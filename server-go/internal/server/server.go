@@ -5,7 +5,6 @@
 package server
 
 import (
-	"encoding/json"
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"log/slog"
 	"net/http"
@@ -267,9 +266,18 @@ func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) *httputil.Re
 			// Node sees the host the browser asked for, as it does today.
 			pr.Out.Host = pr.In.Host
 			pr.SetXForwarded()
+			// Only the Go server's own value calls (app.Node.Do, which go
+			// to Node directly) and marked hand-offs carry this; a
+			// client's is dropped.
+			pr.Out.Header.Del(app.InternalHeader)
+			// A Go route's deliberate hand-off (app.HandOff) is marked.
+			if _, ok := app.IsHandOff(pr.In); ok {
+				pr.Out.Header.Set(app.InternalHeader, "1")
+			}
 			if front != nil {
 				front.ToNode(pr.Out, auth.UserOf(pr.In))
 			}
+			app.RunToNode(pr.In, pr.Out)
 		},
 		// 0 flushes only what streams: ReverseProxy writes a response out
 		// as Node sends it when it is text/event-stream (/api/chat/stream,
@@ -310,11 +318,8 @@ var copyBufferPool = sync.Pool{New: func() any { b := make([]byte, 32<<10); retu
 func (copyBuffers) Get() []byte  { return *copyBufferPool.Get().(*[]byte) }
 func (copyBuffers) Put(b []byte) { copyBufferPool.Put(&b) }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
+// writeJSON is apierr.JSON: Fastify's bytes, with no trailing newline.
+func writeJSON(w http.ResponseWriter, status int, v any) { apierr.JSON(w, status, v) }
 
 // recorder notes the status and size of a response for the access log and
 // passes Flush through, which the proxy needs for event streams.

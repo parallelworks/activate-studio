@@ -33,13 +33,13 @@ function read(): Holder | null {
 }
 
 /** Whether a process is a Studio still running: it exists, and is a node
- *  running main.js, which a process that was given the number of one that
- *  died is not. */
+ *  running main.js or the Go server (studio-server), which a process that
+ *  was given the number of one that died is not. */
 function isStudio(pid: number): boolean {
   try { process.kill(pid, 0) } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EPERM') return false }
   try {
     const cmd = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8', timeout: 3000 })
-    return /\bnode\b/.test(cmd) && /main\.(js|ts)\b/.test(cmd)
+    return (/\bnode\b/.test(cmd) && /main\.(js|ts)\b/.test(cmd)) || /\bstudio-server\b/.test(cmd)
   } catch { return false }
 }
 

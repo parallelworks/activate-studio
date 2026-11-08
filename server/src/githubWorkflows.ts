@@ -1,6 +1,6 @@
 import { parse as parseYaml } from 'yaml'
 import { KbError } from './kb.js'
-import type { WorkflowEntry } from './workflowEntries.js'
+import { githubApiBase, githubRawBase, type WorkflowEntry } from './workflowEntries.js'
 
 /**
  * Workflows defined in GitHub repositories.
@@ -32,7 +32,7 @@ const ghHeaders = (): Record<string, string> => {
 }
 
 const refOf = (e: GithubEntry) => e.ref ?? 'HEAD'
-const rawUrl = (e: GithubEntry, path: string) => `https://raw.githubusercontent.com/${e.owner}/${e.repo}/${refOf(e)}/${path}`
+const rawUrl = (e: GithubEntry, path: string) => `${githubRawBase()}/${e.owner}/${e.repo}/${refOf(e)}/${path}`
 const entryFor = (e: GithubEntry, path: string) =>
   `github.com/${e.owner}/${e.repo}${path ? `/${path}` : ''}${e.ref ? `@${e.ref}` : ''}`
 
@@ -41,7 +41,7 @@ async function treeOf(e: GithubEntry): Promise<Set<string>> {
   const key = `${e.owner}/${e.repo}@${refOf(e)}`
   const hit = treeCache.get(key)
   if (hit && Date.now() - hit.at < TREE_TTL) return hit.paths
-  const res = await fetch(`https://api.github.com/repos/${e.owner}/${e.repo}/git/trees/${encodeURIComponent(refOf(e))}?recursive=1`,
+  const res = await fetch(`${githubApiBase()}/repos/${e.owner}/${e.repo}/git/trees/${encodeURIComponent(refOf(e))}?recursive=1`,
     { headers: ghHeaders(), signal: AbortSignal.timeout(20_000) }).catch(() => null)
   if (!res) throw new KbError(502, `Could not reach GitHub for ${key}.`)
   if (res.status === 404) throw new KbError(404, `No public repository or ref ${key} on GitHub.`)

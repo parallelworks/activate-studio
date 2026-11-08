@@ -3,6 +3,7 @@ import { ModelAccessSection } from '../components/ModelAccessSection'
 import { IndexingSection } from '../components/IndexingSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useRef, useState } from 'react'
+import { okJSON } from '../api'
 import {
   ActionMenu, Autocomplete, Button, Callout, type CalloutTone, Checkbox, CopyButton, CopyCodeBlock,
   DescriptionList, DescriptionListItem, DisclosurePanel, EmptyState, Field, Input, Loader, NumberInput,
@@ -188,7 +189,9 @@ export function SettingsView() {
   const [ext, setExt] = useState<Extensions | null>(null)
   // Settings rail groups the visitor opened or closed this visit.
   const [railOpen, setRailOpen] = useState<Record<string, boolean>>({})
-  const [runtime, setRuntime] = useState<{ local: { available: boolean; reason: string | null; version: string | null; remoteStart: boolean | null; remoteMaxPermissionMode: string | null } } | null>(null)
+  type Runtime = { local: { available: boolean; reason: string | null; version: string | null; remoteStart: boolean | null; remoteMaxPermissionMode: string | null } }
+  const [runtime, setRuntime] = useState<Runtime | null>(null)
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
   const [me, setMe] = useState<{ authEnabled?: boolean; single?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
     shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
@@ -228,9 +231,16 @@ export function SettingsView() {
   const [ragCalls, setRagCalls] = useState<RagCall[]>([])
   const refreshRagCalls = () => fetch('/api/rag/calls').then(r => r.json()).then(d => setRagCalls(d.calls ?? [])).catch(() => {})
 
-  const refreshRagEp = () => fetch('/api/rag/endpoint').then(r => r.json()).then(setRagEp).catch(() => {})
+  const [ragEpError, setRagEpError] = useState<string | null>(null)
+  type RagEp = { state: string; name: string | null; url: string | null; detail: string | null }
+  // An error answer is shown as such; the last good state is not kept, since
+  // it may no longer hold.
+  const takeRagEp = (p: Promise<Response>) => p.then(r => okJSON<RagEp>(r))
+    .then(d => { setRagEp(d); setRagEpError(null) })
+    .catch((e: Error) => { setRagEp(null); setRagEpError(e.message) })
+  const refreshRagEp = () => takeRagEp(fetch('/api/rag/endpoint'))
   const ragEpAction = async (verb: 'start' | 'stop') => {
-    await fetch(`/api/rag/endpoint/${verb}`, { method: 'POST' }).then(r => r.json()).then(setRagEp).catch(() => {})
+    await takeRagEp(fetch(`/api/rag/endpoint/${verb}`, { method: 'POST' }))
     setTimeout(refreshRagEp, 2500)
     setTimeout(refreshRagEp, 8000)
   }
@@ -272,7 +282,9 @@ export function SettingsView() {
       .then(d => setCatalog(d.tools ?? []))
       .catch(() => {})
     fetch('/api/extensions').then(r => r.json()).then(setExt).catch(() => {})
-    fetch('/api/tasks/runtime').then(r => r.json()).then(setRuntime).catch(() => {})
+    fetch('/api/tasks/runtime').then(r => okJSON<Runtime>(r))
+      .then(d => { setRuntime(d?.local ? d : null); setRuntimeError(d?.local ? null : 'The server did not describe the agent runtime.') })
+      .catch((e: Error) => { setRuntime(null); setRuntimeError(e.message) })
     refreshRagEp()
     refreshRagCalls()
     const onSection = (e: Event) => {
@@ -338,7 +350,7 @@ export function SettingsView() {
     </div>
   )
 
-  const ragEpTone: CalloutTone = ragEp?.state === 'running' ? 'success' : ragEp?.state === 'error' ? 'error' : 'default'
+  const ragEpTone: CalloutTone = ragEp?.state === 'running' ? 'success' : ragEp?.state === 'error' || ragEpError ? 'error' : 'default'
   const surfaces: SelectItem<string>[] = Object.entries(SURFACES).map(([k, v]) => ({ value: k, label: v.label }))
 
   return (
@@ -752,6 +764,7 @@ export function SettingsView() {
                     </>}>
                     <Select items={AGENT_EXECUTION} value={form.agentExecution} onValueChange={v => v && setForm({ ...form, agentExecution: v })} />
                   </Field>
+                  {runtimeError && <p className="muted key-note" role="alert">{runtimeError}</p>}
                   {runtime && (
                     <p className="muted key-note">
                       {runtime.local.version
@@ -874,7 +887,8 @@ export function SettingsView() {
                 Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. Platform callers reach it with their own credentials; the deployment credential covers only keyless clients such as pw code. Requires an authenticated pw CLI on the host.
               </p>
               <Callout className="rag-banner" tone={ragEpTone}
-                title={ragEp?.state === 'running' ? 'Connected: published in the platform model catalog' :
+                title={ragEpError ? 'Registration status unavailable' :
+                  ragEp?.state === 'running' ? 'Connected: published in the platform model catalog' :
                   ragEp?.state === 'starting' ? 'Registering…' :
                   ragEp?.state === 'error' ? 'Registration failed' : 'Not registered on the platform'}
                 action={<>
@@ -898,6 +912,7 @@ export function SettingsView() {
                   </div>
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
+                {ragEpError && <p className="muted key-note" role="alert">{ragEpError}</p>}
               </Callout>
               </>)}
               {form.ragProxyEnabled && (<>

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { GATEWAY_BASE } from './config.js'
 import { KbError } from './kb.js'
-import { parseWorkflowEntry, type WorkflowEntry } from './workflowEntries.js'
+import { githubRawBase, parseWorkflowEntry, type WorkflowEntry } from './workflowEntries.js'
 import { firstJson, platformKeyFor, workflowsCli } from './workflowsTab.js'
 
 /**
@@ -140,7 +140,7 @@ export async function readmeText(src: ReadmeSource, key: string): Promise<string
     if (typeof body?.markdown === 'string') return body.markdown.slice(0, README_MAX)
   }
   if (src.github) {
-    const raw = await fetch(`https://raw.githubusercontent.com/${src.repo}/${src.ref}/${src.path}`, { signal: AbortSignal.timeout(15_000) }).catch(() => null)
+    const raw = await fetch(`${githubRawBase()}/${src.repo}/${src.ref}/${src.path}`, { signal: AbortSignal.timeout(15_000) }).catch(() => null)
     if (raw?.ok) return (await raw.text()).slice(0, README_MAX)
   }
   return null
@@ -191,7 +191,7 @@ export async function workflowReadmeRoutes(app: FastifyInstance): Promise<void> 
     if (!src) throw new KbError(404, 'this workflow has no repository')
     const q = new URLSearchParams({ repo: src.repo, ref: src.ref, path })
     let res = await platformGet(`/api/repositories/thumbnail?${q}`, key)
-    if (!res?.ok && src.github) res = await fetch(`https://raw.githubusercontent.com/${src.repo}/${src.ref}/${path}`, { signal: AbortSignal.timeout(15_000) }).catch(() => null)
+    if (!res?.ok && src.github) res = await fetch(`${githubRawBase()}/${src.repo}/${src.ref}/${path}`, { signal: AbortSignal.timeout(15_000) }).catch(() => null)
     const type = res?.headers.get('content-type') ?? ''
     if (!res?.ok || !/^image\//.test(type)) throw new KbError(404, 'image unavailable')
     const body = Buffer.from(await res.arrayBuffer())

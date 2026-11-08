@@ -1,0 +1,89 @@
+# Strings that exercise the dumper's quoting and block rules.
+on: on
+yes: 'yes'
+'no': n
+nul: null
+tilde: ~
+empty: ''
+spaces: '   '
+num: '123'
+octal: '0755'
+hex: '0x1F'
+float: '1.5'
+exp: '1e3'
+dot: '.5'
+inf: '.inf'
+date: '2026-11-08'
+baddate: '2026-13-45'
+stamp: '2026-11-08T10:00:00Z'
+merge: '<<'
+eq: '='
+colon: 'a: b'
+colonend: 'a:'
+urlish: http://example.org/x?y=1#frag
+hash: 'a #b'
+hash2: 'a#b'
+lead: '- item'
+q: '?x'
+dash: -x
+star: '*x'
+amp: '&x'
+bang: '!x'
+pct: '%x'
+at: '@x'
+tick: '`x'
+quote: "it's"
+dq: 'say "hi"'
+brace: '{a}'
+bracket: '[a]'
+comma: a, b
+trail: 'trailing '
+leadsp: ' leading'
+tab: "a\tb"
+cr: "a\rb"
+nbsp: "a b"
+bom: "﻿x"
+ctrl: "a\x01b"
+esc: "a\x1bb"
+uni: héllo wörld
+emoji: "rocket \U0001F680"
+doc: '---'
+dots: '... x'
+ml: "one\ntwo\n"
+mlstrip: "one\ntwo"
+mlkeep: "one\ntwo\n\n"
+mllead: "  indented\nnext\n"
+mlleadnl: "\n\nafter blank\n"
+mltab: "one\n\ttwo\n"
+mlcr: "one\r\ntwo\n"
+nl: "\n"
+true: true
+false: false
+int: 42
+neg: -7
+big: 12345678901234567890
+small: 0.000001
+tiny: 1e-7
+pi: 3.14159
+negzero: -0.0
+emptymap: {}
+emptyseq: []
+nested:
+  - []
+  - {}
+  - - a
+    - b
+  - k: v
+    k2:
+      - 1
+      - null
+  -
+  - ''
+"multi\nline key": v
+'123': numeric key
+'1': one
+'0': zero
+'-1': minus
+'': empty key
+' sp': space key
+'a: b': colon key

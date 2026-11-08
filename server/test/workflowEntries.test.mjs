@@ -11,6 +11,8 @@ process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'we-ix-'))
 process.env.PW_API_KEY = 'deployment-key'
 process.env.STUDIO_WORKFLOWS = 'marketplace/jupyter,github.com/example-org/batch-flow@v2'
 
+const { fakePlatform } = await import('./fakePlatform.mjs')
+const fake = await fakePlatform()
 const { parseWorkflowEntry, githubYamlUrls, githubThumbnail } = await import('../dist/workflowEntries.js')
 
 test('entries parse into their three kinds, and anything else is refused', () => {
@@ -24,31 +26,35 @@ test('entries parse into their three kinds, and anything else is refused', () =>
 })
 
 test('GitHub entries resolve to raw file URLs for the form and the thumbnail', () => {
-  const dir = parseWorkflowEntry('github.com/o/r/sub@v1')
-  assert.deepEqual(githubYamlUrls(dir), ['https://raw.githubusercontent.com/o/r/v1/sub/workflow.yaml', 'https://raw.githubusercontent.com/o/r/v1/sub/workflow.yml'])
-  assert.equal(githubThumbnail(dir), 'https://raw.githubusercontent.com/o/r/v1/sub/thumbnail.png')
-  const file = parseWorkflowEntry('github.com/o/r/flows/a.yaml')
-  assert.deepEqual(githubYamlUrls(file), ['https://raw.githubusercontent.com/o/r/HEAD/flows/a.yaml'])
+  // GitHub's own address, without the fake's override.
+  const override = process.env.STUDIO_GITHUB_RAW_URL
+  delete process.env.STUDIO_GITHUB_RAW_URL
+  try {
+    const dir = parseWorkflowEntry('github.com/o/r/sub@v1')
+    assert.deepEqual(githubYamlUrls(dir), ['https://raw.githubusercontent.com/o/r/v1/sub/workflow.yaml', 'https://raw.githubusercontent.com/o/r/v1/sub/workflow.yml'])
+    assert.equal(githubThumbnail(dir), 'https://raw.githubusercontent.com/o/r/v1/sub/thumbnail.png')
+    const file = parseWorkflowEntry('github.com/o/r/flows/a.yaml')
+    assert.deepEqual(githubYamlUrls(file), ['https://raw.githubusercontent.com/o/r/HEAD/flows/a.yaml'])
+  } finally { process.env.STUDIO_GITHUB_RAW_URL = override }
 })
 
 const YAML = 'on:\n  execute:\n    inputs:\n      message:\n        type: string\n        label: Message\njobs:\n  main:\n    steps:\n      - run: echo hi\n'
 const calls = []
-const { workflowsTabRoutes, setWorkflowsCli, resetWorkflowsTabForTests } = await import('../dist/workflowsTab.js')
-setWorkflowsCli(async args => {
+const { workflowsTabRoutes, resetWorkflowsTabForTests } = await import('../dist/workflowsTab.js')
+fake.cli = async args => {
   calls.push(args)
   if (args[0] === 'marketplace' && args[1] === 'ls') return JSON.stringify([{ slug: 'jupyter', name: 'Jupyter', description: 'Notebook server', type: 'workflow' }, { slug: 'a-bucket', type: 'storage' }])
   if (args[0] === 'marketplace' && args[1] === 'get') return YAML
   if (args[0] === 'workflows' && args[1] === 'run') return JSON.stringify({ run: { slug: 'run-00001' } })
   throw new Error(`unexpected ${args.join(' ')}`)
-})
-const realFetch = globalThis.fetch
+}
 const tree = paths => new Response(JSON.stringify({ tree: paths.map(path => ({ path, type: 'blob' })) }), { status: 200 })
-globalThis.fetch = async (url, init) => {
+fake.fetch = async (url) => {
   if (String(url).startsWith('https://api.github.com/repos/example-org/batch-flow/git/trees/v2')) return tree(['workflow.yaml', 'README.md'])
   if (String(url).startsWith('https://api.github.com/repos/example-org/absent/git/trees/')) return tree(['README.md'])
   if (String(url) === 'https://raw.githubusercontent.com/example-org/batch-flow/v2/workflow.yaml') return new Response(YAML, { status: 200 })
   if (String(url).startsWith('https://raw.githubusercontent.com/')) return new Response('nope', { status: 404 })
-  return realFetch(url, init)
+  return new Response('no', { status: 404 })
 }
 
 const { default: Fastify } = await import('fastify')
