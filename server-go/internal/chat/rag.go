@@ -3,7 +3,6 @@ package chat
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
@@ -31,9 +29,6 @@ import (
 // the caller's bearer key, else the stored personal key of the request's
 // viewer (none on /v1, which no sign-in reaches), else, where Settings
 // allow it, the deployment's credential.
-//
-// TRANSITIONAL: the retrieval itself is ragProxy.ts's buildContext over
-// the chat bridge (the ragContext op), until library search is Go's.
 
 const ragDirective = `Context blocks retrieved from the knowledge base follow, numbered [1], [2], … with their source file paths. ` +
 	`Ground your answer in them and cite blocks inline as [n]. End with a "References:" section listing one "[n] file_path" per line for every block you used. ` +
@@ -112,35 +107,17 @@ func newRagState(m *Module) *ragState {
 	return &ragState{
 		models:   map[string]modelIDs{},
 		failOpen: strings.ToLower(os.Getenv("RAG_FAIL_OPEN")) != "false",
-		retrieve: m.nodeRetrieve,
+		retrieve: m.retrieve,
 	}
 }
 
-// nodeRetrieve is the ragContext op of the chat bridge.
-func (m *Module) nodeRetrieve(r *http.Request, query string, topK float64, tags []string) (bool, *ragContext, error) {
-	if m.A.NodeFree() || m.A.NodeAPI == nil {
-		return false, nil, errors.New("library search is not available without the Node server")
+// retrieve is ragProxy.ts's retrieval: buildContext when there is an index.
+func (m *Module) retrieve(r *http.Request, query string, topK float64, tags []string) (bool, *ragContext, error) {
+	if m.Corpus == nil || !m.A.Cfg.GufiAvailable() {
+		return false, nil, nil
 	}
-	var out struct {
-		Available bool        `json:"available"`
-		Context   *ragContext `json:"context"`
-	}
-	if tags == nil {
-		tags = []string{}
-	}
-	if err := (nodeTools{m.A}).call(r, "ragContext", map[string]any{"query": query, "topK": topK, "tags": tags}, &out); err != nil {
-		var ne *app.NodeError
-		if asNodeError(err, &ne) {
-			var e struct {
-				Error string `json:"error"`
-			}
-			if json.Unmarshal(ne.Body, &e) == nil && e.Error != "" {
-				return false, nil, errors.New(e.Error)
-			}
-		}
-		return false, nil, err
-	}
-	return out.Available, out.Context, nil
+	c, err := m.buildContext(r.Context(), query, int(topK), tags)
+	return true, c, err
 }
 
 // logCall is logCall: newest first, fifty kept.

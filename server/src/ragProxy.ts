@@ -124,9 +124,8 @@ function distill(query: string): string[] {
   return [...new Set(terms)].slice(0, 8)
 }
 
-/** The context blocks for a question; exported for the Go server's RAG
- *  proxy (chat/goBridge.ts), which has no library search of its own yet. */
-export async function buildContext(query: string, topK: number, tags?: string[]): Promise<{ text: string; terms: string[]; blocks: number; chars: number } | null> {
+/** The context blocks for a question. */
+async function buildContext(query: string, topK: number, tags?: string[]): Promise<{ text: string; terms: string[]; blocks: number; chars: number } | null> {
   const q = query.slice(0, 300)
   const terms = distill(q)
   const termQuery = terms.join(' ') || q.slice(0, 100)

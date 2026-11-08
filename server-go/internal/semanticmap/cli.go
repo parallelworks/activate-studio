@@ -31,7 +31,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "semantic-map: give one of --index or --vectors, and --out")
 		return 2
 	}
-	opt := Options{Sample: max(100, *sample), Fit: max(1000, *fit), Seed: *seed}
+	opt := Options{Sample: max(MinSample, *sample), Fit: max(MinFit, *fit), Seed: *seed}
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "of" {
 			opt.Of = of

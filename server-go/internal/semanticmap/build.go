@@ -42,6 +42,25 @@ type Options struct {
 	Seed uint64
 }
 
+// MinSample and MinFit are the smallest Options.Sample and Options.Fit, the
+// floors the command line puts on --sample and --fit.
+const (
+	MinSample = 100
+	MinFit    = 1000
+)
+
+// validate rejects options the build cannot run with, such as the zero
+// value, whose empty fit set has no projection.
+func (o Options) validate() error {
+	if o.Sample < MinSample || o.Fit < MinFit {
+		return fmt.Errorf("semantic map: Sample must be at least %d and Fit at least %d (got %d and %d)", MinSample, MinFit, o.Sample, o.Fit)
+	}
+	if o.Of != nil && *o.Of < 0 {
+		return fmt.Errorf("semantic map: Of must not be negative (got %d)", *o.Of)
+	}
+	return nil
+}
+
 // Num is a coordinate or similarity, written with at most four decimals.
 type Num float64
 
@@ -116,6 +135,9 @@ type Summary struct {
 // Build makes the map of the files src gives into out, replacing it whole.
 // With fewer than three files no map is made and out is left as it was.
 func Build(src Source, out string, opt Options) (Summary, error) {
+	if err := opt.validate(); err != nil {
+		return Summary{}, err
+	}
 	t0 := time.Now()
 	rng := rand.New(rand.NewPCG(opt.Seed, 0x5eed))
 	parent := filepath.Dir(out)

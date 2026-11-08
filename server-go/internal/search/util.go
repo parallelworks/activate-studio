@@ -1,6 +1,7 @@
 package search
 
 import (
+	"encoding/json"
 	"regexp"
 	"unicode/utf16"
 )
@@ -20,3 +21,5 @@ func jsLess(a, b string) bool {
 }
 
 var wordsRe = regexp.MustCompile(`(?i)\bwords\b|\bwordf\b`)
+
+func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
