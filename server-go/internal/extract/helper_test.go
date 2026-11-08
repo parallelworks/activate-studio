@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -123,4 +124,49 @@ func TestPassCancelKillsHelpers(t *testing.T) {
 	}()
 	x.tesseract(ctx, filepath.Join(dir, "p.png"), time.Hour)
 	gone(t, pids)
+}
+
+// TestBuiltinRender: without pdftoppm the pages are drawn by the built-in
+// renderer and read by tesseract, in page order.
+func TestBuiltinRender(t *testing.T) {
+	tools, log := fakeTools(t, 3)
+	tools.Pdftoppm = ""
+	x := newX(t, Options{OCR: true, Tools: &tools})
+	pdf := filepath.Join(t.TempDir(), "a.pdf")
+	put(t, pdf, pdfDoc("", "", ""))
+	got := x.pdfOCR(context.Background(), pdf, 3)
+	want := OCRHeader + "\nink read from page-001.png\n\nink read from page-002.png\n\nink read from page-003.png"
+	if got != want {
+		t.Errorf("got %q", got)
+	}
+	b, _ := os.ReadFile(log)
+	if strings.Contains(string(b), "pdftoppm") {
+		t.Error("pdftoppm ran")
+	}
+}
+
+// TestBuiltinRenderTimeout: a page that takes too long is cut off at the
+// page timeout and the render goes on.
+func TestBuiltinRenderTimeout(t *testing.T) {
+	defer func(d time.Duration) { renderPageTimeout = d }(renderPageTimeout)
+	renderPageTimeout = 50 * time.Millisecond
+	dir := t.TempDir()
+	var c strings.Builder
+	for i := 0; i < 300000; i++ {
+		c.WriteString("0 0 612 792 re f\n")
+	}
+	doc := bytes.Replace(pdfDoc("", ""), []byte("/Length 0 >>\nstream\n"), []byte("/Length "+strconv.Itoa(c.Len())+" >>\nstream\n"+c.String()), 1)
+	pdf := filepath.Join(dir, "a.pdf")
+	put(t, pdf, doc)
+	start := time.Now()
+	if err := renderBuiltin(context.Background(), pdf, 2, filepath.Join(dir, "page")); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("render took %s", d)
+	}
+	pngs, _ := filepath.Glob(filepath.Join(dir, "page-*.png"))
+	if len(pngs) != 2 {
+		t.Errorf("pages written: %v", pngs)
+	}
 }
