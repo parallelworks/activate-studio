@@ -198,9 +198,9 @@ var (
 	// The corpus line of the system prompt follows the index, which the
 	// conversation exports of the earlier runs build.
 	corpusRe = regexp.MustCompile(`\\n(Corpus index not yet built; search_kb falls back to grep\.|Indexed corpus: [^\\]*)\\n`)
-	durRe       = regexp.MustCompile(`"reasoningDuration":\d+`)
-	idRe        = regexp.MustCompile(`"id":"[0-9a-f-]{36}"`)
-	refRe       = regexp.MustCompile(`\(ref [0-9a-z]+\)`)
+	durRe    = regexp.MustCompile(`"reasoningDuration":\d+`)
+	idRe     = regexp.MustCompile(`"id":"[0-9a-f-]{36}"`)
+	refRe    = regexp.MustCompile(`\(ref [0-9a-z]+\)`)
 )
 
 func normal(s string) string {
