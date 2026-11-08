@@ -71,6 +71,12 @@ type Module struct {
 	noCap    *noTokenCap
 	rag      *ragState
 
+	monitorMu sync.Mutex
+	monitor   monitorCache
+	// siteDefaults' answers per system, ten minutes each (tools.ts siteCache)
+	siteMu    sync.Mutex
+	siteCache map[string]siteCacheEntry
+
 	// Corpus is the libraries and search pair the corpus tools read.
 	Corpus *Corpus
 }

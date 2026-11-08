@@ -46,6 +46,9 @@ type fakeGateway struct {
 	mu       sync.Mutex
 	queue    []reply
 	requests []json.RawMessage
+	// api answers platform API paths (with the query) on the gateway's
+	// origin, as the platform serves them.
+	api map[string]string
 }
 
 func (g *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +82,15 @@ func (g *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		io.WriteString(w, "data: [DONE]\n\n")
 	default:
-		http.NotFound(w, r)
+		g.mu.Lock()
+		body, ok := g.api[r.URL.RequestURI()]
+		g.mu.Unlock()
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, body)
 	}
 }
 
@@ -126,6 +137,12 @@ func startGolden(t *testing.T) *goldenEnv { return startGoldenWith(t, nil) }
 // startGoldenWith is startGolden with prep run on the folders before
 // either server starts: the main folder and the two INDEX_BASEs.
 func startGoldenWith(t *testing.T, prep func(kb string, bases []string)) *goldenEnv {
+	return startGoldenEnv(t, prep, nil, nil)
+}
+
+// startGoldenEnv is startGoldenWith with env set over the defaults for
+// both servers ({gateway} in a value is the fake gateway's origin), and more registering further routes on the Go server.
+func startGoldenEnv(t *testing.T, prep func(kb string, bases []string), over map[string]string, more func(mux *http.ServeMux, a *app.App)) *goldenEnv {
 	node := os.Getenv("STUDIO_GOLDEN_NODE")
 	if node == "" {
 		t.Skip("STUDIO_GOLDEN_NODE unset")
@@ -157,6 +174,9 @@ func startGoldenWith(t *testing.T, prep func(kb string, bases []string)) *golden
 		"INDEX_BASE": ix, "KB_ROOT": kb, "PW_GATEWAY_URL": gs.URL + "/v1", "PW_API_KEY": "test-key",
 		"STUDIO_BRIDGE_SECRET": "golden-secret", "PW_CREDENTIALS_DIR": filepath.Join(dir, "nopw"), "PW_CLI": "/bin/false",
 		"HOME": dir, "AI_ENABLED": "1",
+	}
+	for k, v := range over {
+		env[k] = strings.ReplaceAll(v, "{gateway}", gs.URL)
 	}
 	for k, v := range env {
 		t.Setenv(k, v)
@@ -200,6 +220,9 @@ func startGoldenWith(t *testing.T, prep func(kb string, bases []string)) *golden
 	mux := http.NewServeMux()
 	kbpkg.Register(mux, a)
 	Register(mux, a)
+	if more != nil {
+		more(mux, a)
+	}
 	gsrv := httptest.NewServer(mux)
 	t.Cleanup(gsrv.Close)
 	return &goldenEnv{kb: kb, gw: gw, node: nodeURL, goURL: gsrv.URL, module: Default}
