@@ -423,6 +423,12 @@ ONNX Runtime is loaded with `github.com/ebitengine/purego` (v0.11.3, no cgo, API
 
 Variables the Go index reads besides Node's: `STUDIO_GO_INDEX=1` (Go serves the index beside Node), `STUDIO_ORT_LIB` (the onnxruntime library), and for tests `STUDIO_EXTRACT_BIN`, `STUDIO_EMBED_BIN` and `STUDIO_EMBED_QUERY_BIN` (a command run with the subcommand's flags in place of `studio-server extract`, `embed` or `embed-query`) and `STUDIO_INDEX_HOLD_FILE` (the text phase waits while the file exists).
 
+## Libraries and search in Go
+
+`internal/libraries` is the library registry (libraries.ts, libraryScope.ts, omissions.ts and the stored side of userLibraries.ts): the main folder, pinned and added libraries, a viewer's own libraries, `library-caps.json`, probes and scope. `libraries.Of(a)` is the one registry per App; its index settings are `index.Of(a).Settings` and its users store is the one `userlibs.Of(a)` keeps. `internal/remote` is the ssh and pw ssh session pool (remoteExec.ts), one per App through `remote.Shared`. `internal/search` is the one-walk search (`Engine.SearchScope`), Query (`Engine.QueryScope`, `Engine.QuerySQL`, `Engine.RunPlan`), the query embedder over `embed.Queries`, and the hit labels from `internal/kb`; `search.Of(a)` is the one engine per App. `internal/libapi` serves GET `/api/search`, GET `/api/libraries`, POST `/api/query`, POST `/api/query/sql`, GET and POST `/api/query/saved` and DELETE `/api/query/saved/:id`, and sets `Providers.Libraries`.
+
+Node and Go both write `libraries.json`, `library-caps.json` and `indexing.json`; each rereads them when they change on disk and writes them through a renamed temporary file. Differences from Node: Query across several libraries merges their rows here and never runs gufi_vt (`engine` is `merge`; `mergeReason` says gufi_vt is not in the Go server yet where this host has it), and search with Settings, General, "Search across libraries" on gufi_vt runs the one walk. With Node behind the Go server, "being built" for the main folder reads Go's job queue, not Node's. Still in Node: the library write routes (POST `/api/libraries`, PUT depth and meaning, DELETE), details, topology, the map routes, builds and sync, read-through and gufi_vt, and the KB hand-offs for remote and read-through libraries.
+
 ## Performance
 
 Measured on a shared 20-core Linux host (load average 3 to 12 during the runs, recorded with each run) with the harness kept outside the repository; medians of 3 rounds, 10 runs for startup. "Before" is 3065f7d.
