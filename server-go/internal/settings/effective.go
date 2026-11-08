@@ -313,8 +313,10 @@ func asPolicy(raw json.RawMessage) UpdatePolicy {
 	if v["install"] == "auto" {
 		p.Install = "auto"
 	}
-	if v["channel"] == "prerelease" {
-		p.Channel = "prerelease"
+	// stable or preview; the older value prerelease is read as preview
+	// (settings.ts asChannel, docs/UPDATES.md).
+	if v["channel"] == "preview" || v["channel"] == "prerelease" {
+		p.Channel = "preview"
 	}
 	return p
 }
