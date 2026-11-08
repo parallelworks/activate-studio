@@ -6,6 +6,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"sync"
@@ -16,7 +17,9 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
+	"github.com/parallelworks/activate-studio/server-go/internal/extensions"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
+	"github.com/parallelworks/activate-studio/server-go/internal/mcpclient"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
@@ -57,6 +60,14 @@ type Module struct {
 	Conv  *conversations.Store
 	Tools Tools
 	Convs *conversations.Routes
+	// Ext is the deployment's extensions (skills, agents, custom tools).
+	Ext *extensions.Set
+	// MCP is the client for the attached MCP servers.
+	MCP    remoteTools
+	mcp    *mcpclient.Client
+	Plat   Platform
+	held   *heldStore
+	prompt promptCache
 
 	accessMu sync.Mutex
 	access   Access
@@ -70,8 +81,14 @@ var Default *Module
 
 // New builds the module over a's configuration.
 func New(a *app.App) *Module {
-	m := &Module{A: a, Tools: nodeTools{a}}
+	m := &Module{A: a}
+	m.Tools = goTools{m: m, node: nodeTools{a}}
 	m.access = *envAccess()
+	m.Ext = extensions.New(a.Cfg.IndexBase, a.Cfg.ProjectRoot, a.Cfg.KBRoot)
+	m.mcp = mcpclient.New(func() []json.RawMessage { return m.eff().McpServers })
+	m.MCP = remoteTools{m.mcp}
+	m.Plat = accessPlatform{m}
+	m.held = newHeldStore(a.Cfg.IndexBase)
 	m.Keys = modelkeys.New(a.Cfg.IndexBase, a.Cfg.AuthEnabled)
 	m.LLM = llm.New(m.gatewayBase, m.GatewayKey)
 	m.Conv = conversations.New(a.Cfg.IndexBase, a.Cfg.KBRoot, conversations.Hooks{
@@ -231,13 +248,31 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("GET /api/ai/health", m.health)
 	h("GET /api/chat/suggestions", m.suggestions)
 	h("POST /api/chat/stream", m.stream)
+	h("GET /api/chat/tools", m.toolsRoute)
+	h("GET /api/chat/tool-options", m.toolOptions)
+	h("GET /api/settings/mcp-servers", m.mcpServers)
+	h("POST /api/kb/label-suggestions", m.labelSuggestionsRoute)
 	m.attachmentRoutes(h)
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
-	// TODO(chat tools): the MCP listing is mcpClient.ts's, in Node, until the
-	// tools are ported; the bridge's changed op drops it there.
+	// The MCP listing is kept here and, while Node runs, in Node too: a
+	// settings save drops both (the bridge's changed op tells Node).
 	a.Providers.InvalidateMCP = func() { a.Providers.Changed(context.Background(), "mcp") }
+	changed := a.Providers.Changed
+	a.Providers.Changed = func(ctx context.Context, what ...string) {
+		for _, w := range what {
+			switch w {
+			case "context":
+				m.InvalidateContext()
+			case "mcp":
+				m.mcp.Invalidate()
+			}
+		}
+		if changed != nil {
+			changed(ctx, what...)
+		}
+	}
 	a.AddBusy(func() bool { return a.StreamsInFlight() > 0 })
 
 	// Node reads the viewer's key from Go while routes that use it remain

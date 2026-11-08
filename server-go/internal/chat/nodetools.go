@@ -124,6 +124,8 @@ type Access struct {
 	DeploymentKey string  `json:"deploymentKey"`
 	ContextName   *string `json:"contextName"`
 	Platform      bool    `json:"platform"`
+	// CLI is PW_CLI, the pw CLI Node chose.
+	CLI string `json:"cli"`
 }
 
 // Tools is the tool layer the loop calls.
