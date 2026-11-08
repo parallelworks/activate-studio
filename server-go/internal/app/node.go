@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 )
 
 // InternalHeader marks a request the Go server makes to Node on behalf of
@@ -38,6 +39,17 @@ func NewNode(base *url.URL, front *auth.Front, authHeader string) *Node {
 // decodes a JSON answer into out (nil: discarded). A status of 400 or
 // more is an error carrying Node's status and body.
 func (n *Node) Do(r *http.Request, method, path string, body any, out any) error {
+	return n.do(r, method, path, body, out, false)
+}
+
+// DoSigned is Do carrying the bridge secret, for the chat track's
+// TRANSITIONAL bridge (server/src/chat/goBridge.ts), which needs the
+// viewer's identity as well.
+func (n *Node) DoSigned(r *http.Request, method, path string, body any, out any) error {
+	return n.do(r, method, path, body, out, true)
+}
+
+func (n *Node) do(r *http.Request, method, path string, body any, out any, signed bool) error {
 	if n == nil {
 		return fmt.Errorf("no Node server")
 	}
@@ -67,6 +79,9 @@ func (n *Node) Do(r *http.Request, method, path string, body any, out any) error
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set(InternalHeader, "1")
+	if signed {
+		bridge.Sign(req)
+	}
 	if r != nil {
 		req.Host = r.Host
 		if n.Front != nil {
@@ -78,6 +93,9 @@ func (n *Node) Do(r *http.Request, method, path string, body any, out any) error
 				}
 			}
 		}
+	}
+	if r != nil {
+		RunToNode(r, req)
 	}
 	res, err := n.Client.Do(req)
 	if err != nil {

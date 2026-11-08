@@ -152,9 +152,18 @@ export interface StoredConversation {
 let cache: StoredConversation[] | null = null
 let writing: Promise<void> = Promise.resolve()
 
+// TRANSITIONAL: the Go server in front writes this file too
+// (server-go/internal/conversations), so a change on disk this process did
+// not make is read again. Goes away when no Node route reads conversations.
+let stamp = ''
+let pendingWrites = 0
+const stampOf = (): string => { try { const s = fs.statSync(FILE); return `${s.ino}:${s.size}:${s.mtimeMs}` } catch { return '' } }
+
 function load(): StoredConversation[] {
-  if (cache) return cache
+  if (cache && (pendingWrites > 0 || stampOf() === stamp)) return cache
+  const now = stampOf()
   try { cache = JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { cache = [] }
+  stamp = now
   return cache!
 }
 
@@ -165,10 +174,12 @@ function load(): StoredConversation[] {
 function persist(): void {
   const snapshot = JSON.stringify(load(), null, 1)
   const tmp = `${FILE}.${process.pid}.tmp`
+  pendingWrites++
   writing = writing.then(async () => {
     await fsp.writeFile(tmp, snapshot)
     await fsp.rename(tmp, FILE)
-  }).catch(() => {})
+    stamp = stampOf()
+  }).catch(() => {}).finally(() => { pendingWrites-- })
 }
 
 const summary = (c: StoredConversation) => ({
