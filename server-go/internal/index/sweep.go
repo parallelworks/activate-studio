@@ -297,6 +297,13 @@ func (ix *Indexer) Sweep(ctx context.Context, log func(string)) []string {
 		return []string{}
 	}
 	ix.sweeping = true
+	// This sweep reads the settings now, so it covers a sync asked for
+	// before it started; one asked for while it runs sets the flag again.
+	ix.sweepWanted = false
+	if ix.kickTimer != nil {
+		ix.kickTimer.Stop()
+		ix.kickTimer = nil
+	}
 	ix.mu.Unlock()
 	t0 := time.Now()
 	defer func() {
