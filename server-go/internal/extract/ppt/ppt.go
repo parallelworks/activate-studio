@@ -8,22 +8,20 @@
 // content. A lone "*" (the stand-in for a date, footer or slide number
 // field) is left out.
 //
-// The OLE container is read by github.com/richardlehane/mscfb. The stream
-// is found at the root of the container by a case-insensitive name, as
-// olefile finds it.
+// The OLE container is read by internal/extract/cfb, which follows
+// olefile's reading and its tolerance of damage. The stream is found at
+// the root of the container by a case-insensitive name, as olefile finds
+// it.
 package ppt
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf16"
 
-	"github.com/richardlehane/mscfb"
-
+	"github.com/parallelworks/activate-studio/server-go/internal/extract/cfb"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
 )
 
@@ -35,8 +33,6 @@ var (
 	ErrCorrupt = errors.New("ppt: corrupt presentation")
 )
 
-// maxStream bounds the stream read into memory.
-const maxStream = 1 << 30
 
 const (
 	recTextChars    = 0x0FA0
@@ -65,35 +61,24 @@ func Text(r io.ReaderAt, size int64, maxText int) (text string, err error) {
 	return StreamText(stream, maxText), nil
 }
 
-// documentStream reads the root "PowerPoint Document" stream.
+// documentStream reads the root "PowerPoint Document" stream as olefile
+// reads it for enrich.py, damage it passes over included.
 func documentStream(r io.ReaderAt, size int64) ([]byte, error) {
-	doc, err := mscfb.New(io.NewSectionReader(r, 0, size))
-	if err != nil {
+	f, err := cfb.Open(r, size)
+	switch {
+	case errors.Is(err, cfb.ErrNotCFB):
 		return nil, ErrNotPPT
+	case err != nil:
+		return nil, ErrCorrupt
 	}
-	var found *mscfb.File
-	for e, err := doc.Next(); err == nil; e, err = doc.Next() {
-		if len(e.Path) == 0 && strings.EqualFold(e.Name, "PowerPoint Document") {
-			found = e
-			break
-		}
-	}
-	if found == nil {
+	b, err := f.Stream("PowerPoint Document")
+	switch {
+	case errors.Is(err, cfb.ErrNotFound):
 		return nil, ErrNotPPT
-	}
-	if found.Size < 0 || found.Size > size || found.Size > maxStream {
+	case err != nil:
 		return nil, ErrCorrupt
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, found.Size))
-	// olefile raises on a stream it cannot follow to its end, and
-	// enrich.py then has no text; a short read here is the same failure.
-	if _, err := io.Copy(buf, io.LimitReader(found, found.Size)); err != nil {
-		return nil, ErrCorrupt
-	}
-	if int64(buf.Len()) != found.Size {
-		return nil, ErrCorrupt
-	}
-	return buf.Bytes(), nil
+	return b, nil
 }
 
 // StreamText walks the records of a "PowerPoint Document" stream.
@@ -153,20 +138,7 @@ func (w *walker) walk(start, end, depth int) {
 func textOf(rtype uint16, body []byte) string {
 	var s string
 	if rtype == recTextChars {
-		u := make([]uint16, len(body)/2)
-		for i := range u {
-			u[i] = binary.LittleEndian.Uint16(body[2*i:])
-		}
-		if len(body)%2 == 1 {
-			// Python's utf-16-le 'replace' gives one U+FFFD for the odd
-			// byte, which takes in a high surrogate left waiting for it.
-			if n := len(u); n > 0 && u[n-1] >= 0xD800 && u[n-1] <= 0xDBFF {
-				u = u[:n-1]
-			}
-			s = string(utf16.Decode(u)) + "\ufffd"
-		} else {
-			s = string(utf16.Decode(u))
-		}
+		s = pytext.DecodeUTF16LE(body)
 	} else {
 		r := make([]rune, len(body))
 		for i, b := range body {
