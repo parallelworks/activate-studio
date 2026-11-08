@@ -4,6 +4,7 @@ import { invalidateContext } from './chat/context.js'
 import { invalidateDbList } from './gufi.js'
 import { incrementalIndexDir, indexRootDb } from './indexing.js'
 import { invalidateTagMaps } from './tags.js'
+import { invalidateRemote } from './mcpClient.js'
 
 /**
  * TRANSITIONAL: the bridge the Go server in front uses while Node still
@@ -47,6 +48,8 @@ export async function goBridgeRoutes(app: FastifyInstance): Promise<void> {
       if (w === 'dbList') invalidateDbList()
       else if (w === 'context') invalidateContext()
       else if (w === 'tagMaps') invalidateTagMaps()
+      // the MCP listing, after the Go server saved settings (chat track)
+      else if (w === 'mcp') invalidateRemote()
     }
     return { ok: true }
   })

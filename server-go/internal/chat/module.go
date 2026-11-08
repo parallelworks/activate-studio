@@ -211,6 +211,9 @@ func Register(mux *http.ServeMux, a *app.App) {
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
+	// TODO(chat tools): the MCP listing is mcpClient.ts's, in Node, until the
+	// tools are ported; the bridge's changed op drops it there.
+	a.Providers.InvalidateMCP = func() { a.Providers.Changed(context.Background(), "mcp") }
 	a.AddBusy(func() bool { return a.StreamsInFlight() > 0 })
 
 	// Node reads the viewer's key from Go while routes that use it remain
