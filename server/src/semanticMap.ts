@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, SEMANTIC_MAP_DIR, gufiEnv, indexerEnv } from './config.js'
 import { indexSettings, type IndexDepth } from './indexSettings.js'
+import { callFront, goOwnsMaps } from './frontBridge.js'
 import { KbError } from './kb.js'
 import { builtLibraryDir, getLibrary, lacks, listLibraries, onLibraryRemoved, PRIMARY_ID, type Library } from './libraries.js'
 import { countRemoteVectors, dequantize, fetchRemoteVectors, remoteMapFiles, remoteNeighbors, type VectorSource } from './remoteMap.js'
@@ -147,8 +148,10 @@ function stateOf(key: string): MapState {
   return st
 }
 
-/** A library removed: its map goes with it, from disk and from memory. */
+/** A library removed: its map goes with it, from disk and from memory, and
+ *  from the Go server's where it keeps the maps. */
 onLibraryRemoved(id => {
+  if (goOwnsMaps()) void askGo('removed', { id })
   const st = states.get(id)
   if (st?.timer) clearTimeout(st.timer)
   states.delete(id)
@@ -264,6 +267,8 @@ export function semanticMapCluster(c: number, offset = 0, limit = 2000, id: stri
  * map catches up with a sync that ran meanwhile.
  */
 export function scheduleSemanticMapRebuild(delayMs: number, id: string = PRIMARY_ID): void {
+  // The Go server makes the maps it serves (STUDIO_GO_MAPS).
+  if (goOwnsMaps()) { void askGo('schedule', { id, delayMs }); return }
   const st = stateOf(id)
   if (st.running) { st.again = true; return }
   delayMs = Math.max(0, delayMs) * delayScale
@@ -289,10 +294,16 @@ export function setSemanticMapBuilderForTests(fn: Builder | null, opts: { delayS
   delayScale = opts.delayScale ?? 1
   remoteCheckMs = opts.remoteCheckMs ?? REMOTE_CHECK_MS
 }
-export function resetSemanticMapForTests(): void {
+export async function resetSemanticMapForTests(): Promise<void> {
   for (const st of states.values()) if (st.timer) clearTimeout(st.timer)
   states.clear()
   neighborCaches.clear()
+  if (goOwnsMaps()) await askGo('reset', {})
+}
+
+/** A call to the Go server's maps (internal/maps), logged when it fails. */
+function askGo(op: 'schedule' | 'removed' | 'reset', body: Record<string, unknown>): Promise<void> {
+  return callFront(`/internal/maps/${op}`, body).then(() => {}, e => { console.warn(`semantic map: the Go server was not told (${op}): ${String((e as Error).message)}`) })
 }
 
 async function rebuild(id: string): Promise<void> {
