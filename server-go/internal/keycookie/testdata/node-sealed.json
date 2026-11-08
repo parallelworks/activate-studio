@@ -1,0 +1,23 @@
+{
+ "secret": "iH8c4QmCHxYa/prgO/hnQfKQ+5LYtYVmHhiskE5tihI=",
+ "sub": "user-1",
+ "chunks": [
+  "v1:epQnwGct9VTJEXKe:x8n/BnP+LMulj2yrW74rsw==:013AcUHsBScSYKOmQ9/w8ITYK5dvjv1cB4Q+D7qrF3dkZoSu8aic8kd4udCmwVkkKGaBcM96w1lCCO/EltdotgOGWtP8nX2nMijLfMZXRYrXbE0FbVvxogDjr0lS2uKO0GjrDxjWYWv2243fAxmN6ZiWCgdmci1IJOr0OcMt9CNVehLc+LqKmSef0k9Au9h7wHaztdmoqx0EF6dSAnwz/cFZP5mSHw=="
+ ],
+ "want": {
+  "key": "sk-test-not-a-real-key-1234",
+  "baseUrl": "https://models.example.org/v1",
+  "options": {
+   "auth": "api-key",
+   "headers": [
+    {
+     "name": "X-Org",
+     "value": "lab"
+    }
+   ],
+   "models": [
+    "m1"
+   ]
+  }
+ }
+}
