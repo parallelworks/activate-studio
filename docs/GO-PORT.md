@@ -16,7 +16,7 @@ The proxy keeps the browser's `Host`, adds `X-Forwarded-*`, and writes `text/eve
 
 Two rules decide what can move when:
 
-1. A module's in-memory state moves with all of its routes and background jobs. Node caches files it owns and never rereads them: `loadSettings()` reads `INDEX_BASE/settings.json` once per process, and `effectiveSettings()` is read by almost every handler. A Go `PUT /api/settings` would leave Node on the old settings. So a state file moves with its writer and every caching reader, or Node first gets a reread on mtime change (a few lines per file; `semanticMap.ts` already does this for the map's JSON).
+1. A module's in-memory state moves with all of its routes and background jobs. Node caches files it owns: a Go route that writes one would leave Node on the old contents. So a state file moves with its writer and every caching reader, or Node first gets a reread on change. `settings.json` has one since stage 1 (below); `semanticMap.ts` does the same for the map's JSON.
 2. Auth moves before the first `/api` route. `auth.ts` verifies the platform JWT (`AUTH_JWKS_URL`, `AUTH_HEADER`, `AUTH_ISSUER`, `AUTH_AUDIENCE`, `AUTH_REQUIRED`) on `/api/*` only, with a mission-token exception for `/api/mcp`, and `credentials.ts` restores personal model keys from the sealed `ade_mk`/`ade_mkp` cookies. A Go route under `/api` needs both, with the same error body (`sanitizedErrorHandler`: `KbError` status and `{error}`, 400 for validation, 500 `internal error (ref <id>)`).
 
 Three callers reach the server over loopback and must reach whichever process owns their route: the `gufi_vt` wrapper (`POST /internal/gufi-vt`, at `HOST`/`PORT` from `gufiVt.ts:selfUrl()`), mission workers (`/api/mcp` at `STUDIO_SELF_URL`, default `http://127.0.0.1:$PORT`), and the RAG endpoint forwarder (`/v1/*` at `STUDIO_TARGET_PORT`). With Node behind the Go server, Node's `PORT` is its loopback port, so these reach Node directly; when one of those routes moves to Go, the address it is given must become the Go server's.
@@ -32,6 +32,12 @@ server-go/
   internal/server/               routing, static files, reverse proxy, access log
   internal/nodeproc/             starts and stops the Node server
   internal/semanticmap/          the semantic map (package; the CLI wraps it)
+  internal/apierr/               the API error body (sanitizedErrorHandler)
+  internal/settings/             settings.json and effectiveSettings(), reread on change
+  internal/auth/                 proxy JWT and JWKS, OIDC sign-in, sessions, the hand-off to Node
+  internal/keycookie/            the sealed personal-key cookies (credentials.ts's format)
+  internal/gufi/                 GUFI plans, output parsing, executor and admission runner
+  scripts/golden/                Node scripts that write the golden files the Go tests compare with
   scripts/compare_semantic_map.py  Python against Go on the same inputs
 ```
 
@@ -61,12 +67,16 @@ Environment the Go server reads today:
 | `STUDIO_NODE_BIN`, `STUDIO_NODE_MAIN` | `node`, `<root>/server/dist/main.js` | how to start Node |
 | `STUDIO_LOG_FORMAT` | `json` | `text` for a terminal; one access-log line per request with `via` = `go`, `node` or `static` |
 | `STUDIO_SEMANTIC_MAP_BIN` | none | read by the Node server: run this binary in place of `indexer/semantic_map.py` |
+| `STUDIO_FRONT_AUTH` | on with `STUDIO_NODE_SPAWN=1`, off with `STUDIO_NODE_URL` | `1`: verify identity here and hand it to Node (Stage 1); `0`: pass identity headers through to Node |
+| `STUDIO_IDENTITY_ADDR` | `127.0.0.1:0` | loopback address of the key set Node verifies the hand-off with |
+| `AUTH_*`, `OIDC_*` | as Node | identity, read by the Go server in front-auth mode (DEPLOY.md, Sign-in) |
+| `STUDIO_GUFI_CONCURRENCY`, `STUDIO_GUFI_QUEUE`, `STUDIO_GUFI_TIMEOUT_MS`, `STUDIO_GUFI_THREADS` | 2, 256, 60000, cores up to 16 | the GUFI runner (Stage 1) |
 
 When Node exits on its own the Go server exits with Node's code, so exit 76 (a relaunch after an update, `lifecycle.ts`) still reaches the launcher. The desktop shell's supervisor (`desktop/wails/supervisor.go`) starts Node by default. With `STUDIO_GO_SERVER=1` in the shell's environment it starts `studio-server` with `STUDIO_NODE_SPAWN=1` in its place and sets `STUDIO_SEMANTIC_MAP_BIN` to the `semantic-map` beside it: in the Linux payload the two binaries are `app/bin/studio-server` and `app/bin/semantic-map`, which `studio-run.sh` starts (the payload build does not put them there yet), and in a checkout `server-go/bin/`. Without the binary the shell starts Node as before. The process tree is then the shell, `studio-run.sh`, `studio-server`, Node.
 
 ## HTTP API inventory
 
-219 method and path pairs from 212 registrations in 32 files (93 `.ts` files, about 32,800 lines in `server/src`; tests about 19,500 lines). Loops expand `act()` in `fleet.ts` to five routes, the `ssh`/`pw` loop in `userLibraries.ts` to four, and the session relay is GET and HEAD. On top of these, `main.ts` serves `web/dist` (`@fastify/static`, wildcard) with an `index.html` fallback outside `/api`, and Fastify answers HEAD for every GET. There are no websocket routes. Streams: SSE in `/api/chat/stream` (761-line handler: the agent loop) and `/v1/chat/completions`, the relay in `/api/session-proxy/:host/*`, file downloads, and multipart uploads (`/api/kb/upload`, `/api/chat/attachments`, `/api/setup/icon`, `/api/extensions/persona-icon`). Only `/healthz` is ported.
+219 method and path pairs from 212 registrations in 32 files (93 `.ts` files, about 32,800 lines in `server/src`; tests about 19,500 lines). Loops expand `act()` in `fleet.ts` to five routes, the `ssh`/`pw` loop in `userLibraries.ts` to four, and the session relay is GET and HEAD. On top of these, `main.ts` serves `web/dist` (`@fastify/static`, wildcard) with an `index.html` fallback outside `/api`, and Fastify answers HEAD for every GET. There are no websocket routes. Streams: SSE in `/api/chat/stream` (761-line handler: the agent loop) and `/v1/chat/completions`, the relay in `/api/session-proxy/:host/*`, file downloads, and multipart uploads (`/api/kb/upload`, `/api/chat/attachments`, `/api/setup/icon`, `/api/extensions/persona-icon`). Ported: `/healthz`, and in front-auth mode `/api/whoami` and the new `/api/auth/*` (Stage 1).
 
 Dependencies, as an upper bound from the static call graph: `gufi` the GUFI binaries (`gufi_query`, `gufi_sqlite3`, `gufi_vt`, `gufi_dir2index`); `ssh` plain ssh or `pw ssh` for libraries on other systems; `pw` the pw CLI, `pw-token` only to renew the deployment token; `python` an indexer script (`enrich.py`, `embed.py`, `embed_query.py`, `semantic_map.py`, `fetch_embed.py`, or `python -c` with `sqlite3`); `node:sqlite` Node's built-in SQLite (`textCleanup.ts`, `refine.ts`; every other SQLite access goes through GUFI's binaries or Python); `llm` the OpenAI-compatible gateway; `platform` the ACTIVATE API; `github`; `mcp` MCP servers; `soffice` LibreOffice and poppler; `xattr` `getfattr`/`setfattr`; `http` another outbound fetch. Almost every handler also reads `settings.json`.
 
@@ -158,6 +168,44 @@ By risk and dependency, each step behind the proxy and checked against the same 
 
 `preextract.js` (downmark, a Node package with a native binary) is an index-job child, not a route; it needs a Go replacement or stays a separate binary at step 4 or 5.
 
+## Stage 1
+
+Stage 1 adds the foundations every ported `/api` route needs and moves no route of the inventory except `/api/whoami`, in front-auth mode. With the Go server not in use nothing changes for a user; with it in use the API answers as Node's does, apart from the differences listed below and the new sign-in routes.
+
+*Settings:* Node's `loadSettings()` now rereads `settings.json` when its size, mtime or inode changes, and every write (`updateSettings`, `PUT /api/settings`) goes to a temporary file renamed over the old one, so a reader never sees half a file; a file that does not parse keeps the last good read. `internal/settings` reads the file the same way and computes `effectiveSettings()` with Node's defaults, environment fallbacks and key order. So a Go writer and Node's reader, or the reverse, stay in step.
+
+*Error body:* `internal/apierr` writes `{error}` with a `KbError`'s status, 400 for validation, and 500 `internal error (ref <8 base36 characters>)` with the detail in the log under that reference.
+
+*Identity:* In front-auth mode (`STUDIO_FRONT_AUTH`, on by default when the Go server starts Node) the Go server runs auth.ts's check on every request: the session proxy's JWT in `AUTH_HEADER` against `AUTH_JWKS_URL` (RS, PS, ES and EdDSA; never `none` or HMAC; the key set kept 10 minutes and fetched again for an unknown `kid` at most every 30 seconds, as jose does), then the OIDC session cookie. It answers `/api/auth/login`, `/api/auth/callback` and `/api/auth/logout` (OIDC, ported from the `oidc-signin` branch with its variables) and `/api/whoami`, and refuses what `AUTH_REQUIRED` or `OIDC_REQUIRED` requires before Node sees it. The verified user goes to Node in `x-studio-identity`: a JWT the Go server signs with an Ed25519 key made at start (issuer `studio-go-front`, audience `studio-node`, 5 minutes, claims `sub`, `preferred_username`, `name`, `studio_source`). Node is started with `AUTH_JWKS_URL` pointing at a loopback key set the Go server serves (`STUDIO_IDENTITY_ADDR`), `AUTH_HEADER=x-studio-identity`, that issuer and audience, `AUTH_REQUIRED` as configured, and no `OIDC_*`. Node's `auth.ts` is unchanged and its tests pass as before; it trusts only the Go server's key, and the Go server drops any `x-studio-identity` a client sends. A bearer token on `/api/mcp` goes on to Node unchecked, since only Node's task board knows mission tokens. With `STUDIO_NODE_URL` (a Node the Go server did not start) front-auth is off and identity headers pass through, as before.
+
+*OIDC sessions:* kept across restarts in `INDEX_BASE/oidc-sessions.enc` (AES-256-GCM, additional data `oidc-sessions`) under a 32-byte key in `INDEX_BASE/.oidc-session-key`, written 0600 and never logged. Sign-out ends the Studio's session, clears the cookie and revokes the provider's token; it ends the provider's session too only with `OIDC_END_SESSION=1`. The branch kept sessions in memory and ended the provider's session by default; its tests were adapted to both.
+
+*Key cookies:* `internal/keycookie` opens and seals `ade_mk` and `ade_mkp` (3,800-character chunks) in `credentials.ts`'s format under `INDEX_BASE/.credentials-secret`; a test opens a cookie Node sealed and Node opens one Go sealed.
+
+*GUFI:* `internal/gufi` ports `onePassStages` and the search parsing from `gufi.ts`, the canned, builder and raw SQL plans, `shellQuote` and the command line from `query.ts` and `gufiTrace.ts`, the output parsing and `fuseRows`, and `gufiEnvFor`. GUFI stays a helper process. An `Executor` runs `gufi_query` or `gufi_sqlite3`; `LocalExecutor` is the one in place, and a cluster's can follow at step 6. A run is killed by its PID when its request ends or its timeout passes, and keeps the last 16 KiB of its error output. The `Runner` admits at most `STUDIO_GUFI_CONCURRENCY` runs (default 2), queues the rest in arrival order up to `STUDIO_GUFI_QUEUE` (256) and refuses past it with a 503, times a run out after `STUDIO_GUFI_TIMEOUT_MS` (60,000), lowers `-n` to `STUDIO_GUFI_THREADS` (cores up to 16), and logs each run's queue depth, wait, run time, exit and output size; `Stats()` keeps the totals. No route uses it yet.
+
+Differences from Node in front-auth mode:
+
+- `/api/whoami` comes from the Go server, in the `oidc-signin` branch's shape (with `signIn`); Node's `req.user.claims` hold only the hand-off's claims, which no Node route other than whoami reads.
+- Page loads are sent to sign-in only where OIDC is configured and required; `/v1/` and `/internal/` are not, since Node checks them itself. The branch gated them too.
+- A request to `/api/mcp` with a bearer token that is not a mission token, where sign-in is required, gets Node's `{error: 'authentication required'}`; the branch answered `sign-in required` with the sign-in URL.
+- `OIDC_OPERATOR_GROUP` is not implemented: the Studio has no operator or owner role to map a group onto (see Open questions).
+
+Tests:
+
+| What | Result |
+|---|---|
+| Go tests (`go test ./...`, 10 packages) | 78 pass with Node and GUFI on the host; without Node, 74 pass and the 4 that run it skip |
+| Golden comparisons with Node | all equal: 8 settings cases; 85 GUFI cases (search parsing, `onePassStages`, passages, fusion, sizes, dates, 28 query plans with their command lines); 5 walks and 10 query plans run on a built index; key cookies sealed by each and opened by the other |
+| Node suite direct (`node --test`, concurrency 6) | 850 tests: 830 pass, 0 fail, 20 skipped; 89 s |
+| Node suite through the Go server (`npm run test:front`, concurrency 6) | 850 tests: 830 pass, 0 fail, the same 20 skipped; 90 s; 1,751 requests from 54 files went through the Go server |
+
+The golden files are written by `server-go/scripts/golden/*.mjs` from `server/dist`; each package's `TestGoldenIsCurrent` (with `STUDIO_GOLDEN_NODE=<node>`) fails when Node's output has moved from the committed file. The GUFI fixture test indexes `internal/gufi/testdata/tree` (8 files) with `gufi_dir2index`, adds a words table as `enrich.py` does, and runs 5 walks and 10 query plans through Go and through Node's `walkSearch` and `queryScope`; it skips where GUFI is not installed.
+
+Runner overhead: on the 200,000-file test index a canned query took 198.5 and 200.9 ms run directly and 197.0 and 198.6 ms through the runner (10 runs each, two rounds), and on the fixture index 10.5 ms either way; the difference is inside run-to-run spread. Admission and release alone take about 0.1 µs uncontended and 0.6 µs with four callers on two slots.
+
+Routes that could move to Go next at low risk, all read-only over files Go already reads or with no state of their own: `GET /api/version`, `/api/help`, `/api/changelog`, `/api/brand-icon`, `/api/favicon`, `/manifest.webmanifest`, `/api/kb/model`, `/api/index/log`, and the saved queries (`GET` and `POST /api/query/saved`, `DELETE /api/query/saved/:id`; one JSON file Node reads on every request). `POST /api/query/sql` needs only the plans above for the main library but the library list for the rest, so it waits for step 6. `/api/config` reads most of the server's state and is better left to the end of step 2.
+
 ## Tests against a server URL
 
 `server/test` has 121 files on `node:test`, run against `server/dist` with `test/setup.mjs` preloaded (it blocks non-loopback fetches). None starts the server or reads a base URL:
@@ -172,6 +220,8 @@ What was converted, because it was cheap:
 
 - `testdata/server.test.mjs` boots the built server against a temporary KB and talks HTTP. With `STUDIO_TEST_FRONT=<binary>` it also starts that binary in front of Node (`STUDIO_NODE_URL`) and sends every request through it. Both of its tests pass through the Go server.
 - `server/test/semanticMap.test.mjs` runs the map with `STUDIO_SEMANTIC_MAP_BIN` when set; all 10 tests pass with Python and with the Go binary. Its tests of the Python module's own functions (`py()`) stay Python; the Go package has the same cases in `testdata/python_golden.json`.
+
+`npm run test:front` in `server/` (since Stage 1) runs the whole suite through the Go server without changing a test. `test/front.mjs`, preloaded, points `fastify` at `test/frontFastify.mjs` for the tests and `server/dist`: the same Fastify, whose `app.inject` makes the app listen on a loopback port, starts `STUDIO_TEST_FRONT` in front of it (`STUDIO_NODE_URL`, `STUDIO_FRONT_AUTH=0`, a port from 5870 to 5899, no web app), and sends the request over HTTP through it. The test's process, module state and stubs are untouched, which is what kept the 58 `app.inject` files from running against another server. `STUDIO_TEST_FRONT_COUNT=<file>` records how many requests each file sent through the Go server. What it does not cover: the 63 files that call module functions, and front-auth mode, which `internal/server`'s `TestNodeTrustsTheFrontOnly` checks against the real Node server.
 
 A URL switch alone (`STUDIO_TEST_URL`) does not fit these tests: each needs a server started on its own fixture directory. The workable form is the one above: a helper that starts the built server with the test's environment and, with `STUDIO_TEST_FRONT`, the Go server in front. Converting an `app.inject` file means moving its fixtures into that environment and dropping its module hooks; that is worth doing for each module as it is ported, starting with the routes of step 2.
 
@@ -222,6 +272,10 @@ Event streams are unchanged by the flushing change (time to first event and the 
 
 ## Open questions
 
+- Operator gating with OIDC (`OIDC_OPERATOR_GROUP`): the Studio has no operator or owner role in shared mode to map a group onto; deployment-level controls are closed to everyone once sign-in is on. Whether to add such a role, and what it opens, is a decision before a group can gate it.
+- Sign-in with a Node server the Go server did not start (`STUDIO_NODE_URL`): front-auth is off there, so OIDC is not offered. Turning it on needs that Node started with the `AUTH_*` values the Go server logs.
+- Retention of persisted OIDC sessions: they last `OIDC_SESSION_MAX_AGE_SEC`, or as long as refresh succeeds with `offline_access`, and are pruned every ten minutes; deleting `INDEX_BASE/.oidc-session-key` ends them all. Whether to offer a setting that ends them at restart, as the branch's in-memory sessions did, is open.
+- `/v1/` and `/internal/` are left to Node's own checks under required sign-in, where the `oidc-signin` branch redirected them to sign-in.
 - Where the Go server lives in the packaged apps: the desktop supervisor and `deploy/` start `node server/dist/main.js` today. Switching them to `studio-server` with `STUDIO_NODE_SPAWN=1` is one change per launcher.
 - The ONNX embedder in Go (step 4): onnxruntime through cgo, or a pure Go MiniLM. cgo makes cross-compiling harder; pure Go is slower.
 - `semantic_map.py` labels the map with the model most files use but maps the files of every model; the Go port does the same. Whether files of other models should be left out, as the docstring says, is a decision for the Python and Go code together.
