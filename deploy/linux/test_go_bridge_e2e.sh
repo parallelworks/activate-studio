@@ -25,6 +25,10 @@
 #   KEEP=1           leave the scratch folder (its path is printed)
 #   SEARCH=0         skip the search checks (a Go payload whose index is not ported yet)
 #   SHOT=PROGRAM     with WINDOW=1, run PROGRAM SCRATCH NAME for a screenshot before and after the reopen
+#   CHANNEL=preview  publish the Go build as a Preview release (a GitHub prerelease whose signed
+#                    manifest says channel preview) to an install set to take prereleases; the
+#                    default, stable, publishes it as Stable and adds a newer prerelease that the
+#                    Stable install must not offer, before or after the move
 set -euo pipefail
 
 OLD_ARCHIVE="$(cd "$(dirname "${1:?usage: test_go_bridge_e2e.sh OLD_ARCHIVE NEW_ARCHIVE}")" && pwd)/$(basename "$1")"
@@ -155,7 +159,17 @@ MIN_GLIBC="$("$PY" -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["
 export MIN_GLIBC
 (cd "$T/stage/x" && tar --owner=0 --group=0 --numeric-owner --sort=name -I 'gzip -1' -cf "$T/stage/activate-studio-linux-x86_64.tar.gz" activate-studio)
 rm -rf "$T/stage/x"
-"$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW_VERSION" "$T/stage/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
+CHANNEL="${CHANNEL:-stable}"
+if [ "$CHANNEL" = preview ]; then
+  # The setting as the old version names it; the Go updater reads it as preview.
+  api -m 30 PUT "$U/api/settings" '{"updates": {"channel": "prerelease"}}' >/dev/null || bad "the channel was not saved"
+  PRERELEASE=1 CHANNEL=preview "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW_VERSION" "$T/stage/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
+else
+  CHANNEL=stable "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW_VERSION" "$T/stage/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
+  # A newer Preview release, which a Stable install never takes.
+  PRE_VERSION="$("$PY" -I -c 'import sys; m, n = sys.argv[1].lstrip("v").split(".")[:2]; print(f"v{m}.{int(n) + 1}")' "$NEW_VERSION")"
+  PRERELEASE=1 CHANNEL=preview "$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$PRE_VERSION" "$T/stage/activate-studio-linux-x86_64.tar.gz" "$T/keys/update.key"
+fi
 api -m 60 POST "$U/api/updates/check" '{}' >"$T/check.json" || true
 if json "d['available'] and d['latest']['version'] == '$NEW_VERSION' and d['canInstall']" <"$T/check.json"; then
   ok "$OLD_VERSION's updater offers $NEW_VERSION and may install it"
@@ -167,6 +181,13 @@ server_is go && ok "and it is the Go server" || bad "the server is not the Go se
 [ -d "$LIB/.activate-studio.previous" ] && ok "$OLD_VERSION is kept beside it" || bad "no previous payload"
 api -m 10 GET "$U/api/updates" | json "d.get('previous') == {'version': '$OLD_VERSION'} and d.get('mode') == 'app'" && ok "the Go updater offers the rollback" || bad "the Go updater offers no rollback"
 data_ok "on $NEW_VERSION"
+api -m 60 POST "$U/api/updates/check" '{}' >"$T/check2.json" || true
+if [ "$CHANNEL" = preview ]; then
+  json "d['policy']['channel'] == 'preview'" <"$T/check2.json" && ok "the Go updater reads the old prerelease setting as Preview" || bad "the channel after the move: $(cut -c1-300 "$T/check2.json")"
+else
+  json "d['policy']['channel'] == 'stable' and not d['available'] and all(v['version'] != '$PRE_VERSION' for v in d.get('versions') or [])" <"$T/check2.json" &&
+    ok "the Stable install does not take the newer Preview $PRE_VERSION" || bad "the Stable install offers a Preview release: $(cut -c1-300 "$T/check2.json")"
+fi
 if [ "${WINDOW:-}" = 1 ]; then
   # The old window is still the old program; the update changed it, so the
   # page offers Reopen now (and reopens by itself when the person started the
@@ -174,23 +195,38 @@ if [ "${WINDOW:-}" = 1 ]; then
   # install's launcher starts the new one, as reopen.go does.
   api -m 10 GET "$U/api/updates" | json 'd.get("reopen") is True' && ok "the Go updater asks for the window to be reopened" || bad "no reopen asked for"
   [ -n "${SHOT:-}" ] && "${SHOT}" "$T" go-before-reopen || true
-  old_shell="$(pgrep -u "$(id -u)" -f "^$APP/bin/activate-studio" | head -n 1 || true)"
-  [ -n "$old_shell" ] && kill -TERM "$old_shell" 2>/dev/null
-  for _ in $(seq 1 50); do [ -n "$old_shell" ] && kill -0 "$old_shell" 2>/dev/null || break; sleep 0.2; done
+  # Every window process from before the reopen: the old program, whose
+  # file is now under .activate-studio.previous.
+  old_windows="$(pgrep -u "$(id -u)" -f "activate-studio-wk4" || true)"
+  [ -n "$old_windows" ] || bad "no window was running before the reopen"
+  left=
+  for p in $old_windows; do kill -TERM "$p" 2>/dev/null || true; done
+  for _ in $(seq 1 50); do
+    left=; for p in $old_windows; do kill -0 "$p" 2>/dev/null && left=1; done
+    [ -z "$left" ] && break; sleep 0.2
+  done
+  [ -z "$left" ] && ok "the old window ended" || bad "the old window is still running"
   setsid env -i HOME="$H" PATH=/usr/bin:/bin DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-}" \
     XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
     STUDIO_DATA_DIR="$DATA" "$APP/bin/activate-studio" >>"$T/window.log" 2>&1 &
   pids+=($!)
   if wait_version "$NEW_VERSION" 120; then ok "the reopened window starts $NEW_VERSION"; else bad "the reopened window did not start the server"; log_tail; fi
+  # The window now running is a new process whose program is the very file
+  # in the new payload (same device and inode), not the old one renamed.
   w=
   for _ in $(seq 1 30); do
     for p in $(pgrep -u "$(id -u)" -f "activate-studio-wk4" || true); do
-      case "$(readlink "/proc/$p/exe")" in "$APP/bin/"*) w="$p" ;; esac
+      case " $old_windows " in *" $p "*) continue ;; esac
+      exe="$(readlink "/proc/$p/exe" || true)"
+      [ -n "$exe" ] && [ "${exe% (deleted)}" = "$exe" ] || continue
+      want="$APP/bin/$(basename "$exe")"
+      [ -f "$want" ] && [ "$(stat -L -c %d:%i "/proc/$p/exe" 2>/dev/null)" = "$(stat -c %d:%i "$want")" ] && w="$p"
     done
     [ -n "$w" ] && break
     sleep 1
   done
-  if [ -n "$w" ]; then ok "the window is the new payload's shell ($(readlink "/proc/$w/exe"))"; else bad "no window from the new payload"; fi
+  if [ -n "$w" ]; then ok "the window is a new process running the new payload's shell ($(readlink "/proc/$w/exe"))"; else bad "no window running the new payload's shell:"; for p in $(pgrep -u "$(id -u)" -f "activate-studio-wk4" || true); do echo "        $p $(readlink "/proc/$p/exe")"; done; fi
+  api -m 10 GET "$U/api/updates" | json 'd.get("reopen") is False' && ok "and Reopen now is no longer offered" || bad "the reopened window still offers Reopen now"
   sleep 2
   server_is go && ok "under it, the Go server" || bad "the reopened window's server is not the Go server"
   data_ok "in the reopened window"

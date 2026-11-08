@@ -798,3 +798,32 @@ func TestNoFallbackFor4xxOrAForeignAddress(t *testing.T) {
 		}
 	}
 }
+
+// updates/reopen for the version running is answered once the window is
+// this copy's own program; under the old window, for another version, or
+// with no window it still asks.
+func TestStaleReopenMarkIsCleared(t *testing.T) {
+	fx := newFixture(t, "linux", "v1.190", nodeLayout)
+	mark := filepath.Join(fx.data, "updates", "reopen")
+	shell := ""
+	fx.u.o.ShellExe = func() string { return shell }
+	put := func(v string) { write(t, mark, v+"\n", 0o644) }
+	for _, c := range []struct {
+		name, mark, shell string
+		reopen            bool
+	}{
+		{"no window", "v1.190", "", true},
+		{"the old window", "v1.190", fx.app + ".previous/bin/activate-studio-wk41", true},
+		{"another version", "v1.191", fx.app + "/bin/activate-studio-wk41", true},
+		{"this copy's window", "v1.190", fx.app + "/bin/activate-studio-wk41", false},
+	} {
+		put(c.mark)
+		shell = c.shell
+		if got := fx.u.Status().Reopen; got != c.reopen {
+			t.Fatalf("%s: reopen %v, want %v", c.name, got, c.reopen)
+		}
+		if gone := !exists(mark); gone != !c.reopen {
+			t.Fatalf("%s: mark removed %v", c.name, gone)
+		}
+	}
+}

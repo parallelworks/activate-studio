@@ -102,6 +102,10 @@ func main() {
 	}
 	app.inst = inst
 	defer inst.Release()
+	// This window is the current copy's program, so an update that asked
+	// for the app to be reopened has had it (macOS: launcher.sh does the
+	// same). Without this, Settings kept offering Reopen now.
+	clearReopenMark(cfg.DataDir)
 
 	// Before Run: the window's allowed origins name this port.
 	if err := app.listenLocal(); err != nil {

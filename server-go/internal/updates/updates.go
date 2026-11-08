@@ -105,6 +105,9 @@ type Options struct {
 	GOARCH  string
 	// SystemVersion, when set, stands for sw_vers or glibc's version (tests).
 	SystemVersion func() string
+	// ShellExe, when set, stands for the program of the window that started
+	// this server, "" with none (tests); else read from /proc on Linux.
+	ShellExe func() string
 }
 
 // Updater is the update state of one server.
@@ -1080,8 +1083,7 @@ func (u *Updater) status() Status {
 		s.Previous = p
 	}
 	if mode == "app" {
-		_, err := os.Stat(u.inUpdates("reopen"))
-		s.Reopen = err == nil
+		s.Reopen = u.reopenWanted(cur.Version)
 		if r := u.stableBehind(pol, cur.Version); r != nil {
 			s.MoveToStable = &struct {
 				Version string `json:"version"`
@@ -2361,4 +2363,62 @@ func (u *Updater) Stop() {
 		close(u.stop)
 	}
 	u.stopIdleWait()
+}
+
+// reopenWanted: updates/reopen asks for the window to be reopened. A mark
+// for the version running, under a window that is this copy's own program,
+// is stale (the window was reopened, and a shell from before v1.189 never
+// removed the mark); it is removed.
+func (u *Updater) reopenWanted(running string) bool {
+	mark := u.inUpdates("reopen")
+	b, err := os.ReadFile(mark)
+	if err != nil {
+		return false
+	}
+	if !sameVersion(strings.TrimSpace(string(b)), running) {
+		return true
+	}
+	root := u.payloadRoot()
+	exe := u.shellExe()
+	if root == "" || exe == "" {
+		return true
+	}
+	if rel, err := filepath.Rel(root, exe); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return true
+	}
+	_ = os.Remove(mark)
+	return false
+}
+
+// shellExe is the program of the window shell among this server's
+// ancestors (a process whose program is named activate-studio*), or "".
+func (u *Updater) shellExe() string {
+	if u.o.ShellExe != nil {
+		return u.o.ShellExe()
+	}
+	if u.o.GOOS != "linux" {
+		return ""
+	}
+	pid := os.Getppid()
+	for i := 0; i < 12 && pid > 1; i++ {
+		exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+		if err == nil && strings.HasPrefix(filepath.Base(exe), "activate-studio") && !strings.HasSuffix(exe, " (deleted)") {
+			return exe
+		}
+		b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			return ""
+		}
+		st := string(b)
+		f := strings.Fields(st[strings.LastIndexByte(st, ')')+1:])
+		if len(f) < 2 {
+			return ""
+		}
+		next, err := strconv.Atoi(f[1])
+		if err != nil {
+			return ""
+		}
+		pid = next
+	}
+	return ""
 }

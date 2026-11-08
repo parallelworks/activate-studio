@@ -10,7 +10,9 @@
 //   add-release DIR PORT TAG ARCHIVE KEY [corrupt]
 //                                            put the archive, a manifest and a signature in DIR as
 //                                            release TAG ("corrupt": the archive's bytes are changed
-//                                            after the manifest was made, so its SHA-256 is wrong)
+//                                            after the manifest was made, so its SHA-256 is wrong);
+//                                            PRERELEASE=1 publishes it as a GitHub prerelease, and
+//                                            CHANNEL=stable|preview puts that channel in the signed manifest
 //   serve DIR PORT                           the releases API and the downloads
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -44,6 +46,7 @@ if (cmd === 'keygen') {
   const manifest = Buffer.from(JSON.stringify({
     version: tag, asset, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), size: bytes.length,
     minGlibc: process.env.MIN_GLIBC || '2.34', builtAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+    ...(process.env.CHANNEL ? { channel: process.env.CHANNEL } : {}),
   }, null, 1) + '\n')
   const sig = Buffer.from(crypto.sign(null, manifest, crypto.createPrivateKey(fs.readFileSync(keyFile))).toString('base64') + '\n')
   const shipped = Buffer.from(bytes)
@@ -58,7 +61,7 @@ if (cmd === 'keygen') {
   const list = path.join(dir, 'releases.json')
   const have = fs.existsSync(list) ? readJson(list) : []
   have.push({
-    tag_name: tag, draft: false, prerelease: false, published_at: '2026-11-03T12:00:00Z',
+    tag_name: tag, draft: false, prerelease: process.env.PRERELEASE === '1', published_at: '2026-11-03T12:00:00Z',
     body: `- A stand-in release ${tag} for the update check.`, html_url: `https://example.invalid/releases/${tag}`, assets,
   })
   writeJson(list, have)
