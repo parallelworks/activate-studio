@@ -206,3 +206,13 @@ func (m *Module) statsRoute(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, 200, O("available", available, "files", files, "dirs", dirs, "totalBytes", total, "byExt", exts, "libraries", lines))
 	return nil
 }
+
+// CorpusStats is gufi.ts's corpusStats for the main folder's index, for
+// the chat's system prompt: whether it answered, and its counts.
+func (m *Module) CorpusStats(ctx context.Context) (available bool, files, dirs, totalBytes int64) {
+	c, err := m.corpusStats(ctx, m.Roots.GufiIndex)
+	if err != nil || !c.Available {
+		return false, 0, 0, 0
+	}
+	return true, c.Files, c.Dirs, c.Total
+}
