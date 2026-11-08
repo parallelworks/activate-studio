@@ -84,7 +84,7 @@ func (b *LocalBuild) UnmarshalJSON(data []byte) error {
 // ReadThrough is another host over ssh that has a library's files.
 type ReadThrough struct {
 	Destination string   `json:"destination"`
-	Port        *int     `json:"port,omitempty"`
+	Port        *int     `json:"port"`
 	SSHOptions  []string `json:"sshOptions,omitempty"`
 	Root        *string  `json:"root"`
 }
