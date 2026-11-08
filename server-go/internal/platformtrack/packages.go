@@ -6,6 +6,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/ragendpoint"
+	"github.com/parallelworks/activate-studio/server-go/internal/tasks"
 )
 
 // registerPackages registers each package of the track, one line each,
@@ -17,7 +18,7 @@ func registerPackages(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 
 	// slot: workflows, runs
 
-	// slot: agent sites, pwcode, tasks, fleet
+	tasks.Register(mux, a, p) // agent sites, pwcode, tasks, fleet
 
 	ragendpoint.Register(mux, a, p)
 }
