@@ -25,6 +25,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/state"
+	"github.com/parallelworks/activate-studio/server-go/internal/wslpath"
 )
 
 // First-run setup for a single-user install (setup.ts): the icon, the
@@ -48,6 +49,10 @@ func (c *Core) embedModel() string {
 // ExpandPath is setup.ts's expandPath: ~ is the home folder, and a
 // relative path is taken from it.
 func ExpandPath(p string) string {
+	// A Windows path typed under WSL (C:\Users\me) is its /mnt/c folder.
+	if q, ok := wslpath.FromWindows(p); ok {
+		p = q
+	}
 	home, _ := os.UserHomeDir()
 	if h := os.Getenv("HOME"); h != "" {
 		home = h
