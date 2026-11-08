@@ -284,7 +284,13 @@ if [ "$RUN" = 1 ]; then
     else
       ok "gufi_sqlite3 loads only the app's libraries and the system's"
     fi
-    check "gufi_sqlite3 loads sqlite-vec" clean /bin/sh -c "printf '%s\n' 'SELECT vec_length(vec_f32(\"[1,2,3]\"));' | '$G/bin/gufi_sqlite3' | grep -qx 3"
+    # sqlite-vec, which stores and searches the vectors in either version.
+    cat >"$T/vec.sql" <<'SQL'
+CREATE VIRTUAL TABLE v USING vec0(id INTEGER PRIMARY KEY, fp3 float[3]);
+INSERT INTO v(id, fp3) VALUES (1, '[0.9, 0.1, 0.0]'), (2, '[0.0, 0.2, 0.98]');
+SELECT id FROM v WHERE fp3 MATCH '[1, 0, 0]' ORDER BY distance LIMIT 1;
+SQL
+    check "gufi_sqlite3 loads sqlite-vec" clean /bin/sh -c "'$G/bin/gufi_sqlite3' <'$T/vec.sql' | grep -qx 1"
     if [ "$SERVER" != go-only ]; then
     check "the indexer extracts text" clean env "${OCR_ENV[@]}" "$R/python/bin/python3" "$R/app/indexer/enrich.py" \
       --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
