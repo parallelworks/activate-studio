@@ -555,7 +555,7 @@ func (m *Module) toolRunWorkflow(r *http.Request, args map[string]any, ctx ToolC
 					if truthy(resource) {
 						res = runs.Str(tmpl(resource))
 					}
-					routes.Runs.RecordRun(runs.RecordInput{Slug: launched, Workflow: wfName, Resource: res, ConversationID: nonEmpty(deref(ctx.ConversationID)), Owner: nonEmpty(deref(ctx.UserID))})
+					routes.Runs.RecordRun(runs.RecordInput{Slug: launched, Workflow: wfName, Resource: res, ConversationID: ctx.ConversationID, Owner: ctx.UserID})
 				}
 			}
 		}
@@ -579,13 +579,6 @@ func (m *Module) toolRunWorkflow(r *http.Request, args map[string]any, ctx ToolC
 		sum = "run submitted: " + launched
 	}
 	return &Outcome{Result: result + where + partitionNote + fillNote + wsNote, Summary: sum}, nil
-}
-
-func nonEmpty(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 func orUndefined(s string) string {
