@@ -97,6 +97,21 @@ func New(cfg config.Config, log *slog.Logger, store *settings.Store, node *Node)
 // route is Go's, and one not ported yet answers 501.
 func (a *App) NodeFree() bool { return a.Cfg.NodeOff }
 
+// AttachNode sets the caller for value requests to Node, once Node is up
+// (main.go starts Node after every module has registered). The provider
+// defaults use it from then on.
+func (a *App) AttachNode(n *Node) {
+	a.mu.Lock()
+	a.NodeAPI = n
+	a.mu.Unlock()
+}
+
+func (a *App) nodeAPI() *Node {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.NodeAPI
+}
+
 // SetNodeHandler is how the server hands the App its reverse proxy to
 // Node (internal/server); nil where there is no Node.
 func (a *App) SetNodeHandler(h http.Handler) {
