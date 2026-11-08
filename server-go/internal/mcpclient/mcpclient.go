@@ -274,7 +274,7 @@ func (c *Client) listFor(ctx context.Context, s Server) *entry {
 	return e
 }
 
-// stringOr is String(v ?? '').
+// stringOr is String(v ?? ”).
 func stringOr(v json.RawMessage) string {
 	if jsonobj.IsNullish(v) || len(v) == 0 {
 		return ""

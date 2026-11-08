@@ -251,6 +251,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("GET /api/chat/tools", m.toolsRoute)
 	h("GET /api/chat/tool-options", m.toolOptions)
 	h("GET /api/settings/mcp-servers", m.mcpServers)
+	h("POST /api/kb/label-suggestions", m.labelSuggestionsRoute)
 	m.attachmentRoutes(h)
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }

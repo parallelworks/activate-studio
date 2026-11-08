@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
@@ -21,6 +22,7 @@ import (
 // answers each request as one event, "broken" refuses tools/list.
 func fakeMCP(t *testing.T) (*httptest.Server, *[]string) {
 	var seen []string
+	var mu sync.Mutex
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			ID     any             `json:"id"`
@@ -30,6 +32,8 @@ func fakeMCP(t *testing.T) (*httptest.Server, *[]string) {
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &req)
 		kind := strings.Trim(r.URL.Path, "/")
+		mu.Lock()
+		defer mu.Unlock()
 		seen = append(seen, kind+" "+req.Method+" session="+r.Header.Get("Mcp-Session-Id")+" auth="+r.Header.Get("X-Api-Key"))
 		var result any
 		switch req.Method {
