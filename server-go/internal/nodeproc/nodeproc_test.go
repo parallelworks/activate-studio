@@ -55,7 +55,7 @@ func startFake(t *testing.T, mode string) (*Proc, time.Duration, error) {
 	t.Helper()
 	t.Setenv("NODEPROC_FAKE", mode)
 	t0 := time.Now()
-	p, err := Start(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), os.Args[0], "-test.run=^$", 10*time.Second)
+	p, err := Start(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), os.Args[0], "-test.run=^$", 10*time.Second, nil)
 	if p != nil {
 		t.Cleanup(func() { p.Stop(2 * time.Second) })
 	}
@@ -85,5 +85,19 @@ func TestStartReadyByPolling(t *testing.T) {
 	}
 	if took > 2*time.Second {
 		t.Fatalf("ready only after %s", took)
+	}
+}
+
+func TestEnvironOverridesAndRemoves(t *testing.T) {
+	got := Environ([]string{"A=1", "AUTH_JWKS_URL=https://platform/keys", "OIDC_ISSUER=x", "B=2"},
+		map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks.json", "OIDC_ISSUER": "", "C": "3"})
+	want := map[string]bool{"A=1": true, "B=2": true, "AUTH_JWKS_URL=http://127.0.0.1:9/jwks.json": true, "C=3": true}
+	if len(got) != len(want) {
+		t.Fatalf("%v", got)
+	}
+	for _, kv := range got {
+		if !want[kv] {
+			t.Fatalf("unexpected %q in %v", kv, got)
+		}
 	}
 }

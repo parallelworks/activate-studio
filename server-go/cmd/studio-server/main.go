@@ -15,9 +15,11 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
 	"github.com/parallelworks/activate-studio/server-go/internal/nodeproc"
 	"github.com/parallelworks/activate-studio/server-go/internal/server"
@@ -40,6 +42,18 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	front, nodeEnv, err := identityFront(cfg, log)
+	if err != nil {
+		log.Error("auth", "err", err.Error())
+		return 2
+	}
+	if front != nil {
+		if front.Handoff != nil {
+			defer front.Handoff.Close()
+		}
+		go front.Run(ctx)
+	}
+
 	var node *url.URL
 	var proc *nodeproc.Proc
 	switch {
@@ -49,7 +63,7 @@ func run() int {
 			return 2
 		}
 	case cfg.NodeSpawn:
-		if proc, err = nodeproc.Start(ctx, log, cfg.NodeBin, cfg.NodeMain, 90*time.Second); err != nil {
+		if proc, err = nodeproc.Start(ctx, log, cfg.NodeBin, cfg.NodeMain, 90*time.Second, nodeEnv); err != nil {
 			log.Error("node", "err", err.Error())
 			return 1
 		}
@@ -60,7 +74,7 @@ func run() int {
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		Handler:           server.New(cfg, log, node),
+		Handler:           server.New(cfg, log, node, front),
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 	ln, err := net.Listen("tcp", srv.Addr)
@@ -107,6 +121,58 @@ func run() int {
 		log.Warn("shutdown", "err", err.Error())
 	}
 	return code
+}
+
+// identityFront is the Go front's identity handling (docs/GO-PORT.md,
+// Stage 1) and the environment Node needs to accept its hand-off: nil and
+// no change to Node's environment with STUDIO_FRONT_AUTH off, where
+// identity headers pass through to Node as before.
+func identityFront(cfg config.Config, log *slog.Logger) (*auth.Front, map[string]string, error) {
+	if !cfg.FrontAuth {
+		if cfg.OIDC.Enabled() {
+			log.Warn("OIDC_ISSUER is set but the Go server does not handle sign-in for a Node server it did not start; set STUDIO_FRONT_AUTH=1 and start Node with the AUTH_* the Go server logs")
+		}
+		return nil, nil, nil
+	}
+	// Node gets none of the OIDC settings: the Go front signs people in.
+	env := map[string]string{"AUTH_JWKS_URL": "", "AUTH_HEADER": "", "AUTH_ISSUER": "", "AUTH_AUDIENCE": "", "AUTH_REQUIRED": "", "OIDC_REQUIRED": ""}
+	for _, k := range []string{"OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_POST_LOGOUT_REDIRECT_URI", "OIDC_SCOPES", "OIDC_USERNAME_CLAIM", "OIDC_END_SESSION", "OIDC_SESSION_MAX_AGE_SEC"} {
+		env[k] = ""
+	}
+	var store *auth.SessionStore
+	if cfg.OIDC.Enabled() {
+		var err error
+		if store, err = auth.NewSessionStore(cfg.IndexBase); err != nil {
+			return nil, nil, err
+		}
+	}
+	var h *auth.Handoff
+	if cfg.AuthEnabled() {
+		var err error
+		if h, err = auth.StartHandoff(cfg.IdentityAddr); err != nil {
+			return nil, nil, err
+		}
+		for k, v := range h.NodeEnv(cfg.Auth.Required) {
+			env[k] = v
+		}
+	}
+	front := auth.NewFront(cfg, log, store, h)
+	what := []string{}
+	if cfg.Auth.JWKSURL != "" {
+		what = append(what, "session proxy JWT verification")
+	}
+	if cfg.OIDC.Enabled() {
+		what = append(what, "OIDC sign-in ("+cfg.OIDC.Issuer+")")
+	}
+	if len(what) == 0 {
+		what = append(what, "open (no AUTH_JWKS_URL or OIDC_ISSUER)")
+	}
+	attrs := []any{"mode", strings.Join(what, " and "), "required", cfg.Auth.Required}
+	if h != nil {
+		attrs = append(attrs, "nodeJwks", h.JWKSURL)
+	}
+	log.Info("auth", attrs...)
+	return front, env, nil
 }
 
 func nodeString(u *url.URL) string {

@@ -248,20 +248,55 @@ function BuildPanel({ trigger, build, flow, open, onOpenChange }: {
   )
 }
 
+interface SignIn {
+  proxy: boolean
+  oidc: boolean
+  required: boolean
+  source: 'proxy' | 'oidc' | null
+  loginUrl: string | null
+  logoutUrl: string | null
+}
+
 interface WhoAmI {
   authEnabled: boolean
   header: string
   verified: boolean
-  user: { id: string; username: string; name?: string } | null
+  signIn?: SignIn
+  user: { id: string; username: string; name?: string; account?: string | null; uid?: number | null; gid?: number | null; groups?: string[] | null } | null
   token: { issuer: string | null; audience: unknown; issuedAt: string | null; expiresAt: string | null } | null
   claims: Record<string, unknown> | null
 }
 
+/** Inside the platform's embedded session view a provider's sign-in does
+ *  not complete, so there it opens in a tab of its own. */
+function embedded(): boolean {
+  try { return window.self !== window.top } catch { return true }
+}
+
+export function signInHref(loginUrl: string): string {
+  return `${loginUrl}?returnTo=${encodeURIComponent(location.pathname + location.search + location.hash)}`
+}
+
+function SignInLink({ loginUrl }: { loginUrl: string }) {
+  return (
+    <a className="identity-btn" href={signInHref(loginUrl)} {...(embedded() ? { target: '_blank', rel: 'noopener' } : {})}>
+      <StatusDot variant="muted" size={7} />
+      Sign in
+    </a>
+  )
+}
+
 function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI }) {
+  const oidc = who.signIn?.source === 'oidc'
+  const u = who.user
   const rows: [string, string][] = who.verified
     ? [
-        ['Username', who.user?.username ?? ''],
-        ['Name', who.user?.name ?? '(not set)'],
+        ['Username', u?.username ?? ''],
+        ['Name', u?.name ?? '(not set)'],
+        ...(u?.account ? [['Account', u.account] as [string, string]] : []),
+        ...(u?.uid != null ? [['uid', String(u.uid)] as [string, string]] : []),
+        ...(u?.gid != null ? [['gid', String(u.gid)] as [string, string]] : []),
+        ...(u?.groups?.length ? [['Groups', u.groups.join(', ')] as [string, string]] : []),
         ['Subject', String(who.claims?.sub ?? '')],
         ['Issuer', who.token?.issuer ?? ''],
         ['Audience', Array.isArray(who.token?.audience) ? (who.token?.audience as string[]).join('\n') : String(who.token?.audience ?? '')],
@@ -270,13 +305,17 @@ function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI })
       ]
     : []
   return (
-    <FooterPanel trigger={trigger} title={who.verified ? 'Platform-verified identity' : 'Identity not verified'}>
+    <FooterPanel trigger={trigger} title={!who.verified ? 'Identity not verified' : oidc ? 'Signed in' : 'Platform-verified identity'}>
       {who.verified ? (
         <>
           <DetailRows rows={rows} />
           <div className="scope-menu-head">Raw token claims</div>
           <pre className="identity-claims">{JSON.stringify(who.claims, null, 2)}</pre>
         </>
+      ) : who.signIn?.oidc && !who.signIn.proxy ? (
+        <p className="identity-note">
+          You are not signed in. Sign in with your identity provider to use your own conversations, keys and libraries.
+        </p>
       ) : (
         <p className="identity-note">
           This connection carried no valid platform token. Verification is enabled and the
@@ -288,7 +327,14 @@ function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI })
       )}
       <div className="scope-menu-foot">
         <span className="muted identity-src">GET /api/whoami</span>
-        <CloseButton />
+        <span className="identity-actions">
+          {who.signIn?.logoutUrl && (
+            <form method="post" action={who.signIn.logoutUrl}>
+              <Button type="submit" variant="secondary" size="sm">Sign out</Button>
+            </form>
+          )}
+          <CloseButton />
+        </span>
       </div>
     </FooterPanel>
   )
@@ -315,7 +361,12 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // health and counts without asking the server again.
   const refresh = () => Promise.allSettled([
     api.stats().then(s => { setStats(s as typeof stats); share({ stats: s }) }),
-    fetch('/api/whoami').then(r => r.json()).then((w: WhoAmI) => { setWho(w); share({ authEnabled: !!w.authEnabled }) }),
+    fetch('/api/whoami').then(r => r.json()).then((w: WhoAmI) => {
+      setWho(w); share({ authEnabled: !!w.authEnabled })
+      // A sign-in that ended while the page was open, on a Studio that
+      // requires one: go through sign-in again and come back here.
+      if (w.signIn?.required && w.signIn.loginUrl && !w.verified && !embedded()) location.assign(signInHref(w.signIn.loginUrl))
+    }),
     api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null)),
     fetch('/api/ai/health').then(r => r.json()).then((h: AiHealth) => { setAi(h); share({ ai: h }) }).catch(() => { setAi(null); share({ ai: null }) }),
   ])
@@ -401,7 +452,12 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <div className="sidenav-footer">
       <IndexLogHost />
-      {who?.authEnabled && (
+      {who?.authEnabled && !who.verified && who.signIn?.loginUrl && (
+        <div className="status-line" title={embedded() ? 'Sign in, in a new tab' : 'Sign in'}>
+          <SignInLink loginUrl={who.signIn.loginUrl} />
+        </div>
+      )}
+      {who?.authEnabled && (who.verified || !who.signIn?.loginUrl) && (
         <div className="status-line" title="Click for identity details">
           <IdentityPanel
             who={who}

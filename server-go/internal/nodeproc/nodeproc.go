@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -28,14 +29,15 @@ type Proc struct {
 // to 127.0.0.1, so only the Go front is reachable from outside, and waits
 // until Node is ready: a line on the STUDIO_READY_FD pipe, which Node writes
 // once it listens, or else its /healthz answering, polled from 5 ms up to
-// every 100 ms.
-func Start(ctx context.Context, log *slog.Logger, nodeBin, main string, wait time.Duration) (*Proc, error) {
+// every 100 ms. env sets variables for Node over the Go server's own; a
+// value of "" removes the variable.
+func Start(ctx context.Context, log *slog.Logger, nodeBin, main string, wait time.Duration, env map[string]string) (*Proc, error) {
 	port, err := freePort()
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(nodeBin, main)
-	cmd.Env = append(os.Environ(), "PORT="+strconv.Itoa(port), "HOST=127.0.0.1")
+	cmd.Env = append(Environ(os.Environ(), env), "PORT="+strconv.Itoa(port), "HOST=127.0.0.1")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	ready, started, err := readySignal(cmd)
 	if err != nil {
@@ -114,6 +116,24 @@ func (p *Proc) Stop(grace time.Duration) {
 		p.cmd.Process.Kill()
 		<-p.done
 	}
+}
+
+// Environ is base with env's variables set over it; "" removes one.
+func Environ(base []string, env map[string]string) []string {
+	out := make([]string, 0, len(base)+len(env))
+	for _, kv := range base {
+		k, _, _ := strings.Cut(kv, "=")
+		if _, over := env[k]; over {
+			continue
+		}
+		out = append(out, kv)
+	}
+	for k, v := range env {
+		if v != "" {
+			out = append(out, k+"="+v)
+		}
+	}
+	return out
 }
 
 func freePort() (int, error) {

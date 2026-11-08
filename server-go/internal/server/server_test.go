@@ -66,7 +66,7 @@ func fakeNode(t *testing.T) *httptest.Server {
 func front(t *testing.T, dist string, node *url.URL) *httptest.Server {
 	t.Helper()
 	cfg := config.Config{WebDist: dist, GufiBin: t.TempDir(), GufiIndex: filepath.Join(t.TempDir(), "none")}
-	srv := httptest.NewServer(New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), node))
+	srv := httptest.NewServer(New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), node, nil))
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -206,7 +206,7 @@ func TestAbortedStreamIsLogged(t *testing.T) {
 	logs := make(chan string, 16)
 	cfg := config.Config{WebDist: webDist(t), GufiBin: t.TempDir(), GufiIndex: filepath.Join(t.TempDir(), "none")}
 	h := slog.New(slog.NewTextHandler(writerFunc(func(b []byte) { logs <- string(b) }), nil))
-	f := httptest.NewServer(New(cfg, h, u))
+	f := httptest.NewServer(New(cfg, h, u, nil))
 	t.Cleanup(f.Close)
 	res, err := http.Get(f.URL + "/api/longstream")
 	if err != nil {
@@ -353,7 +353,7 @@ func TestOnlyStreamsAreFlushed(t *testing.T) {
 	node := fakeNode(t)
 	u, _ := url.Parse(node.URL)
 	s := New(config.Config{WebDist: webDist(t), GufiBin: t.TempDir(), GufiIndex: filepath.Join(t.TempDir(), "none")},
-		slog.New(slog.NewTextHandler(io.Discard, nil)), u)
+		slog.New(slog.NewTextHandler(io.Discard, nil)), u, nil)
 	rec := httptest.NewRecorder()
 	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/config", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"node":"GET /api/config"`) {

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
 )
 
@@ -30,14 +31,18 @@ type Server struct {
 	ported *http.ServeMux
 	node   *httputil.ReverseProxy // nil without a Node server
 	static *compressCache
+	// front verifies identity and hands it to Node (docs/GO-PORT.md,
+	// Stage 1); nil passes identity headers through to Node unchanged.
+	front *auth.Front
 }
 
-// New makes the handler. node is the Node server's base URL, or nil.
-func New(cfg config.Config, log *slog.Logger, node *url.URL) *Server {
-	s := &Server{cfg: cfg, log: log, ported: http.NewServeMux(), static: newCompressCache()}
+// New makes the handler. node is the Node server's base URL, or nil;
+// front is the identity front, or nil.
+func New(cfg config.Config, log *slog.Logger, node *url.URL, front *auth.Front) *Server {
+	s := &Server{cfg: cfg, log: log, ported: http.NewServeMux(), static: newCompressCache(), front: front}
 	go s.static.warm(cfg.WebDist)
 	if node != nil {
-		s.node = newProxy(node, log)
+		s.node = newProxy(node, log, front)
 	}
 	s.routes()
 	return s
@@ -47,6 +52,11 @@ func New(cfg config.Config, log *slog.Logger, node *url.URL) *Server {
 // docs/GO-PORT.md; a route registered here is no longer reached on Node.
 func (s *Server) routes() {
 	s.ported.HandleFunc("GET /healthz", s.healthz)
+	if s.front != nil {
+		// /api/auth/* (with OIDC) and /api/whoami, which reports what the
+		// front verified.
+		s.front.Routes(s.ported)
+	}
 }
 
 // healthz answers as routes.ts does: {ok, gufi}.
@@ -74,6 +84,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			panic(p)
 		}
 	}()
+	if s.front != nil {
+		gated := s.front.Gate(rec, r)
+		if gated == nil {
+			via = "auth"
+			return
+		}
+		r = gated
+	}
 	via = s.dispatch(rec, r)
 }
 
@@ -117,13 +135,16 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) string {
 	return "none"
 }
 
-func newProxy(target *url.URL, log *slog.Logger) *httputil.ReverseProxy {
+func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			// Node sees the host the browser asked for, as it does today.
 			pr.Out.Host = pr.In.Host
 			pr.SetXForwarded()
+			if front != nil {
+				front.ToNode(pr.Out, auth.UserOf(pr.In))
+			}
 		},
 		// 0 flushes only what streams: ReverseProxy writes a response out
 		// as Node sends it when it is text/event-stream (/api/chat/stream,
