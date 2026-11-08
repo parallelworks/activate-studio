@@ -37,6 +37,7 @@ server-go/
   internal/auth/                 proxy JWT and JWKS, OIDC sign-in, sessions, the hand-off to Node
   internal/keycookie/            the sealed personal-key cookies (credentials.ts's format)
   internal/gufi/                 GUFI plans, output parsing, executor and admission runner
+  internal/extract/xls/          Excel 97-2003 text, as enrich.py's extract_xls
   scripts/golden/                Node scripts that write the golden files the Go tests compare with
   scripts/compare_semantic_map.py  Python against Go on the same inputs
 ```
@@ -250,6 +251,14 @@ To repeat the comparison (numpy from `indexer/.deps`, which `indexer/fetch_embed
 cd server-go && go build -o bin/semantic-map ./cmd/semantic-map
 PYTHONPATH=../indexer/.deps python3 scripts/compare_semantic_map.py --go bin/semantic-map --work /tmp/map-compare
 ```
+
+## Excel 97-2003 text in Go
+
+`internal/extract/xls` is the Go side of `extract_xls` for step 4; nothing calls it yet. `Text(r io.ReaderAt, size int64, maxText int) (string, error)` gives the same layout (a `Sheet:` line, rows as tab-separated cells, numbers, ISO dates, TRUE and FALSE) with the same `MAX_TEXT` cut. It is its own BIFF reader over `github.com/richardlehane/mscfb` (the OLE container; pure Go), plus `golang.org/x/text` for BIFF5 codepages. `github.com/shakinm/xlsReader` was set aside: it printed dates as serials and dropped every FORMULA cell, and fixing both meant reading the records ourselves anyway.
+
+It reads BIFF8 and BIFF5: RK, MULRK, NUMBER, LABEL, LABELSST, RSTRING, BOOLERR, SST and STRING across CONTINUE records, the cached results of FORMULA cells (shared and array formulas included), dates by XF and FORMAT with xlrd's rules, the 1904 system and serial 60. It does not read BIFF2 to BIFF4 (xlrd does) or encrypted workbooks (xlrd does not either). One deliberate difference: a pure time (0 < serial < 1) prints as `HH:MM:SS`, where xlrd prefixes the epoch day.
+
+Checked cell by cell against xlrd and LibreOffice on 441 workbooks (LibreOffice, xlwt, synthetic, and the Excel-written files in xlrd's and Apache POI's test data): every cell equals xlrd's apart from pure times. The run and its results are in `internal/extract/xls/testdata/README.md`.
 
 ## Performance
 
