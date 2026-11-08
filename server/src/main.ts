@@ -169,7 +169,10 @@ setRunsLog(msg => app.log.info(msg))
 startFleet(msg => app.log.info(msg))
 // An automatic update waits until no answer is streaming and nothing is indexing.
 setUpdateBusyCheck(() => streamsInFlight() > 0 || indexStatus().running || indexJobsRunning())
-startUpdates(msg => app.log.info(msg))
+// Behind the Go server (STUDIO_BEHIND_GO=1, which it sets when it starts
+// Node), the Go server owns the update routes and the check: two checkers
+// would race to install. The busy state goes to it in /api/index/status.
+if (process.env.STUDIO_BEHIND_GO !== '1') startUpdates(msg => app.log.info(msg))
 {
   const n = watchRegisteredRuns()
   if (n) app.log.info(`following ${n} workflow run(s) registered before this start`)

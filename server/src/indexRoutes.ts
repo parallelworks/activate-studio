@@ -18,6 +18,7 @@ import { getLibrary, requireWritable } from './libraries.js'
 import { requestAllLibrarySyncs } from './libraryBuild.js'
 import { canRestart, launcherConfigFile, readLauncherSettings, requestRestart, saveLauncherSetting } from './lifecycle.js'
 import { effectiveSettings } from './settings.js'
+import { updateBusy } from './updates.js'
 
 /**
  * The index's own routes: its status (one answer for every view that shows
@@ -57,7 +58,7 @@ export async function indexRoutes(app: FastifyInstance): Promise<void> {
     return getLibrary(q.library ?? b.library, effectiveSettings().kbLabel, req.user?.id ?? null)
   }
 
-  app.get('/api/index/status', async () => ({ ...indexStatus(), log: { ...indexLogInfo(), reveal: process.platform === 'darwin' && !authEnabled() } }))
+  app.get('/api/index/status', async () => ({ ...indexStatus(), ...(process.env.STUDIO_BEHIND_GO === '1' ? { busy: updateBusy() } : {}), log: { ...indexLogInfo(), reveal: process.platform === 'darwin' && !authEnabled() } }))
 
   // What this host can extract text from, so a format that indexes by
   // filename alone is visible rather than a silent gap.

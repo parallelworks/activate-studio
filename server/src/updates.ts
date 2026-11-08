@@ -1272,6 +1272,10 @@ async function rollBack(): Promise<void> {
 /** main.ts says what keeps the Studio busy, which an auto install waits out. */
 export function setUpdateBusyCheck(fn: () => boolean): void { busyCheck = fn }
 
+/** What an automatic install would wait on now; the Go server in front
+ *  reads it in /api/index/status while Node still answers chats and indexes. */
+export function updateBusy(): boolean { return busyCheck() }
+
 /** The time from one check to the next: shorter while a new release waits
  *  for its macOS build, or while the release server cannot be reached. */
 function waitAfterCheck(): number {
