@@ -63,11 +63,19 @@ func statInode(t *testing.T, p string) string {
 // rebuilt index carries none. The index's change hook and the start hook
 // both put them back into the index's xattrs_pwd rows.
 func TestOverlayReappliedAfterChangeAndAtStart(t *testing.T) {
+	t.Run("Node-free", func(t *testing.T) { overlayCase(t, map[string]string{"STUDIO_NODE": "off"}) })
+	t.Run("Go indexes beside Node", func(t *testing.T) { overlayCase(t, map[string]string{"STUDIO_GO_INDEX": "1"}) })
+}
+
+func overlayCase(t *testing.T, mode map[string]string) {
 	dir := t.TempDir()
 	kbRoot, base := filepath.Join(dir, "kb"), filepath.Join(dir, "ix")
 	write(t, filepath.Join(kbRoot, "note.md"), "a note\n")
 	env := map[string]string{"KB_ROOT": kbRoot, "INDEX_BASE": base, "GUFI_BIN": filepath.Join(dir, "no-gufi"),
-		"STUDIO_NODE": "off", "SWEEP_INTERVAL_SEC": "0"}
+		"SWEEP_INTERVAL_SEC": "0"}
+	for k, v := range mode {
+		env[k] = v
+	}
 	cfg, err := config.Load(func(k string) string { return env[k] })
 	if err != nil {
 		t.Fatal(err)
