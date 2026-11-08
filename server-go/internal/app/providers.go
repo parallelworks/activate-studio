@@ -118,7 +118,7 @@ func defaultProviders(a *App) Providers {
 			return map[string]any{"path": file, "bytes": bytes}
 		},
 	}
-	if a.Node == nil {
+	if a.NodeAPI == nil {
 		p.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
 			return []json.RawMessage{a.primaryOnly(kbLabel)}, nil
 		}
@@ -136,7 +136,7 @@ func defaultProviders(a *App) Providers {
 		p.Changed = func(context.Context, ...string) {}
 		return p
 	}
-	n := a.Node
+	n := a.NodeAPI
 	p.Libraries = func(r *http.Request, _, _ string) ([]json.RawMessage, error) {
 		var c struct {
 			Libraries []json.RawMessage `json:"libraries"`
