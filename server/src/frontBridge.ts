@@ -31,6 +31,11 @@ export function frontUrl(): string { return (process.env.STUDIO_FRONT_URL ?? '')
  *  starts this one. Node then neither watches nor reattaches any of it. */
 export function goOwnsPlatform(): boolean { return process.env.STUDIO_GO_PLATFORM === '1' && !!frontUrl() && !!bridgeSecret() }
 
+/** Whether the Go server makes and serves the semantic maps (STUDIO_GO_MAPS,
+ *  set by a Go server that starts this one): a map asked for here, after an
+ *  index job or a library build, is asked of it (semanticMap.ts). */
+export function goOwnsMaps(): boolean { return process.env.STUDIO_GO_MAPS === '1' && !!frontUrl() && !!bridgeSecret() }
+
 function secretOk(given: unknown): boolean {
   const want = bridgeSecret()
   if (!want || typeof given !== 'string' || given.length !== want.length) return false
@@ -91,18 +96,6 @@ export async function frontBridgeRoutes(app: FastifyInstance): Promise<void> {
   app.route({ method: 'POST', url: '/api/__bridge/provider-probes/invalidate', onRequest: guard, handler: async () => {
     const { invalidateProviderProbes } = await import('./chat/gateway.js')
     invalidateProviderProbes()
-    return { ok: true }
-  } })
-
-  // A library on another system that the Go server removed, or whose build
-  // there finished: what keeps something here per library (semanticMap.ts)
-  // is told, as userLibraries.ts tells it.
-  app.route({ method: 'POST', url: '/api/__bridge/user-library', onRequest: guard, handler: async req => {
-    const b = (req.body ?? {}) as { event?: unknown; root?: unknown }
-    const root = String(b.root ?? '')
-    if ((b.event !== 'removed' && b.event !== 'built') || !root.startsWith('remote:')) throw new KbError(400, 'event: removed or built, and a remote root')
-    const { tellUserLibrary } = await import('./userLibraries.js')
-    tellUserLibrary(b.event, root)
     return { ok: true }
   } })
 

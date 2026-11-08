@@ -195,12 +195,6 @@ export function onRemoteIndexBuilt(fn: (root: string) => void): void { builtHook
 const tell = (hooks: Set<(root: string) => void>, root: string) => {
   for (const fn of hooks) { try { fn(root) } catch (e) { console.warn(`${root}: ${(e as Error).message}`) } }
 }
-/** The same hooks, told by the Go server, which serves these routes in
- *  front of this one (frontBridge.ts). */
-export function tellUserLibrary(event: 'removed' | 'built', root: string): void {
-  tell(event === 'removed' ? removedHooks : builtHooks, root)
-}
-
 const SSH_SINGLE_USER = 'Libraries over ssh use the ssh keys of the account the Studio runs as, so they are offered only on a Studio with sign-in off.'
 /** Whether a viewer may use libraries over ssh: only the one user of a
  *  Studio with sign-in off. */
