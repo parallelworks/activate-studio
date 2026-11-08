@@ -164,8 +164,9 @@ func IndentJS(compact []byte, indent string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// Marshal is json.Marshal without HTML escaping, as JSON.stringify writes
-// <, > and & as they are.
+// Marshal is JSON.stringify's bytes for v: no HTML escaping (<, > and &
+// as they are), U+2028, U+2029 and U+FFFD written as characters where
+// encoding/json escapes them, and no trailing newline.
 func Marshal(v any) ([]byte, error) {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
@@ -173,7 +174,43 @@ func Marshal(v any) ([]byte, error) {
 	if err := enc.Encode(v); err != nil {
 		return nil, err
 	}
-	return bytes.TrimRight(b.Bytes(), "\n"), nil
+	return jsEscapes(bytes.TrimRight(b.Bytes(), "\n")), nil
+}
+
+// jsEscapes turns encoding/json's \u2028, \u2029 and \ufffd escapes into
+// the characters, as JSON.stringify leaves them. A backslash in JSON text is
+// always the start of an escape inside a string, so escapes are read in
+// pairs and an escaped backslash is never taken for the start of another.
+func jsEscapes(js []byte) []byte {
+	if !bytes.Contains(js, []byte(`\u20`)) && !bytes.Contains(js, []byte(`\ufffd`)) {
+		return js
+	}
+	out := make([]byte, 0, len(js))
+	for i := 0; i < len(js); i++ {
+		if js[i] != '\\' || i+1 >= len(js) {
+			out = append(out, js[i])
+			continue
+		}
+		if js[i+1] == 'u' && i+6 <= len(js) {
+			switch string(js[i+2 : i+6]) {
+			case "2028":
+				out = append(out, "\u2028"...)
+				i += 5
+				continue
+			case "2029":
+				out = append(out, "\u2029"...)
+				i += 5
+				continue
+			case "fffd":
+				out = append(out, "\ufffd"...)
+				i += 5
+				continue
+			}
+		}
+		out = append(out, js[i], js[i+1])
+		i++
+	}
+	return out
 }
 
 // String is a raw value as a string, when it is one.

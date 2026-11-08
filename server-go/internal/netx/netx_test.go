@@ -3,10 +3,16 @@ package netx
 import (
 	"context"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -122,5 +128,45 @@ func TestRedactAndSetup(t *testing.T) {
 	}
 	if !strings.Contains(o.Line(), "through the proxy http://p.corp:1 (not for a.corp,localhost,127.0.0.1,::1)") {
 		t.Error(o.Line())
+	}
+}
+
+// trustChild runs in the child process of TestSystemCertificates: Setup,
+// then one HTTPS request to STUDIO_TEST_TLS_URL with the default client.
+func init() {
+	if os.Getenv("STUDIO_TEST_TRUST_CHILD") != "1" {
+		return
+	}
+	o := Setup()
+	res, err := http.Get(os.Getenv("STUDIO_TEST_TLS_URL"))
+	if err == nil {
+		res.Body.Close()
+	}
+	fmt.Printf("system=%d bundled=%d err=%v\n", o.SystemCertificates, o.Bundled, err)
+	os.Exit(0)
+}
+
+// As Node with netTrust.ts: the system's certificates (here SSL_CERT_FILE,
+// holding the test server's) are trusted along with the bundled list, and
+// STUDIO_SYSTEM_CA=0 trusts the bundled list only.
+func TestSystemCertificates(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	pemFile := filepath.Join(t.TempDir(), "system.pem")
+	os.WriteFile(pemFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o644)
+	run := func(systemCA string) string {
+		cmd := exec.Command(os.Args[0], "-test.run=^$")
+		cmd.Env = append(os.Environ(), "STUDIO_TEST_TRUST_CHILD=1", "STUDIO_TEST_TLS_URL="+srv.URL, "SSL_CERT_FILE="+pemFile, "SSL_CERT_DIR="+t.TempDir(), "STUDIO_SYSTEM_CA="+systemCA, "HTTPS_PROXY=", "https_proxy=")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	if got := run(""); !regexp.MustCompile(`^system=1 bundled=[1-9][0-9]+ err=<nil>$`).MatchString(got) {
+		t.Errorf("default: %s", got)
+	}
+	if got := run("0"); !regexp.MustCompile(`^system=-1 bundled=[1-9][0-9]+ err=.*certificate signed by unknown authority`).MatchString(got) {
+		t.Errorf("STUDIO_SYSTEM_CA=0: %s", got)
 	}
 }
