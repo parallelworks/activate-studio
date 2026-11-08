@@ -305,7 +305,6 @@ Differences from Node, kept on purpose:
 | job ids | from 1 | Go's jobs from 2^20, lower ids proxied to Node |
 | labels without the attr package | overlay | xattrs by syscall, overlay only where they fail |
 | `/api/kb/stats` after a change made here | counts up to 10 minutes stale | counts dropped |
-| error bodies | no trailing newline | `apierr` adds one |
 
 ## The semantic map in Go
 
@@ -413,7 +412,6 @@ Behavior differences from Node:
 | extractor report | pypdf, xlrd and olefile as Python packages | pypdf never available; the `.xls`, `.ppt` and OpenDocument readers built in |
 | job ids with Node beside | from 1 | from 2^21; lower ids for `/api/index/job/:id` and its cancel go to Node |
 | map rebuild after a job | `semantic_map.py` | `internal/semanticmap` in process, logged to the server log |
-| error bodies | no trailing newline | `apierr` adds one |
 
 `/api/jobs/:id` stays in `internal/kb`, which hands ids it does not know to Node: Node's library builds still create `jobs.ts` jobs, so that hand-off is removed with the libraries track. `fetch_embed.py` is used only by `remoteEmbed.ts` and moves with the libraries track.
 
