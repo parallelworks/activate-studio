@@ -7,14 +7,33 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import http from 'node:http'
+
+// The platform is a stand-in on loopback, so the Go front reaches it as
+// Node does; the session hosts (https on their own names) are answered in
+// this process only, and the relay through the Go front is covered by the
+// relay tests in server-go/internal/sessions.
+const seen = []
+let platformHandler = null
+const platform = http.createServer((req, res) => platformHandler(req, res))
+await new Promise(r => platform.listen(0, '127.0.0.1', r))
+const PLATFORM = `http://127.0.0.1:${platform.address().port}`
+platform.unref()
+
 const IX = fs.mkdtempSync(path.join(os.tmpdir(), 'sx-'))
 process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'skb-'))
 process.env.INDEX_BASE = IX
 process.env.STUDIO_RUN_POLL_MS = '15'
 process.env.PW_API_KEY = 'deploy-key'
-process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
+process.env.PW_GATEWAY_URL = `${PLATFORM}/api/openai/v1`
 fs.writeFileSync(path.join(IX, 'conversations.json'), JSON.stringify([{ id: 'c1', title: 'explore', owner: 'me', createdAt: 'x', updatedAt: 'x', activeBranchId: null,
   messages: [{ id: 'u1', role: 'user', content: 'open the explorer', timestamp: 'x' }, { id: 'a1', role: 'assistant', content: 'launched', parentId: 'u1', timestamp: 'x' }] }]))
+
+// A stand-in pw CLI: the workspace start the run files ask for, with the key it ran with.
+const STARTS = path.join(IX, 'starts.log')
+const CLI = path.join(IX, 'pw-fake.sh')
+fs.writeFileSync(CLI, `#!/bin/sh\nif [ "$1 $2" = "workspace start" ]; then echo "$PW_API_KEY" >> ${JSON.stringify(STARTS)}; fi\n`, { mode: 0o755 })
+process.env.PW_CLI = CLI
 
 const RAW = [
   { name: 'explorer-00012', user: 'me', type: 'endpoint', status: 'running', healthy: true, domainName: 'explorer-00012.sessions.test',
@@ -24,22 +43,26 @@ const RAW = [
   { name: 'old', user: 'other', type: 'endpoint', status: 'off', domainName: 'old.sessions.test', externalHref: 'https://old.sessions.test/', createdAt: '2026-10-09T00:00:00Z' },
   { user: 'nameless' },
 ]
-const seen = []
-globalThis.fetch = async (url, init) => {
-  seen.push({ url: String(url), auth: init?.headers?.Authorization ?? null })
-  if (String(url) === 'https://platform.test/api/sessions') return Response.json(RAW)
+platformHandler = (req, res) => {
+  seen.push({ url: PLATFORM + req.url, auth: req.headers.authorization ?? null })
+  const json = (d, status = 200) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(d)) }
+  if (req.url === '/api/sessions') return json(RAW)
   // A run's files, which the platform returns as a JSON string.
-  if (String(url) === 'https://platform.test/api/workflow-runs/design-explorer-00012/files?file=logs%2Fmain%2Fstep_0%2Flogs.out') return Response.json('step 0 output\n')
+  if (req.url === '/api/workflow-runs/design-explorer-00012/files?file=logs%2Fmain%2Fstep_0%2Flogs.out') return json('step 0 output\n')
   // The platform reads run files from the user's workspace, here scaled down.
-  if (String(url).startsWith('https://platform.test/api/workflow-runs/design-explorer-00013/files')) return Response.json({ error: true, message: 'User workspace not found or is not running', code: 'invalid_request' }, { status: 400 })
-  // The study viewer's own host, behind the platform key.
-  if (String(url).startsWith('https://explorer-00012.sessions.test/')) {
-    if (init?.headers?.Authorization !== 'Bearer deploy-key') return new Response('', { status: 307, headers: { location: 'https://platform.test/login' } })
-    if (new URL(String(url)).pathname === '/status.json') return Response.json({ total: 16 }, { headers: { 'x-frame-options': 'DENY', 'set-cookie': 'a=b' } })
-    return new Response('<html>viewer</html>', { headers: { 'content-type': 'text/html' } })
-  }
-  return new Response('no', { status: 404 })
+  if (req.url.startsWith('/api/workflow-runs/design-explorer-00013/files')) return json({ error: true, message: 'User workspace not found or is not running', code: 'invalid_request' }, 400)
+  res.writeHead(404); res.end('no')
 }
+// The study viewer's own host, behind the platform key (this process only).
+const realFetch = globalThis.fetch
+globalThis.fetch = async (url, init) => {
+  if (!String(url).startsWith('https://explorer-00012.sessions.test/')) return realFetch(url, init)
+  seen.push({ url: String(url), auth: init?.headers?.Authorization ?? null })
+  if (init?.headers?.Authorization !== 'Bearer deploy-key') return new Response('', { status: 307, headers: { location: `${PLATFORM}/login` } })
+  if (new URL(String(url)).pathname === '/status.json') return Response.json({ total: 16 }, { headers: { 'x-frame-options': 'DENY', 'set-cookie': 'a=b' } })
+  return new Response('<html>viewer</html>', { headers: { 'content-type': 'text/html' } })
+}
+const FRONT_RELAY_SKIP = process.env.STUDIO_TEST_FRONT ? 'the session hosts are https names only this process answers; the Go relay is covered by TestRelay* in server-go/internal/sessions' : false
 
 const sessions = await import('../dist/sessions.js')
 const runs = await import('../dist/runs.js')
@@ -120,7 +143,7 @@ test('one session can be named by the address it is served at', async () => {
   assert.equal((await app.inject({ url: '/api/sessions/item?host=elsewhere.test' })).statusCode, 404)
 })
 
-test('the relay serves a session of the viewer with the key, and nothing else', async () => {
+test('the relay serves a session of the viewer with the key, and nothing else', { skip: FRONT_RELAY_SKIP }, async () => {
   sessions.resetSessionsForTests(); seen.length = 0
   const page = await app.inject({ url: '/api/session-proxy/explorer-00012.sessions.test/' })
   assert.equal(page.statusCode, 200)
@@ -165,12 +188,13 @@ test('a run file reaches the step dialogs through the viewer\'s key; a path outs
 })
 
 test('a run file behind a stopped workspace asks for one start and says so', async () => {
-  const starts = []
-  ;(await import('../dist/runPane.js')).setRunPaneWorkspaceStart(async key => { starts.push(key) })
   for (let i = 0; i < 2; i++) {
     const r = await app.inject({ url: '/api/runs/file?slug=design-explorer-00013&path=logs.out' })
     assert.equal(r.statusCode, 503)
     assert.match(r.body, /workspace was not running/)
   }
-  assert.deepEqual(starts, ['deploy-key'], 'one start for both polls')
+  const starts = () => { try { return fs.readFileSync(STARTS, 'utf8') } catch { return '' } }
+  for (let i = 0; i < 200 && !starts(); i++) await sleep(15)
+  await sleep(100)
+  assert.equal(starts(), 'deploy-key\n', 'one start for both polls, with the viewer\'s key')
 })

@@ -106,10 +106,6 @@ func (a *App) AttachNode(n *Node) {
 	a.mu.Unlock()
 }
 
-// NodeCaller is NodeAPI as it is now: nil before Node is attached and in
-// Node-free mode. Routes resolve it per request.
-func (a *App) NodeCaller() *Node { return a.nodeAPI() }
-
 func (a *App) nodeAPI() *Node {
 	a.mu.Lock()
 	defer a.mu.Unlock()

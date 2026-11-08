@@ -1,0 +1,11 @@
+[
+ "no such persona",
+ "path escapes the knowledge base root",
+ "<b>&amp;</b> 'quoted' \"double\" back\\slash /slash",
+ "line\nbreak\ttab\rreturn\bback\fform",
+ "\u0000\u0001\u001f\u007f",
+ "sep\u2028para\u2029end",
+ "caf\u00e9 \u2603 \ud83d\udcc1 \ufffd",
+ "",
+ "Lib has no files on this host; it can be searched and described but not opened"
+]

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -146,16 +145,11 @@ func (x *Extractor) RunExternal(ctx context.Context, e *External, path string) (
 		return "", err
 	}
 	defer os.RemoveAll(dir)
-	ctx, cancel := context.WithTimeout(ctx, e.timeout())
-	defer cancel()
 	argv := e.argv(path)
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd, hctx, cancel := helper(ctx, e.timeout(), argv[0], argv[1:]...)
+	defer cancel()
 	cmd.Dir = dir
-	cmd.Env = helperEnv()
 	cmd.Stdin = nil
-	killGroup(cmd)
-	// A grandchild holding the pipes open must not hold the pass.
-	cmd.WaitDelay = 5 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitWriter{w: &stdout, n: externalMaxOutput}
 	cmd.Stderr = &limitWriter{w: &stderr, n: 4096}
@@ -163,7 +157,7 @@ func (x *Extractor) RunExternal(ctx context.Context, e *External, path string) (
 		return "", err
 	}
 	werr := cmd.Wait()
-	if ctx.Err() == context.DeadlineExceeded {
+	if hctx.Err() == context.DeadlineExceeded {
 		return "", fmt.Errorf("%s: timed out after %s", e.label(), e.timeout())
 	}
 	if werr != nil {

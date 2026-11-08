@@ -327,7 +327,8 @@ function rehydrate(): void {
     } catch { /* a directory without a snapshot predates snapshots */ }
   }
 }
-rehydrate()
+// With the Go server owning tasks (frontBridge.ts) it reattaches them.
+if (process.env.STUDIO_GO_PLATFORM !== '1') rehydrate()
 
 function agentCount(m: Task): number { return m.nodes.size }
 

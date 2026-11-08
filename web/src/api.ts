@@ -1,6 +1,18 @@
 import type { GufiCommand } from './components/GufiCommands'
 import type { Omission } from './components/OmittedLine'
 
+/** An answer's JSON when it is OK; otherwise an Error carrying the server's
+ * own message, so a page shows the failure in place of reading fields that
+ * are not there. */
+export async function okJSON<T = unknown>(r: Response): Promise<T> {
+  const body = await r.json().catch(() => null)
+  if (!r.ok) {
+    const said = body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string' ? (body as { error: string }).error : ''
+    throw new Error(said || `The server answered ${r.status}.`)
+  }
+  return body as T
+}
+
 /** A mounted library, as the server describes it. Paths stay on the server. */
 export interface PublicLibrary {
   id: string

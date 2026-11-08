@@ -24,7 +24,7 @@ import { gatewayKey } from './chat/gateway.js'
 import { resolveUserCred } from './credentials.js'
 import { effectiveSettings } from './settings.js'
 import { KbError } from './kb.js'
-import { entryTitle, githubThumbnail, parseWorkflowEntry, type WorkflowEntry } from './workflowEntries.js'
+import { entryTitle, githubRawBase, githubThumbnail, parseWorkflowEntry, type WorkflowEntry } from './workflowEntries.js'
 import { browseGithub, githubDefinition, githubSummary, resolveGithubEntry } from './githubWorkflows.js'
 import { recordRun, listRuns, markRunEnded, isTerminalRunState } from './runs.js'
 import { withWorkspace } from './workspace.js'
@@ -254,10 +254,11 @@ export function iconCandidates(imageUrl: string | undefined, fallbackUrl: string
   let anonymousOk = true
   try {
     const h = new URL(primary).hostname
-    anonymousOk = primary.startsWith(platform) || h === 'github.com' || h.endsWith('.githubusercontent.com')
+    anonymousOk = primary.startsWith(platform) || h === 'github.com' || h.endsWith('.githubusercontent.com') || primary.startsWith(`${githubRawBase()}/`)
   } catch { /* not a URL */ }
   const ordered = anonymousOk ? [primary, fallback] : [fallback, primary]
-  return [...new Set(ordered.filter(u => /^https:\/\//.test(u)))]
+  // https only, and GitHub's raw host as configured (STUDIO_GITHUB_RAW_URL).
+  return [...new Set(ordered.filter(u => /^https:\/\//.test(u) || u.startsWith(`${githubRawBase()}/`)))]
 }
 
 /**

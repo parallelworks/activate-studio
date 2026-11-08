@@ -448,3 +448,24 @@ export function hydrateFromCookie(sub: string, cookieHeader: string | undefined)
     } catch { /* stale cookie sealed under a rotated secret: try the other */ }
   }
 }
+
+/**
+ * TRANSITIONAL: the key the Go server in front holds for sub, as it sends
+ * it on each request it passes here (x-studio-model-key, sealed as the key
+ * cookie is). "-" is no key: the memory copy is dropped, so a key cleared
+ * in Go stops working here too. Anything else that does not open for sub
+ * is ignored. Goes away when the last route that reads keys is in Go.
+ */
+export function mirrorFromGo(sub: string, header: string | string[] | undefined): void {
+  if (!sub || typeof header !== 'string' || !header || personalKeysDisabled()) return
+  if (header === '-') { sessionKeys.delete(sub); return }
+  try {
+    const opened = decrypt(header)
+    if (!opened) return
+    const { s: owner, k, u, o } = JSON.parse(opened) as { s?: string; k?: string; u?: string | null; o?: EndpointOptions }
+    if (owner !== sub || typeof k !== 'string' || !k.trim()) return
+    const s = liveSession(sub)
+    if (s && s.key === k && (s.baseUrl ?? null) === (u ?? null) && JSON.stringify(s.endpoint ?? null) === JSON.stringify(o ?? null)) return
+    setUserKey(sub, k, false, u ?? null, o ?? null)
+  } catch { /* sealed under another secret: nothing to mirror */ }
+}
