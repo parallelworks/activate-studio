@@ -54,7 +54,7 @@ func TestSanitizeName(t *testing.T) {
 	for in, want := range map[string]string{
 		"report (1).pdf": "report (1).pdf",
 		"a/b/c d.txt":    "c d.txt",
-		"café.md":   "caf_.md",
+		"café.md":        "caf_.md",
 		"\U0001F600.md":  "__.md",
 		"a   b":          "a b",
 	} {
