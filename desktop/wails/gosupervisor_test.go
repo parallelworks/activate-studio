@@ -49,6 +49,21 @@ func TestGoServerPaths(t *testing.T) {
 	if s, m := goServerPaths(env(on), "", t.TempDir()); s != "" || m != "" {
 		t.Errorf("missing binary: %q %q", s, m)
 	}
+	// A Go release: on unless turned off; without a Node, on regardless.
+	if err := os.WriteFile(filepath.Join(tree, "manifest.json"), []byte(`{"version": "v1.200", "server": "go"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := goServerPaths(env(nil), tree, filepath.Join(tree, "app")); s != filepath.Join(tree, "app", "bin", "studio-server") {
+		t.Errorf("Go release, default: %q", s)
+	}
+	off := map[string]string{"STUDIO_GO_SERVER": "0"}
+	if s, _ := goServerPaths(env(off), tree, filepath.Join(tree, "app")); s != "" {
+		t.Errorf("Go release, turned off: %q", s)
+	}
+	touch(t, filepath.Join(tree, "node", "PLACEHOLDER"), 0o644)
+	if s, _ := goServerPaths(env(off), tree, filepath.Join(tree, "app")); s == "" {
+		t.Errorf("no Node: the Go server runs even when turned off")
+	}
 	other := filepath.Join(t.TempDir(), "my-server")
 	touch(t, other, 0o755)
 	if s, _ := goServerPaths(env(map[string]string{"STUDIO_GO_SERVER": "1", "STUDIO_GO_SERVER_BIN": other}), tree, ""); s != other {

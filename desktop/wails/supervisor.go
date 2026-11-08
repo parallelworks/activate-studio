@@ -24,6 +24,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -367,12 +368,20 @@ next:
 	return out
 }
 
-// goServerPaths: with STUDIO_GO_SERVER=1, the Go front server and the Go
-// semantic map, from the tree (app/bin/) or a checkout (server-go/bin/), or
-// STUDIO_GO_SERVER_BIN and STUDIO_SEMANTIC_MAP_BIN when set. Empty when the
-// opt-in is off or studio-server is not there, which leaves Node alone.
+// goServerPaths: the Go front server and the Go semantic map, from the tree
+// (app/bin/) or a checkout (server-go/bin/), or STUDIO_GO_SERVER_BIN and
+// STUDIO_SEMANTIC_MAP_BIN when set. The switch is STUDIO_GO_SERVER: 1 turns
+// the Go server on, 0 off, and unset it is on for a Go release, a tree whose
+// manifest.json says "server": "go" (docs/UPDATES.md, "The Go version").
+// A tree without a Node (node/PLACEHOLDER) runs Go whatever the switch says.
+// Empty when it is off or studio-server is not there, which leaves Node alone.
 func goServerPaths(getenv func(string) string, tree, appDir string) (server, semanticMap string) {
-	if getenv("STUDIO_GO_SERVER") != "1" {
+	on := getenv("STUDIO_GO_SERVER") == "1"
+	if tree != "" && !on {
+		goRelease, noNode := treeServer(tree)
+		on = noNode || (goRelease && getenv("STUDIO_GO_SERVER") != "0")
+	}
+	if !on {
 		return "", ""
 	}
 	dir := filepath.Join(appDir, "server-go", "bin")
@@ -394,6 +403,20 @@ func goServerPaths(getenv func(string) string, tree, appDir string) (server, sem
 		semanticMap = ""
 	}
 	return server, semanticMap
+}
+
+// treeServer reads what a payload tree says about its server: a Go release
+// ("server": "go" in manifest.json), and no Node of its own (node/PLACEHOLDER,
+// the stand-in kept for older updaters' checks).
+func treeServer(tree string) (goRelease, noNode bool) {
+	if b, err := os.ReadFile(filepath.Join(tree, "manifest.json")); err == nil {
+		var m struct {
+			Server string `json:"server"`
+		}
+		goRelease = json.Unmarshal(b, &m) == nil && m.Server == "go"
+	}
+	_, err := os.Stat(filepath.Join(tree, "node", "PLACEHOLDER"))
+	return goRelease, err == nil
 }
 
 // choosePort: the port studio.env names (Settings, Server saves one there),

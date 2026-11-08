@@ -34,7 +34,10 @@
 //	STUDIO_GO_SERVER=1     run the Go front server (studio-server, Node behind it) in
 //	                       place of Node, from app/bin in the tree or server-go/bin in a
 //	                       checkout, or STUDIO_GO_SERVER_BIN; the Go semantic map
-//	                       beside it is used for STUDIO_SEMANTIC_MAP_BIN. Off by default.
+//	                       beside it is used for STUDIO_SEMANTIC_MAP_BIN. On by default
+//	                       for a Go release (the tree's manifest.json says "server":
+//	                       "go"), off otherwise; STUDIO_GO_SERVER=0 turns it off where
+//	                       the tree still has a Node.
 //
 // Build (Linux): go build -tags desktop,production,webkit2_41 for WebKitGTK
 // 4.1, without webkit2_41 for 4.0 (see desktop/linux/build_shell.sh).
@@ -191,6 +194,11 @@ func loadConfig() (Config, error) {
 	cfg.GoServer, cfg.SemanticMap = goServerPaths(os.Getenv, cfg.Tree, cfg.AppDir)
 	if os.Getenv("STUDIO_GO_SERVER") == "1" && cfg.GoServer == "" {
 		fmt.Fprintln(os.Stderr, "STUDIO_GO_SERVER=1, but studio-server was not found; starting Node")
+	}
+	if cfg.Tree != "" && cfg.GoServer == "" {
+		if _, noNode := treeServer(cfg.Tree); noNode {
+			return cfg, fmt.Errorf("%s has no Node and no Go server (app/bin/studio-server)", cfg.Tree)
+		}
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return cfg, err
