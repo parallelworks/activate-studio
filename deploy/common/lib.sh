@@ -13,13 +13,25 @@ sha256_of() {
 # release_asset_via_api URL FILE [CURL ARGS]: a github.com release download
 # (https://github.com/OWNER/REPO/releases/download/TAG/NAME) fetched the
 # second way, through the release API's asset address, which GitHub serves
-# apart from the download host. GH_TOKEN or GITHUB_TOKEN, when set, lifts the
+# apart from the download host; a tag archive (.../archive/refs/tags/TAG.tar.gz)
+# from codeload.github.com. GH_TOKEN or GITHUB_TOKEN, when set, lifts the
 # API's rate limit. Fails for any other URL; the caller checks the hash.
 release_asset_via_api() {
   local url="$1" out="$2" rest repo tag name api
   shift 2
   rest="${url#https://github.com/}"
-  case "$rest" in */*/releases/download/*/*) ;; *) return 1 ;; esac
+  case "$rest" in
+    */*/archive/refs/tags/*.tar.gz)
+      # A tag's source archive: github.com redirects it to codeload, which
+      # serves the same bytes.
+      local r="${rest%%/archive/refs/tags/*}" t="${rest#*/archive/refs/tags/}"
+      echo "  the download failed; trying codeload for $r ${t%.tar.gz}"
+      curl -fsSL --retry 3 "$@" -o "$out" "https://codeload.github.com/$r/tar.gz/refs/tags/${t%.tar.gz}"
+      return
+      ;;
+    */*/releases/download/*/*) ;;
+    *) return 1 ;;
+  esac
   repo="${rest%%/releases/download/*}"
   rest="${rest#*/releases/download/}"
   tag="${rest%%/*}"
