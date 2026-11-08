@@ -32,6 +32,8 @@ type NodeBridge struct {
 	client *http.Client
 }
 
+var bridgeClient = &http.Client{Timeout: 30 * time.Second}
+
 // BridgeSecret is the one bridge secret (internal/bridge).
 func BridgeSecret() string { return bridge.Secret() }
 
@@ -40,7 +42,7 @@ func NewNodeBridge(n *app.Node) *NodeBridge {
 	if n == nil {
 		return nil
 	}
-	return &NodeBridge{Node: n, client: &http.Client{Timeout: 30 * time.Second}}
+	return &NodeBridge{Node: n, client: bridgeClient}
 }
 
 // Do sends a bridge call for the viewer of r (nil: no viewer) and decodes

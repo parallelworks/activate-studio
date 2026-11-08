@@ -66,6 +66,7 @@ type Platform struct {
 	login  *loginSlot
 
 	node     *NodeBridge
+	nodeOf   func() *NodeBridge
 	ownsJobs bool
 }
 
@@ -126,7 +127,15 @@ func (p *Platform) Log() *slog.Logger { return p.log }
 func (p *Platform) SetNode(n *NodeBridge) { p.mu.Lock(); p.node = n; p.mu.Unlock() }
 
 // Node is the Node bridge, or nil.
-func (p *Platform) Node() *NodeBridge { p.mu.Lock(); defer p.mu.Unlock(); return p.node }
+func (p *Platform) Node() *NodeBridge {
+	p.mu.Lock()
+	n, of := p.node, p.nodeOf
+	p.mu.Unlock()
+	if n == nil && of != nil {
+		return of()
+	}
+	return n
+}
 
 // PWContext is what Node's process.env.PW_CONTEXT holds: the chosen
 // context, else the one the server started with, else unset (applyEnv).

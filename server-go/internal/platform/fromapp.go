@@ -21,8 +21,15 @@ func FromApp(a *app.App) *Platform {
 	}
 	p := New(Options{IndexBase: cfg.IndexBase, KBRoot: cfg.KBRoot, Log: a.Log, AuthEnabled: authEnabled})
 	p.ownsJobs = cfg.NodeURL == "" || os.Getenv("STUDIO_PLATFORM_JOBS") == "1"
-	if a.NodeAPI != nil && !a.NodeFree() {
-		p.SetNode(NewNodeBridge(a.NodeAPI))
+	if !a.NodeFree() {
+		// Node is attached after every module registers: resolved per call.
+		p.nodeOf = func() *NodeBridge {
+			n := a.NodeCaller()
+			if n == nil {
+				return nil
+			}
+			return &NodeBridge{Node: n, client: bridgeClient}
+		}
 	}
 	return p
 }
