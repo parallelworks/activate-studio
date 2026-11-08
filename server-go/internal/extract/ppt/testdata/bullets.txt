@@ -1,0 +1,18 @@
+Title text
+First line
+Second line
+Third line
+I’m a text box
+With bullets
+That follow the design pattern
+From the slide master
+I’m a text box with user-defined
+bullet character
+This text 
+follows the design pattern
+from the slide master
+and has bullets
+This is a text placeholder that 
+follows the design pattern
+Defined in the slide master
+and has bullets by default
