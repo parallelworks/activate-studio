@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 )
 
@@ -19,7 +20,8 @@ import (
 type ScopedHit struct {
 	gufi.SearchHit
 	Library HitLibrary `json:"library"`
-	Tags    []string   `json:"tags,omitempty"`
+	// Tags are set by Annotate (nil before: searchScope gives none).
+	Tags *[]string `json:"tags,omitempty"`
 }
 
 // HitLibrary names a hit's library.
@@ -440,38 +442,61 @@ func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q st
 }
 
 // Annotate is the /api/search route's labels: the main library's from
-// tagMaps (annotateHits), the others' from their stores
-// (annotateLibraryHits); with filter, only hits carrying one of them.
+// its files and index (kb annotateHits), the others' from the Studio's
+// stores (annotateLibraryHits); with filter, only hits carrying one, in
+// the order searchScope gave them.
 func (e *Engine) Annotate(ctx context.Context, hits []ScopedHit, filter []string) []ScopedHit {
-	out := []ScopedHit{}
-	if e.Labels == nil {
+	if e.Tags == nil {
+		out := []ScopedHit{}
 		for _, h := range hits {
-			h.Tags = []string{}
-			if wanted(h.Tags, filter) {
+			h.Tags = &[]string{}
+			if len(filter) == 0 {
 				out = append(out, h)
 			}
 		}
 		return out
 	}
-	var primary *TagMaps
-	libs := map[string]TagMaps{}
+	var prim, other []ScopedHit
 	for _, h := range hits {
 		if h.Library.ID == libraries.PrimaryID {
-			if primary == nil {
-				m := e.Labels.Primary(ctx)
-				primary = &m
-			}
-			h.Tags = tagsOf(*primary, h.Path, nil, false)
+			prim = append(prim, h)
 		} else {
-			m, ok := libs[h.Library.ID]
-			if !ok {
-				m = e.Labels.Library(h.Library.ID)
-				libs[h.Library.ID] = m
-			}
-			h.Tags = tagsOf(m, h.Path, nil, true)
+			other = append(other, h)
 		}
-		if wanted(h.Tags, filter) {
-			out = append(out, h)
+	}
+	with := func(h ScopedHit, t []string) ScopedHit {
+		if t == nil {
+			t = []string{}
+		}
+		h.Tags = &t
+		return h
+	}
+	pathOf := func(h ScopedHit) string { return h.Path }
+	prim = kb.AnnotateHits(ctx, e.Tags, prim, pathOf, with, filter)
+	other = kb.AnnotateLibraryHits(e.Tags, other, func(h ScopedHit) string { return h.Library.ID }, pathOf,
+		func(h ScopedHit) []string {
+			if h.Tags == nil {
+				return nil
+			}
+			return *h.Tags
+		}, with, filter)
+	keepP := map[string]ScopedHit{}
+	for _, h := range prim {
+		keepP[h.Path] = h
+	}
+	keepO := map[string]ScopedHit{}
+	for _, h := range other {
+		keepO[h.Library.ID+"\x00"+h.Path] = h
+	}
+	out := []ScopedHit{}
+	for _, h := range hits {
+		if h.Library.ID == libraries.PrimaryID {
+			if k, ok := keepP[h.Path]; ok {
+				k.Library = h.Library
+				out = append(out, k)
+			}
+		} else if k, ok := keepO[h.Library.ID+"\x00"+h.Path]; ok {
+			out = append(out, k)
 		}
 	}
 	return out

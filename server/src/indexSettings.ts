@@ -194,10 +194,13 @@ export async function forgetIndexSettings(library: string): Promise<void> {
 
 /** Through a temporary file renamed over the old one, so a reader in the
  *  other server never sees half a file. */
+let tmpSeq = 0
 async function writeFile(all: { libraries: Record<string, Saved> }): Promise<void> {
-  const tmp = `${FILE}.${process.pid}.tmp`
-  await fsp.writeFile(tmp, JSON.stringify(all, null, 1))
-  await fsp.rename(tmp, FILE)
+  // Written and renamed in one step, with a name of its own, so two saves
+  // at once never rename each other's file.
+  const tmp = `${FILE}.${process.pid}.${++tmpSeq}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(all, null, 1))
+  fs.renameSync(tmp, FILE)
   cacheStamp = stampOf()
 }
 

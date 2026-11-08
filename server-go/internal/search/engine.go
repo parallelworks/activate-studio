@@ -27,6 +27,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
@@ -46,7 +47,8 @@ type Engine struct {
 	Pool      *remote.Pool
 	Remote    *remote.Runners
 	Embed     Embedder
-	Labels    Labels
+	// Tags are the files track's labels (internal/kb), beside each hit.
+	Tags *kb.Tags
 	Getenv    func(string) string
 	// SearchEngine is Settings, General, "Search across libraries":
 	// "gufi_vt" or the default.
