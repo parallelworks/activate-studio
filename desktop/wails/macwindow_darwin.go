@@ -112,6 +112,9 @@ static void adopt(NSWindow *w) {
 	if (!popup && w.frameAutosaveName.length == 0 && ![[w identifier] isEqualToString:@"studio-forgotten"]) {
 		[w setFrameUsingName:frameName];
 		[w setFrameAutosaveName:frameName];
+		// AppKit writes the frame on the next move or resize, or not until
+		// then: write it now, so a window never moved still opens there.
+		[w saveFrameUsingName:frameName];
 	}
 	WKWebView *web = findWebView(w.contentView);
 	if (web) {
