@@ -267,6 +267,9 @@ func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) *httputil.Re
 			// Node sees the host the browser asked for, as it does today.
 			pr.Out.Host = pr.In.Host
 			pr.SetXForwarded()
+			// Only the Go server's own value calls (app.Node.Do, which go
+			// to Node directly) carry this; a client's is dropped.
+			pr.Out.Header.Del(app.InternalHeader)
 			if front != nil {
 				front.ToNode(pr.Out, auth.UserOf(pr.In))
 			}
