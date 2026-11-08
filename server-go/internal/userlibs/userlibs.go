@@ -59,6 +59,10 @@ type Module struct {
 	// Notify tells Node's modules that keep something per library on
 	// another system (semanticMap.ts) that one was removed or built.
 	Notify func(event, root string)
+	// OwnerKey is keyOf(owner)'s personal credential: the owner's platform
+	// key now (ok false for none or a provider key), after rehydrating the
+	// session from cookie when one is given. nil: the viewer's key only.
+	OwnerKey func(owner, cookie string) (key string, ok bool)
 	// Background is the context builds are followed and files sent in.
 	Background func() context.Context
 
@@ -104,6 +108,17 @@ func Of(a *app.App) *Module {
 		return m.ownJobs()
 	}
 	m.Background = func() context.Context { return context.Background() }
+	m.OwnerKey = func(owner, cookie string) (string, bool) {
+		if a.Providers.PersonalCred == nil {
+			return "", false
+		}
+		key, base, ok := a.Providers.PersonalCred(owner, cookie)
+		// A provider key is chat-only (keyOf).
+		if !ok || base != "" {
+			return "", false
+		}
+		return key, true
+	}
 	m.Notify = func(event, root string) {
 		if n := p.Node(); n != nil {
 			if err := n.Background(http.MethodPost, platform.BridgePrefix+"user-library", map[string]string{"event": event, "root": root}, nil); err != nil {
@@ -199,7 +214,26 @@ func (m *Module) whoOf(r *http.Request) (who, error) {
 		}
 		return who{}, err
 	}
-	return who{ID: v.UserID(), Auth: v.AuthEnabled, Own: v.PlatformKey()}, nil
+	w := who{ID: v.UserID(), Auth: v.AuthEnabled, Own: v.PlatformKey()}
+	// keyOf(owner): the key store's, after rehydrating the session from its
+	// cookie as main.ts does on every request, so a build followed later
+	// finds the same key.
+	if m.OwnerKey != nil && w.ID != "" {
+		w.Own, _ = m.OwnerKey(w.ID, r.Header.Get("Cookie"))
+	}
+	return w, nil
+}
+
+// pollKey is keyOf(owner) as Node's follower asks it on every poll: the
+// owner's key now, so a key rotated or cleared during a build is the one
+// used. Without the key store, the key of the request that started it.
+func (m *Module) pollKey(w who, owner string) who {
+	if owner == single || m.OwnerKey == nil {
+		return w
+	}
+	key, _ := m.OwnerKey(owner, "")
+	w.Own = key
+	return w
 }
 
 const single = "single"
