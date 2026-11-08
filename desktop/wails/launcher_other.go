@@ -18,3 +18,6 @@ func macOptions() *mac.Options                                 { return nil }
 
 // watchMacWindow: the macOS window behaviours (macwindow_darwin.go).
 func watchMacWindow() {}
+
+// windowReport: the macOS window's state for the self test (macwindow_darwin.go).
+func windowReport() map[string]any { return nil }

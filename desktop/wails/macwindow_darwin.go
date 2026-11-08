@@ -9,6 +9,9 @@ package main
 //   - Hide Others;
 //   - the microphone for voice input is granted to the Studio's own page
 //     (127.0.0.1) once macOS has asked the person, and refused elsewhere;
+//   - window.open and target=_blank: the Studio's own pages (a session
+//     popped out) get a window of their own, anything else opens in the
+//     browser;
 //   - an uninstall stops the window keeping its frame, and with the data
 //     chosen clears its web data and preferences.
 
@@ -18,9 +21,12 @@ package main
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
+#include <stdlib.h>
 
 static NSString *const frameName = @"ACTIVATE Studio";
+static NSString *const popupID = @"studio-popup";
 static BOOL watching;
+static NSMutableArray<NSWindow *> *popups;
 
 static WKWebView *findWebView(NSView *v) {
 	if ([v isKindOfClass:[WKWebView class]]) return (WKWebView *)v;
@@ -48,14 +54,70 @@ static void allowMicrophone(WKWebView *web) {
 	}
 }
 
+static BOOL isStudio(NSURL *url) {
+	if (url == nil) return YES;
+	if ([@[@"about", @"blob"] containsObject:(url.scheme ?: @"")]) return YES;
+	return [url.host isEqualToString:@"127.0.0.1"];
+}
+
+// The Swift window's createWebViewWith: a window of 1100 by 760 cascaded
+// from the main one, whose web view takes WebKit's configuration (it must)
+// and the main view's UI delegate, so its own pop-ups, dialogs and voice
+// input work as in the main window.
+static void allowPopups(WKWebView *web) {
+	id d = web.UIDelegate;
+	if (d == nil) return;
+	SEL create = @selector(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:);
+	if (![d respondsToSelector:create]) {
+		IMP imp = imp_implementationWithBlock(^WKWebView *(id self_, WKWebView *wv, WKWebViewConfiguration *cfg,
+		                                                   WKNavigationAction *action, WKWindowFeatures *features) {
+			NSURL *url = action.request.URL;
+			if (!isStudio(url)) {
+				[[NSWorkspace sharedWorkspace] openURL:url];
+				return nil;
+			}
+			WKWebView *child = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:cfg];
+			child.UIDelegate = wv.UIDelegate;
+			NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1100, 760)
+				styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
+				backing:NSBackingStoreBuffered defer:NO];
+			w.identifier = popupID;
+			w.releasedWhenClosed = NO;
+			w.title = @"ACTIVATE Studio";
+			w.contentView = child;
+			NSWindow *main = wv.window;
+			if (main) [w cascadeTopLeftFromPoint:NSMakePoint(NSMinX(main.frame), NSMaxY(main.frame))];
+			else [w center];
+			if (popups == nil) popups = [NSMutableArray array];
+			[popups addObject:w];
+			[w makeKeyAndOrderFront:nil];
+			return child;
+		});
+		class_addMethod([d class], create, imp, "@@:@@@@");
+	}
+	SEL close = @selector(webViewDidClose:);
+	if (![d respondsToSelector:close]) {
+		IMP imp = imp_implementationWithBlock(^(id self_, WKWebView *wv) {
+			for (NSWindow *w in [popups copy]) {
+				if (w.contentView == wv) [w close];
+			}
+		});
+		class_addMethod([d class], close, imp, "v@:@");
+	}
+}
+
 static void adopt(NSWindow *w) {
 	if ([w isKindOfClass:[NSPanel class]] || !(w.styleMask & NSWindowStyleMaskTitled)) return;
-	if (w.frameAutosaveName.length == 0 && ![[w identifier] isEqualToString:@"studio-forgotten"]) {
+	BOOL popup = [[w identifier] isEqualToString:popupID];
+	if (!popup && w.frameAutosaveName.length == 0 && ![[w identifier] isEqualToString:@"studio-forgotten"]) {
 		[w setFrameUsingName:frameName];
 		[w setFrameAutosaveName:frameName];
 	}
 	WKWebView *web = findWebView(w.contentView);
-	if (web) allowMicrophone(web);
+	if (web) {
+		allowMicrophone(web);
+		allowPopups(web);
+	}
 }
 
 static void mac_window_watch(void) {
@@ -64,6 +126,9 @@ static void mac_window_watch(void) {
 		watching = YES;
 		[[NSNotificationCenter defaultCenter] addObserverForName:NSWindowDidBecomeKeyNotification
 			object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { adopt(n.object); }];
+		// A closed pop-up window is let go.
+		[[NSNotificationCenter defaultCenter] addObserverForName:NSWindowWillCloseNotification
+			object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [popups removeObject:n.object]; }];
 		for (NSWindow *w in [NSApp windows]) adopt(w);
 	});
 }
@@ -92,8 +157,48 @@ static void mac_forget_window(int purge) {
 	});
 	dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
 }
+// mac_window_report describes the main window as the self test sees it,
+// as JSON (the caller frees it). Call off the main thread.
+static char *mac_window_report(void) {
+	__block NSString *json = @"{}";
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		NSWindow *main = nil;
+		NSUInteger n = 0;
+		for (NSWindow *w in [NSApp windows]) {
+			if ([w isKindOfClass:[NSPanel class]] || !(w.styleMask & NSWindowStyleMaskTitled)) continue;
+			n++;
+			if (main == nil && ![[w identifier] isEqualToString:popupID]) main = w;
+		}
+		if (main == nil) return;
+		NSColor *bg = [main.backgroundColor colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
+		NSString *hex = bg ? [NSString stringWithFormat:@"#%02x%02x%02x", (int)lround(bg.redComponent * 255),
+			(int)lround(bg.greenComponent * 255), (int)lround(bg.blueComponent * 255)] : @"";
+		NSView *bar = [main standardWindowButton:NSWindowCloseButton].superview;
+		WKWebView *web = findWebView(main.contentView);
+		id d = web.UIDelegate;
+		NSDictionary *r = @{
+			@"windows": @(n),
+			@"titlebarTransparent": @(main.titlebarAppearsTransparent),
+			@"background": hex,
+			@"barAppearance": bar.appearance.name ?: @"",
+			@"frameAutosaveName": main.frameAutosaveName ?: @"",
+			@"frameSaved": @([[NSUserDefaults standardUserDefaults] objectForKey:[@"NSWindow Frame " stringByAppendingString:frameName]] != nil),
+			@"microphoneHandler": @([d respondsToSelector:@selector(webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:)]),
+			@"popupHandler": @([d respondsToSelector:@selector(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:)]),
+			@"closeHandler": @([d respondsToSelector:@selector(webViewDidClose:)]),
+		};
+		NSData *data = [NSJSONSerialization dataWithJSONObject:r options:0 error:nil];
+		if (data) json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+	});
+	return strdup(json.UTF8String);
+}
 */
 import "C"
+
+import (
+	"encoding/json"
+	"unsafe"
+)
 
 // watchMacWindow adopts each window as it becomes key. Call before wails.Run.
 func watchMacWindow() { C.mac_window_watch() }
@@ -107,4 +212,13 @@ func forgetMacWindow(purge bool) {
 		p = 1
 	}
 	C.mac_forget_window(p)
+}
+
+// windowReport is the main window's native state for the self test.
+func windowReport() map[string]any {
+	c := C.mac_window_report()
+	defer C.free(unsafe.Pointer(c))
+	var r map[string]any
+	_ = json.Unmarshal([]byte(C.GoString(c)), &r)
+	return r
 }

@@ -736,6 +736,38 @@ EOF
       check "and keeps the documents" sh -c "printf '%s\n' \"\$1\" | grep -q '^keep-documents	$T/corpus\$'" _ "$PLAN"
       check "a dry run removes nothing" test -f "$LIBIDX/.studio-index.json"
 
+      # The window itself, in its self test (desktop/wails/selftest.go, plan
+      # hold): it opens, the Studio draws in it, and the window's own state
+      # is what the Swift window had: the title bar in the page's color,
+      # the frame kept under the Swift window's name, and the web view
+      # answering microphone and pop-up requests (macwindow_darwin.go).
+      echo "Window"
+      WT="$T/window-test"
+      mkdir -p "$WT"
+      env HOME="$H" STUDIO_SHELL_TEST=1 STUDIO_SHELL_TEST_PLAN=hold STUDIO_SHELL_TEST_DIR="$WT" \
+        "$C/MacOS/ACTIVATE Studio" >"$T/window.log" 2>&1 &
+      WPID=$!
+      for _ in $(seq 1 180); do [ -s "$WT/ready" ] && break; kill -0 "$WPID" 2>/dev/null || break; sleep 1; done
+      W() { python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("results", {}).get("window", {}).get(sys.argv[2]))' "$WT/results.json" "$1" 2>/dev/null; }
+      BAR="$(cat "$H/Library/Application Support/ACTIVATE Studio/run/bar-color" 2>/dev/null || true)"
+      if [ -s "$WT/ready" ]; then
+        ok "the window opened and the Studio drew in it"
+        echo "        window: $(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))["results"].get("window")))' "$WT/results.json" 2>/dev/null)"
+        check "the title bar is transparent over the window's color" test "$(W titlebarTransparent)" = True
+        check "that color is the page's ($BAR)" sh -c '[ -n "$1" ] && [ "$1" = "$2" ]' _ "$BAR" "$(W background)"
+        check "the frame is kept under the Swift window's name" sh -c '[ "$1" = "ACTIVATE Studio" ] && [ "$2" = True ]' _ "$(W frameAutosaveName)" "$(W frameSaved)"
+        check "the web view answers microphone requests" test "$(W microphoneHandler)" = True
+        check "and pop-up windows and their closing" sh -c '[ "$1" = True ] && [ "$2" = True ]' _ "$(W popupHandler)" "$(W closeHandler)"
+      else
+        bad "the window did not open, or the Studio did not draw in it"
+        tail -n 30 "$T/window.log" | sed 's/^/        /'
+      fi
+      kill -TERM "$WPID" 2>/dev/null || true
+      for _ in $(seq 1 20); do kill -0 "$WPID" 2>/dev/null || break; sleep 0.5; done
+      kill -KILL "$WPID" 2>/dev/null || true
+      env HOME="$H" "$L" --stop >/dev/null 2>&1 || true
+      defaults delete com.parallelworks.activate-studio "NSWindow Frame ACTIVATE Studio" >/dev/null 2>&1 || true
+
       # A managed Mac where ~/Library/LaunchAgents is read-only: the app
       # starts the server itself (a run loop in a session of its own, named
       # in server.pid), with no administrator rights.

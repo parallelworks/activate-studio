@@ -305,7 +305,7 @@ The Go version (`STUDIO_SERVER=go-only`, the default of `deploy/mac/build_app.sh
 | Title bar in the page's color, light or dark ink | Same (`titlebar_darwin.go`), from the page's theme-color tag, remembered for the next launch |
 | Microphone permission for dictation | Same: granted to the Studio's page (127.0.0.1) after macOS asks, refused elsewhere (`macwindow_darwin.go`) |
 | Window size and place remembered | Same, under the Swift window's autosave name, so they carry over from it |
-| Popup windows for Studio pages | Opened in the default browser |
+| Popup windows for Studio pages | Same: a window of its own for the Studio's pages, the browser for other sites (`macwindow_darwin.go`) |
 | Install offer when run from the disk image | Left to `launcher.sh` (`--install`) |
 | Purge of the window's own web data on uninstall | Same: the frame is forgotten, and with the data the web data and preferences are cleared |
 

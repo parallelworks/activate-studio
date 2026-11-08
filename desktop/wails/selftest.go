@@ -158,6 +158,14 @@ func (t *SelfTest) advance(phase string) {
 	case "checks":
 		if t.app.cfg.TestPlan == "hold" {
 			t.setPhase("hold")
+			// macOS: the window's own state, once the page has had a moment
+			// to name its bar color.
+			time.Sleep(2 * time.Second)
+			if r := windowReport(); r != nil {
+				t.mu.Lock()
+				t.results["window"] = r
+				t.mu.Unlock()
+			}
 			t.write()
 			// Ready only when the Studio drew.
 			if get(t.results, "checks", "appMounted", "mounted") == true {
