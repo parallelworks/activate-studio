@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
@@ -83,13 +84,11 @@ const (
 // location (cmd/studio-server/sub_gufi_vt_remote.go).
 const VtSubcommand = "gufi-vt-remote"
 
-var vtSecret = func() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}()
+// The subcommand presents the bridge secret (bridge.Secret), both as
+// X-Studio-Secret, which the route checks as gufiVt.ts does, and as the
+// bridge header, which lets it past the front's refusal of
+// /internal/gufi-vt (gufivt_bridge.go) to clients without it.
+func vtSecret() string { return bridge.Secret() }
 
 // vtLocation is a remote location gufi_vt asks through the subcommand:
 // the session, and the index roots it may run gufi_query on.
@@ -634,7 +633,7 @@ func (e *Engine) RunAcross(ctx context.Context, items []VtItem, order *VtOrder) 
 	sqlite := filepath.Join(e.GufiBin, gufi.ToolSQLite3)
 	t1 := time.Now()
 	res, runErr := e.Local.Run(ctx, gufi.Command{Tool: gufi.ToolSQLite3, Args: []string{"-d", "x", ":memory:", script}, Timeout: 300 * time.Second,
-		Env: []string{"STUDIO_GUFI_VT_URL=" + e.vtURL(), "STUDIO_GUFI_VT_SECRET=" + vtSecret}})
+		Env: []string{"STUDIO_GUFI_VT_URL=" + e.vtURL(), "STUDIO_GUFI_VT_SECRET=" + vtSecret()}})
 	// Shown as a person would run it: gufi_vt's own remote form, then what
 	// each host ran.
 	shown, serr := vtScript(locs, order, e.viaShell)
@@ -838,7 +837,7 @@ func AddVtLocationForTests(token, site, key, gufiBin string, indexes []string, l
 }
 
 // VtSecretForTests is the secret the subcommand presents.
-func VtSecretForTests() string { return vtSecret }
+func VtSecretForTests() string { return vtSecret() }
 
 func textReply(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -851,7 +850,7 @@ func textReply(w http.ResponseWriter, status int, body string) {
 // not apply.
 func (e *Engine) ServeGufiVt(w http.ResponseWriter, r *http.Request) {
 	given := []byte(r.Header.Get("X-Studio-Secret"))
-	if subtle.ConstantTimeCompare(given, []byte(vtSecret)) != 1 {
+	if len(given) == 0 || subtle.ConstantTimeCompare(given, []byte(vtSecret())) != 1 {
 		textReply(w, 403, "forbidden")
 		return
 	}
@@ -985,6 +984,7 @@ func VtRemoteMain(args []string, getenv func(string) string, stdout, stderr io.W
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Studio-Secret", secret)
+	req.Header.Set(bridge.Header, secret)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(stderr, "gufi_vt remote: %s\n", err)

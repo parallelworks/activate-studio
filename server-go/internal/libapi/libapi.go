@@ -111,6 +111,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		a.OnIndexWork("libraries: sync", s.builds.startSync)
 		a.OnStop("libraries: stop builds", s.builds.stop)
 	}
+	logLibraryStates(a, s)
 }
 
 // viewer is req.user?.id ?? null as Node's routes read it, through the
