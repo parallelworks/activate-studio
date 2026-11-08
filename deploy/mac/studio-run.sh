@@ -190,10 +190,17 @@ while [ "$stopping" = 0 ]; do
     export PATH="$RES/node/bin:$RES/ocr/bin:${LOGIN_PATH:+$LOGIN_PATH:}${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
     export TESSDATA_PREFIX="${TESSDATA_PREFIX:-$RES/ocr/share/tessdata}"
     # The embedding models ship with the app; the index refers to them.
+    # The Go version carries no GGUF model (its server embeds with ONNX).
     model="$INDEX_BASE/models/minilm384.gguf"
-    if [ -L "$model" ] || [ ! -e "$model" ]; then
+    if [ -f "$RES/models/minilm384.gguf" ] && { [ -L "$model" ] || [ ! -e "$model" ]; }; then
       mkdir -p "$INDEX_BASE/models" && ln -sfn "$RES/models/minilm384.gguf" "$model"
     fi
+    # The ONNX runtime library the Go server's embedder loads, where the app
+    # has one (the Go version; Node's Python carries its own).
+    if [ -f "$RES/onnxruntime/lib/libonnxruntime.dylib" ]; then
+      export STUDIO_ONNXRUNTIME_LIB="${STUDIO_ONNXRUNTIME_LIB:-$RES/onnxruntime/lib/libonnxruntime.dylib}"
+    fi
+    [ -x "$PYTHON_BIN" ] || unset PYTHON_BIN
     onnx="$INDEX_BASE/models/minilm-l6"
     if [ -d "$RES/models/minilm-l6" ] && { [ -L "$onnx" ] || [ ! -e "$onnx" ]; }; then
       ln -sfn "$RES/models/minilm-l6" "$onnx"

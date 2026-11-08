@@ -3,7 +3,8 @@
 # Linux app (deploy/linux/build_app.sh with GUFI_TARBALL set).
 #
 # GUFI is built with its AI dependencies (sqlite-vec, and sqlite-lembed with
-# llama.cpp), together with the two libraries a desktop install may not have,
+# llama.cpp; with GUFI_LEMBED=0 sqlite-vec alone, for the Go version, whose
+# server embeds with ONNX and loads no GGUF model), together with the two libraries a desktop install may not have,
 # PCRE2 (which sqlite3-pcre loads) and GCC's OpenMP runtime (libgomp, which
 # llama.cpp and GUFI link). The binaries' run paths are set so that each
 # loads its libraries from the tree (patchelf), and the tree is checked with
@@ -24,9 +25,13 @@
 #   CACHE_DIR    downloads, kept between builds (default deploy/linux/.cache)
 #   JOBS         parallel build jobs (default: the number of CPUs)
 #   SKIP_DEPS    1 to skip installing the build tools
+#   GUFI_LEMBED  0 for the lean build: sqlite-vec without sqlite-lembed and
+#                llama.cpp (deploy/common/gufi-no-lembed.patch, applied to
+#                GUFI's source, adds the DEP_LEMBED switch it builds with)
 #
 # Outputs in OUT_DIR: gufi-linux-x86_64.tar.gz (gufi/ with bin, lib,
-# licenses, README.txt and manifest.json) and its .sha256.
+# licenses, README.txt and manifest.json) and its .sha256; the lean build is
+# gufi-vec-linux-x86_64.tar.gz.
 # shellcheck disable=SC2034  # settings and pins that the sourced files and the build read
 set -euo pipefail
 
@@ -39,6 +44,8 @@ NAME=build_gufi
 OUT_DIR="${OUT_DIR:-$HERE/out}"
 CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 ASSET=gufi-linux-x86_64
+LEMBED="${GUFI_LEMBED:-1}"
+case "$LEMBED" in 1) ;; 0) ASSET=gufi-vec-linux-x86_64 ;; *) die "GUFI_LEMBED is 1 or 0" ;; esac
 GUFI_REF="${GUFI_REF:-$GUFI_COMMIT}"   # tag 0.8.0
 
 # The ref can come from a workflow's free-text input and goes to git.
@@ -116,10 +123,17 @@ fi
 GUFI_REV="$(git -C "$SRC" rev-parse HEAD)"
 GUFI_DESCRIBE="$(git -C "$SRC" describe --tags --always --dirty)"
 echo "  $GUFI_DESCRIBE ($GUFI_REV)"
+if [ "$LEMBED" = 0 ]; then
+  echo "  without sqlite-lembed and llama.cpp (deploy/common/gufi-no-lembed.patch)"
+  git -C "$SRC" apply --check "$HERE/../common/gufi-no-lembed.patch" || die "gufi-no-lembed.patch does not apply to this GUFI"
+  git -C "$SRC" apply "$HERE/../common/gufi-no-lembed.patch"
+fi
 # llama.cpp (vendored by sqlite-lembed) defaults to -march=native, which
 # bakes in the build host's instructions: the tree has to run on any x86-64
 # CPU the targets run on.
-if grep -q -e '-DGGML_CCACHE=Off' "$SRC/contrib/deps/sqlite-lembed.sh"; then
+if [ "$LEMBED" = 0 ]; then
+  :
+elif grep -q -e '-DGGML_CCACHE=Off' "$SRC/contrib/deps/sqlite-lembed.sh"; then
   sed -i 's/-DGGML_CCACHE=Off/-DGGML_CCACHE=Off -DGGML_NATIVE=Off/' "$SRC/contrib/deps/sqlite-lembed.sh"
   grep -q -e '-DGGML_NATIVE=Off' "$SRC/contrib/deps/sqlite-lembed.sh" || die "could not turn off -march=native for llama.cpp"
 else
@@ -144,7 +158,8 @@ fi
   fi
   run cmake -S "$SRC" -B "$BUILD" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$STAGE" \
-    -DDEP_AI=On -DDEP_BUILD_THREADS="$JOBS" -DBASH_COMPLETION=Off
+    -DDEP_AI=On -DDEP_LEMBED="$([ "$LEMBED" = 1 ] && echo On || echo Off)" \
+    -DDEP_BUILD_THREADS="$JOBS" -DBASH_COMPLETION=Off
   run cmake --build "$BUILD" -j "$JOBS"
   # The Local component is what GUFI's package holds: the tools, and the
   # bundled dependencies' libraries, which a plain install leaves out. It
@@ -162,7 +177,7 @@ fi
   stock "$WORK/pcre2-$PCRE2_VERSION/LICENCE.md" pcre2-LICENSE.md
   stock "$B0/sqlite-vec-main/LICENSE-APACHE" sqlite-vec-LICENSE-APACHE
   stock "$B0/sqlite-vec-main/LICENSE-MIT" sqlite-vec-LICENSE-MIT
-  stock "$B0/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE
+  [ "$LEMBED" = 0 ] || stock "$B0/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE
   stock "$B0/jemalloc-dev/COPYING" jemalloc-COPYING
   # GUFI's install names an OpenMP license; the runtime here is GCC's libgomp.
   cat "$CACHE_DIR/gcc-COPYING3" "$CACHE_DIR/gcc-COPYING.RUNTIME" >"$BUILD/licenses/openmp-LICENSE.TXT"
@@ -232,12 +247,13 @@ B="$BUILD/builds"    # GUFI's DEP_BUILD_PREFIX: its dependencies' sources
 license "$SRC/LICENSE.txt" GUFI-LICENSE.txt
 license "$B/sqlite-vec-main/LICENSE-MIT" sqlite-vec-LICENSE-MIT.txt
 license "$B/sqlite-vec-main/LICENSE-APACHE" sqlite-vec-LICENSE-APACHE.txt
-license "$B/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE.txt
+[ "$LEMBED" = 0 ] || license "$B/sqlite-lembed/vendor/llama.cpp/LICENSE" llama.cpp-LICENSE.txt
 license "$B/jemalloc-dev/COPYING" jemalloc-COPYING.txt
 license "$WORK/pcre2-$PCRE2_VERSION/LICENCE.md" pcre2-LICENCE.md
 # libgomp is GCC's runtime library, under the GPL with the runtime library
 # exception, which lets programs of any license link and ship it.
 gcc_licenses "$TREE/licenses" libgomp
+if [ "$LEMBED" = 1 ]; then
 [ -f "$B/sqlite-lembed/sqlite-dist.toml" ] || die "no sqlite-dist.toml in sqlite-lembed"
 {
   echo "sqlite-lembed (https://github.com/asg017/sqlite-lembed) has no license file."
@@ -248,6 +264,7 @@ gcc_licenses "$TREE/licenses" libgomp
   echo "The MIT and Apache 2.0 texts are those of sqlite-vec, by the same author:"
   echo "sqlite-vec-LICENSE-MIT.txt and sqlite-vec-LICENSE-APACHE.txt here."
 } >"$TREE/licenses/sqlite-lembed-LICENSE.txt"
+fi
 
 # The versions GUFI's bundled dependencies report, or "unknown".
 version_in() { if [ -f "$1" ]; then head -n 1 "$1" | tr -d '[:space:]'; else echo unknown; fi; }
@@ -256,8 +273,14 @@ SQLITE_VERSION="$(pc_version "$BUILD/deps/sqlite3/lib/pkgconfig/sqlite3.pc")"
 LLAMA_VERSION="$(pc_version "$BUILD/deps/llama.cpp/lib/pkgconfig/llama.pc")"
 VEC_VERSION="$(version_in "$B/sqlite-vec-main/VERSION")"
 LEMBED_VERSION="$(version_in "$B/sqlite-lembed/VERSION")"
+[ "$LEMBED" = 1 ] || LEMBED_VERSION=none LLAMA_VERSION=none
 GOMP_VERSION="$(gcc -dumpfullversion)"
 
+if [ "$LEMBED" = 1 ]; then AI_DEPS="sqlite-vec $VEC_VERSION,
+sqlite-lembed $LEMBED_VERSION, llama.cpp $LLAMA_VERSION"
+else AI_DEPS="sqlite-vec $VEC_VERSION
+(built without sqlite-lembed and llama.cpp, deploy/common/gufi-no-lembed.patch)"
+fi
 cat >"$TREE/README.txt" <<README
 GUFI, the Grand Unified File Index (Los Alamos National Laboratory)
 https://github.com/mar-file-system/GUFI
@@ -265,8 +288,7 @@ https://github.com/mar-file-system/GUFI
 Built from source by the ACTIVATE Studio build (deploy/linux/build_gufi.sh)
 for Linux x86_64 on glibc $GLIBC and later: GUFI $GUFI_DESCRIBE
 ($GUFI_REV), with the dependencies GUFI bundles (SQLite $SQLITE_VERSION,
-sqlite3-pcre, sqlite-vec $VEC_VERSION, sqlite-lembed $LEMBED_VERSION,
-llama.cpp $LLAMA_VERSION, and jemalloc, linked into the tools), PCRE2
+sqlite3-pcre, $AI_DEPS, and jemalloc, linked into the tools), PCRE2
 $PCRE2_VERSION (lib/libpcre2-8.so.0) built from its release source, and GCC's
 OpenMP runtime from GCC $GOMP_VERSION (lib/libgomp.so.1).
 
@@ -302,7 +324,9 @@ with open(sys.argv[1], 'w') as fh:
 PY
 
 echo "Checking the tree..."
-for f in bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 lib/gufi_vt.so lib/vec0.so lib/lembed0.so \
+NEED_LEMBED=lib/lembed0.so
+[ "$LEMBED" = 1 ] || NEED_LEMBED=
+for f in bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 lib/gufi_vt.so lib/vec0.so $NEED_LEMBED \
   lib/libgomp.so.1 lib/libpcre2-8.so.0 licenses/GUFI-LICENSE.txt manifest.json; do
   [ -s "$TREE/$f" ] || die "the tree has no $f"
 done
@@ -317,6 +341,11 @@ env -i PATH="$TREE/bin:/usr/bin:/bin" "$TREE/bin/gufi_dir2index" -x "$WORK/t/cor
 env -i PATH="$TREE/bin:/usr/bin:/bin" "$TREE/bin/gufi_query" -d ' ' -E 'SELECT name FROM vrpentries;' "$WORK/t/idx/corpus" | grep -q cake.txt \
   || die "gufi_query does not read an index"
 echo "  gufi_dir2index and gufi_query work"
+env -i PATH="$TREE/bin:/usr/bin:/bin" "$TREE/bin/gufi_query" -d ' ' -E "SELECT vec_length('[1,2,3]');" "$WORK/t/idx/corpus" | grep -q 3 \
+  || die "gufi_query has no sqlite-vec"
+if [ "$LEMBED" = 0 ] && find "$TREE" -name 'libllama*' -o -name 'lembed0*' | grep -q .; then
+  die "the lean tree has llama.cpp or sqlite-lembed in it"
+fi
 
 echo "Packing..."
 rm -f "$OUT_DIR/$ASSET.tar.gz" "$OUT_DIR/$ASSET.tar.gz.sha256"

@@ -40,6 +40,17 @@ done
 G="$APP/gufi"
 O="$APP/ocr"
 PY="$APP/python/bin/python3"
+# Which server the tree runs (build_app.sh, STUDIO_SERVER): from its
+# manifest, node/PLACEHOLDER marking the Go server alone.
+SERVER="${STUDIO_SERVER:-}"
+if [ -z "$SERVER" ]; then
+  SERVER=node
+  grep -q '"server": *"go"' "$APP/manifest.json" 2>/dev/null && SERVER=go
+  [ -e "$APP/node/PLACEHOLDER" ] && SERVER=go-only
+fi
+# The checks' own Python: the payload's, or, in a tree without one, the
+# system's, run isolated.
+[ -x "$PY" ] || PY="$(command -v python3)"
 MAX_GLIBC="${MAX_GLIBC:-2.28}"
 MAX_GLIBCXX="${MAX_GLIBCXX:-3.4.25}"
 MAX_CXXABI="${MAX_CXXABI:-1.3.11}"
@@ -50,19 +61,31 @@ check() { local what="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$what"; else
 
 if [ "$STATIC" = 1 ]; then
   echo "Layout"
-  for f in studio-run.sh studio-recover.sh update-signing.pub manifest.json LICENSE NOTICE share/activate-studio.png \
-    node/bin/node node/lib/libatomic.so.1 node/LICENSE python/bin/python3 \
-    models/minilm384.gguf models/minilm-l6/model.onnx models/minilm-l6/tokenizer.json \
-    app/build-info.json app/package.json app/server/dist/main.js app/server/node_modules/fastify/package.json \
-    app/web/dist/index.html app/indexer/enrich.py app/indexer/embed.py app/indexer/embed_onnx.py \
-    app/indexer/embed_query.py app/indexer/semantic_map.py app/indexer/reindex.sh \
-    app/docs/HELP.md app/CHANGELOG.md app/deploy/gufi-index.yaml \
-    gufi/bin/gufi_query gufi/bin/gufi_dir2index gufi/bin/gufi_sqlite3 gufi/lib/gufi_vt.so gufi/lib/vec0.so \
-    gufi/lib/lembed0.so gufi/lib/libgomp.so.1 gufi/lib/libpcre2-8.so.0 gufi/licenses/GUFI-LICENSE.txt gufi/manifest.json \
-    ocr/bin/tesseract ocr/lib/libleptonica.so.6 ocr/share/tessdata/eng.traineddata ocr/share/tessdata/configs/tsv \
-    ocr/licenses/tesseract-LICENSE.txt ocr/licenses/leptonica-LICENSE.txt ocr/manifest.json; do
+  LAYOUT="studio-run.sh studio-recover.sh update-signing.pub manifest.json LICENSE NOTICE share/activate-studio.png
+    node/bin/node models/minilm-l6/model.onnx models/minilm-l6/tokenizer.json
+    app/build-info.json app/package.json app/server/dist/main.js
+    app/web/dist/index.html app/docs/HELP.md app/CHANGELOG.md app/deploy/gufi-index.yaml
+    gufi/bin/gufi_query gufi/bin/gufi_dir2index gufi/bin/gufi_sqlite3 gufi/lib/gufi_vt.so gufi/lib/vec0.so
+    gufi/lib/libgomp.so.1 gufi/lib/libpcre2-8.so.0 gufi/licenses/GUFI-LICENSE.txt gufi/manifest.json
+    ocr/bin/tesseract ocr/lib/libleptonica.so.6 ocr/share/tessdata/eng.traineddata ocr/share/tessdata/configs/tsv
+    ocr/licenses/tesseract-LICENSE.txt ocr/licenses/leptonica-LICENSE.txt ocr/manifest.json"
+  [ "$SERVER" = go-only ] || LAYOUT="$LAYOUT node/lib/libatomic.so.1 node/LICENSE python/bin/python3 models/minilm384.gguf
+    app/server/node_modules/fastify/package.json app/indexer/enrich.py app/indexer/embed.py app/indexer/embed_onnx.py
+    app/indexer/embed_query.py app/indexer/semantic_map.py app/indexer/reindex.sh gufi/lib/lembed0.so"
+  [ "$SERVER" = node ] || LAYOUT="$LAYOUT app/bin/studio-server app/bin/semantic-map app/bin/studio-extract
+    onnxruntime/lib/libonnxruntime.so.1 onnxruntime/licenses/onnxruntime-LICENSE.txt"
+  [ "$SERVER" != go-only ] || LAYOUT="$LAYOUT node/PLACEHOLDER"
+  for f in $LAYOUT; do
     check "$f" test -s "$APP/$f"
   done
+  if [ "$SERVER" != node ]; then
+    check "the manifest says the Go server runs" grep -q '"server": *"go"' "$APP/manifest.json"
+    check "studio-server is a static program" sh -c "! readelf -d '$APP/app/bin/studio-server' 2>/dev/null | grep -q NEEDED"
+  fi
+  if [ "$SERVER" = go-only ]; then
+    check "node/bin/node is the stand-in, executable, as older updaters check" sh -c "[ -x '$APP/node/bin/node' ] && head -c 2 '$APP/node/bin/node' | grep -q '#!'"
+    check "no Node, Python or node_modules" sh -c "[ ! -d '$APP/python' ] && [ ! -d '$APP/app/server/node_modules' ] && ! head -c 4 '$APP/node/bin/node' | grep -q ELF"
+  fi
   check "update-signing.pub is an Ed25519 public key" "$PY" -I - "$APP/update-signing.pub" <<'PY'
 import base64, sys
 pem = open(sys.argv[1]).read().strip().splitlines()
@@ -72,13 +95,15 @@ assert len(der) == 44 and der[:12] == bytes.fromhex('302a300506032b6570032100')
 PY
   check "the icon is a 1024-pixel PNG" "$PY" -I -c 'import struct, sys; d = open(sys.argv[1], "rb").read(24); sys.exit(0 if d[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack(">II", d[16:24]) == (1024, 1024) else 1)' "$APP/share/activate-studio.png"
   check "no link in the tree leads nowhere" sh -c 'find "$1" -type l | while IFS= read -r l; do [ -e "$l" ] || exit 1; done' sh "$APP"
-  check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$APP/models/minilm384.gguf") ))" -gt 10000000
-  check "the ONNX model is the pinned file" "$PY" -I -c 'import hashlib, json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest() == d["model"]["files"]["model.onnx"]["sha256"] else 1)' "$APP/app/indexer/embed_deps.json" "$APP/models/minilm-l6/model.onnx"
-  check "onnxruntime, tokenizers and numpy are in the payload's Python" sh -c "ls -d '$APP'/python/lib/python3.*/site-packages/onnxruntime/__init__.py '$APP'/python/lib/python3.*/site-packages/tokenizers/__init__.py '$APP'/python/lib/python3.*/site-packages/numpy/__init__.py"
-  check "pypdf is in the payload's Python, for PDFs downmark cannot read" sh -c "ls -d '$APP'/python/lib/python3.*/site-packages/pypdf/__init__.py"
-  check "the document converter's Linux x64 binary is there" \
-    sh -c "find '$APP/app/server/node_modules' -path '*downmark-linux-x64/bin/downmark' -type f | grep -q ."
-  check "and no other platform's" sh -c "! find '$APP/app/server/node_modules' \\( -name 'downmark-darwin-*' -o -name 'downmark-win32-*' -o -name 'downmark-linux-arm64' \\) | grep -q ."
+  check "the ONNX model is the pinned file" "$PY" -I -c 'import hashlib, json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest() == d["model"]["files"]["model.onnx"]["sha256"] else 1)' "$ROOT/indexer/embed_deps.json" "$APP/models/minilm-l6/model.onnx"
+  if [ "$SERVER" != go-only ]; then
+    check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$APP/models/minilm384.gguf") ))" -gt 10000000
+    check "onnxruntime, tokenizers and numpy are in the payload's Python" sh -c "ls -d '$APP'/python/lib/python3.*/site-packages/onnxruntime/__init__.py '$APP'/python/lib/python3.*/site-packages/tokenizers/__init__.py '$APP'/python/lib/python3.*/site-packages/numpy/__init__.py"
+    check "pypdf is in the payload's Python, for PDFs downmark cannot read" sh -c "ls -d '$APP'/python/lib/python3.*/site-packages/pypdf/__init__.py"
+    check "the document converter's Linux x64 binary is there" \
+      sh -c "find '$APP/app/server/node_modules' -path '*downmark-linux-x64/bin/downmark' -type f | grep -q ."
+    check "and no other platform's" sh -c "! find '$APP/app/server/node_modules' \\( -name 'downmark-darwin-*' -o -name 'downmark-win32-*' -o -name 'downmark-linux-arm64' \\) | grep -q ."
+  fi
 
   echo "Scripts"
   for s in "$APP/studio-run.sh" "$APP/studio-recover.sh" "$HERE/build_app.sh" "$HERE/build_gufi.sh" "$HERE/build_ocr.sh" "$HERE/check_app.sh"; do
@@ -133,7 +158,7 @@ PY
 
   echo "Size"
   echo "  $(du -sh "$APP" | cut -f1)  total"
-  for d in node python gufi ocr app/server/node_modules app/web models; do
+  for d in node python gufi ocr onnxruntime app/bin app/server/node_modules app/web models; do
     [ -e "$APP/$d" ] || continue
     echo "  $(du -sh "$APP/$d" | cut -f1)  $d"
   done
@@ -161,7 +186,8 @@ if [ "$RUN" = 1 ]; then
   cp "$ROOT"/testdata/corpus/docs/handbook.docx "$ROOT"/testdata/corpus/docs/report.pdf "$T/corpus/docs/"
   cp "$HERE"/../mac/testdata/ocr-sample.png "$HERE"/../mac/testdata/ocr-sample.pdf "$T/corpus/scans/"
   OCR_ENV=(PATH="$O/bin:/usr/bin:/bin" TESSDATA_PREFIX="$O/share/tessdata")
-  DOWNMARK="$(find "$APP/app/server/node_modules" -path '*downmark-linux-x64/bin/downmark' -type f | head -n 1)"
+  DOWNMARK=
+  [ "$SERVER" = go-only ] || DOWNMARK="$(find "$APP/app/server/node_modules" -path '*downmark-linux-x64/bin/downmark' -type f | head -n 1)"
 
   echo "System"
   echo "  $(. /etc/os-release && echo "$PRETTY_NAME"), glibc $(ldd --version 2>&1 | awk 'NR == 1 {print $NF}'), $(id -un) (uid $(id -u))"
@@ -176,23 +202,38 @@ if [ "$RUN" = 1 ]; then
   if [ -z "$unresolved" ]; then ok "the loader finds every library every file in the tree needs"; else bad "libraries the system lacks:"; printf '%s\n' "$unresolved" | sort -u | sed 's/^/        /'; fi
 
   echo "Running"
-  check "node runs" clean "$APP/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
-  check "python runs, with sqlite3 and pypdf" clean "$PY" -c 'import sqlite3, json, zipfile, urllib.request, pypdf'
-  check "the .xls and .ppt readers (xlrd, olefile) import in the payload's Python" clean "$PY" -B -c 'import xlrd, olefile'
-  check "and with onnxruntime, tokenizers and numpy" clean "$PY" -c 'import onnxruntime, tokenizers, numpy'
+  if [ "$SERVER" != go-only ]; then
+    check "node runs" clean "$APP/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
+    check "python runs, with sqlite3 and pypdf" clean "$PY" -c 'import sqlite3, json, zipfile, urllib.request, pypdf'
+    check "the .xls and .ppt readers (xlrd, olefile) import in the payload's Python" clean "$PY" -B -c 'import xlrd, olefile'
+    check "and with onnxruntime, tokenizers and numpy" clean "$PY" -c 'import onnxruntime, tokenizers, numpy'
+  fi
+  if [ "$SERVER" != node ]; then
+    check "studio-server runs" clean "$APP/app/bin/studio-server" routes
+  fi
   # Through /bin/sh, as gufi_vt and scripts start the tools.
   check "gufi_dir2index indexes a folder" clean /bin/sh -c "'$G/bin/gufi_dir2index' -x '$T/corpus' '$T/idx'"
   check "gufi_query reads the index" clean /bin/sh -c "'$G/bin/gufi_query' -d ' ' -E 'SELECT name FROM vrpentries;' '$T/idx/corpus' | grep -q cake.txt"
-  check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$APP/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
-  # The Studio's pattern: load the model, embed the question with lembed,
-  # store document vectors in a vec0 table, and take the nearest.
-  cat >"$T/search.sql" <<SQL
+  if [ "$SERVER" = go-only ]; then
+    # No sqlite-lembed in the Go version: the vectors come from the Go
+    # server's ONNX embedder, and GUFI stores and searches them (sqlite-vec).
+    cat >"$T/search.sql" <<SQL
+CREATE VIRTUAL TABLE v USING vec0(id INTEGER PRIMARY KEY, fp3 float[3]);
+INSERT INTO v(id, fp3) VALUES (1, '[0.9, 0.1, 0.0]'), (2, '[0.0, 0.2, 0.98]');
+SELECT id FROM v WHERE fp3 MATCH '[1, 0, 0]' ORDER BY distance LIMIT 2;
+SQL
+  else
+    check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$APP/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
+    # The Studio's pattern: load the model, embed the question with lembed,
+    # store document vectors in a vec0 table, and take the nearest.
+    cat >"$T/search.sql" <<SQL
 INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$APP/models/minilm384.gguf');
 CREATE VIRTUAL TABLE v USING vec0(id INTEGER PRIMARY KEY, fp384 float[384]);
 INSERT INTO v(id, fp384) VALUES (1, lembed('m', 'a tree of per-directory databases holding file metadata')), (2, lembed('m', 'a recipe for lemon cake'));
 CREATE TABLE q AS SELECT lembed('m', 'how is the file index laid out') AS e;
 SELECT id FROM v WHERE fp384 MATCH (SELECT e FROM q) ORDER BY distance LIMIT 2;
 SQL
+  fi
   # shellcheck disable=SC2016  # $0 is expanded by that shell
   check "sqlite-vec puts the related text first" clean /bin/sh -c "'$G/bin/gufi_sqlite3' <\"\$0\" | head -n 1 | grep -x 1" "$T/search.sql"
   cat >"$T/vt.sql" <<SQL
@@ -218,17 +259,19 @@ SQL
     check "tesseract reads the text in $(basename "$img")" \
       clean env "${OCR_ENV[@]}" /bin/sh -c 'tesseract "$1" stdout 2>/dev/null | grep -qi heliotrope' sh "$img"
   done
-  check "downmark's binary reads a PDF" clean /bin/sh -c '"$1" "$2" | grep -q BOUNDARY-LAYER-4417' sh "$DOWNMARK" "$T/corpus/docs/report.pdf"
-  check "and an Office document" clean /bin/sh -c '"$1" "$2" | grep -q VELOCITY-INLET-7734' sh "$DOWNMARK" "$T/corpus/docs/handbook.docx"
-  check "and a scanned PDF through the payload's tesseract" clean env "${OCR_ENV[@]}" /bin/sh -c \
-    '"$1" -ocr tesseract -ocr-policy thin "$2" | grep -qi heliotrope' sh "$DOWNMARK" "$HERE/../mac/testdata/ocr-sample.pdf"
-  check "the bundled pypdf reads the PDF too" clean "$PY" -c "import sys; from pypdf import PdfReader; sys.exit(0 if 'BOUNDARY-LAYER-4417' in ''.join(p.extract_text() or '' for p in PdfReader('$T/corpus/docs/report.pdf').pages) else 1)"
-  check "the indexer extracts text" clean env "${OCR_ENV[@]}" "$PY" "$APP/app/indexer/enrich.py" \
-    --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
-  check "and reads the text in a picture with the payload's tesseract" grep -qi heliotrope "$T/extract/scans/ocr-sample.png.txt"
-  check "the indexer embeds with the ONNX model" clean /bin/sh -c "'$PY' '$APP/app/indexer/embed.py' --index '$T/idx/corpus' --model '$APP/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-onnx.out' && grep -q 'model: minilm-l6-mean-int8 (onnx)' '$T/embed-onnx.out' && grep -q '0 errors' '$T/embed-onnx.out'"
-  check "the semantic map is made from those vectors with the payload's numpy" clean /bin/sh -c "'$PY' '$APP/app/indexer/semantic_map.py' --index '$T/idx/corpus' --out '$T/semantic-map' >'$T/map.out' && '$PY' -c 'import json, sys; d = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1]); sys.exit(0 if \"available\" in d else 1)' '$T/map.out'"
-  check "the older model still embeds through gufi_sqlite3" clean /bin/sh -c "'$PY' '$APP/app/indexer/embed.py' --index '$T/idx/corpus' --backend lembed --model '$APP/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-lembed.out' && grep -q 'model: minilm384 (lembed)' '$T/embed-lembed.out' && grep -q '0 errors' '$T/embed-lembed.out'"
+  if [ "$SERVER" != go-only ]; then
+    check "downmark's binary reads a PDF" clean /bin/sh -c '"$1" "$2" | grep -q BOUNDARY-LAYER-4417' sh "$DOWNMARK" "$T/corpus/docs/report.pdf"
+    check "and an Office document" clean /bin/sh -c '"$1" "$2" | grep -q VELOCITY-INLET-7734' sh "$DOWNMARK" "$T/corpus/docs/handbook.docx"
+    check "and a scanned PDF through the payload's tesseract" clean env "${OCR_ENV[@]}" /bin/sh -c \
+      '"$1" -ocr tesseract -ocr-policy thin "$2" | grep -qi heliotrope' sh "$DOWNMARK" "$HERE/../mac/testdata/ocr-sample.pdf"
+    check "the bundled pypdf reads the PDF too" clean "$PY" -c "import sys; from pypdf import PdfReader; sys.exit(0 if 'BOUNDARY-LAYER-4417' in ''.join(p.extract_text() or '' for p in PdfReader('$T/corpus/docs/report.pdf').pages) else 1)"
+    check "the indexer extracts text" clean env "${OCR_ENV[@]}" "$PY" "$APP/app/indexer/enrich.py" \
+      --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
+    check "and reads the text in a picture with the payload's tesseract" grep -qi heliotrope "$T/extract/scans/ocr-sample.png.txt"
+    check "the indexer embeds with the ONNX model" clean /bin/sh -c "'$PY' '$APP/app/indexer/embed.py' --index '$T/idx/corpus' --model '$APP/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-onnx.out' && grep -q 'model: minilm-l6-mean-int8 (onnx)' '$T/embed-onnx.out' && grep -q '0 errors' '$T/embed-onnx.out'"
+    check "the semantic map is made from those vectors with the payload's numpy" clean /bin/sh -c "'$PY' '$APP/app/indexer/semantic_map.py' --index '$T/idx/corpus' --out '$T/semantic-map' >'$T/map.out' && '$PY' -c 'import json, sys; d = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1]); sys.exit(0 if \"available\" in d else 1)' '$T/map.out'"
+    check "the older model still embeds through gufi_sqlite3" clean /bin/sh -c "'$PY' '$APP/app/indexer/embed.py' --index '$T/idx/corpus' --backend lembed --model '$APP/models/minilm384.gguf' --gufi-sqlite3 '$G/bin/gufi_sqlite3' >'$T/embed-lembed.out' && grep -q 'model: minilm384 (lembed)' '$T/embed-lembed.out' && grep -q '0 errors' '$T/embed-lembed.out'"
+  fi
 
   # A stand-in for the release server the update check asks (GitHub's API):
   # one release, newer than any this build can be, with no Linux asset.
@@ -273,7 +316,7 @@ PY
   done
   if [ "$up" = 1 ]; then ok "the server answers on 127.0.0.1:$PORT"; else bad "the server did not start:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
   check "it reports this build" grep -q "$(sed -n 's/.*"builtAt": *"\([^"]*\)".*/\1/p' "$APP/app/build-info.json")" "$T/version.json"
-  check "the model is linked into its index" test -e "$T/data/index/models/minilm384.gguf"
+  [ "$SERVER" = go-only ] || check "the model is linked into its index" test -e "$T/data/index/models/minilm384.gguf"
   check "and the ONNX model too" test -e "$T/data/index/models/minilm-l6/model.onnx"
   check "the server starts a full index" api -m 10 POST "http://127.0.0.1:$PORT/api/reindex" '{}'
   poll() {   # poll SECONDS URL PYTHON-EXPRESSION-ON-d: until the answer satisfies it
