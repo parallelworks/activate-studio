@@ -7,10 +7,12 @@ import (
 	"syscall"
 )
 
-// killGroup runs the command in a process group of its own and stops the
-// whole group on cancellation, so a wrapper script's children, or the
-// processes soffice starts, stop with it.
-func killGroup(cmd *exec.Cmd) {
+// tree is a helper's process group.
+type tree struct{}
+
+// prepare runs the command in a process group of its own and stops the
+// whole group on cancellation.
+func (tree) prepare(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	parentDeath(cmd.SysProcAttr)
 	cmd.Cancel = func() error {
@@ -20,3 +22,6 @@ func killGroup(cmd *exec.Cmd) {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 }
+
+func (tree) attach(*exec.Cmd) error { return nil }
+func (tree) release()               {}
