@@ -83,6 +83,18 @@ func (f *Files) abs(rel string) (string, error) { return Resolve(rel, f.Roots.KB
 
 func statOK(p string) bool { _, err := os.Stat(p); return err == nil }
 
+// caseOnly reports a target that is the source itself under another case:
+// on a filesystem that ignores case (drvfs under WSL, a macOS volume) the
+// name the person typed finds the file they are renaming.
+func caseOnly(fromRel, toRel, fromAbs, toAbs string) bool {
+	if fromRel == toRel || !strings.EqualFold(fromRel, toRel) {
+		return false
+	}
+	a, err1 := os.Stat(fromAbs)
+	b, err2 := os.Stat(toAbs)
+	return err1 == nil && err2 == nil && os.SameFile(a, b)
+}
+
 // moveCaches carries a file's path-keyed caches to its new path: the
 // extracted text, the PDF rendering, the page images, the model cache. A
 // cache that is not there, or across devices, is rebuilt later.
@@ -178,6 +190,9 @@ func (f *Files) moveOne(cleaned, dest string, out *Outcome) error {
 	if err != nil {
 		return err
 	}
+	if caseOnly(cleaned, target, abs, targetAbs) {
+		return Error(400, "already there")
+	}
 	if statOK(targetAbs) {
 		return Error(409, "name already exists there")
 	}
@@ -234,7 +249,7 @@ func (f *Files) Rename(rel, nameRaw string) (*Outcome, error) {
 	if err != nil {
 		return nil, err
 	}
-	if statOK(targetAbs) {
+	if statOK(targetAbs) && !caseOnly(cleaned, target, abs, targetAbs) {
 		return nil, Error(409, "name already exists here")
 	}
 	if err := os.Rename(abs, targetAbs); err != nil {
