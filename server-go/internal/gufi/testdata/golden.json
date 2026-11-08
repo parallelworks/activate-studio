@@ -1,0 +1,1379 @@
+{
+ "queries": [
+  {
+   "q": "budget report",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "budget",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "report",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": false,
+    "exact": false
+   },
+   "fts": "(\"budget\" AND \"report\")",
+   "bare": "(budget AND report)",
+   "semantic": true,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE (name LIKE '%budget%' AND name LIKE '%report%') ORDER BY CASE WHEN name LIKE 'budget report' OR name LIKE 'budget report.%' THEN 0 WHEN name LIKE 'budget%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'budget report' OR name LIKE 'budget report.%' THEN 0 WHEN name LIKE 'budget%' THEN 1 ELSE 2 END",
+   "where": "(name LIKE '%budget%' AND name LIKE '%report%')"
+  },
+  {
+   "q": "\"exact phrase\" draft",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "exact phrase",
+        "phrase": true,
+        "prefix": false
+       },
+       {
+        "text": "draft",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": true,
+    "exact": false
+   },
+   "fts": "(\"exact phrase\" AND \"draft\")",
+   "bare": null,
+   "semantic": false,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE (name LIKE '%exact phrase%' AND name LIKE '%draft%') ORDER BY CASE WHEN name LIKE 'exact phrase draft' OR name LIKE 'exact phrase draft.%' THEN 0 WHEN name LIKE 'exact phrase%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'exact phrase draft' OR name LIKE 'exact phrase draft.%' THEN 0 WHEN name LIKE 'exact phrase%' THEN 1 ELSE 2 END",
+   "where": "(name LIKE '%exact phrase%' AND name LIKE '%draft%')"
+  },
+  {
+   "q": "plan* -old",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "plan",
+        "phrase": false,
+        "prefix": true
+       }
+      ],
+      "negatives": [
+       {
+        "text": "old",
+        "phrase": false,
+        "prefix": false
+       }
+      ]
+     }
+    ],
+    "hasOperators": true,
+    "exact": false
+   },
+   "fts": "(\"plan\"* NOT \"old\")",
+   "bare": "(plan* NOT old)",
+   "semantic": false,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE name LIKE '%plan%' ORDER BY CASE WHEN name LIKE 'plan' OR name LIKE 'plan.%' THEN 0 WHEN name LIKE 'plan%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'plan' OR name LIKE 'plan.%' THEN 0 WHEN name LIKE 'plan%' THEN 1 ELSE 2 END",
+   "where": "name LIKE '%plan%'"
+  },
+  {
+   "q": "alpha OR beta NOT gamma",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "alpha",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     },
+     {
+      "items": [
+       {
+        "text": "beta",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": [
+       {
+        "text": "gamma",
+        "phrase": false,
+        "prefix": false
+       }
+      ]
+     }
+    ],
+    "hasOperators": true,
+    "exact": false
+   },
+   "fts": "\"alpha\" OR (\"beta\" NOT \"gamma\")",
+   "bare": "alpha OR (beta NOT gamma)",
+   "semantic": false,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE name LIKE '%alpha%' OR name LIKE '%beta%' ORDER BY CASE WHEN name LIKE 'alpha' OR name LIKE 'alpha.%' THEN 0 WHEN name LIKE 'alpha%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'alpha' OR name LIKE 'alpha.%' THEN 0 WHEN name LIKE 'alpha%' THEN 1 ELSE 2 END",
+   "where": "name LIKE '%alpha%' OR name LIKE '%beta%'"
+  },
+  {
+   "q": "the of and",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "the",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "of",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "and",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": false,
+    "exact": false
+   },
+   "fts": "(\"the\" AND \"of\" AND \"and\")",
+   "bare": "(the AND of AND and)",
+   "semantic": true,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE ((name LIKE 'the%' OR name LIKE '% the%' OR name LIKE '%-the%' OR name LIKE '%_the%' OR name LIKE '%.the%' OR name LIKE '%(the%' OR name LIKE '%[the%' OR name LIKE '%,the%') AND (name LIKE 'of%' OR name LIKE '% of%' OR name LIKE '%-of%' OR name LIKE '%_of%' OR name LIKE '%.of%' OR name LIKE '%(of%' OR name LIKE '%[of%' OR name LIKE '%,of%') AND (name LIKE 'and%' OR name LIKE '% and%' OR name LIKE '%-and%' OR name LIKE '%_and%' OR name LIKE '%.and%' OR name LIKE '%(and%' OR name LIKE '%[and%' OR name LIKE '%,and%')) ORDER BY CASE WHEN name LIKE 'the of and' OR name LIKE 'the of and.%' THEN 0 WHEN name LIKE 'the%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'the of and' OR name LIKE 'the of and.%' THEN 0 WHEN name LIKE 'the%' THEN 1 ELSE 2 END",
+   "where": "((name LIKE 'the%' OR name LIKE '% the%' OR name LIKE '%-the%' OR name LIKE '%_the%' OR name LIKE '%.the%' OR name LIKE '%(the%' OR name LIKE '%[the%' OR name LIKE '%,the%') AND (name LIKE 'of%' OR name LIKE '% of%' OR name LIKE '%-of%' OR name LIKE '%_of%' OR name LIKE '%.of%' OR name LIKE '%(of%' OR name LIKE '%[of%' OR name LIKE '%,of%') AND (name LIKE 'and%' OR name LIKE '% and%' OR name LIKE '%-and%' OR name LIKE '%_and%' OR name LIKE '%.and%' OR name LIKE '%(and%' OR name LIKE '%[and%' OR name LIKE '%,and%'))"
+  },
+  {
+   "q": "  Ünïcode   naïve café  ",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "Ünïcode",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "naïve",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "café",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": false,
+    "exact": false
+   },
+   "fts": "(\"Ünïcode\" AND \"naïve\" AND \"café\")",
+   "bare": "(Ünïcode AND naïve AND café)",
+   "semantic": true,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE (name LIKE '%Ünïcode%' AND name LIKE '%naïve%' AND name LIKE '%café%') ORDER BY CASE WHEN name LIKE 'Ünïcode naïve café' OR name LIKE 'Ünïcode naïve café.%' THEN 0 WHEN name LIKE 'Ünïcode%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'Ünïcode naïve café' OR name LIKE 'Ünïcode naïve café.%' THEN 0 WHEN name LIKE 'Ünïcode%' THEN 1 ELSE 2 END",
+   "where": "(name LIKE '%Ünïcode%' AND name LIKE '%naïve%' AND name LIKE '%café%')"
+  },
+  {
+   "q": "it's a 'quoted' *star*",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "its",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "quoted",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "star",
+        "phrase": false,
+        "prefix": true
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": true,
+    "exact": false
+   },
+   "fts": "(\"its\" AND \"quoted\" AND \"star\"*)",
+   "bare": "(its AND quoted AND star*)",
+   "semantic": false,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE ((name LIKE 'its%' OR name LIKE '% its%' OR name LIKE '%-its%' OR name LIKE '%_its%' OR name LIKE '%.its%' OR name LIKE '%(its%' OR name LIKE '%[its%' OR name LIKE '%,its%') AND name LIKE '%quoted%' AND name LIKE '%star%') ORDER BY CASE WHEN name LIKE 'its quoted star' OR name LIKE 'its quoted star.%' THEN 0 WHEN name LIKE 'its%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'its quoted star' OR name LIKE 'its quoted star.%' THEN 0 WHEN name LIKE 'its%' THEN 1 ELSE 2 END",
+   "where": "((name LIKE 'its%' OR name LIKE '% its%' OR name LIKE '%-its%' OR name LIKE '%_its%' OR name LIKE '%.its%' OR name LIKE '%(its%' OR name LIKE '%[its%' OR name LIKE '%,its%') AND name LIKE '%quoted%' AND name LIKE '%star%')"
+  },
+  {
+   "q": "FY26 GPU-H100 cluster",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "FY26",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "GPU-H100",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "cluster",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": false,
+    "exact": false
+   },
+   "fts": "(\"FY26\" AND \"GPU-H100\" AND \"cluster\")",
+   "bare": null,
+   "semantic": true,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE (name LIKE '%FY26%' AND name LIKE '%GPU-H100%' AND name LIKE '%cluster%') ORDER BY CASE WHEN name LIKE 'FY26 GPU-H100 cluster' OR name LIKE 'FY26 GPU-H100 cluster.%' THEN 0 WHEN name LIKE 'FY26%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'FY26 GPU-H100 cluster' OR name LIKE 'FY26 GPU-H100 cluster.%' THEN 0 WHEN name LIKE 'FY26%' THEN 1 ELSE 2 END",
+   "where": "(name LIKE '%FY26%' AND name LIKE '%GPU-H100%' AND name LIKE '%cluster%')"
+  },
+  {
+   "q": "how do we onboard new users",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "onboard",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "new",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "users",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": false,
+    "exact": false
+   },
+   "fts": "(\"onboard\" AND \"new\" AND \"users\")",
+   "bare": "(onboard AND new AND users)",
+   "semantic": true,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE (name LIKE '%onboard%' AND (name LIKE 'new%' OR name LIKE '% new%' OR name LIKE '%-new%' OR name LIKE '%_new%' OR name LIKE '%.new%' OR name LIKE '%(new%' OR name LIKE '%[new%' OR name LIKE '%,new%') AND name LIKE '%users%') ORDER BY CASE WHEN name LIKE 'onboard new users' OR name LIKE 'onboard new users.%' THEN 0 WHEN name LIKE 'onboard%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'onboard new users' OR name LIKE 'onboard new users.%' THEN 0 WHEN name LIKE 'onboard%' THEN 1 ELSE 2 END",
+   "where": "(name LIKE '%onboard%' AND (name LIKE 'new%' OR name LIKE '% new%' OR name LIKE '%-new%' OR name LIKE '%_new%' OR name LIKE '%.new%' OR name LIKE '%(new%' OR name LIKE '%[new%' OR name LIKE '%,new%') AND name LIKE '%users%')"
+  },
+  {
+   "q": "report_2026%final",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "report_2026%final",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": false,
+    "exact": false
+   },
+   "fts": "\"report_2026%final\"",
+   "bare": null,
+   "semantic": false,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE name LIKE '%report\\_2026final%' ESCAPE '\\' ORDER BY CASE WHEN name LIKE 'report2026final' OR name LIKE 'report2026final.%' THEN 0 WHEN name LIKE 'report2026final%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'report2026final' OR name LIKE 'report2026final.%' THEN 0 WHEN name LIKE 'report2026final%' THEN 1 ELSE 2 END",
+   "where": "name LIKE '%report\\_2026final%' ESCAPE '\\'"
+  },
+  {
+   "q": "NEAR AND",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "NEAR",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": true,
+    "exact": false
+   },
+   "fts": "\"NEAR\"",
+   "bare": "near",
+   "semantic": false,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE name LIKE '%NEAR%' ORDER BY CASE WHEN name LIKE 'NEAR' OR name LIKE 'NEAR.%' THEN 0 WHEN name LIKE 'NEAR%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'NEAR' OR name LIKE 'NEAR.%' THEN 0 WHEN name LIKE 'NEAR%' THEN 1 ELSE 2 END",
+   "where": "name LIKE '%NEAR%'"
+  },
+  {
+   "q": "",
+   "parsed": {
+    "groups": [],
+    "hasOperators": false,
+    "exact": false
+   },
+   "fts": "",
+   "bare": null,
+   "semantic": false,
+   "names": null,
+   "rank": "2",
+   "where": "0"
+  },
+  {
+   "q": "-only -negatives",
+   "parsed": {
+    "groups": [
+     {
+      "items": [],
+      "negatives": [
+       {
+        "text": "only",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "negatives",
+        "phrase": false,
+        "prefix": false
+       }
+      ]
+     }
+    ],
+    "hasOperators": true,
+    "exact": false
+   },
+   "fts": "",
+   "bare": null,
+   "semantic": false,
+   "names": null,
+   "rank": "2",
+   "where": "0"
+  },
+  {
+   "q": "a b　c",
+   "parsed": {
+    "groups": [
+     {
+      "items": [
+       {
+        "text": "b",
+        "phrase": false,
+        "prefix": false
+       },
+       {
+        "text": "c",
+        "phrase": false,
+        "prefix": false
+       }
+      ],
+      "negatives": []
+     }
+    ],
+    "hasOperators": false,
+    "exact": false
+   },
+   "fts": "(\"b\" AND \"c\")",
+   "bare": "(b AND c)",
+   "semantic": true,
+   "names": "SELECT rpath(sname, sroll)||'/'||name, name, size, mtime FROM vrpentries WHERE ((name LIKE 'b%' OR name LIKE '% b%' OR name LIKE '%-b%' OR name LIKE '%_b%' OR name LIKE '%.b%' OR name LIKE '%(b%' OR name LIKE '%[b%' OR name LIKE '%,b%') AND (name LIKE 'c%' OR name LIKE '% c%' OR name LIKE '%-c%' OR name LIKE '%_c%' OR name LIKE '%.c%' OR name LIKE '%(c%' OR name LIKE '%[c%' OR name LIKE '%,c%')) ORDER BY CASE WHEN name LIKE 'b c' OR name LIKE 'b c.%' THEN 0 WHEN name LIKE 'b%' THEN 1 ELSE 2 END, name LIMIT 20;",
+   "rank": "CASE WHEN name LIKE 'b c' OR name LIKE 'b c.%' THEN 0 WHEN name LIKE 'b%' THEN 1 ELSE 2 END",
+   "where": "((name LIKE 'b%' OR name LIKE '% b%' OR name LIKE '%-b%' OR name LIKE '%_b%' OR name LIKE '%.b%' OR name LIKE '%(b%' OR name LIKE '%[b%' OR name LIKE '%,b%') AND (name LIKE 'c%' OR name LIKE '% c%' OR name LIKE '%-c%' OR name LIKE '%_c%' OR name LIKE '%.c%' OR name LIKE '%(c%' OR name LIKE '%[c%' OR name LIKE '%,c%'))"
+  }
+ ],
+ "nameFilters": [
+  {
+   "f": "*.docx",
+   "groups": [
+    [
+     {
+      "kind": "glob",
+      "text": "*.docx",
+      "neg": false
+     }
+    ]
+   ]
+  },
+  {
+   "f": "report-??.pdf OR notes",
+   "groups": [
+    [
+     {
+      "kind": "glob",
+      "text": "report-??.pdf",
+      "neg": false
+     }
+    ],
+    [
+     {
+      "kind": "word",
+      "text": "notes",
+      "neg": false
+     }
+    ]
+   ]
+  },
+  {
+   "f": "reports/*.pdf -draft",
+   "groups": [
+    [
+     {
+      "kind": "glob",
+      "text": "reports/*.pdf",
+      "neg": false
+     },
+     {
+      "kind": "word",
+      "text": "draft",
+      "neg": true
+     }
+    ]
+   ]
+  },
+  {
+   "f": "\"two words\" NOT tmp",
+   "groups": [
+    [
+     {
+      "kind": "word",
+      "text": "two words",
+      "neg": false
+     },
+     {
+      "kind": "word",
+      "text": "tmp",
+      "neg": true
+     }
+    ]
+   ]
+  },
+  {
+   "f": "100%_done",
+   "groups": [
+    [
+     {
+      "kind": "word",
+      "text": "100%_done",
+      "neg": false
+     }
+    ]
+   ]
+  },
+  {
+   "f": "",
+   "groups": []
+  }
+ ],
+ "stages": [
+  [
+   "-I",
+   "CREATE TABLE t (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-K",
+   "CREATE TABLE agg (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "--external-copy",
+   "\\.db$",
+   "INSERT INTO t SELECT 'f', bm25(ext_bm25_by_file), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, replace(replace(snippet(ext_bm25_by_file, -1, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') FROM extdb.ext_bm25_by_file JOIN vrpentries e ON CAST(binode AS INT64) = e.inode AND CAST(bmtime AS INT64) = e.mtime WHERE ext_bm25_by_file MATCH '(\"budget\" AND \"report\")' ORDER BY 2, 3 LIMIT 20;",
+   "-E",
+   "DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 10 WHEN 'f' THEN 60 ELSE 0 END); INSERT INTO t SELECT * FROM (SELECT 'n', CASE WHEN name LIKE 'budget report' OR name LIKE 'budget report.%' THEN 0 WHEN name LIKE 'budget%' THEN 1 ELSE 2 END, rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE (name LIKE '%budget%' AND name LIKE '%report%') ORDER BY 2, 3 LIMIT 10) UNION ALL SELECT * FROM (SELECT 'p', length(substr(rpath(sname, sroll), 15)), rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE ((substr(rpath(sname, sroll), 15) LIKE '%budget%' AND substr(rpath(sname, sroll), 15) LIKE '%report%')) AND NOT ((name LIKE '%budget%' AND name LIKE '%report%')) ORDER BY 2, 3 LIMIT 10); INSERT INTO t SELECT 'f', bm25(words), rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) WHERE wordf MATCH '(\"budget\" AND \"report\")' ORDER BY 2, 3 LIMIT 20;",
+   "-J",
+   "INSERT INTO agg SELECT * FROM t;",
+   "-G",
+   "WITH best AS (SELECT k, min(r) AS r, p, n, s, m, x FROM agg GROUP BY k, p), ranked AS (SELECT *, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM best), kept AS (SELECT * FROM ranked WHERE rn <= CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 10 WHEN 'f' THEN 60 ELSE 0 END), fused AS (SELECT p AS fp, sum(1.0 / (60.0 + rn)) AS score FROM kept GROUP BY p) SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;"
+  ],
+  [
+   "-I",
+   "CREATE TABLE t (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-K",
+   "CREATE TABLE agg (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-E",
+   "DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 0 WHEN 'f' THEN 0 ELSE 0 END); INSERT INTO t SELECT * FROM (SELECT 'n', CASE WHEN name LIKE 'budget' OR name LIKE 'budget.%' THEN 0 WHEN name LIKE 'budget%' THEN 1 ELSE 2 END, rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE name LIKE '%budget%' ORDER BY 2, 3 LIMIT 10);",
+   "-J",
+   "INSERT INTO agg SELECT * FROM t;",
+   "-G",
+   "WITH best AS (SELECT k, min(r) AS r, p, n, s, m, x FROM agg GROUP BY k, p), ranked AS (SELECT *, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM best), kept AS (SELECT * FROM ranked WHERE rn <= CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 0 WHEN 'f' THEN 0 ELSE 0 END), fused AS (SELECT p AS fp, sum(1.0 / (60.0 + rn)) AS score FROM kept GROUP BY p) SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;"
+  ],
+  [
+   "-I",
+   "CREATE TABLE t (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-K",
+   "CREATE TABLE agg (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-E",
+   "DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > CASE k WHEN 'n' THEN 0 WHEN 'p' THEN 0 WHEN 'f' THEN 40 ELSE 0 END); INSERT INTO t SELECT 'f', bm25(words), rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) WHERE wordf MATCH '(\"exact phrase\" NOT \"old\")' ORDER BY 2, 3 LIMIT 10;",
+   "-J",
+   "INSERT INTO agg SELECT * FROM t;",
+   "-G",
+   "WITH best AS (SELECT k, min(r) AS r, p, n, s, m, x FROM agg GROUP BY k, p), ranked AS (SELECT *, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM best), kept AS (SELECT * FROM ranked WHERE rn <= CASE k WHEN 'n' THEN 0 WHEN 'p' THEN 0 WHEN 'f' THEN 40 ELSE 0 END), fused AS (SELECT p AS fp, sum(1.0 / (60.0 + rn)) AS score FROM kept GROUP BY p) SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;"
+  ],
+  [
+   "-I",
+   "CREATE TABLE t (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT); CREATE TABLE qv (pat TEXT, qe BLOB); INSERT INTO qv VALUES ('minilm-l6-mean-int8', X'00ff7f80'), ('%all-MiniLM-L6-v2', X'0102');",
+   "-K",
+   "CREATE TABLE agg (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "--external-copy",
+   "\\.db$",
+   "INSERT INTO t SELECT 'f', bm25(ext_bm25_by_file), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, replace(replace(snippet(ext_bm25_by_file, -1, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') FROM extdb.ext_bm25_by_file JOIN vrpentries e ON CAST(binode AS INT64) = e.inode AND CAST(bmtime AS INT64) = e.mtime WHERE ext_bm25_by_file MATCH '(\"deployment\" AND \"process\")' ORDER BY 2, 3 LIMIT 20; INSERT INTO t SELECT 'v', sqrt(2.0 * vec_distance_cosine(substr(x.embedding, 1, 1536), qv.qe)), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, replace(replace(substr(x.chunk_content, 1, 200), char(10), ' '), char(13), ' ') FROM extdb.ext_vectors_by_file x JOIN qv ON x.vector_model_name LIKE qv.pat JOIN vrpentries e ON CAST(x.vinode AS INT64) = e.inode AND CAST(x.vmtime AS INT64) = e.mtime WHERE length(x.embedding) >= 1536 ORDER BY 2, 3 LIMIT 3;",
+   "-E",
+   "DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 10 WHEN 'f' THEN 60 ELSE 30 END); INSERT INTO t SELECT * FROM (SELECT 'n', CASE WHEN name LIKE 'deployment process' OR name LIKE 'deployment process.%' THEN 0 WHEN name LIKE 'deployment%' THEN 1 ELSE 2 END, rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE (name LIKE '%deployment%' AND name LIKE '%process%') ORDER BY 2, 3 LIMIT 10) UNION ALL SELECT * FROM (SELECT 'p', length(substr(rpath(sname, sroll), 15)), rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE ((substr(rpath(sname, sroll), 15) LIKE '%deployment%' AND substr(rpath(sname, sroll), 15) LIKE '%process%')) AND NOT ((name LIKE '%deployment%' AND name LIKE '%process%')) ORDER BY 2, 3 LIMIT 10); INSERT INTO t SELECT 'f', bm25(words), rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) WHERE wordf MATCH '(\"deployment\" AND \"process\")' ORDER BY 2, 3 LIMIT 20; INSERT INTO t SELECT 'v', k.distance, rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, CASE WHEN g.seq > 0 AND instr(replace(replace(g.ctext, char(10), ' '), char(13), ' '), ' ') > 0 THEN substr(replace(replace(g.ctext, char(10), ' '), char(13), ' '), instr(replace(replace(g.ctext, char(10), ' '), char(13), ' '), ' ') + 1, 200) ELSE substr(replace(replace(g.ctext, char(10), ' '), char(13), ' '), 1, 200) END FROM (SELECT cid, distance FROM gvec WHERE fp384 MATCH (SELECT qe FROM qv WHERE (SELECT model FROM gvecmodel LIMIT 1) LIKE pat LIMIT 1) ORDER BY distance LIMIT 3) k JOIN gchunks g ON g.cid = k.cid JOIN vrpentries e ON e.inode = g.tinode;",
+   "-J",
+   "INSERT INTO agg SELECT * FROM t;",
+   "-G",
+   "WITH best AS (SELECT k, min(r) AS r, p, n, s, m, x FROM agg GROUP BY k, p), ranked AS (SELECT *, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM best), kept AS (SELECT * FROM ranked WHERE rn <= CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 10 WHEN 'f' THEN 60 ELSE 10 END), fused AS (SELECT p AS fp, sum(1.0 / (60.0 + rn)) AS score FROM kept GROUP BY p) SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;"
+  ],
+  [
+   "-I",
+   "CREATE TABLE t (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-K",
+   "CREATE TABLE agg (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "--external-copy",
+   "\\.sqlite$",
+   "INSERT INTO t SELECT 'f', bm25(ext_bm25_by_file), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, replace(replace(snippet(ext_bm25_by_file, -1, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') FROM extdb.ext_bm25_by_file JOIN vrpentries e ON CAST(binode AS INT64) = e.inode AND CAST(bmtime AS INT64) = e.mtime WHERE ext_bm25_by_file MATCH '(\"café\" AND \"ünï\")' ORDER BY 2, 3 LIMIT 5;",
+   "-E",
+   "DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > CASE k WHEN 'n' THEN 5 WHEN 'p' THEN 5 WHEN 'f' THEN 5 ELSE 0 END); INSERT INTO t SELECT * FROM (SELECT 'n', CASE WHEN name LIKE 'café ünï' OR name LIKE 'café ünï.%' THEN 0 WHEN name LIKE 'café%' THEN 1 ELSE 2 END, rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE (name LIKE '%café%' AND (name LIKE 'ünï%' OR name LIKE '% ünï%' OR name LIKE '%-ünï%' OR name LIKE '%_ünï%' OR name LIKE '%.ünï%' OR name LIKE '%(ünï%' OR name LIKE '%[ünï%' OR name LIKE '%,ünï%')) ORDER BY 2, 3 LIMIT 5) UNION ALL SELECT * FROM (SELECT 'p', length(substr(rpath(sname, sroll), 12)), rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE ((substr(rpath(sname, sroll), 12) LIKE '%café%' AND (substr(rpath(sname, sroll), 12) LIKE 'ünï%' OR substr(rpath(sname, sroll), 12) LIKE '% ünï%' OR substr(rpath(sname, sroll), 12) LIKE '%-ünï%' OR substr(rpath(sname, sroll), 12) LIKE '%_ünï%' OR substr(rpath(sname, sroll), 12) LIKE '%.ünï%' OR substr(rpath(sname, sroll), 12) LIKE '%(ünï%' OR substr(rpath(sname, sroll), 12) LIKE '%[ünï%' OR substr(rpath(sname, sroll), 12) LIKE '%,ünï%' OR substr(rpath(sname, sroll), 12) LIKE '%/ünï%'))) AND NOT ((name LIKE '%café%' AND (name LIKE 'ünï%' OR name LIKE '% ünï%' OR name LIKE '%-ünï%' OR name LIKE '%_ünï%' OR name LIKE '%.ünï%' OR name LIKE '%(ünï%' OR name LIKE '%[ünï%' OR name LIKE '%,ünï%'))) ORDER BY 2, 3 LIMIT 5);",
+   "-J",
+   "INSERT INTO agg SELECT * FROM t;",
+   "-G",
+   "WITH best AS (SELECT k, min(r) AS r, p, n, s, m, x FROM agg GROUP BY k, p), ranked AS (SELECT *, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM best), kept AS (SELECT * FROM ranked WHERE rn <= CASE k WHEN 'n' THEN 5 WHEN 'p' THEN 5 WHEN 'f' THEN 5 ELSE 0 END), fused AS (SELECT p AS fp, sum(1.0 / (60.0 + rn)) AS score FROM kept GROUP BY p) SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;"
+  ],
+  null,
+  [
+   "-I",
+   "CREATE TABLE t (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-K",
+   "CREATE TABLE agg (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-E",
+   "DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 10 WHEN 'f' THEN 60 ELSE 0 END); INSERT INTO t SELECT 'f', bm25(words), rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) WHERE wordf MATCH 'budget NEAR forecast' AND (name LIKE '%.pdf' ESCAPE '\\' OR (name LIKE '%.docx' ESCAPE '\\' AND NOT (name LIKE '%draft%' OR substr(rpath(sname, sroll), 15) LIKE '%draft%'))) ORDER BY 2, 3 LIMIT 20;",
+   "-J",
+   "INSERT INTO agg SELECT * FROM t;",
+   "-G",
+   "WITH best AS (SELECT k, min(r) AS r, p, n, s, m, x FROM agg GROUP BY k, p), ranked AS (SELECT *, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM best), kept AS (SELECT * FROM ranked WHERE rn <= CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 10 WHEN 'f' THEN 60 ELSE 0 END), fused AS (SELECT p AS fp, sum(1.0 / (60.0 + rn)) AS score FROM kept GROUP BY p) SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;"
+  ],
+  [
+   "-I",
+   "CREATE TABLE t (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT); CREATE TABLE qv (pat TEXT, qe BLOB); INSERT INTO qv VALUES ('minilm-l6-mean-int8', X'aa');",
+   "-K",
+   "CREATE TABLE agg (k TEXT, r REAL, p TEXT, n TEXT, s INT64, m INT64, x TEXT);",
+   "-E",
+   "DELETE FROM t WHERE rowid IN (SELECT rowid FROM (SELECT rowid, k, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM t) WHERE rn > CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 10 WHEN 'f' THEN 60 ELSE 30 END); INSERT INTO t SELECT * FROM (SELECT 'n', 2, rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE ltrim(CASE WHEN substr(rpath(sname, sroll), 1, 13) = '/srv/index/kb' THEN substr(rpath(sname, sroll), 15) WHEN substr(rpath(sname, sroll), 1, 8) = '/srv/two' THEN substr(rpath(sname, sroll), 10) ELSE rpath(sname, sroll) END||'/'||name, '/') LIKE 'reports/%' ESCAPE '\\' ORDER BY 2, 3 LIMIT 10) UNION ALL SELECT * FROM (SELECT 'p', length(CASE WHEN substr(rpath(sname, sroll), 1, 13) = '/srv/index/kb' THEN substr(rpath(sname, sroll), 15) WHEN substr(rpath(sname, sroll), 1, 8) = '/srv/two' THEN substr(rpath(sname, sroll), 10) ELSE rpath(sname, sroll) END), rpath(sname, sroll)||'/'||name, name, size, mtime, '' FROM vrpentries WHERE (ltrim(CASE WHEN substr(rpath(sname, sroll), 1, 13) = '/srv/index/kb' THEN substr(rpath(sname, sroll), 15) WHEN substr(rpath(sname, sroll), 1, 8) = '/srv/two' THEN substr(rpath(sname, sroll), 10) ELSE rpath(sname, sroll) END||'/'||name, '/') LIKE 'reports/%' ESCAPE '\\') AND NOT (ltrim(CASE WHEN substr(rpath(sname, sroll), 1, 13) = '/srv/index/kb' THEN substr(rpath(sname, sroll), 15) WHEN substr(rpath(sname, sroll), 1, 8) = '/srv/two' THEN substr(rpath(sname, sroll), 10) ELSE rpath(sname, sroll) END||'/'||name, '/') LIKE 'reports/%' ESCAPE '\\') ORDER BY 2, 3 LIMIT 10); INSERT INTO t SELECT 'f', bm25(words), rpath(sname, sroll)||'/'||vrpentries.name, vrpentries.name, size, mtime, replace(replace(snippet(words, 2, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') FROM vrpentries INNER JOIN words ON inode=CAST(tinode AS TEXT) WHERE wordf MATCH '\"cash flow\"' ORDER BY 2, 3 LIMIT 20; INSERT INTO t SELECT 'v', k.distance, rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, CASE WHEN g.seq > 0 AND instr(replace(replace(g.ctext, char(10), ' '), char(13), ' '), ' ') > 0 THEN substr(replace(replace(g.ctext, char(10), ' '), char(13), ' '), instr(replace(replace(g.ctext, char(10), ' '), char(13), ' '), ' ') + 1, 200) ELSE substr(replace(replace(g.ctext, char(10), ' '), char(13), ' '), 1, 200) END FROM (SELECT cid, distance FROM gvec WHERE fp384 MATCH (SELECT qe FROM qv WHERE (SELECT model FROM gvecmodel LIMIT 1) LIKE pat LIMIT 1) ORDER BY distance LIMIT 3) k JOIN gchunks g ON g.cid = k.cid JOIN vrpentries e ON e.inode = g.tinode;",
+   "-J",
+   "INSERT INTO agg SELECT * FROM t;",
+   "-G",
+   "WITH best AS (SELECT k, min(r) AS r, p, n, s, m, x FROM agg GROUP BY k, p), ranked AS (SELECT *, row_number() OVER (PARTITION BY k ORDER BY r, p) AS rn FROM best), kept AS (SELECT * FROM ranked WHERE rn <= CASE k WHEN 'n' THEN 10 WHEN 'p' THEN 10 WHEN 'f' THEN 60 ELSE 10 END), fused AS (SELECT p AS fp, sum(1.0 / (60.0 + rn)) AS score FROM kept GROUP BY p) SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;"
+  ],
+  null
+ ],
+ "passages": [
+  {
+   "snippet": "short text",
+   "clean": "short text"
+  },
+  {
+   "snippet": "<!-- extracted by downmark 1.2.3 --> Title here and body",
+   "clean": "Title here and body"
+  },
+  {
+   "snippet": "downmark 2.0 (no OCR) —> rest",
+   "clean": "rest"
+  },
+  {
+   "snippet": "a long passage that goes on and on and on, with commas, and many words so that it runs past the two hundred character cut that the passage snippet applies to vector hits, which keeps them short enough to read in a list of results without scrolling, and then some more words …",
+   "clean": "a long passage that goes on and on and on, with commas, and many words so that it runs past the two hundred character cut that the passage snippet applies to vector hits, which keeps them short enough to read in a list of results without scrolling, and then some more words here"
+  },
+  {
+   "snippet": "emoji 😀 at the edge 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+   "clean": "emoji 😀 at the edge 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+  }
+ ],
+ "fuse": [
+  [
+   {
+    "path": "a/b.txt",
+    "name": "b.txt",
+    "size": 10,
+    "mtime": 5,
+    "snippet": "s1",
+    "score": 0.04865990111891752,
+    "mode": "fts",
+    "kinds": [
+     "fts",
+     "path",
+     "vector"
+    ],
+    "rank": -3.5
+   },
+   {
+    "path": "a/c.txt",
+    "name": "c.txt",
+    "size": 7,
+    "mtime": 8,
+    "snippet": "s2",
+    "score": 0.03278688524590164,
+    "mode": "fts",
+    "kinds": [
+     "fts",
+     "name"
+    ],
+    "rank": -4.5
+   },
+   {
+    "path": "a/a.txt",
+    "name": "a.txt",
+    "size": 1,
+    "mtime": 1,
+    "snippet": "",
+    "score": 0.016129032258064516,
+    "mode": "fts",
+    "kinds": [
+     "fts"
+    ],
+    "rank": -3.5
+   },
+   {
+    "path": "q.txt",
+    "name": "q.txt",
+    "size": 7,
+    "mtime": 8,
+    "snippet": "",
+    "score": 0.016129032258064516,
+    "mode": "name",
+    "kinds": [
+     "name"
+    ],
+    "rank": 1
+   },
+   {
+    "path": "v.txt",
+    "name": "v.txt",
+    "size": 3,
+    "mtime": 3,
+    "snippet": "vec",
+    "score": 0.016129032258064516,
+    "mode": "vector",
+    "kinds": [
+     "vector"
+    ],
+    "rank": 0.2
+   }
+  ],
+  [
+   {
+    "path": "b.txt",
+    "name": "z",
+    "size": 0,
+    "mtime": 0,
+    "snippet": "",
+    "score": 0.01639344262295082,
+    "mode": "vector",
+    "kinds": [
+     "vector"
+    ],
+    "rank": 0.5
+   },
+   {
+    "path": "😀.txt",
+    "name": "y",
+    "size": 0,
+    "mtime": 0,
+    "snippet": "",
+    "score": 0.016129032258064516,
+    "mode": "vector",
+    "kinds": [
+     "vector"
+    ],
+    "rank": 0.5
+   }
+  ]
+ ],
+ "sizes": [
+  {
+   "value": 10
+  },
+  {
+   "value": 10485760
+  },
+  {
+   "value": 1610612736
+  },
+  {
+   "value": 512000
+  },
+  {
+   "value": 2199023255552
+  },
+  {
+   "error": "size takes a number of bytes or a size such as 10 MB, not \"3x\"",
+   "status": 400
+  },
+  {
+   "error": "size takes a number of bytes or a size such as 10 MB, not \"-1\"",
+   "status": 400
+  },
+  {
+   "error": "size takes a number of bytes or a size such as 10 MB, not \"1e3\"",
+   "status": 400
+  },
+  {
+   "value": 512
+  }
+ ],
+ "whens": [
+  {
+   "value": {
+    "start": 1767225600,
+    "end": 1767312000
+   }
+  },
+  {
+   "value": {
+    "start": 1767259800,
+    "end": 1767259860
+   }
+  },
+  {
+   "value": {
+    "start": 1767259815,
+    "end": 1767259816
+   }
+  },
+  {
+   "error": "modified takes a date such as 2026-01-01, or a time ago such as 7 days, not \"2026-02-30\"",
+   "status": 400
+  },
+  {
+   "error": "modified takes a date such as 2026-01-01, or a time ago such as 7 days, not \"0099-01-01\"",
+   "status": 400
+  },
+  {
+   "value": {
+    "start": 1766620800,
+    "end": 1766620800
+   }
+  },
+  {
+   "value": {
+    "start": 1767182400,
+    "end": 1767182400
+   }
+  },
+  {
+   "value": {
+    "start": 1766016000,
+    "end": 1766016000
+   }
+  },
+  {
+   "value": {
+    "start": 1765411200,
+    "end": 1765411200
+   }
+  },
+  {
+   "error": "modified takes a date such as 2026-01-01, or a time ago such as 7 days, not \"yesterday\"",
+   "status": 400
+  },
+  {
+   "error": "modified takes a date such as 2026-01-01, or a time ago such as 7 days, not \"2026-01-01 24:00\"",
+   "status": 400
+  },
+  {
+   "error": "modified takes a date such as 2026-01-01, or a time ago such as 7 days, not \"2026-01-01 23:60\"",
+   "status": 400
+  }
+ ],
+ "plans": [
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries ORDER BY size DESC LIMIT 5;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY size DESC LIMIT 5;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries ORDER BY size DESC LIMIT 5;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY size DESC LIMIT 5;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries ORDER BY mtime DESC LIMIT 25;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY mtime DESC LIMIT 25;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries ORDER BY mtime DESC LIMIT 25;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY mtime DESC LIMIT 25;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries ORDER BY mtime ASC LIMIT 12;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY mtime ASC LIMIT 12;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries ORDER BY mtime ASC LIMIT 12;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY mtime ASC LIMIT 12;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries WHERE mtime > 1764633600 ORDER BY mtime DESC LIMIT 25;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY mtime DESC LIMIT 25;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries WHERE mtime > 1764633600 ORDER BY mtime DESC LIMIT 25;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY mtime DESC LIMIT 25;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (ext TEXT, cnt INT64, bytes INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (ext TEXT, cnt INT64, bytes INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '(none)' END), count(*), sum(size) FROM vrpentries GROUP BY 1;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT ext, sum(cnt), sum(bytes) FROM agg GROUP BY ext ORDER BY sum(bytes) DESC LIMIT 2000;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (ext TEXT, cnt INT64, bytes INT64);' -K 'CREATE TABLE agg (ext TEXT, cnt INT64, bytes INT64);' -E 'INSERT INTO t SELECT lower(CASE WHEN name LIKE '\\''%.%'\\'' THEN replace(name, rtrim(name, replace(name, '\\''.'\\'', '\\'''\\'')), '\\'''\\'') ELSE '\\''(none)'\\'' END), count(*), sum(size) FROM vrpentries GROUP BY 1;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT ext, sum(cnt), sum(bytes) FROM agg GROUP BY ext ORDER BY sum(bytes) DESC LIMIT 2000;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, files INT64, bytes INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, files INT64, bytes INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll), totfiles, totsize FROM vrsummary;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, files, bytes FROM agg ORDER BY bytes DESC LIMIT 25;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, files INT64, bytes INT64);' -K 'CREATE TABLE agg (path TEXT, files INT64, bytes INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll), totfiles, totsize FROM vrsummary;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, files, bytes FROM agg ORDER BY bytes DESC LIMIT 25;' /golden/ix/gufi/kb/a/b"
+     }
+    ]
+   }
+  },
+  {
+   "error": "unknown canned query: nope",
+   "status": 400
+  },
+  {
+   "error": "scope escapes the index",
+   "status": 400
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-E",
+      "sql": "SELECT name, size FROM vrpentries;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -E 'SELECT name, size FROM vrpentries;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "error": "statement contains a disallowed keyword",
+   "status": 400
+  },
+  {
+   "error": "only SELECT statements are allowed",
+   "status": 400
+  },
+  {
+   "error": "statement contains a disallowed keyword",
+   "status": 400
+  },
+  {
+   "error": "builder, canned, or sql required",
+   "status": 400
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries WHERE (size > 10485760) ORDER BY size DESC LIMIT 200;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY size DESC LIMIT 200;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries WHERE (size > 10485760) ORDER BY size DESC LIMIT 200;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY size DESC LIMIT 200;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (k TEXT, cnt INT64, bytes INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (k TEXT, cnt INT64, bytes INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '(none)' END), count(*), sum(size) FROM vrpentries WHERE (lower(CASE WHEN name LIKE '%.%' THEN replace(name, rtrim(name, replace(name, '.', '')), '') ELSE '(none)' END) = 'pdf') OR (vrpentries.name LIKE '%it''s 100%') GROUP BY 1;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT k, sum(cnt), sum(bytes) FROM agg GROUP BY k ORDER BY sum(cnt) ASC LIMIT 50;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (k TEXT, cnt INT64, bytes INT64);' -K 'CREATE TABLE agg (k TEXT, cnt INT64, bytes INT64);' -E 'INSERT INTO t SELECT lower(CASE WHEN name LIKE '\\''%.%'\\'' THEN replace(name, rtrim(name, replace(name, '\\''.'\\'', '\\'''\\'')), '\\'''\\'') ELSE '\\''(none)'\\'' END), count(*), sum(size) FROM vrpentries WHERE (lower(CASE WHEN name LIKE '\\''%.%'\\'' THEN replace(name, rtrim(name, replace(name, '\\''.'\\'', '\\'''\\'')), '\\'''\\'') ELSE '\\''(none)'\\'' END) = '\\''pdf'\\'') OR (vrpentries.name LIKE '\\''%it'\\'''\\''s 100%'\\'') GROUP BY 1;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT k, sum(cnt), sum(bytes) FROM agg GROUP BY k ORDER BY sum(cnt) ASC LIMIT 50;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (k TEXT, cnt INT64, bytes INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (k TEXT, cnt INT64, bytes INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT uidtouser(uid), count(*), sum(size) FROM vrpentries WHERE (rpath(sname, sroll)||'/'||vrpentries.name = '/golden/ix/gufi/kb/a/b.txt') AND (NOT substr(rpath(sname, sroll)||'/'||vrpentries.name, 20) LIKE '%tmp%') AND (uidtouser(uid) = 'root') GROUP BY 1;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT k, sum(cnt), sum(bytes) FROM agg GROUP BY k ORDER BY sum(bytes) DESC LIMIT 7;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (k TEXT, cnt INT64, bytes INT64);' -K 'CREATE TABLE agg (k TEXT, cnt INT64, bytes INT64);' -E 'INSERT INTO t SELECT uidtouser(uid), count(*), sum(size) FROM vrpentries WHERE (rpath(sname, sroll)||'\\''/'\\''||vrpentries.name = '\\''/golden/ix/gufi/kb/a/b.txt'\\'') AND (NOT substr(rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, 20) LIKE '\\''%tmp%'\\'') AND (uidtouser(uid) = '\\''root'\\'') GROUP BY 1;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT k, sum(cnt), sum(bytes) FROM agg GROUP BY k ORDER BY sum(bytes) DESC LIMIT 7;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, cnt INT64, bytes INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, cnt INT64, bytes INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll), count(*), sum(size) FROM vrpentries WHERE (mtime >= 1767312000) AND (mtime < 1767259800) AND (mtime = 1766620800) AND ((mtime >= 1772600767 AND mtime < 1772600768)) GROUP BY 1;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, cnt, bytes FROM agg ORDER BY cnt DESC LIMIT 50;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, cnt INT64, bytes INT64);' -K 'CREATE TABLE agg (path TEXT, cnt INT64, bytes INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll), count(*), sum(size) FROM vrpentries WHERE (mtime >= 1767312000) AND (mtime < 1767259800) AND (mtime = 1766620800) AND ((mtime >= 1772600767 AND mtime < 1772600768)) GROUP BY 1;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, cnt, bytes FROM agg ORDER BY cnt DESC LIMIT 50;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries WHERE (vrpentries.inode IN (SELECT CAST(tinode AS TEXT) FROM words WHERE wordf MATCH '\"budget\" AND \"forecast\" AND \"its\" AND \"wild\"')) ORDER BY 1 ASC LIMIT 50;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY path ASC LIMIT 50;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries WHERE (vrpentries.inode IN (SELECT CAST(tinode AS TEXT) FROM words WHERE wordf MATCH '\\''\"budget\" AND \"forecast\" AND \"its\" AND \"wild\"'\\'')) ORDER BY 1 ASC LIMIT 50;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY path ASC LIMIT 50;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "error": "empty text match",
+   "status": 400
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries WHERE ((EXISTS (SELECT 1 FROM xattrs_pwd xt WHERE xt.inode = vrpentries.inode AND CAST(xt.name AS TEXT) = 'user.studio.tags' AND (','||lower(CAST(xt.value AS TEXT))||',') LIKE '%,finance,%'))) ORDER BY mtime DESC LIMIT 50;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY mtime DESC LIMIT 50;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries WHERE ((EXISTS (SELECT 1 FROM xattrs_pwd xt WHERE xt.inode = vrpentries.inode AND CAST(xt.name AS TEXT) = '\\''user.studio.tags'\\'' AND ('\\'','\\''||lower(CAST(xt.value AS TEXT))||'\\'','\\'') LIKE '\\''%,finance,%'\\''))) ORDER BY mtime DESC LIMIT 50;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY mtime DESC LIMIT 50;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "error": "size takes equals, greater than or less than; \"contains\" does not apply to it",
+   "status": 400
+  },
+  {
+   "error": "unknown field: bogus",
+   "status": 400
+  },
+  {
+   "error": "size takes a number of bytes or a size such as 10 MB, not \"big\"",
+   "status": 400
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, files INT64, bytes INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, files INT64, bytes INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll), totfiles, totsize FROM vrsummary WHERE (totsize > 1073741824) AND (vrsummary.name < 'm');"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, files, bytes FROM agg ORDER BY files DESC LIMIT 50;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, files INT64, bytes INT64);' -K 'CREATE TABLE agg (path TEXT, files INT64, bytes INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll), totfiles, totsize FROM vrsummary WHERE (totsize > 1073741824) AND (vrsummary.name < '\\''m'\\'');' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, files, bytes FROM agg ORDER BY files DESC LIMIT 50;' /golden/ix/gufi/kb/proj"
+     }
+    ]
+   }
+  },
+  {
+   "error": "directories take name, owner, size and modified conditions, without grouping",
+   "status": 400
+  },
+  {
+   "error": "directories take name, owner, size and modified conditions, without grouping",
+   "status": 400
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries  ORDER BY size DESC LIMIT 3.7;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY size DESC LIMIT 3.7;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries  ORDER BY size DESC LIMIT 3.7;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY size DESC LIMIT 3.7;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  },
+  {
+   "value": {
+    "stages": [
+     {
+      "flag": "-I",
+      "sql": "CREATE TABLE t (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-K",
+      "sql": "CREATE TABLE agg (path TEXT, size INT64, mtime INT64);"
+     },
+     {
+      "flag": "-E",
+      "sql": "INSERT INTO t SELECT rpath(sname, sroll)||'/'||vrpentries.name, size, mtime FROM vrpentries WHERE (vrpentries.name = '42') AND (vrpentries.name > '') ORDER BY size DESC LIMIT 50;"
+     },
+     {
+      "flag": "-J",
+      "sql": "INSERT INTO agg SELECT * FROM t;"
+     },
+     {
+      "flag": "-G",
+      "sql": "SELECT path, size, datetime(mtime, 'unixepoch') FROM agg ORDER BY size DESC LIMIT 50;"
+     }
+    ],
+    "commands": [
+     {
+      "engine": "gufi_query",
+      "command": "/golden/gufi/bin/gufi_query -n 8 -d $'\\x1e' -a 1 -I 'CREATE TABLE t (path TEXT, size INT64, mtime INT64);' -K 'CREATE TABLE agg (path TEXT, size INT64, mtime INT64);' -E 'INSERT INTO t SELECT rpath(sname, sroll)||'\\''/'\\''||vrpentries.name, size, mtime FROM vrpentries WHERE (vrpentries.name = '\\''42'\\'') AND (vrpentries.name > '\\'''\\'') ORDER BY size DESC LIMIT 50;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT path, size, datetime(mtime, '\\''unixepoch'\\'') FROM agg ORDER BY size DESC LIMIT 50;' /golden/ix/gufi/kb"
+     }
+    ]
+   }
+  }
+ ]
+}

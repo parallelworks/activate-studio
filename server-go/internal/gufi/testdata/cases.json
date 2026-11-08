@@ -1,0 +1,90 @@
+{
+ "now": 1767225600,
+ "queries": [
+  "budget report",
+  "\"exact phrase\" draft",
+  "plan* -old",
+  "alpha OR beta NOT gamma",
+  "the of and",
+  "  Ünïcode   naïve café  ",
+  "it's a 'quoted' *star*",
+  "FY26 GPU-H100 cluster",
+  "how do we onboard new users",
+  "report_2026%final",
+  "NEAR AND",
+  "",
+  "-only -negatives",
+  "a b　c"
+ ],
+ "nameFilters": ["*.docx", "report-??.pdf OR notes", "reports/*.pdf -draft", "\"two words\" NOT tmp", "100%_done", ""],
+ "stages": [
+  {"q": "budget report", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": "\\.db$"}, "roots": ["/srv/index/kb"]},
+  {"q": "budget", "lim": {"names": 10, "paths": 0, "words": 0, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "roots": ["/srv/index/kb"]},
+  {"q": "\"exact phrase\" -old", "lim": {"names": 0, "paths": 0, "words": 40, "wordsPerDir": 10, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "roots": ["/srv/index/kb", "/srv/index/kb/nested", "/srv/other"]},
+  {"q": "what is the deployment process", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 10, "vectorsPerDir": 3, "studioText": true, "studioVectors": true, "external": "\\.db$"}, "roots": ["/srv/index/kb"], "vectors": [{"pattern": "minilm-l6-mean-int8", "hex": "00ff7f80"}, {"pattern": "%all-MiniLM-L6-v2", "hex": "0102"}]},
+  {"q": "café ünï", "lim": {"names": 5, "paths": 5, "words": 5, "wordsPerDir": 5, "vectors": 0, "vectorsPerDir": 3, "studioText": false, "studioVectors": false, "external": "\\.sqlite$"}, "roots": ["/srv/índex"]},
+  {"q": "", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "roots": ["/srv/index/kb"]},
+  {"q": "quarterly", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "roots": ["/srv/index/kb"], "refine": {"name": "*.pdf OR *.docx -draft", "text": "budget NEAR forecast", "match": "all"}},
+  {"q": "quarterly", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 10, "vectorsPerDir": 3, "studioText": true, "studioVectors": true, "external": null}, "roots": ["/srv/index/kb", "/srv/two"], "vectors": [{"pattern": "minilm-l6-mean-int8", "hex": "aa"}], "refine": {"name": "reports/*", "text": "\"cash flow\"", "match": "any"}},
+  {"q": "x", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "roots": ["/srv/index/kb"], "refine": {"name": "", "text": "", "match": "all"}}
+ ],
+ "passages": [
+  "short text",
+  "<!-- extracted by downmark 1.2.3 --> Title here and body",
+  "downmark 2.0 (no OCR) —> rest",
+  "a long passage that goes on and on and on, with commas, and many words so that it runs past the two hundred character cut that the passage snippet applies to vector hits, which keeps them short enough to read in a list of results without scrolling, and then some more words here",
+  "emoji 😀 at the edge 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+ ],
+ "fuse": [
+  {"caps": {"name": 2, "fts": 3}, "limit": 10, "rows": [
+   {"kind": "fts", "r": -3.5, "path": "a/b.txt", "name": "b.txt", "size": 10, "mtime": 5, "snippet": "s1", "root": "r"},
+   {"kind": "fts", "r": -4.5, "path": "a/c.txt", "name": "c.txt", "size": 0, "mtime": 0, "snippet": "s2", "root": "r"},
+   {"kind": "fts", "r": -3.5, "path": "a/a.txt", "name": "a.txt", "size": 1, "mtime": 1, "snippet": "", "root": "r"},
+   {"kind": "fts", "r": -1, "path": "z.txt", "name": "z.txt", "size": 1, "mtime": 1, "snippet": "", "root": "r"},
+   {"kind": "name", "r": 0, "path": "a/c.txt", "name": "c.txt", "size": 7, "mtime": 8, "snippet": "", "root": "r"},
+   {"kind": "name", "r": 2, "path": "q.txt", "name": "q.txt", "size": 7, "mtime": 8, "snippet": "", "root": "r"},
+   {"kind": "name", "r": 1, "path": "q.txt", "name": "q.txt", "size": 7, "mtime": 8, "snippet": "", "root": "r"},
+   {"kind": "name", "r": 2, "path": "w.txt", "name": "w.txt", "size": 7, "mtime": 8, "snippet": "", "root": "r"},
+   {"kind": "path", "r": 1, "path": "a/b.txt", "name": "b.txt", "size": 0, "mtime": 0, "snippet": "", "root": "r"},
+   {"kind": "vector", "r": 0.2, "path": "v.txt", "name": "v.txt", "size": 3, "mtime": 3, "snippet": "vec", "root": "r"},
+   {"kind": "vector", "r": 0.1, "path": "a/b.txt", "name": "b.txt", "size": 3, "mtime": 3, "snippet": "vec b", "root": "r"}
+  ]},
+  {"caps": {}, "limit": 2, "rows": [
+   {"kind": "vector", "r": 0.5, "path": "ａ.txt", "name": "x", "size": 0, "mtime": 0, "snippet": "", "root": "r"},
+   {"kind": "vector", "r": 0.5, "path": "😀.txt", "name": "y", "size": 0, "mtime": 0, "snippet": "", "root": "r"},
+   {"kind": "vector", "r": 0.5, "path": "b.txt", "name": "z", "size": 0, "mtime": 0, "snippet": "", "root": "r"}
+  ]}
+ ],
+ "sizes": ["10", "10 MB", "1.5G", "500k", " 2 tib ", "3x", "-1", "1e3", "0.5 kb"],
+ "whens": ["2026-01-01", "2026-01-01 09:30", "2026-01-01T09:30:15", "2026-02-30", "0099-01-01", "7 days", "12 hours ago", "2 weeks", "3w", "yesterday", "2026-01-01 24:00", "2026-01-01 23:60"],
+ "plans": [
+  {"canned": "largest", "n": 5},
+  {"canned": "newest"},
+  {"canned": "oldest", "n": "12"},
+  {"canned": "recent", "days": 30, "n": 0},
+  {"canned": "by_extension", "n": 99999},
+  {"canned": "big_directories", "subtree": "/a/b/"},
+  {"canned": "nope"},
+  {"canned": "largest", "subtree": "a/../.."},
+  {"sql": "SELECT name, size FROM vrpentries;  "},
+  {"sql": "select name from vrpentries; drop table x"},
+  {"sql": "UPDATE x"},
+  {"sql": "SELECT replace(name,'a','b') FROM vrpentries"},
+  {},
+  {"builder": {"source": "files", "filters": [{"field": "size", "op": "gt", "value": "10 MB"}], "groupBy": "none", "sort": "size", "dir": "desc", "limit": 200, "subtree": ""}},
+  {"builder": {"source": "files", "filters": [{"field": "extension", "op": "eq", "value": ".PDF"}, {"field": "name", "op": "contains", "value": "it's 100%_"}], "match": "any", "groupBy": "extension", "sort": "files", "dir": "asc"}},
+  {"builder": {"source": "files", "filters": [{"field": "path", "op": "eq", "value": "/a/b.txt"}, {"field": "path", "op": "not_contains", "value": "tmp"}, {"field": "owner", "op": "eq", "value": "root"}], "groupBy": "owner", "limit": "7"}},
+  {"builder": {"source": "files", "filters": [{"field": "modified", "op": "gt", "value": "2026-01-01"}, {"field": "modified", "op": "lt", "value": "2026-01-01 09:30"}, {"field": "modified", "op": "eq", "value": "7 days"}, {"field": "modified", "op": "eq", "value": "2026-03-04T05:06:07"}], "groupBy": "directory", "sort": "files"}},
+  {"builder": {"source": "files", "filters": [{"field": "text", "op": "match", "value": "  budget \"forecast\" it's *wild*  "}], "sort": "name", "dir": "asc", "limit": 0}},
+  {"builder": {"source": "files", "filters": [{"field": "text", "op": "match", "value": "\"\" ''"}]}},
+  {"builder": {"source": "files", "filters": [{"field": "label", "op": "eq", "value": "Finance"}], "sort": "modified"}},
+  {"builder": {"source": "files", "filters": [{"field": "size", "op": "contains", "value": "1"}]}},
+  {"builder": {"source": "files", "filters": [{"field": "bogus", "op": "eq", "value": "1"}]}},
+  {"builder": {"source": "files", "filters": [{"field": "size", "op": "gt", "value": "big"}]}},
+  {"builder": {"source": "directories", "filters": [{"field": "size", "op": "gt", "value": "1 GB"}, {"field": "name", "op": "lt", "value": "m"}], "groupBy": "none", "sort": "files", "subtree": "proj"}},
+  {"builder": {"source": "directories", "filters": [{"field": "text", "op": "match", "value": "x"}], "groupBy": "none"}},
+  {"builder": {"source": "directories", "groupBy": "extension"}},
+  {"builder": {"source": "files", "filters": "not a list", "limit": 3.7}},
+  {"builder": {"source": "files", "filters": [{"field": "name", "op": "eq", "value": 42}, {"field": "name", "op": "gt", "value": null}]}}
+ ]
+}

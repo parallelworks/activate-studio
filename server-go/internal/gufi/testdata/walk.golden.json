@@ -1,0 +1,424 @@
+{
+ "walks": [
+  [
+   {
+    "path": "code/budget.py",
+    "name": "budget.py",
+    "size": 28,
+    "mtime": 1748786400,
+    "snippet": "def [budget]():     return 42 ",
+    "score": 0.03252247488101534,
+    "mode": "fts",
+    "kinds": [
+     "fts",
+     "name"
+    ],
+    "rank": -0.000001
+   },
+   {
+    "path": "reports/2026/budget-q1.md",
+    "name": "budget-q1.md",
+    "size": 97,
+    "mtime": 1748797200,
+    "snippet": "Quarterly [budget] report for the platform team. The forecast covers compute and … ",
+    "score": 0.03200204813108039,
+    "mode": "fts",
+    "kinds": [
+     "fts",
+     "name"
+    ],
+    "rank": -8.99628252788104e-7
+   },
+   {
+    "path": "reports/2026/forecast-draft.txt",
+    "name": "forecast-draft.txt",
+    "size": 53,
+    "mtime": 1748800800,
+    "snippet": "[Budget] forecast draft. Cash flow is tracked monthly. ",
+    "score": 0.01639344262295082,
+    "mode": "fts",
+    "kinds": [
+     "fts"
+    ],
+    "rank": -0.00000112558139534884
+   }
+  ],
+  [
+   {
+    "path": "reports/annual-report.md",
+    "name": "annual-report.md",
+    "size": 64,
+    "mtime": 1748804400,
+    "snippet": "Annual report summary: [deployment] [process] and onboarding notes. ",
+    "score": 0.01639344262295082,
+    "mode": "fts",
+    "kinds": [
+     "fts"
+    ],
+    "rank": -0.000002
+   },
+   {
+    "path": "notes/onboarding.md",
+    "name": "onboarding.md",
+    "size": 65,
+    "mtime": 1748793600,
+    "snippet": "Meeting notes: onboard new users, review the [deployment] [process]. ",
+    "score": 0.016129032258064516,
+    "mode": "fts",
+    "kinds": [
+     "fts"
+    ],
+    "rank": -0.0000019027027027027
+   }
+  ],
+  [
+   {
+    "path": "reports/annual-report.md",
+    "name": "annual-report.md",
+    "size": 64,
+    "mtime": 1748804400,
+    "snippet": "",
+    "score": 0.01639344262295082,
+    "mode": "path",
+    "kinds": [
+     "path"
+    ],
+    "rank": 7
+   },
+   {
+    "path": "reports/2026/budget-q1.md",
+    "name": "budget-q1.md",
+    "size": 97,
+    "mtime": 1748797200,
+    "snippet": "",
+    "score": 0.016129032258064516,
+    "mode": "path",
+    "kinds": [
+     "path"
+    ],
+    "rank": 12
+   },
+   {
+    "path": "reports/2026/forecast-draft.txt",
+    "name": "forecast-draft.txt",
+    "size": 53,
+    "mtime": 1748800800,
+    "snippet": "",
+    "score": 0.015873015873015872,
+    "mode": "path",
+    "kinds": [
+     "path"
+    ],
+    "rank": 12
+   }
+  ],
+  [
+   {
+    "path": "notes/café.txt",
+    "name": "café.txt",
+    "size": 39,
+    "mtime": 1748790000,
+    "snippet": "Notes on [café] menus and naïve tests. ",
+    "score": 0.03278688524590164,
+    "mode": "fts",
+    "kinds": [
+     "fts",
+     "name"
+    ],
+    "rank": -0.00000105389221556886
+   }
+  ],
+  [
+   {
+    "path": "reports/2026/budget-q1.md",
+    "name": "budget-q1.md",
+    "size": 97,
+    "mtime": 1748797200,
+    "snippet": " … The [forecast] covers compute and storage spending. ",
+    "score": 0.01639344262295082,
+    "mode": "fts",
+    "kinds": [
+     "fts"
+    ],
+    "rank": -8.99628252788104e-7
+   }
+  ]
+ ],
+ "plans": [
+  {
+   "columns": [
+    "path",
+    "bytes",
+    "modified"
+   ],
+   "rows": [
+    [
+     "code/big.bin",
+     "5000",
+     "2025-06-01 13:00:00"
+    ],
+    [
+     "reports/2026/budget-q1.md",
+     "97",
+     "2025-06-01 17:00:00"
+    ],
+    [
+     "notes/onboarding.md",
+     "65",
+     "2025-06-01 16:00:00"
+    ],
+    [
+     "reports/annual-report.md",
+     "64",
+     "2025-06-01 19:00:00"
+    ],
+    [
+     "reports/2026/forecast-draft.txt",
+     "53",
+     "2025-06-01 18:00:00"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "path",
+    "bytes",
+    "modified"
+   ],
+   "rows": [
+    [
+     "README.txt",
+     "38",
+     "2025-06-01 12:00:00"
+    ],
+    [
+     "code/big.bin",
+     "5000",
+     "2025-06-01 13:00:00"
+    ],
+    [
+     "code/budget.py",
+     "28",
+     "2025-06-01 14:00:00"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "extension",
+    "files",
+    "bytes"
+   ],
+   "rows": [
+    [
+     "bin",
+     "1",
+     "5000"
+    ],
+    [
+     "md",
+     "3",
+     "226"
+    ],
+    [
+     "txt",
+     "3",
+     "130"
+    ],
+    [
+     "py",
+     "1",
+     "28"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "directory",
+    "files",
+    "bytes"
+   ],
+   "rows": [
+    [
+     "code",
+     "2",
+     "5028"
+    ],
+    [
+     "reports/2026",
+     "2",
+     "150"
+    ],
+    [
+     "notes",
+     "2",
+     "104"
+    ],
+    [
+     "reports",
+     "1",
+     "64"
+    ],
+    [
+     "<index>",
+     "1",
+     "38"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "path",
+    "bytes",
+    "modified"
+   ],
+   "rows": [
+    [
+     "reports/2026/budget-q1.md",
+     "97",
+     "2025-06-01 17:00:00"
+    ],
+    [
+     "reports/annual-report.md",
+     "64",
+     "2025-06-01 19:00:00"
+    ],
+    [
+     "reports/2026/forecast-draft.txt",
+     "53",
+     "2025-06-01 18:00:00"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "path",
+    "bytes",
+    "modified"
+   ],
+   "rows": [
+    [
+     "code/budget.py",
+     "28",
+     "2025-06-01 14:00:00"
+    ],
+    [
+     "reports/2026/budget-q1.md",
+     "97",
+     "2025-06-01 17:00:00"
+    ],
+    [
+     "reports/2026/forecast-draft.txt",
+     "53",
+     "2025-06-01 18:00:00"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "directory",
+    "files",
+    "bytes"
+   ],
+   "rows": [
+    [
+     "reports/2026",
+     "1",
+     "97"
+    ],
+    [
+     "notes",
+     "1",
+     "65"
+    ],
+    [
+     "reports",
+     "1",
+     "64"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "path",
+    "bytes",
+    "modified"
+   ],
+   "rows": [
+    [
+     "code/big.bin",
+     "5000",
+     "2025-06-01 13:00:00"
+    ],
+    [
+     "reports/2026/budget-q1.md",
+     "97",
+     "2025-06-01 17:00:00"
+    ],
+    [
+     "notes/onboarding.md",
+     "65",
+     "2025-06-01 16:00:00"
+    ],
+    [
+     "reports/annual-report.md",
+     "64",
+     "2025-06-01 19:00:00"
+    ],
+    [
+     "reports/2026/forecast-draft.txt",
+     "53",
+     "2025-06-01 18:00:00"
+    ],
+    [
+     "notes/café.txt",
+     "39",
+     "2025-06-01 15:00:00"
+    ],
+    [
+     "README.txt",
+     "38",
+     "2025-06-01 12:00:00"
+    ],
+    [
+     "code/budget.py",
+     "28",
+     "2025-06-01 14:00:00"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "col1",
+    "col2"
+   ],
+   "rows": [
+    [
+     "annual-report.md",
+     "64"
+    ],
+    [
+     "onboarding.md",
+     "65"
+    ],
+    [
+     "budget-q1.md",
+     "97"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "error": "Error: no such column: nope: \"SELECT nope FROM vrpentries;\"",
+   "status": 400
+  }
+ ]
+}
