@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -34,16 +33,14 @@ func (x *Extractor) Legacy(ctx context.Context, path string) string {
 		return ""
 	}
 	defer os.RemoveAll(out)
-	ctx, cancel := context.WithTimeout(ctx, sofficeTimeout)
-	defer cancel()
 	profileURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(profile)}).String()
 	if !strings.HasPrefix(filepath.ToSlash(profile), "/") {
 		profileURL = "file:///" + filepath.ToSlash(profile) // a Windows drive path
 	}
-	cmd := exec.CommandContext(ctx, x.opt.Soffice, "-env:UserInstallation="+profileURL, "--headless",
+	cmd, hctx, cancel := helper(ctx, sofficeTimeout, x.opt.Soffice, "-env:UserInstallation="+profileURL, "--headless",
 		"--convert-to", target, "--outdir", out, path)
-	cmd.Env = helperEnv()
-	if err := cmd.Run(); err != nil && ctx.Err() != nil {
+	defer cancel()
+	if err := cmd.Run(); err != nil && hctx.Err() != nil {
 		return ""
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))

@@ -2,29 +2,35 @@
 // `node server/dist/preextract.js` followed by the extraction step of
 // `indexer/enrich.py`:
 //
-//	studio-extract --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse]
+//	studio-server extract --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse]
 //	  [--jobs N] [--progress] [--no-ocr] [--no-documents] [--pdf-reader auto|pdftotext|pypdf]
 //	  [--soffice PATH] [--extractors FILE] [--report FILE]
 //
 // It fills the extract cache and prints the pass's summary as one JSON
 // line on stdout, after `@progress {...}` lines with --progress. Problems
 // with single files go to stderr, one line each, and do not fail the
-// pass. Images are described by a vision model when ADE_VISION_MODEL and
+// pass. Contributed extractors (extract.External) are read from
+// --extractors, else from the file STUDIO_EXTRACTORS names, else from
+// INDEX_BASE/extractors.json when it exists. Images are described by a vision model when ADE_VISION_MODEL and
 // a gateway key are set, as for enrich.py.
 package cli
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/config"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract"
 )
 
@@ -41,15 +47,15 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	progress := fs.Bool("progress", false, "print @progress lines on stdout")
 	noOCR := fs.Bool("no-ocr", false, "do not run tesseract on images or scanned PDFs")
 	noDocs := fs.Bool("no-documents", false, "leave PDFs and Office documents unread (indexed by name)")
-	pdfReader := fs.String("pdf-reader", "auto", "how a PDF downmark cannot open is read: auto, pdftotext, or pypdf (no reader here)")
+	pdfReader := fs.String("pdf-reader", "auto", "how a PDF downmark did not convert is read: auto, pdftotext, or pypdf (the built-in reader)")
 	soffice := fs.String("soffice", "", "LibreOffice's soffice, for a legacy file the readers here get nothing from")
-	extractors := fs.String("extractors", "", "a JSON file of contributed extractors (see extract.External)")
+	extractors := fs.String("extractors", "", "a JSON file of contributed extractors (default: $STUDIO_EXTRACTORS, else INDEX_BASE/extractors.json if present)")
 	report := fs.String("report", "", "also write the summary to this JSON file")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *kb == "" || *cache == "" || fs.NArg() > 0 {
-		fmt.Fprintln(stderr, "usage: studio-extract --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse] [--jobs N] [--progress] [--no-ocr] [--no-documents] [--pdf-reader auto|pdftotext|pypdf] [--soffice PATH] [--extractors FILE] [--report FILE]")
+		fmt.Fprintln(stderr, "usage: studio-server extract --kb-root DIR --extract-cache DIR [--subdir REL] [--no-recurse] [--jobs N] [--progress] [--no-ocr] [--no-documents] [--pdf-reader auto|pdftotext|pypdf] [--soffice PATH] [--extractors FILE] [--report FILE]")
 		return 2
 	}
 	switch *pdfReader {
@@ -59,11 +65,19 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	var ext []extract.External
-	if *extractors != "" {
+	if path, required := ExtractorsFile(*extractors, os.Getenv); path != "" {
 		var err error
-		if ext, err = extract.LoadExternal(*extractors); err != nil {
+		ext, err = extract.LoadExternal(path)
+		switch {
+		case err == nil:
+		case required:
 			fmt.Fprintln(stderr, err)
 			return 2
+		case !errors.Is(err, iofs.ErrNotExist):
+			// A mistake in the default file leaves the contributed
+			// extractors out; it does not stop the pass.
+			fmt.Fprintf(stderr, "%v (contributed extractors not used)\n", err)
+			ext = nil
 		}
 	}
 	var logMu sync.Mutex
@@ -122,4 +136,22 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	return 0
+}
+
+// ExtractorsFile is where the contributed extractors are configured: the
+// flag's value, else STUDIO_EXTRACTORS, else extractors.json in INDEX_BASE
+// (the Studio's state folder, as the server resolves it). required is
+// false for the last, which need not exist.
+func ExtractorsFile(flagValue string, getenv func(string) string) (path string, required bool) {
+	if flagValue != "" {
+		return flagValue, true
+	}
+	if p := getenv("STUDIO_EXTRACTORS"); p != "" {
+		return p, true
+	}
+	cfg, err := config.Load(getenv)
+	if err != nil || cfg.IndexBase == "" {
+		return "", false
+	}
+	return filepath.Join(cfg.IndexBase, "extractors.json"), false
 }
