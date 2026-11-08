@@ -208,7 +208,8 @@ while [ "$stopping" = 0 ]; do
     if [ -f "$RES/app/occt/occt-import-js.wasm" ]; then
       export STUDIO_OCCT_WASM="${STUDIO_OCCT_WASM:-$RES/app/occt/occt-import-js.wasm}"
     fi
-    [ -x "$PYTHON_BIN" ] || unset PYTHON_BIN
+    # A Go-only payload has no Python; the Go server then reads with its own.
+    if [ -f "$RES/node/PLACEHOLDER" ] && [ ! -x "$PYTHON_BIN" ]; then unset PYTHON_BIN; fi
     onnx="$INDEX_BASE/models/minilm-l6"
     if [ -d "$RES/models/minilm-l6" ] && { [ -L "$onnx" ] || [ ! -e "$onnx" ]; }; then
       ln -sfn "$RES/models/minilm-l6" "$onnx"
