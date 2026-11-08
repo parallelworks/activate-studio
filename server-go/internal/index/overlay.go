@@ -31,14 +31,12 @@ func reapplyOverlay(ctx context.Context, prefix string) int {
 
 // registerOverlay matches Node's two call sites: indexing.ts afterChange,
 // after every build, sweep and folder pass this process runs, and main.ts
-// once at start. With Node behind the Go server Node's own start does the
-// second.
+// once at start. The start pass runs where this process holds the index
+// (Node-free, or STUDIO_GO_INDEX=1 beside Node), so labels on an index Go
+// holds do not wait on Node's start.
 func registerOverlay(a *app.App, ix *Indexer) {
 	ix.OnChange(func(rel string) { reapplyOverlay(context.Background(), rel) })
-	if !a.NodeFree() {
-		return
-	}
-	a.OnStart("index: tag overlay", func(ctx context.Context) {
+	a.OnIndexWork("index: tag overlay", func(ctx context.Context) {
 		if n := reapplyOverlay(ctx, ""); n > 0 {
 			a.Log.Info(fmt.Sprintf("tag overlay: re-applied %d labeled paths", n))
 		}
