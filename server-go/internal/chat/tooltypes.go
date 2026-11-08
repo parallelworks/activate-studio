@@ -2,21 +2,17 @@ package chat
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
 
-	"github.com/parallelworks/activate-studio/server-go/internal/app"
-	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 )
 
-// TODO(chat tools): the adapter below asks Node (server/src/chat/goBridge.ts)
-// for what tools.ts, context.ts, approvals.ts and access.ts work out, until
-// those are ported. Every method is one in-process call of the Node route.
+// The tool layer's types: what the loop asks of it (Tools, implemented by
+// goTools) and what it answers.
 
 // Spec is a tool spec as the gateway is sent it.
 type Spec = json.RawMessage
@@ -142,116 +138,6 @@ type Tools interface {
 	Access(r *http.Request, freshMS int) (*Access, error)
 }
 
-// nodeTools is Tools over the Node bridge.
-type nodeTools struct{ a *app.App }
-
-func (n nodeTools) call(r *http.Request, op string, in any, out any) error {
-	if n.a.NodeFree() || n.a.NodeAPI == nil {
-		return fmt.Errorf("the chat tools are not available without the Node server")
-	}
-	// The bridge secret rides as a header; Node.Do signs nothing itself.
-	rr := r.Clone(r.Context())
-	rr.Header = r.Header.Clone()
-	return n.a.NodeAPI.DoSigned(rr, "POST", "/internal/go/chat/"+op, in, out)
-}
-
-func (n nodeTools) Begin(r *http.Request, in map[string]any) (*Begin, error) {
-	var b Begin
-	return &b, n.call(r, "begin", in, &b)
-}
-
-func (n nodeTools) System(r *http.Request, platform, connected bool) (string, error) {
-	var out struct {
-		Prompt string `json:"prompt"`
-	}
-	err := n.call(r, "system", map[string]any{"platform": platform, "connected": connected}, &out)
-	return out.Prompt, err
-}
-
-func toolsArg(tools []string, has bool) any {
-	if !has {
-		return nil
-	}
-	return tools
-}
-
-func (n nodeTools) Specs(r *http.Request, tools []string, has bool, platform, changesOK bool, groups []string) (*Specs, error) {
-	var s Specs
-	return &s, n.call(r, "specs", map[string]any{"tools": toolsArg(tools, has), "platform": platform, "changesOk": changesOK, "groups": groups}, &s)
-}
-
-func (n nodeTools) Names(r *http.Request, tools []string, has bool, names []string) (*Names, error) {
-	var s Names
-	return &s, n.call(r, "names", map[string]any{"tools": toolsArg(tools, has), "names": names}, &s)
-}
-
-func (n nodeTools) Execute(r *http.Request, name, args string, ctx ToolCtx) (*Outcome, error) {
-	var o Outcome
-	if err := n.call(r, "execute", map[string]any{"name": name, "args": args, "ctx": ctx}, &o); err != nil {
-		var ne *app.NodeError
-		if asNodeError(err, &ne) {
-			var e struct {
-				Error string `json:"error"`
-			}
-			if json.Unmarshal(ne.Body, &e) == nil && e.Error != "" {
-				return nil, fmt.Errorf("%s", e.Error)
-			}
-		}
-		return nil, err
-	}
-	return &o, nil
-}
-
-func asNodeError(err error, out **app.NodeError) bool {
-	ne, ok := err.(*app.NodeError)
-	if ok {
-		*out = ne
-	}
-	return ok
-}
-
-func (n nodeTools) Prepare(r *http.Request, name, args, changeKey string) (*Prepared, error) {
-	var p Prepared
-	return &p, n.call(r, "prepare", map[string]any{"name": name, "args": args, "changeKey": changeKey}, &p)
-}
-
-func (n nodeTools) Hold(r *http.Request, in map[string]any) (json.RawMessage, error) {
-	var out struct {
-		Approval json.RawMessage `json:"approval"`
-		Error    string          `json:"error"`
-	}
-	if err := n.call(r, "hold", in, &out); err != nil {
-		return nil, err
-	}
-	if out.Error != "" {
-		return nil, fmt.Errorf("%s", out.Error)
-	}
-	return out.Approval, nil
-}
-
-func (n nodeTools) Answer(r *http.Request, answer map[string]any, changeKey *string) (*Answered, error) {
-	var a Answered
-	return &a, n.call(r, "answer", map[string]any{"answer": answer, "changeKey": changeKey}, &a)
-}
-
-func (n nodeTools) Held(r *http.Request, conversationID string) ([]conversations.Holder, error) {
-	var out struct {
-		Held []struct {
-			ToolCallID string `json:"toolCallId"`
-			Viewer     string `json:"viewer"`
-			ViewerName string `json:"viewerName"`
-		} `json:"held"`
-	}
-	if err := n.call(r, "held", map[string]any{"conversationId": conversationID}, &out); err != nil {
-		return nil, err
-	}
-	hs := make([]conversations.Holder, len(out.Held))
-	for i, h := range out.Held {
-		hs[i] = conversations.Holder{ToolCallID: h.ToolCallID, Viewer: h.Viewer, ViewerName: h.ViewerName}
-	}
-	return hs, nil
-}
-
 // envAccess is GATEWAY_BASE and the deployment credential from the
 // environment and the pw CLI's credentials file, without Node.
 func envAccess() *Access {
@@ -272,4 +158,10 @@ func envAccess() *Access {
 	return &Access{GatewayBase: strings.TrimRight(base, "/"), DeploymentKey: key}
 }
 
-var _ = bridge.Header
+// toolsArg is the reader's tool list as the request gave it: nil for none.
+func toolsArg(tools []string, has bool) any {
+	if !has {
+		return nil
+	}
+	return tools
+}

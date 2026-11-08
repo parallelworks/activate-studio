@@ -211,7 +211,15 @@ func startGoldenEnv(t *testing.T, prep func(kb string, bases []string), over map
 	cfg, _ := config.Load(func(k string) string {
 		// Its own INDEX_BASE: conversations.json has one writer at a time
 		// (Node's run notes go through Go), and here both routes write.
-		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix-go"), "KB_ROOT": kb, "STUDIO_NODE_URL": nodeURL, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
+		own := map[string]string{"INDEX_BASE": filepath.Join(dir, "ix-go"), "KB_ROOT": kb, "STUDIO_NODE_URL": nodeURL, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}
+		if v, ok := own[k]; ok {
+			return v
+		}
+		// A key the test set for both servers (GUFI_BIN, say).
+		if _, ok := over[k]; ok {
+			return env[k]
+		}
+		return ""
 	})
 	u, _ := url.Parse(nodeURL)
 	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, app.NewNode(u, nil, ""))

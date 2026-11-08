@@ -354,7 +354,7 @@ func (m *Module) wfDoc(r *http.Request, ctx ToolCtx, name string) (any, error) {
 	if e := workflows.ParseEntry(name); e != nil && e.Kind != workflows.KindAccount {
 		routes := workflows.Current()
 		if routes == nil {
-			return nil, errNodeTool
+			return nil, errNotHere
 		}
 		d, err := routes.WorkflowDefinition(r.Context(), e.Entry, deref(ctx.UserKey))
 		if err != nil {
@@ -705,7 +705,7 @@ func (m *Module) schema() *workflows.Schema {
 func (m *Module) toolValidateWorkflow(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	sch := m.schema()
 	if sch == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	text := tmplOr(arg(args, "yaml"), "")
 	if text == "" && truthy(arg(args, "path")) {
@@ -752,7 +752,7 @@ func bulleted(xs []string) string {
 func (m *Module) toolComposeWorkflow(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	sch := m.schema()
 	if sch == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	raw := coalesce(arg(args, "workflows"), []any{})
 	list, isList := raw.([]any)

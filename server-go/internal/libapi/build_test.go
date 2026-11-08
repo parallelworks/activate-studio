@@ -2,6 +2,7 @@ package libapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -21,6 +22,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/cli"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
+	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 )
 
 // The cases of libraryBuild.test.mjs and the build cases of
@@ -403,5 +405,47 @@ func TestMissingIndexDirsSkipsWhatCouldNotBeRead(t *testing.T) {
 	sub := subScan(index.Scan{Order: []string{"", "a", "a/b", "ab"}, Latest: map[string]int64{"": 1, "a": 2, "a/b": 3, "ab": 4}, Denied: []string{"a/b"}}, "a")
 	if !slices.Equal(sub.Order, []string{"", "b"}) || sub.Latest["b"] != 3 || !slices.Equal(sub.Denied, []string{"b"}) {
 		t.Fatalf("subScan: %+v", sub)
+	}
+}
+
+// At start (startLibrarySync), a build a stop cut off is built again and a
+// change of depth a stop cut off is finished; the hook is registered only
+// Node-free, where the Go server owns library builds.
+func TestStartResumesInterruptedBuilds(t *testing.T) {
+	f := newBuildFixture(t)
+	papers := filepath.Join(f.dir, "papers")
+	put(t, filepath.Join(papers, "intro.md"), "# Introduction\nThe turbine blade study.\n")
+	code, r := f.call("POST", "/api/libraries/build", map[string]any{"sourceRoot": papers, "label": "Papers", "create": true})
+	if code != 200 {
+		t.Fatalf("build: %d %v", code, r)
+	}
+	id := r["library"].(map[string]any)["id"].(string)
+	f.waitReady(id)
+	// As a stop leaves it: building, its programs gone.
+	f.s.Reg.UpdateBuild(id, func(lb *libraries.LocalBuild) { lb.State = "building" })
+	put(t, filepath.Join(papers, "later.md"), "# Later\nA quokka census.\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { f.s.builds.startSync(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	time.Sleep(200 * time.Millisecond)
+	l := f.waitReady(id)
+	if l["build"].(map[string]any)["state"] != "ready" || !slices.Contains(f.hits("quokka", id), "later.md") {
+		t.Fatalf("not resumed: %v, hits %v", l["build"], f.hits("quokka", id))
+	}
+	// A change of depth cut off: its index whole, the depth not recorded.
+	depth := "depth"
+	f.s.Reg.UpdateBuild(id, func(lb *libraries.LocalBuild) { lb.State, lb.Pending, lb.HasPending = "updating", &depth, true })
+	cancel()
+	<-done
+	ctx, cancel = context.WithCancel(context.Background())
+	done = make(chan struct{})
+	go func() { f.s.builds.startSync(ctx); close(done) }()
+	time.Sleep(200 * time.Millisecond)
+	if l := f.waitReady(id); l["build"].(map[string]any)["state"] != "ready" {
+		t.Fatalf("depth not finished: %v", l["build"])
+	}
+	if d := f.s.Reg.AddedDef(id); d.Build.Pending != nil {
+		t.Fatalf("pending left: %v", *d.Build.Pending)
 	}
 }
