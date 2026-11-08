@@ -11,7 +11,7 @@ import realFastify from 'fastify'
 
 const BIN = process.env.STUDIO_TEST_FRONT
 // The ports the Go servers take; another test process may hold one.
-const PORTS = [5870, 5899]
+const PORTS = (process.env.STUDIO_TEST_FRONT_PORTS ?? '5870-5899').split('-').map(Number)
 const fronts = new Set()
 let sent = 0
 
@@ -76,7 +76,7 @@ async function startFront(nodePort) {
     if (!/address already in use/.test(log) && attempt > 3) throw new Error(`the Go server did not start: ${log}`)
     await sleep(50 + Math.random() * 200)
   }
-  throw new Error('no free port for the Go server in 5870-5899')
+  throw new Error(`no free port for the Go server in ${PORTS[0]}-${PORTS[1]}`)
 }
 
 function stopFront(front) {
