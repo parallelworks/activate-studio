@@ -37,8 +37,13 @@ server-go/
   internal/auth/                 proxy JWT and JWKS, OIDC sign-in, sessions, the hand-off to Node
   internal/keycookie/            the sealed personal-key cookies (credentials.ts's format)
   internal/gufi/                 GUFI plans, output parsing, executor and admission runner
-  internal/extract/xls/          Excel 97-2003 text, as enrich.py's extract_xls
   scripts/golden/                Node scripts that write the golden files the Go tests compare with
+  cmd/studio-extract/            the document extraction pass (preextract plus enrich.py's extraction)
+  internal/extract/              the pass: downmark in process, OCR, helpers, cache, external hook
+  internal/extract/xls/          Excel 97-2003 text, as enrich.py's extract_xls
+  internal/extract/odf/          OpenDocument text, as enrich.py's extract_odf
+  internal/extract/ppt/          PowerPoint 97-2003 text, as enrich.py's extract_ppt
+  internal/extract/pytext/       Python and JavaScript string semantics for the readers
   scripts/compare_semantic_map.py  Python against Go on the same inputs
 ```
 
@@ -167,7 +172,7 @@ By risk and dependency, each step behind the proxy and checked against the same 
 | 7 | platform and workflow routes (access, sessions, session relay, workflows, runs, agent sites, tasks, fleet, RAG endpoint, updates) | pw CLI and platform API; updates must keep exit 76 |
 | 8 | chat: conversations, attachments, settings writes, `/api/chat/stream`, `/v1/*`, `/api/mcp` | the agent loop uses every module above; last, then Node is removed |
 
-`preextract.js` (downmark, a Node package with a native binary) is an index-job child, not a route; it needs a Go replacement or stays a separate binary at step 4 or 5.
+`preextract.js` (downmark, a Node package with a native binary) is an index-job child, not a route. `studio-extract` replaces it and the extraction step of `enrich.py` (see Document extraction in Go); switching the index job to it is part of step 4 or 5.
 
 ## Stage 1
 
@@ -260,6 +265,44 @@ It reads BIFF8 and BIFF5: RK, MULRK, NUMBER, LABEL, LABELSST, RSTRING, BOOLERR, 
 
 Checked cell by cell against xlrd and LibreOffice on 441 workbooks (LibreOffice, xlwt, synthetic, and the Excel-written files in xlrd's and Apache POI's test data): every cell equals xlrd's apart from pure times. The run and its results are in `internal/extract/xls/testdata/README.md`.
 
+## Document extraction in Go
+
+`internal/extract` does what `preextract.js` and the extraction step of `enrich.py` do today, in one pass; `cmd/studio-extract` runs it with the flags of both (`--kb-root`, `--extract-cache`, `--subdir`, `--no-recurse`, `--jobs`, `--progress`, `--no-ocr`, `--no-documents`, `--pdf-reader`, `--soffice`, plus `--extractors` and `--report`), prints the same `@progress` lines and a summary line, and is not called by the launchers or the Node server yet. Built stripped for linux/amd64 it is 11.9 MB, with no cgo.
+
+In the binary: downmark 0.10.0 (`github.com/giraffesyo/downmark`, the version the npm package pins, so the provenance line and the cache keys stay the same) for pdf, docx, pptx, xlsx and doc; the Go readers for xls, odt, ods, odp and ppt (`internal/extract/xls`, `odf`, `ppt`, in place of xlrd and olefile); text files with Python's decoding (`internal/extract/pytext`); the flat OOXML readers `enrich.py` uses after LibreOffice; and image captions through the gateway. Helpers, each found on `PATH` and each optional: tesseract (all OCR), pdftoppm and pdfinfo (the thin-PDF recheck), pdftotext (a PDF downmark cannot open), and LibreOffice (legacy formats and the last fallback). pypdf, `enrich.py`'s last resort for a PDF without poppler, has no counterpart.
+
+Kept as today: the entry format and freshness rule, the 64 MB input cap, the thin-PDF policy (fewer than 50 glyphs a page; 30 pages, 120 s a page, 300 s a document in downmark; `enrich.py`'s recheck under 14,400 bytes at 120 characters a page), the helper timeouts, image rules (8 KB floor outside `uploads/chat`, failed captions not cached) and `OMP_THREAD_LIMIT=1` for every tesseract. `--jobs` bounds the workers, and one semaphore of the same size bounds OCR across them. Two differences: dot folders other than the skipped ones are walked by one pass where today `preextract` leaves them to `enrich.py`, and `enrich.py --jobs 1` does not set `OMP_THREAD_LIMIT` (only its pool workers do), which the Go pass does at every job count.
+
+The external extractor hook (none exists today) is a JSON file, `{"extractors": [{"name", "suffixes", "command", "timeoutSeconds"}]}`: the command gets the file's path (`{path}` or appended, no shell), writes text on stdout, and is killed with its process group after the timeout (120 s, at most 3600 s). Text suffixes cannot be taken. The contract is in `external.go`.
+
+downmark's PDF page workers are goroutines without `recover`, so a panic there ends the process. The pass should run as a child process (`studio-extract`, as `preextract.js` is today) when the server moves to Go.
+
+Conformance, today against Go on the same files, cold, comparing cache entries byte for byte: the 275-file assessment corpus (15 formats) gives 275 of 275 equal with OCR and 235 of 235 without; `enrich.py` run over the Go cache afterwards rewrites nothing. On the Apache POI, ODF Toolkit, pdf.js and Tika test suites (3,522 files), 2,957 of the 2,973 files both sides cache are equal, and 3 files are cached by one side only. The 19: 5 damaged xls on which xlrd raises (today's LibreOffice route then indexes SST indices as words, or gets nothing; Go reads the cells, which is right), 5 with pure times (deliberate), 3 BIFF3 and BIFF4 workbooks Go does not read (today is right; LibreOffice covers them), 2 crafted ODF zips whose central directory and local headers disagree (Python and Go pick different members; LibreOffice opens neither), 1 pdf.js file whose pdftoppm output differs from run to run, and 3 fuzzed .ppt files: one olefile cannot open (Go reads it), two whose directories mscfb rejects and olefile accepts (today is right). Fixtures from POI ship in `ppt/testdata` with a NOTICE; the larger suites stay outside the repository.
+
+Timings on the assessment corpus (shared 20-core host, load average 4.6 to 10.7 during the runs; CPU includes helpers; OCR is tesseract plus pdftoppm CPU; peak RSS is the extractor's own processes, helpers excluded):
+
+| Run | Today wall / CPU / OCR | Go wall / CPU / OCR | Peak RSS today, Go |
+|---|---|---|---|
+| all, cold, 8 jobs | 68.3 s / 245.7 / 230.5 | 35.5 s / 267.7 / 254.6 | 276, 205 MB |
+| all, cold, 1 job | 329.5 s / 523.9 / 510.9 | 233.4 s / 235.6 / 224.3 | 135, 58 MB |
+| all, cached, 8 jobs | 0.45 s / 2.5 | 0.20 s / 1.9 | 48, 116 MB |
+| all, cached, 1 job | 0.80 s / 1.9 | 0.48 s / 1.5 | 87, 39 MB |
+| all, cold, no OCR, 8 jobs | 2.00 s / 12.9 | 1.50 s / 11.5 | 219, 176 MB |
+| outline PDFs (5), cold, 1 job | 274.3 s / 459.9 / 454.4 | 177.5 s / 178.6 / 173.2 | 86, 58 MB |
+| outline PDFs (5), cold, 8 jobs | 61.1 s / 186.5 / 180.4 | 28.3 s / 206.3 / 200.0 | 100, 121 MB |
+| scanned PDFs, cold, 8 jobs | 9.07 s / 45.7 / 45.0 | 7.91 s / 44.4 / 43.9 | |
+
+Without OCR every format takes under 0.5 s wall either way; Go's non-OCR CPU is lower for every format but ods: on the ten generated spreadsheets (26 MB of content.xml) the ODF reader takes 1.15 s of CPU against 0.56 s for `extract_odf`, because `encoding/xml` is about half expat's speed and the reader parses content.xml twice (a well-formedness pass, then the walk). Folding the two passes into one would bring it to about parity. OCR is 94 to 97 percent of cold CPU, so the wall gain at 8 jobs comes from overlapping the two stages today runs one after the other, and at 1 job from tesseract running on one thread. On the real-world suites at 8 jobs (an earlier build) today took 783 s and Go 684 s, both bounded by two pdf.js tiling-pattern files on which pdftoppm reaches its 600 s timeout.
+
+Rendering PDF pages for OCR without poppler: a prototype over `github.com/pdfcpu/pdfcpu` (Apache 2.0) and `golang.org/x/image/vector` fills paths (text drawn as outlines) and paints DCT and 8-bit Flate images (scans), in grey; it ignores text, strokes, clipping, shadings and patterns. That covers the pages the OCR path is for. Its tesseract recall on the five outline PDFs equals pdftoppm's within 0.0001 (0.9995 of the words), it rendered them in 5.7 s against pdftoppm's 41.1 s, and on scans the words agree with pdftoppm's to 0.9988. Over the pdf.js suite (1,088 files, 3 pages each) it rendered 1,053, could not read 29 and panicked on 6. `seehuhn.de/go/pdf` renders more but is GPL-3. The recommendation is to keep pdftoppm where installed and add the Go renderer as the fallback where poppler is missing (the macOS app), after it gains `recover`, strokes, clipping and the other image filters (CCITT, JBIG2, JPX); poppler then becomes optional.
+
+```
+cd server-go
+go build -o bin/studio-extract ./cmd/studio-extract
+OMP_THREAD_LIMIT=1 ./bin/studio-extract --kb-root ~/kb --extract-cache ~/.cache/studio/extract --jobs 8 --progress
+ENRICH_PY=../indexer/enrich.py ENRICH_DEPS=../indexer/.deps go test ./internal/extract/...   # compares with Python
+```
+
 ## Performance
 
 Measured on a shared 20-core Linux host (load average 3 to 12 during the runs, recorded with each run) with the harness kept outside the repository; medians of 3 rounds, 10 runs for startup. "Before" is 3065f7d.
@@ -287,4 +330,5 @@ Event streams are unchanged by the flushing change (time to first event and the 
 - `/v1/` and `/internal/` are left to Node's own checks under required sign-in, where the `oidc-signin` branch redirected them to sign-in.
 - Where the Go server lives in the packaged apps: the desktop supervisor and `deploy/` start `node server/dist/main.js` today. Switching them to `studio-server` with `STUDIO_NODE_SPAWN=1` is one change per launcher.
 - The ONNX embedder in Go (step 4): onnxruntime through cgo, or a pure Go MiniLM. cgo makes cross-compiling harder; pure Go is slower.
+- Document extraction (step 4): whether the Go pass needs pypdf's role (PDF text without poppler) or the Go renderer covers it; where the external extractor file lives in Settings; whether `enrich.py --jobs 1` should set `OMP_THREAD_LIMIT` as its pool workers do; and whether a Windows cache written by Python (which writes \r\n) and one written by Go (\n) should be treated alike, not yet compared.
 - `semantic_map.py` labels the map with the model most files use but maps the files of every model; the Go port does the same. Whether files of other models should be left out, as the docstring says, is a decision for the Python and Go code together.
