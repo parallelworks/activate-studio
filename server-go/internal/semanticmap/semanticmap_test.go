@@ -395,3 +395,35 @@ func TestVectorsSourceStopsOnEmitError(t *testing.T) {
 		t.Fatalf("err %v after %d files", err, n)
 	}
 }
+
+func TestBuildRejectsZeroOptions(t *testing.T) {
+	tmp := t.TempDir()
+	index := filepath.Join(tmp, "index")
+	writeIndex(t, index, map[string]int{"bread": 30}, 20)
+	out := filepath.Join(tmp, "maps", "semantic-map")
+	neg := -1
+	for name, opt := range map[string]Options{
+		"zero":        {},
+		"no fit":      {Sample: 3000},
+		"no sample":   {Fit: 20000},
+		"small fit":   {Sample: 3000, Fit: MinFit - 1},
+		"negative of": {Sample: 3000, Fit: 20000, Of: &neg},
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("%s: Build panicked: %v", name, r)
+				}
+			}()
+			if _, err := Build(IndexSource(index), out, opt); err == nil {
+				t.Errorf("%s: Build accepted %+v", name, opt)
+			}
+		}()
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "maps")); !os.IsNotExist(err) {
+		t.Errorf("rejected options left files behind: %v", err)
+	}
+	if _, err := Build(IndexSource(index), out, Options{Sample: MinSample, Fit: MinFit}); err != nil {
+		t.Errorf("the floors: %v", err)
+	}
+}

@@ -35,7 +35,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "semantic-map: give one of --index or --vectors, and --out")
 		os.Exit(2)
 	}
-	opt := semanticmap.Options{Sample: max(100, *sample), Fit: max(1000, *fit), Seed: *seed}
+	opt := semanticmap.Options{Sample: max(semanticmap.MinSample, *sample), Fit: max(semanticmap.MinFit, *fit), Seed: *seed}
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "of" {
 			opt.Of = of

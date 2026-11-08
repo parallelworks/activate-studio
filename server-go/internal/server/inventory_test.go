@@ -69,15 +69,26 @@ func TestNodeFreeAnswers501ForUnported(t *testing.T) {
 		return map[string]string{"STUDIO_NODE": "off", "INDEX_BASE": t.TempDir(), "KB_ROOT": t.TempDir(), "STUDIO_WEB_DIST": t.TempDir()}[k]
 	})
 	s := New(cfg, slog.New(slog.DiscardHandler), nil, nil)
-	for _, c := range []struct {
+	// Any unported route without a path parameter serves as the example,
+	// so the test holds as routes move to Go.
+	var unported []string
+	for _, k := range s.Unported() {
+		if m, p, _ := strings.Cut(k, " "); m == "GET" && !strings.Contains(p, "{") {
+			unported = append(unported, p)
+		}
+	}
+	type check struct {
 		method, path string
 		status       int
-	}{
-		{"GET", "/api/kb/details", 501},
-		{"GET", "/api/kb/topology", 501},
+	}
+	checks := []check{
 		{"GET", "/api/no-such-route", 404},
 		{"GET", "/healthz", 200},
-	} {
+	}
+	if len(unported) > 0 {
+		checks = append(checks, check{"GET", unported[0], 501})
+	}
+	for _, c := range checks {
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, httptest.NewRequest(c.method, c.path, nil))
 		if w.Code != c.status {
