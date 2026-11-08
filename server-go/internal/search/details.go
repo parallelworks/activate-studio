@@ -260,7 +260,14 @@ func (c *labelCounts) top(n int) []LabelCount {
 	for _, t := range c.order {
 		out = append(out, LabelCount{t, c.m[t]})
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	// Labels used equally often by name, as in the label list: Node keeps
+	// the order the index rows came in, which changes between visits.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Label < out[j].Label
+	})
 	if len(out) > n {
 		out = out[:n]
 	}

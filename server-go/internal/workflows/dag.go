@@ -174,7 +174,7 @@ func readError(abs string, err error) string {
 	case errors.Is(err, fs.ErrNotExist):
 		return "ENOENT: no such file or directory, open '" + abs + "'"
 	case errors.Is(err, syscall.EISDIR):
-		return "EISDIR: illegal operation on a directory, read"
+		return "EISDIR: illegal operation on a directory, read '" + abs + "'"
 	case errors.Is(err, fs.ErrPermission):
 		return "EACCES: permission denied, open '" + abs + "'"
 	}

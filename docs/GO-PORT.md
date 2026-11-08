@@ -321,7 +321,7 @@ Differences from Node, kept on purpose:
 | labels without the attr package | overlay | xattrs by syscall, overlay only where they fail |
 | `/api/kb/stats` after a change made here | counts up to 10 minutes stale | counts dropped |
 
-The label list (`GET /api/tags`) puts the most used labels first and orders labels used equally often by name. This is a deliberate difference: Node leaves those in the order GUFI's threads returned their rows, which changes from one visit to the next, so the chips under Search and Stats moved around.
+The label list (`GET /api/tags`) and a folder's labels in Details (`labels.within` in `GET /api/kb/details`) put the most used labels first and order labels used equally often by name. This is a deliberate difference: Node leaves those in the order GUFI's threads returned their rows, which changes from one visit to the next, so the chips under Search and Stats moved around.
 
 ## The semantic map in Go
 
