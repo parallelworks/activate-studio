@@ -102,11 +102,38 @@ export interface StudioSettings {
 }
 
 let cache: StudioSettings | null = null
+/** The file's size and modification time when `cache` was read: another
+ *  process (the Go server in front of this one) may write the file, so a
+ *  change of either reads it again. */
+let cacheStamp = ''
+
+function fileStamp(): string {
+  try { const st = fs.statSync(FILE); return `${st.size}:${st.mtimeMs}:${st.ino}` } catch { return 'none' }
+}
 
 export function loadSettings(): StudioSettings {
-  if (cache) return cache
-  try { cache = JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { cache = {} }
+  const stamp = fileStamp()
+  if (cache && stamp === cacheStamp) return cache
+  try {
+    cache = JSON.parse(fs.readFileSync(FILE, 'utf8'))
+  } catch {
+    // Unreadable or half written: keep what was read last, else nothing.
+    if (stamp !== 'none' && cache) return cache
+    cache = {}
+  }
+  cacheStamp = stamp
   return cache!
+}
+
+/** Write the settings whole, through a temporary file renamed over the
+ *  old, so a reader in another process never sees half a file. */
+async function writeSettingsFile(next: StudioSettings): Promise<void> {
+  await fsp.mkdir(INDEX_BASE, { recursive: true })
+  const tmp = `${FILE}.${process.pid}.tmp`
+  await fsp.writeFile(tmp, JSON.stringify(next, null, 1))
+  await fsp.rename(tmp, FILE)
+  cache = next
+  cacheStamp = fileStamp()
 }
 
 /** A Studio on one person's own computer: nobody signs in, and the platform
@@ -277,9 +304,7 @@ export function effectiveSettings(): Required<StudioSettings> {
 /** Save some settings outside the Settings form, keeping the rest. */
 export async function updateSettings(patch: StudioSettings): Promise<StudioSettings> {
   const next: StudioSettings = { ...loadSettings(), ...patch }
-  await fsp.mkdir(INDEX_BASE, { recursive: true })
-  await fsp.writeFile(FILE, JSON.stringify(next, null, 1))
-  cache = next
+  await writeSettingsFile(next)
   return next
 }
 
@@ -472,9 +497,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const n = String(body.ragEndpointName).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
       next.ragEndpointName = n || undefined
     }
-    await fsp.mkdir(INDEX_BASE, { recursive: true })
-    await fsp.writeFile(FILE, JSON.stringify(next, null, 1))
-    cache = next
+    await writeSettingsFile(next)
     invalidateRemote()
     return { effective: effectiveSettings(), saved: next }
   })
