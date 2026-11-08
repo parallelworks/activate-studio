@@ -49,11 +49,28 @@ func (a *App) installedShell() string {
 
 // shellChanged: the install holds a different program than the one running.
 func (a *App) shellChanged() bool {
-	inst := a.installedShell()
+	return shellChangedFrom("/proc/self/exe", a.installedShell())
+}
+
+// shellChangedFrom: the program running (self, which stat follows to the
+// running file even once it was deleted) is not the file the install holds
+// at inst. Where both can be stat'ed the file decides, whatever its
+// content: an update replaces the whole tree, and a window still running
+// the replaced file (renamed beside the app, or deleted) keeps that copy in
+// use and has to be reopened, even when the new file is byte for byte the
+// same. Elsewhere (no /proc) the contents are compared.
+func shellChangedFrom(self, inst string) bool {
 	if inst == "" {
 		return false
 	}
-	now, was := fileHash(inst), fileHash("/proc/self/exe")
+	ist, err := os.Stat(inst)
+	if err != nil {
+		return false
+	}
+	if sst, err := os.Stat(self); err == nil {
+		return !os.SameFile(sst, ist)
+	}
+	now, was := fileHash(inst), fileHash(self)
 	return now != "" && was != "" && now != was
 }
 

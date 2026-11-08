@@ -209,7 +209,10 @@ func procsUnder(dir string) []int {
 			continue
 		}
 		for _, link := range []string{"exe", "cwd"} {
-			if p, err := os.Readlink(filepath.Join("/proc", e.Name(), link)); err == nil && under(dir, p) {
+			// A deleted file ("... (deleted)") is gone from dir already, under
+			// whatever name it last had there: a window still running a shell
+			// from an earlier copy does not hold this one.
+			if p, err := os.Readlink(filepath.Join("/proc", e.Name(), link)); err == nil && !strings.HasSuffix(p, " (deleted)") && under(dir, p) {
 				out = append(out, pid)
 				break
 			}
