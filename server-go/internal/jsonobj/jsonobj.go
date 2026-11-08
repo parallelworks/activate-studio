@@ -46,7 +46,7 @@ func Parse(b []byte) (*Object, error) {
 	if _, err := dec.Token(); err != nil {
 		return nil, err
 	}
-	if _, err := dec.Token(); err == nil {
+	if len(bytes.TrimSpace(b[dec.InputOffset():])) > 0 {
 		return nil, errors.New("text after the object")
 	}
 	return o, nil
