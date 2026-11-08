@@ -29,3 +29,14 @@ func inodeOfInfo(st os.FileInfo) uint64 {
 	}
 	return 0
 }
+
+// processUmask is the umask at start, read once (setting it back at once).
+var processUmask = func() os.FileMode {
+	m := syscall.Umask(0)
+	syscall.Umask(m)
+	return os.FileMode(m)
+}()
+
+// umask is the mode bits a new file does not get, as Node's writeFile
+// leaves them to the process umask.
+func umask() os.FileMode { return processUmask }
