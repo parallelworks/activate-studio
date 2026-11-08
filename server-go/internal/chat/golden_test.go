@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	kbpkg "github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"io"
 	"log/slog"
 	"net/http"
@@ -185,6 +186,7 @@ func startGolden(t *testing.T) *goldenEnv {
 	u, _ := url.Parse(nodeURL)
 	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, app.NewNode(u, nil, ""))
 	mux := http.NewServeMux()
+	kbpkg.Register(mux, a)
 	Register(mux, a)
 	gsrv := httptest.NewServer(mux)
 	t.Cleanup(gsrv.Close)
@@ -287,6 +289,21 @@ func scenarios() []scenario {
 		{name: "the Studio's own docs", text: "how do labels work in this app?", replies: []reply{call("studio_docs", `{"doc":"nope"}`), text(long)}},
 		{name: "writing a file", text: "save a note", setup: func(g *goldenEnv) { os.Remove(filepath.Join(g.kb, "notes", "new note.md")) },
 			replies: []reply{call("write_kb_file", `{"path":"/notes/new note.md","content":"# New\n"}`), call("write_kb_file", `{"path":"notes/new note.md","content":"again"}`), call("write_kb_file", `{"path":".git/x","content":"x"}`), text(long)}},
+		{name: "showing files and a workflow", text: "show me", setup: func(g *goldenEnv) {
+			os.WriteFile(filepath.Join(g.kb, "notes", "plot.png"), []byte("png"), 0o644)
+			os.WriteFile(filepath.Join(g.kb, "notes", "part.step"), []byte("step"), 0o644)
+		}, replies: []reply{
+			{frames: []any{delta(map[string]any{"tool_calls": []any{
+				map[string]any{"index": 0, "id": "v1", "type": "function", "function": map[string]any{"name": "show_in_viewer", "arguments": `{"target":"notes/kickoff agenda.md"}`}},
+				map[string]any{"index": 1, "id": "v2", "type": "function", "function": map[string]any{"name": "show_in_viewer", "arguments": `{"target":"notes/plot.png"}`}},
+				map[string]any{"index": 2, "id": "v3", "type": "function", "function": map[string]any{"name": "show_in_viewer", "arguments": `{"target":"notes/part.step"}`}},
+				map[string]any{"index": 3, "id": "v4", "type": "function", "function": map[string]any{"name": "show_in_viewer", "arguments": `{"target":"notes"}`}},
+				map[string]any{"index": 4, "id": "v5", "type": "function", "function": map[string]any{"name": "show_in_viewer", "arguments": `{"target":"gone.pdf"}`}},
+				map[string]any{"index": 5, "id": "v6", "type": "function", "function": map[string]any{"name": "show_in_viewer", "arguments": `{"kind":"workflow_dag","target":"my flow!"}`}}}}), finish("tool_calls")}},
+			text(long)}},
+		{name: "labels applied", text: "label the agenda", replies: []reply{
+			call("apply_labels", `{"paths":"/notes/kickoff agenda.md, notes","add":"Meeting Notes,agenda","remove":"draft"}`), call("apply_labels", `{"paths":"x","add":"a","library":"all"}`),
+			call("apply_labels", `{"paths":"","add":""}`), text(long)}},
 		{name: "a tool from an attached MCP server", text: "find deals", replies: []reply{call("crm__find_deals", `{"q":"pumps"}`), call("crm__fail", `{}`), text(long)}},
 		{name: "a steer is not queued, labels scope the prompt", text: "scoped", extra: map[string]any{"labelScope": []any{"alpha", "beta"}}, replies: []reply{text("Scoped answer.")}},
 	}

@@ -152,18 +152,9 @@ export interface StoredConversation {
 let cache: StoredConversation[] | null = null
 let writing: Promise<void> = Promise.resolve()
 
-// TRANSITIONAL: the Go server in front writes this file too
-// (server-go/internal/conversations), so a change on disk this process did
-// not make is read again. Goes away when no Node route reads conversations.
-let stamp = ''
-let pendingWrites = 0
-const stampOf = (): string => { try { const s = fs.statSync(FILE); return `${s.ino}:${s.size}:${s.mtimeMs}` } catch { return '' } }
-
 function load(): StoredConversation[] {
-  if (cache && (pendingWrites > 0 || stampOf() === stamp)) return cache
-  const now = stampOf()
+  if (cache) return cache
   try { cache = JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { cache = [] }
-  stamp = now
   return cache!
 }
 
@@ -174,14 +165,10 @@ function load(): StoredConversation[] {
 function persist(): void {
   const snapshot = JSON.stringify(load(), null, 1)
   const tmp = `${FILE}.${process.pid}.tmp`
-  pendingWrites++
   writing = writing.then(async () => {
     await fsp.writeFile(tmp, snapshot)
-    // the written file's stamp, before a write of Go's can land after it
-    const s = await fsp.stat(tmp)
     await fsp.rename(tmp, FILE)
-    stamp = `${s.ino}:${s.size}:${s.mtimeMs}`
-  }).catch(() => {}).finally(() => { pendingWrites-- })
+  }).catch(() => {})
 }
 
 const summary = (c: StoredConversation) => ({
@@ -247,10 +234,10 @@ export function getConversation(id: string): StoredConversation | undefined {
 }
 
 export function appendConversationNote(conversationId: string, content: string): boolean {
-  const c = load().find(x => x.id === conversationId)
-  if (!c) return false
-  // TRANSITIONAL: behind a Go server that writes conversations.json, the
-  // note is written there, so the file keeps one writer.
+  // TRANSITIONAL: behind a Go server that keeps conversations.json, the
+  // note is written there and this process never reads the file. Goes away
+  // when the run watcher (runs.ts) runs in Go, which calls the chat track's
+  // Providers.ConversationNote.
   const front = process.env.STUDIO_FRONT_URL
   if (process.env.STUDIO_GO_CONVERSATIONS === '1' && front) {
     fetch(`${front.replace(/\/$/, '')}/internal/go-chat/note`, {
@@ -260,6 +247,8 @@ export function appendConversationNote(conversationId: string, content: string):
     }).catch(() => { /* the note is lost with the Go server; the run itself is not */ })
     return true
   }
+  const c = load().find(x => x.id === conversationId)
+  if (!c) return false
   const last = c.messages[c.messages.length - 1]
   c.messages.push({ id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, role: 'assistant', content, parentId: last?.id ?? null, timestamp: new Date().toISOString() })
   c.updatedAt = new Date().toISOString()

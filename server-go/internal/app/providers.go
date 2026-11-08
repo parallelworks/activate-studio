@@ -42,6 +42,11 @@ type Providers struct {
 	// write. Owner: chat track. Node rereads its MCP status when the
 	// settings file changes (mcpClient.ts), so the default does nothing.
 	InvalidateMCP func()
+	// ConversationNote is conversations.ts's appendConversationNote: a note
+	// added to a conversation (the run watcher's, runs.ts), false when the
+	// conversation is not stored. Owner: chat track. Default: nothing is
+	// stored, false.
+	ConversationNote func(conversationID, content string) bool
 	// StopRagEndpoint is ragEndpoint.ts's stopRagEndpoint(), when the RAG
 	// proxy is turned off. Owner: platform track. Node: POST
 	// /api/rag/endpoint/stop. Node-free: nothing runs, so nothing.
@@ -107,7 +112,8 @@ func defaultProviders(a *App) Providers {
 			}
 			return os.Getenv("OPENAI_API_KEY")
 		},
-		InvalidateMCP: func() {},
+		InvalidateMCP:    func() {},
+		ConversationNote: func(string, string) bool { return false },
 		GufiLogInfo: func() any {
 			// gufiLog.ts: LOG_DIR/gufi-commands.log, LOG_DIR being
 			// STUDIO_DATA_DIR/logs, else INDEX_BASE/logs (indexLog.ts).
