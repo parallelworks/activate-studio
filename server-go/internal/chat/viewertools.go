@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
+	"github.com/parallelworks/activate-studio/server-go/internal/libapi"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 )
 
@@ -24,9 +25,9 @@ func init() {
 	goExecutors["show_in_viewer"] = (*Module).toolShowInViewer
 }
 
-// errNodeTool sends a call to the tools still in Node: the library is one
-// only Node knows.
-var errNodeTool = errors.New("the tool runs in Node for this library")
+// errNotHere is a tool's answer where the part of the Studio it runs on is
+// not registered in this server (a test's server, say).
+var errNotHere error = &toolError{"the part of the Studio this tool runs on is not running in this server"}
 
 func csvList(args map[string]any, k string) []string {
 	out := []string{}
@@ -40,7 +41,7 @@ func csvList(args map[string]any, k string) []string {
 
 func (m *Module) toolApplyLabels(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	if kb.Default == nil {
-		return nil, errNodeTool
+		return nil, errNotHere
 	}
 	paths := csvList(args, "paths")
 	add, remove := csvList(args, "add"), csvList(args, "remove")
@@ -62,7 +63,13 @@ func (m *Module) toolApplyLabels(r *http.Request, args map[string]any, ctx ToolC
 	}
 	keys, updated, stored, label, known, err := kb.Default.ApplyLabelsIn(r.Context(), want, rels, add, remove)
 	if !known && err == nil {
-		return nil, errNodeTool
+		// A library Libs does not hold: the viewer's own, on another system.
+		lib, err := m.namedLibrary(want, ctx)
+		if err != nil {
+			return nil, err
+		}
+		label = lib.Label
+		keys, updated, stored, err = kb.Default.ApplyLabelsInLibrary(r.Context(), libapi.ToKB(lib), rels, add, remove)
 	}
 	if err != nil {
 		return nil, &toolError{err.Error()}
