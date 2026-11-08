@@ -250,6 +250,7 @@ func (p *Platform) loadChoice() string {
 // ChosenContext is chosenContext: the context chosen in Model access,
 // while the CLI still has it.
 func (p *Platform) ChosenContext() string {
+	p.rereadChoice()
 	p.mu.Lock()
 	c := p.chosen
 	p.mu.Unlock()

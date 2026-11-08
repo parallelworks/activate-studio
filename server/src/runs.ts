@@ -121,6 +121,8 @@ async function showRunSession(slug: string): Promise<void> {
   if (!key) return
   let rows
   try { rows = await listSessions(key) } catch { return }
+  // Polls overlap when the platform answers slower than the poll interval.
+  if (sessionShown.has(slug)) return
   const s = rows.find(x => sessionOfRun(x, slug) && x.status === 'running')
   if (!s) return
   sessionShown.add(slug)

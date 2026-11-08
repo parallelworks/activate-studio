@@ -293,6 +293,10 @@ func (p *Platform) finishLogin(run *loginRun, host string, code int, out string)
 			p.ChooseContext(made)
 		} else {
 			p.syncGateway()
+			// Node follows the CLI's new current context too (its gateway).
+			if err := p.AccessChanged(false); err != nil {
+				p.log.Warn("pw CLI sign-in: Node did not answer", "err", err.Error())
+			}
 		}
 		msg := "Signed in."
 		if made != "" {
