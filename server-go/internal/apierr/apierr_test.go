@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
 	"net/http/httptest"
 	"regexp"
 	"strings"
@@ -55,5 +57,76 @@ func TestInternalErrorHidesDetailBehindARef(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), m[1]) || !strings.Contains(logs.String(), "/secret/path") {
 		t.Fatalf("log lacks the ref or detail: %s", logs.String())
+	}
+}
+
+// The bytes Fastify sends through sanitizedErrorHandler, from
+// scripts/golden/apierr.mjs (testdata/golden.json).
+type goldenBody struct {
+	Status      int    `json:"status"`
+	ContentType string `json:"contentType"`
+	Body        []byte `json:"body"`
+	Message     string `json:"message"`
+}
+
+func TestErrorBodiesMatchFastify(t *testing.T) {
+	var msgs []string
+	raw, _ := os.ReadFile("testdata/messages.json")
+	if err := json.Unmarshal(raw, &msgs); err != nil {
+		t.Fatal(err)
+	}
+	var g struct {
+		Kb         []goldenBody `json:"kb"`
+		Validation goldenBody   `json:"validation"`
+		Internal   goldenBody   `json:"internal"`
+	}
+	raw, _ = os.ReadFile("testdata/golden.json")
+	if err := json.Unmarshal(raw, &g); err != nil || len(g.Kb) != len(msgs) {
+		t.Fatal("golden.json does not fit messages.json: regenerate it", err)
+	}
+	check := func(name string, rec *httptest.ResponseRecorder, want goldenBody, got []byte) {
+		t.Helper()
+		if rec.Code != want.Status || rec.Header().Get("Content-Type") != want.ContentType || !bytes.Equal(got, want.Body) {
+			t.Errorf("%s: %d %q %q, Fastify %d %q %q", name, rec.Code, rec.Header().Get("Content-Type"), got, want.Status, want.ContentType, want.Body)
+		}
+		if rec.Header().Get("Content-Length") != fmt.Sprint(rec.Body.Len()) {
+			t.Errorf("%s: Content-Length %q for %d bytes", name, rec.Header().Get("Content-Length"), rec.Body.Len())
+		}
+	}
+	for i, m := range msgs {
+		rec := httptest.NewRecorder()
+		Write(rec, nil, New(400+i, "%s", m))
+		check(fmt.Sprintf("message %d", i), rec, g.Kb[i], rec.Body.Bytes())
+	}
+	rec := httptest.NewRecorder()
+	Write(rec, nil, &Validation{Message: g.Validation.Message})
+	check("validation", rec, g.Validation, rec.Body.Bytes())
+	rec = httptest.NewRecorder()
+	Write(rec, nil, errors.New("secret detail"))
+	check("internal", rec, g.Internal, regexp.MustCompile(`\(ref [0-9a-z]{8}\)`).ReplaceAll(rec.Body.Bytes(), []byte("(ref <ref>)")))
+}
+
+// Invalid UTF-8 in a Go message is the replacement character, written as
+// itself as Node writes a string it decoded from the same bytes.
+func TestInvalidUTF8IsTheReplacementCharacter(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Write(rec, nil, New(400, "bad \xff byte \\u2028 kept"))
+	if got := rec.Body.String(); got != "{\"error\":\"bad � byte \\\\u2028 kept\"}" {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestGoldenIsCurrent(t *testing.T) {
+	node := os.Getenv("STUDIO_GOLDEN_NODE")
+	if node == "" {
+		t.Skip("STUDIO_GOLDEN_NODE unset")
+	}
+	out, err := exec.Command(node, "../../scripts/golden/apierr.mjs", "testdata/messages.json", "../../..").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := os.ReadFile("testdata/golden.json")
+	if !bytes.Equal(bytes.TrimSpace(out), bytes.TrimSpace(want)) {
+		t.Fatal("Fastify's error bodies changed: regenerate testdata/golden.json")
 	}
 }
