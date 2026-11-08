@@ -260,6 +260,20 @@ func Register(mux *http.ServeMux, a *app.App) {
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
+	a.Providers.PersonalCred = func(sub, cookieHeader string) (string, string, bool) {
+		if sub != "" && cookieHeader != "" {
+			m.Keys.Hydrate(sub, cookieHeader)
+		}
+		c := m.Keys.Resolve(sub)
+		if c == nil {
+			return "", "", false
+		}
+		base := ""
+		if c.BaseURL != nil {
+			base = *c.BaseURL
+		}
+		return c.Key, base, true
+	}
 	a.Providers.TaskToolNames = m.TaskToolNames
 	// The MCP listing is Go's. Node's, which only its RAG proxy and /api/mcp
 	// still read, drops itself when the saved server list changes

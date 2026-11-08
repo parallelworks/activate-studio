@@ -38,6 +38,12 @@ type Providers struct {
 	// track. Default: PW_API_KEY, else OPENAI_API_KEY (no shared key or CLI
 	// credential until the chat track lands).
 	GatewayKey func() string
+	// PersonalCred is credentials.ts's resolveUserCred(sub), for work that
+	// goes on without a request (a remote build followed in the
+	// background): the user's key and its base URL, ok false for none. A
+	// cookieHeader rehydrates the session first, as main.ts's onRequest hook
+	// does. Owner: chat track. Default: nil, none known.
+	PersonalCred func(sub, cookieHeader string) (key, baseURL string, ok bool)
 	// InvalidateMCP is mcpClient.ts's invalidateRemote(), after a settings
 	// write. Owner: chat track. Node rereads its MCP status when the
 	// settings file changes (mcpClient.ts), so the default does nothing.

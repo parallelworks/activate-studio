@@ -718,3 +718,13 @@ func OnePassStages(queryText string, lim WalkLimits, roots []string, vectors []Q
 			"SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;",
 	)
 }
+
+// FTSColumns, FTSFrom and ChunkSnippet are the word and passage SQL other
+// packages build their own walks from (searchWordsAndNames, searchVector).
+const FTSColumns = ftsColumns
+
+// FTSFrom is FTS_FROM(expr).
+func FTSFrom(expr string) string { return ftsFrom(expr) }
+
+// ChunkSnippet is CHUNK_SNIPPET.
+func ChunkSnippet() string { return chunkSnippet }
