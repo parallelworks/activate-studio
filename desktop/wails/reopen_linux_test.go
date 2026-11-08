@@ -6,26 +6,44 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
-// startShell runs a copy of sleep as tree/bin/activate-studio-wk41, a
-// stand-in for the window's program.
-func startShell(t *testing.T, tree string) (*exec.Cmd, string) {
-	t.Helper()
-	sleep, err := exec.LookPath("sleep")
-	if err != nil {
-		t.Skip("no sleep")
+// A copy of this test binary stands in for a running program (an ELF file
+// everywhere, where sleep can be a script or a multi-call binary): with
+// STUDIO_TEST_SLEEP=1 it only sleeps.
+func init() {
+	if os.Getenv("STUDIO_TEST_SLEEP") == "1" {
+		time.Sleep(time.Minute)
+		os.Exit(0)
 	}
-	b, err := os.ReadFile(sleep)
+}
+
+func selfProgram(t *testing.T) []byte {
+	t.Helper()
+	exe, err := os.Executable()
 	if err != nil {
 		t.Skip(err)
 	}
+	b, err := os.ReadFile(exe)
+	if err != nil {
+		t.Skip(err)
+	}
+	return b
+}
+
+// startShell runs a copy of this test binary as tree/bin/activate-studio-wk41, a
+// stand-in for the window's program.
+func startShell(t *testing.T, tree string) (*exec.Cmd, string) {
+	t.Helper()
+	b := selfProgram(t)
 	exe := filepath.Join(tree, "bin", "activate-studio-wk41")
 	os.MkdirAll(filepath.Dir(exe), 0o755)
 	if err := os.WriteFile(exe, b, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(exe, "60")
+	cmd := exec.Command(exe)
+	cmd.Env = append(os.Environ(), "STUDIO_TEST_SLEEP=1")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
