@@ -5,10 +5,10 @@
 # (deploy/linux/build_app.sh's default, STUDIO_SERVER=go-only): the Go
 # server with the ONNX runtime and model, the built web app, the lean GUFI
 # (sqlite-vec, no llama.cpp), tesseract, the STEP preview's modules and the
-# window shells, with no Node and no Python. It is updated to from the last
-# release (Node) through that release's own updater, on the Stable and the
-# Preview channel (bridge-e2e), and built into the Go container image
-# (container-go). The earlier builds (node, and go with Node behind it) are
+# window shells, with no Node and no Python. It is updated to from the
+# Node releases (v1.187, the first Linux release, and v1.188) through their
+# own updaters, on the Stable and the Preview channel (bridge-e2e), and
+# built into the Go container image (container-go). The earlier builds (node, and go with Node behind it) are
 # built on request (the legacy input) and do not fail the run.
 #
 # GUFI and tesseract are built from source in a Rocky Linux 8 container
@@ -424,21 +424,25 @@ jobs:
           docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/in:ro" -e EXTRA_PACKAGES=findutils \
             rockylinux:8 bash /src/deploy/linux/test_in_container.sh
 
-  # The last release (Node) installed in a scratch home with its own
-  # install.sh, given data, updated to this payload through its own updater
-  # from a local feed signed with a throwaway key, and rolled back
+  # A Node release installed in a scratch home with its own install.sh,
+  # given data, sent a copy of this payload whose server exits at once
+  # (which the run loop puts back), then updated to this payload through its
+  # own updater from a local feed signed with a throwaway key
   # (deploy/linux/test_go_bridge_e2e.sh). The release key is never used. It
-  # does not run for a release.
+  # does not run for a release. Each Node release with a Linux payload:
+  # v1.187, the first, and v1.188, the last.
   bridge-e2e:
     if: inputs.release == ''
     needs: app
     strategy:
       fail-fast: false
       matrix:
+        from: [v1.187, v1.188]
         # stable: a Stable release, and a newer Preview one the install
         # must not take; preview: a Preview release on an install set to
         # take prereleases.
         channel: [stable, preview]
+    name: bridge-e2e (${{ matrix.from }}, ${{ matrix.channel }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -451,17 +455,16 @@ jobs:
         with:
           name: activate-studio-linux-x86_64
           path: ${{ runner.temp }}/new
-      - name: the last release's payload
+      - name: the old release's payload
         env:
           GH_TOKEN: ${{ github.token }}
+          FROM: ${{ matrix.from }}
         run: |
           set -euo pipefail
-          last="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-pre-releases --exclude-drafts -L 1 --json tagName -q '.[0].tagName')"
-          echo "last release: $last" | tee -a "$GITHUB_STEP_SUMMARY"
-          gh release download "$last" -R "$GITHUB_REPOSITORY" -p activate-studio-linux-x86_64.tar.gz \
+          gh release download "$FROM" -R "$GITHUB_REPOSITORY" -p activate-studio-linux-x86_64.tar.gz \
             -p activate-studio-linux-x86_64.tar.gz.sha256 -D "$RUNNER_TEMP/old"
           (cd "$RUNNER_TEMP/old" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
-      - name: update to this payload and roll back
+      - name: update to this payload
         env:
           CHANNEL: ${{ matrix.channel }}
         run: |
@@ -472,8 +475,9 @@ jobs:
         if: always()
         env:
           CHANNEL: ${{ matrix.channel }}
+          FROM: ${{ matrix.from }}
         run: |
-          { echo "### Update to the Go version ($CHANNEL)"; echo '```'; grep -E '^(  (ok|FAIL) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
+          { echo "### Update to the Go version from $FROM ($CHANNEL)"; echo '```'; grep -E '^(  (ok|FAIL) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
 
   # The container image of the Go version, from the payload above, started
   # as container.yaml starts the Node one.
