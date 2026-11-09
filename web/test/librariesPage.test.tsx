@@ -426,6 +426,18 @@ describe('Settings, Indexing, Libraries', () => {
     } finally { location.hash = '' }
   })
 
+  it('opens the add form when the + Add menu sends us to the page already open', async () => {
+    const s = server({ platform: true, ssh: true, canBuild: true })
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    expect(screen.queryByRole('button', { name: 'This computer' })).toBeNull()
+    try {
+      location.hash = '#view=settings:libraries?add=1'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+      expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
+    } finally { location.hash = '' }
+  })
+
   it('a standalone install chooses where and how, and connects an index over ssh', async () => {
     const s = server({ platform: true, ssh: true, canBuild: true })
     await renderPage(s)

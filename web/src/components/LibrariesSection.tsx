@@ -149,11 +149,25 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   // after the page opens: scrolled once at once, it was pushed down again by
   // the libraries arriving.
   const openedAt = useRef(Date.now())
+  const [linked, setLinked] = useState(0)
+  // The + Add menu's link while this page is already open (Settings visited
+  // earlier, the section kept): the address changes, the page does not load.
+  useEffect(() => {
+    const onHash = () => {
+      if (!/^#view=settings:libraries\?(?:.*&)?add=1(?:&|$)/.test(location.hash)) return
+      openedByLink.current = true
+      openedAt.current = Date.now()
+      setAdding(true)
+      setLinked(n => n + 1)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
   useEffect(() => {
     if (!openedByLink.current || libs === null || !addForm.current) return
     if (Date.now() - openedAt.current > 3000) { openedByLink.current = false; return }
     addForm.current.scrollIntoView?.({ block: 'start' })
-  }, [libs, user, status, adding])
+  }, [libs, user, status, adding, linked])
   const [changing, setChanging] = useState(false)
   const [restarting, setRestarting] = useState(false)
   // The library just given a depth its index does not have, and the depth

@@ -2281,7 +2281,13 @@ func (u *Updater) Start() {
 				var p struct{ From, To string }
 				readJSON(u.inUpdates("pending.json"), &p)
 				os.Remove(u.inUpdates("pending.json"))
-				u.log(fmt.Sprintf("update: %s is running; Roll back goes to %s", orText(p.To, u.running().Version), orText(p.From, "the previous version")))
+				// Roll back offers no Node release, so the line names one
+				// only when the version before was a Go release.
+				if _, ok := ParseVersion(p.From); ok && CompareVersions(p.From, u.o.LastNodeRelease) <= 0 {
+					u.log(fmt.Sprintf("update: %s is running", orText(p.To, u.running().Version)))
+				} else {
+					u.log(fmt.Sprintf("update: %s is running; Roll back goes to %s", orText(p.To, u.running().Version), orText(p.From, "the previous version")))
+				}
 				u.retireLoop()
 			})
 		} else {
