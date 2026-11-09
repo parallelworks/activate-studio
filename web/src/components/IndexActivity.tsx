@@ -4,7 +4,7 @@ import { api, type IndexJob, type IndexPhase, type IndexStatus } from '../api'
 import { elapsed, fmtDuration, jobPercent, kickIndexStatus, phaseTimes, useIndexStatus } from '../indexActivity'
 
 /**
- * The index's activity as the footer panel, Settings, Libraries and
+ * The index's activity as the footer panel, Settings, Indexing, Libraries and
  * Statistics show it: a job's phases with their counts and times, the
  * controls (build, stop, delete), the index log, and the record of runs.
  * Everything here reads the one status (indexActivity.ts).

@@ -7,6 +7,7 @@ import { TagMenu } from './TagMenu'
 const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })))
 import { DataTree } from './DataTree'
 import { DagViewer } from './DagViewer'
+import { PdfJsPages } from './PdfJsPages'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 /** Office files the server reads without LibreOffice (officePreview.ts). */
@@ -43,7 +44,7 @@ function PagedPreview({ path, office, markdown, onUnavailable }: {
 }) {
   const [pages, setPages] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [stage, setStage] = useState<'pages' | 'outline' | 'text'>('pages')
+  const [stage, setStage] = useState<'pages' | 'pdfjs' | 'outline' | 'text'>('pages')
   const [fallbackText, setFallbackText] = useState<string | null>(null)
   const outline = OUTLINE_SUFFIXES.includes(suffixOf(path))
   // Several page images can fail at once; the first one decides.
@@ -62,7 +63,8 @@ function PagedPreview({ path, office, markdown, onUnavailable }: {
   }, [path])
 
   // Page images cannot be had: the outline for an Office file the server
-  // reads, else the extracted text (a PDF), else nothing to preview.
+  // reads; for a PDF its pages drawn here by pdf.js, then its extracted
+  // text; else nothing to preview.
   const fail = (why: string) => {
     if (failed.current) return
     failed.current = true
@@ -72,12 +74,17 @@ function PagedPreview({ path, office, markdown, onUnavailable }: {
       else onUnavailable(why)
       return
     }
+    setStage('pdfjs')
+  }
+  const showText = (why: string) => {
+    setError(why)
     setStage('text')
     fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`)).then(r => (r.ok ? r.json() : null))
       .then(f => { if (f?.content?.trim()) setFallbackText(f.content); else onUnavailable(why) })
       .catch(() => onUnavailable(why))
   }
 
+  if (stage === 'pdfjs') return <PdfJsPages url={api.rawUrl(path)} cap={PDF_PAGE_CAP} onFail={why => showText(error ? `${error}; ${why}` : why)} />
   if (stage === 'outline') return <OfficeOutlineView path={path} onFail={why => onUnavailable(why || error || '')} />
   if (stage === 'text') {
     if (fallbackText == null) return <div className="muted pad"><Loader inline size={16} label="Reading the text…" /></div>
@@ -217,6 +224,24 @@ export function findTerms(text: string): string[] {
     .filter(t => t.length >= 2 && !/^(AND|OR|NOT|NEAR)$/i.test(t))
 }
 
+/** The text Find highlights for its terms, any of them, ignoring case. A
+ *  term's letters and digits must appear in order, and punctuation between
+ *  them matches any punctuation or space, as search reads words: a search
+ *  for NIST_SP811 matched "NIST SP811", and Find highlights it there. A
+ *  term with fewer than two such parts is matched as typed. */
+export function findPattern(terms: string[]): RegExp {
+  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(terms.map(t => {
+    const parts = t.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+    return parts.length >= 2 ? parts.map(esc).join('[^\\p{L}\\p{N}]+') : esc(t)
+  }).join('|'), 'giu')
+}
+
+/** Indexed text longer than this (UTF-16 units) is shown as plain text:
+ *  formatting a long manual's text as Markdown holds the page for seconds
+ *  in WebKit (the Linux and macOS windows), about a second in Chromium. */
+export const MARKDOWN_FORMAT_MAX = 60_000
+
 export function Viewer({ path, find, onDeleted, readOnly }: {
   path: string | null
   /** Text to land on and highlight, typically the search query that led here. */
@@ -228,6 +253,8 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
 }) {
   const [file, setFile] = useState<FileContent | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The file is not there (404), as against one that cannot be read.
+  const [missing, setMissing] = useState(false)
   const [tab, setTab] = useState<Tab>('preview')
   // Set when the file has no preview to show (no page images and nothing
   // read from it): the Preview tab goes and the indexed text says why.
@@ -268,7 +295,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
     reg.delete('find-hit'); reg.delete('find-current')
     const terms = findTerms(findText)
     if (!terms.length) { setHitCount(0); return }
-    const re = new RegExp(terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi')
+    const re = findPattern(terms)
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
     const ranges: Range[] = []
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -305,6 +332,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
     setConfirming(false)
     setPreviewGone(null)
     if (!path) return
+    setMissing(false)
     api.file(path).then(f => {
       setFile(f)
       // Text files ARE their own preview; office docs open on the rendered
@@ -312,6 +340,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
       setTab('preview')
     }).catch(e => {
       setError(String(e))
+      setMissing((e as { status?: number })?.status === 404)
       // A file that cannot be opened should not keep reopening: drop it from
       // the remembered location so the next visit lands on the library.
       forgetHash()
@@ -338,7 +367,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
         <Callout tone="error" title="Cannot open this file" className="viewer-callout">
           <p className="viewer-callout-path">{path}</p>
           <p>{error}</p>
-          <p>It may have been moved, renamed, or deleted since this link was made.</p>
+          {missing && <p>It may have been moved, renamed, or deleted since this link was made.</p>}
         </Callout>
       </div>
     )
@@ -384,7 +413,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
           <p className="muted preview-gone-note">A preview of this file needs LibreOffice, so this is its indexed text.</p>
         )}
         <Callout tone="warning" size="sm" className="index-note">This is the text representation stored in the search index, not the original file.</Callout>
-        {isMarkdown || extractedMarkdown
+        {(isMarkdown || extractedMarkdown) && file.content.length <= MARKDOWN_FORMAT_MAX
           ? <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
           : <pre className="text-body">{file.content}</pre>}
         {file.truncated && <p className="muted">Preview truncated; use Download for the full file.</p>}
@@ -403,7 +432,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   const previewView = isStructured ? treeView : isHtml ? (
     <iframe
       sandbox="allow-scripts"
-      src={`/api/kb/html?path=${encodeURIComponent(path)}`}
+      src={withLibrary(`/api/kb/html?path=${encodeURIComponent(path)}`)}
       title={path}
       className="html-preview-frame"
     />

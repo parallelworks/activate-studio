@@ -38,7 +38,9 @@ const FILES = {
   'workflows/explorer/thumbnails/explorer.png': 'PNG',
 }
 let treeCalls = 0
-globalThis.fetch = async (url) => {
+const { fakePlatform } = await import('./fakePlatform.mjs')
+const fake = await fakePlatform()
+fake.fetch = async (url) => {
   const u = String(url)
   if (u.startsWith('https://api.github.com/repos/example-org/components/git/trees/canary')) {
     treeCalls++
@@ -52,9 +54,9 @@ globalThis.fetch = async (url) => {
 }
 
 const calls = []
-const { workflowsTabRoutes, setWorkflowsCli, resetWorkflowsTabForTests } = await import('../dist/workflowsTab.js')
+const { workflowsTabRoutes, resetWorkflowsTabForTests } = await import('../dist/workflowsTab.js')
 const { resetGithubCaches } = await import('../dist/githubWorkflows.js')
-setWorkflowsCli(async args => {
+fake.cli = async args => {
   calls.push(args)
   if (args[0] === 'workflows' && args[1] === 'run') {
     if (args[2].includes('/plain/')) throw new Error(`\x1b[90m2026-10-09T12:45:44Z\x1b[0m [\x1b[31mERROR\x1b[0m] \x1b[1mUnable to find workflow ${args[2]}\x1b[0m`)
@@ -62,7 +64,7 @@ setWorkflowsCli(async args => {
     return JSON.stringify({ run: { slug: 'general-00001' } })
   }
   throw new Error(`unexpected ${args.join(' ')}`)
-})
+}
 const { default: Fastify } = await import('fastify')
 const { sanitizedErrorHandler } = await import('../dist/routes.js')
 const app = Fastify()

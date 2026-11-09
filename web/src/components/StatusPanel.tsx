@@ -6,7 +6,7 @@ import type { AppConfig } from '../config'
 import { setPanelOpen, usePanel } from '../panelState'
 import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '../statusShare'
 import { indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
-import { AI_LABEL } from './StatusFooter'
+import { AI_LABEL, modelsReady } from './StatusFooter'
 import { openInSideView } from './RunPane'
 import { openSessionWindow, type SessionInfo } from './SessionView'
 import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
@@ -235,7 +235,7 @@ async function getJson<T>(url: string): Promise<T> {
   return r.json() as Promise<T>
 }
 
-function useStatusData(agents: boolean, runs: boolean): [StatusData, (p: Partial<StatusData>) => void] {
+function useStatusData(agents: boolean, runs: boolean, mcp = true): [StatusData, (p: Partial<StatusData>) => void] {
   const [data, setData] = useState<StatusData>(lastData)
   const patch = (p: Partial<StatusData>) => setData(d => (lastData = { ...d, ...p }))
   useEffect(() => {
@@ -250,9 +250,11 @@ function useStatusData(agents: boolean, runs: boolean): [StatusData, (p: Partial
         }
       }
       if (runs) getJson<{ runs: RunRow[] }>('/api/runs').then(d => put({ runs: d.runs ?? [] })).catch(() => {})
-      const url = mcpChecked ? '/api/settings/mcp-servers?cached=1' : '/api/settings/mcp-servers'
-      mcpChecked = true
-      getJson<{ servers: McpRow[] }>(url).then(d => put({ mcp: d.servers ?? [] })).catch(() => {})
+      if (mcp) {
+        const url = mcpChecked ? '/api/settings/mcp-servers?cached=1' : '/api/settings/mcp-servers'
+        mcpChecked = true
+        getJson<{ servers: McpRow[] }>(url).then(d => put({ mcp: d.servers ?? [] })).catch(() => {})
+      }
     }
     // A platform request and a cluster check behind the viewer's own
     // libraries, so once a minute, the footer's pace.
@@ -274,7 +276,7 @@ function useStatusData(agents: boolean, runs: boolean): [StatusData, (p: Partial
     const onVisible = () => { if (document.visibilityState === 'visible') tick() }
     document.addEventListener('visibilitychange', onVisible)
     return () => { live = false; window.clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
-  }, [agents, runs])
+  }, [agents, runs, mcp])
   return [data, patch]
 }
 
@@ -373,9 +375,12 @@ export function StatusPanel({ view, cfg }: { view: string; cfg: AppConfig }) {
 
 function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const shown = (id: string) => !cfg.sections || cfg.sections.includes(id)
-  const agentsOn = shown('agents')
+  // With AI features off there are no agents to show, and attached MCP
+  // servers serve only the assistant, so neither is asked about.
+  const ai = cfg.aiEnabled !== false
+  const agentsOn = ai && shown('agents')
   const runsOn = !!cfg.platform && shown('workflows')
-  const [data] = useStatusData(agentsOn, runsOn)
+  const [data] = useStatusData(agentsOn, runsOn, ai)
   const shared = useShared()
   // On the Library page, what is selected in its tree (LibraryDetails.tsx).
   const details = useEntryDetails(view === 'library')
@@ -401,7 +406,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
 
   const libs = libraryLines(cfg.libraries ?? [], data.userLibs, shared.stats)
   const model = shared.model ?? rememberedModel()
-  const conns = connectionLines({ platform: !!cfg.platform, authEnabled: shared.authEnabled, ai: shared.ai, mcp: data.mcp, libs: cfg.libraries ?? [], userLibs: data.userLibs })
+  const conns = connectionLines({ platform: !!cfg.platform, authEnabled: shared.authEnabled, ai: shared.ai, mcp: ai ? data.mcp : null, libs: cfg.libraries ?? [], userLibs: data.userLibs })
   // The index status the footer and the pages show, read once for all.
   const idx = useIndexStatus()
   const ix = indexSummary(idx)
@@ -476,7 +481,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
           {model && <Row tone={shared.ai?.status === 'ok' ? 'success' : 'muted'} name={model} meta={shared.modelProvider ?? 'selected'} title={model} />}
           {shared.ai && (
             <Row tone={shared.ai.status === 'ok' ? 'success' : shared.ai.status === 'unconfigured' || shared.ai.status === 'off' ? 'muted' : 'warning'}
-              name={shared.ai.status === 'ok' ? `${shared.ai.models} models ready` : AI_LABEL[shared.ai.status]}
+              name={shared.ai.status === 'ok' ? modelsReady(shared.ai.models) : AI_LABEL[shared.ai.status]}
               sub={shared.ai.status === 'ok' ? undefined : shared.ai.message ?? undefined}
               title={shared.ai.gatewayHost ? `Through ${shared.ai.gatewayHost}` : undefined} />
           )}

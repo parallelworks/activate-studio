@@ -18,7 +18,8 @@ export function AccentSwatches({ value, onChange }: { value: string; onChange: (
           title={a.label}
           aria-label={a.label}
           aria-pressed={value === k}
-          style={{ background: a.light[0] }}
+          // None shows both inks it takes, the light theme's and the dark's.
+          style={{ background: k === 'none' ? `linear-gradient(135deg, ${a.light[0]} 50%, ${a.dark[0]} 50%)` : a.light[0] }}
           onClick={() => pick(k)}
         />
       ))}

@@ -249,7 +249,11 @@ test('the device prompt is read from the CLI output whatever surrounds it', () =
   assert.equal(access.normalizeHost('a b'), null)
 })
 
-test('the Studio says where it runs the pw CLI from, and takes a location chosen in Model access', async () => {
+// The Go server reads PW_CLI and PATH once, at the first request, so this
+// case, which changes them in this process, runs only against Node; the Go
+// front's TestCLIPathRoute (internal/access) covers the route there.
+const FRONT_SKIP = process.env.STUDIO_TEST_FRONT ? 'changes PW_CLI and PATH in this process; covered by TestCLIPathRoute in server-go/internal/access' : false
+test('the Studio says where it runs the pw CLI from, and takes a location chosen in Model access', { skip: FRONT_SKIP }, async () => {
   let s = await get('/api/access')
   assert.deepEqual([s.cli.path, s.cli.source], [CLI, 'env'])
   assert.ok(s.cli.commonDirs.includes('/usr/local/bin'))

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Callout, Checkbox, ExternalLink, IconButton, Input, Loader, SearchInput, Table, toast } from '@parallelworks/ui'
 import { ArrowDownIcon, ArrowUpIcon } from '@parallelworks/ui/icons'
+import { accessLabel, useAppConfig } from '../config'
 
 /**
  * Settings > Workflows: which platform workflows this Studio offers on its
@@ -13,6 +14,7 @@ interface CatalogRow { name: string; displayName: string; description: string; t
 interface GithubRow { entry: string; title: string; description: string }
 
 export function WorkflowsSection() {
+  const cfg = useAppConfig()
   const [catalog, setCatalog] = useState<CatalogRow[] | null>(null)
   const [source, setSource] = useState<'deployment' | 'viewer'>('deployment')
   const [market, setMarket] = useState<CatalogRow[]>([])
@@ -91,7 +93,7 @@ export function WorkflowsSection() {
       <p className="muted view-sub">Workflows are YAML files, run one of two ways.</p>
       <p className="muted view-sub">
         <i>ACTIVATE workflows:</i> with an ACTIVATE credential (a pw CLI sign-in or an API key, under{' '}
-        <a href="#view=settings:access">Model access</a>), the Workflows page offers the workflows picked below as tiles,
+        <a href="#view=settings:access">{accessLabel(cfg)}</a>), the Workflows page offers the workflows picked below as tiles,
         each run from its own form under the viewer's account. Pick them from the account this Studio runs under, the
         marketplace, or a GitHub repository; a viewer who lacks an account workflow can add a copy from its tile.
       </p>

@@ -468,6 +468,15 @@ export function platformReachability(): Promise<{ ok: boolean; message: string |
   return reaching
 }
 
+/** Read the choice again after the Go server wrote it (frontBridge.ts). */
+export function reloadAccessChoice(): void {
+  storeCache = null
+  chosen = loadChoice()
+  applyEnv()
+  syncGateway()
+  reach = null
+}
+
 /** For tests: forget cached state and read the choice and environment again. */
 export function resetAccessForTests(): void {
   storeCache = null

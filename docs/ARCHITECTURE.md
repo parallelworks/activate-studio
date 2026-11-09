@@ -68,7 +68,7 @@ Three retrieval modes run against the index, all in `server/src/gufi.ts`:
 
 ## 5. Labels
 
-Labels are stored on the files themselves. The primary store is the `user.studio.tags` xattr, so a label survives a move or rename because it belongs to the inode, and GUFI indexes it with the rest of the metadata. Filesystems that refuse xattrs (several network filesystems do) fall back to an overlay keyed by `fsid.inode` with the birth time recorded for validation, which is the convention GUFI's own tooling uses; `reapplyTagOverlay` rejoins the overlay to the rebuilt index on inode after every incremental pass and refreshes the path it stores.
+Labels are stored on the files themselves. The primary store is the `user.studio.tags` xattr, so a label survives a move or rename because it belongs to the inode, and GUFI indexes it with the rest of the metadata. Filesystems that refuse xattrs (several network filesystems do) fall back to an overlay keyed by `fsid.inode` with the birth time recorded for validation, which is the convention GUFI's own tooling uses; `reapplyTagOverlay` rejoins the overlay to the rebuilt index on inode after every incremental pass and refreshes the path it stores. An apply also writes the label into the index in place, against the inode the index holds for the path: a folder copied or restored since it was indexed keeps its names and mtimes, so the incremental pass does not revisit it, but its files have new inodes, and a row keyed by the new one would join to nothing.
 
 A label on a directory applies to everything beneath it, so a corpus can be organised by folder and filtered by label without labelling each file. `GET /api/tags` returns the vocabulary with counts, which the chat scope selector, the query builder, and search filters all read.
 
@@ -88,7 +88,13 @@ Top-k chunks are not stuffed into every prompt. The model searches, reads whole 
 
 ## 7. Identity and credentials
 
-With `AUTH_JWKS_URL` set, the platform's session proxy supplies a verified JWT per request, and the app knows who is asking. That identity drives three things: conversations are stamped with an owner and the chat rail defaults to showing your own, exported transcripts record who wrote them, and model credentials are per user.
+Identity comes from one of two places. With `AUTH_JWKS_URL` set, the platform's session proxy supplies a verified JWT per request (`server/src/auth.ts`). With `OIDC_ISSUER` and `OIDC_CLIENT_ID` set, the Go server in front of Node is an OpenID Connect relying party of any provider with a discovery document, ACTIVATE's included (`server-go/internal/auth`): the authorization code flow with PKCE, state and nonce, the ID token checked against the provider's keys, issuer and the client ID as audience, and a server-side session whose ID is the only thing the browser holds (an HttpOnly, SameSite=Lax cookie). A request with a valid proxy JWT is that JWT's user; otherwise the session cookie decides. Where the Go server starts Node, it verifies both and passes the user to Node in a short-lived token signed with a key only it holds (docs/GO-PORT.md, Stage 1); Node's `req.user` (`server/src/identity.ts`) is the same either way, so nothing downstream knows which one answered.
+
+The provider's tokens identify the person and do nothing else. They are never sent to the platform API or a model gateway, and on ACTIVATE they could not act there: application tokens are signed with a key set no platform authentication path accepts. Acting as the person stays on their own platform key in the vault. With `offline_access` the refresh token is rotated each time the access token expires, which also makes the provider decide again whether the person may still sign in; concurrent requests share one refresh, since a refresh token is single use. Without it a sign-in lasts `OIDC_SESSION_MAX_AGE_SEC`. Sessions are kept across restarts in `INDEX_BASE/oidc-sessions.enc`, encrypted with AES-256-GCM under `INDEX_BASE/.oidc-session-key` (written 0600).
+
+The username is a name from the provider, not a host account. `AUTH_ACCOUNT_CLAIM`, `AUTH_UID_CLAIM` and `AUTH_GID_CLAIM` name the claims that carry a host account, uid and gid where a provider releases them; the values are recorded on `req.user` and nothing acts on them yet (MULTI-USER.md, Identity mapping).
+
+That identity drives three things: conversations are stamped with an owner and the chat rail defaults to showing your own, exported transcripts record who wrote them, and model credentials are per user.
 
 Personal credentials live in a vault beside the index (`server/src/credentials.ts`), encrypted with AES-256-GCM under a key file written 0600, and never leave the server: status APIs expose the last four characters and timestamps only. A key can be stored or held in memory for a session. The interface states the trust model: a key pasted here is available to the server and its operator.
 
@@ -118,7 +124,7 @@ When the corpus directory is missing or empty, the app seeds it with a small sta
 
 The GUFI security model is that the index is just a filesystem: directory permissions in the index replicate the source, queries run as a user, and a user's queries never enter directories they cannot read. Extracted content is protected the same way, because the fts5 and vector tables live inside the per-directory dbs.
 
-The server itself runs as one user, and every query runs as that user. Platform identity separates people for credentials, conversation ownership, and attribution, but it does not yet run queries under the caller's uid. A deployment where the corpus contains material some readers must not see needs that work first: queries executed under the caller's uid (GUFI's tools support this) and extracted content moved into GUFI's permission-permutation external databases, which encode file-level read permissions as database file modes. Until then, point the app at a corpus its whole audience may read.
+The server itself runs as one user, and every query runs as that user. Platform identity, from the session proxy or an OIDC sign-in, separates people for credentials, conversation ownership, and attribution, but it does not yet run queries under the caller's uid. A deployment where the corpus contains material some readers must not see needs that work first: queries executed under the caller's uid (GUFI's tools support this) and extracted content moved into GUFI's permission-permutation external databases, which encode file-level read permissions as database file modes. Until then, point the app at a corpus its whole audience may read.
 
 ## 11. Deployment
 
@@ -134,7 +140,7 @@ The corpus and the index live on shared storage; everything derived (node_module
 
 ## 12. Runbook
 
-- Full rebuild: Settings, Libraries, Update index, or `POST /api/index/build` (the server's job, with phases, stop and a log; see [REFERENCE.md](REFERENCE.md#indexing)); before the server starts, `indexer/reindex.sh` runs the same phases (`INDEX_THREADS` for the threads, `SKIP_EMBED=1` to skip vectors).
+- Full rebuild: Settings, Indexing, Libraries, Update index, or `POST /api/index/build` (the server's job, with phases, stop and a log; see [REFERENCE.md](REFERENCE.md#indexing)); before the server starts, `indexer/reindex.sh` runs the same phases (`INDEX_THREADS` for the threads, `SKIP_EMBED=1` to skip vectors).
 - Extraction is covered end to end by `pnpm test`, which runs the real pipeline over `testdata/corpus` and asserts on the text that reaches the fts5 tables; see `testdata/README.md`.
 - GUFI toolchain: `indexer/setup_gufi.sh` builds from source and fetches the embedding models and the ONNX packages (`indexer/fetch_embed.py`).
 - Serve as a platform session: `deploy/run_endpoint.sh` wraps `pw endpoints run`.

@@ -5,11 +5,15 @@
 // GitHub's releases API, for the Studio's update check.
 //
 //   keygen DIR                               DIR/update.key (PEM) and DIR/update.pub
-//   stamp TREE VERSION PUBFILE               TREE becomes VERSION, verifying updates with PUBFILE
+//   stamp TREE VERSION PUBFILE               TREE (a Linux payload, or a macOS app's Contents/Resources)
+//                                            becomes VERSION, verifying updates with PUBFILE
 //   add-release DIR PORT TAG ARCHIVE KEY [corrupt]
 //                                            put the archive, a manifest and a signature in DIR as
 //                                            release TAG ("corrupt": the archive's bytes are changed
-//                                            after the manifest was made, so its SHA-256 is wrong)
+//                                            after the manifest was made, so its SHA-256 is wrong);
+//                                            PRERELEASE=1 publishes it as a GitHub prerelease, and
+//                                            CHANNEL=stable|preview puts that channel in the signed manifest
+//   remove-release DIR TAG                   take release TAG off the list
 //   serve DIR PORT                           the releases API and the downloads
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -29,8 +33,10 @@ if (cmd === 'keygen') {
   const [tree, version, pub] = a
   const info = path.join(tree, 'app', 'build-info.json')
   writeJson(info, { ...readJson(info), version })
+  // The Linux payload's manifest.json; the macOS app (TREE is its
+  // Contents/Resources) has one only from the Go version on.
   const man = path.join(tree, 'manifest.json')
-  writeJson(man, { ...readJson(man), version })
+  if (fs.existsSync(man)) writeJson(man, { ...readJson(man), version })
   fs.copyFileSync(pub, path.join(tree, 'update-signing.pub'))
 } else if (cmd === 'add-release') {
   const [dir, port, tag, archive, keyFile, corrupt] = a
@@ -41,6 +47,7 @@ if (cmd === 'keygen') {
   const manifest = Buffer.from(JSON.stringify({
     version: tag, asset, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), size: bytes.length,
     minGlibc: process.env.MIN_GLIBC || '2.34', builtAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+    ...(process.env.CHANNEL ? { channel: process.env.CHANNEL } : {}),
   }, null, 1) + '\n')
   const sig = Buffer.from(crypto.sign(null, manifest, crypto.createPrivateKey(fs.readFileSync(keyFile))).toString('base64') + '\n')
   const shipped = Buffer.from(bytes)
@@ -55,10 +62,14 @@ if (cmd === 'keygen') {
   const list = path.join(dir, 'releases.json')
   const have = fs.existsSync(list) ? readJson(list) : []
   have.push({
-    tag_name: tag, draft: false, prerelease: false, published_at: '2026-11-03T12:00:00Z',
+    tag_name: tag, draft: false, prerelease: process.env.PRERELEASE === '1', published_at: '2026-11-03T12:00:00Z',
     body: `- A stand-in release ${tag} for the update check.`, html_url: `https://example.invalid/releases/${tag}`, assets,
   })
   writeJson(list, have)
+} else if (cmd === 'remove-release') {
+  const [dir, tag] = a
+  const list = path.join(dir, 'releases.json')
+  writeJson(list, (fs.existsSync(list) ? readJson(list) : []).filter(r => r.tag_name !== tag))
 } else if (cmd === 'serve') {
   const [dir, port] = a
   http.createServer((req, res) => {
@@ -77,6 +88,6 @@ if (cmd === 'keygen') {
     fs.createReadStream(file).pipe(res)
   }).listen(Number(port), '127.0.0.1')
 } else {
-  console.error('usage: update_e2e.mjs keygen|stamp|add-release|serve ...')
+  console.error('usage: update_e2e.mjs keygen|stamp|add-release|remove-release|serve ...')
   process.exit(2)
 }

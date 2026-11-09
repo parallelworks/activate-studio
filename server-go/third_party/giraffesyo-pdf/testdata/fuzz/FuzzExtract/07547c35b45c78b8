@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("1 0 obj<<///Pages 2 0 R 2 0 obj<</0000/00000/0000[00000]/Count -1 trailer<</Root 1 0 R")

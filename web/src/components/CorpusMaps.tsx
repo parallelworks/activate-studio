@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, IconButton, Loader, SegmentedControl } from '@parallelworks/ui'
 import { CloseIcon, ExpandIcon, ResetIcon, ZoomInIcon, ZoomOutIcon } from '@parallelworks/ui/icons'
@@ -280,24 +280,30 @@ const reducedMotion = () => { try { return matchMedia('(prefers-reduced-motion: 
 /** A map's canvas, inline or filling the window, with its controls. Filling
  *  the window it covers the map's title, so it carries the library picker and
  *  the busy mark itself, and stays open while another library loads. */
-function MapFrame({ title, full, onFull, controls, picker, busy, children }: {
+function MapFrame({ title, full, onFull, controls, picker, busy, onEscape, children }: {
   title: string
   full: boolean
   onFull: (full: boolean) => void
   controls: ReactNode
   picker?: ReactNode
   busy?: ReactNode
+  /** Escape goes here first; true when it was used (a selection cleared),
+   *  so the map stays filling the window. */
+  onEscape?: () => boolean
   children: ReactNode
 }) {
   const panel = useRef<HTMLDivElement>(null)
+  const escape = useRef(onEscape)
+  escape.current = onEscape
   useEffect(() => {
     if (!full) return
     const before = document.activeElement as HTMLElement | null
     panel.current?.focus()
     // Escape with the library list open closes the list, not the map.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || document.querySelector('.library-scope-panel')) return
+      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('.library-scope-panel')) return
       e.preventDefault()
+      if (escape.current?.()) return
       onFull(false)
     }
     window.addEventListener('keydown', onKey)
@@ -542,16 +548,19 @@ export function TopologyMap({ libraries = [] }: { libraries?: PublicLibrary[] })
   const [full, setFull] = useState(false)
   const [highlight, setHighlight] = useState<string | null>(null)
   const gen = useRef(0)
-  const load = useCallback((dir: string) => {
+  // `fresh` asks the server past its own short-lived copy of the counts.
+  const load = useCallback((dir: string, fresh = false): Promise<void> => {
     const my = gen.current
-    if (reach.current.has(dir)) return
+    if (reach.current.has(dir)) return Promise.resolve()
     reach.current.set(dir, 0)
     setLoading(true)
-    fetch(`${mainOrLibrary(lib, 'topology')}${dir ? `?dir=${encodeURIComponent(dir)}` : ''}`)
+    const qs = new URLSearchParams({ ...(dir ? { dir } : {}), ...(fresh ? { refresh: '1' } : {}) }).toString()
+    return fetch(`${mainOrLibrary(lib, 'topology')}${qs ? `?${qs}` : ''}`, { cache: 'no-store' })
       .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d?.error ?? `HTTP ${r.status}`); return d })
       .then((d: { available: boolean; dirs?: DirRow[]; levels?: number }) => {
         if (my !== gen.current) return
-        if (!d.available) { if (!dir) setEmpty(true); return }
+        if (!d.available) { if (!dir) { setDirs(null); setEmpty(true) } return }
+        if (!dir) setEmpty(false)
         reach.current.set(dir, d.levels ?? 99)
         // A folder asked for again replaces its own row, which held the
         // totals of everything below it, with the rows below it.
@@ -567,6 +576,26 @@ export function TopologyMap({ libraries = [] }: { libraries?: PublicLibrary[] })
     setDirs(null); setEmpty(false); setError(null); setFocus('')
     load('')
   }, [lib]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Files added, moved or deleted, or an index job ended (ade-kb-changed):
+  // the folders are read again. The map shown stays until the new counts
+  // arrive, and the folder open stays open, read again below it if it was
+  // deeper than the first read reached.
+  const focusRef = useRef(focus)
+  focusRef.current = focus
+  useEffect(() => {
+    const onChange = () => {
+      gen.current++
+      reach.current = new Map()
+      setError(null)
+      void load('', true).then(() => {
+        const f = focusRef.current
+        const r = f ? reachOf(reach.current, f) : null
+        if (r && r.levels && depthOf(f) - depthOf(r.root) >= r.levels - 2) void load(f, true)
+      })
+    }
+    window.addEventListener('ade-kb-changed', onChange)
+    return () => window.removeEventListener('ade-kb-changed', onChange)
+  }, [load])
   // Opening a folder near the last level fetched asks for the levels below it.
   useEffect(() => {
     if (!focus) return
@@ -896,6 +925,101 @@ function nearestFiles(base: string, p: string): Promise<MapNeighbor[]> {
   return hit
 }
 
+// ---- the file selected on the semantic map ----
+
+/** A file selected on the map, with its place there where it has one (a
+ *  nearest file not on the map yet may have none). */
+export interface MapSelection { p: string; x?: number; y?: number; z?: number; c?: number }
+
+/** What changes the selection: a file on the map, one of the selected file's
+ *  nearest files (from the card or the map), or nothing. */
+export type SelectionAction =
+  | { type: 'select'; file: MapSelection }
+  | { type: 'neighbor'; nb: MapNeighbor }
+  | { type: 'clear' }
+
+export function selectionReducer(sel: MapSelection | null, a: SelectionAction): MapSelection | null {
+  if (a.type === 'clear') return null
+  const file = a.type === 'select' ? a.file : { p: a.nb.p, x: a.nb.x, y: a.nb.y, z: a.nb.z, c: a.nb.c }
+  // The same file again keeps the one held, so the view does not move again.
+  return sel && sel.p === file.p ? sel : file
+}
+
+/** Opens a file from the map: a map filling the window closes first, so the
+ *  Library it opens in is what shows. */
+export function openFromMap(path: string, full: boolean, setFull: (full: boolean) => void, onOpen: (path: string) => void): void {
+  if (full) setFull(false)
+  onOpen(path)
+}
+
+/** The zoom a selection moves to, unless the view is already nearer. */
+export const SELECT_ZOOM = 3
+/** How long the view takes to move to a selection, in milliseconds. */
+export const SELECT_MS = 350
+
+/** The 2D view with the base point `b` at screen point `at` (the centre of
+ *  a w × h canvas unless given), at zoom `k` or the view's own where that is
+ *  nearer; kept over the content, so a point near an edge comes as near as
+ *  it can. */
+export function centreView(v: View, b: { x: number; y: number }, w: number, h: number, k = SELECT_ZOOM, at = { x: w / 2, y: h / 2 }): View {
+  const kk = Math.min(MAX_ZOOM, Math.max(v.k, k))
+  return clampView({ k: kk, tx: at.x - b.x * kk, ty: at.y - b.y * kk }, w, h)
+}
+
+/** The 3D camera with the point `t` (centred map units) at zoom `k` or its
+ *  own where that is nearer, and `off` screen pixels from the centre of the
+ *  view (none unless given); its turn and tilt stay as they are. `scale` is
+ *  the pixels per unit at k = 1. */
+export function centreCamera(cam: Camera, t: readonly [number, number, number], k = SELECT_ZOOM, off = { x: 0, y: 0 }, scale = 1): Camera {
+  const kk = Math.min(MAX_ZOOM, Math.max(cam.k, k))
+  const [a, b, c] = viewPlane(cam, off.x / (scale * kk), -off.y / (scale * kk))
+  return withTarget({ ...cam, k: kk }, [t[0] - a, t[1] - b, t[2] - c])
+}
+
+/** Where on a w × h canvas a selection is shown: its centre, or the middle
+ *  of the part the selection's card leaves free (to its left where the card
+ *  sits at the right, below it where the card spans the canvas). `card` is
+ *  the card's box relative to the canvas. */
+export function freeCentre(w: number, h: number, card: { left: number; bottom: number; width: number } | null): { x: number; y: number } {
+  if (!card || card.width <= 0) return { x: w / 2, y: h / 2 }
+  if (card.left > w * 0.4) return { x: card.left / 2, y: h / 2 }
+  if (card.bottom < h * 0.8) return { x: w / 2, y: (card.bottom + h) / 2 }
+  return { x: w / 2, y: h / 2 }
+}
+
+/** Part way (0 to 1) from one view or camera to another, eased in and out. */
+export function tweenView<T extends View | Camera>(a: T, b: T, t: number): T {
+  const e = t <= 0 ? 0 : t >= 1 ? 1 : t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
+  const out = { ...b } as Record<string, number>
+  for (const key of Object.keys(b) as (keyof T)[]) {
+    const x = a[key] as unknown as number, y = b[key] as unknown as number
+    // Zoom moves evenly in its logarithm, so the picture grows at an even pace.
+    out[key as string] = key === 'k' ? Math.exp(Math.log(x) + (Math.log(y) - Math.log(x)) * e) : x + (y - x) * e
+  }
+  return out as unknown as T
+}
+
+/** A line from a file to one of its nearest files, on screen: to its dot
+ *  where it is on the map, else to its place there with a ring, else none. */
+export interface NeighborLine { p: string; x: number; y: number; sim: number; c: number | undefined; ring: boolean }
+
+export function neighborLines(list: MapNeighbor[], dotAt: (p: string) => { x: number; y: number } | null,
+  placeAt: (x: number, y: number, z: number) => { x: number; y: number }): NeighborLine[] {
+  const out: NeighborLine[] = []
+  for (const nb of list) {
+    const dot = dotAt(nb.p)
+    const to = dot ?? (nb.x !== undefined && nb.y !== undefined && nb.z !== undefined ? placeAt(nb.x, nb.y, nb.z) : null)
+    if (to) out.push({ p: nb.p, x: to.x, y: to.y, sim: nb.sim, c: nb.c, ring: !dot })
+  }
+  return out
+}
+
+/** A file's own name and its folder ('' at the top). */
+export function splitPath(p: string): { name: string; folder: string } {
+  const i = p.lastIndexOf('/')
+  return i < 0 ? { name: p, folder: '' } : { name: p.slice(i + 1), folder: p.slice(0, i) }
+}
+
 /** How long ago a time was, in words. */
 export function ago(iso: string | null | undefined, now = Date.now()): string {
   const t = iso ? Date.parse(iso) : NaN
@@ -965,6 +1089,9 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
   const [highlight, setHighlight] = useState<number | null>(null)
   const loading = useRef(new Set<number>())
   const viewApi = useRef<{ zoom: (f: number) => void; reset: () => void } | null>(null)
+  // The file selected on the map, and its nearest files once they come.
+  const [selected, select] = useReducer(selectionReducer, null)
+  const [selNear, setSelNear] = useState<{ p: string; list: MapNeighbor[] } | null>(null)
 
   useEffect(() => { setData(null); setLive({ building: false, progress: null, error: null }) }, [base])
   useEffect(() => {
@@ -984,7 +1111,17 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
   // Another library starts with no depth asked for.
   useEffect(() => { setDepthAsked(false); setDepthError('') }, [lib])
   // A new map starts over: no cluster open, nothing extra loaded, no answers kept.
-  useEffect(() => { setPages(new Map()); setFocus(null); neighborCache.clear() }, [data])
+  useEffect(() => { setPages(new Map()); setFocus(null); neighborCache.clear(); select({ type: 'clear' }) }, [data])
+  // A cluster opened on its own keeps a selection among its files only.
+  useEffect(() => { if (focus !== null && selected && selected.c !== focus) select({ type: 'clear' }) }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The selected file's nearest files, asked for at once.
+  const selPath = selected?.p ?? null
+  useEffect(() => {
+    if (!selPath || !base) return
+    let alive = true
+    void nearestFiles(base, selPath).then(list => { if (alive) setSelNear({ p: selPath, list }) })
+    return () => { alive = false }
+  }, [selPath, base])
   useEffect(() => { setLinks(linksPref(mode)) }, [mode])
 
   const loadMore = useCallback((c: number, cap: number) => {
@@ -1113,10 +1250,24 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
     ? `${otherModels ? ` ${otherModels.toLocaleString()} file${otherModels === 1 ? '' : 's'} made with another model ${otherModels === 1 ? 'is' : 'are'} left out.` : ''}` +
       `${live.building ? ` ${remoteProgress(live.progress, host)}` : live.error ? ` The last refresh failed: ${live.error}.` : ''}`
     : ''
+  // A file opens in the Library, in its own library where there are several;
+  // a map filling the window closes first, so the Library is what shows.
+  const openFile = (p: string) => openFromMap(p, full, setFull, several && lib ? (q => openInLibrary(onOpen, lib, q)) : onOpen)
+  const nearList = selected && selNear?.p === selected.p ? selNear.list : null
+  const card = selected && (
+    <SelectionCard selected={selected} near={nearList} library={several ? label : null} palette={PALETTE}
+      onNeighbor={nb => select({ type: 'neighbor', nb })} onOpen={() => openFile(selected.p)} onClear={() => select({ type: 'clear' })} />
+  )
+  const selName = selected ? splitPath(selected.p) : null
+  const announce = selected && selName
+    ? `Selected ${selName.name}${selName.folder ? ` in ${selName.folder}` : ''}.${nearList ? ` ${nearList.length} nearest file${nearList.length === 1 ? '' : 's'} shown.` : ''} Enter opens it in the Library.`
+    : ''
   const canvas = (height: number | 'fill') => (
     <SemanticCanvas clusters={clusters} links={data.links ?? []} points={points} mode={mode} focus={open} height={height} palette={PALETTE} spin={spin}
-      labels={labels} showLinks={links} highlight={highlight} onOpen={several && lib ? (p => openInLibrary(onOpen, lib, p)) : onOpen}
-      onFocus={setFocus} onDetail={onDetail} api={viewApi} mapBase={base ?? '/api/kb/semantic-map'} />
+      labels={labels} showLinks={links} highlight={highlight} selected={selected} selectedNear={nearList}
+      onSelect={file => select(file ? { type: 'select', file } : { type: 'clear' })} onOpenFile={openFile}
+      onFocus={setFocus} onDetail={onDetail} api={viewApi} mapBase={base ?? '/api/kb/semantic-map'}
+      overlay={<>{card}<p className="sr-only" aria-live="polite">{announce}</p></>} />
   )
   const controls = (
     <>
@@ -1155,11 +1306,13 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
         Files placed by what they say, from the embeddings search by meaning uses: files that read alike sit near each other
         whatever folder they are in. Only distance means anything. Clusters are named for the words that set them apart, and
         links join each to the two that read most alike; hovering a file draws lines to its five nearest. Click a cluster for
-        all of its files, click a file to open it; zoom and drag to move, or turn it in 3D.
+        all of its files. Click a file to select it. The map moves to it, keeps the lines to its five nearest files and lists
+        them in a card with Open in Library; a double-click or Enter opens it too. Zoom and drag to move, or turn it in 3D.
       </p>
       {!full && (unavailable || statusLine)}
       {(full || !unavailable) && (
-        <MapFrame key="frame" title="Semantic map" full={full} onFull={setFull} controls={unavailable ? null : controls} picker={picker} busy={busy}>
+        <MapFrame key="frame" title="Semantic map" full={full} onFull={setFull} controls={unavailable ? null : controls} picker={picker} busy={busy}
+          onEscape={() => { if (!selected) return false; select({ type: 'clear' }); return true }}>
           {unavailable || (full ? <>{statusLine}{canvas('fill')}{legend}</> : canvas(360))}
         </MapFrame>
       )}
@@ -1168,7 +1321,62 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
   )
 }
 
-function SemanticCanvas({ clusters, links, points, mode, focus, height, palette, spin, labels, showLinks, highlight, onOpen, onFocus, onDetail, api, mapBase }: {
+/** The selected file: its name, folder and library, its nearest files (each
+ *  selects that file), Open in Library, and a button that clears it. Escape
+ *  in it clears it too, and the map keeps the keyboard. */
+function SelectionCard({ selected, near, library, palette, onNeighbor, onOpen, onClear }: {
+  selected: MapSelection
+  near: MapNeighbor[] | null
+  library: string | null
+  palette: string[]
+  onNeighbor: (nb: MapNeighbor) => void
+  onOpen: () => void
+  onClear: () => void
+}) {
+  const { name, folder } = splitPath(selected.p)
+  const ref = useRef<HTMLDivElement>(null)
+  // Clearing from the card hands the keyboard back to the map.
+  const clear = () => {
+    ref.current?.closest('.map-canvas')?.querySelector('canvas')?.focus()
+    onClear()
+  }
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    clear()
+  }
+  return (
+    <div className="map-select" ref={ref} role="group" aria-label={`Selected file ${name}`} onKeyDown={onKey}>
+      <div className="map-select-head">
+        <div className="map-select-title">
+          <strong title={selected.p}>{name}</strong>
+          <span className="muted" title={folder}>{folder || 'Top folder'}{library ? ` · ${library}` : ''}</span>
+        </div>
+        <IconButton icon={<CloseIcon />} label="Clear selection" size="sm" onClick={clear} />
+      </div>
+      <p className="map-select-sub muted">Nearest by meaning</p>
+      {near === null ? <div className="map-select-wait"><Loader inline size={12} label="Finding nearest files…" /></div>
+        : near.length === 0 ? <p className="map-select-none muted">None found.</p>
+          : (
+            <ul className="map-select-list">
+              {near.map(nb => (
+                <li key={nb.p}>
+                  <button type="button" className="map-select-nb" title={nb.p} onClick={() => onNeighbor(nb)}
+                    aria-label={`${splitPath(nb.p).name}, similarity ${nb.sim.toFixed(2)}`}>
+                    <span className="legend-dot" style={{ background: palette[(nb.c ?? selected.c ?? 0) % palette.length] }} />
+                    <span className="map-select-name">{splitPath(nb.p).name}</span>
+                    <span className="muted">{nb.sim.toFixed(2)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+      <Button variant="primary" size="sm" onClick={onOpen}>Open in Library</Button>
+    </div>
+  )
+}
+
+function SemanticCanvas({ clusters, links, points, mode, focus, height, palette, spin, labels, showLinks, highlight, selected, selectedNear, onSelect, onOpenFile, onFocus, onDetail, api, mapBase, overlay }: {
   /** The map's address, for its files' nearest files. */
   mapBase: string
   clusters: MapCluster[]
@@ -1183,21 +1391,34 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
   showLinks: boolean
   /** A cluster hovered in the legend: it stays bright and the rest dims. */
   highlight: number | null
-  onOpen: (path: string) => void
+  /** The file selected, and its nearest files once they are known. */
+  selected: MapSelection | null
+  selectedNear: MapNeighbor[] | null
+  /** A file clicked (or nothing, on an empty part of the map). */
+  onSelect: (file: MapSelection | null) => void
+  /** A file double-clicked, or Enter with one selected. */
+  onOpenFile: (path: string) => void
   onFocus: (c: number) => void
   onDetail: (inView: number[], k: number) => void
   api: React.RefObject<{ zoom: (f: number) => void; reset: () => void } | null>
+  /** Shown over the canvas: the selected file's card. */
+  overlay?: ReactNode
 }) {
   const cv = useRef<HTMLCanvasElement>(null)
   const { w, h } = useCanvasSize(cv, height)
   const [view, setView] = useState<View>(VIEW0)
   const [cam, setCam] = useState<Camera>(CAMERA0)
+  const viewRef = useRef(view)
+  viewRef.current = view
+  const camRef = useRef(cam)
+  camRef.current = cam
   const [hover, setHover] = useState<{ kind: 'point'; i: number } | { kind: 'cluster'; c: number } | null>(null)
   const [near, setNear] = useState<{ p: string; list: MapNeighbor[] } | null>(null)
   const PAD = 26
   // Screen positions from the last draw, for hit testing.
-  const screen = useRef<{ xs: Float32Array; ys: Float32Array; order: Int32Array; cx: Map<number, { x: number; y: number; r: number }> }>(
-    { xs: new Float32Array(0), ys: new Float32Array(0), order: new Int32Array(0), cx: new Map() })
+  // `rings` are the selected file's nearest files that are not dots on the map.
+  const screen = useRef<{ xs: Float32Array; ys: Float32Array; order: Int32Array; cx: Map<number, { x: number; y: number; r: number }>; rings: NeighborLine[] }>(
+    { xs: new Float32Array(0), ys: new Float32Array(0), order: new Int32Array(0), cx: new Map(), rings: [] })
   const pathIndex = useMemo(() => new Map(points.map((p, i) => [p.p, i])), [points])
 
   // A cluster on its own fills the view: the box of its points, with a margin.
@@ -1210,7 +1431,10 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
     return { x0: ax, x1: bx, y0: ay, y1: by, z0: az, z1: bz }
   }, [focus, points.length > 0 ? points[0] : null]) // eslint-disable-line react-hooks/exhaustive-deps
   // A new map, a cluster opened or closed, or the other view starts afresh.
-  useEffect(() => { setView(VIEW0); setCam(CAMERA0); setHover(null) }, [focus?.c, mode, clusters])
+  useEffect(() => { viewRef.current = VIEW0; camRef.current = CAMERA0; setView(VIEW0); setCam(CAMERA0); setHover(null) }, [focus?.c, mode, clusters])
+  // The view moves to a file selected: what was under the pointer is not
+  // there any more, so its label goes until the pointer moves.
+  useEffect(() => { setHover(null) }, [selected?.p])
 
   const base2d = (x: number, y: number) => ({
     x: PAD + ((x - frame.x0) / (frame.x1 - frame.x0)) * (w - 2 * PAD),
@@ -1220,8 +1444,6 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
     const span = Math.max(frame.x1 - frame.x0, frame.y1 - frame.y0, frame.z1 - frame.z0)
     return [(x - (frame.x0 + frame.x1) / 2) / span, (y - (frame.y0 + frame.y1) / 2) / span, (z - (frame.z0 + frame.z1) / 2) / span]
   }
-  const camRef = useRef(cam)
-  camRef.current = cam
   // How far the points reach from the centre in 3D (the 95th percentile),
   // so the cloud fills the view whatever its spread.
   const reach = useMemo(() => {
@@ -1244,6 +1466,40 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
     const t = setTimeout(() => { void nearestFiles(mapBase, hoveredPath).then(list => { if (alive) setNear({ p: hoveredPath, list }) }) }, 220)
     return () => { alive = false; clearTimeout(t) }
   }, [hoveredPath, showLinks, mapBase])
+
+  // A file selected: the view moves to it and zooms in a little, at once
+  // where motion is not welcome. Its turn and tilt in 3D stay as they are.
+  const anim = useRef(0)
+  useEffect(() => {
+    if (!selected || selected.x === undefined || selected.y === undefined) return
+    const sel = { x: selected.x, y: selected.y, z: selected.z ?? 0 }
+    // The card is drawn with the selection: the file goes where it leaves room.
+    const box = cv.current?.getBoundingClientRect()
+    const cardBox = cv.current?.parentElement?.querySelector('.map-select')?.getBoundingClientRect()
+    const at = freeCentre(w, h, box && cardBox ? { left: cardBox.left - box.left, bottom: cardBox.bottom - box.top, width: cardBox.width } : null)
+    let step: (t: number) => void
+    if (mode === '2d') {
+      const a = viewRef.current, b = centreView(a, base2d(sel.x, sel.y), w, h, SELECT_ZOOM, at)
+      step = t => { const v = tweenView(a, b, t); viewRef.current = v; setView(v) }
+    } else {
+      const a = camRef.current, b = centreCamera(a, centred(sel.x, sel.y, sel.z), SELECT_ZOOM, { x: at.x - w / 2, y: at.y - h / 2 }, scale0)
+      step = t => {
+        const c = tweenView(a, b, t)
+        const next = { ...camRef.current, k: c.k, tx: c.tx, ty: c.ty, tz: c.tz }
+        camRef.current = next
+        setCam(next)
+      }
+    }
+    if (reducedMotion() || typeof requestAnimationFrame !== 'function') { step(1); return }
+    const t0 = performance.now()
+    const tick = (now: number) => {
+      const f = Math.min(1, (now - t0) / SELECT_MS)
+      step(f)
+      if (f < 1) anim.current = requestAnimationFrame(tick)
+    }
+    anim.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(anim.current)
+  }, [selected?.p, mode, focus?.c, frame, w, h]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const draw = useCallback(() => {
     const c = cv.current
@@ -1280,7 +1536,15 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
     // Far points first, so near ones are drawn over them.
     const order = Int32Array.from({ length: n }, (_, i) => i)
     if (mode === '3d') order.sort((a, b) => depth[b] - depth[a])
-    screen.current = { xs, ys, order, cx }
+    // The selected file's nearest files, drawn whatever is hovered.
+    const dotAt = (p: string) => { const i = pathIndex.get(p); return i === undefined ? null : { x: xs[i], y: ys[i] } }
+    const placeAt = (x: number, y: number, z: number) => (mode === '2d' ? to2d(x, y) : to3d(x, y, z))
+    const selAt = !selected ? null : dotAt(selected.p)
+      ?? (selected.x !== undefined && selected.y !== undefined ? placeAt(selected.x, selected.y, selected.z ?? 0) : null)
+    const selLines = selected && selectedNear ? neighborLines(selectedNear, dotAt, placeAt) : []
+    c.dataset.selected = selected?.p ?? ''
+    c.dataset.selectedLines = String(selAt ? selLines.length : 0)
+    screen.current = { xs, ys, order, cx, rings: selAt ? selLines.filter(l => l.ring) : [] }
     if (!g) return
     const dark = isDarkTheme()
     const ink = dark ? '#cbd5e1' : '#475569'
@@ -1346,33 +1610,40 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
       g.fill()
     }
     g.globalAlpha = 1
-    // The hovered file's nearest files by meaning: a line to each, and a ring
-    // where the file is not among the dots loaded.
-    if (showLinks && hovered >= 0 && near && near.p === points[hovered]?.p) {
-      const from = { x: xs[hovered], y: ys[hovered] }
-      for (const nb of near.list) {
-        const at = pathIndex.get(nb.p)
-        let to: { x: number; y: number } | null = at !== undefined ? { x: xs[at], y: ys[at] } : null
-        const ring = at === undefined
-        if (!to && nb.x !== undefined && nb.y !== undefined && nb.z !== undefined) to = mode === '2d' ? to2d(nb.x, nb.y) : to3d(nb.x, nb.y, nb.z)
-        if (!to) continue
+    // A file's nearest files by meaning: a line to each, and a ring where
+    // the file is not among the dots loaded.
+    const drawLines = (from: { x: number; y: number }, lines: NeighborLine[], c0: number, width: number) => {
+      for (const l of lines) {
         g.beginPath()
         g.moveTo(from.x, from.y)
-        g.lineTo(to.x, to.y)
-        g.strokeStyle = palette[points[hovered].c % palette.length]
-        g.globalAlpha = 0.45 + 0.4 * Math.max(0, Math.min(1, nb.sim))
-        g.lineWidth = 1.4
+        g.lineTo(l.x, l.y)
+        g.strokeStyle = palette[c0 % palette.length]
+        g.globalAlpha = 0.45 + 0.4 * Math.max(0, Math.min(1, l.sim))
+        g.lineWidth = width
         g.stroke()
-        if (ring) {
+        if (l.ring) {
           g.beginPath()
-          g.arc(to.x, to.y, 5, 0, Math.PI * 2)
-          g.strokeStyle = palette[(nb.c ?? points[hovered].c) % palette.length]
+          g.arc(l.x, l.y, 5, 0, Math.PI * 2)
+          g.strokeStyle = palette[(l.c ?? c0) % palette.length]
           g.globalAlpha = 0.9
           g.lineWidth = 1.6
           g.stroke()
         }
       }
       g.globalAlpha = 1
+    }
+    if (selAt) {
+      drawLines(selAt, selLines, selected!.c ?? 0, 2)
+      // The selected file: a ring in the page's ink around its dot.
+      g.beginPath()
+      g.arc(selAt.x, selAt.y, (mode === '2d' ? dotR : 3 * zoomGrow) + 4, 0, Math.PI * 2)
+      g.strokeStyle = dark ? '#fff' : '#0f172a'
+      g.lineWidth = 2
+      g.stroke()
+    }
+    // The hovered file's, as a preview, with links on.
+    if (showLinks && hovered >= 0 && near && near.p === points[hovered]?.p && near.p !== selected?.p) {
+      drawLines({ x: xs[hovered], y: ys[hovered] }, neighborLines(near.list, dotAt, placeAt), points[hovered].c, 1.4)
     }
     // Cluster names in screen space, largest first, none over another.
     if (!focus) {
@@ -1396,7 +1667,7 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
       }
     }
     c.dataset.drawMs = (performance.now() - t0).toFixed(2)
-  }, [points, clusters, links, mode, focus, frame, view, w, h, hover, palette, reach, showLinks, highlight, near, labels, pathIndex]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [points, clusters, links, mode, focus, frame, view, w, h, hover, palette, reach, showLinks, highlight, near, labels, pathIndex, selected, selectedNear]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { draw() }, [draw, cam])
 
@@ -1459,14 +1730,26 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
     },
     hover: (x, y) => setHover(hitAt(x, y)),
     leave: () => setHover(null),
+    // A file selects it, as does one of the selected file's nearest files
+    // shown as a ring; a cluster opens on its own; an empty spot clears.
     click: (x, y) => {
       const hit = hitAt(x, y)
-      if (hit?.kind === 'point') onOpen(points[hit.i].p)
+      const ring = hit?.kind === 'point' ? null : screen.current.rings.find(r => Math.hypot(r.x - x, r.y - y) <= 10)
+      if (hit?.kind === 'point') { const p = points[hit.i]; onSelect({ p: p.p, x: p.x, y: p.y, z: p.z, c: p.c }) }
+      else if (ring) { const nb = selectedNear?.find(n => n.p === ring.p); if (nb) onSelect({ p: nb.p, x: nb.x, y: nb.y, z: nb.z, c: nb.c }) }
       else if (hit?.kind === 'cluster') onFocus(hit.c)
+      else onSelect(null)
     },
     wheel: (x, y, d) => zoom(Math.exp(-d * 0.0015), x, y),
-    dbl: (x, y) => zoom(2, x, y),
+    // A file opens; anywhere else zooms in.
+    dbl: (x, y) => {
+      const hit = hitAt(x, y)
+      if (hit?.kind === 'point') onOpenFile(points[hit.i].p)
+      else zoom(2, x, y)
+    },
     key: e => {
+      if (e.key === 'Enter' && selected) { onOpenFile(selected.p); return true }
+      if (e.key === 'Escape' && selected) { onSelect(null); return true }
       if (mode === '3d' && e.key.startsWith('Arrow')) {
         const step = 0.12
         setCam(cm => e.key === 'ArrowLeft' ? { ...cm, yaw: cm.yaw - step } : e.key === 'ArrowRight' ? { ...cm, yaw: cm.yaw + step }
@@ -1488,6 +1771,7 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
         aria-label={`Semantic map, ${mode === '2d' ? '2D' : '3D'}: zoom with + and -, ${mode === '2d' ? 'move' : 'turn'} with the arrow keys, 0 resets`}
         style={{ width: '100%', height: height === 'fill' ? '100%' : height, display: 'block', cursor: hover ? 'pointer' : mode === '3d' ? 'grab' : 'default' }} />
       {tip && <div className="map-tip">{tip}{nearNote && <span className="map-tip-note"> · {nearNote}</span>}</div>}
+      {overlay}
     </div>
   )
 }

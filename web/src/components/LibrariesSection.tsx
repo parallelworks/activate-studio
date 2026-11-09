@@ -118,7 +118,7 @@ const counts = (dirs: number | null, files: number | null) =>
   dirs != null ? `${dirs.toLocaleString()} folders, ${(files ?? 0).toLocaleString()} files` : null
 
 /**
- * Settings > Libraries: one list of every library the Studio searches, and
+ * Settings > Indexing > Libraries: one list of every library the Studio searches, and
  * one control to add another (AddLibrary). The main folder is the one the
  * Studio indexes itself and writes to; on a single-user install it can be
  * changed and its index rebuilt here. Every other library is read only: an
@@ -128,7 +128,11 @@ const counts = (dirs: number | null, files: number | null) =>
  * the platform (/api/user-libraries). Builds show their progress under
  * their row.
  */
-export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
+export function LibrariesSection({ pollMs = 1000, heading = true }: {
+  pollMs?: number
+  /** Off where the page around it already names it, as a tab of Settings, Indexing does. */
+  heading?: boolean
+}) {
   const cfg = useAppConfig()
   const [libs, setLibs] = useState<SettingsLibrary[] | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -136,7 +140,34 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const [canBuild, setCanBuild] = useState(false)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
+  // Opened from the Library's + Add menu (#view=settings:libraries?add=1)
+  // with the form already showing.
+  const [adding, setAdding] = useState(() => /^#view=settings:libraries\?(?:.*&)?add=1(?:&|$)/.test(location.hash))
+  const openedByLink = useRef(adding)
+  const addForm = useRef<HTMLElement | null>(null)
+  // Brought into view as the lists above it load, for the first moments
+  // after the page opens: scrolled once at once, it was pushed down again by
+  // the libraries arriving.
+  const openedAt = useRef(Date.now())
+  const [linked, setLinked] = useState(0)
+  // The + Add menu's link while this page is already open (Settings visited
+  // earlier, the section kept): the address changes, the page does not load.
+  useEffect(() => {
+    const onHash = () => {
+      if (!/^#view=settings:libraries\?(?:.*&)?add=1(?:&|$)/.test(location.hash)) return
+      openedByLink.current = true
+      openedAt.current = Date.now()
+      setAdding(true)
+      setLinked(n => n + 1)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  useEffect(() => {
+    if (!openedByLink.current || libs === null || !addForm.current) return
+    if (Date.now() - openedAt.current > 3000) { openedByLink.current = false; return }
+    addForm.current.scrollIntoView?.({ block: 'start' })
+  }, [libs, user, status, adding, linked])
   const [changing, setChanging] = useState(false)
   const [restarting, setRestarting] = useState(false)
   // The library just given a depth its index does not have, and the depth
@@ -262,7 +293,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   if (loadError && !libs) {
     return (
       <>
-        <h1>Libraries</h1>
+        {heading && <h1>Libraries</h1>}
         <Callout tone="error" title="The libraries could not be listed" action={<Button size="sm" variant="secondary" onClick={() => void loadLibs()}>Try again</Button>}>
           {loadError}
         </Callout>
@@ -527,7 +558,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   return (
     <>
       {dialog}
-      <h1>Libraries</h1>
+      {heading && <h1>Libraries</h1>}
       <p className="muted view-sub">
         Every library searched here. The main folder is the only one written to; the others are indexes read where
         they are, built here or connected as they are.
@@ -591,7 +622,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       )}
 
       {adding && (
-        <section className="lib-add-form" aria-label="Add a library">
+        <section className="lib-add-form" aria-label="Add a library"
+          ref={el => { addForm.current = el }}>
           <div className="lib-add-head">
             <div className="tool-group">Add a library</div>
             <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(false)} />

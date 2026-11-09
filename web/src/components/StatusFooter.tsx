@@ -11,7 +11,7 @@ import { openAbout, openUpdates, openWhatsNew } from '../api'
 import { underWay, updateActions, useUpdateFlow, type UpdateFlow } from '../updateFlow'
 import { UpdateProgress } from './UpdatesSection'
 import { share, syncIndex, type AiHealth } from '../statusShare'
-import { useAppConfig } from '../config'
+import { aiOn, useAppConfig } from '../config'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -106,11 +106,14 @@ function DetailRows({ rows }: { rows: [string, string][] }) {
   )
 }
 
+/** "1 model ready", "3 models ready". */
+export const modelsReady = (n: number) => `${n} ${n === 1 ? 'model' : 'models'} ready`
+
 export const AI_LABEL: Record<AiHealth['status'], string> = {
   ok: 'models ready',
   auth: 'model key rejected',
   unreachable: 'models unreachable',
-  offline: 'offline',
+  offline: 'models offline',
   unconfigured: 'models not configured',
   'key-required': 'add your model key',
   off: 'AI features off',
@@ -118,7 +121,7 @@ export const AI_LABEL: Record<AiHealth['status'], string> = {
 
 function AiPanel({ trigger, ai, onRecheck }: { trigger: ReactElement; ai: AiHealth; onRecheck: () => void }) {
   const rows: [string, string][] = [
-    ['Status', AI_LABEL[ai.status] + (ai.status === 'ok' ? ` (${ai.models} models)` : '')],
+    ['Status', AI_LABEL[ai.status] + (ai.status === 'ok' ? ` (${ai.models} ${ai.models === 1 ? 'model' : 'models'})` : '')],
     ['Gateway', ai.gatewayHost],
     ['Checked', new Date(ai.checkedAt).toLocaleTimeString()],
   ]
@@ -248,20 +251,55 @@ function BuildPanel({ trigger, build, flow, open, onOpenChange }: {
   )
 }
 
+interface SignIn {
+  proxy: boolean
+  oidc: boolean
+  required: boolean
+  source: 'proxy' | 'oidc' | null
+  loginUrl: string | null
+  logoutUrl: string | null
+}
+
 interface WhoAmI {
   authEnabled: boolean
   header: string
   verified: boolean
-  user: { id: string; username: string; name?: string } | null
+  signIn?: SignIn
+  user: { id: string; username: string; name?: string; account?: string | null; uid?: number | null; gid?: number | null; groups?: string[] | null } | null
   token: { issuer: string | null; audience: unknown; issuedAt: string | null; expiresAt: string | null } | null
   claims: Record<string, unknown> | null
 }
 
+/** Inside the platform's embedded session view a provider's sign-in does
+ *  not complete, so there it opens in a tab of its own. */
+function embedded(): boolean {
+  try { return window.self !== window.top } catch { return true }
+}
+
+export function signInHref(loginUrl: string): string {
+  return `${loginUrl}?returnTo=${encodeURIComponent(location.pathname + location.search + location.hash)}`
+}
+
+function SignInLink({ loginUrl }: { loginUrl: string }) {
+  return (
+    <a className="identity-btn" href={signInHref(loginUrl)} {...(embedded() ? { target: '_blank', rel: 'noopener' } : {})}>
+      <StatusDot variant="muted" size={7} />
+      Sign in
+    </a>
+  )
+}
+
 function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI }) {
+  const oidc = who.signIn?.source === 'oidc'
+  const u = who.user
   const rows: [string, string][] = who.verified
     ? [
-        ['Username', who.user?.username ?? ''],
-        ['Name', who.user?.name ?? '(not set)'],
+        ['Username', u?.username ?? ''],
+        ['Name', u?.name ?? '(not set)'],
+        ...(u?.account ? [['Account', u.account] as [string, string]] : []),
+        ...(u?.uid != null ? [['uid', String(u.uid)] as [string, string]] : []),
+        ...(u?.gid != null ? [['gid', String(u.gid)] as [string, string]] : []),
+        ...(u?.groups?.length ? [['Groups', u.groups.join(', ')] as [string, string]] : []),
         ['Subject', String(who.claims?.sub ?? '')],
         ['Issuer', who.token?.issuer ?? ''],
         ['Audience', Array.isArray(who.token?.audience) ? (who.token?.audience as string[]).join('\n') : String(who.token?.audience ?? '')],
@@ -270,13 +308,17 @@ function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI })
       ]
     : []
   return (
-    <FooterPanel trigger={trigger} title={who.verified ? 'Platform-verified identity' : 'Identity not verified'}>
+    <FooterPanel trigger={trigger} title={!who.verified ? 'Identity not verified' : oidc ? 'Signed in' : 'Platform-verified identity'}>
       {who.verified ? (
         <>
           <DetailRows rows={rows} />
           <div className="scope-menu-head">Raw token claims</div>
           <pre className="identity-claims">{JSON.stringify(who.claims, null, 2)}</pre>
         </>
+      ) : who.signIn?.oidc && !who.signIn.proxy ? (
+        <p className="identity-note">
+          You are not signed in. Sign in with your identity provider to use your own conversations, keys and libraries.
+        </p>
       ) : (
         <p className="identity-note">
           This connection carried no valid platform token. Verification is enabled and the
@@ -288,7 +330,14 @@ function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI })
       )}
       <div className="scope-menu-foot">
         <span className="muted identity-src">GET /api/whoami</span>
-        <CloseButton />
+        <span className="identity-actions">
+          {who.signIn?.logoutUrl && (
+            <form method="post" action={who.signIn.logoutUrl}>
+              <Button type="submit" variant="secondary" size="sm">Sign out</Button>
+            </form>
+          )}
+          <CloseButton />
+        </span>
       </div>
     </FooterPanel>
   )
@@ -315,7 +364,12 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // health and counts without asking the server again.
   const refresh = () => Promise.allSettled([
     api.stats().then(s => { setStats(s as typeof stats); share({ stats: s }) }),
-    fetch('/api/whoami').then(r => r.json()).then((w: WhoAmI) => { setWho(w); share({ authEnabled: !!w.authEnabled }) }),
+    fetch('/api/whoami').then(r => r.json()).then((w: WhoAmI) => {
+      setWho(w); share({ authEnabled: !!w.authEnabled })
+      // A sign-in that ended while the page was open, on a Studio that
+      // requires one: go through sign-in again and come back here.
+      if (w.signIn?.required && w.signIn.loginUrl && !w.verified && !embedded()) location.assign(signInHref(w.signIn.loginUrl))
+    }),
     api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null)),
     fetch('/api/ai/health').then(r => r.json()).then((h: AiHealth) => { setAi(h); share({ ai: h }) }).catch(() => { setAi(null); share({ ai: null }) }),
   ])
@@ -330,6 +384,17 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     window.addEventListener('ade:model-access-changed', now)
     return () => { clearInterval(t); off(); window.removeEventListener('ade-kb-changed', now); window.removeEventListener('ade:model-access-changed', now) }
   }, [])
+  // Switching AI features on or off changes the model line at once: the
+  // configuration is read again after the switch is saved, and a change of
+  // it here asks the server for the model health again, instead of waiting
+  // for the next poll.
+  const aiFlag = cfg.loaded ? aiOn(cfg) : null
+  const seenAi = useRef<boolean | null>(null)
+  useEffect(() => {
+    if (aiFlag === null) return
+    if (seenAi.current !== null && seenAi.current !== aiFlag) void refresh()
+    seenAi.current = aiFlag
+  }, [aiFlag]) // eslint-disable-line react-hooks/exhaustive-deps
   // Polled: a change means a new version was rolled out under this page.
   // The page keeps working against the new server, but its own code is
   // the old build, so it says so and offers a reload; open conversations
@@ -401,7 +466,12 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <div className="sidenav-footer">
       <IndexLogHost />
-      {who?.authEnabled && (
+      {who?.authEnabled && !who.verified && who.signIn?.loginUrl && (
+        <div className="status-line" title={embedded() ? 'Sign in, in a new tab' : 'Sign in'}>
+          <SignInLink loginUrl={who.signIn.loginUrl} />
+        </div>
+      )}
+      {who?.authEnabled && (who.verified || !who.signIn?.loginUrl) && (
         <div className="status-line" title="Click for identity details">
           <IdentityPanel
             who={who}
@@ -414,7 +484,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           />
         </div>
       )}
-      {ai && cfg.aiEnabled !== false && (
+      {/* An 'off' answer read before AI features were switched on is stale
+          until the read the switch starts returns, so it is not shown. */}
+      {ai && cfg.aiEnabled !== false && ai.status !== 'off' && (
         <div className="status-line" title="Click for model availability details">
           <AiPanel
             ai={ai}
@@ -422,7 +494,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={ai.status === 'ok' ? 'success' : ai.status === 'unconfigured' ? 'muted' : 'warning'} size={7} />
-                {ai.status === 'ok' ? `${ai.models} models ready` : AI_LABEL[ai.status]}
+                {ai.status === 'ok' ? modelsReady(ai.models) : AI_LABEL[ai.status]}
               </button>
             }
           />

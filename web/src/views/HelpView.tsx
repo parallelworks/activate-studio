@@ -2,7 +2,7 @@ import { ReactElement, useEffect, useState } from 'react'
 import { Disclosure } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
 import { api, IndexStatus, onAbout, onWhatsNew } from '../api'
-import { useAppConfig } from '../config'
+import { aiOn, useAppConfig } from '../config'
 import { WhatsNew } from '../components/WhatsNew'
 import { About } from '../components/About'
 
@@ -49,6 +49,18 @@ export function parseHelp(md: string): { intro: string; sections: Section[] } {
   return { intro: intro.join('\n').trim(), sections }
 }
 
+/** The guide marks text about Chat and the assistant as
+ *  `<!-- ai -->…<!-- /ai -->` (an HTML comment, so it reads as plain text on
+ *  GitHub). With AI features on the marks go; with them off the marked text
+ *  goes too, and a list item left empty by that goes with it. */
+export function aiGuideText(md: string, aiEnabled: boolean): string {
+  if (aiEnabled) return md.replace(/<!-- \/?ai -->/g, '')
+  return md
+    .replace(/<!-- ai -->[\s\S]*?<!-- \/ai -->/g, '')
+    .split('\n').filter(l => !/^\s*(\d+\.|[-*])\s*$/.test(l)).join('\n')
+    .replace(/[ \t]+$/gm, '')
+}
+
 function ago(iso: string | null): string {
   if (!iso) return 'pending'
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
@@ -70,6 +82,9 @@ const ABOUT_ICON = <svg viewBox="0 0 16 16" width="18" height="18" fill="none" s
 
 const slugOf = (t: string) => (t === WHATS_NEW ? WHATS_NEW_SLUG : t === ABOUT ? ABOUT_SLUG : t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''))
 
+/** The guide's pages about pages AI features off removes. */
+export const AI_HELP_PAGES = ['Chat', 'Agents']
+
 export function HelpView() {
   const cfg = useAppConfig()
   const [md, setMd] = useState<string>('')
@@ -89,7 +104,12 @@ export function HelpView() {
     api.indexStatus().then(setIdx).catch(() => {})
   }, [])
 
-  const { intro, sections } = parseHelp(md)
+  // With AI features off, the guide's Chat and Agents pages describe pages
+  // that are not there, so they leave the rail with them.
+  const aiEnabled = aiOn(cfg)
+  const parsed = parseHelp(aiGuideText(md, aiEnabled))
+  const intro = parsed.intro
+  const sections = aiEnabled ? parsed.sections : parsed.sections.filter(s => !AI_HELP_PAGES.includes(s.title))
 
   // A link to a page of Help (#view=help:<page>) after this view is up, and
   // What's new asked for from the footer or Settings.
@@ -167,7 +187,7 @@ export function HelpView() {
             <>
               <h1>{cfg.appName}</h1>
               <div className="md-body"><Streamdown>{intro}</Streamdown></div>
-              <p className="muted help-hint">Each section in the left rail covers one part of the application. The chat assistant reads this same guide, so asking it "how do I…" works too.</p>
+              <p className="muted help-hint">Each section in the left rail covers one part of the application.{aiEnabled && ' The chat assistant reads this same guide, so asking it "how do I…" works too.'}</p>
             </>
           ) : (
             <>

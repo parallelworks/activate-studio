@@ -10,6 +10,8 @@ export interface AppConfig {
   theme: 'light' | 'dark'
   accent: string
   surface: string
+  /** The left navigation's width in pixels, when not collapsed. */
+  navWidth: number
   kbLabel: string
   suggestedPrompts: string[]
   /** Classification banner across the top; empty means none. */
@@ -42,8 +44,9 @@ const DEFAULTS: AppConfig = {
   faviconUrl: null,
   faviconUrlDark: null,
   theme: 'light',
-  accent: 'navy',
-  surface: 'neutral',
+  accent: 'none',
+  surface: 'warm',
+  navWidth: 240,
   kbLabel: 'Knowledge base',
   suggestedPrompts: [
     'What is in this knowledge base?',
@@ -77,7 +80,7 @@ function rememberBrand(c: AppConfig): void {
   try {
     localStorage.setItem(BRAND_KEY, JSON.stringify({
       appName: c.appName, iconUrl: c.iconUrl, iconUrlDark: c.iconUrlDark, kbLabel: c.kbLabel,
-      faviconUrl: c.faviconUrl, faviconUrlDark: c.faviconUrlDark,
+      faviconUrl: c.faviconUrl, faviconUrlDark: c.faviconUrlDark, navWidth: c.navWidth, aiEnabled: c.aiEnabled,
       bannerText: c.bannerText, bannerColor: c.bannerColor, bannerWhenEmbedded: c.bannerWhenEmbedded,
     }))
   } catch { /* storage unavailable */ }
@@ -121,8 +124,9 @@ export function useAppConfig(): AppConfig {
           faviconUrl: d.faviconUrl ?? null,
           faviconUrlDark: d.faviconUrlDark ?? null,
           theme: d.theme === 'dark' ? 'dark' : 'light',
-          accent: d.accent || 'navy',
-          surface: d.surface || 'neutral',
+          accent: d.accent || 'none',
+          surface: d.surface || 'warm',
+          navWidth: clampNavWidth(d.navWidth),
           kbLabel: d.kbLabel || DEFAULTS.kbLabel,
           suggestedPrompts: d.suggestedPrompts?.length ? d.suggestedPrompts : DEFAULTS.suggestedPrompts,
           bannerText: d.bannerText ?? '',
@@ -157,6 +161,44 @@ export function useAppConfig(): AppConfig {
   return cfg
 }
 
+/** The left navigation's widths: the Width choice's three, and the range a
+ *  drag of its edge keeps to. Default is the width it had before it could
+ *  be changed. */
+export const NAV_WIDTHS = { narrow: 200, default: 240, wide: 320 } as const
+export const NAV_WIDTH_MIN = NAV_WIDTHS.narrow
+export const NAV_WIDTH_MAX = 400
+
+/** A saved width as a whole number of pixels in range, Default otherwise. */
+export function clampNavWidth(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (v === undefined || v === null || v === '' || !Number.isFinite(n)) return NAV_WIDTHS.default
+  return Math.round(Math.min(NAV_WIDTH_MAX, Math.max(NAV_WIDTH_MIN, n)))
+}
+
+/** Set the navigation's width: the --nav-w variable the sidebar's CSS reads. */
+export function applyNavWidth(px: number): void {
+  document.documentElement.style.setProperty('--nav-w', `${clampNavWidth(px)}px`)
+}
+
+/** The width from the previous visit, before React renders, so the sidebar
+ *  does not jump once the configuration arrives. */
+export function applyRememberedNavWidth(): void {
+  const w = rememberedBrand().navWidth
+  if (typeof w === 'number') applyNavWidth(w)
+}
+
+/** Save the navigation's width, applied at once. */
+export async function saveNavWidth(px: number): Promise<void> {
+  const w = clampNavWidth(px)
+  applyNavWidth(w)
+  if (cached) cached = { ...cached, navWidth: w }
+  await saveSettings({ navWidth: w })
+}
+
+/** The configuration as last read, without asking for it: for a label in a
+ *  component that should not start a request of its own. */
+export function knownAppConfig(): { aiEnabled?: boolean } { return cached ?? rememberedBrand() }
+
 /** Asks the app to fetch its configuration again, as after a library is added. */
 export function reloadAppConfig(): void { window.dispatchEvent(new Event('ade:config-changed')) }
 
@@ -175,6 +217,23 @@ export const SECTION_SWITCHES: { id: string; label: string }[] = [
 export const ALWAYS_SHOWN = ['settings', 'help']
 /** The pages that call a model, gone while AI features are off. */
 export const AI_SECTIONS = ['chat', 'agents']
+
+/** What Settings calls the section with the ACTIVATE credential: Model
+ *  access, or ACTIVATE access while AI features are off and it holds only
+ *  that credential. */
+export function accessLabel(cfg: { aiEnabled?: boolean }): string { return aiOn(cfg) ? 'Model access' : 'ACTIVATE access' }
+
+/** Whether AI features are on. Unset (before the configuration arrives,
+ *  or from an older server) counts as on, as it always has. */
+export function aiOn(cfg: { aiEnabled?: boolean }): boolean { return cfg.aiEnabled !== false }
+
+/** Whether the AI pages may be mounted now: on as the configuration says,
+ *  or, before it arrives, as the previous visit remembered it. A first
+ *  visit waits for the configuration, so a Studio with AI features off
+ *  never starts Chat or Agents and their requests. */
+export function aiPagesMounted(cfg: { aiEnabled?: boolean; loaded: boolean }): boolean {
+  return cfg.loaded ? aiOn(cfg) : cfg.aiEnabled === true
+}
 
 /** Whether a page shows: in the saved sections (none saved means all), or
  *  always shown. Workflows lists platform workflows, so it also needs one,

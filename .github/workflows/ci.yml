@@ -19,6 +19,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The web client, which every build ships, and the Node server and
+  # indexer, which only the earlier builds carry (STUDIO_SERVER=node or go
+  # in the build scripts); releases ship the Go version (the go job).
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -85,6 +88,58 @@ jobs:
           pnpm --filter @activate-studio/server --prod deploy --legacy /tmp/deploy-check
           node testdata/check-packaging.mjs /tmp/deploy-check
 
+  # The Go server (server-go), the server releases ship: vet and tests on
+  # Linux, vet for every platform the desktop app targets, and the release
+  # binaries built as the build scripts build them. Tests that need GUFI,
+  # Node or the ONNX runtime skip themselves when those are absent, as here.
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # GitHub (setup-go's version manifest and Go's archives), Go's own
+      # download host, and the module proxy and checksum database.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            go.dev:443
+            dl.google.com:443
+            storage.googleapis.com:443
+            proxy.golang.org:443
+            sum.golang.org:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          cache-dependency-path: server-go/go.sum
+      - name: go vet
+        working-directory: server-go
+        run: go vet ./...
+      - name: go test
+        working-directory: server-go
+        run: go test -p 4 ./...
+      - name: go vet for each platform
+        working-directory: server-go
+        run: sh scripts/crossvet.sh
+      # As deploy/linux/build_app.sh and deploy/mac/build_app.sh build them
+      # (static, no cgo); the Linux server must list its routes.
+      - name: the release binaries
+        working-directory: server-go
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/linux/" ./cmd/studio-server ./cmd/semantic-map
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/darwin/" ./cmd/studio-server ./cmd/semantic-map
+          "$RUNNER_TEMP/linux/studio-server" routes >/dev/null
+          ls -l "$RUNNER_TEMP/linux" "$RUNNER_TEMP/darwin"
+
   macos:
     # The Studio is expected to run from source on a laptop, and macOS is
     # where that claim rots quietly: a Linux-only assumption in the server
@@ -104,6 +159,16 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - name: install extraction tools
         run: brew install tesseract poppler
+      # The helper a library's build on a Mac runs there (cmd/studio-remote),
+      # built and run as darwin-arm64: its text pass, its check of a kit,
+      # and ONNX Runtime's library taken from a wheel.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          cache-dependency-path: server-go/go.sum
+      - name: go test (the remote helper)
+        working-directory: server-go
+        run: go test ./cmd/studio-remote ./internal/remotepass && go test -run 'TestONNXRuntimeFromTheWheel|TestHelperPlatforms' ./internal/userlibs
       - name: install the document readers
         run: python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only
       # The runner's python3 can be newer than the pinned wheels; the map's

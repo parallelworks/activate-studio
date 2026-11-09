@@ -150,6 +150,13 @@ backoff=2
 failures=
 while [ "$stopping" = 0 ]; do
   recover
+  # An update that replaces the whole app (requiresRelaunch, docs/UPDATES.md)
+  # may hold no Node: this loop, the old copy's, stops, and the reopened app
+  # starts its own server.
+  if [ ! -x "$RES/node/bin/node" ] && [ ! -x "$RES/app/bin/studio-server" ] && [ -f "$DATA/updates/relaunch.json" ]; then
+    echo "$(stamp) the app was replaced by a version that runs once the app is reopened; this run loop stops" >>"$LOG"
+    exit 0
+  fi
   # One previous log is kept.
   if [ -f "$LOG" ] && [ $(( $(wc -c <"$LOG") )) -gt 10485760 ]; then mv -f "$LOG" "$LOG.1"; fi
   (
@@ -187,13 +194,59 @@ while [ "$stopping" = 0 ]; do
     export PATH="$RES/node/bin:$RES/ocr/bin:${LOGIN_PATH:+$LOGIN_PATH:}${PATH:-/usr/bin:/bin}:/usr/local/bin:$HOME/.local/bin"
     export TESSDATA_PREFIX="${TESSDATA_PREFIX:-$RES/ocr/share/tessdata}"
     # The embedding models ship with the payload; the index refers to them.
+    # The Go version carries no GGUF model (its server embeds with ONNX).
     model="$INDEX_BASE/models/minilm384.gguf"
-    if [ -L "$model" ] || [ ! -e "$model" ]; then
+    if [ -f "$RES/models/minilm384.gguf" ] && { [ -L "$model" ] || [ ! -e "$model" ]; }; then
       mkdir -p "$INDEX_BASE/models" && ln -sfn "$RES/models/minilm384.gguf" "$model"
     fi
+    # The ONNX runtime library the Go server's embedder loads (app/lib,
+    # where it looks on its own; named here so that a copy elsewhere on the
+    # system is never used), and the STEP preview's modules (app/occt).
+    if [ -f "$RES/app/lib/libonnxruntime.so.1" ]; then
+      export STUDIO_ORT_LIB="${STUDIO_ORT_LIB:-$RES/app/lib/libonnxruntime.so.1}"
+    fi
+    if [ -f "$RES/app/occt/occt-import-js.wasm" ]; then
+      export STUDIO_OCCT_WASM="${STUDIO_OCCT_WASM:-$RES/app/occt/occt-import-js.wasm}"
+    fi
+    # A Go-only payload has no Python; the Go server then reads with its own.
+    if [ -f "$RES/node/PLACEHOLDER" ] && [ ! -x "$PYTHON_BIN" ]; then unset PYTHON_BIN; fi
     onnx="$INDEX_BASE/models/minilm-l6"
     if [ -d "$RES/models/minilm-l6" ] && { [ -L "$onnx" ] || [ ! -e "$onnx" ]; }; then
       ln -sfn "$RES/models/minilm-l6" "$onnx"
+    fi
+    # Which server runs (docs/UPDATES.md, "The Go version"): the Go server
+    # (app/bin/studio-server) where the payload's manifest.json says
+    # "server": "go", or STUDIO_GO_SERVER=1 asks for it (in studio.env, or
+    # from the window, which names the binary in STUDIO_GO_SERVER_BIN);
+    # STUDIO_GO_SERVER=0 asks for Node. With a Node in the payload, Node runs
+    # behind the Go server on a loopback port for what is not ported yet and
+    # its exit status is passed on; a payload without one (node/PLACEHOLDER:
+    # node/bin/node is there only for the checks of older updaters) has the
+    # Go server answer everything itself.
+    go_bin="${STUDIO_GO_SERVER_BIN:-$RES/app/bin/studio-server}"
+    want_go="${STUDIO_GO_SERVER:-}"
+    if [ -z "$want_go" ]; then
+      want_go=0
+      [ -n "${STUDIO_GO_SERVER_BIN:-}" ] && want_go=1
+      grep -q '"server": *"go"' "$RES/manifest.json" 2>/dev/null && want_go=1
+    fi
+    real_node=0
+    [ -x "$RES/node/bin/node" ] && [ ! -e "$RES/node/PLACEHOLDER" ] && real_node=1
+    if [ "$want_go" = 1 ] && [ -x "$go_bin" ]; then
+      export STUDIO_PROJECT_ROOT="$RES/app"
+      [ -x "$RES/app/bin/semantic-map" ] && export STUDIO_SEMANTIC_MAP_BIN="${STUDIO_SEMANTIC_MAP_BIN:-$RES/app/bin/semantic-map}"
+      if [ "$real_node" = 1 ]; then
+        echo "$(stamp) starting the Go server on http://127.0.0.1:$PORT/ with $KB_ROOT, Node behind it"
+        export STUDIO_NODE_SPAWN=1 STUDIO_NODE_BIN="$RES/node/bin/node" STUDIO_NODE_MAIN="$RES/app/server/dist/main.js"
+      else
+        echo "$(stamp) starting the Go server on http://127.0.0.1:$PORT/ with $KB_ROOT"
+        export STUDIO_NODE=off PATH="${PATH#"$RES/node/bin:"}"
+      fi
+      exec "$go_bin"
+    fi
+    if [ "$real_node" = 0 ]; then
+      echo "$(stamp) this payload has no Node, and its Go server is missing or turned off (STUDIO_GO_SERVER=0)"
+      exit 1
     fi
     echo "$(stamp) starting on http://127.0.0.1:$PORT/ with $KB_ROOT"
     exec "$RES/node/bin/node" "$RES/app/server/dist/main.js"

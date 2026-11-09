@@ -419,7 +419,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           </p>
           {pageOf(shownPersonas, pPage).map(p => (
             <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open this persona for editing">
-              <span className="ov-row-path"><PersonaIcon icon={p.icon} name={p.name} size={20} />{p.name}{p.shared && <span className="persona-shared">shared</span>}</span>
+              <span className="ov-row-path"><PersonaIcon icon={p.icon} name={p.name} size={20} /><span className="agents-name" title={p.name}>{p.name}</span>{p.shared && <span className="persona-shared">shared</span>}</span>
               <span className="ov-row-meta">
                 {p.description || 'no description'}
                 {p.shared && (
@@ -446,7 +446,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           </p>
           {pageOf(shownSkills, sPage).map(s => (
             <div className="ov-row" key={s.name} onClick={() => void edit('skill', s.name)} title="Open this skill for editing">
-              <span className="ov-row-path">{s.name}</span>
+              <span className="ov-row-path"><span className="agents-name" title={s.name}>{s.name}</span></span>
               <span className="ov-row-meta">{s.description || 'no description'}</span>
             </div>
           ))}

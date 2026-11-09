@@ -31,3 +31,6 @@ func openFolder(dir string) {
 		go func() { _ = cmd.Wait() }()
 	}
 }
+
+// revealDownload: nothing here; the Studio says where the file went.
+func revealDownload(string) {}

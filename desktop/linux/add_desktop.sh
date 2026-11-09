@@ -21,13 +21,21 @@ install -m 755 "$HERE/activate-studio" "$APP/bin/activate-studio"
 install -m 755 "$HERE/install.sh" "$HERE/uninstall.sh" "$APP/"
 install -m 644 "$HERE/activate-studio.desktop" "$APP/share/applications/activate-studio.desktop"
 
-# Icons from the 1024-pixel PNG build_app.sh put in share/.
-if command -v magick >/dev/null 2>&1; then IM=(magick); elif command -v convert >/dev/null 2>&1; then IM=(convert); else
-  echo "ImageMagick (magick or convert) is needed to make the icon sizes" >&2; exit 1
+# Icons from the 1024-pixel PNG build_app.sh put in share/: with ImageMagick,
+# else with Go (server-go/scripts/iconsizes), else none, with a warning (the
+# menu entry then shows the desktop's default icon).
+SIZES=(48 64 128 256 512)
+ICONS="$APP/share/icons/hicolor"
+if command -v magick >/dev/null 2>&1; then IM=(magick); elif command -v convert >/dev/null 2>&1; then IM=(convert); else IM=(); fi
+if [ "${#IM[@]}" -gt 0 ]; then
+  for s in "${SIZES[@]}"; do
+    d="$ICONS/${s}x${s}/apps"
+    mkdir -p "$d"
+    "${IM[@]}" "$APP/share/activate-studio.png" -filter Lanczos -resize "${s}x${s}" "$d/activate-studio.png"
+  done
+elif command -v go >/dev/null 2>&1; then
+  (cd "$HERE/../../server-go" && go run ./scripts/iconsizes "$APP/share/activate-studio.png" "$ICONS" "${SIZES[@]}")
+else
+  echo "add_desktop.sh: WARNING: neither ImageMagick nor Go is installed; the icon sizes are not made" >&2
 fi
-for s in 48 64 128 256 512; do
-  d="$APP/share/icons/hicolor/${s}x${s}/apps"
-  mkdir -p "$d"
-  "${IM[@]}" "$APP/share/activate-studio.png" -filter Lanczos -resize "${s}x${s}" "$d/activate-studio.png"
-done
 echo "Desktop pieces added to $APP"

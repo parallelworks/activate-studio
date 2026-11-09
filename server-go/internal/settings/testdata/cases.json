@@ -1,0 +1,10 @@
+[
+  {"name": "personal defaults", "env": {}, "saved": null},
+  {"name": "deployment defaults", "env": {"PW_PLATFORM_HOST": "platform.example.com"}, "saved": null},
+  {"name": "signed-in deployment", "auth": true, "env": {}, "saved": null},
+  {"name": "env values", "env": {"APP_NAME": "Lab", "KB_LABEL": "Docs", "STUDIO_SECTIONS": " chat, library ,,search", "STUDIO_WORKFLOWS": "a,b", "THEME": "dark", "APP_ACCENT": "teal", "SWEEP_INTERVAL_SEC": "120", "STUDIO_SEARCH_ENGINE": "gufi_vt", "STUDIO_GUFI_LOG": "1", "SUGGESTED_PROMPTS": "[\"One\", \"Two\"]", "MCP_ENABLED": "0", "HISTORY_INTERVAL_SEC": "abc", "DELEGATION_MAX_AGENTS": "", "STUDIO_MAX_TOOL_ROUNDS": "0", "AGENT_EXECUTION": "both", "AI_ENABLED": "1", "RAG_TOP_K": "99", "KB_MISSION": "", "BANNER_TEXT": "Banner", "CHAT_TEMPLATE_KWARGS": "{}"}, "saved": null},
+  {"name": "env odd numbers", "env": {"SWEEP_INTERVAL_SEC": "0x10", "DELEGATION_MAX_DEPTH": " 3 ", "RAG_TOP_K": "-4", "STUDIO_MAX_TOOL_ROUNDS": "12", "HISTORY_INTERVAL_SEC": "1e3", "SUGGESTED_PROMPTS": "not json", "AGENT_EXECUTION": "weird"}, "saved": null},
+  {"name": "saved over env", "env": {"APP_NAME": "Env", "THEME": "dark", "PW_PLATFORM_HOST": "platform.example.com"}, "saved": {"appName": "Saved", "theme": "light", "sections": [], "suggestedPrompts": [], "sweepIntervalSec": 900, "mcpServers": [{"name": "m", "url": "https://mcp.example.org"}], "customTools": [{"name": "t", "description": "d", "command": "c"}], "updates": {"check": false, "install": "auto", "channel": "beta"}, "kbMission": "   ", "ragTopK": 50, "agentExecution": "sessions", "aiEnabled": false, "appIcon": "unknown key kept"}},
+  {"name": "personal with deployment prompts saved", "env": {}, "saved": {"suggestedPrompts": ["What tools can you use and what can I ask you to do?", "What is in this knowledge base?", "Which workflows are available to run?"], "setupDone": true}},
+  {"name": "saved nulls", "env": {"APP_NAME": "Env"}, "saved": {"appName": null, "updates": null, "sections": null}}
+]

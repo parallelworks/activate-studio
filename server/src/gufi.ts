@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, gufiAvailable, gufiEnv, gufiIndexAvailable } from './config.js'
-import { REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteQueryMany, remoteTarget } from './userLibraries.js'
+import { onUserLibraryRemoved, REMOTE_PREFIX, remoteIndexRoot, remoteQuery, remoteQueryMany, remoteTarget } from './userLibraries.js'
 import { execRun, gufiSource, noteGufi } from './gufiTrace.js'
 import { withoutProvenance } from './textCleanup.js'
 import { ONNX_MODEL_ID, embedQueries, isOnnxModel, onnxModelPresent } from './embedWorker.js'
@@ -1034,6 +1034,8 @@ const remoteStats = new Map<string, { builtAt: string; stats: CorpusStats }>(
 function keepRemoteStats(): void {
   try { fs.writeFileSync(REMOTE_STATS_FILE, JSON.stringify(Object.fromEntries(remoteStats))) } catch { /* the in-memory copy still serves */ }
 }
+// A removed library's figures go with it.
+onUserLibraryRemoved(root => { if (remoteStats.delete(root)) keepRemoteStats() })
 
 export async function corpusStats(indexRoot?: string): Promise<CorpusStats> {
   if (indexRoot?.startsWith(REMOTE_PREFIX)) {

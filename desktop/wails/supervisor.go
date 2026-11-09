@@ -13,10 +13,20 @@ package main
 // exactly as the run loop does without a window; the shell does the
 // restarting itself. Without a tree (a checkout, and Windows) it starts
 // node directly.
+//
+// With GoServer set (STUDIO_GO_SERVER=1, see goServerPaths) the server is
+// the Go front server (server-go/cmd/studio-server, docs/GO-PORT.md), which
+// starts Node behind it on a loopback port (STUDIO_NODE_SPAWN=1) and passes
+// on Node's exit status, so 75 and 76 work as before. With a tree the run
+// script starts it (STUDIO_GO_SERVER_BIN, read from the tree at each start,
+// since an update or a rollback replaces the tree); without one the
+// supervisor does.
+// SemanticMap, when set, is given to the server as STUDIO_SEMANTIC_MAP_BIN.
 
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -44,14 +54,16 @@ type ServerEvent struct {
 }
 
 type Supervisor struct {
-	RunScript string // the payload's studio-run.sh; when set the server starts through it
-	Node      string // the node binary (no RunScript)
-	Script    string // server/dist/main.js (no RunScript)
-	AppDir    string // the Studio checkout or bundle (the server's working directory)
-	DataDir   string // per-user data: studio.env, index, logs
-	KBRoot    string // the documents folder
-	Events    func(ServerEvent)
-	Pause     time.Duration // the wait before starting again after an update's stop (default 2 s; tests shorten it)
+	RunScript   string // the payload's studio-run.sh; when set the server starts through it
+	Node        string // the node binary (no RunScript)
+	Script      string // server/dist/main.js (no RunScript)
+	GoServer    string // studio-server, the Go front server; empty: Node alone
+	SemanticMap string // the Go semantic-map binary, for STUDIO_SEMANTIC_MAP_BIN; empty: the server's default
+	AppDir      string // the Studio checkout or bundle (the server's working directory)
+	DataDir     string // per-user data: studio.env, index, logs
+	KBRoot      string // the documents folder
+	Events      func(ServerEvent)
+	Pause       time.Duration // the wait before starting again after an update's stop (default 2 s; tests shorten it)
 
 	mu       sync.Mutex
 	child    *serverProcess
@@ -314,9 +326,31 @@ func (s *Supervisor) command(port int, settings map[string]string) *exec.Cmd {
 		cmd := exec.Command("/bin/bash", s.RunScript, "--once", s.DataDir)
 		cmd.Dir = s.DataDir
 		// studio.env still wins over STUDIO_RUN_PORT, as choosePort expects.
-		cmd.Env = append(os.Environ(), "STUDIO_RUN_PORT="+strconv.Itoa(port))
+		// Which server runs is the shell's choice, not an inherited variable's.
+		cmd.Env = append(envWithout(os.Environ(), "STUDIO_GO_SERVER_BIN"), "STUDIO_RUN_PORT="+strconv.Itoa(port))
 		if s.KBRoot != "" {
 			cmd.Env = append(cmd.Env, "STUDIO_DEFAULT_KB="+s.KBRoot)
+		}
+		// Read from the tree as it is now, not as it was at launch: an
+		// update or a rollback replaces it under the running shell, and a
+		// payload without app/bin (a Node release put back) must not be
+		// handed a Go server that is no longer there.
+		goServer, semanticMap := goServerPaths(os.Getenv, filepath.Dir(s.RunScript), s.AppDir)
+		if goServer != "" {
+			cmd.Env = append(cmd.Env, "STUDIO_GO_SERVER_BIN="+goServer)
+			if semanticMap != "" {
+				cmd.Env = append(envWithout(cmd.Env, "STUDIO_SEMANTIC_MAP_BIN"), "STUDIO_SEMANTIC_MAP_BIN="+semanticMap)
+			}
+		}
+		return cmd
+	}
+	if s.GoServer != "" {
+		cmd := exec.Command(s.GoServer)
+		cmd.Dir = s.AppDir
+		cmd.Env = append(s.serverEnv(port, settings),
+			"STUDIO_NODE_SPAWN=1", "STUDIO_NODE_BIN="+s.Node, "STUDIO_NODE_MAIN="+s.Script, "STUDIO_PROJECT_ROOT="+s.AppDir)
+		if s.SemanticMap != "" {
+			cmd.Env = append(envWithout(cmd.Env, "STUDIO_SEMANTIC_MAP_BIN"), "STUDIO_SEMANTIC_MAP_BIN="+s.SemanticMap)
 		}
 		return cmd
 	}
@@ -324,6 +358,72 @@ func (s *Supervisor) command(port int, settings map[string]string) *exec.Cmd {
 	cmd.Dir = s.AppDir
 	cmd.Env = s.serverEnv(port, settings)
 	return cmd
+}
+
+// envWithout is env less the variables named.
+func envWithout(env []string, names ...string) []string {
+	out := make([]string, 0, len(env))
+next:
+	for _, kv := range env {
+		for _, n := range names {
+			if strings.HasPrefix(kv, n+"=") {
+				continue next
+			}
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// goServerPaths: the Go front server and the Go semantic map, from the tree
+// (app/bin/) or a checkout (server-go/bin/), or STUDIO_GO_SERVER_BIN and
+// STUDIO_SEMANTIC_MAP_BIN when set. The switch is STUDIO_GO_SERVER: 1 turns
+// the Go server on, 0 off, and unset it is on for a Go release, a tree whose
+// manifest.json says "server": "go" (docs/UPDATES.md, "The Go version").
+// A tree without a Node (node/PLACEHOLDER) runs Go whatever the switch says.
+// Empty when it is off or studio-server is not there, which leaves Node alone.
+func goServerPaths(getenv func(string) string, tree, appDir string) (server, semanticMap string) {
+	on := getenv("STUDIO_GO_SERVER") == "1"
+	if tree != "" && !on {
+		goRelease, noNode := treeServer(tree)
+		on = noNode || (goRelease && getenv("STUDIO_GO_SERVER") != "0")
+	}
+	if !on {
+		return "", ""
+	}
+	dir := filepath.Join(appDir, "server-go", "bin")
+	if tree != "" {
+		dir = filepath.Join(tree, "app", "bin")
+	}
+	server = getenv("STUDIO_GO_SERVER_BIN")
+	if server == "" {
+		server = filepath.Join(dir, "studio-server")
+	}
+	if st, err := os.Stat(server); err != nil || st.IsDir() {
+		return "", ""
+	}
+	semanticMap = getenv("STUDIO_SEMANTIC_MAP_BIN")
+	if semanticMap == "" {
+		semanticMap = filepath.Join(dir, "semantic-map")
+	}
+	if _, err := os.Stat(semanticMap); err != nil {
+		semanticMap = ""
+	}
+	return server, semanticMap
+}
+
+// treeServer reads what a payload tree says about its server: a Go release
+// ("server": "go" in manifest.json), and no Node of its own (node/PLACEHOLDER,
+// the stand-in kept for older updaters' checks).
+func treeServer(tree string) (goRelease, noNode bool) {
+	if b, err := os.ReadFile(filepath.Join(tree, "manifest.json")); err == nil {
+		var m struct {
+			Server string `json:"server"`
+		}
+		goRelease = json.Unmarshal(b, &m) == nil && m.Server == "go"
+	}
+	_, err := os.Stat(filepath.Join(tree, "node", "PLACEHOLDER"))
+	return goRelease, err == nil
 }
 
 // choosePort: the port studio.env names (Settings, Server saves one there),

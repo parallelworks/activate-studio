@@ -112,6 +112,27 @@ describe('the Query builder', () => {
     expect(fromCanned({ canned: 'unknown' })).toBeNull()
   })
 
+  it('heads the results of your own SELECT with the names the server gives, aliases and repeats included', async () => {
+    const answer = { columns: ['file', 'bytes', 'file'], rows: [['q1.pdf', '1000', 'q1.pdf']], elapsedMs: 1, truncated: false }
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/query') { runs.push(JSON.parse(String(init?.body))); return json(answer) }
+      if (url === '/api/config') return json({ appName: 'Studio', libraries: [] })
+      return json(url === '/api/query/saved' ? [] : {})
+    }))
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<QueryView onOpen={() => {}} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'SQL' }))
+    fireEvent.change(document.querySelector('textarea.sql-box') ?? screen.getByRole('textbox'), { target: { value: 'SELECT name AS file, size AS bytes, name AS file FROM vrpentries' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Run query' }))
+    await waitFor(() => expect(runs).toHaveLength(1))
+    expect(runs[0].sql).toMatch(/AS bytes/)
+    await screen.findAllByText('q1.pdf')
+    expect(screen.getAllByRole('columnheader').map(h => h.textContent).filter(Boolean)).toEqual(['file', 'bytes', 'file'])
+    expect(errors.mock.calls.some(c => /same key/.test(String(c[0])))).toBe(false)
+    errors.mockRestore()
+  })
+
   it('shows the SQL of the form on screen', async () => {
     render(<QueryView onOpen={() => {}} />)
     fireEvent.change(values()[0], { target: { value: 'q1' } })

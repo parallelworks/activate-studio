@@ -250,12 +250,17 @@ export function LibraryView({ display, onDisplay }: {
       groups.set(key, [...(groups.get(key) ?? []), row.path])
     }
     setSuggest({ ...suggest, busy: true })
+    // A refused apply is said, not dropped: the panel stays open on the
+    // proposals that were not saved, with the server's reason.
+    const failed: { paths: string[]; why: string }[] = []
     for (const [labels, paths] of groups) {
-      await api.applyTags(paths, labels.split(','), []).catch(() => {})
+      await api.applyTags(paths, labels.split(','), []).catch(e => { failed.push({ paths, why: String((e as Error).message ?? e) }) })
     }
-    setSuggest(null)
     window.dispatchEvent(new CustomEvent('ade-tags-changed'))
     window.dispatchEvent(new CustomEvent('ade-kb-changed'))
+    if (!failed.length) { setSuggest(null); return }
+    const left = new Set(failed.flatMap(f => f.paths))
+    setSuggest({ ...suggest, busy: false, rows: suggest.rows.filter(r => left.has(r.path)), error: `These labels were not saved: ${failed[0].why}` })
   }
 
   /** Hand a path to the chat as a reference, the way an editor does. */
@@ -396,7 +401,7 @@ export function LibraryView({ display, onDisplay }: {
         ) : (
           <>
             <aside ref={railRef} className="library-rail" style={{ width: railWidth }}>
-              <div className="rail-head">
+              <div className={`rail-head${cfg.libraries && cfg.libraries.length > 1 ? ' rail-head-switch' : ''}`}>
                 {cfg.libraries && cfg.libraries.length > 1
                   ? <LibrarySwitch libraries={cfg.libraries} />
                   : <span className="rail-title" title={cfg.kbLabel}>Library</span>}
@@ -490,7 +495,7 @@ export function LibraryView({ display, onDisplay }: {
                     <span>
                       {suggest.busy && !suggest.rows.length
                         ? `Reading ${suggest.dir || 'the library'} and proposing labels…`
-                        : suggest.error
+                        : suggest.error && !suggest.rows.length
                           ? 'Could not propose labels'
                           : `${suggest.rows.length} of ${suggest.considered ?? 0} unlabelled files have proposals`}
                     </span>

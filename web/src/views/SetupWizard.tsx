@@ -12,7 +12,7 @@ import { MainFolderDepth } from '../components/IndexDepth'
 import { FolderPicker, IndexBuildProgress, json, post, errText, useIndexBuild, type IndexJob, type SetupStatus } from '../components/PrimaryFolder'
 import { SshLibraryForm } from '../components/SshLibraryForm'
 import {
-  AI_SECTIONS, SECTION_SWITCHES, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
+  AI_SECTIONS, SECTION_SWITCHES, accessLabel, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
 } from '../config'
 import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
 
@@ -23,7 +23,7 @@ import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
  * app on a first run, and from Settings, General afterwards; everything
  * here is in Settings too. Each step can be skipped, and Finish later
  * closes setup at any step. The folder step is the same picker and index
- * build as Settings, Libraries (PrimaryFolder); the build runs on the
+ * build as Settings, Indexing, Libraries (PrimaryFolder); the build runs on the
  * server, so no step waits for it.
  */
 
@@ -33,7 +33,7 @@ const STEPS = ['Welcome', 'Your Studio', 'Appearance', 'AI features', 'Sidebar',
 const STEP = { welcome: 0, studio: 1, appearance: 2, ai: 3, sidebar: 4, folder: 5, libraries: 6, done: 7 }
 
 /** Switches for the sidebar's pages, saved as the sections setting. With
- *  AI features off, Chat and Agents stay off. */
+ *  AI features off, Chat and Agents are not offered: they cannot show. */
 export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }: {
   value: string[] | undefined
   platform: boolean
@@ -52,19 +52,15 @@ export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }:
   }
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px 16px' }}>
-      {SECTION_SWITCHES.map(s => {
-        const aiOff = !aiEnabled && AI_SECTIONS.includes(s.id)
-        return (
-          <label key={s.id} className="key-persist" style={{ margin: 0, color: 'var(--pw-text)' }}>
-            <Switch checked={shown.includes(s.id) && !aiOff} disabled={aiOff} onCheckedChange={v => toggle(s.id, v)} aria-label={s.label} />
-            <span>
-              {s.label}
-              {s.id === 'workflows' && !platform && <span className="muted"> (needs a platform login)</span>}
-              {aiOff && <span className="muted"> (AI features off)</span>}
-            </span>
-          </label>
-        )
-      })}
+      {SECTION_SWITCHES.filter(s => aiEnabled || !AI_SECTIONS.includes(s.id)).map(s => (
+        <label key={s.id} className="key-persist" style={{ margin: 0, color: 'var(--pw-text)' }}>
+          <Switch checked={shown.includes(s.id)} onCheckedChange={v => toggle(s.id, v)} aria-label={s.label} />
+          <span>
+            {s.label}
+            {s.id === 'workflows' && !platform && <span className="muted"> (needs a platform login)</span>}
+          </span>
+        </label>
+      ))}
     </div>
   )
 }
@@ -233,10 +229,6 @@ function AiStep({ enabled, sections, me, onSaved, onOpenAccess }: {
   )
 }
 
-const overlay: CSSProperties = {
-  position: 'fixed', inset: 0, zIndex: 60, overflowY: 'auto', background: 'var(--pw-bg)',
-  display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '6vh 16px 24px',
-}
 const panel: CSSProperties = { width: '100%', maxWidth: 680, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }
 const row: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }
 const label: CSSProperties = { margin: '0 0 6px', fontSize: 13, fontWeight: 500 }
@@ -433,7 +425,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
 
   const last = STEPS.length - 1
   return (
-    <div style={overlay} role="dialog" aria-modal="true" aria-labelledby="setup-title">
+    <div className="setup-overlay" role="dialog" aria-modal="true" aria-labelledby="setup-title">
       <div className="card" style={panel}>
         <div>
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>Step {step + 1} of {STEPS.length}</p>
@@ -493,7 +485,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             <p className="muted" style={{ margin: 0 }}>Pages to show in the sidebar. Settings and Help always show.</p>
             <SidebarSwitches value={cfg.sections} platform={!!cfg.platform} aiEnabled={aiOn} onChange={changeSections} />
             <p className="muted" style={{ margin: 0 }}>
-              Workflows runs ACTIVATE workflows, so it needs an ACTIVATE credential (Settings, Model access). For workflow
+              Workflows runs ACTIVATE workflows, so it needs an ACTIVATE credential (Settings, {accessLabel(cfg)}). For workflow
               YAML files of your own, without ACTIVATE, use <ExternalLink href={MERIDIAN_URL}>Meridian</ExternalLink>, the
               open-source workflow engine.
             </p>
@@ -536,7 +528,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
                 <IndexBuildProgress job={index.job} error={index.error} />
                 <p className="muted" style={{ margin: 0 }}>
                   A large folder can take a long time to index. The build runs in the background: go on to the next step, or
-                  finish setup, while it runs. Indexes can be added or changed at any time in Settings, Libraries.
+                  finish setup, while it runs. Indexes can be added or changed at any time in Settings, Indexing, Libraries.
                 </p>
               </div>
             )}
@@ -546,8 +538,9 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
         {step === STEP.libraries && (
           <>
             <p style={{ margin: 0 }}>
-              Optional: another folder on this computer to search beside your main one. It is indexed here, in the background,
-              and the Studio only reads it. Libraries can be added or removed at any time in Settings, Libraries.
+              Optional: another folder on this computer to search beside your main one, such as one of the suggested folders.
+              It is indexed here, in the background, and the Studio only reads it. Libraries can be added or removed at any
+              time in Settings, Indexing, Libraries.
             </p>
             {!otherKinds ? (
               status?.gufi?.found === false

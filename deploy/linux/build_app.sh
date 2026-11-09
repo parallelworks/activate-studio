@@ -5,16 +5,18 @@
 # come after it; the tree runs from any path (deploy/linux/studio-run.sh at
 # its top starts the server).
 #
-# The tree carries everything it runs: Node for Linux x64 (with the one
-# library Node needs that a desktop may lack, libatomic), the built server
-# and web app with production node_modules, GUFI built by
-# deploy/linux/build_gufi.sh, tesseract built by deploy/linux/build_ocr.sh,
-# a standalone Python for the indexer (with pypdf, xlrd and olefile for
-# documents, and onnxruntime, tokenizers and numpy for the ONNX embedding
-# model), and the embedding models. Build GUFI and tesseract in a Rocky
-# Linux 8 container (glibc 2.28) so the tree runs on RHEL 8 and later and on
-# Ubuntu 22.04 and later: this script checks that no file in the tree needs
-# a newer glibc (elf_check.py).
+# By default (STUDIO_SERVER=go-only) the tree is the Go version: the Go
+# server (app/bin/studio-server) with the ONNX runtime library and the
+# embedding model, the built web app, GUFI built by
+# deploy/linux/build_gufi.sh (the lean one, GUFI_LEMBED=0, is enough),
+# tesseract built by deploy/linux/build_ocr.sh, the STEP preview's modules,
+# and the window shells, with no Node and no Python. STUDIO_SERVER=node
+# builds the earlier tree: Node for Linux x64 (with libatomic, which a
+# desktop may lack), the built server with production node_modules, a
+# standalone Python for the indexer, and GUFI with its embedding extension.
+# Build GUFI and tesseract in a Rocky Linux 8 container (glibc 2.28) so the
+# tree runs on RHEL 8 and later and on Ubuntu 22.04 and later: this script
+# checks that no file in the tree needs a newer glibc (elf_check.py).
 #
 # Usage: deploy/linux/build_app.sh
 #   OUT_DIR       where the outputs go (default deploy/linux/out)
@@ -24,6 +26,23 @@
 #   LIBATOMIC     the libatomic.so.1 to bundle with Node (default: the one
 #                 gcc reports)
 #   SKIP_BUILD    1 to use the existing server/dist and web/dist
+#   STUDIO_SERVER which server the tree runs (docs/UPDATES.md, "The Go version"):
+#                 go-only  (default) the Go server alone: no Node, no Python, no
+#                          node_modules, no GGUF model; GUFI may be the lean
+#                          one (build_gufi.sh with GUFI_LEMBED=0), and
+#                          node/bin/node and app/server/dist/main.js are
+#                          placeholders that older updaters' checks look for
+#                          (node/PLACEHOLDER marks them);
+#                 node     Node, the build of v1.188 and earlier;
+#                 go       the Go server (app/bin/studio-server) with Node and
+#                          Python behind it for what is not ported yet.
+#                 Both Go builds carry the ONNX runtime library in
+#                 app/lib (beside app/bin/studio-server, where its embedder
+#                 looks) and the STEP preview's modules in app/occt, with
+#                 their licenses in licenses/. They need Go on PATH; the
+#                 binaries are static.
+#   OCCT_DIR      a folder from server-go/scripts/occt/build.sh (the two
+#                 modules and their licenses), used instead of building them
 #   SHELL_DIR     a folder with activate-studio-wk41 and activate-studio-wk40,
 #                 the window shells (desktop/linux/build_shell.sh); when set the
 #                 tree also gets bin/, install.sh, uninstall.sh, the menu entry
@@ -48,7 +67,13 @@ CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 ASSET=activate-studio-linux-x86_64
 TOP=activate-studio
 
+SERVER="${STUDIO_SERVER:-go-only}"
+case "$SERVER" in node | go | go-only) ;; *) die "STUDIO_SERVER is node, go or go-only" ;; esac
+
 # What only this platform pins (the rest is deploy/common/pins.sh).
+# The ONNX runtime's own release for Linux x64, for the Go server's embedder.
+ORT_VERSION=1.31.0
+ORT_SHA256=cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57
 NODE_SHA256=cb5c9ce9c80d7b8821e3a258543c71b939138cf17c74d5cc44bbe85d6dbc5ad8
 PY_SHA256=178d3d83b6e8e99285a65d3fce9c16b87952cc5efdb4d1a0e3ff3be18ff0fc9c
 # The oldest targets' libraries: RHEL 8's glibc, and the libstdc++ GCC 8
@@ -58,7 +83,10 @@ MAX_GLIBCXX=3.4.25
 MAX_CXXABI=1.3.11
 
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || die "builds on Linux x86_64"
-for tool in python3 curl tar git pnpm patchelf; do
+TOOLS="python3 curl tar git pnpm"
+[ "$SERVER" = go-only ] || TOOLS="$TOOLS patchelf"
+[ "$SERVER" = node ] || TOOLS="$TOOLS go"
+for tool in $TOOLS; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 [ -n "${GUFI_TARBALL:-}" ] && [ -f "$GUFI_TARBALL" ] || die "GUFI_TARBALL names the archive from build_gufi.sh"
@@ -75,7 +103,7 @@ rm -rf "$APP"
 DESCRIBE="$(git -C "$PROJECT_ROOT" describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)"
 COMMIT="$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 case "$DESCRIBE" in v*) VERSION="$DESCRIBE" ;; *) VERSION=dev ;; esac
-echo "Building the Linux payload $VERSION ($COMMIT)"
+echo "Building the Linux payload $VERSION ($COMMIT), server: $SERVER"
 
 if [ "${SKIP_BUILD:-}" != 1 ]; then
   echo "Building web and server..."
@@ -85,8 +113,46 @@ for f in server/dist/main.js web/dist/index.html; do
   [ -f "$PROJECT_ROOT/$f" ] || die "$f is missing; run pnpm build"
 done
 
-mkdir -p "$APP/app/server" "$APP/app/web" "$APP/app/deploy" "$APP/node/bin" "$APP/node/lib" "$APP/models" "$APP/share"
+mkdir -p "$APP/app/server" "$APP/app/web" "$APP/app/deploy" "$APP/node/bin" "$APP/models" "$APP/share"
 
+if [ "$SERVER" != node ]; then
+  echo "The Go server (studio-server, semantic-map)..."
+  mkdir -p "$APP/app/bin"
+  (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
+    -o "$APP/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
+  # The helper a library's build on another system runs, for each system
+  # it is sent to: Linux x86_64 and aarch64, macOS arm64 (internal/userlibs);
+  # about 25 MB each.
+  "$PROJECT_ROOT/server-go/scripts/build_remote.sh" "$APP/app/bin/remote"
+  # The STEP preview's modules (occt-import-js, Open CASCADE, LGPL 2.1):
+  # separate files beside the server, not built into it, so they stay
+  # replaceable. OCCT_DIR names a folder with them already built
+  # (server-go/scripts/occt/build.sh); else they are built here.
+  echo "The STEP preview modules (occt-import-js)..."
+  mkdir -p "$APP/app/occt" "$APP/licenses"
+  # build.sh fetches occt-import-js and binaryen at the versions and npm
+  # integrity hashes it records, and stops on a mismatch.
+  occt="${OCCT_DIR:-$WORK/occt}"
+  [ -n "${OCCT_DIR:-}" ] || "$PROJECT_ROOT/server-go/scripts/occt/build.sh" "$occt" >/dev/null
+  cp "$occt/occt-import-js.wasm" "$occt/occt-import-js.noeh.wasm" "$APP/app/occt/"
+  cp "$occt/license.occt-import-js.txt" "$APP/licenses/occt-import-js-LICENSE.txt"
+  cp "$occt/license.occt.txt" "$APP/licenses/occt-LICENSE.txt"
+fi
+
+if [ "$SERVER" = go-only ]; then
+  # What the updaters of v1.187 to v1.188 check in a payload before they
+  # install it (an executable node/bin/node and app/server/dist/main.js):
+  # stand-ins, so that those installs take the Go version as an ordinary
+  # update. studio-run.sh reads node/PLACEHOLDER and runs the Go server alone.
+  mkdir -p "$APP/app/server/dist"
+  printf '%s\n' "This payload runs the Go server alone (app/bin/studio-server). node/bin/node and" \
+    "app/server/dist/main.js are stand-ins for the checks of older updaters (docs/UPDATES.md)." >"$APP/node/PLACEHOLDER"
+  printf '%s\n' '#!/bin/sh' 'echo "ACTIVATE Studio runs without Node; this file is a stand-in for older updaters" >&2' 'exit 1' >"$APP/node/bin/node"
+  chmod 755 "$APP/node/bin/node"
+  printf '%s\n' '// A stand-in for the checks of older updaters: this payload runs the Go server' \
+    '// (app/bin/studio-server) and carries no Node server.' \
+    "throw new Error('ACTIVATE Studio runs the Go server; there is no Node server here')" >"$APP/app/server/dist/main.js"
+else
 echo "Staging the server's production dependencies for Linux x64 (pnpm deploy)..."
 # --os and --cpu pick the Linux x64 builds of platform packages (the
 # document converter's native binary) whatever this host is.
@@ -99,26 +165,36 @@ echo "Staging the server's production dependencies for Linux x64 (pnpm deploy)..
 mv "$WORK/server/node_modules" "$APP/app/server/node_modules"
 cp "$WORK/server/package.json" "$APP/app/server/package.json"
 cp -R "$PROJECT_ROOT/server/dist" "$APP/app/server/dist"
+fi
 
 echo "Staging web, indexer, docs, change log, starters..."
 cp -R "$PROJECT_ROOT/web/dist" "$APP/app/web/dist"
-cp -R "$PROJECT_ROOT/indexer" "$APP/app/indexer"
+if [ "$SERVER" = go-only ]; then
+  # The pins of what a build on another system is sent (internal/userlibs).
+  mkdir -p "$APP/app/indexer" && cp "$PROJECT_ROOT/indexer/embed_deps.json" "$APP/app/indexer/"
+else
+  cp -R "$PROJECT_ROOT/indexer" "$APP/app/indexer"
+fi
 cp -R "$PROJECT_ROOT/docs" "$APP/app/docs"
 # What's new and the notice after an update read it.
 cp "$PROJECT_ROOT/CHANGELOG.md" "$APP/app/CHANGELOG.md"
 cp -R "$PROJECT_ROOT/extensions-starter" "$APP/app/extensions-starter"
 cp "$PROJECT_ROOT/deploy/gufi-index.yaml" "$APP/app/deploy/"
 cp "$PROJECT_ROOT/package.json" "$APP/app/package.json"
-find "$APP/app/indexer" -name __pycache__ -type d -prune -exec rm -rf {} +
-# A clone's own ONNX packages (fetch_embed.py --deps) are for its platform,
-# not the payload's, which carries its own in its Python.
-rm -rf "$APP/app/indexer/.deps"
+if [ -d "$APP/app/indexer" ]; then
+  find "$APP/app/indexer" -name __pycache__ -type d -prune -exec rm -rf {} +
+  # A clone's own ONNX packages (fetch_embed.py --deps) are for its platform,
+  # not the payload's, which carries its own in its Python.
+  rm -rf "$APP/app/indexer/.deps"
+fi
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf '{\n "version": "%s",\n "commit": "%s",\n "builtAt": "%s"\n}\n' \
   "$VERSION" "$COMMIT" "$BUILT_AT" >"$APP/app/build-info.json"
 cp "$PROJECT_ROOT/LICENSE" "$APP/LICENSE"
 cp "$PROJECT_ROOT/NOTICE" "$APP/NOTICE"
 
+if [ "$SERVER" != go-only ]; then
+mkdir -p "$APP/node/lib"
 echo "Node $NODE_VERSION for Linux x64..."
 NODE_DIST="node-$NODE_VERSION-linux-x64"
 SUMS="$CACHE_DIR/node-$NODE_VERSION-SHASUMS256.txt"
@@ -175,6 +251,21 @@ PY_CP="cp$(echo "$PY_VERSION" | cut -d. -f1,2 | tr -d .)"
 echo "onnxruntime, tokenizers and numpy ($PY_CP), xlrd and olefile, and the ONNX embedding model..."
 python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --platform "linux-x86_64-$PY_CP" --cache "$CACHE_DIR/embed" \
   --deps "$(echo "$APP"/python/lib/python3.*/site-packages)" --model "$APP/models/minilm-l6"
+else
+  echo "The ONNX embedding model..."
+  python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --cache "$CACHE_DIR/embed" --model "$APP/models/minilm-l6"
+fi
+if [ "$SERVER" != node ]; then
+  echo "The ONNX runtime $ORT_VERSION library, for the Go server's embedder..."
+  ORT_DIST="onnxruntime-linux-x64-$ORT_VERSION"
+  fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_DIST.tgz" "$CACHE_DIR/$ORT_DIST.tgz" "$ORT_SHA256"
+  tar -xzf "$CACHE_DIR/$ORT_DIST.tgz" -C "$WORK" "$ORT_DIST/lib/libonnxruntime.so.$ORT_VERSION" "$ORT_DIST/LICENSE" "$ORT_DIST/ThirdPartyNotices.txt"
+  # In app/lib: the embedder looks beside studio-server and in ../lib.
+  mkdir -p "$APP/app/lib" "$APP/licenses"
+  mv "$WORK/$ORT_DIST/lib/libonnxruntime.so.$ORT_VERSION" "$APP/app/lib/libonnxruntime.so.1"
+  mv "$WORK/$ORT_DIST/LICENSE" "$APP/licenses/onnxruntime-LICENSE.txt"
+  mv "$WORK/$ORT_DIST/ThirdPartyNotices.txt" "$APP/licenses/onnxruntime-ThirdPartyNotices.txt"
+fi
 
 echo "GUFI from $GUFI_TARBALL (deploy/linux/build_gufi.sh)..."
 GUFI_SUM="$(sha256_of "$GUFI_TARBALL")"
@@ -183,11 +274,22 @@ if [ -f "$GUFI_TARBALL.sha256" ] && [ "$(awk '{print $1; exit}' "$GUFI_TARBALL.s
 fi
 mkdir -p "$WORK/gufi-tarball"
 tar -xzf "$GUFI_TARBALL" -C "$WORK/gufi-tarball"
-for f in manifest.json bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 lib/gufi_vt.so lib/vec0.so lib/lembed0.so \
+# The Go version needs no sqlite-lembed: the lean GUFI (GUFI_LEMBED=0) will do.
+NEED_LEMBED=lib/lembed0.so
+[ "$SERVER" != go-only ] || NEED_LEMBED=
+for f in manifest.json bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 lib/gufi_vt.so lib/vec0.so $NEED_LEMBED \
   lib/libgomp.so.1 lib/libpcre2-8.so.0 licenses/GUFI-LICENSE.txt; do
   [ -e "$WORK/gufi-tarball/gufi/$f" ] || die "$GUFI_TARBALL has no gufi/$f; it is not an archive from build_gufi.sh"
 done
 mv "$WORK/gufi-tarball/gufi" "$APP/gufi"
+if [ "$SERVER" = go-only ]; then
+  # The Go version keeps the three GUFI tools the server runs (and gufi_vt,
+  # which runs gufi_query). The lean GUFI's programs come stripped
+  # (build_gufi.sh GUFI_LEMBED=0): stripped here, after patchelf, they
+  # would not load.
+  find "$APP/gufi/bin" -mindepth 1 -maxdepth 1 ! -name gufi_query ! -name gufi_dir2index ! -name gufi_sqlite3 -exec rm -f {} +
+  rm -f "$APP"/gufi/lib/*.py
+fi
 
 echo "OCR from $OCR_TARBALL (deploy/linux/build_ocr.sh)..."
 OCR_SUM="$(sha256_of "$OCR_TARBALL")"
@@ -202,15 +304,17 @@ for f in manifest.json bin/tesseract lib/libleptonica.so.6 share/tessdata/eng.tr
 done
 mv "$WORK/ocr-tarball/ocr" "$APP/ocr"
 
-echo "Embedding model..."
-if [ -f "$PROJECT_ROOT/index/models/minilm384.gguf" ]; then
-  cp "$PROJECT_ROOT/index/models/minilm384.gguf" "$APP/models/minilm384.gguf"
-  [ "$(sha256_of "$APP/models/minilm384.gguf")" = "$MODEL_SHA256" ] || \
-    echo "  note: index/models/minilm384.gguf differs from the pinned model; using it as is"
-else
-  fetch "https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/$MODEL_COMMIT/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf" \
-    "$CACHE_DIR/minilm384-$MODEL_COMMIT.gguf" "$MODEL_SHA256"
-  cp "$CACHE_DIR/minilm384-$MODEL_COMMIT.gguf" "$APP/models/minilm384.gguf"
+if [ "$SERVER" != go-only ]; then
+  echo "GGUF embedding model..."
+  if [ -f "$PROJECT_ROOT/index/models/minilm384.gguf" ]; then
+    cp "$PROJECT_ROOT/index/models/minilm384.gguf" "$APP/models/minilm384.gguf"
+    [ "$(sha256_of "$APP/models/minilm384.gguf")" = "$MODEL_SHA256" ] || \
+      echo "  note: index/models/minilm384.gguf differs from the pinned model; using it as is"
+  else
+    fetch "https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/$MODEL_COMMIT/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf" \
+      "$CACHE_DIR/minilm384-$MODEL_COMMIT.gguf" "$MODEL_SHA256"
+    cp "$CACHE_DIR/minilm384-$MODEL_COMMIT.gguf" "$APP/models/minilm384.gguf"
+  fi
 fi
 
 echo "Run loop, update key, icon..."
@@ -238,7 +342,8 @@ find "$APP" -type l | while IFS= read -r l; do [ -e "$l" ] || rm -f "$l"; done
 # The tree's own manifest: what it was built from, and what the checks above
 # found about the libraries it needs.
 echo "Manifest..."
-ELF_REPORT="$(python3 -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP")"
+ELF_REPORT="$(python3 -I "$HERE/elf_check.py" --root "$APP" --skip bin/activate-studio-wk --skip app/bin/remote --max-glibc "$MAX_GLIBC" --max-glibcxx "$MAX_GLIBCXX" --max-cxxabi "$MAX_CXXABI" "$APP")"
+SERVER="$SERVER" ORT_VERSION="$ORT_VERSION" \
 VERSION="$VERSION" COMMIT="$COMMIT" BUILT_AT="$BUILT_AT" NODE_VERSION="$NODE_VERSION" PY_VERSION="$PY_VERSION" PY_TAG="$PY_TAG" \
   GUFI_SUM="$GUFI_SUM" OCR_SUM="$OCR_SUM" ELF_REPORT="$ELF_REPORT" MAX_GLIBC="$MAX_GLIBC" ASSET="$ASSET" \
   python3 - "$APP" <<'PY'
@@ -270,6 +375,15 @@ manifest = {
     },
     'entry': 'studio-run.sh',
 }
+# Which server the tree runs: studio-run.sh and the window read "server".
+if e['SERVER'] != 'node':
+    manifest['server'] = 'go'
+    manifest['components']['studio-server'] = 'app/bin/studio-server'
+    manifest['components']['onnxruntime'] = e['ORT_VERSION']
+if e['SERVER'] == 'go-only':
+    for k in ('node', 'python', 'libatomic'):
+        manifest['components'].pop(k)
+    manifest['placeholders'] = ['node/bin/node', 'app/server/dist/main.js']
 # The window program, when the tree has one: the Studio's updater compares
 # this file in the old and the new payload to tell the person to reopen the
 # window (the shells are built together, so either one changes with the other).
@@ -282,7 +396,7 @@ with open(os.path.join(root, 'manifest.json'), 'w') as fh:
 PY
 
 echo "Checking the tree..."
-"$HERE/check_app.sh" "$APP" --static
+STUDIO_SERVER="$SERVER" "$HERE/check_app.sh" "$APP" --static
 
 echo "Packing..."
 cd "$OUT_DIR"

@@ -33,6 +33,22 @@ func (b *Bridge) ShellState() ShellState { return b.app.State() }
 // Retry starts the server again after it failed.
 func (b *Bridge) Retry() { b.app.retry() }
 
+// ToggleMaximise zooms the window, or puts it back: a double click on the
+// empty part of the page's top row, where the window has no title bar
+// (titleInsetPx).
+func (b *Bridge) ToggleMaximise() {
+	if b.app.ctx != nil {
+		wruntime.WindowToggleMaximise(b.app.ctx)
+	}
+}
+
+// SetCompactTitle moves the window controls for a classification banner:
+// true when one is shown (the controls at a plain title bar's height over
+// it), false when not (the controls in the page's 52px top row). It answers
+// the row's height and the controls' reach in the new layout, which are 0
+// where the window has a title bar of its own (titlebar.go).
+func (b *Bridge) SetCompactTitle(compact bool) map[string]int { return b.app.setCompactTitle(compact) }
+
 // SetBarColor paints the window's title bar (titlebar.go).
 func (b *Bridge) SetBarColor(color string) error { return b.app.setBarColor(color) }
 
@@ -111,7 +127,10 @@ func (b *Bridge) OpenExternal(raw string) error {
 		b.app.test.note("openExternal", raw)
 		return nil
 	}
-	wruntime.BrowserOpenURL(b.app.ctx, u.String())
+	// Under WSL the page opens in a Windows browser (wslopen_unix.go).
+	if !openInWindows(u.String(), true) {
+		wruntime.BrowserOpenURL(b.app.ctx, u.String())
+	}
 	return nil
 }
 
@@ -124,6 +143,9 @@ func (b *Bridge) SaveDownload(name, dataBase64 string) (string, error) {
 		return "", err
 	}
 	path, err := saveInDownloads(name, data)
+	if err == nil {
+		revealDownload(path)
+	}
 	if err == nil && b.app.test != nil {
 		b.app.test.note("saveDownload", path)
 	}
@@ -159,6 +181,7 @@ func (b *Bridge) SaveURL(path, name string) (string, error) {
 	if _, err := f.ReadFrom(res.Body); err != nil {
 		return "", err
 	}
+	revealDownload(dest)
 	return dest, nil
 }
 

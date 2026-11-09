@@ -29,3 +29,30 @@ from their sources by deploy/mac/build_ocr.sh:
   libwebp, BSD 3-Clause License, with Google's patent grant
   GIFLIB, MIT License
 Their license texts are in Contents/Resources/ocr/licenses in the app.
+
+The Go version of the server (app/bin/studio-server, in the Linux payload,
+the macOS app and the container image) is built from server-go/ and carries
+beside it:
+  ONNX Runtime 1.31.0 (app/lib), MIT License, from Microsoft's release
+    archives at a pinned checksum; its license and third-party notices are
+    in licenses/onnxruntime-LICENSE.txt and
+    licenses/onnxruntime-ThirdPartyNotices.txt
+  occt-import-js 0.0.23 and the Open CASCADE Technology it is compiled from
+    (app/occt/occt-import-js.wasm and occt-import-js.noeh.wasm, for the
+    STEP preview), GNU Lesser General Public License 2.1 (Open CASCADE with
+    its exception); the license texts are in licenses/occt-import-js-LICENSE.txt
+    and licenses/occt-LICENSE.txt. The modules are separate files, loaded at
+    run time, and may be replaced with others built from the sources:
+    https://github.com/kovacsv/occt-import-js (v0.0.23) and
+    https://github.com/Open-Cascade-SAS/OCCT. server-go/scripts/occt/build.sh
+    rebuilds them from the occt-import-js package with binaryen 132.
+
+The web app (web/dist, in every build) carries pdf.js 6.4.299 (pdfjs-dist),
+Apache License 2.0, which draws a PDF's pages where poppler is not
+installed. Beside it in web/dist/pdfjs are its character maps (Adobe,
+BSD 3-Clause), standard fonts (Foxit's, under PDFium's BSD 3-Clause
+license; Liberation, GNU General Public License 2.0 with Red Hat's font
+exception), colour profile, and image decoders compiled to
+WebAssembly (OpenJPEG, BSD 2-Clause; the JBIG2 decoder of PDFium,
+BSD 3-Clause; qcms, MIT License), each folder with its license texts, and
+pdf.js's own license in web/dist/pdfjs/LICENSE.

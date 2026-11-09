@@ -163,6 +163,10 @@ export async function applyTagsCore(rawPaths: string[], addRaw: string[], remove
       if (EXCLUDE_DIRS.has(part) || part.startsWith('.')) throw new KbError(400, `not taggable: ${cleaned}`)
     }
     const abs = resolveKb(cleaned)
+    // A path that is not there has nowhere to keep a label: neither an
+    // xattr nor an overlay entry (keyed by inode) can be written, so the
+    // apply would report labels that were never saved.
+    if (!fs.existsSync(abs)) throw new KbError(404, `no such file: ${cleaned}`)
     const current = overlayGet(cleaned) ?? await readTags(abs)
     const next = [...new Set([...current.filter(t => !remove.includes(t)), ...add])]
     const onFs = await writeTags(abs, next)
@@ -249,7 +253,7 @@ export async function reapplyTagOverlay(prefix = ''): Promise<number> {
 async function upsertIndexTags(rels: string[], tags: Record<string, string[]>): Promise<string[]> {
   const fsSync = await import('node:fs')
   const pathMod = path
-  const jobs: { db: string; inode: string; value: string; rel: string }[] = []
+  const jobs: { db: string; inode: string; dir: boolean; name: string; value: string; rel: string }[] = []
   const failed: string[] = []
   for (const rel of rels) {
     try {
@@ -260,7 +264,7 @@ async function upsertIndexTags(rels: string[], tags: Record<string, string[]>): 
         ? pathMod.join(GUFI_INDEX, rel, 'db.db')
         : pathMod.join(GUFI_INDEX, pathMod.dirname(rel) === '.' ? '' : pathMod.dirname(rel), 'db.db')
       if (!fsSync.existsSync(db)) { failed.push(rel); continue }
-      jobs.push({ db, inode: st.ino.toString(), value: (tags[rel] ?? []).join(','), rel })
+      jobs.push({ db, inode: st.ino.toString(), dir: isDir, name: pathMod.basename(rel), value: (tags[rel] ?? []).join(','), rel })
     } catch {
       failed.push(rel)
     }
@@ -273,9 +277,20 @@ bad = []
 for j in jobs:
     try:
         db = sqlite3.connect(j['db'])
-        db.execute("DELETE FROM xattrs_pwd WHERE CAST(inode AS TEXT) = ? AND CAST(name AS TEXT) = 'user.studio.tags'", (j['inode'],))
+        # The row joins to the inode the index has for the path, which is
+        # not the one on disk when the folder was copied or restored since
+        # it was indexed (same names and mtimes, new inodes): keyed by the
+        # disk's inode the label would be written and never shown.
+        if j['dir']:
+            row = db.execute("SELECT CAST(inode AS TEXT) FROM summary WHERE isroot = 1 LIMIT 1").fetchone()
+        else:
+            row = db.execute("SELECT CAST(inode AS TEXT) FROM entries WHERE name = ? LIMIT 1", (j['name'],)).fetchone()
+        if not row:
+            raise LookupError(j['rel'])
+        inode = row[0]
+        db.execute("DELETE FROM xattrs_pwd WHERE CAST(inode AS TEXT) = ? AND CAST(name AS TEXT) = 'user.studio.tags'", (inode,))
         if j['value']:
-            db.execute("INSERT INTO xattrs_pwd (inode, name, value) VALUES (?, 'user.studio.tags', ?)", (j['inode'], j['value']))
+            db.execute("INSERT INTO xattrs_pwd (inode, name, value) VALUES (?, 'user.studio.tags', ?)", (inode, j['value']))
         db.commit()
         db.close()
     except Exception:
@@ -341,7 +356,7 @@ function libraryAndPath(req: LabelRequest, rel: string): { lib: Library; rel: st
 
 /** Apply or remove labels on paths of a library the Studio does not write:
  *  kept by the Studio (libraryLabels.ts), nothing on the files changes. */
-function applyLibraryLabels(lib: Library, rels: string[], addRaw: string[], removeRaw: string[]): Record<string, string[]> {
+export function applyLibraryLabels(lib: Library, rels: string[], addRaw: string[], removeRaw: string[]): Record<string, string[]> {
   const add = addRaw.map(normalizeTag).filter(Boolean)
   const remove = removeRaw.map(normalizeTag).filter(Boolean)
   if (!rels.length || (!add.length && !remove.length)) throw new KbError(400, 'paths and add or remove required')
@@ -357,6 +372,13 @@ function applyLibraryLabels(lib: Library, rels: string[], addRaw: string[], remo
     updated[rel] = setLibraryLabels(lib, rel, [...current.filter(t => !remove.includes(t)), ...add])
   }
   return updated
+}
+
+/** Apply or remove labels on paths of one library, wherever it keeps them:
+ *  on the files for the main library, by the Studio for any other. */
+export async function applyLabelsIn(lib: Library, rels: string[], add: string[], remove: string[]): Promise<{ updated: Record<string, string[]>; stored: 'files' | 'studio' }> {
+  const updated = lib.id === PRIMARY_ID ? await applyTagsCore(rels, add, remove) : applyLibraryLabels(lib, rels, add, remove)
+  return { updated, stored: labelsStored(lib) }
 }
 
 export async function tagRoutes(app: FastifyInstance): Promise<void> {
@@ -412,10 +434,8 @@ export async function tagRoutes(app: FastifyInstance): Promise<void> {
     const updated: Record<string, string[]> = {}
     let stored: 'files' | 'studio' = 'files'
     for (const { lib, rels, asked } of groups.values()) {
-      const got = lib.id === PRIMARY_ID
-        ? await applyTagsCore(rels, body.add ?? [], body.remove ?? [])
-        : applyLibraryLabels(lib, rels, body.add ?? [], body.remove ?? [])
-      if (lib.id !== PRIMARY_ID) stored = 'studio'
+      const { updated: got, stored: where } = await applyLabelsIn(lib, rels, body.add ?? [], body.remove ?? [])
+      if (where === 'studio') stored = 'studio'
       rels.forEach((rel, i) => { if (got[rel]) updated[asked[i]] = got[rel] })
     }
     return { updated, stored }

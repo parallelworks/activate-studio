@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -49,12 +50,45 @@ func (a *App) installedShell() string {
 
 // shellChanged: the install holds a different program than the one running.
 func (a *App) shellChanged() bool {
-	inst := a.installedShell()
+	return shellChangedFrom("/proc/self/exe", a.installedShell())
+}
+
+// shellChangedFrom: the program running (self, /proc/self/exe) is not the
+// file the install holds at inst. The kernel names the running file where it
+// is now: an update moves the whole tree beside the app, so a window still
+// running the replaced file is named there, or "(deleted)" once that copy
+// is removed; it keeps the copy in use and has to be reopened, even when the
+// new file is byte for byte the same. (Device and inode would say the same,
+// but overlayfs, as in containers, reports other numbers for a running
+// program than for its path.) Without /proc the contents are compared.
+func shellChangedFrom(self, inst string) bool {
 	if inst == "" {
 		return false
 	}
-	now, was := fileHash(inst), fileHash("/proc/self/exe")
+	real, err := filepath.EvalSymlinks(inst)
+	if err != nil {
+		return false
+	}
+	if link, err := os.Readlink(self); err == nil {
+		if strings.HasSuffix(link, " (deleted)") {
+			return true
+		}
+		if r, err := filepath.EvalSymlinks(link); err == nil {
+			link = r
+		}
+		return link != real
+	}
+	now, was := fileHash(inst), fileHash(self)
 	return now != "" && was != "" && now != was
+}
+
+// relaunchAsked: the server installed a release that replaces the whole
+// app (its manifest's requiresRelaunch, docs/UPDATES.md), and wrote
+// updates/relaunch.json: the app is reopened even where this program is
+// unchanged, never only the server restarted into the new copy.
+func (a *App) relaunchAsked() bool {
+	_, err := os.Stat(filepath.Join(a.cfg.DataDir, "updates", "relaunch.json"))
+	return err == nil
 }
 
 // reopen starts the install's launcher in a session of its own, which waits

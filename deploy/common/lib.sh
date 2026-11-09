@@ -10,12 +10,70 @@ sha256_of() {
 # fetch URL FILE SHA256 [curl options]: download into the cache once, and
 # check the file against its checksum on every run, so a corrupt or
 # replaced cache entry is caught too.
+# release_asset_via_api URL FILE [CURL ARGS]: a github.com release download
+# (https://github.com/OWNER/REPO/releases/download/TAG/NAME) fetched the
+# second way, through the release API's asset address, which GitHub serves
+# apart from the download host; a tag archive (.../archive/refs/tags/TAG.tar.gz)
+# from codeload.github.com; a repository file (.../raw/TAG/PATH) from the
+# contents API. GH_TOKEN or GITHUB_TOKEN, when set, lifts the
+# API's rate limit. Fails for any other URL; the caller checks the hash.
+release_asset_via_api() {
+  local url="$1" out="$2" rest repo tag name api
+  shift 2
+  rest="${url#https://github.com/}"
+  case "$rest" in
+    */*/archive/refs/tags/*.tar.gz)
+      # A tag's source archive: github.com redirects it to codeload, which
+      # serves the same bytes.
+      local r="${rest%%/archive/refs/tags/*}" t="${rest#*/archive/refs/tags/}"
+      echo "  the download failed; trying codeload for $r ${t%.tar.gz}"
+      curl -fsSL --retry 3 "$@" -o "$out" "https://codeload.github.com/$r/tar.gz/refs/tags/${t%.tar.gz}"
+      return
+      ;;
+    */*/raw/*/*)
+      # A file in a repository at a tag (.../raw/TAG/PATH): the contents API
+      # serves the same bytes.
+      local r2="${rest%%/raw/*}" p="${rest#*/raw/}"
+      local ref="${p%%/*}" file="${p#*/}" a2=()
+      local tok="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+      [ -n "$tok" ] && a2=(-H "Authorization: Bearer $tok")
+      echo "  the download failed; trying the contents API for $r2 $ref $file"
+      curl -fsSL --retry 3 "$@" ${a2[@]+"${a2[@]}"} -H 'Accept: application/vnd.github.raw' -o "$out" \
+        "https://api.github.com/repos/$r2/contents/$file?ref=$ref"
+      return
+      ;;
+    */*/releases/download/*/*) ;;
+    *) return 1 ;;
+  esac
+  repo="${rest%%/releases/download/*}"
+  rest="${rest#*/releases/download/}"
+  tag="${rest%%/*}"
+  name="${rest#*/}"
+  case "$name" in */*) return 1 ;; esac
+  local auth=()
+  local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  [ -n "$token" ] && auth=(-H "Authorization: Bearer $token")
+  echo "  the download failed; trying the release API for $repo $tag $name"
+  # The asset's API address is the last .../releases/assets/ID "url" before
+  # its "name".
+  api="$(curl -fsSL --retry 3 ${auth[@]+"${auth[@]}"} -H 'Accept: application/vnd.github+json' \
+      "https://api.github.com/repos/$repo/releases/tags/$tag" |
+    grep -oE '"(url|name)": *"[^"]*"' |
+    awk -v want="$name" '
+      /^"url"/ { v = $0; sub(/^"url": *"/, "", v); sub(/"$/, "", v); if (v ~ /\/releases\/assets\/[0-9]+$/) last = v; next }
+      { v = $0; sub(/^"name": *"/, "", v); sub(/"$/, "", v); if (v == want && last != "") { print last; exit } }')" || return 1
+  [ -n "$api" ] || return 1
+  curl -fsSL --retry 3 "$@" ${auth[@]+"${auth[@]}"} -H 'Accept: application/octet-stream' -o "$out" "$api"
+}
+
 fetch() {
   local url="$1" file="$2" sum="$3"
   shift 3
   if [ ! -f "$file" ] || [ "$(sha256_of "$file")" != "$sum" ]; then
     echo "  fetching $url"
-    curl -fsSL --retry 3 "$@" -o "$file.part" "$url"
+    if ! curl -fsSL --retry 3 "$@" -o "$file.part" "$url"; then
+      release_asset_via_api "$url" "$file.part" "$@" || die "could not fetch $url"
+    fi
     mv "$file.part" "$file"
   fi
   local got

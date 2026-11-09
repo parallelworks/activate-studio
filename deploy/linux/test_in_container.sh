@@ -24,7 +24,17 @@ if [ -n "${EXTRA_PACKAGES:-}" ]; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq >/dev/null
     # shellcheck disable=SC2086  # a list of names
-    apt-get install -y -qq --no-install-recommends $EXTRA_PACKAGES >/dev/null
+    if ! apt-get install -y -qq --no-install-recommends $EXTRA_PACKAGES >/dev/null; then
+      # A Debian release past its support (Debian 11 since August 2026) has
+      # its packages on archive.debian.org only.
+      echo "Its package mirrors fail; trying archive.debian.org"
+      sed -i -e 's|deb.debian.org/debian-security|archive.debian.org/debian-security|' -e 's|deb.debian.org/debian|archive.debian.org/debian|' \
+        /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+      sed -i '/-updates/d' /etc/apt/sources.list 2>/dev/null || true
+      apt-get update -qq >/dev/null
+      # shellcheck disable=SC2086
+      apt-get install -y -qq --no-install-recommends $EXTRA_PACKAGES >/dev/null
+    fi
   else
     # shellcheck disable=SC2086
     dnf install -y -q --setopt=install_weak_deps=False $EXTRA_PACKAGES >/dev/null
@@ -49,7 +59,13 @@ runuser -u tester -- env HOME=/home/tester bash /src/deploy/linux/check_app.sh "
 # download, a release that will not start, and the read-only /opt installs a
 # package leaves), against a local stand-in for the release server. Set
 # UPDATE_E2E=0 to skip it.
-if [ "${UPDATE_E2E:-1}" = 1 ]; then
+# It drives its stand-in release server with the payload's Node, so a payload
+# without Node (node/PLACEHOLDER) skips it; bridge-e2e updates that payload
+# from the last release instead.
+if [ -e "$APP/node/PLACEHOLDER" ]; then
+  echo
+  echo "Update end to end: skipped, the payload has no Node to serve the stand-in feed (bridge-e2e covers it)"
+elif [ "${UPDATE_E2E:-1}" = 1 ]; then
   echo
   bash /src/deploy/linux/test_update_e2e.sh || status=$?
 fi

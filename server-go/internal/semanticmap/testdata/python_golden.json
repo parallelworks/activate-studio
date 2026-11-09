@@ -1,0 +1,171 @@
+{
+ "wholeWords": [
+  {
+   "in": [
+    "alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha be",
+    "alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha be gamma delta tail words"
+   ],
+   "out": "alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha be alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha beta reef alpha be gamma delta tail words"
+  },
+  {
+   "in": [
+    "short text here",
+    "eef continues word",
+    "abc"
+   ],
+   "out": "short text here  continues word "
+  },
+  {
+   "in": [
+    "Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße "
+   ],
+   "out": "Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße Ünïcode wörds and Straße "
+  },
+  {
+   "in": [
+    "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+    "d word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word wor"
+   ],
+   "out": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word   word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+  },
+  {
+   "in": [
+    "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+    "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+   ],
+   "out": " "
+  }
+ ],
+ "fileTerms": [
+  {
+   "in": "The Turbine turbine TURBINE blade blades v2023 abc123 x1y2z3 data model3 version 1.2.3 hashes deadbeef42 a1b2c3d4 rotor rotor gearbox http www Straße",
+   "out": [
+    [
+     "turbine",
+     3
+    ],
+    [
+     "rotor",
+     2
+    ],
+    [
+     "blade",
+     1
+    ],
+    [
+     "blades",
+     1
+    ],
+    [
+     "data",
+     1
+    ],
+    [
+     "deadbeef42",
+     1
+    ],
+    [
+     "gearbox",
+     1
+    ],
+    [
+     "hashes",
+     1
+    ],
+    [
+     "model3",
+     1
+    ],
+    [
+     "stra",
+     1
+    ],
+    [
+     "version",
+     1
+    ]
+   ]
+  },
+  {
+   "in": "abcdefghijklmnopqrstuvwxyzabcdefgh x9 the and abcdefghijklmnopqrstuvwxyzabcdefgh x9 the and abcdefghijklmnopqrstuvwxyzabcdefgh x9 the and ",
+   "out": [
+    [
+     "abcdefghijklmnopqrstuvwx",
+     3
+    ],
+    [
+     "yzabcdefgh",
+     3
+    ]
+   ]
+  }
+ ],
+ "nameClusters": {
+  "in": [
+   [
+    [
+     "wind",
+     "turbine",
+     "blade"
+    ],
+    [
+     "wind",
+     "turbine",
+     "rotor"
+    ],
+    [
+     "wind",
+     "turbine"
+    ],
+    [
+     "a"
+    ],
+    [],
+    [
+     "bread",
+     "yeast"
+    ]
+   ],
+   [
+    "wind/a",
+    "wind/b",
+    "wind/c",
+    "misc",
+    "misc",
+    "food"
+   ]
+  ],
+  "out": [
+   [
+    "wind, turbine, blade",
+    "rotor, wind, turbine",
+    "wind, turbine",
+    "misc",
+    "misc (2)",
+    "bread, yeast"
+   ],
+   [
+    [
+     "wind",
+     "turbine",
+     "blade"
+    ],
+    [
+     "rotor",
+     "wind",
+     "turbine"
+    ],
+    [
+     "wind",
+     "turbine"
+    ],
+    [],
+    [],
+    [
+     "bread",
+     "yeast"
+    ]
+   ]
+  ]
+ }
+}

@@ -2,7 +2,7 @@
    tokens that @parallelworks/ui's deriveTheme computes from an accent and a
    background, the same derivation the platform's other apps use. accents.ts
    writes the full set for the chosen accent and surface; the two blocks
-   below are its output for the default (navy on the cool surface), for the
+   below are its output for the default (no accent on the warm surface), for the
    moment before the script runs, and a test keeps them equal to it. */
 /* Links take the link color in the UI package's base layer, after its reset,
    so a package Button rendered as a link keeps its own colors. */
@@ -11,130 +11,130 @@
 /* BEGIN derived theme defaults (web/test/themeDefaults.test.ts) */
 :root {
   color-scheme: light;
-  --theme-app-bg: #f3f4f6;
-  --theme-panel-bg: #fcfeff;
-  --theme-panel-hover: #f2f5f9;
-  --theme-muted-panel-bg: #e7eaee;
-  --theme-hover: #e3e5e9;
-  --theme-input-bg: #fafcfe;
-  --theme-input-disabled-bg: #ebeef1;
-  --theme-app: #0a101b;
-  --theme-muted-text-color: #4e5664;
-  --theme-placeholder: #7e8796;
-  --theme-link: #06354f;
-  --theme-border: #cacdd0;
-  --theme-border-field: #bdc0c3;
-  --theme-border-strong: #848689;
-  --theme-accent: #06354f;
+  --theme-app-bg: #f8f8f6;
+  --theme-panel-bg: #ffffff;
+  --theme-panel-hover: #f7f7f5;
+  --theme-muted-panel-bg: #eeeeec;
+  --theme-hover: #e9e9e7;
+  --theme-input-bg: #ffffff;
+  --theme-input-disabled-bg: #f1f1ef;
+  --theme-app: #212115;
+  --theme-muted-text-color: #5d5c4f;
+  --theme-placeholder: #8b8a7c;
+  --theme-link: #171717;
+  --theme-border: #d0d0cf;
+  --theme-border-field: #c4c4c2;
+  --theme-border-strong: #898988;
+  --theme-accent: #171717;
   --theme-accent-text: #ffffff;
-  --theme-accent-hover: #002841;
-  --theme-accent-subtle: #d3ebfc;
-  --theme-focus: #06354f;
-  --theme-focus-ring: rgba(6, 53, 79, 0.25);
-  --theme-success: #00973d;
-  --theme-success-text: #006226;
+  --theme-accent-hover: #0c0c0c;
+  --theme-accent-subtle: #ebebeb;
+  --theme-focus: #171717;
+  --theme-focus-ring: rgba(23, 23, 23, 0.25);
+  --theme-success: #009a40;
+  --theme-success-text: #00692d;
   --theme-success-solid: #00873c;
-  --theme-success-muted: rgba(0, 151, 61, 0.1);
-  --theme-error: #ea4841;
-  --theme-error-text: #a11a1b;
-  --theme-error-solid: #db3934;
-  --theme-error-muted: rgba(234, 72, 65, 0.1);
-  --theme-warning: #bd7100;
-  --theme-warning-text: #7b4a00;
+  --theme-success-muted: rgba(0, 154, 64, 0.1);
+  --theme-error: #ee4c44;
+  --theme-error-text: #a92321;
+  --theme-error-solid: #db3935;
+  --theme-error-muted: rgba(238, 76, 68, 0.1);
+  --theme-warning: #c07400;
+  --theme-warning-text: #814f00;
   --theme-warning-solid: #a76900;
-  --theme-warning-muted: rgba(189, 113, 0, 0.1);
-  --theme-info: #0681f8;
-  --theme-info-text: #0050af;
+  --theme-warning-muted: rgba(192, 116, 0, 0.1);
+  --theme-info: #0e84fb;
+  --theme-info-text: #0056b6;
   --theme-info-solid: #0073e8;
-  --theme-info-muted: rgba(6, 129, 248, 0.1);
-  --theme-favorite: #e7457a;
-  --theme-favorite-text: #9e174b;
+  --theme-info-muted: rgba(14, 132, 251, 0.1);
+  --theme-favorite: #ea497d;
+  --theme-favorite-text: #a62152;
   --theme-favorite-solid: #d7366e;
-  --theme-favorite-muted: rgba(231, 69, 122, 0.1);
+  --theme-favorite-muted: rgba(234, 73, 125, 0.1);
   --theme-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.07);
   --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.07);
   --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.07);
   --theme-shadow-xl: 0 25px 80px -20px rgba(0, 0, 0, 0.2), 0 10px 30px -10px rgba(0, 0, 0, 0.1);
   --theme-backdrop: rgba(0, 0, 0, 0.4);
-  --theme-sidebar-bg: #e6e9ec;
+  --theme-sidebar-bg: #ececea;
   --theme-sidebar-text: #000000;
-  --theme-sidebar-hover: #d5d8dc;
+  --theme-sidebar-hover: #dcdcda;
   --theme-sidebar-active-bg: #ffffff;
-  --theme-sidebar-active-text: #364d5e;
-  --theme-code-bg: #e7eaee;
-  --theme-code-text: #1c2330;
-  --theme-code-comment: #555d6c;
-  --theme-code-keyword: #36617d;
-  --theme-code-string: #196a24;
-  --theme-code-number: #944500;
-  --theme-code-function: #6c4b9e;
-  --theme-code-type: #006565;
-  --theme-code-property: #5a51a5;
-  --theme-ansi-black: #1c2330;
-  --theme-ansi-red: #a3322d;
-  --theme-ansi-green: #006a12;
-  --theme-ansi-yellow: #755800;
-  --theme-ansi-blue: #0b5aae;
-  --theme-ansi-magenta: #8d3a88;
-  --theme-ansi-cyan: #00666c;
-  --theme-ansi-white: #555d6c;
-  --theme-category-1: #ffcfce;
-  --theme-category-1-text: #6e3537;
-  --theme-category-2: #f7d6b8;
-  --theme-category-2-text: #673f12;
-  --theme-category-3: #dfe1b7;
-  --theme-category-3-text: #4e4e11;
-  --theme-category-4: #c1e8cd;
-  --theme-category-4-text: #1f5636;
-  --theme-category-5: #b3e9eb;
-  --theme-category-5-text: #00555a;
-  --theme-category-6: #c0e2ff;
-  --theme-category-6-text: #1f4e73;
-  --theme-category-7: #dcd8ff;
-  --theme-category-7-text: #4a4273;
-  --theme-category-8: #f5d0ec;
-  --theme-category-8-text: #63385a;
+  --theme-sidebar-active-text: #4a4a49;
+  --theme-code-bg: #eeeeec;
+  --theme-code-text: #2e2e22;
+  --theme-code-comment: #646356;
+  --theme-code-keyword: #626262;
+  --theme-code-string: #21702a;
+  --theme-code-number: #994a00;
+  --theme-code-function: #6f4fa1;
+  --theme-code-type: #006d6d;
+  --theme-code-property: #0065a0;
+  --theme-ansi-black: #2e2e22;
+  --theme-ansi-red: #a83630;
+  --theme-ansi-green: #00711b;
+  --theme-ansi-yellow: #7b5e00;
+  --theme-ansi-blue: #1561b4;
+  --theme-ansi-magenta: #903d8b;
+  --theme-ansi-cyan: #006c72;
+  --theme-ansi-white: #646356;
+  --theme-category-1: #ffd0cf;
+  --theme-category-1-text: #6f3637;
+  --theme-category-2: #f8d7b9;
+  --theme-category-2-text: #684114;
+  --theme-category-3: #e0e2b8;
+  --theme-category-3-text: #505014;
+  --theme-category-4: #c2e9ce;
+  --theme-category-4-text: #215838;
+  --theme-category-5: #b4eaec;
+  --theme-category-5-text: #00575c;
+  --theme-category-6: #c0e3ff;
+  --theme-category-6-text: #205074;
+  --theme-category-7: #ddd9ff;
+  --theme-category-7-text: #4c4474;
+  --theme-category-8: #f6d1ed;
+  --theme-category-8-text: #65395c;
 }
 [data-theme='dark'] {
   color-scheme: dark;
-  --theme-app-bg: #0d1117;
-  --theme-panel-bg: #111923;
-  --theme-panel-hover: #1a232d;
-  --theme-muted-panel-bg: #17202b;
-  --theme-hover: #2f3944;
-  --theme-input-bg: #141d27;
-  --theme-input-disabled-bg: #0e1721;
-  --theme-app: #e6f1fd;
-  --theme-muted-text-color: #c6d0db;
-  --theme-placeholder: #9aa4af;
-  --theme-link: #95d7ff;
-  --theme-border: #2b333c;
-  --theme-border-field: #363e47;
-  --theme-border-strong: #626a75;
-  --theme-accent: #7fc0ec;
+  --theme-app-bg: #1f1f1e;
+  --theme-panel-bg: #282824;
+  --theme-panel-hover: #31312e;
+  --theme-muted-panel-bg: #2f2f2c;
+  --theme-hover: #41413d;
+  --theme-input-bg: #2b2b28;
+  --theme-input-disabled-bg: #252522;
+  --theme-app: #f4f4f2;
+  --theme-muted-text-color: #d4d4d2;
+  --theme-placeholder: #a8a8a6;
+  --theme-link: #ececeb;
+  --theme-border: #424241;
+  --theme-border-field: #4a4a49;
+  --theme-border-strong: #787877;
+  --theme-accent: #ececeb;
   --theme-accent-text: #000000;
-  --theme-accent-hover: #8fd0fd;
-  --theme-accent-subtle: #082334;
-  --theme-focus: #7fc0ec;
-  --theme-focus-ring: rgba(127, 192, 236, 0.35);
+  --theme-accent-hover: #fdfdfc;
+  --theme-accent-subtle: #30302f;
+  --theme-focus: #ececeb;
+  --theme-focus-ring: rgba(236, 236, 235, 0.35);
   --theme-success: #00bf54;
-  --theme-success-text: #6ae78b;
+  --theme-success-text: #6fec90;
   --theme-success-solid: #00873c;
   --theme-success-muted: rgba(0, 191, 84, 0.15);
   --theme-error: #ff6056;
-  --theme-error-text: #ffc0b6;
+  --theme-error-text: #ffc9c2;
   --theme-error-solid: #db3934;
   --theme-error-muted: rgba(255, 96, 86, 0.15);
   --theme-warning: #dd8900;
-  --theme-warning-text: #ffc571;
+  --theme-warning-text: #ffca87;
   --theme-warning-solid: #a76900;
   --theme-warning-muted: rgba(221, 137, 0, 0.15);
   --theme-info: #499fff;
-  --theme-info-text: #aad3ff;
+  --theme-info-text: #afd8ff;
   --theme-info-solid: #0073e9;
   --theme-info-muted: rgba(73, 159, 255, 0.15);
   --theme-favorite: #fe5c8e;
-  --theme-favorite-text: #ffbecd;
+  --theme-favorite-text: #ffcad5;
   --theme-favorite-solid: #d7366e;
   --theme-favorite-muted: rgba(254, 92, 142, 0.15);
   --theme-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
@@ -142,43 +142,43 @@
   --theme-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.35);
   --theme-shadow-xl: 0 25px 80px -20px rgba(0, 0, 0, 0.6), 0 10px 30px -10px rgba(0, 0, 0, 0.4);
   --theme-backdrop: rgba(0, 0, 0, 0.65);
-  --theme-sidebar-bg: #040a11;
-  --theme-sidebar-text: #dde7f3;
-  --theme-sidebar-hover: #141c24;
-  --theme-sidebar-active-bg: #002846;
-  --theme-sidebar-active-text: #d1edff;
-  --theme-code-bg: #17202b;
-  --theme-code-text: #dee8f4;
-  --theme-code-comment: #bec8d3;
-  --theme-code-keyword: #8ccefa;
-  --theme-code-string: #8ad88c;
-  --theme-code-number: #ffb681;
-  --theme-code-function: #d2bbff;
-  --theme-code-type: #2fdada;
-  --theme-code-property: #c2c0ff;
-  --theme-ansi-black: #bec8d3;
-  --theme-ansi-red: #ffb3a9;
-  --theme-ansi-green: #7eda82;
-  --theme-ansi-yellow: #ecc13c;
-  --theme-ansi-blue: #9dcaff;
-  --theme-ansi-magenta: #ffa8fb;
-  --theme-ansi-cyan: #00dae4;
-  --theme-ansi-white: #dee8f4;
-  --theme-category-1: #593030;
+  --theme-sidebar-bg: #171716;
+  --theme-sidebar-text: #eaeae8;
+  --theme-sidebar-hover: #2a2a29;
+  --theme-sidebar-active-bg: #343433;
+  --theme-sidebar-active-text: #eeeeed;
+  --theme-code-bg: #2f2f2c;
+  --theme-code-text: #ececea;
+  --theme-code-comment: #cbcbc9;
+  --theme-code-keyword: #cbcbca;
+  --theme-code-string: #8edd91;
+  --theme-code-number: #ffbd8f;
+  --theme-code-function: #d8c0ff;
+  --theme-code-type: #37dfdf;
+  --theme-code-property: #8dd3ff;
+  --theme-ansi-black: #cbcbc9;
+  --theme-ansi-red: #ffbab0;
+  --theme-ansi-green: #83df87;
+  --theme-ansi-yellow: #f1c643;
+  --theme-ansi-blue: #a2cfff;
+  --theme-ansi-magenta: #ffb4fd;
+  --theme-ansi-cyan: #00dfe9;
+  --theme-ansi-white: #ececea;
+  --theme-category-1: #5e3435;
   --theme-category-1-text: #fed2d0;
-  --theme-category-2: #533618;
+  --theme-category-2: #583b1d;
   --theme-category-2-text: #f6d8bc;
-  --theme-category-3: #3f4017;
+  --theme-category-3: #44451c;
   --theme-category-3-text: #dfe2bc;
-  --theme-category-4: #20462f;
+  --theme-category-4: #254b34;
   --theme-category-4-text: #c5e8d0;
-  --theme-category-5: #034649;
+  --theme-category-5: #0b4b4f;
   --theme-category-5-text: #b8e9eb;
-  --theme-category-6: #1f405b;
+  --theme-category-6: #254560;
   --theme-category-6-text: #c3e2fe;
-  --theme-category-7: #3d375a;
+  --theme-category-7: #423c60;
   --theme-category-7-text: #ddd9fe;
-  --theme-category-8: #50314a;
+  --theme-category-8: #56364f;
   --theme-category-8-text: #f4d2eb;
 }
 /* END derived theme defaults */
@@ -336,7 +336,8 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
    embedded app panels (Kubernetes viewer pattern). The dark chrome belongs
    to the platform shell around this session, not to the app. ---- */
 .sidenav {
-  width: 240px; flex-shrink: 0;
+  /* --nav-w: Settings, General, Sidebar, Width, or a drag of the edge. */
+  width: var(--nav-w, 240px); flex-shrink: 0;
   background: var(--pw-nav-bg);
   border-right: 1px solid var(--pw-border);
   color: var(--pw-text);
@@ -344,6 +345,17 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   padding: 12px; overflow-y: auto;
 }
 .sidenav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding: 0 4px; }
+/* The sidebar's right edge as a handle: no width of its own, a 7px target
+   centered on the border. */
+.sidenav-resize { position: relative; flex: 0 0 0; width: 0; z-index: 6; outline: none; }
+.sidenav-resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: -4px; width: 7px; cursor: col-resize; }
+/* The ring shows for keyboard focus only: a press focuses the edge too, so
+   the arrow keys work after it, and marks it pressed until a key is used. */
+.sidenav-resize:hover::before, .sidenav-resize.dragging::before, .sidenav-resize:focus-visible:not(.pressed)::before {
+  background: linear-gradient(to right, transparent 2px, var(--pw-border-strong) 2px, var(--pw-border-strong) 5px, transparent 5px);
+}
+html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-select: none; }
+@media (max-width: 760px) { .sidenav-resize { display: none; } }
 .sidenav-brand { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
 .brand-icon { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; }
 .brand-text { font-size: 14px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; }
@@ -407,7 +419,12 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .footer-pending { min-height: 74px; }
 .footer-skeleton { margin: 4px 0 10px; }
 .status-line.muted2 { color: var(--pw-muted); }
-.footer-sync { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+/* The action beside a footer line gives way first: at the Narrow width it
+   wraps onto two lines before the line's own text, such as the version, is
+   cut. The text keeps its full width up to what the action's minimum leaves
+   it; only a longer one, such as a clone's git describe, is cut. */
+.footer-sync { margin-left: auto; flex-shrink: 1; min-width: 6em; white-space: normal; text-align: right; line-height: 1.2; }
+.status-line:has(> .footer-sync) > .identity-btn { flex-shrink: 0; max-width: calc(100% - 6em - 6px); }
 /* A long build name (a clone's git describe) stays on one line. */
 .status-line .identity-btn { min-width: 0; }
 .identity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -843,7 +860,7 @@ textarea.field { line-height: 1.5; }
 .result-pills { display: inline-flex; gap: 5px; align-items: center; flex-shrink: 0; }
 
 .muted { color: var(--pw-muted); }
-.muted.pad { padding: 12px 16px; }
+.pad { padding: 12px 16px; }
 .error { color: #b91c1c; }
 
 /* 3D model viewer */
@@ -970,6 +987,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    direct children, which made this row full-height and centred the
    buttons halfway down the canvas. */
 .chat-controls { position: absolute; top: 11px; right: 16px; z-index: 8; display: flex; align-items: center; gap: 6px; height: auto; }
+/* The package's find bar (Ctrl+F in a conversation) spans the top of the
+   thread, under these controls. It stops short of them, or sits below them
+   where the thread is too narrow, so its count and buttons stay in view;
+   ChatView measures which as the controls and the canvas change. */
+.chat-canvas main search { padding-right: var(--chat-find-pad, 0px); margin-top: var(--chat-find-top, 0px); }
+/* Its field draws its own focus ring; the page-wide outline would add a
+   second, square one inside it. */
+.chat-canvas main search input:focus-visible { outline: none; }
 @media (max-width: 760px) {
   /* These controls float over the package's own header, which holds the
      model picker. On a phone the picker is wide enough to run under them,
@@ -1027,6 +1052,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   font-size: 12px; color: var(--pw-muted); font-family: inherit;
 }
 .identity-btn:hover { color: var(--pw-navy); }
+a.identity-btn { text-decoration: none; }
 .identity-panel { width: 300px; display: flex; flex-direction: column; gap: 8px; }
 /* A value may hold several lines, such as a token's audiences. */
 .identity-list [data-value] { white-space: pre-line; }
@@ -1034,6 +1060,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .identity-dot { margin-right: 6px; vertical-align: middle; }
 /* On a line of their own, at the right, when the source does not leave room. */
 .identity-actions { display: flex; gap: 6px; margin-left: auto; }
+.identity-actions form { display: contents; }
 .identity-claims {
   margin: 0; padding: 8px; font-size: 11px; line-height: 1.5;
   background: var(--pw-bg); border: 1px solid var(--pw-border); border-radius: 6px;
@@ -1665,6 +1692,29 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .legend-more { background: none; border: none; padding: 0; font: inherit; font-size: 0.82rem; color: var(--pw-link, #2563eb); cursor: pointer; }
 .legend-more:hover { text-decoration: underline; }
 .map-tip-note { opacity: 0.8; }
+/* The file selected on the semantic map: a card in the map's top right
+   corner, no taller than the map. */
+.map-select {
+  position: absolute; top: 8px; right: 8px; width: min(280px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow: auto;
+  display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; box-sizing: border-box;
+  background: var(--theme-panel-bg, var(--pw-panel, #fff)); color: var(--pw-text, #1e293b);
+  border: 1px solid var(--pw-border, #ddd); border-radius: 8px; box-shadow: 0 4px 16px rgba(15,23,42,0.18); font-size: 0.82rem;
+}
+.map-select-head { display: flex; align-items: flex-start; gap: 6px; }
+.map-select-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.map-select-title > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-select-sub, .map-select-none { margin: 0; }
+/* Room for the nearest files while they come, so the card keeps its size. */
+.map-select-wait { min-height: 132px; }
+.map-select-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.map-select-nb {
+  display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; border-radius: 4px;
+  padding: 3px 4px; font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.map-select-nb:hover, .map-select-nb:focus-visible { background: var(--pw-hover, rgba(100,116,139,0.12)); }
+.map-select-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-select > button:last-child { align-self: flex-start; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 
 /* Structured previews: JSON and YAML as a collapsible tree. */
@@ -1751,6 +1801,18 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .persona-icon-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .persona-icon-field { flex: 1; min-width: 160px; }
 .agents-view .ov-row-path { display: flex; align-items: center; gap: 8px; }
+/* A definition's name is shown whole: it takes the width it needs, up to
+   half the row, and wraps past that; the description takes the rest. In a
+   narrow card (a phone, a narrow window) the name sits above it. */
+.agents-view .ov-list { container-type: inline-size; }
+.agents-view .ov-row-path { flex: 0 0 auto; max-width: 50%; white-space: normal; overflow: visible; }
+.agents-view .ov-row-meta { flex: 1 1 0; }
+.agents-name { min-width: 0; overflow-wrap: anywhere; }
+@container (max-width: 520px) {
+  .agents-view .ov-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .agents-view .ov-row-path { max-width: none; }
+  .agents-view .ov-row-meta { text-align: left; }
+}
 .persona-row .persona-name { display: flex; align-items: center; gap: 8px; }
 .task-detail { margin-top: 10px; border-top: 1px solid var(--pw-border); padding-top: 10px; }
 .task-msg { font-size: 13px; display: flex; flex-direction: column; }
@@ -1914,8 +1976,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    collapse button past the pane's edge. */
 .rail-head .library-switch { margin-right: auto; flex: 1 1 0; min-width: 0; max-width: none; }
 .rail-head .rail-actions { flex-shrink: 0; }
+/* With more than one library the picker has a row of its own over the
+   buttons, so a library's name reads in full at any tree width. */
+.rail-head.rail-head-switch { height: auto; flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
+.rail-head.rail-head-switch .library-switch { flex: 1 0 100%; margin-right: 0; }
+/* With the picker on its own row, the buttons spread across the row under it. */
+.rail-head.rail-head-switch .rail-actions { flex: 1 0 100%; justify-content: space-between; }
 
-/* ---- Settings > Libraries ---- */
+/* ---- Settings > Indexing > Libraries ---- */
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }
 .libraries-table .lib-id { font-size: 12px; color: var(--pw-muted); margin-top: 2px; }
 .libraries-table .depth-select { min-width: 11rem; }
@@ -1948,6 +2016,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .lib-create-list { margin: 0; padding-left: 18px; }
 .lib-create-list code { word-break: break-all; }
 .local-library-browse { margin-bottom: 14px; max-width: var(--settings-measure); }
+/* The first-run setup wizard, over the whole window. */
+.setup-overlay {
+  position: fixed; inset: 0; z-index: 60; overflow-y: auto; background: var(--pw-bg);
+  display: flex; justify-content: center; align-items: flex-start; padding: 6vh 16px 24px;
+}
 /* The setup wizard's steps, done and to come. */
 .setup-progress { display: flex; gap: 4px; margin: 6px 0 2px; }
 .setup-progress span { flex: 1; height: 3px; border-radius: 2px; background: var(--pw-border); }
@@ -1956,7 +2029,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .lib-add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 /* Indexing (components/IndexActivity.tsx): a job's phases, each with its
    count and time, the controls, and the log. The same pieces sit in the
-   footer's index panel, Settings, Libraries and Statistics. */
+   footer's index panel, Settings, Indexing, Libraries and Statistics. */
 .ix-job { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ix-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .ix-phase { display: flex; flex-direction: column; gap: 3px; }
@@ -2216,7 +2289,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .agents-view > :not(.ov-head) { margin-inline: 14px; }
 }
 
-/* Settings > Libraries > Your libraries: the Slurm fields under their checkbox. */
+/* Settings > Indexing > Libraries > Your libraries: the Slurm fields under their checkbox. */
 .user-lib-slurm { display: flex; gap: 8px; margin-top: 6px; }
 .user-lib-slurm > input { flex: 1; min-width: 0; }
 
@@ -2359,7 +2432,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .status-card-chev.open { transform: rotate(90deg); }
 .status-card-head:hover .status-card-chev { color: var(--pw-text); }
 .status-card-summary { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding-left: 8px; font-size: 13px; color: var(--pw-muted); }
-.status-card-summary > :first-child { flex-shrink: 0; }
+.status-card-summary > :first-child:not(.status-card-summary-text) { flex-shrink: 0; }
 .status-card-summary-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-card-inner { padding: 0 8px 10px; }
 .status-group + .status-group { margin-top: 6px; }
@@ -2401,10 +2474,13 @@ button.status-row:hover { background: var(--pw-hover-row); }
 .details-inherited { color: var(--pw-muted); }
 .details-index { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .details-index { align-items: flex-start; }
-.details-index code { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.details-index code { min-width: 0; font-size: 12px; overflow-wrap: anywhere; word-break: normal; }
+.details-index .path-part { white-space: nowrap; }
 /* The type bars line up whatever their sizes read. */
 .details-track { flex: none; width: calc(100% - 72px); }
 .details-note { margin: 0; padding: 0 6px 4px; font-size: 13px; color: var(--pw-muted); }
+/* Inside the card the note lines up with the rest of it. */
+.details .details-note { padding: 0; }
 .details-loading { padding: 2px 6px 6px; }
 /* Its toggle: at the end of a page header, beside the chat's own controls,
    and over the top right of the pages that draw their own tops. */
@@ -2474,3 +2550,77 @@ button.status-row:hover { background: var(--pw-hover-row); }
    and its removal comes after 0.114.1; drop this rule once a release has it. */
 .chat-thread ::selection,
 .chat-composer ::selection { background-color: Highlight; color: HighlightText; }
+
+/* ---- The Mac window without a title bar ----
+   The macOS app's window has no title bar of its own: the page runs to the
+   window's top edge and the window controls sit over its top left, centered
+   in a row --shell-top tall that reaches --shell-controls in from the left.
+   The desktop shell (desktop/wails/shell/shim.js) sets html.shell-inset and
+   both variables; nothing else does, so none of this applies on Linux,
+   Windows or in a browser.
+   Each column's first row is that row: the navigation's holds the controls
+   and its collapse button, and the other columns' heads (a page's heading,
+   the library rail's, the status panel's) are made the row's height, so
+   their titles and buttons line up with the controls. A press on an empty
+   part of the row drags the window (shim.js).
+   With a classification banner the window takes a compact layout: the
+   shell drops its toolbar row, so the controls sit at a plain title bar's
+   height and --shell-top is that height (about 28px). The banner is that
+   strip, with the controls over its left end, and the columns below it are
+   as anywhere else. The rules for the row's columns are written for an app
+   with no banner (.app:not(:has(> .cls-banner))). */
+html.shell-inset {
+  /* The UI package's drawers and toasts start below the row. */
+  --app-inset-top: var(--shell-top, 0px);
+}
+/* A name too long for the rail ends in an ellipsis. */
+html.shell-inset .sidenav-brand .brand-text { text-overflow: ellipsis; }
+@media (min-width: 761px) {
+  /* The navigation's top row holds the window controls and, at its right
+     end, the collapse button. The brand row, icon and name across the
+     rail's width, is under it as anywhere else. */
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav { padding-top: 0; overflow-x: clip; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .sidenav-head { flex-wrap: wrap; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .sidenav-brand { order: 1; flex: 1 0 100%; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .nav-collapse { margin: calc(var(--shell-top) / 2 - 14px) 0 calc(var(--shell-top) / 2 - 14px) auto; }
+  /* Collapsed, the rail is as wide as the controls and keeps the row under
+     them empty, so nothing of the page's sits under the controls. */
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav.collapsed { width: max(64px, var(--shell-controls)); padding-top: var(--shell-top); }
+  /* The heads of the other columns are the row's height. */
+  html.shell-inset .app:not(:has(> .cls-banner)) :is(.page-head, .status-panel-head) { min-height: var(--shell-top); }
+  html.shell-inset .app:not(:has(> .cls-banner)) .rail-head:not(.rail-head-switch) { height: max(52px, var(--shell-top)); }
+  html.shell-inset .app:not(:has(> .cls-banner)) .chat-controls { top: calc(var(--shell-top) / 2 - 16px); }
+  html.shell-inset .app:not(:has(> .cls-banner)) .panel-toggle-float { top: calc(var(--shell-top) / 2 - 14px); }
+}
+/* A full view and the setup wizard cover the window: the full view's bar is
+   the top row, past the controls, and the wizard's card starts below it. */
+html.shell-inset .app:not(:has(> .cls-banner)) .full-view-bar { min-height: var(--shell-top); box-sizing: border-box; padding-left: var(--shell-controls); }
+html.shell-inset .setup-overlay { padding-top: max(6vh, calc(var(--shell-top) + 8px)); }
+/* At a phone's width the navigation is a bar at the bottom and the page
+   starts at the top left, under the controls: the page leaves the row
+   empty, in its own color, as a transparent top border. */
+@media (max-width: 760px) {
+  html.shell-inset .app:not(:has(> .cls-banner)) main.content { border-top: var(--shell-top) solid transparent; }
+}
+/* Overlays that fill the window start below the row. */
+html.shell-inset .map-full { top: max(var(--map-top, 0px), var(--shell-top)); }
+html.shell-inset .chat-embed-wrap.overlay { top: var(--shell-top); }
+/* The banner is the row: its height, its text centered on the window and
+   clear of the window controls on both sides. */
+html.shell-inset .cls-banner:not(.banner-preview) {
+  display: flex; align-items: center; justify-content: center;
+  box-sizing: border-box; min-height: var(--shell-top);
+  padding: 2px calc(var(--shell-controls) + 6px); line-height: 1.15;
+  user-select: none; -webkit-user-select: none;
+}
+html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-top: 6vh; }
+
+/* Suggested folders above the folder to index (LocalLibraryForm). */
+.lib-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.lib-suggest-label { font-size: 0.85rem; margin-right: 2px; }
+.lib-suggest-note { margin: 0; font-size: 0.85rem; max-width: var(--settings-measure); }
+
+/* A PDF's pages drawn in the page by pdf.js (PdfJsPages), where the
+   server has no poppler: each the column's width, white like paper. */
+.pdf-page-js { width: 100%; max-width: 1100px; margin: 0 auto 12px; background: #fff; box-shadow: 0 0 0 1px var(--ade-border, #ddd); }
+.pdf-page-js canvas { display: block; width: 100%; height: 100%; }

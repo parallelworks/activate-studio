@@ -24,6 +24,8 @@
 # the log says so.
 #
 # Usage: studio-run.sh DATA_DIR
+#        studio-run.sh --serve DATA_DIR start the server once, in the foreground (the
+#                                       stand-in node/bin/node runs this; see serve)
 #        studio-run.sh --system-proxy   print those variables, one KEY=VALUE a line
 set -u
 
@@ -53,6 +55,12 @@ system_proxy() {
 if [ "${1:-}" = --system-proxy ]; then
   system_proxy
   exit 0
+fi
+
+SERVE_ONCE=0
+if [ "${1:-}" = --serve ]; then
+  SERVE_ONCE=1
+  shift
 fi
 
 RES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -135,65 +143,136 @@ roll_back() {
   exec /bin/bash "$APP/Contents/Resources/studio-run.sh" "$DATA"
 }
 
+# One start of the server, in the foreground: the environment and the
+# choice of server, then exec. The loop below runs it in a subshell; an
+# older run loop reaches it through the stand-in node/bin/node (--serve).
+serve() {
+  unset KB_ROOT
+  # Defaults that studio.env may change; everything it sets is exported.
+  export PORT=4180 INDEX_BASE="$DATA/index" PYTHON_BIN="$RES/python/bin/python3" \
+    STUDIO_GUFI_PREFIX="$RES/gufi" NODE_ENV=production
+  if [ -f "$CONFIG" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    . "$CONFIG"
+    set +a
+  fi
+  # The system's proxy, read at each start since a laptop changes
+  # networks, unless studio.env names one.
+  if [ -z "${HTTPS_PROXY:-}${https_proxy:-}${HTTP_PROXY:-}${http_proxy:-}" ]; then
+    while IFS='=' read -r key value; do
+      case "$key" in
+        HTTPS_PROXY|HTTP_PROXY) export "$key=$value" ;;
+        NO_PROXY) [ -n "${NO_PROXY:-}${no_proxy:-}" ] || export "NO_PROXY=$value" ;;
+        PAC) echo "$(stamp) the system's proxy is set by an automatic configuration file ($value), which the Studio does not follow; set HTTPS_PROXY in studio.env if it cannot reach the internet" ;;
+      esac
+    done < <(system_proxy)
+  fi
+  if [ -n "${KB_ROOT:-}" ]; then
+    # A folder the person chose holds their own material: no starter
+    # folders are written into it.
+    [ -n "${KB_STARTER_DIRS+set}" ] || export KB_STARTER_DIRS=
+  else
+    # The default folder; on first start the server writes a README and
+    # a few starter folders into it.
+    export KB_ROOT="$DEFAULT_KB"
+    mkdir -p "$KB_ROOT"
+  fi
+  # Not settings: loopback only, the launcher's restart and settings file,
+  # and where the app and its data are, for updates. Python writes no
+  # bytecode caches, which would land inside the app and break its
+  # signature's seal.
+  export HOST=127.0.0.1 STUDIO_CONFIG_FILE="$CONFIG" STUDIO_RESTARTABLE=1 \
+    STUDIO_APP_BUNDLE="$APP" STUDIO_DATA_DIR="$DATA" PYTHONDONTWRITEBYTECODE=1
+  # The app's tesseract comes ahead of any other, with its English model
+  # and configs, unless studio.env names another TESSDATA_PREFIX.
+  # An older run loop that started this (--serve) has put its own
+  # node/bin, now this copy's stand-in, on the PATH already: it is taken out.
+  PATH="$(printf '%s' "${PATH:-}" | tr ':' '\n' | grep -vxF "$RES/node/bin" | paste -sd: - || true)"
+  export PATH="$RES/node/bin:$RES/ocr/bin:${LOGIN_PATH:+$LOGIN_PATH:}${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
+  export TESSDATA_PREFIX="${TESSDATA_PREFIX:-$RES/ocr/share/tessdata}"
+  # The embedding models ship with the app; the index refers to them.
+  # The Go version carries no GGUF model (its server embeds with ONNX).
+  model="$INDEX_BASE/models/minilm384.gguf"
+  if [ -f "$RES/models/minilm384.gguf" ] && { [ -L "$model" ] || [ ! -e "$model" ]; }; then
+    mkdir -p "$INDEX_BASE/models" && ln -sfn "$RES/models/minilm384.gguf" "$model"
+  fi
+  # The ONNX runtime library the Go server's embedder loads (app/lib,
+  # where it looks on its own; named here so that a copy elsewhere on the
+  # system is never used), and the STEP preview's modules (app/occt).
+  if [ -f "$RES/app/lib/libonnxruntime.dylib" ]; then
+    export STUDIO_ORT_LIB="${STUDIO_ORT_LIB:-$RES/app/lib/libonnxruntime.dylib}"
+  fi
+  if [ -f "$RES/app/occt/occt-import-js.wasm" ]; then
+    export STUDIO_OCCT_WASM="${STUDIO_OCCT_WASM:-$RES/app/occt/occt-import-js.wasm}"
+  fi
+  # A Go-only payload has no Python; the Go server then reads with its own.
+  if [ -f "$RES/node/PLACEHOLDER" ] && [ ! -x "$PYTHON_BIN" ]; then unset PYTHON_BIN; fi
+  onnx="$INDEX_BASE/models/minilm-l6"
+  if [ -d "$RES/models/minilm-l6" ] && { [ -L "$onnx" ] || [ ! -e "$onnx" ]; }; then
+    ln -sfn "$RES/models/minilm-l6" "$onnx"
+  fi
+  # Which server runs (docs/UPDATES.md, "The Go version"): the Go server
+  # (app/bin/studio-server) where Resources/manifest.json says
+  # "server": "go", or STUDIO_GO_SERVER=1 asks for it (in studio.env, or
+  # from the window, which names the binary in STUDIO_GO_SERVER_BIN);
+  # STUDIO_GO_SERVER=0 asks for Node. With a Node in the app, Node runs
+  # behind the Go server on a loopback port for what is not ported yet and
+  # its exit status is passed on; a app without one (node/PLACEHOLDER:
+  # node/bin/node is there only for the checks of older updaters) has the
+  # Go server answer everything itself.
+  go_bin="${STUDIO_GO_SERVER_BIN:-$RES/app/bin/studio-server}"
+  want_go="${STUDIO_GO_SERVER:-}"
+  if [ -z "$want_go" ]; then
+    want_go=0
+    [ -n "${STUDIO_GO_SERVER_BIN:-}" ] && want_go=1
+    grep -q '"server": *"go"' "$RES/manifest.json" 2>/dev/null && want_go=1
+  fi
+  real_node=0
+  [ -x "$RES/node/bin/node" ] && [ ! -e "$RES/node/PLACEHOLDER" ] && real_node=1
+  if [ "$want_go" = 1 ] && [ -x "$go_bin" ]; then
+    export STUDIO_PROJECT_ROOT="$RES/app"
+    [ -x "$RES/app/bin/semantic-map" ] && export STUDIO_SEMANTIC_MAP_BIN="${STUDIO_SEMANTIC_MAP_BIN:-$RES/app/bin/semantic-map}"
+    if [ "$real_node" = 1 ]; then
+      echo "$(stamp) starting the Go server on http://127.0.0.1:$PORT/ with $KB_ROOT, Node behind it"
+      export STUDIO_NODE_SPAWN=1 STUDIO_NODE_BIN="$RES/node/bin/node" STUDIO_NODE_MAIN="$RES/app/server/dist/main.js"
+    else
+      echo "$(stamp) starting the Go server on http://127.0.0.1:$PORT/ with $KB_ROOT"
+      export STUDIO_NODE=off PATH="${PATH#"$RES/node/bin:"}"
+    fi
+    exec "$go_bin"
+  fi
+  if [ "$real_node" = 0 ]; then
+    echo "$(stamp) this app has no Node, and its Go server is missing or turned off (STUDIO_GO_SERVER=0)"
+    exit 1
+  fi
+  echo "$(stamp) starting on http://127.0.0.1:$PORT/ with $KB_ROOT"
+  exec "$RES/node/bin/node" "$RES/app/server/dist/main.js"
+}
+
+# The stand-in node/bin/node of a Go copy, run as its server by the run loop
+# of a release before v1.170 (docs/UPDATES.md, "The Go version"): one start,
+# under that loop, which restarts it and watches pending.json as it would
+# Node.
+if [ "$SERVE_ONCE" = 1 ]; then
+  echo "$(stamp) an earlier version's run loop starts this copy's server (studio-run.sh --serve)"
+  serve
+  exit 1
+fi
+
 backoff=2
 failures=
 while [ "$stopping" = 0 ]; do
+  # An update that replaces the whole app (requiresRelaunch, docs/UPDATES.md)
+  # may hold no Node: this loop, the old copy's, stops, and the reopened app
+  # starts its own server.
+  if [ ! -x "$RES/node/bin/node" ] && [ ! -x "$RES/app/bin/studio-server" ] && [ -f "$DATA/updates/relaunch.json" ]; then
+    echo "$(stamp) the app was replaced by a version that runs once the app is reopened; this run loop stops" >>"$LOG"
+    exit 0
+  fi
   # One previous log is kept.
   if [ -f "$LOG" ] && [ $(( $(wc -c <"$LOG") )) -gt 10485760 ]; then mv -f "$LOG" "$LOG.1"; fi
-  (
-    unset KB_ROOT
-    # Defaults that studio.env may change; everything it sets is exported.
-    export PORT=4180 INDEX_BASE="$DATA/index" PYTHON_BIN="$RES/python/bin/python3" \
-      STUDIO_GUFI_PREFIX="$RES/gufi" NODE_ENV=production
-    if [ -f "$CONFIG" ]; then
-      set -a
-      # shellcheck source=/dev/null
-      . "$CONFIG"
-      set +a
-    fi
-    # The system's proxy, read at each start since a laptop changes
-    # networks, unless studio.env names one.
-    if [ -z "${HTTPS_PROXY:-}${https_proxy:-}${HTTP_PROXY:-}${http_proxy:-}" ]; then
-      while IFS='=' read -r key value; do
-        case "$key" in
-          HTTPS_PROXY|HTTP_PROXY) export "$key=$value" ;;
-          NO_PROXY) [ -n "${NO_PROXY:-}${no_proxy:-}" ] || export "NO_PROXY=$value" ;;
-          PAC) echo "$(stamp) the system's proxy is set by an automatic configuration file ($value), which the Studio does not follow; set HTTPS_PROXY in studio.env if it cannot reach the internet" ;;
-        esac
-      done < <(system_proxy)
-    fi
-    if [ -n "${KB_ROOT:-}" ]; then
-      # A folder the person chose holds their own material: no starter
-      # folders are written into it.
-      [ -n "${KB_STARTER_DIRS+set}" ] || export KB_STARTER_DIRS=
-    else
-      # The default folder; on first start the server writes a README and
-      # a few starter folders into it.
-      export KB_ROOT="$DEFAULT_KB"
-      mkdir -p "$KB_ROOT"
-    fi
-    # Not settings: loopback only, the launcher's restart and settings file,
-    # and where the app and its data are, for updates. Python writes no
-    # bytecode caches, which would land inside the app and break its
-    # signature's seal.
-    export HOST=127.0.0.1 STUDIO_CONFIG_FILE="$CONFIG" STUDIO_RESTARTABLE=1 \
-      STUDIO_APP_BUNDLE="$APP" STUDIO_DATA_DIR="$DATA" PYTHONDONTWRITEBYTECODE=1
-    # The app's tesseract comes ahead of any other, with its English model
-    # and configs, unless studio.env names another TESSDATA_PREFIX.
-    export PATH="$RES/node/bin:$RES/ocr/bin:${LOGIN_PATH:+$LOGIN_PATH:}${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
-    export TESSDATA_PREFIX="${TESSDATA_PREFIX:-$RES/ocr/share/tessdata}"
-    # The embedding models ship with the app; the index refers to them.
-    model="$INDEX_BASE/models/minilm384.gguf"
-    if [ -L "$model" ] || [ ! -e "$model" ]; then
-      mkdir -p "$INDEX_BASE/models" && ln -sfn "$RES/models/minilm384.gguf" "$model"
-    fi
-    onnx="$INDEX_BASE/models/minilm-l6"
-    if [ -d "$RES/models/minilm-l6" ] && { [ -L "$onnx" ] || [ ! -e "$onnx" ]; }; then
-      ln -sfn "$RES/models/minilm-l6" "$onnx"
-    fi
-    echo "$(stamp) starting on http://127.0.0.1:$PORT/ with $KB_ROOT"
-    exec "$RES/node/bin/node" "$RES/app/server/dist/main.js"
-  ) >>"$LOG" 2>&1 &
+  ( serve ) >>"$LOG" 2>&1 &
   pid=$!
   started=$(date +%s)
   wait "$pid"

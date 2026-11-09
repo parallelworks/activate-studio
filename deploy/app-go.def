@@ -1,0 +1,116 @@
+# ============================================================================
+# Studio, the Go version: a Singularity/Apptainer recipe for the container
+# deployment, with no Node and no Python (docs/UPDATES.md, "The Go version").
+#
+#   The image carries the Linux payload that deploy/linux/build_app.sh makes
+#   by default (STUDIO_SERVER=go-only): the Go server (app/bin/studio-server), the
+#   built SPA, the lean GUFI (sqlite-vec, no llama.cpp), tesseract, the ONNX
+#   runtime library and model, and the STEP preview's modules. Only poppler
+#   (optional: the Go PDF renderer reads PDFs without it) and LibreOffice
+#   (office page previews) come from Debian.
+#   Runtime contract, as deploy/app.def: binds 0.0.0.0:$PORT, serves HTTP at
+#   "/"; the corpus is bind-mounted and named by KB_ROOT; the index,
+#   settings and credential store live under DATA_DIR. INDEX_ON_START=1
+#   builds or refreshes the index before serving.
+#
+# Build:   deploy/linux/build_app.sh (its default build), then unpack
+#          its archive so that .container/activate-studio is the payload
+#          tree, and from the repo root:
+#            apptainer build studio-go.sif deploy/app-go.def
+# Test:    apptainer run --env PORT=8080 --env KB_ROOT=/kb --env DATA_DIR=/data \
+#              --bind /path/to/corpus:/kb --bind /path/to/state:/data studio-go.sif
+# ============================================================================
+
+Bootstrap: docker
+From: debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+
+%files
+    .container/activate-studio /app
+
+%post
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    # One package per need, each proved below: poppler for PDFs where it is
+    # faster than the Go renderer, LibreOffice for office page previews,
+    # attr for GUFI's labels, fonts for rendered pages.
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl attr poppler-utils \
+        libreoffice-writer-nogui libreoffice-impress-nogui libreoffice-calc-nogui \
+        fonts-liberation fonts-dejavu-core
+    rm -rf /var/lib/apt/lists/*
+    command -v pdftotext
+    command -v soffice
+    # The payload is the Go version, complete: its server, a GUFI that
+    # starts, its tesseract with the English model, the ONNX runtime and
+    # model, and nothing of Node's or Python's.
+    test -f /app/node/PLACEHOLDER
+    grep -q '"server": *"go"' /app/manifest.json
+    /app/app/bin/studio-server routes >/dev/null
+    test -f /app/app/lib/libonnxruntime.so.1
+    test -x /app/app/bin/remote/linux-amd64/studio-remote
+    test -f /app/app/indexer/embed_deps.json
+    test -f /app/models/minilm-l6/model.onnx
+    test -f /app/app/occt/occt-import-js.wasm
+    /app/gufi/bin/gufi_query --help >/dev/null 2>&1 || /app/gufi/bin/gufi_query -h >/dev/null 2>&1 || true
+    for f in /app/gufi/bin/* /app/gufi/lib/*.so* /app/ocr/bin/* /app/app/lib/*.so*; do
+        [ -f "$f" ] || continue
+        if ldd "$f" 2>/dev/null | grep "not found"; then
+            echo "unresolved libraries in $f"
+            exit 1
+        fi
+    done
+    TESSDATA_PREFIX=/app/ocr/share/tessdata /app/ocr/bin/tesseract --list-langs 2>&1 | grep -qx eng
+    # The window shells, installer and placeholders are the desktop's; the
+    # container has no use for them.
+    rm -rf /app/bin /app/share/applications /app/share/icons /app/install.sh /app/uninstall.sh
+    cat > /app/start.sh << 'START'
+#!/bin/sh
+# The index lives on the bind-mounted data directory, never in the image;
+# the ONNX model is linked there, so a new image's model is the one used.
+set -e
+mkdir -p "$INDEX_BASE/models"
+if [ -L "$INDEX_BASE/models/minilm-l6" ] || [ ! -e "$INDEX_BASE/models/minilm-l6" ]; then
+    ln -sfn /app/models/minilm-l6 "$INDEX_BASE/models/minilm-l6"
+fi
+# INDEX_ON_START=1 starts a full index once the server answers (the Node
+# image built it before serving; the Go server serves while it builds).
+case "${INDEX_ON_START:-0}" in
+    1|true|TRUE|yes|on)
+        (for _ in $(seq 1 120); do
+            curl -fsS -m 2 "http://127.0.0.1:${PORT:-4180}/api/version" >/dev/null 2>&1 && break
+            sleep 1
+        done
+        curl -fsS -m 30 -X POST -H 'content-type: application/json' -d '{}' \
+            "http://127.0.0.1:${PORT:-4180}/api/reindex" >/dev/null ||
+            echo "WARNING: the index on start did not begin") &
+        ;;
+esac
+exec /app/app/bin/studio-server
+START
+    chmod +x /app/start.sh
+
+%environment
+    export HOST=0.0.0.0
+    export STUDIO_NODE=off
+    export STUDIO_PROJECT_ROOT=/app/app
+    export STUDIO_ORT_LIB=/app/app/lib/libonnxruntime.so.1
+    export STUDIO_OCCT_WASM=/app/app/occt/occt-import-js.wasm
+    export STUDIO_SEMANTIC_MAP_BIN=/app/app/bin/semantic-map
+    export GUFI_BIN=/app/gufi/bin
+    export PATH=/app/ocr/bin:$PATH
+    export TESSDATA_PREFIX=/app/ocr/share/tessdata
+    export KB_ROOT="${KB_ROOT:-/kb}"
+    export INDEX_BASE="${DATA_DIR:-/data}/index"
+
+%startscript
+    exec /app/start.sh
+
+%runscript
+    exec /app/start.sh
+
+%labels
+    org.parallelworks.app studio
+    org.parallelworks.server go
+    org.parallelworks.pattern generic-interactive-app
+    org.parallelworks.contract "PORT + KB_ROOT + DATA_DIR env in, HTTP at / out"

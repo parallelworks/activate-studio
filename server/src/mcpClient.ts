@@ -42,8 +42,16 @@ const cache = new Map<string, Entry>()
  *  because MCP tool names commonly contain single ones. */
 const SEP = '__'
 
+// The server list the cache was filled for. A settings write by another
+// process (the Go server's PUT /api/settings) changes it without a call to
+// invalidateRemote, so a different list drops the cache here.
+let cachedFor = ''
+
 export function remoteServers(): RemoteMcpServer[] {
-  return (effectiveSettings().mcpServers ?? []).filter(s => s?.name && s?.url)
+  const servers = (effectiveSettings().mcpServers ?? []).filter(s => s?.name && s?.url)
+  const key = JSON.stringify(servers)
+  if (key !== cachedFor) { cache.clear(); cachedFor = key }
+  return servers
 }
 
 function headersFor(s: RemoteMcpServer, session: string | null): Record<string, string> {

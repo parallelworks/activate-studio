@@ -72,13 +72,9 @@ describe('sidebar sections', () => {
     expect(onChange).toHaveBeenLastCalledWith(['search', 'agents', 'settings', 'help'])
   })
 
-  it('with AI features off, Chat and Agents are off and cannot be switched on', () => {
+  it('with AI features off, Chat and Agents are not offered', () => {
     render(<SidebarSwitches value={undefined} platform aiEnabled={false} onChange={() => {}} />)
-    for (const name of ['Chat', 'Agents']) {
-      expect(screen.getByRole('switch', { name })).toHaveAttribute('aria-checked', 'false')
-      expect(screen.getByRole('switch', { name })).toHaveAttribute('data-disabled')
-    }
-    expect(screen.getAllByText('(AI features off)')).toHaveLength(2)
+    for (const name of ['Chat', 'Agents']) expect(screen.queryByRole('switch', { name })).toBeNull()
     expect(screen.getByRole('switch', { name: 'Query' })).toHaveAttribute('aria-checked', 'true')
   })
 })
@@ -339,7 +335,7 @@ describe('the setup wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Up' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Research' }, { timeout: 4000 }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('/home/u/Research'))
-    expect(screen.getByText(/Indexes can be added or changed at any time in Settings, Libraries\./)).toBeInTheDocument()
+    expect(screen.getByText(/Indexes can be added or changed at any time in Settings, Indexing, Libraries\./)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Use this folder' }))
     expect(await screen.findByText('The Studio restarted and now uses /home/u/Research.')).toBeInTheDocument()
     expect(s.calls.find(c => c.url === '/api/setup/primary-folder')?.body).toEqual({ path: '/home/u/Research' })
@@ -412,8 +408,9 @@ describe('the setup wizard', () => {
     next()
 
     heading('Sidebar')
-    await waitFor(() => expect(screen.getByRole('switch', { name: 'Chat' })).toHaveAttribute('data-disabled'))
-    expect(screen.getByRole('switch', { name: 'Agents' })).toHaveAttribute('aria-checked', 'false')
+    await waitFor(() => expect(screen.queryByRole('switch', { name: 'Chat' })).toBeNull())
+    expect(screen.queryByRole('switch', { name: 'Agents' })).toBeNull()
+    expect(screen.getByRole('switch', { name: 'Library' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     heading('AI features')
     next()

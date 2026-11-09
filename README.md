@@ -10,7 +10,9 @@ A web workspace over a folder of documents. It indexes the folder, including the
 
 **On Linux (x86_64, glibc 2.28 or newer, so RHEL 8 and 9 and their rebuilds, Ubuntu 20.04 and later, Debian 11 and later):** a per-user install with no administrator rights (`activate-studio/install.sh` from the unpacked archive) or an administrator's `.deb` (Ubuntu, Debian) or `.rpm` (RHEL, Rocky, Alma) puts the same Studio in its own window, where WebKitGTK is installed, and in your browser where it is not. See [`docs/LINUX-APP.md`](docs/LINUX-APP.md).
 
-**On Windows:** the Studio runs in WSL2 (Windows Subsystem for Linux) and opens in a Windows browser, or a browser can open a Studio that runs on a Linux machine. There is no native Windows build. See [`docs/WINDOWS.md`](docs/WINDOWS.md).
+The macOS and Linux apps are built as the Go version: the Go server (`server-go`) with GUFI, tesseract and the embedding model, and no Node or Python. Installed copies of v1.188 and earlier move to it through their normal update ([`docs/UPDATES.md`](docs/UPDATES.md), "The Go version"). The container image on ghcr.io is still built from `deploy/app.def` with Node; `deploy/app-go.def` builds the Go one.
+
+**On Windows:** the Linux app runs inside WSL2 (Windows Subsystem for Linux), in its own window through WSLg or in a Windows browser, and indexes Windows folders through `/mnt/c`. There is no native Windows build, and this setup has been tested only in containers so far. A browser can also open a Studio that runs on a Linux machine. See [`docs/WINDOWS.md`](docs/WINDOWS.md).
 
 **On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.
 
@@ -22,7 +24,7 @@ pnpm install && pnpm build
 indexer/setup_gufi.sh                      # once: builds the GUFI index engine (release 0.8.0)
 export KB_ROOT=/path/to/your/folder
 export OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=<your key>
-indexer/reindex.sh                         # indexes the folder (or later: Settings, Libraries, Build index)
+indexer/reindex.sh                         # indexes the folder (or later: Settings, Indexing, Libraries, Build index)
 pnpm start                                 # then open http://localhost:4080
 ```
 
@@ -37,11 +39,12 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 - **Stats** maps each library, here or on another system: its folders by size, and its files by what they say.
 - **Workflows**, on ACTIVATE, runs chosen platform workflows from their own forms, and opens the sessions they start.
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
+- **Sign-in**, on a Studio several people share: through the ACTIVATE session proxy, or through ACTIVATE or any other OpenID Connect provider ([`docs/DEPLOY.md`](docs/DEPLOY.md)).
 - **Other tools**, such as pw code, can search and read the same knowledge base over MCP (search, the text the index holds, and the original files) or an OpenAI-compatible endpoint.
 
 ### Index depth
 
-Each library the Studio builds has an index depth, set on a scale in Settings, Libraries, in setup, and when the library is added. Each stop adds to the one before and takes longer to index:
+Each library the Studio builds has an index depth, set on a scale in Settings, Indexing, Libraries, in setup, and when the library is added. Each stop adds to the one before and takes longer to index:
 
 | Depth | What the index holds |
 |---|---|
@@ -51,7 +54,7 @@ Each library the Studio builds has an index depth, set on a scale in Settings, L
 | Meaning on documents | Search by meaning over the first four passages of each PDF, Office, text, Markdown and image file. The default for the main folder and the libraries the Studio builds, here or on a remote system, computed last, after names and text are searchable. |
 | Meaning on all files | Search by meaning over up to twelve passages of every file with text. |
 
-Many folders (code, data, simulation output) need no more than Text. Settings, Indexing also sets the speed of search by meaning: **Standard** embeds the first 256 tokens of each passage, and **Faster** the first 128, in well under half the time with slightly lower ranking. Embeddings come from all-MiniLM-L6-v2 through ONNX Runtime (int8), which the macOS app and the container carry; a clone gets it from `indexer/setup_gufi.sh`, or `python3 indexer/fetch_embed.py --deps indexer/.deps --model index/models/minilm-l6`. A build on a remote system embeds with the same model, which the first build there sends with its packages for the Python there. An index connected as it is stays as it was built.
+Many folders (code, data, simulation output) need no more than Text. Settings, Indexing, Building also sets the speed of search by meaning: **Standard** embeds the first 256 tokens of each passage, and **Faster** the first 128, in well under half the time with slightly lower ranking. Embeddings come from all-MiniLM-L6-v2 through ONNX Runtime (int8), which the macOS app and the container carry; a clone gets it from `indexer/setup_gufi.sh`, or `python3 indexer/fetch_embed.py --deps indexer/.deps --model index/models/minilm-l6`. A build on a remote system embeds with the same model, which the first build there sends with its packages for the Python there. An index connected as it is stays as it was built.
 
 The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the details in [`docs/REFERENCE.md`](docs/REFERENCE.md). Its What's new page shows [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -68,9 +71,10 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
 | [`docs/MACOS.md`](docs/MACOS.md) | the macOS app, and running from a clone on macOS |
+| [`docs/UPDATES.md`](docs/UPDATES.md) | update channels (Stable and Preview), installing another version, the state snapshot and format, and what the Go version must keep |
 | [`docs/LINUX-APP.md`](docs/LINUX-APP.md) | the Linux app: per-user install, `.deb` and `.rpm`, requirements, update and uninstall, the install layout |
 | [`docs/GUFI-MACOS.md`](docs/GUFI-MACOS.md) | GUFI built for macOS 14 and later: the published archive, building and checking it |
-| [`docs/WINDOWS.md`](docs/WINDOWS.md) | running the Studio on Windows through WSL2, with your folders, shares and models |
+| [`docs/WINDOWS.md`](docs/WINDOWS.md) | the Linux app on Windows through WSL2: install, window or browser, Windows folders under `/mnt/c`, labels and sync there |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the index, retrieval, and server work |
 
 ## Built on

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Callout, Loader } from '@parallelworks/ui'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { withLibrary } from '../api'
 
 interface ModelMesh {
   name?: string
@@ -78,7 +79,7 @@ export function ModelViewer({ path }: { path: string }) {
     const ro = new ResizeObserver(size)
     ro.observe(mount)
 
-    fetch(`/api/kb/model?path=${encodeURIComponent(path)}`)
+    fetch(withLibrary(`/api/kb/model?path=${encodeURIComponent(path)}`))
       .then(async r => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`)
         return decodeModel(await r.arrayBuffer())

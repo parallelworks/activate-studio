@@ -6,8 +6,9 @@ import { UIProvider } from '@parallelworks/ui'
 import { useRunFile } from './runFile'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
-import { applyRememberedFavicon } from './config'
+import { applyRememberedFavicon, applyRememberedNavWidth } from './config'
 import { keepShellInPlace } from './shellScroll'
+import { installDownloadNotices } from './downloadNotice'
 // Geist Sans and Geist Mono, the platform's typefaces, from the shared package.
 import '@parallelworks/ui/fonts.css'
 // The UI package's prebuilt stylesheet (chat rules included) loads before
@@ -19,11 +20,14 @@ import '@parallelworks/ui/logviewer.css'
 import './styles.css'
 
 keepShellInPlace()
+// A notice for each file the page saves (an exported conversation, a CSV).
+installDownloadNotices()
 
 // Before the first render: components read the hash while initializing.
 restoreLastHash()
 rememberHashChanges()
 applyRememberedFavicon()
+applyRememberedNavWidth()
 
 // The workflow parser (and its WebAssembly) loads only once a workflow form
 // or graph first renders.

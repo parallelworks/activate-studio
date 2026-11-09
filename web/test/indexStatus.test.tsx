@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IndexJob, IndexStatus } from '../src/api'
 import { fmtDuration, indexSummary, jobPercent } from '../src/indexActivity'
 
-// The footer's index line, the status panel, Settings, Libraries and
+// The footer's index line, the status panel, Settings, Indexing, Libraries and
 // Statistics read one status, once per poll, so they say the same thing,
 // follow a running job, and say done when it is.
 

@@ -26,3 +26,4 @@ build-info.json
 
 # The ONNX embedding packages indexer/fetch_embed.py --deps puts here for a clone.
 indexer/.deps/
+!server-go/internal/index/

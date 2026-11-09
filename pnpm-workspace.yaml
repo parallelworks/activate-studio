@@ -12,17 +12,13 @@ engineStrict: true
 # Floors for transitive packages with published advisories, held within
 # the major version their dependents ask for.
 overrides:
-  fast-uri@3: ^3.1.6
-  fast-uri@4: ^4.1.4
+  fast-uri@3: ^3.1.9
+  fast-uri@4: ^4.2.3
   js-yaml@4: ^4.3.2
-  dompurify@3: ^3.4.16
+  dompurify@3: ^3.4.17
   brace-expansion@5: ^5.0.12
   source-map-js@1: ^1.2.2
   '@fastify/busboy@3': ^3.2.2
   # The one exception to "within the major": dependents ask for ^0.16 and
   # no 0.16.x carries the prototype-pollution fix (GHSA-238p-pmpm-9mq7).
   katex@<0.18.2: ^0.18.2
-# Until a @parallelworks/ui release has the chat scroll fix (foundation #647).
-# Remove with the next version taken: a patch names the version it applies to.
-patchedDependencies:
-  '@parallelworks/ui@0.114.1': patches/@parallelworks__ui@0.114.1.patch

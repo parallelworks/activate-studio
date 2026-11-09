@@ -1,9 +1,15 @@
 # Build the Linux x86_64 payload of ACTIVATE Studio, the equivalent of the
-# macOS app's contents without a window or a package: a relocatable
-# directory tree (Node, Python with its packages, GUFI with its AI pieces
-# and the models, tesseract, the built server and web app, the document
-# converter's Linux binary) in activate-studio-linux-x86_64.tar.gz, with a
-# manifest and a SHA-256. See docs/LINUX-APP.md.
+# macOS app's contents without a package: a relocatable directory tree in
+# activate-studio-linux-x86_64.tar.gz, with a manifest and a SHA-256. See
+# docs/LINUX-APP.md. The payload is the Go version
+# (deploy/linux/build_app.sh's default, STUDIO_SERVER=go-only): the Go
+# server with the ONNX runtime and model, the built web app, the lean GUFI
+# (sqlite-vec, no llama.cpp), tesseract, the STEP preview's modules and the
+# window shells, with no Node and no Python. It is updated to from the
+# Node releases (v1.187, the first Linux release, and v1.188) through their
+# own updaters, on the Stable and the Preview channel (bridge-e2e), and
+# built into the Go container image (container-go). The earlier builds (node, and go with Node behind it) are
+# built on request (the legacy input) and do not fail the run.
 #
 # GUFI and tesseract are built from source in a Rocky Linux 8 container
 # (glibc 2.28, the oldest target), so one payload runs on RHEL 8 and later
@@ -44,6 +50,13 @@ on:
       release:
         description: A published release (such as v1.150) to build the payload for and attach it to; blank to build and check only
         default: ""
+      channel:
+        description: For a release, the channel its manifest is signed for (stable, or preview for a prerelease that only Preview installs take; a preview release leaves the fixed linux release alone)
+        default: stable
+      legacy:
+        description: Also build and check the earlier payloads (STUDIO_SERVER=node, and go with Node behind it); they do not fail the run
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -57,9 +70,9 @@ env:
   BUILD_IMAGE: rockylinux:8
 
 jobs:
-  # GUFI (with sqlite-vec and sqlite-lembed) and tesseract, built in a
-  # Rocky 8 container. They do not depend on each other, so they build side
-  # by side.
+  # The lean GUFI (sqlite-vec, no llama.cpp: GUFI_LEMBED=0) and tesseract,
+  # built in a Rocky 8 container. They do not depend on each other, so they
+  # build side by side.
   native:
     strategy:
       fail-fast: false
@@ -90,7 +103,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/cache"
           start=$(date +%s)
           docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/out" -v "$RUNNER_TEMP/cache:/cache" \
-            -e OUT_DIR=/out -e CACHE_DIR=/cache -e "JOBS=$(nproc)" "$BUILD_IMAGE" bash "/src/deploy/linux/build_$COMPONENT.sh"
+            -e OUT_DIR=/out -e CACHE_DIR=/cache -e GUFI_LEMBED=0 -e "JOBS=$(nproc)" "$BUILD_IMAGE" bash "/src/deploy/linux/build_$COMPONENT.sh"
           echo "build_$COMPONENT took $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -138,9 +151,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # The payload: the server and web app built here, the pinned Node and
-  # Python, the two archives above and the window shells, put together and
-  # checked.
+  # The payload: the Go server and web app built here, the two archives
+  # above and the window shells, put together and checked.
   app:
     needs: [native, shell]
     runs-on: ubuntu-24.04
@@ -160,6 +172,11 @@ jobs:
           # No cache: this job's output is what a release would ship.
           package-manager-cache: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          # No cache: this job's output is what a release would ship.
+          cache: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: native-*
@@ -186,9 +203,9 @@ jobs:
           shellcheck -x -s bash -S warning desktop/linux/*.sh desktop/linux/activate-studio
           export SHELL_DIR="$RUNNER_TEMP/shells"
           ls -l "$SHELL_DIR"
-          (cd "$RUNNER_TEMP/native" && sha256sum -c gufi-linux-x86_64.tar.gz.sha256 ocr-linux-x86_64.tar.gz.sha256)
+          (cd "$RUNNER_TEMP/native" && sha256sum -c gufi-vec-linux-x86_64.tar.gz.sha256 ocr-linux-x86_64.tar.gz.sha256)
           start=$(date +%s)
-          GUFI_TARBALL="$RUNNER_TEMP/native/gufi-linux-x86_64.tar.gz" OCR_TARBALL="$RUNNER_TEMP/native/ocr-linux-x86_64.tar.gz" \
+          GUFI_TARBALL="$RUNNER_TEMP/native/gufi-vec-linux-x86_64.tar.gz" OCR_TARBALL="$RUNNER_TEMP/native/ocr-linux-x86_64.tar.gz" \
             deploy/linux/build_app.sh 2>&1 | tee "$RUNNER_TEMP/build_app.log"
           {
             echo "### Payload"
@@ -197,7 +214,7 @@ jobs:
             ls -l "$OUT_DIR"/activate-studio-linux-x86_64.*
             du -sh "$OUT_DIR/activate-studio"
             echo '```'
-            sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 12
+            sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 14
             echo '```'
             cat "$OUT_DIR/activate-studio-linux-x86_64.manifest.json"
             echo '```'
@@ -214,7 +231,8 @@ jobs:
 
   # The payload unpacked in a clean container of each target distribution
   # and run as a plain user, on the image's own packages plus only the ones
-  # in extra_packages (which the log records).
+  # in extra_packages (which the log records) and python3, which the checks
+  # are written in and the payload no longer carries.
   test:
     needs: app
     strategy:
@@ -281,7 +299,7 @@ jobs:
       - name: run it in ${{ matrix.image }}
         env:
           IMAGE: ${{ matrix.image }}
-          EXTRA_PACKAGES: ${{ matrix.extra_packages }}
+          EXTRA_PACKAGES: ${{ matrix.extra_packages }} python3
         run: |
           set -euo pipefail
           (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
@@ -307,6 +325,223 @@ jobs:
           path: ${{ runner.temp }}/test.log
           retention-days: 30
 
+  # The earlier payloads, on request (the legacy input): Node
+  # (STUDIO_SERVER=node, the build of v1.188 and earlier) and the Go server
+  # with Node behind it (go), both with the full GUFI (sqlite-lembed and
+  # llama.cpp) that Node's indexer embeds with. Kept buildable for a
+  # fallback; each is built, then run in a Rocky 8 container. They do not
+  # fail the run and publish nothing.
+  native-legacy:
+    if: inputs.release == '' && inputs.legacy
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: build the full GUFI in Rocky Linux 8
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/cache"
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/out" -v "$RUNNER_TEMP/cache:/cache" \
+            -e OUT_DIR=/out -e CACHE_DIR=/cache -e GUFI_LEMBED=1 -e "JOBS=$(nproc)" "$BUILD_IMAGE" bash /src/deploy/linux/build_gufi.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: legacy-gufi
+          path: |
+            ${{ runner.temp }}/out/*.tar.gz
+            ${{ runner.temp }}/out/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  app-legacy:
+    if: inputs.release == '' && inputs.legacy
+    needs: [native, native-legacy, shell]
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [node, go]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{native-ocr,legacy-gufi}"
+          path: ${{ runner.temp }}/native
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: shell-*
+          path: ${{ runner.temp }}/shells
+          merge-multiple: true
+      - name: install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: build the payload
+        env:
+          OUT_DIR: ${{ runner.temp }}/out
+          CACHE_DIR: ${{ runner.temp }}/cache
+          SKIP_BUILD: "1"
+          STUDIO_SERVER: ${{ matrix.server }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends imagemagick patchelf libatomic1
+          export SHELL_DIR="$RUNNER_TEMP/shells"
+          (cd "$RUNNER_TEMP/native" && sha256sum -c gufi-linux-x86_64.tar.gz.sha256 ocr-linux-x86_64.tar.gz.sha256)
+          GUFI_TARBALL="$RUNNER_TEMP/native/gufi-linux-x86_64.tar.gz" OCR_TARBALL="$RUNNER_TEMP/native/ocr-linux-x86_64.tar.gz" \
+            deploy/linux/build_app.sh 2>&1 | tee "$RUNNER_TEMP/build_app.log"
+          {
+            echo "### The earlier payload ($STUDIO_SERVER)"
+            echo '```'
+            ls -l "$OUT_DIR"/activate-studio-linux-x86_64.*
+            du -sh "$OUT_DIR/activate-studio"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: run it in Rocky Linux 8
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/out:/in:ro" -e EXTRA_PACKAGES=findutils \
+            rockylinux:8 bash /src/deploy/linux/test_in_container.sh
+
+  # A Node release installed in a scratch home with its own install.sh,
+  # given data, sent a copy of this payload whose server exits at once
+  # (which the run loop puts back), then updated to this payload through its
+  # own updater from a local feed signed with a throwaway key
+  # (deploy/linux/test_go_bridge_e2e.sh). The release key is never used. It
+  # does not run for a release. Each Node release with a Linux payload:
+  # v1.187, the first, and v1.188, the last.
+  bridge-e2e:
+    if: inputs.release == ''
+    needs: app
+    strategy:
+      fail-fast: false
+      matrix:
+        from: [v1.187, v1.188]
+        # stable: a Stable release, and a newer Preview one the install
+        # must not take; preview: a Preview release on an install set to
+        # take prereleases.
+        channel: [stable, preview]
+    name: bridge-e2e (${{ matrix.from }}, ${{ matrix.channel }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: ${{ runner.temp }}/new
+      - name: the old release's payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ matrix.from }}
+        run: |
+          set -euo pipefail
+          gh release download "$FROM" -R "$GITHUB_REPOSITORY" -p activate-studio-linux-x86_64.tar.gz \
+            -p activate-studio-linux-x86_64.tar.gz.sha256 -D "$RUNNER_TEMP/old"
+          (cd "$RUNNER_TEMP/old" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+      - name: update to this payload
+        env:
+          CHANNEL: ${{ matrix.channel }}
+        run: |
+          set -euo pipefail
+          bash deploy/linux/test_go_bridge_e2e.sh "$RUNNER_TEMP/old/activate-studio-linux-x86_64.tar.gz" \
+            "$RUNNER_TEMP/new/activate-studio-linux-x86_64.tar.gz" 2>&1 | tee "$RUNNER_TEMP/bridge.log"
+      - name: summary
+        if: always()
+        env:
+          CHANNEL: ${{ matrix.channel }}
+          FROM: ${{ matrix.from }}
+        run: |
+          { echo "### Update to the Go version from $FROM ($CHANNEL)"; echo '```'; grep -E '^(  (ok|FAIL) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
+
+  # The container image of the Go version, from the payload above, started
+  # as container.yaml starts the Node one.
+  container-go:
+    needs: app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      SINGULARITY_VERSION: "4.5.1"
+      SINGULARITY_DEB_SHA256: "e9cdcec5e479e9f96f7fb95338d5bae2835099ee9f97222d204cb8a3f3f38070"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-linux-x86_64
+          path: ${{ runner.temp }}/in
+      - name: install SingularityCE
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deb="singularity-ce_${SINGULARITY_VERSION}-noble_amd64.deb"
+          gh release download "v${SINGULARITY_VERSION}" --repo sylabs/singularity --pattern "$deb" --dir "$RUNNER_TEMP"
+          echo "${SINGULARITY_DEB_SHA256}  $RUNNER_TEMP/$deb" | sha256sum -c -
+          sudo apt-get update
+          sudo apt-get install -y "$RUNNER_TEMP/$deb"
+      - name: build studio-go.sif
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+          mkdir -p .container
+          tar -xzf "$RUNNER_TEMP/in/activate-studio-linux-x86_64.tar.gz" -C .container
+          sudo singularity build studio-go.sif deploy/app-go.def
+          { echo "### The Go container image"; echo '```'; ls -l studio-go.sif; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+      - name: smoke test
+        run: |
+          set -euo pipefail
+          kb="$RUNNER_TEMP/kb"; data="$RUNNER_TEMP/data"; log="$RUNNER_TEMP/studio.log"
+          mkdir -p "$kb/docs" "$data"
+          echo "Smoke-test document about container builds and GUFI." > "$kb/docs/hello.md"
+          singularity run --cleanenv --env PORT=8080 --env KB_ROOT=/kb --env DATA_DIR=/data --env INDEX_ON_START=1 \
+            --bind "$kb:/kb" --bind "$data:/data" studio-go.sif > "$log" 2>&1 &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 90); do
+            curl -fsS --max-time 5 http://127.0.0.1:8080/api/version && { ok=1; break; }
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 2
+          done
+          found=0
+          for _ in $(seq 1 90); do
+            [ "$ok" = 1 ] || break
+            curl -fsS --max-time 10 "http://127.0.0.1:8080/api/search?q=container" | grep -q hello.md && { found=1; break; }
+            sleep 2
+          done
+          echo; echo "----- container log -----"; tail -n 60 "$log"
+          kill "$pid" 2>/dev/null || true
+          [ "$ok" = 1 ] || { echo "::error::the Go server never answered"; exit 1; }
+          [ "$found" = 1 ] || { echo "::error::the index on start did not make the document searchable"; exit 1; }
+
   # The .deb and the .rpm, from the archive above with nfpm (pinned, and
   # checked against the published SHA-256).
   packages:
@@ -328,10 +563,14 @@ jobs:
           name: activate-studio-linux-x86_64
           path: ${{ runner.temp }}/in
       - name: build the packages
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
-          curl -fsSL -o "$RUNNER_TEMP/nfpm.tgz" "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          # Through the release API (gh), which works when GitHub's download
+          # host does not; the hash below is the check either way.
+          timeout 300 gh release download "v${NFPM_VERSION}" --repo goreleaser/nfpm --pattern "nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" --output "$RUNNER_TEMP/nfpm.tgz"
           echo "$NFPM_SHA256  $RUNNER_TEMP/nfpm.tgz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/nfpm.tgz" -C "$RUNNER_TEMP" nfpm
           NFPM="$RUNNER_TEMP/nfpm" desktop/linux/build_packages.sh "$RUNNER_TEMP/in/activate-studio-linux-x86_64.tar.gz" "$RUNNER_TEMP/pkgs"
@@ -473,21 +712,32 @@ jobs:
         env:
           STUDIO_UPDATE_SIGNING_KEY: ${{ secrets.STUDIO_UPDATE_SIGNING_KEY }}
           TAG: ${{ inputs.release }}
+          # Stable is the manifest without the field, as before channels.
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "release must look like v1.150, not '$TAG'"; exit 1; }
+          case "$CHANNEL" in stable) ;; preview) export STUDIO_RELEASE_CHANNEL=preview ;; *) echo "channel is stable or preview, not '$CHANNEL'"; exit 1 ;; esac
           (cd "$RUNNER_TEMP/out" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
           deploy/linux/sign_release.sh "$RUNNER_TEMP/out/activate-studio-linux-x86_64.tar.gz" "$TAG"
       - name: attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/out"
           files=(activate-studio-linux-x86_64.tar.gz activate-studio-linux-x86_64.tar.gz.sha256
             activate-studio-linux-x86_64.manifest.json activate-studio-linux-x86_64.manifest.json.sig)
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          # A Preview release reaches installs that chose Preview, through
+          # their updater; the fixed address new installs come from keeps
+          # the newest Stable payload.
+          if [ "$CHANNEL" = preview ]; then
+            echo "A Preview release: the linux release is left as it is."
+            exit 0
+          fi
           # The linux release holds the newest payload at a fixed address: a
           # prerelease that is never latest, which the app's update check
           # skips (its tag is not a version). An older version than the one

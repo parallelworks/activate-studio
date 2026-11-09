@@ -3,6 +3,7 @@ import { Button, Callout, Field, Input, Select } from '@parallelworks/ui'
 import { api, type IndexDepth, type PwSystems } from '../api'
 import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } from './IndexDepth'
 import { sshOptionsProblem } from '../sshOptions'
+import { accessLabel, knownAppConfig } from '../config'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 
 /**
@@ -12,7 +13,7 @@ import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryForm
  * over pw ssh: picked from the person's systems on the platform, running
  * ones first, or typed when the list cannot be had. Where pw ssh cannot be
  * used yet (no pw CLI found, no sign-in), the form says why instead. Used
- * by Settings, Libraries and by the setup wizard.
+ * by Settings, Indexing, Libraries and by the setup wizard.
  *
  * By default (`mode` connect) the GUFI index is there already: the
  * connection test runs first and reports each step (the connection, GUFI,
@@ -113,7 +114,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
     return (
       <div className="ssh-library-form">
         <Callout tone="warning" title="pw ssh cannot be used yet"
-          action={<Button variant="secondary" size="sm" onClick={() => (onOpenAccess ? onOpenAccess() : void (location.hash = '#view=settings:access'))}>Open Model access</Button>}>
+          action={<Button variant="secondary" size="sm" onClick={() => (onOpenAccess ? onOpenAccess() : void (location.hash = '#view=settings:access'))}>Open {accessLabel(knownAppConfig())}</Button>}>
           {systems.why}
         </Callout>
       </div>

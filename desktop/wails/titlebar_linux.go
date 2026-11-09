@@ -72,8 +72,16 @@ func useOwnTitleBar(title string) {
 	C.bar_watch(c)
 }
 
-func paintBar(css string) {
-	c := C.CString(css)
+// paintBar styles the bar in the page's #rrggbb (barCSS).
+func paintBar(color string) {
+	c := C.CString(barCSS(color))
 	defer C.free(unsafe.Pointer(c))
 	C.bar_set(c)
 }
+
+// titleMetrics: the Linux window draws its own title bar (useOwnTitleBar),
+// in either layout.
+func titleMetrics(bool) (int, int) { return 0, 0 }
+
+// setWindowCompact: nothing to move.
+func setWindowCompact(bool) {}

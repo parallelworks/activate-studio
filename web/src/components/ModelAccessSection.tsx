@@ -177,7 +177,10 @@ export function describeSource(s: SourceInfo, single: boolean): string {
 
 const KIND_LABEL: Record<string, string> = { 'sign-in': 'Sign-in', 'api-key': 'API key', token: 'Platform token' }
 
-export function ModelAccessSection({ requirePersonalKey = false }: { requirePersonalKey?: boolean }) {
+/** With AI features off (`aiEnabled` false) the section keeps only the
+ *  ACTIVATE credential, which the Workflows page and ACTIVATE libraries use:
+ *  no model check, no OpenAI-compatible endpoint, no subscriptions. */
+export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = true }: { requirePersonalKey?: boolean; aiEnabled?: boolean }) {
   const [access, setAccess] = useState<AccessStatus | null>(null)
   const [me, setMe] = useState<KeyStatus | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
@@ -223,12 +226,13 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
       setMe(k)
       setLoadError('')
       setLogin(l => a.login ?? l)
-      setTab(t => t ?? (a.models.source === 'endpoint' ? 'endpoint' : a.models.source === 'key' ? 'key' : a.single ? 'cli' : 'deployment'))
+      setTab(t => t ?? (a.models.source === 'endpoint' && aiEnabled ? 'endpoint' : a.models.source === 'key' ? 'key' : a.single ? 'cli' : 'deployment'))
       if (!filled.current && a.models.source === 'endpoint' && a.models.baseUrl) {
         setPreset(presetOf(a.models.baseUrl)); setBaseUrl(a.models.baseUrl); fillEndpoint(k.endpoint)
       }
       filled.current = true
       setLoginHost(h => h || a.login?.host || (a.cli?.contexts.find(c => c.name === a.cli?.active)?.server ?? ''))
+      if (!aiEnabled) { setHealth(null); setModels(null); setModelsError(''); return }
       const [h, m] = await Promise.all([
         api<Health>(`/api/ai/health${fresh ? '?fresh=1' : ''}`).catch(() => null),
         api<{ models?: { id: string }[]; error?: string }>(`/api/chat/models${fresh ? '?refresh=1' : ''}`).catch(e => ({ models: [], error: errText(e) })),
@@ -242,7 +246,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
       setChecking(false)
     }
   }
-  useEffect(() => { void load() }, [])
+  useEffect(() => { void load() }, [aiEnabled]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A device sign-in under way: ask how it stands until it settles.
   useEffect(() => {
@@ -417,8 +421,10 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   const tabs: { value: Tab; label: string }[] = [
     single ? { value: 'cli', label: 'ACTIVATE (pw CLI)' } : { value: 'deployment', label: 'ACTIVATE (deployment)' },
     { value: 'key', label: 'ACTIVATE API key' },
-    { value: 'endpoint', label: 'OpenAI-compatible endpoint' },
+    ...(aiEnabled ? [{ value: 'endpoint' as Tab, label: 'OpenAI-compatible endpoint' }] : []),
   ]
+  // An endpoint chosen before AI features were switched off is not offered.
+  const shownTab = tab && tabs.some(t => t.value === tab) ? tab : tabs[0].value
   const presets: SelectItem<string>[] = PRESETS.map(p => ({ value: p.value, label: p.label }))
   const local = isLocalUrl(baseUrl)
   // With no key typed: the stored endpoint keeps its stored key, which lets
@@ -441,12 +447,14 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
 
   return (
     <div className="model-access">
-      <h1>Model access</h1>
+      <h1>{aiEnabled ? 'Model access' : 'ACTIVATE access'}</h1>
       <p className="muted view-sub">
-        Where the Studio gets its models, and the credential the Workflows page and the assistant's platform tools use.
+        {aiEnabled
+          ? 'Where the Studio gets its models, and the credential the Workflows page and the assistant\'s platform tools use.'
+          : 'The ACTIVATE credential the Workflows page and libraries on ACTIVATE systems use. With AI features on, this is also where the Studio gets its models.'}
       </p>
 
-      <Callout className="rag-banner" tone={tone} title={title}
+      {aiEnabled && <Callout className="rag-banner" tone={tone} title={title}
         action={<Button variant="secondary" size="sm" loading={checking} onClick={() => void load(true)}>Re-check</Button>}>
         {health?.status === 'ok' && (
           <div className="rag-banner-models">
@@ -483,21 +491,21 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         {stored && me.credExpired && me.credExpiresAt && (
           <p className="identity-note">Your token expired {new Date(me.credExpiresAt).toLocaleString()}.</p>
         )}
-      </Callout>
+      </Callout>}
 
-      <UsesTable access={access} />
+      <UsesTable access={access} aiEnabled={aiEnabled} />
 
       <Field group label="Where access comes from" className="access-source">
-        <SegmentedControl options={tabs} value={tab ?? tabs[0].value} onValueChange={v => { setTab(v); setNote(null) }} />
+        <SegmentedControl options={tabs} value={shownTab} onValueChange={v => { setTab(v); setNote(null) }} />
       </Field>
 
-      {tab === 'cli' && access.cli && (
+      {shownTab === 'cli' && access.cli && (
         <CliPanel access={access} busy={busy} login={login} loginHost={loginHost} setLoginHost={setLoginHost}
           onUse={pickContext} onStartLogin={() => void startLogin()} onCancelLogin={() => void cancelLogin()} onDismissLogin={() => setLogin(null)}
-          onChoosePath={p => void chooseCliPath(p)} />
+          onChoosePath={p => void chooseCliPath(p)} aiEnabled={aiEnabled} />
       )}
 
-      {tab === 'deployment' && (
+      {shownTab === 'deployment' && (
         <div className="access-panel">
           <p className="access-lead">The ACTIVATE credential this deployment runs with, for anyone without a key of their own.</p>
           <p className="muted view-sub">
@@ -514,7 +522,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         </div>
       )}
 
-      {tab === 'key' && (
+      {shownTab === 'key' && (
         <div className="access-panel">
           <p className="access-lead">A token or API key from an ACTIVATE account, for its models and its platform.</p>
           <p className="muted view-sub">
@@ -536,7 +544,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
                 onChange={e => setKeyHost(e.target.value)} />
             </div>
           </div>
-          {typedHost.endpointUrl && (
+          {typedHost.endpointUrl && aiEnabled && (
             <Callout tone="info" className="rag-banner key-as-endpoint" title="This is an endpoint address, not a platform host"
               action={<Button variant="secondary" size="sm" onClick={() => moveToEndpoint(typedHost.endpointUrl!)}>Use as an endpoint</Button>}>
               <p className="identity-note">
@@ -568,7 +576,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         </div>
       )}
 
-      {tab === 'endpoint' && (
+      {shownTab === 'endpoint' && (
         <div className="access-panel">
           <p className="access-lead">Any service that speaks the OpenAI API, such as a site AI portal, a provider, or a model server on this computer.</p>
           <p className="muted view-sub">
@@ -623,7 +631,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
       )}
 
       {/* Offline, the banner already says the platform cannot be reached. */}
-      {!offline && (single ? access.platform.source !== 'none' : access.platform.source === 'key') && (
+      {aiEnabled && !offline && (single ? access.platform.source !== 'none' : access.platform.source === 'key') && (
         <SubscriptionsPanel platformOrigin={access.platformOrigin} host={access.platform.host} onChanged={() => { announceChange(); void load(true) }} />
       )}
 
@@ -636,8 +644,11 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   )
 }
 
-function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStartLogin, onCancelLogin, onDismissLogin, onChoosePath }: {
+function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStartLogin, onCancelLogin, onDismissLogin, onChoosePath, aiEnabled = true }: {
   access: AccessStatus
+  /** Off: the panel speaks of the platform only (Workflows and libraries on
+   *  ACTIVATE systems), since no models are in use. */
+  aiEnabled?: boolean
   busy: boolean
   login: LoginState | null
   loginHost: string
@@ -649,7 +660,11 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   onChoosePath: (path: string | null) => void
 }) {
   const cli = access.cli!
-  const overridden = access.models.source === 'key' || access.models.source === 'endpoint'
+  // With AI features off only the platform credential matters, and an
+  // endpoint (models only) never displaces a context for it.
+  const overridden = aiEnabled
+    ? access.models.source === 'key' || access.models.source === 'endpoint'
+    : access.platform.source === 'key'
   const following = cli.chosen === null
   const waiting = login?.state === 'waiting' || login?.state === 'starting'
   if (!cli.available && !cli.contexts.length) return (
@@ -659,16 +674,27 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   )
   return (
     <div className="access-panel">
-      <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for their models and the platform.</p>
-      <p className="muted view-sub">The context in use covers models, the Workflows page, clusters, and runs.</p>
+      {aiEnabled ? (
+        <>
+          <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for their models and the platform.</p>
+          <p className="muted view-sub">The context in use covers models, the Workflows page, clusters, and runs.</p>
+        </>
+      ) : (
+        <>
+          <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for the Workflows page and libraries on ACTIVATE systems.</p>
+          <p className="muted view-sub">The context in use covers the Workflows page, clusters, runs, and libraries on ACTIVATE systems.</p>
+        </>
+      )}
       <CliLocation cli={cli} busy={busy} onChoose={onChoosePath} />
       {overridden && (
         <p className="identity-note access-override">
-          Your {access.models.source === 'endpoint' ? 'endpoint' : 'key'} is used for models now. Use on a context removes it.
+          {aiEnabled
+            ? `Your ${access.models.source === 'endpoint' ? 'endpoint' : 'key'} is used for models now. Use on a context removes it.`
+            : 'Your key is used for the Workflows page and ACTIVATE libraries now. Use on a context removes it.'}
         </p>
       )}
       {cli.envKey && <p className="identity-note">PW_API_KEY is set in the Studio's environment, and it is used before the pw CLI.</p>}
-      {cli.gatewayFromEnv && <p className="identity-note">The model gateway is fixed by PW_GATEWAY_URL; a context on another platform covers the platform only.</p>}
+      {aiEnabled && cli.gatewayFromEnv && <p className="identity-note">The model gateway is fixed by PW_GATEWAY_URL; a context on another platform covers the platform only.</p>}
       {cli.contexts.length > 0 ? (
         <>
           <Table density="compact" className="cli-contexts" wrapperClassName="cli-contexts-wrap">
@@ -816,18 +842,21 @@ function CliLocation({ cli, busy, onChoose }: { cli: NonNullable<AccessStatus['c
 /** Which credential each part of the Studio uses, in one place: models
  *  and the platform can come from different sources, and the platform's
  *  parts run the pw CLI, which has to be found on this computer. */
-function UsesTable({ access }: { access: AccessStatus }) {
+function UsesTable({ access, aiEnabled = true }: { access: AccessStatus; aiEnabled?: boolean }) {
   const single = access.single
   const platform = access.platform.source === 'none'
     ? 'none: an endpoint covers models only; sign the pw CLI in, or add a platform key'
     : describeSource(access.platform, single)
   const cliMissing = single && !!access.cli && !access.cli.available
   const needsCli = cliMissing ? <StatusBadge variant="warning" size="sm" className="ctx-badge">pw CLI not found</StatusBadge> : null
-  const rows: { part: string; uses: string; extra?: ReactNode }[] = [
+  const rows: { part: string; uses: string; extra?: ReactNode }[] = aiEnabled ? [
     { part: 'Models in chat and for the assistant', uses: describeSource(access.models, single) },
     { part: 'Workflows page and the assistant\'s platform tools', uses: platform, extra: needsCli },
     { part: 'Libraries on ACTIVATE systems (pw ssh)', uses: platform, extra: needsCli },
     { part: 'ChatGPT and Copilot subscriptions', uses: platform },
+  ] : [
+    { part: 'Workflows page', uses: platform, extra: needsCli },
+    { part: 'Libraries on ACTIVATE systems (pw ssh)', uses: platform, extra: needsCli },
   ]
   return (
     <Field group label="What each part uses" className="access-uses">

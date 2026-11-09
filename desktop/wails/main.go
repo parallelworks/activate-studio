@@ -31,6 +31,13 @@
 //	STUDIO_APP_DIR         without a tree: the Studio checkout (server/dist/main.js, web/dist)
 //	STUDIO_NODE            without a tree: the node binary; default: node on PATH
 //	STUDIO_SHELL_TEST=1    the install check (selftest.go)
+//	STUDIO_GO_SERVER=1     run the Go front server (studio-server, Node behind it) in
+//	                       place of Node, from app/bin in the tree or server-go/bin in a
+//	                       checkout, or STUDIO_GO_SERVER_BIN; the Go semantic map
+//	                       beside it is used for STUDIO_SEMANTIC_MAP_BIN. On by default
+//	                       for a Go release (the tree's manifest.json says "server":
+//	                       "go"), off otherwise; STUDIO_GO_SERVER=0 turns it off where
+//	                       the tree still has a Node.
 //
 // Build (Linux): go build -tags desktop,production,webkit2_41 for WebKitGTK
 // 4.1, without webkit2_41 for 4.0 (see desktop/linux/build_shell.sh).
@@ -43,6 +50,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/logger"
@@ -67,6 +75,10 @@ func main() {
 		os.Unsetenv("STUDIO_WAIT_PID")
 		waitForPID(v)
 	}
+	// macOS: the launcher's flags (--install, --stop, --uninstall, --help).
+	if code, ok := maybePassThrough(); ok {
+		os.Exit(code)
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
 		fmt.Println("ACTIVATE Studio shell", version, webkitAPI)
 		return
@@ -90,6 +102,10 @@ func main() {
 	}
 	app.inst = inst
 	defer inst.Release()
+	// This window is the current copy's program, so an update that asked
+	// for the app to be reopened has had it (macOS: launcher.sh does the
+	// same). Without this, Settings kept offering Reopen now.
+	clearReopenMark(cfg.DataDir)
 
 	// Before Run: the window's allowed origins name this port.
 	if err := app.listenLocal(); err != nil {
@@ -99,6 +115,8 @@ func main() {
 
 	useOwnTitleBar(windowTitle)
 	app.restoreBarColor()
+	app.restoreCompactTitle()
+	watchMacWindow()
 
 	err = wails.Run(&options.App{
 		Title:     windowTitle,
@@ -130,12 +148,18 @@ func main() {
 			ProgramName:      "activate-studio",
 			WebviewGpuPolicy: linux.WebviewGpuPolicyOnDemand,
 		},
+		// macOS: the Swift window's menus and About panel (launcher_darwin.go).
+		Menu: appMenu(app),
+		Mac:  macOptions(app.compactTitle),
 		Windows: &windows.Options{
 			// The web view's own data (local storage, cache) with the
 			// Studio's, not beside the executable.
 			WebviewUserDataPath: filepath.Join(cfg.DataDir, "webview"),
 		},
 	})
+	// The window is gone; its page's helper processes end before the shell
+	// does (webkitreap_linux.go).
+	reapWebKit(5 * time.Second)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		app.sup.Stop()
@@ -166,7 +190,10 @@ func loadConfig() (Config, error) {
 	home, _ := os.UserHomeDir()
 	cfg.KBRoot = envOr("STUDIO_DEFAULT_KB", filepath.Join(home, "Documents", "ACTIVATE Studio"))
 
-	if tree := findTree(); tree != "" {
+	platformConfig(&cfg)
+	if cfg.Launcher != "" {
+		// macOS: the launcher runs the server (launcher_darwin.go).
+	} else if tree := findTree(); tree != "" {
 		cfg.Tree = tree
 		cfg.RunScript = filepath.Join(tree, "studio-run.sh")
 		cfg.AppDir = filepath.Join(tree, "app")
@@ -182,6 +209,15 @@ func loadConfig() (Config, error) {
 		cfg.Node = envOr("STUDIO_NODE", "node")
 		if p, err := exec.LookPath(cfg.Node); err == nil {
 			cfg.Node = p
+		}
+	}
+	cfg.GoServer, cfg.SemanticMap = goServerPaths(os.Getenv, cfg.Tree, cfg.AppDir)
+	if os.Getenv("STUDIO_GO_SERVER") == "1" && cfg.GoServer == "" {
+		fmt.Fprintln(os.Stderr, "STUDIO_GO_SERVER=1, but studio-server was not found; starting Node")
+	}
+	if cfg.Tree != "" && cfg.GoServer == "" {
+		if _, noNode := treeServer(cfg.Tree); noNode {
+			return cfg, fmt.Errorf("%s has no Node and no Go server (app/bin/studio-server)", cfg.Tree)
 		}
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {

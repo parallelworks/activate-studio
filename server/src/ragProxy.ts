@@ -124,6 +124,7 @@ function distill(query: string): string[] {
   return [...new Set(terms)].slice(0, 8)
 }
 
+/** The context blocks for a question. */
 async function buildContext(query: string, topK: number, tags?: string[]): Promise<{ text: string; terms: string[]; blocks: number; chars: number } | null> {
   const q = query.slice(0, 300)
   const terms = distill(q)

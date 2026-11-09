@@ -68,16 +68,25 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
 
   const current = snaps && snaps.length > 0 ? snaps[Math.min(idx, snaps.length - 1)] : null
 
+  // Each pick clears what the last one showed, so the panels never show one
+  // pass's contents or changes under another's date, and an answer that
+  // arrives after a newer pick is dropped.
   useEffect(() => {
     if (!current) return
-    fetch(`/api/kb/history/level?id=${current.id}&dir=${encodeURIComponent(dir)}`)
-      .then(r => r.json()).then(setLevel).catch(() => setLevel(null))
+    const ctl = new AbortController()
+    setLevel(null)
+    fetch(`/api/kb/history/level?id=${current.id}&dir=${encodeURIComponent(dir)}`, { signal: ctl.signal })
+      .then(r => r.json()).then(setLevel).catch(() => { if (!ctl.signal.aborted) setLevel(null) })
+    return () => ctl.abort()
   }, [current, dir])
 
   useEffect(() => {
-    if (!snaps || !current || idx === 0) { setDiff(null); return }
-    fetch(`/api/kb/history/diff?from=${snaps[idx - 1].id}&to=${current.id}`)
-      .then(r => r.json()).then(setDiff).catch(() => setDiff(null))
+    setDiff(null)
+    if (!snaps || !current || idx === 0) return
+    const ctl = new AbortController()
+    fetch(`/api/kb/history/diff?from=${snaps[idx - 1].id}&to=${current.id}`, { signal: ctl.signal })
+      .then(r => r.json()).then(setDiff).catch(() => { if (!ctl.signal.aborted) setDiff(null) })
+    return () => ctl.abort()
   }, [snaps, current, idx])
 
   // Arrow keys travel through time, which is the whole point of a scrubber.
@@ -147,7 +156,7 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
         <StatTile value={snaps.length} label={`snapshots · ${bytes(stored)} on disk`} />
         <StatTile value={current!.files} label="files at this point" />
         <StatTile value={bytes(current!.bytes)} label="corpus size then" />
-        <StatTile value={idx === 0 ? '—' : changed} label="changes in this pass" />
+        <StatTile value={idx === 0 ? '—' : diff?.counts ? changed : '…'} label="changes in this pass" />
       </StatTileGroup>
 
       <div className="hist-main">
@@ -169,6 +178,7 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
               <span key={c.path}> / <Button variant="ghost" size="sm" onClick={() => setDir(c.path)}>{c.name}</Button></span>
             ))}
           </p>
+          {!level && <Loader inline size={14} label="Loading this pass…" />}
           {level?.dirs?.map(d => (
             <div key={d.path} className="ov-row" onClick={() => setDir(d.path)}>
               <span className="ov-row-path">{d.name}/</span>

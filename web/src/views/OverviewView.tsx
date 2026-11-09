@@ -9,7 +9,7 @@ import { SemanticMap, TopologyMap } from '../components/CorpusMaps'
 import { currentLibrary, onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
 import { LibrarySwitch } from '../components/LibrarySwitch'
-import { useAppConfig } from '../config'
+import { aiOn, useAppConfig } from '../config'
 
 interface ExtRow { ext: string; count: number; bytes: number }
 interface QueryResult { columns: string[]; rows: string[][]; rowLibraries?: string[] }
@@ -103,6 +103,15 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         .then(r => r.json()).then(r => { if (live && Array.isArray(r?.rows)) set(r) }).catch(() => {})
     q({ canned: 'largest', n: 8 }, setLargest)
     q({ canned: 'recent', n: 8, days: 7 }, setRecent)
+    return () => { live = false }
+  }, [epoch])
+
+  // Chat activity, read only while AI features are on: the card is gone
+  // with them.
+  const aiEnabled = aiOn(cfg)
+  useEffect(() => {
+    if (!cfg.loaded || !aiEnabled) return
+    let live = true
     Promise.all([
       fetch('/api/chat/conversations').then(r => r.json()).catch(() => []),
       fetch('/api/kb/tree?path=chat-sessions').then(r => r.json()).catch(() => []),
@@ -118,7 +127,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
       })
     }).catch(() => {})
     return () => { live = false }
-  }, [epoch])
+  }, [epoch, aiEnabled, cfg.loaded])
 
   // The view stays mounted while another page is open, so a change made
   // there (an upload, a delete) has to reach it.
@@ -257,7 +266,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
           </section>
         )}
 
-        <section className="card ov-list">
+        {aiEnabled && <section className="card ov-list">
           <h3>Studio activity</h3>
           <div className="ov-row ov-click" onClick={() => { location.hash = '' }}>
             <span className="ov-row-path">Chat conversations{activity?.latest ? `, latest: ${activity.latest.slice(0, 48)}` : ''}</span>
@@ -271,7 +280,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
             <span className="ov-row-path">Chat attachments stored under uploads/chat</span>
             <span className="ov-row-meta">{activity?.attachments ?? '…'}</span>
           </div>
-        </section>
+        </section>}
       </div>
 
       <section className="card ov-list ov-runs">

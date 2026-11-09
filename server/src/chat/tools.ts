@@ -43,7 +43,7 @@ export const TOOL_CALLS: Record<string, string> = {
   get_labels: 'reads the user.studio.tags xattr maps cached from the filesystem',
   write_kb_file: 'fs write into the knowledge base (path-checked, excluded dirs refused) followed by an incremental reindex of the touched subtree',
   suggest_labels: 'reads the first ~1200 characters of each unlabelled file and asks the deployment model to propose labels from the existing vocabulary (proposals only, nothing applied)',
-  apply_labels: 'setfattr user.studio.tags on the paths plus an in-place upsert into the index databases',
+  apply_labels: 'setfattr user.studio.tags on the main library\'s paths plus an in-place upsert into the index databases; another library\'s labels are kept by the Studio',
   list_workflows: 'pw workflows ls, plus the marketplace and GitHub entries in this Studio\'s collection',
   list_github_workflows: 'GitHub tree and README reads for a repository (no platform call)',
   get_workflow: 'pw workflows get <name> -o json',
@@ -85,7 +85,7 @@ export const TOOL_CALLS: Record<string, string> = {
 /** The documents studio_docs can read, by the name the model passes. */
 const STUDIO_DOCS: Record<string, string> = {
   help: 'HELP.md', reference: 'REFERENCE.md', deploy: 'DEPLOY.md', architecture: 'ARCHITECTURE.md', customization: 'CUSTOMIZATION.md', libraries: 'LIBRARIES.md',
-  workflows: 'WORKFLOWS.md', agents: 'AGENTS.md', 'multi-user': 'MULTI-USER.md', macos: 'MACOS.md',
+  workflows: 'WORKFLOWS.md', agents: 'AGENTS.md', 'multi-user': 'MULTI-USER.md', macos: 'MACOS.md', updates: 'UPDATES.md',
 }
 
 export const TOOL_SPECS: ToolSpec[] = [
@@ -518,9 +518,10 @@ export const TOOL_SPECS: ToolSpec[] = [
       parameters: {
         type: 'object',
         properties: {
-          paths: { type: 'string', description: 'Comma-separated KB-relative paths' },
+          paths: { type: 'string', description: 'Comma-separated paths relative to the library\'s root' },
           add: { type: 'string', description: 'Comma-separated labels to add' },
           remove: { type: 'string', description: 'Comma-separated labels to remove' },
+          library: { type: 'string', description: 'Which library the paths are in: an id from list_libraries; default the one selected in this conversation, or the knowledge base when all are selected' },
         },
         required: ['paths'],
       },
@@ -1546,7 +1547,7 @@ async function originalTextForTool(lib: Library, rel: string): Promise<ToolText>
  *  index, but its originals can be opened only through the host named for them. */
 function noFilesHere(lib: Library, needsFiles: boolean): void {
   if (needsFiles && !lib.site && !lib.sourceRoot && !lib.readThrough) {
-    throw new Error(`${lib.label} has no files on this host; it can be searched and read from its index (read_kb_file), but its originals cannot be opened. Settings, Libraries can name another host that has them.`)
+    throw new Error(`${lib.label} has no files on this host; it can be searched and read from its index (read_kb_file), but its originals cannot be opened. Settings, Indexing, Libraries can name another host that has them.`)
   }
   if (!needsFiles && !lib.site && !lib.sourceRoot && !lib.caps.index) throw new Error(`${lib.label} has no files on this host and no index to read; it can be searched but not read`)
 }
@@ -2298,13 +2299,20 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         }
       }
       case 'apply_labels': {
-        const { applyTagsCore } = await import('../tags.js')
+        const { applyLabelsIn } = await import('../tags.js')
         const paths = String(args.paths ?? '').split(',').map((x: string) => x.trim()).filter(Boolean)
         const add = String(args.add ?? '').split(',').map((x: string) => x.trim()).filter(Boolean)
         const remove = String(args.remove ?? '').split(',').map((x: string) => x.trim()).filter(Boolean)
-        const updated = await applyTagsCore(paths, add, remove)
+        // The paths' own library: a label on a path of another library
+        // applied to the main one would land on a different file, or none.
+        // With All libraries selected and none named, the main library, as before.
+        const named = String(args.library ?? '').trim()
+        const scoped = toolContext.getStore()?.library ?? null
+        const lib = namedLibrary(named || (String(scoped ?? '').toLowerCase() === 'all' ? 'kb' : scoped))
+        const { updated, stored } = await applyLabelsIn(lib, paths.map(p2 => p2.replace(/^\/+|\/+$/g, '')), add, remove)
         const result = Object.entries(updated).map(([p2, t]) => `${p2}: [${t.join(', ')}]`).join('\n')
-        return { result: `Labels updated and re-indexed:\n${result}`, summary: `${paths.length} paths labeled` }
+        const where = stored === 'files' ? 'on the files, and re-indexed' : `kept by the Studio for ${lib.label}`
+        return { result: `Labels updated (${where}):\n${result}`, summary: `${paths.length} paths labeled` }
       }
       case 'get_labels': {
         const { tagMaps } = await import('../tags.js')

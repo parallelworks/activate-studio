@@ -46,9 +46,14 @@ _rec_field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$2" 2>/dev/null | he
 _rec_complete() {
   local d="$1" want="$2" have
   [ -x "$d/studio-run.sh" ] || return 1
-  [ -x "$d/node/bin/node" ] || return 1
+  # Node's files are in every payload: Node itself, or in the Go version
+  # stand-ins for older updaters' checks; a Go payload also has its server.
+  [ -x "$d/node/bin/node" ] && [ -f "$d/app/server/dist/main.js" ] || return 1
+  if grep -q '"server": *"go"' "$d/manifest.json" 2>/dev/null; then
+    [ -x "$d/app/bin/studio-server" ] || return 1
+  fi
   local f
-  for f in app/server/dist/main.js update-signing.pub manifest.json; do [ -f "$d/$f" ] || return 1; done
+  for f in update-signing.pub manifest.json; do [ -f "$d/$f" ] || return 1; done
   have="$(_rec_version "$d")"
   [ -n "$have" ] && [ "${have#v}" = "${want#v}" ]
 }

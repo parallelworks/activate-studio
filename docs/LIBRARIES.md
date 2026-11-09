@@ -58,13 +58,13 @@ STUDIO_SECTIONS='library,search,overview'
 Libraries set this way are pinned: they appear for every user and cannot
 be removed from Settings.
 
-*In Settings, Libraries:* see the next section. Libraries added there are
+*In Settings, Indexing, Libraries:* see the next section. Libraries added there are
 kept in `libraries.json` under the index base, or, for those over ssh or
 built on a cluster, in the user's own list (below).
 
 ## The Libraries page
 
-Settings, Libraries is one list of every library the Studio searches, and
+Settings, Indexing, Libraries is one list of every library the Studio searches, and
 one **Add a library** control. Each row gives the library's name, its kind
 in plain words with what the Studio may do with it (read and write, or
 read only), where it is (the index directory, and the files when the
@@ -186,6 +186,20 @@ indexes faster at Text + OCR. Nothing counts the files before a build
 (counting them takes a walk of the whole tree), so the note does not
 depend on the folder's size and the default does not change with it.
 
+**Suggested folders** (`GET /api/libraries/suggestions`, a single-user
+install only) are offered above the folder to index, in Add a library
+and in setup: Documents, Desktop and Downloads (on Linux the XDG user
+folders from `~/.config/user-dirs.dirs`, else those names under the
+home folder), and on macOS `~/Library/Mail`. Each is
+`{ id, label, path, note, access }`, offered when it exists and is
+neither the main folder nor a library's source. Documents, Desktop and
+Downloads are not read to list them, since reading them on macOS asks
+the person for access; Mail's folder is, and `access` is
+`full-disk-access` when macOS refuses it, which
+`POST /api/libraries/suggestions/full-disk-access` answers by opening
+System Settings at Full Disk Access. A suggestion fills the folder and
+label and runs Check.
+
 **Check** (`POST /api/libraries/build/check`) reports four steps: GUFI
 is in `GUFI_BIN`; the source folder is readable, or does not exist yet
 and can be made; the index folder is new, empty, or holds an index the
@@ -277,6 +291,21 @@ with `~`, which is resolved there. **Build the index**
 asks before making a folder the user named, and the server tests again
 first. The depth starts at Meaning on documents when none is chosen,
 stored with the library.
+
+The Go version of the Studio runs no Python there. Its connection test
+reads the system's platform with `uname` and offers text and meaning on
+Linux x86_64 and aarch64 and macOS arm64; another system gets names only,
+and the test says why. The first build sends the Studio's helper
+(`studio-remote`, about 25 MB, kept in `~/.activate-studio/go/<platform>-<digest>`),
+which runs the text pass (its own readers for PDF, Office and
+OpenDocument files, pdftotext and tesseract where the system has them)
+and the embedder, and for the meaning stops ONNX Runtime's library, taken
+from the pinned onnxruntime wheel for that platform, with `model.onnx` and `tokenizer.json`
+(kept in `~/.activate-studio/embed/<platform>-<digest of the pins>`). Each
+is sent with a `SHA256SUMS` file, which the helper checks before the build
+uses the folder. The index, its reports and the files described below are
+the same; the extract cache entries start with the line the Studio's own
+cache has. The rest of this section describes the Node version.
 
 Search reads a remote index's vectors in its one-pass walk, which embeds
 the query with the Studio's ONNX model and matches the directories whose
@@ -458,7 +487,7 @@ run rebuilds instead. An index takes about 50 KB per directory.
 ## Indexes built on a cluster
 
 On a Studio the platform hosts, a user can also build through the
-platform's index workflow: Settings, Libraries, **Add a library**, "A
+platform's index workflow: Settings, Indexing, Libraries, **Add a library**, "A
 remote system", "Build an index of a folder", **Connect with** "Platform
 workflow": a cluster from their active clusters, a directory
 (`$WORKDIR` by default), a label, and optionally a Slurm partition and
@@ -510,7 +539,7 @@ live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 ## Libraries over ssh
 
 A library can also be an existing GUFI index on another machine that the
-Studio's host reaches with plain ssh: Settings, Libraries, **Add a
+Studio's host reaches with plain ssh: Settings, Indexing, Libraries, **Add a
 library**, "A remote system", "Connect an existing index", **Connect
 with** ssh, or the setup wizard. The host is written `user@host`, an
 alias from `~/.ssh/config`, or either with `:port`. A Host entry in
@@ -589,6 +618,18 @@ the test again otherwise. **Check** reruns it and updates the counts and the ind
 time (the modified time of the index's `db.db`), which is also when
 Statistics counts the library again.
 
+The same aggregate `gufi_query` counts the directories whose database
+has the Studio's vector table (`gvec`, read from `tree.sqlite_master`),
+so the index step says whether search by meaning covers the index, and
+the library is saved with `vectors`. Search sends the query's vector to
+the host only for a library with vectors. A library connected by
+v1.188 or earlier was saved without `vectors`, so its search by meaning
+returned nothing; it is now treated as unknown and searched by meaning,
+and **Check** records what the index has. Vectors match only where the
+directory's `gvecmodel` names the Studio's ONNX model
+(`minilm-l6-mean-int8`); an index embedded with another model is
+searched by name and words.
+
 ### SSH options
 
 A library over ssh may carry its own ssh options, in the form's **SSH
@@ -624,7 +665,7 @@ shared connection of its own for each set of options.
 The connection test names the jump host it went through, from the options
 or from `~/.ssh/config` (read with `ssh -G`, which connects nowhere):
 "Connected to me@lab-index through me@bastion.example, a Linux host."
-Settings, Libraries shows a library's options, and
+Settings, Indexing, Libraries shows a library's options, and
 `PUT /api/user-libraries/:id/ssh-options` with `{sshOptions}` changes them
 for a connected index, after a connection test with the new ones passes.
 An index built over ssh keeps the options it was built with.
@@ -730,7 +771,7 @@ The case this is for is a site whose index lives where GUFI runs, on a host
 whose login runs only `gufi_query` (see "Hosts whose login runs only
 gufi_query"), while another host, such as a file transfer host, mounts the
 same file systems and gives a normal shell. On the library's row in
-Settings, Libraries, **Originals via**, **Set** names that host:
+Settings, Indexing, Libraries, **Originals via**, **Set** names that host:
 
 - *Host*: `user@host`, or a Host alias from `~/.ssh/config`, with `:port`
   for a port other than 22. It is held to what a destination of `ssh` can
@@ -928,7 +969,7 @@ statement is shown as a here-document with gufi_vt's usual remote form,
 cluster's GUFI added to the PATH there, so it runs from a terminal that
 has GUFI and the pw CLI. The chat model does not receive the commands,
 and a conversation shows them only to the person whose request ran them.
-Settings, General, Indexing, "Log GUFI commands" also writes every
+Settings, Indexing, Storage and logs, "Log GUFI commands" also writes every
 command to a log file ([`REFERENCE.md`](REFERENCE.md), GUFI commands).
 
 ## Sections

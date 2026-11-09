@@ -1,0 +1,22 @@
+{
+ "walks": [
+  {"q": "budget", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "caps": {"name": 10, "path": 10, "fts": 60}, "limit": 20},
+  {"q": "deployment process", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "caps": {"name": 10, "path": 10, "fts": 60}, "limit": 20},
+  {"q": "reports", "lim": {"names": 10, "paths": 10, "words": 0, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "caps": {"name": 10, "path": 10}, "limit": 20},
+  {"q": "café", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "caps": {}, "limit": 20},
+  {"q": "forecast", "lim": {"names": 10, "paths": 10, "words": 60, "wordsPerDir": 20, "vectors": 0, "vectorsPerDir": 3, "studioText": true, "studioVectors": false, "external": null}, "caps": {}, "limit": 20, "refine": {"name": "*.md", "text": "forecast", "match": "all"}}
+ ],
+ "plans": [
+  {"canned": "largest", "n": 5},
+  {"canned": "oldest", "n": 3},
+  {"canned": "by_extension"},
+  {"canned": "big_directories"},
+  {"canned": "largest", "subtree": "reports"},
+  {"builder": {"source": "files", "filters": [{"field": "text", "op": "match", "value": "budget"}], "groupBy": "none", "sort": "name", "dir": "asc"}},
+  {"builder": {"source": "files", "filters": [{"field": "extension", "op": "eq", "value": "md"}], "groupBy": "directory", "sort": "bytes"}},
+  {"builder": {"source": "files", "filters": [{"field": "modified", "op": "lt", "value": "2026-01-01"}, {"field": "size", "op": "gt", "value": "1k"}], "match": "any", "sort": "size"}},
+  {"sql": "SELECT name, size FROM vrpentries WHERE name LIKE '%.md'"},
+  {"sql": "SELECT name AS file, size AS bytes FROM vrpentries WHERE name LIKE '%.md'"},
+  {"sql": "SELECT nope FROM vrpentries"}
+ ]
+}

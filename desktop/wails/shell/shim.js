@@ -100,13 +100,19 @@
     for (var i = 0; i < bytes.length; i += step) s += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
     return btoa(s);
   }
+  // The page is told where the file went, or why it did not
+  // (studio-shell-saved), and shows a notice; the window shows nothing itself.
+  function saved(detail) {
+    try { window.dispatchEvent(new CustomEvent('studio-shell-saved', { detail: detail })); } catch (_) { /* an old page */ }
+  }
   function save(a, u) {
     var name = a.getAttribute('download') || decodeURIComponent(u.pathname.split('/').pop() || '') || 'download';
-    if (u.protocol === 'blob:' || u.protocol === 'data:') {
-      return fetch(u.href).then(function (r) { return r.arrayBuffer(); })
-        .then(function (buf) { return call('SaveDownload', [name, toBase64(buf)]); });
-    }
-    return call('SaveURL', [u.pathname + u.search, name]);
+    var done = u.protocol === 'blob:' || u.protocol === 'data:'
+      ? fetch(u.href).then(function (r) { return r.arrayBuffer(); })
+        .then(function (buf) { return call('SaveDownload', [name, toBase64(buf)]); })
+      : call('SaveURL', [u.pathname + u.search, name]);
+    return done.then(function (path) { saved({ name: name, path: path }); return path; },
+      function (err) { saved({ name: name, error: String(err && err.message || err) }); throw err; });
   }
   // The web view's own menu carries Back and Reload, which mean nothing in an
   // app window. It stays where it has a use: copy and paste in text.
@@ -141,6 +147,66 @@
     return nativeOpen.apply(window, arguments);
   };
 
+  // A window with no title bar of its own (the Mac's): the window controls
+  // sit over the page's top row. html.shell-inset, --shell-top (the row's
+  // height) and --shell-controls (how far in the controls reach) tell the
+  // page to put each column's first row on it and keep the controls' corner
+  // clear; a press on an empty part of the row
+  // drags the window, and a double click zooms it, as a title bar does.
+  // Anything that takes a click is not empty: a control by its element or
+  // role, or anything with a pointer or resize cursor, as the page gives
+  // whatever it makes clickable.
+  //
+  // With a classification banner the window takes its compact layout: the
+  // controls at a plain title bar's height, over the banner, which is that
+  // strip. The page marks the banner on the html element (data-banner,
+  // shown or none) once its settings are read; the shim tells the shell,
+  // which adds or removes its toolbar row and answers the new height and
+  // reach. Until the page says, the layout is the one the last launch
+  // ended with (cfg.titleCompact), so a launch does not jump.
+  var inset = Number(cfg.titleInset) || 0;
+  if (inset > 0) {
+    var root = document.documentElement;
+    var setRow = function (top, controls) {
+      inset = top;
+      root.style.setProperty('--shell-top', top + 'px');
+      root.style.setProperty('--shell-controls', controls + 'px');
+    };
+    root.classList.add('shell-inset');
+    setRow(inset, Number(cfg.titleControls) || 0);
+    var compact = !!cfg.titleCompact;
+    var followBanner = function () {
+      var b = root.getAttribute('data-banner');
+      if (b !== 'shown' && b !== 'none') return;
+      var want = b === 'shown';
+      if (want === compact) return;
+      compact = want;
+      call('SetCompactTitle', [want]).then(function (m) {
+        if (m && m.titleInset > 0 && compact === want) setRow(m.titleInset, m.titleControls || 0);
+      }).catch(function () { /* the layout stays as it was */ });
+    };
+    new MutationObserver(followBanner).observe(root, { attributes: true, attributeFilter: ['data-banner'] });
+    var CONTROL = 'button, a, input, select, textarea, label, summary, [role="button"], [role="tab"], [role="link"],'
+      + ' [role="menuitem"], [role="option"], [role="treeitem"], [role="checkbox"], [role="switch"], [role="slider"],'
+      + ' [contenteditable="true"], [draggable="true"], [tabindex]:not([tabindex="-1"])';
+    var onControl = function (el) {
+      if (!el || el.nodeType !== 1) return false;
+      if (el.closest && el.closest(CONTROL)) return true;
+      var cursor = '';
+      try { cursor = getComputedStyle(el).cursor; } catch (err) { /* treat as empty */ }
+      return !!cursor && cursor !== 'auto' && cursor !== 'default';
+    };
+    var inRow = function (e) { return e.clientY >= 0 && e.clientY < inset && !onControl(e.target); };
+    window.addEventListener('mousedown', function (e) {
+      if (e.button !== 0 || !inRow(e)) return;
+      try { post('drag'); } catch (err) { /* the window stays where it is */ }
+    }, true);
+    window.addEventListener('dblclick', function (e) {
+      if (!inRow(e)) return;
+      call('ToggleMaximise', []).catch(function () { /* the window stays as it is */ });
+    }, true);
+  }
+
   // The window's title bar follows the page's theme-color tag, as the macOS
   // window's does (titlebar.go). The tag holds whatever CSS color the theme
   // uses; a canvas turns it into #rrggbb.
@@ -155,8 +221,17 @@
   function followBar() {
     var tag = document.querySelector('meta[name="theme-color"]');
     if (!tag) return;
-    reportBar(tag);
-    new MutationObserver(function () { reportBar(tag); }).observe(tag, { attributes: true, attributeFilter: ['content'] });
+    var again = function () { reportBar(tag); };
+    again();
+    new MutationObserver(again).observe(tag, { attributes: true, attributeFilter: ['content'] });
+    // Reported again once the page has loaded, a moment later, and when the
+    // window comes forward: a report sent before the window was ready to
+    // take it would otherwise leave the bar in the last launch's color
+    // until the theme changed.
+    window.addEventListener('load', again);
+    window.addEventListener('focus', again);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) again(); });
+    setTimeout(again, 1500);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', followBar); else followBar();
 

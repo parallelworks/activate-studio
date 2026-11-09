@@ -1,6 +1,7 @@
 // First, so every request any module makes trusts the system's certificate
 // authorities and goes through the proxy, if there is one.
 import './netStart.js'
+import './stateStart.js'
 import Fastify from 'fastify'
 import { fleetRoutes, startFleet } from './fleet.js'
 import { setStopper } from './lifecycle.js'
@@ -12,6 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { HOST, PORT, PROJECT_ROOT, KB_ROOT, gufiAvailable } from './config.js'
 import { kbRoutes, sanitizedErrorHandler } from './routes.js'
+import { goBridgeRoutes } from './goBridge.js'
 import { uploadRoutes } from './uploads.js'
 import { queryRoutes } from './query.js'
 import { runPaneRoutes } from './runPane.js'
@@ -24,11 +26,12 @@ import { attachmentRoutes } from './attachments.js'
 import { extensionRoutes, seedExtensions } from './extensions.js'
 import { conversationRoutes } from './conversations.js'
 import { authHook, authEnabled } from './auth.js'
-import { hydrateFromCookie, scrubPersonalVaultEntries } from './credentials.js'
+import { hydrateFromCookie, mirrorFromGo, scrubPersonalVaultEntries } from './credentials.js'
 import { settingsRoutes } from './settings.js'
 import { setupRoutes } from './setup.js'
 import { chatRoutes } from './chat/routes.js'
 import { mcpRoutes } from './mcp.js'
+import { frontBridgeRoutes, goOwnsPlatform } from './frontBridge.js'
 import { taskRoutes } from './tasks.js'
 import { ragProxyRoutes } from './ragProxy.js'
 import { maybeAutoStart, ragEndpointRoutes } from './ragEndpoint.js'
@@ -55,8 +58,13 @@ await app.register(fastifyMultipart)
 await authHook(app)
 // Browser-held personal keys: a request from a verified user whose memory
 // entry has expired rehydrates it from the sealed key cookie.
+// TRANSITIONAL: behind the Go server, which owns the keys and their
+// cookies (server-go/internal/modelkeys), each request carries the
+// viewer's current key from Go instead (mirrorFromGo).
 app.addHook('onRequest', async req => {
-  if (req.user?.id) hydrateFromCookie(req.user.id, req.headers.cookie)
+  if (!req.user?.id) return
+  if (process.env.STUDIO_GO_MODEL_KEYS === '1') mirrorFromGo(req.user.id, req.headers['x-studio-model-key'])
+  else hydrateFromCookie(req.user.id, req.headers.cookie)
 })
 app.log.info(`personal key vault scrub: ${scrubPersonalVaultEntries()} legacy entries removed`)
 
@@ -96,6 +104,7 @@ if (fs.existsSync(webDist)) {
 
 app.setErrorHandler(sanitizedErrorHandler(app))
 await app.register(kbRoutes)
+await app.register(goBridgeRoutes)
 await app.register(workflowsTabRoutes)
 await app.register(accessRoutes)
 await app.register(sessionRoutes)
@@ -126,6 +135,7 @@ await app.register(chatRoutes)
 await app.register(mcpRoutes)
 await app.register(taskRoutes)
 await app.register(fleetRoutes)
+await app.register(frontBridgeRoutes)
 
 // A brand-new deployment opens on a corpus with some shape rather than an
 // empty tree; only ever runs when the knowledge base has nothing in it.
@@ -151,14 +161,31 @@ void import('./tags.js').then(m => m.reapplyTagOverlay())
 
 await app.listen({ host: HOST, port: PORT })
 
+// The Go front server (server-go/internal/nodeproc) passes a pipe as
+// STUDIO_READY_FD and starts serving as soon as a line arrives on it, in
+// place of polling /healthz. Unset (the default), nothing happens here.
+{
+  const fd = Number(process.env.STUDIO_READY_FD)
+  delete process.env.STUDIO_READY_FD
+  if (Number.isInteger(fd) && fd > 2) {
+    try { fs.writeSync(fd, 'ready\n'); fs.closeSync(fd) } catch { /* the front polls /healthz instead */ }
+  }
+}
+
 // Runs the assistant launched before the last restart are followed again,
 // so their end still reaches the conversations that asked for them.
+// With the Go server owning the platform track (frontBridge.ts), it
+// follows runs, ticks the fleet and registers the RAG endpoint; this
+// server does none of it, or both would.
 setRunsLog(msg => app.log.info(msg))
-startFleet(msg => app.log.info(msg))
+if (!goOwnsPlatform()) startFleet(msg => app.log.info(msg))
 // An automatic update waits until no answer is streaming and nothing is indexing.
 setUpdateBusyCheck(() => streamsInFlight() > 0 || indexStatus().running || indexJobsRunning())
-startUpdates(msg => app.log.info(msg))
-{
+// Behind the Go server (STUDIO_BEHIND_GO=1, which it sets when it starts
+// Node), the Go server owns the update routes and the check: two checkers
+// would race to install. The busy state goes to it in /api/index/status.
+if (process.env.STUDIO_BEHIND_GO !== '1') startUpdates(msg => app.log.info(msg))
+if (!goOwnsPlatform()) {
   const n = watchRegisteredRuns()
   if (n) app.log.info(`following ${n} workflow run(s) registered before this start`)
 }
@@ -209,7 +236,7 @@ process.on('uncaughtException', err => {
   app.log.error({ err }, 'uncaught exception; the deployment stays up')
 })
 
-maybeAutoStart(msg => app.log.info(msg))
+if (!goOwnsPlatform()) maybeAutoStart(msg => app.log.info(msg))
 app.log.info(`kb root: ${KB_ROOT}`)
 app.log.info(`gufi index: ${gufiAvailable() ? 'available' : 'NOT BUILT (run indexer/reindex.sh)'}`)
 app.log.info(`gateway: ${gatewayConfigured() ? 'configured' : 'PW_API_KEY NOT SET; chat disabled'}`)

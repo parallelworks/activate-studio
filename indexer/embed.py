@@ -74,6 +74,7 @@ DOCUMENT_SUFFIXES = (
     '.pdf', '.doc', '.docx', '.odt', '.rtf', '.ppt', '.pptx', '.odp',
     '.md', '.markdown', '.txt', '.rst', '.tex', '.org', '.adoc',
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tif', '.tiff',
+    '.emlx', '.eml',
 )
 # The model this run embeds with: MODEL_NAME, or the ONNX backend's id.
 MODEL_ID = MODEL_NAME

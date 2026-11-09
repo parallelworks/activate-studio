@@ -28,13 +28,19 @@ const asExecution = (v: unknown): AgentExecution | undefined =>
 export interface UpdatePolicy {
   check: boolean
   install: 'manual' | 'auto'
-  channel: 'stable' | 'prerelease'
+  /** Preview also takes releases published as GitHub prereleases; the
+   *  setting's older value `prerelease` is read as preview (docs/UPDATES.md). */
+  channel: UpdateChannel
 }
+export type UpdateChannel = 'stable' | 'preview'
+/** stable or preview from a setting, with the older `prerelease` as preview. */
+export const asChannel = (v: unknown): UpdateChannel | null =>
+  v === 'stable' ? 'stable' : v === 'preview' || v === 'prerelease' ? 'preview' : null
 const UPDATE_DEFAULTS: UpdatePolicy = { check: true, install: 'manual', channel: 'stable' }
 const asPolicy = (v: Partial<UpdatePolicy> | undefined): UpdatePolicy => ({
   check: typeof v?.check === 'boolean' ? v.check : UPDATE_DEFAULTS.check,
   install: v?.install === 'auto' ? 'auto' : 'manual',
-  channel: v?.channel === 'prerelease' ? 'prerelease' : 'stable',
+  channel: asChannel(v?.channel) ?? 'stable',
 })
 
 export interface StudioSettings {
@@ -47,6 +53,8 @@ export interface StudioSettings {
   theme?: 'light' | 'dark'
   accent?: string
   surface?: string
+  /** The left navigation's width in pixels (Settings, General, Sidebar). */
+  navWidth?: number
   iconUrl?: string
   iconUrlDark?: string
   sweepIntervalSec?: number
@@ -102,11 +110,38 @@ export interface StudioSettings {
 }
 
 let cache: StudioSettings | null = null
+/** The file's size and modification time when `cache` was read: another
+ *  process (the Go server in front of this one) may write the file, so a
+ *  change of either reads it again. */
+let cacheStamp = ''
+
+function fileStamp(): string {
+  try { const st = fs.statSync(FILE); return `${st.size}:${st.mtimeMs}:${st.ino}` } catch { return 'none' }
+}
 
 export function loadSettings(): StudioSettings {
-  if (cache) return cache
-  try { cache = JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { cache = {} }
+  const stamp = fileStamp()
+  if (cache && stamp === cacheStamp) return cache
+  try {
+    cache = JSON.parse(fs.readFileSync(FILE, 'utf8'))
+  } catch {
+    // Unreadable or half written: keep what was read last, else nothing.
+    if (stamp !== 'none' && cache) return cache
+    cache = {}
+  }
+  cacheStamp = stamp
   return cache!
+}
+
+/** Write the settings whole, through a temporary file renamed over the
+ *  old, so a reader in another process never sees half a file. */
+async function writeSettingsFile(next: StudioSettings): Promise<void> {
+  await fsp.mkdir(INDEX_BASE, { recursive: true })
+  const tmp = `${FILE}.${process.pid}.tmp`
+  await fsp.writeFile(tmp, JSON.stringify(next, null, 1))
+  await fsp.rename(tmp, FILE)
+  cache = next
+  cacheStamp = fileStamp()
 }
 
 /** A Studio on one person's own computer: nobody signs in, and the platform
@@ -189,8 +224,9 @@ export function effectiveSettings(): Required<StudioSettings> {
       : freshPersonal(s) ? PERSONAL_SECTIONS : []),
     workflowCollection: s.workflowCollection ?? (process.env.STUDIO_WORKFLOWS ? process.env.STUDIO_WORKFLOWS.split(',').map(x => x.trim()).filter(Boolean) : []),
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
-    accent: s.accent ?? process.env.APP_ACCENT ?? 'navy',
-    surface: s.surface ?? process.env.APP_SURFACE ?? 'neutral',
+    accent: s.accent ?? process.env.APP_ACCENT ?? 'none',
+    surface: s.surface ?? process.env.APP_SURFACE ?? 'warm',
+    navWidth: s.navWidth ?? 240,
     iconUrl: s.iconUrl ?? process.env.APP_ICON ?? '',
     iconUrlDark: s.iconUrlDark ?? process.env.APP_ICON_DARK ?? '',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
@@ -277,9 +313,7 @@ export function effectiveSettings(): Required<StudioSettings> {
 /** Save some settings outside the Settings form, keeping the rest. */
 export async function updateSettings(patch: StudioSettings): Promise<StudioSettings> {
   const next: StudioSettings = { ...loadSettings(), ...patch }
-  await fsp.mkdir(INDEX_BASE, { recursive: true })
-  await fsp.writeFile(FILE, JSON.stringify(next, null, 1))
-  cache = next
+  await writeSettingsFile(next)
   return next
 }
 
@@ -324,6 +358,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const v = String(body[field]).trim()
       if (v && !/^https?:\/\//i.test(v) && !v.startsWith('/')) throw new KbError(400, 'icon must be an http(s) URL or an absolute path')
       next[field] = v
+    }
+    if (body.navWidth !== undefined) {
+      const n = Number(body.navWidth)
+      if (!Number.isInteger(n) || n < 200 || n > 400) throw new KbError(400, 'navigation width must be a whole number of pixels from 200 to 400')
+      next.navWidth = n
     }
     if (body.surface !== undefined) {
       const a = String(body.surface)
@@ -465,16 +504,14 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       if (!u || typeof u !== 'object' || Array.isArray(u)) throw new KbError(400, 'updates must be an object')
       if (u.check !== undefined && typeof u.check !== 'boolean') throw new KbError(400, 'updates.check must be true or false')
       if (u.install !== undefined && u.install !== 'manual' && u.install !== 'auto') throw new KbError(400, 'updates.install must be manual or auto')
-      if (u.channel !== undefined && u.channel !== 'stable' && u.channel !== 'prerelease') throw new KbError(400, 'updates.channel must be stable or prerelease')
+      if (u.channel !== undefined && !asChannel(u.channel)) throw new KbError(400, 'updates.channel must be stable or preview')
       next.updates = asPolicy({ ...asPolicy(next.updates), ...u })
     }
     if (body.ragEndpointName !== undefined) {
       const n = String(body.ragEndpointName).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
       next.ragEndpointName = n || undefined
     }
-    await fsp.mkdir(INDEX_BASE, { recursive: true })
-    await fsp.writeFile(FILE, JSON.stringify(next, null, 1))
-    cache = next
+    await writeSettingsFile(next)
     invalidateRemote()
     return { effective: effectiveSettings(), saved: next }
   })

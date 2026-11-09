@@ -1,0 +1,4 @@
+# Built binaries.
+/bin/
+# The prepared occt-import-js modules (scripts/occt/build.sh).
+/occt/

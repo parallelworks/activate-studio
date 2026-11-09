@@ -3,7 +3,7 @@ import { api, type IndexJob, type IndexPhase, type IndexStatus } from './api'
 
 /**
  * The index's status, read once for every view that shows it: the footer's
- * index line, the status panel, Settings, Libraries and Statistics all
+ * index line, the status panel, Settings, Indexing, Libraries and Statistics all
  * subscribe here, so they agree. While a job runs it is read every second;
  * otherwise every 15 seconds, and not while the tab is hidden. When a job
  * ends, or a first build makes the names searchable, the views that read
@@ -129,7 +129,7 @@ export function indexSummary(s: IndexStatus | null, files?: number): IndexSummar
     return { ...base, tone: 'warning', text: 'index incomplete',
       detail: s.lastBuild?.state === 'cancelled' ? 'The last build was stopped before it finished. Update the index to finish it.' : 'The last build did not finish. Update the index to finish it.' }
   }
-  if (s.indexed === false) return { ...base, tone: 'muted', text: 'not indexed', detail: 'Build the index under Settings, Libraries.' }
+  if (s.indexed === false) return { ...base, tone: 'muted', text: 'not indexed', detail: 'Build the index under Settings, Indexing, Libraries.' }
   return { ...base, tone: 'success', text: files != null ? `${files.toLocaleString()} files indexed` : 'indexed' }
 }
 

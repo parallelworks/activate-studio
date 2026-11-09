@@ -1,0 +1,1406 @@
+{
+ "specs": [
+  {
+   "name": "search_kb",
+   "description": "Full-text and semantic search over the connected knowledge base. Returns matching file paths with snippets. Use this before answering questions about the knowledge base content. Use query for a plain search, or name and text for a refined one: name for file and folder names (words, or patterns such as *.docx), text for the words in files and their meaning, with match \"all\" to look for the text only in files whose name or path matches.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "query": {
+      "type": "string",
+      "description": "Search terms (plain words, no operators); leave empty when name or text is given"
+     },
+     "name": {
+      "type": "string",
+      "description": "Refined search: words or patterns for file and folder names, such as \"budget *.xlsx\""
+     },
+     "text": {
+      "type": "string",
+      "description": "Refined search: the words in files, in fts5 syntax (AND, OR, NOT, \"phrase\", prefix*); also searched by meaning without its operators"
+     },
+     "match": {
+      "type": "string",
+      "enum": [
+       "any",
+       "all"
+      ],
+      "description": "Refined search: \"any\" lists matches of either kind (default); \"all\" looks for text only in files whose name or path matches"
+     },
+     "limit": {
+      "type": "number",
+      "description": "Max results, default 10"
+     },
+     "tags": {
+      "type": "string",
+      "description": "Comma-separated label filter: only return material carrying at least one of these labels (e.g. \"validated\" or \"research,theoretical\")"
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library to search: an id from list_libraries, several ids separated by commas, or \"all\" for every library; default the one selected in this conversation"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "read_kb_file",
+   "description": "Read the text the knowledge base holds for files, by relative path (as returned by search_kb or list_kb_dir): the text in the index, which is what search matched. That is the extracted text of an office document or PDF, the OCR or description of an image, and a plain text file's contents. It works when the original file cannot be reached. Each result says its source. It says plainly when the index holds no text for a file; for a plain text file the index has none for, the original is read. The index can lag behind a file changed since the library was last indexed, and holds at most the first 500,000 characters of a file: read_original opens the file itself. To read several files, pass them together in paths in one call: each comes back under its own heading, the first part of each when there are many. To show a file to the user, use show_in_viewer.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string",
+      "description": "Path relative to the knowledge base root"
+     },
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Several paths to read in one call, up to 25"
+     },
+     "offset": {
+      "type": "number",
+      "description": "Character offset to start from, default 0"
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library: an id from list_libraries; default the one selected in this conversation"
+     }
+    }
+   }
+  },
+  {
+   "name": "read_original",
+   "description": "Open the original file itself, by relative path (as returned by search_kb or list_kb_dir), not the index's copy of its text. Use it when read_kb_file says the index holds no text, when the file may have changed since it was indexed, when a file is longer than the index keeps, or when the exact bytes matter. It looks for the file at its library's own location first (this computer, or the library's host over ssh) and then on the other host the library names for reading originals, over ssh as the user; the result says where it read the file. Plain text files come back as text. A document or an image comes back as its extracted text where this Studio has it (use read_kb_file for the index's text of a document on another system). When no host has the file, it says which hosts were tried and why each failed. To read several files, pass them together in paths in one call; offset, and library are as in read_kb_file.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string",
+      "description": "Path relative to the library's root"
+     },
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Several paths to read in one call, up to 25"
+     },
+     "offset": {
+      "type": "number",
+      "description": "Character offset to start from, default 0"
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library: an id from list_libraries; default the one selected in this conversation"
+     }
+    }
+   }
+  },
+  {
+   "name": "list_kb_dir",
+   "description": "List a knowledge base directory. Empty path lists the root.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string",
+      "description": "Directory path relative to the knowledge base root, empty for root"
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library: an id from list_libraries; default the one selected in this conversation"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "list_libraries",
+   "description": "List the libraries this user can search and read: the knowledge base, read-only indexes on this host, and the user's own libraries on their clusters, with what each supports. Search, read, list, and query tools take a library id; search and query also take \"all\".",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+   }
+  },
+  {
+   "name": "list_workflows",
+   "description": "List the platform workflows registered in this account with names, descriptions, and tags, plus the marketplace and GitHub workflows this Studio offers. Workflows offered on the Workflows tab are marked offeredHere and listed first; prefer them when one fits, and point the user to that tab to run it from its form. These are composable building blocks: use this catalog to recommend which workflows fit a task or could be assembled together. For workflows kept in a GitHub repository and not registered anywhere, use list_github_workflows.",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+   }
+  },
+  {
+   "name": "list_github_workflows",
+   "description": "List the workflows in a GitHub repository, or under one directory of it, such as github.com/parallelworks/workflows/workflows@canary: one entry per workflow file (a directory's workflow.yaml or each yamls/<variant>.yaml), with the title and summary from its README. Component workflows (a design of experiments, a design explorer, solvers) live there without being published to the marketplace. Pass an entry as the name to get_workflow, workflow_configs, and run_workflow.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "repo": {
+      "type": "string",
+      "description": "github.com/<owner>/<repo>[/path][@ref], for example github.com/parallelworks/workflows/workflows@canary"
+     }
+    },
+    "required": [
+     "repo"
+    ]
+   }
+  },
+  {
+   "name": "get_workflow",
+   "description": "Fetch a workflow definition by name. Returns its YAML jobs, inputs, and a DAG summary (jobs and needs-edges) suitable for describing or previewing the workflow before running it.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Workflow from list_workflows or list_github_workflows: an account workflow name, marketplace/<slug>, or github.com/<owner>/<repo>/<path>[@ref]"
+     }
+    },
+    "required": [
+     "name"
+    ]
+   }
+  },
+  {
+   "name": "pw_help",
+   "description": "Show the help text for a pw CLI command to discover the platform command surface (clusters, sessions, storage, workflows, AI). Example commands: \"workflows run\", \"clusters\", \"sessions\".",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "command": {
+      "type": "string",
+      "description": "Subcommand path, space separated; empty for the top-level command list"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "compose_workflow",
+   "description": "Combine existing workflows into a new one that runs each as a subworkflow step, merging their inputs. Use it to assemble a chain toward a goal: list_workflows to see what exists, then compose the ones that fit. Returns the composed workflow.yaml for review; nothing is saved to the platform. To show it, write the YAML into the knowledge base and embed /?embed=dag&path=<that file>.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "workflows": {
+      "type": "array",
+      "description": "Workflows to run, in order. Each is a name (cloudinit) or a marketplace reference with an optional version (marketplace/cloudinit/v1.0.1).",
+      "items": {
+       "type": "object",
+       "properties": {
+        "uses": {
+         "type": "string",
+         "description": "Workflow reference"
+        },
+        "name": {
+         "type": "string",
+         "description": "Label for the step"
+        },
+        "id": {
+         "type": "string",
+         "description": "Job id; derived from the reference when omitted"
+        },
+        "needs": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "description": "Job ids to wait for; omit for a straight chain"
+        }
+       },
+       "required": [
+        "uses"
+       ]
+      }
+     },
+     "parallel": {
+      "type": "boolean",
+      "description": "Run the steps independently instead of chaining each after the previous one"
+     }
+    },
+    "required": [
+     "workflows"
+    ]
+   }
+  },
+  {
+   "name": "serve_model",
+   "description": "Launch a model-serving workflow (vLLM or Ollama) so a new model becomes available on the platform. Without launch=true it describes the chosen engine: which workflow it runs, the inputs that workflow takes, and this deployment's preset values. With launch=true it submits the run; do that only when the user asked to launch a model in this conversation. A vLLM launch downloads the model, serves it on the chosen resource, and registers it in the platform model catalog (session:<owner>:<name>/<model>); an Ollama launch serves an Ollama plus Open WebUI session on a Kubernetes cluster, and models are pulled inside it afterwards. Watch progress with workflow_runs and workflow_run_detail.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "engine": {
+      "type": "string",
+      "description": "Which serving engine: 'vllm' or 'ollama' (the configured engines; call with no engine to list them)"
+     },
+     "model": {
+      "type": "string",
+      "description": "For vllm: the HuggingFace model id to serve (fills model.hf_model_id). For ollama, models are pulled after launch instead."
+     },
+     "inputs": {
+      "type": "string",
+      "description": "JSON object of workflow inputs, merged over the deployment preset (e.g. {\"resource\": \"my-cluster\", \"endpoint\": {\"name\": \"qwen38-27b\"}})"
+     },
+     "launch": {
+      "type": "boolean",
+      "description": "false (default) describes; true submits the run"
+     }
+    }
+   }
+  },
+  {
+   "name": "validate_workflow",
+   "description": "Validate workflow YAML against the platform's workflow schema. Pass yaml text, or path for a file in the knowledge base. Run this after composing or editing a workflow and fix every error it reports before writing the file, embedding its DAG, or offering to run it; a workflow that fails this check will fail on the platform too.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "yaml": {
+      "type": "string",
+      "description": "Workflow YAML text to validate"
+     },
+     "path": {
+      "type": "string",
+      "description": "Knowledge base path of a workflow YAML file to validate instead of inline text"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "workflow_configs",
+   "description": "List a workflow's saved input configurations: the named, ready-made settings for running it on a particular HPC system. Most site-specific detail a user should not have to know (queue or partition, QoS, walltime, GPU directives, account) is already correct in these. Call this before run_workflow whenever a request names a system (\"on vega\", \"on juno\"), and prefer the configuration whose name matches that system over composing scheduler settings yourself. Configurations marked builtin ship with the workflow; the others were saved by this account and usually carry a resource and a chosen model as well.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Workflow from list_workflows or list_github_workflows: an account workflow name, marketplace/<slug>, or github.com/<owner>/<repo>/<path>[@ref]"
+     },
+     "config": {
+      "type": "string",
+      "description": "Optional: one configuration name, to see its full resolved inputs instead of the summary list"
+     }
+    },
+    "required": [
+     "name"
+    ]
+   }
+  },
+  {
+   "name": "hpc_environments",
+   "description": "List the schedulable partitions (queues) on a connected HPC system, with their state, free node count, walltime ceiling, the defaults the site applies, and which submission fields the site requires. Use this to choose a partition and a legal walltime, to check a system has capacity before submitting, and when a request names a system that workflow_configs has no configuration for, so scheduler settings have to be built from the site's own values rather than guessed.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "cluster": {
+      "type": "string",
+      "description": "Cluster name from list_clusters; omit to list every system that has partitions"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "run_workflow",
+   "description": "Run a platform workflow, or validate it with dry_run. The simplest launch names the workflow, the system in resource (for example vega), and inputs by their plain names ({\"batch_size\": 4}); the Studio places each input where the workflow declares it and fills the cluster reference, partition, scheduler account, and QoS from the user's last completed run on that system, saying what it filled. Pass config to start from a saved configuration from workflow_configs; inputs are merged on top of it and win. When composing or exploring on your own initiative, validate with dry_run:true. When the user has asked in this conversation to run a workflow, their request is the authorization: launch the real run without asking again for confirmation. After a real run, report the run id and call watch_run.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Workflow from list_workflows or list_github_workflows: an account workflow name, marketplace/<slug>, or github.com/<owner>/<repo>/<path>[@ref]"
+     },
+     "config": {
+      "type": "string",
+      "description": "Saved configuration name from workflow_configs to load settings from"
+     },
+     "resource": {
+      "type": "string",
+      "description": "Target system name, e.g. vega. Sets the workflow's compute-clusters input; only needed when the configuration does not already carry one, or to retarget it"
+     },
+     "inputs": {
+      "type": "string",
+      "description": "JSON object of input values, merged over the configuration"
+     },
+     "dry_run": {
+      "type": "boolean",
+      "description": "true validates without executing (default true)"
+     },
+     "trust": {
+      "type": "boolean",
+      "description": "Grant a GitHub workflow the account variables it declares (shown by get_workflow as permissions). Set true only after the user has approved that access in this conversation; never on your own initiative."
+     }
+    },
+    "required": [
+     "name"
+    ]
+   }
+  },
+  {
+   "name": "watch_run",
+   "description": "Check a workflow run and wait briefly for it to make progress. Returns the run state, the state of each job, and the session URL once the run exposes one. Use it after launching anything the user is waiting on, such as a served model or an interactive session, and call it again to keep following a run that is still working. It returns as soon as something changes, so repeated calls are how progress gets reported.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "run": {
+      "type": "string",
+      "description": "Run identifier from run_workflow or workflow_runs; omit to follow the most recent run"
+     },
+     "wait": {
+      "type": "number",
+      "description": "Seconds to wait for a change before returning, 0-120, default 45"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "agent_sites",
+   "description": "List where pw code agents can run: the user's active clusters, plus this Studio's host when it is offered. With probe, also check each named site's pw code daemon (starting it there if none runs) and report its version and host.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "probe": {
+      "type": "string",
+      "description": "Comma-separated site names to check"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "agent_sessions",
+   "description": "List the pw code sessions on a site: id, name, state, workspace, and model. These include sessions the user started in pw code itself.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "site": {
+      "type": "string",
+      "description": "Where the agent runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
+     }
+    },
+    "required": [
+     "site"
+    ]
+   }
+  },
+  {
+   "name": "start_agent",
+   "description": "Start a pw code agent on a site: a session in a workspace there, given the objective. With a goal it keeps working turn after turn until an evaluator finds the goal met or max_turns is reached, without returning to you in between; use a goal for iterative work (fix until the tests pass, run until the residual converges, refine until a check succeeds) and write it as a condition that can be checked from the transcript. The agent runs as the user on that machine with their files and tools. Only start one when the user asks for an agent or remote work in this conversation. Returns the session id; follow it with agent_status.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "site": {
+      "type": "string",
+      "description": "Where the agent runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
+     },
+     "objective": {
+      "type": "string",
+      "description": "What the agent should do, as you would brief a colleague: context, inputs, where outputs go"
+     },
+     "goal": {
+      "type": "string",
+      "description": "Optional completion condition the agent works toward, checked after every turn"
+     },
+     "max_turns": {
+      "type": "number",
+      "description": "Bound on the goal loop, default 20"
+     },
+     "workspace": {
+      "type": "string",
+      "description": "Working directory on the site: absolute, or under ~, $HOME, or $WORKDIR. Default: a new directory under ~/studio-agents"
+     },
+     "model": {
+      "type": "string",
+      "description": "Model id for the session; default: the chat's current model when it is a platform model, else the site's pw code default"
+     },
+     "permission_mode": {
+      "type": "string",
+      "enum": [
+       "accept-edits",
+       "read-only",
+       "plan"
+      ],
+      "description": "accept-edits (default) edits files in the workspace and asks before commands; read-only only reads; plan only plans"
+     }
+    },
+    "required": [
+     "site",
+     "objective"
+    ]
+   }
+  },
+  {
+   "name": "agent_status",
+   "description": "Where a pw code agent stands: running or idle, its goal (active, paused) and the last goal check (turn count, met or not and why), what it waits for approval on, and the end of its transcript.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "site": {
+      "type": "string",
+      "description": "Where the agent runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
+     },
+     "session": {
+      "type": "string",
+      "description": "The pw code session id, from start_agent or agent_sessions"
+     },
+     "lines": {
+      "type": "number",
+      "description": "Transcript lines to include, default 12"
+     }
+    },
+    "required": [
+     "site",
+     "session"
+    ]
+   }
+  },
+  {
+   "name": "agent_steer",
+   "description": "Give a pw code agent direction. By default the text reaches the turn it is working on without ending it; with mode message it queues as the next turn. Use it to correct course, add a constraint, or answer a question the agent asked.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "site": {
+      "type": "string",
+      "description": "Where the agent runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
+     },
+     "session": {
+      "type": "string",
+      "description": "The pw code session id, from start_agent or agent_sessions"
+     },
+     "text": {
+      "type": "string"
+     },
+     "mode": {
+      "type": "string",
+      "enum": [
+       "direction",
+       "message"
+      ]
+     }
+    },
+    "required": [
+     "site",
+     "session",
+     "text"
+    ]
+   }
+  },
+  {
+   "name": "agent_goal",
+   "description": "Manage a pw code agent's goal: set a new condition (it starts working toward it), show the current one, pause the loop, resume it, or clear it.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "site": {
+      "type": "string",
+      "description": "Where the agent runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
+     },
+     "session": {
+      "type": "string",
+      "description": "The pw code session id, from start_agent or agent_sessions"
+     },
+     "action": {
+      "type": "string",
+      "enum": [
+       "set",
+       "show",
+       "pause",
+       "resume",
+       "clear"
+      ]
+     },
+     "condition": {
+      "type": "string",
+      "description": "For set: the completion condition"
+     },
+     "max_turns": {
+      "type": "number",
+      "description": "For set: bound on the loop, default 20"
+     }
+    },
+    "required": [
+     "site",
+     "session",
+     "action"
+    ]
+   }
+  },
+  {
+   "name": "agent_approve",
+   "description": "Answer a pw code agent's approval request (listed by agent_status). Only when the user has decided it in this conversation: show them the request and ask, then pass their answer.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "site": {
+      "type": "string",
+      "description": "Where the agent runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
+     },
+     "session": {
+      "type": "string",
+      "description": "The pw code session id, from start_agent or agent_sessions"
+     },
+     "approval": {
+      "type": "string",
+      "description": "The approval id from agent_status"
+     },
+     "allow": {
+      "type": "boolean"
+     },
+     "message": {
+      "type": "string",
+      "description": "For a denial: what to tell the agent"
+     }
+    },
+    "required": [
+     "site",
+     "session",
+     "approval",
+     "allow"
+    ]
+   }
+  },
+  {
+   "name": "agent_stop",
+   "description": "Interrupt a pw code agent's current turn. A goal stays set; pause or clear it with agent_goal to keep it from starting again.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "site": {
+      "type": "string",
+      "description": "Where the agent runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
+     },
+     "session": {
+      "type": "string",
+      "description": "The pw code session id, from start_agent or agent_sessions"
+     }
+    },
+    "required": [
+     "site",
+     "session"
+    ]
+   }
+  },
+  {
+   "name": "list_sessions",
+   "description": "List the platform sessions the user can open: the interactive apps workflows start (a design explorer, a notebook, a remote desktop) and running endpoints, with the run that opened each. Use it whenever the user asks to see, show, or open sessions or a design explorer, including by a word (\"show me the modo sessions\": match \"modo\"). Pass run to keep the sessions one workflow run opened, or match to keep those whose name, run, or workflow contains a word. Each running session comes with markdown that shows it in the reply as a card with buttons that open it; put that markdown in the reply.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "run": {
+      "type": "string",
+      "description": "Keep only the sessions this run opened (a run slug from run_workflow or workflow_runs)"
+     },
+     "match": {
+      "type": "string",
+      "description": "Keep only sessions whose name, run, or workflow contains any of these words, case-insensitive (for example \"modo\", or \"modo 00006\")"
+     },
+     "all": {
+      "type": "boolean",
+      "description": "Include sessions that are not running; default false"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "workflow_runs",
+   "description": "List recent workflow runs with their status (running, completed, error).",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "limit": {
+      "type": "number",
+      "description": "Max runs to return, default 15"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "query_corpus",
+   "description": "Structured statistics about the corpus from the file index: largest, newest, oldest, recent (last N days), by_extension totals, big_directories. Use for questions about corpus composition, sizes, and recent activity.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "canned": {
+      "type": "string",
+      "enum": [
+       "largest",
+       "newest",
+       "oldest",
+       "recent",
+       "by_extension",
+       "big_directories"
+      ]
+     },
+     "n": {
+      "type": "number",
+      "description": "Row limit, default 25"
+     },
+     "days": {
+      "type": "number",
+      "description": "For recent: window in days, default 7"
+     },
+     "subtree": {
+      "type": "string",
+      "description": "Restrict to a subtree, empty for whole corpus"
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library: an id from list_libraries, or \"all\" for every library (ranked answers re-ranked across them); default the one selected in this conversation"
+     }
+    },
+    "required": [
+     "canned"
+    ]
+   }
+  },
+  {
+   "name": "suggest_labels",
+   "description": "Read files that carry no labels and propose labels for them, reusing the corpus vocabulary where it fits and proposing new labels where it does not. Returns proposals only; nothing is applied. Use when the user asks how the library should be labelled, or asks for help classifying material, then show the proposals and apply them with apply_labels once the user agrees.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "dir": {
+      "type": "string",
+      "description": "KB-relative directory to look at; empty for the whole corpus"
+     },
+     "limit": {
+      "type": "number",
+      "description": "How many files to consider (default 40, max 200)"
+     },
+     "include_labelled": {
+      "type": "boolean",
+      "description": "Also consider files that already have labels (default false)"
+     }
+    }
+   }
+  },
+  {
+   "name": "write_kb_file",
+   "description": "Write a text file into the knowledge base and index it, for material generated in the conversation: a case file, a script, a geometry (ASCII STL), a note. Use ONLY when the user asked for something to be created or saved. Excluded and dot-directories are refused, and an existing file is only replaced with overwrite=true. After writing a viewable file (STL, markdown, case files), show_in_viewer displays it.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string",
+      "description": "KB-relative path to write, e.g. models/generated/dam.stl"
+     },
+     "content": {
+      "type": "string",
+      "description": "The full file content (text; up to 2 MB)"
+     },
+     "overwrite": {
+      "type": "boolean",
+      "description": "Replace an existing file (default false)"
+     }
+    },
+    "required": [
+     "path",
+     "content"
+    ]
+   }
+  },
+  {
+   "name": "apply_labels",
+   "description": "Add or remove provenance labels on knowledge base files or directories. A directory label applies to its whole subtree. Use ONLY when the user explicitly asks to label, tag, or reclassify something.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "paths": {
+      "type": "string",
+      "description": "Comma-separated paths relative to the library's root"
+     },
+     "add": {
+      "type": "string",
+      "description": "Comma-separated labels to add"
+     },
+     "remove": {
+      "type": "string",
+      "description": "Comma-separated labels to remove"
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library the paths are in: an id from list_libraries; default the one selected in this conversation, or the knowledge base when all are selected"
+     }
+    },
+    "required": [
+     "paths"
+    ]
+   }
+  },
+  {
+   "name": "get_labels",
+   "description": "List the label vocabulary in use across the knowledge base with usage counts (labels convey provenance such as research versus validated).",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+   }
+  },
+  {
+   "name": "studio_docs",
+   "description": "Read this Studio's own documentation to answer questions about using the application itself: \"help\" is the in-app user guide (chat, library, search, agents, workflows, query, labels, adding material, installing as an app, navigation), \"reference\" the details behind each part of the guide (search syntax, keyboard use, model markers, query types, the external endpoints), \"deploy\" running it on ACTIVATE, in a container, or as a server and connecting models, \"architecture\" explains the index and retrieval design, \"customization\" covers deployment configuration, \"libraries\" several indexes at once, \"workflows\" the Workflows tab, \"agents\" delegated agents and pw code sessions, \"multi-user\" several people on one deployment, \"macos\" running on macOS. Use for any question about how the Studio works or how to do something in it; do not search the knowledge base for these.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "doc": {
+      "type": "string",
+      "enum": [
+       "help",
+       "reference",
+       "deploy",
+       "architecture",
+       "customization",
+       "libraries",
+       "workflows",
+       "agents",
+       "multi-user",
+       "macos",
+       "updates"
+      ],
+      "description": "Which document to read"
+     }
+    },
+    "required": [
+     "doc"
+    ]
+   }
+  },
+  {
+   "name": "show_in_viewer",
+   "description": "Get a link that opens something in the library viewer: a knowledge base file (images render as images, PDFs as PDFs, STL and STEP models in a 3D viewer) or a workflow DAG diagram. Returns a markdown link; include it verbatim in your reply so the user can click through. Use whenever the user asks to see, show, open, or display a file, image, document, or workflow graph.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "enum": [
+       "file",
+       "workflow_dag"
+      ],
+      "description": "What to display"
+     },
+     "target": {
+      "type": "string",
+      "description": "KB-relative file path, or workflow name for workflow_dag"
+     }
+    },
+    "required": [
+     "kind",
+     "target"
+    ]
+   }
+  },
+  {
+   "name": "workflow_run_detail",
+   "description": "Inspect one workflow run: status detail, and its errors and recent logs when it failed or is running.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "run": {
+      "type": "string",
+      "description": "Run identifier from workflow_runs"
+     }
+    },
+    "required": [
+     "run"
+    ]
+   }
+  },
+  {
+   "name": "list_clusters",
+   "description": "List the compute clusters connected to this account: name, status, active nodes, type. Use this before any cluster_command call to find the right cluster name and confirm it is running.",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   }
+  },
+  {
+   "name": "hpc_status",
+   "description": "Live status of the HPC fleet from the deployment's Status Monitor: which systems are up and how busy, queue depth and node availability per system, allocation burn, storage quotas and purge exposure, open insights, and placement recommendations for where a job would start fastest. Use before recommending where to submit or launch anything (including serve_model targets), and to answer \"is X up\", \"which queue\", \"how much allocation is left\". Read-only.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "view": {
+      "type": "string",
+      "description": "One of: summary (fleet at a glance), fleet (every system), queues (queue health; add cluster for one system), placement (where to submit), insights (open findings), storage (quotas and purge), events (recent changes)"
+     },
+     "cluster": {
+      "type": "string",
+      "description": "System name, for queues"
+     },
+     "launch": {
+      "type": "boolean",
+      "description": "Deploy a Status Monitor for this user via the configured workflow, when none is running. Only when the user asked for one."
+     },
+     "inputs": {
+      "type": "string",
+      "description": "JSON workflow inputs for the launch, when the workflow needs any"
+     }
+    },
+    "required": [
+     "view"
+    ]
+   }
+  },
+  {
+   "name": "delegate",
+   "description": "Break the current request into subtasks and have agents work them concurrently. Each agent gets its own context and writes a result file into the corpus; you get back a task id, not their output. Delegate when the work genuinely splits into independent strands that are each substantial, for example one per document, per system, or per question. Do not delegate work that is small enough to do directly, that is tightly interdependent, or where one strand needs another's answer first. Fewer, larger subtasks beat many small ones.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "execution": {
+      "type": "string",
+      "enum": [
+       "local",
+       "campaign"
+      ],
+      "description": "local runs agents beside the server, bounded at 15 minutes each: right for quick parallel lookups. campaign submits each agent as a platform workflow run on a named system, hours-long and surviving restarts: right for long or many-agent work. Default local."
+     },
+     "resource": {
+      "type": "string",
+      "description": "Campaign only: the connected system to run agents on, from list_clusters. When the user does not name one, consult hpc_status placement before choosing."
+     },
+     "runtime": {
+      "type": "string",
+      "enum": [
+       "session",
+       "runner"
+      ],
+      "description": "Local only, and only when the deployment allows both: session runs each agent as a pw code session the user can watch, steer, and approve requests for on the Agents tab; runner runs a one-shot agent with no live view. Default session."
+     },
+     "objective": {
+      "type": "string",
+      "description": "What the whole task is trying to achieve"
+     },
+     "subtasks": {
+      "type": "array",
+      "description": "The independent strands. Give each a clear objective, a boundary, and what it should produce.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "persona": {
+         "type": "string",
+         "description": "Optional persona name from the library"
+        },
+        "objective": {
+         "type": "string",
+         "description": "This subtask, stated so an agent with no other context can do it"
+        }
+       },
+       "required": [
+        "objective"
+       ]
+      }
+     }
+    },
+    "required": [
+     "objective",
+     "subtasks"
+    ]
+   }
+  },
+  {
+   "name": "task_status",
+   "description": "The state of a delegated task: each subtask, its state and lineage, and recent board messages. With no id, lists tasks.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "description": "Task id from delegate; omit to list all"
+     }
+    },
+    "required": []
+   }
+  },
+  {
+   "name": "cluster_command",
+   "description": "Run a command on a running cluster over SSH (pw ssh <cluster> <command>). Intended for read-only scheduler and system queries: squeue, sinfo, sacct, scontrol show, qstat, pbsnodes, df, nvidia-smi, hostname. State-changing commands (sbatch, scancel, qsub, qdel, rm, kill) are appropriate when the user asked for that action in this conversation; the request itself is the authorization, so do not ask again for confirmation. Do not initiate state changes the user did not request.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "cluster": {
+      "type": "string",
+      "description": "Cluster or resource name from list_clusters"
+     },
+     "command": {
+      "type": "string",
+      "description": "The command line to run on the cluster"
+     }
+    },
+    "required": [
+     "cluster",
+     "command"
+    ]
+   }
+  },
+  {
+   "name": "list_storage",
+   "description": "List the storage the user can use, such as buckets and file systems: type, cloud, region, size and status.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "category": {
+      "type": "string",
+      "enum": [
+       "buckets",
+       "disks",
+       "lustre",
+       "nfs"
+      ],
+      "description": "Only return storages in this category."
+     },
+     "type": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Only return storages of these CSP-qualified types, e.g. aws-bucket. Repeatable."
+     },
+     "permission": {
+      "type": "string",
+      "enum": [
+       "read",
+       "mount",
+       "edit"
+      ],
+      "description": "Only return storages the requesting user holds at least this access on. Defaults to read."
+     },
+     "provisioned": {
+      "type": "boolean",
+      "description": "Only return provisioned storages."
+     },
+     "scope": {
+      "type": "string",
+      "description": "Whose storages to list: mine (default) or user:<username>. Naming another user requires administrator access."
+     }
+    }
+   }
+  },
+  {
+   "name": "start_cluster",
+   "description": "Start a cloud cluster that is off, provisioning its controller and resources. It starts billing. Use resume_cluster for one that is stopped. Leave user out for the user's own cluster. The user approves each call before it runs.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "type": "string",
+      "description": "Username of the target user."
+     },
+     "clusterName": {
+      "type": "string",
+      "description": "The name of the cluster to provision"
+     }
+    },
+    "required": [
+     "clusterName"
+    ]
+   }
+  },
+  {
+   "name": "resume_cluster",
+   "description": "Resume a stopped cloud cluster, restarting its controller. It starts billing again. Leave user out for the user's own cluster. The user approves each call before it runs.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "type": "string",
+      "description": "Username of the target user."
+     },
+     "clusterName": {
+      "type": "string",
+      "description": "The name of the cluster to resume"
+     }
+    },
+    "required": [
+     "clusterName"
+    ]
+   }
+  },
+  {
+   "name": "stop_cluster",
+   "description": "Stop a running cloud cluster's controller to stop its compute billing. It keeps its disks and settings and can be resumed. Leave user out for the user's own cluster. The user approves each call before it runs.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "type": "string",
+      "description": "Username of the target user."
+     },
+     "clusterName": {
+      "type": "string",
+      "description": "The name of the cluster to stop"
+     }
+    },
+    "required": [
+     "clusterName"
+    ]
+   }
+  },
+  {
+   "name": "destroy_cluster",
+   "description": "Destroy a cloud cluster's provisioned resources, including its disks, so nothing bills. Its definition stays, so it can be started again later from scratch. Use stop_cluster to keep its disks. Leave user out for the user's own cluster. The user approves each call before it runs.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "type": "string",
+      "description": "Username of the target user."
+     },
+     "clusterName": {
+      "type": "string",
+      "description": "The name of the cluster to destroy"
+     }
+    },
+    "required": [
+     "clusterName"
+    ]
+   }
+  },
+  {
+   "name": "cancel_workflow_run",
+   "description": "Cancel a running workflow run, by the slug workflow_runs gives it. The user approves each call before it runs.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "slug": {
+      "type": "string",
+      "description": "The slug identifier of the workflow run to cancel."
+     }
+    },
+    "required": [
+     "slug"
+    ]
+   }
+  }
+ ],
+ "calls": {
+  "search_kb": "gufi_query full-text (fts5 words), filename, and vector (sqlite-lembed gvec) searches over the index, blended and label-annotated; grep -ri over the knowledge base when no index exists",
+  "read_kb_file": "reads the text the index holds for the file (gufi_query on its words table: extracted text, OCR, or a plain text file's contents, on another system too), else the library's extraction cache; a plain text file the index has no text for is read from the original",
+  "read_original": "opens the original file at its library's own location (this computer, or over ssh on the library's host), then on the host the library names for reading originals, over ssh as the user; plain text as it is, and the extraction cache's text for documents and images here",
+  "list_kb_dir": "directory listing under the knowledge base root",
+  "query_corpus": "canned gufi_query aggregations over the per-directory index databases",
+  "get_labels": "reads the user.studio.tags xattr maps cached from the filesystem",
+  "write_kb_file": "fs write into the knowledge base (path-checked, excluded dirs refused) followed by an incremental reindex of the touched subtree",
+  "suggest_labels": "reads the first ~1200 characters of each unlabelled file and asks the deployment model to propose labels from the existing vocabulary (proposals only, nothing applied)",
+  "apply_labels": "setfattr user.studio.tags on the main library's paths plus an in-place upsert into the index databases; another library's labels are kept by the Studio",
+  "list_workflows": "pw workflows ls, plus the marketplace and GitHub entries in this Studio's collection",
+  "list_github_workflows": "GitHub tree and README reads for a repository (no platform call)",
+  "get_workflow": "pw workflows get <name> -o json",
+  "serve_model": "pw workflows get/run on the deployment-configured serving workflow for the engine (settings key serveWorkflows)",
+  "run_workflow": "pw workflows run <name> (dry-run validation unless a real run was requested)",
+  "workflow_configs": "pw workflows get <name> -o json, reading its saved input configurations",
+  "hpc_environments": "pw environments ls (scheduler partitions, limits and required fields per system)",
+  "watch_run": "pw workflows runs view <id>, polled until the run changes or exposes a session",
+  "workflow_runs": "pw workflows runs ls",
+  "list_sessions": "GET /api/sessions on the platform with the user's key",
+  "agent_sites": "pw clusters ls, and each site's pw code daemon status over pw ssh",
+  "agent_sessions": "GET /v1/sessions on the site's pw code daemon",
+  "start_agent": "pw ssh to the site, then POST /v1/sessions, a message, and /goal on its pw code daemon",
+  "agent_status": "GET /v1/sessions/<id> and its state on the site's pw code daemon",
+  "agent_steer": "POST /v1/sessions/<id>/direction or /messages on the site's pw code daemon",
+  "agent_goal": "POST /v1/sessions/<id>/goal on the site's pw code daemon",
+  "agent_approve": "POST /v1/sessions/<id>/approvals/<approval> on the site's pw code daemon",
+  "agent_stop": "POST /v1/sessions/<id>/interrupt on the site's pw code daemon",
+  "workflow_run_detail": "pw workflows runs get <id>",
+  "compose_workflow": "reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps",
+  "validate_workflow": "parses the YAML (inline or a knowledge base file) and validates it against the platform's /workflow.schema.json",
+  "pw_help": "pw --help / pw <command> --help",
+  "list_clusters": "pw cluster ls -o json",
+  "hpc_status": "GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events); launch=true instead runs the deployment-configured monitor workflow via the pw CLI",
+  "cluster_command": "pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)",
+  "show_in_viewer": "no external call; returns viewer deep-link or inline-embed markdown",
+  "studio_docs": "reads one of the documents under docs/ in the app installation",
+  "use_skill": "loads extensions/skills/<name>.md into the conversation",
+  "delegate": "spawns concurrent pw code one-shot agents with a server-enforced ceiling and depth limit; results are written under tasks/ in the corpus",
+  "task_status": "reads the in-memory task board and its subtask tree",
+  "list_storage": "GET /api/storage on the platform with the user's key; each item reduced to its name, display name, category, type, owner, cloud, region, size, status, attachment, URI, and group",
+  "start_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/provision on the platform with the user's key, after the user approves the call in the chat",
+  "resume_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/resume on the platform with the user's key, after the user approves the call in the chat",
+  "stop_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/stop on the platform with the user's key, after the user approves the call (or chooses destroy_cluster instead) in the chat",
+  "destroy_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/destroy on the platform with the user's key, after the user approves the call (or chooses stop_cluster instead) in the chat",
+  "cancel_workflow_run": "POST /api/workflow-runs/<slug>/cancel on the platform with the user's key, after the user approves the call in the chat"
+ },
+ "groups": {
+  "workflows": {
+   "summary": "platform workflows: find, compose, validate, and run them; follow runs; list sessions, clusters, and storage; serve models",
+   "names": [
+    "list_workflows",
+    "list_github_workflows",
+    "get_workflow",
+    "pw_help",
+    "compose_workflow",
+    "serve_model",
+    "validate_workflow",
+    "workflow_configs",
+    "hpc_environments",
+    "run_workflow",
+    "watch_run",
+    "workflow_runs",
+    "workflow_run_detail",
+    "list_sessions",
+    "list_clusters",
+    "list_storage",
+    "hpc_status",
+    "cluster_command"
+   ],
+   "cue": "\\b(workflows?|runs?|running|launch|submit|jobs?|clusters?|hpc|slurm|pbs|partition|qos|queue|sessions?|explorer|endpoints?|serve|deploy|dry.?run|allocation|compute|nodes?|study|studies|sweep|doe|optimi[sz]|activate|account|apps?|applications?|catalog|marketplace|platform|gpus?|models? (server|endpoint)|storage|buckets?|disks?|file ?systems?|lustre|nfs)"
+  },
+  "changes": {
+   "summary": "starting, resuming, stopping, and destroying cloud clusters and cancelling workflow runs; the user approves each call",
+   "names": [
+    "start_cluster",
+    "resume_cluster",
+    "stop_cluster",
+    "destroy_cluster",
+    "cancel_workflow_run"
+   ],
+   "cue": "\\b(start|resume|restart|stop|shut ?down|destroy|tear ?down|cancel|abort|turn (on|off)|spin (up|down)|power (on|off|up|down))\\b[^.?!\\n]{0,60}\\b(clusters?|controllers?|runs?|jobs?)\\b|\\b(clusters?|runs?)\\b[^.?!\\n]{0,40}\\b(start|resume|stop|destroy|cancel)"
+  },
+  "agents": {
+   "summary": "pw code agents on connected systems and delegated subtasks",
+   "names": [
+    "agent_sites",
+    "agent_sessions",
+    "start_agent",
+    "agent_status",
+    "agent_steer",
+    "agent_goal",
+    "agent_approve",
+    "agent_stop",
+    "delegate",
+    "task_status"
+   ],
+   "cue": "\\b(agents?|delegat|pw code|subtasks?|steer|in parallel)"
+  },
+  "editing": {
+   "summary": "writing files into the knowledge base and suggesting or applying labels",
+   "names": [
+    "write_kb_file",
+    "suggest_labels",
+    "apply_labels"
+   ],
+   "cue": "\\b(labels?|tags?|tagging|write|save|create|draft|edit|update|append|notes?|file it|add (a|an|the) )"
+  }
+ },
+ "platform": [
+  {
+   "name": "list_storage",
+   "operation": "get-storages",
+   "method": "GET",
+   "path": "/api/storage",
+   "description": "List the storage the user can use, such as buckets and file systems: type, cloud, region, size and status.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "category": {
+      "type": "string",
+      "enum": [
+       "buckets",
+       "disks",
+       "lustre",
+       "nfs"
+      ],
+      "description": "Only return storages in this category."
+     },
+     "type": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Only return storages of these CSP-qualified types, e.g. aws-bucket. Repeatable."
+     },
+     "permission": {
+      "type": "string",
+      "enum": [
+       "read",
+       "mount",
+       "edit"
+      ],
+      "description": "Only return storages the requesting user holds at least this access on. Defaults to read."
+     },
+     "provisioned": {
+      "type": "boolean",
+      "description": "Only return provisioned storages."
+     },
+     "scope": {
+      "type": "string",
+      "description": "Whose storages to list: mine (default) or user:<username>. Naming another user requires administrator access."
+     }
+    }
+   },
+   "fields": [
+    "name",
+    "displayName",
+    "category",
+    "type",
+    "user",
+    "csp",
+    "region",
+    "sizeGb",
+    "status",
+    "statusDescription",
+    "attached",
+    "uri",
+    "group"
+   ]
+  },
+  {
+   "name": "start_cluster",
+   "operation": "provision-cluster",
+   "method": "POST",
+   "path": "/api/organizations/{organization}/users/{user}/clusters/{clusterName}/provision",
+   "description": "Start a cloud cluster that is off, provisioning its controller and resources. It starts billing. Use resume_cluster for one that is stopped. Leave user out for the user's own cluster.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "type": "string",
+      "description": "Username of the target user."
+     },
+     "clusterName": {
+      "type": "string",
+      "description": "The name of the cluster to provision"
+     }
+    },
+    "required": [
+     "clusterName"
+    ]
+   },
+   "fromViewer": [
+    "organization"
+   ],
+   "defaults": [
+    "user"
+   ]
+  },
+  {
+   "name": "resume_cluster",
+   "operation": "resume-cluster",
+   "method": "POST",
+   "path": "/api/organizations/{organization}/users/{user}/clusters/{clusterName}/resume",
+   "description": "Resume a stopped cloud cluster, restarting its controller. It starts billing again. Leave user out for the user's own cluster.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "type": "string",
+      "description": "Username of the target user."
+     },
+     "clusterName": {
+      "type": "string",
+      "description": "The name of the cluster to resume"
+     }
+    },
+    "required": [
+     "clusterName"
+    ]
+   },
+   "fromViewer": [
+    "organization"
+   ],
+   "defaults": [
+    "user"
+   ]
+  },
+  {
+   "name": "stop_cluster",
+   "operation": "stop-cluster",
+   "method": "POST",
+   "path": "/api/organizations/{organization}/users/{user}/clusters/{clusterName}/stop",
+   "description": "Stop a running cloud cluster's controller to stop its compute billing. It keeps its disks and settings and can be resumed. Leave user out for the user's own cluster.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "type": "string",
+      "description": "Username of the target user."
+     },
+     "clusterName": {
+      "type": "string",
+      "description": "The name of the cluster to stop"
+     }
+    },
+    "required": [
+     "clusterName"
+    ]
+   },
+   "fromViewer": [
+    "organization"
+   ],
+   "defaults": [
+    "user"
+   ],
+   "instead": [
+    "destroy_cluster"
+   ]
+  },
+  {
+   "name": "destroy_cluster",
+   "operation": "destroy-cluster",
+   "method": "POST",
+   "path": "/api/organizations/{organization}/users/{user}/clusters/{clusterName}/destroy",
+   "description": "Destroy a cloud cluster's provisioned resources, including its disks, so nothing bills. Its definition stays, so it can be started again later from scratch. Use stop_cluster to keep its disks. Leave user out for the user's own cluster.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "type": "string",
+      "description": "Username of the target user."
+     },
+     "clusterName": {
+      "type": "string",
+      "description": "The name of the cluster to destroy"
+     }
+    },
+    "required": [
+     "clusterName"
+    ]
+   },
+   "fromViewer": [
+    "organization"
+   ],
+   "defaults": [
+    "user"
+   ],
+   "instead": [
+    "stop_cluster"
+   ]
+  },
+  {
+   "name": "cancel_workflow_run",
+   "operation": "cancel-workflow-run",
+   "method": "POST",
+   "path": "/api/workflow-runs/{slug}/cancel",
+   "description": "Cancel a running workflow run, by the slug workflow_runs gives it.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "slug": {
+      "type": "string",
+      "description": "The slug identifier of the workflow run to cancel."
+     }
+    },
+    "required": [
+     "slug"
+    ]
+   }
+  }
+ ],
+ "hashes": {
+  "list_storage": "2126dcab6b8defce81470778a268418ea306db38a2d98744af5fa02bdf89e74f",
+  "start_cluster": "4cc9952e1d7657674a6a102e002a8df5be107c329ac981267590dad54dad9bab",
+  "resume_cluster": "2aa4858d05f81a8dc6a5004adcfcc0bfdcbe58759ba153454768b7aba34ea01f",
+  "stop_cluster": "5dbfe0b72c03395e1a66ef86ee861a55f30b5ce72cbf9cf5226d4ea1a54f1884",
+  "destroy_cluster": "aab1ad3ea5be8db19cdd131db6b1e654fd705cd3523e2f9b3fd1982fd20d1636",
+  "cancel_workflow_run": "450195bdf0ee8917103ede9c20f4dc2f2573ce2192d2849788a319f4ec3e46ec"
+ }
+}

@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Build "ACTIVATE Studio.app" for macOS on Apple silicon from this checkout.
 #
-# The app carries everything it runs: Node for macOS arm64, the built server
-# and web app with production node_modules, GUFI (from GUFI's own macOS
-# package, or built for an older macOS by deploy/mac/build_gufi.sh; either
-# way loading its libraries from inside the app), tesseract for OCR (built
-# by deploy/mac/build_ocr.sh), a standalone Python for the indexer (with
-# pypdf, xlrd and olefile for documents, and onnxruntime, tokenizers and
-# numpy for the ONNX embedding model), and the embedding models. It builds
-# on macOS or Linux; the .dmg is made only on macOS, where hdiutil exists,
-# and OCR is built only on a Mac (or given as OCR_TARBALL).
+# By default (STUDIO_SERVER=go-only) the app is the Go version: the Wails
+# window (desktop/wails), the Go server in Resources/app/bin with the ONNX
+# runtime library and the embedding model, the built web app, GUFI (from
+# GUFI's own macOS package, or built for an older macOS by
+# deploy/mac/build_gufi.sh; either way loading its libraries from inside the
+# app), tesseract for OCR (built by deploy/mac/build_ocr.sh) and the STEP
+# preview's modules, with no Node and no Python. STUDIO_SERVER=node builds
+# the earlier app: the Swift window, Node for macOS arm64, the built server
+# with production node_modules, and a standalone Python for the indexer. It
+# builds on macOS or Linux (the Wails window only on a Mac); the .dmg is
+# made only on macOS, where hdiutil exists, and OCR is built only on a Mac
+# (or given as OCR_TARBALL).
 #
 # Usage: deploy/mac/build_app.sh
 #   OUT_DIR     where the outputs go (default deploy/mac/out)
@@ -23,6 +26,23 @@
 #   SKIP_BUILD  1 to use the existing server/dist and web/dist
 #   MIN_MACOS   LSMinimumSystemVersion; by default the newest macOS that any
 #               bundled binary declares it needs
+#   STUDIO_SERVER  which server the app runs (docs/UPDATES.md, "The Go version"):
+#               go-only (default: the Go server alone, no Node,
+#               no Python, no node_modules, no GGUF model; the ONNX runtime
+#               library in Resources/app/lib; node/bin/node and
+#               app/server/dist/main.js are stand-ins that older updaters'
+#               checks look for, marked by node/PLACEHOLDER); node (the
+#               build of v1.188 and earlier); or go (the Go server in
+#               Resources/app/bin with Node and Python behind it). The Go
+#               builds need Go. Both carry the ONNX runtime library in app/lib
+#               (beside app/bin/studio-server, where its embedder looks) and
+#               the STEP preview's modules in app/occt, with their licenses
+#               in Resources/licenses.
+#   OCCT_DIR    a folder from server-go/scripts/occt/build.sh (the two
+#               modules and their licenses), used instead of building them
+#   MAC_SHELL   swift or wails: the window. Default wails for go-only, else
+#               swift. wails is desktop/wails built for macOS (Go with cgo, on a
+#               Mac), with the Swift window's features (docs/MACOS.md)
 #
 # Outputs in OUT_DIR: ACTIVATE Studio.app; activate-studio-macos-arm64.tar.gz
 # with its .sha256 and install.sh (the release assets install.sh fetches);
@@ -58,7 +78,16 @@ LIBOMP_SHA256=af8425bbe39630ec9b2022b67449ac737e0ed6d48e98a6309f841295d3c6f0f2
 PCRE2_VERSION=10.49
 PCRE2_SHA256=0ec47d18c50f5770db2b3f07b5b85644284cc6ee8e07e23b11d2727e95932b77
 
-for tool in python3 curl tar git pnpm; do
+SERVER="${STUDIO_SERVER:-go-only}"
+case "$SERVER" in node | go | go-only) ;; *) echo "build_app: STUDIO_SERVER is node, go or go-only" >&2; exit 1 ;; esac
+MAC_SHELL="${MAC_SHELL:-$([ "$SERVER" = go-only ] && echo wails || echo swift)}"
+case "$MAC_SHELL" in swift | wails) ;; *) echo "build_app: MAC_SHELL is swift or wails" >&2; exit 1 ;; esac
+# The ONNX runtime's own release for macOS arm64, for the Go server's embedder.
+ORT_VERSION=1.31.0
+ORT_SHA256=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+TOOLS="python3 curl tar git pnpm"
+[ "$SERVER" = node ] && [ "$MAC_SHELL" = swift ] || TOOLS="$TOOLS go"
+for tool in $TOOLS; do
   command -v "$tool" >/dev/null 2>&1 || { echo "build_app: $tool is required" >&2; exit 1; }
 done
 
@@ -73,7 +102,7 @@ SHORT_VERSION="$(printf '%s' "$VERSION" | sed -n 's/^v\([0-9][0-9.]*[0-9]\).*/\1
 SHORT_VERSION="${SHORT_VERSION:-0.0}"
 DISTANCE="$(printf '%s' "$VERSION" | sed -n 's/^v[0-9.]*-\([0-9][0-9]*\)-g.*/\1/p')"
 BUNDLE_VERSION="$SHORT_VERSION${DISTANCE:+.$DISTANCE}"
-echo "Building $APP_NAME.app $VERSION ($COMMIT)"
+echo "Building $APP_NAME.app $VERSION ($COMMIT), server: $SERVER, window: $MAC_SHELL"
 
 if [ "${SKIP_BUILD:-}" != 1 ]; then
   echo "Building web and server..."
@@ -86,6 +115,61 @@ done
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$RES/app/server" "$RES/app/web" "$RES/app/deploy" "$RES/node/bin" "$RES/models"
 
+if [ "$SERVER" != node ]; then
+  echo "The Go server (studio-server, semantic-map) for macOS arm64..."
+  mkdir -p "$RES/app/bin"
+  (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" \
+    -o "$RES/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
+  # The helper a library's build on another system runs, for each system
+  # it is sent to: Linux x86_64 and aarch64, macOS arm64 (internal/userlibs);
+  # about 25 MB each.
+  "$PROJECT_ROOT/server-go/scripts/build_remote.sh" "$RES/app/bin/remote"
+  # The STEP preview's modules (occt-import-js, Open CASCADE, LGPL 2.1):
+  # separate files beside the server, not built into it, so they stay
+  # replaceable. OCCT_DIR names a folder with them already built
+  # (server-go/scripts/occt/build.sh); else they are built here.
+  echo "The STEP preview modules (occt-import-js)..."
+  mkdir -p "$RES/app/occt" "$RES/licenses"
+  # build.sh fetches occt-import-js and binaryen at the versions and npm
+  # integrity hashes it records, and stops on a mismatch.
+  occt="${OCCT_DIR:-$WORK/occt}"
+  [ -n "${OCCT_DIR:-}" ] || "$PROJECT_ROOT/server-go/scripts/occt/build.sh" "$occt" >/dev/null
+  cp "$occt/occt-import-js.wasm" "$occt/occt-import-js.noeh.wasm" "$RES/app/occt/"
+  cp "$occt/license.occt-import-js.txt" "$RES/licenses/occt-import-js-LICENSE.txt"
+  cp "$occt/license.occt.txt" "$RES/licenses/occt-LICENSE.txt"
+fi
+if [ "$SERVER" = go-only ]; then
+  # What the updaters of v1.141 to v1.188 check in a bundle before they
+  # install it (Resources/node/bin/node and app/server/dist/main.js are
+  # files): stand-ins, so that those installs take the Go version as an
+  # ordinary update. studio-run.sh reads node/PLACEHOLDER and runs the Go
+  # server alone.
+  mkdir -p "$RES/app/server/dist"
+  printf '%s\n' "This app runs the Go server alone (app/bin/studio-server). node/bin/node and" \
+    "app/server/dist/main.js are stand-ins for the checks of older updaters (docs/UPDATES.md)." >"$RES/node/PLACEHOLDER"
+  # The run loop of a release before v1.170 restarts the server with exit
+  # 75 when launchctl kickstart fails after an update, and so runs this
+  # file from the new copy as its server, with the new copy's main.js:
+  # it starts this copy's Go server once through studio-run.sh --serve.
+  cat >"$RES/node/bin/node" <<'STANDIN'
+#!/bin/sh
+# A stand-in for the checks of older updaters (docs/UPDATES.md, "The Go
+# version"): this app runs the Go server and carries no Node.
+res="$(cd "$(dirname "$0")/../.." && pwd -P)"
+case "${1:-}" in
+  */app/server/dist/main.js)
+    if [ -n "${STUDIO_DATA_DIR:-}" ] && [ -f "$res/studio-run.sh" ]; then
+      exec /bin/bash "$res/studio-run.sh" --serve "$STUDIO_DATA_DIR"
+    fi ;;
+esac
+echo "ACTIVATE Studio runs without Node; this file is a stand-in for older updaters" >&2
+exit 1
+STANDIN
+  chmod 755 "$RES/node/bin/node"
+  printf '%s\n' '// A stand-in for the checks of older updaters: this app runs the Go server' \
+    '// (app/bin/studio-server) and carries no Node server.' \
+    "throw new Error('ACTIVATE Studio runs the Go server; there is no Node server here')" >"$RES/app/server/dist/main.js"
+else
 echo "Staging the server's production dependencies for macOS arm64 (pnpm deploy)..."
 # --os and --cpu pick the macOS arm64 builds of platform packages (the
 # document converter's native binary) whatever this host is.
@@ -98,24 +182,33 @@ echo "Staging the server's production dependencies for macOS arm64 (pnpm deploy)
 mv "$WORK/server/node_modules" "$RES/app/server/node_modules"
 cp "$WORK/server/package.json" "$RES/app/server/package.json"
 cp -R "$PROJECT_ROOT/server/dist" "$RES/app/server/dist"
+fi
 
 echo "Staging web, indexer, docs, change log, starters..."
 cp -R "$PROJECT_ROOT/web/dist" "$RES/app/web/dist"
-cp -R "$PROJECT_ROOT/indexer" "$RES/app/indexer"
+if [ "$SERVER" = go-only ]; then
+  # The pins of what a build on another system is sent (internal/userlibs).
+  mkdir -p "$RES/app/indexer" && cp "$PROJECT_ROOT/indexer/embed_deps.json" "$RES/app/indexer/"
+else
+  cp -R "$PROJECT_ROOT/indexer" "$RES/app/indexer"
+fi
 cp -R "$PROJECT_ROOT/docs" "$RES/app/docs"
 # What's new and the notice after an update read it.
 cp "$PROJECT_ROOT/CHANGELOG.md" "$RES/app/CHANGELOG.md"
 cp -R "$PROJECT_ROOT/extensions-starter" "$RES/app/extensions-starter"
 cp "$PROJECT_ROOT/deploy/gufi-index.yaml" "$RES/app/deploy/"
 cp "$PROJECT_ROOT/package.json" "$RES/app/package.json"
-find "$RES/app/indexer" -name __pycache__ -type d -prune -exec rm -rf {} +
-# A clone's own ONNX packages (fetch_embed.py --deps) are for its platform,
-# not the app's, which carries its own in its Python.
-rm -rf "$RES/app/indexer/.deps"
+if [ -d "$RES/app/indexer" ]; then
+  find "$RES/app/indexer" -name __pycache__ -type d -prune -exec rm -rf {} +
+  # A clone's own ONNX packages (fetch_embed.py --deps) are for its platform,
+  # not the app's, which carries its own in its Python.
+  rm -rf "$RES/app/indexer/.deps"
+fi
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf '{\n "version": "%s",\n "commit": "%s",\n "builtAt": "%s"\n}\n' \
   "$VERSION" "$COMMIT" "$BUILT_AT" >"$RES/app/build-info.json"
 
+if [ "$SERVER" != go-only ]; then
 echo "Node $NODE_VERSION for macOS arm64..."
 NODE_DIST="node-$NODE_VERSION-darwin-arm64"
 SUMS="$CACHE_DIR/node-$NODE_VERSION-SHASUMS256.txt"
@@ -160,6 +253,22 @@ python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --platform "macos-arm64-$PY_CP" -
 # The document readers again as wheels, which the app sends to a remote
 # system for a build there (server/src/remoteEmbed.ts).
 python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --download-readers --cache "$RES/app/indexer/wheels"
+else
+  echo "The ONNX embedding model..."
+  python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --cache "$CACHE_DIR/embed" --model "$RES/models/minilm-l6"
+fi
+if [ "$SERVER" != node ]; then
+  echo "The ONNX runtime $ORT_VERSION library, for the Go server's embedder..."
+  ORT_DIST="onnxruntime-osx-arm64-$ORT_VERSION"
+  fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_DIST.tgz" "$CACHE_DIR/$ORT_DIST.tgz" "$ORT_SHA256"
+  # The macOS archive's paths start with ./ (the Linux one's do not).
+  tar -xzf "$CACHE_DIR/$ORT_DIST.tgz" -C "$WORK" "./$ORT_DIST/lib/libonnxruntime.$ORT_VERSION.dylib" "./$ORT_DIST/LICENSE" "./$ORT_DIST/ThirdPartyNotices.txt"
+  # In app/lib: the embedder looks beside studio-server and in ../lib.
+  mkdir -p "$RES/app/lib" "$RES/licenses"
+  cp "$WORK/$ORT_DIST/lib/libonnxruntime.$ORT_VERSION.dylib" "$RES/app/lib/libonnxruntime.dylib"
+  cp "$WORK/$ORT_DIST/LICENSE" "$RES/licenses/onnxruntime-LICENSE.txt"
+  cp "$WORK/$ORT_DIST/ThirdPartyNotices.txt" "$RES/licenses/onnxruntime-ThirdPartyNotices.txt"
+fi
 
 G="$RES/gufi"
 if [ -n "${GUFI_TARBALL:-}" ]; then
@@ -285,8 +394,10 @@ else
   echo "OCR: tesseract is built on a Mac (build_ocr.sh); without OCR_TARBALL this app has none"
 fi
 
-echo "Embedding model..."
-if [ -f "$PROJECT_ROOT/index/models/minilm384.gguf" ]; then
+if [ "$SERVER" = go-only ]; then
+  :
+elif [ -f "$PROJECT_ROOT/index/models/minilm384.gguf" ]; then
+  echo "GGUF embedding model..."
   cp "$PROJECT_ROOT/index/models/minilm384.gguf" "$RES/models/minilm384.gguf"
   [ "$(sha256_of "$RES/models/minilm384.gguf")" = "$MODEL_SHA256" ] || \
     echo "  note: index/models/minilm384.gguf differs from the pinned model; using it as is"
@@ -304,7 +415,14 @@ cp "$HERE/update-signing.pub" "$RES/update-signing.pub"
 # On a Mac the app's executable is its own window (shell/StudioShell.swift),
 # which runs the launcher and shows the Studio. Built elsewhere, it is the
 # launcher itself, which opens the Studio in a browser's app window.
-if [ "$(uname -s)" = Darwin ] && command -v swiftc >/dev/null 2>&1 && [ "${NATIVE_WINDOW:-1}" = 1 ]; then
+if [ "$(uname -s)" = Darwin ] && [ "$MAC_SHELL" = wails ] && [ "${NATIVE_WINDOW:-1}" = 1 ]; then
+  # The Go window (desktop/wails, launcher_darwin.go): it runs the launcher
+  # as the Swift one does.
+  (cd "$PROJECT_ROOT/desktop/wails" && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 MACOSX_DEPLOYMENT_TARGET=14.0 \
+    CGO_LDFLAGS="-mmacosx-version-min=14.0" go build -trimpath -tags desktop,production \
+    -ldflags "-s -w -X main.version=$VERSION" -o "$APP/Contents/MacOS/$APP_NAME" .)
+  echo "  native window (Wails)"
+elif [ "$(uname -s)" = Darwin ] && command -v swiftc >/dev/null 2>&1 && [ "${NATIVE_WINDOW:-1}" = 1 ]; then
   swiftc -O -target arm64-apple-macos13 -o "$APP/Contents/MacOS/$APP_NAME" "$HERE/shell/StudioShell.swift"
   echo "  native window"
 else
@@ -344,13 +462,15 @@ COPYRIGHT="$(sed -n 's/^\(Copyright .*\)$/\1/p' "$PROJECT_ROOT/NOTICE" | head -n
 # space in it, and an unquoted list would split each path into pieces that
 # macho_check.py then skips as missing.
 SITE_NATIVE=()
-while IFS= read -r -d '' f; do SITE_NATIVE+=("$f"); done < <(
+[ "$SERVER" = go-only ] || while IFS= read -r -d '' f; do SITE_NATIVE+=("$f"); done < <(
   find "$RES"/python/lib/python3.*/site-packages -type f \( -name '*.so' -o -name '*.dylib' \) -print0)
 echo "  minimum macOS: ${#SITE_NATIVE[@]} native libraries in the Python packages"
-NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "$RES/node/bin/node" "$RES"/python/bin/python3.* \
-  "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so \
-  ${SITE_NATIVE[@]+"${SITE_NATIVE[@]}"} "$G"/bin/* "$G"/lib/*.dylib \
-  "$O"/bin/* "$O"/lib/*.dylib)"
+MACHO_ALL=("$G"/bin/* "$G"/lib/*.dylib "$O"/bin/* "$O"/lib/*.dylib)
+if [ "$SERVER" != go-only ]; then
+  MACHO_ALL+=("$RES/node/bin/node" "$RES"/python/bin/python3.* "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so)
+fi
+[ "$SERVER" = node ] || MACHO_ALL+=("$RES"/app/bin/* "$RES"/app/lib/*.dylib)
+NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "${MACHO_ALL[@]}" ${SITE_NATIVE[@]+"${SITE_NATIVE[@]}"})"
 MIN_MACOS="${MIN_MACOS:-$NEEDS}"
 APP_NAME="$APP_NAME" BUNDLE_ID="$BUNDLE_ID" SHORT_VERSION="$SHORT_VERSION" BUNDLE_VERSION="$BUNDLE_VERSION" \
   MIN_MACOS="$MIN_MACOS" BUILD="$VERSION ($COMMIT, $BUILT_AT)" ICON="$ICON" COPYRIGHT="$COPYRIGHT" \
@@ -384,6 +504,11 @@ with open(sys.argv[1], 'wb') as fh:
     plistlib.dump(info, fh)
 PY
 printf 'APPL????' >"$APP/Contents/PkgInfo"
+# Which server the app runs: studio-run.sh reads "server" (docs/UPDATES.md).
+if [ "$SERVER" != node ]; then
+  printf '{\n "version": "%s",\n "server": "go",\n "window": "%s",\n "onnxruntime": "%s"\n}\n' \
+    "$VERSION" "$MAC_SHELL" "$ORT_VERSION" >"$RES/manifest.json"
+fi
 echo "  LSMinimumSystemVersion $MIN_MACOS (bundled binaries need $NEEDS)"
 
 # Links that lead nowhere, such as the one pnpm leaves in .pnpm/node_modules
@@ -403,7 +528,7 @@ if command -v codesign >/dev/null 2>&1; then
 fi
 
 echo "Checking the app..."
-"$HERE/check_app.sh" "$APP"
+STUDIO_SERVER="$SERVER" "$HERE/check_app.sh" "$APP"
 
 echo "Packing..."
 cd "$OUT_DIR"

@@ -1,0 +1,760 @@
+{
+ "scripts": {
+  "build_check": "near() { p=$1; while [ ! -e \"$p\" ] && [ \"$p\" != / ]; do p=$(dirname \"$p\"); done; printf '%s' \"$p\"; }\nif [ -d \"$1\" ]; then\n  if [ -r \"$1\" ] && [ -x \"$1\" ]; then echo source=ok; else echo source=unreadable; fi\n  echo \"source_real=$(cd \"$1\" 2>/dev/null && pwd -P)\"\nelif [ -e \"$1\" ]; then echo source=notdir\nelse a=$(near \"$1\"); if [ -d \"$a\" ] && [ -w \"$a\" ]; then echo source=create; else echo source=nocreate; fi; echo \"source_at=$a\"; fi\nif [ -d \"$2\" ]; then\n  if [ -f \"$2/.studio-index.json\" ]; then echo index=studio; echo \"index_source=$(sed -n 's/^ *\"source\": *\"\\(.*\\)\", *$/\\1/p' \"$2/.studio-index.json\" | head -n 1)\"\n  elif [ -n \"$(ls -A \"$2\" 2>/dev/null)\" ]; then echo index=foreign\n  elif [ -w \"$2\" ]; then echo index=empty\n  else echo index=readonly; fi\n  echo \"index_real=$(cd \"$2\" 2>/dev/null && pwd -P)\"\nelif [ -e \"$2\" ]; then echo index=notdir\nelse a=$(near \"$2\"); if [ -d \"$a\" ] && [ -w \"$a\" ]; then echo index=create; else echo index=nocreate; fi; echo \"index_at=$a\"; fi\nfor p in python3.13 python3.12 python3.11 python3.10 python3; do\n  c=$(command -v \"$p\" 2>/dev/null) || continue\n  if \"$c\" -c 'import sqlite3, sys; sqlite3.connect(\":memory:\").execute(\"CREATE VIRTUAL TABLE t USING fts5(x)\"); sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then\n    echo \"python=$c\"; echo \"python_version=$(\"$c\" -c 'import sys; print(\"%d.%d\" % sys.version_info[:2])')\"\n    py=$c\necho \"platform=$(\"$py\" -c 'import platform, sys; m = platform.machine().lower(); a = {\"amd64\": \"x86_64\", \"arm64\": \"aarch64\"}.get(m, m); s = \"macos\" if sys.platform == \"darwin\" else \"linux\" if sys.platform.startswith(\"linux\") else sys.platform; print(\"%s-%s-cp%d%d\" % (s, \"arm64\" if s == \"macos\" and a == \"aarch64\" else a, sys.version_info[0], sys.version_info[1]))' 2>/dev/null)\"\necho \"embeds=$(cd \"$HOME/.activate-studio/embed\" 2>/dev/null && for d in */ok; do [ -f \"$d\" ] && printf '%s ' \"${d%/ok}\"; done)\"\necho \"readers=$(cd \"$HOME/.activate-studio/readers\" 2>/dev/null && for d in */ok; do [ -f \"$d\" ] && printf '%s ' \"${d%/ok}\"; done)\"\n    break\n  fi\ndone\nm=\"$HOME/.activate-studio/models/minilm384.gguf\"; [ -f \"$m\" ] && echo \"model=$m\"\nexit 0",
+  "build_run": "s=$1 bin=$2 src=$3 idx=$4 threads=$5 py=$6 model=$7 create=$8 meaning=${9:-} text=${10:-} onnx=${11:-} platform=${12:-} readers=${13:-} depth=${14:-}\nuname -n > \"$s/host\" 2>/dev/null\necho $$ > \"$s/pid\"\nphase() { printf '%s\\n' \"$1\" > \"$s/phase\"; }\nfail() { printf '%s\\n' \"$1\" > \"$s/error\"; exit 1; }\ntrap 'echo $? > \"$s/exit\"' EXIT\nexport PATH=\"$bin:$PATH\"\n[ \"$(uname -s)\" = Darwin ] && export DYLD_LIBRARY_PATH=\"${bin%/*}/lib\"\nphase prepare\nif [ ! -d \"$src\" ]; then\n  [ \"$create\" = 1 ] || fail \"$src is not a folder.\"\n  mkdir -p \"$src\" || fail \"$src could not be created.\"\nfi\nsrc=$(cd \"$src\" && pwd -P) || fail \"$src cannot be read.\"\n[ \"$src\" != / ] || fail \"Indexing / is not supported; choose a folder.\"\n# The index folder is written to either way; the check said it can be made.\nmkdir -p \"$idx\" || fail \"$idx could not be created.\"\nidx=$(cd \"$idx\" && pwd -P)\nbase=${src##*/}; tree=\"$idx/$base\"; stage=\"$idx/.build\"\n# rm -rf, opening the folders first where one keeps it out: an index of a\n# folder its owner may not write has index folders of that mode.\nrmtree() { [ -e \"$1\" ] || return 0; rm -rf \"$1\" 2>/dev/null && return 0; chmod u+rwx \"$(dirname \"$1\")\" 2>/dev/null; chmod -R u+rwx \"$1\" 2>/dev/null; rm -rf \"$1\"; }\nrmtree \"$stage\"\nphase index\ndir2index() { \"$bin/gufi_dir2index\" -n \"$threads\" -x \"$src\" \"$stage\" > \"$s/dir2index.log\" 2>&1 || fail \"gufi_dir2index failed: $(tail -n 3 \"$s/dir2index.log\" | tr '\\n' ' ')\"; }\ndir2index\n# gufi_dir2index gives each index folder the mode of its source folder\n# before the folders inside it make theirs, so for a user other than root\n# a source folder its owner may not write (0555, say) has what is inside it\n# left out, with a \"mkdir ... failure\" line for each. Those index folders\n# are made first and the build is run again; what the index records about\n# the source is unchanged.\nif grep -q '^mkdir .*/db\\.db failure: ' \"$s/dir2index.log\"; then\n  rmtree \"$stage\"\n  find \"$src\" -type d ! -perm -700 -print0 2>/dev/null | while IFS= read -r -d '' d; do\n    find \"$d\" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | while IFS= read -r -d '' c; do\n      if [ -r \"$c\" ] && [ -x \"$c\" ]; then mkdir -p \"$stage/$base${c#\"$src\"}\"; fi\n    done\n  done\n  dir2index\nfi\n[ -d \"$stage/$base\" ] || fail \"gufi_dir2index wrote no tree at $stage/$base.\"\n# The index folders opened for this user, so the text pass can write in them\n# and the tree can be moved; their group and other bits stay the source's.\n[ \"$(id -u)\" = 0 ] || find \"$stage/$base\" -type d ! -perm -700 -exec chmod u+rwx {} + 2>/dev/null\nnew=\"$stage/$base\"\n# The Studio's ONNX embedding model and its packages for this Python, kept\n# in ~/.activate-studio/embed/<version> and installed once: from what the\n# Studio sends while the build runs (it keeps <version>.sending touched as\n# it goes, and removes it when done), by fetch_embed.py with no network, or\n# downloaded here for what it could not send, where this system reaches the\n# network. Several builds may install at once; the first to finish keeps\n# its copy.\ne=\"$HOME/.activate-studio/embed/$onnx\"\nonnxready() {\n  [ -f \"$e/ok\" ] && return 0\n  while [ -f \"$e.sending\" ] && [ -n \"$(find \"$e.sending\" -mmin -10 2>/dev/null)\" ]; do sleep 2; done\n  t=\"$e.tmp-$$\"; rmtree \"$t\"\n  if \"$py\" \"$s/fetch_embed.py\" --deps \"$t/deps\" --no-readers --model \"$t/model\" --platform \"$platform\" --cache \"$e.files\" > \"$s/onnx.log\" 2>&1 &&\n    PYTHONPATH=\"$t/deps\" \"$py\" -c 'import numpy, onnxruntime, tokenizers' >> \"$s/onnx.log\" 2>&1; then\n    : > \"$t/ok\"\n    [ -e \"$e\" ] || mv \"$t\" \"$e\"\n    [ -f \"$e/ok\" ] && rmtree \"$e.files\"\n  fi\n  rmtree \"$t\"\n  [ -f \"$e/ok\" ]\n}\n# The document readers, kept in ~/.activate-studio/readers/<version> and\n# installed the same way, before the text pass that needs them.\nr=\"$HOME/.activate-studio/readers/$readers\"\nreadersready() {\n  [ -f \"$r/ok\" ] && return 0\n  while [ -f \"$r.sending\" ] && [ -n \"$(find \"$r.sending\" -mmin -10 2>/dev/null)\" ]; do sleep 1; done\n  t=\"$r.tmp-$$\"; rmtree \"$t\"\n  if \"$py\" \"$s/fetch_embed.py\" --deps \"$t/deps\" --readers-only --cache \"$r.files\" > \"$s/readers.log\" 2>&1 &&\n    PYTHONPATH=\"$t/deps\" \"$py\" -c 'import pypdf' >> \"$s/readers.log\" 2>&1; then\n    : > \"$t/ok\"\n    [ -e \"$r\" ] || mv \"$t\" \"$r\"\n    [ -f \"$r/ok\" ] && rmtree \"$r.files\"\n  fi\n  rmtree \"$t\"\n  [ -f \"$r/ok\" ]\n}\nfulltext=false vectors=false textwhy= vecwhy=\nrm -f \"$s/text.json\" \"$s/embed.json\"\n[ -n \"$py\" ] || [ \"$depth\" = names ] || [ -z \"$depth\" ] || textwhy=\"this system has no Python 3.10 or later with SQLite's full-text module\"\nif [ -n \"$py\" ] && [ -f \"$s/enrich.py\" ]; then\n  phase extract\n  if [ -n \"$readers\" ] && [ -f \"$s/fetch_embed.py\" ] && readersready; then\n    export PYTHONPATH=\"$r/deps${PYTHONPATH:+:$PYTHONPATH}\"\n  fi\n  # shellcheck disable=SC2086\n  if \"$py\" \"$s/enrich.py\" --kb-root \"$src\" --index \"$new\" --extract-cache \"$idx/.extract\" --report \"$s/text.json\" $text > \"$s/enrich.log\" 2>&1; then fulltext=true; else textwhy=\"the text pass stopped: $(tail -n 1 \"$s/enrich.log\")\"; fi\n  if [ \"$fulltext\" = true ] && [ -x \"$bin/gufi_sqlite3\" ] && [ -f \"$s/embed.py\" ]; then\n    phase embed\n    onnxdir=\n    if [ -n \"$onnx\" ] && [ -f \"$s/fetch_embed.py\" ] && onnxready; then\n      onnxdir=$e\n      export PYTHONPATH=\"$e/deps${PYTHONPATH:+:$PYTHONPATH}\"\n    fi\n    if [ -n \"$onnxdir\" ] || [ -n \"$model\" ]; then\n      # embed.py takes the ONNX model when it loads, else the GGUF one.\n      # shellcheck disable=SC2086\n      \"$py\" \"$s/embed.py\" --index \"$new\" ${model:+--model \"$model\"} ${onnxdir:+--onnx \"$onnxdir/model\"} --gufi-sqlite3 \"$bin/gufi_sqlite3\" --cache \"$idx/.embed-cache.db\" --prune --report \"$s/embed.json\" $meaning > \"$s/embed.log\" 2>&1 && vectors=true\n      [ \"$vectors\" = true ] || vecwhy=\"the embedding pass stopped: $(tail -n 1 \"$s/embed.log\")\"\n    else\n      vecwhy=\"the embedding model could not be installed: $(tail -n 1 \"$s/onnx.log\" 2>/dev/null)\"\n    fi\n  fi\n  # The Studio searches the text with gufi_query, whose SQLite must read it.\n  if [ \"$fulltext\" = true ]; then \"$bin/gufi_query\" -n 1 --max-level 0 -E 'SELECT count(*) FROM words;' \"$new\" >/dev/null 2>&1 || { fulltext=false; textwhy=\"gufi_query on this system cannot read the text tables\"; }; fi\nfi\n# The index answers whole until here: the new one, text and vectors in it,\n# takes its place in one move.\nrmtree \"$idx/.old\"\nif [ -d \"$tree\" ]; then mv \"$tree\" \"$idx/.old\"; fi\nmv \"$new\" \"$tree\" || fail \"The new index could not be moved into place.\"\nrmtree \"$stage\"; rmtree \"$idx/.old\"\ncase \"$depth\" in meaning-*) if [ \"$vectors\" != true ] && [ -z \"$vecwhy\" ]; then\n  if [ \"$fulltext\" != true ]; then vecwhy=\"there is no text to embed\"\n  elif [ ! -x \"$bin/gufi_sqlite3\" ]; then vecwhy=\"there is no gufi_sqlite3 in $bin\"\n  else vecwhy=\"there is no embedding model for this Python\"; fi\nfi ;; esac\nphase count\nc=$(\"$bin/gufi_query\" -n \"$threads\" -d '|' -a 1 -I 'CREATE TABLE t (d INT64, f INT64);' -K 'CREATE TABLE agg (d INT64, f INT64);' \\\n  -E 'INSERT INTO t SELECT count(*), sum(totfiles) FROM vrsummary;' -J 'INSERT INTO agg SELECT * FROM t;' -G 'SELECT sum(d), sum(f) FROM agg;' \"$tree\" 2>/dev/null | tail -n 1)\ndirs=${c%%|*}; files=${c##*|}\ncase \"$dirs\" in ''|*[!0-9]*) dirs=0 ;; esac\ncase \"$files\" in ''|*[!0-9]*) files=0 ;; esac\n# What the index itself holds, whatever the passes reported. A folder\n# without the table answers nothing.\nsumq() { \"$bin/gufi_query\" -n \"$threads\" -E \"$1\" \"$tree\" 2>/dev/null | awk '{ n += $1 } END { print n + 0 }'; }\npdfwords=$(sumq \"SELECT count(*) FROM words WHERE lower(fname) LIKE '%.pdf';\")\npdfvectors=$(sumq \"SELECT count(DISTINCT g.fname) FROM gchunks g JOIN gvec_rowids v ON v.rowid = g.cid WHERE lower(g.fname) LIKE '%.pdf';\")\nvectorrows=$(sumq 'SELECT count(*) FROM gvec_rowids;')\nreport() { if [ -s \"$1\" ]; then cat \"$1\"; else printf null; fi; }\njson() { printf '\"%s\"' \"$(printf '%s' \"$1\" | tr '\\n\\t' '  ' | sed -e 's/\\\\/\\\\\\\\/g' -e 's/\"/\\\\\"/g')\"; }\n{\n  printf '{\\n  \"version\": 1,\\n  \"source\": %s,\\n  \"index\": %s,\\n  \"indexDir\": %s,\\n' \"$(json \"$src\")\" \"$(json \"$tree\")\" \"$(json \"$idx\")\"\n  printf '  \"builtAt\": %s,\\n  \"gufiBin\": %s,\\n' \"$(json \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\")\" \"$(json \"$bin\")\"\n  printf '  \"directories\": %s,\\n  \"files\": %s,\\n  \"fullText\": %s,\\n  \"vectors\": %s,\\n' \"$dirs\" \"$files\" \"$fulltext\" \"$vectors\"\n  printf '  \"depth\": %s,\\n  \"pdfWords\": %s,\\n  \"pdfVectors\": %s,\\n  \"vectorRows\": %s,\\n' \"$(json \"$depth\")\" \"$pdfwords\" \"$pdfvectors\" \"$vectorrows\"\n  printf '  \"textWhy\": %s,\\n  \"vectorsWhy\": %s,\\n  \"text\": %s,\\n  \"embed\": %s\\n}\\n' \"$(json \"$textwhy\")\" \"$(json \"$vecwhy\")\" \"$(report \"$s/text.json\")\" \"$(report \"$s/embed.json\")\"\n} > \"$idx/.studio-index.json.tmp\" && mv \"$idx/.studio-index.json.tmp\" \"$idx/.studio-index.json\"\nphase done\nexit 0",
+  "build_start": "s=\"$HOME/.activate-studio/builds/$1\"\nmkdir -p \"$s\" || exit 3\nprintf '%s\\n' \"$2\" > \"$s/run.sh\"\nrm -f \"$s/enrich.py\" \"$s/embed.py\" \"$s/embed_onnx.py\" \"$s/fetch_embed.py\" \"$s/embed_deps.json\" \"$s/exit\" \"$s/error\" \"$s/phase\" \"$s/pid\" \"$s/host\"\n[ -n \"$3\" ] && printf '%s\\n' \"$3\" > \"$s/enrich.py\"\n[ -n \"$4\" ] && printf '%s\\n' \"$4\" > \"$s/embed.py\"\n[ -n \"$5\" ] && printf '%s\\n' \"$5\" > \"$s/embed_onnx.py\"\n[ -n \"$6\" ] && printf '%s\\n' \"$6\" > \"$s/fetch_embed.py\"\n[ -n \"$7\" ] && printf '%s\\n' \"$7\" > \"$s/embed_deps.json\"\nif [ -n \"$8\" ]; then mkdir -p \"$HOME/.activate-studio/embed\" && touch \"$HOME/.activate-studio/embed/$8.sending\"; fi\nif [ -n \"$9\" ]; then mkdir -p \"$HOME/.activate-studio/readers\" && touch \"$HOME/.activate-studio/readers/$9.sending\"; fi\nshift 9\nif command -v setsid >/dev/null 2>&1; then\n  setsid nohup bash \"$s/run.sh\" \"$s\" \"$@\" </dev/null >\"$s/log\" 2>&1 &\nelse\n  nohup bash \"$s/run.sh\" \"$s\" \"$@\" </dev/null >\"$s/log\" 2>&1 &\nfi\necho started",
+  "build_status": "s=\"$HOME/.activate-studio/builds/$1\"\n[ -d \"$s\" ] || { echo state=missing; exit 0; }\npid=$(cat \"$s/pid\" 2>/dev/null)\nhost=$(cat \"$s/host\" 2>/dev/null)\nalive=1\nif [ -n \"$pid\" ] && { [ -z \"$host\" ] || [ \"$host\" = \"$(uname -n)\" ]; } && ! kill -0 \"$pid\" 2>/dev/null; then alive=0; fi\necho \"phase=$(cat \"$s/phase\" 2>/dev/null)\"\nif [ -f \"$s/exit\" ]; then\n  echo \"exit=$(cat \"$s/exit\")\"\n  [ -f \"$s/error\" ] && echo \"error=$(head -c 400 \"$s/error\" | tr '\\n' ' ')\"\n  if [ -f \"$2/.studio-index.json\" ]; then echo __MANIFEST__; cat \"$2/.studio-index.json\"; fi\n  exit 0\nfi\nif [ \"$alive\" = 0 ]; then echo state=gone; echo \"log=$(tail -n 3 \"$s/log\" 2>/dev/null | tr '\\n' ' ')\"; exit 0; fi\n[ \"$(cat \"$s/phase\" 2>/dev/null)\" = index ] && echo \"dirs=$(find \"$2/.build\" -name db.db 2>/dev/null | wc -l | tr -d ' ')\"\nexit 0",
+  "embed_probe": "py=$1\necho \"platform=$(\"$py\" -c 'import platform, sys; m = platform.machine().lower(); a = {\"amd64\": \"x86_64\", \"arm64\": \"aarch64\"}.get(m, m); s = \"macos\" if sys.platform == \"darwin\" else \"linux\" if sys.platform.startswith(\"linux\") else sys.platform; print(\"%s-%s-cp%d%d\" % (s, \"arm64\" if s == \"macos\" and a == \"aarch64\" else a, sys.version_info[0], sys.version_info[1]))' 2>/dev/null)\"\necho \"embeds=$(cd \"$HOME/.activate-studio/embed\" 2>/dev/null && for d in */ok; do [ -f \"$d\" ] && printf '%s ' \"${d%/ok}\"; done)\"\necho \"readers=$(cd \"$HOME/.activate-studio/readers\" 2>/dev/null && for d in */ok; do [ -f \"$d\" ] && printf '%s ' \"${d%/ok}\"; done)\"\nexit 0"
+ },
+ "phases": {
+  "prepare": "Preparing",
+  "index": "Indexing folders",
+  "extract": "Extracting text",
+  "embed": "Computing search by meaning",
+  "count": "Counting",
+  "done": "Done"
+ },
+ "keyValues": [
+  {
+   "source": "ok",
+   "source_real": "/home/me/proj",
+   "index": "create",
+   "index_at": "/home/me",
+   "python": "/usr/bin/python3",
+   "python_version": "3.12"
+  },
+  {
+   "a": "1",
+   "b_c": "later",
+   "d": "e=f"
+  },
+  {}
+ ],
+ "statuses": [
+  {
+   "state": "missing",
+   "phase": "",
+   "exit": null,
+   "error": null,
+   "dirs": null,
+   "manifest": null
+  },
+  {
+   "state": "running",
+   "phase": "index",
+   "exit": null,
+   "error": null,
+   "dirs": 42,
+   "manifest": null
+  },
+  {
+   "state": "running",
+   "phase": "index",
+   "exit": null,
+   "error": null,
+   "dirs": null,
+   "manifest": null
+  },
+  {
+   "state": "gone",
+   "phase": "extract",
+   "exit": null,
+   "error": "the build stopped without finishing: line one line two",
+   "dirs": null,
+   "manifest": null
+  },
+  {
+   "state": "finished",
+   "phase": "done",
+   "exit": 0,
+   "error": null,
+   "dirs": null,
+   "manifest": {
+    "index": "/home/me/idx/proj",
+    "directories": 3,
+    "files": 7,
+    "fullText": true
+   }
+  },
+  {
+   "state": "finished",
+   "phase": "done",
+   "exit": 0,
+   "error": null,
+   "dirs": null,
+   "manifest": null
+  },
+  {
+   "state": "finished",
+   "phase": "embed",
+   "exit": 2,
+   "error": "embed.py failed: out of memory",
+   "dirs": null,
+   "manifest": null
+  },
+  {
+   "state": "running",
+   "phase": "",
+   "exit": null,
+   "error": null,
+   "dirs": null,
+   "manifest": null
+  }
+ ],
+ "vectorsMade": [
+  false,
+  true,
+  false,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  true,
+  true,
+  true
+ ],
+ "gaps": [
+  [],
+  [],
+  [],
+  [],
+  [],
+  [
+   "No text in this index: no Python 3.10 or later"
+  ],
+  [
+   "1 .docx file has no text",
+   "3 PDFs have no text: pdftotext found none, as with scanned pages, and this depth runs no OCR"
+  ],
+  [
+   "1 PDF has no text: pypdf and OCR found none, as with a damaged or protected file"
+  ],
+  [
+   "1,200 PDFs have no text: this system has no PDF reader"
+  ],
+  [
+   "2 PDFs have no text: pdftotext found none, as with scanned pages, and this system has no tesseract"
+  ],
+  [
+   "No search by meaning: no embedding model there"
+  ],
+  [
+   "No search by meaning: no vectors were written: model not found"
+  ],
+  [
+   "No search by meaning: no vectors were written"
+  ],
+  [
+   "3 PDFs have text but no vectors: too little of it reads as prose",
+   "1 passage or folder has no vectors: a table could not be written"
+  ],
+  [
+   "2 passage or folders have no vectors: the embedding pass could not write them"
+  ],
+  [
+   "1 PDF has text but no vectors: too little of it reads as prose"
+  ]
+ ],
+ "dests": [
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "sshOptions": []
+   }
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": 2222,
+    "sshOptions": []
+   }
+  },
+  {
+   "error": "destination: user@host, or a Host alias from your ~/.ssh/config, in letters, digits, dots, dashes, and underscores (for an IPv6 address, use an alias)",
+   "status": 400
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": 22,
+    "sshOptions": []
+   }
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": 22,
+    "sshOptions": []
+   }
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "sshOptions": []
+   }
+  },
+  {
+   "error": "port: a number from 1 to 65535",
+   "status": 400
+  },
+  {
+   "error": "port: a number from 1 to 65535",
+   "status": 400
+  },
+  {
+   "error": "port: a number from 1 to 65535",
+   "status": 400
+  },
+  {
+   "error": "port: a number from 1 to 65535",
+   "status": 400
+  },
+  {
+   "error": "destination: user@host, or a Host alias from your ~/.ssh/config, in letters, digits, dots, dashes, and underscores (for an IPv6 address, use an alias)",
+   "status": 400
+  },
+  {
+   "error": "destination: user@host, or a Host alias from your ~/.ssh/config, in letters, digits, dots, dashes, and underscores (for an IPv6 address, use an alias)",
+   "status": 400
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "sshOptions": [
+     "-J",
+     "me@jump"
+    ]
+   }
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "sshOptions": [
+     "-J",
+     "me@jump"
+    ]
+   }
+  },
+  {
+   "error": "ssh options: ProxyCommand is not allowed here: ProxyCommand runs a local command: use -J (ProxyJump), or put it in a Host entry in ~/.ssh/config and give that alias as the host",
+   "status": 400
+  },
+  {
+   "error": "ssh options: give the port once, in the port field or in the options",
+   "status": 400
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": 1,
+    "sshOptions": []
+   }
+  }
+ ],
+ "sshSpecs": [
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "sshOptions": [],
+    "indexRoot": "~/idx/proj",
+    "gufiBin": "/opt/gufi/bin",
+    "sourceRoot": "~/proj"
+   }
+  },
+  {
+   "error": "index directory: the top of the GUFI index on that host, the directory with its db.db",
+   "status": 400
+  },
+  {
+   "error": "index directory: an absolute path on that host, or one under ~",
+   "status": 400
+  },
+  {
+   "error": "index directory: an absolute path on that host, or one under ~",
+   "status": 400
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "sshOptions": [],
+    "indexRoot": "/",
+    "gufiBin": null,
+    "sourceRoot": null
+   }
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "sshOptions": [],
+    "indexRoot": "~",
+    "gufiBin": null,
+    "sourceRoot": null
+   }
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "sshOptions": [],
+    "indexRoot": "/idx",
+    "gufiBin": null,
+    "sourceRoot": null
+   }
+  },
+  {
+   "error": "index directory: an absolute path on that host, or one under ~",
+   "status": 400
+  },
+  {
+   "error": "GUFI bin directory: an absolute path on that host, or one under ~",
+   "status": 400
+  },
+  {
+   "error": "source directory: an absolute path on that host, or one under ~",
+   "status": 400
+  },
+  {
+   "error": "index directory: an absolute path on that host, or one under ~",
+   "status": 400
+  }
+ ],
+ "pwSpecs": [
+  {
+   "ok": {
+    "cluster": "my-cluster",
+    "indexRoot": "/scratch/idx",
+    "gufiBin": null,
+    "sourceRoot": "~/data"
+   }
+  },
+  {
+   "error": "cluster: the name of one of your running clusters",
+   "status": 400
+  },
+  {
+   "error": "cluster: the name of one of your running clusters",
+   "status": 400
+  },
+  {
+   "error": "index directory: the top of the GUFI index on that cluster, the directory with its db.db",
+   "status": 400
+  },
+  {
+   "ok": {
+    "cluster": "spaced",
+    "indexRoot": "/x",
+    "gufiBin": "~/gufi/bin",
+    "sourceRoot": null
+   }
+  }
+ ],
+ "advice": [
+  "There is no ssh client on the machine the Studio runs on.",
+  "me@box did not accept a key and asked for a password or another prompt, which the Studio cannot answer. Set up key access (for example ssh-copy-id me@box), load the key into your ssh agent or name it in ~/.ssh/config, then test again.",
+  "The host key of me@box is not known here yet, or has changed. Connect once from a terminal (ssh me@box) and check and accept the key, then test again.",
+  "The host name in me@box does not resolve. Check the spelling, or the Host entry in ~/.ssh/config.",
+  "Nothing accepted the connection on port 2222. Check the port, and that the ssh server runs on me@box.",
+  "Nothing accepted the connection on port 22. Check the port, and that the ssh server runs on me@box.",
+  "me@box did not answer. Check the address, and that this machine can reach it (a VPN, for example).",
+  "bash is not installed on me@box, so the Studio can run only gufi_query there: connect an existing index read only.",
+  "The ssh connection failed: something else",
+  "The ssh connection failed: exit 1"
+ ],
+ "indexDirs": [
+  "/home/me/.activate-studio/indexes/proj-4c3b4937",
+  "/home/me/.activate-studio/indexes/my_project__1_-c58c5617",
+  "/home/me/.activate-studio/indexes/root-8a5edab2",
+  "/root/.activate-studio/indexes/very-long-folder-name-that-goes-on-and-on-and-on-past-sixty--0bd596fd",
+  "/home/me/.activate-studio/indexes/caf_-ef4cf945"
+ ],
+ "manifestFrom": [
+  {
+   "index": "~/idx",
+   "files": 3
+  },
+  null,
+  null,
+  {
+   "a": 1
+  }
+ ],
+ "public": [
+  {
+   "id": "u-old",
+   "label": "old",
+   "transport": "pw",
+   "existing": false,
+   "meaning": null,
+   "depth": null,
+   "site": "cluster-a",
+   "destination": null,
+   "reached": null,
+   "port": null,
+   "sshOptions": null,
+   "jump": null,
+   "gufiVersion": null,
+   "sourceDir": "$WORKDIR",
+   "sourceRoot": null,
+   "indexRoot": null,
+   "state": "building",
+   "run": {
+    "slug": "abc",
+    "mode": "build",
+    "startedAt": "2026-01-01T00:00:00.000Z"
+   },
+   "error": null,
+   "builtAt": null,
+   "directories": null,
+   "files": null,
+   "scheduler": {
+    "partition": "gpu"
+   },
+   "fullText": false,
+   "vectors": false,
+   "formatNote": null,
+   "readThrough": null,
+   "built": false,
+   "indexDir": null,
+   "progress": null,
+   "builtDepth": null,
+   "gaps": [],
+   "buildingDepth": null
+  },
+  {
+   "id": "u-box-proj",
+   "label": "Remote project",
+   "transport": "ssh",
+   "existing": true,
+   "meaning": null,
+   "depth": null,
+   "site": "me@box",
+   "destination": "me@box",
+   "reached": null,
+   "port": 2222,
+   "sshOptions": "-J me@jump -o ServerAliveInterval=5",
+   "jump": "me@jump",
+   "gufiVersion": "0.6.9",
+   "sourceDir": "/home/me/proj",
+   "sourceRoot": "/home/me/proj",
+   "indexRoot": "/home/me/idx/proj",
+   "state": "ready",
+   "run": null,
+   "error": null,
+   "builtAt": "2026-01-01T00:00:00.000Z",
+   "directories": 2,
+   "files": 3,
+   "scheduler": null,
+   "fullText": true,
+   "vectors": false,
+   "formatNote": "Written by a GUFI before 0.8.0 and rolled up, so the files of the folders it rolled up are listed more than once and counts and sizes over them are too high; rebuild it with GUFI 0.8.0 or later.",
+   "readThrough": {
+    "destination": "me@other",
+    "port": 2200,
+    "sshOptions": "-J me@jump",
+    "root": "/mirror"
+   },
+   "built": false,
+   "indexDir": null,
+   "progress": null,
+   "builtDepth": null,
+   "gaps": [],
+   "buildingDepth": null
+  },
+  {
+   "id": "u-cl-docs",
+   "label": "docs",
+   "transport": "pw",
+   "existing": false,
+   "meaning": "off",
+   "depth": "ocr",
+   "site": "cl",
+   "destination": null,
+   "reached": null,
+   "port": null,
+   "sshOptions": null,
+   "jump": null,
+   "gufiVersion": null,
+   "sourceDir": "/home/me/docs",
+   "sourceRoot": null,
+   "indexRoot": null,
+   "state": "building",
+   "run": null,
+   "error": null,
+   "builtAt": null,
+   "directories": null,
+   "files": null,
+   "scheduler": null,
+   "fullText": false,
+   "vectors": false,
+   "formatNote": null,
+   "readThrough": null,
+   "built": true,
+   "indexDir": "/home/me/.activate-studio/indexes/docs-1234",
+   "progress": {
+    "phase": "Indexing folders",
+    "done": 12,
+    "total": 0,
+    "current": "12 folders"
+   },
+   "builtDepth": "names",
+   "gaps": [
+    "1 PDF has no text"
+   ],
+   "buildingDepth": "text",
+   "job": 1048577
+  },
+  {
+   "id": "u-cl-idx",
+   "label": "idx",
+   "transport": "pw",
+   "existing": true,
+   "meaning": null,
+   "depth": null,
+   "site": "cl",
+   "destination": null,
+   "reached": null,
+   "port": null,
+   "sshOptions": null,
+   "jump": null,
+   "gufiVersion": null,
+   "sourceDir": "",
+   "sourceRoot": null,
+   "indexRoot": "/scratch/idx",
+   "state": "ready",
+   "run": null,
+   "error": "it failed",
+   "builtAt": "2026-01-01T00:00:00.000Z",
+   "directories": 0,
+   "files": 0,
+   "scheduler": null,
+   "fullText": false,
+   "vectors": false,
+   "formatNote": null,
+   "readThrough": null,
+   "built": false,
+   "indexDir": null,
+   "progress": null,
+   "builtDepth": null,
+   "gaps": [],
+   "buildingDepth": null
+  },
+  {
+   "id": "u-rt-plain",
+   "label": "old",
+   "transport": "pw",
+   "existing": false,
+   "meaning": null,
+   "depth": null,
+   "site": "cluster-a",
+   "destination": null,
+   "reached": null,
+   "port": null,
+   "sshOptions": null,
+   "jump": null,
+   "gufiVersion": null,
+   "sourceDir": "$WORKDIR",
+   "sourceRoot": null,
+   "indexRoot": null,
+   "state": "building",
+   "run": {
+    "slug": "abc",
+    "mode": "build",
+    "startedAt": "2026-01-01T00:00:00.000Z"
+   },
+   "error": null,
+   "builtAt": null,
+   "directories": null,
+   "files": null,
+   "scheduler": {
+    "partition": "gpu"
+   },
+   "fullText": false,
+   "vectors": false,
+   "formatNote": null,
+   "readThrough": {
+    "destination": "me@xfer",
+    "port": null,
+    "sshOptions": null,
+    "root": "/data/x"
+   },
+   "built": false,
+   "indexDir": null,
+   "progress": null,
+   "builtDepth": null,
+   "gaps": [],
+   "buildingDepth": null
+  },
+  {
+   "id": "u-rt-full",
+   "label": "old",
+   "transport": "pw",
+   "existing": false,
+   "meaning": null,
+   "depth": null,
+   "site": "cluster-a",
+   "destination": null,
+   "reached": null,
+   "port": null,
+   "sshOptions": null,
+   "jump": null,
+   "gufiVersion": null,
+   "sourceDir": "$WORKDIR",
+   "sourceRoot": null,
+   "indexRoot": null,
+   "state": "building",
+   "run": {
+    "slug": "abc",
+    "mode": "build",
+    "startedAt": "2026-01-01T00:00:00.000Z"
+   },
+   "error": null,
+   "builtAt": null,
+   "directories": null,
+   "files": null,
+   "scheduler": {
+    "partition": "gpu"
+   },
+   "fullText": false,
+   "vectors": false,
+   "formatNote": null,
+   "readThrough": {
+    "destination": "me@xfer",
+    "port": 2222,
+    "sshOptions": "-J me@jump",
+    "root": null
+   },
+   "built": false,
+   "indexDir": null,
+   "progress": null,
+   "builtDepth": null,
+   "gaps": [],
+   "buildingDepth": null
+  }
+ ],
+ "embed": [
+  {
+   "files": [
+    {
+     "name": "5e129d6c56abd53e-onnxruntime-1.31.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+     "sha256": "5e129d6c56abd53e659cb70f00a108d6824086470ff99c2e47a82e5786563db3",
+     "size": 23760984
+    },
+    {
+     "name": "376851d22bcf9d65-tokenizers-0.23.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+     "sha256": "376851d22bcf9d650a5c3090bb83e6cf9e895fbf0595369fa4cd43c1f69b5f87",
+     "size": 3396193
+    },
+    {
+     "name": "81f4a14bee47aec5-numpy-2.4.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+     "sha256": "81f4a14bee47aec54f883e0cad2d73986640c1590eb9bfaaba7ad17394481e6e",
+     "size": 16645480
+    },
+    {
+     "name": "afdb6f1a0e45b715-model_quantized.onnx",
+     "sha256": "afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1",
+     "size": 22972370,
+     "local": "model.onnx"
+    },
+    {
+     "name": "da0e79933b9ed517-tokenizer.json",
+     "sha256": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+     "size": 711661,
+     "local": "tokenizer.json"
+    }
+   ],
+   "version": "linux-x86_64-cp312-404ede0ad2ad",
+   "megabytes": 67
+  },
+  {
+   "files": [
+    {
+     "name": "0ba02a44acb62030-onnxruntime-1.31.0-cp313-cp313-macosx_14_0_arm64.whl",
+     "sha256": "0ba02a44acb6203040354d9a1f160e3f37a43feac7bb05caa3e0ea545efed505",
+     "size": 20881803
+    },
+    {
+     "name": "68649e97d5b43c44-tokenizers-0.23.3-cp310-abi3-macosx_11_0_arm64.whl",
+     "sha256": "68649e97d5b43c44c031d8d848874a6eecae8f8fe40ea989aa777a5a83aca716",
+     "size": 3101381
+    },
+    {
+     "name": "4a19d9dba1a76618-numpy-2.4.4-cp313-cp313-macosx_14_0_arm64.whl",
+     "sha256": "4a19d9dba1a76618dd86b164d608566f393f8ec6ac7c44f0cc879011c45e65af",
+     "size": 5199661
+    },
+    {
+     "name": "afdb6f1a0e45b715-model_quantized.onnx",
+     "sha256": "afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1",
+     "size": 22972370,
+     "local": "model.onnx"
+    },
+    {
+     "name": "da0e79933b9ed517-tokenizer.json",
+     "sha256": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+     "size": 711661,
+     "local": "tokenizer.json"
+    }
+   ],
+   "version": "macos-arm64-cp313-93cbb55582ac",
+   "megabytes": 53
+  },
+  {
+   "files": null,
+   "version": null,
+   "megabytes": 0
+  },
+  {
+   "files": null,
+   "version": null,
+   "megabytes": 0
+  },
+  {
+   "files": null,
+   "version": null,
+   "megabytes": 0
+  },
+  {
+   "files": null,
+   "version": null,
+   "megabytes": 0
+  }
+ ],
+ "readers": {
+  "files": [
+   {
+    "name": "ea762c3d29f4cca4-xlrd-2.0.2-py2.py3-none-any.whl",
+    "sha256": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9",
+    "size": 96555
+   },
+   {
+    "name": "543c7da2a7adadf2-olefile-0.47-py2.py3-none-any.whl",
+    "sha256": "543c7da2a7adadf21214938bb79c83ea12b473a4b6ee4ad4bf854e7715e13d1f",
+    "size": 114565
+   },
+   {
+    "name": "1d44d1a3a200f250-pypdf-6.21.2-py3-none-any.whl",
+    "sha256": "1d44d1a3a200f25062adff0085b02040e4646431ac2ccac22e42679e91466084",
+    "size": 407766
+   },
+   {
+    "name": "481caa481374e813-typing_extensions-4.16.0-py3-none-any.whl",
+    "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+    "size": 45571
+   }
+  ],
+  "version": "30d80ca54a78"
+ }
+}

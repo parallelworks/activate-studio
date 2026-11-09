@@ -16,6 +16,18 @@ The assistant talks to any OpenAI-compatible endpoint: set `OPENAI_BASE_URL` and
 
 The chat greeting uses `APP_USER_NAME` in standalone mode. Behind the platform, a verified JWT identity takes precedence (below).
 
+## Readers for other file types
+
+Indexing reads PDFs, Office and OpenDocument files, text and images. A reader for another format, or one to use in place of a built-in reader, is a command listed in `$INDEX_BASE/extractors.json`; set `STUDIO_EXTRACTORS` to a file path to use another file, and `studio-server extract --extractors FILE` takes precedence over both. Nothing else needs to change, and there is no setting for it in the UI.
+
+```json
+{"extractors": [
+  {"name": "dwg", "suffixes": [".dwg", ".dxf"], "command": ["/opt/tools/dwg2text", "--plain", "{path}"], "timeoutSeconds": 300}
+]}
+```
+
+The contract: `{path}` in any argument is replaced by the file's absolute path, or the path is appended when no argument has it; no shell is involved. stdin is empty, the working directory is a scratch directory removed afterwards, and the environment is the Studio's plus `OMP_THREAD_LIMIT=1`. Exit status 0 with text on stdout is the file's text (UTF-8, invalid bytes replaced, `\r\n` read as `\n`, the usual length cap). Exit 0 with only whitespace means the file has no text; any other status is a failure, and in both cases nothing is cached, so the next pass tries again, and the start of stderr goes to the index log. The command and its process group are stopped after `timeoutSeconds` (120 when absent, at most 3600). Suffixes are matched without regard to case; the plain text formats cannot be taken over. A missing `extractors.json` is ignored; a broken one is logged and the pass goes on without it. A file named by `STUDIO_EXTRACTORS` or `--extractors` has to exist and parse, or the pass exits with status 2.
+
 ## Tools, skills, and agent files
 
 The assistant's tool set is managed from the Settings page and from files.
@@ -38,6 +50,9 @@ The in-app Help page renders `docs/HELP.md`: the text before the first heading i
 ## Platform identity (optional)
 
 When served behind the ACTIVATE platform, the session proxy forwards a short-lived (5 minute) RS256 JWT in the `X-PW-User-Token` header: `sub` is `user:<username>`, `iss` is `pw-session-proxy`, and `aud` carries `session:<sessionId>` and `session:<owner>/<sessionName>`. It identifies the user and proves the platform forwarded the request; it carries no credentials. Set `AUTH_JWKS_URL` to the platform's keys endpoint (`https://<platform-host>/api/platform/keys`, the `jwks_uri` from its OIDC discovery document) to verify it; `AUTH_HEADER` names the header (default `x-pw-user-token`), and `AUTH_ISSUER`/`AUTH_AUDIENCE` add the standard claim checks, with `session:<owner>/<sessionName>` the natural audience to pin. With `AUTH_REQUIRED=1`, API requests without a valid token are rejected; without it, verification is best-effort and the verified identity simply personalizes the app. Role-based permissions (who can manage the library versus only chat) are a planned layer on top of this identity.
+
+
+A Studio can also sign people in itself, through ACTIVATE's OpenID Connect provider or any other: set `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. A request with a valid proxy JWT is that user; otherwise the sign-in session decides, and both turn on everything below that says "identity verification enabled". Configuration and the ACTIVATE registration steps are in [`DEPLOY.md`](DEPLOY.md), Sign-in.
 
 ## Per-user model keys (shared ACTIVATE sessions)
 

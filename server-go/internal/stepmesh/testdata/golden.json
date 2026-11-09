@@ -1,0 +1,30 @@
+{
+ "cube-fcstd/cube.step": {
+  "bytes": 932,
+  "sha256": "3af851293cda5658db35e9d72c5772d31f2d72c72879df1b270b0f0f7113241a"
+ },
+ "rounded-cube/rounded-cube.step": {
+  "bytes": 3576,
+  "sha256": "70049c6e6cb7b6f401328035ca02b07289d64b9a77ceae2f3198f8b440408310"
+ },
+ "conical-surface/conical-surface.step": {
+  "bytes": 40336,
+  "sha256": "0a2f6fcb66bd4a185488d8df647cbf32f49a19cb20dd32f7e339a8885d32c9f3"
+ },
+ "cube-units/cube-in.step": {
+  "bytes": 932,
+  "sha256": "ff2ba9f6c3eafa018ffb8a473adcc04d7e08b76065b665e26a968abecdea4956"
+ },
+ "cube-10x10mm/Cube 10x10.stp": {
+  "bytes": 888,
+  "sha256": "fc379e5046ac5f71bfbf75e1211d80e9f965548e1e67b30ab06d990133bb6ce9"
+ },
+ "cax-if/as1-oc-214.stp": {
+  "bytes": 189060,
+  "sha256": "95e4e58df03c1188480bb3665d18a846584c2f613c2639e89674443b1fa040de"
+ },
+ "cax-if/io1-cm-214.stp": {
+  "bytes": 105340,
+  "sha256": "f97bba79275a72028cff6422abb38d4d92535bf90a3714479a44f6c73fc08ca7"
+ }
+}

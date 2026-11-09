@@ -38,7 +38,6 @@ else
 fi
 DATA="${STUDIO_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/activate-studio-data}"
 RUN="$DATA/run"
-PY="$TREE/python/bin/python3"
 
 say() { echo "$@" >&2; }
 
@@ -94,13 +93,10 @@ setting() {
   ( set +eu; unset "$1"; [ -f "$DATA/studio.env" ] && . "$DATA/studio.env" >/dev/null 2>&1; printf '%s' "${!1:-}" )
 }
 
+# Free when nothing answers a connection there (bash's /dev/tcp): the Go
+# version has no Python to bind a socket with.
 port_free() {
-  "$PY" -I -c 'import socket, sys
-s = socket.socket()
-try:
-    s.bind(("127.0.0.1", int(sys.argv[1])))
-except OSError:
-    sys.exit(1)' "$1" 2>/dev/null
+  ! timeout 2 bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$1"' _ "$1" 2>/dev/null
 }
 
 # The port the server uses: studio.env's, else the last one (kept so the
@@ -114,7 +110,13 @@ choose_port() {
     case "$p" in ''|*[!0-9]*) continue ;; esac
     if port_free "$p"; then printf '%s\n' "$p" >"$RUN/server-port"; printf '%s\n' "$p"; return; fi
   done
-  p="$("$PY" -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+  # Else one picked at random from the dynamic range that nothing answers.
+  local n=0
+  while [ "$n" -lt 50 ]; do
+    p=$((20000 + (RANDOM * 32768 + RANDOM) % 40000))
+    port_free "$p" && break
+    n=$((n + 1))
+  done
   printf '%s\n' "$p" >"$RUN/server-port"
   printf '%s\n' "$p"
 }
@@ -127,17 +129,26 @@ running_port() {
   printf '%s\n' "${p:-4180}"
 }
 
-up() { "$PY" -I -c 'import sys, urllib.request; urllib.request.urlopen("http://127.0.0.1:%s/api/version" % sys.argv[1], timeout=2)' "$1" >/dev/null 2>&1; }
+# The server answers /api/version with 200 (HTTP over bash's /dev/tcp).
+up() {
+  timeout 3 bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$1" || exit 1
+printf "GET /api/version HTTP/1.0\r\nHost: 127.0.0.1:%s\r\n\r\n" "$1" >&3
+IFS= read -r l <&3
+case "$l" in "HTTP/1."?" 200"*) exit 0 ;; esac
+exit 1' _ "$1" >/dev/null 2>&1
+}
 
 # The browser mode's server: the payload's run loop in a session of its own
-# (the payload's Python does the setsid), which outlives this script and the
-# browser, and ignores hangups.
+# (setsid, from util-linux), which outlives this script and the browser, and
+# ignores hangups (nohup). A background job of this script leads no process
+# group, so setsid runs it in place and $! is the run loop's own process.
 start_detached() {
   local port="$1" p
-  STUDIO_RUN_PORT="$port" nohup "$PY" -B -c 'import os, signal, sys
-os.setsid()
-signal.signal(signal.SIGHUP, signal.SIG_IGN)
-os.execv("/bin/bash", ["/bin/bash"] + sys.argv[1:])' "$TREE/studio-run.sh" "$DATA" </dev/null >>"$DATA/logs/background.log" 2>&1 &
+  if command -v setsid >/dev/null 2>&1; then
+    STUDIO_RUN_PORT="$port" nohup setsid /bin/bash "$TREE/studio-run.sh" "$DATA" </dev/null >>"$DATA/logs/background.log" 2>&1 &
+  else
+    STUDIO_RUN_PORT="$port" nohup /bin/bash "$TREE/studio-run.sh" "$DATA" </dev/null >>"$DATA/logs/background.log" 2>&1 &
+  fi
   p=$!
   disown "$p" 2>/dev/null || true
   printf '%s\n' "$p" >"$RUN/server.pid"
@@ -162,9 +173,26 @@ stop_window() {
   fi
 }
 
+# WSL (Windows Subsystem for Linux, docs/WINDOWS.md): set for what WSL
+# starts, and its handler for Windows programs.
+in_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop ]; }
+# Windows' rundll32, on the Windows PATH WSL appends or at its usual place.
+win_rundll() {
+  command -v rundll32.exe 2>/dev/null && return 0
+  local r
+  for r in /mnt/c/Windows/System32/rundll32.exe /mnt/c/WINDOWS/system32/rundll32.exe; do
+    [ -x "$r" ] && { printf '%s\n' "$r"; return 0; }
+  done
+  return 1
+}
 open_url() {
   [ "${STUDIO_NO_BROWSER:-}" = 1 ] && return 0
+  local r
   if [ -n "${BROWSER:-}" ]; then "$BROWSER" "$1" >/dev/null 2>&1 &
+  # Under WSL the page opens in the Windows browser: wslview (wslu) where
+  # installed, else rundll32 with url.dll, which no shell parses.
+  elif in_wsl && command -v wslview >/dev/null 2>&1; then wslview "$1" >/dev/null 2>&1 &
+  elif in_wsl && r="$(win_rundll)"; then "$r" url.dll,FileProtocolHandler "$1" >/dev/null 2>&1 &
   elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 &
   else say "Open $1 in a browser."; fi
   return 0
@@ -202,6 +230,9 @@ window_mode() {
   # One server per data folder: the window starts its own.
   stop_detached
   export STUDIO_TREE="$TREE" STUDIO_DATA_DIR="$DATA"
+  # WSLg has no DRM device for WebKitGTK's DMA-BUF renderer, which can leave
+  # the window blank; the renderer it falls back to draws (docs/WINDOWS.md).
+  if in_wsl && [ ! -e /dev/dri ]; then export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"; fi
   exec "$shell_bin" "$@"
 }
 

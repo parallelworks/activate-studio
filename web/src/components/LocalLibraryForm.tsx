@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Callout, Input } from '@parallelworks/ui'
 import { api, type IndexDepth, type SettingsLibrary } from '../api'
 import { DEFAULT_LIBRARY_DEPTH, IndexDepthControl, meaningLastNote, useOcrHere } from './IndexDepth'
@@ -8,6 +8,32 @@ import { FolderBrowser } from './PrimaryFolder'
 const EMPTY = { indexRoot: '', sourceRoot: '', label: '', id: '' }
 
 interface BuildCheck { ok: boolean; steps: CheckStep[]; create: string[] }
+
+/** A folder offered as a library (GET /api/libraries/suggestions). */
+export interface FolderSuggestion {
+  id: string
+  label: string
+  path: string
+  note: string
+  /** 'full-disk-access': macOS lets the app read it only with Full Disk Access. */
+  access: 'ok' | 'full-disk-access'
+}
+
+/** The suggested folders, or none where the server offers none. */
+export function useFolderSuggestions(on: boolean): [FolderSuggestion[], () => void] {
+  const [list, setList] = useState<FolderSuggestion[]>([])
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    if (!on) return
+    let alive = true
+    fetch('/api/libraries/suggestions')
+      .then(r => (r.ok ? r.json() : { suggestions: [] }))
+      .then((d: { suggestions?: FolderSuggestion[] }) => { if (alive) setList(d.suggestions ?? []) })
+      .catch(() => { if (alive) setList([]) })
+    return () => { alive = false }
+  }, [on, n])
+  return [list, () => setN(x => x + 1)]
+}
 
 /**
  * A library on the machine the Studio runs on. By default (`mode` connect)
@@ -44,6 +70,8 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
   const [more, setMore] = useState(false)
   const [depth, setDepth] = useState<IndexDepth>(DEFAULT_LIBRARY_DEPTH)
   const ocr = useOcrHere(build)
+  const [suggestions, reloadSuggestions] = useFolderSuggestions(build && browse)
+  const [picked, setPicked] = useState<FolderSuggestion | null>(null)
   const set = (patch: Partial<typeof EMPTY>) => { setForm(f => ({ ...f, ...patch })); setError(null) }
   const indexName = form.indexRoot.trim().replace(/\/+$/, '').split('/').pop() || ''
   const sourceName = form.sourceRoot.trim().replace(/\/+$/, '').split('/').pop() || ''
@@ -63,12 +91,12 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy(null) }
   }
 
-  const runCheck = async () => {
+  const runCheck = async (f = fields) => {
     setBusy('check'); setError(null); setCheck(null)
     try {
-      const r = await postJson<BuildCheck>('/api/libraries/build/check', { ...fields, depth })
+      const r = await postJson<BuildCheck>('/api/libraries/build/check', { ...f, depth })
       setCheck(r)
-      setChecked(JSON.stringify(fields))
+      setChecked(JSON.stringify(f))
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy(null) }
   }
 
@@ -76,9 +104,23 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
     setBusy('add'); setError(null)
     try {
       const r = await postJson<{ library: SettingsLibrary }>('/api/libraries/build', { ...fields, depth, create: !!check?.create.length })
-      setForm(EMPTY); setCheck(null); setChecked('')
+      setForm(EMPTY); setCheck(null); setChecked(''); setPicked(null)
+      reloadSuggestions()
       onAdded?.(r.library)
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy(null) }
+  }
+
+  // A suggested folder fills the folder and label and checks it at once,
+  // which leaves Build the index.
+  const pick = (sg: FolderSuggestion) => {
+    const next = { ...form, sourceRoot: sg.path, label: sg.label }
+    setForm(next); setPicked(sg); setError(null)
+    void runCheck({ sourceRoot: next.sourceRoot, indexRoot: next.indexRoot.trim() || undefined, label: next.label, id: next.id.trim() || undefined })
+  }
+  const openFullDiskAccess = () => {
+    fetch('/api/libraries/suggestions/full-disk-access', { method: 'POST' })
+      .then(r => (r.ok ? null : r.json().then((d: { error?: string }) => setError(d.error ?? `${r.status}`))))
+      .catch(e => setError(String((e as Error).message ?? e)))
   }
 
   const browseButton = (field: 'indexRoot' | 'sourceRoot', what: string) => browse && (
@@ -95,6 +137,25 @@ export function LocalLibraryForm({ onAdded, browse = false, compact = false, mod
             ? 'A folder on this machine, indexed with GUFI here and kept in step with the folder. Read only in the Studio.'
             : 'An index already built on this machine with GUFI. Read only: the Studio searches it and never writes to it.'}
         </p>
+      )}
+      {build && suggestions.length > 0 && (
+        <div className="lib-suggest" role="group" aria-label="Suggested folders">
+          <span className="muted lib-suggest-label">Suggested:</span>
+          {suggestions.map(sg => (
+            <Button key={sg.id} size="sm" variant={picked?.id === sg.id && form.sourceRoot === sg.path ? 'secondary' : 'outline'}
+              title={sg.path} disabled={busy !== null} onClick={() => pick(sg)}>
+              {sg.label}
+            </Button>
+          ))}
+        </div>
+      )}
+      {build && picked && form.sourceRoot === picked.path && picked.note && <p className="muted lib-suggest-note">{picked.note}</p>}
+      {build && picked && form.sourceRoot === picked.path && picked.access === 'full-disk-access' && (
+        <Callout tone="warning" title="Needs Full Disk Access">
+          macOS lets ACTIVATE Studio read {picked.label} only with Full Disk Access. Turn it on for ACTIVATE Studio in System Settings,
+          Privacy &amp; Security, Full Disk Access, then press Check again.{' '}
+          <Button size="sm" variant="outline" onClick={openFullDiskAccess}>Open System Settings</Button>
+        </Callout>
       )}
       <div className="local-library-main">
         {build ? (

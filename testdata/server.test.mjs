@@ -30,6 +30,9 @@ const REPO = path.resolve(HERE, '..')
 const CORPUS = path.join(HERE, 'corpus')
 const MAIN = path.join(REPO, 'server', 'dist', 'main.js')
 const FAKE_GUFI = path.join(HERE, 'fake-gufi')
+/** A server to put in front of Node, such as the Go server: the tests then
+ *  talk to it, and it to Node. */
+const FRONT = process.env.STUDIO_TEST_FRONT || ''
 
 function findPython() {
   for (const cand of [process.env.PYTHON_BIN, 'python3.13', 'python3.12', 'python3.11', 'python3.10', 'python3']) {
@@ -47,6 +50,7 @@ const { binaryPath } = await import(path.join(REPO, 'server', 'node_modules', '@
 const NATIVE = binaryPath() !== null
 const SKIP = !fs.existsSync(MAIN) ? 'server not built (pnpm --filter @activate-studio/server build)'
   : !PYTHON ? 'no python 3.10+ on PATH'
+  : FRONT && !fs.existsSync(FRONT) ? `STUDIO_TEST_FRONT ${FRONT} does not exist`
   : false
 
 async function freePort() {
@@ -110,7 +114,27 @@ async function boot() {
     }
     await new Promise(r => setTimeout(r, 200))
   }
-  return { base, kb, indexBase, stop: () => child.kill('SIGKILL'), getLog: () => log }
+  if (!FRONT) return { base, kb, indexBase, stop: () => child.kill('SIGKILL'), getLog: () => log }
+
+  // STUDIO_TEST_FRONT: the same requests through the Go server
+  // (server-go/cmd/studio-server), which answers its ported routes and
+  // passes the rest to this Node server. See docs/GO-PORT.md.
+  const frontPort = await freePort()
+  const front = spawn(FRONT, [], {
+    env: { ...process.env, KB_ROOT: kb, INDEX_BASE: indexBase, GUFI_BIN: FAKE_GUFI, PORT: String(frontPort), HOST: '127.0.0.1',
+      STUDIO_PROJECT_ROOT: REPO, STUDIO_NODE_URL: base, STUDIO_LOG_FORMAT: 'text' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  front.stdout.on('data', d => { log += d })
+  front.stderr.on('data', d => { log += d })
+  const frontBase = `http://127.0.0.1:${frontPort}`
+  for (;;) {
+    if (front.exitCode !== null) throw new Error(`front server exited ${front.exitCode}:\n${log}`)
+    try { if ((await fetch(`${frontBase}/healthz`)).ok) break } catch { /* not listening yet */ }
+    if (Date.now() > deadline) { front.kill('SIGKILL'); child.kill('SIGKILL'); throw new Error(`front server did not come up:\n${log}`) }
+    await new Promise(r => setTimeout(r, 100))
+  }
+  return { base: frontBase, kb, indexBase, stop: () => { front.kill('SIGKILL'); child.kill('SIGKILL') }, getLog: () => log }
 }
 
 /** POST /api/index/dir, which indexes synchronously. It reports refusals in

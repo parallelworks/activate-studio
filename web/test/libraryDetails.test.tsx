@@ -59,7 +59,7 @@ describe('the Details card', () => {
     expect(within(c).getByText('Largest types')).toBeInTheDocument()
     expect(within(c).getByText('.pdf')).toBeInTheDocument()
     expect(within(c).getByText('project 12')).toBeInTheDocument()
-    expect(within(c).getByText('/home/alex/.studio/gufi/Notes')).toBeInTheDocument()
+    expect(within(c).getByTitle('/home/alex/.studio/gufi/Notes')).toHaveTextContent(/^\/home\/alex\/\.studio\/gufi\/Notes$/)
 
     act(() => selectLibraryEntry({ path: 'papers', isDir: true }))
     expect(await within(card()).findByText(`papers · ${formatBytes(4_100_000)}`)).toBeInTheDocument()

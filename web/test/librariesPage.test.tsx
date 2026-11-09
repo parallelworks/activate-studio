@@ -238,7 +238,7 @@ describe('what Add a library offers', () => {
   })
 })
 
-describe('Settings, Libraries', () => {
+describe('Settings, Indexing, Libraries', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
   it('brings a library named in a search\'s left-out line into view and marks its row', async () => {
@@ -416,6 +416,28 @@ describe('Settings, Libraries', () => {
     expect([...value.querySelectorAll('.lib-seg')].map(s => s.textContent)).toEqual(['me@a-long-host-name', 'example', 'org', '', 'data', 'groups', 'me', 'projects', 'archive'])
   })
 
+  it('opens with the add form showing when the + Add menu sent us', async () => {
+    location.hash = '#view=settings:libraries?add=1'
+    try {
+      const s = server({ platform: true, ssh: true, canBuild: true })
+      await renderPage(s)
+      expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add a library' })).toBeNull()
+    } finally { location.hash = '' }
+  })
+
+  it('opens the add form when the + Add menu sends us to the page already open', async () => {
+    const s = server({ platform: true, ssh: true, canBuild: true })
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    expect(screen.queryByRole('button', { name: 'This computer' })).toBeNull()
+    try {
+      location.hash = '#view=settings:libraries?add=1'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+      expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
+    } finally { location.hash = '' }
+  })
+
   it('a standalone install chooses where and how, and connects an index over ssh', async () => {
     const s = server({ platform: true, ssh: true, canBuild: true })
     await renderPage(s)
@@ -472,7 +494,7 @@ describe('Settings, Libraries', () => {
     // order the phases run in, and the faster stop for a very large folder.
     expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText(/^Search by meaning is the slowest part of indexing, so it runs last, in the background: names are searchable first, then words\./)).toBeInTheDocument()
-    expect(screen.getByText(/For a folder of more than about 500,000 files, Text \+ OCR is faster; meaning can be added later in Settings, Libraries\.$/)).toBeInTheDocument()
+    expect(screen.getByText(/For a folder of more than about 500,000 files, Text \+ OCR is faster; meaning can be added later in Settings, Indexing, Libraries\.$/)).toBeInTheDocument()
     // This folder is taken to Text, where the note does not apply.
     fireEvent.click(screen.getByRole('button', { name: 'Text' }))
     expect(screen.queryByText(/slowest part of indexing/)).toBeNull()

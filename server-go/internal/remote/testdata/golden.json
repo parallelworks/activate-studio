@@ -1,0 +1,256 @@
+{
+ "options": [
+  {
+   "ok": []
+  },
+  {
+   "ok": [
+    "-J",
+    "me@jump"
+   ]
+  },
+  {
+   "ok": [
+    "-J",
+    "me@jump,other:2200"
+   ]
+  },
+  {
+   "ok": [
+    "-p",
+    "2222",
+    "-i",
+    "~/.ssh/id",
+    "-l",
+    "bob"
+   ]
+  },
+  {
+   "ok": [
+    "-o",
+    "ConnectTimeout=5",
+    "-o",
+    "ServerAliveInterval=10"
+   ]
+  },
+  {
+   "ok": [
+    "-4",
+    "-C",
+    "-6"
+   ]
+  },
+  {
+   "error": "ssh options: ProxyCommand is not allowed here: ProxyCommand runs a local command: use -J (ProxyJump), or put it in a Host entry in ~/.ssh/config and give that alias as the host",
+   "status": 400
+  },
+  {
+   "error": "ssh options: BatchMode is not allowed here: the Studio always runs ssh without prompts (BatchMode=yes)",
+   "status": 400
+  },
+  {
+   "error": "ssh options: Frobnicate is not allowed here; a Host entry in ~/.ssh/config can set it",
+   "status": 400
+  },
+  {
+   "error": "ssh options: -X is not one of -J, -p, -i, -l, -F, -o, -4, -6 or -C",
+   "status": 400
+  },
+  {
+   "error": "ssh options: -p needs a value",
+   "status": 400
+  },
+  {
+   "error": "ssh options: -p 0: a port from 1 to 65535",
+   "status": 400
+  },
+  {
+   "error": "ssh options: -i relative: an absolute path on this computer, or one under ~/",
+   "status": 400
+  },
+  {
+   "error": "ssh options: no quotes or backslashes; a value with a space belongs in a Host entry in ~/.ssh/config",
+   "status": 400
+  },
+  {
+   "error": "ssh options: -o ConnectTimeout: write it as Keyword=value",
+   "status": 400
+  },
+  {
+   "ok": [
+    "-o",
+    "StrictHostKeyChecking=accept-new"
+   ]
+  },
+  {
+   "ok": [
+    "-o",
+    "IdentityFile=none"
+   ]
+  },
+  {
+   "ok": [
+    "-o",
+    "Ciphers=aes128-ctr,aes256-ctr"
+   ]
+  },
+  {
+   "error": "ssh options: host is not one of -J, -p, -i, -l, -F, -o, -4, -6 or -C",
+   "status": 400
+  }
+ ],
+ "sites": [
+  {
+   "ok": "ssh://me@box"
+  },
+  {
+   "ok": "ssh://me@box:2222#WyItSiIsIm1lQGp1bXAiXQ"
+  },
+  {
+   "ok": "ssh://box#WyItbyIsIkNvbm5lY3RUaW1lb3V0PTUiLCItbyIsIlVTRVI9Ym9iIl0"
+  },
+  {
+   "error": "ssh options: give the port once, in the port field or in the options",
+   "status": 400
+  },
+  {
+   "error": "invalid ssh destination",
+   "status": 400
+  },
+  {
+   "error": "invalid ssh port",
+   "status": 400
+  }
+ ],
+ "parsed": [
+  {
+   "ok": null
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": null,
+    "options": []
+   }
+  },
+  {
+   "ok": {
+    "destination": "me@box",
+    "port": 2222,
+    "options": []
+   }
+  },
+  {
+   "ok": {
+    "destination": "box",
+    "port": null,
+    "options": [
+     "-J",
+     "me@jump"
+    ]
+   }
+  },
+  {
+   "error": "invalid ssh site",
+   "status": 400
+  },
+  {
+   "error": "invalid ssh site",
+   "status": 400
+  },
+  {
+   "error": "invalid ssh site",
+   "status": 400
+  }
+ ],
+ "names": [
+  "cluster",
+  "me@box",
+  "me@box:2222",
+  "box",
+  "box",
+  "-x",
+  "me@box:0"
+ ],
+ "shells": [
+  {
+   "ok": [
+    "pw",
+    "ssh",
+    "cluster"
+   ]
+  },
+  {
+   "ok": [
+    "ssh",
+    "me@box"
+   ]
+  },
+  {
+   "ok": [
+    "ssh",
+    "-p",
+    "2222",
+    "me@box"
+   ]
+  },
+  {
+   "ok": [
+    "ssh",
+    "-J",
+    "me@jump",
+    "box"
+   ]
+  },
+  {
+   "error": "invalid ssh site",
+   "status": 400
+  },
+  {
+   "error": "invalid ssh site",
+   "status": 400
+  },
+  {
+   "error": "invalid ssh site",
+   "status": 400
+  }
+ ],
+ "tags": [
+  "",
+  "717dca38",
+  "6b4961aa",
+  "e454dbb3",
+  "",
+  ""
+ ],
+ "jumps": [
+  null,
+  "me@jump",
+  null,
+  null,
+  null,
+  null
+ ],
+ "words": [
+  "gufi_query",
+  "-n",
+  "4",
+  "'SELECT '\\''a'\\'';'",
+  "''",
+  "'a b'",
+  "'it'\\''s'",
+  "/p/x.y",
+  "'$HOME'",
+  "x=y,z:1@h%"
+ ],
+ "direct": "gufi_query -n 4 'SELECT '\\''a'\\'';' '' 'a b' 'it'\\''s' /p/x.y '$HOME' x=y,z:1@h%",
+ "quiet": [
+  "real error",
+  "ok",
+  ""
+ ],
+ "bootstrap": {
+  "ssh": "bash -c \"$(echo c2V0IC1mCmQ9LWQ7IFsgIiQocHJpbnRmIGVBPT0gfCBiYXNlNjQgLWQgMj4vZGV2L251bGwpIiA9IHggXSB8fCBkPS1ECm9zPSQodW5hbWUgLXMgMj4vZGV2L251bGwpCndoaWxlIElGUz0gcmVhZCAtciBsaW5lOyBkbwogIGFyZ3M9KCk7IGZvciBhIGluICRsaW5lOyBkbyBhcmdzKz0oIiQocHJpbnRmICVzICIke2EjeH0iIHwgYmFzZTY0ICRkKSIpOyBkb25lCiAgaWYgWyAiJG9zIiA9IERhcndpbiBdOyB0aGVuCiAgICBjYXNlICIke2FyZ3NbMF19IiBpbiAvKi8qLyopIGNhc2UgIiR7YXJnc1swXSMjKi99IiBpbiBndWZpXyopIGFyZ3M9KGVudiAiRFlMRF9MSUJSQVJZX1BBVEg9JHthcmdzWzBdJS8qLyp9L2xpYiIgIiR7YXJnc1tAXX0iKSA7OyBlc2FjIDs7IGVzYWMKICBmaQogIG89JChta3RlbXApOyBlPSQobWt0ZW1wKQogICIke2FyZ3NbQF19IiA8L2Rldi9udWxsID4iJG8iIDI+IiRlIjsgcmM9JD8KICBwcmludGYgJyVzIG8lcyBlJXNcbicgIiRyYyIgIiQoYmFzZTY0IDwiJG8iIHwgdHIgLWQgJ1xuJykiICIkKHRhaWwgLWMgNDAwMCAiJGUiIHwgYmFzZTY0IHwgdHIgLWQgJ1xuJykiCiAgcm0gLWYgIiRvIiAiJGUiCmRvbmU= | base64 -D 2>/dev/null || echo c2V0IC1mCmQ9LWQ7IFsgIiQocHJpbnRmIGVBPT0gfCBiYXNlNjQgLWQgMj4vZGV2L251bGwpIiA9IHggXSB8fCBkPS1ECm9zPSQodW5hbWUgLXMgMj4vZGV2L251bGwpCndoaWxlIElGUz0gcmVhZCAtciBsaW5lOyBkbwogIGFyZ3M9KCk7IGZvciBhIGluICRsaW5lOyBkbyBhcmdzKz0oIiQocHJpbnRmICVzICIke2EjeH0iIHwgYmFzZTY0ICRkKSIpOyBkb25lCiAgaWYgWyAiJG9zIiA9IERhcndpbiBdOyB0aGVuCiAgICBjYXNlICIke2FyZ3NbMF19IiBpbiAvKi8qLyopIGNhc2UgIiR7YXJnc1swXSMjKi99IiBpbiBndWZpXyopIGFyZ3M9KGVudiAiRFlMRF9MSUJSQVJZX1BBVEg9JHthcmdzWzBdJS8qLyp9L2xpYiIgIiR7YXJnc1tAXX0iKSA7OyBlc2FjIDs7IGVzYWMKICBmaQogIG89JChta3RlbXApOyBlPSQobWt0ZW1wKQogICIke2FyZ3NbQF19IiA8L2Rldi9udWxsID4iJG8iIDI+IiRlIjsgcmM9JD8KICBwcmludGYgJyVzIG8lcyBlJXNcbicgIiRyYyIgIiQoYmFzZTY0IDwiJG8iIHwgdHIgLWQgJ1xuJykiICIkKHRhaWwgLWMgNDAwMCAiJGUiIHwgYmFzZTY0IHwgdHIgLWQgJ1xuJykiCiAgcm0gLWYgIiRvIiAiJGUiCmRvbmU= | base64 -d)\"",
+  "pw": "bash -c \"$(echo c2V0IC1mCmQ9LWQ7IFsgIiQocHJpbnRmIGVBPT0gfCBiYXNlNjQgLWQgMj4vZGV2L251bGwpIiA9IHggXSB8fCBkPS1ECm9zPSQodW5hbWUgLXMgMj4vZGV2L251bGwpCndoaWxlIElGUz0gcmVhZCAtciBsaW5lOyBkbwogIGFyZ3M9KCk7IGZvciBhIGluICRsaW5lOyBkbyBhcmdzKz0oIiQocHJpbnRmICVzICIke2EjeH0iIHwgYmFzZTY0ICRkKSIpOyBkb25lCiAgaWYgWyAiJG9zIiA9IERhcndpbiBdOyB0aGVuCiAgICBjYXNlICIke2FyZ3NbMF19IiBpbiAvKi8qLyopIGNhc2UgIiR7YXJnc1swXSMjKi99IiBpbiBndWZpXyopIGFyZ3M9KGVudiAiRFlMRF9MSUJSQVJZX1BBVEg9JHthcmdzWzBdJS8qLyp9L2xpYiIgIiR7YXJnc1tAXX0iKSA7OyBlc2FjIDs7IGVzYWMKICBmaQogIG89JChta3RlbXApOyBlPSQobWt0ZW1wKQogICIke2FyZ3NbQF19IiA8L2Rldi9udWxsID4iJG8iIDI+IiRlIjsgcmM9JD8KICBwcmludGYgJyVzIG8lcyBlJXNcbicgIiRyYyIgIiQoYmFzZTY0IDwiJG8iIHwgdHIgLWQgJ1xuJykiICIkKHRhaWwgLWMgNDAwMCAiJGUiIHwgYmFzZTY0IHwgdHIgLWQgJ1xuJykiCiAgcm0gLWYgIiRvIiAiJGUiCmRvbmU= | base64 -d)\""
+ }
+}

@@ -1,7 +1,8 @@
 import { deriveTheme } from '@parallelworks/ui/theme'
 
 /** Named accent schemes: [primary ink, hover ink, active pill] per theme.
- *  'navy' is the stylesheet default and applies no override. */
+ *  'none' is the default: no color, the page's own ink (near black on
+ *  light, near white on dark), and the stylesheet's built-in fallback. */
 export interface Accent {
   label: string
   light: [string, string, string]
@@ -9,6 +10,7 @@ export interface Accent {
 }
 
 export const ACCENTS: Record<string, Accent> = {
+  none: { label: 'None', light: ['#171717', '#404040', '#e5e5e5'], dark: ['#ececeb', '#ffffff', '#2c2c2b'] },
   navy: { label: 'Navy', light: ['#06354f', '#0a4a6e', '#e1f2fb'], dark: ['#7fc0ec', '#9cd0f4', '#17395a'] },
   teal: { label: 'Teal', light: ['#0e5750', '#127066', '#dcf3f0'], dark: ['#6fd6cf', '#8ee2dc', '#123f3a'] },
   forest: { label: 'Forest', light: ['#1e5631', '#2a7443', '#e0f2e4'], dark: ['#7fd49a', '#9be0b1', '#14402a'] },
@@ -48,7 +50,7 @@ function accentFor(name: string): Accent | null {
  *  theme ink, lightened. Null for the default accent, whose mark is the app
  *  icon itself (web/icons/icon.svg), and for a name that is not an accent. */
 export function markColors(name: string | null | undefined): { top: string; bottom: string; sparkTop: string; sparkBottom: string } | null {
-  if (!name || name === 'navy') return null
+  if (!name || name === 'navy' || name === 'none') return null
   const a = accentFor(name)
   if (!a) return null
   const ink = a.light[0]
@@ -56,13 +58,14 @@ export function markColors(name: string | null | undefined): { top: string; bott
   return { top: mix(ink, '#ffffff', 0.18), bottom: mix(ink, '#000000', 0.45), sparkTop: mix(glow, '#ffffff', 0.45), sparkBottom: glow }
 }
 
-/** Surface tones: the background each theme is derived from. 'cool' is the
- *  platform's own pair (its light ground and GitHub-like dark), and the
- *  stylesheet's fallback values are derived from it. */
+/** Surface tones: the background each theme is derived from. 'warm' is the
+ *  default, a gray with a slight warmth and no blue, and the stylesheet's
+ *  fallback values are derived from it; 'neutral' has no tint at all; 'cool'
+ *  is the platform's own pair (its light ground and GitHub-like dark). */
 export const SURFACES: Record<string, { label: string; light: string; dark: string }> = {
   cool: { label: 'Cool gray', light: '#f3f4f6', dark: '#0d1117' },
-  neutral: { label: 'Neutral gray', light: '#f4f4f5', dark: '#111214' },
-  warm: { label: 'Warm gray', light: '#f5f4f1', dark: '#151312' },
+  neutral: { label: 'Neutral gray', light: '#f5f5f5', dark: '#171717' },
+  warm: { label: 'Warm gray', light: '#f8f8f6', dark: '#1f1f1e' },
 }
 
 function styleEl(id: string): HTMLStyleElement {
@@ -84,7 +87,7 @@ function remember(key: string, css: string): void {
   try { localStorage.setItem(key, css) } catch { /* storage unavailable */ }
 }
 
-let current = { accent: 'navy', surface: 'cool' }
+let current = { accent: 'none', surface: 'warm' }
 
 /**
  * The whole --theme-* contract for one accent and surface, light and dark,
@@ -95,8 +98,8 @@ let current = { accent: 'navy', surface: 'cool' }
  * the Studio's own --pw-* names are aliases of these in styles.css.
  */
 export function themeFor(accent: string, surface: string): { light: Record<string, string>; dark: Record<string, string> } {
-  const a = accentFor(accent) ?? ACCENTS.navy
-  const s = SURFACES[surface] ?? SURFACES.cool
+  const a = accentFor(accent) ?? ACCENTS.none
+  const s = SURFACES[surface] ?? SURFACES.warm
   return {
     light: deriveTheme({ interface: { base: s.light, accent: a.light[0] } }),
     dark: deriveTheme({ interface: { base: s.dark, accent: a.dark[0] } }),

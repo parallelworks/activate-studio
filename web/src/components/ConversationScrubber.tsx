@@ -30,19 +30,26 @@ const MIN_MESSAGES = 6
 
 /**
  * The package names its thread scroller `chat-thread`, and the messages are
- * the children of its first element, the centred column. The lookup used
- * to key on that column's width class, which has changed twice: max-w-4xl
- * in the earlier chat package, max-w-[50rem] from @parallelworks/ui 0.24,
- * and a variable width from 0.32. Since the first change the rail found no
- * list and stayed hidden.
+ * the children of the centred column inside it. The lookup used to key on
+ * that column's width class, which has changed twice: max-w-4xl in the
+ * earlier chat package, max-w-[50rem] from @parallelworks/ui 0.24, and a
+ * variable width from 0.32. Since the first change the rail found no list
+ * and stayed hidden. It then took the scroller's first child, until 0.116.1
+ * wrapped the column in a height floor (the WebKit scroll fix). From 0.120
+ * the package marks the column itself, `data-transcript`, for its find;
+ * the first child remains the fallback for a thread without the mark.
  */
 function scrollHost(): HTMLElement | null {
   return document.querySelector<HTMLElement>('.chat-canvas .chat-thread')
 }
 
+export function messageListIn(host: Pick<HTMLElement, 'querySelector' | 'firstElementChild'> | null): HTMLElement | null {
+  const list = host?.querySelector('[data-transcript]') ?? host?.firstElementChild
+  return list instanceof HTMLElement ? list : null
+}
+
 function messageList(): HTMLElement | null {
-  const first = scrollHost()?.firstElementChild
-  return first instanceof HTMLElement ? first : null
+  return messageListIn(scrollHost())
 }
 
 /** The shape this needs from an element, kept narrow so the rule below

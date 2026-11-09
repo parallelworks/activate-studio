@@ -75,8 +75,11 @@ process of your own in a session of its own, and records it in
 `server.pid` in the data folder; `logs/agent.log` says which way it
 started. That server keeps running when the window closes and restarts the
 same way, with one difference: it starts when the app is opened, not at
-login. Neither way needs administrator rights. The app carries Node, GUFI, Python for the indexer, tesseract
-for OCR, and the embedding models, so nothing else needs installing. No Parallel Works
+login. Neither way needs administrator rights. The app carries the Go
+server, GUFI, tesseract for OCR, the ONNX runtime and the embedding model,
+so nothing else needs installing; it has no Node and no Python (the app of
+v1.188 and earlier carried both, see [The Go version's
+window](#the-go-versions-window-wails)). No Parallel Works
 account is needed; where the `pw` CLI is installed and signed in, the
 platform features work too.
 
@@ -85,15 +88,16 @@ platform features work too.
 | | |
 |---|---|
 | Documents | `~/Documents/ACTIVATE Studio`, until another folder is chosen |
-| Index and logs | `~/Library/Application Support/ACTIVATE Studio/index` and `logs`; Settings, General, Indexing can keep the index elsewhere, such as on another disk |
-| Index log | `~/Library/Application Support/ACTIVATE Studio/logs/indexing.log`, also shown by View log at the bottom of the navigation and in Settings, Libraries |
+| Index and logs | `~/Library/Application Support/ACTIVATE Studio/index` and `logs`; Settings, Indexing, Storage and logs can keep the index elsewhere, such as on another disk |
+| Index log | `~/Library/Application Support/ACTIVATE Studio/logs/indexing.log`, also shown by View log at the bottom of the navigation and in Settings, Indexing, Libraries |
 | Settings | `~/Library/Application Support/ACTIVATE Studio/studio.env`: `KEY='value'` lines read before each start, such as `PORT='4180'` or a model endpoint (`OPENAI_BASE_URL`, `OPENAI_API_KEY`) |
 
 *What it reads:* PDFs and Word, PowerPoint and Excel files are read out
-of the box: downmark, which comes with the app, converts them, and the
-app's Python carries pypdf for a PDF downmark cannot read, xlrd and olefile
-for `.xls` and `.ppt` files, and onnxruntime, tokenizers and numpy for the
-ONNX embedding model, so poppler is not needed. OpenDocument files are read
+of the box by the Go server's own readers (downmark for PDFs and Office
+files, and readers for `.xls` and `.ppt`), and the ONNX runtime in the app
+runs the embedding model, so poppler is not needed. In the app of v1.188
+and earlier, Node ran downmark and the app's Python carried pypdf, xlrd,
+olefile, onnxruntime, tokenizers and numpy for the same jobs. OpenDocument files are read
 with the standard library. LibreOffice, when it is installed in
 Applications, renders previews of Office documents and reads any file the
 built-in readers cannot; the app does not include it. Text in images
@@ -102,14 +106,14 @@ with its English model (see [OCR in the app](#ocr-in-the-app)); downmark
 hands it each scanned page, so this needs no poppler either. Images are
 also described by a vision model when AI features are on and one is
 chosen under Settings, General, AI features.
-Settings, General, Indexing lists what this Mac reads and what is found by
+Settings, Indexing, Building lists what this Mac reads and what is found by
 name only.
 
 *Indexing:* the first build makes every file searchable by name within
 seconds, then reads documents, images and text, then makes the embeddings
 for search by meaning, each phase with its own count at the bottom of the
-navigation, in Settings, Libraries and on Stats. Each phase uses one thread
-per processor core unless Settings, General, Indexing says otherwise. A build can be
+navigation, in Settings, Indexing, Libraries and on Stats. Each phase uses one thread
+per processor core unless Settings, Indexing, Building says otherwise. A build can be
 stopped and resumed with Update index; the cached text and embeddings are
 kept, so it continues rather than starting over, and so does choosing a
 folder that was indexed before.
@@ -172,7 +176,8 @@ installed only if the release's manifest is signed by the release key
 (the app carries its public half, `Contents/Resources/update-signing.pub`),
 names this app's archive and a newer version than the one running, and
 matches the download's size and SHA-256. The new copy then takes the app's place, the old one is
-kept beside it as `.ACTIVATE Studio.app.previous` (hidden in Finder), and
+kept beside it as `.ACTIVATE Studio.app.previous` (hidden in Finder) until
+the new version has started cleanly and the old window has closed, and
 the server restarts on the new version while the window reloads; the
 reloaded page lists, once, what the new version changed. The window is
 part of the old copy until the app opens again, so if the update changed
@@ -181,7 +186,7 @@ update the person started with **Update now** or **Roll back**, and from
 **Reopen now** in the notice or in Settings after one installed
 automatically. The updater also has LaunchServices look at the new copy
 (`lsregister -f`), so Finder and the Dock show its icon.
-Settings can also turn the checks off, follow prereleases, or install
+Settings can also turn the checks off, choose the Stable or Preview channel, install a chosen version, older ones included, or install
 updates automatically, which happens once an update is verified
 and the Studio has had no chat answer or indexing running for ten
 minutes. An app in a folder its user cannot write to, such as
@@ -205,11 +210,15 @@ the proxy asks for a sign-in) and, if needed, `NO_PROXY` in `studio.env`.
 `STUDIO_SYSTEM_CA=0` there leaves Node's own list alone, and
 `NODE_EXTRA_CA_CERTS` adds a file of authorities as it does for any Node.
 
-*Rolling back:* while the previous copy is there, Settings, General, Updates offers
-Roll back, which puts it back and restarts. The same happens without
-asking when a new version stops three times within two minutes of being
-installed; Settings then says so, and that version is not installed
-automatically again.
+*Rolling back:* Settings, General, Updates offers Roll back, which
+downloads the version installed before again (the size is shown), checks
+it as an update is checked, installs it and restarts; offline it says so
+and changes nothing. A new version that stops three times within two
+minutes of being installed is replaced by the copy kept beside it without
+asking; Settings then says so, and that version is not installed
+automatically again. Channels, installing an older version, the state
+snapshot taken before every change of version, and releases that ask for
+the app to be reopened follow [`UPDATES.md`](UPDATES.md).
 
 *Publishing an update:* a release carries the
 `activate-studio-macos-arm64.tar.gz` that `build_app.sh` writes, and the
@@ -250,8 +259,10 @@ declares as its minimum, which its bundled GUFI sets: macOS 14 with GUFI
 built by `deploy/mac/build_gufi.sh`, macOS 27 with GUFI's own package (see
 [GUFI in the app](#gufi-in-the-app)).
 
-*Building the app:* `deploy/mac/build_app.sh`, on macOS or Linux, writes
-the app, `activate-studio-macos-arm64.tar.gz` with its `.sha256`,
+*Building the app:* `deploy/mac/build_app.sh` writes the Go version by
+default (`STUDIO_SERVER=go-only`, with the Wails window, which builds only
+on a Mac); `STUDIO_SERVER=node` writes the app of v1.188 and earlier (Node,
+Python and the Swift window, on macOS or Linux). It writes the app, `activate-studio-macos-arm64.tar.gz` with its `.sha256`,
 `install.sh`, and on a Mac the disk image to `deploy/mac/out`. On a Mac
 it also builds tesseract with `deploy/mac/build_ocr.sh`, once per version
 of that script; elsewhere, `OCR_TARBALL` gives it that archive, and without
@@ -266,13 +277,39 @@ come from `web/icons/`.
 *Signing and notarizing:* on a Mac, `deploy/mac/sign_app.sh APP IDENTITY
 [KEYCHAIN]` signs every program and library in the app, then the bundle,
 with the hardened runtime, a secure timestamp, and the entitlements in
-`deploy/mac/entitlements` (Node's JIT, and the microphone for the window's
-voice input); `deploy/mac/make_dmg.sh APP OUT.dmg` makes the disk image;
+`deploy/mac/entitlements` (`server.plist` for the Go server, whose STEP
+preview runs WebAssembly compiled in memory; `app.plist`, the microphone for
+the window's voice input; `node.plist`, Node's JIT, in a Node build); `deploy/mac/make_dmg.sh APP OUT.dmg` makes the disk image;
 `deploy/mac/notarize.sh APP DMG` signs the image, notarizes it with an
 App Store Connect API key, staples the ticket to the image and the app,
 and checks both with Gatekeeper. `deploy/mac/keychain.sh` keeps the
 certificate in a keychain of its own. The release workflow runs these in
 that order, then packs the archive from the stapled app.
+
+## The Go version's window (Wails)
+
+The Go version (`STUDIO_SERVER=go-only`, the default of `deploy/mac/build_app.sh`, which then defaults to `MAC_SHELL=wails`) is the app releases ship. It replaces the Swift window (`deploy/mac/shell/StudioShell.swift`) with `desktop/wails`, built for macOS with `-tags desktop,production` into `Contents/MacOS/ACTIVATE Studio`. Like the Swift window it does not supervise the server: it runs `Resources/launcher.sh` with `STUDIO_NO_BROWSER=1`, reads the address the launcher prints, and leaves the server running when the window closes. The launcher restarts a server whose `builtAt` differs from its own copy, so the first start after the update to the Go version stops the Node server the LaunchAgent ran and starts the Go one.
+
+| Swift window | Wails window |
+| --- | --- |
+| Runs `launcher.sh`, opens the address it prints, keeps the server on close | Same (`launcher_darwin.go`) |
+| Starting and failure pages, Try Again | Same (the shell's start page), plus the server log's end |
+| Open Logs on the failure page | Same |
+| About, Check for Updates, Run Setup, Stop Background Server | Same menu items |
+| Uninstall, with the dry-run plan and the keep-data choice | Same (`launcher.sh --uninstall --dry-run`, then the chosen run) |
+| Hide, Hide Others, Show All, Quit; Edit menu; Minimize, Zoom, Close | Same |
+| Reload, Actual Size, Zoom In, Zoom Out, Enter Full Screen | Same (zoom through the page) |
+| Folder chooser, file open panel, alert and confirm dialogs | Same (the shell's bridge) |
+| Downloads to ~/Downloads, revealed in Finder | Same |
+| Reopen after an update that changed the window | Same: the bundle is opened again after this process ends |
+| Title bar in the page's color, light or dark ink | No title bar of its own: the page runs to the window's top edge, and the title bar is a unified toolbar row 52px tall (`TitleBarHiddenInset`, set to the unified style in `macwindow_darwin.go`) with the window controls centered in it. The shell sets `html.shell-inset`, `--shell-top` (the row's height) and `--shell-controls` (how far in the controls reach) (`shell/shim.js`, `titlebar_darwin.go`). Each column's first row is that row (`web/src/styles.css`): the sidebar's holds the controls and, at its right end, the collapse button, with the brand row under it; the page's heading, the library rail's head and the status panel's head are the row's height. The collapsed sidebar is as wide as the controls and keeps their row empty. With a classification banner the window drops its toolbar row, so the controls sit at a plain title bar's height (28px), and the banner is that strip with the controls over its left end. The page marks the banner on its html element (`data-banner`), the shim calls `SetCompactTitle`, and the switch happens live when the banner is turned on or off in Settings; the layout is kept in `run/compact-title` in the data folder, so the next launch opens in it. A press on an empty part of the row drags the window and a double click zooms it; a button, field, link or anything with a pointer cursor does not. `deploy/mac/window_shots.sh` takes screenshots of the window on a Mac (the `hardened` job uploads them as `window-shots`) |
+| Microphone permission for dictation | Same: granted to the Studio's page (127.0.0.1) after macOS asks, refused elsewhere (`macwindow_darwin.go`) |
+| Window size and place remembered | Same, under the Swift window's autosave name, so they carry over from it |
+| Popup windows for Studio pages | Same: a window of its own for the Studio's pages, the browser for other sites (`macwindow_darwin.go`) |
+| Install offer when run from the disk image | Left to `launcher.sh` (`--install`) |
+| Purge of the window's own web data on uninstall | Same: the frame is forgotten, and with the data the web data and preferences are cleared |
+
+Code signing and notarization are as for the Swift window: `deploy/mac/sign_app.sh` signs every Mach-O file in the bundle (the Wails window with `app.plist`, `studio-server` with `server.plist`, `semantic-map`, the macOS `studio-remote` helper in `Resources/app/bin/remote/darwin-arm64`, the ONNX runtime library, GUFI's programs and libraries, tesseract and leptonica), then the bundle. The `mac-app` workflow's release path signs, notarizes and staples this build; on every other run its `hardened` job signs it with a throwaway identity and runs it, and `check_app.sh` then checks that every Mach-O file has the hardened runtime and the bundle's team and that `studio-server` carries its entitlement. A throwaway identity cannot show that the entitlement is enough, since macOS enforces the hardened runtime only under Apple's certificate chain; the release's own run of the signed app shows that. The releases from v1.180 on install a bundle that has `Resources/node/bin/node`, `Resources/app/server/dist/main.js` and `Resources/studio-run.sh` and the manifest's signature; the Go version carries stand-ins at the first two paths (docs/UPDATES.md, "The Go version").
 
 ## From a clone
 

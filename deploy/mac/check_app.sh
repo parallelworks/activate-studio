@@ -41,6 +41,22 @@ C="$APP/Contents"
 R="$C/Resources"
 G="$R/gufi"
 O="$R/ocr"
+# Which server the app runs (build_app.sh STUDIO_SERVER): node, go (the Go
+# server with Node and Python behind it) or go-only (the Go server alone,
+# with stand-ins for older updaters' checks, marked by node/PLACEHOLDER).
+if [ -z "${STUDIO_SERVER:-}" ]; then
+  if [ -f "$R/node/PLACEHOLDER" ]; then STUDIO_SERVER=go-only
+  elif [ -x "$R/app/bin/studio-server" ]; then STUDIO_SERVER=go
+  else STUDIO_SERVER=node; fi
+fi
+SERVER="$STUDIO_SERVER"
+# Across several libraries Node runs gufi_vt; the Go server merges the rows
+# itself (engine "merge") until gufi_vt is ported (docs/GO-PORT.md).
+ENGINES='("gufi_vt",)'
+[ "$SERVER" = node ] || ENGINES='("gufi_vt", "merge")'
+# GUFI built without sqlite-lembed (GUFI_LEMBED=0) has no lembed0.dylib.
+LEMBED=1
+grep -q '"sqlite-lembed": *"none"' "$G/manifest.json" 2>/dev/null && LEMBED=0
 failures=0
 ok() { echo "  ok    $1"; }
 bad() { echo "  FAIL  $1"; failures=$((failures + 1)); }
@@ -58,20 +74,41 @@ for k in ('CFBundleShortVersionString', 'CFBundleVersion', 'LSMinimumSystemVersi
     assert info[k], k
 assert 'Parallel Works' in info['NSHumanReadableCopyright'], 'NSHumanReadableCopyright'
 PY
-for f in \
-  "MacOS/ACTIVATE Studio" Resources/launcher.sh Resources/studio-run.sh Resources/update-signing.pub \
-  Resources/node/bin/node Resources/python/bin/python3 \
-  Resources/models/minilm384.gguf Resources/models/minilm-l6/model.onnx Resources/models/minilm-l6/tokenizer.json \
-  Resources/app/build-info.json Resources/app/package.json \
-  Resources/app/server/dist/main.js Resources/app/server/node_modules/fastify/package.json \
-  Resources/app/web/dist/index.html Resources/app/indexer/enrich.py Resources/app/indexer/embed.py \
-  Resources/app/indexer/embed_onnx.py Resources/app/indexer/embed_query.py Resources/app/indexer/semantic_map.py \
-  Resources/app/indexer/reindex.sh Resources/app/docs/HELP.md Resources/app/CHANGELOG.md Resources/app/deploy/gufi-index.yaml \
-  Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_sqlite3 \
-  Resources/gufi/lib/gufi_vt.dylib Resources/gufi/lib/vec0.dylib Resources/gufi/lib/lembed0.dylib \
-  Resources/gufi/lib/libomp.dylib Resources/gufi/lib/libpcre2-8.0.dylib Resources/gufi/licenses/GUFI-LICENSE.txt; do
+LAYOUT=("MacOS/ACTIVATE Studio" Resources/launcher.sh Resources/studio-run.sh Resources/update-signing.pub
+  Resources/node/bin/node Resources/models/minilm-l6/model.onnx Resources/models/minilm-l6/tokenizer.json
+  Resources/app/build-info.json Resources/app/package.json Resources/app/server/dist/main.js
+  Resources/app/web/dist/index.html Resources/app/docs/HELP.md Resources/app/CHANGELOG.md Resources/app/deploy/gufi-index.yaml
+  Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_sqlite3
+  Resources/gufi/lib/gufi_vt.dylib Resources/gufi/lib/vec0.dylib
+  Resources/gufi/lib/libomp.dylib Resources/gufi/lib/libpcre2-8.0.dylib Resources/gufi/licenses/GUFI-LICENSE.txt)
+if [ "$SERVER" != go-only ]; then
+  LAYOUT+=(Resources/python/bin/python3 Resources/models/minilm384.gguf Resources/app/server/node_modules/fastify/package.json
+    Resources/app/indexer/enrich.py Resources/app/indexer/embed.py Resources/app/indexer/embed_onnx.py
+    Resources/app/indexer/embed_query.py Resources/app/indexer/semantic_map.py Resources/app/indexer/reindex.sh)
+fi
+[ "$LEMBED" = 1 ] && LAYOUT+=(Resources/gufi/lib/lembed0.dylib)
+if [ "$SERVER" != node ]; then
+  LAYOUT+=(Resources/manifest.json Resources/app/bin/studio-server Resources/app/bin/semantic-map
+    Resources/app/lib/libonnxruntime.dylib Resources/licenses/onnxruntime-LICENSE.txt
+    Resources/app/occt/occt-import-js.wasm Resources/app/occt/occt-import-js.noeh.wasm
+    Resources/licenses/occt-import-js-LICENSE.txt Resources/licenses/occt-LICENSE.txt)
+fi
+[ "$SERVER" = go-only ] && LAYOUT+=(Resources/node/PLACEHOLDER)
+for f in "${LAYOUT[@]}"; do
   check "$f" test -s "$C/$f"
 done
+if [ "$SERVER" != node ]; then
+  check "the manifest says the Go server runs" grep -q '"server": *"go"' "$R/manifest.json"
+fi
+if [ "$SERVER" = go-only ]; then
+  check "node/bin/node is the stand-in, executable, as older updaters check" sh -c "test -x '$R/node/bin/node' && head -c 2 '$R/node/bin/node' | grep -q '#!'"
+  check "no Node, Python or node_modules, and of the indexer only embed_deps.json" sh -c "! [ -e '$R/python' ] && ! [ -e '$R/app/server/node_modules' ] && [ \"\$(ls -A '$R/app/indexer')\" = embed_deps.json ]"
+  check "app/indexer/embed_deps.json, the pins a build on another system is sent" python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d["model"]["files"]["model.onnx"]["sha256"] else 1)' "$R/app/indexer/embed_deps.json"
+  # The helper a library's build on another system runs, one folder per
+  # platform (internal/userlibs): Linux x64 and arm64 and macOS arm64, and any
+  # further platform holding the same file.
+  check "studio-remote for linux-amd64, linux-arm64, darwin-arm64 and any platform added beside them" sh -c 'd="$1/app/bin/remote"; for p in linux-amd64 linux-arm64 darwin-arm64; do [ -x "$d/$p/studio-remote" ] || exit 1; done; for p in "$d"/*; do [ -x "$p/studio-remote" ] || exit 1; done' sh "$R"
+fi
 if [ -d "$O" ]; then
   for f in Resources/ocr/bin/tesseract Resources/ocr/lib/libleptonica.6.dylib \
     Resources/ocr/share/tessdata/eng.traineddata Resources/ocr/share/tessdata/configs/tsv \
@@ -113,13 +150,15 @@ if command -v codesign >/dev/null 2>&1; then
     bad "the bundle's signature does not verify:"; printf '%s\n' "$out" | head -n 20 | sed 's/^/        /'
   fi
 fi
-check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
 check "the ONNX model is the pinned file" sh -c "python3 -c 'import hashlib, json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if hashlib.sha256(open(sys.argv[2], \"rb\").read()).hexdigest() == d[\"model\"][\"files\"][\"model.onnx\"][\"sha256\"] else 1)' '$R/app/indexer/embed_deps.json' '$R/models/minilm-l6/model.onnx'"
+if [ "$SERVER" != go-only ]; then
+check "the model is the full file (over 10 MB)" test "$(( $(wc -c <"$R/models/minilm384.gguf") ))" -gt 10000000
 check "onnxruntime, tokenizers and numpy are in the app's Python" sh -c "ls -d '$R'/python/lib/python3.*/site-packages/onnxruntime/__init__.py '$R'/python/lib/python3.*/site-packages/tokenizers/__init__.py '$R'/python/lib/python3.*/site-packages/numpy/__init__.py"
 check "pypdf is in the app's Python, for PDFs downmark cannot read" sh -c "ls -d '$R'/python/lib/python3.*/site-packages/pypdf/__init__.py '$R'/python/lib/python3.*/site-packages/pypdf-*.dist-info/licenses"
 check "the document converter's macOS arm64 binary is there" \
   sh -c "find '$R/app/server/node_modules' -path '*downmark-darwin-arm64/bin/downmark' -type f | grep -q ."
 check "and no Linux build of it" sh -c "! find '$R/app/server/node_modules' -name 'downmark-linux-*' | grep -q ."
+fi
 
 echo "Scripts"
 # The executable is the launcher script, or the native window when built on a Mac.
@@ -136,16 +175,21 @@ done
 command -v shellcheck >/dev/null 2>&1 || echo "  (shellcheck is not installed; skipped)"
 
 echo "Native code"
-if command -v file >/dev/null 2>&1; then
+if command -v file >/dev/null 2>&1 && [ "$SERVER" = go-only ]; then
+  check "studio-server is a Mach-O arm64 executable" sh -c "file -b '$R/app/bin/studio-server' | grep -q 'Mach-O 64-bit.*arm64'"
+elif command -v file >/dev/null 2>&1; then
   check "node is a Mach-O arm64 executable" sh -c "file -b '$R/node/bin/node' | grep -q 'Mach-O 64-bit.*arm64'"
 fi
 MIN="$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["LSMinimumSystemVersion"])' "$C/Info.plist")"
-NATIVE=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so "$G"/bin/* "$G"/lib/*.dylib
-  "$O"/bin/* "$O"/lib/*.dylib)
-# The Python packages' native libraries (onnxruntime, numpy and others), read
-# NUL-separated since the app's path has a space in it.
-while IFS= read -r -d '' f; do NATIVE+=("$f"); done < <(
-  find "$R"/python/lib/python3.*/site-packages -type f \( -name '*.so' -o -name '*.dylib' \) -print0)
+NATIVE=("$G"/bin/* "$G"/lib/*.dylib "$O"/bin/* "$O"/lib/*.dylib)
+[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/app/bin/remote/darwin-*/studio-remote "$R"/app/lib/*.dylib)
+if [ "$SERVER" != go-only ]; then
+  NATIVE+=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so)
+  # The Python packages' native libraries (onnxruntime, numpy and others), read
+  # NUL-separated since the app's path has a space in it.
+  while IFS= read -r -d '' f; do NATIVE+=("$f"); done < <(
+    find "$R"/python/lib/python3.*/site-packages -type f \( -name '*.so' -o -name '*.dylib' \) -print0)
+fi
 if out="$(python3 "$HERE/macho_check.py" --max-minos "$MIN" "${NATIVE[@]}" 2>&1)"; then
   ok "arm64, signed, runs on macOS $MIN, libraries resolve without DYLD_LIBRARY_PATH"
 else
@@ -154,7 +198,10 @@ else
 fi
 elf="$(python3 - "$APP" <<'PY'
 import os, sys
-for d, _dirs, files in os.walk(sys.argv[1]):
+for d, dirs, files in os.walk(sys.argv[1]):
+    # The helpers sent to other systems for library builds there.
+    if d.endswith('/app/bin'):
+        dirs[:] = [x for x in dirs if x != 'remote']
     for f in files:
         p = os.path.join(d, f)
         if not os.path.islink(p):
@@ -163,7 +210,7 @@ for d, _dirs, files in os.walk(sys.argv[1]):
                     print(p)
 PY
 )"
-if [ -z "$elf" ]; then ok "no Linux (ELF) binaries"; else bad "Linux binaries in the app:"; printf '        %s\n' "$elf"; fi
+if [ -z "$elf" ]; then ok "no Linux (ELF) binaries outside app/bin/remote"; else bad "Linux binaries in the app:"; printf '        %s\n' "$elf"; fi
 # Signed by sign_app.sh, with the hardened runtime: every Mach-O file, as
 # file(1) finds them, is signed the same way, as notarization requires and
 # library validation assumes.
@@ -181,11 +228,17 @@ if command -v codesign >/dev/null 2>&1 && codesign -dv "$APP" 2>&1 | grep -q '^C
   else
     bad "Mach-O files not signed like the bundle:"; printf '%s\n' "$unlike" | sed 's/^/        /'
   fi
+  # The STEP preview's WebAssembly runs as machine code wazero writes into
+  # memory, which the hardened runtime refuses the Go server without this.
+  if [ -f "$R/app/bin/studio-server" ]; then
+    check "the Go server is signed with allow-unsigned-executable-memory (the STEP preview)" sh -c \
+      'codesign -d --entitlements - --xml "$1" 2>/dev/null | grep -q com.apple.security.cs.allow-unsigned-executable-memory' _ "$R/app/bin/studio-server"
+  fi
 fi
 
 echo "Size"
 echo "  $(du -sh "$APP" | cut -f1)  total"
-for d in node python gufi ocr app/server/node_modules app/web models; do
+for d in node python gufi ocr app/lib app/occt app/bin app/bin/remote app/server/node_modules app/web models; do
   [ -e "$R/$d" ] || continue
   echo "  $(du -sh "$R/$d" | cut -f1)  $d"
 done
@@ -217,10 +270,15 @@ if [ "$RUN" = 1 ]; then
     fi
 
     echo "Running"
+    if [ "$SERVER" != go-only ]; then
     check "node runs" clean "$R/node/bin/node" -e 'process.exit(process.versions.node.startsWith("26.") ? 0 : 1)'
     check "python runs, with sqlite3 and pypdf" clean "$R/python/bin/python3" -c 'import sqlite3, json, zipfile, urllib.request, pypdf'
     check "the .xls and .ppt readers (xlrd, olefile) import in the app's Python" clean "$R/python/bin/python3" -B -c 'import xlrd, olefile'
     check "and with onnxruntime, tokenizers and numpy" clean "$R/python/bin/python3" -c 'import onnxruntime, tokenizers, numpy'
+    fi
+    if [ "$SERVER" != node ]; then
+      check "studio-server runs and lists its routes" clean /bin/sh -c "'$R/app/bin/studio-server' routes | grep -q /api/updates"
+    fi
     # The window, started only far enough to hand --help to the launcher.
     check "the app's executable starts" sh -c "env -i HOME='$T/home' PATH=/usr/bin:/bin '$C/MacOS/ACTIVATE Studio' --help | grep -q -- --uninstall"
     if command -v codesign >/dev/null 2>&1; then
@@ -229,7 +287,7 @@ if [ "$RUN" = 1 ]; then
     # Through /bin/sh, which drops DYLD_* variables, as gufi_vt and scripts start the tools.
     check "gufi_dir2index indexes a folder" clean /bin/sh -c "'$G/bin/gufi_dir2index' -x '$T/corpus' '$T/idx'"
     check "gufi_query reads the index" clean /bin/sh -c "'$G/bin/gufi_query' -d ' ' -E 'SELECT name FROM vrpentries;' '$T/idx/corpus' | grep -q cake.txt"
-    check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$R/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
+    [ "$LEMBED" = 0 ] || [ "$SERVER" = go-only ] || check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$R/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
     # dyld's lines are "dyld[pid]: /path", or on macOS 15 "dyld[pid]: <uuid>
     # /path" with "delayed: <name>" lines for libraries it defers.
     loaded="$(DYLD_PRINT_LIBRARIES=1 "$G/bin/gufi_sqlite3" :memory: 'SELECT 1;' 2>&1 >/dev/null |
@@ -242,6 +300,14 @@ if [ "$RUN" = 1 ]; then
     else
       ok "gufi_sqlite3 loads only the app's libraries and the system's"
     fi
+    # sqlite-vec, which stores and searches the vectors in either version.
+    cat >"$T/vec.sql" <<'SQL'
+CREATE VIRTUAL TABLE v USING vec0(id INTEGER PRIMARY KEY, fp3 float[3]);
+INSERT INTO v(id, fp3) VALUES (1, '[0.9, 0.1, 0.0]'), (2, '[0.0, 0.2, 0.98]');
+SELECT id FROM v WHERE fp3 MATCH '[1, 0, 0]' ORDER BY distance LIMIT 1;
+SQL
+    check "gufi_sqlite3 loads sqlite-vec" clean /bin/sh -c "'$G/bin/gufi_sqlite3' <'$T/vec.sql' | grep -qx 1"
+    if [ "$SERVER" != go-only ]; then
     check "the indexer extracts text" clean env "${OCR_ENV[@]}" "$R/python/bin/python3" "$R/app/indexer/enrich.py" \
       --kb-root "$T/corpus" --index "$T/idx/corpus" --extract-cache "$T/extract"
     if [ "$OCR_RUN" = 1 ]; then
@@ -260,6 +326,7 @@ if [ "$RUN" = 1 ]; then
       mkdir -p "$T/pdfs/docs" && cp "$HERE/../../testdata/corpus/docs/report.pdf" "$T/pdfs/docs/"
       check "downmark's binary reads a PDF" clean /bin/sh -c 'b="$(find "$1" -path "*downmark-darwin-arm64/bin/downmark" -type f | head -1)"; "$b" "$2" | grep -q BOUNDARY-LAYER-4417' sh "$R/app/server/node_modules" "$T/pdfs/docs/report.pdf"
       check "the bundled pypdf reads it too" clean "$R/python/bin/python3" -c "import sys; from pypdf import PdfReader; sys.exit(0 if 'BOUNDARY-LAYER-4417' in ''.join(p.extract_text() or '' for p in PdfReader('$T/pdfs/docs/report.pdf').pages) else 1)"
+    fi
     fi
     # OCR: the app's tesseract on each image format leptonica reads, then on
     # a scanned PDF, whose page downmark hands it as a PNG (no poppler).
@@ -280,7 +347,7 @@ if [ "$RUN" = 1 ]; then
       else
         ok "tesseract loads only the app's library and the system's"
       fi
-      check "downmark reads a scanned PDF through the app's tesseract" clean env "${OCR_ENV[@]}" /bin/sh -c \
+      [ "$SERVER" = go-only ] || check "downmark reads a scanned PDF through the app's tesseract" clean env "${OCR_ENV[@]}" /bin/sh -c \
         'b="$(find "$1" -path "*downmark-darwin-arm64/bin/downmark" -type f | head -1)"; "$b" -ocr tesseract -ocr-policy thin "$2" | grep -qi heliotrope' \
         sh "$R/app/server/node_modules" "$HERE/testdata/ocr-sample.pdf"
     fi
@@ -327,7 +394,9 @@ if [ "$RUN" = 1 ]; then
     }
     trap 'tls_cleanup; rm -rf "$T"' EXIT
     echo "Outbound HTTPS through a certificate authority macOS trusts"
-    if ! sudo -n true 2>/dev/null; then
+    if [ "$SERVER" = go-only ]; then
+      echo "  (the check's HTTPS server is Node, which this app does not carry; skipped)"
+    elif ! sudo -n true 2>/dev/null; then
       echo "  (sudo asks for a password here, so no authority can be added to the System keychain; skipped)"
     else
       mkdir -p "$T/tls"
@@ -380,7 +449,7 @@ if [ "$RUN" = 1 ]; then
     done
     if [ "$up" = 1 ]; then ok "the server answers on 127.0.0.1:$PORT_FREE"; else bad "the server did not start:"; tail -n 30 "$T/data/logs/studio.log" | sed 's/^/        /'; fi
     check "it reports this build" grep -q "$(sed -n 's/.*"builtAt": *"\([^"]*\)".*/\1/p' "$R/app/build-info.json")" "$T/version.json"
-    check "its log says it trusts the system's certificates" grep -q "trusts the system's certificates" "$T/data/logs/studio.log"
+    [ "$SERVER" = go-only ] || check "its log says it trusts the system's certificates" grep -q "trusts the system's certificates" "$T/data/logs/studio.log"
     if [ "$TLS_RUN" = 1 ]; then
       curl -fsS -m 30 -X POST "http://127.0.0.1:$PORT_FREE/api/updates/check" >"$T/updcheck.json" 2>/dev/null || true
       if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("state") == "idle" and not d.get("error") and not d.get("offline") and d.get("checkedAt") else 1)' "$T/updcheck.json" 2>/dev/null; then
@@ -391,7 +460,7 @@ if [ "$RUN" = 1 ]; then
         grep -i -E "outbound|update check|certificate" "$T/data/logs/studio.log" | tail -n 5 | sed 's/^/        /'
       fi
     fi
-    check "the model is linked into its index" test -e "$T/data/index/models/minilm384.gguf"
+    [ "$SERVER" = go-only ] || check "the model is linked into its index" test -e "$T/data/index/models/minilm384.gguf"
     check "and the ONNX model too" test -e "$T/data/index/models/minilm-l6/model.onnx"
     # A full rebuild runs indexer/reindex.sh (bash, then Python) with the
     # GUFI the server found; search then reads it through gufi_query.
@@ -436,7 +505,7 @@ if [ "$RUN" = 1 ]; then
         "http://127.0.0.1:$PORT_FREE/api/libraries" >/dev/null; then
       curl -fsS -m 60 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 20}' \
         "http://127.0.0.1:$PORT_FREE/api/query" >"$T/query.json" 2>"$T/query.err" || true
-      if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and {"kb", "second"} <= libs and not d.get("failed") else 1)' "$T/query.json" 2>/dev/null; then
+      if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") in '"$ENGINES"' and {"kb", "second"} <= libs and not d.get("failed") else 1)' "$T/query.json" 2>/dev/null; then
         ok "a query across two libraries runs through gufi_vt"
       else
         bad "a query across two libraries did not run through gufi_vt:"
@@ -460,7 +529,7 @@ if [ "$RUN" = 1 ]; then
         curl -fsS -m 60 -X POST -H 'content-type: application/json' \
           -d '{"library": "all", "builder": {"source": "files", "filters": [{"field": "text", "op": "match", "value": "heliotrope"}], "groupBy": "none", "sort": "size", "dir": "desc", "limit": 20}}' \
           "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qwords.json" 2>"$T/qwords.err" || true
-        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); found = any("ocr-sample" in str(r) for r in d.get("rows") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and found and not d.get("failed") else 1)' "$T/qwords.json" 2>/dev/null; then
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); found = any("ocr-sample" in str(r) for r in d.get("rows") or []); sys.exit(0 if d.get("engine") in '"$ENGINES"' and found and not d.get("failed") else 1)' "$T/qwords.json" 2>/dev/null; then
           ok "and a query with a words condition runs through gufi_vt too"
         else
           bad "a query with a words condition did not run through gufi_vt:"
@@ -512,7 +581,7 @@ EOF
         qid="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["id"])' "$T/qadd.json" 2>/dev/null || true)"
         curl -fsS -m 120 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 50}' \
           "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qquery.json" 2>"$T/qquery.err" || true
-        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("engine") == "gufi_vt" and sys.argv[2] in set(d.get("rowLibraries") or []) and not d.get("failed") else 1)' "$T/qquery.json" "$qid" 2>/dev/null; then
+        if python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(0 if d.get("engine") in '"$ENGINES"' and sys.argv[2] in set(d.get("rowLibraries") or []) and not d.get("failed") else 1)' "$T/qquery.json" "$qid" 2>/dev/null; then
           ok "and Query reaches its index through gufi_vt with gufi_query alone"
         else
           bad "Query across libraries did not reach the gufi_query-only host:"
@@ -549,7 +618,7 @@ EOF
           curl -fsS -m 120 -X POST -H 'content-type: application/json' -d '{"library": "all", "canned": "largest", "n": 50}' \
             "http://127.0.0.1:$PORT_FREE/api/query" >"$T/qstack.json" 2>"$T/qstack.err" || true
           ran=$(( $(wc -l <"$T/qonly.log") - before ))
-          if [ "$ran" = 2 ] && python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") == "gufi_vt" and {sys.argv[2], sys.argv[3]} <= libs and not d.get("failed") else 1)' "$T/qstack.json" "$qid" "$q2id" 2>/dev/null; then
+          if [ "$ran" = 2 ] && python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); libs = set(d.get("rowLibraries") or []); sys.exit(0 if d.get("engine") in '"$ENGINES"' and {sys.argv[2], sys.argv[3]} <= libs and not d.get("failed") else 1)' "$T/qstack.json" "$qid" "$q2id" 2>/dev/null; then
             ok "two libraries on one host: Query asks it once (a check and a gufi_query), rows back to each"
           else
             bad "two libraries on one host were not asked together ($ran commands there):"
@@ -574,7 +643,11 @@ EOF
         printf 'turbine blade %s, the rotor and the gearbox of a wind turbine\n' "$n" >"$T/mapsrc/wind/turbine-$n.txt"
         printf 'sourdough loaf %s, the starter, the flour and the oven\n' "$n" >"$T/mapsrc/bread/loaf-$n.txt"
       done
-      if clean "$G/bin/gufi_dir2index" -x "$T/mapsrc" "$T/mapidx" >/dev/null 2>&1 &&
+      # The fixture is made with the Node version's Python indexer and GGUF
+      # model, which the Go-only app does not carry.
+      if [ "$SERVER" = go-only ]; then
+        echo "  note  the remote semantic map check is skipped: its fixture needs the Node version's indexer"
+      elif clean "$G/bin/gufi_dir2index" -x "$T/mapsrc" "$T/mapidx" >/dev/null 2>&1 &&
         clean "$R/python/bin/python3" "$R/app/indexer/enrich.py" --kb-root "$T/mapsrc" --index "$T/mapidx/mapsrc" --extract-cache "$T/mapextract" >/dev/null 2>&1 &&
         clean "$R/python/bin/python3" "$R/app/indexer/embed.py" --index "$T/mapidx/mapsrc" --model "$R/models/minilm384.gguf" --gufi-sqlite3 "$G/bin/gufi_sqlite3" >"$T/mapembed.out" 2>&1 &&
         curl -fsS -m 120 -X POST -H 'content-type: application/json' \
@@ -663,6 +736,38 @@ EOF
       check "and keeps the documents" sh -c "printf '%s\n' \"\$1\" | grep -q '^keep-documents	$T/corpus\$'" _ "$PLAN"
       check "a dry run removes nothing" test -f "$LIBIDX/.studio-index.json"
 
+      # The window itself, in its self test (desktop/wails/selftest.go, plan
+      # hold): it opens, the Studio draws in it, and the window's own state
+      # is what the Swift window had: the title bar in the page's color,
+      # the frame kept under the Swift window's name, and the web view
+      # answering microphone and pop-up requests (macwindow_darwin.go).
+      echo "Window"
+      WT="$T/window-test"
+      mkdir -p "$WT"
+      env HOME="$H" STUDIO_SHELL_TEST=1 STUDIO_SHELL_TEST_PLAN=hold STUDIO_SHELL_TEST_DIR="$WT" \
+        "$C/MacOS/ACTIVATE Studio" >"$T/window.log" 2>&1 &
+      WPID=$!
+      for _ in $(seq 1 180); do [ -s "$WT/ready" ] && break; kill -0 "$WPID" 2>/dev/null || break; sleep 1; done
+      W() { python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("results", {}).get("window", {}).get(sys.argv[2]))' "$WT/results.json" "$1" 2>/dev/null; }
+      BAR="$(cat "$H/Library/Application Support/ACTIVATE Studio/run/bar-color" 2>/dev/null || true)"
+      if [ -s "$WT/ready" ]; then
+        ok "the window opened and the Studio drew in it"
+        echo "        window: $(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))["results"].get("window")))' "$WT/results.json" 2>/dev/null)"
+        check "the title bar is transparent over the window's color" test "$(W titlebarTransparent)" = True
+        check "that color is the page's ($BAR)" sh -c '[ -n "$1" ] && [ "$1" = "$2" ]' _ "$BAR" "$(W background)"
+        check "the frame is kept under the Swift window's name" sh -c '[ "$1" = "ACTIVATE Studio" ] && [ "$2" = True ]' _ "$(W frameAutosaveName)" "$(W frameSaved)"
+        check "the web view answers microphone requests" test "$(W microphoneHandler)" = True
+        check "and pop-up windows and their closing" sh -c '[ "$1" = True ] && [ "$2" = True ]' _ "$(W popupHandler)" "$(W closeHandler)"
+      else
+        bad "the window did not open, or the Studio did not draw in it"
+        tail -n 30 "$T/window.log" | sed 's/^/        /'
+      fi
+      kill -TERM "$WPID" 2>/dev/null || true
+      for _ in $(seq 1 20); do kill -0 "$WPID" 2>/dev/null || break; sleep 0.5; done
+      kill -KILL "$WPID" 2>/dev/null || true
+      env HOME="$H" "$L" --stop >/dev/null 2>&1 || true
+      defaults delete com.parallelworks.activate-studio "NSWindow Frame ACTIVATE Studio" >/dev/null 2>&1 || true
+
       # A managed Mac where ~/Library/LaunchAgents is read-only: the app
       # starts the server itself (a run loop in a session of its own, named
       # in server.pid), with no administrator rights.
@@ -749,7 +854,14 @@ EOF
           check "and stopped the server running from it" sh -c 'for _ in $(seq 1 30); do curl -fsS -m 2 "http://127.0.0.1:$1/api/version" >/dev/null 2>&1 || exit 0; sleep 1; done; exit 1' _ "$PORT4"
           check "with the old copy gone, and no staging copies left" sh -c '! [ -e "$1/Contents/old-copy-marker" ] && ! ls -a "$2" | grep -q "^\.$3\.app\."' _ "$COPY" "$H3/Applications" "$NAME"
           check "the replaced copy's signature verifies" codesign --verify --deep --strict "$COPY"
-          check "opening it starts the server again" fresh env STUDIO_NO_BROWSER=1 "$COPY/Contents/Resources/launcher.sh"
+          if fresh env STUDIO_NO_BROWSER=1 "$COPY/Contents/Resources/launcher.sh" >"$T/reopen.out" 2>&1; then
+            ok "opening it starts the server again"
+          else
+            bad "opening it starts the server again:"
+            { tail -n 8 "$T/reopen.out"; tail -n 12 "$D3/logs/agent.log"; tail -n 20 "$D3/logs/studio.log"
+              launchctl print "gui/$(id -u)/com.parallelworks.activate-studio" 2>&1 | grep -E 'state|path|last exit|disabled' | head -n 8
+              lsof -nP -iTCP:"$PORT4" -sTCP:LISTEN 2>/dev/null; } 2>/dev/null | cut -c1-220 | sed 's/^/        /'
+          fi
           check "--stop stops it" fresh "$COPY/Contents/Resources/launcher.sh" --stop
           launchctl enable "gui/$(id -u)/com.parallelworks.activate-studio" 2>/dev/null || true
           # A copy macOS marked as downloaded (quarantined): the installed

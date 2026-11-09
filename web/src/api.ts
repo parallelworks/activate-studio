@@ -1,6 +1,18 @@
 import type { GufiCommand } from './components/GufiCommands'
 import type { Omission } from './components/OmittedLine'
 
+/** An answer's JSON when it is OK; otherwise an Error carrying the server's
+ * own message, so a page shows the failure in place of reading fields that
+ * are not there. */
+export async function okJSON<T = unknown>(r: Response): Promise<T> {
+  const body = await r.json().catch(() => null)
+  if (!r.ok) {
+    const said = body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string' ? (body as { error: string }).error : ''
+    throw new Error(said || `The server answered ${r.status}.`)
+  }
+  return body as T
+}
+
 /** A mounted library, as the server describes it. Paths stay on the server. */
 export interface PublicLibrary {
   id: string
@@ -146,13 +158,25 @@ export function setLibrary(id: string): void {
 }
 /** Called with the configured libraries: falls back to the default when
  *  the tab has no choice of its own or its choice no longer exists. */
+let knownIds: string[] = []
 export function settleLibraries(ids: string[]): void {
+  knownIds = [...ids]
   try { localStorage.setItem(COUNT_KEY, String(ids.length)); localStorage.removeItem(LIB_KEY) } catch { /* storage unavailable */ }
   const mine = stored()
   const want = mine && (mine === ALL ? ids.length > 1 : ids.includes(mine)) ? mine : defaultLibrary(ids.length)
   if (want === current) return
   current = want
   for (const fn of listeners) fn(current)
+}
+/** A file link's path as the open library reads it. A link names its
+ *  library with &lib=, or none for the main one; in All mode paths start
+ *  with their library's id, so the link's path gets that prefix unless it
+ *  already starts with a library's id (a link made while All was open). */
+export function linkTarget(path: string, lib?: string): string {
+  if (current !== ALL) return path
+  const first = path.replace(/^\/+/, '').split('/')[0]
+  if (!lib && knownIds.includes(first)) return path
+  return `${lib ?? PRIMARY}/${path.replace(/^\/+/, '')}`
 }
 export function onLibraryChange(fn: (id: string) => void): () => void {
   listeners.add(fn)
@@ -350,7 +374,7 @@ async function getJson<T>(url: string): Promise<T> {
     // The server's own sentence where it gave one, such as why a search's
     // text cannot be read.
     const body = await res.json().catch(() => null) as { error?: string } | null
-    throw new Error(body?.error ?? `${url}: ${res.status}`)
+    throw Object.assign(new Error(body?.error ?? `${url}: ${res.status}`), { status: res.status })
   }
   return res.json() as Promise<T>
 }
@@ -599,12 +623,34 @@ export const api = {
 // ---- updates ----
 // Only the macOS app installs updates; a clone is told the version and the
 // command, and a hosted deployment has none (its routes answer 403).
-export interface UpdatePolicy { check: boolean; install: 'manual' | 'auto'; channel: 'stable' | 'prerelease' }
+/** Preview also takes releases published before they are Stable
+ *  (docs/UPDATES.md). */
+export type UpdateChannel = 'stable' | 'preview'
+export interface UpdatePolicy { check: boolean; install: 'manual' | 'auto'; channel: UpdateChannel }
+/** A signed release this Studio can install on its channel. */
+export interface UpdateVersion { version: string; publishedAt: string | null; url: string | null; channel: UpdateChannel; current: boolean; newer: boolean }
+/** A copy of the state the updater kept before a change of version. */
+export interface StateSnapshot { id: string; from: string; to: string | null; reason: string; format: number; at: string }
+/** What installing a picked version would do, from its signed manifest. */
+export interface VersionCheck {
+  version: string
+  older: boolean
+  channel: UpdateChannel
+  stateFormat: number
+  currentFormat: number
+  /** That version reads the state as it is. */
+  readable: boolean
+  /** When it does not: the snapshot it would be given, or null (it cannot be installed). */
+  snapshot: StateSnapshot | null
+  /** It replaces the whole app, which reopens. */
+  requiresRelaunch: boolean
+}
 /** One pull request's change: its title, and its description as markdown. */
 export interface ChangeEntry { title: string; pr: number | null; body: string }
 /** A release an update brings, with its notes as entries. */
 export interface UpdateRelease { version: string; publishedAt: string | null; url: string | null; entries: ChangeEntry[] }
-export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'error'
+/** relaunch: a release that replaces the whole app is in place; the app has to reopen. */
+export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'relaunch' | 'error'
 export interface UpdatesStatus {
   /** app: this copy replaces itself; clone and package: it is updated
    *  from outside (git, or a package manager); hosted: by its deployment. */
@@ -633,10 +679,18 @@ export interface UpdatesStatus {
   checkedAt: string | null
   /** The last check could not reach the release server; it checks again later. */
   offline?: boolean
-  /** The version a rollback goes back to. */
-  previous: { version: string } | null
+  /** The version a rollback goes back to: the one the last update
+   *  replaced, which Roll back downloads again (size: the download, null
+   *  when the release is not known here). */
+  previous: { version: string; size?: number | null } | null
   /** The last update changed the app's own window, which reopening runs. */
   reopen?: boolean
+  /** The signed releases on the channel, newest first (the running one included). */
+  versions?: UpdateVersion[]
+  /** On Stable while running a newer Preview: the newest Stable to go back to. */
+  moveToStable?: { version: string } | null
+  stateFormat?: number
+  snapshots?: StateSnapshot[]
 }
 
 async function sendUpdates(url: string, method: 'POST' | 'PUT', body: unknown = {}): Promise<unknown> {
@@ -658,6 +712,11 @@ export const updatesApi = {
   },
   check: () => sendUpdates('/api/updates/check', 'POST') as Promise<UpdatesStatus>,
   install: () => sendUpdates('/api/updates/install', 'POST') as Promise<UpdatesStatus>,
+  /** A version the person picked, older ones included; restoreState puts
+   *  back the snapshot that version reads when it cannot read the state. */
+  installVersion: (version: string, restoreState = false) =>
+    sendUpdates('/api/updates/install', 'POST', { version, restoreState }) as Promise<UpdatesStatus>,
+  inspect: (version: string) => sendUpdates('/api/updates/inspect', 'POST', { version }) as Promise<VersionCheck>,
   rollback: () => sendUpdates('/api/updates/rollback', 'POST') as Promise<UpdatesStatus>,
   /** Saved with the other settings. */
   savePolicy: (updates: UpdatePolicy) => sendUpdates('/api/settings', 'PUT', { updates }).then(() => undefined),

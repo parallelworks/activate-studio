@@ -165,7 +165,7 @@ export async function openOriginal(lib: Library, rel: string, o: { viewerId?: st
     try {
       if (!sshAllowed(o.viewerId)) throw new KbError(403, READ_THROUGH_SINGLE_USER)
       const root = rt.root || ownRootOf(lib)
-      if (!root) throw new KbError(409, 'the library\'s folder on that host is not known: name it in Settings, Libraries')
+      if (!root) throw new KbError(409, 'the library\'s folder on that host is not known: name it in Settings, Indexing, Libraries')
       const site = sshSite(rt.destination, rt.port ?? null, rt.sshOptions ?? [])
       return { file: await readRemoteFile(site, '', root, rel, READ_MS), where, via: 'read-through' }
     } catch (e) {
@@ -198,7 +198,7 @@ export async function downloadOriginal(lib: Library, rel: string, o: { viewerId?
     try {
       if (!sshAllowed(o.viewerId)) throw new KbError(403, READ_THROUGH_SINGLE_USER)
       const root = rt.root || ownRootOf(lib)
-      if (!root) throw new KbError(409, 'the library\'s folder on that host is not known: name it in Settings, Libraries')
+      if (!root) throw new KbError(409, 'the library\'s folder on that host is not known: name it in Settings, Indexing, Libraries')
       return await downloadRemoteFile(sshSite(rt.destination, rt.port ?? null, rt.sshOptions ?? []), '', root, rel)
     } catch (e) {
       if (e instanceof KbError && (e.status === 400 || e.status === 413)) throw e

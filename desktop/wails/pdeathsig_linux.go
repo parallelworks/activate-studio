@@ -23,13 +23,21 @@ import (
 func setParentDeathSignal(a *syscall.SysProcAttr) { a.Pdeathsig = syscall.SIGTERM }
 
 // guardCommand makes cmd run through the guard.
+//
+// The guard is this running program (/proc/self/exe), not the file at its
+// path: an update or a rollback replaces that file under the running shell
+// with another version's, which may not know --guard.
 func guardCommand(cmd *exec.Cmd) {
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
+	self := "/proc/self/exe"
+	if _, err := os.Stat(self); err != nil {
+		self = exe
+	}
 	cmd.Args = append([]string{exe, "--guard", cmd.Path}, cmd.Args[1:]...)
-	cmd.Path = exe
+	cmd.Path = self
 }
 
 // maybeRunGuard runs the guard when the process was started as one.

@@ -1,0 +1,7 @@
+SYNTHETIC HEADLINE 123
+part one (alpha) | part two (beta) | part three
+SECTION ONE
+item line - example text (one - two)
+kerned segments need a space here.
+SECTION TWO
+closing line of the synthetic document (three - four)

@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package main
 
@@ -46,7 +46,13 @@ func downloadsDir() string {
 
 // openFolder shows a folder in the file manager.
 func openFolder(dir string) {
+	if openInWindows(dir, false) {
+		return
+	}
 	if cmd := exec.Command("xdg-open", dir); cmd.Start() == nil {
 		go func() { _ = cmd.Wait() }()
 	}
 }
+
+// revealDownload: nothing here; the Studio says where the file went.
+func revealDownload(string) {}

@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { GUFI_BIN, GUFI_INDEX, INDEX_BASE, KB_ROOT, PROJECT_ROOT, PYTHON_BIN, SEMANTIC_MAP_DIR, gufiEnv, indexerEnv } from './config.js'
 import { indexSettings, type IndexDepth } from './indexSettings.js'
+import { callFront, goOwnsMaps } from './frontBridge.js'
 import { KbError } from './kb.js'
 import { builtLibraryDir, getLibrary, lacks, listLibraries, onLibraryRemoved, PRIMARY_ID, type Library } from './libraries.js'
 import { countRemoteVectors, dequantize, fetchRemoteVectors, remoteMapFiles, remoteNeighbors, type VectorSource } from './remoteMap.js'
@@ -95,6 +96,9 @@ export interface SemanticMapOverview {
 }
 
 const SCRIPT = path.join(PROJECT_ROOT, 'indexer', 'semantic_map.py')
+/** The Go semantic map (server-go/cmd/semantic-map), used in place of the
+ *  Python script when set; see docs/GO-PORT.md. */
+const GO_MAP_BIN = process.env.STUDIO_SEMANTIC_MAP_BIN || ''
 /** The map the server draws itself when numpy is missing: this many files at most. */
 const FALLBACK_FILES = 4000
 /** A cluster's points per request, at most. */
@@ -144,8 +148,10 @@ function stateOf(key: string): MapState {
   return st
 }
 
-/** A library removed: its map goes with it, from disk and from memory. */
+/** A library removed: its map goes with it, from disk and from memory, and
+ *  from the Go server's where it keeps the maps. */
 onLibraryRemoved(id => {
+  if (goOwnsMaps()) void askGo('removed', { id })
   const st = states.get(id)
   if (st?.timer) clearTimeout(st.timer)
   states.delete(id)
@@ -261,6 +267,8 @@ export function semanticMapCluster(c: number, offset = 0, limit = 2000, id: stri
  * map catches up with a sync that ran meanwhile.
  */
 export function scheduleSemanticMapRebuild(delayMs: number, id: string = PRIMARY_ID): void {
+  // The Go server makes the maps it serves (STUDIO_GO_MAPS).
+  if (goOwnsMaps()) { void askGo('schedule', { id, delayMs }); return }
   const st = stateOf(id)
   if (st.running) { st.again = true; return }
   delayMs = Math.max(0, delayMs) * delayScale
@@ -286,10 +294,16 @@ export function setSemanticMapBuilderForTests(fn: Builder | null, opts: { delayS
   delayScale = opts.delayScale ?? 1
   remoteCheckMs = opts.remoteCheckMs ?? REMOTE_CHECK_MS
 }
-export function resetSemanticMapForTests(): void {
+export async function resetSemanticMapForTests(): Promise<void> {
   for (const st of states.values()) if (st.timer) clearTimeout(st.timer)
   states.clear()
   neighborCaches.clear()
+  if (goOwnsMaps()) await askGo('reset', {})
+}
+
+/** A call to the Go server's maps (internal/maps), logged when it fails. */
+function askGo(op: 'schedule' | 'removed' | 'reset', body: Record<string, unknown>): Promise<void> {
+  return callFront(`/internal/maps/${op}`, body).then(() => {}, e => { console.warn(`semantic map: the Go server was not told (${op}): ${String((e as Error).message)}`) })
 }
 
 async function rebuild(id: string): Promise<void> {
@@ -321,7 +335,10 @@ function buildWithPython(t: MapTarget): Promise<void> {
     ? ['--vectors', t.remote.vectors, '--model', t.remote.model ?? '', ...(t.remote.of ? ['--of', String(t.remote.of)] : [])]
     : ['--index', t.index]
   return new Promise((resolve, reject) => {
-    execFile(PYTHON_BIN, [SCRIPT, ...from, '--out', t.out],
+    // STUDIO_SEMANTIC_MAP_BIN (opt-in): the Go port (server-go/cmd/semantic-map),
+    // which takes the same arguments and writes the same files.
+    const [bin, args] = GO_MAP_BIN ? [GO_MAP_BIN, from] : [PYTHON_BIN, [SCRIPT, ...from]]
+    execFile(bin, [...args, '--out', t.out],
       { timeout: 30 * 60_000, maxBuffer: 4 * 1024 * 1024, env: indexerEnv({ PYTHONDONTWRITEBYTECODE: '1' }) },
       (err, stdout, stderr) => {
         if (!err) {

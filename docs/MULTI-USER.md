@@ -6,7 +6,7 @@ Status: design, not yet scheduled. This note collects the current state, the tar
 
 The service currently runs as one POSIX user, with the changes planned in this note not yet started. Every file the app writes (uploads, chat exports, seeded directories) is owned by that user, every query runs as that user, and the extracted text and vectors live inside the per-directory `db.db` files with the same ownership. `INDEX_BASE` is deployment-level state: settings, conversations, saved queries, the credential vault.
 
-Platform identity (the `X-PW-User-Token` JWT, and the ACTIVATE OIDC flow in progress that will carry the CAC-authenticated user) already separates people above the filesystem: conversations have owners, transcripts record who wrote them, model credentials are per user in the vault, and a shared key has a named provider. It does not separate anything at the filesystem: a group sharing a deployment this way has all its files roll up to the single service user.
+Platform identity (the `X-PW-User-Token` JWT from the session proxy, or a sign-in through an OpenID Connect provider) already separates people above the filesystem: conversations have owners, transcripts record who wrote them, model credentials are per user in the vault, and a shared key has a named provider. It does not separate anything at the filesystem: a group sharing a deployment this way has all its files roll up to the single service user.
 
 The security statement that follows from this is in ARCHITECTURE.md section 10: point the app at a corpus its whole audience may read.
 
@@ -42,17 +42,21 @@ None of this is scheduled. It is recorded here as a constraint on the multi-user
 
 ## Identity mapping
 
+Where it stands: ACTIVATE is an OpenID Connect provider (a feature preview; an organization administrator registers applications), and the Studio is a generic OIDC client of any provider (ARCHITECTURE.md section 7, DEPLOY.md). A signed-in person gets the same `req.user` as one the session proxy identifies. The provider's tokens are identity only: they open the provider's userinfo endpoint and nothing else, so acting as the person on the platform stays on their own platform key in the vault. Execution as the person's host account, the next step below, is not started.
+
+The provider's username is not assumed to be a host account. ACTIVATE releases `sub`, `name`, `preferred_username`, `email` and `groups`, and no uid or gid, and its username does not always match the login on a given cluster. The operator names the claims that carry the account and, where a provider emits them (Keycloak backed by LDAP can release `uidNumber` and `gidNumber`, for one), a numeric uid and gid: `AUTH_ACCOUNT_CLAIM`, `AUTH_UID_CLAIM`, `AUTH_GID_CLAIM`. Whatever is present is recorded on `req.user` as `account`, `uid` and `gid`, and absent values stay absent. A mapping per host (this person is `jdoe` on one cluster and `jd1234` on another) is expected to sit beside this and is not implemented; the per-host lookup below should take the recorded claims as input and never fall back to the username silently.
+
 The working assumption: authentication is OIDC (through ACTIVATE, carrying the CAC-authenticated user, or standalone against an IdP directly), and the authenticated user has a valid uid and gid on the cluster holding the knowledge base. That matches how these clusters are actually run, where the platform account and the host account are the same person, and it removes the hardest design problem, since the mapping is a lookup rather than a provisioning scheme.
 
 What the lookup and execution need:
 
-- **Resolving the account**: the OIDC subject or preferred_username resolves to the host account (getpwnam on the claim, with a claim-to-account mapping configurable for sites where the two differ). A user who authenticates but has no host account is refused filesystem writes and reads beyond what the service user could do, with a message that says why.
+- **Resolving the account**: the claim the operator names (`AUTH_ACCOUNT_CLAIM`, or a per-host mapping where accounts differ between hosts) resolves to the host account with getpwnam, and a uid claim, where there is one, is checked against the result. The username is used only when the operator names it as the account claim. A user who authenticates but has no host account is refused filesystem writes and reads beyond what the service user could do, with a message that says why.
 - **Acting as the uid**: the service needs a mechanism to execute as the caller: per-user worker processes, a setuid helper, or a privileged wrapper of the kind GUFI's own multi-user tooling uses. This is the main implementation decision for step 2.
-- **Standalone**: same design, with the IdP as the source of the claim instead of the platform's session proxy. The app already verifies JWTs from a JWKS URL, so standalone OIDC is configuration plus the token acquisition flow, not a second identity system.
+- **Standalone**: same design, with the IdP as the source of the claim instead of the platform's session proxy. The OIDC client is in place, so a standalone deployment is configuration.
 
 Deployments without host accounts for their users stay supported as what they are: shared-user mode, identity separation above the filesystem only, and labelled that way.
 
-The vault, conversations, and chat filters already key on the JWT subject, so nothing above the filesystem changes shape; the new work is entirely at and below the filesystem boundary.
+The vault, conversations, and chat filters already key on the verified subject, so nothing above the filesystem changes shape; the new work is entirely at and below the filesystem boundary.
 
 ## Deployment-state questions to settle during design
 

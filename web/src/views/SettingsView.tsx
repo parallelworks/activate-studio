@@ -1,8 +1,9 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { ModelAccessSection } from '../components/ModelAccessSection'
-import { IndexingSection } from '../components/IndexingSection'
+import { IndexBuildSettings, IndexStorageSettings } from '../components/IndexingSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useRef, useState } from 'react'
+import { okJSON } from '../api'
 import {
   ActionMenu, Autocomplete, Button, Callout, type CalloutTone, Checkbox, CopyButton, CopyCodeBlock,
   DescriptionList, DescriptionListItem, DisclosurePanel, EmptyState, Field, Input, Loader, NumberInput,
@@ -14,7 +15,7 @@ import { AccentSwatches } from '../components/AccentSwatches'
 import { BrandIcons, type Branding } from '../components/BrandIcons'
 import { ServerSection } from '../components/ServerSection'
 import { UpdatesSection } from '../components/UpdatesSection'
-import { reloadAppConfig, saveAiEnabled, saveSections, saveSettings, useAppConfig } from '../config'
+import { NAV_WIDTHS, aiOn as aiOnIn, reloadAppConfig, saveNavWidth, saveAiEnabled, saveSections, saveSettings, useAppConfig } from '../config'
 import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
 import { useUpdateFlow } from '../updateFlow'
 import { SidebarSwitches, THEME_OPTIONS, saveThemeChoice } from './SetupWizard'
@@ -26,6 +27,7 @@ interface Effective {
   theme: 'light' | 'dark'
   accent: string
   surface: string
+  navWidth: number
   iconUrl: string
   iconUrlDark: string
   sweepIntervalSec: number
@@ -109,28 +111,59 @@ const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
   { value: 'both', label: 'Both, chosen per task' },
 ]
 
-type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'libraries' | 'workflows'
+type SectionId = 'general' | 'indexing' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
 
 /** The tabs of Settings, General, in order. Each has an address of its own
- *  (#view=settings:<tab>); #view=settings:general opens the first. */
+ *  (#view=settings:<tab>); #view=settings:general opens the first. Branding
+ *  is a group of Appearance; its old address opens Appearance there. */
 export const GENERAL_TABS = [
   { value: 'appearance', label: 'Appearance' },
-  { value: 'branding', label: 'Branding' },
   { value: 'sidebar', label: 'Sidebar' },
   { value: 'ai', label: 'AI features' },
-  { value: 'indexing', label: 'Indexing' },
   { value: 'updates', label: 'Updates' },
   { value: 'server', label: 'Server' },
 ] as const
 export type GeneralTab = typeof GENERAL_TABS[number]['value']
 
-/** The section and General tab an address names: a section's own id, a
- *  General tab's id, or anything else for General's first tab. */
-export function settingsTarget(id: string | null | undefined): { section: SectionId; tab: GeneralTab } {
-  const tab = GENERAL_TABS.find(t => t.value === id)
-  if (tab) return { section: 'general', tab: tab.value }
-  const sections: SectionId[] = ['general', 'access', 'tools', 'rag', 'previews', 'ext', 'libraries', 'workflows']
+/** The tabs of Settings, Indexing, in order, each with an address of its
+ *  own. Libraries keeps the address it had as a section of its own
+ *  (#view=settings:libraries, with ?add=1 for the Add a library form). */
+export const INDEXING_TABS = [
+  { value: 'libraries', label: 'Libraries' },
+  { value: 'sync-search', label: 'Sync and search' },
+  { value: 'building', label: 'Building' },
+  { value: 'storage', label: 'Storage and logs' },
+] as const
+export type IndexingTab = typeof INDEXING_TABS[number]['value']
+export type SettingsTab = GeneralTab | IndexingTab
+
+/** The section and tab an address names: a tab's id, a section's own id, or
+ *  anything else for General's first tab. #view=settings:indexing, General's
+ *  Indexing tab before Indexing was a section, opens Sync and search, where
+ *  that tab's first settings are now; the rail opens the section on its
+ *  first tab, Libraries. */
+export function settingsTarget(id: string | null | undefined): { section: SectionId; tab: SettingsTab; anchor?: 'branding' } {
+  const general = GENERAL_TABS.find(t => t.value === id)
+  if (general) return { section: 'general', tab: general.value }
+  if (id === 'branding') return { section: 'general', tab: 'appearance', anchor: 'branding' }
+  if (id === 'indexing') return { section: 'indexing', tab: 'sync-search' }
+  const indexing = INDEXING_TABS.find(t => t.value === id)
+  if (indexing) return { section: 'indexing', tab: indexing.value }
+  const sections: SectionId[] = ['general', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']
   return { section: sections.includes(id as SectionId) ? id as SectionId : 'general', tab: 'appearance' }
+}
+
+/** Sections with nothing to set while AI features are off: every setting in
+ *  them is the assistant's. Their addresses open General, AI features, where
+ *  the switch is. External access stays (MCP serves outside clients with no
+ *  model here), and so does Model access, which also holds the ACTIVATE
+ *  credential the Workflows page and ACTIVATE libraries use. */
+export const AI_ONLY_SECTIONS: readonly SectionId[] = ['tools', 'previews', 'ext']
+
+/** The section and tab to show for a target: an AI-only section, while AI
+ *  features are off, is General, AI features. */
+export function shownSettingsTarget<T extends { section: SectionId; tab: SettingsTab }>(t: T, aiEnabled: boolean): T | { section: SectionId; tab: SettingsTab } {
+  return !aiEnabled && AI_ONLY_SECTIONS.includes(t.section) ? { section: 'general', tab: 'ai' } : t
 }
 
 /**
@@ -141,10 +174,20 @@ export function settingsTarget(id: string | null | undefined): { section: Sectio
  * find is off for everyone regardless of the switch. Workflows appears
  * only when the Studio runs on the platform, since it lists the platform's.
  */
-export function settingsSections(opts: { authEnabled: boolean; platform?: boolean; single?: boolean }): { id: SectionId; label: string; group: string | null }[] {
+export function settingsSections(opts: { authEnabled: boolean; platform?: boolean; single?: boolean; aiEnabled?: boolean }): { id: SectionId; label: string; group: string | null }[] {
+  // With AI features off, the assistant's sections leave the rail. Model
+  // access keeps only its ACTIVATE credential, so it is named for that and
+  // sits with the Studio's own sections.
+  if (opts.aiEnabled === false) return [
+    { id: 'general', label: 'General', group: 'Studio' },
+    { id: 'indexing', label: 'Indexing', group: 'Studio' },
+    ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
+    ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'ACTIVATE access', group: 'Studio' }] : []),
+    { id: 'rag', label: 'External access', group: null },
+  ]
   return [
     { id: 'general', label: 'General', group: 'Studio' },
-    { id: 'libraries', label: 'Libraries', group: 'Studio' },
+    { id: 'indexing', label: 'Indexing', group: 'Studio' },
     ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
     ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
     { id: 'tools', label: 'Assistant tools', group: 'Assistant' },
@@ -174,6 +217,17 @@ function ModelInput({ value, models, emptyLabel, onChange }: {
   )
 }
 
+const NAV_WIDTH_OPTIONS = [
+  { value: 'narrow', label: 'Narrow' },
+  { value: 'default', label: 'Default' },
+  { value: 'wide', label: 'Wide' },
+]
+
+/** Which of the Width choice's three a width is, or null for a dragged one. */
+export function navWidthPreset(px: number): keyof typeof NAV_WIDTHS | null {
+  return (Object.keys(NAV_WIDTHS) as (keyof typeof NAV_WIDTHS)[]).find(k => NAV_WIDTHS[k] === px) ?? null
+}
+
 export function SettingsView() {
   const cfg = useAppConfig()
   const [form, setForm] = useState<Effective | null>(null)
@@ -188,7 +242,9 @@ export function SettingsView() {
   const [ext, setExt] = useState<Extensions | null>(null)
   // Settings rail groups the visitor opened or closed this visit.
   const [railOpen, setRailOpen] = useState<Record<string, boolean>>({})
-  const [runtime, setRuntime] = useState<{ local: { available: boolean; reason: string | null; version: string | null; remoteStart: boolean | null; remoteMaxPermissionMode: string | null } } | null>(null)
+  type Runtime = { local: { available: boolean; reason: string | null; version: string | null; remoteStart: boolean | null; remoteMaxPermissionMode: string | null } }
+  const [runtime, setRuntime] = useState<Runtime | null>(null)
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
   const [me, setMe] = useState<{ authEnabled?: boolean; single?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
     shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
@@ -199,10 +255,27 @@ export function SettingsView() {
   const [branding, setBranding] = useState<Branding | null>(null)
   const [sectionsNote, setSectionsNote] = useState('')
   const [target, setTarget] = useState(() => settingsTarget(location.hash.match(/^#view=settings:([a-z-]+)/)?.[1]))
-  const { section, tab } = target
+  // The switch as this page last saved it, else as the app has it. Off
+  // hides what only the assistant uses; on brings it back at once.
+  const aiEnabled = form ? form.aiEnabled !== false : aiOnIn(cfg)
+  const { section, tab } = shownSettingsTarget(target, aiEnabled)
+  // An address of a section AI features off has hidden names the switch.
+  const redirected = section !== target.section
+  // The page stays there once AI features are switched on.
+  useEffect(() => {
+    if (!redirected) return
+    setTarget({ section: 'general', tab: 'ai' })
+    if (location.hash.startsWith('#view=settings')) history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:ai`)
+  }, [redirected])
+  // #view=settings:branding opens Appearance at its Branding group.
+  useEffect(() => {
+    if (target.anchor !== 'branding' || !form) return
+    const id = requestAnimationFrame(() => document.getElementById('settings-branding')?.scrollIntoView({ block: 'start' }))
+    return () => cancelAnimationFrame(id)
+  }, [target, !!form]) // eslint-disable-line react-hooks/exhaustive-deps
   const setSection = (id: string) => setTarget(settingsTarget(id))
 
-  const goSection = (id: SectionId | GeneralTab) => {
+  const goSection = (id: SectionId | SettingsTab) => {
     setSection(id)
     history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:${id}`)
   }
@@ -224,13 +297,51 @@ export function SettingsView() {
       saveSettings(patch).catch(e => setAppearanceNote(String((e as Error).message ?? e)))
     }, delay)
   }
+  /** The product name and icon addresses save once typing pauses, on
+   *  leaving the box, or on Enter. */
+  const [brandNote, setBrandNote] = useState('')
+  const brandTimer = useRef<number | undefined>(undefined)
+  const brandPending = useRef<Partial<Effective>>({})
+  const saveBrand = (patch: Partial<Pick<Effective, 'appName' | 'iconUrl' | 'iconUrlDark'>>, delay = 800) => {
+    if (Object.keys(patch).length) setForm(f => f && { ...f, ...patch })
+    brandPending.current = { ...brandPending.current, ...patch }
+    setBrandNote('')
+    window.clearTimeout(brandTimer.current)
+    brandTimer.current = window.setTimeout(() => {
+      const next = brandPending.current
+      brandPending.current = {}
+      if (!Object.keys(next).length) return
+      saveSettings(next).catch(e => setBrandNote(String((e as Error).message ?? e)))
+    }, delay)
+  }
+  /** The classification banner saves with its own button: a marking typed
+   *  a letter at a time would show every visitor a wrong marking until the
+   *  last keystroke, so it changes only when the whole of it is set. */
+  const [bannerBusy, setBannerBusy] = useState(false)
+  const [bannerNote, setBannerNote] = useState('')
+  const saveBanner = async () => {
+    if (!form) return
+    setBannerBusy(true)
+    setBannerNote('')
+    try {
+      await saveSettings({ bannerText: form.bannerText ?? '', bannerColor: form.bannerColor ?? '', bannerWhenEmbedded: !!form.bannerWhenEmbedded })
+      setBannerNote('Saved.')
+    } catch (e) { setBannerNote(String((e as Error).message ?? e)) } finally { setBannerBusy(false) }
+  }
   const [ragEp, setRagEp] = useState<{ state: string; name: string | null; url: string | null; detail: string | null } | null>(null)
   const [ragCalls, setRagCalls] = useState<RagCall[]>([])
   const refreshRagCalls = () => fetch('/api/rag/calls').then(r => r.json()).then(d => setRagCalls(d.calls ?? [])).catch(() => {})
 
-  const refreshRagEp = () => fetch('/api/rag/endpoint').then(r => r.json()).then(setRagEp).catch(() => {})
+  const [ragEpError, setRagEpError] = useState<string | null>(null)
+  type RagEp = { state: string; name: string | null; url: string | null; detail: string | null }
+  // An error answer is shown as such; the last good state is not kept, since
+  // it may no longer hold.
+  const takeRagEp = (p: Promise<Response>) => p.then(r => okJSON<RagEp>(r))
+    .then(d => { setRagEp(d); setRagEpError(null) })
+    .catch((e: Error) => { setRagEp(null); setRagEpError(e.message) })
+  const refreshRagEp = () => takeRagEp(fetch('/api/rag/endpoint'))
   const ragEpAction = async (verb: 'start' | 'stop') => {
-    await fetch(`/api/rag/endpoint/${verb}`, { method: 'POST' }).then(r => r.json()).then(setRagEp).catch(() => {})
+    await takeRagEp(fetch(`/api/rag/endpoint/${verb}`, { method: 'POST' }))
     setTimeout(refreshRagEp, 2500)
     setTimeout(refreshRagEp, 8000)
   }
@@ -246,7 +357,6 @@ export function SettingsView() {
     fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) })
       .catch(() => {}).finally(() => setSetupKnown(true))
     fetch('/api/me/model-key').then(r => r.json()).then(setMe).catch(() => {})
-    refreshModels()
   }
   // The model ids the pickers below suggest; read again when model access
   // changes, which Model access announces.
@@ -265,16 +375,28 @@ export function SettingsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // What only the assistant's settings show, read while AI features are on
+  // and again when they are switched on. Attached MCP servers are contacted
+  // to report their state, so with AI off they are left alone.
+  const aiReads = (!!form || cfg.loaded) && aiEnabled
   useEffect(() => {
+    if (!aiReads) return
+    refreshModels()
     fetch('/api/settings/mcp-servers').then(r => r.json()).then(d => setMcpStatus(d.servers ?? [])).catch(() => {})
-    loadForm()
     fetch('/api/chat/tools').then(r => r.json())
       .then(d => setCatalog(d.tools ?? []))
       .catch(() => {})
     fetch('/api/extensions').then(r => r.json()).then(setExt).catch(() => {})
-    fetch('/api/tasks/runtime').then(r => r.json()).then(setRuntime).catch(() => {})
+    fetch('/api/tasks/runtime').then(r => okJSON<Runtime>(r))
+      .then(d => { setRuntime(d?.local ? d : null); setRuntimeError(d?.local ? null : 'The server did not describe the agent runtime.') })
+      .catch((e: Error) => { setRuntime(null); setRuntimeError(e.message) })
     refreshRagEp()
     refreshRagCalls()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiReads])
+
+  useEffect(() => {
+    loadForm()
     const onSection = (e: Event) => {
       const d = (e as CustomEvent).detail as { view?: string; section?: string }
       if (d?.view === 'settings' && d.section) setSection(d.section)
@@ -328,7 +450,7 @@ export function SettingsView() {
 
   const pickableModels = models.filter(m => !/studio-(agent|rag)/.test(m))
 
-  const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform, single: !!me?.single })
+  const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform, single: !!me?.single, aiEnabled })
 
   const mcpJson = JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)
   const saveRow = (reload = true) => (
@@ -338,7 +460,7 @@ export function SettingsView() {
     </div>
   )
 
-  const ragEpTone: CalloutTone = ragEp?.state === 'running' ? 'success' : ragEp?.state === 'error' ? 'error' : 'default'
+  const ragEpTone: CalloutTone = ragEp?.state === 'running' ? 'success' : ragEp?.state === 'error' || ragEpError ? 'error' : 'default'
   const surfaces: SelectItem<string>[] = Object.entries(SURFACES).map(([k, v]) => ({ value: k, label: v.label }))
 
   return (
@@ -354,7 +476,7 @@ export function SettingsView() {
             return acc
           }, []).map((g, i) => {
             const rows = g.items.map(s => (
-              <button key={s.id} className={section === s.id ? 'active' : ''} onClick={() => goSection(s.id)}>
+              <button key={s.id} className={section === s.id ? 'active' : ''} onClick={() => goSection(s.id === 'indexing' ? INDEXING_TABS[0].value : s.id)}>
                 <span>{s.label}</span>
               </button>
             ))
@@ -390,7 +512,7 @@ export function SettingsView() {
               )}
               <Tabs label="General settings" items={[...tabs]} value={tab} onValueChange={v => goSection(v)} className="settings-tabs">
                 <TabPanel value="appearance">
-                  <p className="muted view-sub">Saved as you change them.</p>
+                  <p className="muted view-sub">Saved as you change them, apart from the classification banner, which has its own Save.</p>
                   <Field group label={setupAvailable ? 'Theme' : 'Theme in this browser'}
                     description={setupAvailable
                       ? "System follows this computer's light or dark setting. The sidebar's theme button switches it too."
@@ -418,11 +540,12 @@ export function SettingsView() {
                     <AccentSwatches value={form.accent} onChange={v => saveLook({ accent: v }, v.startsWith('custom:') ? 400 : 0)} />
                   </Field>
                   {appearanceNote && <Callout tone="error" live>{appearanceNote}</Callout>}
-                </TabPanel>
 
-                <TabPanel value="branding">
+                  <h2 className="ix-h2 settings-group-head" id="settings-branding">Branding</h2>
                   <div className="settings-grid">
-                    <Input label="Product name" value={form.appName} onChange={e => setForm({ ...form, appName: e.target.value })} />
+                    <Input label="Product name" value={form.appName}
+                      onChange={e => saveBrand({ appName: e.target.value })}
+                      onBlur={() => saveBrand({}, 0)} onKeyDown={e => { if (e.key === 'Enter') saveBrand({}, 0) }} />
                     {setupAvailable ? (
                       <Field group label="Icon" description="Saved as it is chosen.">
                         <BrandIcons value={branding} onChange={b => {
@@ -433,64 +556,87 @@ export function SettingsView() {
                     ) : (
                       <>
                         <Input label="Brand icon (URL, or a path on the server)" value={form.iconUrl} placeholder="https://example.org/logo.png"
-                          onChange={e => setForm({ ...form, iconUrl: e.target.value })} />
+                          onChange={e => saveBrand({ iconUrl: e.target.value })} onBlur={() => saveBrand({}, 0)} />
                         <Input label="Brand icon for dark mode (optional)" value={form.iconUrlDark} placeholder="leave empty to use the same image"
-                          onChange={e => setForm({ ...form, iconUrlDark: e.target.value })} />
+                          onChange={e => saveBrand({ iconUrlDark: e.target.value })} onBlur={() => saveBrand({}, 0)} />
                       </>
                     )}
-                    <div className="banner-field">
-                      <Field label="Classification banner (empty for none)">
-                        <div className="banner-row">
-                          <ActionMenu label="Marking" align="start"
-                            triggerClassName={cx(fieldBox(), 'banner-preset')}
-                            items={BANNER_PRESETS.map(p => ({
-                              label: p.label,
-                              onClick: () => setForm({ ...form, bannerText: p.text, bannerColor: p.color }),
-                            }))}>
-                            Marking… <ChevronDownIcon aria-hidden="true" />
-                          </ActionMenu>
-                          <Input className="banner-text" value={form.bannerText ?? ''}
-                            placeholder="Text across the top, or pick a marking"
-                            onChange={e => setForm({ ...form, bannerText: e.target.value })} />
-                          {/* Every library control in one field takes the field's
-                              id, so the color, a second box, is a plain input in
-                              the library's field look. */}
-                          <input className={cx(fieldBox(), 'banner-hex')} aria-label="Banner color" value={form.bannerColor ?? ''} placeholder="#24612e"
-                            onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
-                        </div>
-                        {(form.bannerText ?? '').trim() && (
-                          <div className="cls-banner banner-preview"
-                            style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
-                            {form.bannerText}
-                          </div>
-                        )}
-                      </Field>
-                      <label className="key-persist">
-                        <Checkbox checked={!!form.bannerWhenEmbedded}
-                          onCheckedChange={v => setForm({ ...form, bannerWhenEmbedded: v })} />
-                        <span>Show it inside the platform frame too, which already draws its own</span>
-                      </label>
-                    </div>
                   </div>
-                  {saveRow()}
+                  {brandNote && <Callout tone="error" live>{brandNote}</Callout>}
+                  <div className="banner-field settings-field">
+                    <Field label="Classification banner (empty for none)">
+                      <div className="banner-row">
+                        <ActionMenu label="Marking" align="start"
+                          triggerClassName={cx(fieldBox(), 'banner-preset')}
+                          items={BANNER_PRESETS.map(p => ({
+                            label: p.label,
+                            onClick: () => setForm({ ...form, bannerText: p.text, bannerColor: p.color }),
+                          }))}>
+                          Marking… <ChevronDownIcon aria-hidden="true" />
+                        </ActionMenu>
+                        <Input className="banner-text" value={form.bannerText ?? ''}
+                          placeholder="Text across the top, or pick a marking"
+                          onChange={e => setForm({ ...form, bannerText: e.target.value })} />
+                        {/* Every library control in one field takes the field's
+                            id, so the color, a second box, is a plain input in
+                            the library's field look. */}
+                        <input className={cx(fieldBox(), 'banner-hex')} aria-label="Banner color" value={form.bannerColor ?? ''} placeholder="#24612e"
+                          onChange={e => setForm({ ...form, bannerColor: e.target.value })} />
+                      </div>
+                      {(form.bannerText ?? '').trim() && (
+                        <div className="cls-banner banner-preview"
+                          style={{ background: form.bannerColor, color: bannerInk(form.bannerColor) }}>
+                          {form.bannerText}
+                        </div>
+                      )}
+                    </Field>
+                    <label className="key-persist">
+                      <Checkbox checked={!!form.bannerWhenEmbedded}
+                        onCheckedChange={v => setForm({ ...form, bannerWhenEmbedded: v })} />
+                      <span>Show it inside the platform frame too, which already draws its own</span>
+                    </label>
+                  </div>
+                  <div className="query-actions">
+                    <Button variant="primary" onClick={() => void saveBanner()} loading={bannerBusy}>{bannerBusy ? 'Saving…' : 'Save banner'}</Button>
+                    {bannerNote && <span className="muted">{bannerNote}</span>}
+                  </div>
                 </TabPanel>
 
                 <TabPanel value="sidebar">
                   <p className="muted view-sub">Pages the sidebar shows; Settings and Help always show. Saved as you switch.</p>
-                  <SidebarSwitches value={form.sections} platform={!!cfg.platform} aiEnabled={form.aiEnabled !== false} onChange={next => {
+                  <SidebarSwitches value={form.sections} platform={!!cfg.platform} aiEnabled={aiEnabled} onChange={next => {
                     setForm({ ...form, sections: next })
                     setSectionsNote('')
                     saveSections(next).catch(e => setSectionsNote(String((e as Error).message ?? e)))
                   }} />
                   {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
+                  <Field group className="settings-field" label="Width"
+                    description={navWidthPreset(cfg.navWidth)
+                      ? 'The sidebar\'s width when it is not collapsed. Its right edge can also be dragged; a double click there returns it to Default.'
+                      : `Dragged to ${cfg.navWidth} pixels. Pick a width here, or double click the sidebar's right edge for Default.`}>
+                    <SegmentedControl options={NAV_WIDTH_OPTIONS} value={navWidthPreset(cfg.navWidth) ?? ''} aria-label="Sidebar width"
+                      onValueChange={v => {
+                        const px = NAV_WIDTHS[v as keyof typeof NAV_WIDTHS]
+                        if (!px) return
+                        setSectionsNote('')
+                        saveNavWidth(px).catch(e => setSectionsNote(String((e as Error).message ?? e)))
+                      }} />
+                  </Field>
                 </TabPanel>
 
                 <TabPanel value="ai">
-                  <p className="muted view-sub">
-                    Off takes Chat and Agents out of the sidebar and sends nothing to a model; search, the library, query and
-                    statistics work as before. They can be switched back on here at any time. Saved as you switch.
-                    {(me?.single || me?.authEnabled) && <> The model endpoint is under <a href="#view=settings:access">Model access</a>.</>}
-                  </p>
+                  {aiEnabled ? (
+                    <p className="muted view-sub">
+                      Off takes Chat and Agents out of the sidebar, hides the settings only the assistant uses, and sends nothing
+                      to a model; search, the library, query and statistics work as before. They can be switched back on here at
+                      any time. Saved as you switch.
+                      {(me?.single || me?.authEnabled) && <> The model endpoint is under <a href="#view=settings:access">Model access</a>.</>}
+                    </p>
+                  ) : (
+                    <p className="muted view-sub">
+                      Off. On adds Chat and Agents, the assistant&apos;s settings, label suggestions and image descriptions.
+                    </p>
+                  )}
                   <div className="access-switch">
                     <Switch checked={form.aiEnabled !== false} aria-label="AI features" onLabel="On" offLabel="Off"
                       onCheckedChange={v => {
@@ -502,6 +648,7 @@ export function SettingsView() {
                     <span>Chat, Agents, and other features that call a model</span>
                   </div>
                   {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
+                  {aiEnabled && (<>
                   {me?.authEnabled && (
                     <label className="key-persist">
                       <Checkbox checked={form.requirePersonalKey}
@@ -558,9 +705,29 @@ export function SettingsView() {
                     </Field>
                   </div>
                   {saveRow(false)}
+                  </>)}
                 </TabPanel>
 
-                <TabPanel value="indexing">
+                <TabPanel value="updates">
+                  <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
+                </TabPanel>
+
+                <TabPanel value="server">
+                  <ServerSection />
+                </TabPanel>
+              </Tabs>
+            </>
+          )}
+
+          {section === 'indexing' && (
+            <>
+              <h1>Indexing</h1>
+              <Tabs label="Indexing settings" items={[...INDEXING_TABS]} value={tab} onValueChange={v => goSection(v)} className="settings-tabs">
+                <TabPanel value="libraries">
+                  <LibrariesSection heading={false} />
+                </TabPanel>
+
+                <TabPanel value="sync-search">
                   <div className="settings-grid">
                     <Field label="Search across libraries"
                       description="Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.">
@@ -580,6 +747,18 @@ export function SettingsView() {
                         onValueChange={v => setForm({ ...form, historyIntervalSec: v ?? 0 })} />
                     </Field>
                   </div>
+                  {saveRow(false)}
+                </TabPanel>
+
+                <TabPanel value="building">
+                  {/* How the main folder's index is built: threads, depth,
+                      readers, embeddings (IndexingSection). Saves as it changes. */}
+                  <IndexBuildSettings visionModel={form.visionModel} deploymentCred={deploymentCred} />
+                </TabPanel>
+
+                <TabPanel value="storage">
+                  <IndexStorageSettings />
+                  <h2 className="ix-h2">GUFI command log</h2>
                   <label className="key-persist">
                     <Checkbox checked={!!form.gufiLog} onCheckedChange={v => setForm({ ...form, gufiLog: v })} />
                     Log GUFI commands: every command run to read an index, with when it ran, what asked for it, how long it took, how it ended, and the end of its error output
@@ -590,25 +769,13 @@ export function SettingsView() {
                       {gufiLogFile.bytes > 0 ? ` (${formatBytes(gufiLogFile.bytes)})` : ''}, one previous file kept past 10 MB.
                     </p>
                   )}
-                  <p className="muted view-sub">Libraries and their indexes are under <a href="#view=settings:libraries">Libraries</a>.</p>
                   {saveRow(false)}
-                  {/* How the main folder's index is built: threads, readers,
-                      embeddings, where it is kept (IndexingSection). */}
-                  <IndexingSection visionModel={form.visionModel} deploymentCred={deploymentCred} />
-                </TabPanel>
-
-                <TabPanel value="updates">
-                  <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
-                </TabPanel>
-
-                <TabPanel value="server">
-                  <ServerSection />
                 </TabPanel>
               </Tabs>
             </>
           )}
 
-          {section === 'access' && <ModelAccessSection requirePersonalKey={form.requirePersonalKey} />}
+          {section === 'access' && <ModelAccessSection requirePersonalKey={form.requirePersonalKey} aiEnabled={aiEnabled} />}
 
           {section === 'tools' && (
             <>
@@ -690,6 +857,10 @@ export function SettingsView() {
           {section === 'rag' && (
             <>
               <h1>External access</h1>
+              {/* With AI features off, only MCP is left: the client brings its
+                  own model. The grounded model, delegation and attached
+                  servers all run this Studio's assistant. */}
+              {aiEnabled ? <>
               <p className="muted view-sub">Two ways to use this knowledge base from outside. They are independent, and a deployment can serve either or both.</p>
               <DescriptionList className="access-compare">
                 <DescriptionListItem label="Knowledge tools (MCP)">
@@ -699,24 +870,28 @@ export function SettingsView() {
                   This deployment answers as a model, with retrieval built in. Suits any client that can only point at an OpenAI base URL, and it is what the platform model catalog publishes.
                 </DescriptionListItem>
               </DescriptionList>
+              </> : (
+                <p className="muted view-sub">Other tools can use this knowledge base over MCP, with their own model. The grounded model and the assistant&apos;s settings here return with AI features.</p>
+              )}
               <div className="tool-group">Knowledge tools over MCP (your model, our tools)</div>
               <p className="muted view-sub">
                 <code>{location.origin}/api/mcp</code><CopyButton text={`${location.origin}/api/mcp`} label="MCP address" /> serves
                 this knowledge base over the Model Context Protocol: the client brings its own model and calls the corpus tools
                 directly (search, read, list, query, labels, docs). Read-only; adding material, labels, and platform actions stay
-                with this assistant. {me?.authEnabled
+                with {aiEnabled ? 'this assistant' : 'the Studio'}. {me?.authEnabled
                   ? 'This deployment requires sign-in, so clients send a platform token as the bearer.'
                   : 'This deployment is open, so no header is needed.'}
               </p>
               <div className="access-switch">
                 <Switch checked={form.mcpEnabled} onCheckedChange={v => setForm({ ...form, mcpEnabled: v })} onLabel="On" offLabel="Off" aria-label="Serve MCP" />
-                <span>Serve MCP at /api/mcp. Individual tools can be disabled in the tool catalog above.</span>
+                <span>Serve MCP at /api/mcp.{aiEnabled && ' Individual tools can be disabled under Assistant tools.'}</span>
               </div>
               <p className="field-label">pw code</p>
               <CopyCodeBlock className="mcp-snippet" text={`pw code mcp add --transport http studio-kb ${location.origin}/api/mcp`} label="pw code command">
                 pw code mcp add --transport http studio-kb {location.origin}/api/mcp
               </CopyCodeBlock>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
+              {aiEnabled && <>
               <div className="tool-group">Delegation (the assistant working in parallel)</div>
               <p className="muted view-sub">
                 With this on, the assistant may split a request into subtasks and run them concurrently as headless
@@ -752,6 +927,7 @@ export function SettingsView() {
                     </>}>
                     <Select items={AGENT_EXECUTION} value={form.agentExecution} onValueChange={v => v && setForm({ ...form, agentExecution: v })} />
                   </Field>
+                  {runtimeError && <p className="muted key-note" role="alert">{runtimeError}</p>}
                   {runtime && (
                     <p className="muted key-note">
                       {runtime.local.version
@@ -795,11 +971,13 @@ export function SettingsView() {
                 <Button variant="secondary" onClick={() => setForm({ ...form, mcpServers: [...(form.mcpServers ?? []), { name: '', url: '', header: '' }] })}>Attach a server</Button>
               </div>
               {saveRow(false)}
+              </>}
 
               <p className="field-label">Other MCP clients (settings JSON)</p>
               <CopyCodeBlock className="mcp-snippet" text={mcpJson} label="MCP settings">{mcpJson}</CopyCodeBlock>
               {saveRow(false)}
 
+              {aiEnabled && <>
 
               <div className="tool-group">Grounded model (OpenAI-compatible /v1)</div>
               <div className="access-switch">
@@ -874,7 +1052,8 @@ export function SettingsView() {
                 Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. Platform callers reach it with their own credentials; the deployment credential covers only keyless clients such as pw code. Requires an authenticated pw CLI on the host.
               </p>
               <Callout className="rag-banner" tone={ragEpTone}
-                title={ragEp?.state === 'running' ? 'Connected: published in the platform model catalog' :
+                title={ragEpError ? 'Registration status unavailable' :
+                  ragEp?.state === 'running' ? 'Connected: published in the platform model catalog' :
                   ragEp?.state === 'starting' ? 'Registering…' :
                   ragEp?.state === 'error' ? 'Registration failed' : 'Not registered on the platform'}
                 action={<>
@@ -898,6 +1077,7 @@ export function SettingsView() {
                   </div>
                 )}
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
+                {ragEpError && <p className="muted key-note" role="alert">{ragEpError}</p>}
               </Callout>
               </>)}
               {form.ragProxyEnabled && (<>
@@ -933,6 +1113,7 @@ export function SettingsView() {
                 </Table>
               )}
               </>)}
+              </>}
             </>
           )}
 
@@ -964,7 +1145,7 @@ export function SettingsView() {
               {saveRow()}
             </>
           )}
-          {section === 'libraries' && <LibrariesSection />}
+
           {section === 'workflows' && <WorkflowsSection />}
           {section === 'ext' && (
             <>
