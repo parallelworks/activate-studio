@@ -233,10 +233,6 @@ function AiStep({ enabled, sections, me, onSaved, onOpenAccess }: {
   )
 }
 
-const overlay: CSSProperties = {
-  position: 'fixed', inset: 0, zIndex: 60, overflowY: 'auto', background: 'var(--pw-bg)',
-  display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '6vh 16px 24px',
-}
 const panel: CSSProperties = { width: '100%', maxWidth: 680, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }
 const row: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }
 const label: CSSProperties = { margin: '0 0 6px', fontSize: 13, fontWeight: 500 }
@@ -433,7 +429,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
 
   const last = STEPS.length - 1
   return (
-    <div style={overlay} role="dialog" aria-modal="true" aria-labelledby="setup-title">
+    <div className="setup-overlay" role="dialog" aria-modal="true" aria-labelledby="setup-title">
       <div className="card" style={panel}>
         <div>
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>Step {step + 1} of {STEPS.length}</p>

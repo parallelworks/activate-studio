@@ -302,7 +302,7 @@ The Go version (`STUDIO_SERVER=go-only`, the default of `deploy/mac/build_app.sh
 | Folder chooser, file open panel, alert and confirm dialogs | Same (the shell's bridge) |
 | Downloads to ~/Downloads, revealed in Finder | Same |
 | Reopen after an update that changed the window | Same: the bundle is opened again after this process ends |
-| Title bar in the page's color, light or dark ink | Same (`titlebar_darwin.go`), from the page's theme-color tag, remembered for the next launch |
+| Title bar in the page's color, light or dark ink | No title bar of its own: the page runs to the window's top edge and the window controls sit over the top of the sidebar (`titlebar_darwin.go`). The shell sets `html.shell-inset` and `--shell-top` (`shell/shim.js`), and each column of the page keeps an empty strip that tall at its top in its own color (`web/src/styles.css`); a classification banner fills that strip instead. A press in the strip drags the window and a double click zooms it |
 | Microphone permission for dictation | Same: granted to the Studio's page (127.0.0.1) after macOS asks, refused elsewhere (`macwindow_darwin.go`) |
 | Window size and place remembered | Same, under the Swift window's autosave name, so they carry over from it |
 | Popup windows for Studio pages | Same: a window of its own for the Studio's pages, the browser for other sites (`macwindow_darwin.go`) |
