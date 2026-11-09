@@ -215,10 +215,10 @@ func (x *Extractor) log(format string, args ...any) {
 
 // fallbackVersion is the downmark version in go.mod, for a binary built
 // without module information (go test sets it).
-const fallbackVersion = "0.10.1"
+const fallbackVersion = "0.10.0"
 
 // DownmarkVersion is the version of the downmark module linked in, as
-// the npm package's package.json gives it to preextract.ts ("0.10.1").
+// the npm package's package.json gives it to preextract.ts ("0.10.0").
 // The two must match for a cache written by either to stay current for
 // the other; TestDownmarkVersionMatchesNPM checks that they do.
 func DownmarkVersion() string {

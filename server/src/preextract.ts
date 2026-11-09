@@ -79,7 +79,7 @@ const MAX_INPUT_BYTES = 64 * 1024 * 1024
 /**
  * Every entry this writes names the converter on its first line:
  *
- *     <!-- extracted by downmark 0.10.1 -->
+ *     <!-- extracted by downmark 0.10.0 -->
  *
  * which answers two questions nothing else could. A later pass can tell an
  * entry it produced from one enrich.py's flat-text readers wrote, so an

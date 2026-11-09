@@ -5,7 +5,7 @@ import { PROVENANCE_PREFIX } from './preextract.js'
 
 /**
  * The line preextract.ts writes first in each cache entry it converts
- * ("<!-- extracted by downmark 0.10.1 -->") names the converter, for the
+ * ("<!-- extracted by downmark 0.10.0 -->") names the converter, for the
  * cache's own use. It is not the document's text. Indexes written before
  * enrich.py dropped it carry it at the start of each such file's `words`
  * row, so search snippets began with it and "downmark" or "extracted"
