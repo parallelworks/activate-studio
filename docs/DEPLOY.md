@@ -4,22 +4,23 @@ Three ways to run the Studio, how people sign in to a shared one, then how it re
 
 ## On ACTIVATE
 
-[`deploy/workflow.yaml`](../deploy/workflow.yaml) deploys the Studio onto a connected resource from the ACTIVATE workflow form. It has two source modes:
+[`deploy/workflow.yaml`](../deploy/workflow.yaml) deploys the Studio onto a connected resource from the ACTIVATE workflow form. Its GitHub and Bundle modes run the Studio's Linux app, `activate-studio-linux-x86_64.tar.gz`, the same file the Linux release ships: the Go server, the built interface, GUFI, tesseract, and the ONNX runtime with the search by meaning model. Nothing is built on the resource, and it needs no Node or Python.
 
 | Mode | What it does |
 |---|---|
-| GitHub (default) | clones this repository and builds on the resource, fetching Node and the embedding model when they are missing |
-| Bundle | unpacks a self-contained tarball from `deploy/make_bundle.sh`, pulled from a bucket or pre-staged at `<workdir>/bundle-prestage.tar.gz`, for systems without outbound network |
+| GitHub release (default) | downloads the Linux app of the release named in Release (a tag such as `v1.190`; `main` means the current Stable release) and checks it against its `.sha256` |
+| Bundle | the same file from a bucket, or pre-staged at `<workdir>/bundle-prestage.tar.gz`, for systems without outbound network. `deploy/make_bundle.sh` downloads a release's file and checks it, ready to upload |
+| Container | runs the Apptainer image built from `deploy/app.def` (below) |
 
-Search by meaning uses the ONNX backend where its packages are in place, and the older GGUF model otherwise. On every launch, whether or not the index is built on launch, the workflow installs the packages for the Python the server will run, from the Linux x86_64 wheels a bundle carries (`app/indexer/wheels`, for Python 3.11 to 3.13), so a system without outbound network still gets them; a GitHub launch, or a Python the bundle has no wheels for, downloads them. The step's log says which backend is in use.
+A relaunch from the same release or bundle file keeps the app in place unless Load Latest Bundle is set. The index, settings and credentials live in the Index Directory, by default `<workdir>/data/index`. A deployment that kept them in `<workdir>/app/index` under v1.188 or earlier has them moved there on its first launch of the Go version, so its index, labels, conversations and settings carry over. With Index on Launch set, the workflow starts a full index once the server answers, and the Studio serves while it builds.
 
-GUFI is built from source on the resource when cmake is available; without it the Studio still runs, with folder browsing and plain text search. The session method `web` serves the Studio through a platform session that outlives the workflow, `e2e` starts it, checks `/healthz`, and stops it, and `cleanup` stops what an earlier launch left running. The server writes `app.log` in the workdir; a launch moves the previous server's log to `app.log.prev`. The workflow can also run everything, the model server included, as one batch job on a compute node under Slurm or PBS: [`deploy/COMPUTE.md`](../deploy/COMPUTE.md).
+The session method `web` serves the Studio through a platform session that outlives the workflow, `e2e` starts it, checks `/healthz`, and stops it, and `cleanup` stops what an earlier launch left running. In `web` mode a watchdog checks the server every two minutes. A server that stops answering is restarted on the same port, so the session keeps its address; if the session's endpoint process is gone, the watchdog relaunches the whole deployment. The server writes `app.log` in the workdir; a launch moves the previous server's log to `app.log.prev`. The workflow can also run everything, the model server included, as one batch job on a compute node under Slurm or PBS: [`deploy/COMPUTE.md`](../deploy/COMPUTE.md).
 
 On the platform, the assistant gains workflow tools (the account's catalog, a preview of each workflow's steps, dry-run validation, runs on request, and run monitoring) from the pw CLI. They are hidden where the CLI is absent; the knowledge base tools work everywhere.
 
 ## In a container
 
-`deploy/app.def` packages the server, the interface, GUFI, and the text extraction tools as one Apptainer image, for container-first sites and for the compute-node workflow. Build it on Linux with Apptainer 1.2 or later:
+`deploy/app.def` packages the server, the interface, GUFI, and the text extraction tools as one Apptainer image, for container-first sites and for the compute-node workflow. It is still the Node version, and it is the image the release publishes to ghcr.io; `deploy/app-go.def` builds the Go version from the Linux app. Build it on Linux with Apptainer 1.2 or later:
 
 ```
 apptainer build studio.sif deploy/app.def

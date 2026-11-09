@@ -1,108 +1,50 @@
 #!/usr/bin/env bash
-# Build a self-contained deployment bundle for the ACTIVATE workflow
-# (deploy/workflow.yaml). The bundle carries everything the target resource
-# cannot be assumed to have: the production server with its node_modules
-# (pnpm deploy), the built web app, the indexer, a Node runtime, the GUFI
-# source tree, and the embedding model. Compilers (gcc, cmake) are needed on
-# the resource only if GUFI is built there.
+# The deployment bundle for the ACTIVATE workflow (deploy/workflow.yaml,
+# Bundle mode): the Studio's Linux payload, activate-studio-linux-x86_64.tar.gz,
+# as the Linux release ships it. It carries the Go server, the built web app,
+# GUFI, tesseract, and the ONNX runtime and model, with no Node and no
+# Python, so the resource needs no outbound network and builds nothing.
 #
-# Usage: deploy/make_bundle.sh [output.tar.gz]
+# Usage: deploy/make_bundle.sh [--release TAG | --from FILE] [output.tar.gz]
+#   --release TAG  that release's payload, downloaded from GitHub and checked
+#                  against its .sha256 (default: the checkout's release tag,
+#                  git describe --tags --match 'v*' --abbrev=0)
+#   --from FILE    a payload already here, such as deploy/linux/build_app.sh's
+#                  deploy/linux/out/activate-studio-linux-x86_64.tar.gz
+# The output defaults to studio-bundle.tar.gz at the repository root.
 set -euo pipefail
-
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO=parallelworks/activate-studio
+ASSET=activate-studio-linux-x86_64.tar.gz
+TAG=""
+FROM=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --release) TAG="${2:?--release needs a tag}"; shift 2 ;;
+    --from) FROM="${2:?--from needs a file}"; shift 2 ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    *) break ;;
+  esac
+done
 OUT="${1:-$PROJECT_ROOT/studio-bundle.tar.gz}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-NODE_VERSION="v26.10.0"
-# From nodejs.org/dist/<version>/SHASUMS256.txt; change both together.
-NODE_SHA256="ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022"
-NODE_DIST="node-${NODE_VERSION}-linux-x64"
-CACHE="$PROJECT_ROOT/deploy/.cache"
-mkdir -p "$CACHE"
-
-echo "Building web and server..."
-(cd "$PROJECT_ROOT" && pnpm build >/dev/null)
-
-echo "Staging production server (pnpm deploy)..."
-mkdir -p "$STAGE/app"
-(cd "$PROJECT_ROOT" && pnpm --filter @activate-studio/server --prod deploy --legacy "$STAGE/app/server" >/dev/null)
-# The deploy records a prod-only install; restore the dev one.
-(cd "$PROJECT_ROOT" && pnpm install --frozen-lockfile >/dev/null)
-
-echo "Staging web, indexer, docs, change log, starters..."
-# Stamp the build so a running deployment can say which one it is. Without
-# this a refresh that silently failed is indistinguishable from one that
-# worked, since PROJECT_ROOT in a deployment is app/ and there is no git
-# checkout there to ask.
-VERSION="$(cd "$PROJECT_ROOT" && git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)"
-case "$VERSION" in v*) ;; *) VERSION="dev" ;; esac
-COMMIT="$(cd "$PROJECT_ROOT" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-printf '{\n "version": "%s",\n "commit": "%s",\n "builtAt": "%s"\n}\n' \
-  "$VERSION" "$COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STAGE/app/build-info.json"
-echo "Build stamp: $VERSION ($COMMIT)"
-
-mkdir -p "$STAGE/app/web"
-cp -r "$PROJECT_ROOT/web/dist" "$STAGE/app/web/dist"
-cp -r "$PROJECT_ROOT/indexer" "$STAGE/app/indexer"
-# Packages fetched for this machine's Python (indexer/.deps) may not suit the
-# resource's; the workflow fetches its own there.
-rm -rf "$STAGE/app/indexer/.deps"
-find "$STAGE/app/indexer" -name __pycache__ -type d -prune -exec rm -rf {} +
-cp -r "$PROJECT_ROOT/docs" "$STAGE/app/docs"
-# What's new reads it.
-cp "$PROJECT_ROOT/CHANGELOG.md" "$STAGE/app/CHANGELOG.md"
-# The index workflow the Studio registers for users' cluster libraries.
-mkdir -p "$STAGE/app/deploy" && cp "$PROJECT_ROOT/deploy/gufi-index.yaml" "$STAGE/app/deploy/"
-cp -r "$PROJECT_ROOT/extensions-starter" "$STAGE/app/extensions-starter"
-
-echo "Staging embedding model..."
-mkdir -p "$STAGE/app/index/models"
-if [ -f "$PROJECT_ROOT/index/models/minilm384.gguf" ]; then
-  cp "$PROJECT_ROOT/index/models/minilm384.gguf" "$STAGE/app/index/models/"
-else
-  echo "  (model not present locally; vector search disabled unless added)"
+if [ -z "$FROM" ]; then
+  [ -n "$TAG" ] || TAG="$(cd "$PROJECT_ROOT" && git describe --tags --match 'v*' --abbrev=0)"
+  URL="https://github.com/$REPO/releases/download/$TAG/$ASSET"
+  echo "Downloading $URL ..."
+  curl -fsSL --retry 3 -o "$STAGE/$ASSET" "$URL"
+  curl -fsSL --retry 3 -o "$STAGE/$ASSET.sha256" "$URL.sha256"
+  (cd "$STAGE" && sha256sum -c "$ASSET.sha256")
+  FROM="$STAGE/$ASSET"
 fi
-# The ONNX model works with any Python; its packages are fetched on the
-# resource, for the Python there (deploy/workflow.yaml).
-python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --model "$STAGE/app/index/models/minilm-l6" --cache "$CACHE/embed" >/dev/null ||
-  echo "  (the ONNX embedding model could not be fetched; search by meaning uses the GGUF model)"
-# Its packages for each Linux x86_64 Python the pins cover, as the wheels
-# themselves (checked against their SHA-256 here and again there), so a
-# resource without access to the package index still gets the backend: the
-# workflow unpacks the ones for its Python from app/indexer/wheels.
-for tag in $(PINS="$PROJECT_ROOT/indexer/embed_deps.json" python3 -c "import json, os; print(' '.join(p for p in json.load(open(os.environ['PINS']))['wheels'] if p.startswith('linux-x86_64-')))"); do
-  python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --deps "$CACHE/embed-unpack-$tag" --platform "$tag" --cache "$STAGE/app/indexer/wheels" >/dev/null ||
-    echo "  (the ONNX packages for $tag could not be fetched; that Python downloads its own, or uses the GGUF model)"
-  rm -rf "$CACHE/embed-unpack-$tag"
-done
-
-echo "Fetching Node runtime ${NODE_VERSION}..."
-if [ ! -f "$CACHE/${NODE_DIST}.tar.xz" ]; then
-  curl -fsSL -o "$CACHE/${NODE_DIST}.tar.xz" \
-    "https://nodejs.org/dist/${NODE_VERSION}/${NODE_DIST}.tar.xz"
-fi
-# Checked on every run, so a corrupt or tampered cache is caught too.
-# shasum covers macOS, where sha256sum may be missing.
-if command -v sha256sum >/dev/null 2>&1; then
-  echo "${NODE_SHA256}  $CACHE/${NODE_DIST}.tar.xz" | sha256sum -c -
-else
-  echo "${NODE_SHA256}  $CACHE/${NODE_DIST}.tar.xz" | shasum -a 256 -c -
-fi
-cp "$CACHE/${NODE_DIST}.tar.xz" "$STAGE/"
-
-echo "Fetching GUFI source..."
-# The 0.8.0 release, by its commit. A copy cached from another GUFI is fetched again.
-GUFI_COMMIT=021a717a6089b9e28b068695dc7c7f3732fd1a56
-if [ "$(git -C "$CACHE/GUFI" rev-parse HEAD 2>/dev/null)" != "$GUFI_COMMIT" ]; then
-  rm -rf "$CACHE/GUFI"
-  git clone --depth 1 --branch 0.8.0 --recurse-submodules --shallow-submodules \
-    https://github.com/mar-file-system/GUFI "$CACHE/GUFI"
-  [ "$(git -C "$CACHE/GUFI" rev-parse HEAD)" = "$GUFI_COMMIT" ] || { echo "GUFI tag 0.8.0 is not commit $GUFI_COMMIT" >&2; exit 1; }
-fi
-tar -C "$CACHE" --exclude='GUFI/.git' -czf "$STAGE/gufi-src.tar.gz" GUFI
-
-echo "Packing $OUT ..."
-tar -C "$STAGE" -czf "$OUT" .
+[ -f "$FROM" ] || { echo "no such file: $FROM" >&2; exit 1; }
+# The workflow takes only the Go version's payload.
+tar -tzf "$FROM" activate-studio/app/bin/studio-server >/dev/null 2>&1 ||
+  { echo "$FROM is not the Studio's Linux payload with the Go server (activate-studio/app/bin/studio-server)" >&2; exit 1; }
+tar -xzOf "$FROM" activate-studio/app/build-info.json 2>/dev/null | tr -d '\n' && echo
+cp "$FROM" "$OUT.tmp"
+mv "$OUT.tmp" "$OUT"
 ls -lh "$OUT"
 echo "Upload with: pw buckets cp $OUT <bucket-uri>/studio-bundle.tar.gz"
