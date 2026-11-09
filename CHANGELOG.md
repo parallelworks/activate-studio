@@ -2,7 +2,163 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.188 (2026-11-06)
+## v1.189 (2026-11-09)
+
+### The Studio runs as one Go program; the macOS window is built with Wails (#649)
+
+The Studio's server and indexer now run as one Go program, with no Node or Python. The macOS app's window is now built with Wails, the toolkit the Linux app's window already uses. Installed apps update to this version through the usual update: on macOS from v1.141, the first release with a macOS app, and on Linux from v1.187, the first Linux release.
+
+## What changed
+
+The Node server (`server/src`) and the indexer's Python steps (`indexer/`) are ported to Go in `server-go/`. Every route the Node server answered is answered by the Go server, with the same requests, responses and error bodies. The web app is unchanged apart from the features below. The desktop apps ship `app/bin/studio-server` in place of Node, Python and the indexer scripts. On the other systems the Studio builds libraries on, it sends a Go helper in place of Python. Search by meaning still uses ONNX Runtime and the MiniLM model.
+
+On macOS the window is the Wails window (`desktop/wails`) in place of the Swift window. It has no title bar of its own. The window controls sit on the sidebar's first row, with the collapse button at its right end and the icon and name on the row under it; that row is also the row of each column's heading. With a classification banner set, the window takes a plain title bar's height and the banner fills it, with the controls over its left end; the change happens as the banner is turned on or off. An empty part of the top row drags the window, and a double click zooms it. The bundle identifier, app path, data folder and LaunchAgent are the same.
+
+## Updates
+
+No bridge release is needed. The updaters of the installed releases check a new copy for files only, and the Go build carries stand-ins at those paths. After the swap the old run loop starts the new copy's run script, which starts the Go server. Under the run loops of v1.141 to v1.169 on macOS, the stand-in for `node` starts the Go server. If the new version fails to start three times in a row, the run loop puts the previous copy back. This holds until the new version's first clean start. A person still in the old macOS window is offered **Reopen now**, and the old window works until then.
+
+Settings, Updates no longer offers a rollback to a Node release, and **Install a version**, **Move to Stable** and **Roll back** offer only Go releases. A snapshot of the settings, conversations, libraries list and keys is still taken before every change of version.
+
+## Also in this version
+
+- Settings, Indexing is a section under Studio with four tabs: Libraries, Sync and search, Building, and Storage and logs. The Library's **+ Add** menu links to Add a library.
+- With AI features off, the settings, pages and status lines that need the assistant are hidden: Assistant tools, Feature previews, Extensions, the Chat and Agents pages and their sidebar switches, image descriptions, and delegation and attached MCP servers under External access. Model access becomes ACTIVATE access. Switching AI features on brings them back without a reload.
+- Building a library of a folder on this computer, in Add a library and in setup, offers suggested folders: Documents, Desktop and Downloads, and on macOS Apple Mail's folder, with a link to Full Disk Access, which macOS requires for it. A suggestion fills in the folder and runs the check.
+- Apple Mail messages (`.emlx`) and `.eml` files are read at the Text depth and above, searched by meaning on documents, and shown in the file view as the message: subject, sender, recipients, date, body and attachment names.
+- Settings, General, Sidebar has a Width choice (Narrow, Default, Wide), and the sidebar's right edge drags from 200 to 400 pixels.
+- Branding is part of the Appearance tab.
+- The default accent is None, which uses no color. The default surface is Warm gray, a gray with a slight warmth. Neutral gray has no tint.
+- In the semantic map, a click on a file selects it. The view moves to the file and shows its nearest files by meaning, with **Open in Library**, which leaves full screen first.
+- Ctrl+F (⌘F on a Mac) finds text in the open conversation. The chat uses `@parallelworks/ui` 0.120.0, and the local patch for the chat's scroll position is gone.
+- PDFs and Office files of a library on another system preview in the file view.
+- PDFs whose pages the server cannot draw, because poppler is not installed (as in the macOS app), are drawn in the viewer by pdf.js; only a PDF neither can draw shows its text.
+- The Library tree of a library on another system whose index was rolled up (`gufi_rollup`) lists one folder at a time, where it listed every folder and file below a rolled-up folder at once.
+- Indexed text longer than about 60,000 characters shows as plain text, so a long manual's text opens at once: a 90-page manual opened from search in under half a second in the Linux window, where it took about 6 s. Find matches a word across punctuation, as search does, so NIST_SP811 finds "NIST SP811".
+- A file that cannot be opened says it may have moved only when it is missing; a file of a library on another system connected without its source directory says to add the library again with that directory.
+- Links to a chat's sources open in the right library when all libraries are shown.
+- Label suggestions come from the library being edited.
+- Test connection fills in a GUFI folder without ".." steps, which Add then accepts.
+- The Linux window's title bar takes the page's theme from launch.
+- A file opened from a search result opens with Find set to the query only when it was found by its words; one found only by its meaning, name or folder opens without it.
+- Where poppler is not installed, as in the macOS app, a PDF's text view says so and gives the command that installs it, in place of an internal error.
+
+## Tested
+
+The Node server and the Go server were run side by side on the same seeded library:
+- **Routes:** the Go server serves 219 of the Node server's 221 routes, with the same replies. The two it does not serve are the internal routes between the Go server and a Node server behind it, which the Go version does not run.
+- **API:** 75 of 84 parameter-free GET routes answer identically. The other 9 differ only where expected: notes about readers that needed Python, labels with equal counts ordered by name, a folder's time, the port, and the sign-in field.
+- **Files:** of 88 file routes, 64 answer identically, and the other 24 differ only in timings and a folder's time.
+- **UI:** the side-by-side check of every view found no difference in function.
+- **No Python:** an index build at Meaning on documents and a semantic map build, traced on the Go server, started no Python and no Node.
+
+On the release commit: the Go tests, the web tests (487), and the front-end suite run against the Go server in strict mode with every fixture, including a local sshd for libraries on another system (860 pass, 0 fail, 14 skipped). The skips are cases for the Node server's Python readers, which the Go server's own tests cover, and cases that need root or extra Python packages.
+
+The move from the Node releases was run in CI through each old release's own updater, with a throwaway signing key and a local release feed. Each run covered install, data, update to the Go build, data again, and the put-back of a Go build that never starts. On macOS this ran from nine releases between v1.141 and v1.188, each with the old app's own LaunchAgent and, from v1.170, also detached. On Linux it ran from v1.187 and v1.188, on Stable and Preview. All passed.
+
+Twelve rounds on a Linux desktop (WebKitGTK 4.1, real mouse and keyboard) updated the installed app over the air from one Preview to the next and checked the data each time: settings, conversations, libraries, credentials, labels. They covered every view, chat with markdown, previews, remote libraries, Settings and the update path. A scratch v1.188 install also updated to the Go version through its own updater.
+
+On macOS, the CI check runs build, sign with the hardened runtime, run the bridge tests, and take screenshots of the window on a macOS runner in Chat, Library and Settings, in light and dark, with the sidebar expanded and collapsed, with and without a classification banner, and with the banner switched on and off while open. The same window opens a PDF, which pdf.js draws, and builds and searches a library of an Apple Mail folder offered as a suggestion. The Preview releases from v1.188.1 were signed and notarized, and a Mac on the Preview channel updated through them over the air.
+
+## Not tested
+
+Windows under WSL. The macOS app on Intel Macs. It is built for Apple silicon only, as before.
+
+In a WebKit window, find in the conversation leaves earlier matches highlighted as the query grows, until the transcript scrolls. The fix belongs to the shared UI package: parallelworks/foundation#681.
+
+## v1.188.23 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.22 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.21 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.20 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.19 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.18 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.17 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.16 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.15 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.14 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.13 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.12 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.11 (2026-11-09)
+
+_No pull requests; tag only._
+
+## v1.188.10 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.9 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.8 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.7 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.6 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.5 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.4 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.3 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.2 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188.1 (2026-11-08)
+
+_No pull requests; tag only._
+
+## v1.188 (2026-11-05)
 
 ### Linux app runs on RHEL 8 and its rebuilds (#647)
 
@@ -31,6 +187,10 @@ The build also ran on a remote desktop, driven with real mouse and keyboard inpu
 ## Not tested
 
 A physical Rocky 8 desktop, and the window on stock RHEL (UBI repositories have no WebKitGTK), Debian 11 (its WebKitGTK packages are gone from the mirrors) and Amazon Linux 2023. Chat in the window was not run in this round. On Fedora 43 the window crashed at launch twice in about ten launches and opened on the next try. The cause is not known and is recorded in `docs/LINUX-APP.md`.
+
+### Change log through v1.188 (#648)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.188` before tagging v1.188.
 
 ## v1.187 (2026-11-05)
 
