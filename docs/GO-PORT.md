@@ -45,6 +45,7 @@ server-go/
   internal/extract/xls/          Excel 97-2003 text, as enrich.py's extract_xls
   internal/extract/odf/          OpenDocument text, as enrich.py's extract_odf
   internal/extract/ppt/          PowerPoint 97-2003 text, as enrich.py's extract_ppt
+  internal/extract/mail/         email text from Apple Mail .emlx and .eml files (new in Go)
   internal/extract/cfb/          OLE2 compound files, read as olefile reads them
   internal/extract/render/       PDF pages drawn for OCR where pdftoppm is missing
   third_party/giraffesyo-pdf/    giraffesyo/pdf v0.6.0 with the reader fixes listed in its README
@@ -416,6 +417,8 @@ go build -o bin/studio-server ./cmd/studio-server
 OMP_THREAD_LIMIT=1 ./bin/studio-server extract --kb-root ~/kb --extract-cache ~/.cache/studio/extract --jobs 8 --progress
 ENRICH_PY=../indexer/enrich.py ENRICH_DEPS=../indexer/.deps go test ./internal/extract/...   # compares with Python
 ```
+
+Email, an addition with no Node or Python counterpart: `internal/extract/mail` reads Apple Mail's `.emlx` (and `.partial.emlx`) and plain `.eml` files with the standard library's MIME packages, `golang.org/x/text` for charsets and `golang.org/x/net/html` for HTML bodies. The text is Subject, From, To, Cc and Date, then the text/plain body (else the HTML as text, else nothing), then `Attachments:` and the attachment names; an attached message is read the same way inside it. Input is capped at 64 MB, nesting at 16 levels and 1,000 parts, and a truncated or malformed message gives what could be read. The two suffixes are `NativeSuffixes`, so the pass caches them and the words step reads them at Text and above (not with documents off); they are documents for Meaning on documents (`documentSuffixes`, and `DOCUMENT_SUFFIXES` in `embed.py` for remote builds). `GET /api/kb/file` reads the message from the file itself and answers `kind: "text"`, `source: "extracted"`, `format: "text"`, so the viewer shows it as text with no web change; Node shows the raw MIME. The extractor report lists a Mail reader.
 
 ## Chat in Go
 
