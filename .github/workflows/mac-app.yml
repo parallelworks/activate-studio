@@ -48,7 +48,7 @@ on:
         type: boolean
         default: false
       bridge:
-        description: The releases the bridge job updates from (check, v1.169 with its LaunchAgent and v1.188 detached; all, every release and start in the bridge job's list)
+        description: The releases the bridge job updates from (check, v1.169 with its LaunchAgent and v1.188 detached; all, v1.141 to v1.188 and each way of starting in the bridge job's list)
         type: choice
         options: [check, all]
         default: check
@@ -264,15 +264,16 @@ jobs:
   # detached is the run loop launcher.sh starts where no LaunchAgent can be
   # loaded (v1.170 and later, exit 76); loop is the run loop of a release
   # before v1.170 when kickstart fails (exit 75, through the new copy's
-  # stand-in node/bin/node). v1.169 is the newest release before v1.170 with
-  # a macOS app. The check set runs on every check run; all on request.
+  # stand-in node/bin/node). v1.141 is the first release with a macOS app
+  # (and its updater), v1.169 the newest before v1.170. The check set runs
+  # on every check run; all on request.
   bridge:
     if: inputs.release == ''
     needs: build
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.bridge == 'all' && '[{"from":"v1.169","start":"launcher"},{"from":"v1.169","start":"loop"},{"from":"v1.170","start":"launcher"},{"from":"v1.170","start":"detached"},{"from":"v1.180","start":"launcher"},{"from":"v1.180","start":"detached"},{"from":"v1.188","start":"launcher"},{"from":"v1.188","start":"detached"}]' || '[{"from":"v1.169","start":"launcher"},{"from":"v1.188","start":"detached"}]') }}
+        include: ${{ fromJSON(inputs.bridge == 'all' && '[{"from":"v1.141","start":"launcher"},{"from":"v1.169","start":"launcher"},{"from":"v1.169","start":"loop"},{"from":"v1.170","start":"launcher"},{"from":"v1.170","start":"detached"},{"from":"v1.180","start":"launcher"},{"from":"v1.180","start":"detached"},{"from":"v1.188","start":"launcher"},{"from":"v1.188","start":"detached"}]' || '[{"from":"v1.169","start":"launcher"},{"from":"v1.188","start":"detached"}]') }}
     name: bridge (${{ matrix.from }}, ${{ matrix.start }})
     runs-on: macos-15
     timeout-minutes: 45
