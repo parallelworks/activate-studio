@@ -139,7 +139,7 @@ if [ "$SERVER" != node ]; then
   cp "$occt/license.occt.txt" "$RES/licenses/occt-LICENSE.txt"
 fi
 if [ "$SERVER" = go-only ]; then
-  # What the updaters of v1.180 to v1.188 check in a bundle before they
+  # What the updaters of v1.141 to v1.188 check in a bundle before they
   # install it (Resources/node/bin/node and app/server/dist/main.js are
   # files): stand-ins, so that those installs take the Go version as an
   # ordinary update. studio-run.sh reads node/PLACEHOLDER and runs the Go
@@ -147,7 +147,24 @@ if [ "$SERVER" = go-only ]; then
   mkdir -p "$RES/app/server/dist"
   printf '%s\n' "This app runs the Go server alone (app/bin/studio-server). node/bin/node and" \
     "app/server/dist/main.js are stand-ins for the checks of older updaters (docs/UPDATES.md)." >"$RES/node/PLACEHOLDER"
-  printf '%s\n' '#!/bin/sh' 'echo "ACTIVATE Studio runs without Node; this file is a stand-in for older updaters" >&2' 'exit 1' >"$RES/node/bin/node"
+  # The run loop of a release before v1.170 restarts the server with exit
+  # 75 when launchctl kickstart fails after an update, and so runs this
+  # file from the new copy as its server, with the new copy's main.js:
+  # it starts this copy's Go server once through studio-run.sh --serve.
+  cat >"$RES/node/bin/node" <<'STANDIN'
+#!/bin/sh
+# A stand-in for the checks of older updaters (docs/UPDATES.md, "The Go
+# version"): this app runs the Go server and carries no Node.
+res="$(cd "$(dirname "$0")/../.." && pwd -P)"
+case "${1:-}" in
+  */app/server/dist/main.js)
+    if [ -n "${STUDIO_DATA_DIR:-}" ] && [ -f "$res/studio-run.sh" ]; then
+      exec /bin/bash "$res/studio-run.sh" --serve "$STUDIO_DATA_DIR"
+    fi ;;
+esac
+echo "ACTIVATE Studio runs without Node; this file is a stand-in for older updaters" >&2
+exit 1
+STANDIN
   chmod 755 "$RES/node/bin/node"
   printf '%s\n' '// A stand-in for the checks of older updaters: this app runs the Go server' \
     '// (app/bin/studio-server) and carries no Node server.' \
