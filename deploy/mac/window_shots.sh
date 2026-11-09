@@ -2,14 +2,16 @@
 # Screenshots of the app's window on this Mac, for a person to look at: the
 # window controls over the page's top row (desktop/wails, html.shell-inset)
 # in Chat, Library and Settings, light and dark, with the navigation
-# expanded and collapsed, then with a classification banner and with the
-# setup wizard open. The window runs its self test's hold plan
+# expanded and collapsed, without and with a classification banner, the
+# banner switched on and off live, longer names, and the setup wizard. The
+# window runs its self test's hold plan
 # (desktop/wails/selftest.go), and each state is set by a script the window
 # hands to the page (eval.js in the test folder).
 #
 # Usage: deploy/mac/window_shots.sh "path/to/ACTIVATE Studio.app" OUT_DIR
-# OUT_DIR gets one PNG per state, window.json (the window's own report:
-# its number, title bar height and the controls' frames) and window.log.
+# OUT_DIR gets one PNG per state, window.json and window-*.json (the
+# window's own report: its number, title bar height and the controls'
+# frames, at launch and in each layout) and window.log.
 set -euo pipefail
 APP="$(cd "${1:?usage: window_shots.sh APP OUT_DIR}" && pwd -P)"
 OUT="${2:?usage: window_shots.sh APP OUT_DIR}"
@@ -66,27 +68,60 @@ state() { # theme collapsed view
   page "localStorage.setItem('ade-theme','$1');localStorage.setItem('ade-nav-collapsed','$2');localStorage.setItem('ade-status-panel','1');location.hash='#view=$3';location.reload()"
 }
 
+# A fresh report of the window's own state, saved as OUT/window-NAME.json.
+report() {
+  rm -f "$WT/window-report.json"
+  : >"$WT/window-report"
+  for _ in $(seq 1 50); do [ -s "$WT/window-report.json" ] && break; sleep 0.2; done
+  cp "$WT/window-report.json" "$OUT/window-$1.json" 2>/dev/null || echo "no window report for $1"
+  python3 -I -c 'import json, sys; r = json.load(open(sys.argv[1])); print(sys.argv[2], "title bar", r.get("titlebarHeight"), "controls", [(c["x"], c["y"]) for c in r.get("controls", [])])' "$OUT/window-$1.json" "$1" 2>/dev/null || true
+}
+# Settings saved as Settings does it: the page picks them up without a reload.
+settings() {
+  page "fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify($1)}).then(()=>window.dispatchEvent(new Event('ade:config-changed')))"
+}
+BANNER="{bannerText:'CUI // TEST MARKING',bannerColor:'#502b85'}"
+NOBANNER="{bannerText:''}"
+pages() { # prefix
+  for theme in light dark; do
+    for nav in expanded collapsed; do
+      c=0; [ "$nav" = collapsed ] && c=1
+      for view in chat library settings; do
+        state "$theme" "$c" "$view"
+        shot "$1$view-$theme-$nav"
+      done
+    done
+  done
+}
+
 # The setup is done, so no first-run wizard opens over the pages.
 page "fetch('/api/setup/complete',{method:'POST'}).then(()=>fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({aiEnabled:true})})).then(()=>location.reload())"
 sleep 3
-for theme in light dark; do
-  for nav in expanded collapsed; do
-    c=0; [ "$nav" = collapsed ] && c=1
-    for view in chat library settings; do
-      state "$theme" "$c" "$view"
-      shot "$view-$theme-$nav"
-    done
-  done
-done
+# No banner: the controls share the page's 52px top row.
+pages ""
+report row
 state light 0 settings; sleep 4
 page "window.dispatchEvent(new Event('ade:setup-open'))"
 shot "setup-light-expanded" 2
-page "fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({bannerText:'CUI // TEST MARKING',bannerColor:'#502b85'})}).then(()=>location.reload())"
-sleep 3
-for theme in light dark; do
-  state "$theme" 0 library
-  shot "banner-library-$theme-expanded"
+# Longer names in the sidebar's brand row.
+for name in "Matthew's Studio" "Materials Engineering Knowledge Studio"; do
+  page "fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({appName:\"$name\"})}).then(()=>location.reload())"
+  sleep 4
+  shot "name-$(printf '%s' "$name" | tr -cd 'A-Za-z' | head -c 12)-light-expanded" 1
 done
-state light 1 chat
-shot "banner-chat-light-collapsed"
+page "fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({appName:null})}).then(()=>location.reload())"
+sleep 3
+# The banner switched on live, from the library, without a reload.
+state light 0 library; sleep 4
+settings "$BANNER"
+shot "switch-on-library-light-expanded"
+report switched-on
+# The banner on: the compact layout.
+pages "banner-"
+report banner
+# And off again, live.
+state light 0 library; sleep 4
+settings "$NOBANNER"
+shot "switch-off-library-light-expanded"
+report switched-off
 ls "$OUT"

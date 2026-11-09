@@ -56,9 +56,11 @@ describe('the Mac window without a title bar', () => {
     // No column keeps a transparent strip at its top on the desktop layout.
     for (const r of inset.filter(r => !/max-width/.test(r.media))) expect(r.body, r.selector).not.toMatch(/border-top:\s*var\(--shell-top\)/)
     const row = (sel: string, decl: RegExp) => inset.some(r => r.selector.startsWith(NO_BANNER) && r.selector.includes(sel) && decl.test(r.body))
-    // The navigation's brand row is the row, past the controls.
-    expect(row('.sidenav-head', /min-height:\s*var\(--shell-top\)/)).toBe(true)
-    expect(row('.sidenav-head', /padding-left:\s*calc\(var\(--shell-controls\)/)).toBe(true)
+    // The navigation's top row holds the controls and the collapse button,
+    // centered on the row; the brand row, icon and name, is under it.
+    expect(row('.nav-collapse', /margin:\s*calc\(var\(--shell-top\) \/ 2 - 14px\)/)).toBe(true)
+    expect(row('.sidenav-brand', /flex:\s*1 0 100%/)).toBe(true)
+    expect(inset.some(r => r.selector.includes('.brand-icon') && /display:\s*none/.test(r.body))).toBe(false)
     // Collapsed, the rail is as wide as the controls and keeps their row.
     expect(row('.sidenav.collapsed', /width:\s*max\(64px,\s*var\(--shell-controls\)\)/)).toBe(true)
     // The other columns' heads are the row's height.

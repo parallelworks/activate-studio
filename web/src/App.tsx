@@ -289,6 +289,9 @@ export default function App() {
       // installed app it is the title bar, which otherwise shows the page's
       // ground between the window controls until the app arrives.
       if (cfg.loaded) {
+        // Whether a banner is shown, once that is known: the Mac app's
+        // window moves its controls to suit (desktop/wails/shell/shim.js).
+        document.documentElement.dataset.banner = bannerShownColor(cfg) ? 'shown' : 'none'
         try {
           const shown = bannerShownColor(cfg)
           if (shown) localStorage.setItem('ade-banner', JSON.stringify({ text: cfg.bannerText.trim(), color: shown, ink: bannerInk(shown), whenEmbedded: !!cfg.bannerWhenEmbedded }))

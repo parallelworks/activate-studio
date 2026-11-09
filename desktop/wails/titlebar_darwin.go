@@ -27,6 +27,26 @@ static void bar_apply(NSWindow *w) {
 	bar.appearance = [NSAppearance appearanceNamed:barLightInk ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
 }
 
+// The main window's toolbar row: none in the compact layout, so the window
+// controls sit at a plain title bar's height; otherwise an empty toolbar in
+// the unified style, which puts them in a 52px row (macOptions).
+static void bar_set_compact(int compact) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+		for (NSWindow *w in [NSApp windows]) {
+			if ([w isKindOfClass:[NSPanel class]] || !(w.styleMask & NSWindowStyleMaskTitled)) continue;
+			if ([[w identifier] isEqualToString:@"studio-popup"]) continue;
+			if (compact) {
+				w.toolbar = nil;
+			} else if (w.toolbar == nil) {
+				NSToolbar *t = [[NSToolbar alloc] initWithIdentifier:@"wails.toolbar"];
+				t.showsBaselineSeparator = NO;
+				w.toolbar = t;
+				w.toolbarStyle = NSWindowToolbarStyleUnified;
+			}
+		}
+	});
+}
+
 static void bar_paint(double r, double g, double b, int lightInk) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 		barColor = [NSColor colorWithSRGBRed:r green:g blue:b alpha:1];
@@ -57,6 +77,32 @@ const titleInsetPx = 52
 // toolbar row the three controls' frames are 14 by 16 at x 19, 39 and 59,
 // y 18 (the self test's window report), so they end at 73.
 const titleControlsPx = 82
+
+// compactInsetPx and compactControlsPx are the same for the compact layout,
+// with a classification banner (setCompactTitle): no toolbar, so the
+// controls sit at a plain title bar's height, and the banner is that strip.
+const (
+	compactInsetPx    = 28
+	compactControlsPx = 76
+)
+
+// titleMetrics is the row's height and the controls' reach in a layout.
+func titleMetrics(compact bool) (int, int) {
+	if compact {
+		return compactInsetPx, compactControlsPx
+	}
+	return titleInsetPx, titleControlsPx
+}
+
+// setWindowCompact adds or removes the window's toolbar row
+// (macwindow_darwin.go).
+func setWindowCompact(compact bool) {
+	c := C.int(0)
+	if compact {
+		c = 1
+	}
+	C.bar_set_compact(c)
+}
 
 // useOwnTitleBar: the macOS bar is the system's, painted by paintBar.
 func useOwnTitleBar(string) {}

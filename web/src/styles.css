@@ -2541,27 +2541,31 @@ button.status-row:hover { background: var(--pw-hover-row); }
    The desktop shell (desktop/wails/shell/shim.js) sets html.shell-inset and
    both variables; nothing else does, so none of this applies on Linux,
    Windows or in a browser.
-   Each column's first row is that row: the navigation's brand row moves up
-   beside the controls, and the other columns' heads (a page's heading, the
-   library rail's, the status panel's) are made the row's height, so their
-   titles and buttons line up with the controls. A press on an empty part of
-   the row drags the window (shim.js).
-   A classification banner is the row instead: it is the row's height with
-   the controls over its left end, and the columns below it are as anywhere
-   else. The rules for the row's columns are written for an app with no
-   banner (.app:not(:has(> .cls-banner))). */
+   Each column's first row is that row: the navigation's holds the controls
+   and its collapse button, and the other columns' heads (a page's heading,
+   the library rail's, the status panel's) are made the row's height, so
+   their titles and buttons line up with the controls. A press on an empty
+   part of the row drags the window (shim.js).
+   With a classification banner the window takes a compact layout: the
+   shell drops its toolbar row, so the controls sit at a plain title bar's
+   height and --shell-top is that height (about 28px). The banner is that
+   strip, with the controls over its left end, and the columns below it are
+   as anywhere else. The rules for the row's columns are written for an app
+   with no banner (.app:not(:has(> .cls-banner))). */
 html.shell-inset {
   /* The UI package's drawers and toasts start below the row. */
   --app-inset-top: var(--shell-top, 0px);
 }
+/* A name too long for the rail ends in an ellipsis. */
+html.shell-inset .sidenav-brand .brand-text { text-overflow: ellipsis; }
 @media (min-width: 761px) {
-  /* The navigation's brand row is the top row, past the controls. The brand
-     icon gives way there: the Dock already shows it, and the row has room
-     for the name, at the 13px of a Mac title, and the collapse button. */
+  /* The navigation's top row holds the window controls and, at its right
+     end, the collapse button. The brand row, icon and name across the
+     rail's width, is under it as anywhere else. */
   html.shell-inset .app:not(:has(> .cls-banner)) .sidenav { padding-top: 0; overflow-x: clip; }
-  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .sidenav-head { min-height: var(--shell-top); margin: 0 -6px 4px 0; gap: 4px; padding-left: calc(var(--shell-controls) - 12px); padding-right: 0; }
-  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .brand-icon { display: none; }
-  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav-brand .brand-text { font-size: 13px; text-overflow: ellipsis; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .sidenav-head { flex-wrap: wrap; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .sidenav-brand { order: 1; flex: 1 0 100%; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .nav-collapse { margin: calc(var(--shell-top) / 2 - 14px) 0 calc(var(--shell-top) / 2 - 14px) auto; }
   /* Collapsed, the rail is as wide as the controls and keeps the row under
      them empty, so nothing of the page's sits under the controls. */
   html.shell-inset .app:not(:has(> .cls-banner)) .sidenav.collapsed { width: max(64px, var(--shell-controls)); padding-top: var(--shell-top); }

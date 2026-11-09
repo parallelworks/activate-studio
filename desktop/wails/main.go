@@ -115,6 +115,7 @@ func main() {
 
 	useOwnTitleBar(windowTitle)
 	app.restoreBarColor()
+	app.restoreCompactTitle()
 	watchMacWindow()
 
 	err = wails.Run(&options.App{
@@ -149,7 +150,7 @@ func main() {
 		},
 		// macOS: the Swift window's menus and About panel (launcher_darwin.go).
 		Menu: appMenu(app),
-		Mac:  macOptions(),
+		Mac:  macOptions(app.compactTitle),
 		Windows: &windows.Options{
 			// The web view's own data (local storage, cache) with the
 			// Studio's, not beside the executable.

@@ -42,6 +42,13 @@ func (b *Bridge) ToggleMaximise() {
 	}
 }
 
+// SetCompactTitle moves the window controls for a classification banner:
+// true when one is shown (the controls at a plain title bar's height over
+// it), false when not (the controls in the page's 52px top row). It answers
+// the row's height and the controls' reach in the new layout, which are 0
+// where the window has a title bar of its own (titlebar.go).
+func (b *Bridge) SetCompactTitle(compact bool) map[string]int { return b.app.setCompactTitle(compact) }
+
 // SetBarColor paints the window's title bar (titlebar.go).
 func (b *Bridge) SetBarColor(color string) error { return b.app.setBarColor(color) }
 

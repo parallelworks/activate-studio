@@ -21,6 +21,10 @@ var barColorForm = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 func barColorFile(dataDir string) string { return filepath.Join(dataDir, "run", "bar-color") }
 
+// compactTitleFile holds "1" when the last launch ended with a
+// classification banner shown, so the next one opens in that layout.
+func compactTitleFile(dataDir string) string { return filepath.Join(dataDir, "run", "compact-title") }
+
 // barInk is the title and controls' color on a bar of the given #rrggbb: the
 // one with the higher contrast, by the WCAG luminance the macOS window uses.
 func barInk(color string) string {
@@ -91,5 +95,40 @@ func (a *App) setBarColor(color string) error {
 func (a *App) restoreBarColor() {
 	if b, err := os.ReadFile(barColorFile(a.cfg.DataDir)); err == nil {
 		_ = a.setBarColor(strings.TrimSpace(string(b)))
+	}
+}
+
+// setCompactTitle switches the window between its two layouts (macOS):
+// with a classification banner the controls sit at a plain title bar's
+// height over it, without one in the page's taller top row. The layout is
+// kept in the data folder for the next launch. It answers the new row's
+// height and the controls' reach for the page (titleMetrics).
+func (a *App) setCompactTitle(compact bool) map[string]int {
+	a.mu.Lock()
+	changed := a.compactTitle != compact
+	a.compactTitle = compact
+	a.mu.Unlock()
+	if changed {
+		setWindowCompact(compact)
+		file := compactTitleFile(a.cfg.DataDir)
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err == nil {
+			v := "0"
+			if compact {
+				v = "1"
+			}
+			_ = os.WriteFile(file, []byte(v+"\n"), 0o644)
+		}
+	}
+	inset, controls := titleMetrics(compact)
+	return map[string]int{"titleInset": inset, "titleControls": controls}
+}
+
+// restoreCompactTitle starts in the layout the last launch ended with.
+// Call before the window is made.
+func (a *App) restoreCompactTitle() {
+	if b, err := os.ReadFile(compactTitleFile(a.cfg.DataDir)); err == nil {
+		a.mu.Lock()
+		a.compactTitle = strings.TrimSpace(string(b)) == "1"
+		a.mu.Unlock()
 	}
 }

@@ -37,3 +37,26 @@ func TestSetBarColorRefusesAnythingButAColor(t *testing.T) {
 		t.Error("the style sheet does not carry the color")
 	}
 }
+
+func TestCompactTitleIsRememberedForTheNextLaunch(t *testing.T) {
+	a := &App{cfg: Config{DataDir: t.TempDir()}}
+	got := a.setCompactTitle(true)
+	inset, controls := titleMetrics(true)
+	if got["titleInset"] != inset || got["titleControls"] != controls {
+		t.Errorf("answered %v, want %d and %d", got, inset, controls)
+	}
+	b := &App{cfg: a.cfg}
+	b.restoreCompactTitle()
+	if !b.compactTitle {
+		t.Error("the banner layout was not restored")
+	}
+	if !strings.Contains(b.shimScript(), `"titleCompact":true`) {
+		t.Error("the shim is not told the layout")
+	}
+	a.setCompactTitle(false)
+	c := &App{cfg: a.cfg}
+	c.restoreCompactTitle()
+	if c.compactTitle {
+		t.Error("the row layout was not restored")
+	}
+}
