@@ -220,7 +220,7 @@ func (s *Store) Effective() Effective {
 		theme = "dark"
 	}
 	e.Theme = or(str("theme"), theme)
-	e.Accent = or(str("accent"), s.envOr("APP_ACCENT", "navy"))
+	e.Accent = or(str("accent"), s.envOr("APP_ACCENT", "none"))
 	e.Surface = or(str("surface"), s.envOr("APP_SURFACE", "neutral"))
 	e.IconURL = or(str("iconUrl"), env("APP_ICON"))
 	e.IconURLDark = or(str("iconUrlDark"), env("APP_ICON_DARK"))

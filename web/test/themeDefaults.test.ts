@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { deriveTheme, THEME_TOKENS } from '@parallelworks/ui/theme'
-import { SURFACES, themeFor } from '../src/accents'
+import { ACCENTS, SURFACES, themeFor } from '../src/accents'
 
 /** The declarations of one block in the stylesheet's derived defaults. */
 function block(css: string, selector: string): Record<string, string> {
@@ -24,12 +24,12 @@ function derivedBlock(light: Record<string, string>, dark: Record<string, string
 describe('the theme', () => {
   const file = path.resolve(process.cwd(), 'src/styles.css')
   const css = readFileSync(file, 'utf8')
-  const light = deriveTheme({ interface: { base: SURFACES.cool.light, accent: '#06354f' } })
-  const dark = deriveTheme({ interface: { base: SURFACES.cool.dark, accent: '#7fc0ec' } })
+  const light = deriveTheme({ interface: { base: SURFACES.cool.light, accent: ACCENTS.none.light[0] } })
+  const dark = deriveTheme({ interface: { base: SURFACES.cool.dark, accent: ACCENTS.none.dark[0] } })
 
   // A UI package release that changes deriveTheme fails this; rerun it with
   // UPDATE_THEME_DEFAULTS=1 to rewrite the block from the new release.
-  it('ships fallback values equal to deriveTheme for navy on the cool surface', () => {
+  it('ships fallback values equal to deriveTheme for the default accent (none) on the cool surface', () => {
     if (process.env.UPDATE_THEME_DEFAULTS) {
       const start = css.indexOf('/* BEGIN derived theme defaults'), end = css.indexOf('/* END derived theme defaults')
       writeFileSync(file, css.slice(0, start) + derivedBlock(light, dark) + css.slice(end))
@@ -41,7 +41,7 @@ describe('the theme', () => {
 
   it('derives the whole contract for every accent and surface, with readable text', () => {
     for (const surface of Object.keys(SURFACES)) {
-      for (const accent of ['navy', 'teal', 'forest', 'burgundy', 'violet', 'slate', 'custom:#7a3b10']) {
+      for (const accent of ['none', 'navy', 'teal', 'forest', 'burgundy', 'violet', 'slate', 'custom:#7a3b10']) {
         const t = themeFor(accent, surface)
         expect(Object.keys(t.light).length).toBe(THEME_TOKENS.length)
         expect(Object.keys(t.dark).length).toBe(THEME_TOKENS.length)

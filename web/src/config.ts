@@ -42,7 +42,7 @@ const DEFAULTS: AppConfig = {
   faviconUrl: null,
   faviconUrlDark: null,
   theme: 'light',
-  accent: 'navy',
+  accent: 'none',
   surface: 'neutral',
   kbLabel: 'Knowledge base',
   suggestedPrompts: [
@@ -121,7 +121,7 @@ export function useAppConfig(): AppConfig {
           faviconUrl: d.faviconUrl ?? null,
           faviconUrlDark: d.faviconUrlDark ?? null,
           theme: d.theme === 'dark' ? 'dark' : 'light',
-          accent: d.accent || 'navy',
+          accent: d.accent || 'none',
           surface: d.surface || 'neutral',
           kbLabel: d.kbLabel || DEFAULTS.kbLabel,
           suggestedPrompts: d.suggestedPrompts?.length ? d.suggestedPrompts : DEFAULTS.suggestedPrompts,
