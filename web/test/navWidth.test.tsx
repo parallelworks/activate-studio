@@ -95,4 +95,33 @@ describe('the sidebar width', () => {
     fireEvent.keyDown(edge, { key: 'Home' })
     await waitFor(() => expect(puts.at(-1)).toEqual({ navWidth: NAV_WIDTH_MIN }))
   })
+
+  it('a click on the edge focuses it, so the arrow keys work after it, and focusing it scrolls nothing', async () => {
+    const puts = stub(240)
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    const reveal = vi.fn()
+    const had = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = reveal
+    render(<div style={{ display: 'flex' }}><nav className="sidenav"><button>sync now</button></nav><NavResize width={240} /><main><button>first</button></main></div>)
+    const edge = screen.getByRole('separator', { name: 'Sidebar width' })
+    screen.getByRole('button', { name: 'first' }).focus()
+    fireEvent.pointerDown(edge, { button: 0, clientX: 240 })
+    fireEvent.pointerUp(edge, { clientX: 240 })
+    expect(document.activeElement).toBe(edge)
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
+    expect(reveal).not.toHaveBeenCalled()
+    // A press shows no focus ring; a key brings it back.
+    expect(edge).toHaveClass('pressed')
+    // A click that moved nothing saves nothing.
+    expect(puts).toEqual([])
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' })
+    await waitFor(() => expect(puts.at(-1)).toEqual({ navWidth: 250 }))
+    expect(edge).not.toHaveClass('pressed')
+    // Another button than the main one leaves the focus where it was.
+    screen.getByRole('button', { name: 'first' }).focus()
+    fireEvent.pointerDown(edge, { button: 2, clientX: 240 })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'first' }))
+    focus.mockRestore()
+    Element.prototype.scrollIntoView = had
+  })
 })

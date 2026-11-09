@@ -349,7 +349,9 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
    centered on the border. */
 .sidenav-resize { position: relative; flex: 0 0 0; width: 0; z-index: 6; outline: none; }
 .sidenav-resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: -4px; width: 7px; cursor: col-resize; }
-.sidenav-resize:hover::before, .sidenav-resize.dragging::before, .sidenav-resize:focus-visible::before {
+/* The ring shows for keyboard focus only: a press focuses the edge too, so
+   the arrow keys work after it, and marks it pressed until a key is used. */
+.sidenav-resize:hover::before, .sidenav-resize.dragging::before, .sidenav-resize:focus-visible:not(.pressed)::before {
   background: linear-gradient(to right, transparent 2px, var(--pw-border-strong) 2px, var(--pw-border-strong) 5px, transparent 5px);
 }
 html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-select: none; }
