@@ -286,6 +286,36 @@ describe('the corpus topology', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close full screen' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
+
+  it('reads the folders again when the library changes, and keeps the folder open', async () => {
+    let rows = [{ dir: 'reports', files: 3, bytes: 3000 }, { dir: 'kitchen', files: 4, bytes: 40000 }]
+    const fetchMock = vi.fn(async () => reply({ available: true, levels: 4, dirs: rows }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<TopologyMap />)
+    expect(await screen.findByRole('button', { name: /kitchen/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /garden/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /reports/ }))
+    expect(await screen.findByRole('button', { name: '/reports' })).toBeInTheDocument()
+    // A file added, a folder moved: the views that read the index are told.
+    rows = [{ dir: 'reports', files: 3, bytes: 3000 }, { dir: 'garden', files: 2, bytes: 90000 }]
+    act(() => { window.dispatchEvent(new Event('ade-kb-changed')) })
+    expect(await screen.findByRole('button', { name: /garden/ })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: /kitchen/ })).toBeNull())
+    expect(screen.getByRole('button', { name: '/reports' })).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    // Past the server's own short-lived copy of the counts.
+    expect(String((fetchMock.mock.calls[1] as unknown[])[0])).toBe('/api/kb/topology?refresh=1')
+  })
+
+  it('says there is no index once the index is gone', async () => {
+    let available = true
+    vi.stubGlobal('fetch', vi.fn(async () => reply(available ? { available, dirs: [{ dir: 'kitchen', files: 4, bytes: 40000 }] } : { available })))
+    render(<TopologyMap libraries={[{ id: 'kb', label: 'Main' }, { id: 'b', label: 'B' }] as PublicLibrary[]} />)
+    expect(await screen.findByRole('button', { name: /kitchen/ })).toBeInTheDocument()
+    available = false
+    act(() => { window.dispatchEvent(new Event('ade-kb-changed')) })
+    expect(await screen.findByText(/has no index yet/)).toBeInTheDocument()
+  })
 })
 
 describe('cluster names on the map', () => {

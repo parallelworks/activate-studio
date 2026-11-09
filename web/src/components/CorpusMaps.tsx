@@ -542,16 +542,19 @@ export function TopologyMap({ libraries = [] }: { libraries?: PublicLibrary[] })
   const [full, setFull] = useState(false)
   const [highlight, setHighlight] = useState<string | null>(null)
   const gen = useRef(0)
-  const load = useCallback((dir: string) => {
+  // `fresh` asks the server past its own short-lived copy of the counts.
+  const load = useCallback((dir: string, fresh = false): Promise<void> => {
     const my = gen.current
-    if (reach.current.has(dir)) return
+    if (reach.current.has(dir)) return Promise.resolve()
     reach.current.set(dir, 0)
     setLoading(true)
-    fetch(`${mainOrLibrary(lib, 'topology')}${dir ? `?dir=${encodeURIComponent(dir)}` : ''}`)
+    const qs = new URLSearchParams({ ...(dir ? { dir } : {}), ...(fresh ? { refresh: '1' } : {}) }).toString()
+    return fetch(`${mainOrLibrary(lib, 'topology')}${qs ? `?${qs}` : ''}`, { cache: 'no-store' })
       .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d?.error ?? `HTTP ${r.status}`); return d })
       .then((d: { available: boolean; dirs?: DirRow[]; levels?: number }) => {
         if (my !== gen.current) return
-        if (!d.available) { if (!dir) setEmpty(true); return }
+        if (!d.available) { if (!dir) { setDirs(null); setEmpty(true) } return }
+        if (!dir) setEmpty(false)
         reach.current.set(dir, d.levels ?? 99)
         // A folder asked for again replaces its own row, which held the
         // totals of everything below it, with the rows below it.
@@ -567,6 +570,26 @@ export function TopologyMap({ libraries = [] }: { libraries?: PublicLibrary[] })
     setDirs(null); setEmpty(false); setError(null); setFocus('')
     load('')
   }, [lib]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Files added, moved or deleted, or an index job ended (ade-kb-changed):
+  // the folders are read again. The map shown stays until the new counts
+  // arrive, and the folder open stays open, read again below it if it was
+  // deeper than the first read reached.
+  const focusRef = useRef(focus)
+  focusRef.current = focus
+  useEffect(() => {
+    const onChange = () => {
+      gen.current++
+      reach.current = new Map()
+      setError(null)
+      void load('', true).then(() => {
+        const f = focusRef.current
+        const r = f ? reachOf(reach.current, f) : null
+        if (r && r.levels && depthOf(f) - depthOf(r.root) >= r.levels - 2) void load(f, true)
+      })
+    }
+    window.addEventListener('ade-kb-changed', onChange)
+    return () => window.removeEventListener('ade-kb-changed', onChange)
+  }, [load])
   // Opening a folder near the last level fetched asks for the levels below it.
   useEffect(() => {
     if (!focus) return
