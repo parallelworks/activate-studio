@@ -605,7 +605,7 @@ export default function App() {
         {/* Chat puts the status panel's toggle beside its own controls; the
             library, settings, and help have no header, so it floats at
             their top right. */}
-        <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView /></div>
+        <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView active={view === 'chat'} /></div>
         <div className={view === 'library' ? 'view with-toggle' : 'view hidden'}>
           <LibraryView display={display} onDisplay={setDisplay} />
           {view === 'library' && <PanelToggle className="panel-toggle-float" />}

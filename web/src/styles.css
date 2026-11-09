@@ -970,6 +970,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    direct children, which made this row full-height and centred the
    buttons halfway down the canvas. */
 .chat-controls { position: absolute; top: 11px; right: 16px; z-index: 8; display: flex; align-items: center; gap: 6px; height: auto; }
+/* The package's find bar (Ctrl+F in a conversation) spans the top of the
+   thread, under these controls. It stops short of them, or sits below them
+   where the thread is too narrow, so its count and buttons stay in view;
+   ChatView measures which as the controls and the canvas change. */
+.chat-canvas main search { padding-right: var(--chat-find-pad, 0px); margin-top: var(--chat-find-top, 0px); }
+/* Its field draws its own focus ring; the page-wide outline would add a
+   second, square one inside it. */
+.chat-canvas main search input:focus-visible { outline: none; }
 @media (max-width: 760px) {
   /* These controls float over the package's own header, which holds the
      model picker. On a phone the picker is wide enough to run under them,

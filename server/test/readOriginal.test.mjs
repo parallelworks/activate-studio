@@ -277,7 +277,7 @@ test('paths that leave the library are refused, in one file and in several, on b
 
 test('a library with no files here and no other host says what to do', async () => {
   const r = await orig({ path: 'a.md', library: 'idxonly' })
-  assert.match(r.result, /^Tool error: Index only has no files on this host; it can be searched and read from its index \(read_kb_file\), but its originals cannot be opened\. Settings, Libraries can name another host that has them\./)
+  assert.match(r.result, /^Tool error: Index only has no files on this host; it can be searched and read from its index \(read_kb_file\), but its originals cannot be opened\. Settings, Indexing, Libraries can name another host that has them\./)
 })
 
 // ---- read_original: a library over ssh, and the host named for reading originals ----
