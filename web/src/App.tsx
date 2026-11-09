@@ -1,7 +1,7 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { IconButton, SearchInput } from '@parallelworks/ui'
 import { buildOpenHash, parseOpenHash } from './nav'
-import { currentLibrary, setLibrary, settleLibraries } from './api'
+import { currentLibrary, linkTarget, setLibrary, settleLibraries } from './api'
 import { rememberHash } from './lastLocation'
 import { ChatView } from './views/ChatView'
 import { DagViewer } from './components/DagViewer'
@@ -122,6 +122,19 @@ function readClosedGroups(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem('ade-nav-closed') ?? '[]') as string[]) } catch { return new Set() }
 }
 
+
+/** A file link opened in the library it names. With All libraries open it
+ *  stays open, and the link's path becomes All mode's path for it (the
+ *  library's id first); a link from a chat names no library for the main
+ *  one. Otherwise a link to another library switches to it. */
+function inOpenLibrary(d: Display | null): Display | null {
+  if (d?.kind !== 'file') return d
+  if (d.lib === 'all' || currentLibrary() !== 'all') {
+    if (d.lib && d.lib !== currentLibrary()) setLibrary(d.lib)
+    return d
+  }
+  return { ...d, target: linkTarget(d.target, d.lib), lib: 'all' }
+}
 export default function App() {
   const [view, setView] = useState<ViewId>('chat')
   const [display, setDisplay] = useState<Display | null>(null)
@@ -299,8 +312,7 @@ export default function App() {
   // back/forward (hash-only history moves fire hashchange).
   useEffect(() => {
     const applyHash = () => {
-      const opened = parseOpenHash(location.hash)
-      if (opened?.kind === 'file' && opened.lib && opened.lib !== currentLibrary()) setLibrary(opened.lib)
+      const opened = inOpenLibrary(parseOpenHash(location.hash))
       if (opened) {
         setDisplay(opened)
         setView('library')
@@ -324,8 +336,7 @@ export default function App() {
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest?.('a[href*="#open="], a[href*="#view="]') as HTMLAnchorElement | null
       const href = a?.getAttribute('href') ?? ''
-      const opened = parseOpenHash(href.slice(href.indexOf('#open=')))
-      if (opened?.kind === 'file' && opened.lib && opened.lib !== currentLibrary()) setLibrary(opened.lib)
+      const opened = inOpenLibrary(parseOpenHash(href.slice(href.indexOf('#open='))))
       if (opened) {
         e.preventDefault()
         e.stopPropagation()

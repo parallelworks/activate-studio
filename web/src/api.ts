@@ -158,13 +158,25 @@ export function setLibrary(id: string): void {
 }
 /** Called with the configured libraries: falls back to the default when
  *  the tab has no choice of its own or its choice no longer exists. */
+let knownIds: string[] = []
 export function settleLibraries(ids: string[]): void {
+  knownIds = [...ids]
   try { localStorage.setItem(COUNT_KEY, String(ids.length)); localStorage.removeItem(LIB_KEY) } catch { /* storage unavailable */ }
   const mine = stored()
   const want = mine && (mine === ALL ? ids.length > 1 : ids.includes(mine)) ? mine : defaultLibrary(ids.length)
   if (want === current) return
   current = want
   for (const fn of listeners) fn(current)
+}
+/** A file link's path as the open library reads it. A link names its
+ *  library with &lib=, or none for the main one; in All mode paths start
+ *  with their library's id, so the link's path gets that prefix unless it
+ *  already starts with a library's id (a link made while All was open). */
+export function linkTarget(path: string, lib?: string): string {
+  if (current !== ALL) return path
+  const first = path.replace(/^\/+/, '').split('/')[0]
+  if (!lib && knownIds.includes(first)) return path
+  return `${lib ?? PRIMARY}/${path.replace(/^\/+/, '')}`
 }
 export function onLibraryChange(fn: (id: string) => void): () => void {
   listeners.add(fn)
