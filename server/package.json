@@ -13,7 +13,7 @@
   "dependencies": {
     "@fastify/multipart": "^10.1.0",
     "@fastify/static": "^10.1.5",
-    "@giraffesyo/downmark": "0.10.0",
+    "@giraffesyo/downmark": "0.10.1",
     "@parallelworks/workflow-parser": "^0.8.0",
     "ajv": "^8.20.0",
     "fastify": "^5.12.6",

@@ -14,10 +14,10 @@ import (
 // text of <kb>/<rel>. An entry is current when it is at least as new as
 // its source. An entry downmark wrote names it on its first line,
 //
-//	<!-- extracted by downmark 0.10.0 -->
+//	<!-- extracted by downmark 0.10.1 -->
 //
 // followed by a blank line and the Markdown; a PDF converted without OCR
-// says "0.10.0 (no OCR)". Entries from the other readers are plain text
+// says "0.10.1 (no OCR)". Entries from the other readers are plain text
 // with no such line. This is the format preextract.ts and enrich.py
 // write and read, kept as is so that a cache either of them wrote stays
 // valid.

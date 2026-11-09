@@ -1,12 +1,12 @@
 module github.com/parallelworks/activate-studio/server-go
 
-go 1.26.0
+go 1.27.3
 
 require (
 	github.com/andybalholm/brotli v1.2.8
 	github.com/ebitengine/purego v0.11.3
-	github.com/giraffesyo/downmark v0.10.0
-	github.com/giraffesyo/pdf v0.6.0
+	github.com/giraffesyo/downmark v0.10.1
+	github.com/giraffesyo/pdf v0.8.0
 	github.com/pdfcpu/pdfcpu v0.11.1
 	github.com/richardlehane/mscfb v1.0.9
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -36,15 +36,17 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
-	github.com/xuri/efp v0.0.1 // indirect
-	github.com/xuri/excelize/v2 v2.11.0 // indirect
+	github.com/xuri/efp v0.0.2 // indirect
+	github.com/xuri/excelize/v2 v2.11.1-0.20261020033641-611b222fd8f7 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/net v0.61.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
 
+// The PDF reader is the patched copy of v0.6.0 in third_party, whatever
+// version downmark asks for (v0.8.0 as of downmark v0.10.1).
 replace github.com/giraffesyo/pdf => ./third_party/giraffesyo-pdf
