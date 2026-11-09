@@ -163,6 +163,9 @@ func (p *Previews) PageCount(ctx context.Context, pdf string) (int, error) {
 	cmd.Stderr = &se
 	out, err := cmd.Output()
 	if err != nil {
+		if e := popplerMissing(err, "pdfinfo"); e != nil {
+			return 0, e
+		}
 		return 0, errors.New(firstNonEmpty(se.String(), err.Error()))
 	}
 	m := pagesLine.FindSubmatch(out)
@@ -201,6 +204,9 @@ func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page int) (stri
 	var se strings.Builder
 	cmd.Stderr = &se
 	if err := cmd.Run(); err != nil {
+		if e := popplerMissing(err, "pdftoppm"); e != nil {
+			return "", e
+		}
 		return "", fmt.Errorf("page render failed: %s", firstNonEmpty(se.String(), err.Error()))
 	}
 	// pdftoppm writes <prefix>-<page>.png, zero-padded once the page count
@@ -224,6 +230,22 @@ func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page int) (stri
 		}
 	}
 	return outFile, nil
+}
+
+// popplerMissing is the 415 for a host without poppler, whose pdfinfo and
+// pdftoppm draw PDF pages; the viewer shows a PDF's text instead and says
+// why. The macOS app does not include poppler; its server's PATH has
+// Homebrew's, so installing it there brings the page images. nil for any
+// other failure.
+func popplerMissing(err error, tool string) error {
+	if !errors.Is(err, exec.ErrNotFound) && !errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	msg := fmt.Sprintf("poppler's %s is not installed", tool)
+	if runtime.GOOS == "darwin" {
+		msg += "; brew install poppler adds it"
+	}
+	return Error(415, "%s", msg)
 }
 
 func firstNonEmpty(a, b string) string {

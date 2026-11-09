@@ -65,6 +65,15 @@ export function foundBy(h: Pick<SearchHit, 'mode' | 'kinds'>): string {
   return `Found by ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]}`
 }
 
+/** What the opened file's find bar starts with: the words searched for,
+ *  when the file was found by its words. A file found only by its meaning,
+ *  name or folder need not hold those words, and a find bar reading "No
+ *  matches" over it says the search was wrong. */
+export function findFor(h: Pick<SearchHit, 'mode' | 'kinds'>, words: string): string | undefined {
+  const kinds = h.kinds?.length ? h.kinds : [h.mode]
+  return kinds.includes('fts') && words.trim() ? words : undefined
+}
+
 /** Search results as a table for export: one row per result, in the order
  *  shown, with how it was found, its size in bytes and its modified time in
  *  UTC. The library comes first when several were searched. */
@@ -265,7 +274,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
           {hits.length === 0 && <EmptyState variant="bare" title="No matches." />}
           {hits.map(h => (
             <div key={`${h.library?.id ?? ''}/${h.path}`} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`}
-              onClick={() => openInLibrary(p => onOpen(p, refineOpen ? text || name : q), h.library?.id, h.path)}>
+              onClick={() => openInLibrary(p => onOpen(p, findFor(h, refineOpen ? text : q)), h.library?.id, h.path)}>
               <div className="result-top">
                 <RowCheck checked={sel.has(h.path)} onToggle={() => toggleSel(h.path)} />
                 <span className="result-path">{h.path}</span>
