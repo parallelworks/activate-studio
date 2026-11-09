@@ -12,7 +12,7 @@ import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryForm
  * over pw ssh: picked from the person's systems on the platform, running
  * ones first, or typed when the list cannot be had. Where pw ssh cannot be
  * used yet (no pw CLI found, no sign-in), the form says why instead. Used
- * by Settings, Libraries and by the setup wizard.
+ * by Settings, Indexing, Libraries and by the setup wizard.
  *
  * By default (`mode` connect) the GUFI index is there already: the
  * connection test runs first and reports each step (the connection, GUFI,

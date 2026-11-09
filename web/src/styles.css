@@ -1935,7 +1935,7 @@ a.identity-btn { text-decoration: none; }
 /* With the picker on its own row, the buttons spread across the row under it. */
 .rail-head.rail-head-switch .rail-actions { flex: 1 0 100%; justify-content: space-between; }
 
-/* ---- Settings > Libraries ---- */
+/* ---- Settings > Indexing > Libraries ---- */
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }
 .libraries-table .lib-id { font-size: 12px; color: var(--pw-muted); margin-top: 2px; }
 .libraries-table .depth-select { min-width: 11rem; }
@@ -1976,7 +1976,7 @@ a.identity-btn { text-decoration: none; }
 .lib-add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 /* Indexing (components/IndexActivity.tsx): a job's phases, each with its
    count and time, the controls, and the log. The same pieces sit in the
-   footer's index panel, Settings, Libraries and Statistics. */
+   footer's index panel, Settings, Indexing, Libraries and Statistics. */
 .ix-job { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ix-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .ix-phase { display: flex; flex-direction: column; gap: 3px; }
@@ -2236,7 +2236,7 @@ a.identity-btn { text-decoration: none; }
   .agents-view > :not(.ov-head) { margin-inline: 14px; }
 }
 
-/* Settings > Libraries > Your libraries: the Slurm fields under their checkbox. */
+/* Settings > Indexing > Libraries > Your libraries: the Slurm fields under their checkbox. */
 .user-lib-slurm { display: flex; gap: 8px; margin-top: 6px; }
 .user-lib-slurm > input { flex: 1; min-width: 0; }
 

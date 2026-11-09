@@ -24,7 +24,7 @@ pnpm install && pnpm build
 indexer/setup_gufi.sh                      # once: builds the GUFI index engine (release 0.8.0)
 export KB_ROOT=/path/to/your/folder
 export OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=<your key>
-indexer/reindex.sh                         # indexes the folder (or later: Settings, Libraries, Build index)
+indexer/reindex.sh                         # indexes the folder (or later: Settings, Indexing, Libraries, Build index)
 pnpm start                                 # then open http://localhost:4080
 ```
 
@@ -44,7 +44,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 
 ### Index depth
 
-Each library the Studio builds has an index depth, set on a scale in Settings, Libraries, in setup, and when the library is added. Each stop adds to the one before and takes longer to index:
+Each library the Studio builds has an index depth, set on a scale in Settings, Indexing, Libraries, in setup, and when the library is added. Each stop adds to the one before and takes longer to index:
 
 | Depth | What the index holds |
 |---|---|
@@ -54,7 +54,7 @@ Each library the Studio builds has an index depth, set on a scale in Settings, L
 | Meaning on documents | Search by meaning over the first four passages of each PDF, Office, text, Markdown and image file. The default for the main folder and the libraries the Studio builds, here or on a remote system, computed last, after names and text are searchable. |
 | Meaning on all files | Search by meaning over up to twelve passages of every file with text. |
 
-Many folders (code, data, simulation output) need no more than Text. Settings, Indexing also sets the speed of search by meaning: **Standard** embeds the first 256 tokens of each passage, and **Faster** the first 128, in well under half the time with slightly lower ranking. Embeddings come from all-MiniLM-L6-v2 through ONNX Runtime (int8), which the macOS app and the container carry; a clone gets it from `indexer/setup_gufi.sh`, or `python3 indexer/fetch_embed.py --deps indexer/.deps --model index/models/minilm-l6`. A build on a remote system embeds with the same model, which the first build there sends with its packages for the Python there. An index connected as it is stays as it was built.
+Many folders (code, data, simulation output) need no more than Text. Settings, Indexing, Building the index also sets the speed of search by meaning: **Standard** embeds the first 256 tokens of each passage, and **Faster** the first 128, in well under half the time with slightly lower ranking. Embeddings come from all-MiniLM-L6-v2 through ONNX Runtime (int8), which the macOS app and the container carry; a clone gets it from `indexer/setup_gufi.sh`, or `python3 indexer/fetch_embed.py --deps indexer/.deps --model index/models/minilm-l6`. A build on a remote system embeds with the same model, which the first build there sends with its packages for the Python there. An index connected as it is stays as it was built.
 
 The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the details in [`docs/REFERENCE.md`](docs/REFERENCE.md). Its What's new page shows [`CHANGELOG.md`](CHANGELOG.md).
 

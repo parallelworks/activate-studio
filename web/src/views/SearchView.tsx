@@ -339,7 +339,7 @@ export function SearchHelp({ libraries }: { libraries: PublicLibrary[] }) {
             <i>By meaning:</i> passages that say the same thing in other words, so a question such as "why did the blades
             crack" finds a report on fatigue failure that never uses those words. It runs for a few plain words; quotes,
             operators, one short word, or a code such as ABC-12 match words only. Each library&apos;s depth sets it, under{' '}
-            <a href="#view=settings:libraries">Settings, Libraries</a>: Meaning on documents covers documents and images,
+            <a href="#view=settings:libraries">Settings, Indexing, Libraries</a>: Meaning on documents covers documents and images,
             Meaning on all files every file with text, and the stops before them leave it off. Here it is {inScope.map((l, i) => (
               <span key={l.id}>{i ? ', ' : ''}{l.label}: {meaningOn(l) ? (l.meaning === 'full' ? 'all files' : l.meaning === 'documents' ? 'documents' : 'its own vectors') : 'off'}</span>
             ))}.

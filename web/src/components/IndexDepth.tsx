@@ -40,7 +40,7 @@ export const UNSTORED_LIBRARY_DEPTH: IndexDepth = 'ocr'
  *  costs, the order the phases run in, and the faster choice for a very
  *  large folder. Nothing counts the files first, so this is a note, not a
  *  change of the default. */
-export const MEANING_LAST = 'Search by meaning is the slowest part of indexing, so it runs last, in the background: names are searchable first, then words. For a folder of more than about 500,000 files, Text + OCR is faster; meaning can be added later in Settings, Libraries.'
+export const MEANING_LAST = 'Search by meaning is the slowest part of indexing, so it runs last, in the background: names are searchable first, then words. For a folder of more than about 500,000 files, Text + OCR is faster; meaning can be added later in Settings, Indexing, Libraries.'
 export const meaningLastNote = (depth: IndexDepth) => (depth.startsWith('meaning') ? MEANING_LAST : null)
 /** Under a Meaning stop in the form that builds a library on another
  *  system: what the first build sends there, and the order the phases run in. */

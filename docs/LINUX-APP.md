@@ -58,7 +58,7 @@ The `.deb` carries the WebKitGTK 4.1 window shell and depends on `libwebkit2gtk-
 
 ## Use
 
-`activate-studio` opens the window: the Studio on your own documents folder (`~/Documents/ACTIVATE Studio` until you choose another, in setup or Settings, Libraries, where **Choose another folder…** opens the system folder chooser). The window starts the server, which listens on 127.0.0.1 only, and stops it, and everything it started, when the window closes. Opening the program a second time brings the first window forward. Two users on one computer each get their own server, on their own port.
+`activate-studio` opens the window: the Studio on your own documents folder (`~/Documents/ACTIVATE Studio` until you choose another, in setup or Settings, Indexing, Libraries, where **Choose another folder…** opens the system folder chooser). The window starts the server, which listens on 127.0.0.1 only, and stops it, and everything it started, when the window closes. Opening the program a second time brings the first window forward. Two users on one computer each get their own server, on their own port.
 
 | Command | Does |
 |---|---|

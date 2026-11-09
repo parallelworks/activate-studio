@@ -5,7 +5,7 @@ import { collectChosen, collectDropped, collectListed, type UploadItem } from '.
 import { chooseUpload, shellListsFolders } from '../nativeShell'
 import { startUpload } from '../transfers'
 
-/** Settings > Libraries with its Add a library form open. */
+/** Settings > Indexing > Libraries with its Add a library form open. */
 export const ADD_LIBRARY_HASH = '#view=settings:libraries?add=1'
 
 export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly }: {
