@@ -85,12 +85,14 @@ jobs:
           singularity --version
 
       - name: build studio.sif
+        env:
+          RELEASE: ${{ inputs.release }}
         run: |
           set -euo pipefail
           mkdir -p .container
           tar -xzf "$RUNNER_TEMP/in/activate-studio-linux-x86_64.tar.gz" -C .container
           sudo singularity build studio.sif deploy/app-go.def
-          { echo "### The Go container image for ${{ inputs.release }}"; echo '```'; ls -l studio.sif; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+          { echo "### The Go container image for $RELEASE"; echo '```'; ls -l studio.sif; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
 
       - name: smoke test
         env:
