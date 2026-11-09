@@ -46,3 +46,13 @@ beside it:
     https://github.com/kovacsv/occt-import-js (v0.0.23) and
     https://github.com/Open-Cascade-SAS/OCCT. server-go/scripts/occt/build.sh
     rebuilds them from the occt-import-js package with binaryen 132.
+
+The web app (web/dist, in every build) carries pdf.js 6.4.299 (pdfjs-dist),
+Apache License 2.0, which draws a PDF's pages where poppler is not
+installed. Beside it in web/dist/pdfjs are its character maps (Adobe,
+BSD 3-Clause), standard fonts (Foxit's, under PDFium's BSD 3-Clause
+license; Liberation, GNU General Public License 2.0 with Red Hat's font
+exception), colour profile, and image decoders compiled to
+WebAssembly (OpenJPEG, BSD 2-Clause; the JBIG2 decoder of PDFium,
+BSD 3-Clause; qcms, MIT License), each folder with its license texts, and
+pdf.js's own license in web/dist/pdfjs/LICENSE.

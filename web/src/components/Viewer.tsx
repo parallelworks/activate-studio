@@ -7,6 +7,7 @@ import { TagMenu } from './TagMenu'
 const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })))
 import { DataTree } from './DataTree'
 import { DagViewer } from './DagViewer'
+import { PdfJsPages } from './PdfJsPages'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 /** Office files the server reads without LibreOffice (officePreview.ts). */
@@ -43,7 +44,7 @@ function PagedPreview({ path, office, markdown, onUnavailable }: {
 }) {
   const [pages, setPages] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [stage, setStage] = useState<'pages' | 'outline' | 'text'>('pages')
+  const [stage, setStage] = useState<'pages' | 'pdfjs' | 'outline' | 'text'>('pages')
   const [fallbackText, setFallbackText] = useState<string | null>(null)
   const outline = OUTLINE_SUFFIXES.includes(suffixOf(path))
   // Several page images can fail at once; the first one decides.
@@ -62,7 +63,8 @@ function PagedPreview({ path, office, markdown, onUnavailable }: {
   }, [path])
 
   // Page images cannot be had: the outline for an Office file the server
-  // reads, else the extracted text (a PDF), else nothing to preview.
+  // reads; for a PDF its pages drawn here by pdf.js, then its extracted
+  // text; else nothing to preview.
   const fail = (why: string) => {
     if (failed.current) return
     failed.current = true
@@ -72,12 +74,17 @@ function PagedPreview({ path, office, markdown, onUnavailable }: {
       else onUnavailable(why)
       return
     }
+    setStage('pdfjs')
+  }
+  const showText = (why: string) => {
+    setError(why)
     setStage('text')
     fetch(withLibrary(`/api/kb/file?path=${encodeURIComponent(path)}`)).then(r => (r.ok ? r.json() : null))
       .then(f => { if (f?.content?.trim()) setFallbackText(f.content); else onUnavailable(why) })
       .catch(() => onUnavailable(why))
   }
 
+  if (stage === 'pdfjs') return <PdfJsPages url={api.rawUrl(path)} cap={PDF_PAGE_CAP} onFail={why => showText(error ? `${error}; ${why}` : why)} />
   if (stage === 'outline') return <OfficeOutlineView path={path} onFail={why => onUnavailable(why || error || '')} />
   if (stage === 'text') {
     if (fallbackText == null) return <div className="muted pad"><Loader inline size={16} label="Reading the text…" /></div>
