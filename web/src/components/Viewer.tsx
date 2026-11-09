@@ -235,6 +235,8 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
 }) {
   const [file, setFile] = useState<FileContent | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The file is not there (404), as against one that cannot be read.
+  const [missing, setMissing] = useState(false)
   const [tab, setTab] = useState<Tab>('preview')
   // Set when the file has no preview to show (no page images and nothing
   // read from it): the Preview tab goes and the indexed text says why.
@@ -312,6 +314,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
     setConfirming(false)
     setPreviewGone(null)
     if (!path) return
+    setMissing(false)
     api.file(path).then(f => {
       setFile(f)
       // Text files ARE their own preview; office docs open on the rendered
@@ -319,6 +322,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
       setTab('preview')
     }).catch(e => {
       setError(String(e))
+      setMissing((e as { status?: number })?.status === 404)
       // A file that cannot be opened should not keep reopening: drop it from
       // the remembered location so the next visit lands on the library.
       forgetHash()
@@ -345,7 +349,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
         <Callout tone="error" title="Cannot open this file" className="viewer-callout">
           <p className="viewer-callout-path">{path}</p>
           <p>{error}</p>
-          <p>It may have been moved, renamed, or deleted since this link was made.</p>
+          {missing && <p>It may have been moved, renamed, or deleted since this link was made.</p>}
         </Callout>
       </div>
     )

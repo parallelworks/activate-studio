@@ -68,6 +68,7 @@ func TestRemoteTreeOfARolledUpIndex(t *testing.T) {
 		return out
 	}
 	for rel, want := range map[string][]string{
+		"":                {"top/"},
 		"top":             {"top/adumpre/", "top/cgiparse/", "top/f-top.txt"},
 		"top/cgiparse":    {"top/cgiparse/AI/", "top/cgiparse/news/", "top/cgiparse/f-cgiparse.txt"},
 		"top/cgiparse/AI": {"top/cgiparse/AI/aix/", "top/cgiparse/AI/apple/", "top/cgiparse/AI/f-AI.txt"},

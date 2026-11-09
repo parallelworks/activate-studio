@@ -1,9 +1,12 @@
 package kb
 
 import (
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/mail"
 )
@@ -46,6 +49,11 @@ func ReadFileContent(rel, root, cacheRoot string) (*Obj, error) {
 		return nil, err
 	}
 	st, err := os.Stat(abs)
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		// A file that is not there is a 404, where Node answered a 500:
+		// the viewer says it may have moved only for a 404.
+		return nil, Error(404, "no such file")
+	}
 	if err != nil {
 		return nil, err
 	}

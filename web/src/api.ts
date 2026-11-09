@@ -374,7 +374,7 @@ async function getJson<T>(url: string): Promise<T> {
     // The server's own sentence where it gave one, such as why a search's
     // text cannot be read.
     const body = await res.json().catch(() => null) as { error?: string } | null
-    throw new Error(body?.error ?? `${url}: ${res.status}`)
+    throw Object.assign(new Error(body?.error ?? `${url}: ${res.status}`), { status: res.status })
   }
   return res.json() as Promise<T>
 }

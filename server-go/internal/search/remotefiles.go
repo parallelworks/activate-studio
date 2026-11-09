@@ -187,6 +187,10 @@ func (e *Engine) RemoteFile(ctx context.Context, root, rel string) (*kb.Obj, err
 	return o, nil
 }
 
+// noSourceRoot is why a library on another system opens no file: it was
+// connected without the folder its index was built from.
+const noSourceRoot = "the library's folder on that host is not known: remove the library and add it again with its source directory, in Settings, Indexing, Libraries"
+
 // ReadRemoteFile is readRemoteFile: one file under sourceRoot on a host,
 // its size and time from the file itself, and its text when it is a text
 // file, in one round trip.
@@ -195,7 +199,7 @@ func (e *Engine) ReadRemoteFile(ctx context.Context, site, key, sourceRoot, rel 
 		return nil, apierr.New(409, "%s", noFilesThere(site))
 	}
 	if sourceRoot == "" {
-		return nil, apierr.New(409, "the source directory of this library is not known")
+		return nil, apierr.New(409, "%s", noSourceRoot)
 	}
 	sub, err := CleanRel(rel)
 	if err != nil {
@@ -255,7 +259,7 @@ func (e *Engine) DownloadRemoteFile(ctx context.Context, site, key, sourceRoot, 
 		return "", nil, apierr.New(409, "%s", noFilesThere(site))
 	}
 	if sourceRoot == "" {
-		return "", nil, apierr.New(409, "the source directory of this library is not known")
+		return "", nil, apierr.New(409, "%s", noSourceRoot)
 	}
 	sub, err := CleanRel(rel)
 	if err != nil {
