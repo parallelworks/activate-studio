@@ -63,6 +63,30 @@ type Store struct {
 
 	answering map[string]int
 	steers    map[string][]Steer
+
+	// exports counts the chat exports being written (exportSoon).
+	exports sync.WaitGroup
+}
+
+// exportSoon writes a conversation's export to the library without
+// holding up the caller.
+func (s *Store) exportSoon(c *Conversation) {
+	s.exports.Add(1)
+	go func() {
+		defer s.exports.Done()
+		s.exportToKB(c)
+	}()
+}
+
+// Flush waits for the exports being written, and stops a pending reindex
+// of the export folder; a test calls it before its folder is removed.
+func (s *Store) Flush() {
+	s.exports.Wait()
+	s.mu.Lock()
+	if s.indexTimer != nil {
+		s.indexTimer.Stop()
+	}
+	s.mu.Unlock()
 }
 
 // Steer is a message sent while a reply runs.
@@ -254,7 +278,7 @@ func (s *Store) RecordAssistantTurn(conversationID string, m Message) {
 	s.persist()
 	snap := c.Clone()
 	s.mu.Unlock()
-	go s.exportToKB(snap)
+	s.exportSoon(snap)
 }
 
 // SettleHeld is settleHeldPart.

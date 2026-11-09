@@ -94,6 +94,9 @@ func newTestModule(t *testing.T, env map[string]string) (*Module, *httptest.Serv
 	m := Default
 	m.Tools = fakeTools{gs.URL + "/v1"}
 	m.setAccess(&Access{GatewayBase: gs.URL + "/v1", DeploymentKey: base["PW_API_KEY"]})
+	// After the server closes (cleanups run last first): the chat exports
+	// still being written into the folder before it is removed.
+	t.Cleanup(m.Conv.Flush)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return m, srv, gw, &listings
