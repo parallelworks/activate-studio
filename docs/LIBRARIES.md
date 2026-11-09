@@ -186,6 +186,20 @@ indexes faster at Text + OCR. Nothing counts the files before a build
 (counting them takes a walk of the whole tree), so the note does not
 depend on the folder's size and the default does not change with it.
 
+**Suggested folders** (`GET /api/libraries/suggestions`, a single-user
+install only) are offered above the folder to index, in Add a library
+and in setup: Documents, Desktop and Downloads (on Linux the XDG user
+folders from `~/.config/user-dirs.dirs`, else those names under the
+home folder), and on macOS `~/Library/Mail`. Each is
+`{ id, label, path, note, access }`, offered when it exists and is
+neither the main folder nor a library's source. Documents, Desktop and
+Downloads are not read to list them, since reading them on macOS asks
+the person for access; Mail's folder is, and `access` is
+`full-disk-access` when macOS refuses it, which
+`POST /api/libraries/suggestions/full-disk-access` answers by opening
+System Settings at Full Disk Access. A suggestion fills the folder and
+label and runs Check.
+
 **Check** (`POST /api/libraries/build/check`) reports four steps: GUFI
 is in `GUFI_BIN`; the source folder is readable, or does not exist yet
 and can be made; the index folder is new, empty, or holds an index the
