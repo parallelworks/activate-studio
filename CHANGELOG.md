@@ -2,6 +2,37 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.190 (2026-11-09)
+
+### Deploy the Go version from the ACTIVATE workflow (#652)
+
+The ACTIVATE workflow (`deploy/workflow.yaml`, and the generated `deploy/workflow-cfd-studio.yaml`) now deploys the Go version. Its GitHub and Bundle modes run the Linux app the release ships, `activate-studio-linux-x86_64.tar.gz`: the Go server, the interface, GUFI, tesseract, and the ONNX runtime with the search by meaning model. Nothing is cloned or built on the resource, and it needs no Node or Python.
+
+## Changes
+
+- GitHub release mode downloads the named release's Linux app (`main` means the current Stable release, the fixed `linux` release) and checks it against its `.sha256`. Bundle mode takes the same file from a bucket or a pre-staged copy. A relaunch from the same file keeps the app in place unless Load Latest Bundle is set.
+- `deploy/make_bundle.sh` downloads and checks a release's Linux app for upload to a bucket (`--release TAG`), or takes a local build (`--from FILE`).
+- A deployment that kept its index, settings and credentials in `app/index` (no Index Directory set) has them moved to `data/index` on its first launch. The Node tree, GUFI build and Node runtime are removed.
+- Index on Launch posts `/api/reindex` once the server answers.
+- The watchdog restarts a failed server on the same port and leaves the endpoint process running. Before, it re-registered the endpoint as well, which the platform refuses once the workflow run has ended, so the session's address went dead after the first restart. This was also true of v1.188.
+- The container and compute-node paths are unchanged and still run the image built from `deploy/app.def`.
+- Docs: `docs/DEPLOY.md`, `docs/ARCHITECTURE.md`, `docs/REFERENCE.md`.
+
+## Merge order
+
+`main` resolves to the Stable Linux release, which is still v1.188 (the Node payload). The workflow refuses a payload without `app/bin/studio-server`, so a launch with Release set to `main` fails until a Go release is on Stable. Merge this together with the next Stable release.
+
+## Tested
+
+On a test resource on the platform, in strict multi-user posture:
+
+- Upgrade from a v1.188 Node deployment in GitHub mode: the seeded folder, upload, label and conversation carried over. 50 checks passed: uploads (single file, folder, PDF, docx, from a URL), path escape refused, reindex, search by name, words and meaning, extractors, view, download, PDF pages, rename, copy, move, delete, labels, statistics, query, libraries, settings, chat attachment, conversations, model key, semantic map and the workflows catalog.
+- Upgrade from a v1.188 Node deployment with no Index Directory, in Bundle mode from a bucket (bundle from `make_bundle.sh --release v1.189`): the index moved to `data/index`, the seeded state carried over, and the same 50 checks passed.
+- A personal key stored in the browser cookie by the Go server survived a redeploy and a server restart; the keycookie format matches the Node version (`TestWithNode`).
+- Killing the server: the watchdog restarted it on the same port within its two-minute check, and the session address kept working.
+- Every run block in both workflows passes `bash -n`.
+- Without a personal key, platform calls use the job's own token and the platform API answers 401. The same happens in the Node version.
+
 ## v1.189 (2026-11-09)
 
 ### The Studio runs as one Go program; the macOS window is built with Wails (#649)
@@ -65,6 +96,10 @@ On macOS, the CI check runs build, sign with the hardened runtime, run the bridg
 Windows under WSL. The macOS app on Intel Macs. It is built for Apple silicon only, as before.
 
 In a WebKit window, find in the conversation leaves earlier matches highlighted as the query grows, until the transcript scrolls. The fix belongs to the shared UI package: parallelworks/foundation#681.
+
+### Change log through v1.189 (#650)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.189` before tagging v1.189.
 
 ## v1.188.23 (2026-11-09)
 
