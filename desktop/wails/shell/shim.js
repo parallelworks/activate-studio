@@ -161,8 +161,17 @@
   function followBar() {
     var tag = document.querySelector('meta[name="theme-color"]');
     if (!tag) return;
-    reportBar(tag);
-    new MutationObserver(function () { reportBar(tag); }).observe(tag, { attributes: true, attributeFilter: ['content'] });
+    var again = function () { reportBar(tag); };
+    again();
+    new MutationObserver(again).observe(tag, { attributes: true, attributeFilter: ['content'] });
+    // Reported again once the page has loaded, a moment later, and when the
+    // window comes forward: a report sent before the window was ready to
+    // take it would otherwise leave the bar in the last launch's color
+    // until the theme changed.
+    window.addEventListener('load', again);
+    window.addEventListener('focus', again);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) again(); });
+    setTimeout(again, 1500);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', followBar); else followBar();
 
