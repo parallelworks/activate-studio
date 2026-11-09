@@ -100,6 +100,10 @@ describe('the Search page', () => {
     const asked = stub(() => ({ body: hits }))
     render(<SearchView onOpen={() => {}} />)
     expect(await screen.findByRole('button', { name: 'Libraries: 2 libraries' })).toBeInTheDocument()
+    // The button is drawn before that render's effects run; the search
+    // listener is re-registered by them, so let them run first, or the event
+    // reaches the listener from before the libraries arrived (scope "all").
+    await act(async () => {})
     await act(async () => { window.dispatchEvent(new CustomEvent('ade:search', { detail: { q: 'notes' } })) })
     await screen.findByText('b.pdf')
     expect(asked[0].searchParams.get('library')).toBe('kb,papers')

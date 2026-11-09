@@ -76,7 +76,9 @@ echo "  the system libraries the payload's ELF files need, and the package that 
 # Some images (Oracle Linux) ship without the linker cache.
 [ -e /etc/ld.so.cache ] || ldconfig 2>/dev/null || true
 for lib in $(sed -n 's/^ *"\(lib[^"]*\|ld-linux[^"]*\)",\{0,1\}$/\1/p' "$APP/manifest.json"); do
-  path="$(ldconfig -p | awk -v l="$lib" '$1 == l {print $NF; exit}')"
+  # awk reads to the end: an early exit would send ldconfig SIGPIPE, which
+  # pipefail turns into a failed run (exit 141) when the timing is unlucky.
+  path="$(ldconfig -p | awk -v l="$lib" '$1 == l && !f {print $NF; f = 1}')"
   if [ -z "$path" ]; then echo "  $lib: NOT FOUND"; continue; fi
   owner=
   for p in "$path" "$(readlink -f "$path")"; do
