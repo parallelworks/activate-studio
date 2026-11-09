@@ -140,7 +140,7 @@ The corpus and the index live on shared storage; everything derived (node_module
 
 ## 12. Runbook
 
-- Full rebuild: Settings, Libraries, Update index, or `POST /api/index/build` (the server's job, with phases, stop and a log; see [REFERENCE.md](REFERENCE.md#indexing)); before the server starts, `indexer/reindex.sh` runs the same phases (`INDEX_THREADS` for the threads, `SKIP_EMBED=1` to skip vectors).
+- Full rebuild: Settings, Indexing, Libraries, Update index, or `POST /api/index/build` (the server's job, with phases, stop and a log; see [REFERENCE.md](REFERENCE.md#indexing)); before the server starts, `indexer/reindex.sh` runs the same phases (`INDEX_THREADS` for the threads, `SKIP_EMBED=1` to skip vectors).
 - Extraction is covered end to end by `pnpm test`, which runs the real pipeline over `testdata/corpus` and asserts on the text that reaches the fts5 tables; see `testdata/README.md`.
 - GUFI toolchain: `indexer/setup_gufi.sh` builds from source and fetches the embedding models and the ONNX packages (`indexer/fetch_embed.py`).
 - Serve as a platform session: `deploy/run_endpoint.sh` wraps `pw endpoints run`.

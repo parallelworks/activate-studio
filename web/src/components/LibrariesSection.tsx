@@ -118,7 +118,7 @@ const counts = (dirs: number | null, files: number | null) =>
   dirs != null ? `${dirs.toLocaleString()} folders, ${(files ?? 0).toLocaleString()} files` : null
 
 /**
- * Settings > Libraries: one list of every library the Studio searches, and
+ * Settings > Indexing > Libraries: one list of every library the Studio searches, and
  * one control to add another (AddLibrary). The main folder is the one the
  * Studio indexes itself and writes to; on a single-user install it can be
  * changed and its index rebuilt here. Every other library is read only: an
@@ -128,7 +128,11 @@ const counts = (dirs: number | null, files: number | null) =>
  * the platform (/api/user-libraries). Builds show their progress under
  * their row.
  */
-export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
+export function LibrariesSection({ pollMs = 1000, heading = true }: {
+  pollMs?: number
+  /** Off where the page around it already names it, as a tab of Settings, Indexing does. */
+  heading?: boolean
+}) {
   const cfg = useAppConfig()
   const [libs, setLibs] = useState<SettingsLibrary[] | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -265,7 +269,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   if (loadError && !libs) {
     return (
       <>
-        <h1>Libraries</h1>
+        {heading && <h1>Libraries</h1>}
         <Callout tone="error" title="The libraries could not be listed" action={<Button size="sm" variant="secondary" onClick={() => void loadLibs()}>Try again</Button>}>
           {loadError}
         </Callout>
@@ -530,7 +534,7 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   return (
     <>
       {dialog}
-      <h1>Libraries</h1>
+      {heading && <h1>Libraries</h1>}
       <p className="muted view-sub">
         Every library searched here. The main folder is the only one written to; the others are indexes read where
         they are, built here or connected as they are.

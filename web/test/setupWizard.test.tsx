@@ -339,7 +339,7 @@ describe('the setup wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Up' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Research' }, { timeout: 4000 }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('/home/u/Research'))
-    expect(screen.getByText(/Indexes can be added or changed at any time in Settings, Libraries\./)).toBeInTheDocument()
+    expect(screen.getByText(/Indexes can be added or changed at any time in Settings, Indexing, Libraries\./)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Use this folder' }))
     expect(await screen.findByText('The Studio restarted and now uses /home/u/Research.')).toBeInTheDocument()
     expect(s.calls.find(c => c.url === '/api/setup/primary-folder')?.body).toEqual({ path: '/home/u/Research' })

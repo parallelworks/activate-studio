@@ -28,7 +28,7 @@ describe('the settings rail groups', () => {
   it('groups the Studio and Assistant sections, and leaves External access on its own', () => {
     const rows = settingsSections({ authEnabled: true, platform: true })
     const by = (g: string | null) => rows.filter(r => r.group === g).map(r => r.id)
-    expect(by('Studio')).toEqual(['general', 'libraries', 'workflows'])
+    expect(by('Studio')).toEqual(['general', 'indexing', 'workflows'])
     expect(by('Assistant')).toEqual(['access', 'tools', 'previews', 'ext'])
     expect(by(null)).toEqual(['rag'])
   })

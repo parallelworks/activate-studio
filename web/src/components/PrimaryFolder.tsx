@@ -7,7 +7,7 @@ import { IndexJobView, jobOutcome } from './IndexActivity'
 
 /**
  * The primary folder on a single-user install, shared by the setup wizard
- * and Settings, Libraries: choosing another folder, which restarts the
+ * and Settings, Indexing, Libraries: choosing another folder, which restarts the
  * Studio on it where the app's launcher runs it, and building the folder's
  * whole index with its progress (/api/setup/*).
  */
