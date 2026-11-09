@@ -1432,6 +1432,9 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
   }, [focus, points.length > 0 ? points[0] : null]) // eslint-disable-line react-hooks/exhaustive-deps
   // A new map, a cluster opened or closed, or the other view starts afresh.
   useEffect(() => { viewRef.current = VIEW0; camRef.current = CAMERA0; setView(VIEW0); setCam(CAMERA0); setHover(null) }, [focus?.c, mode, clusters])
+  // The view moves to a file selected: what was under the pointer is not
+  // there any more, so its label goes until the pointer moves.
+  useEffect(() => { setHover(null) }, [selected?.p])
 
   const base2d = (x: number, y: number) => ({
     x: PAD + ((x - frame.x0) / (frame.x1 - frame.x0)) * (w - 2 * PAD),

@@ -10,7 +10,7 @@ export interface Accent {
 }
 
 export const ACCENTS: Record<string, Accent> = {
-  none: { label: 'None', light: ['#18181b', '#3f3f46', '#e4e4e7'], dark: ['#ececee', '#ffffff', '#2c2c30'] },
+  none: { label: 'None', light: ['#171717', '#404040', '#e5e5e5'], dark: ['#ececeb', '#ffffff', '#2c2c2b'] },
   navy: { label: 'Navy', light: ['#06354f', '#0a4a6e', '#e1f2fb'], dark: ['#7fc0ec', '#9cd0f4', '#17395a'] },
   teal: { label: 'Teal', light: ['#0e5750', '#127066', '#dcf3f0'], dark: ['#6fd6cf', '#8ee2dc', '#123f3a'] },
   forest: { label: 'Forest', light: ['#1e5631', '#2a7443', '#e0f2e4'], dark: ['#7fd49a', '#9be0b1', '#14402a'] },
