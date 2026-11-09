@@ -364,6 +364,7 @@ jobs:
             deploy/mac/sign_app.sh
             deploy/mac/make_dmg.sh
             deploy/mac/check_app.sh
+            deploy/mac/window_shots.sh
             deploy/mac/macho_check.py
             deploy/mac/install.sh
             deploy/mac/entitlements/
@@ -387,6 +388,18 @@ jobs:
           deploy/mac/make_dmg.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" "$RUNNER_TEMP/test.dmg"
       - name: run the signed app
         run: deploy/mac/check_app.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" --run --launch --dmg "$RUNNER_TEMP/test.dmg"
+      # The window as a person sees it: the window controls over the page's
+      # top row, in Chat, Library and Settings, light and dark, the
+      # navigation expanded and collapsed, with a banner and with setup open.
+      - name: screenshots of the window
+        run: deploy/mac/window_shots.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" "$RUNNER_TEMP/window-shots"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: window-shots
+          path: ${{ runner.temp }}/window-shots
+          if-no-files-found: warn
+          retention-days: 14
       - name: remove the keychain
         if: always()
         run: |

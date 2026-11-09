@@ -2536,75 +2536,60 @@ button.status-row:hover { background: var(--pw-hover-row); }
 
 /* ---- The Mac window without a title bar ----
    The macOS app's window has no title bar of its own: the page runs to the
-   window's top edge and the window controls float over its top left. The
-   desktop shell (desktop/wails/shell/shim.js) marks that with
-   html.shell-inset and --shell-top, the strip's height; nothing else sets
-   them, so none of this applies on Linux, Windows or in a browser.
-   Every column that reaches the top keeps an empty strip that tall in its
-   own color: a transparent top border, so the column's background shows
-   through it, its scrolling happens below it, and nothing is drawn or
-   clickable in it. A press in the strip drags the window (shim.js).
-   --inset-strip is the strip the columns leave; with a classification
-   banner the banner fills the strip instead and the columns start under
-   it as they do anywhere else. */
+   window's top edge and the window controls sit over its top left, centered
+   in a row --shell-top tall that reaches --shell-controls in from the left.
+   The desktop shell (desktop/wails/shell/shim.js) sets html.shell-inset and
+   both variables; nothing else does, so none of this applies on Linux,
+   Windows or in a browser.
+   Each column's first row is that row: the navigation's brand row moves up
+   beside the controls, and the other columns' heads (a page's heading, the
+   library rail's, the status panel's) are made the row's height, so their
+   titles and buttons line up with the controls. A press on an empty part of
+   the row drags the window (shim.js).
+   A classification banner is the row instead: it is the row's height with
+   the controls over its left end, and the columns below it are as anywhere
+   else. The rules for the row's columns are written for an app with no
+   banner (.app:not(:has(> .cls-banner))). */
 html.shell-inset {
-  --inset-strip: var(--shell-top, 0px);
-  /* The UI package's drawers and toasts start below this. */
+  /* The UI package's drawers and toasts start below the row. */
   --app-inset-top: var(--shell-top, 0px);
 }
-html.shell-inset .cls-banner ~ * { --inset-strip: 0px; }
-html.shell-inset :is(main.content, .full-view, .setup-overlay) { border-top: var(--inset-strip) solid transparent; }
-html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); }
 @media (min-width: 761px) {
-  html.shell-inset :is(.sidenav, .status-panel) { border-top: var(--inset-strip) solid transparent; }
-  /* The views whose own rails run to the top (Chat, Library, Settings,
-     Help): main gives up its strip and each of the view's columns takes
-     one in its own color, unless an update notice sits above the view. */
-  html.shell-inset main.content:has(> .view:not(.hidden) :is(.chat-canvas, .library-card, .help-docs)):not(:has(> .update-notice)) {
-    border-top-width: 0;
-    --rail-strip: var(--inset-strip);
-  }
+  /* The navigation's brand row is the top row, past the controls. The brand
+     icon gives way there: the Dock already shows it, and the row has room
+     for the name, at the 13px of a Mac title, and the collapse button. */
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav { padding-top: 0; overflow-x: clip; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .sidenav-head { min-height: var(--shell-top); margin: 0 -6px 4px 0; gap: 4px; padding-left: calc(var(--shell-controls) - 12px); padding-right: 0; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav:not(.collapsed) .brand-icon { display: none; }
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav-brand .brand-text { font-size: 13px; text-overflow: ellipsis; }
+  /* Collapsed, the rail is as wide as the controls and keeps the row under
+     them empty, so nothing of the page's sits under the controls. */
+  html.shell-inset .app:not(:has(> .cls-banner)) .sidenav.collapsed { width: max(64px, var(--shell-controls)); padding-top: var(--shell-top); }
+  /* The heads of the other columns are the row's height. */
+  html.shell-inset .app:not(:has(> .cls-banner)) :is(.page-head, .status-panel-head) { min-height: var(--shell-top); }
+  html.shell-inset .app:not(:has(> .cls-banner)) .rail-head:not(.rail-head-switch) { height: max(52px, var(--shell-top)); }
+  html.shell-inset .app:not(:has(> .cls-banner)) .chat-controls { top: calc(var(--shell-top) / 2 - 16px); }
+  html.shell-inset .app:not(:has(> .cls-banner)) .panel-toggle-float { top: calc(var(--shell-top) / 2 - 14px); }
 }
-html.shell-inset :is(.library-card > *, .help-docs > *, .chat-canvas > div > :is(aside, main)) {
-  border-top: var(--rail-strip, 0px) solid transparent;
+/* A full view and the setup wizard cover the window: the full view's bar is
+   the top row, past the controls, and the wizard's card starts below it. */
+html.shell-inset .app:not(:has(> .cls-banner)) .full-view-bar { min-height: var(--shell-top); box-sizing: border-box; padding-left: var(--shell-controls); }
+html.shell-inset .setup-overlay { padding-top: max(6vh, calc(var(--shell-top) + 8px)); }
+/* At a phone's width the navigation is a bar at the bottom and the page
+   starts at the top left, under the controls: the page leaves the row
+   empty, in its own color, as a transparent top border. */
+@media (max-width: 760px) {
+  html.shell-inset .app:not(:has(> .cls-banner)) main.content { border-top: var(--shell-top) solid transparent; }
 }
-@media (min-width: 761px) {
-  /* What floats over the top of those views moves down with their columns. */
-  html.shell-inset .panel-toggle-float { top: calc(10px + var(--rail-strip, 0px)); }
-  html.shell-inset .chat-controls { top: calc(11px + var(--rail-strip, 0px)); }
-  html.shell-inset .cred-banner { top: calc(64px + var(--rail-strip, 0px)); }
-  html.shell-inset .chat-scrubber { top: var(--rail-strip, 0px); }
-}
-/* A column's 1px side border meets the strip's transparent top border on a
-   diagonal, which fades the divider out across the strip. In the strip the
-   divider is drawn as a background line instead, so it runs straight to the
-   window's top edge as it does below. */
-@media (min-width: 761px) {
-  html.shell-inset :is(.sidenav, .help-nav, .rail-strip, .chat-canvas > div > aside) {
-    background-image: linear-gradient(var(--pw-border), var(--pw-border));
-    background-origin: border-box; background-size: 1px 100%; background-repeat: no-repeat;
-    background-position: right top;
-    border-right-color: transparent;
-  }
-  html.shell-inset .status-panel {
-    background-image: linear-gradient(var(--pw-border), var(--pw-border));
-    background-origin: border-box; background-size: 1px 100%; background-repeat: no-repeat;
-    background-position: left top;
-    border-left-color: transparent;
-  }
-}
-/* The side view beside the chat; narrower, it stacks under the chat. */
-@media (min-width: 1001px) {
-  html.shell-inset .chat-wrap > .side-view { border-top: var(--rail-strip, 0px) solid transparent; }
-}
-/* Overlays that fill the window start below the strip. */
+/* Overlays that fill the window start below the row. */
 html.shell-inset .map-full { top: max(var(--map-top, 0px), var(--shell-top)); }
 html.shell-inset .chat-embed-wrap.overlay { top: var(--shell-top); }
-/* The banner is the strip: at least its height, its text centered on the
-   window and clear of the window controls on both sides. */
+/* The banner is the row: its height, its text centered on the window and
+   clear of the window controls on both sides. */
 html.shell-inset .cls-banner:not(.banner-preview) {
   display: flex; align-items: center; justify-content: center;
   box-sizing: border-box; min-height: var(--shell-top);
-  padding: 2px 84px; line-height: 1.15;
+  padding: 2px calc(var(--shell-controls) + 6px); line-height: 1.15;
   user-select: none; -webkit-user-select: none;
 }
+html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-top: 6vh; }

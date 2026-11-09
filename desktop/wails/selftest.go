@@ -194,15 +194,25 @@ func (t *SelfTest) advance(phase string) {
 
 // watchReopen (plan hold): a file named reopen in the test folder asks for
 // the relaunch the page asks for after an update that changed the window's
-// program.
+// program, and a file named eval.js is run in the page.
 func (t *SelfTest) watchReopen() {
 	f := filepath.Join(t.dir, "reopen")
+	js := filepath.Join(t.dir, "eval.js")
 	for {
 		if _, err := os.Stat(f); err == nil {
 			_ = os.Remove(f)
 			t.logf("relaunch asked for")
 			t.app.relaunch()
 			return
+		}
+		// A script for the page, from a check that drives it (the window
+		// screenshots, deploy/mac/window_shots.sh); evaluated is written
+		// once it has been handed to the page.
+		if b, err := os.ReadFile(js); err == nil {
+			_ = os.Remove(js)
+			t.logf("eval %d bytes", len(b))
+			t.app.execJS(string(b))
+			_ = os.WriteFile(filepath.Join(t.dir, "evaluated"), []byte(time.Now().Format(time.RFC3339Nano)+"\n"), 0o644)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}

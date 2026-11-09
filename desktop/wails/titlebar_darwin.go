@@ -44,11 +44,19 @@ import "C"
 
 import "strconv"
 
-// titleInsetPx is the strip at the top of the page the window controls
-// sit in: the window has no title bar of its own (macOptions), so the page
-// leaves this much room at the top of each column and the shim makes it
-// drag the window.
-const titleInsetPx = 28
+// titleInsetPx is the height of the window's top row, where the window
+// controls sit: the window has no title bar of its own, and its title bar
+// is a unified toolbar row this tall (macOptions, macwindow_darwin.go), with
+// the controls centered in it. The page puts each column's first row on it
+// (html.shell-inset), and the shim makes its empty parts drag the window.
+const titleInsetPx = 52
+
+// titleControlsPx is how far in from the window's left edge the window
+// controls reach, with a gap after them: the page starts its top row's
+// content past it where the controls sit over that row. In the unified
+// toolbar row the three controls' frames are 14 by 16 at x 19, 39 and 59,
+// y 18 (the self test's window report), so they end at 73.
+const titleControlsPx = 82
 
 // useOwnTitleBar: the macOS bar is the system's, painted by paintBar.
 func useOwnTitleBar(string) {}

@@ -116,6 +116,10 @@ static void adopt(NSWindow *w) {
 		// then: write it now, so a window never moved still opens there.
 		[w saveFrameUsingName:frameName];
 	}
+	// The main window's title bar is a toolbar row (TitleBarHiddenInset in
+	// macOptions) in the unified style, so the window controls sit lower and
+	// further in, centered on the page's first row (titleInsetPx).
+	if (!popup && w.toolbar != nil) w.toolbarStyle = NSWindowToolbarStyleUnified;
 	WKWebView *web = findWebView(w.contentView);
 	if (web) {
 		allowMicrophone(web);
@@ -179,7 +183,21 @@ static char *mac_window_report(void) {
 		NSView *bar = [main standardWindowButton:NSWindowCloseButton].superview;
 		WKWebView *web = findWebView(main.contentView);
 		id d = web.UIDelegate;
+		// The window controls in page coordinates (top left origin), and
+		// the window's number for screencapture -l.
+		NSMutableArray *controls = [NSMutableArray array];
+		CGFloat top = main.contentView.bounds.size.height;
+		for (NSNumber *k in @[@(NSWindowCloseButton), @(NSWindowMiniaturizeButton), @(NSWindowZoomButton)]) {
+			NSButton *b = [main standardWindowButton:(NSWindowButton)k.integerValue];
+			if (b == nil) continue;
+			NSRect f = [b convertRect:b.bounds toView:nil];
+			[controls addObject:@{@"x": @(f.origin.x), @"y": @(top - NSMaxY(f)), @"w": @(f.size.width), @"h": @(f.size.height)}];
+		}
 		NSDictionary *r = @{
+			@"windowNumber": @(main.windowNumber),
+			@"controls": controls,
+			@"titlebarHeight": @(main.frame.size.height - main.contentLayoutRect.size.height),
+			@"toolbarStyle": @((NSInteger)main.toolbarStyle),
 			@"windows": @(n),
 			@"titlebarTransparent": @(main.titlebarAppearsTransparent),
 			@"background": hex,

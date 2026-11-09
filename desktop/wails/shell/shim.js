@@ -147,24 +147,37 @@
     return nativeOpen.apply(window, arguments);
   };
 
-  // A window with no title bar of its own (the Mac's): the page runs under
-  // the window controls. html.shell-inset and --shell-top tell the page's
-  // columns to leave that strip at their top, in their own color; a press
-  // there that is not on a control drags the window, and a double click
-  // zooms it, as a title bar does.
+  // A window with no title bar of its own (the Mac's): the window controls
+  // sit over the page's top row. html.shell-inset, --shell-top (the row's
+  // height) and --shell-controls (how far in the controls reach) tell the
+  // page to put each column's first row on it and keep the controls' corner
+  // clear; a press on an empty part of the row
+  // drags the window, and a double click zooms it, as a title bar does.
+  // Anything that takes a click is not empty: a control by its element or
+  // role, or anything with a pointer or resize cursor, as the page gives
+  // whatever it makes clickable.
   var inset = Number(cfg.titleInset) || 0;
   if (inset > 0) {
     document.documentElement.classList.add('shell-inset');
     document.documentElement.style.setProperty('--shell-top', inset + 'px');
+    document.documentElement.style.setProperty('--shell-controls', (Number(cfg.titleControls) || 0) + 'px');
+    var CONTROL = 'button, a, input, select, textarea, label, summary, [role="button"], [role="tab"], [role="link"],'
+      + ' [role="menuitem"], [role="option"], [role="treeitem"], [role="checkbox"], [role="switch"], [role="slider"],'
+      + ' [contenteditable="true"], [draggable="true"], [tabindex]:not([tabindex="-1"])';
     var onControl = function (el) {
-      return el && el.closest && el.closest('button, a, input, select, textarea, label, [role="button"], [role="tab"], [contenteditable="true"]');
+      if (!el || el.nodeType !== 1) return false;
+      if (el.closest && el.closest(CONTROL)) return true;
+      var cursor = '';
+      try { cursor = getComputedStyle(el).cursor; } catch (err) { /* treat as empty */ }
+      return !!cursor && cursor !== 'auto' && cursor !== 'default';
     };
+    var inRow = function (e) { return e.clientY >= 0 && e.clientY < inset && !onControl(e.target); };
     window.addEventListener('mousedown', function (e) {
-      if (e.button !== 0 || e.clientY >= inset || onControl(e.target)) return;
+      if (e.button !== 0 || !inRow(e)) return;
       try { post('drag'); } catch (err) { /* the window stays where it is */ }
     }, true);
     window.addEventListener('dblclick', function (e) {
-      if (e.clientY >= inset || onControl(e.target)) return;
+      if (!inRow(e)) return;
       call('ToggleMaximise', []).catch(function () { /* the window stays as it is */ });
     }, true);
   }

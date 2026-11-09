@@ -42,30 +42,42 @@ describe('the Mac window without a title bar', () => {
   const all = rules(css)
   const inset = all.filter(r => r.selector.includes('shell-inset'))
 
-  it('scopes every rule that uses the strip to html.shell-inset', () => {
+  const NO_BANNER = 'html.shell-inset .app:not(:has(> .cls-banner))'
+
+  it('scopes every rule that uses the row to html.shell-inset', () => {
     // Linux, Windows and browsers never get the class, so nothing here may
-    // apply to them: each selector in a rule naming the strip starts there.
-    for (const r of all.filter(r => /--(shell-top|inset-strip|rail-strip)\b/.test(r.body))) {
+    // apply to them: each selector in a rule naming the row starts there.
+    for (const r of all.filter(r => /--shell-(top|controls)\b/.test(r.body))) {
       for (const sel of topLevel(r.selector)) expect(sel.trim(), r.selector).toMatch(/^html\.shell-inset($|[\s.:])/)
     }
   })
 
-  it('leaves the strip at the top of every top-level column, in its own color', () => {
-    const strip = (name: string) => inset.some(r => r.selector.includes(name) && /border-top:\s*var\(--(inset|rail)-strip/.test(r.body))
-    for (const col of ['.sidenav', 'main.content', '.status-panel', '.full-view', '.setup-overlay', '.library-card > *', '.help-docs > *', '.chat-canvas > div > :is(aside, main)']) {
-      expect(strip(col), col).toBe(true)
-    }
+  it('puts each column\'s first row on the controls\' row, with no empty strip above it', () => {
+    // No column keeps a transparent strip at its top on the desktop layout.
+    for (const r of inset.filter(r => !/max-width/.test(r.media))) expect(r.body, r.selector).not.toMatch(/border-top:\s*var\(--shell-top\)/)
+    const row = (sel: string, decl: RegExp) => inset.some(r => r.selector.startsWith(NO_BANNER) && r.selector.includes(sel) && decl.test(r.body))
+    // The navigation's brand row is the row, past the controls.
+    expect(row('.sidenav-head', /min-height:\s*var\(--shell-top\)/)).toBe(true)
+    expect(row('.sidenav-head', /padding-left:\s*calc\(var\(--shell-controls\)/)).toBe(true)
+    // Collapsed, the rail is as wide as the controls and keeps their row.
+    expect(row('.sidenav.collapsed', /width:\s*max\(64px,\s*var\(--shell-controls\)\)/)).toBe(true)
+    // The other columns' heads are the row's height.
+    expect(row('.page-head', /min-height:\s*var\(--shell-top\)/)).toBe(true)
+    expect(row('.status-panel-head', /min-height:\s*var\(--shell-top\)/)).toBe(true)
+    expect(row('.full-view-bar', /padding-left:\s*var\(--shell-controls\)/)).toBe(true)
     expect(inset.find(r => r.selector === 'html.shell-inset' && r.body.includes('--app-inset-top'))).toBeTruthy()
   })
 
-  it('keeps the phone layout, whose navigation sits at the bottom, free of a strip on it', () => {
-    const nav = inset.find(r => r.selector.includes('.sidenav') && r.body.includes('border-top'))
+  it('keeps the phone layout, whose page starts under the controls, clear of them', () => {
+    const phone = inset.find(r => r.selector.includes('main.content') && /border-top:\s*var\(--shell-top\)/.test(r.body))
+    expect(phone?.media).toMatch(/max-width:\s*760px/)
+    const nav = inset.find(r => r.selector.includes('.sidenav-head'))
     expect(nav?.media).toMatch(/min-width:\s*761px/)
   })
 
-  it('lets a classification banner fill the strip in place of the columns', () => {
-    expect(inset.some(r => r.selector.includes('.cls-banner ~') && /--inset-strip:\s*0/.test(r.body))).toBe(true)
+  it('lets a classification banner be the row, clear of the controls', () => {
     const banner = inset.find(r => /\.cls-banner:not\(\.banner-preview\)$/.test(r.selector))
     expect(banner?.body).toMatch(/min-height:\s*var\(--shell-top\)/)
+    expect(banner?.body).toMatch(/padding:[^;]*var\(--shell-controls\)/)
   })
 })

@@ -418,13 +418,14 @@ func planText(plan string) string {
 }
 
 // macOptions: the About panel's credit, the web view's user agent and
-// no title bar of its own: the page runs under the window controls, and
-// its columns take the strip they sit in (titleInsetPx, the shim's drag
-// strip). The bar's color still follows the page for the moment before
-// the page draws (titlebar.go, titlebar_darwin.go).
+// no title bar of its own: the page runs under the window controls, which
+// sit in a toolbar row (TitleBarHiddenInset) on the same line as each
+// column's first row (titleInsetPx, the shim's drag band). The bar's color
+// still follows the page for the moment before the page draws (titlebar.go,
+// titlebar_darwin.go).
 func macOptions() *mac.Options {
 	return &mac.Options{
-		TitleBar:   mac.TitleBarHidden(),
+		TitleBar:   mac.TitleBarHiddenInset(),
 		Appearance: mac.DefaultAppearance,
 		About: &mac.AboutInfo{
 			Title:   windowTitle,

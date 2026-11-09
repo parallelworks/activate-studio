@@ -34,7 +34,8 @@ func (b *Bridge) ShellState() ShellState { return b.app.State() }
 func (b *Bridge) Retry() { b.app.retry() }
 
 // ToggleMaximise zooms the window, or puts it back: a double click on the
-// page's title strip, where the window has no title bar (titleInsetPx).
+// empty part of the page's top row, where the window has no title bar
+// (titleInsetPx).
 func (b *Bridge) ToggleMaximise() {
 	if b.app.ctx != nil {
 		wruntime.WindowToggleMaximise(b.app.ctx)
