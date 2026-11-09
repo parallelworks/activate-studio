@@ -6,13 +6,13 @@ afterEach(() => setLibrary('kb'))
 describe('a file link opened in the open library', () => {
   it('keeps its path in one library', () => {
     setLibrary('kb')
-    expect(linkTarget('ihelp-docs/COMBINE.pdf')).toBe('ihelp-docs/COMBINE.pdf')
+    expect(linkTarget('manuals/combined.pdf')).toBe('manuals/combined.pdf')
   })
 
   it('with All libraries open, a chat link with no library opens in the main one', () => {
     settleLibraries(['kb', 'far'])
     setLibrary('all')
-    expect(linkTarget('ihelp-docs/COMBINE.pdf')).toBe('kb/ihelp-docs/COMBINE.pdf')
+    expect(linkTarget('manuals/combined.pdf')).toBe('kb/manuals/combined.pdf')
     expect(linkTarget('specs/pump.pdf', 'far')).toBe('far/specs/pump.pdf')
   })
 
