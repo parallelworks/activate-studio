@@ -416,6 +416,16 @@ describe('Settings, Libraries', () => {
     expect([...value.querySelectorAll('.lib-seg')].map(s => s.textContent)).toEqual(['me@a-long-host-name', 'example', 'org', '', 'data', 'groups', 'me', 'projects', 'archive'])
   })
 
+  it('opens with the add form showing when the + Add menu sent us', async () => {
+    location.hash = '#view=settings:libraries?add=1'
+    try {
+      const s = server({ platform: true, ssh: true, canBuild: true })
+      await renderPage(s)
+      expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add a library' })).toBeNull()
+    } finally { location.hash = '' }
+  })
+
   it('a standalone install chooses where and how, and connects an index over ssh', async () => {
     const s = server({ platform: true, ssh: true, canBuild: true })
     await renderPage(s)

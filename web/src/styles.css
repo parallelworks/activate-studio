@@ -1932,7 +1932,8 @@ a.identity-btn { text-decoration: none; }
    buttons, so a library's name reads in full at any tree width. */
 .rail-head.rail-head-switch { height: auto; flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
 .rail-head.rail-head-switch .library-switch { flex: 1 0 100%; margin-right: 0; }
-.rail-head.rail-head-switch .rail-actions { margin-left: auto; }
+/* With the picker on its own row, the buttons spread across the row under it. */
+.rail-head.rail-head-switch .rail-actions { flex: 1 0 100%; justify-content: space-between; }
 
 /* ---- Settings > Libraries ---- */
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }

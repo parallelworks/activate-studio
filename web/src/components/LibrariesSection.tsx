@@ -136,7 +136,10 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
   const [canBuild, setCanBuild] = useState(false)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
+  // Opened from the Library's + Add menu (#view=settings:libraries?add=1)
+  // with the form already showing.
+  const [adding, setAdding] = useState(() => /^#view=settings:libraries\?(?:.*&)?add=1(?:&|$)/.test(location.hash))
+  const openedByLink = useRef(adding)
   const [changing, setChanging] = useState(false)
   const [restarting, setRestarting] = useState(false)
   // The library just given a depth its index does not have, and the depth
@@ -591,7 +594,8 @@ export function LibrariesSection({ pollMs = 1000 }: { pollMs?: number }) {
       )}
 
       {adding && (
-        <section className="lib-add-form" aria-label="Add a library">
+        <section className="lib-add-form" aria-label="Add a library"
+          ref={el => { if (el && openedByLink.current) { openedByLink.current = false; el.scrollIntoView?.({ block: 'start' }) } }}>
           <div className="lib-add-head">
             <div className="tool-group">Add a library</div>
             <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(false)} />
