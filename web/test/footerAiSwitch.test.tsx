@@ -45,3 +45,12 @@ describe('the footer\'s model line when AI features are switched', () => {
     expect(asked.filter(u => u === '/api/ai/health').length).toBeGreaterThan(healthReads)
   })
 })
+
+describe('modelsReady', () => {
+  it('says model for one and models otherwise', async () => {
+    const { modelsReady } = await import('../src/components/StatusFooter')
+    expect(modelsReady(1)).toBe('1 model ready')
+    expect(modelsReady(2)).toBe('2 models ready')
+    expect(modelsReady(0)).toBe('0 models ready')
+  })
+})

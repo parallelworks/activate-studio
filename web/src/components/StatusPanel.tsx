@@ -6,7 +6,7 @@ import type { AppConfig } from '../config'
 import { setPanelOpen, usePanel } from '../panelState'
 import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '../statusShare'
 import { indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
-import { AI_LABEL } from './StatusFooter'
+import { AI_LABEL, modelsReady } from './StatusFooter'
 import { openInSideView } from './RunPane'
 import { openSessionWindow, type SessionInfo } from './SessionView'
 import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
@@ -481,7 +481,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
           {model && <Row tone={shared.ai?.status === 'ok' ? 'success' : 'muted'} name={model} meta={shared.modelProvider ?? 'selected'} title={model} />}
           {shared.ai && (
             <Row tone={shared.ai.status === 'ok' ? 'success' : shared.ai.status === 'unconfigured' || shared.ai.status === 'off' ? 'muted' : 'warning'}
-              name={shared.ai.status === 'ok' ? `${shared.ai.models} models ready` : AI_LABEL[shared.ai.status]}
+              name={shared.ai.status === 'ok' ? modelsReady(shared.ai.models) : AI_LABEL[shared.ai.status]}
               sub={shared.ai.status === 'ok' ? undefined : shared.ai.message ?? undefined}
               title={shared.ai.gatewayHost ? `Through ${shared.ai.gatewayHost}` : undefined} />
           )}

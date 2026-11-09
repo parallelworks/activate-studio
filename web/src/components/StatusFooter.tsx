@@ -106,6 +106,9 @@ function DetailRows({ rows }: { rows: [string, string][] }) {
   )
 }
 
+/** "1 model ready", "3 models ready". */
+export const modelsReady = (n: number) => `${n} ${n === 1 ? 'model' : 'models'} ready`
+
 export const AI_LABEL: Record<AiHealth['status'], string> = {
   ok: 'models ready',
   auth: 'model key rejected',
@@ -118,7 +121,7 @@ export const AI_LABEL: Record<AiHealth['status'], string> = {
 
 function AiPanel({ trigger, ai, onRecheck }: { trigger: ReactElement; ai: AiHealth; onRecheck: () => void }) {
   const rows: [string, string][] = [
-    ['Status', AI_LABEL[ai.status] + (ai.status === 'ok' ? ` (${ai.models} models)` : '')],
+    ['Status', AI_LABEL[ai.status] + (ai.status === 'ok' ? ` (${ai.models} ${ai.models === 1 ? 'model' : 'models'})` : '')],
     ['Gateway', ai.gatewayHost],
     ['Checked', new Date(ai.checkedAt).toLocaleTimeString()],
   ]
@@ -491,7 +494,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={ai.status === 'ok' ? 'success' : ai.status === 'unconfigured' ? 'muted' : 'warning'} size={7} />
-                {ai.status === 'ok' ? `${ai.models} models ready` : AI_LABEL[ai.status]}
+                {ai.status === 'ok' ? modelsReady(ai.models) : AI_LABEL[ai.status]}
               </button>
             }
           />
