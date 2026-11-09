@@ -238,7 +238,7 @@ describe('what Add a library offers', () => {
   })
 })
 
-describe('Settings, Libraries', () => {
+describe('Settings, Indexing, Libraries', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
   it('brings a library named in a search\'s left-out line into view and marks its row', async () => {
@@ -482,7 +482,7 @@ describe('Settings, Libraries', () => {
     // order the phases run in, and the faster stop for a very large folder.
     expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText(/^Search by meaning is the slowest part of indexing, so it runs last, in the background: names are searchable first, then words\./)).toBeInTheDocument()
-    expect(screen.getByText(/For a folder of more than about 500,000 files, Text \+ OCR is faster; meaning can be added later in Settings, Libraries\.$/)).toBeInTheDocument()
+    expect(screen.getByText(/For a folder of more than about 500,000 files, Text \+ OCR is faster; meaning can be added later in Settings, Indexing, Libraries\.$/)).toBeInTheDocument()
     // This folder is taken to Text, where the note does not apply.
     fireEvent.click(screen.getByRole('button', { name: 'Text' }))
     expect(screen.queryByText(/slowest part of indexing/)).toBeNull()

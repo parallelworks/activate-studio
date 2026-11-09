@@ -17,7 +17,7 @@ describe('the Search page says what search matches', () => {
     fireEvent.click(screen.getByRole('button', { name: 'How search works' }))
     expect(screen.getByText(/passages that say the same thing in other words/)).toBeInTheDocument()
     expect(screen.getByText('Notes: documents')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Settings, Libraries' })).toHaveAttribute('href', '#view=settings:libraries')
+    expect(screen.getByRole('link', { name: 'Settings, Indexing, Libraries' })).toHaveAttribute('href', '#view=settings:libraries')
     expect(screen.getByText(/Each result says how it matched: name, folder, words, or meaning/)).toBeInTheDocument()
     expect(screen.getByText(/a folder the file is in has the search in its name/)).toBeInTheDocument()
   })

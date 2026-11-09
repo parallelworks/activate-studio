@@ -60,7 +60,7 @@ WSL can stop Ubuntu, and the Studio with it, a short time after its last window 
 
 The Studio's data (index, settings, logs and labels kept by the Studio) is in `~/.local/share/activate-studio-data`, in the Linux file system. The main folder is `~/Documents/ACTIVATE Studio` in Linux until another is chosen.
 
-A Windows folder can be the main folder or a library. In setup, Settings, Libraries, and every other place that takes a folder, a Windows path can be typed as it is: `C:\Users\me\Documents` is read as `/mnt/c/Users/me/Documents`, and `\\wsl.localhost\Ubuntu-24.04\home\me\notes` as `/home/me/notes`. A drive mounted somewhere else by `[automount] root` in `/etc/wsl.conf` is followed. The window's folder chooser is a Linux one, and Windows drives are under `/mnt/c`, `/mnt/d` and so on. The Studio shows Linux paths; `wslpath -w` turns one back into the Windows form.
+A Windows folder can be the main folder or a library. In setup, Settings, Indexing, Libraries, and every other place that takes a folder, a Windows path can be typed as it is: `C:\Users\me\Documents` is read as `/mnt/c/Users/me/Documents`, and `\\wsl.localhost\Ubuntu-24.04\home\me\notes` as `/home/me/notes`. A drive mounted somewhere else by `[automount] root` in `/etc/wsl.conf` is followed. The window's folder chooser is a Linux one, and Windows drives are under `/mnt/c`, `/mnt/d` and so on. The Studio shows Linux paths; `wslpath -w` turns one back into the Windows form.
 
 A folder in the Linux file system, such as `~/documents`, is indexed and searched much faster than the same folder under `/mnt/c`. Where the files can move, keep them in Linux; where they have to stay in Windows, index them in place.
 
@@ -70,7 +70,7 @@ A folder in the Linux file system, such as `~/documents`, is indexed and searche
 
 *Changes made in Windows.* The Studio has no file watcher on any system. The background sync finds changes by reading the time of every folder and file, every 300 seconds by default, and changes made in Windows are found the same way. On a large folder under `/mnt/c` that walk is slow, so set Settings, General, Indexing, **Background sync interval** to 1800 or 3600 seconds, and press **Update index** after large changes.
 
-*Threads.* Settings, General, Indexing sets the threads each indexing phase uses, one per processor core by default. Under `/mnt/c` the time goes mostly to waiting on Windows, and up to twice the number of cores may index faster *(a suggestion, not yet measured on Windows)*.
+*Threads.* Settings, Indexing, Building sets the threads each indexing phase uses, one per processor core by default. Under `/mnt/c` the time goes mostly to waiting on Windows, and up to twice the number of cores may index faster *(a suggestion, not yet measured on Windows)*.
 
 *Labels.* In the main folder, the Studio stores a label on the file as an extended attribute (`user.studio.tags`). Windows drives in WSL do not take `user.` extended attributes, so the Studio keeps those labels itself, in `tags-overlay.json` in its index folder, matched to each file by its file number and checked by its creation time. Labels look and work the same. They do not travel with a copy of the file, and a file deleted and created again is a new file with no label; back up `tags-overlay.json` if labels matter. Libraries other than the main folder always keep labels in the Studio.
 

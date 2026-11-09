@@ -27,10 +27,10 @@ describe('the line naming libraries left out of a search or a query', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Answered in part: Archive (its index has no extracted text, so text conditions match nothing there).')
   })
 
-  it('opens the library\'s row in Settings, Libraries', () => {
+  it('opens the library\'s row in Settings, Indexing, Libraries', () => {
     render(<OmittedLine omitted={[building]} />)
     const link = screen.getByRole('button', { name: 'Shelf' })
-    expect(link).toHaveAttribute('title', 'Open in Settings, Libraries')
+    expect(link).toHaveAttribute('title', 'Open in Settings, Indexing, Libraries')
     fireEvent.click(link)
     expect(location.hash).toBe('#view=settings:libraries')
     expect(sessionStorage.getItem(FOCUS_LIBRARY_KEY)).toBe('shelf')

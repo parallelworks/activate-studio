@@ -15,15 +15,17 @@ const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
 }
 
 /**
- * Settings, General, Indexing (below the sync settings): how the main
- * folder's index is built. The threads every phase uses, the main folder's
- * depth (names, text, OCR, meaning on documents or on all files), how
- * documents are read (the PDF fallback, LibreOffice for older Office
- * files, image descriptions when AI features are on), the speed of search
- * by meaning, and where the index is kept. Each setting saves as it changes; a new depth
- * or speed is applied by the sync, over the files already indexed (indexing.ts), and the
- * readers apply to files read from then on. The vision model is chosen under AI features;
- * this says which one describes images.
+ * Settings, Indexing: how the main folder's index is built and where it is
+ * kept, in two parts for two tabs. IndexBuildSettings (Building)
+ * holds the threads every phase uses, the main folder's depth (names, text,
+ * OCR, meaning on documents or on all files), how documents are read (the
+ * PDF fallback, LibreOffice for older Office files, image descriptions when
+ * AI features are on), the speed of search by meaning, and the readers this
+ * computer has. IndexStorageSettings (Storage and logs) holds where the index
+ * is kept. Each setting saves as it changes; a new depth or speed is applied
+ * by the sync, over the files already indexed (indexing.ts), and the readers
+ * apply to files read from then on. The vision model is chosen under AI
+ * features; this says which one describes images.
  */
 
 const PDF_READERS: SelectItem<IndexSettings['pdfReader']>[] = [
@@ -32,28 +34,33 @@ const PDF_READERS: SelectItem<IndexSettings['pdfReader']>[] = [
   { value: 'pypdf', label: 'pypdf only' },
 ]
 
-export function IndexingSection({ visionModel = '', deploymentCred = null }: {
+/** The indexing settings as the server has them, read once per part shown. */
+function useIndexSettingsInfo() {
+  const [info, setInfo] = useState<IndexSettingsInfo | null>(null)
+  const [error, setError] = useState('')
+  const load = () => api.indexSettings().then(i => {
+    // A server without these routes (an older one) answers something else.
+    if (!i?.settings || !i.readers || !i.location) throw new Error('This server does not offer indexing settings.')
+    setInfo(i); setError('')
+  }).catch(e => setError(errText(e)))
+  useEffect(() => { void load() }, [])
+  return { info, setInfo, error, setError, load }
+}
+
+export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: {
   /** The vision model chosen under AI features, as the General form has it. */
   visionModel?: string
   /** Whether the deployment has a credential of its own for background calls. */
   deploymentCred?: boolean | null
 }) {
-  const [info, setInfo] = useState<IndexSettingsInfo | null>(null)
-  const [error, setError] = useState('')
+  const { info, setInfo, error, setError } = useIndexSettingsInfo()
   const [saving, setSaving] = useState<string | null>(null)
   const [threads, setThreads] = useState<number | null>(null)
-  const [moving, setMoving] = useState(false)
-  const [moveNote, setMoveNote] = useState('')
-  const [restarting, setRestarting] = useState(false)
   const status = useIndexStatus()
   const controls = useIndexControls()
-
-  const load = () => api.indexSettings().then(i => {
-    // A server without these routes (an older one) answers something else.
-    if (!i?.settings || !i.readers || !i.location) throw new Error('This server does not offer indexing settings.')
-    setInfo(i); setThreads(i.settings.threads); setError('')
-  }).catch(e => setError(errText(e)))
-  useEffect(() => { void load() }, [])
+  // The threads box starts from what was read, once; a save keeps what was typed.
+  const loaded = info !== null
+  useEffect(() => { if (info) setThreads(info.settings.threads) }, [loaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async (patch: Partial<IndexSettings>, key: string) => {
     if (!info) return
@@ -63,24 +70,6 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
       const r = await api.saveIndexSettings(patch)
       setInfo({ ...info, settings: r.settings, threads: r.threads, readers: r.readers })
     } catch (e) { setError(errText(e)) } finally { setSaving(null) }
-  }
-  const move = async (path: string) => {
-    setMoveNote('')
-    try {
-      const before = await fetch('/api/version').then(r => r.json()).then((v: { startedAt?: string }) => v.startedAt ?? '').catch(() => '')
-      const r = await api.moveIndex(path)
-      if (r.restarting) {
-        setRestarting(true)
-        const back = await waitForRestart(before, 1000, () => true)
-        setRestarting(false)
-        if (back) { location.reload(); return }
-        setMoveNote('The Studio did not come back after the move. Open it again from the app.')
-      } else {
-        setMoveNote(r.note ?? '')
-        setMoving(false)
-        await load()
-      }
-    } catch (e) { setMoveNote(errText(e)) }
   }
 
   if (!info) {
@@ -134,7 +123,7 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
           <p className="ix-note">
             A new depth is applied in the background at once, to the files already indexed (with the background sync paused,
             at Sync now). Search by name works as soon as the names are in; text and meaning follow. Each other library has
-            its own depth, under <a href="#view=settings:libraries">Settings, Libraries</a>.
+            its own depth, under <a href="#view=settings:libraries">Libraries</a>.
           </p>
         </div>
         <Field label="PDFs downmark cannot read"
@@ -188,6 +177,48 @@ export function IndexingSection({ visionModel = '', deploymentCred = null }: {
       <ReaderInstalls readers={info.readers} single={info.single} running={running}
         onReaders={r => setInfo(i => (i ? { ...i, readers: r } : i))} onBuild={() => void controls.build()} />
 
+    </>
+  )
+}
+
+export function IndexStorageSettings() {
+  const { info, error, load } = useIndexSettingsInfo()
+  const [moving, setMoving] = useState(false)
+  const [moveNote, setMoveNote] = useState('')
+  const [restarting, setRestarting] = useState(false)
+  const status = useIndexStatus()
+
+  const move = async (path: string) => {
+    setMoveNote('')
+    try {
+      const before = await fetch('/api/version').then(r => r.json()).then((v: { startedAt?: string }) => v.startedAt ?? '').catch(() => '')
+      const r = await api.moveIndex(path)
+      if (r.restarting) {
+        setRestarting(true)
+        const back = await waitForRestart(before, 1000, () => true)
+        setRestarting(false)
+        if (back) { location.reload(); return }
+        setMoveNote('The Studio did not come back after the move. Open it again from the app.')
+      } else {
+        setMoveNote(r.note ?? '')
+        setMoving(false)
+        await load()
+      }
+    } catch (e) { setMoveNote(errText(e)) }
+  }
+
+  if (!info) {
+    return (
+      <>
+        <h2 className="ix-h2">Where the index is kept</h2>
+        {error ? <Callout tone="error">{error}</Callout> : <Loader inline size={16} label="Loading…" />}
+      </>
+    )
+  }
+  const running = !!status?.running
+
+  return (
+    <>
       <h2 className="ix-h2">Where the index is kept</h2>
       <div className="settings-field">
         <p className="ix-path"><code>{info.location.current}</code></p>

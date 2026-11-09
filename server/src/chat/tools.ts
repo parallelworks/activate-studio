@@ -1547,7 +1547,7 @@ async function originalTextForTool(lib: Library, rel: string): Promise<ToolText>
  *  index, but its originals can be opened only through the host named for them. */
 function noFilesHere(lib: Library, needsFiles: boolean): void {
   if (needsFiles && !lib.site && !lib.sourceRoot && !lib.readThrough) {
-    throw new Error(`${lib.label} has no files on this host; it can be searched and read from its index (read_kb_file), but its originals cannot be opened. Settings, Libraries can name another host that has them.`)
+    throw new Error(`${lib.label} has no files on this host; it can be searched and read from its index (read_kb_file), but its originals cannot be opened. Settings, Indexing, Libraries can name another host that has them.`)
   }
   if (!needsFiles && !lib.site && !lib.sourceRoot && !lib.caps.index) throw new Error(`${lib.label} has no files on this host and no index to read; it can be searched but not read`)
 }

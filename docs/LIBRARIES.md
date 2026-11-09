@@ -58,13 +58,13 @@ STUDIO_SECTIONS='library,search,overview'
 Libraries set this way are pinned: they appear for every user and cannot
 be removed from Settings.
 
-*In Settings, Libraries:* see the next section. Libraries added there are
+*In Settings, Indexing, Libraries:* see the next section. Libraries added there are
 kept in `libraries.json` under the index base, or, for those over ssh or
 built on a cluster, in the user's own list (below).
 
 ## The Libraries page
 
-Settings, Libraries is one list of every library the Studio searches, and
+Settings, Indexing, Libraries is one list of every library the Studio searches, and
 one **Add a library** control. Each row gives the library's name, its kind
 in plain words with what the Studio may do with it (read and write, or
 read only), where it is (the index directory, and the files when the
@@ -473,7 +473,7 @@ run rebuilds instead. An index takes about 50 KB per directory.
 ## Indexes built on a cluster
 
 On a Studio the platform hosts, a user can also build through the
-platform's index workflow: Settings, Libraries, **Add a library**, "A
+platform's index workflow: Settings, Indexing, Libraries, **Add a library**, "A
 remote system", "Build an index of a folder", **Connect with** "Platform
 workflow": a cluster from their active clusters, a directory
 (`$WORKDIR` by default), a label, and optionally a Slurm partition and
@@ -525,7 +525,7 @@ live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 ## Libraries over ssh
 
 A library can also be an existing GUFI index on another machine that the
-Studio's host reaches with plain ssh: Settings, Libraries, **Add a
+Studio's host reaches with plain ssh: Settings, Indexing, Libraries, **Add a
 library**, "A remote system", "Connect an existing index", **Connect
 with** ssh, or the setup wizard. The host is written `user@host`, an
 alias from `~/.ssh/config`, or either with `:port`. A Host entry in
@@ -651,7 +651,7 @@ shared connection of its own for each set of options.
 The connection test names the jump host it went through, from the options
 or from `~/.ssh/config` (read with `ssh -G`, which connects nowhere):
 "Connected to me@lab-index through me@bastion.example, a Linux host."
-Settings, Libraries shows a library's options, and
+Settings, Indexing, Libraries shows a library's options, and
 `PUT /api/user-libraries/:id/ssh-options` with `{sshOptions}` changes them
 for a connected index, after a connection test with the new ones passes.
 An index built over ssh keeps the options it was built with.
@@ -757,7 +757,7 @@ The case this is for is a site whose index lives where GUFI runs, on a host
 whose login runs only `gufi_query` (see "Hosts whose login runs only
 gufi_query"), while another host, such as a file transfer host, mounts the
 same file systems and gives a normal shell. On the library's row in
-Settings, Libraries, **Originals via**, **Set** names that host:
+Settings, Indexing, Libraries, **Originals via**, **Set** names that host:
 
 - *Host*: `user@host`, or a Host alias from `~/.ssh/config`, with `:port`
   for a port other than 22. It is held to what a destination of `ssh` can
@@ -955,7 +955,7 @@ statement is shown as a here-document with gufi_vt's usual remote form,
 cluster's GUFI added to the PATH there, so it runs from a terminal that
 has GUFI and the pw CLI. The chat model does not receive the commands,
 and a conversation shows them only to the person whose request ran them.
-Settings, General, Indexing, "Log GUFI commands" also writes every
+Settings, Indexing, Storage and logs, "Log GUFI commands" also writes every
 command to a log file ([`REFERENCE.md`](REFERENCE.md), GUFI commands).
 
 ## Sections

@@ -23,7 +23,7 @@ import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
  * app on a first run, and from Settings, General afterwards; everything
  * here is in Settings too. Each step can be skipped, and Finish later
  * closes setup at any step. The folder step is the same picker and index
- * build as Settings, Libraries (PrimaryFolder); the build runs on the
+ * build as Settings, Indexing, Libraries (PrimaryFolder); the build runs on the
  * server, so no step waits for it.
  */
 
@@ -532,7 +532,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
                 <IndexBuildProgress job={index.job} error={index.error} />
                 <p className="muted" style={{ margin: 0 }}>
                   A large folder can take a long time to index. The build runs in the background: go on to the next step, or
-                  finish setup, while it runs. Indexes can be added or changed at any time in Settings, Libraries.
+                  finish setup, while it runs. Indexes can be added or changed at any time in Settings, Indexing, Libraries.
                 </p>
               </div>
             )}
@@ -543,7 +543,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
           <>
             <p style={{ margin: 0 }}>
               Optional: another folder on this computer to search beside your main one. It is indexed here, in the background,
-              and the Studio only reads it. Libraries can be added or removed at any time in Settings, Libraries.
+              and the Studio only reads it. Libraries can be added or removed at any time in Settings, Indexing, Libraries.
             </p>
             {!otherKinds ? (
               status?.gufi?.found === false
