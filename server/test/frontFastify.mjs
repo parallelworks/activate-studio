@@ -7,6 +7,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import realFastify from 'fastify'
 
 const BIN = process.env.STUDIO_TEST_FRONT
@@ -119,6 +120,10 @@ async function startFront(nodePort) {
     // the Go updater offers none at or before v1.188, the last Node release.
     STUDIO_LAST_NODE_RELEASE: process.env.STUDIO_LAST_NODE_RELEASE ?? 'v1.0',
   })
+  // The helper a build on another system sends (server-go/scripts/build_remote.sh
+  // puts it in the checkout); the server beside the packages finds its own.
+  const helpers = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'server-go', 'bin', 'remote')
+  if (!env.STUDIO_REMOTE_HELPERS && fs.existsSync(helpers)) env.STUDIO_REMOTE_HELPERS = helpers
   const deadline = Date.now() + 120_000
   for (let attempt = 0; Date.now() < deadline; attempt++) {
     const port = PORTS[0] + Math.floor(Math.random() * (PORTS[1] - PORTS[0] + 1))

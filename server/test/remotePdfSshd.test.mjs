@@ -99,6 +99,10 @@ if (!skip) {
   delete process.env.no_proxy; delete process.env.NO_PROXY
 }
 const needWheels = skip || (!wheels && 'the reader wheels could not be fetched')
+// Against the Go server: a build there sends the Studio's helper, which reads
+// PDFs itself and needs no Python, so the cases of the pypdf Node sends are
+// Node's own; Go's are server-go/internal/userlibs TestRemotePdfOverRealSSH.
+const pythonOnly = needWheels || (process.env.STUDIO_TEST_FRONT && 'Node sends pypdf; the Go helper reads PDFs itself: server-go/internal/userlibs TestRemotePdfOverRealSSH')
 
 const R = skip ? {} : await import('../dist/remoteExec.js')
 const U = skip ? {} : await import('../dist/userLibraries.js')
@@ -170,7 +174,7 @@ test('a host with pdftotext reads its PDFs with it, and has no gaps', { skip: ne
   assert.equal((await pdfHits(l.id, 'zeppelin')).length, 1)
 })
 
-test('a host with neither reader reads its PDFs with the pypdf the Studio sends, with no network there', { skip: needWheels, timeout: 120_000 }, async () => {
+test('a host with neither reader reads its PDFs with the pypdf the Studio sends, with no network there', { skip: pythonOnly, timeout: 120_000 }, async () => {
   const h = await host('neither')
   const l = await build('neither')
   assert.equal(l.state, 'ready', l.error ?? '')
@@ -183,7 +187,7 @@ test('a host with neither reader reads its PDFs with the pypdf the Studio sends,
   assert.deepEqual(fs.readdirSync(readersThere(h)), [v], 'the sent files and the marker are gone once installed')
 })
 
-test('where the readers cannot be sent, the row says so, and a Rebuild with them recovers the library', { skip: needWheels, timeout: 180_000 }, async () => {
+test('where the readers cannot be sent, the row says so, and a Rebuild with them recovers the library', { skip: pythonOnly, timeout: 180_000 }, async () => {
   await host('unsent')
   const wheelDir = path.join(process.env.INDEX_BASE, 'embed-wheels'), away = `${wheelDir}.away`
   fs.renameSync(wheelDir, away)
@@ -199,7 +203,7 @@ test('where the readers cannot be sent, the row says so, and a Rebuild with them
   assert.deepEqual(again.gaps, [])
 })
 
-test('a host with no Python says why it has no text, and a Rebuild after one is installed finds it', { skip: needWheels, timeout: 180_000 }, async () => {
+test('a host with no Python says why it has no text, and a Rebuild after one is installed finds it', { skip: pythonOnly, timeout: 180_000 }, async () => {
   const h = await host('nopython', { noPython: true })
   const l = await build('nopython', 'meaning-documents')
   assert.equal(l.state, 'ready', l.error ?? '')
@@ -223,7 +227,7 @@ test('a Meaning depth with no embedding model to be had says so; the words are s
   assert.match(l.gaps[0], /^No search by meaning: /)
 })
 
-test('a PDF with no text layer is counted, with the reader that found nothing', { skip: needWheels, timeout: 120_000 }, async () => {
+test('a PDF with no text layer is counted, with the reader that found nothing', { skip: pythonOnly, timeout: 120_000 }, async () => {
   const h = await host('blank')
   write(path.join(h.home, 'docs', 'manuals', 'scan.pdf'), pdf(' '))
   const l = await build('blank')
