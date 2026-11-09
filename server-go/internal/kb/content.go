@@ -4,6 +4,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/extract/mail"
 )
 
 // CachedText is kb.ts's cachedText: the text a library's extraction cache
@@ -53,6 +55,15 @@ func ReadFileContent(rel, root, cacheRoot string) (*Obj, error) {
 	kind := Classify(abs, false)
 	out := O("path", rel, "kind", kind, "size", st.Size(), "mtime", mtimeSec(st))
 	size := st.Size()
+	if mail.Suffixes[strings.ToLower(ExtName(abs))] {
+		// An email (Apple Mail's .emlx, or .eml) shows as its message:
+		// headers and body text, read from the file itself, the way the
+		// index reads it. One that does not read shows as before.
+		if text, err := mail.ReadFile(abs, MaxPreviewBytes+1); err == nil {
+			return out.Set("kind", KindText).Set("truncated", UTF16Len(text) > MaxPreviewBytes).
+				Set("content", SliceUTF16(text, MaxPreviewBytes)).Set("source", "extracted").Set("format", "text"), nil
+		}
+	}
 	switch kind {
 	case KindText:
 		b, err := readHead(abs, min(size, MaxPreviewBytes))

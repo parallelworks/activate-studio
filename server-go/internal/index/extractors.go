@@ -196,6 +196,7 @@ func ExtractorReportFor(o ReaderOptions, projectRoot string) Report {
 		{"OpenDocument reader", true, ".odt, .ods, .odp, .odg", "Part of the Studio, with nothing to install.", false},
 		{"xlrd", true, ".xls", "Part of the Studio. Reads Excel 97-2003 workbooks.", false},
 		{"olefile", true, ".ppt", "Part of the Studio. Reads PowerPoint 97-2003 slides and speaker notes.", false},
+		{"Mail reader", true, ".emlx, .eml", "Part of the Studio. Reads Apple Mail messages and .eml files: headers, body and attachment names.", false},
 		{"LibreOffice", p.soffice != "", "previews of Office documents, and .doc, .ppt, .xls and OpenDocument files the readers above cannot read", sofficeNote, false},
 		{"tesseract", tess != "", "text inside images and scanned PDF pages (OCR)", tessNote, false},
 	}
@@ -221,6 +222,7 @@ func ExtractorReportFor(o ReaderOptions, projectRoot string) Report {
 			r := append([]string{f[1]}, lo...)
 			formats = append(formats, FormatReadiness{f[0], r, true, "Read by " + strings.Join(r, ", then ") + "."})
 		}
+		formats = append(formats, FormatReadiness{".emlx, .eml", []string{"Mail reader"}, true, "Read by the Mail reader: headers, body and attachment names."})
 	}
 	img := []string{}
 	if o.OCR && tess != "" {

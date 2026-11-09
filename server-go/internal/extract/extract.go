@@ -66,8 +66,10 @@ var (
 		".html", ".css", ".js", ".ts", ".tsx", ".svg", ".toml", ".cfg", ".ini", ".def", ".mjs", ".sql")
 	// DownmarkSuffixes go through downmark.
 	DownmarkSuffixes = set(".pdf", ".docx", ".pptx", ".xlsx", ".doc")
-	// NativeSuffixes have a reader of their own in this module.
-	NativeSuffixes = set(".odt", ".ods", ".odp", ".odg", ".xls", ".ppt")
+	// NativeSuffixes have a reader of their own in this module: the
+	// OpenDocument and Office 97-2003 readers, and the mail reader for
+	// Apple Mail's .emlx (and .partial.emlx) and .eml messages.
+	NativeSuffixes = set(".odt", ".ods", ".odp", ".odg", ".xls", ".ppt", ".emlx", ".eml")
 	// LegacySuffixes are what LibreOffice converts each format to, for a
 	// file its own reader gets nothing from.
 	LegacySuffixes = map[string]string{".ppt": "pptx", ".odp": "pptx", ".xls": "xlsx", ".ods": "xlsx",

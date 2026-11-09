@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/extract/mail"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/odf"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/ppt"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
@@ -212,8 +213,13 @@ func (x *Extractor) fallback(ctx context.Context, src string) string {
 	return ""
 }
 
-// native reads an OpenDocument, .xls or .ppt file with the reader here.
+// native reads an OpenDocument, .xls, .ppt or mail file with the reader
+// here.
 func (x *Extractor) native(src string) string {
+	if mail.Suffixes[Suffix(src)] {
+		text, _ := mail.ReadFile(src, MaxText)
+		return text
+	}
 	f, err := os.Open(src)
 	if err != nil {
 		return ""
