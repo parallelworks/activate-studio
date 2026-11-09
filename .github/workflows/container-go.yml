@@ -1,0 +1,188 @@
+# Build the Go container image (deploy/app-go.def) from a published release's
+# Linux app, prove that it starts and indexes, and publish it to ghcr.io as
+# an ORAS artifact: :<release>, and :latest when the release is GitHub's
+# "Latest release".
+#
+# linux-app.yml starts this when it has attached the Linux app to a release;
+# it can also be run by hand for a release that already carries the app.
+# linux-app.yml's container-go job builds and tests the same image on every
+# run from the payload it builds; this workflow is the one that publishes.
+#
+# The image carries the release's Linux app as published, checked against its
+# .sha256, so the image and the desktop and workflow installs of a release run
+# the same server. Publishing needs permission to write packages, which the
+# build never gets: the build runs apt and the image recipe as root, so only
+# the separate push job, which runs no build code, holds that token.
+#
+# Pull the result, and check it was built here, with:
+#   singularity pull studio.sif oras://ghcr.io/parallelworks/activate-studio:<tag>
+#   gh attestation verify studio.sif --repo parallelworks/activate-studio
+
+name: container-go
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: A published release that carries the Linux app (such as v1.190)
+        required: true
+      push:
+        description: Push the image to ghcr.io
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: container-go-${{ inputs.release }}
+  cancel-in-progress: false
+
+env:
+  # Pinned as in container.yaml; change both together.
+  SINGULARITY_VERSION: "4.5.1"
+  SINGULARITY_DEB_SHA256: "e9cdcec5e479e9f96f7fb95338d5bae2835099ee9f97222d204cb8a3f3f38070"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: check the release name
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: |
+          [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::not a release version: $RELEASE"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release }}
+
+      - name: download the release's Linux app
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/in"
+          gh release download "$RELEASE" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/in" \
+            --pattern activate-studio-linux-x86_64.tar.gz --pattern activate-studio-linux-x86_64.tar.gz.sha256
+          (cd "$RUNNER_TEMP/in" && sha256sum -c activate-studio-linux-x86_64.tar.gz.sha256)
+
+      - &install-singularity
+        name: install SingularityCE
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deb="singularity-ce_${SINGULARITY_VERSION}-noble_amd64.deb"
+          gh release download "v${SINGULARITY_VERSION}" \
+            --repo sylabs/singularity --pattern "$deb" --dir "$RUNNER_TEMP"
+          echo "${SINGULARITY_DEB_SHA256}  $RUNNER_TEMP/$deb" | sha256sum -c -
+          sudo apt-get update
+          sudo apt-get install -y "$RUNNER_TEMP/$deb"
+          singularity --version
+
+      - name: build studio.sif
+        run: |
+          set -euo pipefail
+          mkdir -p .container
+          tar -xzf "$RUNNER_TEMP/in/activate-studio-linux-x86_64.tar.gz" -C .container
+          sudo singularity build studio.sif deploy/app-go.def
+          { echo "### The Go container image for ${{ inputs.release }}"; echo '```'; ls -l studio.sif; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: smoke test
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+          kb="$RUNNER_TEMP/kb"; data="$RUNNER_TEMP/data"; log="$RUNNER_TEMP/studio.log"
+          mkdir -p "$kb/docs" "$data"
+          echo "Smoke-test document about container builds and GUFI." > "$kb/docs/hello.md"
+          singularity run --cleanenv --env PORT=8080 --env KB_ROOT=/kb --env DATA_DIR=/data --env INDEX_ON_START=1 \
+            --bind "$kb:/kb" --bind "$data:/data" studio.sif > "$log" 2>&1 &
+          pid=$!
+          ok=0; version=""
+          for _ in $(seq 1 90); do
+            version=$(curl -fsS --max-time 5 http://127.0.0.1:8080/api/version) && { ok=1; break; }
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 2
+          done
+          found=0; health=""; included=""
+          if [ "$ok" = 1 ]; then
+            for _ in $(seq 1 90); do
+              curl -fsS --max-time 10 "http://127.0.0.1:8080/api/search?q=container" | grep -q hello.md && { found=1; break; }
+              sleep 2
+            done
+            health=$(curl -fsS --max-time 5 http://127.0.0.1:8080/healthz || true)
+            included=$(curl -fsS --max-time 10 http://127.0.0.1:8080/api/changelog | grep -o '"included":[a-z]*' || true)
+          fi
+          echo "version: $version"; echo "healthz: $health"
+          echo; echo "----- container log -----"; tail -n 60 "$log"
+          kill "$pid" 2>/dev/null || true
+          [ "$ok" = 1 ] || { echo "::error::the Go server never answered"; exit 1; }
+          case "$version" in *"\"version\":\"$RELEASE\""*) ;; *) echo "::error::the image is not $RELEASE: $version"; exit 1 ;; esac
+          case "$health" in *'"gufi":true'*) ;; *) echo "::error::the server reports GUFI unavailable: $health"; exit 1 ;; esac
+          [ "$included" = '"included":true' ] || { echo "::error::the image carries no CHANGELOG.md ($included)"; exit 1; }
+          [ "$found" = 1 ] || { echo "::error::the index on start did not make the document searchable"; exit 1; }
+
+      # SIF is already squashfs, so the file goes up as it is.
+      - name: keep studio.sif for the push job
+        if: inputs.push
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: studio.sif
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+  push:
+    needs: build-test
+    if: inputs.push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read      # releases/latest lookup
+      packages: write
+      id-token: write     # provenance: Sigstore signing identity
+      attestations: write
+    steps:
+      # Audit, not block, as in container.yaml's push job. It runs no build code.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      # v8 fails on a digest mismatch, so what gets pushed is byte for byte
+      # what build-test tested.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: studio.sif
+
+      - *install-singularity
+
+      - name: push to ghcr.io
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+          set -f   # tags are word-split below; never glob them
+          [ -s studio.sif ] || { echo "::error::studio.sif missing from the downloaded artifact"; exit 1; }
+          [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::not a release version: $RELEASE"; exit 1; }
+          image="oras://ghcr.io/${GITHUB_REPOSITORY,,}"   # ghcr needs lowercase
+          tags="$RELEASE"
+          # :latest follows GitHub's "Latest release", so a prerelease or a
+          # fix published for an older line does not move it backwards.
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name || true)
+          [ "$latest" != "$RELEASE" ] || tags="$tags latest"
+          echo "$GH_TOKEN" | singularity registry login \
+            --username "$GITHUB_ACTOR" --password-stdin oras://ghcr.io
+          for t in $tags; do
+            singularity push studio.sif "$image:$t"
+            echo "Pushed \`$image:$t\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: studio.sif

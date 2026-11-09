@@ -66,9 +66,11 @@ relaunches.
 - **App & Bundle**: source must be Container. The image comes from the
   bucket URI or path in Container Image and is cached at
   `<workdir>/containers/studio.sif` on the shared filesystem so the compute
-  node sees it; delete the cached file to force a fresh pull. Rebuild with
-  `apptainer build studio.sif deploy/app.def` and upload to the bucket to
-  release a new version.
+  node sees it; delete the cached file to force a fresh pull. To release a
+  new version, pull the release's image
+  (`apptainer pull studio.sif oras://ghcr.io/parallelworks/activate-studio:<version>`,
+  built from its Linux app with `deploy/app-go.def`) and upload it to the
+  bucket.
 - **Models**: the vLLM serve. Serve a Model in the Job starts vLLM on the
   job's GPUs and points the Studio at it; off, the Studio uses the gateway
   settings. Tool-call and reasoning parsers are model-specific (see the

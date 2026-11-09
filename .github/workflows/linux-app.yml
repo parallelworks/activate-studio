@@ -685,6 +685,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: write      # starts container-go.yml for the release
     steps:
       - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
@@ -759,3 +760,10 @@ jobs:
           A copy installed in a user's home folder updates itself from the release for its version. A copy installed from a .deb or .rpm package is updated through apt or dnf.
 
           Changes: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG and the releases before it."
+      # The Go container image is built from the Linux app just attached, and
+      # published to ghcr.io, by container-go.yml.
+      - name: start the container image build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release }}
+        run: gh workflow run container-go.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f release="$TAG"
