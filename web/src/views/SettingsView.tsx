@@ -130,7 +130,7 @@ export type GeneralTab = typeof GENERAL_TABS[number]['value']
 export const INDEXING_TABS = [
   { value: 'libraries', label: 'Libraries' },
   { value: 'sync-search', label: 'Sync and search' },
-  { value: 'building', label: 'Building the index' },
+  { value: 'building', label: 'Building' },
   { value: 'storage', label: 'Storage and logs' },
 ] as const
 export type IndexingTab = typeof INDEXING_TABS[number]['value']

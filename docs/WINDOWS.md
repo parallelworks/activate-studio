@@ -70,7 +70,7 @@ A folder in the Linux file system, such as `~/documents`, is indexed and searche
 
 *Changes made in Windows.* The Studio has no file watcher on any system. The background sync finds changes by reading the time of every folder and file, every 300 seconds by default, and changes made in Windows are found the same way. On a large folder under `/mnt/c` that walk is slow, so set Settings, General, Indexing, **Background sync interval** to 1800 or 3600 seconds, and press **Update index** after large changes.
 
-*Threads.* Settings, Indexing, Building the index sets the threads each indexing phase uses, one per processor core by default. Under `/mnt/c` the time goes mostly to waiting on Windows, and up to twice the number of cores may index faster *(a suggestion, not yet measured on Windows)*.
+*Threads.* Settings, Indexing, Building sets the threads each indexing phase uses, one per processor core by default. Under `/mnt/c` the time goes mostly to waiting on Windows, and up to twice the number of cores may index faster *(a suggestion, not yet measured on Windows)*.
 
 *Labels.* In the main folder, the Studio stores a label on the file as an extended attribute (`user.studio.tags`). Windows drives in WSL do not take `user.` extended attributes, so the Studio keeps those labels itself, in `tags-overlay.json` in its index folder, matched to each file by its file number and checked by its creation time. Labels look and work the same. They do not travel with a copy of the file, and a file deleted and created again is a new file with no label; back up `tags-overlay.json` if labels matter. Libraries other than the main folder always keep labels in the Studio.
 

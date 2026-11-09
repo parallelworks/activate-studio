@@ -106,14 +106,14 @@ with its English model (see [OCR in the app](#ocr-in-the-app)); downmark
 hands it each scanned page, so this needs no poppler either. Images are
 also described by a vision model when AI features are on and one is
 chosen under Settings, General, AI features.
-Settings, Indexing, Building the index lists what this Mac reads and what is found by
+Settings, Indexing, Building lists what this Mac reads and what is found by
 name only.
 
 *Indexing:* the first build makes every file searchable by name within
 seconds, then reads documents, images and text, then makes the embeddings
 for search by meaning, each phase with its own count at the bottom of the
 navigation, in Settings, Indexing, Libraries and on Stats. Each phase uses one thread
-per processor core unless Settings, Indexing, Building the index says otherwise. A build can be
+per processor core unless Settings, Indexing, Building says otherwise. A build can be
 stopped and resumed with Update index; the cached text and embeddings are
 kept, so it continues rather than starting over, and so does choosing a
 folder that was indexed before.

@@ -77,7 +77,7 @@ describe('Settings, Indexing', () => {
       { id: 'indexing', label: 'Indexing', group: 'Studio' },
     ])
     expect(rows.map(r => r.id)).not.toContain('libraries')
-    expect(INDEXING_TABS.map(t => t.label)).toEqual(['Libraries', 'Sync and search', 'Building the index', 'Storage and logs'])
+    expect(INDEXING_TABS.map(t => t.label)).toEqual(['Libraries', 'Sync and search', 'Building', 'Storage and logs'])
   })
 
   it('maps its tabs and the old addresses to the section', () => {
@@ -142,7 +142,7 @@ describe('Settings, Indexing', () => {
     expect(tabNamed('Libraries')).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('Building the index holds how it is built, what is read and what this computer reads, saved as they change', async () => {
+  it('Building holds how it is built, what is read and what this computer reads, saved as they change', async () => {
     const s = stub()
     at('#view=settings:building')
     render(<SettingsView />)

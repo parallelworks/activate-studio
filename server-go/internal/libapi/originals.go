@@ -196,7 +196,7 @@ func (s *Service) OpenOriginal(ctx context.Context, l libraries.Library, rel str
 				root = s.ownRootOf(l)
 			}
 			if root == "" {
-				return nil, apierr.New(409, "the library's folder on that host is not known: name it in Settings, Libraries")
+				return nil, apierr.New(409, "the library's folder on that host is not known: name it in Settings, Indexing, Libraries")
 			}
 			site, err := s.readThroughSite(rt)
 			if err != nil {
@@ -279,7 +279,7 @@ func (s *Service) DownloadOriginal(ctx context.Context, l libraries.Library, rel
 				root = s.ownRootOf(l)
 			}
 			if root == "" {
-				return "", nil, apierr.New(409, "the library's folder on that host is not known: name it in Settings, Libraries")
+				return "", nil, apierr.New(409, "the library's folder on that host is not known: name it in Settings, Indexing, Libraries")
 			}
 			site, err := s.readThroughSite(rt)
 			if err != nil {

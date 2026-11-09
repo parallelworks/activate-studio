@@ -16,7 +16,7 @@ const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
 
 /**
  * Settings, Indexing: how the main folder's index is built and where it is
- * kept, in two parts for two tabs. IndexBuildSettings (Building the index)
+ * kept, in two parts for two tabs. IndexBuildSettings (Building)
  * holds the threads every phase uses, the main folder's depth (names, text,
  * OCR, meaning on documents or on all files), how documents are read (the
  * PDF fallback, LibreOffice for older Office files, image descriptions when

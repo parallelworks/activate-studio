@@ -288,7 +288,7 @@ func (m *Module) originalTextForTool(c context.Context, lib libraries.Library, r
 // noFilesHere is noFilesHere: what a library with no files here cannot do.
 func noFilesHere(lib libraries.Library, needsFiles bool) error {
 	if needsFiles && lib.Site == "" && lib.SourceRoot == "" && lib.ReadThrough == nil {
-		return &toolError{lib.Label + " has no files on this host; it can be searched and read from its index (read_kb_file), but its originals cannot be opened. Settings, Libraries can name another host that has them."}
+		return &toolError{lib.Label + " has no files on this host; it can be searched and read from its index (read_kb_file), but its originals cannot be opened. Settings, Indexing, Libraries can name another host that has them."}
 	}
 	if !needsFiles && lib.Site == "" && lib.SourceRoot == "" && !lib.Caps.Index {
 		return &toolError{lib.Label + " has no files on this host and no index to read; it can be searched but not read"}
