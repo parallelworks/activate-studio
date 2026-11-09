@@ -584,12 +584,12 @@ func (m *Module) sourceFile(r *http.Request) (Library, string, string, error) {
 // library and path name, for routes outside this package (the 3D model
 // preview).
 func (m *Module) SourceFile(r *http.Request) (lib, rel, abs string, err error) {
-	l, rel, abs, err := m.sourceFile(r)
+	l, rel, abs, err := m.previewSource(r, true)
 	return l.ID, rel, abs, err
 }
 
 func (m *Module) raw(w http.ResponseWriter, r *http.Request) error {
-	_, _, abs, err := m.sourceFile(r)
+	_, _, abs, err := m.previewSource(r, true)
 	if err != nil {
 		return m.handled(w, r, err)
 	}
@@ -604,7 +604,7 @@ var htmlFile = func(p string) bool {
 // html serves corpus HTML under a hard sandbox: inline script and style
 // run, nothing loads, and the page has no origin.
 func (m *Module) html(w http.ResponseWriter, r *http.Request) error {
-	_, _, abs, err := m.sourceFile(r)
+	_, _, abs, err := m.previewSource(r, true)
 	if err != nil {
 		return m.handled(w, r, err)
 	}
@@ -616,7 +616,7 @@ func (m *Module) html(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (m *Module) pdf(w http.ResponseWriter, r *http.Request) error {
-	_, rel, abs, err := m.sourceFile(r)
+	_, rel, abs, err := m.previewSource(r, true)
 	if err != nil {
 		return m.handled(w, r, err)
 	}
@@ -639,7 +639,7 @@ func previewKey(lib Library, rel string) string {
 }
 
 func (m *Module) pdfInfo(w http.ResponseWriter, r *http.Request) error {
-	lib, rel, abs, err := m.sourceFile(r)
+	lib, rel, abs, err := m.previewSource(r, true)
 	if err != nil {
 		return m.handled(w, r, err)
 	}
@@ -656,7 +656,7 @@ func (m *Module) pdfInfo(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (m *Module) pdfPage(w http.ResponseWriter, r *http.Request) error {
-	lib, rel, abs, err := m.sourceFile(r)
+	lib, rel, abs, err := m.previewSource(r, false)
 	if err != nil {
 		return m.handled(w, r, err)
 	}
@@ -676,7 +676,7 @@ func (m *Module) pdfPage(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (m *Module) officePreview(w http.ResponseWriter, r *http.Request) error {
-	_, _, abs, err := m.sourceFile(r)
+	_, _, abs, err := m.previewSource(r, true)
 	if err != nil {
 		return m.handled(w, r, err)
 	}
@@ -689,7 +689,7 @@ func (m *Module) officePreview(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (m *Module) officeMedia(w http.ResponseWriter, r *http.Request) error {
-	_, _, abs, err := m.sourceFile(r)
+	_, _, abs, err := m.previewSource(r, false)
 	if err != nil {
 		return m.handled(w, r, err)
 	}

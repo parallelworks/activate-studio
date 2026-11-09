@@ -135,7 +135,21 @@ func (e *Engine) RemoteFile(ctx context.Context, root, rel string) (*kb.Obj, err
 	if t == nil {
 		return nil, apierr.New(404, "no such library")
 	}
-	return e.ReadRemoteFile(ctx, t.Site, t.Key, t.SourceRoot, rel, 120*time.Second)
+	o, err := e.ReadRemoteFile(ctx, t.Site, t.Key, t.SourceRoot, rel, 120*time.Second)
+	if err != nil {
+		return o, err
+	}
+	if src, _ := o.Get("source"); src != "none" {
+		return o, nil
+	}
+	// A PDF, an Office file or an image: the text its index there holds,
+	// as the file view shows a local file's extracted text.
+	sub, _ := CleanRel(rel)
+	dir, name := path.Split(sub)
+	if it := e.IndexedTextState(ctx, root, strings.TrimSuffix(dir, "/"), name); it.State == "text" {
+		o = o.Set("truncated", kb.UTF16Len(it.Text) > PreviewBytes).Set("content", kb.SliceUTF16(it.Text, PreviewBytes)).Set("format", "text").Set("source", "extracted")
+	}
+	return o, nil
 }
 
 // ReadRemoteFile is readRemoteFile: one file under sourceRoot on a host,
