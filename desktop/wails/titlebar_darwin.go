@@ -81,9 +81,11 @@ const titleControlsPx = 82
 // compactInsetPx and compactControlsPx are the same for the compact layout,
 // with a classification banner (setCompactTitle): no toolbar, so the
 // controls sit at a plain title bar's height, and the banner is that strip.
+// There the controls' frames are 14 by 16 at x 7, 27 and 47, y 6, ending
+// at 61 (the self test's window report).
 const (
 	compactInsetPx    = 28
-	compactControlsPx = 76
+	compactControlsPx = 70
 )
 
 // titleMetrics is the row's height and the controls' reach in a layout.

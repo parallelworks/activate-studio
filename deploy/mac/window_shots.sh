@@ -109,7 +109,7 @@ for name in "Matthew's Studio" "Materials Engineering Knowledge Studio"; do
   sleep 4
   shot "name-$(printf '%s' "$name" | tr -cd 'A-Za-z' | head -c 12)-light-expanded" 1
 done
-page "fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({appName:null})}).then(()=>location.reload())"
+page "fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({appName:''})}).then(()=>location.reload())"
 sleep 3
 # The banner switched on live, from the library, without a reload.
 state light 0 library; sleep 4
