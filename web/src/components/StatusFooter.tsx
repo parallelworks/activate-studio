@@ -11,7 +11,7 @@ import { openAbout, openUpdates, openWhatsNew } from '../api'
 import { underWay, updateActions, useUpdateFlow, type UpdateFlow } from '../updateFlow'
 import { UpdateProgress } from './UpdatesSection'
 import { share, syncIndex, type AiHealth } from '../statusShare'
-import { useAppConfig } from '../config'
+import { aiOn, useAppConfig } from '../config'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -381,6 +381,17 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     window.addEventListener('ade:model-access-changed', now)
     return () => { clearInterval(t); off(); window.removeEventListener('ade-kb-changed', now); window.removeEventListener('ade:model-access-changed', now) }
   }, [])
+  // Switching AI features on or off changes the model line at once: the
+  // configuration is read again after the switch is saved, and a change of
+  // it here asks the server for the model health again, instead of waiting
+  // for the next poll.
+  const aiFlag = cfg.loaded ? aiOn(cfg) : null
+  const seenAi = useRef<boolean | null>(null)
+  useEffect(() => {
+    if (aiFlag === null) return
+    if (seenAi.current !== null && seenAi.current !== aiFlag) void refresh()
+    seenAi.current = aiFlag
+  }, [aiFlag]) // eslint-disable-line react-hooks/exhaustive-deps
   // Polled: a change means a new version was rolled out under this page.
   // The page keeps working against the new server, but its own code is
   // the old build, so it says so and offers a reload; open conversations
@@ -470,7 +481,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           />
         </div>
       )}
-      {ai && cfg.aiEnabled !== false && (
+      {/* An 'off' answer read before AI features were switched on is stale
+          until the read the switch starts returns, so it is not shown. */}
+      {ai && cfg.aiEnabled !== false && ai.status !== 'off' && (
         <div className="status-line" title="Click for model availability details">
           <AiPanel
             ai={ai}
