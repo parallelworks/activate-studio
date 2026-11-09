@@ -79,7 +79,10 @@ type App struct {
 	mu       sync.Mutex
 	state    ShellState
 	barColor string // the title bar's, #rrggbb (titlebar.go)
-	moved    *struct {
+	// compactTitle: a classification banner is shown, and the window
+	// controls sit at a plain title bar's height over it (titlebar.go).
+	compactTitle bool
+	moved        *struct {
 		port int
 		hash string
 	}
@@ -293,7 +296,11 @@ func (a *App) execJS(js string) {
 // shimScript is the shim, with the self test's page side appended when it
 // runs.
 func (a *App) shimScript() string {
-	cfg := map[string]any{"test": a.test != nil, "titleInset": titleInsetPx, "titleControls": titleControlsPx}
+	a.mu.Lock()
+	compact := a.compactTitle
+	a.mu.Unlock()
+	inset, controls := titleMetrics(compact)
+	cfg := map[string]any{"test": a.test != nil, "titleInset": inset, "titleControls": controls, "titleCompact": compact}
 	b, _ := json.Marshal(cfg)
 	s := strings.Replace(shimJS, "__STUDIO_SHELL_CONFIG__", string(b), 1)
 	if a.test != nil {

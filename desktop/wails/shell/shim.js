@@ -156,11 +156,36 @@
   // Anything that takes a click is not empty: a control by its element or
   // role, or anything with a pointer or resize cursor, as the page gives
   // whatever it makes clickable.
+  //
+  // With a classification banner the window takes its compact layout: the
+  // controls at a plain title bar's height, over the banner, which is that
+  // strip. The page marks the banner on the html element (data-banner,
+  // shown or none) once its settings are read; the shim tells the shell,
+  // which adds or removes its toolbar row and answers the new height and
+  // reach. Until the page says, the layout is the one the last launch
+  // ended with (cfg.titleCompact), so a launch does not jump.
   var inset = Number(cfg.titleInset) || 0;
   if (inset > 0) {
-    document.documentElement.classList.add('shell-inset');
-    document.documentElement.style.setProperty('--shell-top', inset + 'px');
-    document.documentElement.style.setProperty('--shell-controls', (Number(cfg.titleControls) || 0) + 'px');
+    var root = document.documentElement;
+    var setRow = function (top, controls) {
+      inset = top;
+      root.style.setProperty('--shell-top', top + 'px');
+      root.style.setProperty('--shell-controls', controls + 'px');
+    };
+    root.classList.add('shell-inset');
+    setRow(inset, Number(cfg.titleControls) || 0);
+    var compact = !!cfg.titleCompact;
+    var followBanner = function () {
+      var b = root.getAttribute('data-banner');
+      if (b !== 'shown' && b !== 'none') return;
+      var want = b === 'shown';
+      if (want === compact) return;
+      compact = want;
+      call('SetCompactTitle', [want]).then(function (m) {
+        if (m && m.titleInset > 0 && compact === want) setRow(m.titleInset, m.titleControls || 0);
+      }).catch(function () { /* the layout stays as it was */ });
+    };
+    new MutationObserver(followBanner).observe(root, { attributes: true, attributeFilter: ['data-banner'] });
     var CONTROL = 'button, a, input, select, textarea, label, summary, [role="button"], [role="tab"], [role="link"],'
       + ' [role="menuitem"], [role="option"], [role="treeitem"], [role="checkbox"], [role="switch"], [role="slider"],'
       + ' [contenteditable="true"], [draggable="true"], [tabindex]:not([tabindex="-1"])';

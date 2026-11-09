@@ -194,7 +194,8 @@ func (t *SelfTest) advance(phase string) {
 
 // watchReopen (plan hold): a file named reopen in the test folder asks for
 // the relaunch the page asks for after an update that changed the window's
-// program, and a file named eval.js is run in the page.
+// program, a file named eval.js is run in the page, and a file named
+// window-report asks for the window's state in window-report.json.
 func (t *SelfTest) watchReopen() {
 	f := filepath.Join(t.dir, "reopen")
 	js := filepath.Join(t.dir, "eval.js")
@@ -213,6 +214,15 @@ func (t *SelfTest) watchReopen() {
 			t.logf("eval %d bytes", len(b))
 			t.app.execJS(string(b))
 			_ = os.WriteFile(filepath.Join(t.dir, "evaluated"), []byte(time.Now().Format(time.RFC3339Nano)+"\n"), 0o644)
+		}
+		// A fresh report of the window's own state (its controls move
+		// with the banner), written to window-report.json.
+		if _, err := os.Stat(filepath.Join(t.dir, "window-report")); err == nil {
+			_ = os.Remove(filepath.Join(t.dir, "window-report"))
+			if r := windowReport(); r != nil {
+				b, _ := json.MarshalIndent(r, "", " ")
+				_ = os.WriteFile(filepath.Join(t.dir, "window-report.json"), b, 0o644)
+			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
