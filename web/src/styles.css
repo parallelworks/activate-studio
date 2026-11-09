@@ -417,7 +417,12 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 .footer-pending { min-height: 74px; }
 .footer-skeleton { margin: 4px 0 10px; }
 .status-line.muted2 { color: var(--pw-muted); }
-.footer-sync { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+/* The action beside a footer line gives way first: at the Narrow width it
+   wraps onto two lines before the line's own text, such as the version, is
+   cut. The text keeps its full width up to what the action's minimum leaves
+   it; only a longer one, such as a clone's git describe, is cut. */
+.footer-sync { margin-left: auto; flex-shrink: 1; min-width: 6em; white-space: normal; text-align: right; line-height: 1.2; }
+.status-line:has(> .footer-sync) > .identity-btn { flex-shrink: 0; max-width: calc(100% - 6em - 6px); }
 /* A long build name (a clone's git describe) stays on one line. */
 .status-line .identity-btn { min-width: 0; }
 .identity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
