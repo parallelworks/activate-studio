@@ -169,7 +169,7 @@ describe('the semantic map', () => {
     expect(screen.getByRole('button', { name: 'Turn slowly' })).toBeInTheDocument()
   })
 
-  it('names the file under the pointer, and opens it on a click', async () => {
+  it('names the file under the pointer, selects it on a click, and opens it from its card', async () => {
     const opened: string[] = []
     render(<SemanticMap onOpen={p => opened.push(p)} />)
     await screen.findByText(/files shown/)
@@ -183,6 +183,9 @@ describe('the semantic map', () => {
     expect(await screen.findByText('kitchen/bread/sourdough.md')).toBeInTheDocument()
     pointer('pointerdown', 0.8, 0.7)
     pointer('pointerup', 0.8, 0.7)
+    expect(opened).toEqual([])
+    const card = await screen.findByRole('group', { name: 'Selected file sourdough.md' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Open in Library' }))
     expect(opened).toEqual(['kitchen/bread/sourdough.md'])
   })
 
@@ -608,6 +611,7 @@ describe('maps of each library', () => {
     await screen.findByText('kitchen/bread/sourdough.md')
     pointer('pointerdown', 0.8, 0.7)
     pointer('pointerup', 0.8, 0.7)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open in Library' }))
     expect(opened).toEqual(['kitchen/bread/sourdough.md'])
     expect(currentLibrary()).toBe('papers')
   })
