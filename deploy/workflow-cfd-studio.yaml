@@ -233,9 +233,9 @@ permissions:
               - label: Bundle (bucket or pre-staged; for air-gapped systems)
                 value: bundle
             tooltip: |
-              Container → run a prebuilt Apptainer image (deploy/app.def) that
-              carries Node, Python, GUFI, and the embedding model, so nothing is
-              compiled on the resource and host differences stop mattering.
+              Container → run a prebuilt Apptainer image of the Linux app
+              (deploy/app-go.def; each release publishes one to ghcr.io), so
+              host differences stop mattering.
               GitHub release → download the Linux app of a release from GitHub
               (needs outbound HTTPS to github.com); nothing is built on the
               resource.

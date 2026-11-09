@@ -1,13 +1,14 @@
-# Build the Singularity image from deploy/app.def, prove that it starts and
-# that GUFI is complete inside it, and publish it to ghcr.io as an ORAS artifact.
+# Build the Node version's Singularity image from deploy/app.def and prove
+# that it starts and that GUFI is complete inside it. Releases publish the Go
+# version's image (deploy/app-go.def) from container-go.yml; this one is
+# published only by hand, as sha-<commit> or a tag given here.
 #
 #   pull_request or push to main touching the image's inputs : build + test, no push
-#   release published                                         : build + test, push :<tag> (+ :latest)
 #   workflow_dispatch (manual "Run workflow" button)          : build + test, push only if ticked
 #
 # The image bakes in far more than app.def, so a change anywhere in what it
 # copies or builds runs this too; otherwise a break would first surface when
-# a release is published, and that release would ship without an image.
+# someone builds the image by hand.
 # The workflow starts on every PR and push so build-test can be a required
 # check: the changes job decides whether the image is affected, and a
 # skipped build-test counts as passing.
@@ -25,8 +26,6 @@
 name: container
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       push:

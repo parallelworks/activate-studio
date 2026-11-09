@@ -10,7 +10,7 @@ Three ways to run the Studio, how people sign in to a shared one, then how it re
 |---|---|
 | GitHub release (default) | downloads the Linux app of the release named in Release (a tag such as `v1.190`; `main` means the current Stable release) and checks it against its `.sha256` |
 | Bundle | the same file from a bucket, or pre-staged at `<workdir>/bundle-prestage.tar.gz`, for systems without outbound network. `deploy/make_bundle.sh` downloads a release's file and checks it, ready to upload |
-| Container | runs the Apptainer image built from `deploy/app.def` (below) |
+| Container | runs the Apptainer image built from the same Linux app (`deploy/app-go.def`, below) |
 
 A relaunch from the same release or bundle file keeps the app in place unless Load Latest Bundle is set. The index, settings and credentials live in the Index Directory, by default `<workdir>/data/index`. A deployment that kept them in `<workdir>/app/index` under v1.188 or earlier has them moved there on its first launch of the Go version, so its index, labels, conversations and settings carry over. With Index on Launch set, the workflow starts a full index once the server answers, and the Studio serves while it builds.
 
@@ -20,19 +20,27 @@ On the platform, the assistant gains workflow tools (the account's catalog, a pr
 
 ## In a container
 
-`deploy/app.def` packages the server, the interface, GUFI, and the text extraction tools as one Apptainer image, for container-first sites and for the compute-node workflow. It is still the Node version, and it is the image the release publishes to ghcr.io; `deploy/app-go.def` builds the Go version from the Linux app. Build it on Linux with Apptainer 1.2 or later:
+`deploy/app-go.def` packages the Linux app (the Go server, the interface, GUFI, tesseract and the search by meaning model) as one Apptainer image, for container-first sites and for the compute-node workflow. Each release publishes it to ghcr.io from that release's Linux app (`.github/workflows/container-go.yml`), tagged with the version, and `latest` for the newest Stable release:
 
 ```
-apptainer build studio.sif deploy/app.def
+apptainer pull studio.sif oras://ghcr.io/parallelworks/activate-studio:latest
 ```
 
-Run it with the knowledge base and its index bound in:
+To build one, unpack a release's `activate-studio-linux-x86_64.tar.gz` so that `.container/activate-studio` is its top folder, then from the repository root, on Linux with Apptainer 1.2 or later:
+
+```
+apptainer build studio.sif deploy/app-go.def
+```
+
+Run it with the knowledge base and a writable data folder bound in. The index, settings and credentials go in `index` under the data folder:
 
 ```
 apptainer run --bind /path/to/folder:/kb --env KB_ROOT=/kb \
-  --bind /path/to/index:/kb-index --env INDEX_BASE=/kb-index \
+  --bind /path/to/data:/data --env DATA_DIR=/data \
   --env PORT=4080 studio.sif
 ```
+
+`INDEX_ON_START=1` starts a full index once the server answers. `deploy/app.def` builds the Node version's image, which releases no longer publish.
 
 The deploy workflow pulls a prebuilt image from a bucket when one is configured, so most deployments never build one.
 
