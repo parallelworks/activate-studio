@@ -493,14 +493,128 @@ async function rawRun(plan: Plan): Promise<QueryResult> {
   }
   const width = lines.length ? Math.max(...lines.map(r => r.length)) : 1
   return {
-    columns: rawColumns(width),
+    columns: rawColumns(plan.stages.E, width, lines.length > 0),
     rows: lines.slice(0, MAX_ROWS),
     elapsedMs: Date.now() - t0,
     truncated: lines.length > MAX_ROWS,
   }
 }
 
-const rawColumns = (width: number) => Array.from({ length: width }, (_, i) => `col${i + 1}`)
+// The names of a raw SELECT's result columns, as SQLite names them: the
+// alias after AS (or a bare alias after a column), else a column's own
+// name, else the expression as written. The Go server's gufi.SelectColumnNames
+// is the same; both read ASCII only, so their offsets agree.
+const IDENT = '(?:[A-Za-z_][A-Za-z0-9_$]*|"(?:[^"]|"")*"|`[^`]*`|\\[[^\\]]*\\])'
+const COLUMN_RE = new RegExp(`^(?:${IDENT}\\.)*(${IDENT})$`)
+const BARE_ALIAS_RE = new RegExp(`^(?:${IDENT}\\.)*${IDENT}[ \\t\\r\\n\\f\\v]+(${IDENT})$`)
+const SINGLE_NAME_RE = new RegExp(`^${IDENT}$`)
+const STOP_WORDS = new Set(['from', 'where', 'group', 'having', 'order', 'limit', 'union', 'intersect', 'except', 'window'])
+const isWord = (c: string) => /^[A-Za-z0-9_$]$/.test(c)
+const isSpace = (c: string) => c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\v'
+const trimSql = (s: string) => s.replace(/^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g, '')
+function unquoteIdent(s: string): string {
+  if (s.length >= 2) {
+    if (s[0] === '"' && s.at(-1) === '"') return s.slice(1, -1).replace(/""/g, '"')
+    if ((s[0] === '`' && s.at(-1) === '`') || (s[0] === '[' && s.at(-1) === ']')) return s.slice(1, -1)
+  }
+  return s
+}
+
+/** The SQL with each comment made one space; quoted text is kept. */
+function withoutComments(s: string): string {
+  let out = ''
+  for (let i = 0; i < s.length;) {
+    const c = s[i]
+    if (c === "'" || c === '"' || c === '`' || c === '[') {
+      const close = c === '[' ? ']' : c
+      let j = i + 1
+      while (j < s.length) {
+        if (s[j] === close) {
+          if ((close === "'" || close === '"') && s[j + 1] === close) { j += 2; continue }
+          break
+        }
+        j++
+      }
+      j = Math.min(j + 1, s.length)
+      out += s.slice(i, j); i = j
+    } else if (c === '-' && s[i + 1] === '-') {
+      while (i < s.length && s[i] !== '\n') i++
+      out += ' '
+    } else if (c === '/' && s[i + 1] === '*') {
+      const j = s.indexOf('*/', i + 2); i = j >= 0 ? j + 2 : s.length
+      out += ' '
+    } else { out += c; i++ }
+  }
+  return out
+}
+
+/** null when the names cannot be told from the text, as for * or a
+ *  statement that is not one SELECT. */
+export function selectColumnNames(sql: string): string[] | null {
+  const s = trimSql(withoutComments(sql)).replace(/[; \t\r\n]+$/, '')
+  if (s.length < 7 || s.slice(0, 6).toLowerCase() !== 'select' || !isSpace(s[6])) return null
+  let i = 6
+  while (i < s.length && isSpace(s[i])) i++
+  for (const w of ['distinct', 'all']) {
+    if (s.slice(i, i + w.length).toLowerCase() === w && (s.length === i + w.length || !isWord(s[i + w.length]))) { i += w.length; break }
+  }
+  const items: { start: number; end: number; as: number }[] = []
+  let cur = { start: i, end: 0, as: -1 }
+  let depth = 0
+  let end = s.length
+  scan: while (i < s.length) {
+    const c = s[i]
+    if (c === "'" || c === '"' || c === '`' || c === '[') {
+      const close = c === '[' ? ']' : c
+      i++
+      while (i < s.length) {
+        if (s[i] === close) {
+          if ((close === "'" || close === '"') && s[i + 1] === close) { i += 2; continue }
+          break
+        }
+        i++
+      }
+      i++
+      continue
+    }
+    if (c === '(') depth++
+    else if (c === ')') depth--
+    else if (c === ',' && depth === 0) { cur.end = i; items.push(cur); cur = { start: i + 1, end: 0, as: -1 } }
+    else if (depth === 0 && isWord(c) && (i === 0 || !isWord(s[i - 1]))) {
+      let j = i
+      while (j < s.length && isWord(s[j])) j++
+      const w = s.slice(i, j).toLowerCase()
+      if (STOP_WORDS.has(w)) { end = i; break scan }
+      if (w === 'as') cur.as = i
+      i = j
+      continue
+    }
+    i++
+  }
+  if (depth !== 0) return null
+  cur.end = end
+  items.push(cur)
+  const names: string[] = []
+  for (const it of items) {
+    const text = trimSql(s.slice(it.start, it.end))
+    if (!text || text === '*' || text.endsWith('.*')) return null
+    if (it.as >= 0) {
+      const alias = trimSql(s.slice(it.as + 2, it.end))
+      if (SINGLE_NAME_RE.test(alias) && trimSql(s.slice(it.start, it.as))) { names.push(unquoteIdent(alias)); continue }
+    }
+    const m = BARE_ALIAS_RE.exec(text) ?? COLUMN_RE.exec(text)
+    names.push(m ? unquoteIdent(m[1]) : text)
+  }
+  return names
+}
+
+/** The names a raw SELECT gives its columns when they can be told and fit
+ *  the rows (or there are no rows), else col1 to colN for the widest row. */
+export function rawColumns(sql: string, width: number, anyRows: boolean): string[] {
+  const names = selectColumnNames(sql)
+  if (names && (!anyRows || names.length === width)) return names
+  return Array.from({ length: Math.max(width, 1) }, (_, i) => `col${i + 1}`)
+}
 
 export interface QueryRequest {
   canned?: string; sql?: string; builder?: BuilderPayload
@@ -662,7 +776,7 @@ export async function queryScope(body: QueryRequest, viewerId: string | null): P
   }
   const label = new Map(libs.map(l => [l.id, l.label]))
   const width = Math.max(1, ...tagged.map(t => t.row.length))
-  const columns = ['library', ...(plans[0].plan.raw ? rawColumns(width) : plans[0].plan.columns)]
+  const columns = ['library', ...(plans[0].plan.raw ? rawColumns(plans[0].plan.stages.E, width, tagged.length > 0) : plans[0].plan.columns)]
   const merged = mergeRows(tagged, order)
   const byLabel = new Map(libs.map(l => [l.label, l]))
   for (const f of failed ?? []) {

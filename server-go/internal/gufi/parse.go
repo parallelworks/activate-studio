@@ -248,7 +248,7 @@ func (p *Planner) StripIndexPrefix(cell string) string {
 
 // Rows is query.ts's parse and its raw counterpart: the rows of a plan's
 // output, cells relative to the index, at most MaxRows. A raw plan's
-// columns are col1 to colN for its widest row.
+// columns are named as RawColumns says.
 func (p *Planner) Rows(plan Plan, stdout string) QueryResult {
 	fields := len(plan.Columns)
 	var rows [][]string
@@ -273,10 +273,7 @@ func (p *Planner) Rows(plan Plan, stdout string) QueryResult {
 				width = max(width, len(r))
 			}
 		}
-		cols = make([]string, width)
-		for i := range cols {
-			cols[i] = "col" + itoa(i+1)
-		}
+		cols = RawColumns(plan.Stages.E, width, len(rows) > 0)
 	}
 	res := QueryResult{Columns: cols, Rows: rows, Truncated: len(rows) > MaxRows}
 	if res.Rows == nil {

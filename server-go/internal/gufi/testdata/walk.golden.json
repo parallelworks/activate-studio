@@ -397,8 +397,29 @@
   },
   {
    "columns": [
-    "col1",
-    "col2"
+    "name",
+    "size"
+   ],
+   "rows": [
+    [
+     "annual-report.md",
+     "64"
+    ],
+    [
+     "onboarding.md",
+     "65"
+    ],
+    [
+     "budget-q1.md",
+     "97"
+    ]
+   ],
+   "truncated": false
+  },
+  {
+   "columns": [
+    "file",
+    "bytes"
    ],
    "rows": [
     [

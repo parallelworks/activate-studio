@@ -93,6 +93,8 @@ In the knowledge base the labels are saved on the files. In any other library, i
 
 Structured questions about the files themselves (largest, oldest, totals by type or owner) answered in milliseconds, in the libraries ticked under **Querying**. Pick a preset under **Start from** and change it, add conditions (all must match, or any), or write read-only SQL, and save the ones you reuse. Sizes take units (`10 MB`), and dates take a day (`2026-01-01`) or a time ago (`7 days`). **GUFI commands** under the form shows what ran, ready to copy, with each command's error output, also when the query fails; the code button beside a saved query, or **Show SQL** for the form on screen, shows the SQL it runs and its command.
 
+The columns of your own SQL are named as SQLite names them: the name after `AS` (`SELECT name AS file, size AS bytes ...` heads the columns **file** and **bytes**), else the column's own name, else the expression as written. A column named `bytes` shows its sizes in units. With `*` in the list the columns are named col1, col2 and so on.
+
 **Export CSV** above the rows saves them as a CSV file, sizes in bytes, and **Copy** puts them on the clipboard for a spreadsheet. Both take the rows the query returned, up to its limit (2,000 at most); for more, narrow the query or run the command under **GUFI commands** in a terminal.
 
 ## Stats

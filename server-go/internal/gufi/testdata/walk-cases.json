@@ -16,6 +16,7 @@
   {"builder": {"source": "files", "filters": [{"field": "extension", "op": "eq", "value": "md"}], "groupBy": "directory", "sort": "bytes"}},
   {"builder": {"source": "files", "filters": [{"field": "modified", "op": "lt", "value": "2026-01-01"}, {"field": "size", "op": "gt", "value": "1k"}], "match": "any", "sort": "size"}},
   {"sql": "SELECT name, size FROM vrpentries WHERE name LIKE '%.md'"},
+  {"sql": "SELECT name AS file, size AS bytes FROM vrpentries WHERE name LIKE '%.md'"},
   {"sql": "SELECT nope FROM vrpentries"}
  ]
 }

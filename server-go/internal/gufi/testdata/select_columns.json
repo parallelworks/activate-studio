@@ -1,0 +1,22 @@
+[
+  { "sql": "SELECT name AS file, size AS bytes FROM vrpentries;", "names": ["file", "bytes"] },
+  { "sql": "select name as file, size bytes from vrpentries where size > 10 order by size", "names": ["file", "bytes"] },
+  { "sql": "SELECT name, size FROM vrpentries WHERE size > 10;", "names": ["name", "size"] },
+  { "sql": "SELECT vrpentries.name, e.size FROM vrpentries e", "names": ["name", "size"] },
+  { "sql": "SELECT count(*), sum(size) AS total FROM vrpentries", "names": ["count(*)", "total"] },
+  { "sql": "SELECT CAST(size AS TEXT), CAST(size AS INTEGER) AS n FROM vrpentries", "names": ["CAST(size AS TEXT)", "n"] },
+  { "sql": "SELECT DISTINCT type AS kind FROM vrpentries", "names": ["kind"] },
+  { "sql": "SELECT name AS \"File name\", size AS [bytes on disk], mtime AS `modified` FROM vrpentries", "names": ["File name", "bytes on disk", "modified"] },
+  { "sql": "SELECT 'a, b' AS label, name FROM vrpentries", "names": ["label", "name"] },
+  { "sql": "SELECT name -- the file, FROM here\n  , size /* , not a column */ AS bytes\nFROM vrpentries", "names": ["name", "bytes"] },
+  { "sql": "SELECT name || ' from ' || type FROM vrpentries", "names": ["name || ' from ' || type"] },
+  { "sql": "SELECT CASE WHEN size > 10 THEN 'big' ELSE 'small' END AS band FROM vrpentries", "names": ["band"] },
+  { "sql": "SELECT (SELECT max(size) FROM vrpentries) AS largest, name FROM vrpentries", "names": ["largest", "name"] },
+  { "sql": "SELECT name AS a FROM vrpentries UNION SELECT name AS b FROM vrpentries", "names": ["a"] },
+  { "sql": "SELECT fromage, asset, size_from FROM vrpentries", "names": ["fromage", "asset", "size_from"] },
+  { "sql": "SELECT * FROM vrpentries", "names": null },
+  { "sql": "SELECT e.*, size FROM vrpentries e", "names": null },
+  { "sql": "SELECT name, FROM vrpentries", "names": null },
+  { "sql": "SELECT (name FROM vrpentries", "names": null },
+  { "sql": "DELETE FROM vrpentries", "names": null }
+]

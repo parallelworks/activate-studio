@@ -641,9 +641,7 @@ func (e *Engine) QueryScope(ctx context.Context, body []byte, viewer libraries.V
 	}
 	cols := []string{"library"}
 	if plans[0].plan.Raw {
-		for i := 1; i <= width; i++ {
-			cols = append(cols, "col"+strconv.Itoa(i))
-		}
+		cols = append(cols, gufi.RawColumns(plans[0].plan.Stages.E, width, len(rows) > 0)...)
 	} else {
 		cols = append(cols, plans[0].plan.Columns...)
 	}

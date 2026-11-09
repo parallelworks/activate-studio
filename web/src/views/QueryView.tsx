@@ -389,7 +389,8 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
           )}
           <Table stickyHeader density="compact" borderless wrapperClassName="table-scroll">
             {pathCol >= 0 && <Table.Header className="sel-col" />}
-            {result.columns.map(c => <Table.Header key={c}>{c}</Table.Header>)}
+            {/* Named as the server names them (a raw SELECT's AS aliases); two may share a name. */}
+            {result.columns.map((c, j) => <Table.Header key={j}>{c}</Table.Header>)}
             {result.rows.map((r, i) => (
               <tr key={i} className={pathCol >= 0 && sel.has(r[pathCol]) ? 'multi' : ''}>
                 {pathCol >= 0 && (
