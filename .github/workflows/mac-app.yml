@@ -137,6 +137,10 @@ jobs:
           fi
 
       - name: OCR
+        env:
+          # The sources' fallback through the release API (deploy/common/lib.sh),
+          # which refuses a runner without a token once its rate limit is spent.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           OUT_DIR="$RUNNER_TEMP/ocr" deploy/mac/build_ocr.sh
@@ -229,6 +233,10 @@ jobs:
           (cd "$RUNNER_TEMP/gufi" && shasum -a 256 -c gufi-macos-arm64.tar.gz.sha256)
           echo "GUFI_TARBALL=$RUNNER_TEMP/gufi/gufi-macos-arm64.tar.gz" >> "$GITHUB_ENV"
       - name: OCR
+        env:
+          # The sources' fallback through the release API (deploy/common/lib.sh),
+          # which refuses a runner without a token once its rate limit is spent.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           OUT_DIR="$RUNNER_TEMP/ocr" deploy/mac/build_ocr.sh
