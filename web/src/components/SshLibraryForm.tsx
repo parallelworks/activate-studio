@@ -3,6 +3,7 @@ import { Button, Callout, Field, Input, Select } from '@parallelworks/ui'
 import { api, type IndexDepth, type PwSystems } from '../api'
 import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } from './IndexDepth'
 import { sshOptionsProblem } from '../sshOptions'
+import { accessLabel, knownAppConfig } from '../config'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 
 /**
@@ -113,7 +114,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
     return (
       <div className="ssh-library-form">
         <Callout tone="warning" title="pw ssh cannot be used yet"
-          action={<Button variant="secondary" size="sm" onClick={() => (onOpenAccess ? onOpenAccess() : void (location.hash = '#view=settings:access'))}>Open Model access</Button>}>
+          action={<Button variant="secondary" size="sm" onClick={() => (onOpenAccess ? onOpenAccess() : void (location.hash = '#view=settings:access'))}>Open {accessLabel(knownAppConfig())}</Button>}>
           {systems.why}
         </Callout>
       </div>

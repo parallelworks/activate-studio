@@ -336,7 +336,8 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
    embedded app panels (Kubernetes viewer pattern). The dark chrome belongs
    to the platform shell around this session, not to the app. ---- */
 .sidenav {
-  width: 240px; flex-shrink: 0;
+  /* --nav-w: Settings, General, Sidebar, Width, or a drag of the edge. */
+  width: var(--nav-w, 240px); flex-shrink: 0;
   background: var(--pw-nav-bg);
   border-right: 1px solid var(--pw-border);
   color: var(--pw-text);
@@ -344,6 +345,15 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
   padding: 12px; overflow-y: auto;
 }
 .sidenav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding: 0 4px; }
+/* The sidebar's right edge as a handle: no width of its own, a 7px target
+   centered on the border. */
+.sidenav-resize { position: relative; flex: 0 0 0; width: 0; z-index: 6; outline: none; }
+.sidenav-resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: -4px; width: 7px; cursor: col-resize; }
+.sidenav-resize:hover::before, .sidenav-resize.dragging::before, .sidenav-resize:focus-visible::before {
+  background: linear-gradient(to right, transparent 2px, var(--pw-border-strong) 2px, var(--pw-border-strong) 5px, transparent 5px);
+}
+html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-select: none; }
+@media (max-width: 760px) { .sidenav-resize { display: none; } }
 .sidenav-brand { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
 .brand-icon { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; }
 .brand-text { font-size: 14px; color: var(--pw-muted); white-space: nowrap; overflow: hidden; }

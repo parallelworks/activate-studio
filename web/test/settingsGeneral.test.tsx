@@ -72,6 +72,8 @@ describe('Settings, General tabs', () => {
     expect(settingsTarget('updates')).toEqual({ section: 'general', tab: 'updates' })
     expect(settingsTarget('server')).toEqual({ section: 'general', tab: 'server' })
     expect(settingsTarget('access')).toEqual({ section: 'access', tab: 'appearance' })
+    // Branding joined Appearance; its address opens it at the Branding group.
+    expect(settingsTarget('branding')).toEqual({ section: 'general', tab: 'appearance', anchor: 'branding' })
     // Libraries and the old Indexing tab moved to the Indexing section.
     expect(settingsTarget('libraries')).toEqual({ section: 'indexing', tab: 'libraries' })
     expect(settingsTarget('indexing')).toEqual({ section: 'indexing', tab: 'sync-search' })
@@ -92,11 +94,10 @@ describe('Settings, General tabs', () => {
 
     // Appearance last, since a click on the tab already open changes nothing.
     const where: Record<string, (string | RegExp)[]> = {
-      Branding: ['Product name', 'Icon', 'Classification banner (empty for none)'],
       Sidebar: ['Library', 'Search', 'Query'],
       'AI features': ['Chat, Agents, and other features that call a model', 'Mission and context', 'Suggested questions (one per line)', 'Vision model for image captioning'],
       Server: ['Port'],
-      Appearance: ['Theme', 'Surface tone', 'Accent color'],
+      Appearance: ['Theme', 'Surface tone', 'Accent color', 'Branding', 'Product name', 'Icon', 'Classification banner (empty for none)'],
     }
     for (const [tab, labels] of Object.entries(where)) {
       fireEvent.click(tabNamed(tab))
@@ -109,10 +110,12 @@ describe('Settings, General tabs', () => {
     }
     // Indexing is a section of its own now, not a tab here.
     expect(screen.queryByRole('tab', { name: 'Indexing' })).toBeNull()
+    // No Branding tab: it is a group of Appearance.
+    expect(screen.queryByRole('tab', { name: 'Branding' })).toBeNull()
     // A tab's own address opens it.
-    at('#view=settings:branding')
-    act(() => { window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: 'settings', section: 'branding' } })) })
-    expect(tabNamed('Branding')).toHaveAttribute('aria-selected', 'true')
+    at('#view=settings:sidebar')
+    act(() => { window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: 'settings', section: 'sidebar' } })) })
+    expect(tabNamed('Sidebar')).toHaveAttribute('aria-selected', 'true')
   })
 
   it('#view=settings:setup, the address the macOS menu uses, opens setup over General where setup runs', async () => {
@@ -155,9 +158,9 @@ describe('Settings, General tabs', () => {
       if (url.startsWith('/api/setup/status')) return reply({ standalone: true, launcher: true, port: 4180 })
       return reply({})
     }))
-    at('#view=settings:branding')
+    at('#view=settings:server')
     render(<SettingsView />)
-    expect(await screen.findByRole('tab', { name: 'Branding' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('tab', { name: 'Server' })).toHaveAttribute('aria-selected', 'true')
     openUpdates()
     expect(location.hash).toBe('#view=settings:updates')
     // The app routes the address to the page, as App's hash handler does.

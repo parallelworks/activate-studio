@@ -6,7 +6,7 @@ import { UIProvider } from '@parallelworks/ui'
 import { useRunFile } from './runFile'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
-import { applyRememberedFavicon } from './config'
+import { applyRememberedFavicon, applyRememberedNavWidth } from './config'
 import { keepShellInPlace } from './shellScroll'
 import { installDownloadNotices } from './downloadNotice'
 // Geist Sans and Geist Mono, the platform's typefaces, from the shared package.
@@ -27,6 +27,7 @@ installDownloadNotices()
 restoreLastHash()
 rememberHashChanges()
 applyRememberedFavicon()
+applyRememberedNavWidth()
 
 // The workflow parser (and its WebAssembly) loads only once a workflow form
 // or graph first renders.

@@ -4,6 +4,7 @@ import {
 } from '@parallelworks/ui'
 import { api, type IndexSettings, type IndexSettingsInfo, type InstallItem, type ReadersReport } from '../api'
 import { useIndexStatus } from '../indexActivity'
+import { aiOn, useAppConfig } from '../config'
 import { IndexControls, IndexJobView, LastBuild, useIndexControls } from './IndexActivity'
 import { FolderBrowser, errText, waitForRestart } from './PrimaryFolder'
 import { IndexDepthControl } from './IndexDepth'
@@ -54,6 +55,9 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
   deploymentCred?: boolean | null
 }) {
   const { info, setInfo, error, setError } = useIndexSettingsInfo()
+  // Image descriptions need a model, so they show only with AI features on,
+  // as the app has it now: switching AI features on shows them at once.
+  const cfg = useAppConfig()
   const [saving, setSaving] = useState<string | null>(null)
   const [threads, setThreads] = useState<number | null>(null)
   const status = useIndexStatus()
@@ -138,7 +142,7 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
             <span className="muted">{soffice?.note}</span>
           </span>
         </label>
-        {info.ai?.enabled && (
+        {(cfg.loaded ? aiOn(cfg) : !!info.ai?.enabled) && (
           <>
             <label className="ix-switch">
               <Switch checked={s.imageDescriptions} disabled={!s.ocr || saving !== null} onCheckedChange={v => void save({ imageDescriptions: v }, 'imageDescriptions')} />

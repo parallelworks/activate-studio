@@ -22,7 +22,8 @@ import { StatusFooter } from './components/StatusFooter'
 import { UpdateNotice } from './components/UpdateNotice'
 import { UpdatedNotice } from './components/UpdatedNotice'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
-import { sectionAllowed, shownView, useAppConfig } from './config'
+import { aiPagesMounted, applyNavWidth, sectionAllowed, shownView, useAppConfig } from './config'
+import { NavResize } from './components/NavResize'
 import { applyAccent, applySurface } from './accents'
 import { onThemeChoice } from './theme'
 import { FullViewHost, RunPane } from './components/RunPane'
@@ -263,6 +264,7 @@ export default function App() {
     link.href = favicon
   }, [cfg, effectiveTheme])
   useEffect(() => { if (cfg.loaded) { applyAccent(cfg.accent); applySurface(cfg.surface) } }, [cfg])
+  useEffect(() => { if (cfg.loaded) applyNavWidth(cfg.navWidth) }, [cfg.loaded, cfg.navWidth])
   useEffect(() => {
     // An embed document is told its theme by the page hosting it, and that
     // instruction outranks every local derivation: the iframe must match
@@ -590,6 +592,7 @@ export default function App() {
         </div>
         <StatusFooter collapsed={navCollapsed} />
       </nav>
+      {!navCollapsed && <NavResize width={cfg.navWidth} />}
       <main className="content">
         {/* Above every page: a newer version to install, and once after an
             update, what it brought. */}
@@ -605,7 +608,9 @@ export default function App() {
         {/* Chat puts the status panel's toggle beside its own controls; the
             library, settings, and help have no header, so it floats at
             their top right. */}
-        <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView active={view === 'chat'} /></div>
+        {/* With AI features off, Chat and Agents are not mounted at all, so
+            nothing of theirs polls the server or reads a model. */}
+        {aiPagesMounted(cfg) && <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView active={view === 'chat'} /></div>}
         <div className={view === 'library' ? 'view with-toggle' : 'view hidden'}>
           <LibraryView display={display} onDisplay={setDisplay} />
           {view === 'library' && <PanelToggle className="panel-toggle-float" />}
@@ -614,7 +619,7 @@ export default function App() {
         <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
         <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView onOpen={openFile} /></div>
         <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
-        <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>
+        {aiPagesMounted(cfg) && <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>}
         {cfg.platform && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
         <div className={view === 'settings' ? 'view with-toggle' : 'view hidden'}>
           <SettingsView />

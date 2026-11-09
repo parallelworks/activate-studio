@@ -12,7 +12,7 @@ import { MainFolderDepth } from '../components/IndexDepth'
 import { FolderPicker, IndexBuildProgress, json, post, errText, useIndexBuild, type IndexJob, type SetupStatus } from '../components/PrimaryFolder'
 import { SshLibraryForm } from '../components/SshLibraryForm'
 import {
-  AI_SECTIONS, SECTION_SWITCHES, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
+  AI_SECTIONS, SECTION_SWITCHES, accessLabel, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
 } from '../config'
 import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
 
@@ -33,7 +33,7 @@ const STEPS = ['Welcome', 'Your Studio', 'Appearance', 'AI features', 'Sidebar',
 const STEP = { welcome: 0, studio: 1, appearance: 2, ai: 3, sidebar: 4, folder: 5, libraries: 6, done: 7 }
 
 /** Switches for the sidebar's pages, saved as the sections setting. With
- *  AI features off, Chat and Agents stay off. */
+ *  AI features off, Chat and Agents are not offered: they cannot show. */
 export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }: {
   value: string[] | undefined
   platform: boolean
@@ -52,19 +52,15 @@ export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }:
   }
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px 16px' }}>
-      {SECTION_SWITCHES.map(s => {
-        const aiOff = !aiEnabled && AI_SECTIONS.includes(s.id)
-        return (
-          <label key={s.id} className="key-persist" style={{ margin: 0, color: 'var(--pw-text)' }}>
-            <Switch checked={shown.includes(s.id) && !aiOff} disabled={aiOff} onCheckedChange={v => toggle(s.id, v)} aria-label={s.label} />
-            <span>
-              {s.label}
-              {s.id === 'workflows' && !platform && <span className="muted"> (needs a platform login)</span>}
-              {aiOff && <span className="muted"> (AI features off)</span>}
-            </span>
-          </label>
-        )
-      })}
+      {SECTION_SWITCHES.filter(s => aiEnabled || !AI_SECTIONS.includes(s.id)).map(s => (
+        <label key={s.id} className="key-persist" style={{ margin: 0, color: 'var(--pw-text)' }}>
+          <Switch checked={shown.includes(s.id)} onCheckedChange={v => toggle(s.id, v)} aria-label={s.label} />
+          <span>
+            {s.label}
+            {s.id === 'workflows' && !platform && <span className="muted"> (needs a platform login)</span>}
+          </span>
+        </label>
+      ))}
     </div>
   )
 }
@@ -489,7 +485,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             <p className="muted" style={{ margin: 0 }}>Pages to show in the sidebar. Settings and Help always show.</p>
             <SidebarSwitches value={cfg.sections} platform={!!cfg.platform} aiEnabled={aiOn} onChange={changeSections} />
             <p className="muted" style={{ margin: 0 }}>
-              Workflows runs ACTIVATE workflows, so it needs an ACTIVATE credential (Settings, Model access). For workflow
+              Workflows runs ACTIVATE workflows, so it needs an ACTIVATE credential (Settings, {accessLabel(cfg)}). For workflow
               YAML files of your own, without ACTIVATE, use <ExternalLink href={MERIDIAN_URL}>Meridian</ExternalLink>, the
               open-source workflow engine.
             </p>
