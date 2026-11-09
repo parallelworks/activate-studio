@@ -73,10 +73,13 @@ func (a *App) setBarColor(color string) error {
 	same := a.barColor == color
 	a.barColor = color
 	a.mu.Unlock()
+	// Painted every time, the same color too: the page reports it again on
+	// load and focus, so a bar painted before the window was ready, or
+	// repainted by the system since, comes back to the page's color.
+	paintBar(color)
 	if same {
 		return nil
 	}
-	paintBar(color)
 	file := barColorFile(a.cfg.DataDir)
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return err

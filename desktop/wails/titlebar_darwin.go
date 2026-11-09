@@ -44,6 +44,12 @@ import "C"
 
 import "strconv"
 
+// titleInsetPx is the strip at the top of the page the window controls
+// sit in: the window has no title bar of its own (macOptions), so the page
+// leaves this much room at the top of each column and the shim makes it
+// drag the window.
+const titleInsetPx = 28
+
 // useOwnTitleBar: the macOS bar is the system's, painted by paintBar.
 func useOwnTitleBar(string) {}
 
