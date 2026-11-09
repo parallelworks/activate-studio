@@ -244,9 +244,9 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 		return nil
 	}))
 
-	// Roll back: the version the last update replaced, downloaded and
-	// installed as a picked version is (retire.go), the state snapshot put
-	// back when it cannot read the state as it is.
+	// Roll back: the version the last update replaced, when it is a Go
+	// release, downloaded and installed as a picked version is (retire.go),
+	// the state snapshot put back when it cannot read the state as it is.
 	mux.HandleFunc("POST /api/updates/rollback", h(func(w http.ResponseWriter, r *http.Request) error {
 		if err := requireApp(); err != nil {
 			return err
@@ -263,6 +263,9 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 		}
 		prev := u.previousVersion()
 		if prev == nil {
+			if v := u.previousTag(); v != "" {
+				return apierr.New(409, "%s runs the Node server, which this version does not go back to.", v)
+			}
 			return apierr.New(409, "There is no previous version to go back to.")
 		}
 		rel := u.rollbackRelease(prev.Version)

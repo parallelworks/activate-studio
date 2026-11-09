@@ -114,6 +114,11 @@ type Options struct {
 	// InUse, when set, stands for the processes running from a folder
 	// (tests); else read from /proc on Linux and lsof on macOS.
 	InUse func(dir string) []int
+	// LastNodeRelease is the newest release that runs the Node server
+	// (versions.go's LastNodeRelease unless set here or, for tests that run
+	// the server as a process, in STUDIO_LAST_NODE_RELEASE). Install a
+	// version, Roll back and Move to Stable offer only releases after it.
+	LastNodeRelease string
 }
 
 // Updater is the update state of one server.
@@ -252,6 +257,14 @@ func New(o Options) *Updater {
 	}
 	if o.Version == nil {
 		o.Version = func() (string, *string) { return "dev", nil }
+	}
+	if o.LastNodeRelease == "" {
+		o.LastNodeRelease = LastNodeRelease
+		if v := o.Getenv("STUDIO_LAST_NODE_RELEASE"); v != "" {
+			if _, ok := ParseVersion(v); ok {
+				o.LastNodeRelease = v
+			}
+		}
 	}
 	return &Updater{o: o, state: state.Dir{Base: o.IndexBase, Getenv: o.Getenv}, log: o.Log, st: status{State: "idle"},
 		stop: make(chan struct{}), infer: map[string]string{}}
@@ -956,7 +969,7 @@ func (u *Updater) installable(channel string) []release {
 	}
 	var rs []release
 	for _, r := range u.loadSaved().Releases {
-		if onChannel(r, channel) && u.hasApp(r) {
+		if onChannel(r, channel) && u.hasApp(r) && u.goRelease(r.Tag) {
 			rs = append(rs, r)
 		}
 	}
@@ -979,7 +992,7 @@ func (u *Updater) stableBehind(p settings.UpdatePolicy, cur string) *release {
 		return nil
 	}
 	r := u.latestRelease("stable", u.needsBuild())
-	if r != nil && CompareVersions(r.Tag, cur) < 0 {
+	if r != nil && u.goRelease(r.Tag) && CompareVersions(r.Tag, cur) < 0 {
 		return r
 	}
 	return nil
