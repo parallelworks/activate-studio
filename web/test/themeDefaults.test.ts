@@ -24,12 +24,12 @@ function derivedBlock(light: Record<string, string>, dark: Record<string, string
 describe('the theme', () => {
   const file = path.resolve(process.cwd(), 'src/styles.css')
   const css = readFileSync(file, 'utf8')
-  const light = deriveTheme({ interface: { base: SURFACES.cool.light, accent: ACCENTS.none.light[0] } })
-  const dark = deriveTheme({ interface: { base: SURFACES.cool.dark, accent: ACCENTS.none.dark[0] } })
+  const light = deriveTheme({ interface: { base: SURFACES.warm.light, accent: ACCENTS.none.light[0] } })
+  const dark = deriveTheme({ interface: { base: SURFACES.warm.dark, accent: ACCENTS.none.dark[0] } })
 
   // A UI package release that changes deriveTheme fails this; rerun it with
   // UPDATE_THEME_DEFAULTS=1 to rewrite the block from the new release.
-  it('ships fallback values equal to deriveTheme for the default accent (none) on the cool surface', () => {
+  it('ships fallback values equal to deriveTheme for the default accent (none) on the warm surface', () => {
     if (process.env.UPDATE_THEME_DEFAULTS) {
       const start = css.indexOf('/* BEGIN derived theme defaults'), end = css.indexOf('/* END derived theme defaults')
       writeFileSync(file, css.slice(0, start) + derivedBlock(light, dark) + css.slice(end))

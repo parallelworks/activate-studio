@@ -223,7 +223,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     workflowCollection: s.workflowCollection ?? (process.env.STUDIO_WORKFLOWS ? process.env.STUDIO_WORKFLOWS.split(',').map(x => x.trim()).filter(Boolean) : []),
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
     accent: s.accent ?? process.env.APP_ACCENT ?? 'none',
-    surface: s.surface ?? process.env.APP_SURFACE ?? 'neutral',
+    surface: s.surface ?? process.env.APP_SURFACE ?? 'warm',
     iconUrl: s.iconUrl ?? process.env.APP_ICON ?? '',
     iconUrlDark: s.iconUrlDark ?? process.env.APP_ICON_DARK ?? '',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),

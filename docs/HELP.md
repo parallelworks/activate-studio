@@ -162,7 +162,7 @@ On a new install the AI features page starts with a mission written for one pers
 
 **Run setup again**, in Settings, General, and **Run Setup…** in the macOS app's menu open the setup later. Each step shows what is set now and changes nothing until you change it; leaving partway keeps what was already saved.
 
-Settings, General has a tab for each part: **Appearance** (theme, accent, surface tone), **Branding** (name, icon, classification banner), **Sidebar**, **AI features** (the switch, the mission and context the assistant works from, the suggested questions under an empty chat, and image captioning), **Updates**, and **Server** (the port). Settings, Model access has the model endpoint.
+Settings, General has a tab for each part: **Appearance** (theme, accent, surface tone; the default surface is Warm gray, a gray with a slight warmth, and Neutral gray has no tint), **Branding** (name, icon, classification banner), **Sidebar**, **AI features** (the switch, the mission and context the assistant works from, the suggested questions under an empty chat, and image captioning), **Updates**, and **Server** (the port). Settings, Model access has the model endpoint.
 
 Settings, Indexing has a tab for each part of indexing: **Libraries** (the main folder and every other library, their depth, and Add a library), **Sync and search** (search across libraries, the background sync interval, history snapshots), **Building** (threads, the main folder's depth, how files are read, the speed of search by meaning, and what this computer can read), and **Storage and logs** (where the index is kept, and the GUFI command log). Sync and search and the GUFI command log have Save settings; everything else on these tabs saves as it changes.
 

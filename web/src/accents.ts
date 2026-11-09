@@ -58,13 +58,14 @@ export function markColors(name: string | null | undefined): { top: string; bott
   return { top: mix(ink, '#ffffff', 0.18), bottom: mix(ink, '#000000', 0.45), sparkTop: mix(glow, '#ffffff', 0.45), sparkBottom: glow }
 }
 
-/** Surface tones: the background each theme is derived from. 'cool' is the
- *  platform's own pair (its light ground and GitHub-like dark), and the
- *  stylesheet's fallback values are derived from it. */
+/** Surface tones: the background each theme is derived from. 'warm' is the
+ *  default, a gray with a slight warmth and no blue, and the stylesheet's
+ *  fallback values are derived from it; 'neutral' has no tint at all; 'cool'
+ *  is the platform's own pair (its light ground and GitHub-like dark). */
 export const SURFACES: Record<string, { label: string; light: string; dark: string }> = {
   cool: { label: 'Cool gray', light: '#f3f4f6', dark: '#0d1117' },
-  neutral: { label: 'Neutral gray', light: '#f4f4f5', dark: '#111214' },
-  warm: { label: 'Warm gray', light: '#f5f4f1', dark: '#151312' },
+  neutral: { label: 'Neutral gray', light: '#f5f5f5', dark: '#171717' },
+  warm: { label: 'Warm gray', light: '#f8f8f6', dark: '#1f1f1e' },
 }
 
 function styleEl(id: string): HTMLStyleElement {
@@ -86,7 +87,7 @@ function remember(key: string, css: string): void {
   try { localStorage.setItem(key, css) } catch { /* storage unavailable */ }
 }
 
-let current = { accent: 'none', surface: 'cool' }
+let current = { accent: 'none', surface: 'warm' }
 
 /**
  * The whole --theme-* contract for one accent and surface, light and dark,
@@ -98,7 +99,7 @@ let current = { accent: 'none', surface: 'cool' }
  */
 export function themeFor(accent: string, surface: string): { light: Record<string, string>; dark: Record<string, string> } {
   const a = accentFor(accent) ?? ACCENTS.none
-  const s = SURFACES[surface] ?? SURFACES.cool
+  const s = SURFACES[surface] ?? SURFACES.warm
   return {
     light: deriveTheme({ interface: { base: s.light, accent: a.light[0] } }),
     dark: deriveTheme({ interface: { base: s.dark, accent: a.dark[0] } }),
