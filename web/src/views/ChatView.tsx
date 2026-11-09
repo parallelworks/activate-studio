@@ -120,7 +120,10 @@ function usePhoneLayout(): boolean {
   return phone
 }
 
-export function ChatView() {
+/** active: the chat is the view on screen. Find in the transcript listens
+ *  for ⌘F / Ctrl+F on the whole page, so a hidden chat leaves the key to
+ *  the view that is showing. */
+export function ChatView({ active = true }: { active?: boolean } = {}) {
   // The open conversation lives in the URL, so a refresh (or a shared link)
   // returns to the same session instead of an empty chat.
   const [activeId, setActiveIdState] = useState<string | null>(() => {
@@ -378,7 +381,30 @@ export function ChatView() {
   const libLabel = chatLib === 'all' ? 'All libraries' : (cfg.libraries?.find(l => chatLib ? l.id === chatLib : l.primary)?.label ?? chatLib ?? 'Knowledge base')
 
   const canvasRef = useRef<HTMLDivElement>(null)
-
+  // The Persona and Scope buttons float over the top right of the thread,
+  // where the package puts the end of its find bar (the count, the steps
+  // and Close). The bar stops short of them, or, where that leaves it too
+  // narrow, sits below them (styles.css, .chat-canvas main search). On a
+  // phone the package's own header row already puts the bar below them.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const controls = canvas?.querySelector<HTMLElement>(':scope > .chat-controls')
+    if (!canvas || !controls || typeof ResizeObserver === 'undefined') return
+    const phone = matchMedia(PHONE_QUERY)
+    const measure = () => {
+      const main = canvas.querySelector('main')?.getBoundingClientRect()
+      const c = controls.getBoundingClientRect()
+      const beside = main && c.width > 0 && !phone.matches && main.width - c.width - 40 >= 280
+      const below = main && c.width > 0 && !phone.matches && !beside
+      canvas.style.setProperty('--chat-find-pad', beside ? `${Math.ceil(c.width) + 24}px` : '0px')
+      canvas.style.setProperty('--chat-find-top', below ? `${Math.ceil(c.bottom - main.top) + 6}px` : '0px')
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(controls)
+    ro.observe(canvas)
+    return () => ro.disconnect()
+  }, [cfg.loaded, chatEpoch])
 
   // The empty state freezes its greeting and starter prompts at mount, so
   // wait for the deployment config before mounting the chat tree.
@@ -502,7 +528,7 @@ export function ChatView() {
                 onActiveDeleted={() => setActiveId(null)}
                 onClose={() => setShowManage(false)}
               />
-            ) : showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} /> : (
+            ) : showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} find={active} /> : (
               // Read live, so a theme toggle swaps a light and a dark icon.
               <EmptyChatBrand cfg={cfg} dark={effectiveTheme === 'dark'}>
                 <ChatEmptyState />
