@@ -19,7 +19,7 @@ import (
 // user-library loops expanded).
 func TestInventoryMatchesNode(t *testing.T) {
 	src := "../../../server/src"
-	re := regexp.MustCompile("app\\.(get|post|put|delete|patch)\\(\\s*['`]([^'`]+)['`]")
+	re := regexp.MustCompile("app\\.(get|post|put|delete|patch)(?:<[^(]*?>)?\\(\\s*['`]([^'`]+)['`]")
 	want := map[string]bool{}
 	filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(p, ".ts") {
