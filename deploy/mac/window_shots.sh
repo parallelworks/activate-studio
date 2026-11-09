@@ -24,6 +24,21 @@ mkdir -p "$D" "$WT" "$T/corpus/notes" "$T/corpus/papers"
 printf '# Design\n\nThe index is a tree of per-directory databases.\n' >"$T/corpus/notes/design.md"
 printf 'A recipe for lemon cake.\n' >"$T/corpus/cake.txt"
 printf 'Drag measurements.\n' >"$T/corpus/papers/drag.txt"
+# A PDF for the viewer, which this app draws with pdf.js in the window (it
+# carries no poppler), and an Apple Mail folder as Mail keeps one, for the
+# suggested folders.
+HERE="$(cd "$(dirname "$0")" && pwd -P)"
+cp "$HERE/testdata/ocr-sample.pdf" "$T/corpus/papers/scan.pdf"
+MB="$H/Library/Mail/V10/0000-TEST/INBOX.mbox/Data/Messages"
+mkdir -p "$MB"
+python3 -I - "$MB/1.emlx" <<'PY'
+import sys
+msg = ("From: Ada <ada@example.com>\r\nTo: Charles <cb@example.com>\r\n"
+       "Subject: Engine notes\r\nDate: Mon, 2 Nov 2026 10:00:00 -0600\r\n\r\n"
+       "The analytical engine weaves quillwort patterns.\r\n")
+plist = '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>flags</key><integer>8590195713</integer></dict></plist>\n'
+open(sys.argv[1], "w").write("%d\n%s%s" % (len(msg.encode()), msg, plist))
+PY
 PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
 printf "PORT='%s'\nKB_ROOT='%s'\n" "$PORT" "$T/corpus" >"$D/studio.env"
 # AI on, with a model address that answers nothing, so Chat is in the
@@ -124,4 +139,47 @@ state light 0 library; sleep 4
 settings "$NOBANNER"
 shot "switch-off-library-light-expanded"
 report switched-off
+
+# The page's own answers, through the self test's log (selftest.log).
+said() { { grep -o "page: $1 .*" "$WT/selftest.log" 2>/dev/null || true; } | tail -n 1 | sed "s/^page: $1 //"; }
+ask() { # name script-returning-a-promise-of-a-string
+  page "Promise.resolve().then(()=>$2).then(v=>window.__studioShell.call('TestLog',['$1 '+v]),e=>window.__studioShell.call('TestLog',['$1 error '+e]))"
+  for _ in $(seq 1 ${3:-60}); do [ -n "$(said "$1")" ] && break; sleep 1; done
+  said "$1"
+}
+FAIL=0
+
+# A PDF opened from the library: its pages drawn by pdf.js in this window.
+state light 0 library; sleep 4
+page "location.hash='#open=file:papers/scan.pdf'"
+sleep 8
+shot "pdf-light-expanded" 1
+PDF="$(ask pdf "new Promise(r=>setTimeout(r,1000)).then(()=>{const c=[...document.querySelectorAll('canvas.pdf-page-img')];const inked=c.filter(x=>{if(!x.width||!x.height)return false;const d=x.getContext('2d').getImageData(0,0,x.width,x.height).data;let n=0;for(let i=0;i<d.length;i+=16)if(d[i]<128)n++;return n>50});return JSON.stringify({canvases:c.length,inked:inked.length,serverPages:document.querySelectorAll('img.pdf-page-img').length,text:!!document.querySelector('.viewer-body pre, .md-body')})})")"
+echo "pdf: $PDF"
+case "$PDF" in *'"inked":0'*|'' |*error*) echo "FAIL pdf.js did not draw the PDF in the window"; FAIL=1 ;; *'"inked":'*) echo "ok pdf.js drew the PDF's page in the window" ;; esac
+
+# The suggested folders: Apple Mail offered, built as a library, its
+# message found by search.
+SUG="$(ask sug "fetch('/api/libraries/suggestions').then(r=>r.text())")"
+echo "suggestions: $SUG"
+case "$SUG" in *'"id":"mail"'*) echo "ok Apple Mail is offered" ;; *) echo "FAIL Apple Mail is not offered"; FAIL=1 ;; esac
+state light 0 settings; sleep 4
+page "window.dispatchEvent(new Event('ade:setup-open'))"
+shot "suggestions-setup-light-expanded" 3
+MAILDIR="$H/Library/Mail"
+BUILT="$(ask build "fetch('/api/libraries/build/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceRoot:'$MAILDIR',label:'Apple Mail'})}).then(r=>r.json()).then(c=>fetch('/api/libraries/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceRoot:'$MAILDIR',label:'Apple Mail',create:!!(c.create&&c.create.length)})})).then(r=>r.text().then(t=>r.status+' '+t.slice(0,300)))")"
+echo "build: $BUILT"
+found=0
+for i in $(seq 1 30); do
+  HIT="$(ask "find$i" "fetch('/api/search?q=quillwort&library=all').then(r=>r.text())" 20)"
+  case "$HIT" in *1.emlx*) found=1; break ;; esac
+  sleep 4
+done
+if [ "$found" = 1 ]; then echo "ok the Apple Mail message is found by search"; else echo "FAIL the Apple Mail message was not found: $HIT"; FAIL=1; fi
+page "location.hash='#view=search?q=quillwort'"
+shot "mail-search-light-expanded" 4
+OPENED="$(ask fda "fetch('/api/libraries/suggestions/full-disk-access',{method:'POST'}).then(r=>r.status+' '+r.headers.get('content-type'))")"
+echo "full disk access setting: $OPENED"
+
 ls "$OUT"
+exit "$FAIL"
