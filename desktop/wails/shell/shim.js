@@ -100,13 +100,19 @@
     for (var i = 0; i < bytes.length; i += step) s += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
     return btoa(s);
   }
+  // The page is told where the file went, or why it did not
+  // (studio-shell-saved), and shows a notice; the window shows nothing itself.
+  function saved(detail) {
+    try { window.dispatchEvent(new CustomEvent('studio-shell-saved', { detail: detail })); } catch (_) { /* an old page */ }
+  }
   function save(a, u) {
     var name = a.getAttribute('download') || decodeURIComponent(u.pathname.split('/').pop() || '') || 'download';
-    if (u.protocol === 'blob:' || u.protocol === 'data:') {
-      return fetch(u.href).then(function (r) { return r.arrayBuffer(); })
-        .then(function (buf) { return call('SaveDownload', [name, toBase64(buf)]); });
-    }
-    return call('SaveURL', [u.pathname + u.search, name]);
+    var done = u.protocol === 'blob:' || u.protocol === 'data:'
+      ? fetch(u.href).then(function (r) { return r.arrayBuffer(); })
+        .then(function (buf) { return call('SaveDownload', [name, toBase64(buf)]); })
+      : call('SaveURL', [u.pathname + u.search, name]);
+    return done.then(function (path) { saved({ name: name, path: path }); return path; },
+      function (err) { saved({ name: name, error: String(err && err.message || err) }); throw err; });
   }
   // The web view's own menu carries Back and Reload, which mean nothing in an
   // app window. It stays where it has a use: copy and paste in text.
