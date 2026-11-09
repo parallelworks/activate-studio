@@ -73,11 +73,12 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted }: {
   const choices = addChoices(options)
   const [where, setWhere] = useState<Where>('here')
   const hows = choices.how(where)
-  const [how, setHow] = useState<How>(hows[0])
+  // Until a How is picked it follows the first offered: building here is
+  // offered once the libraries answer, after the form first shows.
+  const [howPicked, setHow] = useState<How | null>(null)
+  const how = howPicked && hows.includes(howPicked) ? howPicked : hows[0]
   const vias = choices.via(where, how)
   const [via, setVia] = useState<Via | undefined>(vias[0])
-  // A choice that is no longer offered falls back to the first that is.
-  useEffect(() => { if (!hows.includes(how)) setHow(hows[0]) }, [hows.join(), how])
   useEffect(() => { if (vias.length ? !via || !vias.includes(via) : via) setVia(vias[0]) }, [vias.join(), via])
   const v = vias.includes(via as Via) ? via : vias[0]
 
@@ -91,7 +92,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted }: {
         )}
         {hows.length > 1 && (
           <Field label="How">
-            <SegmentedControl label="How" value={hows.includes(how) ? how : hows[0]} onValueChange={setHow} options={hows.map(h => ({ value: h, label: HOW_LABEL[h] }))} />
+            <SegmentedControl label="How" value={how} onValueChange={setHow} options={hows.map(h => ({ value: h, label: HOW_LABEL[h] }))} />
           </Field>
         )}
         {where === 'remote' && vias.length > 1 && (
@@ -100,13 +101,13 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted }: {
           </Field>
         )}
       </div>
-      <p className="muted lib-add-about">{describe(where, hows.includes(how) ? how : hows[0], v)}</p>
-      {where === 'here' && (how === 'build' && hows.includes('build')
+      <p className="muted lib-add-about">{describe(where, how, v)}</p>
+      {where === 'here' && (how === 'build'
         ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />
         : <LocalLibraryForm key="here-connect" compact browse={browse} onAdded={lib => onAdded(lib, false)} />)}
       {where === 'remote' && v === 'workflow' && <ClusterLibraryForm compact onStarted={lib => onStarted?.(lib)} />}
       {where === 'remote' && (v === 'ssh' || v === 'pw') && (
-        <SshLibraryForm key={`${v}-${how}`} compact transport={v} mode={how === 'build' && hows.includes('build') ? 'build' : 'connect'}
+        <SshLibraryForm key={`${v}-${how}`} compact transport={v} mode={how === 'build' ? 'build' : 'connect'}
           onAdded={lib => onAdded(lib, how === 'build')} />
       )}
     </div>

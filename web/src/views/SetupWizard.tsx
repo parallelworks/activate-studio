@@ -538,8 +538,9 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
         {step === STEP.libraries && (
           <>
             <p style={{ margin: 0 }}>
-              Optional: another folder on this computer to search beside your main one. It is indexed here, in the background,
-              and the Studio only reads it. Libraries can be added or removed at any time in Settings, Indexing, Libraries.
+              Optional: another folder on this computer to search beside your main one, such as one of the suggested folders.
+              It is indexed here, in the background, and the Studio only reads it. Libraries can be added or removed at any
+              time in Settings, Indexing, Libraries.
             </p>
             {!otherKinds ? (
               status?.gufi?.found === false

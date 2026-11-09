@@ -2614,3 +2614,8 @@ html.shell-inset .cls-banner:not(.banner-preview) {
   user-select: none; -webkit-user-select: none;
 }
 html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-top: 6vh; }
+
+/* Suggested folders above the folder to index (LocalLibraryForm). */
+.lib-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.lib-suggest-label { font-size: 0.85rem; margin-right: 2px; }
+.lib-suggest-note { margin: 0; font-size: 0.85rem; max-width: var(--settings-measure); }

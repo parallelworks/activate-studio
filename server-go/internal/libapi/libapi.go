@@ -114,6 +114,8 @@ func Register(mux *http.ServeMux, a *app.App) {
 		mux.HandleFunc("PUT /api/libraries/{id}/meaning", h(s.setMeaning))
 		mux.HandleFunc("POST /api/libraries/build/check", h(s.buildCheck))
 		mux.HandleFunc("POST /api/libraries/build", h(s.buildAdd))
+		mux.HandleFunc("GET /api/libraries/suggestions", h(s.suggestions))
+		mux.HandleFunc("POST /api/libraries/suggestions/full-disk-access", h(s.openFullDiskAccess))
 		mux.HandleFunc("POST /api/libraries/{id}/rebuild", h(s.rebuild))
 		mux.HandleFunc("PUT /api/libraries/{id}/read-through", h(s.readThroughSave))
 		mux.HandleFunc("POST /api/libraries/{id}/read-through/test", h(s.readThroughTest))
