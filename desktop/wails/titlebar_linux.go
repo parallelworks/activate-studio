@@ -72,6 +72,9 @@ func useOwnTitleBar(title string) {
 	C.bar_watch(c)
 }
 
+// titleInsetPx: the Linux window draws its own title bar (useOwnTitleBar).
+const titleInsetPx = 0
+
 // paintBar styles the bar in the page's #rrggbb (barCSS).
 func paintBar(color string) {
 	c := C.CString(barCSS(color))

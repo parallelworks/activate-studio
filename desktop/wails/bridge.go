@@ -33,6 +33,14 @@ func (b *Bridge) ShellState() ShellState { return b.app.State() }
 // Retry starts the server again after it failed.
 func (b *Bridge) Retry() { b.app.retry() }
 
+// ToggleMaximise zooms the window, or puts it back: a double click on the
+// page's title strip, where the window has no title bar (titleInsetPx).
+func (b *Bridge) ToggleMaximise() {
+	if b.app.ctx != nil {
+		wruntime.WindowToggleMaximise(b.app.ctx)
+	}
+}
+
 // SetBarColor paints the window's title bar (titlebar.go).
 func (b *Bridge) SetBarColor(color string) error { return b.app.setBarColor(color) }
 

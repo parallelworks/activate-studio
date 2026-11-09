@@ -147,6 +147,28 @@
     return nativeOpen.apply(window, arguments);
   };
 
+  // A window with no title bar of its own (the Mac's): the page runs under
+  // the window controls. html.shell-inset and --shell-top tell the page's
+  // columns to leave that strip at their top, in their own color; a press
+  // there that is not on a control drags the window, and a double click
+  // zooms it, as a title bar does.
+  var inset = Number(cfg.titleInset) || 0;
+  if (inset > 0) {
+    document.documentElement.classList.add('shell-inset');
+    document.documentElement.style.setProperty('--shell-top', inset + 'px');
+    var onControl = function (el) {
+      return el && el.closest && el.closest('button, a, input, select, textarea, label, [role="button"], [role="tab"], [contenteditable="true"]');
+    };
+    window.addEventListener('mousedown', function (e) {
+      if (e.button !== 0 || e.clientY >= inset || onControl(e.target)) return;
+      try { post('drag'); } catch (err) { /* the window stays where it is */ }
+    }, true);
+    window.addEventListener('dblclick', function (e) {
+      if (e.clientY >= inset || onControl(e.target)) return;
+      call('ToggleMaximise', []).catch(function () { /* the window stays as it is */ });
+    }, true);
+  }
+
   // The window's title bar follows the page's theme-color tag, as the macOS
   // window's does (titlebar.go). The tag holds whatever CSS color the theme
   // uses; a canvas turns it into #rrggbb.
