@@ -72,7 +72,9 @@ describe('Settings, General tabs', () => {
     expect(settingsTarget('updates')).toEqual({ section: 'general', tab: 'updates' })
     expect(settingsTarget('server')).toEqual({ section: 'general', tab: 'server' })
     expect(settingsTarget('access')).toEqual({ section: 'access', tab: 'appearance' })
-    expect(settingsTarget('libraries')).toEqual({ section: 'libraries', tab: 'appearance' })
+    // Libraries and the old Indexing tab moved to the Indexing section.
+    expect(settingsTarget('libraries')).toEqual({ section: 'indexing', tab: 'libraries' })
+    expect(settingsTarget('indexing')).toEqual({ section: 'indexing', tab: 'sync-search' })
     expect(settingsTarget('nonsense')).toEqual({ section: 'general', tab: 'appearance' })
     // No tab shares an id with a section.
     for (const t of GENERAL_TABS) expect(settingsTarget(t.value).section).toBe('general')
@@ -93,7 +95,6 @@ describe('Settings, General tabs', () => {
       Branding: ['Product name', 'Icon', 'Classification banner (empty for none)'],
       Sidebar: ['Library', 'Search', 'Query'],
       'AI features': ['Chat, Agents, and other features that call a model', 'Mission and context', 'Suggested questions (one per line)', 'Vision model for image captioning'],
-      Indexing: ['Search across libraries', 'Background sync interval (seconds, 0 pauses)', 'Corpus history snapshot (seconds between points)'],
       Server: ['Port'],
       Appearance: ['Theme', 'Surface tone', 'Accent color'],
     }
@@ -106,10 +107,12 @@ describe('Settings, General tabs', () => {
         await waitFor(() => expect(within(panel).getAllByText(l).length).toBeGreaterThan(0), { timeout: 2000 })
       }
     }
+    // Indexing is a section of its own now, not a tab here.
+    expect(screen.queryByRole('tab', { name: 'Indexing' })).toBeNull()
     // A tab's own address opens it.
-    at('#view=settings:indexing')
-    act(() => { window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: 'settings', section: 'indexing' } })) })
-    expect(tabNamed('Indexing')).toHaveAttribute('aria-selected', 'true')
+    at('#view=settings:branding')
+    act(() => { window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: 'settings', section: 'branding' } })) })
+    expect(tabNamed('Branding')).toHaveAttribute('aria-selected', 'true')
   })
 
   it('#view=settings:setup, the address the macOS menu uses, opens setup over General where setup runs', async () => {
@@ -160,19 +163,6 @@ describe('Settings, General tabs', () => {
     // The app routes the address to the page, as App's hash handler does.
     act(() => { window.dispatchEvent(new CustomEvent('ade-view-section', { detail: { view: 'settings', section: 'updates' } })) })
     expect(await screen.findByRole('tab', { name: 'Updates' })).toHaveAttribute('aria-selected', 'true')
-  })
-
-  it('Indexing turns the GUFI command log on, and names the file it writes', async () => {
-    const s = stub()
-    at('#view=settings:indexing')
-    render(<SettingsView />)
-    const box = await screen.findByRole('checkbox', { name: /Log GUFI commands/ })
-    expect(screen.queryByText('/data/logs/gufi-commands.log')).toBeNull()
-    fireEvent.click(box)
-    expect(screen.getByText('/data/logs/gufi-commands.log')).toBeInTheDocument()
-    expect(screen.getByText(/One JSON object per line in/)).toHaveTextContent('(2 KB), one previous file kept past 10 MB.')
-    fireEvent.click(within(screen.getByRole('tabpanel')).getByRole('button', { name: 'Save settings' }))
-    await waitFor(() => expect(s.puts.at(-1)?.gufiLog).toBe(true))
   })
 
   it('Appearance saves as it changes: the theme for this window and as the default, the accent and surface', async () => {

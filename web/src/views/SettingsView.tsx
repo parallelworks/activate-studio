@@ -1,6 +1,6 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { ModelAccessSection } from '../components/ModelAccessSection'
-import { IndexingSection } from '../components/IndexingSection'
+import { IndexBuildSettings, IndexStorageSettings } from '../components/IndexingSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { useEffect, useRef, useState } from 'react'
 import { okJSON } from '../api'
@@ -110,7 +110,7 @@ const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
   { value: 'both', label: 'Both, chosen per task' },
 ]
 
-type SectionId = 'general' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'libraries' | 'workflows'
+type SectionId = 'general' | 'indexing' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
 
 /** The tabs of Settings, General, in order. Each has an address of its own
  *  (#view=settings:<tab>); #view=settings:general opens the first. */
@@ -119,18 +119,35 @@ export const GENERAL_TABS = [
   { value: 'branding', label: 'Branding' },
   { value: 'sidebar', label: 'Sidebar' },
   { value: 'ai', label: 'AI features' },
-  { value: 'indexing', label: 'Indexing' },
   { value: 'updates', label: 'Updates' },
   { value: 'server', label: 'Server' },
 ] as const
 export type GeneralTab = typeof GENERAL_TABS[number]['value']
 
-/** The section and General tab an address names: a section's own id, a
- *  General tab's id, or anything else for General's first tab. */
-export function settingsTarget(id: string | null | undefined): { section: SectionId; tab: GeneralTab } {
-  const tab = GENERAL_TABS.find(t => t.value === id)
-  if (tab) return { section: 'general', tab: tab.value }
-  const sections: SectionId[] = ['general', 'access', 'tools', 'rag', 'previews', 'ext', 'libraries', 'workflows']
+/** The tabs of Settings, Indexing, in order, each with an address of its
+ *  own. Libraries keeps the address it had as a section of its own
+ *  (#view=settings:libraries, with ?add=1 for the Add a library form). */
+export const INDEXING_TABS = [
+  { value: 'libraries', label: 'Libraries' },
+  { value: 'sync-search', label: 'Sync and search' },
+  { value: 'building', label: 'Building the index' },
+  { value: 'storage', label: 'Storage and logs' },
+] as const
+export type IndexingTab = typeof INDEXING_TABS[number]['value']
+export type SettingsTab = GeneralTab | IndexingTab
+
+/** The section and tab an address names: a tab's id, a section's own id, or
+ *  anything else for General's first tab. #view=settings:indexing, General's
+ *  Indexing tab before Indexing was a section, opens Sync and search, where
+ *  that tab's first settings are now; the rail opens the section on its
+ *  first tab, Libraries. */
+export function settingsTarget(id: string | null | undefined): { section: SectionId; tab: SettingsTab } {
+  const general = GENERAL_TABS.find(t => t.value === id)
+  if (general) return { section: 'general', tab: general.value }
+  if (id === 'indexing') return { section: 'indexing', tab: 'sync-search' }
+  const indexing = INDEXING_TABS.find(t => t.value === id)
+  if (indexing) return { section: 'indexing', tab: indexing.value }
+  const sections: SectionId[] = ['general', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']
   return { section: sections.includes(id as SectionId) ? id as SectionId : 'general', tab: 'appearance' }
 }
 
@@ -145,7 +162,7 @@ export function settingsTarget(id: string | null | undefined): { section: Sectio
 export function settingsSections(opts: { authEnabled: boolean; platform?: boolean; single?: boolean }): { id: SectionId; label: string; group: string | null }[] {
   return [
     { id: 'general', label: 'General', group: 'Studio' },
-    { id: 'libraries', label: 'Libraries', group: 'Studio' },
+    { id: 'indexing', label: 'Indexing', group: 'Studio' },
     ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
     ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
     { id: 'tools', label: 'Assistant tools', group: 'Assistant' },
@@ -205,7 +222,7 @@ export function SettingsView() {
   const { section, tab } = target
   const setSection = (id: string) => setTarget(settingsTarget(id))
 
-  const goSection = (id: SectionId | GeneralTab) => {
+  const goSection = (id: SectionId | SettingsTab) => {
     setSection(id)
     history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:${id}`)
   }
@@ -366,7 +383,7 @@ export function SettingsView() {
             return acc
           }, []).map((g, i) => {
             const rows = g.items.map(s => (
-              <button key={s.id} className={section === s.id ? 'active' : ''} onClick={() => goSection(s.id)}>
+              <button key={s.id} className={section === s.id ? 'active' : ''} onClick={() => goSection(s.id === 'indexing' ? INDEXING_TABS[0].value : s.id)}>
                 <span>{s.label}</span>
               </button>
             ))
@@ -572,7 +589,26 @@ export function SettingsView() {
                   {saveRow(false)}
                 </TabPanel>
 
-                <TabPanel value="indexing">
+                <TabPanel value="updates">
+                  <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
+                </TabPanel>
+
+                <TabPanel value="server">
+                  <ServerSection />
+                </TabPanel>
+              </Tabs>
+            </>
+          )}
+
+          {section === 'indexing' && (
+            <>
+              <h1>Indexing</h1>
+              <Tabs label="Indexing settings" items={[...INDEXING_TABS]} value={tab} onValueChange={v => goSection(v)} className="settings-tabs">
+                <TabPanel value="libraries">
+                  <LibrariesSection heading={false} />
+                </TabPanel>
+
+                <TabPanel value="sync-search">
                   <div className="settings-grid">
                     <Field label="Search across libraries"
                       description="Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.">
@@ -592,6 +628,18 @@ export function SettingsView() {
                         onValueChange={v => setForm({ ...form, historyIntervalSec: v ?? 0 })} />
                     </Field>
                   </div>
+                  {saveRow(false)}
+                </TabPanel>
+
+                <TabPanel value="building">
+                  {/* How the main folder's index is built: threads, depth,
+                      readers, embeddings (IndexingSection). Saves as it changes. */}
+                  <IndexBuildSettings visionModel={form.visionModel} deploymentCred={deploymentCred} />
+                </TabPanel>
+
+                <TabPanel value="storage">
+                  <IndexStorageSettings />
+                  <h2 className="ix-h2">GUFI command log</h2>
                   <label className="key-persist">
                     <Checkbox checked={!!form.gufiLog} onCheckedChange={v => setForm({ ...form, gufiLog: v })} />
                     Log GUFI commands: every command run to read an index, with when it ran, what asked for it, how long it took, how it ended, and the end of its error output
@@ -602,19 +650,7 @@ export function SettingsView() {
                       {gufiLogFile.bytes > 0 ? ` (${formatBytes(gufiLogFile.bytes)})` : ''}, one previous file kept past 10 MB.
                     </p>
                   )}
-                  <p className="muted view-sub">Libraries and their indexes are under <a href="#view=settings:libraries">Libraries</a>.</p>
                   {saveRow(false)}
-                  {/* How the main folder's index is built: threads, readers,
-                      embeddings, where it is kept (IndexingSection). */}
-                  <IndexingSection visionModel={form.visionModel} deploymentCred={deploymentCred} />
-                </TabPanel>
-
-                <TabPanel value="updates">
-                  <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
-                </TabPanel>
-
-                <TabPanel value="server">
-                  <ServerSection />
                 </TabPanel>
               </Tabs>
             </>
@@ -979,7 +1015,7 @@ export function SettingsView() {
               {saveRow()}
             </>
           )}
-          {section === 'libraries' && <LibrariesSection />}
+
           {section === 'workflows' && <WorkflowsSection />}
           {section === 'ext' && (
             <>
