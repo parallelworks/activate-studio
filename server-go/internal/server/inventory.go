@@ -16,6 +16,7 @@ var nodeRoutes = []nodeRoute{
 	{"accessRoutes.ts", "POST", "/api/access/cli/login/cancel"},
 	{"accessRoutes.ts", "GET", "/api/access/subscriptions"},
 	{"accessRoutes.ts", "POST", "/api/access/codex"},
+	{"accessRoutes.ts", "POST", "/api/access/codex/{id}"},
 	{"accessRoutes.ts", "POST", "/api/access/copilot"},
 	{"agentSites.ts", "GET", "/api/agent-sites"},
 	{"agentSites.ts", "GET", "/api/agent-sites/{site}/status"},
