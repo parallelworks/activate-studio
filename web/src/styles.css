@@ -860,7 +860,7 @@ textarea.field { line-height: 1.5; }
 .result-pills { display: inline-flex; gap: 5px; align-items: center; flex-shrink: 0; }
 
 .muted { color: var(--pw-muted); }
-.muted.pad { padding: 12px 16px; }
+.pad { padding: 12px 16px; }
 .error { color: #b91c1c; }
 
 /* 3D model viewer */
