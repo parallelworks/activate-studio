@@ -14,7 +14,8 @@ sha256_of() {
 # (https://github.com/OWNER/REPO/releases/download/TAG/NAME) fetched the
 # second way, through the release API's asset address, which GitHub serves
 # apart from the download host; a tag archive (.../archive/refs/tags/TAG.tar.gz)
-# from codeload.github.com. GH_TOKEN or GITHUB_TOKEN, when set, lifts the
+# from codeload.github.com; a repository file (.../raw/TAG/PATH) from the
+# contents API. GH_TOKEN or GITHUB_TOKEN, when set, lifts the
 # API's rate limit. Fails for any other URL; the caller checks the hash.
 release_asset_via_api() {
   local url="$1" out="$2" rest repo tag name api
@@ -27,6 +28,18 @@ release_asset_via_api() {
       local r="${rest%%/archive/refs/tags/*}" t="${rest#*/archive/refs/tags/}"
       echo "  the download failed; trying codeload for $r ${t%.tar.gz}"
       curl -fsSL --retry 3 "$@" -o "$out" "https://codeload.github.com/$r/tar.gz/refs/tags/${t%.tar.gz}"
+      return
+      ;;
+    */*/raw/*/*)
+      # A file in a repository at a tag (.../raw/TAG/PATH): the contents API
+      # serves the same bytes.
+      local r2="${rest%%/raw/*}" p="${rest#*/raw/}"
+      local ref="${p%%/*}" file="${p#*/}" a2=()
+      local tok="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+      [ -n "$tok" ] && a2=(-H "Authorization: Bearer $tok")
+      echo "  the download failed; trying the contents API for $r2 $ref $file"
+      curl -fsSL --retry 3 "$@" ${a2[@]+"${a2[@]}"} -H 'Accept: application/vnd.github.raw' -o "$out" \
+        "https://api.github.com/repos/$r2/contents/$file?ref=$ref"
       return
       ;;
     */*/releases/download/*/*) ;;
