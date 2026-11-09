@@ -40,7 +40,7 @@ func TestFollowUsesTheOwnersKeyNow(t *testing.T) {
 	gufi := needGufi(t)
 	hold := filepath.Join(h.dir, "hold")
 	bin := filepath.Join(h.dir, "slow-gufi")
-	exe(t, filepath.Join(bin, "gufi_dir2index"), "#!/bin/sh\nif [ $# -gt 1 ]; then while [ -f "+hold+" ]; do sleep 0.05; done; fi\nexec "+gufi+"/gufi_dir2index \"$@\"\n")
+	exe(t, filepath.Join(bin, "gufi_dir2index"), "#!/bin/sh\nn=0\nif [ $# -gt 1 ]; then while [ -f "+hold+" ] && [ $n -lt 1200 ]; do sleep 0.05; n=$((n+1)); done; fi\nexec "+gufi+"/gufi_dir2index \"$@\"\n")
 	exe(t, filepath.Join(bin, "gufi_query"), "#!/bin/sh\nexec "+gufi+"/gufi_query \"$@\"\n")
 	waitSession := func(key string) {
 		t.Helper()

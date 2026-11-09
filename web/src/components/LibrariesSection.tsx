@@ -144,6 +144,16 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   // with the form already showing.
   const [adding, setAdding] = useState(() => /^#view=settings:libraries\?(?:.*&)?add=1(?:&|$)/.test(location.hash))
   const openedByLink = useRef(adding)
+  const addForm = useRef<HTMLElement | null>(null)
+  // Brought into view as the lists above it load, for the first moments
+  // after the page opens: scrolled once at once, it was pushed down again by
+  // the libraries arriving.
+  const openedAt = useRef(Date.now())
+  useEffect(() => {
+    if (!openedByLink.current || libs === null || !addForm.current) return
+    if (Date.now() - openedAt.current > 3000) { openedByLink.current = false; return }
+    addForm.current.scrollIntoView?.({ block: 'start' })
+  }, [libs, user, status, adding])
   const [changing, setChanging] = useState(false)
   const [restarting, setRestarting] = useState(false)
   // The library just given a depth its index does not have, and the depth
@@ -599,7 +609,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
 
       {adding && (
         <section className="lib-add-form" aria-label="Add a library"
-          ref={el => { if (el && openedByLink.current) { openedByLink.current = false; el.scrollIntoView?.({ block: 'start' }) } }}>
+          ref={el => { addForm.current = el }}>
           <div className="lib-add-head">
             <div className="tool-group">Add a library</div>
             <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(false)} />

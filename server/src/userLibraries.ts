@@ -705,7 +705,11 @@ async function gufiStep(h: ProbeHost, run: Run, steps: SshStep[], at: { given: s
   const need = build ? 'gufi_query gufi_dir2index' : 'gufi_query'
   const search = at.given ? FIND_TOOLS : `need=$1; shift; c=$(command -v gufi_query 2>/dev/null); s=$(ls -dt "$HOME"/.activate-studio/gufi/*/bin 2>/dev/null); set -- $s "$@"; case "$c" in /*) set -- "\${c%/*}" "$@" ;; esac; set -- "$need" "$@"; ${FIND_TOOLS}`
   const found = await run(['sh', '-c', search, '_', need, ...(at.given ? [at.given] : ['/usr/local/bin', `${at.home}/usr/local/bin`, '/opt/gufi/bin'])])
-  const bin = found.code === 0 ? lastLine(found.stdout) : ''
+  // A PATH entry such as /opt/gufi/bin/../bin is reported as written; the
+  // folder is kept without its ".." steps, which a library's GUFI bin
+  // directory may not hold.
+  const reported = found.code === 0 ? lastLine(found.stdout) : ''
+  const bin = reported.startsWith('/') ? path.posix.normalize(reported).replace(/(.)\/+$/, '$1') : reported
   let version = ''
   if (!bin.startsWith('/')) {
     const tools = build ? 'gufi_dir2index and gufi_query' : 'gufi_query'

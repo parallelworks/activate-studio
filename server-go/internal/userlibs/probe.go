@@ -238,6 +238,12 @@ func (m *Module) gufiStep(h probeHost, run runFn, steps *[]step, given *string, 
 	if found.Code == 0 {
 		bin = lastLine(found.Stdout)
 	}
+	// A PATH entry such as /opt/gufi/bin/../bin is reported as written; the
+	// folder is kept without its ".." steps, which a library's GUFI bin
+	// directory may not hold.
+	if strings.HasPrefix(bin, "/") {
+		bin = path.Clean(bin)
+	}
 	if !strings.HasPrefix(bin, "/") {
 		var detail string
 		g := ""
