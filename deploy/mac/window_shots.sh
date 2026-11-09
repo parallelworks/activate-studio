@@ -167,6 +167,8 @@ case "$SUG" in *'"id":"mail"'*) echo "ok Apple Mail is offered" ;; *) echo "FAIL
 # folder and checks it.
 state light 0 library; sleep 4
 page "[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='+ Add').click()"
+sleep 2
+page "[...document.querySelectorAll('button')].find(b=>b.textContent.trim().startsWith('Add a library')).click()"
 shot "suggestions-add-light-expanded" 3
 page "[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Apple Mail').click()"
 shot "suggestions-mail-light-expanded" 4
@@ -180,7 +182,7 @@ for i in $(seq 1 30); do
   sleep 4
 done
 if [ "$found" = 1 ]; then echo "ok the Apple Mail message is found by search"; else echo "FAIL the Apple Mail message was not found: $HIT"; FAIL=1; fi
-page "location.hash='#view=search?q=quillwort'"
+page "location.hash='#view=search?q=quillwort';location.reload()"
 shot "mail-search-light-expanded" 4
 OPENED="$(ask fda "fetch('/api/libraries/suggestions/full-disk-access',{method:'POST'}).then(r=>r.status+' '+r.headers.get('content-type'))")"
 echo "full disk access setting: $OPENED"
