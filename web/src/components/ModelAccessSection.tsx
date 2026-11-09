@@ -502,7 +502,7 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
       {shownTab === 'cli' && access.cli && (
         <CliPanel access={access} busy={busy} login={login} loginHost={loginHost} setLoginHost={setLoginHost}
           onUse={pickContext} onStartLogin={() => void startLogin()} onCancelLogin={() => void cancelLogin()} onDismissLogin={() => setLogin(null)}
-          onChoosePath={p => void chooseCliPath(p)} />
+          onChoosePath={p => void chooseCliPath(p)} aiEnabled={aiEnabled} />
       )}
 
       {shownTab === 'deployment' && (
@@ -644,8 +644,11 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
   )
 }
 
-function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStartLogin, onCancelLogin, onDismissLogin, onChoosePath }: {
+function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStartLogin, onCancelLogin, onDismissLogin, onChoosePath, aiEnabled = true }: {
   access: AccessStatus
+  /** Off: the panel speaks of the platform only (Workflows and libraries on
+   *  ACTIVATE systems), since no models are in use. */
+  aiEnabled?: boolean
   busy: boolean
   login: LoginState | null
   loginHost: string
@@ -657,7 +660,11 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   onChoosePath: (path: string | null) => void
 }) {
   const cli = access.cli!
-  const overridden = access.models.source === 'key' || access.models.source === 'endpoint'
+  // With AI features off only the platform credential matters, and an
+  // endpoint (models only) never displaces a context for it.
+  const overridden = aiEnabled
+    ? access.models.source === 'key' || access.models.source === 'endpoint'
+    : access.platform.source === 'key'
   const following = cli.chosen === null
   const waiting = login?.state === 'waiting' || login?.state === 'starting'
   if (!cli.available && !cli.contexts.length) return (
@@ -667,16 +674,27 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   )
   return (
     <div className="access-panel">
-      <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for their models and the platform.</p>
-      <p className="muted view-sub">The context in use covers models, the Workflows page, clusters, and runs.</p>
+      {aiEnabled ? (
+        <>
+          <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for their models and the platform.</p>
+          <p className="muted view-sub">The context in use covers models, the Workflows page, clusters, and runs.</p>
+        </>
+      ) : (
+        <>
+          <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for the Workflows page and libraries on ACTIVATE systems.</p>
+          <p className="muted view-sub">The context in use covers the Workflows page, clusters, runs, and libraries on ACTIVATE systems.</p>
+        </>
+      )}
       <CliLocation cli={cli} busy={busy} onChoose={onChoosePath} />
       {overridden && (
         <p className="identity-note access-override">
-          Your {access.models.source === 'endpoint' ? 'endpoint' : 'key'} is used for models now. Use on a context removes it.
+          {aiEnabled
+            ? `Your ${access.models.source === 'endpoint' ? 'endpoint' : 'key'} is used for models now. Use on a context removes it.`
+            : 'Your key is used for the Workflows page and ACTIVATE libraries now. Use on a context removes it.'}
         </p>
       )}
       {cli.envKey && <p className="identity-note">PW_API_KEY is set in the Studio's environment, and it is used before the pw CLI.</p>}
-      {cli.gatewayFromEnv && <p className="identity-note">The model gateway is fixed by PW_GATEWAY_URL; a context on another platform covers the platform only.</p>}
+      {aiEnabled && cli.gatewayFromEnv && <p className="identity-note">The model gateway is fixed by PW_GATEWAY_URL; a context on another platform covers the platform only.</p>}
       {cli.contexts.length > 0 ? (
         <>
           <Table density="compact" className="cli-contexts" wrapperClassName="cli-contexts-wrap">

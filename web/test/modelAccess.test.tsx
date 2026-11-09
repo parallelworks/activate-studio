@@ -110,6 +110,19 @@ describe('Model access', () => {
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
   })
 
+  it('with AI features off, says what the context is for and nothing about models, even with an endpoint stored', async () => {
+    const endpoint = { source: 'endpoint' as const, host: '127.0.0.1:11434', context: null, baseUrl: 'http://127.0.0.1:11434/v1' }
+    stub(srv({ access: accessOf({ models: endpoint }) }))
+    render(<ModelAccessSection aiEnabled={false} />)
+    expect(await screen.findByText(/for the Workflows page and libraries on ACTIVATE systems\./)).toBeInTheDocument()
+    expect(screen.queryByText(/used for models now/)).toBeNull()
+    expect(screen.queryByText(/for their models/)).toBeNull()
+    expect(screen.queryByText(/covers models/)).toBeNull()
+    // An endpoint covers models only, so the context still serves the platform.
+    const work = within(document.querySelector('table.cli-contexts') as HTMLElement).getByText('work').closest('tr')!
+    expect(within(work).getByText('In use')).toBeInTheDocument()
+  })
+
   it('says offline plainly, as a warning rather than an error', async () => {
     stub(srv({ health: { status: 'offline', models: 0, gatewayHost: 'platform-a.example.com', message: 'Could not reach platform-a.example.com (ENOTFOUND). This computer may be offline, or the server is down. Local libraries and a local model keep working.' }, models: [] }))
     render(<ModelAccessSection />)
