@@ -18,20 +18,19 @@ import (
 // up (the run loop's rollback after three failed starts needs the copy
 // until then, and works offline), and no process left running from it (the
 // window of the old copy runs from it until it is reopened). Then it is
-// removed, with the files in the data folder that only the Node version
-// made and that its run loop makes again (nodeLeftovers). The version it
-// held is kept in updates/previous.json; Roll back then downloads that
-// version and installs it as installing a picked version does (signature,
-// size and SHA-256, the swap, the state snapshot put back when needed).
+// removed, with the links in the data folder that led into it and that only
+// the Node version made (nodeLeftovers). The version it held is kept in
+// updates/previous.json. When that version is a Go release, Roll back
+// downloads it and installs it as installing a picked version does
+// (signature, size and SHA-256, the swap, the state snapshot put back when
+// needed); a Node release is never offered (LastNodeRelease).
 
 // previousRecord names the version the last update replaced.
 const previousRecord = "previous.json"
 
-// nodeLeftovers are paths under INDEX_BASE that only the Node version made
-// and that its own run loop makes again at its next start, so a rollback to
-// it loses nothing: each is removed only when it is a symbolic link that
-// leads nowhere (into the removed copy). docs/UPDATES.md lists what was
-// checked and kept.
+// nodeLeftovers are paths under INDEX_BASE that only the Node version made:
+// each is removed only when it is a symbolic link that leads nowhere (into
+// the removed copy). docs/UPDATES.md lists what was checked and kept.
 var nodeLeftovers = []string{
 	// The GGUF embedding model studio-run.sh links from the app's models/
 	// for sqlite-lembed; the Go version embeds with ONNX and carries none.
@@ -50,12 +49,12 @@ type previousInfo struct {
 	Size    *int64 `json:"size"`
 }
 
-// previousVersion is the version Roll back installs: the one in the copy
-// still kept beside the app, else the one the record names (the caller
-// holds the lock).
-func (u *Updater) previousVersion() *previousInfo {
+// previousTag is the version the last update replaced: the one in the copy
+// still kept beside the app, else the one the record names; "" with none
+// (the caller holds the lock).
+func (u *Updater) previousTag() string {
 	if u.Mode() != "app" {
-		return nil
+		return ""
 	}
 	v := u.versionOf(u.beside("previous"))
 	if v == "" {
@@ -65,6 +64,16 @@ func (u *Updater) previousVersion() *previousInfo {
 		}
 	}
 	if _, ok := ParseVersion(v); !ok || sameVersion(v, u.running().Version) {
+		return ""
+	}
+	return v
+}
+
+// previousVersion is the version Roll back installs: previousTag when it is
+// a Go release, else nil (the caller holds the lock).
+func (u *Updater) previousVersion() *previousInfo {
+	v := u.previousTag()
+	if v == "" || !u.goRelease(v) {
 		return nil
 	}
 	p := &previousInfo{Version: v}
@@ -121,7 +130,11 @@ func (u *Updater) retirePrevious() bool {
 	if err := rmTree(gone); err != nil {
 		u.log("update: the previous copy could not be removed: " + plain(err))
 	}
-	u.log(fmt.Sprintf("update: the copy of %s kept beside the app was removed%s; Roll back downloads it again", orText(v, "the previous version"), removed))
+	again := ""
+	if u.goRelease(v) {
+		again = "; Roll back downloads it again"
+	}
+	u.log(fmt.Sprintf("update: the copy of %s kept beside the app was removed%s%s", orText(v, "the previous version"), removed, again))
 	return true
 }
 

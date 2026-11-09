@@ -4,8 +4,9 @@
 # LaunchAgent. The app is the Go version (deploy/mac/build_app.sh's default,
 # STUDIO_SERVER=go-only): the Wails window (desktop/wails) and the Go
 # server, with no Node and no Python. It is the build releases ship, and it
-# is updated to from the last release (Node) through that release's own
-# updater (the bridge job). A copy of the app is also
+# is updated to from earlier releases (Node) through their own updaters
+# (the bridge job: v1.169 and v1.188 on every check run, more with the
+# bridge input). A copy of the app is also
 # signed the way a release signs it, with a throwaway identity, and run (the
 # hardened job). Asked to for a published release (the release input), it
 # builds that tag; signs, notarizes and staples the app with the Developer ID
@@ -46,6 +47,11 @@ on:
         description: Also build and check the earlier builds (STUDIO_SERVER=node, and go with Node behind it); they do not fail the run
         type: boolean
         default: false
+      bridge:
+        description: The releases the bridge job updates from (check, v1.169 with its LaunchAgent and v1.188 detached; all, v1.141 to v1.188 and each way of starting in the bridge job's list)
+        type: choice
+        options: [check, all]
+        default: check
   # A change to the app or its build is built and checked on a Mac, and so
   # is a change to the Go server or the window, which check_app.sh runs from
   # the app (indexing, search, Query, libraries over ssh). The web client is
@@ -247,13 +253,28 @@ jobs:
           OUT_DIR: ${{ runner.temp }}/out
         run: deploy/mac/check_app.sh "$OUT_DIR/ACTIVATE Studio.app" --run
 
-  # The last release (Node and the Swift window) installed, updated to this
-  # build through that release's own updater, and rolled back
-  # (deploy/mac/test_go_bridge_e2e.sh, with a throwaway key on 127.0.0.1).
-  # It publishes nothing, and does not run for a release.
+  # A released app (Node and the Swift window) installed, updated to this
+  # build through that release's own updater (deploy/mac/test_go_bridge_e2e.sh,
+  # with a throwaway key on 127.0.0.1): first a copy whose server exits at
+  # once, which the run loop puts back, then this build. It publishes
+  # nothing, and does not run for a release. Each entry is a release (from,
+  # downloaded from its own release assets) and how its server is started
+  # (start): launcher runs that release's own launcher.sh, which loads its
+  # LaunchAgent (an update then restarts it with launchctl kickstart);
+  # detached is the run loop launcher.sh starts where no LaunchAgent can be
+  # loaded (v1.170 and later, exit 76); loop is the run loop of a release
+  # before v1.170 when kickstart fails (exit 75, through the new copy's
+  # stand-in node/bin/node). v1.141 is the first release with a macOS app
+  # (and its updater), v1.169 the newest before v1.170. The check set runs
+  # on every check run; all on request.
   bridge:
     if: inputs.release == ''
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.bridge == 'all' && '[{"from":"v1.141","start":"launcher"},{"from":"v1.169","start":"launcher"},{"from":"v1.169","start":"loop"},{"from":"v1.170","start":"launcher"},{"from":"v1.170","start":"detached"},{"from":"v1.180","start":"launcher"},{"from":"v1.180","start":"detached"},{"from":"v1.188","start":"launcher"},{"from":"v1.188","start":"detached"}]' || '[{"from":"v1.169","start":"launcher"},{"from":"v1.188","start":"detached"}]') }}
+    name: bridge (${{ matrix.from }}, ${{ matrix.start }})
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
@@ -266,17 +287,43 @@ jobs:
         with:
           name: activate-studio-macos-arm64
           path: ${{ runner.temp }}/new
-      - name: the last release's app
+      - name: the old release's app
         env:
           GH_TOKEN: ${{ github.token }}
+          FROM: ${{ matrix.from }}
         run: |
           set -euo pipefail
-          last="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-pre-releases --exclude-drafts -L 1 --json tagName -q '.[0].tagName')"
-          echo "last release: $last" | tee -a "$GITHUB_STEP_SUMMARY"
-          gh release download "$last" -R "$GITHUB_REPOSITORY" -p activate-studio-macos-arm64.tar.gz \
+          gh release download "$FROM" -R "$GITHUB_REPOSITORY" -p activate-studio-macos-arm64.tar.gz \
             -p activate-studio-macos-arm64.tar.gz.sha256 -D "$RUNNER_TEMP/old"
           (cd "$RUNNER_TEMP/old" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
-      - name: update to this build and roll back
+      - name: what launchd allows here
+        if: matrix.start == 'launcher'
+        run: |
+          set -uo pipefail
+          # A throwaway agent in the gui domain, loaded and removed, to say
+          # whether this runner can run a LaunchAgent at all.
+          uid="$(id -u)"
+          plist="$RUNNER_TEMP/probe.plist"
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict><key>Label</key><string>com.example.bridge-probe</string>' \
+            '<key>ProgramArguments</key><array><string>/bin/sleep</string><string>600</string></array>' \
+            '<key>RunAtLoad</key><true/></dict></plist>' >"$plist"
+          {
+            echo "### launchd on this runner"
+            echo '```'
+            echo "user $(id -un) uid $uid; console user $(stat -f %Su /dev/console)"
+            launchctl print "gui/$uid" >/dev/null 2>&1 && echo "gui/$uid exists" || echo "gui/$uid: launchctl print fails"
+            out="$(launchctl bootstrap "gui/$uid" "$plist" 2>&1)"; echo "bootstrap gui/$uid: status $? ${out}"
+            sleep 1
+            launchctl print "gui/$uid/com.example.bridge-probe" 2>&1 | grep -E '^\s*(state|pid|domain) =' || echo "the probe is not loaded"
+            out="$(launchctl kickstart -k "gui/$uid/com.example.bridge-probe" 2>&1)"; echo "kickstart -k: status $? ${out}"
+            launchctl bootout "gui/$uid/com.example.bridge-probe" 2>&1; echo "bootout: status $?"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: update to this build
+        env:
+          START: ${{ matrix.start }}
         run: |
           set -euo pipefail
           (cd "$RUNNER_TEMP/new" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
@@ -284,8 +331,11 @@ jobs:
             "$RUNNER_TEMP/new/activate-studio-macos-arm64.tar.gz" 2>&1 | tee "$RUNNER_TEMP/bridge.log"
       - name: summary
         if: always()
+        env:
+          FROM: ${{ matrix.from }}
+          START: ${{ matrix.start }}
         run: |
-          { echo "### Update to the Go version on macOS"; echo '```'; grep -E '^(  (ok|FAIL) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
+          { echo "### Update to the Go version on macOS from $FROM ($START)"; echo '```'; grep -E '^(  (ok|FAIL|note) |[A-Z])' "$RUNNER_TEMP/bridge.log" | cut -c1-200; echo '```'; } >>"$GITHUB_STEP_SUMMARY" || true
 
   # The release signing, on every build but a release's: a copy of the app
   # is signed with the sign job's scripts and keychain steps, but with a

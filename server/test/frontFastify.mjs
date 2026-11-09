@@ -115,6 +115,9 @@ async function startFront(nodePort) {
     STUDIO_NODE_URL: `http://127.0.0.1:${nodePort}`, STUDIO_FRONT_AUTH: '0', HOST: '127.0.0.1',
     // No web app: every page request reaches Node, as inject's do.
     STUDIO_WEB_DIST: path.join(webDist, 'none'), STUDIO_LOG_FORMAT: 'text',
+    // The update tests' releases (v1.120 to v1.160) stand for Go releases:
+    // the Go updater offers none at or before v1.188, the last Node release.
+    STUDIO_LAST_NODE_RELEASE: process.env.STUDIO_LAST_NODE_RELEASE ?? 'v1.0',
   })
   const deadline = Date.now() + 120_000
   for (let attempt = 0; Date.now() < deadline; attempt++) {

@@ -7,21 +7,37 @@
 #
 # 1. The released app (OLD_ARCHIVE, activate-studio-macos-arm64.tar.gz) is
 #    put in HOME/Applications, made to verify updates with a throwaway key,
-#    and its server started from its own run loop (Resources/studio-run.sh,
-#    as its LaunchAgent starts it).
+#    and its server started the way START says.
 # 2. Settings, a label, a second library and a conversation are made through
 #    its API, and the folder is indexed.
-# 3. A stand-in release server on 127.0.0.1 offers NEW_ARCHIVE (the Go
-#    version), stamped as the next version and signed with that key. The old
-#    server's own updater checks, downloads, verifies and swaps it in; its
-#    run loop starts the new app's run loop, which starts the Go server.
-# 4. Rolling back from the Go version puts OLD back.
+# 3. A stand-in release server on 127.0.0.1 offers a Go build whose server
+#    exits at once, stamped as the next version and signed with that key.
+#    The old updater installs it, and the run loop puts OLD back after three
+#    failed starts, with the data intact.
+# 4. It then offers NEW_ARCHIVE (the Go version), stamped as the version
+#    after. The old server's own updater checks, downloads, verifies and
+#    swaps it in, and the server comes back as the Go server, with the data
+#    intact, the page asked to offer Reopen, and no Roll back to OLD.
+# 5. The copy of OLD kept beside the app goes after the first clean start.
 #
-# Nothing is signed with a real key, nothing is published, no network
-# beyond 127.0.0.1 is used, and no LaunchAgent is installed. The old app's
-# own Node and Python run the helpers.
+# Nothing is signed with a real key, nothing is published, and no network
+# beyond 127.0.0.1 is used. The old app's own Node and Python run the
+# helpers.
 #
 # Usage: deploy/mac/test_go_bridge_e2e.sh OLD_ARCHIVE NEW_ARCHIVE
+#   START            how the old server starts (default detached):
+#                      detached  its run loop, as launcher.sh starts it where no LaunchAgent
+#                                can be loaded (STUDIO_SUPERVISOR=detached, v1.170 and later):
+#                                an update restarts it through exit 76
+#                      launcher  the old app's own launcher.sh, which loads its LaunchAgent
+#                                (com.parallelworks.activate-studio, in the gui domain, with
+#                                the plist in the scratch HOME; booted out at the end), or
+#                                from v1.170 runs detached where it cannot: an update
+#                                restarts it through launchctl kickstart
+#                      loop      its run loop with no LaunchAgent and no STUDIO_SUPERVISOR,
+#                                as a release before v1.170 runs when launchctl kickstart
+#                                fails: an update restarts it through exit 75, and the old
+#                                loop runs the new copy's stand-in node/bin/node
 #   PORT, FEED_PORT  the Studio's port and the release server's (default 6024, 6025)
 #   KEEP=1           leave the scratch folder (its path is printed)
 #   SEARCH=0         skip the search checks
@@ -44,7 +60,11 @@ failures=0
 ok() { echo "  ok    $1"; }
 bad() { echo "  FAIL  $1"; failures=$((failures + 1)); }
 pids=()
+START="${START:-detached}"
+LABEL=com.parallelworks.activate-studio
+SERVICE="gui/$(id -u)/$LABEL"
 cleanup() {
+  if [ "$START" = launcher ]; then launchctl bootout "$SERVICE" 2>/dev/null || true; fi
   for p in ${pids[@]+"${pids[@]}"}; do kill -TERM "$p" 2>/dev/null || true; done
   # The server the run loop runs, by the port it listens on.
   for p in $(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null || true); do kill -TERM "$p" 2>/dev/null || true; done
@@ -63,8 +83,10 @@ NODE="$OLD/node/bin/node"
 PY="$OLD/python/bin/python3"
 MJS="$HERE/../linux/update_e2e.mjs"
 OLD_VERSION="$("$PY" -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$OLD/app/build-info.json")"
-NEW_VERSION="${NEW_VERSION:-$("$PY" -I -c 'import sys; m, n = sys.argv[1].lstrip("v").split(".")[:2]; print(f"v{m}.{int(n) + 1}")' "$OLD_VERSION")}"
-echo "Go version bridge on macOS: $OLD_VERSION (Swift and Node) to $NEW_VERSION (Wails and Go), in $T"
+next_minor() { "$PY" -I -c 'import sys; m, n = sys.argv[1].lstrip("v").split(".")[:2]; print(f"v{m}.{int(n) + 1}")' "$1"; }
+CRASH_VERSION="${CRASH_VERSION:-$(next_minor "$OLD_VERSION")}"
+NEW_VERSION="${NEW_VERSION:-$(next_minor "$CRASH_VERSION")}"
+echo "Go version bridge on macOS: $OLD_VERSION (Swift and Node) to $NEW_VERSION (Wails and Go), started by $START, in $T"
 
 api() { "$PY" -I "$HERE/../linux/api.py" "$@"; }
 json() { "$PY" -I -c 'import json, sys; d = json.load(sys.stdin); sys.exit(0 if eval(sys.argv[1]) else 1)' "$1"; }
@@ -117,13 +139,36 @@ ditto "$T/old/$NAME.app" "$APP"
 printf "PORT='%s'\nKB_ROOT='%s'\nSTUDIO_UPDATE_URL='http://127.0.0.1:%s'\n" "$PORT" "$KB" "$FEED_PORT" >"$DATA/studio.env"
 "$NODE" "$MJS" serve "$T/rel" "$FEED_PORT" &
 pids+=($!)
-# As launcher.sh starts it where no LaunchAgent is loaded (STUDIO_APP_BUNDLE
-# and STUDIO_SUPERVISOR=detached): an update then restarts it through exit
-# 76, which runs the new copy's own studio-run.sh. With a LaunchAgent,
-# launchctl kickstart runs the new copy's studio-run.sh instead.
-env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin STUDIO_APP_BUNDLE="$APP" STUDIO_SUPERVISOR=detached \
-  /bin/bash "$RES/studio-run.sh" "$DATA" >/dev/null 2>&1 &
-pids+=($!)
+case "$START" in
+  detached|loop)
+    # As launcher.sh starts it where no LaunchAgent is loaded (detached:
+    # STUDIO_APP_BUNDLE and STUDIO_SUPERVISOR=detached, so an update
+    # restarts it through exit 76, which runs the new copy's own
+    # studio-run.sh); loop: without STUDIO_SUPERVISOR, as a release before
+    # v1.170 runs when launchctl kickstart fails, so an update restarts it
+    # through exit 75 and the old loop runs the new copy's node/bin/node.
+    sup=
+    [ "$START" = detached ] && sup=detached
+    env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin STUDIO_APP_BUNDLE="$APP" ${sup:+STUDIO_SUPERVISOR=$sup} \
+      /bin/bash "$RES/studio-run.sh" "$DATA" >/dev/null 2>&1 &
+    pids+=($!) ;;
+  launcher)
+    # The old app's own launcher.sh, as its window runs it: the LaunchAgent
+    # where it can be loaded, else (from v1.170) the detached run loop.
+    launchctl bootout "$SERVICE" 2>/dev/null || true
+    if env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin STUDIO_NO_BROWSER=1 /bin/bash "$RES/launcher.sh" >"$T/launcher.log" 2>&1; then
+      ok "$OLD_VERSION's launcher.sh started the server: $(tail -n 1 "$T/launcher.log" | cut -c1-120)"
+    else
+      bad "$OLD_VERSION's launcher.sh failed:"; tail -n 8 "$T/launcher.log" | sed 's/^/        /'
+      tail -n 5 "$DATA/logs/agent.log" 2>/dev/null | sed 's/^/        /' || true
+    fi
+    if launchctl print "$SERVICE" >/dev/null 2>&1; then
+      ok "the LaunchAgent $LABEL is loaded in gui/$(id -u)"
+    else
+      echo "  note  no LaunchAgent is loaded: $(grep -h 'no LaunchAgent' "$DATA/logs/agent.log" 2>/dev/null | tail -n 1 | cut -c1-200)"
+    fi ;;
+  *) echo "START is detached, launcher or loop" >&2; exit 2 ;;
+esac
 if wait_version "$OLD_VERSION" 120; then ok "$OLD_VERSION runs"; else bad "$OLD_VERSION did not start"; log_tail; exit 1; fi
 server_is node && ok "with the Node server" || bad "the server is not Node's"
 
@@ -148,21 +193,54 @@ data_ok() {   # data_ok WHEN
 }
 data_ok "on $OLD_VERSION"
 
-# ---- 3. the Go version, through the old updater ----
+# ---- 3. a Go build that never starts: the run loop puts OLD back ----
 
-echo "Update to the Go version"
-mkdir -p "$T/stage/x"
-tar -xzf "$NEW_ARCHIVE" -C "$T/stage/x"
-NEWRES="$T/stage/x/$NAME.app/Contents/Resources"
-"$NODE" "$MJS" stamp "$NEWRES" "$NEW_VERSION" "$T/keys/update.pub"
-grep -q '"server": *"go"' "$NEWRES/manifest.json" || bad "the new app's manifest does not say server go"
-grep -q '"window": *"wails"' "$NEWRES/manifest.json" && ok "the new app's window is the Wails one" || bad "the new app's window is not the Wails one"
-# The stamp changed files under the seal; sign it again ad hoc, as
-# build_app.sh signs it.
-codesign --force --deep --sign - "$T/stage/x/$NAME.app" >/dev/null 2>&1 || bad "codesign could not sign the stamped app"
-(cd "$T/stage/x" && tar -czf "$T/stage/activate-studio-macos-arm64.tar.gz" "$NAME.app")
-rm -rf "$T/stage/x"
-"$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW_VERSION" "$T/stage/activate-studio-macos-arm64.tar.gz" "$T/keys/update.key"
+# go_build VERSION [crash]: NEW_ARCHIVE stamped as VERSION and signed again
+# ad hoc (the stamp changed files under the seal, as build_app.sh signs
+# it), in $T/stage/VERSION/; crash: its server exits at once, every time.
+go_build() {
+  local d="$T/stage/$1"
+  mkdir -p "$d/x"
+  tar -xzf "$NEW_ARCHIVE" -C "$d/x"
+  "$NODE" "$MJS" stamp "$d/x/$NAME.app/Contents/Resources" "$1" "$T/keys/update.pub"
+  if [ "${2:-}" = crash ]; then printf '#!/bin/sh\nexit 1\n' >"$d/x/$NAME.app/Contents/Resources/app/bin/studio-server"; fi
+  codesign --force --deep --sign - "$d/x/$NAME.app" >/dev/null 2>&1 || bad "codesign could not sign the stamped app"
+  (cd "$d/x" && tar -czf "$d/activate-studio-macos-arm64.tar.gz" "$NAME.app")
+  rm -rf "$d/x"
+}
+UPD="$DATA/updates"
+app_version() { "$PY" -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$RES/app/build-info.json" 2>/dev/null; }
+
+echo "A Go build that never starts ($CRASH_VERSION)"
+go_build "$CRASH_VERSION" crash
+"$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$CRASH_VERSION" "$T/stage/$CRASH_VERSION/activate-studio-macos-arm64.tar.gz" "$T/keys/update.key"
+api -m 60 POST "$U/api/updates/check" '{}' >"$T/check0.json" || true
+json "d['available'] and d['latest']['version'] == '$CRASH_VERSION' and d['canInstall']" <"$T/check0.json" &&
+  ok "$OLD_VERSION's updater offers $CRASH_VERSION and may install it" || { bad "the check:"; cut -c1-400 "$T/check0.json" | sed 's/^/        /'; }
+api -m 30 POST "$U/api/updates/install" '{}' >/dev/null || bad "the install of $CRASH_VERSION was refused"
+"$NODE" "$MJS" remove-release "$T/rel" "$CRASH_VERSION"
+# The server answers as OLD until the swap: wait for the swap (pending.json,
+# or the crashing copy in place), then for the run loop's note.
+n=0; until [ -f "$UPD/pending.json" ] || [ "$(app_version)" = "$CRASH_VERSION" ] || [ -f "$UPD/rolled-back.json" ] || [ "$n" -ge 240 ]; do sleep 1; n=$((n + 1)); done
+n=0; until [ -f "$UPD/rolled-back.json" ] || [ "$n" -ge 300 ]; do sleep 1; n=$((n + 1)); done
+if wait_version "$OLD_VERSION" 300 && [ "$(app_version)" = "$OLD_VERSION" ]; then
+  ok "after three failed starts the run loop put $OLD_VERSION back"
+else bad "$OLD_VERSION was not put back (the app is $(app_version))"; log_tail; fi
+grep -q "\"$CRASH_VERSION\"" "$UPD/rolled-back.json" 2>/dev/null && ok "rolled-back.json says $CRASH_VERSION did not start" || bad "rolled-back.json: $(cat "$UPD/rolled-back.json" 2>/dev/null)"
+grep -h "keeps stopping\|stopped .* times\|is back" "$DATA/logs/studio.log" 2>/dev/null | tail -n 1 | cut -c1-200 | sed 's/^/  note  /' || true
+sleep 2
+server_is node && ok "with the Node server" || bad "the server is not Node's after the run loop's rollback"
+data_ok "after the run loop's rollback"
+
+# ---- 4. the Go version, through the old updater ----
+
+echo "Update to the Go version ($NEW_VERSION)"
+go_build "$NEW_VERSION"
+mkdir -p "$T/stage/peek"
+tar -xzf "$T/stage/$NEW_VERSION/activate-studio-macos-arm64.tar.gz" -C "$T/stage/peek" "$NAME.app/Contents/Resources/manifest.json"
+grep -q '"server": *"go"' "$T/stage/peek/$NAME.app/Contents/Resources/manifest.json" || bad "the new app's manifest does not say server go"
+grep -q '"window": *"wails"' "$T/stage/peek/$NAME.app/Contents/Resources/manifest.json" && ok "the new app's window is the Wails one" || bad "the new app's window is not the Wails one"
+"$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$NEW_VERSION" "$T/stage/$NEW_VERSION/activate-studio-macos-arm64.tar.gz" "$T/keys/update.key"
 api -m 60 POST "$U/api/updates/check" '{}' >"$T/check.json" || true
 if json "d['available'] and d['latest']['version'] == '$NEW_VERSION' and d['canInstall']" <"$T/check.json"; then
   ok "$OLD_VERSION's updater offers $NEW_VERSION and may install it"
@@ -171,17 +249,31 @@ api -m 30 POST "$U/api/updates/install" '{}' >/dev/null || bad "the install requ
 if wait_version "$NEW_VERSION" 300; then ok "the server answers as $NEW_VERSION"; else bad "the server did not come back as $NEW_VERSION"; log_tail; fi
 sleep 2
 server_is go && ok "and it is the Go server" || bad "the server is not the Go server"
+case "$START" in
+  loop) grep -q "studio-run.sh --serve" "$DATA/logs/studio.log" && ok "started by $OLD_VERSION's run loop through the stand-in node/bin/node" || bad "the log does not show the stand-in starting the Go server" ;;
+esac
+if [ "$START" = launcher ] && launchctl print "$SERVICE" >/dev/null 2>&1; then
+  launchctl print "$SERVICE" 2>/dev/null | grep -q "$RES/studio-run.sh" && ok "under the LaunchAgent, which runs the new copy's studio-run.sh" || bad "the LaunchAgent does not run the app's studio-run.sh"
+fi
 check_exe() { "$PY" -I -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb"))["CFBundleExecutable"])' "$APP/Contents/Info.plist"; }
 file -b "$APP/Contents/MacOS/$(check_exe)" | grep -q 'Mach-O' && ok "the installed app's executable is a program (the Wails window)" || bad "the installed app's executable is not a program"
 codesign --verify --deep --strict "$APP" >/dev/null 2>&1 && ok "the installed app's signature verifies" || bad "the installed app's signature does not verify"
-api -m 10 GET "$U/api/updates" | json "(d.get('previous') or {}).get('version') == '$OLD_VERSION'" && ok "the Go updater offers the rollback" || bad "the Go updater offers no rollback"
+# The old updater marks the window changed (updates/reopen): the Go page
+# offers Reopen now in Settings, Updates, and in the Updated notice.
+[ -f "$UPD/reopen" ] && api -m 10 GET "$U/api/updates" | json 'd.get("reopen") is True' &&
+  ok "the page is asked to offer Reopen (updates/reopen names $(cat "$UPD/reopen"))" || bad "no reopen: $(api -m 10 GET "$U/api/updates" | field 'd.get("reopen")')"
+# The old Swift window keeps showing the Studio until it is reopened: the
+# page it loads is the Go server's.
+curl -fsS -m 10 "$U/" | grep -qi '<html' && ok "the Go server serves the page the old window shows" || bad "the Go server does not serve the page"
+api -m 10 GET "$U/api/updates" | json "d.get('previous') is None" && ok "the Go updater offers no Roll back to $OLD_VERSION" || bad "the Go updater offers a rollback: $(api -m 10 GET "$U/api/updates" | field 'd.get("previous")')"
+code="$(curl -s -o "$T/rollback.json" -w '%{http_code}' -m 30 -X POST -H 'content-type: application/json' -d '{}' "$U/api/updates/rollback" || true)"
+[ "$code" = 409 ] && grep -q "runs the Node server" "$T/rollback.json" && ok "and refuses one: $(cut -c1-120 "$T/rollback.json")" || bad "the rollback request: $code $(cut -c1-200 "$T/rollback.json")"
 data_ok "on $NEW_VERSION"
 
-# ---- 4. the copy kept beside it goes after the first clean start ----
+# ---- 5. the copy kept beside it goes after the first clean start ----
 
 echo "After the first clean start"
 PREV="$H/Applications/.$NAME.app.previous"
-UPD="$DATA/updates"
 n=0
 while [ -d "$PREV" ] && [ "$n" -lt 240 ]; do sleep 1; n=$((n + 1)); done
 if [ ! -d "$PREV" ]; then
@@ -191,26 +283,8 @@ else
   bad "the copy of $OLD_VERSION is still there after ${n}s"; log_tail
 fi
 grep -q "\"$OLD_VERSION\"" "$UPD/previous.json" 2>/dev/null && ok "updates/previous.json names $OLD_VERSION" || bad "previous.json: $(cat "$UPD/previous.json" 2>/dev/null)"
-
-# ---- 5. back to the Node version, by download ----
-
-echo "Roll back"
-mkdir -p "$T/stage/old"
-ditto "$T/old/$NAME.app" "$T/stage/old/$NAME.app"
-"$NODE" "$MJS" stamp "$T/stage/old/$NAME.app/Contents/Resources" "$OLD_VERSION" "$T/keys/update.pub"
-codesign --force --deep --sign - "$T/stage/old/$NAME.app" >/dev/null 2>&1 || bad "codesign could not sign the stamped old app"
-mkdir -p "$T/stage/$OLD_VERSION"
-(cd "$T/stage/old" && tar -czf "$T/stage/$OLD_VERSION/activate-studio-macos-arm64.tar.gz" "$NAME.app")
-rm -rf "$T/stage/old"
-"$NODE" "$MJS" add-release "$T/rel" "$FEED_PORT" "$OLD_VERSION" "$T/stage/$OLD_VERSION/activate-studio-macos-arm64.tar.gz" "$T/keys/update.key"
-api -m 60 POST "$U/api/updates/check" '{}' >/dev/null || true
-api -m 10 GET "$U/api/updates" | json "(d.get('previous') or {}).get('version') == '$OLD_VERSION' and (d['previous'].get('size') or 0) > 0" &&
-  ok "Roll back offers $OLD_VERSION, a download of its size" || bad "Roll back does not offer the download"
-api -m 60 POST "$U/api/updates/rollback" '{}' >/dev/null || bad "the rollback was refused"
-if wait_version "$OLD_VERSION" 300; then ok "the server answers as $OLD_VERSION again"; else bad "the server did not come back as $OLD_VERSION"; log_tail; fi
-sleep 2
-server_is node && ok "with the Node server" || bad "the server is not Node's after the rollback"
-data_ok "after the rollback"
+api -m 10 GET "$U/api/updates" | json "d.get('previous') is None" && ok "still no Roll back to $OLD_VERSION" || bad "a rollback is offered after the clean start"
+data_ok "after the copy was removed"
 
 echo
 if [ "$failures" -gt 0 ]; then echo "$failures check(s) failed"; exit 1; fi

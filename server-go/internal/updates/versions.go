@@ -47,6 +47,19 @@ func IsNewer(candidate, running string) bool {
 	return ok && CompareVersions(candidate, running) > 0
 }
 
+// LastNodeRelease is the newest release that runs the Node server. The
+// Go version installs only releases after it (the first Preview of the Go
+// version is v1.188.1, the first Stable v1.189): it never goes back to Node
+// by choice. Releases carry no mark of their server in the signed manifest,
+// so the version is the mark. The run loop still puts the copy an update
+// replaced back, Node's included, when the new one keeps failing to start.
+const LastNodeRelease = "v1.188"
+
+// goRelease: tag is a release of the Go version, one this updater may install.
+func (u *Updater) goRelease(tag string) bool {
+	return IsNewer(tag, u.o.LastNodeRelease)
+}
+
 func sameVersion(a, b string) bool {
 	_, ok := ParseVersion(a)
 	return ok && CompareVersions(a, b) == 0

@@ -275,7 +275,10 @@ func newFixture(t *testing.T, flavor, version string, l layout) *fixture {
 		},
 		Version:       func() (string, *string) { fx.mu.Lock(); defer fx.mu.Unlock(); return fx.version, nil },
 		SystemVersion: func() string { return "14.5" },
-		Timings:       Timings{FirstCheck: time.Hour, Interval: time.Hour, Soon: time.Hour, Poll: time.Hour, Idle: 50 * time.Millisecond, IdlePoll: 10 * time.Millisecond, Healthy: time.Hour},
+		// The tests' versions stand for Go releases; TestNodeReleasesNotOffered
+		// uses the real floor.
+		LastNodeRelease: "v1.0",
+		Timings:         Timings{FirstCheck: time.Hour, Interval: time.Hour, Soon: time.Hour, Poll: time.Hour, Idle: 50 * time.Millisecond, IdlePoll: 10 * time.Millisecond, Healthy: time.Hour},
 	})
 	t.Cleanup(fx.u.wait)
 	return fx
@@ -977,5 +980,74 @@ func TestStaleReopenMarkIsCleared(t *testing.T) {
 		if gone := !exists(mark); gone != !c.reopen {
 			t.Fatalf("%s: mark removed %v", c.name, gone)
 		}
+	}
+}
+
+// The Go version never offers a Node release (v1.188 and earlier): not in
+// Install a version, not as Move to Stable, not as Roll back.
+func TestNodeReleasesNotOffered(t *testing.T) {
+	fx := newFixture(t, "macos", "v1.188.2", goLayout)
+	fx.u.o.LastNodeRelease = LastNodeRelease
+	preview := relOpts{prerelease: true, manifest: map[string]any{"channel": "preview"}}
+	fx.feed.set(
+		fx.rel("v1.188.3", goLayout, preview),
+		fx.rel("v1.188.1", goLayout, preview),
+		fx.rel("v1.188", nodeLayout, relOpts{}),
+		fx.rel("v1.187", nodeLayout, relOpts{}),
+	)
+	fx.u.Check()
+	versions := func(s Status) []string {
+		var out []string
+		for _, v := range s.Versions {
+			out = append(out, v.Version)
+		}
+		return out
+	}
+	s := fx.u.Status()
+	if s.MoveToStable != nil || len(s.Versions) != 0 {
+		t.Fatalf("stable, before v1.189: move %v versions %v", s.MoveToStable, versions(s))
+	}
+	fx.setPolicy(map[string]any{"check": true, "install": "manual", "channel": "preview"})
+	s = fx.u.Status()
+	if got := strings.Join(versions(s), " "); got != "v1.188.3 v1.188.1" {
+		t.Fatalf("preview versions %q", got)
+	}
+	if code, body := fx.install(map[string]any{"version": "v1.188"}); code != 409 || !strings.Contains(body, "not a release this Studio can install") {
+		t.Fatalf("install v1.188: %d %s", code, body)
+	}
+	if code, body := call(fx, "POST", "/api/updates/inspect", map[string]any{"version": "v1.187"}); code != 409 {
+		t.Fatalf("inspect v1.187: %d %s", code, body)
+	}
+	// The record of the Node copy the move replaced: no Roll back.
+	write(t, filepath.Join(fx.data, "updates", previousRecord), `{"version": "v1.188", "at": "2026-11-09T00:00:00Z"}`, 0o644)
+	if s := fx.u.Status(); s.Previous != nil {
+		t.Fatalf("previous %+v", s.Previous)
+	}
+	if code, body := call(fx, "POST", "/api/updates/rollback", nil); code != 409 || !strings.Contains(body, "v1.188 runs the Node server") {
+		t.Fatalf("rollback: %d %s", code, body)
+	}
+	// A Go release replaced last: Roll back is offered.
+	write(t, filepath.Join(fx.data, "updates", previousRecord), `{"version": "v1.188.1", "at": "2026-11-09T00:00:00Z"}`, 0o644)
+	if p, ok := fx.u.Status().Previous.(*previousInfo); !ok || p.Version != "v1.188.1" {
+		t.Fatalf("previous %+v", fx.u.Status().Previous)
+	}
+	// Stable once v1.189 is out: Move to Stable goes there, never to v1.188.
+	fx.feed.set(
+		fx.rel("v1.189", goLayout, relOpts{}),
+		fx.rel("v1.188.3", goLayout, preview),
+		fx.rel("v1.188", nodeLayout, relOpts{}),
+	)
+	fx.setPolicy(map[string]any{"check": true, "install": "manual", "channel": "stable"})
+	fx.u.Check()
+	s = fx.u.Status()
+	if s.MoveToStable != nil || !s.Available || s.Latest.Version != "v1.189" || strings.Join(versions(s), " ") != "v1.189" {
+		t.Fatalf("stable with v1.189: move %v available %v versions %v", s.MoveToStable, s.Available, versions(s))
+	}
+	// A Preview after v1.189 on Stable: Move to Stable goes to v1.189.
+	fx.mu.Lock()
+	fx.version = "v1.189.2"
+	fx.mu.Unlock()
+	if s := fx.u.Status(); s.MoveToStable == nil || s.MoveToStable.Version != "v1.189" {
+		t.Fatalf("move to stable from v1.189.2: %v", s.MoveToStable)
 	}
 }
