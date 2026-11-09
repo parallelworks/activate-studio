@@ -224,6 +224,24 @@ export function findTerms(text: string): string[] {
     .filter(t => t.length >= 2 && !/^(AND|OR|NOT|NEAR)$/i.test(t))
 }
 
+/** The text Find highlights for its terms, any of them, ignoring case. A
+ *  term's letters and digits must appear in order, and punctuation between
+ *  them matches any punctuation or space, as search reads words: a search
+ *  for NIST_SP811 matched "NIST SP811", and Find highlights it there. A
+ *  term with fewer than two such parts is matched as typed. */
+export function findPattern(terms: string[]): RegExp {
+  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(terms.map(t => {
+    const parts = t.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+    return parts.length >= 2 ? parts.map(esc).join('[^\\p{L}\\p{N}]+') : esc(t)
+  }).join('|'), 'giu')
+}
+
+/** Indexed text longer than this (UTF-16 units) is shown as plain text:
+ *  formatting a long manual's text as Markdown holds the page for seconds
+ *  in WebKit (the Linux and macOS windows), about a second in Chromium. */
+export const MARKDOWN_FORMAT_MAX = 60_000
+
 export function Viewer({ path, find, onDeleted, readOnly }: {
   path: string | null
   /** Text to land on and highlight, typically the search query that led here. */
@@ -277,7 +295,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
     reg.delete('find-hit'); reg.delete('find-current')
     const terms = findTerms(findText)
     if (!terms.length) { setHitCount(0); return }
-    const re = new RegExp(terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi')
+    const re = findPattern(terms)
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
     const ranges: Range[] = []
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -395,7 +413,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
           <p className="muted preview-gone-note">A preview of this file needs LibreOffice, so this is its indexed text.</p>
         )}
         <Callout tone="warning" size="sm" className="index-note">This is the text representation stored in the search index, not the original file.</Callout>
-        {isMarkdown || extractedMarkdown
+        {(isMarkdown || extractedMarkdown) && file.content.length <= MARKDOWN_FORMAT_MAX
           ? <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
           : <pre className="text-body">{file.content}</pre>}
         {file.truncated && <p className="muted">Preview truncated; use Download for the full file.</p>}
