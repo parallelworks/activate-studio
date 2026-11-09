@@ -163,9 +163,13 @@ case "$PDF" in *'"inked":0'*|'' |*error*) echo "FAIL pdf.js did not draw the PDF
 SUG="$(ask sug "fetch('/api/libraries/suggestions').then(r=>r.text())")"
 echo "suggestions: $SUG"
 case "$SUG" in *'"id":"mail"'*) echo "ok Apple Mail is offered" ;; *) echo "FAIL Apple Mail is not offered"; FAIL=1 ;; esac
-state light 0 settings; sleep 4
-page "window.dispatchEvent(new Event('ade:setup-open'))"
-shot "suggestions-setup-light-expanded" 3
+# Library's Add form offers them as buttons; Apple Mail picked fills the
+# folder and checks it.
+state light 0 library; sleep 4
+page "[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='+ Add').click()"
+shot "suggestions-add-light-expanded" 3
+page "[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Apple Mail').click()"
+shot "suggestions-mail-light-expanded" 4
 MAILDIR="$H/Library/Mail"
 BUILT="$(ask build "fetch('/api/libraries/build/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceRoot:'$MAILDIR',label:'Apple Mail'})}).then(r=>r.json()).then(c=>fetch('/api/libraries/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceRoot:'$MAILDIR',label:'Apple Mail',create:!!(c.create&&c.create.length)})})).then(r=>r.text().then(t=>r.status+' '+t.slice(0,300)))")"
 echo "build: $BUILT"
