@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
+	"github.com/parallelworks/activate-studio/server-go/internal/libapi"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
@@ -127,7 +129,20 @@ type labelSuggestions struct {
 
 var wsRun = regexp.MustCompile(`[\s\x{a0}\x{feff}\x{2028}\x{2029}]+`)
 
-func (m *Module) headText(rel string) string {
+// labelTarget is the library label suggestions read: the main one, a
+// library on this host, or a library on another system, whose folders and
+// files are read through the paths the tree and the file view use.
+type labelTarget struct {
+	r   *http.Request
+	lib kb.Library
+}
+
+func (t labelTarget) primary() bool { return t.lib.ID == kb.PrimaryID }
+
+func (m *Module) headText(t labelTarget, rel string) string {
+	if !t.primary() && kb.Default != nil {
+		return jsval.Slice(m.libraryHead(t, rel), labelHeadChars)
+	}
 	if b, err := os.ReadFile(kb.RootsFrom(m.A.Cfg).ExtractPath(rel)); err == nil && jsTrim(string(b)) != "" {
 		return jsval.Slice(string(b), labelHeadChars)
 	}
@@ -140,35 +155,80 @@ func (m *Module) headText(rel string) string {
 	return jsval.Slice(s, labelHeadChars)
 }
 
-func (m *Module) labelCandidates(ctx context.Context, dir string, limit int, includeLabelled bool) []string {
-	var out []string
-	var walk func(rel string, depth int)
-	walk = func(rel string, depth int) {
-		if len(out) >= limit || depth > 6 {
-			return
+// libraryHead is a file's text in a library other than the main one. For
+// one on another system or read through another host, the text its index
+// holds comes first (one query there, and the only text of a PDF), then
+// the file itself as the file view reads it.
+func (m *Module) libraryHead(t labelTarget, rel string) string {
+	if (t.lib.Site != "" || t.lib.ReadThrough) && t.lib.Indexed && m.Corpus != nil && m.Corpus.Search != nil {
+		dir, name := "", rel
+		if i := strings.LastIndex(rel, "/"); i >= 0 {
+			dir, name = rel[:i], rel[i+1:]
 		}
+		if res := m.Corpus.Search.IndexedTextState(t.r.Context(), t.lib.IndexRoot, dir, name); res.State == "text" {
+			return res.Text
+		}
+	}
+	return kb.Default.LibraryFileText(t.r, t.lib, rel)
+}
+
+// labelEntry is a directory entry as the walk needs it.
+type labelEntry struct {
+	name string
+	dir  bool
+}
+
+func (m *Module) labelEntries(t labelTarget, rel string) ([]labelEntry, error) {
+	var out []labelEntry
+	if t.primary() || kb.Default == nil {
 		abs, err := kb.Resolve(rel, m.A.Cfg.KBRoot)
 		if err != nil {
-			return
+			return nil, err
 		}
 		entries, err := os.ReadDir(abs)
 		if err != nil {
-			return
+			return nil, err
 		}
-		sort.SliceStable(entries, func(i, j int) bool { return kb.LocaleCompare(entries[i].Name(), entries[j].Name()) < 0 })
+		for _, e := range entries {
+			out = append(out, labelEntry{e.Name(), e.IsDir()})
+		}
+	} else {
+		entries, err := kb.Default.LibraryListing(t.r, t.lib, rel)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			out = append(out, labelEntry{e.Name, e.Type == "dir"})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return kb.LocaleCompare(out[i].name, out[j].name) < 0 })
+	return out, nil
+}
+
+func (m *Module) labelCandidates(ctx context.Context, t labelTarget, dir string, limit int, includeLabelled bool) ([]string, error) {
+	var out []string
+	var walk func(rel string, depth int) error
+	walk = func(rel string, depth int) error {
+		if len(out) >= limit || depth > 6 {
+			return nil
+		}
+		entries, err := m.labelEntries(t, rel)
+		if err != nil {
+			return err
+		}
 		for _, e := range entries {
 			if len(out) >= limit {
-				return
+				return nil
 			}
-			if strings.HasPrefix(e.Name(), ".") {
+			if strings.HasPrefix(e.name, ".") {
 				continue
 			}
-			child := e.Name()
+			child := e.name
 			if rel != "" {
-				child = rel + "/" + e.Name()
+				child = rel + "/" + e.name
 			}
-			if e.IsDir() {
-				if kb.ExcludeDirs[e.Name()] {
+			if e.dir {
+				if kb.ExcludeDirs[e.name] {
 					continue
 				}
 				walk(child, depth+1)
@@ -176,25 +236,28 @@ func (m *Module) labelCandidates(ctx context.Context, dir string, limit int, inc
 				out = append(out, child)
 			}
 		}
+		return nil
 	}
-	walk(edgeSlashes.ReplaceAllString(dir, ""), 0)
+	if !t.primary() && t.lib.Site == "" && t.lib.SourceRoot == "" {
+		return nil, apierr.New(409, "%s has no files on this host, so labels cannot be suggested for it", t.lib.Label)
+	}
+	// The main library's missing folder lists as nothing, as in Node; a
+	// library elsewhere that cannot be listed (no key, the system refused)
+	// says why.
+	if err := walk(edgeSlashes.ReplaceAllString(dir, ""), 0); err != nil && !t.primary() {
+		return nil, err
+	}
 	if includeLabelled {
-		return out
+		return out, nil
 	}
-	t := kbTags()
 	var unlabelled []string
 	for _, rel := range out {
-		if t != nil {
-			eff := t.Effective(ctx, rel)
-			own, _ := eff.Get("own")
-			inh, _ := eff.Get("inherited")
-			if len(own.([]string)) > 0 || len(inh.([]string)) > 0 {
-				continue
-			}
+		if kb.Default != nil && kb.Default.LibraryLabelled(ctx, t.lib, rel) {
+			continue
 		}
 		unlabelled = append(unlabelled, rel)
 	}
-	return unlabelled
+	return unlabelled, nil
 }
 
 var fencedJSON = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)```")
@@ -219,13 +282,24 @@ func parseLabelJSON(text string) (any, bool) {
 	return v, true
 }
 
-func (m *Module) suggestLabels(ctx context.Context, dir string, limit int, includeLabelled bool, model string, cred credArgs) (*labelSuggestions, error) {
+func (m *Module) suggestLabels(ctx context.Context, t labelTarget, dir string, limit int, includeLabelled bool, model string, cred credArgs) (*labelSuggestions, error) {
 	limit = min(max(limit, 1), 200)
-	files := m.labelCandidates(ctx, dir, limit, includeLabelled)
+	files, err := m.labelCandidates(ctx, t, dir, limit, includeLabelled)
+	if err != nil {
+		return nil, &labelReadError{err}
+	}
 	var known []string
 	counts := map[string]int{}
-	if t := kbTags(); t != nil {
-		known, counts = t.Counts(ctx)
+	if t.primary() {
+		if tags := kbTags(); tags != nil {
+			known, counts = tags.Counts(ctx)
+		}
+	} else if kb.Default != nil {
+		// Another library reuses the labels of every library, its own
+		// included, as the label vocabulary lists them.
+		if known, counts, err = kb.Default.LabelVocabulary(t.r); err != nil {
+			return nil, &labelReadError{err}
+		}
 	}
 	// sorted by count, stable over first-seen order, as Array.sort is
 	vocab := append([]string{}, known...)
@@ -252,7 +326,7 @@ func (m *Module) suggestLabels(ctx context.Context, dir string, limit int, inclu
 		}, "\n")
 		var parts []string
 		for _, rel := range batch {
-			text := jsval.Slice(wsRun.ReplaceAllString(m.headText(rel), " "), labelHeadChars)
+			text := jsval.Slice(wsRun.ReplaceAllString(m.headText(t, rel), " "), labelHeadChars)
 			if text == "" {
 				text = "(no extracted text)"
 			}
@@ -359,7 +433,21 @@ func (m *Module) toolSuggestLabels(r *http.Request, args map[string]any, ctx Too
 	if limit == 0 {
 		limit = 40
 	}
-	out, err := m.suggestLabels(r.Context(), argString(args, "dir"), limit, reqbody.Truthy(args["include_labelled"]), model, credArgs{key: deref(ctx.UserKey)})
+	// The library the chat's Scope selects, as apply_labels labels it;
+	// the main one when all are selected.
+	t := labelTarget{r: r, lib: kb.Library{ID: kb.PrimaryID}}
+	if scoped := jsTrim(deref(ctx.Library)); scoped != "" && strings.ToLower(scoped) != "all" && scoped != kb.PrimaryID {
+		lib, err := m.namedLibrary(scoped, ctx)
+		if err != nil {
+			return nil, &toolError{err.Error()}
+		}
+		t.lib = libapi.ToKB(lib)
+	}
+	out, err := m.suggestLabels(r.Context(), t, argString(args, "dir"), limit, reqbody.Truthy(args["include_labelled"]), model, credArgs{key: deref(ctx.UserKey)})
+	var re *labelReadError
+	if errors.As(err, &re) {
+		return nil, &toolError{re.err.Error()}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +513,15 @@ func (m *Module) labelSuggestionsRoute(w http.ResponseWriter, r *http.Request) e
 	if v := b.Get("limit"); v != nil {
 		limit = int(reqbody.JSNumber(v))
 	}
-	out, err := m.suggestLabels(r.Context(), b.Str("dir"), limit, reqbody.Truthy(b.Get("includeLabelled")), model, cred)
+	t, dir, err := m.labelTargetOf(r, b.Str("library"), b.Str("dir"))
+	if err != nil {
+		return err
+	}
+	out, err := m.suggestLabels(r.Context(), t, dir, limit, reqbody.Truthy(b.Get("includeLabelled")), model, cred)
+	var re *labelReadError
+	if errors.As(err, &re) {
+		return re.err
+	}
 	if err != nil {
 		detail := jsval.Slice(err.Error(), 160)
 		if hasCred {
@@ -434,4 +530,38 @@ func (m *Module) labelSuggestionsRoute(w http.ResponseWriter, r *http.Request) e
 		return apierr.New(502, "No personal model credential is loaded, and the deployment credential was refused (%s). Add your key in Settings, Model access.", detail)
 	}
 	return reqbody.OK(w, out)
+}
+
+// labelReadError is a library that could not be read for suggestions,
+// told apart from the model refusing the request.
+type labelReadError struct{ err error }
+
+func (e *labelReadError) Error() string { return e.err.Error() }
+
+// labelTargetOf is the library and folder a request names: the body's
+// library (the Library view sends the one shown, or the one a path of All
+// belongs to), the main one when it names none or all.
+func (m *Module) labelTargetOf(r *http.Request, library, dir string) (labelTarget, string, error) {
+	t := labelTarget{r: r, lib: kb.Library{ID: kb.PrimaryID}}
+	want := strings.ToLower(jsTrim(library))
+	if want == "" || want == kb.PrimaryID || kb.Default == nil {
+		return t, dir, nil
+	}
+	if want == kb.All && splitFirst(dir) == "" {
+		return t, dir, nil
+	}
+	lib, rel, err := kb.Default.LabelLibrary(r, want, dir)
+	if err != nil {
+		return t, "", err
+	}
+	t.lib = lib
+	return t, rel, nil
+}
+
+func splitFirst(p string) string {
+	p = edgeSlashes.ReplaceAllString(p, "")
+	if i := strings.Index(p, "/"); i >= 0 {
+		return p[:i]
+	}
+	return p
 }

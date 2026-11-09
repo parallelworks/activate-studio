@@ -272,12 +272,25 @@ func (m *Module) source(lib Library) (string, error) {
 func inAll(r *http.Request) bool { return strings.ToLower(qs(r, "library")) == All }
 
 // others are listLibraries(label, viewer) without the main one, for the
-// label vocabulary.
+// label vocabulary. The viewer's own libraries on other systems come after this host's, so
+// labels the Studio keeps for them are counted too.
 func (m *Module) others(r *http.Request) ([]Library, error) {
-	if _, err := m.allLibs(r); err != nil {
+	all, err := m.allLibs(r)
+	if err != nil {
 		return nil, err
 	}
-	return m.Libs.List()[1:], nil
+	out := m.Libs.List()[1:]
+	seen := map[string]bool{PrimaryID: true}
+	for _, l := range out {
+		seen[l.ID] = true
+	}
+	for _, l := range all {
+		if !seen[l.ID] {
+			seen[l.ID] = true
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
 
 // splitAll takes "<library id>/<path>" apart, as the combined tree's paths are.
@@ -1034,6 +1047,11 @@ func (m *Module) labelLib(r *http.Request, b body, rel string) (Library, string,
 	if v, ok := libraryParam(r, b); ok {
 		want = strings.ToLower(JSTrim(v))
 	}
+	return m.labelLibNamed(r, want, rel)
+}
+
+// labelLibNamed is labelLib for a library already read from the request.
+func (m *Module) labelLibNamed(r *http.Request, want, rel string) (Library, string, error) {
 	cleaned := trimSlashes(rel)
 	if want == All {
 		libs, err := m.allLibs(r)

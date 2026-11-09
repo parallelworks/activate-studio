@@ -65,6 +65,16 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	libraries.CheckDest = remote.SSHDest
 	kb.LibraryResolver = kbResolver{s}
+	// remote-stats.json keeps counts only for libraries that still exist:
+	// a removed library's entry goes with it, and entries left by earlier
+	// removals are dropped when the file is read.
+	users := s.Reg.Users()
+	kb.RemoteStatsKnown = func(root string) bool {
+		_, d, err := users.FindRoot(root)
+		return err == nil && d != nil
+	}
+	users.OnRemoved(func(root string) { kb.ForgetRemoteStats(a.Cfg.IndexBase, root) })
+	kb.LoadRemoteStats(a.Cfg.IndexBase)
 	a.Providers.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
 		v := libraries.ViewerOf(viewer)
 		var out []json.RawMessage

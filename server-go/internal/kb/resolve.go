@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 )
 
@@ -81,9 +82,11 @@ const remotePrefix = "remote:"
 // ---- counts of a library on another system ----
 
 // remoteStats keeps the counts of libraries on other systems by the time
-// their index was built, in INDEX_BASE/remote-stats.json (gufi.ts).
+// their index was built, in INDEX_BASE/remote-stats.json (gufi.ts), keyed
+// by the library's root ("remote:<owner hash>:<id>").
 type remoteStats struct {
 	mu     sync.Mutex
+	file   string
 	loaded bool
 	m      map[string]remoteStat
 	order  []string
@@ -96,15 +99,21 @@ type remoteStat struct {
 
 var keptRemote remoteStats
 
+// RemoteStatsKnown says whether a root in remote-stats.json is still a
+// library; the libraries track sets it. Entries of libraries removed
+// before removal dropped them (or while another server ran) are dropped
+// when the file is read.
+var RemoteStatsKnown func(root string) bool
+
 func (m *Module) remoteStatsFile() string {
 	return filepath.Join(m.Roots.IndexBase, "remote-stats.json")
 }
 
 func (k *remoteStats) load(file string) {
-	if k.loaded {
+	if k.loaded && k.file == file {
 		return
 	}
-	k.loaded, k.m = true, map[string]remoteStat{}
+	k.file, k.loaded, k.m, k.order = file, true, map[string]remoteStat{}, nil
 	raw, err := os.ReadFile(file)
 	if err != nil {
 		return
@@ -116,18 +125,56 @@ func (k *remoteStats) load(file string) {
 	for dec.More() {
 		kt, err := dec.Token()
 		if err != nil {
-			return
+			break
 		}
 		key, _ := kt.(string)
 		var v remoteStat
 		if dec.Decode(&v) != nil {
-			return
+			break
 		}
 		if _, had := k.m[key]; !had {
 			k.order = append(k.order, key)
 		}
 		k.m[key] = v
 	}
+	if known := RemoteStatsKnown; known != nil {
+		n := len(k.order)
+		k.order = slices.DeleteFunc(k.order, func(key string) bool {
+			if known(key) {
+				return false
+			}
+			delete(k.m, key)
+			return true
+		})
+		if len(k.order) != n {
+			k.save(file)
+		}
+	}
+}
+
+// LoadRemoteStats reads remote-stats.json under indexBase now, dropping the
+// entries of libraries that no longer exist, so an install that removed
+// libraries before this was done is cleaned up at start.
+func LoadRemoteStats(indexBase string) {
+	keptRemote.mu.Lock()
+	defer keptRemote.mu.Unlock()
+	keptRemote.loaded = false
+	keptRemote.load(filepath.Join(indexBase, "remote-stats.json"))
+}
+
+// ForgetRemoteStats drops a removed library's counts from
+// remote-stats.json under indexBase.
+func ForgetRemoteStats(indexBase, root string) {
+	file := filepath.Join(indexBase, "remote-stats.json")
+	keptRemote.mu.Lock()
+	defer keptRemote.mu.Unlock()
+	keptRemote.load(file)
+	if _, ok := keptRemote.m[root]; !ok {
+		return
+	}
+	delete(keptRemote.m, root)
+	keptRemote.order = slices.DeleteFunc(keptRemote.order, func(key string) bool { return key == root })
+	keptRemote.save(file)
 }
 
 func (k *remoteStats) save(file string) {
