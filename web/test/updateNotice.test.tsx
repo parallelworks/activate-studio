@@ -455,6 +455,32 @@ describe('after an update that changed the app\'s window', () => {
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
   })
 
+  it('clears Reopen now once the server says the window runs the new copy, without a reload', async () => {
+    setUpdateFlowOptions({ focusGapMs: 0 })
+    const s = server({ updates: updated() })
+    stubServer(s)
+    appWindow(async () => true)
+    render(<UpdatesSection />)
+    expect(await screen.findByText("The update also changed the app's window, which updates when the app reopens.")).toBeInTheDocument()
+    // The window was reopened: the shell removed updates/reopen, and the
+    // server reports reopen false at the next read (here, the window focused).
+    s.updates = { ...updated(), reopen: false }
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Reopen now' })).toBeNull())
+    expect(screen.queryByText(/updates when the app reopens/)).toBeNull()
+  })
+
+  it('the reopened window announces the version with no Reopen now', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.140')
+    stubServer(server({ updates: { ...updated(), reopen: false } }))
+    appWindow(async () => true)
+    render(<UpdatedNotice />)
+    const box = await screen.findByTestId('updated-notice')
+    expect(box.textContent).toContain('Updated to v1.142')
+    expect(box.textContent).not.toContain('reopens')
+    expect(within(box).queryByRole('button', { name: 'Reopen now' })).toBeNull()
+  })
+
   it('Settings, Updates asks the window to reopen', async () => {
     stubServer(server({ updates: updated() }))
     const post = appWindow(async () => true)
