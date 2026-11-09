@@ -2,13 +2,13 @@
 
 Files collect in many folders, drives, and systems. Finding one means remembering where it was saved, and answering a question from a set of documents means opening them one at a time.
 
-{appName} indexes your folders with GUFI. **Search** finds files by name, by the words inside them (PDFs and office documents, and text in images and scanned pages where OCR is available, as it is in the macOS app), and by meaning. **Query** answers questions about the files themselves, such as the largest, the newest, or the totals by type. **Chat** answers questions from the files and links each source it used.
+{appName} indexes your folders with GUFI. **Search** finds files by name, by the words inside them (PDFs and office documents, and text in images and scanned pages where OCR is available, as it is in the macOS app), and by meaning. **Query** answers questions about the files themselves, such as the largest, the newest, or the totals by type. <!-- ai -->**Chat** answers questions from the files and links each source it used.<!-- /ai -->
 
-Files stay where they are. {appName} keeps its index in a folder of its own, reads each file in place, and follows the file system's permissions. Indexing, search, and query run where {appName} runs and need no network connection; Chat sends text only to the model endpoint you configure, which can be on the same computer. The same index works for a folder on a laptop and for a cluster's file systems.
+Files stay where they are. {appName} keeps its index in a folder of its own, reads each file in place, and follows the file system's permissions. Indexing, search, and query run where {appName} runs and need no network connection.<!-- ai --> Chat sends text only to the model endpoint you configure, which can be on the same computer.<!-- /ai --> The same index works for a folder on a laptop and for a cluster's file systems.
 
 1. **Choose a folder.** On a computer of its own, setup asks which folder to index; Settings, Indexing, Libraries changes it later.
 2. **Search.** Type a word or phrase in **Search**, then click a result to open the file at the match.
-3. **Ask.** Open **Chat** and ask in plain language. The answer links the files it used.
+3. <!-- ai -->**Ask.** Open **Chat** and ask in plain language. The answer links the files it used.<!-- /ai -->
 4. **Query.** Open **Query** and pick a preset, or build one, to list files by size, age, type, owner, or label.
 
 On a computer of its own, setup can be run again at any time, starting from what is set now: **Run setup again** in Settings, General, or **Run Setup…** in the macOS app's menu.

@@ -49,6 +49,18 @@ export function parseHelp(md: string): { intro: string; sections: Section[] } {
   return { intro: intro.join('\n').trim(), sections }
 }
 
+/** The guide marks text about Chat and the assistant as
+ *  `<!-- ai -->…<!-- /ai -->` (an HTML comment, so it reads as plain text on
+ *  GitHub). With AI features on the marks go; with them off the marked text
+ *  goes too, and a list item left empty by that goes with it. */
+export function aiGuideText(md: string, aiEnabled: boolean): string {
+  if (aiEnabled) return md.replace(/<!-- \/?ai -->/g, '')
+  return md
+    .replace(/<!-- ai -->[\s\S]*?<!-- \/ai -->/g, '')
+    .split('\n').filter(l => !/^\s*(\d+\.|[-*])\s*$/.test(l)).join('\n')
+    .replace(/[ \t]+$/gm, '')
+}
+
 function ago(iso: string | null): string {
   if (!iso) return 'pending'
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
@@ -95,7 +107,7 @@ export function HelpView() {
   // With AI features off, the guide's Chat and Agents pages describe pages
   // that are not there, so they leave the rail with them.
   const aiEnabled = aiOn(cfg)
-  const parsed = parseHelp(md)
+  const parsed = parseHelp(aiGuideText(md, aiEnabled))
   const intro = parsed.intro
   const sections = aiEnabled ? parsed.sections : parsed.sections.filter(s => !AI_HELP_PAGES.includes(s.title))
 
