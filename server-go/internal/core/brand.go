@@ -387,6 +387,7 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	set("theme", eff.Theme)
 	set("accent", eff.Accent)
 	set("surface", eff.Surface)
+	set("navWidth", eff.NavWidth)
 	set("suggestedPrompts", eff.SuggestedPrompts)
 	set("bannerText", eff.BannerText)
 	set("bannerColor", eff.BannerColor)

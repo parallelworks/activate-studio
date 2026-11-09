@@ -53,6 +53,8 @@ export interface StudioSettings {
   theme?: 'light' | 'dark'
   accent?: string
   surface?: string
+  /** The left navigation's width in pixels (Settings, General, Sidebar). */
+  navWidth?: number
   iconUrl?: string
   iconUrlDark?: string
   sweepIntervalSec?: number
@@ -224,6 +226,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     theme: s.theme ?? (process.env.THEME === 'dark' ? 'dark' : 'light'),
     accent: s.accent ?? process.env.APP_ACCENT ?? 'none',
     surface: s.surface ?? process.env.APP_SURFACE ?? 'warm',
+    navWidth: s.navWidth ?? 240,
     iconUrl: s.iconUrl ?? process.env.APP_ICON ?? '',
     iconUrlDark: s.iconUrlDark ?? process.env.APP_ICON_DARK ?? '',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
@@ -355,6 +358,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const v = String(body[field]).trim()
       if (v && !/^https?:\/\//i.test(v) && !v.startsWith('/')) throw new KbError(400, 'icon must be an http(s) URL or an absolute path')
       next[field] = v
+    }
+    if (body.navWidth !== undefined) {
+      const n = Number(body.navWidth)
+      if (!Number.isInteger(n) || n < 200 || n > 400) throw new KbError(400, 'navigation width must be a whole number of pixels from 200 to 400')
+      next.navWidth = n
     }
     if (body.surface !== undefined) {
       const a = String(body.surface)

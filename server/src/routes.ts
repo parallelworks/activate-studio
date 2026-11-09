@@ -247,6 +247,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       theme: eff.theme,
       accent: eff.accent,
       surface: eff.surface,
+      navWidth: eff.navWidth,
       suggestedPrompts: eff.suggestedPrompts,
       bannerText: eff.bannerText,
       bannerColor: eff.bannerColor,

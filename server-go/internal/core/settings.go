@@ -146,6 +146,13 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 		}
 		set(f, v)
 	}
+	if v, ok := in("navWidth"); ok {
+		n := jsval.Number(v)
+		if !jsval.IsInteger(n) || n < 200 || n > 400 {
+			return bad("navigation width must be a whole number of pixels from 200 to 400")
+		}
+		set("navWidth", n)
+	}
 	if _, ok := in("surface"); ok {
 		a := str("surface")
 		if !surfaceRe.MatchString(a) {

@@ -37,6 +37,7 @@ type Effective struct {
 	Theme                  string            `json:"theme"`
 	Accent                 string            `json:"accent"`
 	Surface                string            `json:"surface"`
+	NavWidth               Number            `json:"navWidth"`
 	IconURL                string            `json:"iconUrl"`
 	IconURLDark            string            `json:"iconUrlDark"`
 	SweepIntervalSec       Number            `json:"sweepIntervalSec"`
@@ -222,6 +223,7 @@ func (s *Store) Effective() Effective {
 	e.Theme = or(str("theme"), theme)
 	e.Accent = or(str("accent"), s.envOr("APP_ACCENT", "none"))
 	e.Surface = or(str("surface"), s.envOr("APP_SURFACE", "warm"))
+	e.NavWidth = or(num("navWidth"), 240)
 	e.IconURL = or(str("iconUrl"), env("APP_ICON"))
 	e.IconURLDark = or(str("iconUrlDark"), env("APP_ICON_DARK"))
 	e.SweepIntervalSec = or(num("sweepIntervalSec"), envNum("SWEEP_INTERVAL_SEC", "300"))
