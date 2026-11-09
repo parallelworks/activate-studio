@@ -1753,6 +1753,18 @@ a.identity-btn { text-decoration: none; }
 .persona-icon-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .persona-icon-field { flex: 1; min-width: 160px; }
 .agents-view .ov-row-path { display: flex; align-items: center; gap: 8px; }
+/* A definition's name is shown whole: it takes the width it needs, up to
+   half the row, and wraps past that; the description takes the rest. In a
+   narrow card (a phone, a narrow window) the name sits above it. */
+.agents-view .ov-list { container-type: inline-size; }
+.agents-view .ov-row-path { flex: 0 0 auto; max-width: 50%; white-space: normal; overflow: visible; }
+.agents-view .ov-row-meta { flex: 1 1 0; }
+.agents-name { min-width: 0; overflow-wrap: anywhere; }
+@container (max-width: 520px) {
+  .agents-view .ov-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .agents-view .ov-row-path { max-width: none; }
+  .agents-view .ov-row-meta { text-align: left; }
+}
 .persona-row .persona-name { display: flex; align-items: center; gap: 8px; }
 .task-detail { margin-top: 10px; border-top: 1px solid var(--pw-border); padding-top: 10px; }
 .task-msg { font-size: 13px; display: flex; flex-direction: column; }
