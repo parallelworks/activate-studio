@@ -60,9 +60,22 @@ func (e *Engine) RemoteTree(ctx context.Context, root, rel string) ([]kb.Entry, 
 		r   remote.Result
 		err error
 	}
+	// In a rolled-up index (gufi_rollup) a folder's database also holds
+	// everything under it: its vrpentries has the files of its subfolders
+	// too, and its children's vrsummary the folders below them, named by
+	// their path from the folder ("AI/aix"). atroot marks the folder's own
+	// files; folders are kept to direct children by name. A GUFI too old
+	// to know atroot answers "no such column" (with exit 0), and the
+	// listing is asked again without it, as before rollups were known.
 	files, dirs := make(chan res, 1), make(chan res, 1)
 	go func() {
-		r, err := e.RemoteGufi(ctx, t.Site, t.Key, []string{q, "-d", "\x1e", "-n", "1", "--min-level", "0", "--max-level", "0", "-E", "SELECT name, type, size, mtime FROM vrpentries;", target}, GufiOpts{Source: "library"})
+		ask := func(sql string) (remote.Result, error) {
+			return e.RemoteGufi(ctx, t.Site, t.Key, []string{q, "-d", "\x1e", "-n", "1", "--min-level", "0", "--max-level", "0", "-E", sql, target}, GufiOpts{Source: "library"})
+		}
+		r, err := ask("SELECT name, type, size, mtime, atroot FROM vrpentries;")
+		if err == nil && r.Stdout == "" && strings.Contains(r.Stderr, "no such column") {
+			r, err = ask("SELECT name, type, size, mtime FROM vrpentries;")
+		}
 		files <- res{r, err}
 	}()
 	go func() {
@@ -102,12 +115,34 @@ func (e *Engine) RemoteTree(ctx context.Context, root, rel string) ([]kb.Entry, 
 		return int64(f)
 	}
 	var ds, fs []kb.Entry
+	seen := map[string]int{}
 	for _, x := range rows(dr.r.Stdout) {
-		if x[0] != "" {
-			ds = append(ds, kb.Entry{Name: x[0], Path: at(x[0]), Type: "dir", Mtime: num(x, 1), Kind: kb.KindDir})
+		// A rolled-up child's descendants come as "child/sub": each stands
+		// for its first part, which is listed once.
+		name, deeper := x[0], false
+		if i := strings.IndexByte(name, '/'); i >= 0 {
+			name, deeper = name[:i], true
 		}
+		if name == "" {
+			continue
+		}
+		if j, ok := seen[name]; ok {
+			if !deeper {
+				ds[j].Mtime = num(x, 1)
+			}
+			continue
+		}
+		var mtime int64
+		if !deeper {
+			mtime = num(x, 1)
+		}
+		seen[name] = len(ds)
+		ds = append(ds, kb.Entry{Name: name, Path: at(name), Type: "dir", Mtime: mtime, Kind: kb.KindDir})
 	}
 	for _, x := range rows(fr.r.Stdout) {
+		if len(x) >= 5 && strings.TrimSpace(x[4]) == "0" {
+			continue // a file of a subfolder, in a rolled-up folder's database
+		}
 		if x[0] != "" && (len(x) < 2 || x[1] != "d") {
 			fs = append(fs, kb.Entry{Name: x[0], Path: at(x[0]), Type: "file", Size: num(x, 2), Mtime: num(x, 3), Kind: kb.Classify(x[0], false)})
 		}
