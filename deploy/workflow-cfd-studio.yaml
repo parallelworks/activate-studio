@@ -9,19 +9,23 @@
 # STUDIO — knowledge base workspace as an ACTIVATE session
 #
 # Forked from the containerized-webapp-deployment pattern (nii-ops-viewer
-# lineage): a self-contained bundle is pulled from a bucket onto the
-# resource, GUFI is optionally built there, the knowledge base is indexed,
-# and the Node server is served as a web session through a forked pw
-# endpoint that outlives the workflow. Session methods: web, e2e, cleanup.
+# lineage): the Studio's Linux app is put on the resource, its Go server is
+# started over the knowledge base, which it indexes, and it is served as a
+# web session through a forked pw endpoint that outlives the workflow.
+# Session methods: web, e2e, cleanup.
 #
-# Bundle: build with deploy/make_bundle.sh and upload to the bucket. It
-# carries the built app with node_modules, a Node 26 runtime, the GUFI
-# source tree, and the embedding model, so the resource needs no outbound
-# network. If GUFI cannot build (no cmake or gcc), the app still runs:
-# browsing works from the filesystem and search falls back to grep.
+# The app is the payload the Linux release ships
+# (activate-studio-linux-x86_64.tar.gz, deploy/linux/build_app.sh): the Go
+# server, the built web app, GUFI, tesseract, and the ONNX runtime and
+# model, with no Node and no Python. GitHub mode downloads a release's
+# payload; Bundle mode takes the same file from a bucket
+# (deploy/make_bundle.sh), so the resource needs no outbound network. It
+# runs on glibc 2.28 and later (RHEL 8, Ubuntu 22.04 and later).
 #
 # Topology (login-node placement):
 #   setup ─┬─ get_ports ─┬─ pull_software ── build_gufi ── index_kb ── run_app ── expose_session
+#   (build_gufi and index_kb only report: GUFI ships in the app, and the
+#   server indexes once it answers)
 #          └─────────────┘
 #
 # Scheduler placement: the "Submit as a Scheduler Job" toggle instead runs
@@ -224,7 +228,7 @@ permissions:
             options:
               - label: Container (Apptainer image; pinned runtime, no build on the resource)
                 value: container
-              - label: GitHub (clone and build on the resource)
+              - label: GitHub release (download the Linux app)
                 value: github
               - label: Bundle (bucket or pre-staged; for air-gapped systems)
                 value: bundle
@@ -232,12 +236,12 @@ permissions:
               Container → run a prebuilt Apptainer image (deploy/app.def) that
               carries Node, Python, GUFI, and the embedding model, so nothing is
               compiled on the resource and host differences stop mattering.
-              GitHub → clone the repository on the resource and build there (needs
-              outbound HTTPS to github.com and nodejs.org; Node is fetched
-              automatically when absent).
-              Bundle → self-contained tarball from deploy/make_bundle.sh, pulled from
-              the bucket or pre-staged at <workdir>/bundle-prestage.tar.gz; nothing
-              is fetched from the internet.
+              GitHub release → download the Linux app of a release from GitHub
+              (needs outbound HTTPS to github.com); nothing is built on the
+              resource.
+              Bundle → the same Linux app (deploy/make_bundle.sh), pulled from the
+              bucket or pre-staged at <workdir>/bundle-prestage.tar.gz; nothing is
+              fetched from the internet.
           container_dir:
             label: Container Scratch Directory
             type: string
@@ -260,13 +264,13 @@ permissions:
             type: string
             default: https://github.com/parallelworks/activate-studio
             hidden: ${{ inputs.app_settings.source == 'bundle' }}
-            tooltip: Repository to clone. For a private repository, embed a token (https://<token>@github.com/...) or install a deploy key on the resource.
+            tooltip: Repository whose releases carry the Linux app (activate-studio-linux-x86_64.tar.gz).
           git_ref:
-            label: Git Ref
+            label: Release
             type: string
             default: main
             hidden: ${{ inputs.app_settings.source == 'bundle' }}
-            tooltip: Branch, tag, or commit to check out.
+            tooltip: A release tag (such as v1.190), or main for the current Stable release.
           rundir:
             label: Run Directory
             type: string
@@ -286,7 +290,7 @@ permissions:
             label: Load Latest Bundle
             type: boolean
             default: false
-            tooltip: Clobber the cached bundle and re-pull the latest from the bucket.
+            tooltip: Replace the app in the work directory even when it came from the same release or bundle file; the index, settings and credentials are kept.
           office_runtime:
             label: LibreOffice Runtime (bucket)
             type: string
@@ -312,7 +316,7 @@ permissions:
             type: string
             default: "${WORKDIR:-$HOME/pw}/studio-index"
             optional: true
-            tooltip: Where the search index, settings, and credential store live. Empty keeps it inside the work directory; set an absolute path (e.g. a /shared location) to survive work-directory rebuilds.
+            tooltip: Where the search index, settings, and credential store live. Empty keeps them in <workdir>/data/index; set an absolute path (e.g. a /shared location) to survive work-directory rebuilds.
           starter_dirs:
             label: Starter Directories
             type: string
@@ -366,16 +370,13 @@ permissions:
             label: Build GUFI Index Engine
             type: boolean
             default: true
-            tooltip: |
-              Build GUFI from the bundled source (needs cmake and a C compiler on the
-              resource; takes a few minutes the first time, cached afterwards). When
-              off or when the build fails, the app still runs with filesystem browsing
-              and grep-backed search.
+            hidden: true
+            tooltip: Kept for saved inputs. GUFI ships built in the app, so nothing is built on the resource.
           run_index:
             label: Index on Launch
             type: boolean
             default: true
-            tooltip: Run the full index (metadata, text extraction, embeddings) before starting. Turn off for an instant relaunch on an unchanged corpus.
+            tooltip: Start a full index (metadata, text extraction, embeddings) once the server answers; the Studio serves while it builds. Turn off for a relaunch on an unchanged corpus, which the server keeps in sync as files change.
       model_settings:
         label: "Advanced: Model serving"
         type: group
@@ -522,114 +523,10 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
     steps:
-      - name: Clone and build from GitHub
-        run: |
-          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
-          if [ "${{ inputs.app_settings.source }}" != "github" ]; then
-            echo "Not GitHub mode; a later step stages the image or bundle."
-            exit 0
-          fi
-          cd ${{ inputs.app_settings.workdir }}
-          set -e
-          # A workdir node-runtime shadows the system node on PATH, so an
-          # older one is discarded rather than kept.
-          node_ok() { [ "$("$1" -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)" -ge 26 ]; }
-          if [ -x node-runtime/bin/node ] && ! node_ok node-runtime/bin/node; then
-            rm -rf node-runtime
-          fi
-          NEED_NODE=1
-          if [ -x node-runtime/bin/node ]; then
-            NEED_NODE=0
-          elif command -v node >/dev/null 2>&1 && node_ok node; then
-            NEED_NODE=0
-          fi
-          if [ "$NEED_NODE" = "1" ]; then
-            echo "Fetching Node runtime..."
-            curl -fsSL -o node.tar.xz https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.xz
-            # SHASUMS256.txt digest for the version above; change both together.
-            echo "ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022  node.tar.xz" | sha256sum -c -
-            mkdir -p node-runtime
-            tar -xJf node.tar.xz -C node-runtime --strip-components=1
-            rm -f node.tar.xz
-          fi
-          PATH="$PWD/node-runtime/bin:$PATH"; export PATH
-          echo "node: $(node --version)"
-          if [ -d repo/.git ]; then
-            echo "Updating existing clone..."
-            git -C repo fetch --all --prune
-          else
-            # A repo dir without .git is debris (interrupted copy or failed
-            # clone); wipe it rather than dying on a non-empty destination.
-            rm -rf repo
-            git clone "${{ inputs.app_settings.repo_url }}" repo
-          fi
-          git -C repo checkout -f "${{ inputs.app_settings.git_ref }}"
-          # Hard reset so force-pushed branches update too; a plain ff-only
-          # pull fails silently after a force push and builds a stale tree.
-          git -C repo reset --hard "origin/${{ inputs.app_settings.git_ref }}" 2>/dev/null || true
-          echo "building $(git -C repo rev-parse --short HEAD): $(git -C repo log -1 --format=%s)"
-
-          cd repo
-          # No corepack: its vm loader crashes on several pnpm/Node pairings
-          # and its shims linger broken across runs. A plain npm global
-          # install of pnpm 11 overwrites any stale shim and just works.
-          PNPM_MAJ=$(pnpm --version 2>/dev/null | cut -d. -f1 || echo 0)
-          if [ "${PNPM_MAJ:-0}" -lt 11 ] 2>/dev/null; then
-            echo "installing pnpm via npm"
-            npm install -g pnpm@11 >/dev/null 2>&1 || true
-          fi
-          pnpm --version >/dev/null 2>&1 || { echo "ERROR: pnpm unavailable"; exit 1; }
-          echo "pnpm: $(pnpm --version)"
-
-          echo "Installing dependencies and building..."
-          pnpm install --frozen-lockfile
-          pnpm build
-          # Lay out the same app/ tree the bundle uses, so later jobs are identical.
-          cd ..
-          rm -rf app
-          mkdir -p app/web
-          pnpm --dir repo --filter @activate-studio/server --prod deploy --legacy "$PWD/app/server"
-          cp -r repo/web/dist app/web/dist
-          cp -r repo/indexer app/indexer
-          cp -r repo/docs app/docs
-          cp -r repo/extensions-starter app/extensions-starter
-          mkdir -p app/index/models cache
-          # The app tree is rebuilt from scratch each run, so the model is
-          # cached beside it rather than inside it; otherwise every update
-          # re-downloads it.
-          if [ ! -f cache/minilm384.gguf ]; then
-            echo "Fetching embedding model..."
-            curl -fsSL -o cache/minilm384.gguf \
-              'https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf' \
-              || echo "WARNING: model fetch failed; vector search disabled."
-          else
-            echo "embedding model already cached"
-          fi
-          [ -f cache/minilm384.gguf ] && cp -f cache/minilm384.gguf app/index/models/minilm384.gguf
-          if [ ! -f gufi-src.tar.gz ]; then
-            echo "Fetching GUFI source..."
-            # GUFI's cmake runs git describe for its version string; a shallow
-            # clone has no tags, so stamp one and keep .git in the tarball.
-            # The 0.8.0 release, not whatever main is: an index built by one GUFI
-            # is read by the others, and the Studio is tested against this one.
-            if git clone --depth 1 --branch 0.8.0 --recurse-submodules --shallow-submodules https://github.com/mar-file-system/GUFI gufi-clone \
-                && [ "$(git -C gufi-clone rev-parse HEAD)" = "021a717a6089b9e28b068695dc7c7f3732fd1a56" ]; then
-              git -C gufi-clone -c user.name=deploy -c user.email=deploy@localhost tag -a deploy-snapshot -m "deploy snapshot" 2>/dev/null || true
-              tar -czf gufi-src.tar.gz --transform 's|^gufi-clone|GUFI|' gufi-clone
-            else
-              echo "WARNING: GUFI source fetch failed; index engine unavailable."
-            fi
-            rm -rf gufi-clone
-          fi
-          echo "github" > .bundle
-      - name: Pull and unpack the bundle
+      - name: Put the app in place
         run: |
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then
             echo "Cleanup run; nothing to pull."
-            exit 0
-          fi
-          if [ "${{ inputs.app_settings.source }}" = "github" ]; then
-            echo "GitHub mode; app already built in the previous step."
             exit 0
           fi
           if [ "${{ inputs.app_settings.source }}" = "container" ]; then
@@ -696,44 +593,74 @@ jobs:
             exit 0
           fi
           cd ${{ inputs.app_settings.workdir }}
-          BUNDLE="${{ inputs.app_settings.bundle_file }}"
-          if [[ -d app && "$(cat .bundle 2>/dev/null)" == "$BUNDLE" && "${{ inputs.app_settings.refresh_software }}" == "false" ]]; then
-            echo "Bundle ($BUNDLE) already unpacked."
+          set -e
+          # The app is the Linux payload (activate-studio-linux-x86_64.tar.gz),
+          # from a GitHub release or the same file from a bucket. Each copy is
+          # named by where it came from, so a relaunch on the same one keeps it.
+          ASSET=activate-studio-linux-x86_64.tar.gz
+          if [ "${{ inputs.app_settings.source }}" = "github" ]; then
+            REF="${{ inputs.app_settings.git_ref }}"
+            # A release tag names that release; anything else, main included,
+            # is the current Stable release, the fixed "linux" release.
+            case "$REF" in v[0-9]*) TAG="$REF" ;; *) TAG=linux ;; esac
+            URL="$(printf '%s' "${{ inputs.app_settings.repo_url }}" | sed 's|/*$||; s|\.git$||')/releases/download/$TAG/$ASSET"
+            SUM="$(curl -fsSL --retry 3 "$URL.sha256" | awk '{print $1}')" || true
+            [ -n "$SUM" ] || { echo "ERROR: no $ASSET in release $TAG ($URL.sha256)"; exit 1; }
+            KEY="github:$TAG:$SUM"
           else
-            echo "Pulling bundle $BUNDLE ..."
-            # Bucket inputs interpolate as objects; .uri is required (the bare
-            # form injects JSON and the copy fails silently).
-            pw buckets cp "${{ inputs.app_settings.bundlebucket.uri }}/$BUNDLE" ./bundle.tar.gz > bucket-cp.log 2>&1 || {
-              tr '\r' '\n' < bucket-cp.log | tail -3
-              if [ -f bundle-prestage.tar.gz ]; then
-                echo "Bucket pull failed; using pre-staged bundle-prestage.tar.gz"
-                cp bundle-prestage.tar.gz bundle.tar.gz
-              else
-                echo "ERROR: bundle pull failed and no pre-staged bundle found"; exit 1
-              fi
-            }
-            rm -rf app node-* gufi-src.tar.gz
-            tar -xzf bundle.tar.gz
-            rm -f bundle.tar.gz
-            echo "$BUNDLE" > .bundle
+            BUNDLE="${{ inputs.app_settings.bundle_file }}"
+            KEY="bundle:$BUNDLE"
           fi
-          # Node runtime from the bundle, unless the resource has v26+.
-          NEED_NODE=1
-          if [ -x node-runtime/bin/node ]; then
-            NEED_NODE=0
-          elif command -v node >/dev/null 2>&1; then
-            MAJ=$(node -p 'process.version.slice(1).split(".")[0]' 2>/dev/null || echo 0)
-            [ "$MAJ" -ge 26 ] && NEED_NODE=0
-          fi
-          if [ "$NEED_NODE" = "1" ]; then
-            NODE_TAR=$(ls node-*-linux-x64.tar.xz 2>/dev/null | head -1)
-            if [ -n "$NODE_TAR" ]; then
-              mkdir -p node-runtime
-              tar -xJf "$NODE_TAR" -C node-runtime --strip-components=1
+          if [ -x payload/app/bin/studio-server ] && [ "$(cat .bundle 2>/dev/null)" = "$KEY" ] && [ "${{ inputs.app_settings.refresh_software }}" != "true" ]; then
+            echo "The app is in place ($KEY)."
+          else
+            rm -f incoming.tar.gz
+            if [ "${{ inputs.app_settings.source }}" = "github" ]; then
+              echo "Downloading $URL ..."
+              curl -fsSL --retry 3 -o incoming.tar.gz "$URL"
+              echo "$SUM  incoming.tar.gz" | sha256sum -c - >/dev/null || { echo "ERROR: the download does not match its checksum"; exit 1; }
+            else
+              echo "Pulling bundle $BUNDLE ..."
+              # Bucket inputs interpolate as objects; .uri is required (the bare
+              # form injects JSON and the copy fails silently).
+              pw buckets cp "${{ inputs.app_settings.bundlebucket.uri }}/$BUNDLE" ./incoming.tar.gz > bucket-cp.log 2>&1 || {
+                tr '\r' '\n' < bucket-cp.log | tail -3
+                if [ -f bundle-prestage.tar.gz ]; then
+                  echo "Bucket pull failed; using pre-staged bundle-prestage.tar.gz"
+                  cp bundle-prestage.tar.gz incoming.tar.gz
+                else
+                  echo "ERROR: bundle pull failed and no pre-staged bundle found"; exit 1
+                fi
+              }
             fi
+            if ! tar -tzf incoming.tar.gz activate-studio/app/bin/studio-server >/dev/null 2>&1; then
+              echo "ERROR: this is not the Studio's Linux app (no activate-studio/app/bin/studio-server)."
+              echo "A bundle made before the Go version carries the Node server; make one with deploy/make_bundle.sh."
+              exit 1
+            fi
+            rm -rf payload.new
+            mkdir payload.new
+            tar -xzf incoming.tar.gz -C payload.new --strip-components=1
+            rm -f incoming.tar.gz
+            # The window shells and the installer are the desktop's.
+            rm -rf payload.new/bin payload.new/share payload.new/install.sh payload.new/uninstall.sh
+            payload.new/app/bin/studio-server routes >/dev/null || { echo "ERROR: the Studio's server does not run here (it needs glibc 2.28 or later)"; exit 1; }
+            # One previous copy is kept beside it.
+            rm -rf payload.prev
+            if [ -d payload ]; then mv payload payload.prev; fi
+            mv payload.new payload
+            echo "$KEY" > .bundle
           fi
-          PATH="$PWD/node-runtime/bin:$PATH"; export PATH
-          echo "node: $(command -v node) $(node --version 2>/dev/null || echo 'MISSING')"
+          # The Node version's tree goes. With no index directory set, its
+          # index, settings and credential store were app/index; they become
+          # data/index.
+          if [ -d app/index ] && [ -z "${{ inputs.kb_settings.index_base }}" ] && [ ! -e data/index ]; then
+            mkdir -p data
+            mv app/index data/index
+            echo "Moved the index, settings and credentials from app/index to data/index."
+          fi
+          rm -rf app node-runtime node-*-linux-x64.tar.xz gufi-install GUFI gufi-src.tar.gz cache repo
+          echo "app: $(tr -d '\n ' < payload/app/build-info.json 2>/dev/null)"
       - name: Office rendering runtime when soffice is absent
         run: |
           cd ${{ inputs.app_settings.workdir }}
@@ -751,56 +678,24 @@ jobs:
           printf '#!/bin/bash\nexec "%s" "$@"\n' "$SOFFICE" > soffice-wrapper.sh
           chmod +x soffice-wrapper.sh
           echo "Office rendering via staged runtime: $SOFFICE"
-      - name: Search by meaning packages, document readers and models
+      - name: Search by meaning model
         run: |
-          # On every launch, whether or not the index is built on launch: the
-          # server embeds as it syncs, and answers searches by meaning, with
-          # what is in place here. Without the ONNX packages it uses the GGUF
-          # model through sqlite-lembed, slower and with lower ranking.
+          # The ONNX model ships in the app; the index refers to it at
+          # INDEX_BASE/models/minilm-l6, a link, so a new app's model is the
+          # one used.
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
           if [ "${{ inputs.app_settings.source }}" = "container" ]; then
-            echo "Container mode; the image carries the embedding backend."
+            echo "Container mode; the image carries the model."
             exit 0
           fi
           cd ${{ inputs.app_settings.workdir }}
           INDEX_BASE="${{ inputs.kb_settings.index_base }}"
-          [ -n "$INDEX_BASE" ] || INDEX_BASE="$PWD/app/index"
-          # The models ship inside the app tree; a relocated index needs them
-          # at $INDEX_BASE/models, where the server and the indexer look.
-          if [ "$INDEX_BASE" != "$PWD/app/index" ]; then
-            mkdir -p "$INDEX_BASE/models"
-            if [ ! -f "$INDEX_BASE/models/minilm384.gguf" ] && [ -f app/index/models/minilm384.gguf ]; then
-              cp app/index/models/minilm384.gguf "$INDEX_BASE/models/"
-            fi
+          [ -n "$INDEX_BASE" ] || INDEX_BASE="$PWD/data/index"
+          mkdir -p "$INDEX_BASE/models"
+          if [ -L "$INDEX_BASE/models/minilm-l6" ] || [ ! -e "$INDEX_BASE/models/minilm-l6" ]; then
+            ln -sfn "$PWD/payload/models/minilm-l6" "$INDEX_BASE/models/minilm-l6"
           fi
-          # The packages for the Python the server will run (the same choice
-          # server/src/config.ts makes: the newest python3.x that is 3.10 or
-          # later), from the wheels the bundle carries, so no network is
-          # needed; a Python the bundle has no wheels for downloads its own.
-          PY=""
-          for cand in python3.13 python3.12 python3.11 python3.10 python3; do
-            if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-              PY="$cand"; break
-            fi
-          done
-          if [ -z "$PY" ]; then
-            echo "NOTE: no Python 3.10 or later here; search by meaning uses the GGUF model."
-            exit 0
-          fi
-          # Only what is missing: the model ships in the app tree, and packages
-          # already unpacked for this Python are kept.
-          WANT=""
-          [ -f app/index/models/minilm-l6/model.onnx ] || WANT="--model app/index/models/minilm-l6"
-          "$PY" -c 'import sys; sys.path.insert(0, "app/indexer/.deps"); import onnxruntime, tokenizers, numpy, xlrd, olefile' 2>/dev/null \
-            || WANT="$WANT --deps app/indexer/.deps"
-          if [ -z "$WANT" ] || "$PY" app/indexer/fetch_embed.py $WANT --cache app/indexer/wheels; then
-            echo "Search by meaning: the ONNX backend, for $($PY --version 2>&1)."
-          else
-            echo "NOTE: the ONNX embedding backend is not installed here; search by meaning uses the GGUF model."
-          fi
-          if [ "$INDEX_BASE" != "$PWD/app/index" ] && [ -d app/index/models/minilm-l6 ] && [ ! -e "$INDEX_BASE/models/minilm-l6" ]; then
-            ln -s "$PWD/app/index/models/minilm-l6" "$INDEX_BASE/models/minilm-l6"
-          fi
+          echo "Search by meaning model: $(ls "$INDEX_BASE/models/minilm-l6/" | tr '\n' ' ')"
 
   build_gufi:
     if: ${{ inputs.resource_and_execution.scheduler != true }}
@@ -809,49 +704,15 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource_and_execution.resource.ip }}
     steps:
-      - name: Build GUFI from bundled source
+      - name: GUFI
         run: |
+          # GUFI ships built in the app (payload/gufi); nothing is built here.
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
-          if [ "${{ inputs.app_settings.source }}" = "container" ]; then
-            echo "Container mode; GUFI ships inside the image."
-            exit 0
-          fi
-          if [ "${{ inputs.kb_settings.build_gufi }}" != "true" ]; then
-            echo "GUFI build disabled; the app will run with filesystem browsing and grep search."
-            exit 0
-          fi
+          if [ "${{ inputs.app_settings.source }}" = "container" ]; then echo "Container mode; GUFI ships inside the image."; exit 0; fi
           cd ${{ inputs.app_settings.workdir }}
-          if [ -x gufi-install/bin/gufi_query ]; then
-            echo "GUFI already built."
-            exit 0
-          fi
-          if ! command -v cmake >/dev/null 2>&1; then
-            module load cmake 2>/dev/null || true
-          fi
-          if ! command -v cmake >/dev/null 2>&1; then
-            echo "WARNING: cmake not available; skipping GUFI build. The app degrades gracefully."
-            exit 0
-          fi
-          rm -rf GUFI
-          tar -xzf gufi-src.tar.gz
-          # llama.cpp (vendored for the embedding layer) defaults to
-          # -march=native; older assemblers reject the AVX-VNNI instructions
-          # new CPUs advertise (seen as vpdpbusd errors). Build it portable.
-          sed -i 's/-DGGML_CCACHE=Off/-DGGML_CCACHE=Off -DGGML_NATIVE=Off/' GUFI/contrib/deps/sqlite-lembed.sh 2>/dev/null || true
-          mkdir -p GUFI/build
-          cd GUFI/build
-          # SERVER_CONFIG/CLIENT_CONFIG default under /etc/GUFI and the
-          # completion script installs to /etc/bash_completion.d; neither is
-          # writable without root, so keep config in the prefix and skip
-          # the completion install.
-          GUFI_PREFIX="${{ inputs.app_settings.workdir }}/gufi-install"
-          cmake .. -DCMAKE_INSTALL_PREFIX="$GUFI_PREFIX" -DCMAKE_BUILD_TYPE=Release \
-            -DSERVER_CONFIG="$GUFI_PREFIX/etc/server" -DCLIENT_CONFIG="$GUFI_PREFIX/etc/client" \
-            -DBASH_COMPLETION=Off \
-            || { echo "WARNING: cmake configure failed; continuing without GUFI"; exit 0; }
-          make -j "$(nproc)" || { echo "WARNING: GUFI build failed; continuing without GUFI"; exit 0; }
-          make install || { echo "WARNING: GUFI install failed; continuing without GUFI"; exit 0; }
-          echo "GUFI installed at ${{ inputs.app_settings.workdir }}/gufi-install"
+          payload/gufi/bin/gufi_query --help >/dev/null 2>&1 || payload/gufi/bin/gufi_query -h >/dev/null 2>&1 || true
+          ls payload/gufi/bin/gufi_query payload/gufi/bin/gufi_dir2index
+
   index_kb:
     if: ${{ inputs.resource_and_execution.scheduler != true }}
     needs:
@@ -861,36 +722,10 @@ jobs:
     steps:
       - name: Index the knowledge base
         run: |
-          if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then exit 0; fi
-          if [ "${{ inputs.kb_settings.run_index }}" != "true" ]; then
-            echo "Indexing on launch disabled."
-            exit 0
-          fi
-          if [ "${{ inputs.app_settings.source }}" = "container" ]; then
-            echo "Container mode; the image indexes on start (INDEX_ON_START)."
-            exit 0
-          fi
-          cd ${{ inputs.app_settings.workdir }}
-          if [ ! -x gufi-install/bin/gufi_dir2index ]; then
-            echo "GUFI not present; skipping index build (search falls back to grep)."
-            exit 0
-          fi
-          export KB_ROOT="${{ inputs.kb_settings.kb_root }}"
-          export GUFI_BIN="$PWD/gufi-install/bin"
-          # Each step is its own shell, so the PATH pull_software exported is
-          # gone. Document conversion runs as a Node CLI: without this, a
-          # resource whose only Node is the staged runtime indexes Word,
-          # PowerPoint and Excel files with the fallback reader and says so
-          # only in passing.
-          if [ -x node-runtime/bin/node ]; then
-            PATH="$PWD/node-runtime/bin:$PATH"; export PATH
-          fi
-          export INDEX_BASE="${{ inputs.kb_settings.index_base }}"
-          [ -n "$INDEX_BASE" ] || INDEX_BASE="$PWD/app/index"
-          export INDEX_BASE
-          # The embedding models and the ONNX packages are put in place by
-          # pull_software, on every launch.
-          bash app/indexer/reindex.sh || echo "WARNING: index build failed; the app still serves the filesystem."
+          # The server builds the index once it answers (expose_session), and
+          # serves while it builds.
+          echo "Index on launch: ${{ inputs.kb_settings.run_index }}"
+
   run_app:
     if: ${{ inputs.resource_and_execution.scheduler != true }}
     needs:
@@ -928,7 +763,7 @@ jobs:
           # Sweep by pattern too, scoped so other deployments on the node
           # survive: studio servers are matched by working directory, the
           # endpoint agent by this deployment's session name.
-          for p in $(pgrep -f "app/server/dist/main[.]js" 2>/dev/null); do
+          for p in $(pgrep -f "app/server/dist/main[.]js|payload/app/bin/studio-server" 2>/dev/null); do
             [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill "$p" 2>/dev/null && echo "  swept stale server $p"
           done
           PREFIX="$(eval echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
@@ -948,7 +783,17 @@ jobs:
           SCRIPT_HEADER
 
           echo "pushd ${WORKDIR}" >> ${SCRIPT}
-          echo "export PATH=\"${WORKDIR}/node-runtime/bin:\$PATH\"" >> ${SCRIPT}
+          # The app's own server, GUFI, tesseract, ONNX runtime and STEP
+          # modules, as deploy/app-go.def sets them for the container.
+          if [ "${{ inputs.app_settings.source }}" != "container" ]; then
+            cat >> ${SCRIPT} << 'PAYLOAD_ENV'
+          P="$PWD/payload"
+          export STUDIO_NODE=off STUDIO_PROJECT_ROOT="$P/app" STUDIO_ORT_LIB="$P/app/lib/libonnxruntime.so.1" \
+            STUDIO_OCCT_WASM="$P/app/occt/occt-import-js.wasm" STUDIO_SEMANTIC_MAP_BIN="$P/app/bin/semantic-map" \
+            GUFI_BIN="$P/gufi/bin" TESSDATA_PREFIX="$P/ocr/share/tessdata"
+          export PATH="$P/ocr/bin:$PATH"
+          PAYLOAD_ENV
+          fi
           echo "export PORT=${{ needs.get_ports.outputs.APP_PORT }}" >> ${SCRIPT}
           echo "export KB_ROOT=${{ inputs.kb_settings.kb_root }}" >> ${SCRIPT}
           echo "export KB_LABEL='${{ inputs.kb_settings.kb_label }}'" >> ${SCRIPT}
@@ -959,14 +804,13 @@ jobs:
           MISSION_EOF
           )
           printf 'export KB_MISSION=%q\n' "$KB_MISSION_TEXT" >> ${SCRIPT}
-          echo "export GUFI_BIN=${WORKDIR}/gufi-install/bin" >> ${SCRIPT}
           if [ -x "${WORKDIR}/soffice-wrapper.sh" ]; then
             echo "export SOFFICE_BIN=${WORKDIR}/soffice-wrapper.sh" >> ${SCRIPT}
           fi
           if [ -n "${{ inputs.kb_settings.index_base }}" ]; then
             echo "export INDEX_BASE='${{ inputs.kb_settings.index_base }}'" >> ${SCRIPT}
           else
-            echo "export INDEX_BASE=${WORKDIR}/app/index" >> ${SCRIPT}
+            echo "export INDEX_BASE=${WORKDIR}/data/index" >> ${SCRIPT}
           fi
           echo "export APP_NAME='${{ inputs.app_settings.app_name }}'" >> ${SCRIPT}
           if [ -n "${{ inputs.app_settings.banner_text }}" ]; then
@@ -1031,7 +875,7 @@ jobs:
             while read -r p; do [ -n "$p" ] && kill "$p" 2>/dev/null && echo "  killed $p"; done < app-custom.pids
             : > app-custom.pids
           fi
-          for pat in "server/dist/main[.]js" "pw endpoints http.*studio"; do
+          for pat in "server/dist/main[.]js" "payload/app/bin/studio-server" "pw endpoints http.*studio"; do
             pkill -f "$pat" 2>/dev/null && echo "  killed by pattern: $pat"
           done
           echo "cleanup complete"
@@ -1077,7 +921,7 @@ jobs:
           else
             cat >> ${SCRIPT} << 'APP_LAUNCH'
           echo "Starting Studio server on port ${PORT} over ${KB_ROOT} ..."
-          setsid nohup node app/server/dist/main.js > app.log 2>&1 < /dev/null &
+          setsid nohup "$PWD/payload/app/bin/studio-server" > app.log 2>&1 < /dev/null &
           APP_LAUNCH
           fi
           cat >> ${SCRIPT} << 'APP_LAUNCH'
@@ -1087,6 +931,13 @@ jobs:
             (exec 3<>/dev/tcp/127.0.0.1/${PORT}) 2>/dev/null && { exec 3>&- 3<&-; echo "app listening after ~$(( (i-1) * 2 ))s"; break; }
             sleep 2
           done
+          # The watchdog restarts a failed server with STUDIO_APP_ONLY set and
+          # leaves the endpoint agent running: once the workflow run has
+          # ended, its credential can no longer register a new endpoint.
+          if [ -n "${STUDIO_APP_ONLY:-}" ]; then
+            echo "Server restarted; the endpoint agent and watchdog keep running."
+            exit 0
+          fi
           if [ "${{ inputs.session_settings.session_method }}" = "web" ]; then
             PREFIX="$(eval echo "${{ inputs.session_settings.session_name }}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
             [ -n "$PREFIX" ] || PREFIX="studio"
@@ -1104,10 +955,11 @@ jobs:
             setsid nohup "$PW_BIN" endpoints http -o text --name "$EP_NAME" --subdomain "$EP_NAME" "$PORT" > endpoint.log 2>&1 < /dev/null &
             echo "$!" >> app-custom.pids
             echo "$!" > agent.pid
-            # Watchdog: if the app stops answering or the endpoint agent
-            # process dies, kill what is left of this deployment (servers
-            # scoped by workdir, the agent by recorded pid) and re-run this
-            # script for a clean start. Liveness uses the app health URL and
+            # Watchdog: if the app stops answering, restart the server alone
+            # on the same port, so the endpoint keeps serving the same URL.
+            # If the endpoint agent process dies, kill what is left of this
+            # deployment (servers scoped by workdir, the agent by recorded
+            # pid) and re-run this script for a clean start. Liveness uses the app health URL and
             # the agent pid file; matching the agent by command line proved
             # unreliable. A workflow relaunch kills the watchdog first, so
             # the two never fight.
@@ -1115,17 +967,22 @@ jobs:
             cat > watchdog.sh << WATCHDOG
           cd "\$(dirname "\$0")"
           while sleep 120; do
-            ok=1
-            curl -sf -m 8 "localhost:${PORT}/healthz" > /dev/null || ok=0
-            kill -0 "\$(cat agent.pid 2>/dev/null)" 2>/dev/null || ok=0
-            [ "\$ok" = 1 ] && continue
-            echo "\$(date -Is) unhealthy; restarting stack" >> watchdog.log
-            for p in \$(pgrep -f "app/server/dist/main[.]js" 2>/dev/null); do
+            app=1; agent=1
+            curl -sf -m 8 "localhost:${PORT}/healthz" > /dev/null || app=0
+            kill -0 "\$(cat agent.pid 2>/dev/null)" 2>/dev/null || agent=0
+            [ "\$app\$agent" = 11 ] && continue
+            for p in \$(pgrep -f "app/server/dist/main[.]js|payload/app/bin/studio-server" 2>/dev/null); do
               [ "\$(readlink /proc/\$p/cwd 2>/dev/null)" = "\$PWD" ] && kill "\$p" 2>/dev/null
             done
-            kill "\$(cat agent.pid 2>/dev/null)" 2>/dev/null
             sleep 3
-            bash "${RUN_SCRIPT}" >> watchdog.log 2>&1
+            if [ "\$agent" = 1 ]; then
+              echo "\$(date -Is) server unhealthy; restarting the server only" >> watchdog.log
+              STUDIO_APP_ONLY=1 bash "${RUN_SCRIPT}" >> watchdog.log 2>&1
+            else
+              echo "\$(date -Is) endpoint agent gone; restarting stack" >> watchdog.log
+              kill "\$(cat agent.pid 2>/dev/null)" 2>/dev/null
+              bash "${RUN_SCRIPT}" >> watchdog.log 2>&1
+            fi
             sleep 60
           done
           WATCHDOG
@@ -1188,6 +1045,14 @@ jobs:
             exit 0
           fi
           [ "$up" = "1" ] || echo "WARNING: app never responded; check app.log. Continuing."
+          # The index on launch (the container's image starts its own).
+          if [ "$up" = "1" ] && [ "${{ inputs.kb_settings.run_index }}" = "true" ] && [ "${{ inputs.app_settings.source }}" != "container" ]; then
+            if curl -fsS -m 30 -X POST -H 'content-type: application/json' -d '{}' "http://localhost:${PORT}/api/reindex" > /dev/null; then
+              echo "Started a full index; the Studio serves while it builds."
+            else
+              echo "WARNING: the index on launch did not start; Settings, Indexing starts one."
+            fi
+          fi
           echo "Web endpoint was forked in run_app.sh; URL from endpoint.log:"
           for i in $(seq 1 12); do
             [ -s endpoint.log ] && break

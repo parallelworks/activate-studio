@@ -130,11 +130,11 @@ The server itself runs as one user, and every query runs as that user. Platform 
 
 Three paths, all driven by `deploy/workflow.yaml` as a platform workflow:
 
-- **github**: clones the public repository on the resource and builds it there. The usual choice while the app is changing; a rerun pulls and restarts.
-- **bundle**: unpacks a tarball staged in a bucket, for hosts without GitHub access.
+- **github**: downloads a release's Linux app (`activate-studio-linux-x86_64.tar.gz`: the Go server, the interface, GUFI, tesseract and the embedding model) and runs it. Nothing is built on the resource; a relaunch on the same release keeps the app in place.
+- **bundle**: the same file, staged in a bucket, for hosts without GitHub access.
 - **container**: runs the Apptainer image built from `deploy/app.def`, staged in a bucket. The image pins Node, GUFI, the embedding model, and the document extractors, so it does not depend on what the host provides, such as an old default python, a stale corepack shim, or an assembler that rejects the CPU's newest instructions. The recipe runs under `set -e` and imports every extractor before the image is sealed; an image missing one indexes Word files by filename with no error.
 
-The corpus and the index live on shared storage; everything derived (node_modules, builds, GUFI) belongs on local disk, which measured about 55 times faster for small-file writes on the deployment that prompted the split. Presentation is deployment configuration: app name, brand icons for light and dark, starter prompts, starter directories, and a classification banner with its own text and colour, drawn only when the app is open on its own so it is not duplicated inside the platform frame.
+The corpus and the index live on shared storage; everything derived (the app, and for the container its image) belongs on local disk, which measured about 55 times faster for small-file writes on the deployment that prompted the split. Presentation is deployment configuration: app name, brand icons for light and dark, starter prompts, starter directories, and a classification banner with its own text and colour, drawn only when the app is open on its own so it is not duplicated inside the platform frame.
 
 `docs/CUSTOMIZATION.md` covers file-based extensions: `tools/*.json` add chat tools, `skills/*.md` are instruction sets loaded on demand, and `agents/default.md` is appended to the system prompt as standing instructions.
 
@@ -197,7 +197,7 @@ indexer/
   enrich.py        text extraction into fts5 words tables (--subdir for incremental)
   embed.py         chunking and vec0 embeddings (--subdir for incremental)
 deploy/
-  workflow.yaml    platform workflow: github, bundle, or container deployment
+  workflow.yaml    platform workflow: github release, bundle, or container deployment
   app.def          Apptainer image recipe
   run_endpoint.sh  serve as a platform session
 testdata/
