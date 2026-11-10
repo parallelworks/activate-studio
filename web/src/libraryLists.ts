@@ -160,7 +160,7 @@ export async function importEntry(e: ListEntry, user?: string): Promise<ImportRe
         note = ` Its originals could not be set to be read through ${e.readThrough.destination}: ${errText(err)}`
       }
     }
-    return { state: 'added', text: `Added.${where}${note}`, id: added.id, label: added.label }
+    return { state: 'added', text: `${where}${note}`.trim(), id: added.id, label: added.label }
   } catch (err) {
     return { state: 'failed', text: errText(err) }
   }

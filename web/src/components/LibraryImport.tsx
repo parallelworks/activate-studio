@@ -107,7 +107,7 @@ export function LibraryImport({ onAdded, onDone }: {
                     {c.where && <code className="lib-import-where">{c.where}</code>}
                     {e?.kind === 'ssh' && can && (
                       <Input label="Connect as" size="sm" mono spellCheck={false} value={users[c.index] ?? ''} disabled={running}
-                        placeholder="user name" aria-label={`User name for ${name}`}
+                        placeholder="user name"
                         description={`Connects as ${destinationWith(users[c.index] ?? '', c.host ?? '')}. Your own login, so your permissions apply there.`}
                         onChange={ev => setUsers(u => ({ ...u, [c.index]: ev.target.value }))} />
                     )}

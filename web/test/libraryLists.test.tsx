@@ -77,7 +77,7 @@ describe('importing a library list', () => {
     expect(screen.getByText(/"tape" is not one this Studio knows/)).toBeInTheDocument()
 
     // The file names no user: the login here is offered, and can be changed.
-    const user = screen.getByLabelText('User name for Index server')
+    const user = screen.getByLabelText('Connect as')
     expect(user).toHaveValue('me')
     fireEvent.change(user, { target: { value: 'alice' } })
     expect(screen.getByText(/Connects as alice@index.example/)).toBeInTheDocument()
@@ -132,11 +132,11 @@ describe('adding one entry', () => {
       'PUT /api/libraries/u-box-index/read-through': { body: { readThrough: { destination: 'files.example' } } },
     })
     expect(await importEntry({ kind: 'pw', mode: 'build', label: 'Work', cluster: 'c1', sourceRoot: '~/work', depth: 'names' }))
-      .toMatchObject({ state: 'added', text: 'Added. Building its index there.' })
+      .toMatchObject({ state: 'added', text: 'Building its index there.' })
     expect(calls[1]).toMatchObject({ url: '/api/user-libraries/pw/build', body: { cluster: 'c1', label: 'Work', sourceRoot: '~/work', depth: 'names' } })
     expect(calls[1].body).not.toHaveProperty('create')
     const r = await importEntry({ kind: 'ssh', mode: 'connect', label: 'Box', destination: 'admin@box', indexRoot: '/i', readThrough: { destination: 'files.example', root: '/f' } }, '')
-    expect(r).toMatchObject({ state: 'added', text: 'Added. Originals are read through files.example.' })
+    expect(r).toMatchObject({ state: 'added', text: 'Originals are read through files.example.' })
     expect(calls[2].body).toMatchObject({ destination: 'box' })
     expect(calls[3]).toMatchObject({ method: 'PUT', url: '/api/libraries/u-box-index/read-through', body: { destination: 'files.example', root: '/f' } })
   })
