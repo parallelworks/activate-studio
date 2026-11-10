@@ -7,6 +7,7 @@ import { api } from '../api'
 import { AccentSwatches } from '../components/AccentSwatches'
 import { BrandIcons } from '../components/BrandIcons'
 import { KINDS } from '../components/LibrariesSection'
+import { LibraryImport } from '../components/LibraryImport'
 import { LocalLibraryForm } from '../components/LocalLibraryForm'
 import { MainFolderDepth } from '../components/IndexDepth'
 import { FolderPicker, IndexBuildProgress, json, post, errText, useIndexBuild, type IndexJob, type SetupStatus } from '../components/PrimaryFolder'
@@ -291,6 +292,8 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
   // The libraries step leads with the common case, another folder here; the
   // other kinds (an existing index, ssh, ACTIVATE) are a click away.
   const [otherKinds, setOtherKinds] = useState(false)
+  // Or a library list from a file, such as one an administrator shares.
+  const [fromList, setFromList] = useState(false)
   const [pwOffered, setPwOffered] = useState(false)
   const alive = useRef(true)
   useEffect(() => {
@@ -542,7 +545,15 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
               It is indexed here, in the background, and the Studio only reads it. Libraries can be added or removed at any
               time in Settings, Indexing, Libraries.
             </p>
-            {!otherKinds ? (
+            {fromList ? (
+              <>
+                <p className="muted" style={{ margin: 0 }}>
+                  A library list is a file exported from another Studio, such as one your administrator shares. Choose it or paste
+                  it, check the libraries to add, and each one is checked and added as the forms here add it.
+                </p>
+                <LibraryImport onAdded={lib => libraryAdded(lib)} />
+              </>
+            ) : !otherKinds ? (
               status?.gufi?.found === false
                 ? <Callout tone="warning">GUFI was not found in {status.gufi.bin}, so another folder cannot be indexed here.</Callout>
                 : <LocalLibraryForm mode="build" browse compact onAdded={lib => libraryAdded({ id: lib.id, label: lib.label })} />
@@ -556,9 +567,14 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
                 {kind === 'pw' && <SshLibraryForm compact transport="pw" onAdded={libraryAdded} onOpenAccess={() => void openAccess()} />}
               </>
             )}
-            <div>
-              <Button variant="ghost" size="sm" aria-expanded={otherKinds} onClick={() => setOtherKinds(o => !o)}>
-                {otherKinds ? 'Back to a folder on this computer' : 'Other kinds: an existing GUFI index, or one on another machine'}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {!fromList && (
+                <Button variant="ghost" size="sm" aria-expanded={otherKinds} onClick={() => setOtherKinds(o => !o)}>
+                  {otherKinds ? 'Back to a folder on this computer' : 'Other kinds: an existing GUFI index, or one on another machine'}
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" aria-expanded={fromList} onClick={() => setFromList(o => !o)}>
+                {fromList ? 'Back to adding one library' : 'Import a library list from your administrator'}
               </Button>
             </div>
             {others.length > 0 && (

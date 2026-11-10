@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Field, SegmentedControl } from '@parallelworks/ui'
+import { Button, Field, SegmentedControl } from '@parallelworks/ui'
 import type { UserLibrary } from '../api'
 import { ClusterLibraryForm } from './ClusterLibraryForm'
+import { LibraryImport } from './LibraryImport'
 import { LocalLibraryForm } from './LocalLibraryForm'
 import { SshLibraryForm } from './SshLibraryForm'
 
@@ -59,7 +60,7 @@ function describe(where: Where, how: How, via: Via | undefined): string {
     : `A GUFI index already on a remote system, read ${over}. Read only: nothing is written there.`
 }
 
-export function AddLibrary({ options, browse = false, onAdded, onStarted }: {
+export function AddLibrary({ options, browse = false, onAdded, onStarted, onImported }: {
   options: AddOptions
   /** Folders on this computer can be picked from a list (a single-user install). */
   browse?: boolean
@@ -69,7 +70,11 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted }: {
   onAdded: (lib: { id: string; label: string }, started: boolean, here?: boolean) => void
   /** A build through the platform's index workflow started. */
   onStarted?: (lib: UserLibrary) => void
+  /** Offers importing a library list in place of the form; called with
+   *  how many were added once the import is done. */
+  onImported?: (added: number) => void
 }) {
+  const [importing, setImporting] = useState(false)
   const choices = addChoices(options)
   const [where, setWhere] = useState<Where>('here')
   const hows = choices.how(where)
@@ -82,8 +87,19 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted }: {
   useEffect(() => { if (vias.length ? !via || !vias.includes(via) : via) setVia(vias[0]) }, [vias.join(), via])
   const v = vias.includes(via as Via) ? via : vias[0]
 
+  if (importing) {
+    return (
+      <div className="lib-add-flow">
+        <div><Button variant="ghost" size="sm" onClick={() => setImporting(false)}>Back to adding one library</Button></div>
+        <p className="muted lib-add-about">A library list exported from another Studio, such as one your administrator shares. Each library is checked and added as this form adds it.</p>
+        <LibraryImport onDone={n => onImported?.(n)} />
+      </div>
+    )
+  }
+
   return (
     <div className="lib-add-flow">
+      {onImported && <div><Button variant="ghost" size="sm" onClick={() => setImporting(true)}>Import a library list from a file…</Button></div>}
       <div className="lib-add-choices">
         {choices.where.length > 1 && (
           <Field label="Where">

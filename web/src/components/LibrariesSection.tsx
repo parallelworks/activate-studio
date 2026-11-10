@@ -7,6 +7,8 @@ import { api, type BuildProgress, type IndexDepth, type ReadThrough, type Settin
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
+import { LibraryExport } from './LibraryExport'
+import { LibraryImport } from './LibraryImport'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
 import { IndexControls, IndexJobView, LastBuild } from './IndexActivity'
 import { useIndexStatus } from '../indexActivity'
@@ -170,6 +172,9 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   }, [libs, user, status, adding, linked])
   const [changing, setChanging] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  // Library lists: a file of libraries to import, and one to export.
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   // The library just given a depth its index does not have, and the depth
   // that index has: what the choice under its row is about.
   const [asked, setAsked] = useState<{ id: string; from: IndexDepth } | null>(null)
@@ -272,6 +277,13 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   const added = (message: string) => {
     toast.success(message)
     setAdding(false)
+    void loadLibs()
+    void loadUser()
+    reloadAppConfig()
+  }
+  // After an import the dialog stays open with each entry's result.
+  const imported = (count: number) => {
+    if (!count) return
     void loadLibs()
     void loadUser()
     reloadAppConfig()
@@ -618,8 +630,16 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       {!adding && (
         <div className="query-actions lib-add">
           <Button variant="primary" icon={<AddIcon />} onClick={() => setAdding(true)}>Add a library</Button>
+          <Button variant="secondary" onClick={() => setImporting(true)}>Import…</Button>
+          {libs && <Button variant="secondary" onClick={() => setExporting(true)}>Export…</Button>}
         </div>
       )}
+      <Modal open={importing} onClose={() => setImporting(false)} size="lg" title="Import libraries"
+        description="A library list exported from another Studio, such as one your administrator shares. Each library is checked and added as the Add a library form adds it."
+        footer={<Button variant="secondary" onClick={() => setImporting(false)}>Close</Button>}>
+        {importing && <LibraryImport onDone={imported} />}
+      </Modal>
+      {libs && <LibraryExport open={exporting} onClose={() => setExporting(false)} libraries={libs} userLibraries={user.libraries} />}
 
       {adding && (
         <section className="lib-add-form" aria-label="Add a library"
@@ -628,7 +648,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
             <div className="tool-group">Add a library</div>
             <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(false)} />
           </div>
-          <AddLibrary options={options} browse={!!standalone}
+          <AddLibrary options={options} browse={!!standalone} onImported={imported}
             onAdded={(lib, started, here) => added(!started ? `Added ${lib.label}. It is in the Library switcher.`
               : here ? `Building ${lib.label}. Its progress shows in the list. It is searchable by name once its folders are indexed; text and meaning, where its depth has them, follow in that order.`
               : `Building ${lib.label}. Its progress shows in the list; it is searchable once the build is done.`)}
