@@ -285,6 +285,26 @@ func (m *Module) pwUnavailable(w who) string {
 	return ""
 }
 
+// Offered is what a request's viewer may add of their own, as GET
+// /api/user-libraries reports it: whose list it is ("" for nobody),
+// whether the Studio signs people in, whether libraries over ssh are
+// theirs to add, and why pw ssh cannot be used now ("" when it can).
+type Offered struct {
+	Owner string
+	Auth  bool
+	SSH   bool
+	PwWhy string
+}
+
+// OfferedTo is Offered for r's viewer (the library list import's check).
+func (m *Module) OfferedTo(r *http.Request) (Offered, error) {
+	w, err := m.whoOf(r)
+	if err != nil {
+		return Offered{}, err
+	}
+	return Offered{Owner: w.owner(), Auth: w.Auth, SSH: w.sshAllowed(), PwWhy: m.pwUnavailable(w)}, nil
+}
+
 // workflowOffered: the index workflow builds on a cluster on a Studio the
 // platform hosts.
 func (m *Module) workflowOffered(w who) bool { return w.Auth || m.getenv("PW_PLATFORM_HOST") != "" }

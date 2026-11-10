@@ -62,6 +62,10 @@ be removed from Settings.
 kept in `libraries.json` under the index base, or, for those over ssh or
 built on a cluster, in the user's own list (below).
 
+*From a library list:* a file exported from another Studio, imported in
+Settings, Indexing, Libraries, in Add a library, or in setup (see "Library
+lists").
+
 ## The Libraries page
 
 Settings, Indexing, Libraries is one list of every library the Studio searches, and
@@ -159,6 +163,103 @@ its caches, never the files (`DELETE /api/index?confirm=1`); **View log**
 shows the index log. Where users sign in, only **View log** is offered and
 the state comes from the probe. See [REFERENCE.md](REFERENCE.md#indexing)
 for the jobs and their phases.
+
+## Library lists
+
+A library list is a file of libraries that one Studio exports and another
+imports, so an administrator can set up the same libraries for many
+people in one step: each person imports the file into their own Studio,
+and each library is added there as that person, with their own ssh login
+and their own permissions (see [`ACCESS-CONTROL.md`](ACCESS-CONTROL.md)).
+The file is JSON, saved as `<label>.studio-libraries.json`:
+
+```json
+{
+  "format": "activate-studio-libraries",
+  "version": 1,
+  "exportedAt": "2026-11-10T12:00:00.000Z",
+  "studioVersion": "v1.191",
+  "libraries": [
+    { "kind": "index", "label": "Shared drive", "indexRoot": "/mnt/gufi/shared",
+      "readThrough": { "destination": "files.example.org", "root": "/export/shared" } },
+    { "kind": "folder", "label": "Projects", "sourceRoot": "/srv/projects", "depth": "text" },
+    { "kind": "ssh", "label": "Index server", "mode": "connect", "destination": "index.example.org",
+      "port": 2222, "sshOptions": ["-J", "jump.example.org"], "indexRoot": "/gufi/shared",
+      "sourceRoot": "/srv/shared", "gufiBin": "/opt/gufi/bin" },
+    { "kind": "ssh", "label": "Data", "mode": "build", "destination": "box.example.org",
+      "sourceRoot": "~/data", "depth": "meaning-documents" },
+    { "kind": "pw", "label": "Cluster index", "mode": "connect", "cluster": "cluster-a",
+      "indexRoot": "/scratch/gufi" }
+  ]
+}
+```
+
+Each entry has a `kind` and the fields that kind takes, which are the
+fields of the Add a library form for it:
+
+| Kind | What it is | Fields |
+|---|---|---|
+| `index` | a GUFI index on the importing computer | `indexRoot`; `sourceRoot`, `readThrough` optional |
+| `folder` | a folder on the importing computer that its Studio indexes | `sourceRoot`; `indexDir` (an index folder of its own choosing), `depth` optional |
+| `ssh` | a library on another system over ssh | `destination` (`host` or `user@host`), `port`, `sshOptions` (a list of words), `gufiBin`, `mode`; for `connect` `indexRoot`, with `sourceRoot` and `readThrough` optional; for `build` `sourceRoot`, with `indexDir` and `depth` optional |
+| `pw` | a library on a cluster over pw ssh | `cluster`, `gufiBin`, `mode`, and the paths as for `ssh` |
+
+`label` is optional for every kind (the last part of the path otherwise),
+`mode` defaults to `connect`, and `depth` is one of the index depths
+(`names` to `meaning-full`). Paths are absolute or under `~`, which is
+the importing person's home here, or their home on the remote system.
+`readThrough` is the host the files are read through (see "Reading
+originals through another host"): `destination`, `port`, `sshOptions`,
+`root`.
+
+*Export:* **Export…** in Settings, Indexing, Libraries (`POST
+/api/libraries/export`) writes every library ticked. The main folder is
+in the file only when ticked, as a `folder` entry. A library built by the
+platform's index workflow is the person's own and is left out with a
+note. The file never has ids, build state, counts, dates of builds, caps,
+user hashes, keys, tokens, passwords or settings. It also leaves out
+what only works for the person exporting: the ssh options that name their
+key files or ssh configuration (`-i`, `-F`, `IdentityFile`,
+`CertificateFile`, `IdentityAgent`), and the folders
+the Studio makes in their home on a remote system (`~/.activate-studio`:
+the default index folder of a build there, and GUFI it installed there),
+which the importing Studio makes again. **Leave out the user name**, on by
+default, writes `host` for `user@host`, here and in `readThrough`, and
+drops `-l`, `User=` and the user names of jump hosts, so each person
+connects as themselves and GUFI answers them with their own permissions.
+
+*Import:* **Import…** in Settings, Indexing, Libraries, **Import a library
+list from a file…** in Add a library, and **Import a library list from
+your administrator** on setup's Other libraries step take the file,
+chosen or pasted. `POST /api/libraries/import/check` reads it and answers
+each entry normalized, with a state:
+
+- *new*: ticked;
+- *present*: already a library here, unticked: the same index directory
+  or folder here, or the same host (whatever the user name), port and
+  index directory or source folder, a path under `~` matching the one the
+  connection test recorded; or the same as an earlier entry of the file;
+- *invalid*: the entry cannot be read, with why: no kind or one this
+  Studio does not know, a missing or bad field, or a file whose `version`
+  is newer than 1. A file that is not a library list at all is refused
+  whole; keys this Studio does not know are ignored;
+- *unavailable*: not one this viewer may add here, with why: on a Studio
+  where people sign in, an `index` or `folder` entry (libraries on that
+  computer are the deployment's) and an `ssh` entry (libraries over ssh
+  are for a Studio with sign-in off); a `pw` entry where pw ssh cannot be
+  used now.
+
+An `ssh` entry has an editable user name, the login the Studio runs as
+when the file names none. **Add** then adds each ticked entry in turn
+through the routes the forms use, so each one is validated and tested as
+there: `POST /api/libraries` for `index`; `POST /api/libraries/build/check`
+then `/build` for `folder`; `POST /api/user-libraries/ssh` or `/pw` for
+`connect`; `POST /api/user-libraries/ssh/build/test` or `/pw/build/test`
+then `/build` for `build`; and `PUT /api/libraries/:id/read-through` for a
+`readThrough`. A build whose source folder does not exist fails; an
+index folder it needs is created, as the form does once confirmed. Each
+entry's line says Added (Building, for a build), Failed with the reason,
+or Skipped.
 
 ## Libraries built from a folder on this computer
 

@@ -2027,6 +2027,18 @@ a.identity-btn { text-decoration: none; }
 .setup-progress span.on { background: var(--pw-navy); }
 .setup-build { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; }
 .lib-add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Library lists (LibraryImport, LibraryExport): each entry with a tick,
+   what it is, where it points, and its state or result. */
+.lib-import { display: flex; flex-direction: column; gap: 12px; }
+.lib-import-source { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lib-import-paste { display: flex; flex-direction: column; gap: 8px; max-width: var(--settings-measure); }
+.lib-import-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.lib-import-item { display: flex; gap: 10px; align-items: flex-start; }
+.lib-import-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.lib-import-where { word-break: break-all; font-size: 12px; }
+.lib-export { display: flex; flex-direction: column; gap: 14px; }
+.lib-export-user { display: flex; gap: 10px; align-items: flex-start; }
+.lib-export-user > span { display: flex; flex-direction: column; gap: 2px; }
 /* Indexing (components/IndexActivity.tsx): a job's phases, each with its
    count and time, the controls, and the log. The same pieces sit in the
    footer's index panel, Settings, Indexing, Libraries and Statistics. */
