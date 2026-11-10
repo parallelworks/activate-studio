@@ -515,7 +515,12 @@ type Options struct {
 	Primary bool
 	// KeepUser keeps user@host; otherwise only host is written, so each
 	// person connects as themselves.
-	KeepUser      bool
+	KeepUser bool
+	// ShareBuilt writes a library this Studio built as its index, to be
+	// connected where it is, so each person who imports the file searches
+	// this one index as themselves; otherwise it is written as its folder,
+	// and each person's Studio indexes it again.
+	ShareBuilt    bool
 	StudioVersion string
 	Now           time.Time
 }
@@ -574,6 +579,10 @@ func Export(src Source, o Options) (File, []Skipped) {
 		if !picked(l.ID) {
 			continue
 		}
+		if l.Build != nil && o.ShareBuilt && l.IndexRoot != "" {
+			f.Libraries = append(f.Libraries, Entry{Kind: KindIndex, Label: l.Label, IndexRoot: l.IndexRoot, SourceRoot: l.SourceRoot})
+			continue
+		}
 		if l.Build != nil {
 			if l.SourceRoot == "" {
 				skipped = append(skipped, Skipped{l.ID, l.Label, "Its folder is not recorded."})
@@ -594,7 +603,7 @@ func Export(src Source, o Options) (File, []Skipped) {
 		if !picked(d.ID) {
 			continue
 		}
-		e, why := userEntry(d, depth(d.ID), o.KeepUser)
+		e, why := userEntry(d, depth(d.ID), o.KeepUser, o.ShareBuilt)
 		if why != "" {
 			skipped = append(skipped, Skipped{d.ID, d.Label, why})
 			continue
@@ -633,7 +642,7 @@ func deref(p *string) string {
 	return *p
 }
 
-func userEntry(d libraries.UserDef, depth string, keepUser bool) (Entry, string) {
+func userEntry(d libraries.UserDef, depth string, keepUser, shareBuilt bool) (Entry, string) {
 	e := Entry{Label: d.Label}
 	if d.IsSSH() {
 		e.Kind = KindSSH
@@ -663,6 +672,13 @@ func userEntry(d libraries.UserDef, depth string, keepUser bool) (Entry, string)
 			return ""
 		}
 		return b
+	}
+	if d.Build != nil && shareBuilt && deref(d.IndexRoot) != "" && !studioDir(deref(d.IndexRoot)) {
+		e.Mode = ModeConnect
+		e.IndexRoot = deref(d.IndexRoot)
+		e.SourceRoot = d.Build.SourceRoot
+		e.GufiBin = gufiBin(d.Build.GufiBin)
+		return e, ""
 	}
 	if d.Build != nil {
 		e.Mode = ModeBuild

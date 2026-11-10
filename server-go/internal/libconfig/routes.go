@@ -60,6 +60,7 @@ func (s *service) export(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	o := Options{Primary: body.Get("primary") == true, KeepUser: body.Get("keepUser") == true,
+		ShareBuilt:    body.Get("shareBuilt") == true,
 		StudioVersion: version.Of(s.a.Cfg.ProjectRoot).Version, Now: time.Now()}
 	if ids, ok := body.Get("ids").([]any); ok {
 		for _, id := range ids {

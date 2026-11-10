@@ -129,6 +129,15 @@ export function LibraryView({ display, onDisplay }: {
   // since a path only means something inside its own library.
   const [libId, setLibId] = useState(currentLibrary())
   useEffect(() => onLibraryChange(id => { setLibId(id); setRefreshKey(k => k + 1); onDisplay(null); setTargetDir(id === ALL_LIBRARIES ? 'kb/uploads' : 'uploads') }), [onDisplay])
+  // A library added, imported or removed in Settings changes the folders
+  // of All libraries: read the tree again when the set of libraries does.
+  const libSet = cfg.libraries?.map(l => l.id).join('\n') ?? ''
+  const seenLibSet = useRef(libSet)
+  useEffect(() => {
+    if (seenLibSet.current === libSet) return
+    seenLibSet.current = libSet
+    setRefreshKey(k => k + 1)
+  }, [libSet])
   const writable = libraryWritable(cfg.libraries, libId)
   // With All libraries selected the tree has a folder per library, and a
   // path is writable when its library is; a library's own folder takes

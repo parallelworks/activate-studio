@@ -227,6 +227,14 @@ which the importing Studio makes again. **Leave out the user name**, on by
 default, writes `host` for `user@host`, here and in `readThrough`, and
 drops `-l`, `User=` and the user names of jump hosts, so each person
 connects as themselves and GUFI answers them with their own permissions.
+A library this Studio built is written as a `folder` entry, for each
+person's Studio to index again, unless **Share the indexes built here** is
+ticked (`shareBuilt`, off by default, offered when a ticked library was
+built): then it is written as an `index` entry (an `ssh` or `pw` entry in
+`connect` mode for one built on another system, when its index path is
+known and is not in `~/.activate-studio`), so each person connects this one
+index and searches it as themselves. That is the administrator's export of
+a root-built index ([`ACCESS-CONTROL.md`](ACCESS-CONTROL.md)).
 
 *Import:* **Import…** in Settings, Indexing, Libraries, **Import a library
 list from a file…** in Add a library, and **Import a library list from

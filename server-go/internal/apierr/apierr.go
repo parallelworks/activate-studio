@@ -3,7 +3,9 @@
 // status and {error: message}, 400 with the message for a request that
 // fails validation, and for anything else 500 with
 // {error: "internal error (ref <id>)"}, the detail going to the log only
-// under that id.
+// under that id. A file system permission refusal is 403 with a plain
+// message: it is the answer for a file the Studio's account may not open,
+// not a fault.
 package apierr
 
 import (
@@ -11,6 +13,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"math/big"
 	"net/http"
@@ -52,6 +55,8 @@ func Write(w http.ResponseWriter, log *slog.Logger, err error) {
 			msg = "invalid request"
 		}
 		JSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+	case errors.Is(err, fs.ErrPermission):
+		JSON(w, http.StatusForbidden, map[string]string{"error": PermissionMessage})
 	default:
 		id := Ref()
 		if log != nil {
@@ -60,6 +65,10 @@ func Write(w http.ResponseWriter, log *slog.Logger, err error) {
 		JSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error (ref " + id + ")"})
 	}
 }
+
+// PermissionMessage answers a request the file system refused. It names no
+// path, so it says nothing about what is behind the refusal.
+const PermissionMessage = "Permission denied: the account the Studio runs as cannot open this."
 
 // StatusClientClosed is the status logged for a request whose client left
 // before the answer was ready (nginx's 499).

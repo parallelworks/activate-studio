@@ -68,7 +68,7 @@ export interface ExportAnswer {
   skipped: { id: string; label: string; why: string }[]
 }
 
-export const exportLibraries = (o: { ids?: string[]; primary?: boolean; keepUser?: boolean }) =>
+export const exportLibraries = (o: { ids?: string[]; primary?: boolean; keepUser?: boolean; shareBuilt?: boolean }) =>
   postJson<ExportAnswer>('/api/libraries/export', o)
 
 /** The check before an import, of a file's text. */
