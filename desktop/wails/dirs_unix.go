@@ -21,22 +21,28 @@ func defaultDataDir() string {
 	return filepath.Join(home, ".local", "share", "activate-studio-data")
 }
 
-// downloadsDir: XDG_DOWNLOAD_DIR from ~/.config/user-dirs.dirs, else ~/Downloads.
+// downloadsDir: XDG_DOWNLOAD_DIR from ~/.config/user-dirs.dirs, else
+// ~/Downloads. A value of the home folder itself, "$HOME/" as xdg-user-dirs
+// writes it, means the folder is not set, so ~/Downloads it is.
 func downloadsDir() string {
 	home, _ := os.UserHomeDir()
 	cfgHome := os.Getenv("XDG_CONFIG_HOME")
 	if cfgHome == "" {
 		cfgHome = filepath.Join(home, ".config")
 	}
-	if f, err := os.Open(filepath.Join(cfgHome, "user-dirs.dirs")); err == nil {
+	return xdgDownloadDir(filepath.Join(cfgHome, "user-dirs.dirs"), home)
+}
+
+func xdgDownloadDir(dirsFile, home string) string {
+	if f, err := os.Open(dirsFile); err == nil {
 		defer f.Close()
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
 			if v, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "XDG_DOWNLOAD_DIR="); ok {
 				v = strings.Trim(v, `"`)
 				v = strings.Replace(v, "$HOME", home, 1)
-				if v != "" && v != home {
-					return v
+				if v != "" && filepath.Clean(v) != filepath.Clean(home) {
+					return filepath.Clean(v)
 				}
 			}
 		}
