@@ -1,6 +1,6 @@
 # Access control
 
-Who can find what in the Studio is decided by the file system's own permissions, through GUFI. The Studio keeps no access list of its own. Every search, query and assistant tool runs `gufi_query` as the account the Studio runs under (or, for a library on another system, as the account ssh logs in to), and GUFI shows that account only what its permissions allow. This page describes how that works, what it covers today, and how to deploy for user and group level access.
+The Studio's retrieval for its assistant reads the GUFI index itself. Text and vectors sit in SQLite databases inside the index tree, so there is no separate vector database to run, no copy of the documents to keep in sync, and the index carries the source's POSIX permissions. Who can find what is decided by those permissions, through GUFI. The Studio keeps no access list of its own. Every search, query and assistant tool runs `gufi_query` as the account the Studio runs under (or, for a library on another system, as the account ssh logs in to), and GUFI shows that account only what its permissions allow. This page describes how that works, what it covers today, and how to deploy for user and group level access.
 
 ## How GUFI enforces permissions
 
