@@ -69,6 +69,7 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 | [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, building an index of a folder here or on a remote system over ssh or pw ssh, the Library's Details card, and which parts of the app appear |
 | [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | the Workflows tab |
 | [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
+| [`docs/ACCESS-CONTROL.md`](docs/ACCESS-CONTROL.md) | who can find what: GUFI and the file system's permissions, and deploying for user and group access |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
 | [`docs/MACOS.md`](docs/MACOS.md) | the macOS app, and running from a clone on macOS |
 | [`docs/UPDATES.md`](docs/UPDATES.md) | update channels (Stable and Preview), installing another version, the state snapshot and format, and what the Go version must keep |

@@ -8,7 +8,7 @@ The service currently runs as one POSIX user, with the changes planned in this n
 
 Platform identity (the `X-PW-User-Token` JWT from the session proxy, or a sign-in through an OpenID Connect provider) already separates people above the filesystem: conversations have owners, transcripts record who wrote them, model credentials are per user in the vault, and a shared key has a named provider. It does not separate anything at the filesystem: a group sharing a deployment this way has all its files roll up to the single service user.
 
-The security statement that follows from this is in ARCHITECTURE.md section 10: point the app at a corpus its whole audience may read.
+The security statement that follows from this is in ARCHITECTURE.md section 10: point the app at a corpus its whole audience may read. What GUFI enforces today, and how to deploy one Studio per person for user and group access, is in [`ACCESS-CONTROL.md`](ACCESS-CONTROL.md).
 
 ## Target
 
