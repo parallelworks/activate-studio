@@ -108,6 +108,31 @@ func TestExportKeepsUserWhenAsked(t *testing.T) {
 	}
 }
 
+// Sharing built indexes writes a library this Studio built as its index,
+// connected where it is, so an administrator's root-built index is
+// searched by each person who imports it, as themselves. A remote build
+// with no index path recorded yet stays a build.
+func TestExportSharesBuiltIndexesWhenAsked(t *testing.T) {
+	text, f, _ := export(t, Options{ShareBuilt: true, IDs: []string{"projects", "archive", "c1-built", "kb"}})
+	want := []Entry{
+		{Kind: "index", Label: "Projects", IndexRoot: "/home/admin/.local/idx/projects/projects", SourceRoot: "/srv/projects"},
+		{Kind: "index", Label: "Archive", IndexRoot: "/fast/idx/archive/archive", SourceRoot: "/srv/archive"},
+		{Kind: "pw", Label: "Cluster folder", Mode: "build", Cluster: "c1", SourceRoot: "~/work", IndexDir: "/scratch/my-index", GufiBin: "/apps/gufi/bin", Depth: "text"},
+	}
+	if !reflect.DeepEqual(f.Libraries, want) {
+		t.Errorf("entries:\n%s", text)
+	}
+	src := source()
+	src.Users[3].IndexRoot = sp("/scratch/my-index/work")
+	f, _ = Export(src, Options{ShareBuilt: true, IDs: []string{"c1-built", "box-data"}})
+	if len(f.Libraries) != 2 || f.Libraries[1].Mode != "connect" || f.Libraries[1].IndexRoot != "/scratch/my-index/work" || f.Libraries[1].SourceRoot != "~/work" {
+		t.Errorf("remote built: %+v", f.Libraries)
+	}
+	if f.Libraries[0].Mode != "build" {
+		t.Errorf("a build in a home folder's .activate-studio stays a build: %+v", f.Libraries[0])
+	}
+}
+
 func TestExportPrimaryOnlyWhenTicked(t *testing.T) {
 	_, f, _ := export(t, Options{IDs: []string{"kb", "projects"}})
 	if len(f.Libraries) != 1 || f.Libraries[0].Label != "Projects" {

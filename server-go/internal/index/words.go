@@ -17,6 +17,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/extract"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
+	"github.com/parallelworks/activate-studio/server-go/internal/posixaccess"
 )
 
 // The text phase's writing step: enrich.py's write_dir. Every directory
@@ -61,6 +62,9 @@ type WordsOptions struct {
 type WordsResult struct {
 	Dirs  int
 	Files int
+	// NameOnly counts the files left to their names because their own
+	// permissions are narrower than their folder's (posixaccess).
+	NameOnly int
 	// Documents counts, per suffix of a document format, the files seen
 	// and those with no text (enrich.py's --report).
 	Documents map[string]*DocCount
@@ -92,9 +96,10 @@ type wordFile struct {
 }
 
 type wordDir struct {
-	db    string
-	rel   string
-	files []wordFile
+	db       string
+	rel      string
+	files    []wordFile
+	nameOnly int
 }
 
 // WriteWords writes the words tables under opts.Index.
@@ -127,6 +132,7 @@ func WriteWords(ctx context.Context, o WordsOptions) (WordsResult, error) {
 	if o.Subdir != "" {
 		walkRoot = filepath.Join(o.Index, o.Subdir)
 	}
+	fileLevel := posixaccess.FileLevel()
 	var dirs []wordDir
 	err := filepath.WalkDir(walkRoot, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -152,7 +158,7 @@ func WriteWords(ctx context.Context, o WordsOptions) (WordsResult, error) {
 		wd := wordDir{db: dbfile, rel: rel}
 		src := filepath.Join(o.KBRoot, rel)
 		if st, err := os.Stat(src); err == nil && st.IsDir() && !excludedRel(rel) {
-			wd.files = listWordFiles(src, rel, cacheable, o, warn)
+			wd.files, wd.nameOnly = listWordFiles(src, st, rel, cacheable, o, fileLevel, warn)
 		}
 		dirs = append(dirs, wd)
 		return nil
@@ -161,6 +167,9 @@ func WriteWords(ctx context.Context, o WordsOptions) (WordsResult, error) {
 		return WordsResult{}, err
 	}
 	res := WordsResult{Dirs: len(dirs), Documents: map[string]*DocCount{}}
+	for _, wd := range dirs {
+		res.NameOnly += wd.nameOnly
+	}
 	var mu sync.Mutex
 	done := 0
 	if o.Progress != nil {
@@ -221,15 +230,18 @@ func excludedRel(rel string) bool {
 }
 
 // listWordFiles are the files of a source folder whose text is indexed,
-// sorted by name, with their inodes (enrich.py's plan).
-func listWordFiles(src, rel string, cacheable map[string]bool, o WordsOptions, warn func(string)) []wordFile {
+// sorted by name, with their inodes (enrich.py's plan). With fileLevel, a
+// file that not everyone who can enter the folder may read is left out
+// and counted: its folder's db.db is readable by all of them.
+func listWordFiles(src string, srcSt os.FileInfo, rel string, cacheable map[string]bool, o WordsOptions, fileLevel bool, warn func(string)) ([]wordFile, int) {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) {
 			warn(fmt.Sprintf("  cannot list %s: %s", src, pyErr(err)))
 		}
-		return nil
+		return nil, 0
 	}
+	nameOnly := 0
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	var out []wordFile
 	for _, e := range entries {
@@ -256,9 +268,13 @@ func listWordFiles(src, rel string, cacheable map[string]bool, o WordsOptions, w
 				continue
 			}
 		}
+		if fileLevel && !posixaccess.Shared(srcSt, st) {
+			nameOnly++
+			continue
+		}
 		out = append(out, wordFile{name: e.Name(), suffix: suffix, ino: inodeOf(st), text: isText})
 	}
-	return out
+	return out, nameOnly
 }
 
 // pyErr is the message Python's PermissionError prints.

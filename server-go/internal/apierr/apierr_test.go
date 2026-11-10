@@ -36,6 +36,16 @@ func TestKbErrorKeepsStatusAndMessage(t *testing.T) {
 	}
 }
 
+// A file the Studio's account may not open is 403 with a message that
+// names no path.
+func TestPermissionRefusalIs403(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Write(rec, nil, fmt.Errorf("read: %w", &os.PathError{Op: "open", Path: "/srv/secret/payroll.txt", Err: os.ErrPermission}))
+	if rec.Code != 403 || body(t, rec)["error"] != PermissionMessage || strings.Contains(rec.Body.String(), "payroll") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestValidationIs400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	Write(rec, nil, &Validation{Message: "body/name must be string"})

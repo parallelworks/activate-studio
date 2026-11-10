@@ -18,6 +18,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/ppt"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/xls"
+	"github.com/parallelworks/activate-studio/server-go/internal/posixaccess"
 )
 
 // Action is what a pass did with one file's cache entry.
@@ -323,6 +324,13 @@ type Summary struct {
 func (x *Extractor) Run(ctx context.Context, p PassOptions) (Summary, error) {
 	t0 := time.Now()
 	s := Summary{OCR: x.ocr, Kinds: map[string]*KindCount{}}
+	if posixaccess.FileLevel() && p.CacheRoot != "" {
+		// The cache mirrors the source's names and holds the text of every
+		// file read: under a root build, root's alone.
+		if err := posixaccess.PrivateDir(p.CacheRoot); err != nil {
+			return s, fmt.Errorf("extract: %w", err)
+		}
+	}
 	files, err := x.Plan(p)
 	if err != nil {
 		return s, err

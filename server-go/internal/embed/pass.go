@@ -23,6 +23,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
+	"github.com/parallelworks/activate-studio/server-go/internal/posixaccess"
 )
 
 // The meaning phase: indexer/embed.py in Go. Each directory's words (the
@@ -227,6 +228,10 @@ func OpenCache(file string) (*sql.DB, error) {
 	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS emb (h TEXT PRIMARY KEY, v BLOB) WITHOUT ROWID"); err != nil {
 		db.Close()
 		return nil, err
+	}
+	if posixaccess.FileLevel() {
+		// Under a root build, root's alone, as the extract cache is.
+		os.Chmod(file, 0o600)
 	}
 	return db, nil
 }

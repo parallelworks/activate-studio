@@ -21,6 +21,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/embed"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
+	"github.com/parallelworks/activate-studio/server-go/internal/posixaccess"
 )
 
 // ---- running the tools ----
@@ -576,6 +577,9 @@ func (c *jobCtx) text(o textScope) error {
 	}
 	if err != nil {
 		return fmt.Errorf("text: %w", err)
+	}
+	if res.NameOnly > 0 {
+		c.log(fmt.Sprintf("text: %s files indexed by name only: their permissions are narrower than their folder's, and anyone who can enter a folder can read its index (%s)", enUS(res.NameOnly), posixaccess.Env))
 	}
 	ph.finish(fmt.Sprintf("%s files with text", enUS(res.Files)))
 	return nil
