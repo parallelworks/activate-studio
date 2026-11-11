@@ -2,6 +2,98 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.191 (2026-11-11)
+
+_No pull requests; tag only._
+
+## v1.190.2 (2026-11-10)
+
+### Keep a root-built index's text to file permissions; share built indexes in library lists (#658)
+
+An administrator can build one index as root and hand it out as a library list, and each person who imports it sees what their own permissions allow. Testing that setup found one leak and a few gaps, fixed here.
+
+**Leak.** GUFI gives each index folder its source folder's owner, group and mode, so anyone who can enter a folder can read its `db.db`, including the Studio's `words` table. A Studio running as root extracted the text of a file whose own mode is narrower than its folder's (a root-only file in an open folder), and anyone who could enter the folder could find its text by search.
+
+- New `internal/posixaccess`: with `STUDIO_TEXT_ACCESS=file`, the default when the Studio runs as root, a file's text (and so its passages and vectors) is written only when everyone who can enter its folder can read it, judged by owner, group and mode. Other files are indexed by name only, and the text phase logs how many. `folder` keeps today's behavior, the default for a Studio running as its own user.
+- Under the same setting the extract cache folder is made 0700 and the embedding cache 0600, since they hold the text of every file read and the cache mirrors the source's names.
+- A rebuild rewrites each folder's table, so text written before goes when the setting is on.
+
+**Export.** A built library always went into a library list as a folder for each person to index again. **Share the indexes built here** (`shareBuilt`, off by default, shown when a ticked library was built) writes it as an index to connect: `index` for one built here, `ssh` or `pw` in connect mode for one built elsewhere when its index path is known and not in `~/.activate-studio`.
+
+**Smaller fixes.**
+- A file system permission refusal answers 403 with "Permission denied: the account the Studio runs as cannot open this." in place of a 500 internal error. The message names no path.
+- The Library tree reads its folders again when the set of libraries changes, so an imported or removed library shows without pressing refresh.
+
+**Docs.** ACCESS-CONTROL.md gets an "An administrator's index" section: the two ways to build (a Studio as root, run where no one else can reach it, or GUFI alone), the 777 mode `gufi_dir2index` leaves on the index folder, the hand-out, and the tested result. REFERENCE (Indexing, text and file permissions), LIBRARIES, HELP and README updated.
+
+**Testing.**
+- Go: all packages pass; new tests for the permission rule (14 cases), the text pass at file and folder level including the switch both ways, the export option, and the 403.
+- Web: 494 tests pass; new test for the export option.
+- End to end on Linux with this branch's server: a root-owned share with an open folder, a group folder, a root-only folder, another group's folder, and a root-only file in the open folder. Root built it with the Studio and exported it with the share option; a Studio running as a member of the first group imported it. Search returned the open and group files and only the name of the root-only file; reading any file that user cannot open returned 403. Both servers ran in a private network namespace.
+
+### Linux app: save to ~/Downloads when XDG_DOWNLOAD_DIR is the home folder (#659)
+
+xdg-user-dirs writes `XDG_DOWNLOAD_DIR="$HOME/"` for a folder that is not set. The Linux shell compared the expanded value to the home folder without its trailing slash, missed it, and saved Export CSV, conversation downloads and library list exports into the home folder itself. Both sides are now cleaned before comparing, so that case falls back to ~/Downloads, and a set folder is cleaned of a trailing slash.
+
+Testing: `TestXDGDownloadDir` covers a set folder, a non-ASCII folder with a trailing slash, an absolute path, `$HOME/`, `$HOME`, an empty value, a file without the key, and no file. The shell package needs GTK to build, so the test was run on the function in a scratch module; Linux shell tests are not run in CI. Found on a Linux desktop whose user-dirs.dirs has `$HOME/`.
+
+## v1.190.1 (2026-11-10)
+
+### Publish the Go version's container image with each release (#655)
+
+Releases published the Node version's image (`deploy/app.def`) to ghcr.io from `container.yaml`. The Go image (`deploy/app-go.def`) was built and smoke-tested in every `linux-app` run but never published, so the workflow's Container option and the compute-node path still ran Node.
+
+## Changes
+
+- `container-go.yml` (new) builds the Go image from a published release's Linux app, checked against its `.sha256`. Its smoke test checks the version, GUFI, the change log, and that a document is found after the index on start. It pushes the image to ghcr.io as `:<release>`, and `:latest` when the release is GitHub's latest. As in `container.yaml`, only the push job holds the packages token, and the image gets a provenance attestation.
+- `linux-app.yml`'s release job starts `container-go.yml` once it has attached the Linux app.
+- `container.yaml` no longer runs on releases. It still builds and tests the Node image on pull requests, and can publish it by hand.
+- The workflow's Container option, `docs/DEPLOY.md`, `deploy/COMPUTE.md`, `docs/ARCHITECTURE.md`, `docs/REFERENCE.md` and the README describe the Go image. The parser golden is regenerated with Node for the new tooltip.
+
+## Tested
+
+- Built the image from the v1.190 Linux app with `deploy/app-go.def` (locally with Apptainer 1.3.4, which needs the base image by digest alone; CI's SingularityCE 4.5.1 takes the tag and digest as written).
+- On a test resource on the platform, in strict multi-user posture: deployed the published Node v1.188 image in Container mode, seeded a folder, an upload, a label and a conversation, then relaunched the same deployment with the Go image. It served v1.190 with the same index folder, the seeded state carried over, and the same 50 checks as the host-mode test passed (uploads, search by name, words and meaning, previews, PDF pages, rename, copy, move, delete, labels, conversations, settings, semantic map, workflows catalog).
+- `container-go.yml` itself can only be dispatched once it is on main. After merging, I will run it for v1.190, which publishes the Go image as `:v1.190` and `:latest`. The Node image build for the v1.190 release was cancelled before it pushed, so `:v1.190` does not exist yet, and `:latest` is the Node v1.188 image until that run.
+
+### Fix two CI flakes: ldconfig's pipe and the search scope test (#654)
+
+Two tests failed once each today with nothing wrong in the code they test.
+
+- `deploy/linux/test_in_container.sh` looked up each library with `ldconfig -p | awk '... exit'`. awk's early exit could send ldconfig SIGPIPE, and under `pipefail` the script then ended with exit 141. That failed the ubuntu:22.04 test of the v1.190 release run once, after every check had passed. awk now reads to the end and prints the first match.
+- `web/test/libraryScope.test.tsx` fired its search as soon as the Libraries button was drawn. The search listener is re-registered by that render's effects, which may not have run yet, so on a slow runner the event reached the listener from before the libraries arrived and searched `all` (the macOS job of this PR). The test now lets pending effects run first. In a browser they run within a frame, long before anyone could type a search.
+
+Tested: the scope test passes three runs in a row locally; CI on this PR.
+
+### Document access control: GUFI permissions and per-person deployments (#656)
+
+Adds docs/ACCESS-CONTROL.md, linked from the README, MULTI-USER.md and ARCHITECTURE.md.
+
+It explains how access is decided today: every search, query and assistant tool runs gufi_query as the Studio's account (or the ssh account for a remote library), and GUFI skips index folders that account cannot open. Text in the Studio's own tables is readable per folder. Text in GUFI external databases is readable per file, because each database carries the access of its files and --external-copy leaves out a database the caller cannot open. Checked locally with GUFI 0.8.0: an unreadable ext database in a folder is left out while the readable one answers (exit 0), and an index folder of mode 000 is skipped while the rest of the tree answers.
+
+Deployment guidance: one Studio per person (Mac app, Linux app, or a per-person ACTIVATE session) enforces user and group permissions today, by building per person or by connecting one administrator-built index locally or over ssh (gufi_jail logins work). A shared Studio runs as one account, as MULTI-USER.md already says.
+
+Docs only.
+
+### Export and import library lists (#657)
+
+An administrator can now share one file that sets up libraries in each person's own Studio. A library list is a JSON file (`<label>.studio-libraries.json`, format `activate-studio-libraries`, version 1) of where each library is and how it is built. Each person imports it at setup or in Settings, and each library is added as that person, so their own ssh login and permissions apply.
+
+**Export.** Settings, Indexing, Libraries has **Export…**: the libraries ticked (all but the main folder by default; the main folder only when ticked, as a folder to index), saved as a download the way an exported table is. The file has no ids, build state, counts, build dates, caps, user hashes, keys, tokens, passwords or settings, and no ssh options that name the exporter's key files or ssh config (`-i`, `-F`, `IdentityFile`, `CertificateFile`, `IdentityAgent`). Folders the Studio made in the exporter's home on a remote system (`~/.activate-studio`) are left out and made again on import. **Leave out the user name**, on by default, writes `host` for `user@host` and drops `-l`, `User=` and jump host user names. A library built by the platform's index workflow is left out with a note.
+
+**Import.** **Import…** in Settings, Indexing, Libraries, **Import a library list from a file…** in Add a library, and **Import a library list from your administrator** on setup's Other libraries step take the file, chosen or pasted. The preview lists each entry with its kind, label, where it points and a tick. Entries already present (same index directory or folder, or same host, port and index directory or source folder), unreadable (unknown kind, bad field, newer format version) or not addable here (sign-in rules) show the reason and are unticked. An ssh entry has **Connect as**, prefilled with the login the Studio runs as when the file names none. Each ticked entry is then added through the existing Add a library routes (`POST /api/libraries`, `/api/libraries/build/check` and `/build`, `/api/user-libraries/ssh` and `/pw` and their `/build/test` and `/build`, and `PUT /api/libraries/:id/read-through`), with one result line each: Added, Failed with the reason, or Skipped.
+
+**Server.** New package `server-go/internal/libconfig` with two routes: `POST /api/libraries/export` writes the file, and `POST /api/libraries/import/check` parses, normalizes and checks one. Neither adds a library. `userlibs.Module.OfferedTo` exposes what the viewer may add, as `GET /api/user-libraries` reports it.
+
+**Shared mode.** With sign-in on, `index` and `folder` entries are shown as not addable (libraries on that computer are the deployment's), as are `ssh` entries (ssh is for a Studio with sign-in off); `pw` entries follow the viewer's platform key.
+
+Docs: LIBRARIES.md (new "Library lists" section with the format and rules), HELP.md (Library and setup), REFERENCE.md (routes), ACCESS-CONTROL.md, README.
+
+**Verification**
+- Go: `go test -p 4 ./...` passes (59 packages), including new unit tests for parse, normalize, export (no state or key file options leak, user name stripping, primary only when ticked, round trip), duplicates and availability, and an HTTP test of both routes. `scripts/crossvet.sh` clean.
+- Web: vitest 65 files, 493 tests (and the rhel9 config, 64 files, 479 tests) pass, with new tests for the import preview and adds, single entry adds, and the export dialog and download.
+- End to end with the Go server (Node off): an admin Studio with a GUFI index here, a folder built here, and a GUFI index over ssh to a private sshd on loopback (identity given with `-i`). The export left out the user name and the `-i` option. Imported over HTTP into a fresh Studio (the ssh login authenticating through an agent) and through the UI in another fresh Studio's setup wizard (file chooser, preview, Add 3 libraries: all Added); in both, searches in each of the three libraries returned their files. Settings, Import… on a Studio that already had them showed all three as Already added with Add disabled.
+
 ## v1.190 (2026-11-09)
 
 ### Deploy the Go version from the ACTIVATE workflow (#652)
@@ -32,6 +124,10 @@ On a test resource on the platform, in strict multi-user posture:
 - Killing the server: the watchdog restarted it on the same port within its two-minute check, and the session address kept working.
 - Every run block in both workflows passes `bash -n`.
 - Without a personal key, platform calls use the job's own token and the platform API answers 401. The same happens in the Node version.
+
+### Change log through v1.190 (#653)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.190` before tagging v1.190.
 
 ## v1.189 (2026-11-09)
 
