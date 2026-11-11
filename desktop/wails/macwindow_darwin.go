@@ -27,6 +27,9 @@ static NSString *const frameName = @"ACTIVATE Studio";
 static NSString *const popupID = @"studio-popup";
 static BOOL watching;
 static NSMutableArray<NSWindow *> *popups;
+// The page zoom every Studio window's web view takes (zoom.go); main
+// thread only once the app runs.
+static double pageZoom = 1;
 
 static WKWebView *findWebView(NSView *v) {
 	if ([v isKindOfClass:[WKWebView class]]) return (WKWebView *)v;
@@ -78,6 +81,7 @@ static void allowPopups(WKWebView *web) {
 			}
 			WKWebView *child = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:cfg];
 			child.UIDelegate = wv.UIDelegate;
+			child.pageZoom = pageZoom;
 			NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1100, 760)
 				styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
 				backing:NSBackingStoreBuffered defer:NO];
@@ -124,8 +128,28 @@ static void adopt(NSWindow *w) {
 	if (web) {
 		allowMicrophone(web);
 		allowPopups(web);
+		if (web.pageZoom != pageZoom) web.pageZoom = pageZoom;
 	}
 }
+
+// mac_set_zoom gives every Studio window's web view the page zoom z and
+// tells each page's shim (shell/shim.js), whose title bar row and file
+// drops are in the window's points.
+static void mac_set_zoom(double z) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+		pageZoom = z;
+		NSString *js = [NSString stringWithFormat:@"window.__studioShell && window.__studioShell.setZoom && window.__studioShell.setZoom(%g)", z];
+		for (NSWindow *w in [NSApp windows]) {
+			WKWebView *web = findWebView(w.contentView);
+			if (web == nil) continue;
+			web.pageZoom = z;
+			[web evaluateJavaScript:js completionHandler:nil];
+		}
+	});
+}
+
+// mac_init_zoom sets the level the windows open at, before the app runs.
+static void mac_init_zoom(double z) { pageZoom = z; }
 
 static void mac_window_watch(void) {
 	dispatch_async(dispatch_get_main_queue(), ^{
@@ -207,6 +231,7 @@ static char *mac_window_report(void) {
 			@"microphoneHandler": @([d respondsToSelector:@selector(webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:)]),
 			@"popupHandler": @([d respondsToSelector:@selector(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:)]),
 			@"closeHandler": @([d respondsToSelector:@selector(webViewDidClose:)]),
+			@"pageZoom": @(web ? web.pageZoom : 0),
 		};
 		NSData *data = [NSJSONSerialization dataWithJSONObject:r options:0 error:nil];
 		if (data) json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -225,6 +250,13 @@ import (
 func watchMacWindow() { C.mac_window_watch() }
 
 func hideOthers() { C.mac_hide_others() }
+
+// The window's zoom is WKWebView.pageZoom (zoom.go); the menu has the keys.
+const pageZoomWorks = true
+const zoomKeys = false
+
+func initPageZoom(z float64)         { C.mac_init_zoom(C.double(z)) }
+func (a *App) setPageZoom(z float64) { C.mac_set_zoom(C.double(z)) }
 
 // forgetMacWindow: see mac_forget_window. Not on the main thread.
 func forgetMacWindow(purge bool) {

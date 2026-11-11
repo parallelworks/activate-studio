@@ -32,6 +32,8 @@ WebKitGTK gives a page nothing of a drop from a file manager, and its file choos
 
 The window's context menu offers copy and paste over text and fields. Elsewhere it is off, as Back and Reload mean nothing in an app window.
 
+Ctrl+= and Ctrl+- zoom the window in and out, in steps from 50% to 300%, and Ctrl+0 returns it to actual size. The zoom is WebKitGTK's own zoom level on the web view, as in a browser (`desktop/wails/zoom.go`), and is kept in `run/window-zoom` in the data folder for the next launch.
+
 ## The window's title bar
 
 The window draws its own title bar (a GTK header bar), which takes the color the page names in its `theme-color` tag, as the macOS window's does: the classification banner's when one is shown, so the bar and the banner read as one strip, otherwise the page's ground in its light or dark theme, following changes while the window is open. The title and the window controls switch to light or dark to read on it. A bar the window manager draws cannot take the page's color, and `GTK_CSD=1` is not used for this because GTK ignores it where no compositor runs, as in many remote desktop sessions. The last color is kept in `run/bar-color` in the data folder, so the next launch opens with it. Dialogs such as the folder chooser keep the desktop's theme.

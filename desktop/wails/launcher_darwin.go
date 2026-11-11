@@ -296,13 +296,10 @@ func appMenu(a *App) *menu.Menu {
 	m.Append(menu.EditMenu())
 	view := m.AddSubmenu("View")
 	view.AddText("Reload", keys.CmdOrCtrl("r"), func(*menu.CallbackData) { a.reloadStudio() })
-	view.AddText("Actual Size", keys.CmdOrCtrl("0"), func(*menu.CallbackData) { a.execJS(`document.body.style.zoom = ''`) })
-	view.AddText("Zoom In", keys.CmdOrCtrl("="), func(*menu.CallbackData) {
-		a.execJS(`document.body.style.zoom = String((parseFloat(document.body.style.zoom) || 1) * 1.1)`)
-	})
-	view.AddText("Zoom Out", keys.CmdOrCtrl("-"), func(*menu.CallbackData) {
-		a.execJS(`document.body.style.zoom = String((parseFloat(document.body.style.zoom) || 1) / 1.1)`)
-	})
+	// The web view's page zoom (zoom.go).
+	view.AddText("Actual Size", keys.CmdOrCtrl("0"), func(*menu.CallbackData) { a.setZoom("reset") })
+	view.AddText("Zoom In", keys.CmdOrCtrl("="), func(*menu.CallbackData) { a.setZoom("in") })
+	view.AddText("Zoom Out", keys.CmdOrCtrl("-"), func(*menu.CallbackData) { a.setZoom("out") })
 	view.AddSeparator()
 	view.AddText("Enter Full Screen", keys.Combo("f", keys.CmdOrCtrlKey, keys.ControlKey), func(*menu.CallbackData) {
 		if wruntime.WindowIsFullscreen(a.ctx) {

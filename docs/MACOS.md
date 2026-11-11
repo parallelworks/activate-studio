@@ -298,7 +298,7 @@ The Go version (`STUDIO_SERVER=go-only`, the default of `deploy/mac/build_app.sh
 | About, Check for Updates, Run Setup, Stop Background Server | Same menu items |
 | Uninstall, with the dry-run plan and the keep-data choice | Same (`launcher.sh --uninstall --dry-run`, then the chosen run) |
 | Hide, Hide Others, Show All, Quit; Edit menu; Minimize, Zoom, Close | Same |
-| Reload, Actual Size, Zoom In, Zoom Out, Enter Full Screen | Same (zoom through the page) |
+| Reload, Actual Size, Zoom In, Zoom Out, Enter Full Screen | Same: the zoom is the web view's own page zoom (`WKWebView.pageZoom`, `desktop/wails/zoom.go`), in steps from 50% to 300%, kept in `run/window-zoom` in the data folder for the next launch. v1.190 and v1.191 zoomed with CSS zoom on the page's body, which in WebKit opened menus away from their buttons and made dragged edges run ahead of the pointer |
 | Folder chooser, file open panel, alert and confirm dialogs | Same (the shell's bridge) |
 | Downloads to ~/Downloads, revealed in Finder | Same |
 | Reopen after an update that changed the window | Same: the bundle is opened again after this process ends |
