@@ -187,5 +187,47 @@ shot "mail-search-light-expanded" 4
 OPENED="$(ask fda "fetch('/api/libraries/suggestions/full-disk-access',{method:'POST'}).then(r=>r.status+' '+r.headers.get('content-type'))")"
 echo "full disk access setting: $OPENED"
 
+# View, Zoom In twice: the web view's own page zoom (desktop/wails/zoom.go),
+# so the page lays out at 125% and a menu opens at its button. The zoom of
+# v1.190 and v1.191 (CSS zoom on the body) opened menus a quarter of the
+# way across the window from their buttons.
+state light 0 library; sleep 4
+W0="$(ask zoomw0 "String(innerWidth)")"
+ask zoomin "window.__studioShell.call('Zoom',['in']).then(()=>window.__studioShell.call('Zoom',['in'])).then(String)" >/dev/null
+sleep 2
+ZM="$(ask zoom "new Promise(r=>setTimeout(r,500)).then(()=>{const t=[...document.querySelectorAll('[aria-haspopup]')].find(e=>e.getBoundingClientRect().width>0);if(!t)return JSON.stringify({trigger:null});t.click();return new Promise(r=>setTimeout(r,800)).then(()=>{const a=t.getBoundingClientRect();const ps=[...document.querySelectorAll('[role=menu],[role=listbox],[role=dialog],[data-radix-popper-content-wrapper],[popover]')].filter(e=>e.getBoundingClientRect().width>0);const p=ps[ps.length-1];const b=p&&p.getBoundingClientRect();return JSON.stringify({zoom:window.__studioShell.zoom(),bodyZoom:document.body.style.zoom,innerWidth:innerWidth,innerHeight:innerHeight,trigger:[a.left,a.top,a.right,a.bottom].map(Math.round),menu:b?[b.left,b.top,b.right,b.bottom].map(Math.round):null})})})")"
+echo "zoom: $ZM (width at 100%: $W0)"
+shot "zoom-125-library-light-expanded" 1
+report zoomed
+if python3 -I - "$ZM" "$W0" "$OUT/window-zoomed.json" <<'PY'
+import json, sys
+z, w0 = json.loads(sys.argv[1]), float(sys.argv[2])
+native = json.load(open(sys.argv[3])).get("pageZoom")
+t, m = z.get("trigger"), z.get("menu")
+problems = []
+if abs(z.get("zoom", 0) - 1.25) > 0.001 or abs((native or 0) - 1.25) > 0.001:
+    problems.append(f"zoom {z.get('zoom')}, the web view's pageZoom {native}, want 1.25")
+if z.get("bodyZoom"):
+    problems.append(f"the body carries CSS zoom {z['bodyZoom']}")
+if abs(z["innerWidth"] * 1.25 - w0) > w0 * 0.03:
+    problems.append(f"the page is {z['innerWidth']} px wide, want about {w0 / 1.25:.0f} (laid out at 125%)")
+if not t or not m:
+    problems.append("no menu button, or its menu did not open")
+else:
+    overlap = min(m[2], t[2]) - max(m[0], t[0])
+    gap = max(m[1] - t[3], t[1] - m[3], 0)
+    if overlap <= 0 or gap > 16:
+        problems.append(f"the menu {m} is not at its button {t}")
+    if m[0] < 0 or m[1] < 0 or m[2] > z["innerWidth"] or m[3] > z["innerHeight"]:
+        problems.append(f"the menu {m} runs off the window")
+print("\n".join(problems))
+sys.exit(1 if problems else 0)
+PY
+then echo "ok zoomed to 125%, the page lays out at that size and the menu opens at its button"
+else echo "FAIL the zoom"; FAIL=1
+fi
+page "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))"
+ask zoomreset "window.__studioShell.call('Zoom',['reset']).then(String)" >/dev/null
+
 ls "$OUT"
 exit "$FAIL"

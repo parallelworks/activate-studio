@@ -52,6 +52,10 @@ func (b *Bridge) SetCompactTitle(compact bool) map[string]int { return b.app.set
 // SetBarColor paints the window's title bar (titlebar.go).
 func (b *Bridge) SetBarColor(color string) error { return b.app.setBarColor(color) }
 
+// Zoom changes the window's page zoom ("in", "out", "reset") or, with "",
+// reports it, and answers the level (zoom.go).
+func (b *Bridge) Zoom(op string) float64 { return b.app.setZoom(op) }
+
 // OpenLogs opens the folder with the server's log in the file manager.
 // (Wails' BrowserOpenURL takes web addresses only.)
 func (b *Bridge) OpenLogs() { openFolder(filepath.Join(b.app.cfg.DataDir, "logs")) }

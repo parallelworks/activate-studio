@@ -142,6 +142,7 @@ You can also ask the assistant to run a pw code agent on one of your clusters, f
 The address bar follows what you are looking at, so back and forward work and a copied link opens the same place for someone else.
 
 - **Search**, at the top of the navigation, searches the knowledge base; Ctrl+K (⌘K on a Mac) jumps to it from anywhere.
+- In the desktop app, Ctrl+= and Ctrl+- (⌘= and ⌘- on a Mac, also in the View menu) make everything larger or smaller, and Ctrl+0 (⌘0) returns to actual size. The app opens at the size it was left at. In a browser, the browser's own zoom does this.
 - The navigation groups its pages under **Knowledge** and **Run**; click a group's name to fold it away, and {appName} remembers.
 - **Install app**, in the navigation, installs {appName} as a desktop app in its own window. If a classification banner is shown, the chevron in Chrome's title bar moves the banner into the title bar. The loading screen draws the banner as it was last shown, so the title bar has no gap while the app starts.
 - The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.

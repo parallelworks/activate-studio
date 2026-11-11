@@ -164,13 +164,22 @@
   // which adds or removes its toolbar row and answers the new height and
   // reach. Until the page says, the layout is the one the last launch
   // ended with (cfg.titleCompact), so a launch does not jump.
+  //
+  // The row's height and reach are in the window's points. With the window
+  // zoomed by z (zoom.go: the web view's page zoom) a page px is z points,
+  // so they are divided by the zoom: the row stays level with the window
+  // controls, which do not zoom. The row keeps at least 36 px (or its own
+  // height, if less) so the buttons in it still fit at the larger zooms.
+  var zoom = 1;
+  var rowAt = null; // the row as last set, in points: [top, controls]
   var inset = Number(cfg.titleInset) || 0;
+  var root = document.documentElement;
   if (inset > 0) {
-    var root = document.documentElement;
     var setRow = function (top, controls) {
-      inset = top;
-      root.style.setProperty('--shell-top', top + 'px');
-      root.style.setProperty('--shell-controls', controls + 'px');
+      rowAt = [top, controls];
+      inset = Math.max(top / zoom, Math.min(top, 36));
+      root.style.setProperty('--shell-top', inset + 'px');
+      root.style.setProperty('--shell-controls', (controls / zoom) + 'px');
     };
     root.classList.add('shell-inset');
     setRow(inset, Number(cfg.titleControls) || 0);
@@ -235,6 +244,29 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', followBar); else followBar();
 
+  // The window's zoom (zoom.go). The shell says the level when it changes
+  // (setZoom); a page that has just loaded asks, which on Linux also applies
+  // the level saved by the last launch. Where the window has no menu
+  // (cfg.zoomKeys, Linux) Ctrl+=, Ctrl+- and Ctrl+0 change it, as in a
+  // browser.
+  function setZoom(z) {
+    z = Number(z);
+    if (!(z > 0)) return;
+    zoom = z;
+    if (rowAt) setRow(rowAt[0], rowAt[1]);
+  }
+  call('Zoom', ['']).then(setZoom, function () { /* an older shell: no zoom */ });
+  if (cfg.zoomKeys) {
+    window.addEventListener('keydown', function (e) {
+      if (!e.ctrlKey || e.altKey || e.metaKey) return;
+      var op = e.key === '=' || e.key === '+' ? 'in' : e.key === '-' || e.key === '_' ? 'out' : e.key === '0' ? 'reset' : '';
+      if (!op) return;
+      e.preventDefault();
+      e.stopPropagation();
+      call('Zoom', [op]).then(setZoom, function () { /* the zoom stays as it was */ });
+    }, true);
+  }
+
   window.__studioShell = {
     cfg: cfg,
     call: call,
@@ -244,7 +276,13 @@
     readyStateAtInstall: readyStateAtInstall,
     nativeOpen: nativeOpen,
     setDownloads: function (mode) { downloads = mode; },
+    setZoom: setZoom,
+    zoom: function () { return zoom; },
     fileDrop: function (x, y, files) {
+      // The drop's place is in the window's points; the page's px are
+      // zoom points each.
+      x = x / zoom;
+      y = y / zoom;
       // The page saw the drag arrive but not this drop, so its highlights
       // would stay on.
       var over = document.elementFromPoint(x, y);

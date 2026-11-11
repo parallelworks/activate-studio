@@ -82,7 +82,9 @@ type App struct {
 	// compactTitle: a classification banner is shown, and the window
 	// controls sit at a plain title bar's height over it (titlebar.go).
 	compactTitle bool
-	moved        *struct {
+	// zoom: the web view's page zoom (zoom.go).
+	zoom  float64
+	moved *struct {
 		port int
 		hash string
 	}
@@ -300,7 +302,10 @@ func (a *App) shimScript() string {
 	compact := a.compactTitle
 	a.mu.Unlock()
 	inset, controls := titleMetrics(compact)
-	cfg := map[string]any{"test": a.test != nil, "titleInset": inset, "titleControls": controls, "titleCompact": compact}
+	// zoomKeys: the page takes Ctrl+=, Ctrl+- and Ctrl+0 for the window's
+	// zoom, where no menu has them (Linux).
+	cfg := map[string]any{"test": a.test != nil, "titleInset": inset, "titleControls": controls, "titleCompact": compact,
+		"zoomKeys": zoomKeys}
 	b, _ := json.Marshal(cfg)
 	s := strings.Replace(shimJS, "__STUDIO_SHELL_CONFIG__", string(b), 1)
 	if a.test != nil {

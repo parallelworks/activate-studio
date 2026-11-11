@@ -116,6 +116,7 @@ func main() {
 	useOwnTitleBar(windowTitle)
 	app.restoreBarColor()
 	app.restoreCompactTitle()
+	app.restoreZoom()
 	watchMacWindow()
 
 	err = wails.Run(&options.App{
