@@ -2,9 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.191 (2026-11-11)
+## v1.192 (2026-11-11)
 
-_No pull requests; tag only._
+### Zoom the desktop window with the web view's own page zoom (#663)
+
+The macOS window has zoomed with CSS zoom on the page's body since the move to Wails (v1.190). In WebKit that leaves the pointer, the page's layout and what is drawn apart by the zoom factor. Measured in WebKit at 125%: a More actions button at x 564 opened its menu at x 705, the model and status menus ended at y 946 in a 900 px window, and the library divider moved 125 px for a 100 px drag.
+
+View, Zoom In, Zoom Out and Actual Size now set `WKWebView.pageZoom`, as the Swift window did, so the page lays out at the new size and menus and drags line up at any zoom. The Linux window gets Ctrl+=, Ctrl+- and Ctrl+0 through WebKitGTK's zoom level, which it did not have before. Steps run from 50% to 300%, and the level is kept in `run/window-zoom` for the next launch.
+
+The shim keeps the macOS title row level with the window controls, which do not zoom (at least 36 px so its buttons fit at high zoom), and maps file drops from window points to page pixels.
+
+Tested:
+- WebKit (Playwright) against a v1.190.2 server: CSS zoom misplaces every menu and the divider, page zoom places them as at 100%.
+- The Linux app built with this shell (Docker, `build_shell.sh wk41`, vet and tests pass) on the VNC desktop: Ctrl+= twice to 125%, the status and Add menus open at their buttons, the library divider follows the cursor, Ctrl+0 and Ctrl+- step as expected, and a relaunch opens at 125%.
+- `window_shots.sh` gains a check that zooms the Mac window to 125% and fails unless the page lays out at that size, the body has no CSS zoom, the web view's `pageZoom` is 1.25, and a menu opens at its button inside the window. The checker passes on the page zoom result and fails on the CSS zoom one.
+
+Not yet run on a Mac: the Objective-C side compiles and runs only in the mac-app workflow.
+
+## v1.191 (2026-11-10)
+
+### Change log through v1.191 (#661)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.191` before tagging v1.191.
 
 ## v1.190.2 (2026-11-10)
 
