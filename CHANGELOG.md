@@ -2,6 +2,42 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.193 (2026-11-12)
+
+### Updates: keep offering Reopen now until the app reopens (#665)
+
+After an update that changed the app's window, the **Updated to** line with **Reopen now** showed once. Dismissing it, or reloading the page, left the offer only in Settings, General, Updates, where it is easy to miss.
+
+Each page load now shows a shorter line, "Reopen to finish updating to vX", with **Reopen now**, while the server reports `reopen`. It does not show beside the announcement, which carries the button itself, nor while the page is asking the app to reopen on its own. Dismissing it hides it until the next load. It goes as soon as a status read reports `reopen` false, and a hosted deployment never shows it.
+
+Tests in `web/test/updateNotice.test.tsx` cover the dismissed and already seen cases, Reopen now from the reminder, clearing on `reopen` false, and hosted. HELP.md and REFERENCE.md describe the line.
+
+### Updates: a workflow deployment updates itself from Settings (#666)
+
+A Studio deployed through the ACTIVATE workflow refused updates ("This Studio is updated by its deployment"), so a new version meant relaunching the workflow.
+
+A deployment of a GitHub release now updates from Settings, General, Updates, as the Linux app does: the same check, signed and checksummed download, Roll back, and channel.
+
+**Who.** The workflow sets `STUDIO_UPDATE_OWNERS` from the platform's `PW_USER`. Where sign-in is on, only those usernames get the update routes; anyone else gets the hosted 403 as before. Without sign-in the deployment is one person's.
+
+**Server** (`internal/updates/deployment.go`). With `STUDIO_HOSTED_UPDATES=1` and a replaceable payload, a hosted Studio is mode `app` with `deployment: true`. It never sets `reopen`, treats a `requiresRelaunch` release as a restart, and removes the window files (`bin`, `share`, `install.sh`, `uninstall.sh`) from the new copy, as the workflow does.
+
+**Workflow.**
+- The server runs under `studio-serve.sh` in the workdir. Exit 75 and 76 start it again at once, other stops after a backoff. After an update (`pending.json`), three stops within two minutes put `.payload.previous` back and write `rolled-back.json`, matching the Linux app's run loop.
+- `STUDIO_RESTARTABLE=1` is set, since the loop restarts.
+- The watchdog stops the loop before the server and looks twice, 30 seconds apart, before acting. The stop step and cleanup sweep the loop.
+- A relaunch that follows Stable keeps an updated copy that is not older than Stable. A pinned tag keeps it while the tag is unchanged. Load Latest Bundle replaces it.
+- Bucket bundles and containers are unchanged.
+
+**Web.** `deployment` adjusts two messages that told people to reopen the app.
+
+**Tested.**
+- `deployment_test.go`: mode gating, owners (case, `user:` prefix, nobody named, no sign-in), and an install of a `requiresRelaunch` release that restarts with 76, leaves no window files, `reopen` or `relaunch.json`, and keeps the previous copy.
+- The run loop on its own: a payload that exits at once is rolled back after three stops.
+- A real workflow deployment on the ACTIVATE platform, launched from this branch's yaml and pinned to v1.191, with this branch's server swapped in. Signed in through the session proxy, the username matched the owner the workflow recorded. **Update now** downloaded v1.192, swapped it in, and the loop restarted it within seconds. The page reloaded onto v1.192, `.payload.previous` held v1.191, and the new payload had no window files.
+
+Existing deployments pick this up after one relaunch with the updated workflow. Docs: DEPLOY.md, HELP.md, REFERENCE.md.
+
 ## v1.192 (2026-11-11)
 
 ### Zoom the desktop window with the web view's own page zoom (#663)
@@ -18,6 +54,10 @@ Tested:
 - `window_shots.sh` gains a check that zooms the Mac window to 125% and fails unless the page lays out at that size, the body has no CSS zoom, the web view's `pageZoom` is 1.25, and a menu opens at its button inside the window. The checker passes on the page zoom result and fails on the CSS zoom one.
 
 Not yet run on a Mac: the Objective-C side compiles and runs only in the mac-app workflow.
+
+### Change log through v1.192 (#664)
+
+CHANGELOG.md with v1.192, written with `node scripts/release-notes.mjs --changelog --next v1.192` before the tag, so the build carries its own notes.
 
 ## v1.191 (2026-11-10)
 
