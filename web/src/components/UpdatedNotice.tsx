@@ -20,11 +20,18 @@ export const SEEN_KEY = 'ade-seen-version'
  * app opens again. After an install the person started on the page before,
  * the app reopens on its own, and the reopened window announces the version;
  * after one installed while the Studio was idle, the line has Reopen now.
+ * Until the app reopens, every page load also shows a shorter line with
+ * Reopen now, so dismissing the first one or reloading does not lose the
+ * offer. Dismissing it hides it until the page loads again.
  */
 export function UpdatedNotice() {
   const flow = useUpdateFlow()
   const [shown, setShown] = useState<{ version: string; versions: ChangeVersion[] } | null>(null)
   const decided = useRef(false)
+  // The reminder waits until the page has decided whether to ask the app to
+  // reopen on its own, and after the person dismisses either line, until the
+  // page loads again.
+  const [quiet, setQuiet] = useState(true)
   const current = flow.status?.current.version ?? null
   const mode = flow.status?.mode ?? null
   const reopen = mode === 'app' && !!flow.status?.reopen
@@ -34,9 +41,10 @@ export function UpdatedNotice() {
     decided.current = true
     const announce = () => {
       let seen: string | null
-      try { seen = localStorage.getItem(SEEN_KEY) } catch { return }
+      // Nothing to announce: the reminder, if any, shows at once.
+      try { seen = localStorage.getItem(SEEN_KEY) } catch { setQuiet(false); return }
       try { localStorage.setItem(SEEN_KEY, current) } catch { /* not remembered */ }
-      if (!seen || !isVersion(seen) || !isNewer(current, seen)) return
+      if (!seen || !isVersion(seen) || !isNewer(current, seen)) { setQuiet(false); return }
       const since = seen
       changelogApi.get(since)
         .then(log => setShown({ version: current, versions: log.versions.filter(v => !isNewer(v.version, current)) }))
@@ -50,10 +58,23 @@ export function UpdatedNotice() {
     announce()
   }, [flow.none, current, mode, reopen])
 
-  if (!shown) return null
+  if (!shown) {
+    if (!reopen || quiet) return null
+    return (
+      <Callout variant="bar" tone="info" className="update-notice" testId="reopen-notice" onDismiss={() => setQuiet(true)}>
+        <div className="update-notice-row">
+          <span className="update-notice-text">
+            <b>Reopen to finish updating to {current}</b>
+            <span className="update-notice-sub"> · the app's window updates when the app reopens</span>
+          </span>
+          <div className="update-notice-actions"><ReopenApp /></div>
+        </div>
+      </Callout>
+    )
+  }
   const changes = shown.versions.reduce((n, v) => n + v.entries.length, 0)
   return (
-    <Callout variant="bar" tone="success" live className="update-notice" testId="updated-notice" onDismiss={() => setShown(null)}>
+    <Callout variant="bar" tone="success" live className="update-notice" testId="updated-notice" onDismiss={() => { setShown(null); setQuiet(true) }}>
       <div className="update-notice-row">
         <span className="update-notice-text">
           <b>Updated to {shown.version}</b>
@@ -62,7 +83,7 @@ export function UpdatedNotice() {
         </span>
         <div className="update-notice-actions">
           {reopen && <ReopenApp />}
-          <Button variant="secondary" size="sm" onClick={() => { setShown(null); openWhatsNew() }}>What's new</Button>
+          <Button variant="secondary" size="sm" onClick={() => { setShown(null); setQuiet(true); openWhatsNew() }}>What's new</Button>
         </div>
       </div>
     </Callout>
