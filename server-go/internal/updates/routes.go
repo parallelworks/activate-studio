@@ -12,6 +12,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
 	"github.com/parallelworks/activate-studio/server-go/internal/version"
 )
@@ -82,14 +83,17 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 	h := func(fn func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
 		return apierr.Handler(log, fn)
 	}
-	refuseHosted := func() error {
-		if u.Mode() == "hosted" {
+	// A hosted Studio is updated by its deployment; one whose deployment
+	// lets it update itself (deployment.go) is updated by the people the
+	// deployment names, and to anyone else it is as any hosted Studio.
+	refuseHosted := func(r *http.Request) error {
+		if u.Mode() == "hosted" || !u.MayUpdate(auth.UserOf(r)) {
 			return apierr.New(403, "This Studio is updated by its deployment, not from here.")
 		}
 		return nil
 	}
-	requireApp := func() error {
-		if err := refuseHosted(); err != nil {
+	requireApp := func(r *http.Request) error {
+		if err := refuseHosted(r); err != nil {
 			return err
 		}
 		if mode := u.Mode(); mode != "app" {
@@ -106,7 +110,7 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 	}
 
 	mux.HandleFunc("GET /api/updates", h(func(w http.ResponseWriter, r *http.Request) error {
-		if err := refuseHosted(); err != nil {
+		if err := refuseHosted(r); err != nil {
 			return err
 		}
 		// The window opening after the Mac slept past a check starts it
@@ -127,7 +131,7 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 	}))
 
 	mux.HandleFunc("POST /api/updates/check", h(func(w http.ResponseWriter, r *http.Request) error {
-		if err := refuseHosted(); err != nil {
+		if err := refuseHosted(r); err != nil {
 			return err
 		}
 		u.mu.Lock()
@@ -141,7 +145,7 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 	}))
 
 	mux.HandleFunc("POST /api/updates/install", h(func(w http.ResponseWriter, r *http.Request) error {
-		if err := requireApp(); err != nil {
+		if err := requireApp(r); err != nil {
 			return err
 		}
 		body := readBody(r)
@@ -212,7 +216,7 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 	// What installing a version would do, from its signed manifest: older
 	// or not, and whether it reads the state or needs a snapshot put back.
 	mux.HandleFunc("POST /api/updates/inspect", h(func(w http.ResponseWriter, r *http.Request) error {
-		if err := requireApp(); err != nil {
+		if err := requireApp(r); err != nil {
 			return err
 		}
 		vs, _ := readBody(r)["version"].(string)
@@ -248,7 +252,7 @@ func Routes(u *Updater, mux *http.ServeMux, log *slog.Logger) {
 	// release, downloaded and installed as a picked version is (retire.go),
 	// the state snapshot put back when it cannot read the state as it is.
 	mux.HandleFunc("POST /api/updates/rollback", h(func(w http.ResponseWriter, r *http.Request) error {
-		if err := requireApp(); err != nil {
+		if err := requireApp(r); err != nil {
 			return err
 		}
 		u.mu.Lock()

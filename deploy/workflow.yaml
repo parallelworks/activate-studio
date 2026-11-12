@@ -608,7 +608,17 @@ jobs:
             BUNDLE="${{ inputs.app_settings.bundle_file }}"
             KEY="bundle:$BUNDLE"
           fi
-          if [ -x payload/app/bin/studio-server ] && [ "$(cat .bundle 2>/dev/null)" = "$KEY" ] && [ "${{ inputs.app_settings.refresh_software }}" != "true" ]; then
+          # Following Stable, a payload the Studio updated itself to (Settings,
+          # Updates) is kept while it is not older than the Stable release.
+          HAVE="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' payload/app/build-info.json 2>/dev/null | head -n 1)"
+          NEWER=0
+          if [ "${{ inputs.app_settings.source }}" = "github" ] && [ "$TAG" = linux ] && [ -n "$HAVE" ] && [ "$(cat .bundle 2>/dev/null)" != "$KEY" ]; then
+            WANT="$(curl -fsSL --retry 3 "${URL%.tar.gz}.manifest.json" 2>/dev/null | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -n 1)"
+            if [ -n "$WANT" ] && [ "$(printf '%s\n%s\n' "$WANT" "$HAVE" | sort -V | tail -n 1)" = "$HAVE" ]; then NEWER=1; fi
+          fi
+          if [ -x payload/app/bin/studio-server ] && [ "${{ inputs.app_settings.refresh_software }}" != "true" ] && [ "$NEWER" = 1 ]; then
+            echo "The app in place ($HAVE) was updated from the Studio and is not older than Stable ($WANT); kept. Turn on Load Latest Bundle to replace it."
+          elif [ -x payload/app/bin/studio-server ] && [ "$(cat .bundle 2>/dev/null)" = "$KEY" ] && [ "${{ inputs.app_settings.refresh_software }}" != "true" ]; then
             echo "The app is in place ($KEY)."
           else
             rm -f incoming.tar.gz
@@ -758,8 +768,12 @@ jobs:
           fi
           : > app-custom.pids
           # Sweep by pattern too, scoped so other deployments on the node
-          # survive: studio servers are matched by working directory, the
+          # survive: run loops and studio servers are matched by working
+          # directory (a loop first, or it starts its server again), the
           # endpoint agent by this deployment's session name.
+          for p in $(pgrep -f "studio-serve[.]sh" 2>/dev/null); do
+            [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill "$p" 2>/dev/null && echo "  swept stale run loop $p"
+          done
           for p in $(pgrep -f "app/server/dist/main[.]js|payload/app/bin/studio-server" 2>/dev/null); do
             [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$PWD" ] && kill "$p" 2>/dev/null && echo "  swept stale server $p"
           done
@@ -790,6 +804,14 @@ jobs:
             GUFI_BIN="$P/gufi/bin" TESSDATA_PREFIX="$P/ocr/share/tessdata"
           export PATH="$P/ocr/bin:$PATH"
           PAYLOAD_ENV
+            # studio-serve.sh (below) starts the server again when it asks.
+            echo "export STUDIO_RESTARTABLE=1" >> ${SCRIPT}
+            # A payload from a GitHub release updates itself from Settings,
+            # Updates, for the person who launched this workflow (docs/DEPLOY.md).
+            if [ "${{ inputs.app_settings.source }}" = "github" ]; then
+              echo "export STUDIO_HOSTED_UPDATES=1" >> ${SCRIPT}
+              printf 'export STUDIO_UPDATE_OWNERS=%q\n' "${PW_USER:-}" >> ${SCRIPT}
+            fi
           fi
           echo "export PORT=${{ needs.get_ports.outputs.APP_PORT }}" >> ${SCRIPT}
           echo "export KB_ROOT=${{ inputs.kb_settings.kb_root }}" >> ${SCRIPT}
@@ -890,7 +912,7 @@ jobs:
             while read -r p; do [ -n "$p" ] && kill "$p" 2>/dev/null && echo "  killed $p"; done < app-custom.pids
             : > app-custom.pids
           fi
-          for pat in "server/dist/main[.]js" "payload/app/bin/studio-server" "pw endpoints http.*studio"; do
+          for pat in "studio-serve[.]sh" "server/dist/main[.]js" "payload/app/bin/studio-server" "pw endpoints http.*studio"; do
             pkill -f "$pat" 2>/dev/null && echo "  killed by pattern: $pat"
           done
           echo "cleanup complete"
@@ -944,7 +966,65 @@ jobs:
             cat >> ${SCRIPT} << 'APP_LAUNCH'
           echo "Starting Studio server on port ${PORT} over ${KB_ROOT} ..."
           [ -f app.log ] && mv -f app.log app.log.prev
-          setsid nohup "$PWD/payload/app/bin/studio-server" > app.log 2>&1 < /dev/null &
+          # The run loop: exit 75 (a restart) and 76 (an update from Settings,
+          # Updates replaced the payload) start the server again at once, any
+          # other stop after a pause. After an update (pending.json, which the
+          # server clears once it has been up a minute) a server that stops
+          # three times within two minutes is broken: the previous payload,
+          # kept as .payload.previous, is put back, as the Linux app does.
+          cat > studio-serve.sh << 'SERVE'
+          cd "$(dirname "$0")"
+          # Where the server keeps its update marks (no STUDIO_DATA_DIR here).
+          UPD="${INDEX_BASE}/updates"
+          pid= stopping=0 fails= backoff=2
+          trap 'stopping=1; [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null' TERM INT HUP
+          field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$UPD/pending.json" 2>/dev/null | head -n 1; }
+          while [ "$stopping" = 0 ]; do
+            # An update cut off between its two moves leaves no payload here.
+            if [ ! -x payload/app/bin/studio-server ] && [ -d .payload.previous ]; then
+              rm -rf .payload.failed; [ -e payload ] && mv payload .payload.failed
+              mv .payload.previous payload && echo "$(date -Is) the previous payload is back after an update was cut off"
+              rm -f "$UPD/swap.json" "$UPD/pending.json"
+            fi
+            started=$(date +%s)
+            "$PWD/payload/app/bin/studio-server" &
+            pid=$!
+            wait "$pid"; code=$?
+            while kill -0 "$pid" 2>/dev/null; do wait "$pid"; code=$?; done
+            pid=
+            [ "$stopping" = 1 ] && break
+            now=$(date +%s)
+            if [ -f "$UPD/pending.json" ] && [ $((now - started)) -gt 60 ]; then
+              rm -f "$UPD/pending.json"; fails=
+            elif [ -f "$UPD/pending.json" ] && [ "$code" != 75 ] && [ "$code" != 76 ]; then
+              recent= n=0
+              for t in $fails $now; do
+                if [ $((now - t)) -le 120 ]; then recent="$recent $t"; n=$((n + 1)); fi
+              done
+              fails="$recent"
+              if [ "$n" -ge 3 ] && [ -d .payload.previous ]; then
+                from="$(field to)" to="$(field from)"
+                chmod -R u+w .payload.failed 2>/dev/null; rm -rf .payload.failed
+                if mv payload .payload.failed && mv .payload.previous payload; then
+                  printf '{\n "from": "%s",\n "to": "%s",\n "at": "%s",\n "reason": "it stopped %s times within two minutes of starting"\n}\n' \
+                    "${from:-unknown}" "${to:-unknown}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$n" > "$UPD/rolled-back.json"
+                  rm -f "$UPD/pending.json"
+                  chmod -R u+w .payload.failed 2>/dev/null; rm -rf .payload.failed
+                  echo "$(date -Is) ${from:-the new version} stopped $n times within two minutes; ${to:-the previous version} is back"
+                  fails= backoff=2
+                  continue
+                fi
+              fi
+            fi
+            case "$code" in 75|76) backoff=2; continue ;; esac
+            [ $((now - started)) -gt 60 ] && backoff=2
+            echo "$(date -Is) the server stopped with status $code; starting it again in ${backoff}s"
+            sleep "$backoff" & wait $!
+            backoff=$(( backoff * 2 > 60 ? 60 : backoff * 2 ))
+          done
+          SERVE
+          setsid nohup bash "$PWD/studio-serve.sh" > app.log 2>&1 < /dev/null &
+          echo "$!" > serve.pid
           APP_LAUNCH
           fi
           cat >> ${SCRIPT} << 'APP_LAUNCH'
@@ -991,9 +1071,11 @@ jobs:
           cd "\$(dirname "\$0")"
           while sleep 120; do
             app=1; agent=1
-            curl -sf -m 8 "localhost:${PORT}/healthz" > /dev/null || app=0
+            # A second look: the run loop restarts the server after an update.
+            curl -sf -m 8 "localhost:${PORT}/healthz" > /dev/null || { sleep 30; curl -sf -m 8 "localhost:${PORT}/healthz" > /dev/null || app=0; }
             kill -0 "\$(cat agent.pid 2>/dev/null)" 2>/dev/null || agent=0
             [ "\$app\$agent" = 11 ] && continue
+            [ -f serve.pid ] && kill "\$(cat serve.pid)" 2>/dev/null
             for p in \$(pgrep -f "app/server/dist/main[.]js|payload/app/bin/studio-server" 2>/dev/null); do
               [ "\$(readlink /proc/\$p/cwd 2>/dev/null)" = "\$PWD" ] && kill "\$p" 2>/dev/null
             done

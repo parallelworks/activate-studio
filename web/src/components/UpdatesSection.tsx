@@ -17,8 +17,8 @@ const CHANNELS: SelectItem<UpdatePolicy['channel']>[] = [
 ]
 
 /** What the confirmation says about installing a picked version. */
-function pickDescription(c: VersionCheck, from: string): string {
-  const reopen = c.requiresRelaunch ? ' The app reopens to finish.' : ' The Studio restarts on it.'
+function pickDescription(c: VersionCheck, from: string, deployment = false): string {
+  const reopen = c.requiresRelaunch && !deployment ? ' The app reopens to finish.' : ' The Studio restarts on it.'
   if (!c.readable && c.snapshot) {
     return `${c.version} cannot read this Studio's data as it is now, so the settings, conversations and credentials saved ${formatDateTime(c.snapshot.at, 'short')} (before ${c.snapshot.from} changed to ${c.snapshot.to ?? 'another version'}) are put back. What is there now is kept in a snapshot.${reopen}`
   }
@@ -221,7 +221,7 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
       {picked && (
         <ConfirmModal open onClose={() => setPicked(null)}
           title={`Install ${picked.version}?`}
-          description={pickDescription(picked, current.version)}
+          description={pickDescription(picked, current.version, !!status.deployment)}
           confirmLabel="Install"
           onConfirm={() => { const c = picked; setPicked(null); void updateActions.installVersion(c.version, !c.readable) }} />
       )}
@@ -271,7 +271,9 @@ export function UpdateProgress({ flow, barClassName = 'settings-field' }: { flow
         <Callout className="rag-banner" tone="error" live
           title={`${waiting.version ? `Version ${waiting.version}` : 'The new version'} did not start within three minutes`}
           action={<Button variant="secondary" size="sm" onClick={reloadPage}>Reload</Button>}>
-          The app may have gone back to the version it had. Reload the page to see which version is running, or quit and reopen the app.
+          {status.deployment
+            ? 'The Studio may have gone back to the version it had. Reload the page to see which version is running, or launch its workflow again.'
+            : 'The app may have gone back to the version it had. Reload the page to see which version is running, or quit and reopen the app.'}
         </Callout>
       )}
     </>
