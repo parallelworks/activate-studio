@@ -262,6 +262,67 @@ func parseEnvelope(content, nonce string, names []string, hasNames bool) []envCa
 	return calls
 }
 
+var fenceAroundRe = regexp.MustCompile("(?s)```[a-z_]*\\s*$")
+
+// splitEnvelope reads a reply on the emulated tool path. A reply that is
+// the envelope alone gives its calls and no text. Some models write a
+// sentence or two first and the envelope after it, or between paragraphs;
+// such an envelope counts when it carries this turn's nonce (one quoted
+// from a file or an earlier turn does not), and is cut out of the text the
+// user sees, along with a markdown fence around it. With no envelope found
+// the text comes back whole and calls is nil.
+func splitEnvelope(content, nonce string, names []string, hasNames bool) (string, []envCall) {
+	if calls := parseEnvelope(content, nonce, names, hasNames); calls != nil {
+		return "", calls
+	}
+	if nonce == "" || !strings.Contains(content, "studio-tools-1") {
+		return content, nil
+	}
+	type span struct{ from, to int }
+	var cut []span
+	var calls []envCall
+	found := false
+	for at := 0; ; {
+		k := strings.Index(content[at:], "studio-tools-1")
+		if k < 0 {
+			break
+		}
+		k += at
+		at = k + 1
+		// The object opens at one of the few braces just before the marker.
+		for open, tries := strings.LastIndex(content[:k], "{"), 0; open >= 0 && tries < 4 && k-open < 400; open, tries = strings.LastIndex(content[:open], "{"), tries+1 {
+			dec := json.NewDecoder(strings.NewReader(content[open:]))
+			var d map[string]any
+			if dec.Decode(&d) != nil || d["protocol"] != "studio-tools-1" || jsString(d["nonce"]) != nonce {
+				continue
+			}
+			end := open + int(dec.InputOffset())
+			found = true
+			calls = append(calls, parseEnvelope(content[open:end], nonce, names, hasNames)...)
+			from, to := open, end
+			if loc := fenceAroundRe.FindStringIndex(content[:from]); loc != nil {
+				if rest := strings.TrimLeft(content[to:], " \t\r\n"); strings.HasPrefix(rest, "```") {
+					from, to = loc[0], len(content)-len(rest)+3
+				}
+			}
+			cut = append(cut, span{from, to})
+			at = to
+			break
+		}
+	}
+	if !found {
+		return content, nil
+	}
+	var b strings.Builder
+	last := 0
+	for _, s := range cut {
+		b.WriteString(content[last:s.from])
+		last = s.to
+	}
+	b.WriteString(content[last:])
+	return strings.TrimSpace(b.String()), calls
+}
+
 // orderedFromJSON keeps nothing of the key order Go's decoder lost; the
 // arguments are re-read in source order where they can be.
 func orderedFromJSON(v any) any { return v }

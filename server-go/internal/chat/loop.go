@@ -201,7 +201,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 					if text == "" {
 						text = buffered
 					}
-					calls := parseEnvelope(text, nonce, offered, p.hasTools)
+					prose, calls := splitEnvelope(text, nonce, offered, p.hasTools)
 					if calls == nil && attempt < 2 && ctx.Err() == nil && looksLikeRefusal(text) {
 						m.A.Log.Warn("model refused the emulated tool format; retrying with a plainer request", "attempt", attempt)
 						// Node writes a corrective note into the emulated prompt here, which
@@ -217,9 +217,13 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 							t.ToolCalls = append(t.ToolCalls, llm.ToolCall{Index: &i, ID: fmt.Sprintf("em-%s-%s-%d", nonce, now, ci), Type: "function", Function: llm.Function{Name: c.Name, Arguments: c.Arguments}})
 						}
 						t.FinishReason = sp("tool_calls")
-						t.Content = ""
-					} else if buffered != "" {
-						st.callbacks.OnContent(buffered)
+					}
+					// Text the model wrote around an envelope is shown, as
+					// a natively calling model's would be; the envelope
+					// itself never is, even one naming no offered lookup.
+					t.Content = prose
+					if prose != "" {
+						st.callbacks.OnContent(prose)
 					}
 					return t, nil
 				}
