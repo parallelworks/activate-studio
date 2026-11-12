@@ -2425,6 +2425,13 @@ a.identity-btn { text-decoration: none; }
    scrolling would carry the composer with it. The drawer layout's box only
    hides its overflow, which a script can still scroll. */
 .chat-canvas .chat-thread { position: relative; overscroll-behavior: none; }
+/* A screen reader label sits where its text would be. Inside a box that
+   clips (a folded or height-limited block of an answer) that place can be
+   thousands of pixels below the box, and the label, placed against the
+   thread rather than the box, escaped the clip and stretched the thread:
+   blank space under the composer, and a chat that opened and jumped into it.
+   Pinned to the top of whatever places it, a label adds no scroll height. */
+.chat-canvas .chat-thread .sr-only { top: 0; left: 0; }
 .chat-canvas .overflow-hidden:has(.chat-thread) { overflow: clip; }
 [data-testid="tool-call-part"] { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 [data-testid="tool-call-part"] > :first-child { flex: 0 1 auto; min-width: 0; }
