@@ -2670,3 +2670,50 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
    server has no poppler: each the column's width, white like paper. */
 .pdf-page-js { width: 100%; max-width: 1100px; margin: 0 auto 12px; background: #fff; box-shadow: 0 0 0 1px var(--ade-border, #ddd); }
 .pdf-page-js canvas { display: block; width: 100%; height: 100%; }
+
+/* CSV and TSV files as a table (Viewer, Table tab). The table scrolls in a
+   box of its own, sized to the window, so its header row stays in view:
+   the library pane scrolls the whole file, and a header pinned to that
+   would sit under the viewer's own sticky head and tabs. */
+.csv-view { padding: 12px 20px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.csv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.csv-filter {
+  flex: 0 1 280px; min-width: 160px; padding: 5px 8px; font: inherit; font-size: 13px;
+  border: 1px solid var(--pw-border-strong); border-radius: 6px; background: var(--pw-panel); color: var(--pw-text);
+}
+.csv-count { font-size: 12px; }
+.csv-scroll {
+  overflow: auto; max-height: max(260px, calc(100dvh - 230px));
+  border: 1px solid var(--pw-border); border-radius: 8px; background: var(--pw-panel);
+}
+.csv-table { border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 1.45; width: max-content; min-width: 100%; }
+/* Columns take their content's width, so short values never wrap; a long
+   value wraps at a reading width inside its cell (.csv-c), since a table
+   cell's own max-width does not hold under automatic table layout. */
+.csv-table th, .csv-table td {
+  padding: 5px 10px; text-align: left; vertical-align: top;
+  border-bottom: 1px solid var(--pw-border); border-right: 1px solid var(--pw-border);
+}
+.csv-c { max-width: 26rem; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+.csv-table th:last-child, .csv-table td:last-child { border-right: none; }
+.csv-table thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--pw-bg); padding: 0;
+  border-bottom: 1px solid var(--pw-border-strong); white-space: nowrap;
+}
+.csv-table thead th button {
+  all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 6px 10px; font-weight: 600; color: var(--pw-text); cursor: pointer;
+}
+.csv-table thead th.num button { justify-content: flex-end; }
+.csv-table thead th button:hover { background: var(--theme-hover); }
+.csv-table thead th button:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; }
+.csv-sort { font-size: 9px; color: var(--pw-muted); min-width: 9px; }
+.csv-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.csv-table tbody tr:nth-child(even) td { background: var(--pw-bg); }
+.csv-table tbody tr:hover td { background: var(--theme-hover); }
+.csv-table .csv-n {
+  position: sticky; left: 0; z-index: 1; text-align: right; color: var(--pw-muted);
+  font-variant-numeric: tabular-nums; background: var(--pw-panel); min-width: 3ch; white-space: nowrap;
+}
+.csv-table thead .csv-n { z-index: 3; background: var(--pw-bg); }
+.csv-more { display: flex; align-items: center; gap: 12px; }

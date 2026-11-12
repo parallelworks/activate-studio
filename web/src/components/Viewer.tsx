@@ -8,6 +8,7 @@ const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.M
 import { DataTree } from './DataTree'
 import { DagViewer } from './DagViewer'
 import { PdfJsPages } from './PdfJsPages'
+import { CsvTable, DELIMITED_SUFFIXES } from './CsvTable'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 /** Office files the server reads without LibreOffice (officePreview.ts). */
@@ -385,6 +386,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   const isJson = JSON_SUFFIXES.includes(suffix)
   const isYaml = YAML_SUFFIXES.includes(suffix)
   const isStructured = (isJson || isYaml) && isText
+  const isDelimited = DELIMITED_SUFFIXES.includes(suffix) && isText && file.content != null
   // A YAML file with a jobs map is a platform workflow, and the DAG is the
   // reading of it people actually want. The heuristic only decides whether
   // the tab appears; the server's parse is the authority on the content.
@@ -429,7 +431,9 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
 
   const treeView = <DataTree text={file.content ?? ''} format={isYaml ? 'yaml' : 'json'} />
 
-  const previewView = isStructured ? treeView : isHtml ? (
+  const previewView = isStructured ? treeView : isDelimited ? (
+    <CsvTable text={file.content ?? ''} suffix={suffix} truncated={file.truncated} />
+  ) : isHtml ? (
     <iframe
       sandbox="allow-scripts"
       src={withLibrary(`/api/kb/html?path=${encodeURIComponent(path)}`)}
@@ -456,13 +460,13 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   // A file's tabs are the representations it actually has: a rendered
   // preview where one exists, the bytes as written, and the text the
   // index holds for formats whose text is extracted rather than read.
-  const previewLabel = isStructured ? 'Tree' : isMarkdown ? 'Rendered' : isHtml ? 'Page' : isPdf ? 'Pages' : isOffice ? officeLabel(suffix) : 'Preview'
+  const previewLabel = isStructured ? 'Tree' : isDelimited ? 'Table' : isMarkdown ? 'Rendered' : isHtml ? 'Page' : isPdf ? 'Pages' : isOffice ? officeLabel(suffix) : 'Preview'
   const views: { key: Tab; label: string; node: ReactElement }[] = []
   if (isWorkflowYaml) {
     // First, so a workflow file opens on its DAG rather than on the tree.
     views.push({ key: 'workflow', label: 'Workflow', node: <div className="workflow-tab-body"><DagViewer path={path} /></div> })
   }
-  const hasRendered = isStructured || isMarkdown || isHtml || isImage || ((isPdf || isOffice) && previewGone === null) || isModel
+  const hasRendered = isStructured || isDelimited || isMarkdown || isHtml || isImage || ((isPdf || isOffice) && previewGone === null) || isModel
   if (hasRendered) views.push({ key: 'preview', label: previewLabel, node: previewView })
   if (isText) views.push({ key: 'source', label: hasRendered ? 'Source' : 'Text', node: sourceView })
   if (!isText && (isImage || isPdf || isOffice || isModel)) {
