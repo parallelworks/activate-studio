@@ -2,6 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.196 (2026-11-12)
+
+### Chat: no blank space under the composer from screen reader labels (#677)
+
+A screen reader label (a link's "opens in new tab" text) inside a clipped block of an answer was positioned against the chat thread, escaped the clip, and stretched the thread's scroll height far past the composer. Opening such a chat, or Jump to latest, scrolled into blank space.
+
+The labels in the thread are now pinned to the top of their containing block, so they add no scroll height.
+
+Verified in WebKit and Chromium with a clipped block holding a link: scroll height 6016 against a composer bottom of 2541 before, equal after.
+
+### Code: list pw code sessions on the platform and link to them (#675)
+
+A **Code** page (Run group, shown only with a platform connection, like Workflows) for PW Code on the web:
+
+- Lists the viewer's pw code sessions across the platform's machines, the same list as the platform's Code page: waiting for you, working, recent, and archived behind **Show archived**; pinned first; filter by title, machine, folder, model or branch. A line names the machines whose pw code daemon is running.
+- Choosing a session shows its conversation read only (user messages, replies as Markdown, each tool call on one line with its result folded under it), opened at the latest messages and refreshed every 5 s while it works. Status, machine, folder, model, branch and pull requests head it.
+- **Open in ACTIVATE** opens `/code/<machine id>/<session id>` on the platform; **New session in ACTIVATE** opens its Code page.
+
+Server: `internal/codesessions` serves `GET /api/code-sessions` and `GET /api/code-sessions/item`, reading the platform's `/api/code/sessions` and `/api/code/machines/{m}/sessions/{id}` as the viewer with the run pane's credential. History is trimmed (latest 400 items, no thinking or turn markers, tool results cut to 1,500 characters). A 403, or a 404 on the list, is explained as the agents preview being off. Read only by design: the platform's start, message, approve and stop routes are internal to its preview; when its client is opened up, the same credential can drive them.
+
+Checked against a live platform (17 sessions, one connected machine): list, detail, links. Tests: grouping, time and path labels, transcript folding (web), title, URL, view and id checks (Go); setup wizard tests updated for the new switch. HELP, README and REFERENCE updated.
+
 ## v1.195 (2026-11-12)
 
 ### chat: run a prompted tool call written after prose (#672)
@@ -40,6 +62,10 @@ New package `internal/docwrite`. Dependencies: `github.com/yuin/goldmark` v1.8.7
 The Node server's catalog entry for `write_kb_file` is unchanged; Studio runs the Go server, and CI does not run the Node catalog comparison.
 
 Tests: Markdown parsing, PDF output, DOCX parts well formed with the expected styles, numbering and links, XLSX from CSV, Markdown, JSON sheets and objects (types, formulas, sheet names), refusals. Checked end to end through a chat turn with a stub model writing each format, the PDF and the DOCX (via LibreOffice) rendered and inspected, and each file opened in the Library viewer. HELP, README and GO-PORT updated.
+
+### docs: change log through v1.195 (#676)
+
+Change log entries for v1.195 (#672, #673, #674).
 
 ## v1.194 (2026-11-12)
 
