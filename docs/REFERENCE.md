@@ -108,6 +108,10 @@ The full description, including where tiles come from, approvals for GitHub work
 
 Fleet agents each have a goal, a persona, a budget, and triggers: a schedule, a workflow run ending, or files changing under a folder. An agent wakes, does one bounded round of work with the assistant's tools, writes the outcome to its journal, and waits under **Needs you** when it needs a person; a message in its box is answered on its next round. Delegated tasks, the ways agents run, approvals, and steering are in [`AGENTS.md`](AGENTS.md).
 
+## Code
+
+`GET /api/code-sessions` reads the platform's `GET /api/code/sessions` as the viewer, with the credential the run pane uses, and answers `{machines, sessions, codeUrl}`: each session with its machine's name, a title (its name, the name given from its first message, or that message), its status, archived and pinned flags, the number of approvals waiting, and `url`, its page at `/code/<machine id>/<session id>` on the platform. `GET /api/code-sessions/item?machine=&id=` reads `GET /api/code/machines/<machine>/sessions/<id>` and answers the session and its latest 400 history items, without thinking and turn markers, a tool result cut to 1,500 characters and other text to 20,000, and `earlier`, the number left out. A 403, or a 404 for the list, means the platform's agents preview is off for the user, and says so. The page reads the list every 20 seconds and a working session every 5 while the tab is visible. Both routes only read; the platform's routes to start, message, approve and stop sessions are internal to its preview and are not called. The page shows only with a platform connection, as Workflows does.
+
 ## Status panel
 
 The Model card shows only while AI features are on. The Connections card shows only when there is something to list, grouped as the ACTIVATE platform, attached MCP servers, and the machines that hold remote libraries.

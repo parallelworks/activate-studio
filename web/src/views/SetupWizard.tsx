@@ -58,7 +58,7 @@ export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }:
           <Switch checked={shown.includes(s.id)} onCheckedChange={v => toggle(s.id, v)} aria-label={s.label} />
           <span>
             {s.label}
-            {s.id === 'workflows' && !platform && <span className="muted"> (needs a platform login)</span>}
+            {(s.id === 'workflows' || s.id === 'code') && !platform && <span className="muted"> (needs a platform login)</span>}
           </span>
         </label>
       ))}
