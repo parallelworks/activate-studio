@@ -85,6 +85,9 @@ type streamBody struct {
 	Tools           any               `json:"tools"`
 	Resume          any               `json:"resume"`
 	Library         any               `json:"library"`
+	// Effort is the composer's reasoning effort for this turn; empty
+	// leaves it to the model (and chatTemplateKwargs).
+	Effort *string `json:"effort"`
 }
 
 func sp(s string) *string { return &s }
@@ -362,6 +365,14 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 		allocation = os.Getenv("PW_ALLOCATION")
 	}
 	library := strOrNil(jsString(body.Library))
+	// Files the user linked with @ go in the system prompt, read as this
+	// user (messages[0] points at sys).
+	for i := len(raw) - 1; i >= 0; i-- {
+		if raw[i].Role == "user" {
+			sys += m.mentionNote(r, raw[i].Text(), ToolCtx{LabelScope: labelScope, Library: library, UserKey: pwToolKey, ConversationID: strOrNil(convID), UserID: strOrNil(userID(r))})
+			break
+		}
+	}
 	cited := &CitationContext{Known: map[string]string{}, Library: deref(library)}
 	var citedMu sync.Mutex
 	if c := m.Conv.Get(convID); c != nil {
@@ -509,7 +520,7 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 		markThinking: markThinking, flushCites: flushCites, finish: finish, resume: resume, resumedFrom: &resumedFrom,
 		viewer: viewer, changes: changes, changeKey: changeKey, platform: platform, meta: meta, readerTools: readerTools, hasReader: hasReader,
 		activeGroups: activeGroups, groupsMu: &groupsMu, groupList: groupList, labelScope: labelScope, library: library, pwToolKey: pwToolKey,
-		convID: convID, lastUser: lastUserMsg(messages),
+		convID: convID, lastUser: lastUserMsg(messages), effort: effortOf(body.Effort),
 		timing: func(kind string, ms int64, extra string) {
 			switch kind {
 			case "round":

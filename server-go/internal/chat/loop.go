@@ -61,6 +61,7 @@ type loopState struct {
 	pwToolKey      *string
 	convID         string
 	lastUser       *llm.Message
+	effort         string
 	timing         func(kind string, ms int64, extra string)
 }
 
@@ -107,9 +108,11 @@ type payload struct {
 	hasTools  bool
 	maxTokens int
 	kwargs    json.RawMessage
+	// effort is the turn's reasoning effort, "" for the model's own.
+	effort string
 }
 
-func (p payload) object(stream, foldSystem bool, nonce string, dropCap bool) (*jsonobj.Object, bool) {
+func (p payload) object(stream, foldSystem bool, nonce string, dropCap, dropEffort bool) (*jsonobj.Object, bool) {
 	o := jsonobj.New()
 	_ = o.SetValue("model", p.model)
 	msgs := p.messages
@@ -130,8 +133,15 @@ func (p payload) object(stream, foldSystem bool, nonce string, dropCap bool) (*j
 	if !dropCap {
 		_ = o.SetValue("max_tokens", p.maxTokens)
 	}
-	if p.kwargs != nil {
-		o.Set("chat_template_kwargs", p.kwargs)
+	kwargs, topEffort := withEffort(p.kwargs, p.effort)
+	if dropEffort {
+		kwargs, topEffort = p.kwargs, ""
+	}
+	if kwargs != nil {
+		o.Set("chat_template_kwargs", kwargs)
+	}
+	if topEffort != "" {
+		_ = o.SetValue("reasoning_effort", topEffort)
 	}
 	if !stream {
 		_ = o.SetValue("stream", false)
@@ -152,6 +162,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	foldSystem := emulatesTools(model)
 	nonce := nonce8()
 	dropTokenCap := false
+	dropEffort := false
 	retryUnstreamed := false
 	res := st.res
 
@@ -159,7 +170,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		for attempt := 0; ; attempt++ {
 			streamThis := !ns && (attempt == 0 || !retryUnstreamed)
 			drop := dropTokenCap || m.noCap.has(model)
-			obj, emulating := p.object(streamThis, foldSystem, nonce, drop)
+			obj, emulating := p.object(streamThis, foldSystem, nonce, drop, dropEffort || m.noEffort(model))
 			var t *llm.Turn
 			var err error
 			if !emulating {
@@ -217,6 +228,15 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 				return t, nil
 			}
 			errText := err.Error()
+			// A provider that takes no reasoning effort, or not this one,
+			// gets the turn again without it, and this model keeps going
+			// without it until the Studio restarts.
+			if p.effort != "" && !dropEffort && rejectedEffort(errText) && attempt < 2 && ctx.Err() == nil && len(*st.finalContent) == 0 {
+				dropEffort = true
+				m.rememberNoEffort(model)
+				m.A.Log.Warn("provider refused the reasoning effort; retrying without it", "model", model, "effort", p.effort, "err", errText)
+				continue
+			}
 			rejectedTokenCap := unsupportedRe.MatchString(errText) && tokenCapRe.MatchString(errText)
 			var se *llm.StreamedError
 			streamed := errors.As(err, &se)
@@ -381,7 +401,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		sb, _ := jsonobj.Marshal(selected)
 		maxTokens := m.fitWindow(*messages, model, jsval.Len(string(sb)))
 		modelStart := time.Now()
-		turn, err := turnWithRetry(payload{model: model, messages: *messages, tools: selected, hasTools: true, maxTokens: maxTokens, kwargs: m.templateKwargsFor(model)})
+		turn, err := turnWithRetry(payload{model: model, messages: *messages, tools: selected, hasTools: true, maxTokens: maxTokens, kwargs: m.templateKwargsFor(model), effort: st.effort})
 		if err != nil {
 			return err
 		}
@@ -586,7 +606,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	for attempt := 0; attempt < 2; attempt++ {
 		*st.turnBreak = true
 		mt := m.fitWindow(finalMessages, model, 0)
-		t, err := turnWithRetry(payload{model: model, messages: finalMessages, maxTokens: mt, kwargs: m.templateKwargsFor(model)})
+		t, err := turnWithRetry(payload{model: model, messages: finalMessages, maxTokens: mt, kwargs: m.templateKwargsFor(model), effort: st.effort})
 		if err != nil {
 			return err
 		}

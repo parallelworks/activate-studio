@@ -7,7 +7,8 @@ import { useRunFile } from './runFile'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
 import { applyRememberedFavicon, applyRememberedNavWidth } from './config'
-import { keepShellInPlace } from './shellScroll'
+import { keepShellInPlace, settleAfterKeyboard } from './shellScroll'
+import { installClipboardFallback } from './clipboard'
 import { installDownloadNotices } from './downloadNotice'
 // Geist Sans and Geist Mono, the platform's typefaces, from the shared package.
 import '@parallelworks/ui/fonts.css'
@@ -20,6 +21,8 @@ import '@parallelworks/ui/logviewer.css'
 import './styles.css'
 
 keepShellInPlace()
+settleAfterKeyboard()
+installClipboardFallback()
 // A notice for each file the page saves (an exported conversation, a CSV).
 installDownloadNotices()
 

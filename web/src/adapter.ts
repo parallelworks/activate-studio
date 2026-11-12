@@ -1,5 +1,5 @@
 import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
-import { getChatLibrary, getLabelScope, getPersona } from './labelScope'
+import { getChatLibrary, getEffort, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
 import { fetchModels } from './api'
 import { rememberToolCommands } from './components/GufiCommands'
 
@@ -18,6 +18,14 @@ async function listModels(): Promise<ModelsList> {
 /** Stream one completion from the server's tool-loop endpoint over SSE. */
 const CUT_OFF = 'The reply was cut off before it arrived, for example by a restart of the Studio. Retry sends the message again.'
 
+/** The conversation's effort; a conversation without one yet (a new
+ *  chat's first turn) takes the last one chosen and keeps it from then on. */
+function effortFor(conversationId: string | undefined): string {
+  const e = getEffort(conversationId)
+  if (conversationId && !hasEffort(conversationId)) setEffort(e, conversationId)
+  return e
+}
+
 const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
   const res = await fetch('/api/chat/stream', {
     method: 'POST',
@@ -32,6 +40,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       labelScope: getLabelScope(),
       library: getChatLibrary(),
       agent: getPersona(),
+      effort: effortFor(req.conversationId) || null,
       tools: req.tools,
       // The user's answer to a call held for approval; the server runs what
       // it held for that call, never what the request says to run.

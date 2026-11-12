@@ -1325,10 +1325,16 @@ a.identity-btn { text-decoration: none; }
 /* Chat tables: soft header emphasis and subtle zebra striping. */
 /* A reply scrolls with the chat. Streamdown caps a table's box with an inline
    height, which cut long tables off mid row behind a scrollbar of their own.
-   A path breaks anywhere, or it holds its column at full width and pushes the
-   next one out of view; overflow-wrap does not reach WebKit's table sizing. */
+   A path in a cell breaks only after its separators: links and inline code
+   carry <wbr> there (components/breakable.tsx), which WebKit's table sizing
+   honors where it ignores overflow-wrap. Breaking anywhere kept columns
+   narrow but split words mid way, which read badly. */
 .chat-canvas [data-streamdown='table-wrapper'] > div:has(> table) { max-height: none !important; }
-.chat-canvas [data-streamdown='table'] td :is(a, button, code) { word-break: break-all; }
+.chat-canvas [data-streamdown='table'] td :is(a, button, code) { word-break: normal; overflow-wrap: normal; }
+/* Headers wrap between words like the cells under them: kept on one line,
+   a long header alone held its column wide enough to push the last
+   column out of view. */
+.chat-canvas [data-streamdown='table'] th { white-space: normal; }
 .chat-canvas [data-streamdown='table'] thead th { border-bottom: 1px solid var(--pw-border-strong); }
 .chat-canvas [data-streamdown='table'] tbody tr:nth-child(even) { background: var(--pw-bg); }
 /* divide-y sets 1px row borders whose color utility is missing (falls back
@@ -1466,6 +1472,9 @@ a.identity-btn { text-decoration: none; }
   box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
   padding: 6px; max-height: 320px; overflow-y: auto;
 }
+/* .chat-canvas > * gives every child the canvas's height; a palette is
+   as tall as its list. */
+.chat-canvas > .slash-palette { height: auto; }
 .slash-item {
   display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 10px;
   padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
@@ -1474,6 +1483,21 @@ a.identity-btn { text-decoration: none; }
 .slash-name { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
 .slash-desc { color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slash-foot { font-size: 11px; padding: 6px 10px 2px; }
+/* The @ file picker: the slash palette's box, a line saying where it
+   looks, file names in the body face. */
+.mention-head { font-size: 11px; padding: 4px 10px 6px; }
+.mention-item { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
+.mention-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mention-empty { padding: 8px 10px; font-size: 13px; }
+/* @[path] in a sent message: a link to the file, drawn without touching
+   the message's DOM (components/MentionLinks.tsx). */
+::highlight(studio-mention) { color: var(--pw-link); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+/* Reasoning effort beside the model: plain text with the select's own
+   arrow, like the model name next to it. */
+.composer-effort { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--pw-muted); white-space: nowrap; }
+.composer-effort-word { font-size: 12px; }
+.composer-effort select { font: inherit; color: var(--pw-text); background: transparent; border: 0; padding: 2px 0; cursor: pointer; }
+.composer-effort select:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 2px; border-radius: 4px; }
 
 /* Conversation scrubber: a tick per message down the side of the thread,
    hover to preview, click to jump. Vertical because that is the axis the
@@ -1851,6 +1875,16 @@ a.identity-btn { text-decoration: none; }
    single column with the navigation as an icon bar along the bottom edge,
    which is where thumbs are. Nothing changes above 760px, and nothing
    here touches color or type. */
+/* A touch screen of any width (an iPad as much as a phone): the page
+   itself never scrolls. iPadOS scrolls the whole page to keep the
+   composer above its on-screen keyboard and can leave it there when the
+   keyboard closes, which stranded the composer mid screen over a band of
+   blank page. The app is pinned to what is visible and the views scroll
+   inside themselves; main.tsx also puts the page back if it moved. */
+@media (hover: none) and (pointer: coarse) {
+  html, body, #root { height: 100%; overflow: hidden; overflow: clip; }
+  .app { position: fixed; inset: 0; height: 100dvh; }
+}
 @media (max-width: 760px) {
   /* Dynamic-toolbar browsers shrink the visual viewport as their chrome
      appears; 100% of the layout viewport leaves the bottom bar buried
