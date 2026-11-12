@@ -2,6 +2,45 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.195 (2026-11-12)
+
+### chat: run a prompted tool call written after prose (#672)
+
+Models on the prompted tool format sometimes write a sentence and then the `studio-tools-1` envelope in the same reply. The parser accepted only a reply that was the envelope alone, so the call never ran and the raw JSON showed in the chat.
+
+- `splitEnvelope` finds an envelope inside a reply when it carries this turn's nonce, cuts it (and a markdown fence around it) out of the text, and returns its calls. An envelope without the nonce, such as one quoted from a file, stays text.
+- The loop shows the text around the envelope, as it would for a natively calling model, and never shows the envelope itself, even when it names no offered tool.
+
+Tested with unit cases (whole reply, fenced, after a sentence, between paragraphs, foreign nonce, unoffered tool) and end to end against a stub model on the prompted format: the sentence streams, the tool runs, and the answer follows.
+
+### viewer: CSV and TSV files open as a table (#673)
+
+A delimited file used to open on its source text, one long line per row. It now opens on a **Table** tab:
+
+- RFC 4180 parsing (quoted fields, doubled quotes, line breaks inside a field), with the delimiter detected (comma, tab, semicolon, pipe; tab for .tsv).
+- Header row and row numbers stay in view; the table scrolls in its own box, sized to the window.
+- Columns size to their content; long values wrap at a reading width in their cell.
+- Numeric columns are right aligned and sort as numbers; a header click cycles ascending, descending, unsorted.
+- **Filter rows** keeps rows holding its text; rows are drawn 500 at a time with **Show more**.
+- A preview cut at the 512 KB limit drops the half row and says so. **Source** keeps the file as written.
+
+Tests: parser, delimiter detection, truncation, sort and filter (web suite 509 pass). Checked in the browser on a 1,300 row file. HELP and README updated.
+
+### chat: write PDF, Word and Excel files (#674)
+
+`write_kb_file` wrote text only, so asking the chat to save a report as a PDF got an explanation instead of a file. Now:
+
+- **.pdf / .docx**: made from the Markdown the model writes as `content`: headings, bold, italic, strike, code, web links (Studio-internal links keep their text), nested bulleted and numbered lists (each numbered list restarts at its own start), tables (column widths from content, numeric columns right aligned, header repeated across pages), block quotes, code blocks, rules. PDF is US Letter with 1 inch margins and page numbers; Word uses Calibri with real Heading 1-4 styles, a fixed table grid, and hyperlinks.
+- **.xlsx**: rows from CSV/TSV, Markdown tables (one sheet each, named by the heading above it), or JSON `{"sheets":[{"name":..,"rows":[[..]]}]}` (also a bare array of rows or of objects). Numbers become numbers (codes with leading zeros stay text), a value starting with `=` is a formula, the first row is bold, frozen and filterable, columns sized to content.
+- **.pptx, .doc, .xls, .odt** and similar are refused with what to write instead.
+- The tool description tells the model all this, so it stops saying it can only write text.
+
+New package `internal/docwrite`. Dependencies: `github.com/yuin/goldmark` v1.8.7 (MIT, was already indirect), `github.com/go-pdf/fpdf` v0.9.0 (MIT; the project is no longer developed but is stable and pure Go), and `excelize` promoted from indirect. The PDF embeds the first complete TrueType family on the host (DejaVu, Liberation, Arial, or `STUDIO_PDF_FONT_DIR`) so non-Latin characters draw; with none it falls back to Helvetica and Courier with a few symbols folded to ASCII.
+
+The Node server's catalog entry for `write_kb_file` is unchanged; Studio runs the Go server, and CI does not run the Node catalog comparison.
+
+Tests: Markdown parsing, PDF output, DOCX parts well formed with the expected styles, numbering and links, XLSX from CSV, Markdown, JSON sheets and objects (types, formulas, sheet names), refusals. Checked end to end through a chat turn with a stub model writing each format, the PDF and the DOCX (via LibreOffice) rendered and inspected, and each file opened in the Library viewer. HELP, README and GO-PORT updated.
+
 ## v1.194 (2026-11-12)
 
 ### Chat: @ to name library files, reasoning effort, table and copy fixes (#669)
@@ -22,6 +61,10 @@ Adds two composer features and fixes four chat problems.
 - Go: `go test ./internal/chat/ ./internal/settings/`, with new tests for mention parsing and the effort mapping and refusal detection.
 - Web: the full vitest suite (505 tests, 66 files), with new tests for the @ query, tokens, `<wbr>` breaking, the effort store, and the clipboard fallback.
 - End to end in Chromium and WebKit against a scratch Studio and a stand-in model server: the picker lists folders and names; the request carried `reasoning_effort: "high"` and both named files' text; a provider 400 on `reasoning_effort` was retried without it; the token in the sent bubble opened the file; and copy succeeded in a frame where the clipboard API was refused.
+
+### Change log through v1.194 (#671)
+
+The change log entry for v1.194 (#669), written by scripts/release-notes.mjs.
 
 ## v1.193 (2026-11-11)
 
