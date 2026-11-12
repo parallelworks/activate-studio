@@ -2,7 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.193 (2026-11-12)
+## v1.194 (2026-11-12)
+
+### Chat: @ to name library files, reasoning effort, table and copy fixes (#669)
+
+Adds two composer features and fixes four chat problems.
+
+**@ library files.** Typing @ in the composer lists the chat library's top folder, narrows by file name as you type (the index's name search, or the folder's listing where a library has no index), opens a folder in place, and writes a chosen file as `@[path]` (or `@[library:path]` for another library). Before the first model call the server reads each named file's index text as `read_kb_file` would for the reader, and puts it in that turn's system prompt (up to 8 files, 16,000 characters between them). In sent messages the tokens are drawn as links with the CSS Custom Highlight API, leaving the package's DOM alone, and a click opens the file.
+
+**Effort.** A Default / Low / Medium / High / Max control beside the model, kept per conversation in the browser, sent as `effort` on `/api/chat/stream`. The server passes it as `reasoning_effort` (which the ACTIVATE gateway takes and validates), or through a model's `chatTemplateKwargs` entry: gpt-oss's `reasoning_effort` (capped at high) and Qwen's `enable_thinking`. A provider that refuses it gets the turn again without it, and that model skips it until restart.
+
+**Fixes**
+- Table cells broke paths and words anywhere (`word-break: break-all` from #645). Links and inline code now carry `<wbr>` after `/ _ . -`, so a path wraps between its parts and words stay whole; headers wrap between words, so a five-column table fits the reading column instead of pushing its last column out of view.
+- Copy buttons failed in a frame without clipboard access ("Couldn't copy pw code command"). `navigator.clipboard.writeText` now falls back to a textarea copy.
+- On a touch screen wider than a phone (an iPad), the page could stay panned after the on-screen keyboard closed, stranding the composer mid screen. The phone's no-page-scroll layout now applies to every touch screen, and the page returns to the top when the keyboard closes. Not verified on a real iPad.
+- The slash palette took the canvas's full height (`.chat-canvas > *`); palettes are now as tall as their lists.
+
+**Tested**
+- Go: `go test ./internal/chat/ ./internal/settings/`, with new tests for mention parsing and the effort mapping and refusal detection.
+- Web: the full vitest suite (505 tests, 66 files), with new tests for the @ query, tokens, `<wbr>` breaking, the effort store, and the clipboard fallback.
+- End to end in Chromium and WebKit against a scratch Studio and a stand-in model server: the picker lists folders and names; the request carried `reasoning_effort: "high"` and both named files' text; a provider 400 on `reasoning_effort` was retried without it; the token in the sent bubble opened the file; and copy succeeded in a frame where the clipboard API was refused.
+
+## v1.193 (2026-11-11)
 
 ### Updates: keep offering Reopen now until the app reopens (#665)
 
@@ -37,6 +58,10 @@ A deployment of a GitHub release now updates from Settings, General, Updates, as
 - A real workflow deployment on the ACTIVATE platform, launched from this branch's yaml and pinned to v1.191, with this branch's server swapped in. Signed in through the session proxy, the username matched the owner the workflow recorded. **Update now** downloaded v1.192, swapped it in, and the loop restarted it within seconds. The page reloaded onto v1.192, `.payload.previous` held v1.191, and the new payload had no window files.
 
 Existing deployments pick this up after one relaunch with the updated workflow. Docs: DEPLOY.md, HELP.md, REFERENCE.md.
+
+### Change log through v1.193 (#667)
+
+The v1.193 entries (#665, #666).
 
 ## v1.192 (2026-11-11)
 
