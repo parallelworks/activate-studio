@@ -29,3 +29,17 @@ export function onShellScroll(e: Event): void {
 export function keepShellInPlace(): void {
   document.addEventListener('scroll', onShellScroll, { capture: true, passive: true })
 }
+
+/** iPadOS pans the page to keep the composer above its on-screen keyboard
+ *  and can leave it panned once the keyboard closes, which strands the
+ *  composer mid screen over blank page. When the visible area grows back
+ *  by a keyboard's height, the page goes back to the top. */
+export function settleAfterKeyboard(): void {
+  const vv = window.visualViewport
+  if (!vv) return
+  let last = vv.height
+  vv.addEventListener('resize', () => {
+    if (vv.height > last + 80 && (window.scrollY || vv.offsetTop)) window.scrollTo(0, 0)
+    last = vv.height
+  })
+}

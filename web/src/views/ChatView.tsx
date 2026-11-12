@@ -4,6 +4,10 @@ import {
 } from '@parallelworks/ui'
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
+import { EffortPicker } from '../components/EffortPicker'
+import { MentionPalette } from '../components/MentionPalette'
+import { MentionLinks } from '../components/MentionLinks'
+import { breakable } from '../components/breakable'
 import { NextUp } from '../components/NextUp'
 import { VoiceOverlay } from '../components/VoiceOverlay'
 import { rememberHash } from '../lastLocation'
@@ -371,13 +375,14 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           else if (target.kind === 'external' && target.href.startsWith('#')) location.hash = target.href
           else if (target.kind === 'external') window.open(target.href, '_blank', 'noopener')
         }}
-      >{children}</a>
+      >{breakable(children)}</a>
     )
   }, [startNewChat])
   const cfg = useAppConfig()
   // The library the chat searches is part of its scope, chosen in the same
   // menu as the labels; the button names it when there is more than one.
   const hasLibraries = (cfg.libraries?.length ?? 0) > 1
+  const libraryIds = useMemo(() => (cfg.libraries ?? []).map(l => l.id), [cfg.libraries])
   const libLabel = chatLib === 'all' ? 'All libraries' : (cfg.libraries?.find(l => chatLib ? l.id === chatLib : l.primary)?.label ?? chatLib ?? 'Knowledge base')
 
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -442,6 +447,13 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
         markdownComponents: {
+          // Inline code (a path, most often) wraps after its separators,
+          // never mid word; the classes are Streamdown's own.
+          ...({
+            inlineCode: ({ node: _node, className, children, ...props }: React.ComponentProps<'code'> & { node?: unknown }) => (
+              <code className={['rounded bg-muted px-1.5 py-0.5 font-mono text-sm', className].filter(Boolean).join(' ')} data-streamdown="inline-code" {...props}>{breakable(children)}</code>
+            ),
+          } as object),
           img: ({ node: _node, ...props }) =>
             typeof props.src === 'string' && props.src.startsWith('/?embed=') ? (
               <EmbedFrame src={props.src} title={String(props.alt ?? 'embedded viewer')} />
@@ -454,7 +466,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         // the alternative the server allows beside it.
         // The tools that run GUFI show the commands they ran in their row,
         // and fold with the other finished calls.
-        slots: { partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolPresentation: gufiToolPresentation },
+        slots: { composerUsage: <EffortPicker conversationId={activeId} />, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolPresentation: gufiToolPresentation },
         strings: {
           thinking: {
             thoughtFor: (duration: string) => `Worked for ${duration}`,
@@ -538,6 +550,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           {activeId && !showAttachments && !showManage && <ConversationScrubber />}
           <SteerBridge />
           {!showAttachments && !showManage && <SlashPalette canvas={canvasRef} />}
+          {!showAttachments && !showManage && <MentionPalette canvas={canvasRef} />}
+          <MentionLinks canvas={canvasRef} libraryIds={libraryIds} />
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
           {voiceOpen && cfg.features?.voice?.url && <VoiceOverlay url={cfg.features.voice.url} onClose={() => setVoiceOpen(false)} />}
           <div className="chat-controls" hidden={showManage}>
