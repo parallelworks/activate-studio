@@ -469,9 +469,15 @@ func (u *Updater) payload() *payloadInfo {
 	return &payloadInfo{root: root, marker: mk, packageName: name, kind: kind}
 }
 
-// Mode is app, clone, hosted or package.
+// Mode is app, clone, hosted or package. A hosted deployment that updates
+// itself (deployment.go) is app.
 func (u *Updater) Mode() string {
 	if u.hosted() {
+		if u.deployment() {
+			if p := u.payload(); p != nil && p.selfUpdates {
+				return "app"
+			}
+		}
 		return "hosted"
 	}
 	if u.appBundle() != "" {
@@ -1017,25 +1023,27 @@ type latest struct {
 
 // Status is GET /api/updates, its keys in updates.ts's order.
 type Status struct {
-	Mode         string                `json:"mode"`
-	Current      current               `json:"current"`
-	Policy       settings.UpdatePolicy `json:"policy"`
-	Latest       *latest               `json:"latest"`
-	Releases     []UpdateRelease       `json:"releases"`
-	Available    bool                  `json:"available"`
-	CanInstall   bool                  `json:"canInstall"`
-	Reason       *string               `json:"reason"`
-	Command      *string               `json:"command"`
-	CommandNote  *string               `json:"commandNote"`
-	Package      *PackageInfo          `json:"package"`
-	State        string                `json:"state"`
-	Progress     *Progress             `json:"progress"`
-	Error        *string               `json:"error"`
-	CheckedAt    *string               `json:"checkedAt"`
-	Offline      bool                  `json:"offline"`
-	Previous     any                   `json:"previous"`
-	Reopen       bool                  `json:"reopen"`
-	Versions     []UpdateVersion       `json:"versions"`
+	Mode        string                `json:"mode"`
+	Current     current               `json:"current"`
+	Policy      settings.UpdatePolicy `json:"policy"`
+	Latest      *latest               `json:"latest"`
+	Releases    []UpdateRelease       `json:"releases"`
+	Available   bool                  `json:"available"`
+	CanInstall  bool                  `json:"canInstall"`
+	Reason      *string               `json:"reason"`
+	Command     *string               `json:"command"`
+	CommandNote *string               `json:"commandNote"`
+	Package     *PackageInfo          `json:"package"`
+	State       string                `json:"state"`
+	Progress    *Progress             `json:"progress"`
+	Error       *string               `json:"error"`
+	CheckedAt   *string               `json:"checkedAt"`
+	Offline     bool                  `json:"offline"`
+	Previous    any                   `json:"previous"`
+	Reopen      bool                  `json:"reopen"`
+	// Deployment: a hosted deployment that updates itself (deployment.go).
+	Deployment   bool            `json:"deployment,omitempty"`
+	Versions     []UpdateVersion `json:"versions"`
 	MoveToStable *struct {
 		Version string `json:"version"`
 	} `json:"moveToStable"`
@@ -1097,7 +1105,8 @@ func (u *Updater) status() Status {
 		s.Previous = p
 	}
 	if mode == "app" {
-		s.Reopen = u.reopenWanted(cur.Version)
+		s.Deployment = u.deployment()
+		s.Reopen = !s.Deployment && u.reopenWanted(cur.Version)
 		if r := u.stableBehind(pol, cur.Version); r != nil {
 			s.MoveToStable = &struct {
 				Version string `json:"version"`
@@ -1806,16 +1815,25 @@ func (u *Updater) prepare(rel release, o installOpts) (*prepared, error) {
 		return nil, err
 	}
 	os.Remove(archive)
-	if err := u.checkBundle(next, man.Version, man.RequiresRelaunch); err != nil {
+	// A deployment has no window: its run loop starts whatever payload is
+	// in place, so every release restarts the server, and the window's
+	// files are left out as the deployment leaves them out.
+	relaunch := man.RequiresRelaunch && !u.deployment()
+	if err := u.checkBundle(next, man.Version, relaunch); err != nil {
 		return nil, err
+	}
+	if u.deployment() {
+		if err := withoutWindow(next); err != nil {
+			return nil, err
+		}
 	}
 	if k.flavor == "linux" {
 		if err := u.markUser(next); err != nil {
 			return nil, err
 		}
 	}
-	return &prepared{Version: man.Version, From: from, ShellChanged: u.shellHash(next) != u.shellHash(u.installRoot()),
-		StateFormat: man.StateFormat, Relaunch: man.RequiresRelaunch, Older: CompareVersions(man.Version, from) < 0}, nil
+	return &prepared{Version: man.Version, From: from, ShellChanged: !u.deployment() && u.shellHash(next) != u.shellHash(u.installRoot()),
+		StateFormat: man.StateFormat, Relaunch: relaunch, Older: CompareVersions(man.Version, from) < 0}, nil
 }
 
 // markUser: the new payload says it was installed per user, as the one it
@@ -1838,6 +1856,9 @@ func (u *Updater) restart() {
 	failed := func() {
 		u.st.State = "error"
 		u.st.Error = strp("The new version is in place, but the Studio could not restart itself. Quit and reopen the app.")
+		if u.deployment() {
+			u.st.Error = strp("The new version is in place, but the Studio could not restart itself. Launch its workflow again to start it.")
+		}
 	}
 	if k := u.kit(); (k != nil && k.flavor == "linux") || u.env("STUDIO_SUPERVISOR") == "detached" {
 		if !u.o.Restart(RelaunchExitCode) {

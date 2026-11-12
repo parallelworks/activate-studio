@@ -685,6 +685,8 @@ export interface UpdatesStatus {
   previous: { version: string; size?: number | null } | null
   /** The last update changed the app's own window, which reopening runs. */
   reopen?: boolean
+  /** A hosted deployment that updates itself (docs/DEPLOY.md): no window to reopen. */
+  deployment?: boolean
   /** The signed releases on the channel, newest first (the running one included). */
   versions?: UpdateVersion[]
   /** On Stable while running a newer Preview: the newest Stable to go back to. */
