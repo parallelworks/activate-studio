@@ -1,0 +1,265 @@
+// Package docwrite renders what the assistant writes into binary office
+// formats: Markdown into a PDF or a Word document, and rows (CSV, Markdown
+// tables or JSON) into an Excel workbook. Models write text; these are the
+// files people asked for.
+package docwrite
+
+import (
+	"strings"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	east "github.com/yuin/goldmark/extension/ast"
+	"github.com/yuin/goldmark/text"
+)
+
+// Run is a stretch of inline text with one style.
+type Run struct {
+	Text                       string
+	Bold, Italic, Code, Strike bool
+	Link                       string
+}
+
+// Block kinds.
+const (
+	KHeading = "h"
+	KPara    = "p"
+	KList    = "list"
+	KTable   = "table"
+	KCode    = "code"
+	KQuote   = "quote"
+	KRule    = "rule"
+)
+
+// Block is one block of a Markdown document.
+type Block struct {
+	Kind     string
+	Level    int   // heading level
+	Runs     []Run // heading, paragraph
+	Ordered  bool  // list
+	Start    int   // list
+	Items    [][]Block
+	Header   [][]Run // table
+	Rows     [][][]Run
+	Align    []string // table: "left", "right", "center" or ""
+	Text     string   // code
+	Children []Block  // quote
+}
+
+var md = goldmark.New(goldmark.WithExtensions(extension.GFM))
+
+// Parse reads Markdown into blocks.
+func Parse(src string) []Block {
+	b := []byte(src)
+	doc := md.Parser().Parse(text.NewReader(b))
+	return blocksOf(doc, b)
+}
+
+func blocksOf(parent ast.Node, src []byte) []Block {
+	var out []Block
+	for n := parent.FirstChild(); n != nil; n = n.NextSibling() {
+		switch v := n.(type) {
+		case *ast.Heading:
+			out = append(out, Block{Kind: KHeading, Level: v.Level, Runs: runsOf(v, src)})
+		case *ast.Paragraph, *ast.TextBlock:
+			if r := runsOf(v, src); len(r) > 0 {
+				out = append(out, Block{Kind: KPara, Runs: r})
+			}
+		case *ast.List:
+			l := Block{Kind: KList, Ordered: v.IsOrdered(), Start: v.Start}
+			if l.Start == 0 {
+				l.Start = 1
+			}
+			for it := v.FirstChild(); it != nil; it = it.NextSibling() {
+				l.Items = append(l.Items, blocksOf(it, src))
+			}
+			out = append(out, l)
+		case *ast.FencedCodeBlock, *ast.CodeBlock, *ast.HTMLBlock:
+			var sb strings.Builder
+			lines := v.Lines()
+			for i := 0; i < lines.Len(); i++ {
+				seg := lines.At(i)
+				sb.Write(seg.Value(src))
+			}
+			t := strings.TrimRight(sb.String(), "\n")
+			if _, html := v.(*ast.HTMLBlock); html {
+				if t = stripTags(t); strings.TrimSpace(t) != "" {
+					out = append(out, Block{Kind: KPara, Runs: []Run{{Text: strings.TrimSpace(t)}}})
+				}
+				continue
+			}
+			out = append(out, Block{Kind: KCode, Text: t})
+		case *ast.Blockquote:
+			out = append(out, Block{Kind: KQuote, Children: blocksOf(v, src)})
+		case *ast.ThematicBreak:
+			out = append(out, Block{Kind: KRule})
+		case *east.Table:
+			t := Block{Kind: KTable}
+			for _, a := range v.Alignments {
+				switch a {
+				case east.AlignLeft:
+					t.Align = append(t.Align, "left")
+				case east.AlignRight:
+					t.Align = append(t.Align, "right")
+				case east.AlignCenter:
+					t.Align = append(t.Align, "center")
+				default:
+					t.Align = append(t.Align, "")
+				}
+			}
+			for row := v.FirstChild(); row != nil; row = row.NextSibling() {
+				var cells [][]Run
+				for c := row.FirstChild(); c != nil; c = c.NextSibling() {
+					cells = append(cells, runsOf(c, src))
+				}
+				if _, head := row.(*east.TableHeader); head {
+					t.Header = cells
+				} else {
+					t.Rows = append(t.Rows, cells)
+				}
+			}
+			out = append(out, t)
+		default:
+			out = append(out, blocksOf(n, src)...)
+		}
+	}
+	return out
+}
+
+func runsOf(n ast.Node, src []byte) []Run {
+	var out []Run
+	var walk func(n ast.Node, st Run)
+	add := func(st Run, s string) {
+		if s == "" {
+			return
+		}
+		st.Text = ""
+		if k := len(out) - 1; k >= 0 {
+			p := out[k]
+			p.Text = ""
+			if p == st {
+				out[k].Text += s
+				return
+			}
+		}
+		st.Text = s
+		out = append(out, st)
+	}
+	walk = func(n ast.Node, st Run) {
+		for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+			switch v := c.(type) {
+			case *ast.Text:
+				add(st, string(v.Segment.Value(src)))
+				if v.HardLineBreak() {
+					add(st, "\n")
+				} else if v.SoftLineBreak() {
+					add(st, " ")
+				}
+			case *ast.String:
+				add(st, string(v.Value))
+			case *ast.CodeSpan:
+				s := st
+				s.Code = true
+				var sb strings.Builder
+				for t := v.FirstChild(); t != nil; t = t.NextSibling() {
+					switch tv := t.(type) {
+					case *ast.Text:
+						sb.Write(tv.Segment.Value(src))
+					case *ast.String:
+						sb.Write(tv.Value)
+					}
+				}
+				add(s, sb.String())
+			case *ast.Emphasis:
+				s := st
+				if v.Level >= 2 {
+					s.Bold = true
+				} else {
+					s.Italic = true
+				}
+				walk(v, s)
+			case *east.Strikethrough:
+				s := st
+				s.Strike = true
+				walk(v, s)
+			case *ast.Link:
+				s := st
+				s.Link = externalLink(string(v.Destination))
+				walk(v, s)
+			case *ast.AutoLink:
+				s := st
+				s.Link = externalLink(string(v.URL(src)))
+				add(s, string(v.Label(src)))
+			case *ast.Image:
+				var sb strings.Builder
+				for t := v.FirstChild(); t != nil; t = t.NextSibling() {
+					if tv, ok := t.(*ast.Text); ok {
+						sb.Write(tv.Segment.Value(src))
+					}
+				}
+				if alt := sb.String(); alt != "" {
+					add(st, "["+alt+"]")
+				}
+			case *ast.RawHTML:
+				var sb strings.Builder
+				for i := 0; i < v.Segments.Len(); i++ {
+					seg := v.Segments.At(i)
+					sb.Write(seg.Value(src))
+				}
+				if strings.HasPrefix(strings.ToLower(sb.String()), "<br") {
+					add(st, "\n")
+				}
+			default:
+				walk(c, st)
+			}
+		}
+	}
+	walk(n, Run{})
+	return out
+}
+
+// externalLink keeps web and mail links; a Studio link (#open=...) or a
+// relative path means nothing outside the Studio, so its text stands alone.
+func externalLink(dest string) string {
+	l := strings.ToLower(dest)
+	if strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "mailto:") {
+		return dest
+	}
+	return ""
+}
+
+func stripTags(s string) string {
+	var sb strings.Builder
+	in := false
+	for _, r := range s {
+		switch {
+		case r == '<':
+			in = true
+		case r == '>':
+			in = false
+		case !in:
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
+// Plain is the runs' text.
+func Plain(runs []Run) string {
+	var sb strings.Builder
+	for _, r := range runs {
+		sb.WriteString(r.Text)
+	}
+	return sb.String()
+}
+
+// Title is the document's first heading, for the file's metadata.
+func Title(blocks []Block) string {
+	for _, b := range blocks {
+		if b.Kind == KHeading {
+			return strings.TrimSpace(Plain(b.Runs))
+		}
+	}
+	return ""
+}

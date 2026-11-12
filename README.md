@@ -32,7 +32,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 
 ## What it does
 
-- **Chat** answers from your files and links each source. Type @ to hand it a file from the library, and set how long the model reasons with Effort.
+- **Chat** answers from your files and links each source. Type @ to hand it a file from the library, set how long the model reasons with Effort, and ask it to save a report or table as a PDF, Word or Excel file.
 - **Search** finds file names, the words inside files, and, where it is on, meaning: passages that say the same thing in other words.
 - **Library** browses and views documents, images, PDFs, office files, and 3D models, takes files and whole folders with their structure, and describes the folder you select: its size, contents, and labels. A library can name a second host over ssh that has its files, for an index whose own host does not. Libraries can be exported as a library list file that others import into their own Studio, in setup or in Settings, so an administrator shares one setup, including an index built as root, and each person connects as themselves and sees what their own permissions allow.
 - **Query** answers structured questions about the files, such as the largest or newest, or runs read-only SQL. Query and search results export to CSV.

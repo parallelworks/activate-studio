@@ -684,7 +684,7 @@
   },
   {
    "name": "write_kb_file",
-   "description": "Write a text file into the knowledge base and index it, for material generated in the conversation: a case file, a script, a geometry (ASCII STL), a note. Use ONLY when the user asked for something to be created or saved. Excluded and dot-directories are refused, and an existing file is only replaced with overwrite=true. After writing a viewable file (STL, markdown, case files), show_in_viewer displays it.",
+   "description": "Write a file into the knowledge base and index it, for material generated in the conversation: a report, a case file, a script, a geometry (ASCII STL), a note, a spreadsheet. Use ONLY when the user asked for something to be created or saved. Text formats are written as given. A .pdf or .docx (Word) path is made from Markdown you write as content: headings, paragraphs, bold and italic, links, bulleted and numbered lists, tables, block quotes and code blocks. A .xlsx (Excel) path is made from rows: CSV, Markdown tables (one sheet each, named by the heading above it), or JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[[\"header\",...],[...]]}]}; numbers become numbers, a value starting with = is a formula, and the first row is the header. Slides (.pptx) and older formats (.doc, .xls) are not made. Excluded and dot-directories are refused, and an existing file is only replaced with overwrite=true. After writing a viewable file (STL, markdown, case files), show_in_viewer displays it.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -694,7 +694,7 @@
      },
      "content": {
       "type": "string",
-      "description": "The full file content (text; up to 2 MB)"
+      "description": "The full file content (text; up to 2 MB): Markdown for a .pdf or .docx, rows for a .xlsx"
      },
      "overwrite": {
       "type": "boolean",

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/docwrite"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
@@ -79,14 +80,28 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if exists && args["overwrite"] != true {
 		return &Outcome{Result: rel + " already exists. Pass overwrite=true to replace it, or choose another name.", Summary: "exists"}, nil
 	}
+	// A PDF, Word or Excel file is made from what the model wrote
+	// (Markdown, or rows); other office formats are refused with what to
+	// write instead, so no text lands in a file named as a binary format.
+	ext := strings.ToLower(filepath.Ext(rel))
+	data, made := []byte(content), ""
+	if why := docwrite.Unsupported(ext); why != "" {
+		return &Outcome{Result: why, Summary: "refused"}, nil
+	}
+	if docwrite.Handles(ext) {
+		out, err := docwrite.Render(ext, content)
+		if err != nil {
+			return &Outcome{Result: "Could not write " + rel + ": " + err.Error(), Summary: "error"}, nil
+		}
+		data, made = out.Data, out.Note
+	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return nil, nodeFSError(err, "mkdir", filepath.Dir(abs))
 	}
-	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(abs, data, 0o644); err != nil {
 		return nil, nodeFSError(err, "open", abs)
 	}
 	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
-	ext := strings.ToLower(filepath.Ext(rel))
 	base := rel[strings.LastIndex(rel, "/")+1:]
 	link := "[" + rel + "](#open=file:" + strings.ReplaceAll(rel, " ", "%20") + ")"
 	show := "show_in_viewer can display it."
@@ -96,12 +111,17 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	case ".html", ".htm":
 		show = "Show the page inline, sandboxed, with this markdown, then its link:\n![" + base + "](/?embed=html&path=" + encodeURIComponent(rel) + ")\n" + link + "\nThe sandbox allows inline scripts and styles only, no network requests, so keep the page self-contained."
 	}
+	wrote := itoaInt(jsval.Len(content)) + " bytes"
+	if made != "" {
+		wrote = made + ", " + itoaInt(len(data)) + " bytes"
+		show = "Give the user its link: " + link + " It opens in the Library viewer."
+	}
 	replaced := ""
 	if exists {
 		replaced = ", replacing the previous version"
 	}
 	return &Outcome{
-		Result:  "Wrote " + rel + " (" + itoaInt(jsval.Len(content)) + " bytes)" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show,
+		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show,
 		Summary: "wrote " + rel,
 	}, nil
 }
