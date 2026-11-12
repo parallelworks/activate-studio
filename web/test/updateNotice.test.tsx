@@ -481,6 +481,59 @@ describe('after an update that changed the app\'s window', () => {
     expect(within(box).queryByRole('button', { name: 'Reopen now' })).toBeNull()
   })
 
+  it('until the app reopens, every page load offers Reopen now again, after the announcement is dismissed or already seen', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.140')
+    const s = server({ updates: updated() })
+    stubServer(s)
+    const post = appWindow(async () => true)
+    const first = render(<UpdatedNotice />)
+    const box = await screen.findByTestId('updated-notice')
+    // One line at a time: the announcement carries Reopen now itself.
+    expect(screen.queryByTestId('reopen-notice')).toBeNull()
+    fireEvent.click(within(box).getByRole('button', { name: /dismiss/i }))
+    await settle()
+    expect(screen.queryByTestId('updated-notice')).toBeNull()
+    expect(screen.queryByTestId('reopen-notice')).toBeNull()
+    first.unmount()
+
+    // The page loads again: the version was seen, the window still runs the
+    // old copy.
+    const second = render(<UpdatedNotice />)
+    const line = await screen.findByTestId('reopen-notice')
+    expect(screen.queryByTestId('updated-notice')).toBeNull()
+    expect(within(line).getByText('Reopen to finish updating to v1.142')).toBeInTheDocument()
+    // Dismissed, it stays hidden on this page.
+    fireEvent.click(within(line).getByRole('button', { name: /dismiss/i }))
+    expect(screen.queryByTestId('reopen-notice')).toBeNull()
+    second.unmount()
+
+    render(<UpdatedNotice />)
+    fireEvent.click(within(await screen.findByTestId('reopen-notice')).getByRole('button', { name: 'Reopen now' }))
+    await waitFor(() => expect(post).toHaveBeenCalledWith({ action: 'relaunch' }))
+  })
+
+  it('the reminder goes once the server says the window runs the new copy, and never shows on a hosted deployment', async () => {
+    setUpdateFlowOptions({ focusGapMs: 0 })
+    localStorage.setItem(SEEN_KEY, 'v1.142')
+    const s = server({ updates: updated() })
+    stubServer(s)
+    appWindow(async () => true)
+    const one = render(<UpdatedNotice />)
+    await screen.findByTestId('reopen-notice')
+    s.updates = { ...updated(), reopen: false }
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(screen.queryByTestId('reopen-notice')).toBeNull())
+    one.unmount()
+    vi.unstubAllGlobals()
+
+    const hosted = server({ updates: { ...updated(), mode: 'hosted' } })
+    stubServer(hosted)
+    render(<UpdatedNotice />)
+    await waitFor(() => expect(hosted.calls.some(c => c.url === '/api/updates')).toBe(true))
+    await settle()
+    expect(screen.queryByTestId('reopen-notice')).toBeNull()
+  })
+
   it('Settings, Updates asks the window to reopen', async () => {
     stubServer(server({ updates: updated() }))
     const post = appWindow(async () => true)
