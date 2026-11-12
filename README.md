@@ -38,6 +38,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 - **Query** answers structured questions about the files, such as the largest or newest, or runs read-only SQL. Query and search results export to CSV.
 - **Stats** maps each library, here or on another system: its folders by size, and its files by what they say.
 - **Workflows**, on ACTIVATE, runs chosen platform workflows from their own forms, and opens the sessions they start.
+- **Code**, on ACTIVATE, lists your pw code sessions across the platform's machines, shows each one's conversation, and opens it in ACTIVATE.
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
 - **Sign-in**, on a Studio several people share: through the ACTIVATE session proxy, or through ACTIVATE or any other OpenID Connect provider ([`docs/DEPLOY.md`](docs/DEPLOY.md)).
 - **Other tools**, such as pw code, can search and read the same knowledge base over MCP (search, the text the index holds, and the original files) or an OpenAI-compatible endpoint.

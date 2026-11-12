@@ -28,7 +28,7 @@ const ORDER = ['chat', 'library', 'search', 'query', 'overview', 'agents', 'work
 
 describe('sidebar sections', () => {
   it('shows every page when nothing is saved, and Settings and Help always', () => {
-    expect(SECTION_SWITCHES.every(s => s.id === 'workflows' || sectionAllowed(s.id, {}))).toBe(true)
+    expect(SECTION_SWITCHES.every(s => s.id === 'workflows' || s.id === 'code' || sectionAllowed(s.id, {}))).toBe(true)
     const cfg = { sections: ['library', 'search', 'settings', 'help'] }
     expect(sectionAllowed('chat', cfg)).toBe(false)
     expect(sectionAllowed('agents', cfg)).toBe(false)
@@ -38,6 +38,9 @@ describe('sidebar sections', () => {
     // Workflows lists platform workflows, so it needs a platform as well.
     expect(sectionAllowed('workflows', {})).toBe(false)
     expect(sectionAllowed('workflows', { platform: true })).toBe(true)
+    // So does Code, which lists pw code sessions on the platform.
+    expect(sectionAllowed('code', {})).toBe(false)
+    expect(sectionAllowed('code', { platform: true })).toBe(true)
     // Chat and Agents call a model, so they need AI features on.
     expect(sectionAllowed('chat', { aiEnabled: false })).toBe(false)
     expect(sectionAllowed('agents', { aiEnabled: false })).toBe(false)
@@ -65,7 +68,7 @@ describe('sidebar sections', () => {
     render(<SidebarSwitches value={['library', 'search', 'settings', 'help']} platform={false} onChange={onChange} />)
     expect(screen.getByRole('switch', { name: 'Chat' })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('switch', { name: 'Library' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByText('(needs a platform login)')).toBeInTheDocument()
+    expect(screen.getAllByText('(needs a platform login)')).toHaveLength(2)
     fireEvent.click(screen.getByRole('switch', { name: 'Library' }))
     expect(onChange).toHaveBeenLastCalledWith(['search', 'settings', 'help'])
     fireEvent.click(screen.getByRole('switch', { name: 'Agents' }))
@@ -323,7 +326,7 @@ describe('the setup wizard', () => {
     expect(screen.getByRole('link', { name: /Meridian/ })).toHaveAttribute('href', 'https://github.com/parallelworks/meridian')
     expect(screen.getByRole('switch', { name: 'Chat' })).not.toHaveAttribute('data-disabled')
     fireEvent.click(screen.getByRole('switch', { name: 'History' }))
-    await waitFor(() => expect(s.sections).toEqual(['chat', 'library', 'search', 'query', 'overview', 'workflows', 'agents', 'settings', 'help']))
+    await waitFor(() => expect(s.sections).toEqual(['chat', 'library', 'search', 'query', 'overview', 'workflows', 'agents', 'code', 'settings', 'help']))
     next()
 
     heading('Your folder')
@@ -400,7 +403,7 @@ describe('the setup wizard', () => {
     await waitFor(() => expect(screen.getByRole('switch', { name: 'AI features' })).toHaveAttribute('aria-checked', 'true'))
     fireEvent.click(screen.getByRole('switch', { name: 'AI features' }))
     await waitFor(() => expect(s.aiEnabled).toBe(false))
-    expect(sent(s, 'PUT', '/api/settings').at(-1)).toEqual({ aiEnabled: false, sections: ['library', 'search', 'query', 'overview', 'history', 'workflows', 'settings', 'help'] })
+    expect(sent(s, 'PUT', '/api/settings').at(-1)).toEqual({ aiEnabled: false, sections: ['library', 'search', 'query', 'overview', 'history', 'workflows', 'code', 'settings', 'help'] })
     expect(await screen.findByText(/^Off: Chat and Agents leave the sidebar/)).toHaveTextContent('can be turned back on at any time in Settings, General, AI features')
     expect(screen.queryByLabelText('Base URL')).toBeNull()
     // Off is a choice made, so there is nothing to skip.

@@ -139,6 +139,10 @@ Delegation is turned on under Settings, "External access".
 
 You can also ask the assistant to run a pw code agent on one of your clusters, for example "start an agent on my cluster in ~/project to fix the failing tests, and keep going until they pass". It starts a pw code session there with your key and gives it the goal, so the agent keeps working until the goal is met or a turn limit is reached. Ask the assistant how the agent is doing, give it direction, or pause, resume, or clear its goal. You can open the same session in a terminal with `pw code attach <cluster>/<session>`.
 
+## Code
+
+On ACTIVATE, Code lists your pw code sessions on the platform's machines, the same ones the platform's Code page shows: those waiting for you first, then those working, then the rest, with archived sessions behind **Show archived**. The line under the filter names the machines whose pw code daemon is running. Choose a session to read its conversation, with each tool call folded under one line; it updates while the session works. **Open in ACTIVATE** opens the session on the platform, where you answer, approve and steer it, and **New session in ACTIVATE** starts one there. Code is read only for now.
+
 # More
 
 ## Getting around

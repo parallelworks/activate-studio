@@ -14,6 +14,7 @@ import { OverviewView } from './views/OverviewView'
 import { HistoryView } from './views/HistoryView'
 import { useInstall } from './install'
 import { WorkflowsView } from './views/WorkflowsView'
+import { CodeView } from './views/CodeView'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
@@ -32,7 +33,7 @@ import { setPanelView } from './panelState'
 import { studioMark } from './studioMark'
 import { SEARCH_NOTE, searchReach, useSearchScope } from './searchReach'
 
-type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'settings' | 'help'
+type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'code' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
 
 // The destinations that keep a spot in the phone bottom bar; the rest
@@ -48,6 +49,7 @@ const PAGE_NOTES: Partial<Record<ViewId, string>> = {
   overview: 'What the knowledge base holds and how the index is doing',
   agents: '',
   workflows: 'Each runs under your own account',
+  code: 'Your pw code sessions on the platform\'s machines',
   history: 'The corpus at each index pass',
 }
 
@@ -88,6 +90,11 @@ const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="1.5" y="2" width="5" height="4" rx="1"/><rect x="9.5" y="10" width="5" height="4" rx="1"/><path d="M4 6v3a1.5 1.5 0 0 0 1.5 1.5h4"/><path d="m8 9 1.5 1.5L8 12"/></svg>,
   },
   {
+    id: 'code',
+    label: 'Code',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="m5.5 4.5-3.5 3.5 3.5 3.5"/><path d="m10.5 4.5 3.5 3.5-3.5 3.5"/></svg>,
+  },
+  {
     id: 'history',
     label: 'History',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.4V8l2.6 1.6"/></svg>,
@@ -114,7 +121,7 @@ const NAV_LAYOUT: NavEntry[] = [
     group: 'knowledge', label: 'Knowledge', items: ['library', 'search', 'query', 'overview', 'history'],
   },
   {
-    group: 'run', label: 'Run', items: ['workflows', 'agents'],
+    group: 'run', label: 'Run', items: ['workflows', 'agents', 'code'],
   },
 ]
 const navItem = (id: ViewId) => NAV.find(n => n.id === id)!
@@ -624,6 +631,7 @@ export default function App() {
         <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
         {aiPagesMounted(cfg) && <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>}
         {cfg.platform && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
+        {cfg.platform && view === 'code' && <div className="view"><CodeView /></div>}
         <div className={view === 'settings' ? 'view with-toggle' : 'view hidden'}>
           <SettingsView />
           {view === 'settings' && <PanelToggle className="panel-toggle-float" />}

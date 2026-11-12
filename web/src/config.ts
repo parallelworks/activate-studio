@@ -212,6 +212,7 @@ export const SECTION_SWITCHES: { id: string; label: string }[] = [
   { id: 'history', label: 'History' },
   { id: 'workflows', label: 'Workflows' },
   { id: 'agents', label: 'Agents' },
+  { id: 'code', label: 'Code' },
 ]
 /** Always reachable, whatever is switched off. */
 export const ALWAYS_SHOWN = ['settings', 'help']
@@ -236,10 +237,10 @@ export function aiPagesMounted(cfg: { aiEnabled?: boolean; loaded: boolean }): b
 }
 
 /** Whether a page shows: in the saved sections (none saved means all), or
- *  always shown. Workflows lists platform workflows, so it also needs one,
+ *  always shown. Workflows and Code list what is on the platform, so they need one,
  *  and Chat and Agents need AI features on. */
 export function sectionAllowed(id: string, cfg: { sections?: string[]; platform?: boolean; aiEnabled?: boolean }): boolean {
-  if (id === 'workflows' && !cfg.platform) return false
+  if ((id === 'workflows' || id === 'code') && !cfg.platform) return false
   if (AI_SECTIONS.includes(id) && cfg.aiEnabled === false) return false
   return !cfg.sections?.length || cfg.sections.includes(id) || ALWAYS_SHOWN.includes(id)
 }
