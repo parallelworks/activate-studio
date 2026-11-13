@@ -16,7 +16,8 @@ references in place, without changing any file's size:
   - a library's own install name becomes @rpath/<name>.
 
 Then it recomputes the code page hashes of the ad hoc signature, which
-Apple silicon checks when it maps each page. On a Mac, the build re-signs
+Apple silicon checks when it maps each page (an unsigned x86_64 file is
+left unsigned). On a Mac, the build re-signs
 the changed files with codesign afterwards as well.
 
 Usage: macho_relink.py DIR    (DIR holds bin/ and lib/)
@@ -29,7 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from macho_check import (  # noqa: E402
-    DYLIB_CMDS, HASHES, LC_CODE_SIGNATURE, LC_ID_DYLIB, LC_RPATH, cstr, system_lib)
+    CPUS, DYLIB_CMDS, HASHES, LC_CODE_SIGNATURE, LC_ID_DYLIB, LC_RPATH, cstr, system_lib)
 
 
 def put(img, at, capacity, value):
@@ -43,8 +44,9 @@ def put(img, at, capacity, value):
 
 def resign(img):
     """Recomputes every CodeDirectory's code page hashes; False when the
-    signature is not one this can redo (a certificate-signed file)."""
-    _magic, _cpu, _sub, _ft, ncmds, _size, _flags, _res = struct.unpack('<IiiIIIII', img[:32])
+    signature is not one this can redo (a certificate-signed file), True
+    for an unsigned x86_64 file, which an Intel Mac runs as it is."""
+    _magic, cpu, _sub, _ft, ncmds, _size, _flags, _res = struct.unpack('<IiiIIIII', img[:32])
     off, sig = 32, None
     for _ in range(ncmds):
         cmd, size = struct.unpack('<II', img[off:off + 8])
@@ -52,7 +54,7 @@ def resign(img):
             sig = struct.unpack('<II', img[off + 8:off + 16])
         off += size
     if not sig:
-        return False
+        return cpu & 0xffffffff == CPUS['x86_64']
     base = sig[0]
     _bmagic, _blen, count = struct.unpack('>III', img[base:base + 12])
     slots = [struct.unpack('>II', img[base + 12 + k * 8:base + 20 + k * 8]) for k in range(count)]
