@@ -15,17 +15,34 @@ import (
 // numbered list restarts at its own start), tables with a fixed grid and
 // a repeating header row, and web links as hyperlinks.
 
-const textWidth = 9360 // twips: 6.5 inches between one inch margins
-
 type docxw struct {
-	body  strings.Builder
-	rels  []string // hyperlink targets, rId 100+
-	nums  []int    // per numbered list: its start
-	depth int
-	pics  map[string]*picture
-	media []string       // embedded images' sources, in order: word/media/imageN
-	ids   map[string]int // source to N
-	drawn int            // drawings placed, for their ids
+	o      Options
+	tw, th int // the text area's width and height, in twips
+	body   strings.Builder
+	rels   []string // hyperlink targets, rId 100+
+	nums   []int    // per numbered list: its start
+	depth  int
+	pics   map[string]*picture
+	media  []string       // embedded images' sources, in order: word/media/imageN
+	ids    map[string]int // source to N
+	drawn  int            // drawings placed, for their ids
+}
+
+// page is the page's width and height and its margin, in twips.
+func (o Options) page() (w, h, m int) {
+	w, h = 12240, 15840
+	if o.Landscape {
+		w, h = h, w
+	}
+	return w, h, int(o.marginPt()*20 + 0.5)
+}
+
+// bodyJc is the alignment a body paragraph carries.
+func (d *docxw) bodyJc() string {
+	if d.o.Justify {
+		return `<w:jc w:val="both"/>`
+	}
+	return ""
 }
 
 func esc(s string) string {
@@ -110,7 +127,9 @@ func (d *docxw) blocks(bs []Block, list string, level int) {
 			if list != "" {
 				style = "ListParagraph"
 			}
-			d.para(style, numPr, b.Runs)
+			d.para(style, numPr+d.bodyJc(), b.Runs)
+		case KBreak:
+			d.body.WriteString(`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`)
 		case KList:
 			id := "1"
 			if b.Ordered {
@@ -132,7 +151,7 @@ func (d *docxw) blocks(bs []Block, list string, level int) {
 		case KQuote:
 			for _, c := range b.Children {
 				if c.Kind == KPara {
-					d.para("Quote", "", c.Runs)
+					d.para("Quote", d.bodyJc(), c.Runs)
 				} else {
 					d.blocks([]Block{c}, "", 0)
 				}
@@ -147,12 +166,8 @@ func (d *docxw) blocks(bs []Block, list string, level int) {
 	}
 }
 
-// EMU per pixel at 96 pixels an inch, and the text area's size in EMU.
-const (
-	emuPerPx  = 9525
-	emuWidth  = 6.5 * 914400
-	emuHeight = 9 * 914400
-)
+// EMU per pixel at 96 pixels an inch.
+const emuPerPx = 9525
 
 // image places a picture inline in a paragraph of its own, at its own size
 // or smaller to fit the page; one that could not be embedded shows its
@@ -172,7 +187,7 @@ func (d *docxw) image(b Block, props string) {
 		d.ids[b.Src] = n
 	}
 	d.drawn++
-	w, h := pic.size(emuWidth/emuPerPx*72/96, emuHeight/emuPerPx*72/96)
+	w, h := pic.size(float64(d.tw)/20, float64(d.th)/20)
 	cx, cy := int(w*96/72*emuPerPx), int(h*96/72*emuPerPx)
 	alt := esc(b.Text)
 	d.body.WriteString(fmt.Sprintf(`<w:p><w:pPr><w:keepNext/>%s</w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="%d" cy="%d"/><wp:docPr id="%d" name="Picture %d" descr="%s"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="%d" name="image%d.%s" descr="%s"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdImg%d"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`,
@@ -202,7 +217,8 @@ func (d *docxw) table(b Block) {
 	}
 	widths := make([]int, cols)
 	for c := range want {
-		widths[c] = max(864, int(float64(textWidth)*want[c]/sum))
+		// Inside the margins after the table's 115 twip indent.
+		widths[c] = max(864, int(float64(d.tw-230)*want[c]/sum))
 	}
 	d.body.WriteString(`<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="` + fmt.Sprint(sumInts(widths)) + `" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblInd w:w="115" w:type="dxa"/><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr><w:tblGrid>`)
 	for _, w := range widths {
@@ -252,9 +268,24 @@ func sumInts(xs []int) int {
 	return n
 }
 
-const docxStyles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+// docxStyles is the styles part, with the body font and size the options
+// ask for.
+func docxStyles(o Options) string {
+	font := o.Font
+	if font == "" {
+		font = "Calibri"
+	}
+	f := esc(font)
+	sz := 22
+	if o.Size > 0 {
+		sz = int(o.Size*2 + 0.5)
+	}
+	return strings.NewReplacer("FONT", f, `"SZ"`, fmt.Sprintf(`"%d"`, sz)).Replace(docxStylesTmpl)
+}
+
+const docxStylesTmpl = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="FONT" w:hAnsi="FONT" w:eastAsia="FONT" w:cs="FONT"/><w:sz w:val="SZ"/><w:szCs w:val="SZ"/><w:lang w:val="en-US"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>
 <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="200" w:after="100"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="27"/></w:rPr></w:style>
@@ -263,6 +294,7 @@ const docxStyles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="60"/><w:ind w:left="720"/><w:contextualSpacing/></w:pPr></w:style>
 <w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="F4F5F7"/><w:spacing w:after="120" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/><w:sz w:val="18"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:pBdr><w:left w:val="single" w:sz="18" w:space="8" w:color="BFBFBF"/></w:pBdr><w:ind w:left="360"/></w:pPr><w:rPr><w:color w:val="555555"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Footer"><w:name w:val="footer"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="808080"/><w:sz w:val="18"/></w:rPr></w:style>
 <w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="1F4E9E"/><w:u w:val="single"/></w:rPr></w:style>
 <w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:left w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:right w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/></w:tblBorders><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>
 </w:styles>`
@@ -288,14 +320,23 @@ func numberingXML(starts []int) string {
 	return sb.String()
 }
 
-func renderDOCX(blocks []Block, pics map[string]*picture) ([]byte, error) {
-	d := &docxw{pics: pics, ids: map[string]int{}}
+// docxFooter numbers the pages.
+const docxFooter = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>`
+
+func renderDOCX(blocks []Block, pics map[string]*picture, o Options) ([]byte, error) {
+	pw, ph, m := o.page()
+	d := &docxw{o: o, tw: pw - 2*m, th: ph - 2*m - 360, pics: pics, ids: map[string]int{}}
 	d.blocks(blocks, "", 0)
+	orient := ""
+	if o.Landscape {
+		orient = ` w:orient="landscape"`
+	}
 	doc := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>` +
 		d.body.String() +
-		`<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`
+		fmt.Sprintf(`<w:sectPr><w:footerReference w:type="default" r:id="rIdFtr"/><w:pgSz w:w="%d" w:h="%d"%s/><w:pgMar w:top="%d" w:right="%d" w:bottom="%d" w:left="%d" w:header="%d" w:footer="%d" w:gutter="0"/></w:sectPr></w:body></w:document>`,
+			pw, ph, orient, m, m, m, m, m/2, m/2)
 	var rels strings.Builder
-	rels.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`)
+	rels.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rIdFtr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
 	for i, t := range d.rels {
 		rels.WriteString(fmt.Sprintf(`<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="%s" TargetMode="External"/>`, 100+i, esc(t)))
 	}
@@ -306,10 +347,11 @@ func renderDOCX(blocks []Block, pics map[string]*picture) ([]byte, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	core := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>` + esc(Title(blocks)) + `</dc:title><dc:creator>ACTIVATE Studio</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">` + now + `</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">` + now + `</dcterms:modified></cp:coreProperties>`
 	parts := []struct{ name, body string }{
-		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`},
+		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`},
 		{"_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`},
 		{"word/document.xml", doc},
-		{"word/styles.xml", docxStyles},
+		{"word/styles.xml", docxStyles(o)},
+		{"word/footer1.xml", docxFooter},
 		{"word/numbering.xml", numberingXML(d.nums)},
 		{"word/_rels/document.xml.rels", rels.String()},
 		{"docProps/core.xml", core},

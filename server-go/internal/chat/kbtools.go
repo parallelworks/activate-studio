@@ -86,7 +86,7 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	// write instead, so no text lands in a file named as a binary format.
 	ext := strings.ToLower(filepath.Ext(rel))
 	data, made := []byte(content), ""
-	var missing []string
+	var missing, problems []string
 	if why := docwrite.Unsupported(ext); why != "" {
 		return &Outcome{Result: why, Summary: "refused"}, nil
 	}
@@ -99,7 +99,7 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 		if err != nil {
 			return &Outcome{Result: "Could not write " + rel + ": " + err.Error(), Summary: "error"}, nil
 		}
-		data, made, missing = out.Data, out.Note, out.Missing
+		data, made, missing, problems = out.Data, out.Note, out.Missing, out.Problems
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return nil, nodeFSError(err, "mkdir", filepath.Dir(abs))
@@ -130,6 +130,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 		// Said first, so the model fixes the paths and writes it again
 		// (overwrite=true) before it hands the file over.
 		show = "These images were not embedded, and their alt text stands in their place: " + strings.Join(missing, "; ") + ". Give each as a path in the library (relative to this file's folder, or from the library's top) and write the file again with overwrite=true. " + show
+	}
+	if len(problems) > 0 {
+		show = "These front matter options were not applied, and their defaults stood: " + strings.Join(problems, "; ") + ". Correct them and write the file again with overwrite=true. " + show
 	}
 	return &Outcome{
 		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show,
