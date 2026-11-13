@@ -71,7 +71,7 @@ func isPlatformTool(name string) bool { _, ok := platformByName[name]; return ok
 // asksFirst is whether the tool's calls wait for the user's approval.
 func asksFirst(name string) bool {
 	t := platformByName[name]
-	return t != nil && t.Method == "POST"
+	return (t != nil && t.Method == "POST") || isKBAsksFirst(name)
 }
 
 // insteadOf is the tools the user may run in place of a held call.
@@ -89,6 +89,9 @@ func insteadOf(name string) []string {
 
 // toolHash identifies what a call to the tool does.
 func toolHash(name string) string {
+	if isKBAsksFirst(name) {
+		return kbToolHash(name)
+	}
 	t := platformByName[name]
 	if t == nil {
 		return ""
@@ -103,6 +106,9 @@ var pathParam = regexp.MustCompile(`\{(\w+)\}`)
 // prepareArgs is a call's arguments in canonical form, or what is wrong
 // with them. raw is the model's argument text, or a decoded value.
 func prepareArgs(name string, raw any, viewerUsername string) (args *jsonobj.Object, canonical string, problem string) {
+	if isKBAsksFirst(name) {
+		return prepareKBArgs(name, raw)
+	}
 	t := platformByName[name]
 	if t == nil {
 		return nil, "", "Unknown tool " + name
@@ -268,6 +274,12 @@ var effects = map[string]effect{
 	"destroy_cluster": {title: func(a *jsonobj.Object) string { return "Destroy cluster " + argText(a, "clusterName") + "?" }, reason: "Destroys its provisioned resources, including its disks, so nothing bills. Its definition stays, so it can be started again from scratch.",
 		insteadLabel: "Destroy it instead", insteadNote: "Deletes its disks too, so nothing bills."},
 	"cancel_workflow_run": {title: func(a *jsonobj.Object) string { return "Cancel run " + argText(a, "slug") + "?" }, reason: "Cancels the workflow run."},
+	"delete_kb_files": {title: func(a *jsonobj.Object) string {
+		if p := kbPaths(a); len(p) == 1 {
+			return "Delete " + p[0] + "?"
+		}
+		return "Delete " + itoaInt(len(kbPaths(a))) + " files?"
+	}, reason: "Deletes these files from the library, with their extracted text and previews, and updates the index. The Studio cannot undo this."},
 }
 
 // approvalPart is the approval part the chat draws for a held call.
@@ -289,7 +301,11 @@ func approvalPart(name string, args *jsonobj.Object, toolCallID, expiresAt strin
 	if has {
 		header = e.title(args)
 	}
-	o := reqbody.O("kind", "approval", "id", toolCallID, "approvalKind", "confirm", "toolName", name, "subject", "call", "header", header, "command", callSignature(name, args))
+	command := callSignature(name, args)
+	if isKBAsksFirst(name) {
+		command = strings.Join(kbPaths(args), "\n")
+	}
+	o := reqbody.O("kind", "approval", "id", toolCallID, "approvalKind", "confirm", "toolName", name, "subject", "call", "header", header, "command", command)
 	if has {
 		o.SetValue("reason", e.reason)
 	}

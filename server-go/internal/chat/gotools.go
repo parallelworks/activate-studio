@@ -148,6 +148,7 @@ func (t goTools) Begin(r *http.Request, in map[string]any) (*Begin, error) {
 	}
 	out.Viewer = viewer
 	out.Changes = m.changesAvailable(viewer, b.ChangeKey, b.Owner, username)
+	out.KBChanges = m.kbChangesAvailable(viewer, b.Owner, username)
 	out.Platform = m.A.Providers.PlatformAvailable(r, userID(r))
 	reader := readerSet(b.Tools)
 	groups := initialToolGroups(b.RecentUserText, b.UsedTools)

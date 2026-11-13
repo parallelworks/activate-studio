@@ -42,15 +42,17 @@ type Viewer struct {
 
 // Begin is what the route works out before the first model turn.
 type Begin struct {
-	History  []llm.Message `json:"history"`
-	Listing  *string       `json:"listing"`
-	Viewer   *Viewer       `json:"viewer"`
-	Changes  Changes       `json:"changes"`
-	Platform bool          `json:"platform"`
-	Groups   []string      `json:"groups"`
-	Persona  *string       `json:"persona"`
-	System   string        `json:"system"`
-	Meta     Meta          `json:"meta"`
+	History []llm.Message `json:"history"`
+	Listing *string       `json:"listing"`
+	Viewer  *Viewer       `json:"viewer"`
+	Changes Changes       `json:"changes"`
+	// KBChanges is whether a library change can be asked for here.
+	KBChanges Changes  `json:"kbChanges"`
+	Platform  bool     `json:"platform"`
+	Groups    []string `json:"groups"`
+	Persona   *string  `json:"persona"`
+	System    string   `json:"system"`
+	Meta      Meta     `json:"meta"`
 }
 
 // Specs are a round's tools: those offered, and those sent.

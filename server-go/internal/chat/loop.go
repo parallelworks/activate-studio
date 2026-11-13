@@ -48,6 +48,7 @@ type loopState struct {
 	resumedFrom    **string
 	viewer         *Viewer
 	changes        Changes
+	kbChanges      Changes
 	changeKey      *string
 	platform       bool
 	meta           Meta
@@ -470,9 +471,13 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 					continue
 				}
 				why := ""
+				gate := st.changes
+				if isKBAsksFirst(name) {
+					gate = st.kbChanges
+				}
 				switch {
-				case !st.changes.OK:
-					why = name + " is not available in this chat: " + st.changes.Why + ". Nothing ran."
+				case !gate.OK:
+					why = name + " is not available in this chat: " + gate.Why + ". Nothing ran."
 				case !hasSpec(available, name):
 					why = name + " is turned off for this deployment. Nothing ran."
 				case st.convID == "":

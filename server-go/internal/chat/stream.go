@@ -309,6 +309,7 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	meta := begin.Meta
 	viewer := begin.Viewer
 	changes := begin.Changes
+	kbChanges := begin.KBChanges
 	platform := begin.Platform
 	var groupsMu sync.Mutex
 	activeGroups := map[string]bool{}
@@ -518,7 +519,7 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 		allocation: allocation, userKey: userKey, userBase: userBase, userEndpoint: userEndpoint, finalContent: &finalContent,
 		usage: &usageTotal, finalModel: &finalModel, finalReasoning: &finalReasoning, turnBreak: &turnBreak, finalParts: &finalParts,
 		markThinking: markThinking, flushCites: flushCites, finish: finish, resume: resume, resumedFrom: &resumedFrom,
-		viewer: viewer, changes: changes, changeKey: changeKey, platform: platform, meta: meta, readerTools: readerTools, hasReader: hasReader,
+		viewer: viewer, changes: changes, kbChanges: kbChanges, changeKey: changeKey, platform: platform, meta: meta, readerTools: readerTools, hasReader: hasReader,
 		activeGroups: activeGroups, groupsMu: &groupsMu, groupList: groupList, labelScope: labelScope, library: library, pwToolKey: pwToolKey,
 		convID: convID, lastUser: lastUserMsg(messages), effort: effortOf(body.Effort),
 		timing: func(kind string, ms int64, extra string) {
