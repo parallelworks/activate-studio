@@ -66,8 +66,10 @@ jobs:
           # build_gufi.sh refuses anything that is not a ref or a version.
           GUFI_REF: ${{ inputs.gufi_ref }}
           MACOSX_DEPLOYMENT_TARGET: ${{ inputs.deployment_target || '14.0' }}
-          # A tag push has no inputs: the full build.
-          GUFI_LEMBED: ${{ inputs.lembed == false && '0' || '1' }}
+          # A tag push has no inputs: the full build. (On a push inputs.lembed
+          # is null, and null == false is true in an expression, so the event
+          # is checked first.)
+          GUFI_LEMBED: ${{ github.event_name == 'workflow_dispatch' && inputs.lembed == false && '0' || '1' }}
         run: |
           set -euo pipefail
           OUT_DIR="$RUNNER_TEMP/gufi" deploy/mac/build_gufi.sh
