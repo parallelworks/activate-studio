@@ -30,8 +30,8 @@ on:
         description: Oldest macOS the build runs on
         default: "14.0"
       test_runners:
-        description: Runners to check the build on, a JSON list; include one running the deployment target
-        default: '["macos-14"]'
+        description: Runners to check the build on, a JSON list; the oldest hosted macOS (GitHub retired macos-14 in November 2026)
+        default: '["macos-15"]'
       check_setup_script:
         description: Also check indexer/setup_gufi.sh, the from-source path for a clone
         type: boolean
@@ -104,7 +104,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON(inputs.test_runners || '["macos-14"]') }}
+        runner: ${{ fromJSON(inputs.test_runners || '["macos-15"]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
