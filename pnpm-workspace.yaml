@@ -22,3 +22,7 @@ overrides:
   # The one exception to "within the major": dependents ask for ^0.16 and
   # no 0.16.x carries the prototype-pollution fix (GHSA-238p-pmpm-9mq7).
   katex@<0.18.2: ^0.18.2
+# Escape stops a chat reply only while the chat is on screen. The fix goes
+# upstream to @parallelworks/ui; drop this patch on the release that has it.
+patchedDependencies:
+  '@parallelworks/ui@0.120.0': patches/@parallelworks__ui@0.120.0.patch

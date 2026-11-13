@@ -321,10 +321,17 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
     // text explains, the toast provides the button.
     const onCredError = (e: Event) => setCredNote(String((e as CustomEvent).detail ?? 'Model credential needed.'))
     window.addEventListener('ade-credential-error', onCredError)
-    // Back and forward between conversations.
+    // Back and forward between conversations. Only the chat's own hashes
+    // move it: opening a file (#open=), or another view, leaves the open
+    // conversation alone. Taking every other hash as "no conversation"
+    // closed the thread whenever a chat attachment or link was opened,
+    // which cancelled the reply in progress and dropped the queued
+    // messages behind it.
     const onHash = () => {
-      const m = location.hash.match(/^#chat=([0-9a-f-]{8,})$/i)
-      setActiveIdState(m ? m[1] : null)
+      const h = location.hash
+      const m = h.match(/^#chat=([0-9a-f-]{8,})$/i)
+      if (m) setActiveIdState(m[1])
+      else if (h === '' || h === '#') setActiveIdState(null)
     }
     window.addEventListener('hashchange', onHash)
     return () => {
