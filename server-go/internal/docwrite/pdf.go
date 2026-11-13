@@ -73,36 +73,46 @@ func findFonts() *loadedFonts {
 				cands = append([]fontSet{{reg, pick("bold"), pick("italic"), pick("bolditalic"), pick("mono"), pick("mono", "bold")}}, cands...)
 			}
 		}
-		for _, c := range cands {
-			read := func(p string) []byte {
-				if p == "" {
-					return nil
+		// A family with all four faces first: a host may hold a family's
+		// regular and bold only (Debian's fonts-dejavu-core), and italic
+		// drawn from the regular face comes out upright.
+		for _, complete := range []bool{true, false} {
+			for _, c := range cands {
+				read := func(p string) []byte {
+					if p == "" {
+						return nil
+					}
+					b, err := os.ReadFile(p)
+					if err != nil {
+						return nil
+					}
+					return b
 				}
-				b, err := os.ReadFile(p)
-				if err != nil {
-					return nil
+				r := read(c.regular)
+				if r == nil {
+					continue
 				}
-				return b
-			}
-			r := read(c.regular)
-			if r == nil {
-				continue
-			}
-			lf := &loadedFonts{}
-			lf.body[0] = r
-			for i, p := range []string{c.bold, c.italic, c.boldItalic} {
-				if lf.body[i+1] = read(p); lf.body[i+1] == nil {
-					lf.body[i+1] = r
+				lf := &loadedFonts{}
+				lf.body[0] = r
+				whole := true
+				for i, p := range []string{c.bold, c.italic, c.boldItalic} {
+					if lf.body[i+1] = read(p); lf.body[i+1] == nil {
+						lf.body[i+1] = r
+						whole = false
+					}
 				}
-			}
-			if m := read(c.mono); m != nil {
-				lf.mono[0], lf.hasMono = m, true
-				if lf.mono[1] = read(c.monoBold); lf.mono[1] == nil {
-					lf.mono[1] = m
+				if complete && !whole {
+					continue
 				}
+				if m := read(c.mono); m != nil {
+					lf.mono[0], lf.hasMono = m, true
+					if lf.mono[1] = read(c.monoBold); lf.mono[1] == nil {
+						lf.mono[1] = m
+					}
+				}
+				fonts = lf
+				return
 			}
-			fonts = lf
-			return
 		}
 	})
 	return fonts
