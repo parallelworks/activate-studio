@@ -445,7 +445,10 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   ) : isImage ? (
     <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
   ) : isPdf || isOffice ? (
-    <PagedPreview path={path} office={isOffice} markdown={extractedMarkdown} onUnavailable={why => { setPreviewGone(why); setTab('indexed') }} />
+    // Keyed by the file: kept across files, the first render of the next
+    // one used the last one's page count, asked for pages it does not
+    // have, and their errors sent it to the fallback.
+    <PagedPreview key={path} path={path} office={isOffice} markdown={extractedMarkdown} onUnavailable={why => { setPreviewGone(why); setTab('indexed') }} />
   ) : isText ? (
     <div className="viewer-body">
       {isMarkdown
