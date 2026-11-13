@@ -308,7 +308,7 @@ func (m *Module) answerHeld(ctx context.Context, a answer, viewer *Viewer, key *
 		if a.Tool != "" && a.Tool != pending.Tool {
 			tool = a.Tool
 		}
-		if key == nil || *key == "" {
+		if (key == nil || *key == "") && !isKBAsksFirst(tool) {
 			return &Answered{Why: "Running this needs your own platform key, which you can add under Settings, Model access; nothing ran."}
 		}
 		if !enabled(tool) {
@@ -331,7 +331,13 @@ func (m *Module) answerHeld(ctx context.Context, a answer, viewer *Viewer, key *
 	if err != nil || args == nil {
 		args = jsonobj.New()
 	}
-	out, failed := m.runPlatformTool(ctx, tool, args, *key)
+	var out string
+	var failed bool
+	if isKBAsksFirst(tool) {
+		out, failed = m.runKBTool(ctx, tool, args)
+	} else {
+		out, failed = m.runPlatformTool(ctx, tool, args, deref(key))
+	}
 	target := ""
 	for _, k := range []string{"clusterName", "slug"} {
 		if args.Has(k) && !jsonobj.IsNullish(args.Get(k)) {
@@ -349,6 +355,9 @@ func (m *Module) answerHeld(ctx context.Context, a answer, viewer *Viewer, key *
 		summary = "failed: " + jsval.Slice(out, 160)
 	} else {
 		verb := doneVerb[tool]
+		if isKBAsksFirst(tool) {
+			verb = "deleted " + countOf(len(kbPaths(args)), "file", "files")
+		}
 		if verb == "" {
 			verb = "ran"
 		}

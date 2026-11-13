@@ -736,6 +736,97 @@
    }
   },
   {
+   "name": "move_kb_files",
+   "description": "Move or rename files and folders within the main library (the knowledge base), with the Library's own move: extracted text and previews follow, and the index is updated. Use when the user asks to move, reorganize or file things away; for renaming one item where it is, rename_kb_file is simpler. dest is the folder to move into (\"/\" for the library's top; it is created when missing); name renames a single item, in place when dest is omitted. An existing file is never replaced: a name already taken is skipped and reported. Moving between libraries or to another system is not this tool's work.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Library-relative paths, e.g. [\"drafts/report-v1.md\", \"drafts/report-v2.md\"]"
+     },
+     "dest": {
+      "type": "string",
+      "description": "Folder to move into, library-relative; \"/\" is the top"
+     },
+     "name": {
+      "type": "string",
+      "description": "New name for a single item (optional)"
+     }
+    },
+    "required": [
+     "paths"
+    ]
+   }
+  },
+  {
+   "name": "rename_kb_file",
+   "description": "Rename one file or folder in the main library (the knowledge base) where it is, with the Library's own rename: extracted text and previews follow, and the index is updated. Use when the user asks to rename something. name is the new name only, with no folder; to move it as well, use move_kb_files. A name already taken is refused and reported.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string",
+      "description": "Library-relative path, e.g. \"drafts/report-v1.md\""
+     },
+     "name": {
+      "type": "string",
+      "description": "New name, e.g. \"report-final.md\""
+     }
+    },
+    "required": [
+     "path",
+     "name"
+    ]
+   }
+  },
+  {
+   "name": "copy_kb_files",
+   "description": "Copy files and folders within the main library into a folder (created when missing) and index the copies. A copy whose name is taken is named \"<name> copy\" (then \"copy 2\" and on), so nothing is replaced. Use when the user asks to copy or duplicate something, e.g. to keep an original before editing.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Library-relative paths, e.g. [\"drafts/report-v1.md\", \"drafts/report-v2.md\"]"
+     },
+     "dest": {
+      "type": "string",
+      "description": "Folder to copy into, library-relative; \"/\" is the top"
+     }
+    },
+    "required": [
+     "paths",
+     "dest"
+    ]
+   }
+  },
+  {
+   "name": "delete_kb_files",
+   "description": "Delete files from the main library, with their extracted text and previews, and update the index. The user approves each call in the chat before anything is deleted, and the Studio cannot undo it, so call it only when the user asked for files to be deleted or cleaned up, naming exactly the files meant (check them with list_kb_dir first). Files only; a folder is refused. One call may name up to 200 files; if the user declines, do not call it again unless they ask.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Library-relative paths, e.g. [\"drafts/report-v1.md\", \"drafts/report-v2.md\"]"
+     }
+    },
+    "required": [
+     "paths"
+    ]
+   }
+  },
+  {
    "name": "get_labels",
    "description": "List the label vocabulary in use across the knowledge base with usage counts (labels convey provenance such as research versus validated).",
    "parameters": {
@@ -1127,7 +1218,11 @@
   "resume_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/resume on the platform with the user's key, after the user approves the call in the chat",
   "stop_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/stop on the platform with the user's key, after the user approves the call (or chooses destroy_cluster instead) in the chat",
   "destroy_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/destroy on the platform with the user's key, after the user approves the call (or chooses stop_cluster instead) in the chat",
-  "cancel_workflow_run": "POST /api/workflow-runs/<slug>/cancel on the platform with the user's key, after the user approves the call in the chat"
+  "cancel_workflow_run": "POST /api/workflow-runs/<slug>/cancel on the platform with the user's key, after the user approves the call in the chat",
+  "move_kb_files": "moves each path into dest within the main library (kb.Files.Move, then Rename for name), creating dest; refuses a taken name; re-indexes the roots touched",
+  "rename_kb_file": "renames path in place within the main library (move_kb_files with name and no dest: kb.Files.Rename); refuses a taken name; re-indexes the roots touched",
+  "copy_kb_files": "copies each path into dest within the main library (kb.Files.Copy, naming a taken name \"<name> copy\"), creating dest; re-indexes the roots touched",
+  "delete_kb_files": "held for the user's approval; then deletes each file and its caches in the main library (kb.Files.DeletePaths) and re-indexes the roots touched"
  },
  "groups": {
   "workflows": {
@@ -1182,13 +1277,17 @@
    "cue": "\\b(agents?|delegat|pw code|subtasks?|steer|in parallel)"
   },
   "editing": {
-   "summary": "writing files into the knowledge base and suggesting or applying labels",
+   "summary": "writing, moving, renaming, copying and deleting files in the knowledge base (deletes are approved by the user), and suggesting or applying labels",
    "names": [
     "write_kb_file",
+    "move_kb_files",
+    "rename_kb_file",
+    "copy_kb_files",
+    "delete_kb_files",
     "suggest_labels",
     "apply_labels"
    ],
-   "cue": "\\b(labels?|tags?|tagging|write|save|create|draft|edit|update|append|notes?|file it|add (a|an|the) )"
+   "cue": "\\b(labels?|tags?|tagging|write|save|create|draft|edit|update|append|notes?|file it|add (a|an|the) |delete|remove|clean ?up|tidy|move|rename|copy|duplicate|reorgani[sz]e|archive|organi[sz]e)"
   }
  },
  "platform": [
