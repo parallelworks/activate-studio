@@ -1,0 +1,26 @@
+diff --git a/dist/ai/components/SessionView.js b/dist/ai/components/SessionView.js
+index ad0ecd0a9a8018e7455d4a32c23e3308ba78fca6..c09764405554514770a9ed8c63631faae7fdc0f7 100644
+--- a/dist/ai/components/SessionView.js
++++ b/dist/ai/components/SessionView.js
+@@ -12,6 +12,12 @@ import { jsx, jsxs } from "react/jsx-runtime";
+ /** One conversation or agent session: its transcript, with the composer at
+ *  the foot of the scrolling column. The host binds its own data and actions;
+ *  what it leaves out (editing, regenerating, branches) the view leaves out. */
++/** Whether the session is on screen. A host that keeps the chat mounted
++*  while another page shows hides it with display or visibility; Escape
++*  pressed on that other page belongs to it and must not stop the turn. */
++function shown(el) {
++	return !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
++}
+ function SessionView({ sessionKey, messages, allMessages, streamingMessage, queuedMessages, onRemoveQueued, canRemoveQueued, queueDelivery, turn, onSend, onEdit, onRegenerate, onRetry, onNavigateBranch, onApprovalAnswer, showAuthor, currentUsername, banners, error, loading = false, dropFiles = false, footer, label, flush, foldEveryRun, workingIndicator, composer, find = false }) {
+ 	const inputRef = useRef(null);
+ 	const viewRef = useRef(null);
+@@ -23,7 +29,7 @@ function SessionView({ sessionKey, messages, allMessages, streamingMessage, queu
+ 	useEffect(() => {
+ 		if (!running) return;
+ 		const onKeyDown = (e) => {
+-			if (e.key === "Escape" && !e.defaultPrevented && !escapeClosesLayer(e.target)) stop();
++			if (e.key === "Escape" && !e.defaultPrevented && !escapeClosesLayer(e.target) && shown(viewRef.current)) stop();
+ 		};
+ 		window.addEventListener("keydown", onKeyDown);
+ 		return () => window.removeEventListener("keydown", onKeyDown);
