@@ -2,11 +2,12 @@
 # Check a built "ACTIVATE Studio.app".
 #
 # On any host: the bundle's layout and Info.plist, the scripts' syntax
-# (and shellcheck where installed), that every native file is an arm64
-# Mach-O with an intact signature whose libraries resolve inside the app or
+# (and shellcheck where installed), that every native file is a Mach-O for
+# the app's architecture (LSArchitecturePriority: arm64, or x86_64 for
+# Intel) with an intact signature whose libraries resolve inside the app or
 # the system, that nothing built for Linux slipped in, and the size.
 #
-# On a Mac, --run also runs what was bundled: Node, Python, the app's
+# On a Mac of that architecture, --run also runs what was bundled: Node, Python, the app's
 # executable, and GUFI indexing and querying a small folder, embedding with
 # the model, tesseract reading text in pictures and a scanned PDF, the
 # indexer scripts, and the server itself from the app's own run loop on a
@@ -57,6 +58,8 @@ ENGINES='("gufi_vt",)'
 # GUFI built without sqlite-lembed (GUFI_LEMBED=0) has no lembed0.dylib.
 LEMBED=1
 grep -q '"sqlite-lembed": *"none"' "$G/manifest.json" 2>/dev/null && LEMBED=0
+# The Macs the app is for (build_app.sh MACOS_ARCH).
+ARCH="$(python3 -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb")).get("LSArchitecturePriority", ["arm64"])[0])' "$C/Info.plist" 2>/dev/null || echo arm64)"
 failures=0
 ok() { echo "  ok    $1"; }
 bad() { echo "  FAIL  $1"; failures=$((failures + 1)); }
@@ -164,7 +167,7 @@ echo "Scripts"
 # The executable is the launcher script, or the native window when built on a Mac.
 scripts=("$R/launcher.sh" "$R/studio-run.sh" "$HERE/install.sh")
 if head -c 2 "$C/MacOS/ACTIVATE Studio" | grep -q '#!'; then scripts+=("$C/MacOS/ACTIVATE Studio"); else
-  check "the executable is the native window, for arm64" sh -c "file -b '$C/MacOS/ACTIVATE Studio' | grep -q 'Mach-O.*arm64'"
+  check "the executable is the native window, for $ARCH" sh -c "file -b '$C/MacOS/ACTIVATE Studio' | grep -q 'Mach-O.*$ARCH'"
 fi
 for s in "${scripts[@]}"; do
   check "bash -n $(basename "$s")" bash -n "$s"
@@ -176,13 +179,13 @@ command -v shellcheck >/dev/null 2>&1 || echo "  (shellcheck is not installed; s
 
 echo "Native code"
 if command -v file >/dev/null 2>&1 && [ "$SERVER" = go-only ]; then
-  check "studio-server is a Mach-O arm64 executable" sh -c "file -b '$R/app/bin/studio-server' | grep -q 'Mach-O 64-bit.*arm64'"
+  check "studio-server is a Mach-O $ARCH executable" sh -c "file -b '$R/app/bin/studio-server' | grep -q 'Mach-O 64-bit.*$ARCH'"
 elif command -v file >/dev/null 2>&1; then
   check "node is a Mach-O arm64 executable" sh -c "file -b '$R/node/bin/node' | grep -q 'Mach-O 64-bit.*arm64'"
 fi
 MIN="$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["LSMinimumSystemVersion"])' "$C/Info.plist")"
 NATIVE=("$G"/bin/* "$G"/lib/*.dylib "$O"/bin/* "$O"/lib/*.dylib)
-[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/app/bin/remote/darwin-*/studio-remote "$R"/app/lib/*.dylib)
+[ "$SERVER" = node ] || NATIVE+=("$R"/app/bin/* "$R"/app/lib/*.dylib)
 if [ "$SERVER" != go-only ]; then
   NATIVE+=("$R/node/bin/node" "$R"/python/bin/python3.* "$R"/python/lib/*.dylib "$R"/python/lib/python3.*/lib-dynload/*.so)
   # The Python packages' native libraries (onnxruntime, numpy and others), read
@@ -190,11 +193,21 @@ if [ "$SERVER" != go-only ]; then
   while IFS= read -r -d '' f; do NATIVE+=("$f"); done < <(
     find "$R"/python/lib/python3.*/site-packages -type f \( -name '*.so' -o -name '*.dylib' \) -print0)
 fi
-if out="$(python3 "$HERE/macho_check.py" --max-minos "$MIN" "${NATIVE[@]}" 2>&1)"; then
-  ok "arm64, signed, runs on macOS $MIN, libraries resolve without DYLD_LIBRARY_PATH"
+if out="$(python3 "$HERE/macho_check.py" --arch "$ARCH" --max-minos "$MIN" "${NATIVE[@]}" 2>&1)"; then
+  ok "$ARCH, signed, runs on macOS $MIN, libraries resolve without DYLD_LIBRARY_PATH"
 else
   bad "Mach-O check:"
   printf '%s\n' "$out" | sed 's/^/        /'
+fi
+# The macOS helper sent to other Macs is for the Mac its folder names,
+# whichever Mac the app is for.
+if [ "$SERVER" != node ]; then
+  for h in "$R"/app/bin/remote/darwin-*/studio-remote; do
+    p="$(basename "$(dirname "$h")")"
+    a="${p#darwin-}"
+    [ "$a" != amd64 ] || a=x86_64
+    check "the helper for $p is a signed $a Mach-O that runs on macOS $MIN" python3 "$HERE/macho_check.py" --arch "$a" --max-minos "$MIN" "$h"
+  done
 fi
 elf="$(python3 - "$APP" <<'PY'
 import os, sys
@@ -244,8 +257,8 @@ for d in node python gufi ocr app/lib app/occt app/bin app/bin/remote app/server
 done
 
 if [ "$RUN" = 1 ]; then
-  if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
-    echo "--run needs a Mac with Apple silicon; skipped"
+  if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != "$ARCH" ]; then
+    echo "--run needs a Mac whose processor is $ARCH; skipped"
   elif ! python3 -c 'import sys; v = lambda s: [int(x) for x in s.split(".")]; sys.exit(0 if v(sys.argv[1]) <= v(sys.argv[2]) else 1)' \
     "$MIN" "$(sw_vers -productVersion)"; then
     echo "--run: the app needs macOS $MIN and this Mac has $(sw_vers -productVersion); skipped"

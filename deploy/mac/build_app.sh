@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build "ACTIVATE Studio.app" for macOS on Apple silicon from this checkout.
+# Build "ACTIVATE Studio.app" for macOS from this checkout, for Apple silicon
+# (arm64) or Intel (x86_64) Macs.
 #
 # By default (STUDIO_SERVER=go-only) the app is the Go version: the Wails
 # window (desktop/wails), the Go server in Resources/app/bin with the ONNX
@@ -17,12 +18,17 @@
 # Usage: deploy/mac/build_app.sh
 #   OUT_DIR     where the outputs go (default deploy/mac/out)
 #   CACHE_DIR   downloads, kept between builds (default deploy/mac/.cache)
-#   GUFI_TARBALL  a gufi-macos-arm64.tar.gz from build_gufi.sh, used instead
+#   MACOS_ARCH  arm64 or x86_64: the Macs the app is for (default: this Mac's;
+#               arm64 when built elsewhere). The Intel app is the Go version
+#               (go-only) and needs GUFI_TARBALL, since GUFI's package and the
+#               Homebrew bottles it links are for Apple silicon here
+#   GUFI_TARBALL  a gufi-macos-<arch>.tar.gz from build_gufi.sh, used instead
 #               of GUFI's package when set
 #   GUFI_PKG    a GUFI macOS .pkg on disk to use instead of the pinned download
-#   OCR_TARBALL an ocr-macos-arm64.tar.gz from build_ocr.sh; without it, a
-#               Mac runs build_ocr.sh (its archive is kept in CACHE_DIR for
-#               the next build), and elsewhere the app has no OCR
+#   OCR_TARBALL an ocr-macos-<arch>.tar.gz from build_ocr.sh; without it, a
+#               Mac of that architecture runs build_ocr.sh (its archive is
+#               kept in CACHE_DIR for the next build), and elsewhere the app
+#               has no OCR
 #   SKIP_BUILD  1 to use the existing server/dist and web/dist
 #   MIN_MACOS   LSMinimumSystemVersion; by default the newest macOS that any
 #               bundled binary declares it needs
@@ -44,9 +50,9 @@
 #               swift. wails is desktop/wails built for macOS (Go with cgo, on a
 #               Mac), with the Swift window's features (docs/MACOS.md)
 #
-# Outputs in OUT_DIR: ACTIVATE Studio.app; activate-studio-macos-arm64.tar.gz
+# Outputs in OUT_DIR: ACTIVATE Studio.app; activate-studio-macos-<arch>.tar.gz
 # with its .sha256 and install.sh (the release assets install.sh fetches);
-# activate-studio-macos-arm64.dmg on macOS (deploy/mac/make_dmg.sh).
+# activate-studio-macos-<arch>.dmg on macOS (deploy/mac/make_dmg.sh).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,7 +62,6 @@ CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 APP_NAME="ACTIVATE Studio"
 APP="$OUT_DIR/$APP_NAME.app"
 RES="$APP/Contents/Resources"
-ASSET=activate-studio-macos-arm64
 BUNDLE_ID=com.parallelworks.activate-studio
 
 # Pinned inputs shared with the other platforms (the versions of Node and
@@ -82,9 +87,21 @@ SERVER="${STUDIO_SERVER:-go-only}"
 case "$SERVER" in node | go | go-only) ;; *) echo "build_app: STUDIO_SERVER is node, go or go-only" >&2; exit 1 ;; esac
 MAC_SHELL="${MAC_SHELL:-$([ "$SERVER" = go-only ] && echo wails || echo swift)}"
 case "$MAC_SHELL" in swift | wails) ;; *) echo "build_app: MAC_SHELL is swift or wails" >&2; exit 1 ;; esac
-# The ONNX runtime's own release for macOS arm64, for the Go server's embedder.
-ORT_VERSION=1.31.0
-ORT_SHA256=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+ARCH="${MACOS_ARCH:-$([ "$(uname -s)" = Darwin ] && uname -m || echo arm64)}"
+case "$ARCH" in arm64) GO_ARCH=arm64 ;; x86_64) GO_ARCH=amd64 ;; *) die "MACOS_ARCH is arm64 or x86_64, not '$ARCH'" ;; esac
+# Node, Python and their packages are pinned for Apple silicon only.
+[ "$ARCH" = arm64 ] || [ "$SERVER" = go-only ] || die "the Intel app is the Go version only (STUDIO_SERVER=go-only)"
+ASSET="activate-studio-macos-$ARCH"
+# The ONNX runtime's own release for macOS, for the Go server's embedder. Its
+# releases after 1.23 have no Intel build; the embedder asks for an API
+# version 1.23 serves (server-go/internal/embed/ort).
+if [ "$ARCH" = arm64 ]; then
+  ORT_VERSION=1.31.0
+  ORT_SHA256=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+else
+  ORT_VERSION=1.23.2
+  ORT_SHA256=d10359e16347b57d9959f7e80a225a5b4a66ed7d7e007274a15cae86836485a6
+fi
 TOOLS="python3 curl tar git pnpm"
 [ "$SERVER" = node ] && [ "$MAC_SHELL" = swift ] || TOOLS="$TOOLS go"
 for tool in $TOOLS; do
@@ -102,7 +119,7 @@ SHORT_VERSION="$(printf '%s' "$VERSION" | sed -n 's/^v\([0-9][0-9.]*[0-9]\).*/\1
 SHORT_VERSION="${SHORT_VERSION:-0.0}"
 DISTANCE="$(printf '%s' "$VERSION" | sed -n 's/^v[0-9.]*-\([0-9][0-9]*\)-g.*/\1/p')"
 BUNDLE_VERSION="$SHORT_VERSION${DISTANCE:+.$DISTANCE}"
-echo "Building $APP_NAME.app $VERSION ($COMMIT), server: $SERVER, window: $MAC_SHELL"
+echo "Building $APP_NAME.app $VERSION ($COMMIT) for $ARCH, server: $SERVER, window: $MAC_SHELL"
 
 if [ "${SKIP_BUILD:-}" != 1 ]; then
   echo "Building web and server..."
@@ -116,9 +133,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$RES/app/server" "$RES/app/web" "$RES/app/deploy" "$RES/node/bin" "$RES/models"
 
 if [ "$SERVER" != node ]; then
-  echo "The Go server (studio-server, semantic-map) for macOS arm64..."
+  echo "The Go server (studio-server, semantic-map) for macOS $ARCH..."
   mkdir -p "$RES/app/bin"
-  (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" \
+  (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=darwin GOARCH="$GO_ARCH" go build -trimpath -ldflags "-s -w" \
     -o "$RES/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
   # The helper a library's build on another system runs, for each system
   # it is sent to: Linux x86_64 and aarch64, macOS arm64 (internal/userlibs);
@@ -259,7 +276,7 @@ else
 fi
 if [ "$SERVER" != node ]; then
   echo "The ONNX runtime $ORT_VERSION library, for the Go server's embedder..."
-  ORT_DIST="onnxruntime-osx-arm64-$ORT_VERSION"
+  ORT_DIST="onnxruntime-osx-$ARCH-$ORT_VERSION"
   fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_DIST.tgz" "$CACHE_DIR/$ORT_DIST.tgz" "$ORT_SHA256"
   # The macOS archive's paths start with ./ (the Linux one's do not).
   tar -xzf "$CACHE_DIR/$ORT_DIST.tgz" -C "$WORK" "./$ORT_DIST/lib/libonnxruntime.$ORT_VERSION.dylib" "./$ORT_DIST/LICENSE" "./$ORT_DIST/ThirdPartyNotices.txt"
@@ -296,6 +313,7 @@ print(f"  GUFI {m['gufi']['version']} ({m['gufi']['commit'][:12]}) for macOS {m[
       f"built {m['builtAt']}; SHA-256 {sys.argv[2]}")
 PY
 else
+  [ "$ARCH" = arm64 ] || die "GUFI for an Intel app comes from build_gufi.sh (GUFI_TARBALL); its package path here is for Apple silicon"
   echo "GUFI from its macOS package..."
   if [ -n "${GUFI_PKG:-}" ]; then
     PKG="$GUFI_PKG"
@@ -355,15 +373,15 @@ fi
 # library from the tree and signed ad hoc, as build_ocr.sh made and checked
 # them on the Mac it ran on.
 O="$RES/ocr"
-if [ -z "${OCR_TARBALL:-}" ] && [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+if [ -z "${OCR_TARBALL:-}" ] && [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = "$ARCH" ]; then
   # Built once per version of build_ocr.sh and deployment target, and kept
   # in the cache for the builds after.
   OCR_CACHE="$CACHE_DIR/ocr-$(sha256_of "$HERE/build_ocr.sh" | cut -c1-16)-${MACOSX_DEPLOYMENT_TARGET:-14.0}"
-  if [ ! -f "$OCR_CACHE/ocr-macos-arm64.tar.gz" ]; then
+  if [ ! -f "$OCR_CACHE/ocr-macos-$ARCH.tar.gz" ]; then
     echo "OCR: building tesseract (deploy/mac/build_ocr.sh)..."
     OUT_DIR="$OCR_CACHE" CACHE_DIR="$CACHE_DIR" "$HERE/build_ocr.sh"
   fi
-  OCR_TARBALL="$OCR_CACHE/ocr-macos-arm64.tar.gz"
+  OCR_TARBALL="$OCR_CACHE/ocr-macos-$ARCH.tar.gz"
 fi
 if [ -n "${OCR_TARBALL:-}" ]; then
   echo "OCR from $OCR_TARBALL (deploy/mac/build_ocr.sh)..."
@@ -418,12 +436,12 @@ cp "$HERE/update-signing.pub" "$RES/update-signing.pub"
 if [ "$(uname -s)" = Darwin ] && [ "$MAC_SHELL" = wails ] && [ "${NATIVE_WINDOW:-1}" = 1 ]; then
   # The Go window (desktop/wails, launcher_darwin.go): it runs the launcher
   # as the Swift one does.
-  (cd "$PROJECT_ROOT/desktop/wails" && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 MACOSX_DEPLOYMENT_TARGET=14.0 \
-    CGO_LDFLAGS="-mmacosx-version-min=14.0" go build -trimpath -tags desktop,production \
+  (cd "$PROJECT_ROOT/desktop/wails" && CGO_ENABLED=1 GOOS=darwin GOARCH="$GO_ARCH" MACOSX_DEPLOYMENT_TARGET=14.0 \
+    CGO_CFLAGS="-arch $ARCH" CGO_LDFLAGS="-arch $ARCH -mmacosx-version-min=14.0" go build -trimpath -tags desktop,production \
     -ldflags "-s -w -X main.version=$VERSION" -o "$APP/Contents/MacOS/$APP_NAME" .)
   echo "  native window (Wails)"
 elif [ "$(uname -s)" = Darwin ] && command -v swiftc >/dev/null 2>&1 && [ "${NATIVE_WINDOW:-1}" = 1 ]; then
-  swiftc -O -target arm64-apple-macos13 -o "$APP/Contents/MacOS/$APP_NAME" "$HERE/shell/StudioShell.swift"
+  swiftc -O -target "$ARCH-apple-macos13" -o "$APP/Contents/MacOS/$APP_NAME" "$HERE/shell/StudioShell.swift"
   echo "  native window"
 else
   cp "$HERE/launcher.sh" "$APP/Contents/MacOS/$APP_NAME"
@@ -470,9 +488,9 @@ if [ "$SERVER" != go-only ]; then
   MACHO_ALL+=("$RES/node/bin/node" "$RES"/python/bin/python3.* "$RES"/python/lib/*.dylib "$RES"/python/lib/python3.*/lib-dynload/*.so)
 fi
 [ "$SERVER" = node ] || MACHO_ALL+=("$RES"/app/bin/* "$RES"/app/lib/*.dylib)
-NEEDS="$(python3 "$HERE/macho_check.py" --print-minos "${MACHO_ALL[@]}" ${SITE_NATIVE[@]+"${SITE_NATIVE[@]}"})"
+NEEDS="$(python3 "$HERE/macho_check.py" --arch "$ARCH" --print-minos "${MACHO_ALL[@]}" ${SITE_NATIVE[@]+"${SITE_NATIVE[@]}"})"
 MIN_MACOS="${MIN_MACOS:-$NEEDS}"
-APP_NAME="$APP_NAME" BUNDLE_ID="$BUNDLE_ID" SHORT_VERSION="$SHORT_VERSION" BUNDLE_VERSION="$BUNDLE_VERSION" \
+APP_NAME="$APP_NAME" ARCH="$ARCH" BUNDLE_ID="$BUNDLE_ID" SHORT_VERSION="$SHORT_VERSION" BUNDLE_VERSION="$BUNDLE_VERSION" \
   MIN_MACOS="$MIN_MACOS" BUILD="$VERSION ($COMMIT, $BUILT_AT)" ICON="$ICON" COPYRIGHT="$COPYRIGHT" \
   python3 - "$APP/Contents/Info.plist" <<'PY'
 import os, plistlib, sys
@@ -488,7 +506,7 @@ info = {
     'CFBundleShortVersionString': e['SHORT_VERSION'],
     'CFBundleVersion': e['BUNDLE_VERSION'],
     'LSApplicationCategoryType': 'public.app-category.productivity',
-    'LSArchitecturePriority': ['arm64'],
+    'LSArchitecturePriority': [e['ARCH']],
     'LSMinimumSystemVersion': e['MIN_MACOS'],
     'NSHighResolutionCapable': True,
     # The window loads the Studio from its own server on 127.0.0.1.

@@ -7,6 +7,16 @@ sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{print $1}'
 }
 
+# mac_arch: the architecture this Mac builds for, as the macOS archives'
+# names spell it: arm64 (Apple silicon) or x86_64 (Intel).
+mac_arch() {
+  [ "$(uname -s)" = Darwin ] || die "runs on a Mac"
+  case "$(uname -m)" in
+    arm64 | x86_64) uname -m ;;
+    *) die "runs on a Mac with Apple silicon or an Intel processor, not $(uname -m)" ;;
+  esac
+}
+
 # fetch URL FILE SHA256 [curl options]: download into the cache once, and
 # check the file against its checksum on every run, so a corrupt or
 # replaced cache entry is caught too.

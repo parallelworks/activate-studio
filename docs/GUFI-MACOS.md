@@ -1,6 +1,6 @@
 # GUFI for macOS 14 and later
 
-The macOS app carries [GUFI](https://github.com/mar-file-system/GUFI), built from source by this repository for macOS 14 and later on Apple silicon. This page covers the published build, how to reproduce it, what the build does, and how it is checked and published. GUFI's own macOS package declares macOS 27 as the minimum for every file and loads two libraries from a Homebrew install, which is why the app does not use it.
+The macOS app carries [GUFI](https://github.com/mar-file-system/GUFI), built from source by this repository for macOS 14 and later, on Apple silicon and on Intel. This page covers the published build, how to reproduce it, what the build does, and how it is checked and published. GUFI's own macOS package declares macOS 27 as the minimum for every file and loads two libraries from a Homebrew install, which is why the app does not use it.
 
 ## The published build
 
@@ -30,13 +30,13 @@ gufi_query -d ' ' -E 'SELECT name FROM vrpentries;' /tmp/idx/notes
 
 ## Building it
 
-On a Mac with Apple silicon, the Command Line Tools (`xcode-select --install`) and Homebrew:
+On a Mac (Apple silicon or Intel), with the Command Line Tools (`xcode-select --install`) and Homebrew; the archive is named for the Mac's processor, `arm64` or `x86_64`:
 
 ```
 git clone https://github.com/parallelworks/activate-studio
 cd activate-studio
 deploy/mac/build_gufi.sh
-deploy/mac/check_gufi.sh deploy/mac/out/gufi-macos-arm64.tar.gz
+deploy/mac/check_gufi.sh deploy/mac/out/gufi-macos-$(uname -m).tar.gz
 ```
 
 The build takes about eight minutes on a GitHub `macos-15` runner and writes the archive, its `.sha256` and the manifest to `deploy/mac/out`. It installs its build tools with Homebrew unless `SKIP_BREW=1`. Other settings:
@@ -66,10 +66,10 @@ Homebrew must not have `jemalloc` installed: GUFI links one that pkg-config find
 
 ## How it is checked
 
-`deploy/mac/check_gufi.sh TREE|ARCHIVE` checks on any host that the expected tools, libraries, licenses and manifest are there, and that every Mach-O file is arm64, signed, needs no newer macOS than the manifest says, and loads its libraries from the tree or the system without `DYLD_LIBRARY_PATH`, never a system copy of a library the tree carries. On a Mac it also indexes a folder with `gufi_dir2index`, queries it with `gufi_query` and through `gufi_vt`, embeds text with sqlite-lembed and a 384-dimension model, and ranks with sqlite-vec, all through `/bin/sh` with no `DYLD_*` variables, as gufi_vt and scripts start the tools. It then confirms from dyld's own list that only the tree's libraries and the system's were loaded.
+`deploy/mac/check_gufi.sh TREE|ARCHIVE` checks on any host that the expected tools, libraries, licenses and manifest are there, and that every Mach-O file is for the architecture the manifest names, signed (Intel Macs also run unsigned code), needs no newer macOS than the manifest says, and loads its libraries from the tree or the system without `DYLD_LIBRARY_PATH`, never a system copy of a library the tree carries. On a Mac it also indexes a folder with `gufi_dir2index`, queries it with `gufi_query` and through `gufi_vt`, embeds text with sqlite-lembed and a 384-dimension model, and ranks with sqlite-vec, all through `/bin/sh` with no `DYLD_*` variables, as gufi_vt and scripts start the tools. It then confirms from dyld's own list that only the tree's libraries and the system's were loaded.
 
 ## CI and publishing
 
-The `gufi-macos` workflow builds on a `macos-15` runner, runs `check_gufi.sh` there, and runs it again on clean runners that did not build it, `macos-14` by default, which is the oldest macOS the build targets. Run by hand from the Actions tab, it takes a GUFI ref, a deployment target and the test runners, and keeps the archive as a workflow artifact for 30 days. Pushing a tag named `gufi-*` builds with the defaults and attaches the archive to that tag's release, as a prerelease that is never marked latest, so the app's installer and update check keep finding the app's own releases.
+The `gufi-macos` workflow builds on a `macos-15` runner, runs `check_gufi.sh` there, and runs it again on clean runners that did not build it, `macos-14` by default, which is the oldest macOS the build targets. Run by hand from the Actions tab, it takes a GUFI ref, a deployment target and the test runners, and keeps the archive as a workflow artifact for 30 days. Pushing a tag named `gufi-*` builds with the defaults and attaches the archive to that tag's release, as a prerelease that is never marked latest, so the app's installer and update check keep finding the app's own releases. The published release is the Apple silicon build; the `mac-app` workflow's Intel job uses a `gufi-macos-x86_64` archive when the run or release it is given has one, and otherwise builds the lean tree (`GUFI_LEMBED=0`, `gufi-vec-macos-x86_64`) on its `macos-15-intel` runner, which is all the Go version loads.
 
 To move the app to a newer GUFI: run the workflow with the new `gufi_ref` and check its archive in an app build (the `mac-app` workflow's `gufi_run` input); change `GUFI_REF` in `build_gufi.sh` to that commit; push a tag such as `gufi-<commit>-macos14`; and set `GUFI_RELEASE` in `.github/workflows/mac-app.yml` to the tag.

@@ -26,6 +26,12 @@
 #
 # OCR (tesseract and leptonica, with the English model) is built from
 # source for macOS 14 on each run, by deploy/mac/build_ocr.sh.
+#
+# The app is built for Apple silicon (arm64, on macos-15) and for Intel
+# (x86_64, on macos-15-intel). The Intel build takes GUFI from the same
+# places when they have a gufi-macos-x86_64 archive, and otherwise builds
+# the lean GUFI (build_gufi.sh, GUFI_LEMBED=0) in the job. The bridge job
+# updates from earlier releases, which were Apple silicon only.
 name: mac-app
 
 on:
@@ -71,7 +77,7 @@ env:
   # a new GUFI build (a run's archive expires after 30 days). Empty for a
   # release.
   GUFI_RUN: ""
-  # The gufi-* release whose gufi-macos-arm64.tar.gz the app uses.
+  # The gufi-* release whose gufi-macos-<arch>.tar.gz the app uses.
   GUFI_RELEASE: gufi-021a717-macos14
 
 concurrency:
@@ -79,11 +85,23 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
-    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
     permissions:
       contents: read
       actions: read
+    env:
+      ARCH: ${{ matrix.arch }}
+      ASSET: activate-studio-macos-${{ matrix.arch }}
     steps:
       - name: the release
         if: inputs.release != ''
@@ -124,14 +142,21 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/gufi"
           run="${GUFI_RUN_INPUT:-$GUFI_RUN}"
+          gufi="gufi-macos-$ARCH.tar.gz"
+          # An Intel build goes on without one: it builds GUFI below.
           if [ -n "$run" ]; then
-            gh run download "$run" -R "$GITHUB_REPOSITORY" -n gufi-macos-arm64 -D "$RUNNER_TEMP/gufi"
+            gh run download "$run" -R "$GITHUB_REPOSITORY" -n "gufi-macos-$ARCH" -D "$RUNNER_TEMP/gufi" || [ "$ARCH" != arm64 ]
           elif [ -n "$GUFI_RELEASE" ]; then
-            gh release download "$GUFI_RELEASE" -R "$GITHUB_REPOSITORY" -p 'gufi-macos-arm64.tar.gz*' -D "$RUNNER_TEMP/gufi"
+            gh release download "$GUFI_RELEASE" -R "$GITHUB_REPOSITORY" -p "$gufi*" -D "$RUNNER_TEMP/gufi" || [ "$ARCH" != arm64 ]
           fi
-          if [ -f "$RUNNER_TEMP/gufi/gufi-macos-arm64.tar.gz" ]; then
-            (cd "$RUNNER_TEMP/gufi" && shasum -a 256 -c gufi-macos-arm64.tar.gz.sha256)
-            echo "GUFI_TARBALL=$RUNNER_TEMP/gufi/gufi-macos-arm64.tar.gz" >> "$GITHUB_ENV"
+          if [ ! -f "$RUNNER_TEMP/gufi/$gufi" ] && [ "$ARCH" != arm64 ]; then
+            echo "No $gufi: building the lean GUFI here (build_gufi.sh, GUFI_LEMBED=0)."
+            GUFI_LEMBED=0 OUT_DIR="$RUNNER_TEMP/gufi" deploy/mac/build_gufi.sh
+            gufi="gufi-vec-macos-$ARCH.tar.gz"
+          fi
+          if [ -f "$RUNNER_TEMP/gufi/$gufi" ]; then
+            (cd "$RUNNER_TEMP/gufi" && shasum -a 256 -c "$gufi.sha256")
+            echo "GUFI_TARBALL=$RUNNER_TEMP/gufi/$gufi" >> "$GITHUB_ENV"
           else
             echo "No GUFI archive: the app uses GUFI's own macOS package."
           fi
@@ -144,7 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           OUT_DIR="$RUNNER_TEMP/ocr" deploy/mac/build_ocr.sh
-          echo "OCR_TARBALL=$RUNNER_TEMP/ocr/ocr-macos-arm64.tar.gz" >> "$GITHUB_ENV"
+          echo "OCR_TARBALL=$RUNNER_TEMP/ocr/ocr-macos-$ARCH.tar.gz" >> "$GITHUB_ENV"
 
       - name: build the app
         env:
@@ -156,7 +181,7 @@ jobs:
           {
             echo "### The app"
             echo '```'
-            ls -l "$OUT_DIR"/activate-studio-macos-arm64.*
+            ls -l "$OUT_DIR/$ASSET".*
             du -sh "$OUT_DIR/ACTIVATE Studio.app"
             echo '```'
             sed -n '/^Size$/,/^$/p' "$RUNNER_TEMP/build_app.log" | head -n 14
@@ -170,15 +195,15 @@ jobs:
       - name: check it on this Mac
         env:
           OUT_DIR: ${{ runner.temp }}/out
-        run: deploy/mac/check_app.sh "$OUT_DIR/ACTIVATE Studio.app" --run --launch --dmg "$OUT_DIR/activate-studio-macos-arm64.dmg"
+        run: deploy/mac/check_app.sh "$OUT_DIR/ACTIVATE Studio.app" --run --launch --dmg "$OUT_DIR/$ASSET.dmg"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: activate-studio-macos-arm64
+          name: ${{ env.ASSET }}
           path: |
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz.sha256
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.dmg
+            ${{ runner.temp }}/out/${{ env.ASSET }}.tar.gz
+            ${{ runner.temp }}/out/${{ env.ASSET }}.tar.gz.sha256
+            ${{ runner.temp }}/out/${{ env.ASSET }}.dmg
             ${{ runner.temp }}/out/install.sh
           if-no-files-found: error
           retention-days: 30
@@ -359,10 +384,21 @@ jobs:
   hardened:
     if: inputs.release == ''
     needs: build
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    name: hardened (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
+    env:
+      ASSET: activate-studio-macos-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -380,14 +416,14 @@ jobs:
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: activate-studio-macos-arm64
+          name: ${{ env.ASSET }}
           path: ${{ runner.temp }}/in
       - name: unpack the app
         run: |
           set -euo pipefail
-          (cd "$RUNNER_TEMP/in" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
+          (cd "$RUNNER_TEMP/in" && shasum -a 256 -c "$ASSET.tar.gz.sha256")
           mkdir -p "$RUNNER_TEMP/app"
-          tar -xzf "$RUNNER_TEMP/in/activate-studio-macos-arm64.tar.gz" -C "$RUNNER_TEMP/app"
+          tar -xzf "$RUNNER_TEMP/in/$ASSET.tar.gz" -C "$RUNNER_TEMP/app"
       - name: sign it with a throwaway identity
         run: |
           set -euo pipefail
@@ -404,7 +440,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: window-shots
+          name: window-shots${{ matrix.arch != 'arm64' && format('-{0}', matrix.arch) || '' }}
           path: ${{ runner.temp }}/window-shots
           if-no-files-found: warn
           retention-days: 14
@@ -423,10 +459,23 @@ jobs:
   sign:
     if: github.event_name == 'workflow_dispatch' && inputs.release != '' && vars.APPLE_TEAM_ID != ''
     needs: build
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    name: sign (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
       contents: read
+    env:
+      ASSET: activate-studio-macos-${{ matrix.arch }}
+    # Each architecture's job writes the same value: signing needs the same
+    # secrets and scripts for both.
     outputs:
       signed: ${{ steps.signed.outputs.signed }}
     steps:
@@ -470,15 +519,15 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: steps.ready.outputs.ready == 'true'
         with:
-          name: activate-studio-macos-arm64
+          name: ${{ env.ASSET }}
           path: ${{ runner.temp }}/in
       - name: unpack the app
         if: steps.ready.outputs.ready == 'true'
         run: |
           set -euo pipefail
-          (cd "$RUNNER_TEMP/in" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
+          (cd "$RUNNER_TEMP/in" && shasum -a 256 -c "$ASSET.tar.gz.sha256")
           mkdir -p "$RUNNER_TEMP/sign" "$RUNNER_TEMP/out"
-          tar -xzf "$RUNNER_TEMP/in/activate-studio-macos-arm64.tar.gz" -C "$RUNNER_TEMP/sign"
+          tar -xzf "$RUNNER_TEMP/in/$ASSET.tar.gz" -C "$RUNNER_TEMP/sign"
       # A keychain of its own, with the certificate; the identity is the
       # team's Developer ID Application certificate in it.
       - name: the signing keychain
@@ -499,14 +548,14 @@ jobs:
         run: deploy/mac/sign_app.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" "$SIGN_IDENTITY" "$SIGN_KEYCHAIN"
       - name: disk image
         if: steps.ready.outputs.ready == 'true'
-        run: deploy/mac/make_dmg.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" "$RUNNER_TEMP/out/activate-studio-macos-arm64.dmg"
+        run: deploy/mac/make_dmg.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" "$RUNNER_TEMP/out/$ASSET.dmg"
       - name: notarize and staple
         if: steps.ready.outputs.ready == 'true'
         env:
           NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
-        run: deploy/mac/notarize.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" "$RUNNER_TEMP/out/activate-studio-macos-arm64.dmg"
+        run: deploy/mac/notarize.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" "$RUNNER_TEMP/out/$ASSET.dmg"
       - name: remove the signing keychain
         if: always()
         run: |
@@ -518,9 +567,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/sign"
-          COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "ACTIVATE Studio.app"
+          COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "$RUNNER_TEMP/out/$ASSET.tar.gz" "ACTIVATE Studio.app"
           cd "$RUNNER_TEMP/out"
-          shasum -a 256 activate-studio-macos-arm64.tar.gz >activate-studio-macos-arm64.tar.gz.sha256
+          shasum -a 256 "$ASSET.tar.gz" >"$ASSET.tar.gz.sha256"
           cp "$RUNNER_TEMP/in/install.sh" install.sh
       # After packing: running it writes into the bundle (Python's caches).
       # With the notarized, stapled disk image where the tag's check_app.sh
@@ -530,16 +579,16 @@ jobs:
         run: |
           set -euo pipefail
           dmg=()
-          if grep -q -- '--dmg FILE' deploy/mac/check_app.sh; then dmg=(--dmg "$RUNNER_TEMP/out/activate-studio-macos-arm64.dmg"); fi
+          if grep -q -- '--dmg FILE' deploy/mac/check_app.sh; then dmg=(--dmg "$RUNNER_TEMP/out/$ASSET.dmg"); fi
           deploy/mac/check_app.sh "$RUNNER_TEMP/sign/ACTIVATE Studio.app" --run --launch ${dmg[@]+"${dmg[@]}"}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.ready.outputs.ready == 'true'
         with:
-          name: activate-studio-macos-arm64-signed
+          name: ${{ env.ASSET }}-signed
           path: |
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.tar.gz.sha256
-            ${{ runner.temp }}/out/activate-studio-macos-arm64.dmg
+            ${{ runner.temp }}/out/${{ env.ASSET }}.tar.gz
+            ${{ runner.temp }}/out/${{ env.ASSET }}.tar.gz.sha256
+            ${{ runner.temp }}/out/${{ env.ASSET }}.dmg
             ${{ runner.temp }}/out/install.sh
           if-no-files-found: error
           retention-days: 30
@@ -548,8 +597,9 @@ jobs:
         if: steps.ready.outputs.ready == 'true'
         run: echo "signed=true" >>"$GITHUB_OUTPUT"
 
-  # Sign the update manifest and attach to the release: the notarized app
-  # when the sign job made one, otherwise the build's ad hoc one. The only
+  # Sign the update manifests and attach to the release, for each
+  # architecture: the notarized app when the sign job made one, otherwise
+  # the build's ad hoc one. The only
   # job that can write, and the only one that sees the update signing key;
   # it runs no build code.
   release:
@@ -583,12 +633,14 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.sign.outputs.signed == 'true'
         with:
-          name: activate-studio-macos-arm64-signed
+          pattern: activate-studio-macos-*-signed
+          merge-multiple: true
           path: ${{ runner.temp }}/out
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.sign.outputs.signed != 'true'
         with:
-          name: activate-studio-macos-arm64
+          pattern: activate-studio-macos-*
+          merge-multiple: true
           path: ${{ runner.temp }}/out
       - name: sign the update manifest
         env:
@@ -599,7 +651,9 @@ jobs:
         run: |
           set -euo pipefail
           case "$CHANNEL" in stable) ;; preview) export STUDIO_RELEASE_CHANNEL=preview ;; *) echo "channel is stable or preview, not '$CHANNEL'"; exit 1 ;; esac
-          deploy/mac/sign_release.sh "$RUNNER_TEMP/out/activate-studio-macos-arm64.tar.gz" "$TAG"
+          for arch in arm64 x86_64; do
+            deploy/mac/sign_release.sh "$RUNNER_TEMP/out/activate-studio-macos-$arch.tar.gz" "$TAG"
+          done
       - name: attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -608,9 +662,11 @@ jobs:
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/out"
-          files=(activate-studio-macos-arm64.tar.gz activate-studio-macos-arm64.tar.gz.sha256
-            activate-studio-macos-arm64.manifest.json activate-studio-macos-arm64.manifest.json.sig
-            activate-studio-macos-arm64.dmg install.sh)
+          files=(install.sh)
+          for arch in arm64 x86_64; do
+            a="activate-studio-macos-$arch"
+            files+=("$a.tar.gz" "$a.tar.gz.sha256" "$a.manifest.json" "$a.manifest.json.sig" "$a.dmg")
+          done
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
           # A Preview release reaches installs that chose Preview, through
           # their updater; the fixed address new installs come from keeps
@@ -635,7 +691,7 @@ jobs:
               --title "ACTIVATE Studio for macOS" --notes "The newest macOS app."
           fi
           gh release upload macos -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
-          gh release edit macos -R "$GITHUB_REPOSITORY" --notes "ACTIVATE Studio $TAG for macOS, Apple silicon, macOS 14 or later.
+          gh release edit macos -R "$GITHUB_REPOSITORY" --notes "ACTIVATE Studio $TAG for macOS, Apple silicon or Intel, macOS 14 or later.
 
           Install: \`curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/download/macos/install.sh | bash\`, or open the disk image and drag the app to Applications.
 

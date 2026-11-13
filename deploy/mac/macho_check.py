@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """Check Mach-O files the way a Mac would load them, without macOS tools.
 
-For each file (thin, or the arm64 slice of a universal file) it checks:
-  - the CPU is arm64;
+For each file (thin, or the --arch slice of a universal file) it checks:
+  - the CPU is --arch (arm64 by default, or x86_64);
   - every linked library resolves the way dyld resolves it with
     DYLD_LIBRARY_PATH set to --lib-dir: by leaf name in --lib-dir, at an
     @rpath, @loader_path or @executable_path location, or under /usr/lib
     or /System (present on every Mac);
   - the code signature (ad hoc is enough on Apple silicon) matches the
     file's pages, since a page that does not match its hash kills the
-    process on load;
+    process on load; an Intel Mac also runs x86_64 code with no signature;
   - with --max-minos, that the file runs on that macOS version;
   - with --bundled DIR, that no library is loaded from the system when DIR
     carries a library of the same name: a build that picked up the build
     machine's copy needs a macOS release that has one.
 Problems are printed and the exit status is 1.
 
-Usage: macho_check.py [--lib-dir DIR] [--max-minos 13.5] [--bundled DIR] [--verbose] FILE...
+Usage: macho_check.py [--arch arm64|x86_64] [--lib-dir DIR] [--max-minos 13.5] [--bundled DIR] [--verbose] FILE...
        macho_check.py --print-minos FILE...   (the newest macOS any file needs)
 Files that are not Mach-O (scripts, data) and symbolic links are skipped.
 """
@@ -38,7 +38,7 @@ LC_RPATH = 0x1C | LC_REQ_DYLD
 LC_BUILD_VERSION = 0x32
 LC_VERSION_MIN_MACOSX = 0x24
 DYLIB_CMDS = {LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, LC_REEXPORT_DYLIB, LC_LAZY_LOAD_DYLIB, LC_LOAD_UPWARD_DYLIB}
-CPU_ARM64 = 0x0100000C
+CPUS = {'arm64': 0x0100000C, 'x86_64': 0x01000007}
 HASHES = {1: hashlib.sha1, 2: hashlib.sha256}
 
 
@@ -47,8 +47,8 @@ def cstr(buf, off):
     return buf[off:end].decode('utf-8', 'replace')
 
 
-def slice_of(data):
-    """The arm64 image inside a file, the file itself when thin, or None."""
+def slice_of(data, want):
+    """The image for CPU want inside a file, the file itself when thin, or None."""
     magic = data[:4]
     if magic in (b'\xca\xfe\xba\xbe', b'\xca\xfe\xba\xbf'):    # universal
         n = struct.unpack('>I', data[4:8])[0]
@@ -59,9 +59,9 @@ def slice_of(data):
         for k in range(n):
             rec = data[8 + k * step:8 + (k + 1) * step]
             cpu, _sub, off, size = struct.unpack('>iiQQ' if wide else '>iiII', rec[:24 if wide else 16])
-            if cpu & 0xffffffff == CPU_ARM64:
+            if cpu & 0xffffffff == want:
                 return data[off:off + size]
-        return b''    # universal, but no arm64 slice
+        return b''    # universal, but no slice for want
     if magic == b'\xcf\xfa\xed\xfe':    # 64-bit little endian
         return data
     return None
@@ -71,10 +71,10 @@ def version(v):
     return f'{v >> 16}.{(v >> 8) & 0xff}'
 
 
-def parse(path):
+def parse(path, want):
     with open(path, 'rb') as fh:
         data = fh.read()
-    img = slice_of(data)
+    img = slice_of(data, want)
     if img is None:
         return None
     if not img:
@@ -107,6 +107,8 @@ def parse(path):
 def signature_problem(info):
     """None when every code page matches the CodeDirectory, else why not."""
     if not info['sig']:
+        if info['cpu'] == CPUS['x86_64']:
+            return None
         return 'not signed (Apple silicon refuses to run unsigned code)'
     img = info['img']
     dataoff, datasize = info['sig']
@@ -167,6 +169,7 @@ def resolve(name, info, path, lib_dir, exe_dir):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    ap.add_argument('--arch', choices=sorted(CPUS), default='arm64', help='the CPU every file must be for')
     ap.add_argument('--lib-dir', default='', help='the directory DYLD_LIBRARY_PATH will name')
     ap.add_argument('--exe-dir', default='', help='directory standing in for @executable_path')
     ap.add_argument('--max-minos', default='', help='oldest macOS the files must run on, e.g. 13.5')
@@ -176,6 +179,7 @@ def main():
     ap.add_argument('--verbose', action='store_true')
     ap.add_argument('files', nargs='+')
     args = ap.parse_args()
+    want = CPUS[args.arch]
     floor = None
     if args.max_minos:
         major, _, minor = args.max_minos.partition('.')
@@ -184,19 +188,19 @@ def main():
         for f in args.files:
             if not os.path.lexists(f):
                 print(f'macho_check: {f}: no such file; left out of the minimum macOS', file=sys.stderr)
-        infos = [parse(f) for f in args.files if not os.path.islink(f) and os.path.isfile(f)]
+        infos = [parse(f, want) for f in args.files if not os.path.islink(f) and os.path.isfile(f)]
         print(version(max([i.get('minos') or 0 for i in infos if i] or [0])))
         return
     bad = seen = 0
     for f in args.files:
         if os.path.islink(f) or not os.path.isfile(f):
             continue
-        info = parse(f)
+        info = parse(f, want)
         if info is None:
             continue
         seen += 1
-        if info['cpu'] != CPU_ARM64:
-            print(f'{f}: not arm64 (cpu type {info["cpu"]:#x})')
+        if info['cpu'] != want:
+            print(f'{f}: not {args.arch} (cpu type {info["cpu"]:#x})')
             bad += 1
             continue
         why = signature_problem(info)

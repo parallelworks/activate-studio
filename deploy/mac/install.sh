@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install ACTIVATE Studio on a Mac with Apple silicon, for the current user
+# Install ACTIVATE Studio on a Mac (Apple silicon or Intel), for the current user
 # (no administrator rights):
 #
 #   curl -fsSL https://github.com/parallelworks/activate-studio/releases/download/macos/install.sh | bash
@@ -15,7 +15,9 @@
 # is there is removed. STUDIO_NO_OPEN=1 installs without opening it.
 set -euo pipefail
 
-STUDIO_URL="${STUDIO_URL:-https://github.com/parallelworks/activate-studio/releases/download/macos/activate-studio-macos-arm64.tar.gz}"
+# The processor's architecture, also from a shell that runs under Rosetta.
+if [ "$(sysctl -in hw.optional.arm64 2>/dev/null)" = 1 ]; then ARCH=arm64; else ARCH=x86_64; fi
+STUDIO_URL="${STUDIO_URL:-https://github.com/parallelworks/activate-studio/releases/download/macos/activate-studio-macos-$ARCH.tar.gz}"
 DEST_DIR="${STUDIO_INSTALL_DIR:-$HOME/Applications}"
 APP_NAME="ACTIVATE Studio.app"
 LABEL=com.parallelworks.activate-studio
@@ -25,7 +27,6 @@ fail() { echo "install: $*" >&2; exit 1; }
 
 if [ "${STUDIO_INSTALL_ANY_HOST:-}" != 1 ]; then
   [ "$(uname -s)" = Darwin ] || fail "ACTIVATE Studio.app is for macOS."
-  [ "$(uname -m)" = arm64 ] || fail "this build is for Apple silicon (arm64); this Mac is $(uname -m)."
 fi
 
 sha256() {
@@ -58,6 +59,10 @@ echo "Checksum verified."
 mkdir -p "$WORK/unpacked" "$DEST_DIR"
 tar -xzf "$archive" -C "$WORK/unpacked"
 [ -x "$WORK/unpacked/$APP_NAME/Contents/MacOS/ACTIVATE Studio" ] || fail "the archive does not hold $APP_NAME"
+if [ "${STUDIO_INSTALL_ANY_HOST:-}" != 1 ] && [ "$ARCH" = x86_64 ]; then
+  built="$(plutil -extract LSArchitecturePriority.0 raw "$WORK/unpacked/$APP_NAME/Contents/Info.plist" 2>/dev/null || echo arm64)"
+  [ "$built" = x86_64 ] || fail "this archive is the app for Apple silicon; this Mac has an Intel processor (activate-studio-macos-x86_64.tar.gz is its app)."
+fi
 
 # Stop a running copy before replacing it; the app loads it again.
 if [ "$(uname -s)" = Darwin ]; then

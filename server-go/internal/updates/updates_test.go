@@ -252,7 +252,9 @@ func newFixture(t *testing.T, flavor, version string, l layout) *fixture {
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 	fx.env = map[string]string{"STUDIO_DATA_DIR": fx.data, "STUDIO_UPDATE_URL": fx.feed.srv.URL, "STUDIO_LSREGISTER": filepath.Join(bin, "lsregister")}
 	projectRoot := ""
+	goarch := "amd64"
 	if flavor == "macos" {
+		goarch = "arm64"
 		fx.app = filepath.Join(root, "Applications", "ACTIVATE Studio.app")
 		macApp(t, fx.app, version, fx.keys.pub, l, "#!/bin/sh\n# shell 1\n")
 		fx.env["STUDIO_APP_BUNDLE"] = fx.app
@@ -266,7 +268,7 @@ func newFixture(t *testing.T, flavor, version string, l layout) *fixture {
 	os.MkdirAll(index, 0o755)
 	store := settings.Open(index, filepath.Join(root, "kb"), false, func(k string) (string, bool) { v, ok := fx.env[k]; return v, ok })
 	fx.u = New(Options{
-		ProjectRoot: projectRoot, IndexBase: index, Getenv: fx.getenv, Settings: store, GOOS: "linux", GOARCH: "amd64",
+		ProjectRoot: projectRoot, IndexBase: index, Getenv: fx.getenv, Settings: store, GOOS: "linux", GOARCH: goarch,
 		Restart: func(code int) bool {
 			fx.mu.Lock()
 			fx.restarts = append(fx.restarts, code)
@@ -358,6 +360,21 @@ func TestVersions(t *testing.T) {
 	}
 	if !dottedAtMost("14.0", "14.5") || dottedAtMost("15", "14.5") || !dottedAtMost("2.28", "2.35") {
 		t.Fatal("dottedAtMost")
+	}
+}
+
+func TestAssetNamesByArchitecture(t *testing.T) {
+	for _, c := range []struct{ goos, goarch, mac, linux string }{
+		{"darwin", "arm64", "activate-studio-macos-arm64.tar.gz", "activate-studio-linux-aarch64.tar.gz"},
+		{"darwin", "amd64", "activate-studio-macos-x86_64.tar.gz", "activate-studio-linux-x86_64.tar.gz"},
+	} {
+		u := New(Options{GOOS: c.goos, GOARCH: c.goarch, Getenv: func(string) string { return "" }})
+		if got := u.MacAsset(); got != c.mac {
+			t.Errorf("%s: MacAsset %s, want %s", c.goarch, got, c.mac)
+		}
+		if got := u.LinuxAsset(); got != c.linux {
+			t.Errorf("%s: LinuxAsset %s, want %s", c.goarch, got, c.linux)
+		}
 	}
 }
 

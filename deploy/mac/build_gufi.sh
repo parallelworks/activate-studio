@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build GUFI from source for macOS on Apple silicon, as a relocatable tree
+# Build GUFI from source for macOS, as a relocatable tree for the Mac it runs
+# on (Apple silicon or Intel)
 # for the app (deploy/mac/build_app.sh with GUFI_TARBALL set).
 #
 # GUFI's own macOS package is built without a deployment target, so every
@@ -13,8 +14,9 @@
 # target (check_gufi.sh --static). check_gufi.sh without --static also runs
 # what was built.
 #
-# Runs on a Mac with Apple silicon, Homebrew and the Command Line Tools,
-# such as GitHub's macos-15 runner (.github/workflows/gufi-macos.yml). The
+# Runs on a Mac with Homebrew and the Command Line Tools, such as GitHub's
+# macos-15 runner (.github/workflows/gufi-macos.yml) or, for Intel, its
+# macos-15-intel runner. The
 # build tools come from Homebrew, as GUFI's macOS guide asks (its LLVM and
 # the GNU utilities); nothing the tree loads does.
 #
@@ -30,20 +32,19 @@
 #   SKIP_BREW    1 to skip installing the Homebrew build tools
 #   GUFI_LEMBED  0 for the lean build of the Go version: sqlite-vec without
 #                sqlite-lembed and llama.cpp (deploy/common/gufi-no-lembed.patch);
-#                its archive is gufi-vec-macos-arm64.tar.gz
+#                its archive is gufi-vec-macos-<arch>.tar.gz
 #
-# Outputs in OUT_DIR: gufi-macos-arm64.tar.gz (gufi/ with bin, lib,
-# licenses, README.txt and manifest.json), its .sha256, and
-# gufi-macos-arm64.manifest.json (the manifest with the archive's name,
+# Outputs in OUT_DIR: gufi-macos-<arch>.tar.gz, <arch> arm64 or x86_64 (gufi/
+# with bin, lib, licenses, README.txt and manifest.json), its .sha256, and
+# gufi-macos-<arch>.manifest.json (the manifest with the archive's name,
 # size and SHA-256).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${OUT_DIR:-$HERE/out}"
 CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
-ASSET=gufi-macos-arm64
 LEMBED="${GUFI_LEMBED:-1}"
-case "$LEMBED" in 1) ;; 0) ASSET=gufi-vec-macos-arm64 ;; *) echo "build_gufi: GUFI_LEMBED is 1 or 0" >&2; exit 1 ;; esac
+case "$LEMBED" in 1) ;; 0) ;; *) echo "build_gufi: GUFI_LEMBED is 1 or 0" >&2; exit 1 ;; esac
 TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 NAME=build_gufi
 . "$HERE/../common/lib.sh"
@@ -62,7 +63,8 @@ PCRE2_SHA256=$PCRE2_SRC_SHA256
 # compiler flags and the ref to git, so each must be what it claims to be.
 [[ "$TARGET" =~ ^[0-9]{2}(\.[0-9]{1,2})?$ ]] || die "MACOSX_DEPLOYMENT_TARGET must look like 14.0, not '$TARGET'"
 [[ "$GUFI_REF" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] || die "GUFI_REF is not a branch, tag or commit: '$GUFI_REF'"
-if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then die "runs on a Mac with Apple silicon"; fi
+ARCH="$(mac_arch)"
+ASSET="gufi-$([ "$LEMBED" = 1 ] || echo vec-)macos-$ARCH"
 for tool in brew xcrun codesign otool git curl tar python3; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
@@ -341,14 +343,14 @@ LLAMA_VERSION="$(pc_version "$BUILD/deps/llama.cpp/lib/pkgconfig/llama.pc")"
 VEC_VERSION="$(version_in "$B/sqlite-vec-main/VERSION")"
 LEMBED_VERSION="$(version_in "$B/sqlite-lembed/VERSION")"
 [ "$LEMBED" = 1 ] || LEMBED_VERSION=none LLAMA_VERSION=none
-MINOS="$(python3 "$HERE/macho_check.py" --print-minos "${MACHO[@]}")"
+MINOS="$(python3 "$HERE/macho_check.py" --arch "$ARCH" --print-minos "${MACHO[@]}")"
 
 cat >"$TREE/README.txt" <<README
 GUFI, the Grand Unified File Index (Los Alamos National Laboratory)
 https://github.com/mar-file-system/GUFI
 
 Built from source by the ACTIVATE Studio build (deploy/mac/build_gufi.sh)
-for macOS $TARGET and later on Apple silicon: GUFI $GUFI_DESCRIBE
+for macOS $TARGET and later on $ARCH: GUFI $GUFI_DESCRIBE
 ($GUFI_COMMIT), with the dependencies GUFI bundles (SQLite $SQLITE_VERSION,
 sqlite3-pcre, sqlite-vec $VEC_VERSION, sqlite-lembed $LEMBED_VERSION,
 llama.cpp $LLAMA_VERSION, and jemalloc, linked into the tools), and LLVM
@@ -366,7 +368,7 @@ domain.
 README
 
 GUFI_REF="$GUFI_REF" GUFI_COMMIT="$GUFI_COMMIT" GUFI_DESCRIBE="$GUFI_DESCRIBE" TARGET="$TARGET" \
-  MINOS="$MINOS" SDK="$SDK_VERSION" BUILD_MACOS="$(sw_vers -productVersion)" COMPILER="$COMPILER" \
+  MINOS="$MINOS" ARCH="$ARCH" SDK="$SDK_VERSION" BUILD_MACOS="$(sw_vers -productVersion)" COMPILER="$COMPILER" \
   LIBOMP="$LIBOMP_VERSION" PCRE2="$PCRE2_VERSION" SQLITE="$SQLITE_VERSION" VEC="$VEC_VERSION" \
   LEMBED="$LEMBED_VERSION" LLAMA="$LLAMA_VERSION" python3 - "$TREE/manifest.json" <<'PY'
 import datetime, json, os, sys
@@ -375,7 +377,7 @@ manifest = {
     'gufi': {'ref': e['GUFI_REF'], 'commit': e['GUFI_COMMIT'], 'version': e['GUFI_DESCRIBE']},
     'deploymentTarget': e['TARGET'],
     'minos': e['MINOS'],
-    'arch': 'arm64',
+    'arch': e['ARCH'],
     'components': {
         'libomp': e['LIBOMP'], 'pcre2': e['PCRE2'], 'sqlite': e['SQLITE'],
         'sqlite-vec': e['VEC'], 'sqlite-lembed': e['LEMBED'], 'llama.cpp': e['LLAMA'],

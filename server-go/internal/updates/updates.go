@@ -336,8 +336,19 @@ func (k kit) resources(root string) string {
 	return root
 }
 
-var macosKit = kit{flavor: "macos", asset: "activate-studio-macos-arm64.tar.gz", manifest: "activate-studio-macos-arm64.manifest.json",
-	signature: "activate-studio-macos-arm64.manifest.json.sig", top: appName, label: "macOS app"}
+func newKit(flavor, asset, top, label string) kit {
+	m := strings.TrimSuffix(asset, ".tar.gz") + ".manifest.json"
+	return kit{flavor: flavor, asset: asset, manifest: m, signature: m + ".sig", top: top, label: label}
+}
+
+// MacAsset is the macOS app archive's name for this computer.
+func (u *Updater) MacAsset() string {
+	arch := u.o.GOARCH
+	if arch == "amd64" {
+		arch = "x86_64"
+	}
+	return "activate-studio-macos-" + arch + ".tar.gz"
+}
 
 // LinuxAsset is the Linux archive's name for this computer.
 func (u *Updater) LinuxAsset() string {
@@ -352,9 +363,7 @@ func (u *Updater) LinuxAsset() string {
 }
 
 func (u *Updater) linuxKit() kit {
-	a := u.LinuxAsset()
-	m := strings.TrimSuffix(a, ".tar.gz") + ".manifest.json"
-	return kit{flavor: "linux", asset: a, manifest: m, signature: m + ".sig", top: linuxTop, label: "Linux app"}
+	return newKit("linux", u.LinuxAsset(), linuxTop, "Linux app")
 }
 
 type payloadInfo struct {
@@ -498,7 +507,7 @@ func (u *Updater) Mode() string {
 
 func (u *Updater) kit() *kit {
 	if u.appBundle() != "" {
-		k := macosKit
+		k := newKit("macos", u.MacAsset(), appName, "macOS app")
 		return &k
 	}
 	if u.payload() != nil {

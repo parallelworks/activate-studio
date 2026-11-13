@@ -17,7 +17,7 @@
 // install itself in ~/Applications, through `launcher.sh --install`, and
 // opens that copy.
 //
-// Built with: swiftc -O -target arm64-apple-macos13 StudioShell.swift
+// Built with: swiftc -O -target <arm64|x86_64>-apple-macos13 StudioShell.swift
 // (deploy/mac/build_app.sh does this when it runs on a Mac).
 
 import AppKit

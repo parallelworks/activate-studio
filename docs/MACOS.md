@@ -4,7 +4,7 @@ There are two ways to run the Studio on a Mac: the app, which carries
 everything it needs, and a clone of this repository. The app is the short
 path; the clone is for working on the Studio itself.
 
-## The app (Apple silicon)
+## The app (Apple silicon or Intel)
 
 *Install:* in Terminal,
 
@@ -13,10 +13,11 @@ curl -fsSL https://github.com/parallelworks/activate-studio/releases/download/ma
 ```
 
 This puts `ACTIVATE Studio.app` in `~/Applications`, without
-administrator rights, and opens it. The alternative is the disk image,
-`activate-studio-macos-arm64.dmg` on the
+administrator rights, and opens it; it takes the build for the Mac's
+processor. The alternative is the disk image on the
 [macOS release](https://github.com/parallelworks/activate-studio/releases/tag/macos)
-page, which always holds the newest app. Open it and double-click
+page, which always holds the newest app: `activate-studio-macos-arm64.dmg`
+for Apple silicon, `activate-studio-macos-x86_64.dmg` for Intel. Open it and double-click
 ACTIVATE Studio, then choose Install: the app copies itself to
 Applications in your home folder (`~/Applications`, created if missing)
 and opens from there, with no administrator rights needed, and it updates
@@ -220,11 +221,12 @@ automatically again. Channels, installing an older version, the state
 snapshot taken before every change of version, and releases that ask for
 the app to be reopened follow [`UPDATES.md`](UPDATES.md).
 
-*Publishing an update:* a release carries the
-`activate-studio-macos-arm64.tar.gz` that `build_app.sh` writes, and the
-`.manifest.json` and `.manifest.json.sig` that
-`deploy/mac/sign_release.sh activate-studio-macos-arm64.tar.gz` writes
-beside it. The script reads the private key from
+*Publishing an update:* a release carries, for each architecture, the
+`activate-studio-macos-<arch>.tar.gz` that `build_app.sh` writes (`arm64`,
+`x86_64`), and the `.manifest.json` and `.manifest.json.sig` that
+`deploy/mac/sign_release.sh activate-studio-macos-<arch>.tar.gz` writes
+beside it. An installed app updates from the archive for its own
+architecture. The script reads the private key from
 `STUDIO_UPDATE_SIGNING_KEY` (the PEM text, as the repository secret of
 that name holds it) or from the file `STUDIO_UPDATE_SIGNING_KEY_FILE`,
 refuses a key that does not match `update-signing.pub`, takes the version
@@ -254,22 +256,27 @@ works for any release:
 xattr -dr com.apple.quarantine "$HOME/Applications/ACTIVATE Studio.app"
 ```
 
-*Requirements:* a Mac with Apple silicon, and the macOS release the app
-declares as its minimum, which its bundled GUFI sets: macOS 14 with GUFI
+*Requirements:* a Mac with Apple silicon or an Intel processor, and the
+macOS release the app declares as its minimum, which its bundled GUFI sets: macOS 14 with GUFI
 built by `deploy/mac/build_gufi.sh`, macOS 27 with GUFI's own package (see
 [GUFI in the app](#gufi-in-the-app)).
 
 *Building the app:* `deploy/mac/build_app.sh` writes the Go version by
 default (`STUDIO_SERVER=go-only`, with the Wails window, which builds only
 on a Mac); `STUDIO_SERVER=node` writes the app of v1.188 and earlier (Node,
-Python and the Swift window, on macOS or Linux). It writes the app, `activate-studio-macos-arm64.tar.gz` with its `.sha256`,
+Python and the Swift window, on macOS or Linux, Apple silicon only). It
+builds for the Mac it runs on, or for `MACOS_ARCH` (`arm64` or `x86_64`).
+The Intel app is the Go version, takes the GUFI archive from
+`GUFI_TARBALL` (`deploy/mac/build_gufi.sh` on an Intel Mac, or
+`GUFI_LEMBED=0` for the lean build) and ONNX Runtime 1.23.2, the last
+release with an Intel build. It writes the app, `activate-studio-macos-<arch>.tar.gz` with its `.sha256`,
 `install.sh`, and on a Mac the disk image to `deploy/mac/out`. On a Mac
 it also builds tesseract with `deploy/mac/build_ocr.sh`, once per version
 of that script; elsewhere, `OCR_TARBALL` gives it that archive, and without
 one the app has no OCR. It checks
 the app with `deploy/mac/check_app.sh`, which on a Mac also runs it with
 `--run`. `install.sh` installs from a local archive too:
-`bash install.sh path/to/activate-studio-macos-arm64.tar.gz`. The app's
+`bash install.sh path/to/activate-studio-macos-<arch>.tar.gz`. The app's
 icon is `deploy/mac/AppIcon-1024.png`, drawn from `deploy/mac/AppIcon.svg`
 on Apple's icon grid; the disk image's volume shows it too. The web icons
 come from `web/icons/`.
@@ -451,8 +458,8 @@ from one of two sources:
 
 | Source | Set with | Oldest macOS |
 |---|---|---|
-| An archive from `deploy/mac/build_gufi.sh`; the app's releases use the published one | `GUFI_TARBALL=path/to/gufi-macos-arm64.tar.gz` | its deployment target, 14 by default |
-| GUFI's own macOS package, with Homebrew's `libomp` and `pcre2` bottles (when no archive is given) | `GUFI_PKG`, or the pinned download | 27 |
+| An archive from `deploy/mac/build_gufi.sh`; the app's releases use the published one | `GUFI_TARBALL=path/to/gufi-macos-<arch>.tar.gz` | its deployment target, 14 by default |
+| GUFI's own macOS package, with Homebrew's `libomp` and `pcre2` bottles (when no archive is given; Apple silicon only) | `GUFI_PKG`, or the pinned download | 27 |
 
 The app's `LSMinimumSystemVersion` is the newest macOS any bundled binary
 declares, and GUFI is the one that sets it (the bundled Node needs 13.5).
@@ -487,7 +494,7 @@ SHA-256, builds it with Apple's compilers for `MACOSX_DEPLOYMENT_TARGET`
 `/usr/local`, or targets a newer macOS. It checks that every file loads only
 the tree's library and the system's, signs them ad hoc, and reads the text
 in a sample of each image format (`deploy/mac/testdata`) before it packs
-`ocr-macos-arm64.tar.gz` with its `.sha256` and manifest. The macOS app
+`ocr-macos-<arch>.tar.gz` (`arm64` or `x86_64`, the Mac it runs on) with its `.sha256` and manifest. The macOS app
 workflow builds it on each run and hands it to `build_app.sh` as
 `OCR_TARBALL`. `check_app.sh --run` then reads each sample with the app's
 tesseract, reads the scanned sample PDF through downmark, and has the

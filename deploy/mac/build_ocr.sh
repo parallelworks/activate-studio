@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Build tesseract, the OCR engine, for the macOS app on Apple silicon, as a
-# relocatable tree for deploy/mac/build_app.sh (OCR_TARBALL).
+# Build tesseract, the OCR engine, for the macOS app on the Mac it runs on
+# (Apple silicon or Intel), as a relocatable tree for deploy/mac/build_app.sh
+# (OCR_TARBALL).
 #
 # The indexer runs tesseract on pictures (indexer/enrich.py), and downmark
 # hands it each scanned PDF page as a PNG on stdin, with tesseract's tsv
@@ -24,8 +25,8 @@
 # tesseract finds its data through TESSDATA_PREFIX, which studio-run.sh sets
 # to share/tessdata here.
 #
-# Runs on a Mac with Apple silicon and the Command Line Tools, such as
-# GitHub's macos-15 runner, with CMake (from Homebrew when it is missing).
+# Runs on a Mac with the Command Line Tools, such as GitHub's macos-15 or
+# macos-15-intel runner, with CMake (from Homebrew when it is missing).
 # Nothing the tree loads comes from Homebrew.
 #
 # Usage: deploy/mac/build_ocr.sh
@@ -34,15 +35,14 @@
 #   CACHE_DIR  downloads, kept between builds (default deploy/mac/.cache)
 #   JOBS       parallel build jobs (default: the number of CPUs)
 #
-# Outputs in OUT_DIR: ocr-macos-arm64.tar.gz (ocr/ as above), its .sha256,
-# and ocr-macos-arm64.manifest.json (the manifest with the archive's name,
-# size and SHA-256).
+# Outputs in OUT_DIR: ocr-macos-<arch>.tar.gz, <arch> arm64 or x86_64 (ocr/
+# as above), its .sha256, and ocr-macos-<arch>.manifest.json (the manifest
+# with the archive's name, size and SHA-256).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${OUT_DIR:-$HERE/out}"
 CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
-ASSET=ocr-macos-arm64
 TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 
 # Pinned sources (deploy/common/pins.sh), checked against their SHA-256 on
@@ -55,7 +55,8 @@ NAME=build_ocr
 # The target can come from a workflow's free-text input, and goes into
 # compiler flags.
 [[ "$TARGET" =~ ^[0-9]{2}(\.[0-9]{1,2})?$ ]] || die "MACOSX_DEPLOYMENT_TARGET must look like 14.0, not '$TARGET'"
-if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then die "runs on a Mac with Apple silicon"; fi
+ARCH="$(mac_arch)"
+ASSET="ocr-macos-$ARCH"
 for tool in xcrun codesign otool curl tar make python3; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
@@ -93,7 +94,7 @@ echo "  $COMPILER, macOS SDK $SDK_VERSION, deployment target $TARGET, CMake $(cm
 # Nothing from Homebrew or /usr/local: a library found there would be
 # linked in place of the one built here.
 CM=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$DEPS" -DCMAKE_PREFIX_PATH="$DEPS"
-  -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET="$TARGET"
+  -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$TARGET"
   -DCMAKE_OSX_SYSROOT="$SDKROOT" -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local"
   -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
 
@@ -133,7 +134,7 @@ for f in "$TREE/bin/tesseract" "$TREE/lib/$LEPT"; do
   out="$(codesign --force --sign - "$f" 2>&1)" || die "codesign could not sign $f: $out"
   codesign --verify "$f" || die "codesign rejects $f after signing"
 done
-python3 "$HERE/macho_check.py" --max-minos "$TARGET" "$TREE/bin/tesseract" "$TREE/lib/$LEPT" ||
+python3 "$HERE/macho_check.py" --arch "$ARCH" --max-minos "$TARGET" "$TREE/bin/tesseract" "$TREE/lib/$LEPT" ||
   die "the Mach-O check failed (above)"
 
 echo "Licenses..."
@@ -152,12 +153,12 @@ license "$WORK/libwebp-$LIBWEBP_VERSION/COPYING" libwebp-COPYING.txt
 license "$WORK/libwebp-$LIBWEBP_VERSION/PATENTS" libwebp-PATENTS.txt
 license "$WORK/giflib-$GIFLIB_VERSION/COPYING" giflib-COPYING.txt
 
-MINOS="$(python3 "$HERE/macho_check.py" --print-minos "$TREE/bin/tesseract" "$TREE/lib/$LEPT")"
+MINOS="$(python3 "$HERE/macho_check.py" --arch "$ARCH" --print-minos "$TREE/bin/tesseract" "$TREE/lib/$LEPT")"
 cat >"$TREE/README.txt" <<README
 tesseract, the OCR engine (https://github.com/tesseract-ocr/tesseract)
 
 Built from source by the ACTIVATE Studio build (deploy/mac/build_ocr.sh)
-for macOS $TARGET and later on Apple silicon: tesseract $TESSERACT_VERSION, without
+for macOS $TARGET and later on $ARCH: tesseract $TESSERACT_VERSION, without
 its training tools or legacy engine, and leptonica $LEPTONICA_VERSION
 (lib/$LEPT), which reads PNG, JPEG, TIFF, WebP and GIF through libpng
 $LIBPNG_VERSION, libjpeg-turbo $JPEG_TURBO_VERSION, libtiff $LIBTIFF_VERSION, libwebp $LIBWEBP_VERSION and giflib
@@ -173,7 +174,7 @@ replaces. manifest.json records the build. The licenses are in licenses/.
 README
 
 TARGET="$TARGET" MINOS="$MINOS" SDK="$SDK_VERSION" BUILD_MACOS="$(sw_vers -productVersion)" COMPILER="$COMPILER" \
-  TESSERACT="$TESSERACT_VERSION" LEPTONICA="$LEPTONICA_VERSION" LIBPNG="$LIBPNG_VERSION" JPEG="$JPEG_TURBO_VERSION" \
+  ARCH="$ARCH" TESSERACT="$TESSERACT_VERSION" LEPTONICA="$LEPTONICA_VERSION" LIBPNG="$LIBPNG_VERSION" JPEG="$JPEG_TURBO_VERSION" \
   TIFF="$LIBTIFF_VERSION" WEBP="$LIBWEBP_VERSION" GIF="$GIFLIB_VERSION" TESSDATA="$TESSDATA_TAG" \
   python3 - "$TREE/manifest.json" <<'PY'
 import datetime, json, os, sys
@@ -182,7 +183,7 @@ manifest = {
     'tesseract': e['TESSERACT'],
     'deploymentTarget': e['TARGET'],
     'minos': e['MINOS'],
-    'arch': 'arm64',
+    'arch': e['ARCH'],
     'components': {
         'leptonica': e['LEPTONICA'], 'libpng': e['LIBPNG'], 'libjpeg-turbo': e['JPEG'],
         'libtiff': e['TIFF'], 'libwebp': e['WEBP'], 'giflib': e['GIF'],

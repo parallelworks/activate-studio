@@ -3,12 +3,13 @@
 # or its archive.
 #
 # On any host: the layout (the tools and libraries the Studio runs, the
-# licenses, the manifest), and that every Mach-O file is arm64, signed,
-# runs on the macOS release the manifest names (or --max-minos), and loads
-# its libraries from the tree or the system without DYLD_LIBRARY_PATH,
-# never a system copy of a library the tree carries (macho_check.py).
+# licenses, the manifest), and that every Mach-O file is for the
+# manifest's architecture (arm64 or x86_64), signed, runs on the macOS
+# release the manifest names (or --max-minos), and loads its libraries
+# from the tree or the system without DYLD_LIBRARY_PATH, never a system
+# copy of a library the tree carries (macho_check.py).
 #
-# On a Mac with Apple silicon, unless --static, also what the Studio does
+# On a Mac of that architecture, unless --static, also what the Studio does
 # with it, with no DYLD_* variables and through /bin/sh as gufi_vt and the
 # indexer start the tools: index a folder, query it with gufi_query and
 # through gufi_vt, embed text with sqlite-lembed and the model, and search
@@ -93,6 +94,7 @@ for f in bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 \
   check "$f" test -s "$G/$f"
 done
 TARGET="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["deploymentTarget"])' "$G/manifest.json" 2>/dev/null || true)"
+ARCH="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("arch", "arm64"))' "$G/manifest.json" 2>/dev/null || echo arm64)"
 MAX="${MAX:-$TARGET}"
 if [ -n "$TARGET" ]; then ok "the manifest says it was built for macOS $TARGET"; else bad "the manifest names no deployment target"; fi
 
@@ -100,8 +102,8 @@ echo "Native code"
 NATIVE=("$G"/bin/* "$G"/lib/*.dylib)
 FLOOR=()
 [ -z "$MAX" ] || FLOOR=(--max-minos "$MAX")
-if out="$(python3 "$HERE/macho_check.py" ${FLOOR[@]+"${FLOOR[@]}"} --bundled "$G/lib" "${NATIVE[@]}" 2>&1)"; then
-  ok "arm64, signed, runs on macOS ${MAX:-(any)}, loads its libraries from the tree or the system"
+if out="$(python3 "$HERE/macho_check.py" --arch "$ARCH" ${FLOOR[@]+"${FLOOR[@]}"} --bundled "$G/lib" "${NATIVE[@]}" 2>&1)"; then
+  ok "$ARCH, signed, runs on macOS ${MAX:-(any)}, loads its libraries from the tree or the system"
 else
   bad "Mach-O check:"
   printf '%s\n' "$out" | sed 's/^/        /'
@@ -121,8 +123,8 @@ if [ -z "$elf" ]; then ok "no Linux (ELF) binaries"; else bad "Linux binaries:";
 
 if [ "$STATIC" = 1 ]; then
   :
-elif [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
-  echo "(running the tools needs a Mac with Apple silicon; skipped)"
+elif [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != "$ARCH" ]; then
+  echo "(running the tools needs a Mac whose processor is $ARCH; skipped)"
 else
   echo "Running on macOS $(sw_vers -productVersion)"
   if [ "$LEMBED" = 0 ]; then

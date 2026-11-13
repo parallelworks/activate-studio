@@ -3,7 +3,7 @@
 # and the manifest's Ed25519 signature, beside the archive.
 #
 # Usage: deploy/mac/sign_release.sh ARCHIVE [VERSION]
-#   ARCHIVE   activate-studio-macos-arm64.tar.gz, as build_app.sh writes it
+#   ARCHIVE   activate-studio-macos-<arch>.tar.gz, as build_app.sh writes it
 #   VERSION   the release, vMAJOR.MINOR[.PATCH]; by default the version the
 #             app in the archive reports (build-info.json) less any -N-gHASH
 #
