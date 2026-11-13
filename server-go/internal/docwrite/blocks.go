@@ -19,6 +19,7 @@ type Run struct {
 	Text                       string
 	Bold, Italic, Code, Strike bool
 	Link                       string
+	Image                      string // an image's source, with its alt text as Text
 }
 
 // Block kinds.
@@ -30,6 +31,7 @@ const (
 	KCode    = "code"
 	KQuote   = "quote"
 	KRule    = "rule"
+	KImage   = "img"
 )
 
 // Block is one block of a Markdown document.
@@ -43,7 +45,8 @@ type Block struct {
 	Header   [][]Run // table
 	Rows     [][][]Run
 	Align    []string // table: "left", "right", "center" or ""
-	Text     string   // code
+	Text     string   // code; an image's alt text
+	Src      string   // image
 	Children []Block  // quote
 }
 
@@ -61,11 +64,9 @@ func blocksOf(parent ast.Node, src []byte) []Block {
 	for n := parent.FirstChild(); n != nil; n = n.NextSibling() {
 		switch v := n.(type) {
 		case *ast.Heading:
-			out = append(out, Block{Kind: KHeading, Level: v.Level, Runs: runsOf(v, src)})
+			out = append(out, Block{Kind: KHeading, Level: v.Level, Runs: textOnly(runsOf(v, src))})
 		case *ast.Paragraph, *ast.TextBlock:
-			if r := runsOf(v, src); len(r) > 0 {
-				out = append(out, Block{Kind: KPara, Runs: r})
-			}
+			out = append(out, splitImages(runsOf(v, src))...)
 		case *ast.List:
 			l := Block{Kind: KList, Ordered: v.IsOrdered(), Start: v.Start}
 			if l.Start == 0 {
@@ -111,7 +112,7 @@ func blocksOf(parent ast.Node, src []byte) []Block {
 			for row := v.FirstChild(); row != nil; row = row.NextSibling() {
 				var cells [][]Run
 				for c := row.FirstChild(); c != nil; c = c.NextSibling() {
-					cells = append(cells, runsOf(c, src))
+					cells = append(cells, textOnly(runsOf(c, src)))
 				}
 				if _, head := row.(*east.TableHeader); head {
 					t.Header = cells
@@ -198,9 +199,8 @@ func runsOf(n ast.Node, src []byte) []Run {
 						sb.Write(tv.Segment.Value(src))
 					}
 				}
-				if alt := sb.String(); alt != "" {
-					add(st, "["+alt+"]")
-				}
+				// Its own run, never merged: a paragraph is split around it.
+				out = append(out, Run{Text: sb.String(), Image: string(v.Destination)})
 			case *ast.RawHTML:
 				var sb strings.Builder
 				for i := 0; i < v.Segments.Len(); i++ {
@@ -216,6 +216,67 @@ func runsOf(n ast.Node, src []byte) []Run {
 		}
 	}
 	walk(n, Run{})
+	return out
+}
+
+// splitImages makes a paragraph's runs into blocks: its text, and each
+// image as a block of its own where it stands. Whitespace left between
+// images is dropped.
+func splitImages(runs []Run) []Block {
+	var out []Block
+	var text []Run
+	flush := func() {
+		if strings.TrimSpace(Plain(text)) != "" {
+			out = append(out, Block{Kind: KPara, Runs: text})
+		}
+		text = nil
+	}
+	for _, r := range runs {
+		if r.Image != "" {
+			flush()
+			out = append(out, Block{Kind: KImage, Src: r.Image, Text: r.Text})
+			continue
+		}
+		text = append(text, r)
+	}
+	flush()
+	return out
+}
+
+// textOnly turns images into their alt text in brackets, where an image
+// cannot stand (a heading, a table cell).
+func textOnly(runs []Run) []Run {
+	out := runs[:0:0]
+	for _, r := range runs {
+		if r.Image != "" {
+			if r.Text == "" {
+				continue
+			}
+			r = Run{Text: "[" + r.Text + "]"}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// Images lists the sources of the images in blocks, each once, in order.
+func Images(blocks []Block) []string {
+	var out []string
+	seen := map[string]bool{}
+	var walk func([]Block)
+	walk = func(bs []Block) {
+		for _, b := range bs {
+			if b.Kind == KImage && !seen[b.Src] {
+				seen[b.Src] = true
+				out = append(out, b.Src)
+			}
+			for _, it := range b.Items {
+				walk(it)
+			}
+			walk(b.Children)
+		}
+	}
+	walk(blocks)
 	return out
 }
 

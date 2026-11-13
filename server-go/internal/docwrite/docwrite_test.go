@@ -56,7 +56,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestPDF(t *testing.T) {
-	r, err := Render(".pdf", sample+strings.Repeat("\nA long paragraph that fills the page with words. ", 120))
+	r, err := Render(".pdf", sample+strings.Repeat("\nA long paragraph that fills the page with words. ", 120), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestPDF(t *testing.T) {
 }
 
 func TestDOCX(t *testing.T) {
-	r, err := Render(".docx", sample)
+	r, err := Render(".docx", sample, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestXLSX(t *testing.T) {
 		}},
 	}
 	for _, c := range cases {
-		r, err := Render(".xlsx", c.content)
+		r, err := Render(".xlsx", c.content, nil)
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -153,7 +153,7 @@ func TestXLSX(t *testing.T) {
 		}
 		f.Close()
 	}
-	if _, err := Render(".xlsx", `{"rows":1}`); err == nil {
+	if _, err := Render(".xlsx", `{"rows":1}`, nil); err == nil {
 		t.Error("a JSON object without sheets was accepted")
 	}
 }

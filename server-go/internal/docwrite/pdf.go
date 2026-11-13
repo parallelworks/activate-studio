@@ -73,36 +73,46 @@ func findFonts() *loadedFonts {
 				cands = append([]fontSet{{reg, pick("bold"), pick("italic"), pick("bolditalic"), pick("mono"), pick("mono", "bold")}}, cands...)
 			}
 		}
-		for _, c := range cands {
-			read := func(p string) []byte {
-				if p == "" {
-					return nil
+		// A family with all four faces first: a host may hold a family's
+		// regular and bold only (Debian's fonts-dejavu-core), and italic
+		// drawn from the regular face comes out upright.
+		for _, complete := range []bool{true, false} {
+			for _, c := range cands {
+				read := func(p string) []byte {
+					if p == "" {
+						return nil
+					}
+					b, err := os.ReadFile(p)
+					if err != nil {
+						return nil
+					}
+					return b
 				}
-				b, err := os.ReadFile(p)
-				if err != nil {
-					return nil
+				r := read(c.regular)
+				if r == nil {
+					continue
 				}
-				return b
-			}
-			r := read(c.regular)
-			if r == nil {
-				continue
-			}
-			lf := &loadedFonts{}
-			lf.body[0] = r
-			for i, p := range []string{c.bold, c.italic, c.boldItalic} {
-				if lf.body[i+1] = read(p); lf.body[i+1] == nil {
-					lf.body[i+1] = r
+				lf := &loadedFonts{}
+				lf.body[0] = r
+				whole := true
+				for i, p := range []string{c.bold, c.italic, c.boldItalic} {
+					if lf.body[i+1] = read(p); lf.body[i+1] == nil {
+						lf.body[i+1] = r
+						whole = false
+					}
 				}
-			}
-			if m := read(c.mono); m != nil {
-				lf.mono[0], lf.hasMono = m, true
-				if lf.mono[1] = read(c.monoBold); lf.mono[1] == nil {
-					lf.mono[1] = m
+				if complete && !whole {
+					continue
 				}
+				if m := read(c.mono); m != nil {
+					lf.mono[0], lf.hasMono = m, true
+					if lf.mono[1] = read(c.monoBold); lf.mono[1] == nil {
+						lf.mono[1] = m
+					}
+				}
+				fonts = lf
+				return
 			}
-			fonts = lf
-			return
 		}
 	})
 	return fonts
@@ -116,15 +126,16 @@ type pdfw struct {
 	right      float64 // page's right content edge
 	bottom     float64
 	color      [3]int
+	pics       map[string]*picture
 }
 
 var numericRe = regexp.MustCompile(`^[-+]?[$€£]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?%?$`)
 
-func renderPDF(blocks []Block) ([]byte, int, error) {
+func renderPDF(blocks []Block, pics map[string]*picture) ([]byte, int, error) {
 	p := fpdf.New("P", "pt", "Letter", "")
 	p.SetMargins(margin, margin, margin)
 	p.SetAutoPageBreak(true, margin)
-	w := &pdfw{p: p, body: "Helvetica", mono: "Courier", tr: func(s string) string { return s }}
+	w := &pdfw{p: p, body: "Helvetica", mono: "Courier", tr: func(s string) string { return s }, pics: pics}
 	if f := findFonts(); f != nil {
 		for i, st := range []string{"", "B", "I", "BI"} {
 			p.AddUTF8FontFromBytes("body", st, f.body[i])
@@ -302,8 +313,37 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 		case KTable:
 			w.table(b)
 			w.space(8)
+		case KImage:
+			w.image(b)
 		}
 	}
+}
+
+// image draws a picture at its own size, or narrower to fit between the
+// margins and shorter to fit a page, on a new page when it does not fit
+// below. One the document could not embed shows its alt text.
+func (w *pdfw) image(b Block) {
+	pic := w.pics[b.Src]
+	if pic == nil {
+		if b.Text != "" {
+			w.p.SetX(w.left)
+			w.runs([]Run{{Text: "[" + b.Text + "]", Italic: true}}, bodySize, bodyLine)
+			w.p.Ln(bodyLine)
+			w.space(5)
+		}
+		return
+	}
+	name := "img:" + b.Src
+	opt := fpdf.ImageOptions{ImageType: pic.kind}
+	w.p.RegisterImageOptionsReader(name, opt, bytes.NewReader(pic.data))
+	iw, ih := pic.size(w.right-w.left, w.bottom-margin)
+	if w.p.GetY()+ih > w.bottom {
+		w.p.AddPage()
+	}
+	y := w.p.GetY()
+	w.p.ImageOptions(name, w.left, y, iw, ih, false, opt, 0, "")
+	w.p.SetXY(w.left, y+ih)
+	w.space(8)
 }
 
 func (w *pdfw) table(b Block) {
