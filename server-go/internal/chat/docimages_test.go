@@ -59,6 +59,7 @@ func TestWriteKBFileEmbedsImages(t *testing.T) {
 	var b bytes.Buffer
 	png.Encode(&b, image.NewGray(image.Rect(0, 0, 40, 30)))
 	os.WriteFile(filepath.Join(kb, "uploads/chat/shot.png"), b.Bytes(), 0o644)
+	os.WriteFile(filepath.Join(kb, "uploads/chat/Screenshot 2026-11-13 at 9.01.28 AM-x1.png"), b.Bytes(), 0o644)
 	t.Setenv("PW_CLI", filepath.Join(dir, "no-pw"))
 	cfg, _ := config.Load(func(k string) string {
 		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": kb, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
@@ -69,8 +70,8 @@ func TestWriteKBFileEmbedsImages(t *testing.T) {
 	Register(mux, a)
 	r := httptest.NewRequest("POST", "/api/chat/stream", nil)
 
-	out, ok := Default.executeInGo(r, "write_kb_file", `{"path":"requirements/req.pdf","content":"# Req\n\n![screen](uploads/chat/shot.png)\n\n![web](https://example.org/x.png)\n"}`, ToolCtx{})
-	if !ok || !strings.Contains(out.Result, "with 1 image") || !strings.Contains(out.Result, "https://example.org/x.png (web images are not fetched") {
+	out, ok := Default.executeInGo(r, "write_kb_file", `{"path":"requirements/req.pdf","content":"# Req\n\n![screen](uploads/chat/shot.png)\n\n![spaced](../uploads/chat/Screenshot 2026-11-13 at 9.01.28 AM-x1.png)\n\n![web](https://example.org/x.png)\n"}`, ToolCtx{})
+	if !ok || !strings.Contains(out.Result, "with 2 images") || !strings.Contains(out.Result, "https://example.org/x.png (web images are not fetched") {
 		t.Fatalf("%+v", out)
 	}
 	pdf, _ := os.ReadFile(filepath.Join(kb, "requirements/req.pdf"))

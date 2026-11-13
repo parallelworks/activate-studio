@@ -197,6 +197,12 @@ func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page int) (stri
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return "", err
 	}
+	// A stale image goes first: pdftoppm writes p-N.png, which is renamed
+	// to pN.png below only when that is missing, so an old pN.png left in
+	// place was served again for a PDF rewritten under the same name.
+	if err := os.Remove(outFile); err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	n := strconv.Itoa(page)
@@ -215,6 +221,9 @@ func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page int) (stri
 		entries, _ := os.ReadDir(dir)
 		made := ""
 		for _, e := range entries {
+			if e.Name() == filepath.Base(outFile) {
+				continue
+			}
 			if m := pageFile.FindStringSubmatch(e.Name()); m != nil {
 				if v, _ := strconv.Atoi(m[1]); v == page {
 					made = e.Name()

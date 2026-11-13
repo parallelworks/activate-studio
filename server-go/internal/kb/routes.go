@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -688,11 +689,36 @@ func (m *Module) pdfPage(w http.ResponseWriter, r *http.Request) error {
 	if f := jsNumberOr(page, 1); f >= 1 {
 		n = int(f)
 	}
+	if fresh(w, r, abs, "p"+strconv.Itoa(n)) {
+		return nil
+	}
 	png, err := m.Previews.PagePNG(r.Context(), abs, previewKey(lib, rel), n)
 	if err != nil {
 		return err
 	}
-	return sendFile(w, png, map[string]string{"Content-Type": "image/png", "Cache-Control": "public, max-age=300"})
+	return sendFile(w, png, map[string]string{"Content-Type": "image/png"})
+}
+
+// fresh tags a preview made from the file at abs (a page image, a
+// picture inside an Office file) with that file's size and modification
+// time, and answers 304 when the browser already holds that version. A
+// browser asks again on every view (no-cache), so a file rewritten under
+// the same name shows its new pages at once; a fixed max-age kept the old
+// ones for minutes.
+func fresh(w http.ResponseWriter, r *http.Request, abs, part string) bool {
+	st, err := os.Stat(abs)
+	if err != nil {
+		return false
+	}
+	tag := fmt.Sprintf(`"%x-%x-%s"`, st.ModTime().UnixNano(), st.Size(), url.PathEscape(part))
+	h := w.Header()
+	h.Set("ETag", tag)
+	h.Set("Cache-Control", "private, no-cache")
+	if r.Header.Get("If-None-Match") == tag {
+		w.WriteHeader(http.StatusNotModified)
+		return true
+	}
+	return false
 }
 
 func (m *Module) officePreview(w http.ResponseWriter, r *http.Request) error {
@@ -713,6 +739,9 @@ func (m *Module) officeMedia(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return m.handled(w, r, err)
 	}
+	if fresh(w, r, abs, "m"+qs(r, "name")) {
+		return nil
+	}
 	b, typ, err := m.Office.Media(abs, qs(r, "name"))
 	if err != nil {
 		return err
@@ -721,7 +750,6 @@ func (m *Module) officeMedia(w http.ResponseWriter, r *http.Request) error {
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Type", typ)
-	h.Set("Cache-Control", "private, max-age=300")
 	h.Set("Content-Length", strconv.Itoa(len(b)))
 	w.WriteHeader(200)
 	w.Write(b)

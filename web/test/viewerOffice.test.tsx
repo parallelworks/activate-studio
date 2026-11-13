@@ -70,7 +70,7 @@ describe('the Office preview without LibreOffice', () => {
     render(<Viewer path="paper.pdf" onDeleted={() => {}} />)
     await waitFor(() => expect(document.querySelectorAll('img.pdf-page-img').length).toBe(2))
     const src = (document.querySelector('img.pdf-page-img') as HTMLImageElement).getAttribute('src')
-    expect(src).toBe('/api/kb/pdf-page?path=paper.pdf&page=1&library=site')
+    expect(src).toBe('/api/kb/pdf-page?path=paper.pdf&page=1&v=1700000000&library=site')
     expect(screen.getByRole('tab', { name: 'Pages' })).toBeInTheDocument()
   })
 })
