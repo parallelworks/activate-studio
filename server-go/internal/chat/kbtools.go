@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -85,15 +86,20 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	// write instead, so no text lands in a file named as a binary format.
 	ext := strings.ToLower(filepath.Ext(rel))
 	data, made := []byte(content), ""
+	var missing []string
 	if why := docwrite.Unsupported(ext); why != "" {
 		return &Outcome{Result: why, Summary: "refused"}, nil
 	}
 	if docwrite.Handles(ext) {
-		out, err := docwrite.Render(ext, content)
+		dir := path.Dir(rel)
+		if dir == "." {
+			dir = ""
+		}
+		out, err := docwrite.Render(ext, content, libraryImages(m.A.Cfg.KBRoot, dir))
 		if err != nil {
 			return &Outcome{Result: "Could not write " + rel + ": " + err.Error(), Summary: "error"}, nil
 		}
-		data, made = out.Data, out.Note
+		data, made, missing = out.Data, out.Note, out.Missing
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return nil, nodeFSError(err, "mkdir", filepath.Dir(abs))
@@ -119,6 +125,11 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	replaced := ""
 	if exists {
 		replaced = ", replacing the previous version"
+	}
+	if len(missing) > 0 {
+		// Said first, so the model fixes the paths and writes it again
+		// (overwrite=true) before it hands the file over.
+		show = "These images were not embedded, and their alt text stands in their place: " + strings.Join(missing, "; ") + ". Give each as a path in the library (relative to this file's folder, or from the library's top) and write the file again with overwrite=true. " + show
 	}
 	return &Outcome{
 		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show,

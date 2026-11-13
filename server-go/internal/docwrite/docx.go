@@ -22,6 +22,10 @@ type docxw struct {
 	rels  []string // hyperlink targets, rId 100+
 	nums  []int    // per numbered list: its start
 	depth int
+	pics  map[string]*picture
+	media []string       // embedded images' sources, in order: word/media/imageN
+	ids   map[string]int // source to N
+	drawn int            // drawings placed, for their ids
 }
 
 func esc(s string) string {
@@ -137,8 +141,42 @@ func (d *docxw) blocks(bs []Block, list string, level int) {
 			d.body.WriteString(`<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="BFBFBF"/></w:pBdr></w:pPr></w:p>`)
 		case KTable:
 			d.table(b)
+		case KImage:
+			d.image(b, numPr)
 		}
 	}
+}
+
+// EMU per pixel at 96 pixels an inch, and the text area's size in EMU.
+const (
+	emuPerPx  = 9525
+	emuWidth  = 6.5 * 914400
+	emuHeight = 9 * 914400
+)
+
+// image places a picture inline in a paragraph of its own, at its own size
+// or smaller to fit the page; one that could not be embedded shows its
+// alt text.
+func (d *docxw) image(b Block, props string) {
+	pic := d.pics[b.Src]
+	if pic == nil {
+		if b.Text != "" {
+			d.para("", props, []Run{{Text: "[" + b.Text + "]", Italic: true}})
+		}
+		return
+	}
+	n, ok := d.ids[b.Src]
+	if !ok {
+		d.media = append(d.media, b.Src)
+		n = len(d.media)
+		d.ids[b.Src] = n
+	}
+	d.drawn++
+	w, h := pic.size(emuWidth/emuPerPx*72/96, emuHeight/emuPerPx*72/96)
+	cx, cy := int(w*96/72*emuPerPx), int(h*96/72*emuPerPx)
+	alt := esc(b.Text)
+	d.body.WriteString(fmt.Sprintf(`<w:p><w:pPr><w:keepNext/>%s</w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="%d" cy="%d"/><wp:docPr id="%d" name="Picture %d" descr="%s"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="%d" name="image%d.%s" descr="%s"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdImg%d"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`,
+		props, cx, cy, d.drawn, d.drawn, alt, d.drawn, n, pic.ext(), alt, n, cx, cy))
 }
 
 func (d *docxw) table(b Block) {
@@ -250,10 +288,10 @@ func numberingXML(starts []int) string {
 	return sb.String()
 }
 
-func renderDOCX(blocks []Block) ([]byte, error) {
-	d := &docxw{}
+func renderDOCX(blocks []Block, pics map[string]*picture) ([]byte, error) {
+	d := &docxw{pics: pics, ids: map[string]int{}}
 	d.blocks(blocks, "", 0)
-	doc := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>` +
+	doc := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>` +
 		d.body.String() +
 		`<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`
 	var rels strings.Builder
@@ -261,11 +299,14 @@ func renderDOCX(blocks []Block) ([]byte, error) {
 	for i, t := range d.rels {
 		rels.WriteString(fmt.Sprintf(`<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="%s" TargetMode="External"/>`, 100+i, esc(t)))
 	}
+	for i, src := range d.media {
+		rels.WriteString(fmt.Sprintf(`<Relationship Id="rIdImg%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image%d.%s"/>`, i+1, i+1, d.pics[src].ext()))
+	}
 	rels.WriteString(`</Relationships>`)
 	now := time.Now().UTC().Format(time.RFC3339)
 	core := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>` + esc(Title(blocks)) + `</dc:title><dc:creator>ACTIVATE Studio</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">` + now + `</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">` + now + `</dcterms:modified></cp:coreProperties>`
 	parts := []struct{ name, body string }{
-		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`},
+		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`},
 		{"_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`},
 		{"word/document.xml", doc},
 		{"word/styles.xml", docxStyles},
@@ -281,6 +322,18 @@ func renderDOCX(blocks []Block) ([]byte, error) {
 			return nil, err
 		}
 		if _, err := f.Write([]byte(p.body)); err != nil {
+			return nil, err
+		}
+	}
+	for i, src := range d.media {
+		pic := d.pics[src]
+		// Deflated like the rest: LibreOffice refuses a document whose
+		// stored entries carry a data descriptor, as Go's writer adds.
+		f, err := z.Create(fmt.Sprintf("word/media/image%d.%s", i+1, pic.ext()))
+		if err != nil {
+			return nil, err
+		}
+		if _, err := f.Write(pic.data); err != nil {
 			return nil, err
 		}
 	}

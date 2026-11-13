@@ -9,6 +9,9 @@ import (
 type Rendered struct {
 	Data []byte
 	Note string
+	// Missing lists the images that could not be embedded, each with why;
+	// their alt text stands in their place.
+	Missing []string
 }
 
 // Formats lists the suffixes Render makes, for the tool's description.
@@ -38,29 +41,41 @@ func Unsupported(suffix string) string {
 	return ""
 }
 
-// Render makes a .pdf or .docx from Markdown, or a .xlsx from rows.
-func Render(suffix, content string) (*Rendered, error) {
+// Render makes a .pdf or .docx from Markdown, with the images it refers
+// to read through src, or a .xlsx from rows.
+func Render(suffix, content string, src ImageSource) (*Rendered, error) {
 	switch strings.ToLower(suffix) {
 	case ".pdf":
-		data, pages, err := renderPDF(Parse(content))
+		blocks := Parse(content)
+		pics, missing := pictures(blocks, src)
+		data, pages, err := renderPDF(blocks, pics)
 		if err != nil {
 			return nil, fmt.Errorf("making the PDF: %v", err)
 		}
-		return &Rendered{data, fmt.Sprintf("a PDF of %d page%s, made from the Markdown", pages, plural(pages))}, nil
+		return &Rendered{data, fmt.Sprintf("a PDF of %d page%s, made from the Markdown%s", pages, plural(pages), withImages(len(pics))), missing}, nil
 	case ".docx":
-		data, err := renderDOCX(Parse(content))
+		blocks := Parse(content)
+		pics, missing := pictures(blocks, src)
+		data, err := renderDOCX(blocks, pics)
 		if err != nil {
 			return nil, fmt.Errorf("making the Word document: %v", err)
 		}
-		return &Rendered{data, "a Word document made from the Markdown"}, nil
+		return &Rendered{data, "a Word document made from the Markdown" + withImages(len(pics)), missing}, nil
 	case ".xlsx":
 		data, n, err := renderXLSX(content)
 		if err != nil {
 			return nil, fmt.Errorf("making the workbook: %v", err)
 		}
-		return &Rendered{data, fmt.Sprintf("an Excel workbook of %d sheet%s", n, plural(n))}, nil
+		return &Rendered{Data: data, Note: fmt.Sprintf("an Excel workbook of %d sheet%s", n, plural(n))}, nil
 	}
 	return nil, fmt.Errorf("%s files are not made here", suffix)
+}
+
+func withImages(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", with %d image%s", n, plural(n))
 }
 
 func plural(n int) string {
