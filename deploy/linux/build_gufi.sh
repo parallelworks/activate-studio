@@ -18,7 +18,7 @@
 #
 # Usage: deploy/linux/build_gufi.sh
 #   GUFI_REF     GUFI branch, tag or commit (default: the commit of GUFI's
-#                0.8.0 tag, deploy/common/pins.sh)
+#                0.8.1 tag, deploy/common/pins.sh)
 #   GUFI_SRC     an existing GUFI checkout to build as it is, instead of
 #                cloning GUFI_REF
 #   OUT_DIR      where the outputs go (default deploy/linux/out)
@@ -46,7 +46,7 @@ CACHE_DIR="${CACHE_DIR:-$HERE/.cache}"
 ASSET=gufi-linux-x86_64
 LEMBED="${GUFI_LEMBED:-1}"
 case "$LEMBED" in 1) ;; 0) ASSET=gufi-vec-linux-x86_64 ;; *) die "GUFI_LEMBED is 1 or 0" ;; esac
-GUFI_REF="${GUFI_REF:-$GUFI_COMMIT}"   # tag 0.8.0
+GUFI_REF="${GUFI_REF:-$GUFI_COMMIT}"   # tag 0.8.1
 
 # The ref can come from a workflow's free-text input and goes to git.
 [[ "$GUFI_REF" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] || die "GUFI_REF is not a branch, tag or commit: '$GUFI_REF'"

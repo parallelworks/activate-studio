@@ -95,7 +95,7 @@ TO="$(bundle_version "$DEST")"
 TO_GUFI="$(gufi_of "$DEST")"
 log "replaced with $TO, GUFI: $TO_GUFI"
 [ "$FROM_GUFI" != "$TO_GUFI" ] || log "note: both builds report the same GUFI version"
-case "$TO_GUFI" in *0.8.0*) ;; *) fail "the new build's GUFI is '$TO_GUFI', not 0.8.0" ;; esac
+case "$TO_GUFI" in *0.8.1*) ;; *) fail "the new build's GUFI is '$TO_GUFI', not 0.8.1" ;; esac
 open "$DEST" &
 v="$(wait_server)" || fail "the server of $TO did not answer"
 log "the server answers: $v"

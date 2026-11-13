@@ -16,9 +16,9 @@ PYPDF_VERSION=6.21.2
 PYPDF_URL=https://files.pythonhosted.org/packages/1b/4d/c9d2d67f204eff463237a1a8f5e25a6923b7b1043982b91fcaf104c8ef60/pypdf-6.21.2-py3-none-any.whl
 PYPDF_SHA256=1d44d1a3a200f25062adff0085b02040e4646431ac2ccac22e42679e91466084
 
-# GUFI 0.8.0 (its tag), built from source, with the sources it links.
+# GUFI 0.8.1 (its tag), built from source, with the sources it links.
 GUFI_REPO=https://github.com/mar-file-system/GUFI
-GUFI_COMMIT=021a717a6089b9e28b068695dc7c7f3732fd1a56
+GUFI_COMMIT=f2292ea596405c245fec8d4306cc5b14e736d61f
 PCRE2_SRC_VERSION=10.49
 PCRE2_SRC_SHA256=53c156e1ba416a20da8e65395daa132da0d80e76910424caca3fcdae7831d384
 

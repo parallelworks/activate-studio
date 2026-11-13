@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 3b51a080..b95f24c3 100644
+index 4d2a7b03..848f42b2 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -173,6 +173,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -23,7 +23,7 @@ index 3b51a080..b95f24c3 100644
    endfunction()
  
    if(CYGWIN)
-@@ -405,6 +408,9 @@ elseif (CYGWIN)
+@@ -408,6 +411,9 @@ elseif (CYGWIN)
  endif()
  if (DEP_AI)
    set(DEP_OPTIONS ${DEP_OPTIONS} --AI)
@@ -33,14 +33,19 @@ index 3b51a080..b95f24c3 100644
  
    # llama.cpp uses OpenMP (not required, but left enabled)
    find_package(OpenMP REQUIRED COMPONENTS C CXX)
-@@ -468,12 +474,24 @@ install(FILES
- )
- 
+@@ -475,15 +481,27 @@ endif()
  if (DEP_AI)
+   # copy dependencies into packages
+   set(VEC_LINK "${CMAKE_BINARY_DIR}/libvec0.${EXT}")
+-  set(LEMBED_LINK "${CMAKE_BINARY_DIR}/liblembed0.${EXT}")
+   file(CREATE_LINK "vec0.${EXT}" "${VEC_LINK}" SYMBOLIC)
+-  file(CREATE_LINK "lembed0.${EXT}" "${LEMBED_LINK}" SYMBOLIC)
 +  if (DEP_LEMBED)
++    set(LEMBED_LINK "${CMAKE_BINARY_DIR}/liblembed0.${EXT}")
++    file(CREATE_LINK "lembed0.${EXT}" "${LEMBED_LINK}" SYMBOLIC)
 +    set(LEMBED_LIBS
 +      "${DEP_INSTALL_PREFIX}/sqlite-lembed/lib/lembed0.${EXT}"
-+      "${DEP_INSTALL_PREFIX}/sqlite-lembed/lib/liblembed0.${EXT}")
++      "${LEMBED_LINK}")
 +    set(LEMBED_LICENSES
 +      "${CMAKE_BINARY_DIR}/licenses/sqlite-lembed"
 +      "${CMAKE_BINARY_DIR}/licenses/llama.cpp-LICENSE")
@@ -50,63 +55,66 @@ index 3b51a080..b95f24c3 100644
 +    set(LEMBED_LICENSES)
 +    set(LLAMA_LIB_DIR)
 +  endif()
-   # copy dependencies into packages
+ 
    install(FILES
      "${DEP_INSTALL_PREFIX}/sqlite-vec/lib/vec0.${EXT}"
-     "${DEP_INSTALL_PREFIX}/sqlite-vec/lib/libvec0.${EXT}"
 -    "${DEP_INSTALL_PREFIX}/sqlite-lembed/lib/lembed0.${EXT}"
--    "${DEP_INSTALL_PREFIX}/sqlite-lembed/lib/liblembed0.${EXT}"
+     "${VEC_LINK}"
+-    "${LEMBED_LINK}"
 +    ${LEMBED_LIBS}
      ${OpenMP_omp_LIBRARY}
      DESTINATION "${LIB}"
      COMPONENT Local
-@@ -482,15 +500,14 @@ if (DEP_AI)
-   install(FILES
-     "${CMAKE_BINARY_DIR}/licenses/sqlite-vec-LICENSE-APACHE"
-     "${CMAKE_BINARY_DIR}/licenses/sqlite-vec-LICENSE-MIT"
--    "${CMAKE_BINARY_DIR}/licenses/sqlite-lembed"
--    "${CMAKE_BINARY_DIR}/licenses/llama.cpp-LICENSE"
-+    ${LEMBED_LICENSES}
-     "${CMAKE_BINARY_DIR}/licenses/openmp-LICENSE.TXT"
-     DESTINATION "${LICENSES}"
-     COMPONENT Local
-     EXCLUDE_FROM_ALL # do not copy if running 'make install'
-   )
+@@ -493,8 +511,7 @@ if (DEP_AI)
+     install(FILES
+       "${CMAKE_BINARY_DIR}/licenses/sqlite-vec-LICENSE-APACHE"
+       "${CMAKE_BINARY_DIR}/licenses/sqlite-vec-LICENSE-MIT"
+-      "${CMAKE_BINARY_DIR}/licenses/sqlite-lembed"
+-      "${CMAKE_BINARY_DIR}/licenses/llama.cpp-LICENSE"
++      ${LEMBED_LICENSES}
+       "${CMAKE_BINARY_DIR}/licenses/openmp-LICENSE.TXT"
+       DESTINATION "${LICENSES}"
+       COMPONENT Local
+@@ -502,7 +519,7 @@ if (DEP_AI)
+     )
+   endif()
    install(DIRECTORY
 -    "${DEP_INSTALL_PREFIX}/llama.cpp/lib/" # keep trailing slash
 +    ${LLAMA_LIB_DIR}
      DESTINATION "${LIB}"
      COMPONENT Local
      EXCLUDE_FROM_ALL # do not copy if running 'make install'
-@@ -500,8 +517,7 @@ if (DEP_AI)
+@@ -511,9 +528,8 @@ if (DEP_AI)
+   )
    install(FILES
      "${DEP_INSTALL_PREFIX}/sqlite-vec/lib/vec0.${EXT}"
-     "${DEP_INSTALL_PREFIX}/sqlite-vec/lib/libvec0.${EXT}"
 -    "${DEP_INSTALL_PREFIX}/sqlite-lembed/lib/lembed0.${EXT}"
--    "${DEP_INSTALL_PREFIX}/sqlite-lembed/lib/liblembed0.${EXT}"
+     "${VEC_LINK}"
+-    "${LEMBED_LINK}"
 +    ${LEMBED_LIBS}
      ${OpenMP_omp_LIBRARY}
      DESTINATION "${REMOTE_LIB}"
      COMPONENT Remote
-@@ -510,15 +526,14 @@ if (DEP_AI)
-   install(FILES
-     "${CMAKE_BINARY_DIR}/licenses/sqlite-vec-LICENSE-APACHE"
-     "${CMAKE_BINARY_DIR}/licenses/sqlite-vec-LICENSE-MIT"
--    "${CMAKE_BINARY_DIR}/licenses/sqlite-lembed"
--    "${CMAKE_BINARY_DIR}/licenses/llama.cpp-LICENSE"
-+    ${LEMBED_LICENSES}
-     "${CMAKE_BINARY_DIR}/licenses/openmp-LICENSE.TXT"
-     DESTINATION "${LICENSES}"
-     COMPONENT Remote
-     EXCLUDE_FROM_ALL # do not copy if running 'make install'
-   )
+@@ -523,8 +539,7 @@ if (DEP_AI)
+     install(FILES
+       "${CMAKE_BINARY_DIR}/licenses/sqlite-vec-LICENSE-APACHE"
+       "${CMAKE_BINARY_DIR}/licenses/sqlite-vec-LICENSE-MIT"
+-      "${CMAKE_BINARY_DIR}/licenses/sqlite-lembed"
+-      "${CMAKE_BINARY_DIR}/licenses/llama.cpp-LICENSE"
++      ${LEMBED_LICENSES}
+       "${CMAKE_BINARY_DIR}/licenses/openmp-LICENSE.TXT"
+       DESTINATION "${LICENSES}"
+       COMPONENT Remote
+@@ -532,7 +547,7 @@ if (DEP_AI)
+     )
+     endif()
    install(DIRECTORY
 -    "${DEP_INSTALL_PREFIX}/llama.cpp/lib/" # keep trailing slash
 +    ${LLAMA_LIB_DIR}
      DESTINATION "${REMOTE_LIB}"
      COMPONENT Remote
      EXCLUDE_FROM_ALL # do not copy if running 'make install'
-@@ -708,17 +723,21 @@ function(add_ai target vec_basename lembed_basename)
+@@ -724,17 +739,21 @@ function(add_ai target vec_basename lembed_basename)
  
    if (DEP_AI)
      target_include_directories("${target}" SYSTEM PUBLIC "${DEP_INSTALL_PREFIX}/sqlite-vec/include")
@@ -169,7 +177,7 @@ index ec79969d..22c0a41f 100755
  
  if [[ "${JEMALLOC}" == "true" ]]; then
 diff --git a/src/extensions.c b/src/extensions.c
-index dff87dba..c80b8587 100644
+index 9a58184a..e7d1c141 100644
 --- a/src/extensions.c
 +++ b/src/extensions.c
 @@ -63,7 +63,9 @@ OF SUCH DAMAGE.
@@ -182,7 +190,7 @@ index dff87dba..c80b8587 100644
  #include "sqlite-vec.h"
  #endif
  
-@@ -92,11 +94,13 @@ int augment_db(sqlite3 *db, const sqlite3_api_routines *pApi) {
+@@ -88,11 +90,13 @@ int augment_db(sqlite3 *db, const sqlite3_api_routines *pApi) {
          return 1;
      }
  
@@ -197,10 +205,10 @@ index dff87dba..c80b8587 100644
      (void) err;
      (void) pApi;
 diff --git a/src/gufi_sqlite3.c b/src/gufi_sqlite3.c
-index ae67725e..5781ec3f 100644
+index 85b5780f..0261f549 100644
 --- a/src/gufi_sqlite3.c
 +++ b/src/gufi_sqlite3.c
-@@ -66,7 +66,9 @@ OF SUCH DAMAGE.
+@@ -67,7 +67,9 @@ OF SUCH DAMAGE.
  #include <string.h>
  
  #if HAVE_AI
@@ -210,7 +218,7 @@ index ae67725e..5781ec3f 100644
  #include "sqlite-vec.h"
  #endif
  
-@@ -119,9 +121,11 @@ int main(int argc, char *argv[]) {
+@@ -120,9 +122,11 @@ int main(int argc, char *argv[]) {
      /* load the sqlite-vec extension */
      sqlite3_vec_init(db, NULL, NULL);
  

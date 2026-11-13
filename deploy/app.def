@@ -45,7 +45,7 @@ Stage: build
     # build stand on lines of their own.
     set -e
     export DEBIAN_FRONTEND=noninteractive
-    GUFI_COMMIT=021a717a6089b9e28b068695dc7c7f3732fd1a56    # tag 0.8.0
+    GUFI_COMMIT=f2292ea596405c245fec8d4306cc5b14e736d61f    # tag 0.8.1
     MODEL_COMMIT=7a7bac37782986fe1d4f213de771a8a3d9170b35
     MODEL_SHA256=71f1d177171468fb5f186c07019e303015aea17af275a67767760bba7be8d2e6
     # GUFI's cmake requires these executables at configure time (column
