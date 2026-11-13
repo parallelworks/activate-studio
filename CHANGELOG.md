@@ -2,6 +2,56 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.199 (2026-11-13)
+
+### PDF and Word layout options, and printing HTML pages (#688)
+
+write_kb_file reads a front matter block at the top of the Markdown for
+a .pdf or .docx: align (left or justify), orientation (portrait or
+landscape), font (a family, or serif or sans), size (8 to 16 pt) and
+margin (0.5 to 2 inches). Unknown keys and values out of range are
+listed in the result so the model can correct them. A line holding only
+\newpage (or \pagebreak, \clearpage, or <!-- pagebreak -->) starts a new
+page.
+
+The PDF lays out justified paragraphs word by word, as fpdf justifies
+only single-style cells, keeping bold, italic and links; a serif font
+uses the first complete Liberation Serif, Times New Roman or DejaVu
+Serif family found. Word documents get the font and size in their
+default style, justified body and list paragraphs, the page size,
+orientation and margins in the section, and a page number footer. Word
+tables now stay inside the margins after their indent.
+
+HTML pages in the viewer may open the print dialog (allow-modals in the
+frame and the CSP sandbox), and a Print button opens the page in a tab
+of its own that prints it, with Save as PDF among the destinations.
+
+### pw code from the chat: library folders, finding sessions, waiting (#689)
+
+start_agent works in a library folder when the site sees this Studio's
+library: always the local site, and a cluster where a mark file written
+here reads back over pw ssh (the same machine, or the library on shared
+storage). The folder is the one named with the new folder argument, or a
+new one under agents/; elsewhere it keeps ~/studio-agents. A named
+folder on a site that does not see the library is refused.
+
+agent_status takes wait (up to 600 seconds), holding while the agent
+works, through a goal's turns, until it finishes or asks for approval.
+It reports the session's last error, and once the agent is not running
+it indexes its library folder and lists the files there with links.
+
+agent_sessions takes find, matching a session's name, the topic pw code
+gave it, its first request and its workspace, and lists each session's
+topic and first request. The other agent tools accept a session's name
+or topic words in place of its id; when several match as well, the
+result lists them so the model asks which.
+
+The agent tools are offered without the platform where the Studio offers
+its own host as a site (sign-in off, or AGENT_LOCAL_SITE=1), as pw code
+runs without an ACTIVATE account.
+
+Checked end to end against a pw code daemon on a development host: start_agent made the session in a new library folder, agent_status found it by topic words, waited for it to finish, indexed the folder and linked the file it wrote; a session that stopped on a model error now says so.
+
 ## v1.198 (2026-11-13)
 
 ### Reports: image paths may hold spaces; a PDF rewritten in place shows its new pages (#686)
@@ -24,6 +74,10 @@ Tests:
 - The web test is updated for the versioned URL.
 
 Checked live on a local Studio: a three-page PDF open in the viewer was rewritten in place as a one-page PDF, opened again, and showed the new page.
+
+### Change log through v1.198 (#687)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.198` before tagging v1.198.
 
 ## v1.197 (2026-11-13)
 
