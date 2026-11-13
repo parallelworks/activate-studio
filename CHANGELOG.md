@@ -2,6 +2,107 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.197 (2026-11-13)
+
+### GUFI 0.8.1 (#679)
+
+Moves the Studio from GUFI 0.8.0 to 0.8.1 (tag 0.8.1, commit f2292ea5), a fix release with the same index format.
+
+Upstream changes that touch the Studio:
+
+- Library links and rpaths are fixed: the install now makes `libvec0` and `liblembed0` relative links in the build directory. The lean Linux build's `deploy/common/gufi-no-lembed.patch` no longer applied (its install hunks failed) and is ported to the new install section. The existing step that replaces absolute links in the tree still runs and now finds none to replace.
+- `gufi_vt(internal_copy=...)` is split into `internal_test` and `internal_copy`. The Studio does not use either.
+- GUFI now sets `PRAGMA trusted_schema = ON`. No Studio query depends on it.
+- `spread_tree.c` now creates its file with `mkstemp`, so the `setup_gufi.sh` fix for the missing `open` mode no longer matches. It is conditional and is left in place for older refs.
+
+Pins updated: `indexer/setup_gufi.sh`, `deploy/common/pins.sh` (Linux and macOS builds), `deploy/app.def`, `deploy/gufi-index.yaml`, the macOS package fallback in `deploy/mac/build_app.sh` (0.8.1 pkg and its SHA-256; the GUFI license is unchanged), `GUFI_RELEASE` in `mac-app.yml` (new prerelease `gufi-f2292ea-macos14`, built by `gufi-macos.yml` from the tag), the upgrade e2e version check, the wfparser golden file (regenerated), and the docs.
+
+Tested:
+
+- The lean Linux build (`deploy/linux/build_gufi.sh`, `GUFI_LEMBED=0`) in `rockylinux:8`, as `linux-app.yml` runs it: builds in 3 minutes, and its own `gufi_dir2index` and `gufi_query` check passes. Manifest: GUFI 0.8.1, SQLite 3.53.4, sqlite-vec 0.1.10-alpha.4, PCRE2 10.49, glibc 2.28.
+- The Go suite with `GUFI_BIN` and `STUDIO_GUFI_BIN` pointed at that tree, compared with the same run against the 0.8.0 lean tree: 678 pass, 47 skip, 3 fail, against 677, 48, 3 on 0.8.0. The one difference is `TestRemoteTreeOfARolledUpIndex`, which was skipped on 0.8.0 (no `gufi_rollup` in that tree) and passes on 0.8.1. The same three tests fail on both versions because of where this host installs GUFI (the SSH library tests expect `/opt/gufi/bin`).
+- 0.8.1 tools read an index that 0.8.0 wrote and give the same rows, including `dev`.
+
+macOS:
+
+- `gufi-f2292ea-macos14` is published as a prerelease that is never marked latest, so v1.196 stays the latest release. It is the full build (SQLite 3.53.4, sqlite-vec 0.1.10-alpha.4, sqlite-lembed 0.0.1-alpha.8, llama.cpp, libomp 23.1.4, PCRE2 10.49), like `gufi-021a717-macos14`. `check_gufi.sh` passed on the build runner and on a clean `macos-15` runner: index, query, embed and search.
+- Two fixes to `gufi-macos.yml` were needed to publish it. First, GitHub no longer runs `macos-14` runners, so the check job was cancelled at start and the release job never ran. The default check runner is now `macos-15`. The build still targets macOS 14, but no hosted runner checks that version any more. Second, a `gufi-*` tag push built the lean GUFI, although the workflow comment says a tag push gives the full build. On a push `inputs.lembed` is null, and `null == false` is true in a workflow expression, so the expression now checks the event first.
+
+Upgrade e2e (`mac-upgrade-e2e`, which runs here because its script changed):
+
+- The test installs v1.183 and builds libraries at each depth, then replaces it with this build. With this PR it passes. The update touched none of the 141 index databases. All 57 answers matched before and after the update, and again after every library was rebuilt with 0.8.1.
+- It first failed on 7 answers. A control run on main, updating v1.183 to the released v1.196 (GUFI 0.8.0), failed on the same 7. The rows were identical once sorted, and only the column labels differed. The Node server in v1.183 labels an unnamed result column `col1`, and the Go server labels it with its expression (`count(*)`). The comparison now treats a `colN` label as matching the label in the same position. This check had last run on 2 November, before the Go server shipped.
+- A rerun of the `mac-app` build was needed once, after `hdiutil convert` returned "Resource temporarily unavailable".
+
+### Chat: move, rename, copy and delete library files; a delete waits for approval (#680)
+
+The chat can now move, rename, copy and delete files in the main library.
+
+- `move_kb_files` (paths, dest, optional name) and `copy_kb_files` (paths, dest) use the Library's own move and copy (`kb.Files`), create the destination folder when missing, and re-index the roots touched. A move never replaces a file: a taken name is skipped and reported. A copy into a folder that has the name is named "<name> copy". They run at once.
+- `rename_kb_file` (path, name) renames one file or folder where it is. It is the rename `move_kb_files` does with a name and no dest, under a name the model finds when asked to rename something.
+- `delete_kb_files` (paths) is held for the user's approval through the existing approval path (held-tool-calls.json, the approval card, resume). The card is headed "Delete N files?", lists the paths one per line, and says the Studio cannot undo it. Preparing the call refuses missing paths, folders and protected folders before anything is asked. After Yes, `kb.Files.DeletePaths` deletes the files with their caches and re-indexes.
+- Library changes have their own gate (`kbChangesAvailable`): someone present to approve and a conversation that is theirs. They need no platform key, unlike cluster and run changes. The MCP endpoint and no-viewer callers still never get a tool that asks first.
+- The tools are in the editing group, whose cue now includes delete, remove, clean up, move, rename, copy and archive, and in Settings, Tools.
+
+Moves between libraries or systems are left to the data movers.
+
+Tests: `kbfileops_test.go` (path parsing; move, rename, refused overwrite, copy naming, excluded destination; delete held, card text, refused missing and folder paths, allowed once, declined). Checked end to end in the browser with a stub model on a Studio with no platform connection: the move ran, the card listed both files, and they were deleted only after Yes. HELP and README updated.
+
+### fix(chat): opening a file from the chat keeps the reply and the queued messages (#681)
+
+Sending a message with an image while a reply streamed queued it, and opening the image from the chat then stopped the reply and dropped the queued message.
+
+Two causes:
+
+- ChatView took any hash other than `#chat=<id>` as "no conversation". Opening an attachment or file navigates to `#open=...`, which closed the conversation, aborted the stream and cleared the queue. Only the chat's own hashes, or an empty hash, change the conversation now.
+- The chat stays mounted (hidden) while another page shows, and @parallelworks/ui's SessionView keeps a window Escape listener that stops the turn. Escape that closed the viewer stopped the reply. A pnpm patch of @parallelworks/ui 0.120.0 has it stop only while the view is on screen (has layout and is not visibility hidden). The same change goes upstream; the patch is dropped on the release that carries it.
+
+Verified in a local Studio against a slow stub model: send, attach an image and queue a second message, open the image from the queued message, press Escape in the Library, return to the chat. Before: the stream was cancelled and the queued message never sent. After: both replies complete and the conversation is still open. Web typecheck and tests pass; HELP.md describes the queue and Escape behavior.
+
+### Viewer: PDF pages show as separate sheets; a shorter PDF no longer requests missing pages (#682)
+
+The Pages view showed the server-rendered page images edge to edge with no styling, white on the white viewer, so page edges, margins and page breaks were invisible.
+
+- `.pdf-pages` is now a column on the muted panel color (`--theme-muted-panel-bg`, light and dark) with 16px padding and a 16px gap.
+- Each page (server image or pdf.js canvas) is white with a light shadow and hairline edge, up to 1100px wide.
+- A page image not loaded yet takes a letter page's shape (`aspect-ratio: auto 17 / 22`), so the lazy-loaded pages below the fold have height and load as they scroll in, then take their own shape.
+
+Checked in Chromium and WebKit, light and dark, with a three-page PDF. Web tests pass. HELP.md describes the view.
+
+Also fixed here: PagedPreview stayed mounted from one file to the next, so the first render of the new file used the previous file's page count and requested pages that do not exist. Server logs show this as "page render failed: Wrong page range given: the first page (N) can not be after the last page (M)", and the late errors could switch the new file to the pdf.js fallback. The preview is now keyed by the file. Checked by opening a three-page PDF and then a one-page PDF: before, page 2 of the one-page file was requested and failed with 500; after, only page 1 is requested.
+
+### Library: a raw HTML or SVG file opened as a page runs no script (#684)
+
+`GET /api/kb/raw` served library files inline as their own Content-Type with no CSP and no `nosniff`. An `.html` or `.svg` file opened at that URL, as a page in a tab or through a link in a chat reply, ran its scripts on the Studio's origin with the user's session. The file could be in the library, uploaded, or written by the chat. Those scripts could call the Studio's APIs as that user.
+
+- `raw` now sends `X-Content-Type-Options: nosniff` on every file.
+- HTML, SVG, XHTML and XML get `Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:`: an opaque origin with no scripts.
+- The policy binds only a document. An SVG or PNG in an `<img>` and a PDF fetched by pdf.js are unchanged, and PDFs, images and other types get no CSP, so a PDF opened in a tab still shows in the browser's viewer.
+- Chat attachment downloads also send `nosniff`.
+- `/api/kb/html` is unchanged. It is still the route that runs a page's inline scripts, sandboxed.
+
+Test: `internal/kb/raw_sandbox_test.go` checks the headers for HTML, SVG, PDF, PNG and an unknown type whose body looks like HTML.
+
+### Reports: PDF and Word files embed the images their Markdown names (#683)
+
+A screenshot named in a report's Markdown did not appear in the PDF: `write_kb_file` rendered .pdf and .docx from text only and printed an image as `[alt]`.
+
+- **Parsing** (`docwrite/blocks.go`): `![alt](src)` in a paragraph becomes an image block where it stands, and the paragraph is split around it. In a heading or table cell it stays as `[alt]` text.
+- **Loading** (`docwrite/images.go`): each image is read once through an `ImageSource` and checked with `image.DecodeConfig`. A JPEG embeds as it came. PNG, GIF, WebP, BMP and TIFF are redrawn as 8-bit PNG, and a CMYK JPEG as RGB JPEG, so both writers take them. Limits are 25 MB and 50 megapixels per image, and 100 images per document.
+- **PDF:** each image is drawn at 96 pixels per inch, scaled down to the text width and to one page's height, and moved to a new page when it does not fit below. Each image is stored once in the file however often it appears.
+- **Word:** each image is an inline picture in a `word/media` part with an image relationship, sized in EMU to the same limits. Media entries are deflated: LibreOffice refuses a package whose stored entries carry Go's data descriptor (found while checking; there is a test for it).
+- **Resolving** (`chat/docimages.go`): a path relative to the new file's folder, then from the library's top. A leading slash, `#open=file:…`, `/api/kb/raw?path=…` and URL-escaped paths are accepted, and so is a base64 `data:` URL. Excluded and dot folders and paths leaving the library are refused. Web images are not fetched.
+- **Reporting:** the tool result says "with N images". It lists each image that was not embedded and why, and asks the model to fix the path and write the file again. That image's alt text stands in its place, in italics.
+- **Docs:** the tool description, HELP.md and README say images are supported.
+
+Tests:
+- `docwrite/images_test.go`: parsing and splitting, PDF image objects, Word media, relationships, extents scaled to 6.5 in, deflated entries, missing images, a nil source.
+- `chat/docimages_test.go`: every reference form and refusal, plus `write_kb_file` end to end.
+
+Checked by eye: a PDF with a screenshot, rendered with poppler, and the Word file converted by LibreOffice.
+
+Also: PDF italics came out upright where only `fonts-dejavu-core` provides DejaVu (the container), because that package has no oblique faces and missing faces were drawn from the regular one. The writer now picks a family with all four faces first (Liberation, also installed there) and falls back to a partial family only when none is complete. Checked on a host with the same font packages.
+
 ## v1.196 (2026-11-12)
 
 ### Chat: no blank space under the composer from screen reader labels (#677)
@@ -23,6 +124,10 @@ A **Code** page (Run group, shown only with a platform connection, like Workflow
 Server: `internal/codesessions` serves `GET /api/code-sessions` and `GET /api/code-sessions/item`, reading the platform's `/api/code/sessions` and `/api/code/machines/{m}/sessions/{id}` as the viewer with the run pane's credential. History is trimmed (latest 400 items, no thinking or turn markers, tool results cut to 1,500 characters). A 403, or a 404 on the list, is explained as the agents preview being off. Read only by design: the platform's start, message, approve and stop routes are internal to its preview; when its client is opened up, the same credential can drive them.
 
 Checked against a live platform (17 sessions, one connected machine): list, detail, links. Tests: grouping, time and path labels, transcript folding (web), title, URL, view and id checks (Go); setup wizard tests updated for the new switch. HELP, README and REFERENCE updated.
+
+### docs: change log through v1.196 (#678)
+
+Change log entries for v1.196 (#675, #677).
 
 ## v1.195 (2026-11-12)
 
