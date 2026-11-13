@@ -154,7 +154,7 @@ activate-studio/
 |---|---|
 | `node/` | stand-ins only: `node/bin/node` and `app/server/dist/main.js` are what the v1.187 and v1.188 updaters check for before they install, marked by `node/PLACEHOLDER` |
 | `app/` | `bin/` (`studio-server`, `semantic-map`), `lib/libonnxruntime.so.1`, `occt/` (the STEP preview's modules), the built web app, `docs/`, `CHANGELOG.md`, `build-info.json` |
-| `gufi/` | GUFI 0.8.0, the lean build (sqlite-vec, no llama.cpp), with PCRE2 and `libgomp.so.1` |
+| `gufi/` | GUFI 0.8.1, the lean build (sqlite-vec, no llama.cpp), with PCRE2 and `libgomp.so.1` |
 | `ocr/` | tesseract and leptonica with the English model |
 | `models/` | the ONNX embedding model (MiniLM) and its tokenizer |
 | `licenses/` | the licenses of ONNX Runtime and the STEP modules (LGPL) |

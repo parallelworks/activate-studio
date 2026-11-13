@@ -12,9 +12,9 @@ PREFIX="${GUFI_PREFIX:-/opt/gufi}"
 # them; GUFI_AI=0 turns them off for a quick build that keeps full-text and
 # metadata search and loses only the semantic blend.
 AI="${GUFI_AI:-1}"
-# The GUFI release the Studio is tested with (tag 0.8.0): a commit, a tag or a
+# The GUFI release the Studio is tested with (tag 0.8.1): a commit, a tag or a
 # branch. A clone's checkout is moved to it, so an older build is replaced.
-GUFI_REF="${GUFI_REF:-021a717a6089b9e28b068695dc7c7f3732fd1a56}"
+GUFI_REF="${GUFI_REF:-f2292ea596405c245fec8d4306cc5b14e736d61f}"
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 case "$(uname -s)" in

@@ -4,11 +4,11 @@ The macOS app carries [GUFI](https://github.com/mar-file-system/GUFI), built fro
 
 ## The published build
 
-The release [`gufi-021a717-macos14`](https://github.com/parallelworks/activate-studio/releases/tag/gufi-021a717-macos14), the one the app uses, is a prerelease of this repository, separate from the app's releases, and holds GUFI 0.8.0 (commit `021a717a`, GUFI's `0.8.0` tag). The earlier `gufi-1713537-macos14` holds GUFI commit `1713537a` and is kept for older app builds. The table is the 0.8.0 build, as its manifest recorded it. The release holds `gufi-macos-arm64.tar.gz`, its `.sha256`, and `gufi-macos-arm64.manifest.json`, which records what was built:
+The release [`gufi-f2292ea-macos14`](https://github.com/parallelworks/activate-studio/releases/tag/gufi-f2292ea-macos14), the one the app uses, is a prerelease of this repository, separate from the app's releases, and holds GUFI 0.8.1 (commit `f2292ea5`, GUFI's `0.8.1` tag). The earlier `gufi-021a717-macos14` (GUFI 0.8.0) and `gufi-1713537-macos14` (GUFI commit `1713537a`) are kept for older app builds. The table is the 0.8.1 build, as its manifest recorded it. The release holds `gufi-macos-arm64.tar.gz`, its `.sha256`, and `gufi-macos-arm64.manifest.json`, which records what was built:
 
 | | |
 |---|---|
-| GUFI | 0.8.0, commit `021a717a` (GUFI's `0.8.0` tag) |
+| GUFI | 0.8.1, commit `f2292ea5` (GUFI's `0.8.1` tag) |
 | Runs on | macOS 14.0 and later, Apple silicon |
 | Bundled by GUFI | SQLite 3.53.4, sqlite3-pcre, sqlite-vec 0.1.10-alpha.4, sqlite-lembed 0.0.1-alpha.8, llama.cpp, jemalloc |
 | Built here from release sources | LLVM OpenMP 23.1.4, PCRE2 10.49 (shared and static) |
@@ -17,8 +17,8 @@ The release [`gufi-021a717-macos14`](https://github.com/parallelworks/activate-s
 The archive unpacks to `gufi/` with `bin` (every GUFI tool), `lib` (`gufi_vt.dylib`, `vec0.dylib`, `lembed0.dylib`, the llama.cpp and ggml libraries, `libomp.dylib`, `libpcre2-8.0.dylib`), `licenses`, `README.txt` and `manifest.json`. The tools load their libraries from `lib` wherever the tree is, with no `DYLD_LIBRARY_PATH`.
 
 ```
-curl -fsSLO https://github.com/parallelworks/activate-studio/releases/download/gufi-021a717-macos14/gufi-macos-arm64.tar.gz
-curl -fsSLO https://github.com/parallelworks/activate-studio/releases/download/gufi-021a717-macos14/gufi-macos-arm64.tar.gz.sha256
+curl -fsSLO https://github.com/parallelworks/activate-studio/releases/download/gufi-f2292ea-macos14/gufi-macos-arm64.tar.gz
+curl -fsSLO https://github.com/parallelworks/activate-studio/releases/download/gufi-f2292ea-macos14/gufi-macos-arm64.tar.gz.sha256
 shasum -a 256 -c gufi-macos-arm64.tar.gz.sha256
 tar -xzf gufi-macos-arm64.tar.gz
 export PATH="$PWD/gufi/bin:$PATH"     # gufi_vt starts gufi_query by name
@@ -43,7 +43,7 @@ The build takes about eight minutes on a GitHub `macos-15` runner and writes the
 
 | Variable | Default | |
 |---|---|---|
-| `GUFI_REF` | `021a717a…` | GUFI branch, tag or commit to clone |
+| `GUFI_REF` | `f2292ea5…` | GUFI branch, tag or commit to clone |
 | `GUFI_SRC` | | an existing GUFI checkout, built as it is |
 | `MACOSX_DEPLOYMENT_TARGET` | `14.0` | the oldest macOS the tree runs on |
 | `OUT_DIR`, `CACHE_DIR` | `deploy/mac/out`, `deploy/mac/.cache` | outputs, and downloads kept between builds |

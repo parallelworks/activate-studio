@@ -20,7 +20,7 @@
 #
 # Usage: deploy/mac/build_gufi.sh
 #   GUFI_REF     GUFI branch, tag or commit (default: the commit of GUFI's
-#                0.8.0 tag)
+#                0.8.1 tag)
 #   GUFI_SRC     an existing GUFI checkout to build as it is, instead of
 #                cloning GUFI_REF
 #   MACOSX_DEPLOYMENT_TARGET  the oldest macOS the tree runs on (default 14.0)
@@ -48,7 +48,7 @@ TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 NAME=build_gufi
 . "$HERE/../common/lib.sh"
 . "$HERE/../common/pins.sh"
-GUFI_REF="${GUFI_REF:-$GUFI_COMMIT}"   # tag 0.8.0
+GUFI_REF="${GUFI_REF:-$GUFI_COMMIT}"   # tag 0.8.1
 
 # Pinned sources, checked against their SHA-256 on every build. libomp is
 # the release build_app.sh takes as a Homebrew bottle, built here from

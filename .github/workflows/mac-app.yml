@@ -72,7 +72,7 @@ env:
   # release.
   GUFI_RUN: ""
   # The gufi-* release whose gufi-macos-arm64.tar.gz the app uses.
-  GUFI_RELEASE: gufi-021a717-macos14
+  GUFI_RELEASE: gufi-f2292ea-macos14
 
 concurrency:
   group: mac-app-${{ inputs.release || github.ref }}

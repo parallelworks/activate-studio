@@ -68,8 +68,8 @@ NAME=build_app
 . "$HERE/../common/pins.sh"
 NODE_SHA256=751fdf7439f115d87ee2a8f3f18c065b6151852068e3e666ac60ac2996f75ac9
 PY_SHA256=9866e11cf2ae9caa1e671383786f248859a52dd8bfb702fb4c0dc2c65f1d36de
-GUFI_PKG_URL=https://github.com/mar-file-system/GUFI/releases/download/0.8.0/gufi-0.8.0.macOS.arm64.pkg
-GUFI_PKG_SHA256=b45cdaf8d7839faf112196555ecfd59c383316985ed2d136563bb29d53bfd75e
+GUFI_PKG_URL=https://github.com/mar-file-system/GUFI/releases/download/0.8.1/gufi-0.8.1.macOS.arm64.pkg
+GUFI_PKG_SHA256=36d83545421044eb6a810be6b649dbc485effda662950895baed94a350950532
 GUFI_LICENSE_SHA256=9e40647012a77d1fdcac90a9b7241843900cb589631b5c7f7cbad793a91828aa
 # GUFI's package links libomp and pcre2 from a Homebrew install it does not
 # carry; the app takes them from Homebrew's macOS 15 bottles.

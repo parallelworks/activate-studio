@@ -21,7 +21,7 @@ The macOS and Linux apps are built as the Go version: the Go server (`server-go`
 ```
 git clone https://github.com/parallelworks/activate-studio && cd activate-studio
 pnpm install && pnpm build
-indexer/setup_gufi.sh                      # once: builds the GUFI index engine (release 0.8.0)
+indexer/setup_gufi.sh                      # once: builds the GUFI index engine (release 0.8.1)
 export KB_ROOT=/path/to/your/folder
 export OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=<your key>
 indexer/reindex.sh                         # indexes the folder (or later: Settings, Indexing, Libraries, Build index)
