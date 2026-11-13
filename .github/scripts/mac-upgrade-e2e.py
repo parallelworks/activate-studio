@@ -178,6 +178,16 @@ def compare(a, b):
     def rows(v):
         return sorted(map(tuple, v.get('rows', []))) if isinstance(v, dict) else None
 
+    # The Node server labels a result column it cannot name col1, col2, ...;
+    # the Go server labels it with its expression (count(*)). The same
+    # column at the same place is the same answer.
+    def same_columns(u, v):
+        p, q = u.get('columns'), v.get('columns')
+        if p == q:
+            return True
+        return isinstance(p, list) and isinstance(q, list) and len(p) == len(q) \
+            and all(a == b or re.fullmatch(r'col\d+', str(a)) for a, b in zip(p, q))
+
     for lib in x:
         if not isinstance(x[lib], dict):
             if x[lib] != y.get(lib):
@@ -186,7 +196,7 @@ def compare(a, b):
             continue
         for k in x[lib]:
             u, v = x[lib][k], y[lib].get(k)
-            if u == v or (isinstance(u, dict) and 'rows' in u and isinstance(v, dict) and u.get('columns') == v.get('columns') and rows(u) == rows(v)):
+            if u == v or (isinstance(u, dict) and 'rows' in u and isinstance(v, dict) and same_columns(u, v) and rows(u) == rows(v)):
                 continue
             # A limited query that chooses among rows of the same size or date.
             if isinstance(u, dict) and isinstance(v, dict) and 'rows' in u and len(u['rows']) == len(v['rows']) and k.split(':')[1] in ('largest', 'ext') \
