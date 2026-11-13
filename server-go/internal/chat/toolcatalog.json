@@ -374,13 +374,17 @@
   },
   {
    "name": "agent_sessions",
-   "description": "List the pw code sessions on a site: id, name, state, workspace, and model. These include sessions the user started in pw code itself.",
+   "description": "List the pw code sessions on a site: id, state, name (or the topic pw code gave it), workspace, model, and how its first request began. These include sessions the user started in pw code itself. With find, only the sessions whose name, topic, first request or workspace hold those words, best match first; use it when the user names a session or what it was about, then pass its id to the other agent tools.",
    "parameters": {
     "type": "object",
     "properties": {
      "site": {
       "type": "string",
       "description": "Where the agent runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
+     },
+     "find": {
+      "type": "string",
+      "description": "Words from the session's name or topic, such as the report or project it was about"
      }
     },
     "required": [
@@ -390,7 +394,7 @@
   },
   {
    "name": "start_agent",
-   "description": "Start a pw code agent on a site: a session in a workspace there, given the objective. With a goal it keeps working turn after turn until an evaluator finds the goal met or max_turns is reached, without returning to you in between; use a goal for iterative work (fix until the tests pass, run until the residual converges, refine until a check succeeds) and write it as a condition that can be checked from the transcript. The agent runs as the user on that machine with their files and tools. Only start one when the user asks for an agent or remote work in this conversation. Returns the session id; follow it with agent_status.",
+   "description": "Start a pw code agent on a site: a session in a workspace there, given the objective. With a goal it keeps working turn after turn until an evaluator finds the goal met or max_turns is reached, without returning to you in between; use a goal for iterative work (fix until the tests pass, run until the residual converges, refine until a check succeeds) and write it as a condition that can be checked from the transcript. The agent runs as the user on that machine with their files and tools. Only start one when the user asks for an agent, pw code, or remote work in this conversation. pw code is a full coding agent, so hand it work that needs more than the library tools: a report or document built with code, figures or formatting the PDF and Word writers do not offer, analysis over many files, or anything run on the site. On a site that sees this Studio's library (always the local site; a cluster where the library is on the same machine or shared storage) it works in a new library folder under agents/, or in the folder you name, so what it writes appears in the Library; brief it to write its outputs there. Returns the session id; follow it with agent_status, whose wait holds until the agent finishes and which then lists and indexes the files it wrote in the library.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -412,7 +416,11 @@
      },
      "workspace": {
       "type": "string",
-      "description": "Working directory on the site: absolute, or under ~, $HOME, or $WORKDIR. Default: a new directory under ~/studio-agents"
+      "description": "Working directory on the site: absolute, or under ~, $HOME, or $WORKDIR. Default: a new library folder under agents/ when the site sees the library, else a new directory under ~/studio-agents"
+     },
+     "folder": {
+      "type": "string",
+      "description": "A library folder to work in, relative to the library's top, such as reports/site-survey; the site must see the library. Give this or workspace, not both"
      },
      "model": {
       "type": "string",
@@ -436,7 +444,7 @@
   },
   {
    "name": "agent_status",
-   "description": "Where a pw code agent stands: running or idle, its goal (active, paused) and the last goal check (turn count, met or not and why), what it waits for approval on, and the end of its transcript.",
+   "description": "Where a pw code agent stands: running or idle, its goal (active, paused) and the last goal check (turn count, met or not and why), what it waits for approval on, and the end of its transcript. When the agent works in a library folder and is not running, it also lists the files there with links, newest first, and indexes them. With wait, it first holds while the agent works (through a goal's turns too), returning as soon as it finishes or asks for approval.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -446,11 +454,15 @@
      },
      "session": {
       "type": "string",
-      "description": "The pw code session id, from start_agent or agent_sessions"
+      "description": "The pw code session id, from start_agent or agent_sessions; a session's name or words from its topic also find it"
      },
      "lines": {
       "type": "number",
       "description": "Transcript lines to include, default 12"
+     },
+     "wait": {
+      "type": "number",
+      "description": "Seconds to wait for the agent to finish first, up to 600; call again to keep waiting. Default 0"
      }
     },
     "required": [
@@ -471,7 +483,7 @@
      },
      "session": {
       "type": "string",
-      "description": "The pw code session id, from start_agent or agent_sessions"
+      "description": "The pw code session id, from start_agent or agent_sessions; a session's name or words from its topic also find it"
      },
      "text": {
       "type": "string"
@@ -503,7 +515,7 @@
      },
      "session": {
       "type": "string",
-      "description": "The pw code session id, from start_agent or agent_sessions"
+      "description": "The pw code session id, from start_agent or agent_sessions; a session's name or words from its topic also find it"
      },
      "action": {
       "type": "string",
@@ -543,7 +555,7 @@
      },
      "session": {
       "type": "string",
-      "description": "The pw code session id, from start_agent or agent_sessions"
+      "description": "The pw code session id, from start_agent or agent_sessions; a session's name or words from its topic also find it"
      },
      "approval": {
       "type": "string",
@@ -577,7 +589,7 @@
      },
      "session": {
       "type": "string",
-      "description": "The pw code session id, from start_agent or agent_sessions"
+      "description": "The pw code session id, from start_agent or agent_sessions; a session's name or words from its topic also find it"
      }
     },
     "required": [
@@ -1274,7 +1286,7 @@
     "delegate",
     "task_status"
    ],
-   "cue": "\\b(agents?|delegat|pw code|subtasks?|steer|in parallel)"
+   "cue": "\\b(agents?|delegat|pw ?code|subtasks?|steer|in parallel)"
   },
   "editing": {
    "summary": "writing, moving, renaming, copying and deleting files in the knowledge base (deletes are approved by the user), and suggesting or applying labels",

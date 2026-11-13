@@ -78,7 +78,7 @@ func (m *Module) toolOptions(w http.ResponseWriter, r *http.Request) error {
 		if id == "changes" && !ok {
 			continue
 		}
-		if !platform && slices.Contains(PlatformGroups, id) {
+		if !platform && slices.Contains(PlatformGroups, id) && (id != "agents" || !m.localAgents()) {
 			continue
 		}
 		out = append(out, o)
