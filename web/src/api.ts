@@ -394,7 +394,7 @@ export const api = {
   tree: (path: string, hidden = false) => getJson<{ entries: KbEntry[] }>(`/api/kb/tree?path=${encodeURIComponent(path)}${hidden ? '&hidden=1' : ''}`),
   file: (path: string) => getJson<FileContent>(`/api/kb/file?path=${encodeURIComponent(path)}`),
   downloadUrl: (path: string) => withLibrary(`/api/kb/download?path=${encodeURIComponent(path)}`),
-  rawUrl: (path: string) => withLibrary(`/api/kb/raw?path=${encodeURIComponent(path)}`),
+  rawUrl: (path: string, version?: number) => withLibrary(`/api/kb/raw?path=${encodeURIComponent(path)}${version ? `&v=${version}` : ''}`),
   pdfUrl: (path: string) => withLibrary(`/api/kb/pdf?path=${encodeURIComponent(path)}`),
   deleteFiles: async (paths: string[]) => {
     const back = prefixFor(paths[0] ?? '')
@@ -449,7 +449,9 @@ export const api = {
    *  sheets, read without LibreOffice. */
   officePreview: (path: string) => getJson<OfficeOutline>(`/api/kb/office-preview?path=${encodeURIComponent(path)}`),
   officeMediaUrl: (path: string, name: string) => withLibrary(`/api/kb/office-media?path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`),
-  pdfPageUrl: (path: string, page: number) => withLibrary(`/api/kb/pdf-page?path=${encodeURIComponent(path)}&page=${page}`),
+  // version (the file's mtime) makes a rewritten file's pages new URLs: a
+  // page keeps an image it already holds for a URL whatever the headers say.
+  pdfPageUrl: (path: string, page: number, version?: number) => withLibrary(`/api/kb/pdf-page?path=${encodeURIComponent(path)}&page=${page}${version ? `&v=${version}` : ''}`),
   indexStatus: () => getJson<IndexStatus>(`/api/index/status`),
   sweepNow: () => postJson<{ changed: string[] }>(`/api/index/sweep`, {}),
   uploadUrl: async (url: string, dir: string) => {

@@ -5,6 +5,7 @@
 package docwrite
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -54,7 +55,7 @@ var md = goldmark.New(goldmark.WithExtensions(extension.GFM))
 
 // Parse reads Markdown into blocks.
 func Parse(src string) []Block {
-	b := []byte(src)
+	b := []byte(spacedImages(src))
 	doc := md.Parser().Parse(text.NewReader(b))
 	return blocksOf(doc, b)
 }
@@ -217,6 +218,44 @@ func runsOf(n ast.Node, src []byte) []Run {
 	}
 	walk(n, Run{})
 	return out
+}
+
+var (
+	imageRef = regexp.MustCompile(`!\[([^\]\n]*)\]\(((?:[^()<>\n]|\([^()<>\n]*\))*\s(?:[^()<>\n]|\([^()<>\n]*\))*)\)`)
+	titled   = regexp.MustCompile(`^\S+\s+("[^"]*"|'[^']*')$`)
+	fence    = regexp.MustCompile("^ {0,3}(```|~~~)")
+)
+
+// spacedImages lets an image's path hold spaces, as a screenshot's name
+// does ("Screenshot 2026-11-13 at 9.01.28 AM.png"): Markdown ends a bare
+// destination at the first space, so ![alt](a b.png) is not an image
+// at all. Such a destination is wrapped in angle brackets, which Markdown
+// takes whole. One with a title ("a.png \"Title\"") and text in code
+// fences are left as written.
+func spacedImages(src string) string {
+	if !strings.Contains(src, "![") {
+		return src
+	}
+	lines := strings.Split(src, "\n")
+	inFence := false
+	for i, l := range lines {
+		if fence.MatchString(l) {
+			inFence = !inFence
+			continue
+		}
+		if inFence || !strings.Contains(l, "![") {
+			continue
+		}
+		lines[i] = imageRef.ReplaceAllStringFunc(l, func(m string) string {
+			sm := imageRef.FindStringSubmatch(m)
+			dest := strings.TrimSpace(sm[2])
+			if titled.MatchString(dest) {
+				return m
+			}
+			return "![" + sm[1] + "](<" + dest + ">)"
+		})
+	}
+	return strings.Join(lines, "\n")
 }
 
 // splitImages makes a paragraph's runs into blocks: its text, and each

@@ -138,3 +138,24 @@ func keys(m map[string]string) []string {
 	}
 	return out
 }
+
+func TestSpacedImagePaths(t *testing.T) {
+	src := "![shot](uploads/chat/Screenshot 2026-11-13 at 9.01.28 AM.png)\n\n" +
+		"![second](Screenshot 2026-11-13 (2).png)\n\n" +
+		"![titled](plain.png \"A title\")\n\n" +
+		"```\n![code](a b.png)\n```\n\n" +
+		"![bracketed](<already b.png>)\n"
+	var srcs []string
+	for _, b := range Parse(src) {
+		if b.Kind == KImage {
+			srcs = append(srcs, b.Src)
+		}
+	}
+	want := "uploads/chat/Screenshot 2026-11-13 at 9.01.28 AM.png|Screenshot 2026-11-13 (2).png|plain.png|already b.png"
+	if got := strings.Join(srcs, "|"); got != want {
+		t.Errorf("images\n got %s\nwant %s", got, want)
+	}
+	if !strings.Contains(spacedImages(src), "```\n![code](a b.png)\n```") {
+		t.Error("a code fence is left as written")
+	}
+}

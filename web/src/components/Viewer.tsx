@@ -37,8 +37,9 @@ function officeLabel(suffix: string): string {
  * so the tab never shows broken images. `onUnavailable` says there is
  * nothing to preview at all, and the viewer opens the indexed text instead.
  */
-function PagedPreview({ path, office, markdown, onUnavailable }: {
+function PagedPreview({ path, version, office, markdown, onUnavailable }: {
   path: string
+  version?: number
   office: boolean
   markdown: boolean
   onUnavailable: (why: string) => void
@@ -85,7 +86,7 @@ function PagedPreview({ path, office, markdown, onUnavailable }: {
       .catch(() => onUnavailable(why))
   }
 
-  if (stage === 'pdfjs') return <PdfJsPages url={api.rawUrl(path)} cap={PDF_PAGE_CAP} onFail={why => showText(error ? `${error}; ${why}` : why)} />
+  if (stage === 'pdfjs') return <PdfJsPages url={api.rawUrl(path, version)} cap={PDF_PAGE_CAP} onFail={why => showText(error ? `${error}; ${why}` : why)} />
   if (stage === 'outline') return <OfficeOutlineView path={path} onFail={why => onUnavailable(why || error || '')} />
   if (stage === 'text') {
     if (fallbackText == null) return <div className="muted pad"><Loader inline size={16} label="Reading the text…" /></div>
@@ -106,7 +107,7 @@ function PagedPreview({ path, office, markdown, onUnavailable }: {
         <img
           key={i}
           className="pdf-page-img"
-          src={api.pdfPageUrl(path, i + 1)}
+          src={api.pdfPageUrl(path, i + 1, version)}
           alt={`page ${i + 1}`}
           loading="lazy"
           onError={() => fail('a page could not be rendered')}
@@ -443,12 +444,13 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   ) : isModel ? (
     <Suspense fallback={<div className="muted pad"><Loader inline size={16} label="Loading the 3D viewer…" /></div>}><ModelViewer path={path} /></Suspense>
   ) : isImage ? (
-    <div className="viewer-body"><img src={api.rawUrl(path)} alt={path} style={{ maxWidth: '100%' }} /></div>
+    <div className="viewer-body"><img src={api.rawUrl(path, file.mtime)} alt={path} style={{ maxWidth: '100%' }} /></div>
   ) : isPdf || isOffice ? (
-    // Keyed by the file: kept across files, the first render of the next
-    // one used the last one's page count, asked for pages it does not
-    // have, and their errors sent it to the fallback.
-    <PagedPreview key={path} path={path} office={isOffice} markdown={extractedMarkdown} onUnavailable={why => { setPreviewGone(why); setTab('indexed') }} />
+    // Keyed by the file and its version: kept across files, the first
+    // render of the next one used the last one's page count, asked for
+    // pages it does not have, and their errors sent it to the fallback;
+    // a file rewritten in place starts over with its new pages.
+    <PagedPreview key={`${path}@${file.mtime}`} path={path} version={file.mtime} office={isOffice} markdown={extractedMarkdown} onUnavailable={why => { setPreviewGone(why); setTab('indexed') }} />
   ) : isText ? (
     <div className="viewer-body">
       {isMarkdown
