@@ -32,6 +32,7 @@ const (
 	KCode    = "code"
 	KQuote   = "quote"
 	KRule    = "rule"
+	KBreak   = "break" // a page break
 	KImage   = "img"
 )
 
@@ -67,7 +68,12 @@ func blocksOf(parent ast.Node, src []byte) []Block {
 		case *ast.Heading:
 			out = append(out, Block{Kind: KHeading, Level: v.Level, Runs: textOnly(runsOf(v, src))})
 		case *ast.Paragraph, *ast.TextBlock:
-			out = append(out, splitImages(runsOf(v, src))...)
+			runs := runsOf(v, src)
+			if len(runs) == 1 && pageBreakText.MatchString(runs[0].Text) {
+				out = append(out, Block{Kind: KBreak})
+				continue
+			}
+			out = append(out, splitImages(runs)...)
 		case *ast.List:
 			l := Block{Kind: KList, Ordered: v.IsOrdered(), Start: v.Start}
 			if l.Start == 0 {
@@ -86,6 +92,10 @@ func blocksOf(parent ast.Node, src []byte) []Block {
 			}
 			t := strings.TrimRight(sb.String(), "\n")
 			if _, html := v.(*ast.HTMLBlock); html {
+				if pageBreakHTML.MatchString(t) {
+					out = append(out, Block{Kind: KBreak})
+					continue
+				}
 				if t = stripTags(t); strings.TrimSpace(t) != "" {
 					out = append(out, Block{Kind: KPara, Runs: []Run{{Text: strings.TrimSpace(t)}}})
 				}
@@ -221,9 +231,13 @@ func runsOf(n ast.Node, src []byte) []Run {
 }
 
 var (
-	imageRef = regexp.MustCompile(`!\[([^\]\n]*)\]\(((?:[^()<>\n]|\([^()<>\n]*\))*\s(?:[^()<>\n]|\([^()<>\n]*\))*)\)`)
-	titled   = regexp.MustCompile(`^\S+\s+("[^"]*"|'[^']*')$`)
-	fence    = regexp.MustCompile("^ {0,3}(```|~~~)")
+	// A page break: \newpage or \pagebreak on a line of its own, or an
+	// HTML comment or element that asks for one.
+	pageBreakText = regexp.MustCompile(`^\s*\\(newpage|pagebreak|clearpage)\s*$`)
+	pageBreakHTML = regexp.MustCompile(`(?i)<!--\s*page-?break\s*-->|page-break-(before|after)\s*:\s*always|break-(before|after)\s*:\s*page`)
+	imageRef      = regexp.MustCompile(`!\[([^\]\n]*)\]\(((?:[^()<>\n]|\([^()<>\n]*\))*\s(?:[^()<>\n]|\([^()<>\n]*\))*)\)`)
+	titled        = regexp.MustCompile(`^\S+\s+("[^"]*"|'[^']*')$`)
+	fence         = regexp.MustCompile("^ {0,3}(```|~~~)")
 )
 
 // spacedImages lets an image's path hold spaces, as a screenshot's name

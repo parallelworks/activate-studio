@@ -622,8 +622,19 @@ var htmlFile = func(p string) bool {
 	return strings.HasSuffix(low, ".html") || strings.HasSuffix(low, ".htm")
 }
 
-// html serves corpus HTML under a hard sandbox: inline script and style
-// run, nothing loads, and the page has no origin.
+// htmlCSP is the sandbox corpus HTML runs in: inline script and style
+// run, nothing loads, and the page has no origin. Modals are allowed so
+// a page's own print button (and print=1) can open the print dialog.
+const htmlCSP = "sandbox allow-scripts allow-modals; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:"
+
+// printScript opens the print dialog once the page has drawn, for the
+// viewer's Print button (?print=1), which opens the page in a tab of its
+// own: a page framed in the Studio cannot be printed by the Studio, as
+// the sandbox gives it no origin.
+const printScript = "\n<script>addEventListener('load',function(){setTimeout(function(){print()},250)})</script>\n"
+
+// html serves corpus HTML under htmlCSP, with printScript added after it
+// when print=1.
 func (m *Module) html(w http.ResponseWriter, r *http.Request) error {
 	_, _, abs, err := m.previewSource(r, true)
 	if err != nil {
@@ -632,8 +643,22 @@ func (m *Module) html(w http.ResponseWriter, r *http.Request) error {
 	if !htmlFile(abs) {
 		return Error(415, "not an html file")
 	}
-	return sendFile(w, abs, map[string]string{"Content-Type": "text/html; charset=utf-8",
-		"Content-Security-Policy": "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:"})
+	headers := map[string]string{"Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": htmlCSP}
+	if r.URL.Query().Get("print") != "1" {
+		return sendFile(w, abs, headers)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return err
+	}
+	for k, v := range headers {
+		w.Header().Set(k, v)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(200)
+	w.Write(data)
+	io.WriteString(w, printScript)
+	return nil
 }
 
 func (m *Module) pdf(w http.ResponseWriter, r *http.Request) error {
