@@ -593,7 +593,27 @@ func (m *Module) raw(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return m.handled(w, r, err)
 	}
-	return sendFile(w, abs, map[string]string{"Content-Type": MimeFor(abs), "Content-Disposition": "inline"})
+	return sendFile(w, abs, rawHeaders(MimeFor(abs)))
+}
+
+// rawHeaders serves a library file inline as its own type, never sniffed.
+// A file that a browser runs when opened as a page (HTML, SVG) gets a
+// sandbox with no scripts, so a script in a library, uploaded or written
+// file never runs on the Studio's origin with the user's session. The
+// header binds only a page: as an <img>, or fetched for pdf.js, a file
+// shows as before. /api/kb/html is the route that runs a page's scripts,
+// in a sandbox of its own.
+func rawHeaders(mime string) map[string]string {
+	h := map[string]string{"Content-Type": mime, "Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"}
+	if activeMIME(mime) {
+		h["Content-Security-Policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+	}
+	return h
+}
+
+func activeMIME(mime string) bool {
+	t := strings.ToLower(strings.TrimSpace(strings.SplitN(mime, ";", 2)[0]))
+	return t == "text/html" || t == "image/svg+xml" || t == "application/xhtml+xml" || strings.HasSuffix(t, "/xml")
 }
 
 var htmlFile = func(p string) bool {

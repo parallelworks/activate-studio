@@ -210,6 +210,7 @@ func (m *Module) attachmentRoutes(h func(string, func(http.ResponseWriter, *http
 		defer f.Close()
 		w.Header().Set("Content-Type", kb.MimeFor(abs))
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(abs)+`"`)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		_, err = io.Copy(w, f)
 		return err
 	})
