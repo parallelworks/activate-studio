@@ -2,6 +2,29 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.198 (2026-11-13)
+
+### Reports: image paths may hold spaces; a PDF rewritten in place shows its new pages (#686)
+
+Two problems that kept a screenshot out of a chat-written PDF report, found in use on v1.197.
+
+**Spaces in image paths.** A macOS screenshot's name has spaces (`Screenshot 2026-11-13 at 9.01.28 AM.png`). Markdown ends a bare link destination at the first space, so `![alt](uploads/chat/Screenshot ... .png)` was not parsed as an image, and the model had to copy and rename the file. `docwrite.Parse` now wraps such a destination in angle brackets first. One level of parentheses is allowed (`(2).png`). A destination with a title and text inside code fences are left as written. The tool description says spaces are fine.
+
+**Old pages after a rewrite.** Three causes:
+
+- **Server:** `PagePNG` re-rendered a page whose PDF was newer than its cached image. But pdftoppm writes `p-N.png`, and the rename to `pN.png` ran only when `pN.png` was missing, so the old image was served forever. The pattern that found the new file also matched `pN.png` itself. The stale image is now removed before rendering, and the cached name is skipped when looking for the new one.
+- **Browser cache:** page images (`/api/kb/pdf-page`) and pictures inside Office files (`/api/kb/office-media`) were cached for five minutes (`max-age=300`). They now send `Cache-Control: private, no-cache` with an ETag from the source file's mtime and size and the page or name. A matching `If-None-Match` gets 304 before anything is rendered.
+- **Viewer:** a page reuses an image it already holds for a URL, whatever the headers say. Page-image, pdf.js and image URLs now carry `v=<mtime>`, and the paged preview is keyed by path and mtime.
+
+Tests:
+- `kb/pagepng_rewrite_test.go` renders page 1, rewrites the PDF and renders again. It fails on main and passes here, and is skipped without poppler.
+- `kb/fresh_test.go` covers 304, per-page tags and a rewritten file.
+- `docwrite/images_test.go` covers spaced, parenthesized, titled, fenced and bracketed paths.
+- `chat/docimages_test.go` writes a PDF that embeds a spaced screenshot name.
+- The web test is updated for the versioned URL.
+
+Checked live on a local Studio: a three-page PDF open in the viewer was rewritten in place as a one-page PDF, opened again, and showed the new page.
+
 ## v1.197 (2026-11-13)
 
 ### GUFI 0.8.1 (#679)
@@ -102,6 +125,10 @@ Tests:
 Checked by eye: a PDF with a screenshot, rendered with poppler, and the Word file converted by LibreOffice.
 
 Also: PDF italics came out upright where only `fonts-dejavu-core` provides DejaVu (the container), because that package has no oblique faces and missing faces were drawn from the regular one. The writer now picks a family with all four faces first (Liberation, also installed there) and falls back to a partial family only when none is complete. Checked on a host with the same font packages.
+
+### Change log through v1.197 (#685)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.197` before tagging v1.197.
 
 ## v1.196 (2026-11-12)
 
