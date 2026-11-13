@@ -30,11 +30,11 @@ func init() {
 		"agent_sites":    (*Module).toolAgentSites,
 		"agent_sessions": (*Module).toolAgentSessions,
 		"start_agent":    (*Module).toolStartAgent,
-		"agent_status":   (*Module).toolAgentStatus,
-		"agent_steer":    (*Module).toolAgentSteer,
-		"agent_goal":     (*Module).toolAgentGoal,
-		"agent_approve":  (*Module).toolAgentApprove,
-		"agent_stop":     (*Module).toolAgentStop,
+		"agent_status":   bySession((*Module).toolAgentStatus),
+		"agent_steer":    bySession((*Module).toolAgentSteer),
+		"agent_goal":     bySession((*Module).toolAgentGoal),
+		"agent_approve":  bySession((*Module).toolAgentApprove),
+		"agent_stop":     bySession((*Module).toolAgentStop),
 		"delegate":       (*Module).toolDelegate,
 		"task_status":    (*Module).toolTaskStatus,
 		"list_storage":   (*Module).toolListStorage,
@@ -790,11 +790,22 @@ func (m *Module) toolAgentSessions(r *http.Request, args map[string]any, ctx Too
 	if err != nil {
 		return nil, err
 	}
+	find := tmplOr(arg(args, "find"), "")
+	head := ""
+	if strings.TrimSpace(find) != "" {
+		hits := findSessions(rows, find)
+		if len(hits) == 0 {
+			head = "No session matches " + strconv.Quote(find) + "; the most recent are:\n"
+			rows = recentSessions(rows, 10)
+		} else {
+			rows = hits
+		}
+	}
 	lines := make([]string, len(rows))
 	for i, x := range rows {
-		lines[i] = jsTrim(tmpl(prop(x, "id")) + "  " + tmplOr(prop(x, "status"), "") + "  " + tmplOr(prop(x, "name"), "") + "  " + tmplOr(prop(x, "workspace"), "") + "  " + tmplOr(prop(x, "model"), ""))
+		lines[i] = sessionLine(x)
 	}
-	return &Outcome{Result: capText(orStr(strings.Join(lines, "\n"), "No sessions on that site.")), Summary: strconv.Itoa(len(rows)) + " session" + plural(len(rows))}, nil
+	return &Outcome{Result: capText(head + orStr(strings.Join(lines, "\n"), "No sessions on that site.")), Summary: strconv.Itoa(len(rows)) + " session" + plural(len(rows))}, nil
 }
 
 var agentModel = regexp.MustCompile(`^[^\s:]+:[^\s]+/[^\s]+$`)
@@ -818,7 +829,8 @@ func (m *Module) toolStartAgent(r *http.Request, args map[string]any, ctx ToolCt
 	}
 	turns := numOr(arg(args, "max_turns"), 0)
 	st, err := s.Start(r.Context(), agentsites.StartAgent{Site: tmplOr(arg(args, "site"), ""), Key: m.agentKey(s, ctx), Objective: tmplOr(arg(args, "objective"), ""),
-		Goal: optStr(arg(args, "goal")), MaxTurns: turns, Workspace: optStr(arg(args, "workspace")), Model: model, PermissionMode: optStr(arg(args, "permission_mode"))}, m.A.Cfg.AuthEnabled())
+		Goal: optStr(arg(args, "goal")), MaxTurns: turns, Workspace: optStr(arg(args, "workspace")), Model: model, PermissionMode: optStr(arg(args, "permission_mode")),
+		Library: m.A.Cfg.KBRoot, Folder: optStr(arg(args, "folder"))}, m.A.Cfg.AuthEnabled())
 	if err != nil {
 		return nil, err
 	}
@@ -827,8 +839,12 @@ func (m *Module) toolStartAgent(r *http.Request, args map[string]any, ctx ToolCt
 		goal = ", with a goal it works toward until met or bounded"
 	}
 	site := tmpl(prop(st, "site"))
-	return &Outcome{Result: "Started pw code session " + tmpl(prop(st, "session")) + " on " + site + " (" + tmpl(prop(st, "host")) + "), workspace " + tmpl(prop(st, "workspace")) + ", mode " + tmpl(prop(st, "mode")) + goal +
-		". Follow it with agent_status; it can also be opened in a terminal there with pw code attach " + site + "/" + tmpl(prop(st, "session")) + ".", Summary: "agent started on " + site}, nil
+	lib := ""
+	if l := prop(st, "library"); truthy(l) {
+		lib = ", the library folder " + tmpl(l) + " (what it writes there is indexed and linked when agent_status finds it finished)"
+	}
+	return &Outcome{Result: "Started pw code session " + tmpl(prop(st, "session")) + " on " + site + " (" + tmpl(prop(st, "host")) + "), workspace " + tmpl(prop(st, "workspace")) + lib + ", mode " + tmpl(prop(st, "mode")) + goal +
+		". Follow it with agent_status (wait lets it block until the agent finishes); it can also be opened in a terminal there with pw code attach " + site + "/" + tmpl(prop(st, "session")) + ".", Summary: "agent started on " + site}, nil
 }
 
 func (m *Module) toolAgentStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
@@ -836,6 +852,7 @@ func (m *Module) toolAgentStatus(r *http.Request, args map[string]any, ctx ToolC
 	if err != nil {
 		return nil, err
 	}
+	m.awaitAgent(r, s, args, ctx)
 	st, err := s.Status(r.Context(), tmplOr(arg(args, "site"), ""), m.agentKey(s, ctx), tmplOr(arg(args, "session"), ""), numOr(arg(args, "lines"), 12), m.A.Cfg.AuthEnabled())
 	if err != nil {
 		return nil, err
@@ -869,7 +886,11 @@ func (m *Module) toolAgentStatus(r *http.Request, args map[string]any, ctx ToolC
 		}
 		asks = "waiting for approval:\n" + strings.Join(ls, "\n")
 	}
-	parts := []string{tmpl(prop(st, "session")) + " on " + tmpl(prop(st, "site")) + ": " + tmpl(prop(st, "status")) + ", workspace " + tmpl(prop(st, "workspace")) + ", model " + tmpl(prop(st, "model")), goal, check, asks, "recent:"}
+	failed := ""
+	if e := prop(st, "lastError"); truthy(e) {
+		failed = "last error (the agent stopped on it; tell the user, and steer or start again once it is fixed): " + tmpl(e)
+	}
+	parts := []string{tmpl(prop(st, "session")) + " on " + tmpl(prop(st, "site")) + ": " + tmpl(prop(st, "status")) + ", workspace " + tmpl(prop(st, "workspace")) + ", model " + tmpl(prop(st, "model")), failed, goal, check, asks, "recent:"}
 	for _, l := range jsonv.Arr(prop(st, "recent")) {
 		parts = append(parts, tmpl(l))
 	}
@@ -880,8 +901,15 @@ func (m *Module) toolAgentStatus(r *http.Request, args map[string]any, ctx ToolC
 		}
 	}
 	sum := tmpl(prop(st, "status"))
+	if failed != "" {
+		sum += ", stopped on an error"
+	}
 	if len(approvals) > 0 {
 		sum += ", needs approval"
+	}
+	// The files come first, so a long transcript never cuts them off.
+	if files := m.agentLibraryFiles(r, st); files != "" {
+		keep = append([]string{keep[0], files}, keep[1:]...)
 	}
 	return &Outcome{Result: capText(strings.Join(keep, "\n")), Summary: sum}, nil
 }

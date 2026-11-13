@@ -214,7 +214,10 @@ func (t goTools) System(r *http.Request, platform, connected bool) (string, erro
 
 // offered is whether a tool goes to a reply with this platform and these
 // changes.
-func offered(n string, platform, changesOK bool) bool {
+func offered(n string, platform, changesOK, localAgents bool) bool {
+	if localAgents && localAgentTools[n] {
+		return true
+	}
 	if !platform && needsPlatform(n) {
 		return false
 	}
@@ -229,9 +232,10 @@ func offered(n string, platform, changesOK bool) bool {
 
 func (t goTools) Specs(r *http.Request, tools []string, has bool, platform, changesOK bool, groups []string) (*Specs, error) {
 	reader := readerFrom(tools, has)
+	local := t.m.localAgents()
 	var available []ToolSpec
 	for _, s := range t.m.activeToolSpecsWithRemote() {
-		if t.m.readerAllows(s.Name, reader) && offered(s.Name, platform, changesOK) {
+		if t.m.readerAllows(s.Name, reader) && offered(s.Name, platform, changesOK, local) {
 			available = append(available, s)
 		}
 	}

@@ -315,6 +315,13 @@ func BoundedGoal(goal string, turns float64) string {
 type StartAgent struct {
 	Site, Key, Objective, Goal, Workspace, Model, PermissionMode string
 	MaxTurns                                                     float64 // 0: the default
+	// Library is the library's top on this machine, "" for none. With no
+	// Workspace, an agent on a site that sees the library works in a new
+	// folder under agents/ there, so what it writes is in the library.
+	Library string
+	// Folder is a library folder to work in, relative to its top; the
+	// site must see the library.
+	Folder string
 }
 
 // Start is startAgent: a pw code session at the site on the objective,
@@ -347,13 +354,37 @@ func (s *Sites) Start(ctx context.Context, o StartAgent, authEnabled bool) (*jso
 		why, _ := status.Get("why")
 		return nil, kb(502, o.Site+": "+jsString(why))
 	}
-	ws := o.Workspace
-	if ws == "" {
-		ws = s.defaultWorkspace(objective)
+	var workspace string
+	library := any(jsonv.Undefined)
+	if o.Workspace == "" && o.Library != "" {
+		rel := o.Folder
+		if rel != "" {
+			if rel, err = LibraryFolder(rel); err != nil {
+				return nil, err
+			}
+		} else {
+			rel = agentsFolder + "/" + strings.TrimPrefix(s.defaultWorkspace(objective), "~/studio-agents/")
+		}
+		seen, ok, err := s.placeInLibrary(ctx, c.Site(), o.Key, o.Library, rel)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			workspace, library = seen, rel
+		} else if o.Folder != "" {
+			return nil, kb(400, "folder: "+c.Site()+" does not see this Studio's library, so an agent there cannot work in it; run it on a site that does, or leave the folder out")
+		}
+	} else if o.Folder != "" {
+		return nil, kb(400, "folder: give a folder or a workspace, not both")
 	}
-	workspace, err := s.makeWorkspace(ctx, c.Site(), o.Key, trimJS(ws))
-	if err != nil {
-		return nil, err
+	if workspace == "" {
+		ws := o.Workspace
+		if ws == "" {
+			ws = s.defaultWorkspace(objective)
+		}
+		if workspace, err = s.makeWorkspace(ctx, c.Site(), o.Key, trimJS(ws)); err != nil {
+			return nil, err
+		}
 	}
 	req := jsonv.NewObject("workspace", workspace, "permissionMode", mode, "remoteControl", true)
 	if o.Model != "" {
@@ -384,7 +415,7 @@ func (s *Sites) Start(ctx context.Context, o StartAgent, authEnabled bool) (*jso
 	if !has {
 		host = jsonv.Undefined
 	}
-	return jsonv.NewObject("site", c.Site(), "session", undef(session, "id"), "workspace", workspace, "host", host, "mode", mode, "goal", goal), nil
+	return jsonv.NewObject("site", c.Site(), "session", undef(session, "id"), "workspace", workspace, "host", host, "mode", mode, "goal", goal, "library", library), nil
 }
 
 // undef is o[k], undefined when absent.
@@ -562,7 +593,7 @@ func (s *Sites) Status(ctx context.Context, site, key, id string, lines float64,
 	}
 	return jsonv.NewObject("site", c.Site(), "session", undef(d, "id"), "status", undef(d, "status"),
 		"workspace", undef(d, "workspace"), "model", undef(d, "model"), "goal", goal, "lastCheck", lastCheck,
-		"approvals", approvals, "recent", recent), nil
+		"approvals", approvals, "recent", recent, "lastError", undef(d, "lastError")), nil
 }
 
 // Sessions is agentSessions.
@@ -586,7 +617,8 @@ func (s *Sites) Sessions(ctx context.Context, site, key string, authEnabled bool
 			return v
 		}
 		out = append(out, jsonv.NewObject("id", undef(o, "id"), "name", orNull("name"), "status", orNull("status"),
-			"workspace", orNull("workspace"), "model", orNull("model"), "updatedAt", orNull("updatedAt")))
+			"workspace", orNull("workspace"), "model", orNull("model"), "updatedAt", orNull("updatedAt"),
+			"autoName", undef(o, "autoName"), "preview", undef(o, "preview")))
 	}
 	return out, nil
 }
