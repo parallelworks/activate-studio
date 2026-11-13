@@ -61,6 +61,17 @@ func TestKBFileTools(t *testing.T) {
 	if out.Failed || !exists("drafts/b-final.md") || out.Summary != "renamed drafts/b.md" {
 		t.Errorf("rename %+v", out)
 	}
+	out, _ = m.executeInGo(r, "rename_kb_file", `{"path":"drafts/b-final.md","name":"b-v2.md"}`, ToolCtx{})
+	if out.Failed || !exists("drafts/b-v2.md") || exists("drafts/b-final.md") || !strings.Contains(out.Result, "Renamed") {
+		t.Errorf("rename_kb_file %+v", out)
+	}
+	out, _ = m.executeInGo(r, "rename_kb_file", `{"path":"drafts/b-v2.md","name":"../c.md"}`, ToolCtx{})
+	if !out.Failed || !exists("drafts/b-v2.md") {
+		t.Errorf("a name with a folder is refused: %+v", out)
+	}
+	if out, _ = m.executeInGo(r, "rename_kb_file", `{"path":"drafts/b-v2.md"}`, ToolCtx{}); !out.Failed {
+		t.Errorf("a rename needs a name: %+v", out)
+	}
 	os.WriteFile(filepath.Join(kb, "archive/2026/c.md"), []byte("taken"), 0o644)
 	out, _ = m.executeInGo(r, "move_kb_files", `{"paths":["drafts/c.md"],"dest":"archive/2026"}`, ToolCtx{})
 	if !out.Failed || !exists("drafts/c.md") || !strings.Contains(out.Result, "name already exists there") {

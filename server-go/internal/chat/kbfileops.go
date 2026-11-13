@@ -23,6 +23,7 @@ import (
 
 func init() {
 	goExecutors["move_kb_files"] = (*Module).toolMoveKBFiles
+	goExecutors["rename_kb_file"] = (*Module).toolRenameKBFile
 	goExecutors["copy_kb_files"] = (*Module).toolCopyKBFiles
 	goExecutors["delete_kb_files"] = (*Module).toolDeleteKBFiles
 }
@@ -229,6 +230,19 @@ func (m *Module) toolMoveKBFiles(r *http.Request, args map[string]any, _ ToolCtx
 		result += "\n" + strings.TrimSpace(reindexed(r.Context(), o))
 	}
 	return &Outcome{Result: strings.TrimSpace(result), Summary: summary, Failed: len(o.Moved) == 0}, nil
+}
+
+// toolRenameKBFile renames one file or folder where it is: the rename that
+// move_kb_files does with a name and no dest, under a name the model finds.
+func (m *Module) toolRenameKBFile(r *http.Request, args map[string]any, tc ToolCtx) (*Outcome, error) {
+	p := pathArgs(args["path"])
+	if len(p) != 1 {
+		return &Outcome{Result: "path is required: the one library file or folder to rename.", Summary: "error", Failed: true}, nil
+	}
+	if jsTrim(argString(args, "name")) == "" {
+		return &Outcome{Result: "name is required: the new name, without a folder.", Summary: "error", Failed: true}, nil
+	}
+	return m.toolMoveKBFiles(r, map[string]any{"paths": []any{p[0]}, "name": args["name"]}, tc)
 }
 
 func (m *Module) toolCopyKBFiles(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
