@@ -12,7 +12,7 @@ The release [`gufi-f2292ea-macos14`](https://github.com/parallelworks/activate-s
 | Runs on | macOS 14.0 and later, Apple silicon |
 | Bundled by GUFI | SQLite 3.53.4, sqlite3-pcre, sqlite-vec 0.1.10-alpha.4, sqlite-lembed 0.0.1-alpha.8, llama.cpp, jemalloc |
 | Built here from release sources | LLVM OpenMP 23.1.4, PCRE2 10.49 (shared and static) |
-| Built with | Homebrew clang 23.1, macOS SDK 15.5, on macOS 15.7 |
+| Built with | Homebrew clang 23.1, macOS SDK 15.5, on macOS 15.8 |
 
 The archive unpacks to `gufi/` with `bin` (every GUFI tool), `lib` (`gufi_vt.dylib`, `vec0.dylib`, `lembed0.dylib`, the llama.cpp and ggml libraries, `libomp.dylib`, `libpcre2-8.0.dylib`), `licenses`, `README.txt` and `manifest.json`. The tools load their libraries from `lib` wherever the tree is, with no `DYLD_LIBRARY_PATH`.
 
@@ -70,6 +70,6 @@ Homebrew must not have `jemalloc` installed: GUFI links one that pkg-config find
 
 ## CI and publishing
 
-The `gufi-macos` workflow builds on a `macos-15` runner, runs `check_gufi.sh` there, and runs it again on clean runners that did not build it, `macos-14` by default, which is the oldest macOS the build targets. Run by hand from the Actions tab, it takes a GUFI ref, a deployment target and the test runners, and keeps the archive as a workflow artifact for 30 days. Pushing a tag named `gufi-*` builds with the defaults and attaches the archive to that tag's release, as a prerelease that is never marked latest, so the app's installer and update check keep finding the app's own releases.
+The `gufi-macos` workflow builds on a `macos-15` runner, runs `check_gufi.sh` there, and runs it again on clean runners that did not build it, `macos-15` by default. The build targets macOS 14, but GitHub no longer runs `macos-14` runners (November 2026), so no hosted runner checks the deployment target itself. Run by hand from the Actions tab, it takes a GUFI ref, a deployment target and the test runners, and keeps the archive as a workflow artifact for 30 days. Pushing a tag named `gufi-*` builds with the defaults (the full build, with sqlite-lembed and llama.cpp) and attaches the archive to that tag's release, as a prerelease that is never marked latest, so the app's installer and update check keep finding the app's own releases.
 
 To move the app to a newer GUFI: run the workflow with the new `gufi_ref` and check its archive in an app build (the `mac-app` workflow's `gufi_run` input); change `GUFI_REF` in `build_gufi.sh` to that commit; push a tag such as `gufi-<commit>-macos14`; and set `GUFI_RELEASE` in `.github/workflows/mac-app.yml` to the tag.
