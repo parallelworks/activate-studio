@@ -16,9 +16,9 @@
 #
 # Runs on a Mac with Homebrew and the Command Line Tools, such as GitHub's
 # macos-15 runner (.github/workflows/gufi-macos.yml) or, for Intel, its
-# macos-15-intel runner. The
-# build tools come from Homebrew, as GUFI's macOS guide asks (its LLVM and
-# the GNU utilities); nothing the tree loads does.
+# macos-15-intel runner. The build tools come from Homebrew, as GUFI's macOS
+# guide asks (its LLVM, or on Intel the Command Line Tools' clang, and the
+# GNU utilities); nothing the tree loads does.
 #
 # Usage: deploy/mac/build_gufi.sh
 #   GUFI_REF     GUFI branch, tag or commit (default: the commit of GUFI's
@@ -96,12 +96,19 @@ export SDKROOT HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
 echo "Build tools from Homebrew..."
 # GUFI's contrib/CI/macos.sh list, less pcre2 and libomp, which are built
 # here, and sqlite, which GUFI bundles.
+# Homebrew has no Intel bottle of LLVM, so on Intel the compiler is the
+# Command Line Tools' clang, which takes OpenMP through its preprocessor.
+if [ "$ARCH" = arm64 ]; then BREW_LLVM=llvm; else BREW_LLVM=; fi
 if [ "${SKIP_BREW:-}" != 1 ]; then
-  brew install cmake pkgconf llvm autoconf automake libtool gettext \
+  brew install cmake pkgconf $BREW_LLVM autoconf automake libtool gettext \
     coreutils findutils gnu-sed gpatch grep diffutils flock
 fi
 BREW_PREFIX="$(brew --prefix)"
-LLVM_PREFIX="$(brew --prefix llvm)"
+if [ -n "$BREW_LLVM" ]; then
+  LLVM_BIN="$(brew --prefix llvm)/bin" OPENMP_FLAGS=-fopenmp
+else
+  LLVM_BIN="$(dirname "$(xcrun -f clang)")" OPENMP_FLAGS="-Xpreprocessor -fopenmp"
+fi
 # The llama.cpp that GUFI's sqlite-lembed vendors leans on headers that
 # older C++ libraries pulled in through others (errno, EXIT_FAILURE and
 # std::fill without <cerrno>, <cstdlib> and <algorithm>), which the libc++
@@ -117,12 +124,12 @@ done
 cat >"$WORK/cxx/clang++" <<EOF
 #!/bin/sh
 case " \$* " in
-  *" -c "*) exec "$LLVM_PREFIX/bin/clang++" $INCLUDES "\$@" ;;
+  *" -c "*) exec "$LLVM_BIN/clang++" $INCLUDES "\$@" ;;
 esac
-exec "$LLVM_PREFIX/bin/clang++" "\$@"
+exec "$LLVM_BIN/clang++" "\$@"
 EOF
 chmod 755 "$WORK/cxx/clang++"
-export CC="$LLVM_PREFIX/bin/clang" CXX="$WORK/cxx/clang++"
+export CC="$LLVM_BIN/clang" CXX="$WORK/cxx/clang++"
 COMPILER="$("$CC" --version | head -n 1)"
 SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 echo "  $COMPILER, macOS SDK $SDK_VERSION, deployment target $TARGET"
@@ -206,8 +213,8 @@ echo "  $GUFI_DESCRIBE ($GUFI_COMMIT)"
     -DCMAKE_OSX_SYSROOT=macosx -DCMAKE_OSX_DEPLOYMENT_TARGET="$TARGET" \
     -DDEP_AI=On -DDEP_LEMBED="$([ "$LEMBED" = 1 ] && echo On || echo Off)" \
     -DDEP_BUILD_THREADS="$JOBS" -DOpenMP_ROOT="$DEPS" \
-    -DOpenMP_C_FLAGS=-fopenmp -DOpenMP_C_LIB_NAMES=libomp \
-    -DOpenMP_CXX_FLAGS=-fopenmp -DOpenMP_CXX_LIB_NAMES=libomp \
+    -DOpenMP_C_FLAGS="$OPENMP_FLAGS" -DOpenMP_C_LIB_NAMES=libomp \
+    -DOpenMP_CXX_FLAGS="$OPENMP_FLAGS" -DOpenMP_CXX_LIB_NAMES=libomp \
     -DOpenMP_libomp_LIBRARY="$DEPS/lib/libomp.dylib"
   run cmake --build "$BUILD" -j "$JOBS"
   # The Local component is what GUFI's package holds: the tools, and the
