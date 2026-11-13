@@ -66,14 +66,20 @@ release_asset_via_api() {
   curl -fsSL --retry 3 "$@" ${auth[@]+"${auth[@]}"} -H 'Accept: application/octet-stream' -o "$out" "$api"
 }
 
+# URL may list mirrors separated by spaces, tried in order; the SHA-256
+# check below is what makes any of them acceptable.
 fetch() {
-  local url="$1" file="$2" sum="$3"
+  local url="$1" file="$2" sum="$3" u ok
   shift 3
   if [ ! -f "$file" ] || [ "$(sha256_of "$file")" != "$sum" ]; then
-    echo "  fetching $url"
-    if ! curl -fsSL --retry 3 "$@" -o "$file.part" "$url"; then
-      release_asset_via_api "$url" "$file.part" "$@" || die "could not fetch $url"
-    fi
+    ok=
+    for u in $url; do
+      echo "  fetching $u"
+      if curl -fsSL --retry 3 "$@" -o "$file.part" "$u" || release_asset_via_api "$u" "$file.part" "$@"; then
+        ok=1; break
+      fi
+    done
+    [ -n "$ok" ] || die "could not fetch $url"
     mv "$file.part" "$file"
   fi
   local got
