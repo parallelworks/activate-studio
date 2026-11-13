@@ -436,7 +436,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
     <CsvTable text={file.content ?? ''} suffix={suffix} truncated={file.truncated} />
   ) : isHtml ? (
     <iframe
-      sandbox="allow-scripts"
+      sandbox="allow-scripts allow-modals"
       src={withLibrary(`/api/kb/html?path=${encodeURIComponent(path)}`)}
       title={path}
       className="html-preview-frame"
@@ -499,6 +499,11 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
             trigger={<Button variant="secondary" size="sm">Labels</Button>}
             align="end"
           />
+          {isHtml && (
+            // Opens the page in a tab of its own, which opens the print
+            // dialog (Save as PDF among its destinations).
+            <Button variant="secondary" size="sm" href={withLibrary(`/api/kb/html?path=${encodeURIComponent(path)}&print=1`)} target="_blank" rel="noopener" reloadDocument title="Open the page in a new tab and print it, or save it as a PDF">Print</Button>
+          )}
           <Button variant="primary" size="sm" href={api.downloadUrl(file.path)} reloadDocument>Download</Button>
           {readOnly
             ? (

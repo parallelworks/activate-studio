@@ -60,4 +60,19 @@ func TestRawSandboxesActiveFiles(t *testing.T) {
 	if ct := get("blob.bin").Get("Content-Type"); ct != "application/octet-stream" {
 		t.Errorf("unknown type served as %q", ct)
 	}
+
+	// /api/kb/html runs the page's scripts in a sandbox that may open the
+	// print dialog; print=1 adds the call that opens it.
+	for _, q := range []string{"", "&print=1"} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/kb/html?path=page.html"+q, nil))
+		csp := w.Header().Get("Content-Security-Policy")
+		if w.Code != 200 || !strings.HasPrefix(csp, "sandbox allow-scripts allow-modals;") || strings.Contains(csp, "same-origin") {
+			t.Errorf("html%s: %d csp %q", q, w.Code, csp)
+		}
+		body := w.Body.String()
+		if !strings.HasPrefix(body, "<script>fetch") || strings.Contains(body, "print()") != (q != "") {
+			t.Errorf("html%s: body %q", q, body)
+		}
+	}
 }

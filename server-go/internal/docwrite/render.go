@@ -12,6 +12,9 @@ type Rendered struct {
 	// Missing lists the images that could not be embedded, each with why;
 	// their alt text stands in their place.
 	Missing []string
+	// Problems lists front matter options that were not understood; their
+	// defaults stood.
+	Problems []string
 }
 
 // Formats lists the suffixes Render makes, for the tool's description.
@@ -46,21 +49,23 @@ func Unsupported(suffix string) string {
 func Render(suffix, content string, src ImageSource) (*Rendered, error) {
 	switch strings.ToLower(suffix) {
 	case ".pdf":
-		blocks := Parse(content)
+		o, md, problems := SplitFrontMatter(content)
+		blocks := Parse(md)
 		pics, missing := pictures(blocks, src)
-		data, pages, err := renderPDF(blocks, pics)
+		data, pages, err := renderPDF(blocks, pics, o)
 		if err != nil {
 			return nil, fmt.Errorf("making the PDF: %v", err)
 		}
-		return &Rendered{data, fmt.Sprintf("a PDF of %d page%s, made from the Markdown%s", pages, plural(pages), withImages(len(pics))), missing}, nil
+		return &Rendered{data, fmt.Sprintf("a PDF of %d page%s, made from the Markdown%s%s", pages, plural(pages), withImages(len(pics)), o.describe()), missing, problems}, nil
 	case ".docx":
-		blocks := Parse(content)
+		o, md, problems := SplitFrontMatter(content)
+		blocks := Parse(md)
 		pics, missing := pictures(blocks, src)
-		data, err := renderDOCX(blocks, pics)
+		data, err := renderDOCX(blocks, pics, o)
 		if err != nil {
 			return nil, fmt.Errorf("making the Word document: %v", err)
 		}
-		return &Rendered{data, "a Word document made from the Markdown" + withImages(len(pics)), missing}, nil
+		return &Rendered{data, "a Word document made from the Markdown" + withImages(len(pics)) + o.describe(), missing, problems}, nil
 	case ".xlsx":
 		data, n, err := renderXLSX(content)
 		if err != nil {

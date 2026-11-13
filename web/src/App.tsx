@@ -442,7 +442,7 @@ export default function App() {
     return (
       <div className="embed-root">
         <iframe
-          sandbox="allow-scripts"
+          sandbox="allow-scripts allow-modals"
           src={`/api/kb/html?path=${encodeURIComponent(embedParams.get('path')!)}`}
           title="sandboxed page"
           style={{ width: '100%', height: '100%', border: 0 }}
