@@ -15,7 +15,8 @@ type Rendered struct {
 	// Problems lists what the author should know went wrong: front matter
 	// options that were not understood, whose defaults stood; characters
 	// the PDF's font does not have, which were replaced by a placeholder;
-	// a table too wide for its page, whose words were broken.
+	// a table too wide for its page, whose words were broken; a footnote
+	// nothing refers to, which was left out.
 	Problems []string
 }
 
@@ -52,6 +53,7 @@ func Render(suffix, content string, src ImageSource) (*Rendered, error) {
 	switch strings.ToLower(suffix) {
 	case ".pdf":
 		o, md, problems := SplitFrontMatter(content)
+		problems = append(problems, unusedNotes(md)...)
 		blocks := Parse(md)
 		pics, missing := pictures(blocks, src)
 		data, pages, unfit, err := renderPDF(blocks, pics, o)
@@ -61,6 +63,7 @@ func Render(suffix, content string, src ImageSource) (*Rendered, error) {
 		return &Rendered{data, fmt.Sprintf("a PDF of %d page%s, made from the Markdown%s%s", pages, plural(pages), withImages(len(pics)), o.describe()), missing, append(problems, unfit...)}, nil
 	case ".docx":
 		o, md, problems := SplitFrontMatter(content)
+		problems = append(problems, unusedNotes(md)...)
 		blocks := Parse(md)
 		pics, missing := pictures(blocks, src)
 		data, crowded, err := renderDOCX(blocks, pics, o)

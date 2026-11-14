@@ -646,3 +646,19 @@ func TestKeepTogether(t *testing.T) {
 		t.Error("the caption and header row are not kept with what follows")
 	}
 }
+
+// A footnote that nothing refers to is left out by the parser; the author
+// is told which, and one that is referred to is not reported.
+func TestUnusedFootnoteIsReported(t *testing.T) {
+	src := "# T\n\nUsed here[^a].\n\n```\n[^c]: in a code block\n```\n\n[^a]: the first note\n[^B]: the second note\n"
+	for _, suffix := range []string{".pdf", ".docx"} {
+		out, err := Render(suffix, src, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Join(out.Problems, " | ")
+		if !strings.Contains(got, "[^B]") || strings.Contains(got, "[^a]") || strings.Contains(got, "[^c]") {
+			t.Fatalf("%s problems = %q", suffix, got)
+		}
+	}
+}
