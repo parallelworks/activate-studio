@@ -49,6 +49,26 @@ var serifCandidates = []fontSet{
 type loadedFonts struct {
 	body, mono [4][]byte // regular, bold, italic, bold italic (mono: regular, bold)
 	hasMono    bool
+	// What each face can draw, as body and mono are ordered.
+	cover, monoCover [4]coverage
+	// How wide the body face sets text, against Arial as 1.
+	wide float64
+}
+
+// faceWidth is how wide a family sets text against Arial, from the name
+// of its file: the Word writer measures with the PDF's font and scales
+// to the font the document names.
+func faceWidth(path string) float64 {
+	l := strings.ToLower(filepath.Base(path))
+	switch {
+	case strings.Contains(l, "dejavuserif"):
+		return 1.17
+	case strings.Contains(l, "dejavu"):
+		return 1.14
+	case strings.Contains(l, "serif") || strings.Contains(l, "times"):
+		return 0.9
+	}
+	return 1
 }
 
 var (
@@ -117,7 +137,7 @@ func loadFamily(cands []fontSet) *loadedFonts {
 			if r == nil {
 				continue
 			}
-			lf := &loadedFonts{}
+			lf := &loadedFonts{wide: faceWidth(c.regular)}
 			lf.body[0] = r
 			whole := true
 			for i, p := range []string{c.bold, c.italic, c.boldItalic} {
@@ -135,6 +155,12 @@ func loadFamily(cands []fontSet) *loadedFonts {
 					lf.mono[1] = m
 				}
 			}
+			for i := range lf.body {
+				lf.cover[i] = faceCoverage(lf.body[i])
+			}
+			if lf.hasMono {
+				lf.monoCover[0], lf.monoCover[1] = faceCoverage(lf.mono[0]), faceCoverage(lf.mono[1])
+			}
 			return lf
 		}
 	}
@@ -143,21 +169,30 @@ func loadFamily(cands []fontSet) *loadedFonts {
 
 type pdfw struct {
 	p          *fpdf.Fpdf
+	o          Options
 	body, mono string
-	tr         func(string) string
-	left       float64 // content's left edge (moves with list indent)
-	right      float64 // page's right content edge
+	lf         *loadedFonts        // the embedded family; nil with the standard fonts
+	cp         func(string) string // the standard fonts' encoding
+	cov        coverage            // what the font now set can draw
+	g          glyphs              // characters fitted to the font
+	left       float64             // content's left edge (moves with list indent)
+	right      float64             // page's right content edge
 	bottom     float64
 	color      [3]int
 	pics       map[string]*picture
 	top        float64 // the page's top margin
 	size, line float64 // body text size and line height
 	justify    bool
+	cm         float64 // the library's cell margin, restored after a block that changes it
+	wide       float64 // how wide the body font sets text, against Arial as 1
+	problems   []string
 }
 
 var numericRe = regexp.MustCompile(`^[-+]?[$€£]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?%?$`)
 
-func renderPDF(blocks []Block, pics map[string]*picture, o Options) ([]byte, int, error) {
+// newPDFWriter is a PDF with its fonts loaded and no page yet. The Word
+// writer makes one too, to measure text with.
+func newPDFWriter(pics map[string]*picture, o Options) *pdfw {
 	orient := "P"
 	if o.Landscape {
 		orient = "L"
@@ -166,52 +201,127 @@ func renderPDF(blocks []Block, pics map[string]*picture, o Options) ([]byte, int
 	p := fpdf.New(orient, "pt", "Letter", "")
 	p.SetMargins(m, m, m)
 	p.SetAutoPageBreak(true, m)
-	w := &pdfw{p: p, body: "Helvetica", mono: "Courier", tr: func(s string) string { return s }, pics: pics,
-		top: m, size: o.pdfSize(), justify: o.Justify}
-	w.line = w.size * bodyLine / bodySize
+	w := &pdfw{p: p, o: o, body: "Helvetica", mono: "Courier", pics: pics, top: m, size: o.pdfSize(), justify: o.Justify}
+	w.line = o.pdfLine(w.size)
+	w.cm = p.GetCellMargin()
+	w.wide = 1
 	f := findFonts()
 	if o.Serif {
-		w.body, f = "Times", findSerifFonts()
+		w.body, f, w.wide = "Times", findSerifFonts(), 0.9
 	}
 	if f != nil {
 		for i, st := range []string{"", "B", "I", "BI"} {
 			p.AddUTF8FontFromBytes("body", st, f.body[i])
 		}
-		w.body, w.mono = "body", "body"
+		w.body, w.mono, w.lf, w.wide = "body", "body", f, f.wide
 		if f.hasMono {
 			p.AddUTF8FontFromBytes("mono", "", f.mono[0])
 			p.AddUTF8FontFromBytes("mono", "B", f.mono[1])
 			w.mono = "mono"
 		}
 	} else {
-		cp := p.UnicodeTranslatorFromDescriptor("")
-		w.tr = func(s string) string { return cp(asciiFold(s)) }
+		w.cp = p.UnicodeTranslatorFromDescriptor("")
 	}
-	if t := Title(blocks); t != "" {
-		p.SetTitle(t, true)
-	}
-	p.SetCreator("ACTIVATE Studio", true)
 	pw, ph := p.GetPageSize()
 	w.right = pw - m
 	w.bottom = ph - m
 	w.left = m
+	return w
+}
+
+// setFont sets the font, and with it what tr can draw.
+func (w *pdfw) setFont(fam, st string, size float64) {
+	w.p.SetFont(fam, st, size)
+	bold := strings.Contains(st, "B")
+	switch {
+	case w.lf == nil:
+		w.cov = standardCoverage
+	case fam == "mono":
+		w.cov = w.lf.monoCover[0]
+		if bold {
+			w.cov = w.lf.monoCover[1]
+		}
+	default:
+		i := 0
+		if bold {
+			i = 1
+		}
+		if strings.Contains(st, "I") {
+			i += 2
+		}
+		w.cov = w.lf.cover[i]
+	}
+}
+
+// tr makes text drawable in the font now set: a character the font lacks
+// becomes an equivalent it has, or a placeholder that is reported.
+func (w *pdfw) tr(s string) string {
+	s = w.g.fit(s, w.cov)
+	if w.cp != nil {
+		s = w.cp(s)
+	}
+	return s
+}
+
+// running draws a page's header or footer line, centered between the
+// page's margins at y, cut short when it is wider than the page holds.
+func (w *pdfw) running(text string, y float64) {
+	m := w.top
+	pw, _ := w.p.GetPageSize()
+	cov := w.cov
+	w.setFont(w.body, "", 8.5)
+	t := w.tr(text)
+	if width := pw - 2*m - 2*w.p.GetCellMargin(); w.p.GetStringWidth(t) > width {
+		rs := []rune(text)
+		for len(rs) > 1 && w.p.GetStringWidth(w.tr(string(rs)+"...")) > width {
+			rs = rs[:len(rs)-1]
+		}
+		t = w.tr(strings.TrimSpace(string(rs)) + "...")
+	}
+	w.p.SetTextColor(120, 120, 120)
+	w.p.SetXY(m, y)
+	w.p.CellFormat(pw-2*m, 10, t, "", 0, "C", false, 0, "")
+	w.p.SetTextColor(w.color[0], w.color[1], w.color[2])
+	w.cov = cov
+}
+
+func renderPDF(blocks []Block, pics map[string]*picture, o Options) ([]byte, int, []string, error) {
+	w := newPDFWriter(pics, o)
+	p, m := w.p, w.top
+	if t := Title(blocks); t != "" {
+		p.SetTitle(t, true)
+	}
+	p.SetCreator("ACTIVATE Studio", true)
+	_, ph := p.GetPageSize()
+	if o.Header != "" {
+		p.SetHeaderFunc(func() {
+			// The page's text starts where it would without a header.
+			x, y := p.GetXY()
+			w.running(o.Header, m/2-5)
+			p.SetXY(x, y)
+		})
+	}
 	p.SetFooterFunc(func() {
-		p.SetY(ph - m/2)
-		p.SetFont(w.body, "", 8.5)
-		p.SetTextColor(120, 120, 120)
-		p.CellFormat(0, 10, strconv.Itoa(p.PageNo()), "", 0, "C", false, 0, "")
-		p.SetTextColor(w.color[0], w.color[1], w.color[2])
+		// The footer's text sits on the line above the page's number.
+		if o.Footer != "" {
+			w.running(o.Footer, ph-m/2-11)
+		}
+		w.running(strconv.Itoa(p.PageNo()), ph-m/2)
 	})
 	p.AddPage()
 	w.blocks(blocks, 0)
 	if err := p.Error(); err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	var buf bytes.Buffer
 	if err := p.Output(&buf); err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
-	return buf.Bytes(), p.PageNo(), nil
+	problems := w.problems
+	if pr := w.g.problem(); pr != "" {
+		problems = append(problems, pr)
+	}
+	return buf.Bytes(), p.PageNo(), problems, nil
 }
 
 func (w *pdfw) font(r Run, size float64) {
@@ -230,13 +340,27 @@ func (w *pdfw) font(r Run, size float64) {
 		}
 		size -= 1
 	}
+	if r.Sup {
+		size *= supScale
+	}
 	if r.Link != "" {
 		st += "U"
 	}
 	if r.Strike {
 		st += "S"
 	}
-	w.p.SetFont(fam, st, size)
+	w.setFont(fam, st, size)
+}
+
+// A footnote's number is set at supScale of the text's size, raised.
+const supScale = 0.62
+
+// rise is how far above the line a run is drawn.
+func (w *pdfw) rise(r Run, size float64) float64 {
+	if r.Sup {
+		return size * 0.3
+	}
+	return 0
 }
 
 // runs writes inline text, flowing and wrapping between the left edge and
@@ -250,6 +374,12 @@ func (w *pdfw) runs(rs []Run, size, line float64) {
 			w.p.SetTextColor(w.color[0], w.color[1], w.color[2])
 			continue
 		}
+		if up := w.rise(r, size); up > 0 {
+			w.p.SetXY(w.p.GetX(), w.p.GetY()-up)
+			w.p.Write(line, w.tr(r.Text))
+			w.p.SetXY(w.p.GetX(), w.p.GetY()+up)
+			continue
+		}
 		w.p.Write(line, w.tr(r.Text))
 	}
 }
@@ -261,122 +391,38 @@ func (w *pdfw) runs(rs []Run, size, line float64) {
 // only a single-style MultiCell, so the words are placed here one by one.
 // It leaves the cursor on the paragraph's last line, as runs does.
 func (w *pdfw) flow(rs []Run, size, line float64) {
-	type word struct {
-		r       Run
-		text    string
-		w, gapW float64 // the word's width, and the space before it
-		brk     bool    // a hard break before it
-	}
-	var words []word
-	gap, brk := false, false
-	for _, r := range rs {
-		w.font(r, size)
-		sp := w.p.GetStringWidth(" ")
-		for _, part := range strings.SplitAfter(r.Text, "\n") {
-			hard := strings.HasSuffix(part, "\n")
-			part = strings.TrimSuffix(part, "\n")
-			if part != "" && (part[0] == ' ' || part[0] == '\t') {
-				gap = true
-			}
-			fs := strings.Fields(part)
-			for i, f := range fs {
-				t := w.tr(f)
-				words = append(words, word{r: r, text: t, w: w.p.GetStringWidth(t), brk: brk})
-				if (i > 0 || gap) && len(words) > 1 && !brk {
-					words[len(words)-1].gapW = sp
-				}
-				gap, brk = false, false
-			}
-			if len(fs) > 0 && strings.TrimRight(part, " \t") != part {
-				gap = true
-			}
-			if hard {
-				brk, gap = true, false
-			}
-		}
-	}
-	width := w.right - w.left
-	// Break a word wider than the line into pieces that fit.
-	var fit []word
-	for _, wd := range words {
-		if wd.w <= width {
-			fit = append(fit, wd)
-			continue
-		}
-		w.font(wd.r, size)
-		piece := ""
-		for _, ch := range wd.text {
-			if piece != "" && w.p.GetStringWidth(piece+string(ch)) > width {
-				fit = append(fit, word{r: wd.r, text: piece, w: w.p.GetStringWidth(piece), gapW: wd.gapW, brk: wd.brk})
-				wd.gapW, wd.brk, piece = 0, false, ""
-			}
-			piece += string(ch)
-		}
-		fit = append(fit, word{r: wd.r, text: piece, w: w.p.GetStringWidth(piece), gapW: wd.gapW, brk: wd.brk})
-	}
+	// Between the same edges as unjustified text, which the library sets
+	// a cell margin inside the page margins.
+	width := w.right - w.left - 2*w.p.GetCellMargin()
+	lines := w.wrap(w.words(rs, size), size, width)
 	y := w.p.GetY()
-	first := true
-	draw := func(ln []word, stretch bool) {
-		if !first {
+	for i, ln := range lines {
+		if i > 0 {
 			y += line
 		}
-		first = false
 		if y+line > w.bottom {
 			w.p.AddPage()
 			y = w.p.GetY()
 		}
-		natural := 0.0
-		for i, wd := range ln {
-			natural += wd.w
-			if i > 0 {
-				natural += wd.gapW
+		// Stretched unless the paragraph or a hard break ends the line.
+		if i+1 < len(lines) && len(lines[i+1]) > 0 && lines[i+1][0].brk == 0 {
+			gaps := 0
+			for k := 1; k < len(ln); k++ {
+				if ln[k].space > 0 {
+					gaps++
+				}
+			}
+			if gaps > 0 {
+				extra := (width - lineWidth(ln)) / float64(gaps)
+				ln = append([]lword(nil), ln...)
+				for k := 1; k < len(ln); k++ {
+					if ln[k].space > 0 {
+						ln[k].space += extra
+					}
+				}
 			}
 		}
-		extra := 0.0
-		gaps := 0
-		for i := 1; i < len(ln); i++ {
-			if ln[i].gapW > 0 {
-				gaps++
-			}
-		}
-		if stretch && gaps > 0 {
-			extra = (width - natural) / float64(gaps)
-		}
-		x := w.left
-		for i, wd := range ln {
-			if i > 0 && wd.gapW > 0 {
-				x += wd.gapW + extra
-			}
-			w.font(wd.r, size)
-			if wd.r.Link != "" {
-				w.p.SetTextColor(20, 70, 160)
-			}
-			w.p.SetXY(x, y)
-			w.p.CellFormat(wd.w, line, wd.text, "", 0, "L", false, 0, wd.r.Link)
-			if wd.r.Link != "" {
-				w.p.SetTextColor(w.color[0], w.color[1], w.color[2])
-			}
-			x += wd.w
-		}
-	}
-	var cur []word
-	used := 0.0
-	for _, wd := range fit {
-		add := wd.w
-		if len(cur) > 0 {
-			add += wd.gapW
-		}
-		if len(cur) > 0 && (wd.brk || used+add > width) {
-			draw(cur, !wd.brk)
-			cur, used = nil, 0
-			wd.gapW = 0
-			add = wd.w
-		}
-		cur = append(cur, wd)
-		used += add
-	}
-	if len(cur) > 0 {
-		draw(cur, false)
+		w.drawLine(ln, w.left, y, width, size, line, "L")
 	}
 	w.p.SetXY(w.left, y)
 }
@@ -387,22 +433,100 @@ func (w *pdfw) space(h float64) {
 	}
 }
 
+// ensure starts a new page when h does not fit below, unless the page is
+// empty or h is more than a page holds.
+func (w *pdfw) ensure(h float64) {
+	if y := w.p.GetY(); y+h > w.bottom && y > w.top+1 && h <= w.bottom-w.top {
+		w.p.AddPage()
+	}
+}
+
+func (w *pdfw) headingSize(level int) float64 {
+	size := map[int]float64{1: 19, 2: 15, 3: 12.5}[level]
+	if size == 0 {
+		size = 11
+	}
+	return size * w.size / bodySize
+}
+
+// textLines is how many lines inline text takes between the margins.
+func (w *pdfw) textLines(rs []Run, size float64) int {
+	return len(w.wrap(w.words(rs, size), size, w.right-w.left-2*w.p.GetCellMargin()))
+}
+
+var captionRe = regexp.MustCompile(`(?i)^(figure|fig\.|table|chart|exhibit|diagram|image|photo|source|note)\b`)
+
+// isCaption reports a short paragraph that labels a figure or a table:
+// one that opens "Figure 1", "Table 2", "Source:" and the like, or is set
+// wholly in italic.
+func isCaption(b Block) bool {
+	if b.Kind != KPara || len(b.Runs) == 0 {
+		return false
+	}
+	t := strings.TrimSpace(Plain(b.Runs))
+	if t == "" || len(t) > 300 {
+		return false
+	}
+	if captionRe.MatchString(t) {
+		return true
+	}
+	for _, r := range b.Runs {
+		if !r.Italic && strings.TrimSpace(r.Text) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// room is the height the start of bs needs to stay in one piece: a
+// heading with what it heads, a figure with its caption, a caption with
+// its table's first rows, a few lines of anything else.
+func (w *pdfw) room(bs []Block) float64 {
+	if len(bs) == 0 {
+		return 0
+	}
+	switch b := bs[0]; b.Kind {
+	case KHeading:
+		size := w.headingSize(b.Level)
+		return size*0.8 + float64(w.textLines(b.Runs, size))*size*1.3 + size*0.35 + w.room(bs[1:])
+	case KPara:
+		n := w.textLines(b.Runs, w.size)
+		if isCaption(b) && len(bs) > 1 && bs[1].Kind == KTable {
+			return float64(n)*w.line + 5 + w.room(bs[1:])
+		}
+		return float64(min(n, 3)) * w.line
+	case KTable:
+		return w.layTable(b).start()
+	case KImage:
+		_, ih, capH := w.imageSize(bs)
+		return ih + capH
+	case KCode:
+		return 11.5 * float64(min(strings.Count(b.Text, "\n")+1, 3))
+	case KList:
+		if len(b.Items) > 0 {
+			return max(w.line, w.room(b.Items[0]))
+		}
+	case KQuote:
+		return w.room(b.Children)
+	}
+	return w.line
+}
+
 func (w *pdfw) blocks(bs []Block, depth int) {
 	for i, b := range bs {
 		switch b.Kind {
 		case KHeading:
-			size := map[int]float64{1: 19, 2: 15, 3: 12.5}[b.Level]
-			if size == 0 {
-				size = 11
-			}
-			size *= w.size / bodySize
+			size := w.headingSize(b.Level)
 			if i > 0 {
 				w.space(size * 0.8)
 			}
-			// Keep a heading with at least a few lines of what follows.
-			if w.p.GetY()+size*1.4+w.line*3 > w.bottom {
-				w.p.AddPage()
+			// Keep a heading with the start of what follows it, or with a
+			// few lines when that is more than a page holds.
+			need := w.room(bs[i:]) - size*0.8
+			if need > w.bottom-w.top {
+				need = size*1.4 + w.line*3
 			}
+			w.ensure(need)
 			w.p.SetX(w.left)
 			rs := make([]Run, len(b.Runs))
 			for k, r := range b.Runs {
@@ -413,6 +537,10 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 			w.p.Ln(size * 1.3)
 			w.space(size * 0.35)
 		case KPara:
+			// Keep a table's caption with the table's first rows.
+			if isCaption(b) && i+1 < len(bs) && bs[i+1].Kind == KTable {
+				w.ensure(w.room(bs[i:]))
+			}
 			w.p.SetX(w.left)
 			if w.justify {
 				w.flow(b.Runs, w.size, w.line)
@@ -427,7 +555,7 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 			}
 		case KList:
 			n := b.Start
-			for _, item := range b.Items {
+			for k, item := range b.Items {
 				marker := "•"
 				if depth%2 == 1 {
 					marker = "◦"
@@ -440,9 +568,13 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 					w.p.AddPage()
 				}
 				saved := w.left
-				w.p.SetFont(w.body, "", w.size)
-				w.p.SetXY(saved+4, w.p.GetY())
-				w.p.CellFormat(14, w.line, w.tr(marker), "", 0, "R", false, 0, "")
+				if k < len(b.Checks) && b.Checks[k] != 0 {
+					w.checkbox(saved+18, w.p.GetY(), b.Checks[k] == Checked)
+				} else {
+					w.setFont(w.body, "", w.size)
+					w.p.SetXY(saved+4, w.p.GetY())
+					w.p.CellFormat(14, w.line, w.tr(marker), "", 0, "R", false, 0, "")
+				}
 				w.left = saved + 22
 				w.p.SetLeftMargin(w.left)
 				w.p.SetX(w.left)
@@ -452,12 +584,12 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 			}
 			w.space(3)
 		case KCode:
-			w.p.SetFont(w.mono, "", 8.5)
+			w.setFont(w.mono, "", 8.5)
 			w.p.SetFillColor(244, 245, 247)
 			w.p.SetX(w.left)
 			w.p.SetCellMargin(6)
 			w.p.MultiCell(w.right-w.left, 11.5, w.tr(b.Text), "", "L", true)
-			w.p.SetCellMargin(2)
+			w.p.SetCellMargin(w.cm)
 			w.space(7)
 		case KQuote:
 			y0 := w.p.GetY()
@@ -487,15 +619,54 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 			w.table(b)
 			w.space(8)
 		case KImage:
-			w.image(b)
+			w.image(bs[i:])
 		}
 	}
 }
 
-// image draws a picture at its own size, or narrower to fit between the
-// margins and shorter to fit a page, on a new page when it does not fit
-// below. One the document could not embed shows its alt text.
-func (w *pdfw) image(b Block) {
+// checkbox draws a task's box on the line at y, its right edge at right:
+// empty, or with a check mark.
+func (w *pdfw) checkbox(right, y float64, checked bool) {
+	side := w.size * 0.72
+	x, top := right-side-1.5, y+(w.line-side)/2
+	w.p.SetDrawColor(70, 70, 70)
+	w.p.SetLineWidth(0.7)
+	w.p.Rect(x, top, side, side, "D")
+	if checked {
+		w.p.SetLineWidth(1.1)
+		w.p.SetLineCapStyle("round")
+		w.p.Line(x+side*0.2, top+side*0.52, x+side*0.42, top+side*0.76)
+		w.p.Line(x+side*0.42, top+side*0.76, x+side*0.82, top+side*0.22)
+		w.p.SetLineCapStyle("butt")
+	}
+	w.p.SetLineWidth(0.5)
+}
+
+// imageSize is the size the picture at the head of bs is drawn at, and
+// the height of the caption under it, which the picture leaves room for
+// on its page. A picture the document could not embed has no width.
+func (w *pdfw) imageSize(bs []Block) (iw, ih, capH float64) {
+	if len(bs) > 1 && isCaption(bs[1]) {
+		capH = 8 + float64(w.textLines(bs[1].Runs, w.size))*w.line
+	}
+	pic := w.pics[bs[0].Src]
+	if pic == nil {
+		return 0, w.line, capH
+	}
+	page := w.bottom - w.top
+	if capH > page/2 {
+		capH = 0
+	}
+	iw, ih = pic.size(w.right-w.left, page-capH)
+	return iw, ih, capH
+}
+
+// image draws the picture at the head of bs at its own size, or narrower
+// to fit between the margins and shorter to fit a page, on a new page
+// when there is too little room below for it and its caption. One the document could
+// not embed shows its alt text.
+func (w *pdfw) image(bs []Block) {
+	b := bs[0]
 	pic := w.pics[b.Src]
 	if pic == nil {
 		if b.Text != "" {
@@ -509,9 +680,16 @@ func (w *pdfw) image(b Block) {
 	name := "img:" + b.Src
 	opt := fpdf.ImageOptions{ImageType: pic.kind}
 	w.p.RegisterImageOptionsReader(name, opt, bytes.NewReader(pic.data))
-	iw, ih := pic.size(w.right-w.left, w.bottom-w.top)
-	if w.p.GetY()+ih > w.bottom {
-		w.p.AddPage()
+	iw, ih, capH := w.imageSize(bs)
+	if below := w.bottom - w.p.GetY() - capH; ih > below+slack {
+		// With most of the page still free the picture is drawn smaller
+		// to fit it, and what leads up to it is not left on a page of its
+		// own; otherwise it starts a new page.
+		if page := w.bottom - w.top; below >= 0.6*page && w.p.GetY() > w.top+1 {
+			iw, ih = pic.size(w.right-w.left, below)
+		} else {
+			w.p.AddPage()
+		}
 	}
 	y := w.p.GetY()
 	w.p.ImageOptions(name, w.left, y, iw, ih, false, opt, 0, "")
@@ -519,76 +697,76 @@ func (w *pdfw) image(b Block) {
 	w.space(8)
 }
 
-func (w *pdfw) table(b Block) {
+// tableLay is a table measured for the page: its text size, its column
+// widths, and each row's cells wrapped into lines.
+type tableLay struct {
+	cols       int
+	size, line float64
+	widths     []float64
+	pad        float64 // the padding at each side of a cell
+	fits       bool    // no word had to be broken for want of room
+	align      []string
+	head       [][][]lword   // the header row's cells; nil without one
+	rows       [][][][]lword // each body row's cells
+}
+
+// A table cell's padding: at its sides (less in a table too crowded for
+// it), and above and below.
+const (
+	cellPad   = 5.5
+	cellTight = 3.0
+	cellVPad  = 4.0
+)
+
+func (t *tableLay) height(cells [][][]lword) float64 {
+	n := 1
+	for _, c := range cells {
+		n = max(n, len(c))
+	}
+	return float64(n)*t.line + 2*cellVPad
+}
+
+// start is the height of the header row and the first row under it,
+// which stay on one page.
+func (t *tableLay) start() float64 {
+	h := 0.0
+	if t.head != nil {
+		h = t.height(t.head)
+	}
+	if len(t.rows) > 0 {
+		h += t.height(t.rows[0])
+	}
+	return h
+}
+
+func (w *pdfw) layTable(b Block) *tableLay {
 	cols := len(b.Header)
 	for _, r := range b.Rows {
 		cols = max(cols, len(r))
 	}
+	t := &tableLay{cols: cols}
 	if cols == 0 {
-		return
+		return t
 	}
-	size := w.size - 1
+	base := w.size - 1
 	if cols > 5 {
-		size = w.size - 2
+		base = w.size - 2
 	}
-	line := size * 1.3
-	const pad = 4.0
+	// Widths: each column's natural width when they fit, otherwise each
+	// keeps its longest word and the rest is shared by how much more it
+	// wants.
+	t.size, t.pad, t.widths, t.fits = w.tableLayout(b, cols, base, min(base, 7), w.right-w.left, cellPad, cellTight, 1)
+	t.line = t.size * 1.3
 	cell := func(row [][]Run, c int) string {
 		if c < len(row) {
 			return strings.TrimSpace(Plain(row[c]))
 		}
 		return ""
 	}
-	// Widths: each column's natural width when they fit, otherwise each
-	// keeps its longest word and the rest is shared by how much more it
-	// wants.
-	total := w.right - w.left
-	natural := make([]float64, cols)
-	least := make([]float64, cols)
-	all := append([][][]Run{b.Header}, b.Rows...)
-	for ri, row := range all {
-		st := ""
-		if ri == 0 {
-			st = "B"
-		}
-		w.p.SetFont(w.body, st, size)
-		for c := 0; c < cols; c++ {
-			s := w.tr(cell(row, c))
-			for _, ln := range strings.Split(s, "\n") {
-				natural[c] = max(natural[c], w.p.GetStringWidth(ln)+2*pad)
-			}
-			for _, word := range strings.Fields(s) {
-				least[c] = max(least[c], min(w.p.GetStringWidth(word)+2*pad, total/2))
-			}
-			least[c] = max(least[c], 24)
-		}
-	}
-	widths := make([]float64, cols)
-	sumN, sumL := 0.0, 0.0
-	for c := range natural {
-		natural[c] = max(natural[c], least[c])
-		sumN += natural[c]
-		sumL += least[c]
-	}
-	switch {
-	case sumN <= total:
-		for c := range widths {
-			widths[c] = natural[c] * total / sumN
-		}
-	case sumL >= total:
-		for c := range widths {
-			widths[c] = least[c] * total / sumL
-		}
-	default:
-		extra := total - sumL
-		for c := range widths {
-			widths[c] = least[c] + extra*(natural[c]-least[c])/(sumN-sumL)
-		}
-	}
-	numeric := make([]bool, cols)
+	t.align = make([]string, cols)
 	for c := 0; c < cols; c++ {
 		seen := 0
-		numeric[c] = true
+		numeric := true
 		for _, r := range b.Rows {
 			v := cell(r, c)
 			if v == "" {
@@ -596,98 +774,91 @@ func (w *pdfw) table(b Block) {
 			}
 			seen++
 			if !numericRe.MatchString(v) {
-				numeric[c] = false
+				numeric = false
 				break
 			}
 		}
-		numeric[c] = numeric[c] && seen > 0
-	}
-	align := func(c int) string {
+		t.align[c] = "L"
+		if numeric && seen > 0 {
+			t.align[c] = "R"
+		}
 		if c < len(b.Align) {
 			switch b.Align[c] {
 			case "right":
-				return "R"
+				t.align[c] = "R"
 			case "center":
-				return "C"
+				t.align[c] = "C"
 			case "left":
-				return "L"
+				t.align[c] = "L"
 			}
 		}
-		if numeric[c] {
-			return "R"
-		}
-		return "L"
 	}
-	lines := func(row [][]Run, bold bool) ([][]string, float64) {
-		st := ""
-		if bold {
-			st = "B"
-		}
-		w.p.SetFont(w.body, st, size)
-		out := make([][]string, cols)
-		h := 0.0
+	lay := func(row [][]Run, head bool) [][][]lword {
+		out := make([][][]lword, cols)
 		for c := 0; c < cols; c++ {
-			for _, para := range strings.Split(w.tr(cell(row, c)), "\n") {
-				if para == "" {
-					out[c] = append(out[c], "")
-					continue
-				}
-				out[c] = append(out[c], w.p.SplitText(para, widths[c]-2*pad)...)
+			var rs []Run
+			if c < len(row) {
+				rs = cellRuns(row[c], head)
 			}
-			h = max(h, float64(len(out[c]))*line+2*pad)
+			out[c] = w.wrap(w.words(rs, t.size), t.size, t.widths[c]-2*t.pad)
 		}
-		return out, h
+		return out
 	}
-	draw := func(row [][]Run, head bool) {
-		ls, h := lines(row, head)
-		if w.p.GetY()+h > w.bottom {
-			w.p.AddPage()
-			if !head && len(b.Header) > 0 {
-				hl, hh := lines(b.Header, true)
-				w.cells(hl, widths, hh, true, align, line, pad, size)
-				ls, h = lines(row, false)
-			}
-		}
-		w.cells(ls, widths, h, head, align, line, pad, size)
-	}
-	w.p.SetDrawColor(200, 200, 200)
-	w.p.SetLineWidth(0.5)
 	if len(b.Header) > 0 {
-		draw(b.Header, true)
+		t.head = lay(b.Header, true)
 	}
 	for _, r := range b.Rows {
-		draw(r, false)
+		t.rows = append(t.rows, lay(r, false))
 	}
+	return t
+}
+
+func (w *pdfw) table(b Block) {
+	t := w.layTable(b)
+	if t.cols == 0 {
+		return
+	}
+	if !t.fits {
+		w.problems = append(w.problems, crowded(t.cols))
+	}
+	// Words are placed at their measured widths, with no cell margin of
+	// the library's inside the cell's own padding.
+	w.p.SetCellMargin(0)
+	// The header row is not left alone at the foot of a page.
+	w.ensure(t.start())
+	if t.head != nil {
+		w.cells(t, t.head, true)
+	}
+	for _, r := range t.rows {
+		if h := t.height(r); w.p.GetY()+h > w.bottom+slack && w.p.GetY() > w.top+1 {
+			w.p.AddPage()
+			if t.head != nil {
+				w.cells(t, t.head, true)
+			}
+		}
+		w.cells(t, r, false)
+	}
+	w.p.SetCellMargin(w.cm)
 	w.p.SetX(w.left)
 	w.p.Ln(2)
 }
 
-func (w *pdfw) cells(ls [][]string, widths []float64, h float64, head bool, align func(int) string, line, pad, size float64) {
+func (w *pdfw) cells(t *tableLay, cells [][][]lword, head bool) {
 	x, y := w.left, w.p.GetY()
-	st := ""
+	h := t.height(cells)
+	w.p.SetDrawColor(200, 200, 200)
+	w.p.SetLineWidth(0.5)
+	style := "D"
 	if head {
-		st = "B"
+		style = "DF"
 		w.p.SetFillColor(240, 242, 245)
 	}
-	for c := range widths {
-		style := "D"
-		if head {
-			style = "DF"
+	for c, width := range t.widths {
+		w.p.Rect(x, y, width, h, style)
+		for i, ln := range cells[c] {
+			w.drawLine(ln, x+t.pad, y+cellVPad+float64(i)*t.line, width-2*t.pad, t.size, t.line, t.align[c])
 		}
-		w.p.Rect(x, y, widths[c], h, style)
-		w.p.SetFont(w.body, st, size)
-		for i, l := range ls[c] {
-			w.p.SetXY(x+pad, y+pad+float64(i)*line)
-			w.p.CellFormat(widths[c]-2*pad, line, l, "", 0, align(c), false, 0, "")
-		}
-		x += widths[c]
+		x += width
 	}
 	w.p.SetXY(w.left, y+h)
 }
-
-// asciiFold maps the punctuation models favour onto what the standard
-// PDF fonts can draw, for a host with no TrueType font to embed.
-var asciiFold = strings.NewReplacer(
-	"≥", ">=", "≤", "<=", "→", "->", "←", "<-", "≈", "~", "≠", "!=", "×", "x", "✓", "[x]", "✔", "[x]", "✗", "[ ]",
-	"◦", "-", "▪", "-", "\u00a0", " ",
-).Replace
