@@ -1,4 +1,4 @@
-import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { ReactElement, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Callout, ConfirmModal, EmptyState, Loader, TabPanel, Tabs, Tooltip } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
 import { api, withLibrary, FileContent, type OfficeBlock, type OfficeOutline } from '../api'
@@ -22,6 +22,10 @@ const YAML_SUFFIXES = ['.yaml', '.yml']
 
 const PDF_PAGE_CAP = 150
 
+/** What a look at the open file found: it is not there any more, it was
+ *  rewritten (the viewer has taken the new version), or it is as it was. */
+export type FileCheck = 'missing' | 'changed' | 'same'
+
 /** What an Office file's Preview tab is called: what it shows. */
 function officeLabel(suffix: string): string {
   return SLIDE_SUFFIXES.includes(suffix) ? 'Slides' : SHEET_SUFFIXES.includes(suffix) ? 'Sheets' : 'Document'
@@ -36,15 +40,27 @@ function officeLabel(suffix: string): string {
  * extracted text. A page image that fails to load is treated the same way,
  * so the tab never shows broken images. `onUnavailable` says there is
  * nothing to preview at all, and the viewer opens the indexed text instead.
+ *
+ * A file can be rewritten, renamed or deleted while its pages are on
+ * screen, and a page asked for after that fails too. So before any
+ * fallback the viewer looks at the file again (`recheck`): a file that is
+ * gone gets the viewer's message, a rewritten one starts this preview
+ * over, and only a file that is as it was falls back. A page past the end
+ * of a file that still reads the same gets the page count read again.
  */
-function PagedPreview({ path, version, office, markdown, onUnavailable }: {
+function PagedPreview({ path, version, office, markdown, recheck, onUnavailable }: {
   path: string
   version?: number
   office: boolean
   markdown: boolean
+  recheck: () => Promise<FileCheck>
   onUnavailable: (why: string) => void
 }) {
   const [pages, setPages] = useState<number | null>(null)
+  // Counts the times the page count was read again, so the pages are
+  // asked for anew.
+  const [recount, setRecount] = useState(0)
+  const counting = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [stage, setStage] = useState<'pages' | 'pdfjs' | 'outline' | 'text'>('pages')
   const [fallbackText, setFallbackText] = useState<string | null>(null)
@@ -66,10 +82,17 @@ function PagedPreview({ path, version, office, markdown, onUnavailable }: {
 
   // Page images cannot be had: the outline for an Office file the server
   // reads; for a PDF its pages drawn here by pdf.js, then its extracted
-  // text; else nothing to preview.
+  // text; else nothing to preview. Not for a file that has gone or been
+  // rewritten, which the viewer handles.
   const fail = (why: string) => {
     if (failed.current) return
     failed.current = true
+    void recheck().then(state => {
+      if (state === 'same') fallBack(why)
+      else failed.current = false
+    })
+  }
+  const fallBack = (why: string) => {
     setError(why)
     if (office) {
       if (outline) setStage('outline')
@@ -77,6 +100,32 @@ function PagedPreview({ path, version, office, markdown, onUnavailable }: {
       return
     }
     setStage('pdfjs')
+  }
+  // A page image did not load. Once at a time: several fail together.
+  const pageFailed = () => {
+    if (failed.current || counting.current) return
+    counting.current = true
+    const why = 'a page could not be rendered'
+    void (async () => {
+      try {
+        if (await recheck() !== 'same') return
+        const r = await fetch(withLibrary(`/api/kb/pdf-info?path=${encodeURIComponent(path)}`))
+        const d = r.ok ? await r.json() as { pages?: number } : null
+        if (typeof d?.pages === 'number' && d.pages !== pages) {
+          // The file has another number of pages now: show those.
+          setPages(d.pages)
+          setRecount(n => n + 1)
+          return
+        }
+        failed.current = true
+        fallBack(why)
+      } catch {
+        failed.current = true
+        fallBack(why)
+      } finally {
+        counting.current = false
+      }
+    })()
   }
   const showText = (why: string) => {
     setError(why)
@@ -105,12 +154,12 @@ function PagedPreview({ path, version, office, markdown, onUnavailable }: {
     <div className="pdf-pages">
       {Array.from({ length: shown }, (_, i) => (
         <img
-          key={i}
+          key={`${recount}:${i}`}
           className="pdf-page-img"
-          src={api.pdfPageUrl(path, i + 1, version)}
+          src={api.pdfPageUrl(path, i + 1, version) + (recount ? `&r=${recount}` : '')}
           alt={`page ${i + 1}`}
           loading="lazy"
-          onError={() => fail('a page could not be rendered')}
+          onError={pageFailed}
         />
       ))}
       {pages > shown && (
@@ -257,6 +306,9 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   const [error, setError] = useState<string | null>(null)
   // The file is not there (404), as against one that cannot be read.
   const [missing, setMissing] = useState(false)
+  // The file was open and is no longer there: moved, renamed or deleted
+  // by something else (the assistant, another window, the file system).
+  const [gone, setGone] = useState(false)
   const [tab, setTab] = useState<Tab>('preview')
   // Set when the file has no preview to show (no page images and nothing
   // read from it): the Preview tab goes and the indexed text says why.
@@ -333,6 +385,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
     setError(null)
     setConfirming(false)
     setPreviewGone(null)
+    setGone(false)
     if (!path) return
     setMissing(false)
     api.file(path).then(f => {
@@ -352,6 +405,46 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
     })
   }, [path])
 
+  // Looks at the open file again, on a sign that it may have changed: the
+  // library changed, the window came back, or part of the preview failed
+  // to load. A file that is gone is said to be, once, and nothing asks
+  // for it again; a rewritten one is shown as it is now.
+  const open = useRef<{ path: string | null; file: FileContent | null; gone: boolean }>({ path, file, gone })
+  open.current = { path, file, gone }
+  const checking = useRef<{ path: string; result: Promise<FileCheck> } | null>(null)
+  const recheck = useCallback((): Promise<FileCheck> => {
+    const { path: p, file: was, gone: isGone } = open.current
+    if (isGone) return Promise.resolve('missing')
+    if (!p || !was || was.path !== p) return Promise.resolve('same')
+    if (checking.current?.path === p) return checking.current.result
+    const result = api.file(p).then((f): FileCheck => {
+      if (open.current.path !== p) return 'same'
+      if (f.mtime === was.mtime && f.size === was.size) return 'same'
+      setFile(f)
+      setPreviewGone(null)
+      return 'changed'
+    }).catch((e): FileCheck => {
+      if (open.current.path !== p || (e as { status?: number })?.status !== 404) return 'same'
+      setGone(true)
+      forgetHash()
+      if (location.hash.startsWith('#open=')) {
+        history.replaceState(null, '', location.pathname + location.search + '#view=library')
+      }
+      return 'missing'
+    }).finally(() => { if (checking.current?.result === result) checking.current = null })
+    checking.current = { path: p, result }
+    return result
+  }, [])
+  useEffect(() => {
+    const look = () => { void recheck() }
+    window.addEventListener('ade-kb-changed', look)
+    window.addEventListener('focus', look)
+    return () => {
+      window.removeEventListener('ade-kb-changed', look)
+      window.removeEventListener('focus', look)
+    }
+  }, [recheck])
+
   if (!path) {
     return (
       <div className="viewer empty">
@@ -370,6 +463,16 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
           <p className="viewer-callout-path">{path}</p>
           <p>{error}</p>
           {missing && <p>It may have been moved, renamed, or deleted since this link was made.</p>}
+        </Callout>
+      </div>
+    )
+  }
+  if (gone) {
+    return (
+      <div className="viewer">
+        <Callout tone="warning" title="This file was moved or deleted" className="viewer-callout">
+          <p className="viewer-callout-path">{path}</p>
+          <p>It is no longer in the library under this name.</p>
         </Callout>
       </div>
     )
@@ -435,7 +538,9 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   const previewView = isStructured ? treeView : isDelimited ? (
     <CsvTable text={file.content ?? ''} suffix={suffix} truncated={file.truncated} />
   ) : isHtml ? (
+    // Keyed by the file's version, so a page rewritten in place is read again.
     <iframe
+      key={`${path}@${file.mtime}@${file.size}`}
       sandbox="allow-scripts allow-modals"
       src={withLibrary(`/api/kb/html?path=${encodeURIComponent(path)}`)}
       title={path}
@@ -444,13 +549,21 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   ) : isModel ? (
     <Suspense fallback={<div className="muted pad"><Loader inline size={16} label="Loading the 3D viewer…" /></div>}><ModelViewer path={path} /></Suspense>
   ) : isImage ? (
-    <div className="viewer-body"><img src={api.rawUrl(path, file.mtime)} alt={path} style={{ maxWidth: '100%' }} /></div>
+    <div className="viewer-body"><img src={api.rawUrl(path, file.mtime)} alt={path} style={{ maxWidth: '100%' }} onError={() => { void recheck() }} /></div>
   ) : isPdf || isOffice ? (
     // Keyed by the file and its version: kept across files, the first
     // render of the next one used the last one's page count, asked for
     // pages it does not have, and their errors sent it to the fallback;
     // a file rewritten in place starts over with its new pages.
-    <PagedPreview key={`${path}@${file.mtime}`} path={path} version={file.mtime} office={isOffice} markdown={extractedMarkdown} onUnavailable={why => { setPreviewGone(why); setTab('indexed') }} />
+    <PagedPreview
+      key={`${path}@${file.mtime}@${file.size}`}
+      path={path}
+      version={file.mtime}
+      office={isOffice}
+      markdown={extractedMarkdown}
+      recheck={recheck}
+      onUnavailable={why => { void recheck().then(state => { if (state === 'same') { setPreviewGone(why); setTab('indexed') } }) }}
+    />
   ) : isText ? (
     <div className="viewer-body">
       {isMarkdown

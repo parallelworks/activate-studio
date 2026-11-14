@@ -4,6 +4,7 @@ import { buildOpenHash, parseOpenHash } from './nav'
 import { currentLibrary, linkTarget, setLibrary, settleLibraries } from './api'
 import { rememberHash } from './lastLocation'
 import { ChatView } from './views/ChatView'
+import { LibraryPageFrame } from './components/LibraryImage'
 import { DagViewer } from './components/DagViewer'
 import { SessionView } from './components/SessionView'
 const ModelViewer = lazy(() => import('./components/ModelViewer').then(m => ({ default: m.ModelViewer })))
@@ -441,12 +442,7 @@ export default function App() {
     // network access.
     return (
       <div className="embed-root">
-        <iframe
-          sandbox="allow-scripts allow-modals"
-          src={`/api/kb/html?path=${encodeURIComponent(embedParams.get('path')!)}`}
-          title="sandboxed page"
-          style={{ width: '100%', height: '100%', border: 0 }}
-        />
+        <LibraryPageFrame src={`/api/kb/html?path=${encodeURIComponent(embedParams.get('path')!)}`} />
       </div>
     )
   }
