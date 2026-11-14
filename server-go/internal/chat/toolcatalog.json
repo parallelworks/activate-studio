@@ -696,7 +696,7 @@
   },
   {
    "name": "write_kb_file",
-   "description": "Write a file into the knowledge base and index it, for material generated in the conversation: a report, a case file, a script, a geometry (ASCII STL), a note, a spreadsheet. Use ONLY when the user asked for something to be created or saved. Text formats are written as given. A .pdf or .docx (Word) path is made from Markdown you write as content: headings, paragraphs, bold and italic, links, bulleted and numbered lists, tables, block quotes, code blocks and images. An image, ![alt](path), is embedded from the library at its own size, scaled down to fit the page: a PNG, JPEG, GIF, WebP, BMP or TIFF, by its path relative to the new file's folder or from the library's top (spaces in the name are fine, as written) (files attached in the chat are under uploads/chat/). Web images are not fetched; the result lists any image that was not embedded. Table columns are sized to what they hold. A line holding only \\newpage starts a new page. To set the layout, open the Markdown with a front matter block: a line ---, then key: value lines, then ---. The keys are align (left or justify), orientation (portrait or landscape), font (a family such as Times New Roman, Arial or Calibri, or serif or sans), size (body text in points, 8 to 16) and margin (inches, 0.5 to 2); for example ---\\nalign: justify\\nfont: Times New Roman\\nsize: 11\\n---. The defaults are left-aligned, portrait US Letter, a sans-serif font, one-inch margins; pages are numbered. A .xlsx (Excel) path is made from rows: CSV, Markdown tables (one sheet each, named by the heading above it), or JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[[\"header\",...],[...]]}]}; numbers become numbers, a value starting with = is a formula, and the first row is the header. Slides (.pptx) and older formats (.doc, .xls) are not made. Excluded and dot-directories are refused, and an existing file is only replaced with overwrite=true. After writing a viewable file (STL, markdown, case files), show_in_viewer displays it.",
+   "description": "Write a file into the knowledge base and index it, for material generated in the conversation: a report, a case file, a script, a geometry (ASCII STL), a note, a spreadsheet. Use ONLY when the user asked for something to be created or saved. Text formats are written as given. A .pdf or .docx (Word) path is made from Markdown you write as content: headings, paragraphs, bold and italic, links, bulleted and numbered lists, tables, block quotes, code blocks and images. An image, ![alt](path), is embedded from the library at its own size, scaled down to fit the page: a PNG, JPEG, GIF, WebP, BMP or TIFF, by its path relative to the new file's folder or from the library's top (spaces in the name are fine, as written) (files attached in the chat are under uploads/chat/). Web images are not fetched; the result lists any image that was not embedded. Table columns are sized to what they hold. A line holding only \\newpage starts a new page. To set the layout, open the Markdown with a front matter block: a line ---, then key: value lines, then ---. The keys are align (left or justify), orientation (portrait or landscape), font (a family such as Times New Roman, Arial or Calibri, or serif or sans), size (body text in points, 8 to 16) and margin (inches, 0.5 to 2); for example ---\\nalign: justify\\nfont: Times New Roman\\nsize: 11\\n---. The defaults are left-aligned, portrait US Letter, a sans-serif font, one-inch margins; pages are numbered. A .xlsx (Excel) path is made from rows: CSV, Markdown tables (one sheet each, named by the heading above it), or JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[[\"header\",...],[...]]}]}; numbers become numbers, a value starting with = is a formula, and the first row is the header. Slides (.pptx) and older formats (.doc, .xls) are not made. Excluded and dot-directories are refused, and an existing file is only replaced with overwrite=true. For a report, write it once as a Markdown (.md) file and pass also (pdf, docx, or both): the documents are made beside it under its name in the same call, so the report is sent once, not once per format. source in place of content makes a .pdf or .docx from a Markdown file already in the library. To change a report afterwards, call edit_kb_file on the Markdown: only the changed text is sent, and the documents made from it are made again. After writing a viewable file (STL, markdown, case files), show_in_viewer displays it.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -706,7 +706,22 @@
      },
      "content": {
       "type": "string",
-      "description": "The full file content (text; up to 2 MB): Markdown for a .pdf or .docx, rows for a .xlsx"
+      "description": "The full file content (text; up to 2 MB): Markdown for a .pdf or .docx, rows for a .xlsx. Leave it out when source is given."
+     },
+     "also": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "enum": [
+        "pdf",
+        "docx"
+       ]
+      },
+      "description": "With a Markdown (.md) path: also make these formats from the same content, beside it and under its name; reports/survey.md with [\"pdf\",\"docx\"] makes reports/survey.pdf and reports/survey.docx as well."
+     },
+     "source": {
+      "type": "string",
+      "description": "In place of content: a text file already in the library to make this .pdf, .docx or .xlsx from, e.g. reports/survey.md. Images it names are found from its folder."
      },
      "overwrite": {
       "type": "boolean",
@@ -714,8 +729,52 @@
      }
     },
     "required": [
-     "path",
-     "content"
+     "path"
+    ]
+   }
+  },
+  {
+   "name": "edit_kb_file",
+   "description": "Change part of a text file in the knowledge base in place: a report's Markdown, a note, a script, a case file. Send only the text to change, not the file again. Each edit replaces find, the text as it is in the file (enough of it to occur once), with replace; all=true replaces every place it occurs; an empty replace removes it. append adds text at the end. Either every edit applies or nothing is changed, and the result says which edit did not apply and why. A .pdf or .docx made from the file (write_kb_file with also or source) is made again from the edited text, so use this for every correction to a report after it is written. A PDF, Word or Excel file is not edited itself: edit the Markdown it was made from. Read the file first (read_kb_file) when you do not have its current text.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string",
+      "description": "KB-relative path of the text file to edit, e.g. reports/survey.md"
+     },
+     "edits": {
+      "type": "array",
+      "description": "The changes, made in order.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "find": {
+         "type": "string",
+         "description": "The text to replace, as it is in the file."
+        },
+        "replace": {
+         "type": "string",
+         "description": "The text to put in its place; empty to remove it."
+        },
+        "all": {
+         "type": "boolean",
+         "description": "Replace every place find occurs (default false: find must occur once)"
+        }
+       },
+       "required": [
+        "find",
+        "replace"
+       ]
+      }
+     },
+     "append": {
+      "type": "string",
+      "description": "Text to add at the end of the file."
+     }
+    },
+    "required": [
+     "path"
     ]
    }
   },
@@ -1192,7 +1251,8 @@
   "list_kb_dir": "directory listing under the knowledge base root",
   "query_corpus": "canned gufi_query aggregations over the per-directory index databases",
   "get_labels": "reads the user.studio.tags xattr maps cached from the filesystem",
-  "write_kb_file": "fs write into the knowledge base (path-checked, excluded dirs refused) followed by an incremental reindex of the touched subtree; a .pdf or .docx is rendered from Markdown (docwrite), embedding the library images it refers to",
+  "write_kb_file": "fs write into the knowledge base (path-checked, excluded dirs refused) followed by an incremental reindex of the touched subtree; a .pdf or .docx is rendered from Markdown (docwrite), embedding the library images it refers to; with also, the same Markdown is also rendered to the named formats beside it, and with source the content is read from a text file in the library; each document made that way is recorded with its source (made-documents.json beside the index)",
+  "edit_kb_file": "reads the text file in the main library, applies each find and replace (exact, then ignoring spacing) and the appended text, all or none, writes it back and re-indexes; then renders again the .pdf and .docx recorded as made from it whose bytes are still the ones written here",
   "suggest_labels": "reads the first ~1200 characters of each unlabelled file and asks the deployment model to propose labels from the existing vocabulary (proposals only, nothing applied)",
   "apply_labels": "setfattr user.studio.tags on the main library's paths plus an in-place upsert into the index databases; another library's labels are kept by the Studio",
   "list_workflows": "pw workflows ls, plus the marketplace and GitHub entries in this Studio's collection",
@@ -1289,9 +1349,10 @@
    "cue": "\\b(agents?|delegat|pw ?code|subtasks?|steer|in parallel)"
   },
   "editing": {
-   "summary": "writing, moving, renaming, copying and deleting files in the knowledge base (deletes are approved by the user), and suggesting or applying labels",
+   "summary": "writing and editing files in the knowledge base (a report as Markdown, PDF and Word), moving, renaming, copying and deleting them (deletes are approved by the user), and suggesting or applying labels",
    "names": [
     "write_kb_file",
+    "edit_kb_file",
     "move_kb_files",
     "rename_kb_file",
     "copy_kb_files",

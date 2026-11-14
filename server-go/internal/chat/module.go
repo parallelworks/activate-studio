@@ -58,12 +58,17 @@ type Module struct {
 	// Ext is the deployment's extensions (skills, agents, custom tools).
 	Ext *extensions.Set
 	// MCP is the client for the attached MCP servers.
-	MCP    remoteTools
-	mcp    *mcpclient.Client
-	Plat   Platform
-	pf     *platform.Platform
-	held   *heldStore
-	prompt promptCache
+	MCP  remoteTools
+	mcp  *mcpclient.Client
+	Plat Platform
+	pf   *platform.Platform
+	held *heldStore
+	// made is which documents were made from which library file.
+	made *renderStore
+	// writeMu orders a write to a library file and a read of one as the
+	// source of a document: tool calls of one round run side by side.
+	writeMu sync.Mutex
+	prompt  promptCache
 
 	accessMu sync.Mutex
 	access   Access
@@ -99,6 +104,7 @@ func New(a *app.App) *Module {
 	m.pf = platform.Of(a)
 	m.Plat = m.pf
 	m.held = newHeldStore(a.Cfg.IndexBase)
+	m.made = newRenderStore(a.Cfg.IndexBase)
 	m.Keys = modelkeys.New(a.Cfg.IndexBase, a.Cfg.AuthEnabled)
 	m.LLM = llm.New(m.gatewayBase, m.GatewayKey)
 	m.Conv = conversations.New(a.Cfg.IndexBase, a.Cfg.KBRoot, conversations.Hooks{
