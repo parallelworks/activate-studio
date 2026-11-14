@@ -786,7 +786,9 @@ func (m *Module) suggestions(w http.ResponseWriter, r *http.Request) error {
 	if c == nil {
 		return reqbody.OK(w, reqbody.O("after", nil, "suggestions", []any{}))
 	}
-	if uid := userID(r); c.OwnerName() != "" && uid != "" && c.OwnerName() != uid && !m.eff().ChatSharedHistory {
+	// A conversation is owned by username, as the stream records it; the
+	// viewer's id is another form of it on a platform sign-in.
+	if u := user(r); c.OwnerName() != "" && u != nil && u.Username != "" && c.OwnerName() != u.Username && !m.eff().ChatSharedHistory {
 		return apierr.New(403, "not your conversation")
 	}
 	return reqbody.OK(w, SuggestNext(c))

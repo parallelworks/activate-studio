@@ -61,55 +61,120 @@ var edgeSlashes = regexp.MustCompile(`^/+|/+$`)
 func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
 	rel := edgeSlashes.ReplaceAllString(argString(args, "path"), "")
 	content := argString(args, "content")
-	if rel == "" || content == "" {
-		return &Outcome{Result: "path and content are required", Summary: "error"}, nil
+	source := edgeSlashes.ReplaceAllString(jsTrim(argString(args, "source")), "")
+	fail := func(result, summary string) (*Outcome, error) {
+		return &Outcome{Result: result, Summary: summary}, nil
+	}
+	if rel == "" || (content == "" && source == "") {
+		return fail("path and content are required (or source in place of content: a Markdown file in the library to make a .pdf or .docx from)", "error")
+	}
+	if content != "" && source != "" {
+		return fail("Give content or source, not both: source makes the file from a Markdown file already in the library.", "error")
+	}
+	ext := strings.ToLower(filepath.Ext(rel))
+	also, bad := alsoFormats(args["also"])
+	if bad != "" {
+		return fail(bad, "error")
+	}
+	if len(also) > 0 && !isMarkdownExt(ext) {
+		return fail("also makes a .pdf or .docx beside a Markdown file, and "+rel+" is not one. Write the report as a .md file with also, or write this file alone.", "error")
+	}
+	if len(also) > 0 && source != "" {
+		return fail("also goes with content. To make another format from "+source+", call write_kb_file for that path with the same source.", "error")
+	}
+	if source != "" {
+		if !docwrite.Handles(ext) {
+			return fail("source makes a .pdf, .docx or .xlsx from a text file in the library. To copy a file, use copy_kb_files.", "error")
+		}
+		text, why := m.sourceText(source)
+		if why != "" {
+			return fail(why, "error")
+		}
+		content = text
 	}
 	if jsval.Len(content) > 2*1024*1024 {
-		return &Outcome{Result: "Content over 2 MB; write it in parts or as multiple files.", Summary: "too large"}, nil
+		return fail("Content over 2 MB; write it in parts or as multiple files.", "too large")
 	}
 	for _, part := range strings.Split(rel, "/") {
 		if kb.ExcludeDirs[part] || strings.HasPrefix(part, ".") {
-			return &Outcome{Result: "Not writable: " + part + " is excluded.", Summary: "refused"}, nil
+			return fail("Not writable: "+part+" is excluded.", "refused")
 		}
 	}
 	abs, err := kb.Resolve(rel, m.A.Cfg.KBRoot)
 	if err != nil {
-		return &Outcome{Result: err.Error(), Summary: "refused"}, nil
+		return fail(err.Error(), "refused")
 	}
+	overwrite := args["overwrite"] == true
 	_, statErr := os.Stat(abs)
 	exists := statErr == nil
-	if exists && args["overwrite"] != true {
-		return &Outcome{Result: rel + " already exists. Pass overwrite=true to replace it, or choose another name.", Summary: "exists"}, nil
+	if exists && !overwrite {
+		return fail(rel+" already exists. Pass overwrite=true to replace it, or choose another name.", "exists")
+	}
+	// The other formats asked for beside a Markdown file: checked before
+	// anything is written, so the call writes all of them or none.
+	stem := strings.TrimSuffix(rel, filepath.Ext(rel))
+	type beside struct{ rel, abs, ext string }
+	var extra []beside
+	for _, f := range also {
+		orel := stem + "." + f
+		oabs, err := kb.Resolve(orel, m.A.Cfg.KBRoot)
+		if err != nil {
+			return fail(err.Error(), "refused")
+		}
+		if _, err := os.Stat(oabs); err == nil && !overwrite {
+			return fail(orel+" already exists. Pass overwrite=true to replace it, or choose another name.", "exists")
+		}
+		extra = append(extra, beside{orel, oabs, "." + f})
 	}
 	// A PDF, Word or Excel file is made from what the model wrote
 	// (Markdown, or rows); other office formats are refused with what to
 	// write instead, so no text lands in a file named as a binary format.
-	ext := strings.ToLower(filepath.Ext(rel))
 	data, made := []byte(content), ""
 	var missing, problems []string
 	if why := docwrite.Unsupported(ext); why != "" {
-		return &Outcome{Result: why, Summary: "refused"}, nil
+		return fail(why, "refused")
+	}
+	// Images are found from the folder of the Markdown that names them.
+	imageDir := path.Dir(rel)
+	if source != "" {
+		imageDir = path.Dir(source)
+	}
+	if imageDir == "." {
+		imageDir = ""
 	}
 	if docwrite.Handles(ext) {
-		dir := path.Dir(rel)
-		if dir == "." {
-			dir = ""
-		}
-		out, err := docwrite.Render(ext, content, libraryImages(m.A.Cfg.KBRoot, dir))
+		out, err := docwrite.Render(ext, content, libraryImages(m.A.Cfg.KBRoot, imageDir))
 		if err != nil {
-			return &Outcome{Result: "Could not write " + rel + ": " + err.Error(), Summary: "error"}, nil
+			return fail("Could not write "+rel+": "+err.Error(), "error")
 		}
 		data, made, missing, problems = out.Data, out.Note, out.Missing, out.Problems
 	}
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return nil, nodeFSError(err, "mkdir", filepath.Dir(abs))
+	if err := m.writeLibraryFile(abs, data); err != nil {
+		return nil, err
 	}
-	if err := os.WriteFile(abs, data, 0o644); err != nil {
-		return nil, nodeFSError(err, "open", abs)
+	if source != "" {
+		m.made.set(rel, source, data)
+	} else {
+		m.made.drop(rel)
+	}
+	var alsoMade []string
+	links := []string{libraryLink(rel)}
+	for _, x := range extra {
+		out, err := docwrite.Render(x.ext, content, libraryImages(m.A.Cfg.KBRoot, imageDir))
+		if err != nil {
+			return fail("Wrote "+rel+", but could not make "+x.rel+": "+err.Error(), "error")
+		}
+		if err := m.writeLibraryFile(x.abs, out.Data); err != nil {
+			return nil, err
+		}
+		m.made.set(x.rel, rel, out.Data)
+		alsoMade = append(alsoMade, x.rel+" ("+out.Note+")")
+		links = append(links, libraryLink(x.rel))
+		missing, problems = addNew(missing, out.Missing), addNew(problems, out.Problems)
 	}
 	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
 	base := rel[strings.LastIndex(rel, "/")+1:]
-	link := "[" + rel + "](#open=file:" + strings.ReplaceAll(rel, " ", "%20") + ")"
+	link := links[0]
 	show := "show_in_viewer can display it."
 	switch ext {
 	case ".stl", ".step", ".stp", ".obj", ".glb", ".gltf":
@@ -121,6 +186,14 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if made != "" {
 		wrote = made + ", " + itoaInt(len(data)) + " bytes"
 		show = "Give the user its link: " + link + " It opens in the Library viewer."
+	}
+	if source != "" {
+		wrote += ", from " + source
+		show += " An edit to " + source + " with edit_kb_file makes it again."
+	}
+	if len(alsoMade) > 0 {
+		wrote += "; made from it: " + strings.Join(alsoMade, ", ")
+		show = "Give the user their links: " + strings.Join(links, " ") + " They open in the Library viewer. To change the report, call edit_kb_file on " + rel + ": the documents made from it are made again."
 	}
 	replaced := ""
 	if exists {

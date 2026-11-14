@@ -158,7 +158,7 @@ func SuggestNext(c *conversations.Conversation) *jsonobj.Object {
 				push("Open "+cite+" and summarize it", "a search cited it")
 			}
 		}
-		if p.Name == "write_kb_file" {
+		if p.Name == "write_kb_file" || p.Name == "edit_kb_file" {
 			if path := jsString(a["path"]); path != "" {
 				push("Open "+path+" in the library", "a file was written")
 			}

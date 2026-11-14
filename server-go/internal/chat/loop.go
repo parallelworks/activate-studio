@@ -654,6 +654,47 @@ func orEmptyCalls(c []llm.ToolCall) []llm.ToolCall {
 	return c
 }
 
+// liveTools read something that changes while a reply is written: an
+// agent, a run, a queue. The same call made again is a second look, so it
+// runs again and is never answered from the reply's earlier calls.
+var liveTools = map[string]bool{
+	"agent_status": true, "agent_sessions": true, "watch_run": true, "workflow_runs": true, "workflow_run_detail": true,
+	"list_sessions": true, "list_clusters": true, "hpc_status": true, "task_status": true, "cluster_command": true,
+}
+
+// changingTools change what other tools read: a file, a label, an agent,
+// a run, a cluster. After one runs, a read made before it is made again
+// when the model repeats it, and not repeated from before the change.
+var changingTools = map[string]bool{
+	"write_kb_file": true, "edit_kb_file": true, "move_kb_files": true, "rename_kb_file": true, "copy_kb_files": true, "delete_kb_files": true, "apply_labels": true,
+	"start_agent": true, "agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true, "delegate": true,
+	"run_workflow": true, "serve_model": true, "cancel_workflow_run": true,
+	"start_cluster": true, "resume_cluster": true, "stop_cluster": true, "destroy_cluster": true,
+}
+
+// repeatedCall is the result of this exact call made earlier in the
+// reply, when it still stands.
+func repeatedCall(cache map[string]string, mu *sync.Mutex, name, args string) (string, bool) {
+	if liveTools[name] {
+		return "", false
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	hit, ok := cache[name+":"+args]
+	return hit, ok
+}
+
+// rememberCall keeps a call's result for the rest of the reply. A call
+// that changes something first drops the results kept before it.
+func rememberCall(cache map[string]string, mu *sync.Mutex, name, args, result string) {
+	mu.Lock()
+	defer mu.Unlock()
+	if changingTools[name] {
+		clear(cache)
+	}
+	cache[name+":"+args] = result
+}
+
 // runCall is one call's outcome, as the route's worker computes it.
 func (m *Module) runCall(r *http.Request, st *loopState, tc llm.ToolCall, i int, names *Names, available []Spec, notRun map[int]*Outcome, isHeld bool,
 	cache map[string]string, cacheMu *sync.Mutex, toolCtx func() ToolCtx) *Outcome {
@@ -705,20 +746,14 @@ func (m *Module) runCall(r *http.Request, st *loopState, tc llm.ToolCall, i int,
 	if g := names.GroupOf[name]; g != nil && *g != "" {
 		st.addGroup(*g)
 	}
-	key := name + ":" + tc.Function.Arguments
-	cacheMu.Lock()
-	hit, ok := cache[key]
-	cacheMu.Unlock()
-	if ok {
+	if hit, ok := repeatedCall(cache, cacheMu, name, tc.Function.Arguments); ok {
 		return &Outcome{Result: "[You already made this exact call in this reply; identical result repeated below. Do not repeat it again.]\n" + hit, Summary: "repeated call (cached)"}
 	}
 	out, err := m.Tools.Execute(r, name, tc.Function.Arguments, toolCtx())
 	if err != nil {
 		return &Outcome{Result: "tool failed: " + err.Error(), Summary: "failed", Failed: true}
 	}
-	cacheMu.Lock()
-	cache[key] = out.Result
-	cacheMu.Unlock()
+	rememberCall(cache, cacheMu, name, tc.Function.Arguments, out.Result)
 	st.markThinking()
 	return out
 }
