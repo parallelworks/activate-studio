@@ -68,3 +68,40 @@ func opName(op string) string {
 	}
 	return op
 }
+
+// missing says whether err is a file that is not there, or one whose
+// folder is now a file.
+func missing(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+}
+
+// notFound is err as a viewing route answers it: a file that is not
+// there is a 404 the client may read, as ReadFileContent answers it;
+// anything else is err unchanged.
+func notFound(err error) error {
+	if missing(err) {
+		return Error(404, "no such file")
+	}
+	return err
+}
+
+// missingSince is the 404 when the file at abs went away while a helper
+// program was reading it: the helper's own message says only that it
+// could not open the file. Any other failure is err unchanged.
+func missingSince(abs string, err error) error {
+	if _, serr := os.Stat(abs); missing(serr) {
+		return Error(404, "no such file")
+	}
+	return notFound(err)
+}
+
+// PastLastPage is a page asked for beyond the end of a PDF, as happens
+// when a file is rewritten shorter while its pages are on screen.
+type PastLastPage struct{ Page, Pages int }
+
+func (e *PastLastPage) Error() string {
+	if e.Pages == 1 {
+		return fmt.Sprintf("page %d is past the end: this file has 1 page", e.Page)
+	}
+	return fmt.Sprintf("page %d is past the end: this file has %d pages", e.Page, e.Pages)
+}

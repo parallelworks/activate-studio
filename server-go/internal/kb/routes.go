@@ -500,20 +500,21 @@ func contentDisposition(name string) string {
 }
 
 // sendFile streams a file as Node's reply.send(createReadStream) does: the
-// whole file with a 200 (no ranges), and a file that cannot be opened is a
-// 500 with the headers already set left off.
+// whole file with a 200 (no ranges). A file that is no longer there is a
+// 404 and a directory a 400, where Node answered a 500; any other file
+// that cannot be opened is a 500 with the headers already set left off.
 func sendFile(w http.ResponseWriter, abs string, headers map[string]string) error {
 	f, err := os.Open(abs)
 	if err != nil {
-		return err
+		return notFound(err)
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return err
+		return notFound(err)
 	}
 	if st.IsDir() {
-		return &os.PathError{Op: "read", Path: abs, Err: errors.New("is a directory")}
+		return Error(400, "path is a directory")
 	}
 	for k, v := range headers {
 		w.Header().Set(k, v)
@@ -578,7 +579,20 @@ func (m *Module) sourceFile(r *http.Request) (Library, string, string, error) {
 	}
 	rel := qs(r, "path")
 	abs, err := Resolve(rel, root)
-	return lib, rel, abs, err
+	if err != nil {
+		return lib, rel, abs, err
+	}
+	// A file open in the viewer may be renamed or deleted under it: the
+	// routes that draw it answer 404 then, which the viewer shows as a
+	// moved or deleted file, not a fault.
+	st, err := os.Stat(abs)
+	if err != nil {
+		return lib, rel, abs, notFound(err)
+	}
+	if st.IsDir() {
+		return lib, rel, abs, Error(400, "path is a directory")
+	}
+	return lib, rel, abs, nil
 }
 
 // SourceFile is the library, path and file on this host that a request's
@@ -649,7 +663,7 @@ func (m *Module) html(w http.ResponseWriter, r *http.Request) error {
 	}
 	data, err := os.ReadFile(abs)
 	if err != nil {
-		return err
+		return notFound(err)
 	}
 	for k, v := range headers {
 		w.Header().Set(k, v)
@@ -671,7 +685,7 @@ func (m *Module) pdf(w http.ResponseWriter, r *http.Request) error {
 	}
 	out, err := m.Previews.OfficeToPDF(r.Context(), abs, rel)
 	if err != nil {
-		return err
+		return notFound(err)
 	}
 	return sendFile(w, out, map[string]string{"Content-Type": "application/pdf", "Content-Disposition": "inline"})
 }
@@ -691,11 +705,11 @@ func (m *Module) pdfInfo(w http.ResponseWriter, r *http.Request) error {
 	}
 	pdf, err := m.Previews.PreviewPDF(r.Context(), abs, previewKey(lib, rel))
 	if err != nil {
-		return err
+		return notFound(err)
 	}
 	n, err := m.Previews.PageCount(r.Context(), pdf)
 	if err != nil {
-		return err
+		return missingSince(pdf, err)
 	}
 	writeJSON(w, 200, O("pages", n))
 	return nil
@@ -719,7 +733,18 @@ func (m *Module) pdfPage(w http.ResponseWriter, r *http.Request) error {
 	}
 	png, err := m.Previews.PagePNG(r.Context(), abs, previewKey(lib, rel), n)
 	if err != nil {
-		return err
+		// The tag belongs to a page image, not to an error.
+		w.Header().Del("ETag")
+		w.Header().Del("Cache-Control")
+		var past *PastLastPage
+		if errors.As(err, &past) {
+			// A PDF rewritten shorter while it is open: the answer carries
+			// the page count, so the viewer shows the pages there are.
+			w.Header().Set("X-Page-Count", strconv.Itoa(past.Pages))
+			writeJSON(w, http.StatusRequestedRangeNotSatisfiable, O("error", past.Error(), "page", past.Page, "pages", past.Pages))
+			return nil
+		}
+		return missingSince(abs, err)
 	}
 	return sendFile(w, png, map[string]string{"Content-Type": "image/png"})
 }
@@ -753,7 +778,7 @@ func (m *Module) officePreview(w http.ResponseWriter, r *http.Request) error {
 	}
 	out, err := m.Office.Outline(abs)
 	if err != nil {
-		return err
+		return notFound(err)
 	}
 	writeJSON(w, 200, out)
 	return nil
@@ -769,7 +794,9 @@ func (m *Module) officeMedia(w http.ResponseWriter, r *http.Request) error {
 	}
 	b, typ, err := m.Office.Media(abs, qs(r, "name"))
 	if err != nil {
-		return err
+		w.Header().Del("ETag")
+		w.Header().Del("Cache-Control")
+		return notFound(err)
 	}
 	h := w.Header()
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox")

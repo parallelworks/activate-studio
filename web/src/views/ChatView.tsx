@@ -23,6 +23,7 @@ import { setChatLibrary, setLabelScope, setPersona } from '../labelScope'
 import { useLabelVocabulary } from '../labelVocabulary'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
+import { LibraryImage, isLibrarySource } from '../components/LibraryImage'
 import { EmbedFrame } from '../components/EmbedFrame'
 import { SideViewHost } from '../components/RunPane'
 import { PanelToggle } from '../components/StatusPanel'
@@ -464,6 +465,10 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           img: ({ node: _node, ...props }) =>
             typeof props.src === 'string' && props.src.startsWith('/?embed=') ? (
               <EmbedFrame src={props.src} title={String(props.alt ?? 'embedded viewer')} />
+            ) : isLibrarySource(props.src) ? (
+              // A file of the library, which may be gone by the time the
+              // reply is read again.
+              <LibraryImage {...props} />
             ) : (
               <img {...props} />
             ),

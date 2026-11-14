@@ -863,6 +863,9 @@ textarea.field { line-height: 1.5; }
 .pad { padding: 12px 16px; }
 .error { color: #b91c1c; }
 
+/* A chat reply's picture or page of a library file that is gone. */
+.library-image-gone { display: inline-block; font-size: 0.85rem; font-style: italic; }
+
 /* 3D model viewer */
 .model-viewer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .model-canvas { flex: 1; min-height: 320px; background: radial-gradient(ellipse at center, #f8fafc 0%, #e2e8f0 100%); border-radius: 8px; }

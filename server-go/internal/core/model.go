@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
@@ -205,7 +206,7 @@ func (c *Core) model(w http.ResponseWriter, r *http.Request) error {
 		return apierr.New(415, "not a supported 3D model type")
 	}
 	st, err := os.Stat(abs)
-	if errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		return apierr.New(404, "not found")
 	}
 	if err != nil {
