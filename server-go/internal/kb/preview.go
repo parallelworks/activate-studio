@@ -213,6 +213,11 @@ func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page int) (stri
 		if e := popplerMissing(err, "pdftoppm"); e != nil {
 			return "", e
 		}
+		// pdftoppm refuses a page past the end ("Wrong page range
+		// given"); the count says whether that is what happened.
+		if total, cerr := p.PageCount(ctx, pdf); cerr == nil && page > total {
+			return "", &PastLastPage{Page: page, Pages: total}
+		}
 		return "", fmt.Errorf("page render failed: %s", firstNonEmpty(se.String(), err.Error()))
 	}
 	// pdftoppm writes <prefix>-<page>.png, zero-padded once the page count
