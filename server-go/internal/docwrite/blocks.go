@@ -6,6 +6,7 @@ package docwrite
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -21,6 +22,7 @@ type Run struct {
 	Bold, Italic, Code, Strike bool
 	Link                       string
 	Image                      string // an image's source, with its alt text as Text
+	Sup                        bool   // raised and small: a footnote's number
 }
 
 // Block kinds.
@@ -36,6 +38,12 @@ const (
 	KImage   = "img"
 )
 
+// A task list item's box.
+const (
+	Unchecked int8 = 1
+	Checked   int8 = 2
+)
+
 // Block is one block of a Markdown document.
 type Block struct {
 	Kind     string
@@ -44,6 +52,7 @@ type Block struct {
 	Ordered  bool  // list
 	Start    int   // list
 	Items    [][]Block
+	Checks   []int8  // list: per item, Unchecked or Checked for a task, else 0
 	Header   [][]Run // table
 	Rows     [][][]Run
 	Align    []string // table: "left", "right", "center" or ""
@@ -52,7 +61,7 @@ type Block struct {
 	Children []Block  // quote
 }
 
-var md = goldmark.New(goldmark.WithExtensions(extension.GFM))
+var md = goldmark.New(goldmark.WithExtensions(extension.GFM, extension.Footnote))
 
 // Parse reads Markdown into blocks.
 func Parse(src string) []Block {
@@ -79,10 +88,31 @@ func blocksOf(parent ast.Node, src []byte) []Block {
 			if l.Start == 0 {
 				l.Start = 1
 			}
+			tasks := false
+			for it := v.FirstChild(); it != nil; it = it.NextSibling() {
+				l.Items = append(l.Items, blocksOf(it, src))
+				check := taskBox(it)
+				if k := len(l.Items) - 1; check != 0 && len(l.Items[k]) > 0 && len(l.Items[k][0].Runs) > 0 {
+					first := &l.Items[k][0].Runs[0]
+					first.Text = strings.TrimLeft(first.Text, " ")
+				}
+				tasks = tasks || check != 0
+				l.Checks = append(l.Checks, check)
+			}
+			if !tasks {
+				l.Checks = nil
+			}
+			out = append(out, l)
+		case *east.FootnoteList:
+			// The notes, in the order they are first referred to, as a
+			// numbered list under a heading at the end of the document.
+			l := Block{Kind: KList, Ordered: true, Start: 1}
 			for it := v.FirstChild(); it != nil; it = it.NextSibling() {
 				l.Items = append(l.Items, blocksOf(it, src))
 			}
-			out = append(out, l)
+			if len(l.Items) > 0 {
+				out = append(out, Block{Kind: KHeading, Level: 2, Runs: []Run{{Text: NotesHeading}}}, l)
+			}
 		case *ast.FencedCodeBlock, *ast.CodeBlock, *ast.HTMLBlock:
 			var sb strings.Builder
 			lines := v.Lines()
@@ -137,6 +167,24 @@ func blocksOf(parent ast.Node, src []byte) []Block {
 		}
 	}
 	return out
+}
+
+// NotesHeading is the heading over a document's footnotes.
+const NotesHeading = "Notes"
+
+// taskBox is a list item's box, when it is a task ("- [x] done").
+func taskBox(item ast.Node) int8 {
+	first := item.FirstChild()
+	if first == nil {
+		return 0
+	}
+	if box, ok := first.FirstChild().(*east.TaskCheckBox); ok {
+		if box.IsChecked {
+			return Checked
+		}
+		return Unchecked
+	}
+	return 0
 }
 
 func runsOf(n ast.Node, src []byte) []Run {
@@ -212,6 +260,12 @@ func runsOf(n ast.Node, src []byte) []Run {
 				}
 				// Its own run, never merged: a paragraph is split around it.
 				out = append(out, Run{Text: sb.String(), Image: string(v.Destination)})
+			case *east.FootnoteLink:
+				// Its own run, as an image is: a number set raised.
+				out = append(out, Run{Text: strconv.Itoa(v.Index), Sup: true})
+			case *east.FootnoteBacklink, *east.TaskCheckBox:
+				// The way back from a note is a web page's; a task's box
+				// is drawn by its list.
 			case *ast.RawHTML:
 				var sb strings.Builder
 				for i := 0; i < v.Segments.Len(); i++ {

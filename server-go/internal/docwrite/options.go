@@ -15,11 +15,14 @@ import (
 //	font: Times New Roman
 //	size: 11
 //	margin: 1
+//	spacing: 1.15
+//	header: Draft
+//	footer: Quarterly report
 //	---
 //
 // Anything left out keeps its default: left-aligned body text, portrait
 // US Letter, a sans-serif font at 10.5 pt (11 pt in Word), one-inch
-// margins.
+// margins, lines 1.15 apart, a page number alone at the foot of the page.
 type Options struct {
 	Justify   bool
 	Landscape bool
@@ -27,10 +30,16 @@ type Options struct {
 	Font      string  // the Word font name; "" for Calibri, or Times New Roman when Serif
 	Size      float64 // body size in points; 0 for the default
 	Margin    float64 // inches; 0 for one inch
+	Spacing   float64 // line spacing, 1 to 2; 0 for the default (1.15)
+	Header    string  // a line centered at the top of every page
+	Footer    string  // a line centered at the bottom of every page, above its number
 }
 
+// maxRunningText is the longest header or footer taken, in characters.
+const maxRunningText = 120
+
 // OptionKeys names the front matter keys, for the tool's description.
-const OptionKeys = "align (left or justify), orientation (portrait or landscape), font (a family such as Times New Roman, Arial or Calibri, or serif or sans), size (body text in points, 8 to 16), margin (inches, 0.5 to 2)"
+const OptionKeys = "align (left or justify), orientation (portrait or landscape), font (a family such as Times New Roman, Arial or Calibri, or serif or sans), size (body text in points, 8 to 16), margin (inches, 0.5 to 2), spacing (line spacing, 1 to 2), header and footer (a short line of text centered at the top and bottom of every page)"
 
 // SplitFrontMatter takes the options from Markdown that opens with a ---
 // block of key: value lines, and returns the rest. Markdown without one
@@ -108,6 +117,24 @@ func SplitFrontMatter(src string) (Options, string, []string) {
 				continue
 			}
 			o.Margin = n
+		case "spacing", "line-spacing", "line_spacing", "linespacing", "line-height", "line_height":
+			n, ok := spacingValue(lv)
+			if !ok {
+				problems = append(problems, fmt.Sprintf("spacing %q is not 1 to 2", v))
+				continue
+			}
+			o.Spacing = n
+		case "header", "footer":
+			t := strings.Join(strings.Fields(v), " ")
+			if n := len([]rune(t)); n > maxRunningText {
+				problems = append(problems, fmt.Sprintf("the %s is %d characters, over the %d a page's %s holds; it was left out", k, n, maxRunningText, k))
+				continue
+			}
+			if k == "header" {
+				o.Header = t
+			} else {
+				o.Footer = t
+			}
 		case "title", "author", "date", "subject":
 			// Common in front matter; the title comes from the first heading.
 		default:
@@ -115,6 +142,24 @@ func SplitFrontMatter(src string) (Options, string, []string) {
 		}
 	}
 	return o, body[strings.IndexByte(body, '\n')+1+end:], problems
+}
+
+// spacingValue reads a line spacing: a number from 1 to 2, or single,
+// double or 1.5 by name.
+func spacingValue(lv string) (float64, bool) {
+	switch lv {
+	case "single":
+		return 1, true
+	case "double":
+		return 2, true
+	case "one and a half", "one-and-a-half":
+		return 1.5, true
+	}
+	n, err := strconv.ParseFloat(strings.TrimSuffix(lv, "x"), 64)
+	if err != nil || n < 1 || n > 2 {
+		return 0, false
+	}
+	return n, true
 }
 
 // fontChoice is the Word font name for a requested family, and whether
@@ -139,6 +184,16 @@ func (o Options) pdfSize() float64 {
 		return o.Size
 	}
 	return bodySize
+}
+
+// pdfLine is the PDF body line height at a text size: the spacing asked
+// for, as a multiple of single spacing (1.2 times the size), or the
+// default, which is 1.15.
+func (o Options) pdfLine(size float64) float64 {
+	if o.Spacing > 0 {
+		return size * 1.2 * o.Spacing
+	}
+	return size * bodyLine / bodySize
 }
 
 func (o Options) marginPt() float64 {
@@ -167,6 +222,15 @@ func (o Options) describe() string {
 	}
 	if o.Margin > 0 {
 		parts = append(parts, strconv.FormatFloat(o.Margin, 'f', -1, 64)+" inch margins")
+	}
+	if o.Spacing > 0 {
+		parts = append(parts, strconv.FormatFloat(o.Spacing, 'f', -1, 64)+" line spacing")
+	}
+	if o.Header != "" {
+		parts = append(parts, "header "+strconv.Quote(o.Header))
+	}
+	if o.Footer != "" {
+		parts = append(parts, "footer "+strconv.Quote(o.Footer))
 	}
 	if len(parts) == 0 {
 		return ""
