@@ -39,7 +39,7 @@ const errText = (e: unknown) => String((e as Error)?.message ?? e)
  * app installs; a clone is shown the commands that update it, and a hosted
  * deployment shows nothing. The install itself, and the reload onto the
  * new version, are the page's update flow (updateFlow.ts), which the
- * update notice shares.
+ * footer shares.
  */
 export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
   /** Called with the policy once it is saved, so a form holding the other

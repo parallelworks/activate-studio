@@ -130,7 +130,7 @@ An atomic exchange (`renameat2` with `RENAME_EXCHANGE`) or a symlink flip would 
 
 ### What a package install shows
 
-A `deb` copy shows, under the **Version … is available** notice and in Settings, Updates: "This copy was installed from a .deb package, so it does not update itself" with `sudo apt update` and `sudo apt install --only-upgrade activate-studio` to copy, and says to quit and reopen ACTIVATE Studio afterward. An `rpm` copy says the same with `sudo dnf upgrade --refresh activate-studio`. There is no **Update now**, no automatic install and no rollback, and the install and rollback requests are refused with the same sentence.
+A `deb` copy shows, in the **What's new** dialog of the footer's Build panel and in Settings, Updates: "This copy was installed from a .deb package, so it does not update itself" with `sudo apt update` and `sudo apt install --only-upgrade activate-studio` to copy, and says to quit and reopen ACTIVATE Studio afterward. An `rpm` copy says the same with `sudo dnf upgrade --refresh activate-studio`. There is no **Update now**, no automatic install and no rollback, and the install and rollback requests are refused with the same sentence.
 
 ## Uninstall
 

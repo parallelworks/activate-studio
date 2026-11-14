@@ -5,7 +5,7 @@ import { reopenApp } from './nativeShell'
 /**
  * The page's one view of updates: the status the server reports, a check,
  * install or rollback under way, and the wait for the new version after the
- * restart. The update notice, the footer and Settings, Updates all read it,
+ * restart. The footer and Settings, Updates both read it,
  * so an install started from any of them is followed once.
  *
  * An install ends with the server restarting on the new version. The page
@@ -39,6 +39,8 @@ export interface UpdateFlow {
   busy: 'check' | 'install' | 'rollback' | null
   /** The last check, install or rollback failed, and why. */
   error: string
+  /** The last install or rollback failed; `error` or the status says why. */
+  failed: boolean
   waiting: Waiting | null
 }
 
@@ -82,7 +84,7 @@ export function setUpdateFlowOptions(o: Partial<typeof DEFAULTS>): void {
   for (const [k, v] of Object.entries(o)) if (v !== undefined) Object.assign(options, { [k]: v })
 }
 
-const EMPTY: UpdateFlow = { status: null, none: false, readError: '', busy: null, error: '', waiting: null }
+const EMPTY: UpdateFlow = { status: null, none: false, readError: '', busy: null, error: '', failed: false, waiting: null }
 let flow: UpdateFlow = EMPTY
 const listeners = new Set<() => void>()
 /** Bumped on reset, so an answer to a forgotten request is dropped. */
@@ -118,7 +120,7 @@ function set(patch: Partial<UpdateFlow>): void {
 
 /** Set before the reload after an install or rollback the person started
  *  on this page: the version it went to. The page that loads takes it to
- *  reopen the app's window, when the update changed it (UpdatedNotice). */
+ *  reopen the app's window, when the update changed it (afterUpdate.ts). */
 const REOPEN_KEY = 'ade-reopen-after-update'
 
 function reloadOnNewVersion(): void {
@@ -142,8 +144,11 @@ function waitFor(version: string | null, from: string): void {
 }
 
 function apply(s: UpdatesStatus): void {
+  // An install that ends in an error failed; one under way again has not.
+  const was = lastState
+  const failed = s.state === 'error' ? flow.failed || UNDER_WAY.has(was) || was === 'restarting' : UNDER_WAY.has(s.state) ? false : flow.failed
   lastState = s.state
-  set({ status: s, readError: '' })
+  set({ status: s, readError: '', failed })
   // A check the server is running (one this read started, say): read again
   // shortly for its answer, a bounded number of times.
   if (s.state === 'checking' && checkingTimer === null && checkingReads < 15) {
@@ -273,13 +278,13 @@ export function useUpdateFlow(): UpdateFlow {
 }
 
 async function act(kind: 'check' | 'install' | 'rollback', call: () => Promise<UpdatesStatus>): Promise<boolean> {
-  set({ busy: kind, error: '' })
+  set({ busy: kind, error: '', failed: false })
   try {
     apply(await call())
     return true
   } catch (e) {
     if (kind !== 'check') { target = null; asked = false }
-    set({ error: errText(e) })
+    set({ error: errText(e), failed: kind !== 'check' })
     return false
   } finally {
     set({ busy: null })

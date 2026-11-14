@@ -1,10 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Changelog, UpdateRelease, UpdatesStatus } from '../src/api'
+import { SEEN_KEY } from '../src/afterUpdate'
 import { StatusFooter } from '../src/components/StatusFooter'
-import { LATER_MS, UpdateNotice } from '../src/components/UpdateNotice'
 import { CHECK_EVENT, setUpdateFlowOptions } from '../src/updateFlow'
-import { SEEN_KEY, UpdatedNotice } from '../src/components/UpdatedNotice'
 import { UpdatesSection } from '../src/components/UpdatesSection'
 import { WhatsNew } from '../src/components/WhatsNew'
 import { HelpView } from '../src/views/HelpView'
@@ -95,7 +94,14 @@ function stubServer(s: Server) {
 }
 
 const server = (over: Partial<Server> = {}): Server => ({ updates: status(), code: 200, version: 'v1.140', changelog: CHANGELOG, calls: [], ...over })
-const notice = () => screen.queryByTestId('update-notice')
+/** The footer's version line's action: update available, updating…, update failed. */
+const action = (name: string) => screen.findByRole('button', { name })
+/** Opens the Build panel from "update available", then its What's new dialog. */
+async function openDetails() {
+  fireEvent.click(await action('update available'))
+  fireEvent.click(await screen.findByRole('button', { name: /^What's new \(/ }))
+  return screen.findByRole('dialog', { name: /^Version / })
+}
 const settle = () => act(async () => { await new Promise(r => setTimeout(r, 20)) })
 
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); history.replaceState(null, '', location.pathname) })
@@ -109,19 +115,16 @@ function appWindow(answer: (message: { action: string }) => Promise<unknown>) {
 }
 const REOPEN_KEY = 'ade-reopen-after-update'
 
-describe('the update notice', () => {
-  it('in the app: one line with the version, Update now and Later; What\'s new opens every newer version\'s changes, newest first, each opening to its description', async () => {
+describe('a newer version, in the footer', () => {
+  it('in the app: "update available" beside the version, and the Build panel\'s What\'s new opens every newer version\'s changes, newest first, each opening to its description', async () => {
     stubServer(server())
-    render(<UpdateNotice />)
-    expect(await screen.findByText('Version v1.142 is available')).toBeInTheDocument()
-    const line = notice()!
-    expect(line.textContent).toContain('you have v1.140')
-    // One line: the changes are not in the notice.
-    expect(within(line).queryByRole('heading')).toBeNull()
-    expect(within(line).getByRole('button', { name: 'Update now' })).toBeEnabled()
-    expect(within(line).getByRole('button', { name: 'Later' })).toBeInTheDocument()
-    fireEvent.click(within(line).getByRole('button', { name: "What's new (3)" }))
-    const box = await screen.findByRole('dialog')
+    render(<StatusFooter />)
+    fireEvent.click(await action('update available'))
+    const panel = await screen.findByTestId('build-updates')
+    expect(panel.textContent).toContain('Version v1.142 is available')
+    expect(within(panel).getByRole('button', { name: 'Update now' })).toBeEnabled()
+    fireEvent.click(within(panel).getByRole('button', { name: "What's new (3)" }))
+    const box = await screen.findByRole('dialog', { name: 'Version v1.142' })
     expect(within(box).getByText('You have version v1.140. These are the changes since.')).toBeInTheDocument()
     const versions = within(box).getAllByRole('heading', { level: 3 }).map(h => h.textContent)
     expect(versions).toEqual([expect.stringMatching(/^v1\.142/), expect.stringMatching(/^v1\.141/)])
@@ -137,18 +140,17 @@ describe('the update notice', () => {
     expect(box.textContent).not.toContain('**')
     expect(within(box).getByRole('link', { name: 'Pull request #506' })).toHaveAttribute('href', 'https://github.com/parallelworks/activate-studio/pull/506')
     expect(within(box).getByRole('button', { name: 'Update now' })).toBeEnabled()
-    expect(within(box).getByRole('button', { name: 'Later' })).toBeInTheDocument()
+    // Nothing to put off: the footer is the only standing signal.
+    expect(screen.queryByRole('button', { name: 'Later' })).toBeNull()
+    fireEvent.click(within(box).getByRole('button', { name: 'Update settings' }))
+    expect(location.hash).toBe('#view=settings:updates')
+    expect(screen.queryByRole('dialog', { name: 'Version v1.142' })).toBeNull()
   })
 
   it('in a clone: the commands that update it, no Update now', async () => {
     stubServer(server({ updates: status({ mode: 'clone', canInstall: false, reason: 'This Studio runs from a clone of the repository.', command: 'git pull\npnpm install\npnpm build' }) }))
-    render(<UpdateNotice />)
-    const line = await screen.findByTestId('update-notice')
-    expect(within(line).queryByRole('button', { name: 'Update now' })).toBeNull()
-    expect(within(line).getByRole('button', { name: 'Later' })).toBeInTheDocument()
-    expect(line.textContent).not.toContain('git pull')
-    fireEvent.click(within(line).getByRole('button', { name: /^What's new/ }))
-    const box = await screen.findByRole('dialog')
+    render(<StatusFooter />)
+    const box = await openDetails()
     expect(box.textContent).toContain('git pull\npnpm install\npnpm build')
     expect(within(box).getByText('pnpm start')).toBeInTheDocument()
     expect(within(box).queryByRole('button', { name: 'Update now' })).toBeNull()
@@ -161,11 +163,8 @@ describe('the update notice', () => {
       command: 'sudo dnf upgrade --refresh activate-studio', commandNote: note,
       package: { kind: 'rpm', manager: 'dnf', name: 'activate-studio' },
     }) }))
-    render(<UpdateNotice />)
-    const line = await screen.findByTestId('update-notice')
-    expect(within(line).queryByRole('button', { name: 'Update now' })).toBeNull()
-    fireEvent.click(within(line).getByRole('button', { name: /^What's new/ }))
-    const box = await screen.findByRole('dialog')
+    render(<StatusFooter />)
+    const box = await openDetails()
     expect(within(box).getByText(note)).toBeInTheDocument()
     expect(box.textContent).toContain('sudo dnf upgrade --refresh activate-studio')
     expect(box.textContent).not.toContain('pnpm')
@@ -175,90 +174,48 @@ describe('the update notice', () => {
   it('an app that cannot install says why, with the release page', async () => {
     const reason = 'The folder holding the app is not writable, so the app cannot replace itself.'
     stubServer(server({ updates: status({ mode: 'clone', canInstall: false, reason, command: null }) }))
-    render(<UpdateNotice />)
-    fireEvent.click(within(await screen.findByTestId('update-notice')).getByRole('button', { name: /^What's new/ }))
-    const box = await screen.findByRole('dialog')
+    render(<StatusFooter />)
+    const box = await openDetails()
     expect(within(box).getByText(reason)).toBeInTheDocument()
     expect(within(box).queryByText(/git pull/)).toBeNull()
     expect(within(box).getByRole('link', { name: 'Release page' })).toHaveAttribute('href', 'https://example.org/releases/v1.142')
   })
 
-  it('never shows on a hosted deployment, refused or reported, nor with nothing newer', async () => {
+  it('a hosted deployment, refused or reported, shows none of it, expanded or on the rail', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.139')
     for (const s of [
       server({ code: 403 }),
-      server({ updates: status({ mode: 'hosted', available: false, latest: null, releases: [] }) }),
-      server({ updates: status({ available: false, releases: [] }) }),
+      server({ updates: status({ mode: 'hosted', reopen: true }) }),
     ]) {
-      stubServer(s)
-      const { unmount } = render(<UpdateNotice />)
-      await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates')).toBe(true))
-      await settle()
-      expect(notice()).toBeNull()
-      unmount()
-      vi.unstubAllGlobals()
+      for (const collapsed of [false, true]) {
+        stubServer(s)
+        const { unmount } = render(<StatusFooter collapsed={collapsed} />)
+        await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates')).toBe(true))
+        if (!collapsed) await screen.findByText('v1.140')
+        await settle()
+        expect(screen.queryByRole('button', { name: /update available|updating|update failed|what's new|check for updates|is available|Reopen/i })).toBeNull()
+        expect(screen.queryByTestId('footer-reopen')).toBeNull()
+        unmount()
+        vi.unstubAllGlobals()
+      }
     }
-  })
-
-  it('Later hides it for that version for a day, in this browser; a newer version shows it again', async () => {
-    const s = server()
-    stubServer(s)
-    const first = render(<UpdateNotice />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Later' }))
-    expect(notice()).toBeNull()
-    const stored = JSON.parse(localStorage.getItem('ade-update-later')!)
-    expect(stored.version).toBe('v1.142')
-    expect(stored.until - Date.now()).toBeGreaterThan(LATER_MS - 60_000)
-    first.unmount()
-
-    // Opened again the same day: still hidden for v1.142.
-    const again = render(<UpdateNotice />)
-    await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(2))
-    await settle()
-    expect(notice()).toBeNull()
-    again.unmount()
-
-    // v1.143 comes out.
-    s.updates = status({
-      latest: { version: 'v1.143', publishedAt: '2026-10-22T12:00:00Z', notes: '', url: 'https://example.org/releases/v1.143' },
-      releases: [{ version: 'v1.143', publishedAt: '2026-10-22T12:00:00Z', url: 'https://example.org/releases/v1.143', entries: [{ title: 'Chat: a newer change', pr: 510, body: 'Newer.' }] }, ...RELEASES],
-    })
-    render(<UpdateNotice />)
-    expect(await screen.findByText('Version v1.143 is available')).toBeInTheDocument()
-    fireEvent.click(within(notice()!).getByRole('button', { name: "What's new (4)" }))
-    expect(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Chat: a newer change' })).toBeInTheDocument()
-  })
-
-  it('a Later from the day before, an older version, or an earlier Studio no longer hides it', async () => {
-    for (const later of [
-      JSON.stringify({ version: 'v1.142', until: Date.now() - 1000 }),
-      JSON.stringify({ version: 'v1.141', until: Date.now() + LATER_MS }),
-      // Stored by a Studio whose Later lasted until the next version.
-      'v1.142',
-    ]) {
-      localStorage.setItem('ade-update-later', later)
-      stubServer(server())
-      const { unmount } = render(<UpdateNotice />)
-      expect(await screen.findByText('Version v1.142 is available')).toBeInTheDocument()
-      unmount()
-      vi.unstubAllGlobals()
-    }
+    expect(localStorage.getItem(SEEN_KEY)).toBe('v1.139')
   })
 
   it('reads the status again when the window is shown or focused, and follows a check the server runs', async () => {
     setUpdateFlowOptions({ focusGapMs: 0, checkingMs: 5 })
     const s = server({ updates: status({ available: false, latest: null, releases: [] }) })
     stubServer(s)
-    render(<UpdateNotice />)
-    await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(1))
-    await settle()
-    expect(notice()).toBeNull()
+    render(<StatusFooter />)
+    await action('check for updates')
+    expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(1)
     // While the window was hidden, the server's check became due: the read on
     // focus starts it, and the page reads again until it ends.
     s.updates = status({ state: 'checking', available: false, latest: null, releases: [] })
     act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(2))
     s.updates = status()
-    expect(await screen.findByText('Version v1.142 is available')).toBeInTheDocument()
+    await action('update available')
     const reads = s.calls.filter(c => c.url === '/api/updates').length
     act(() => { document.dispatchEvent(new Event('visibilitychange')) })
     await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(reads + 1))
@@ -267,13 +224,13 @@ describe('the update notice', () => {
   it('the app menu\'s Check for Updates event runs a check', async () => {
     const s = server()
     stubServer(s)
-    render(<UpdateNotice />)
-    await screen.findByText('Version v1.142 is available')
+    render(<StatusFooter />)
+    await action('update available')
     act(() => { window.dispatchEvent(new Event(CHECK_EVENT)) })
     await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates/check' && c.method === 'POST')).toBe(true))
   })
 
-  it('Update now shows the install\'s progress in place of the buttons, then the restart, then reloads', async () => {
+  it('Update now in the details: the footer reads "updating…" and the Build panel opens on the progress, then the restart, then the reload', async () => {
     const s = server({
       onPost: (url, srv) => {
         if (url === '/api/updates/install') srv.updates = status({ state: 'downloading', progress: { bytes: 0, total: 2048 } })
@@ -281,18 +238,23 @@ describe('the update notice', () => {
     })
     stubServer(s)
     const reload = vi.fn()
-    render(<UpdateNotice pollMs={5} reload={reload} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Update now' }))
-    expect(await screen.findByText('Updating to version v1.142')).toBeInTheDocument()
-    expect(within(notice()!).getByRole('progressbar')).toBeInTheDocument()
-    expect(within(notice()!).queryByRole('button', { name: 'Update now' })).toBeNull()
-    expect(within(notice()!).queryByRole('button', { name: 'Later' })).toBeNull()
+    setUpdateFlowOptions({ pollMs: 5, reload })
+    render(<StatusFooter />)
+    const box = await openDetails()
+    fireEvent.click(within(box).getByRole('button', { name: 'Update now' }))
+    await action('updating…')
+    expect(screen.queryByRole('button', { name: 'update available' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Version v1.142' })).toBeNull()
+    const panel = await screen.findByTestId('build-updates')
+    expect(await within(panel).findByRole('progressbar')).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Update now' })).toBeNull()
     s.updates = status({ state: 'downloading', progress: { bytes: 1024, total: 2048 } })
-    expect(await screen.findByText('1 KB of 2 KB')).toBeInTheDocument()
+    expect(await within(panel).findByText('1 KB of 2 KB')).toBeInTheDocument()
     s.updates = status({ state: 'installing' })
-    expect(await screen.findByText('Installing version v1.142')).toBeInTheDocument()
+    expect(await within(panel).findByText('Installing version v1.142')).toBeInTheDocument()
     s.code = 0
-    expect(await screen.findByText('Restarting…')).toBeInTheDocument()
+    expect(await within(panel).findByText('Restarting…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'updating…' })).toBeInTheDocument()
     s.version = 'v1.142'
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
     expect(s.calls.filter(c => c.url === '/api/updates/install').length).toBe(1)
@@ -300,14 +262,14 @@ describe('the update notice', () => {
     expect(sessionStorage.getItem(REOPEN_KEY)).toBe('v1.142')
   })
 
-  it('an install started from Settings, or a deferred version being installed, shows its progress too', async () => {
-    localStorage.setItem('ade-update-later', JSON.stringify({ version: 'v1.142', until: Date.now() + LATER_MS }))
+  it('an install started from Settings, or by the server, reads "updating…" too, and "updating…" opens the progress', async () => {
+    setUpdateFlowOptions({ pollMs: 5 })
     const s = server({ updates: status({ state: 'verifying' }) })
     stubServer(s)
     const intervals = vi.spyOn(window, 'setInterval')
-    render(<><UpdateNotice pollMs={5} /><UpdatesSection pollMs={5} /></>)
-    expect(await screen.findByText('Updating to version v1.142')).toBeInTheDocument()
-    expect(within(notice()!).getByText("Checking the download's signature and checksum")).toBeInTheDocument()
+    render(<><StatusFooter /><UpdatesSection /></>)
+    fireEvent.click(await action('updating…'))
+    expect(within(await screen.findByTestId('build-updates')).getByText("Checking the download's signature and checksum")).toBeInTheDocument()
     // One page, one follower: the two do not each poll. Counted by the
     // timers at the poll interval, which a slow runner cannot change.
     const before = s.calls.filter(c => c.url === '/api/updates').length
@@ -315,6 +277,55 @@ describe('the update notice', () => {
     expect(s.calls.filter(c => c.url === '/api/updates').length - before).toBeGreaterThan(2)
     expect(intervals.mock.calls.filter(([, ms]) => ms === 5)).toHaveLength(1)
     intervals.mockRestore()
+  })
+
+  it('an install that fails reads "update failed", and the Build panel says why; a failed check does not', async () => {
+    setUpdateFlowOptions({ pollMs: 5 })
+    const why = 'The update failed: the download did not match its checksum.'
+    const s = server({ updates: status({ state: 'downloading', progress: { bytes: 10, total: 2048 } }) })
+    stubServer(s)
+    const first = render(<StatusFooter />)
+    await action('updating…')
+    s.updates = status({ state: 'error', error: why })
+    fireEvent.click(await action('update failed'))
+    expect(within(await screen.findByTestId('build-updates')).getByRole('alert').textContent).toBe(why)
+    expect(screen.queryByRole('button', { name: 'updating…' })).toBeNull()
+    first.unmount()
+    vi.unstubAllGlobals()
+
+    // The install request itself refused.
+    const refused = server()
+    stubServer(refused)
+    const second = render(<StatusFooter />)
+    fireEvent.click(await action('update available'))
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => String(input) === '/api/updates/install'
+      ? reply({ error: 'Another update is under way.' }, 409)
+      : reply(refused.updates)))
+    fireEvent.click(within(await screen.findByTestId('build-updates')).getByRole('button', { name: 'Update now' }))
+    await action('update failed')
+    expect(screen.getByRole('alert').textContent).toBe('Another update is under way.')
+    second.unmount()
+    vi.unstubAllGlobals()
+
+    stubServer(server({ updates: status({ state: 'error', error: 'The check for updates failed: GitHub answered HTTP 500.' }) }))
+    render(<StatusFooter />)
+    await action('update available')
+    await settle()
+    expect(screen.queryByRole('button', { name: 'update failed' })).toBeNull()
+  })
+
+  it('on the collapsed rail: a dot for a newer version, an install, and a failed one', async () => {
+    setUpdateFlowOptions({ pollMs: 5 })
+    const s = server()
+    stubServer(s)
+    render(<StatusFooter collapsed />)
+    await action('Version v1.142 is available')
+    s.updates = status({ state: 'installing' })
+    act(() => { window.dispatchEvent(new Event(CHECK_EVENT)) })
+    await action('Updating')
+    s.updates = status({ state: 'error', error: 'The update failed: no room on the disk.' })
+    fireEvent.click(await action('The update failed'))
+    expect(location.hash).toBe('#view=settings:updates')
   })
 })
 
@@ -360,57 +371,44 @@ describe("What's new", () => {
 })
 
 describe('after an update', () => {
-  it('the first visit only records the version; a newer one is announced once, with the changes since', async () => {
+  const link = () => screen.queryByRole('button', { name: "what's new" })
+
+  it('the first visit only records the version; a newer one shows "what\'s new" beside the version until it is opened, once', async () => {
     const s = server({ version: 'v1.140', updates: status({ current: { version: 'v1.140', builtAt: null }, available: false, latest: null, releases: [] }) })
     stubServer(s)
-    const first = render(<UpdatedNotice />)
+    const first = render(<StatusFooter />)
     await waitFor(() => expect(localStorage.getItem(SEEN_KEY)).toBe('v1.140'))
-    await settle()
-    expect(screen.queryByTestId('updated-notice')).toBeNull()
-    expect(s.calls.some(c => c.url.startsWith('/api/changelog'))).toBe(false)
+    await action('check for updates')
+    expect(link()).toBeNull()
     first.unmount()
 
     // Updated to v1.142.
+    s.version = 'v1.142'
     s.updates = status({ current: { version: 'v1.142', builtAt: null }, available: false, latest: null, releases: [] })
-    const second = render(<UpdatedNotice />)
-    const box = await screen.findByTestId('updated-notice')
-    expect(within(box).getByText('Updated to v1.142')).toBeInTheDocument()
-    // One line: how many changes came since v1.140, listed on What's new.
-    expect(box.textContent).toContain('3 changes since you last opened it')
-    expect(within(box).queryByRole('listitem')).toBeNull()
-    expect(s.calls.find(c => c.url.startsWith('/api/changelog'))?.url).toBe('/api/changelog?after=v1.140')
-    expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
-    fireEvent.click(within(box).getByRole('button', { name: "What's new" }))
+    const second = render(<StatusFooter />)
+    fireEvent.click(await action("what's new"))
     expect(location.hash).toBe('#view=help:whats-new')
-    expect(screen.queryByTestId('updated-notice')).toBeNull()
+    expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
+    expect(link()).toBeNull()
+    // The line's own action is back.
+    expect(screen.getByRole('button', { name: 'check for updates' })).toBeInTheDocument()
     second.unmount()
 
     // Once only.
-    render(<UpdatedNotice />)
-    await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(3))
+    render(<StatusFooter />)
+    await action('check for updates')
     await settle()
-    expect(screen.queryByTestId('updated-notice')).toBeNull()
+    expect(link()).toBeNull()
   })
 
-  it('dismisses, and a hosted deployment neither shows it nor records anything', async () => {
-    localStorage.setItem(SEEN_KEY, 'v1.141')
-    stubServer(server({ updates: status({ current: { version: 'v1.142', builtAt: null }, available: false, latest: null, releases: [] }) }))
-    const one = render(<UpdatedNotice />)
-    const box = await screen.findByTestId('updated-notice')
-    fireEvent.click(within(box).getByRole('button', { name: /dismiss/i }))
-    expect(screen.queryByTestId('updated-notice')).toBeNull()
-    one.unmount()
-    vi.unstubAllGlobals()
-
-    localStorage.setItem(SEEN_KEY, 'v1.141')
-    const hosted = server({ code: 403 })
-    stubServer(hosted)
-    render(<UpdatedNotice />)
-    await waitFor(() => expect(hosted.calls.some(c => c.url === '/api/updates')).toBe(true))
+  it('gives way to "update available" when a newer version is already out', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.139')
+    stubServer(server())
+    render(<StatusFooter />)
+    await action('update available')
     await settle()
-    expect(screen.queryByTestId('updated-notice')).toBeNull()
-    expect(localStorage.getItem(SEEN_KEY)).toBe('v1.141')
-    expect(hosted.calls.some(c => c.url.startsWith('/api/changelog'))).toBe(false)
+    expect(link()).toBeNull()
+    expect(localStorage.getItem(SEEN_KEY)).toBe('v1.140')
   })
 })
 
@@ -426,33 +424,39 @@ describe('Settings, Updates', () => {
 
 describe('after an update that changed the app\'s window', () => {
   const updated = () => status({ current: { version: 'v1.142', builtAt: null }, available: false, latest: null, releases: [], reopen: true })
+  const line = () => screen.queryByTestId('footer-reopen')
 
-  it('after an install the person started, the app reopens on its own, and the reopened window announces the version', async () => {
+  it('after an install the person started, the app reopens on its own, and the reopened window is the one that says it updated', async () => {
     localStorage.setItem(SEEN_KEY, 'v1.140')
     sessionStorage.setItem(REOPEN_KEY, 'v1.142')
-    stubServer(server({ updates: updated() }))
+    stubServer(server({ version: 'v1.142', updates: updated() }))
     const post = appWindow(async () => true)
-    render(<UpdatedNotice />)
+    render(<StatusFooter />)
     await waitFor(() => expect(post).toHaveBeenCalledWith({ action: 'relaunch' }))
+    await screen.findByText('v1.142')
     await settle()
-    expect(screen.queryByTestId('updated-notice')).toBeNull()
+    expect(line()).toBeNull()
+    expect(screen.queryByRole('button', { name: "what's new" })).toBeNull()
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.140')
     expect(sessionStorage.getItem(REOPEN_KEY)).toBeNull()
   })
 
-  it('otherwise the line offers Reopen now, and a window that cannot reopen gets the words', async () => {
+  it('otherwise a footer line offers Reopen now, and a window that cannot reopen keeps the words', async () => {
     localStorage.setItem(SEEN_KEY, 'v1.140')
-    stubServer(server({ updates: updated() }))
+    stubServer(server({ version: 'v1.142', updates: updated() }))
     // A window from before the app could reopen itself.
     const post = appWindow(async () => { throw new Error('unknown request relaunch') })
-    render(<UpdatedNotice />)
-    const box = await screen.findByTestId('updated-notice')
+    render(<StatusFooter />)
+    const reopen = await screen.findByTestId('footer-reopen')
     expect(post).not.toHaveBeenCalled()
-    expect(box.textContent).toContain("the app's window updates when the app reopens")
-    fireEvent.click(within(box).getByRole('button', { name: 'Reopen now' }))
-    expect(await within(box).findByText('Quit and reopen ACTIVATE Studio to finish.')).toBeInTheDocument()
-    expect(post).toHaveBeenCalledWith({ action: 'relaunch' })
+    expect(reopen.textContent).toContain('Reopen to finish updating')
+    expect(screen.getByRole('button', { name: "what's new" })).toBeInTheDocument()
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
+    fireEvent.click(within(reopen).getByRole('button', { name: 'Reopen now' }))
+    await waitFor(() => expect(within(reopen).queryByRole('button', { name: 'Reopen now' })).toBeNull())
+    expect(post).toHaveBeenCalledWith({ action: 'relaunch' })
+    expect(reopen.textContent).toContain('Reopen to finish updating')
+    expect(reopen.title).toContain('Quit and reopen the app to finish.')
   })
 
   it('clears Reopen now once the server says the window runs the new copy, without a reload', async () => {
@@ -470,68 +474,53 @@ describe('after an update that changed the app\'s window', () => {
     expect(screen.queryByText(/updates when the app reopens/)).toBeNull()
   })
 
-  it('the reopened window announces the version with no Reopen now', async () => {
+  it('the reopened window offers what\'s new with no reopen line', async () => {
     localStorage.setItem(SEEN_KEY, 'v1.140')
-    stubServer(server({ updates: { ...updated(), reopen: false } }))
+    stubServer(server({ version: 'v1.142', updates: { ...updated(), reopen: false } }))
     appWindow(async () => true)
-    render(<UpdatedNotice />)
-    const box = await screen.findByTestId('updated-notice')
-    expect(box.textContent).toContain('Updated to v1.142')
-    expect(box.textContent).not.toContain('reopens')
-    expect(within(box).queryByRole('button', { name: 'Reopen now' })).toBeNull()
+    render(<StatusFooter />)
+    await action("what's new")
+    expect(line()).toBeNull()
   })
 
-  it('until the app reopens, every page load offers Reopen now again, after the announcement is dismissed or already seen', async () => {
-    localStorage.setItem(SEEN_KEY, 'v1.140')
-    const s = server({ updates: updated() })
+  it('until the app reopens, every page load has the line again, expanded and as a dot on the rail', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.142')
+    const s = server({ version: 'v1.142', updates: updated() })
     stubServer(s)
     const post = appWindow(async () => true)
-    const first = render(<UpdatedNotice />)
-    const box = await screen.findByTestId('updated-notice')
-    // One line at a time: the announcement carries Reopen now itself.
-    expect(screen.queryByTestId('reopen-notice')).toBeNull()
-    fireEvent.click(within(box).getByRole('button', { name: /dismiss/i }))
-    await settle()
-    expect(screen.queryByTestId('updated-notice')).toBeNull()
-    expect(screen.queryByTestId('reopen-notice')).toBeNull()
+    const first = render(<StatusFooter />)
+    await screen.findByTestId('footer-reopen')
     first.unmount()
 
-    // The page loads again: the version was seen, the window still runs the
-    // old copy.
-    const second = render(<UpdatedNotice />)
-    const line = await screen.findByTestId('reopen-notice')
-    expect(screen.queryByTestId('updated-notice')).toBeNull()
-    expect(within(line).getByText('Reopen to finish updating to v1.142')).toBeInTheDocument()
-    // Dismissed, it stays hidden on this page.
-    fireEvent.click(within(line).getByRole('button', { name: /dismiss/i }))
-    expect(screen.queryByTestId('reopen-notice')).toBeNull()
-    second.unmount()
+    const rail = render(<StatusFooter collapsed />)
+    fireEvent.click(await action('Reopen to finish updating'))
+    expect(location.hash).toBe('#view=settings:updates')
+    rail.unmount()
 
-    render(<UpdatedNotice />)
-    fireEvent.click(within(await screen.findByTestId('reopen-notice')).getByRole('button', { name: 'Reopen now' }))
+    render(<StatusFooter />)
+    fireEvent.click(within(await screen.findByTestId('footer-reopen')).getByRole('button', { name: 'Reopen now' }))
     await waitFor(() => expect(post).toHaveBeenCalledWith({ action: 'relaunch' }))
   })
 
-  it('the reminder goes once the server says the window runs the new copy, and never shows on a hosted deployment', async () => {
+  it('a release that waits for the app to reopen has the line, and no "updating…"', async () => {
+    stubServer(server({ updates: status({ state: 'relaunch', available: false, reopen: true }) }))
+    appWindow(async () => true)
+    render(<StatusFooter />)
+    expect(within(await screen.findByTestId('footer-reopen')).getByRole('button', { name: 'Reopen now' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'updating…' })).toBeNull()
+  })
+
+  it('the line goes once the server says the window runs the new copy', async () => {
     setUpdateFlowOptions({ focusGapMs: 0 })
     localStorage.setItem(SEEN_KEY, 'v1.142')
-    const s = server({ updates: updated() })
+    const s = server({ version: 'v1.142', updates: updated() })
     stubServer(s)
     appWindow(async () => true)
-    const one = render(<UpdatedNotice />)
-    await screen.findByTestId('reopen-notice')
+    render(<StatusFooter />)
+    await screen.findByTestId('footer-reopen')
     s.updates = { ...updated(), reopen: false }
     act(() => { window.dispatchEvent(new Event('focus')) })
-    await waitFor(() => expect(screen.queryByTestId('reopen-notice')).toBeNull())
-    one.unmount()
-    vi.unstubAllGlobals()
-
-    const hosted = server({ updates: { ...updated(), mode: 'hosted' } })
-    stubServer(hosted)
-    render(<UpdatedNotice />)
-    await waitFor(() => expect(hosted.calls.some(c => c.url === '/api/updates')).toBe(true))
-    await settle()
-    expect(screen.queryByTestId('reopen-notice')).toBeNull()
+    await waitFor(() => expect(line()).toBeNull())
   })
 
   it('Settings, Updates asks the window to reopen', async () => {
