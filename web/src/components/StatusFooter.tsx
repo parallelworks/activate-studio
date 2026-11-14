@@ -9,6 +9,9 @@ import { IndexJobView, IndexLogButton, IndexLogHost, jobOutcome } from './IndexA
 import type { LibraryStats } from '../api'
 import { openAbout, openUpdates, openWhatsNew } from '../api'
 import { underWay, updateActions, useUpdateFlow, type UpdateFlow } from '../updateFlow'
+import { useAfterUpdate } from '../afterUpdate'
+import { ReopenApp } from './ReopenApp'
+import { changeCount, UpdateDetails } from './UpdateDetails'
 import { UpdateProgress } from './UpdatesSection'
 import { share, syncIndex, type AiHealth } from '../statusShare'
 import { aiOn, useAppConfig } from '../config'
@@ -165,9 +168,10 @@ const BUILD_SOURCE: Record<Build['source'], string> = {
 }
 
 /** The Build panel's updates: up to date or a newer version, with Check now,
- *  and Update now (the app) or the commands (a clone). Not for a hosted
- *  deployment, which its operator updates. */
-function BuildUpdates({ flow }: { flow: UpdateFlow }) {
+ *  What's new, and Update now (the app) or the commands (a clone); an
+ *  install under way shows its progress. Not for a hosted deployment, which
+ *  its operator updates. */
+function BuildUpdates({ flow, onDetails }: { flow: UpdateFlow; onDetails: () => void }) {
   const { status } = flow
   if (flow.none || !status) return null
   const checking = flow.busy === 'check' || status.state === 'checking'
@@ -190,6 +194,9 @@ function BuildUpdates({ flow }: { flow: UpdateFlow }) {
             {status.mode === 'app' && status.canInstall && (
               <Button variant="primary" size="sm" disabled={!!flow.busy} loading={flow.busy === 'install'} onClick={() => void updateActions.install()}>Update now</Button>
             )}
+            <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={onDetails}>
+              What's new{changeCount(status) ? ` (${changeCount(status)})` : ''}
+            </PopoverClose>
             <PopoverClose render={<Button variant="secondary" size="sm" />} onClick={openUpdates}>Changes</PopoverClose>
             {check}
           </div>
@@ -228,10 +235,16 @@ function BuildPanel({ trigger, build, flow, open, onOpenChange }: {
     ['Server started', new Date(build.startedAt).toLocaleString()],
     ['Source', app && build.source === 'bundle' ? 'stamped when the app was built' : BUILD_SOURCE[build.source]],
   ]
+  // What the newer versions bring, in a dialog over the page. Update now in
+  // it opens the panel again, which shows the install's progress.
+  const [details, setDetails] = useState(false)
+  const install = () => { setDetails(false); onOpenChange?.(true); void updateActions.install() }
   return (
+    <>
+    {details && <UpdateDetails flow={flow} onClose={() => setDetails(false)} onInstall={install} />}
     <FooterPanel trigger={trigger} title="Build" open={open} onOpenChange={onOpenChange}>
       <DetailRows rows={rows} />
-      <BuildUpdates flow={flow} />
+      <BuildUpdates flow={flow} onDetails={() => setDetails(true)} />
       {hosted && (
         <p className="identity-note">
           Compare this against the release you deployed. A redeploy that did not take leaves
@@ -248,6 +261,7 @@ function BuildPanel({ trigger, build, flow, open, onOpenChange }: {
         </span>
       </div>
     </FooterPanel>
+    </>
   )
 }
 
@@ -415,12 +429,22 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
 
   // A newer release the Studio can tell about. The version line says so,
   // and the Build panel it opens has Update now; with none known, the line
-  // offers a check. The page's update flow reads the server's answer every
-  // two minutes and when the window is shown (the server checks every 15
-  // minutes); a hosted deployment has no updates and shows neither.
+  // offers a check. An install under way, and one that failed, show in the
+  // same place, and the panel has the progress or the error. The page's
+  // update flow reads the server's answer every two minutes and when the
+  // window is shown (the server checks every 15 minutes); a hosted
+  // deployment has no updates and shows none of this.
   const flow = useUpdateFlow()
   const updates = !flow.none && !!flow.status && flow.status.mode !== 'hosted'
   const update = updates && flow.status?.available && flow.status.latest ? flow.status.latest.version : null
+  const timedOut = !!flow.waiting?.timedOut
+  const failed = updates && (timedOut || (flow.failed && !!(flow.error || flow.status?.state === 'error')))
+  // Waiting for the app to reopen is the reopen line's to say.
+  const installing = updates && !timedOut && underWay(flow) && flow.status?.state !== 'relaunch'
+  // After an update: What's new beside the version for this page load, where
+  // the line has nothing about a newer version to say, and a line while the
+  // app's window waits to reopen.
+  const after = useAfterUpdate(flow)
   const [buildOpen, setBuildOpen] = useState(false)
   // What a check from the line found, shown for a few seconds.
   const [checked, setChecked] = useState<'up to date' | 'check failed' | null>(null)
@@ -446,13 +470,20 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
 
   const busy = syncing || !!idx?.running
   const summary = indexSummary(idx, stats?.files)
+  const railUpdate = failed ? 'The update failed' : installing ? 'Updating' : `Version ${update} is available`
   if (collapsed) {
     return (
       <div className="sidenav-footer">
-        {update && (
-          <button className="status-line footer-rail-update" title={`Version ${update} is available. Opens Settings, Updates.`}
-            aria-label={`Version ${update} is available`} onClick={openUpdates}>
-            <StatusDot variant="info" size={7} />
+        {after.reopen && (
+          <button className="status-line footer-rail-update" title="Reopen the app to finish updating. Opens Settings, Updates."
+            aria-label="Reopen to finish updating" onClick={openUpdates}>
+            <StatusDot variant="warning" size={7} />
+          </button>
+        )}
+        {(update || installing || failed) && (
+          <button className="status-line footer-rail-update" title={`${railUpdate}. Opens Settings, Updates.`}
+            aria-label={railUpdate} onClick={openUpdates}>
+            <StatusDot variant={failed ? 'warning' : 'info'} pulse={installing} size={7} />
           </button>
         )}
         <div className="status-line" title={`${summary.text}${summary.detail ? `: ${summary.detail}` : ''}, sync ${ago(idx?.lastSweepAt ?? null)}`}>
@@ -507,6 +538,13 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           <Button variant="secondary" size="xs" onClick={() => location.reload()}>Reload</Button>
         </div>
       )}
+      {after.reopen && (
+        <div className="status-line" data-testid="footer-reopen" title="The update changed the app's window, which updates when the app reopens. Quit and reopen the app to finish.">
+          <StatusDot variant="warning" size={7} />
+          Reopen to finish updating
+          <ReopenApp compact />
+        </div>
+      )}
       {build && (
         <div className="status-line" title="Click for build details">
           <BuildPanel
@@ -521,10 +559,25 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
               </button>
             }
           />
-          {update ? (
+          {installing ? (
+            <Button variant="ghost" size="xs" className="footer-sync footer-update" title="An update is being installed. Opens the Build panel, with its progress."
+              onClick={() => setBuildOpen(true)}>
+              updating…
+            </Button>
+          ) : failed ? (
+            <Button variant="ghost" size="xs" className="footer-sync footer-update" title="The update was not installed. Opens the Build panel, which says why."
+              onClick={() => setBuildOpen(true)}>
+              update failed
+            </Button>
+          ) : update ? (
             <Button variant="ghost" size="xs" className="footer-sync footer-update" title={`Version ${update} is available. Opens the Build panel, with Update now.`}
               onClick={() => setBuildOpen(true)}>
               update available
+            </Button>
+          ) : after.updated ? (
+            <Button variant="ghost" size="xs" className="footer-sync" title="This version is newer than the one last opened here. Opens What's new."
+              onClick={() => { after.clear(); openWhatsNew() }}>
+              what's new
             </Button>
           ) : updates ? (
             <Button variant="ghost" size="xs" className="footer-sync" title={checked === 'check failed' && flow.error ? flow.error : 'Check for a newer version now'}

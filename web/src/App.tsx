@@ -21,8 +21,6 @@ import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { SetupWizard } from './views/SetupWizard'
 import { StatusFooter } from './components/StatusFooter'
-import { UpdateNotice } from './components/UpdateNotice'
-import { UpdatedNotice } from './components/UpdatedNotice'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
 import { aiPagesMounted, applyNavWidth, sectionAllowed, shownView, useAppConfig } from './config'
 import { NavResize } from './components/NavResize'
@@ -600,10 +598,6 @@ export default function App() {
       </nav>
       {!navCollapsed && <NavResize width={cfg.navWidth} />}
       <main className="content">
-        {/* Above every page: a newer version to install, and once after an
-            update, what it brought. */}
-        <UpdatedNotice />
-        <UpdateNotice />
         {view in PAGE_NOTES && (
           <header className="page-head">
             <h1>{NAV.find(n => n.id === view)?.label}</h1>

@@ -11,7 +11,7 @@ package main
 //
 //	checks         the Studio drew (its app replaced the loading placeholder), the
 //	               bridge answers, an index build finds a search term
-//	relaunch       the page asks the shell to relaunch, as UpdatedNotice does after
+//	relaunch       the page asks the shell to relaunch, as the footer does after
 //	               an update; the shell restarts the server and reloads the page
 //	afterRelaunch  the page drew again from the restarted server
 //	move           the page saves another port (Settings, Server): the server exits 75

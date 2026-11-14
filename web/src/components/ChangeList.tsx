@@ -35,8 +35,8 @@ function Entry({ entry }: { entry: ChangeEntry }) {
 
 /**
  * Versions newest first, each with the titles of its changes; a title opens
- * the change's description, rendered as markdown. The update notice,
- * Settings, Updates and What's new all list changes this way.
+ * the change's description, rendered as markdown. The footer's update
+ * details, Settings, Updates and What's new all list changes this way.
  */
 export function ChangeList({ versions, headingLevel = 3 }: { versions: ChangeGroup[]; headingLevel?: 2 | 3 | 4 }) {
   const H = `h${headingLevel}` as 'h2' | 'h3' | 'h4'

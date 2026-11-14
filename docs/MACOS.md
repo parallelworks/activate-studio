@@ -158,17 +158,16 @@ machines.
 *Updates:* the app checks this repository's releases a minute after it
 starts, then once 15 minutes have passed by the clock, which counts time
 the Mac was asleep; the server looks every two minutes, and when the
-window asks for the status. A one-line notice at the top of
-every page, and Settings, General, Updates, show the newest release, with
-the changes in every version newer than the one running (the notice's
-What's new), and Update now; Later hides the notice
-for a day, or until a newer version is out. The page reads the status
+window asks for the status. The footer's version line says update
+available, and its Build panel and Settings, General, Updates show the
+newest release, with the changes in every version newer than the one
+running (the panel's What's new), and Update now. The page reads the status
 every two minutes and when its window is shown, so a version the server
 found appears within seconds of opening the window. Check for Updates in
 the app menu, Check now in the footer's Build panel and check for updates
 beside the footer's version all check at once. It takes the newest release that carries
 the signed app. Not every release does: the macOS build runs only for the
-releases it is asked for, so the app skips the others and the notice lists
+releases it is asked for, so the app skips the others and What's new lists
 their changes with the next one it can install. While a release published
 in the last two hours has no app yet, it checks again after 5 minutes. The download
 goes to `~/Library/Application Support/ACTIVATE Studio/updates` and is
@@ -183,7 +182,7 @@ reloaded page lists, once, what the new version changed. The window is
 part of the old copy until the app opens again, so if the update changed
 it (the title bar, the Dock icon), the app reopens: on its own after an
 update the person started with **Update now** or **Roll back**, and from
-**Reopen now** in the notice or in Settings after one installed
+**Reopen now** in the footer or in Settings after one installed
 automatically. The updater also has LaunchServices look at the new copy
 (`lsregister -f`), so Finder and the Dock show its icon.
 Settings can also turn the checks off, choose the Stable or Preview channel, install a chosen version, older ones included, or install
