@@ -1346,7 +1346,7 @@
     "delegate",
     "task_status"
    ],
-   "cue": "\\b(agents?|delegat|pw ?code|subtasks?|steer|in parallel)"
+   "cue": "\\b(agents?|delegat|pw[ -]?code|cod(e|ing) sessions?|subtasks?|steer|in parallel)"
   },
   "editing": {
    "summary": "writing and editing files in the knowledge base (a report as Markdown, PDF and Word), moving, renaming, copying and deleting them (deletes are approved by the user), and suggesting or applying labels",
