@@ -402,7 +402,7 @@ func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx)
 		res += " These images were not embedded, and their alt text stands in their place: " + strings.Join(missing, "; ") + "."
 	}
 	if len(problems) > 0 {
-		res += " Not applied: " + strings.Join(problems, "; ") + "."
+		res += " Made with these problems: " + strings.Join(problems, "; ") + "."
 	}
 	if len(links) > 1 {
 		res += " Links: " + strings.Join(links, " ")

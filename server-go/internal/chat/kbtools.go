@@ -205,7 +205,7 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 		show = "These images were not embedded, and their alt text stands in their place: " + strings.Join(missing, "; ") + ". Give each as a path in the library (relative to this file's folder, or from the library's top) and write the file again with overwrite=true. " + show
 	}
 	if len(problems) > 0 {
-		show = "These front matter options were not applied, and their defaults stood: " + strings.Join(problems, "; ") + ". Correct them and write the file again with overwrite=true. " + show
+		show = "The document was made with these problems: " + strings.Join(problems, "; ") + ". A front matter option that was not understood kept its default. Correct the text or the options and make the document again (edit_kb_file on its Markdown, or this call again with overwrite=true), and tell the user of any that stand. " + show
 	}
 	return &Outcome{
 		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show,
