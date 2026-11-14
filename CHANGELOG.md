@@ -2,6 +2,102 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.200 (2026-11-14)
+
+### Reports: written once, edited in place; agent status looked at again (#692)
+
+Writing a report from the chat sent the whole document once per format, and again in full for every correction. This change has the report written once and edited in place.
+
+**Reports**
+- `write_kb_file` takes `also` (pdf, docx, or both) with a Markdown path: the documents are made beside it under its name in the same call.
+- `write_kb_file` takes `source` in place of `content`: a PDF, Word or Excel file made from a text file already in the library.
+- New tool `edit_kb_file`: find and replace edits (exact, then line-ending and spacing tolerant; all or nothing) or an append, on any text file in the library. Documents made from the file are made again; one that has been replaced or changed since it was made is left alone and named in the result.
+- The record of which document was made from which file is kept beside the index (`made-documents.json`).
+
+**Chat loop**
+- A repeated tool call in one reply is no longer answered from the reply's cache when the tool reads live state (agent, run, session, cluster and task status), and a call that changes something clears the cache. An agent's status asked for twice now returns its state at each ask.
+
+**Suggestions**
+- The follow-up suggestions route compared the conversation's owner name with the viewer's id, so it answered 403 for every signed-in owner with per-person history. It compares usernames.
+
+**Tests**
+- `kbedit_test.go`: writing with `also` and `source`, edits (exact, spacing, CRLF, all, in order, refused), documents made again, a replaced document left alone, the record read back.
+- `callcache_test.go`, `suggestions_owner_test.go`.
+
+**Docs**
+- HELP.md, README.md and GO-PORT.md.
+
+### Viewer: a file moved, deleted or rewritten while it is open (#691)
+
+A file renamed, deleted or rewritten while it was open in the Library viewer left failed page requests and server errors: the viewing routes answered 500 for a file that was gone, and for a page a rewritten, shorter PDF no longer has.
+
+**Server**
+- The viewing routes (`raw`, `html`, `pdf`, `pdf-info`, `pdf-page`, `office-preview`, `office-media`, `download`) answer 404 `no such file` for a file that is not there, and 400 for a folder, as `/api/kb/file` already does.
+- A PDF page past the last page answers 416 with the page count in the body and in `X-Page-Count`.
+
+**Web**
+- The viewer says the file was moved, renamed or deleted in place of the preview, and stops asking for its pages.
+- A PDF rewritten while it is open is read again and shows the pages it has now.
+- A picture or page in a chat reply whose file has gone shows a short note in its place.
+
+**Tests**
+- `viewing_missing_test.go` for the routes, `viewerFileGone.test.tsx` for the viewer.
+
+**Docs**
+- HELP.md: the viewer when an open file is moved, deleted or rewritten.
+
+### Report rendering: whole words in tables, footnotes, checklists, page header and footer (#693)
+
+Reports written from the chat as PDF and Word documents had tables with split words, characters that vanished, and no way to mark every page. This change fixes the layout and adds the options a report needs.
+
+**Tables**
+- A column is never narrower than its longest word while the table can fit, and the table is as wide as the text column, in the PDF and in Word.
+- PDF cells keep bold, italic, code and links. Word column widths come from font metrics.
+- A table too wide for the page steps its text and padding down, then breaks only the longest words, and is reported so the assistant can turn the page to landscape or split the table.
+- Word rows do not split across pages; a header row stays with its first row in both formats.
+
+**Text**
+- A character the PDF font lacks is given an equivalent or a placeholder and reported. It was dropped silently.
+- Footnotes are numbered and listed under a Notes heading. A footnote nothing refers to is reported; the parser leaves it out.
+- Task list items draw a checked or empty box.
+- Word: a justified line that ends at a line break is no longer stretched; the document opens out of compatibility mode.
+
+**Options**
+- Front matter takes `header`, `footer` and `spacing`.
+
+**Layout**
+- A heading stays with what follows it, a figure with its caption, a caption with its table. A tall picture is drawn smaller when most of the page is free.
+
+**Chat**
+- The result of a write or an edit names what went wrong in making a document in one sentence.
+- Asking for a code session by that name brings the agent tools into the reply.
+
+**Tests**
+- `quality_test.go`, `agentcue_test.go`.
+
+**Docs**
+- HELP.md, README.md and GO-PORT.md.
+
+### Updates: status in the footer, no bars above the page (#694)
+
+With releases coming often, the bars above every page (a newer version is available, updated to a version, reopen to finish) took room from the page and attention from the work. This change removes them and carries the same states in the footer of the navigation, beside the version.
+
+**Footer**
+- The action beside the version reads `updating…`, `update failed`, `update available`, `what's new` (the first load on a newer version) or `check for updates`, in that order of priority.
+- The Build panel has What's new (N), which opens the dialog the bar opened: the changes in each newer version, the commands for a clone or a package, Update now and Update settings.
+- The macOS app waiting to reopen shows a "Reopen to finish updating" line with Reopen now.
+- The collapsed navigation shows a dot for each of these.
+- A hosted deployment shows none of it, as before.
+
+**Removed**
+- `UpdateNotice`, `UpdatedNotice`, Later and its stored key.
+
+**Tests**
+- The notice tests are replaced by footer tests of the same cases, with a failed install, the collapsed dots and the relaunch state added.
+
+**Docs**
+- HELP.md, REFERENCE.md, UPDATES.md, MACOS.md and LINUX-APP.md.
+
 ## v1.199 (2026-11-13)
 
 ### PDF and Word layout options, and printing HTML pages (#688)
@@ -51,6 +147,10 @@ its own host as a site (sign-in off, or AGENT_LOCAL_SITE=1), as pw code
 runs without an ACTIVATE account.
 
 Checked end to end against a pw code daemon on a development host: start_agent made the session in a new library folder, agent_status found it by topic words, waited for it to finish, indexed the folder and linked the file it wrote; a session that stopped on a model error now says so.
+
+### Change log for v1.199 (#690)
+
+Change log entries for v1.199.
 
 ## v1.198 (2026-11-13)
 
