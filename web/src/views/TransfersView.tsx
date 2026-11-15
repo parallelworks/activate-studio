@@ -30,7 +30,7 @@ function useNarrow(query = '(max-width: 900px)'): boolean {
 type Side = 'a' | 'b'
 const other = (s: Side): Side => (s === 'a' ? 'b' : 'a')
 
-const DEFAULT_MOVERS: MoverName[] = ['rsync', 'studio-copy', 'conduit']
+const DEFAULT_MOVERS: MoverName[] = ['rsync', 'rclone', 'studio-copy', 'conduit']
 
 /**
  * Transfers: the list of every transfer, yours and the assistant's, and

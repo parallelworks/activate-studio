@@ -336,6 +336,12 @@ func (m *rsyncMover) route(ctx context.Context, p *planRec) (rsyncRoute, string)
 	if p.src.fs == nil {
 		return rsyncRoute{}, "it reads files Studio can list, and Studio cannot list " + p.src.Label
 	}
+	if _, ok := asRclone(p.src.fs); ok {
+		return rsyncRoute{}, "rsync does not reach rclone remotes"
+	}
+	if _, ok := asRclone(p.dst.fs); ok {
+		return rsyncRoute{}, "rsync does not reach rclone remotes"
+	}
 	// rsync runs a program on each host it reaches; an account that takes
 	// SFTP only runs none.
 	for _, f := range []FS{p.src.fs, p.dst.fs} {

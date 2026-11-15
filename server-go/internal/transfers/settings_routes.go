@@ -28,6 +28,8 @@ type Detected struct {
 	RsyncText    string   `json:"rsyncText,omitempty"`
 	Clusters     int      `json:"clusters"`
 	LibraryHosts []string `json:"libraryHosts"`
+	// Rclone is rclone on this computer and the remotes it has.
+	Rclone *RcloneDetected `json:"rclone,omitempty"`
 }
 
 // SettingsView is GET /api/transfers/settings: the section, with the
@@ -101,6 +103,7 @@ func (s *Service) detect(ctx context.Context, v Viewer, set Settings) Detected {
 			d.LibraryHosts = append(d.LibraryHosts, remote.SiteName(r.SiteID))
 		}
 	}
+	d.Rclone = s.detectRclone(c, v, set)
 	return d
 }
 
@@ -145,6 +148,10 @@ type TestResult struct {
 	// SFTPOnly: the account takes SFTP only, so Studio reaches it over the
 	// SFTP protocol, copies use studio-copy and rsync is not available.
 	SFTPOnly bool `json:"sftpOnly,omitempty"`
+	// Rclone: whether rclone is on the host, for information only
+	// (transfers do not run rclone on hosts).
+	Rclone        *bool  `json:"rclone,omitempty"`
+	RcloneVersion string `json:"rcloneVersion,omitempty"`
 }
 
 // TestSettings checks a saved location or a CONDUIT server: over ssh (or
@@ -215,6 +222,13 @@ func (s *Service) TestSettings(ctx context.Context, v Viewer, in TestRequest) (T
 		}
 		if !clean {
 			out.Why = "the login prints text before a command runs, which rsync's protocol cannot pass; studio-copy will carry transfers"
+		}
+	}
+	if !out.SFTPOnly {
+		if ver, found := RcloneOnHost(c, s.d.Runner, site, ""); found {
+			out.Rclone, out.RcloneVersion = &found, ver
+		} else {
+			out.Rclone = &found
 		}
 	}
 	probe := stagingPrefix + "test-" + newID()

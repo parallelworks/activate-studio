@@ -4,7 +4,7 @@ import {
 } from '@parallelworks/ui'
 import {
   HOST_LOCATIONS, TransferError, bytesText, fieldError, placesReady, testText, transferApi,
-  type ComputerFolder, type ConduitMount, type MoverName, type SavedLocation, type SettingTest, type TransferLocation, type TransferSettings,
+  type ComputerFolder, type ConduitMount, type MoverName, type RcloneDetected, type SavedLocation, type SettingTest, type TransferLocation, type TransferSettings,
 } from '../transferApi'
 import { ReadySummary } from './TransfersReady'
 
@@ -153,11 +153,54 @@ function TestResult({ r }: { r: SettingTest }) {
         {checks.filter(([, v]) => v !== undefined).map(([k, v]) => <li key={k} className={v ? 'yes' : 'no'}>{v ? '✓' : '✕'} {k}{!v && k.startsWith('rsync') ? ', Studio copy is used' : ''}</li>)}
         {r.freeBytes !== undefined && <li>{bytesText(r.freeBytes)} free</li>}
         {r.roundTripMs !== undefined && <li>{Math.round(r.roundTripMs)} ms round trip</li>}
+        {r.rclone !== undefined && <li>{r.rclone ? `rclone${r.rcloneVersion ? ` ${r.rcloneVersion}` : ''} there` : 'No rclone there'} (for information; transfers do not run rclone on hosts)</li>}
       </ul>
       {r.sftpOnly && <p className="xfer-checks-note">This account takes SFTP only. Copies use Studio copy over SFTP; rsync is not available there.</p>}
       {r.rsync && r.rsyncText && <p className="xfer-checks-note">{r.rsyncText}.</p>}
       {r.why && <p className="xfer-checks-note">{r.why.charAt(0).toUpperCase() + r.why.slice(1)}.</p>}
     </Callout>
+  )
+}
+
+/** rclone: on or off, the program, and what was found: its version and
+ *  the remotes of its configuration, each a location. Studio never
+ *  changes that configuration, so remotes are added with rclone config. */
+function RcloneMover({ value, detected, disabled, onChange }: {
+  value: { enabled: boolean; path: string }
+  detected?: RcloneDetected
+  disabled: boolean
+  onChange: (v: { enabled: boolean; path: string }) => void
+}) {
+  let found = ''
+  if (detected && value.enabled && !disabled) {
+    if (!detected.found) found = detected.why ? `${detected.why.charAt(0).toUpperCase()}${detected.why.slice(1)}.` : 'Not found on this computer.'
+    else found = `Found${detected.path ? ` at ${detected.path}` : ''}${detected.version ? `, version ${detected.version}` : ''}.`
+  }
+  return (
+    <div className="xfer-settings-mover">
+      <label className="xfer-check"><Switch size="sm" checked={value.enabled && !disabled} disabled={disabled}
+        onCheckedChange={v => onChange({ ...value, enabled: v })} aria-label="rclone" /> <b>rclone</b></label>
+      <span className="muted">
+        Each remote of your rclone configuration is a location, and rclone moves files between it and this computer or another remote.
+        Studio uses rclone and its configuration as they are and never changes them.{' '}
+        {disabled ? 'With sign-in on it is not used, since everyone would act with this server\'s rclone credentials.' : found}
+      </span>
+      {value.enabled && !disabled && (
+        <Input size="sm" label="Program" mono value={value.path}
+          description="A name looked for in Homebrew's folders on macOS, then on PATH; or an absolute path."
+          onChange={e => onChange({ ...value, path: e.target.value })} />
+      )}
+      {value.enabled && !disabled && detected?.found && (
+        detected.remotes.length
+          ? (
+            <table className="xfer-settings-table" aria-label="rclone remotes">
+              <thead><tr><th>Remote</th><th>Type</th></tr></thead>
+              <tbody>{detected.remotes.map(r => <tr key={r.name}><td className="xfer-mono">{r.name}</td><td>{r.type}</td></tr>)}</tbody>
+            </table>
+          )
+          : <span className="muted">rclone has no remotes. Add them with <code>rclone config</code>, then open this page again.</span>
+      )}
+    </div>
   )
 }
 
@@ -283,9 +326,11 @@ export function TransfersSettingsSection() {
     return <span className={`xfer-test ${t.result!.ok ? 'good' : 'bad'}`} role="status">{testText(t.result!)}</span>
   }
 
+  const rclone = s.movers.rclone ?? { enabled: true, path: 'rclone' }
   const moverItems: SelectItem<MoverName>[] = [
     { value: 'auto', label: 'Automatic', description: 'The first that reaches both ends' },
     { value: 'rsync', label: 'rsync', disabled: !s.movers.rsync.enabled },
+    { value: 'rclone', label: 'rclone', disabled: !rclone.enabled },
     { value: 'studio-copy', label: 'Studio copy' },
     { value: 'conduit', label: 'CONDUIT', disabled: !s.movers.conduit.enabled },
   ]
@@ -399,6 +444,8 @@ export function TransfersSettingsSection() {
               onChange={e => movers({ rsync: { ...s.movers.rsync, path: e.target.value } })} />
           )}
         </div>
+        <RcloneMover value={rclone} detected={s.detected?.rclone} disabled={off}
+          onChange={v => movers({ rclone: v })} />
         <div className="xfer-settings-mover">
           <span className="xfer-check"><b>Studio copy</b> <StatusLabel variant="success">Always on</StatusLabel></span>
           <span className="muted">Studio reads each file over ssh and writes it itself, wherever rsync is missing.</span>

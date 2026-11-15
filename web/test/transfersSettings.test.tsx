@@ -255,3 +255,69 @@ describe('Settings, Transfers', () => {
     expect(link).toHaveAttribute('href', '#view=settings:tools')
   })
 })
+
+describe('Settings, Transfers: rclone', () => {
+  const withRclone = (rclone: Record<string, unknown>, locations?: MockOptions['locations']) => {
+    const s = mockSettings()
+    s.movers = { ...(s.movers as object), rclone: { enabled: true, path: 'rclone' } }
+    s.detected = { ...(s.detected as object), rclone }
+    serve({ settings: s, ...(locations ? { locations } : {}) })
+  }
+
+  it('shows the version and the remotes with their types, and counts them in the Ready line', async () => {
+    const locs = (await import('./transfersMock')).MOCK_LOCATIONS
+    withRclone(
+      { enabled: true, found: true, path: '/usr/bin/rclone', version: '1.76.0', remotes: [{ name: 'archive', type: 's3' }, { name: 'drive', type: 'drive' }] },
+      [...locs, { id: 'rclone:archive', kind: 'rclone', label: 'archive', detail: 'rclone remote, s3', writable: true, indexed: false, browsable: true, available: true },
+        { id: 'rclone:drive', kind: 'rclone', label: 'drive', detail: 'rclone remote, drive', writable: true, indexed: false, browsable: true, available: true }],
+    )
+    render(<TransfersSettingsSection />)
+    expect(await screen.findByText(/Found at \/usr\/bin\/rclone, version 1\.76\.0\./)).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'rclone remotes' })
+    expect(within(table).getByText('archive')).toBeInTheDocument()
+    expect(within(table).getByText('s3')).toBeInTheDocument()
+    const box = screen.getByText('Ready to use').closest('.xfer-ready') as HTMLElement
+    await waitFor(() => expect(within(box).getByText(/2 rclone remotes/)).toBeInTheDocument())
+    expect(screen.getByText(/never changes them/)).toBeInTheDocument()
+  })
+
+  it('says plainly when rclone is missing or has no remotes', async () => {
+    withRclone({ enabled: true, found: false, remotes: [], why: 'rclone is not installed on this computer (looked for rclone)' })
+    const { unmount } = render(<TransfersSettingsSection />)
+    expect(await screen.findByText(/Rclone is not installed on this computer/)).toBeInTheDocument()
+    const box = screen.getByText('Ready to use').closest('.xfer-ready') as HTMLElement
+    await waitFor(() => expect(within(box).getByText(/rclone not found/)).toBeInTheDocument())
+    unmount()
+    withRclone({ enabled: true, found: true, version: '1.76.0', remotes: [], why: 'rclone has no remotes configured; add them with rclone config' })
+    render(<TransfersSettingsSection />)
+    expect(await screen.findByText(/rclone has no remotes\. Add them with/)).toBeInTheDocument()
+    const box2 = screen.getByText('Ready to use').closest('.xfer-ready') as HTMLElement
+    await waitFor(() => expect(within(box2).getByText(/rclone has no remotes/)).toBeInTheDocument())
+  })
+
+  it('saves the program and the switch with Save', async () => {
+    withRclone({ enabled: true, found: true, version: '1.76.0', remotes: [] })
+    render(<TransfersSettingsSection />)
+    const program = (await screen.findAllByLabelText('Program'))[1]
+    fireEvent.change(program, { target: { value: '/opt/tools/rclone' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(saved().length).toBe(1))
+    expect((saved()[0].movers as { rclone: unknown }).rclone).toEqual({ enabled: true, path: '/opt/tools/rclone' })
+  })
+})
+
+describe('rclone in the plain rules', () => {
+  it('counts rclone remotes as places, and says why there are none', async () => {
+    const { placesReady, readyParts, testText } = await import('../src/transferApi')
+    const loc = (id: string, kind: 'rclone' | 'computer') => ({ id, kind, label: id, detail: '', writable: true, indexed: false, browsable: true, available: true })
+    const st = mockSettings() as never as Parameters<typeof placesReady>[1]
+    const p = placesReady([loc('rclone:a', 'rclone'), loc('rclone:b', 'rclone'), loc('computer:x', 'computer')], st)
+    expect(p.total).toBe(3)
+    expect(readyParts(p)).toContain('2 rclone remotes')
+    const none = placesReady([], { ...st!, detected: { ...st!.detected!, rclone: { enabled: true, found: true, remotes: [] } } })
+    expect(readyParts(none)).toContain('rclone has no remotes')
+    const off = placesReady([], { ...st!, detected: { ...st!.detected!, rclone: { enabled: false, found: false, remotes: [] } } })
+    expect(readyParts(off).join(' ')).not.toContain('rclone')
+    expect(testText({ ok: true, rsync: true, rclone: true, rcloneVersion: '1.76.0' })).toContain('rclone 1.76.0 there')
+  })
+})

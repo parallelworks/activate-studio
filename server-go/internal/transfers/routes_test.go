@@ -180,7 +180,7 @@ func TestEndToEndOverTheRoutes(t *testing.T) {
 		t.Fatalf("since %v", out)
 	}
 	st, out = a.do("GET", "/api/transfers/movers?source=library:kb&destination=saved:b", "", nil)
-	if st != 200 || len(out["movers"].([]any)) != 3 {
+	if st != 200 || len(out["movers"].([]any)) != 4 {
 		t.Fatalf("movers %d %v", st, out)
 	}
 	// Another user sees none of it.

@@ -63,6 +63,15 @@ type MoverSettings struct {
 	Rsync      RsyncSettings   `json:"rsync"`
 	StudioCopy Switch          `json:"studioCopy"`
 	Conduit    ConduitSettings `json:"conduit"`
+	Rclone     RcloneSettings  `json:"rclone"`
+}
+
+// RcloneSettings: Path is the rclone program on this computer, a name
+// (looked for in Homebrew's folders on macOS, then on PATH) or an absolute
+// path. Studio uses rclone's own configuration and never changes it.
+type RcloneSettings struct {
+	Enabled bool   `json:"enabled"`
+	Path    string `json:"path"`
 }
 
 type Switch struct {
@@ -122,6 +131,7 @@ func DefaultSettings() Settings {
 			Rsync:      RsyncSettings{Enabled: true, Path: "rsync"},
 			StudioCopy: Switch{Enabled: true},
 			Conduit:    ConduitSettings{Mounts: []ConduitMount{}},
+			Rclone:     RcloneSettings{Enabled: true, Path: "rclone"},
 		},
 		Defaults:      Defaults{Mover: "auto", PreserveTimes: true, Parallel: 4},
 		HostLocations: HostLocations{Enabled: true, Hidden: []string{}},
@@ -145,6 +155,9 @@ func (s Settings) off() map[string]bool {
 	}
 	if _, ok := s.conduit(); !ok {
 		off[MoverConduit] = true
+	}
+	if !s.Movers.Rclone.Enabled {
+		off[MoverRclone] = true
 	}
 	return off
 }
@@ -198,6 +211,9 @@ func (s Settings) normal() Settings {
 		s.Movers.Rsync.Path = d.Movers.Rsync.Path
 	}
 	s.Movers.StudioCopy.Enabled = true
+	if s.Movers.Rclone.Path == "" {
+		s.Movers.Rclone.Path = d.Movers.Rclone.Path
+	}
 	if s.Movers.Conduit.Mounts == nil {
 		s.Movers.Conduit.Mounts = []ConduitMount{}
 	}
@@ -377,6 +393,13 @@ func (s Settings) Check(refused func(string) string) (Settings, error) {
 	if err := checkProgram("movers.rsync.path", s.Movers.Rsync.Path); err != nil {
 		return s, err
 	}
+	s.Movers.Rclone.Path = strings.TrimSpace(s.Movers.Rclone.Path)
+	if s.Movers.Rclone.Path == "" {
+		s.Movers.Rclone.Path = "rclone"
+	}
+	if err := checkRclonePath("movers.rclone.path", s.Movers.Rclone.Path); err != nil {
+		return s, err
+	}
 	c := &s.Movers.Conduit
 	if c.Server != nil {
 		if v := strings.TrimSpace(*c.Server); v == "" {
@@ -406,9 +429,9 @@ func (s Settings) Check(refused func(string) string) (Settings, error) {
 		}
 	}
 	switch s.Defaults.Mover {
-	case "auto", MoverRsync, MoverCopy, MoverConduit:
+	case "auto", MoverRsync, MoverCopy, MoverConduit, MoverRclone:
 	default:
-		return s, bad("defaults.mover", "auto, rsync, studio-copy or conduit")
+		return s, bad("defaults.mover", "auto, rsync, rclone, studio-copy or conduit")
 	}
 	if s.Defaults.Parallel < 1 || s.Defaults.Parallel > 16 {
 		return s, bad("defaults.parallel", "a number from 1 to 16")
@@ -421,6 +444,23 @@ func (s Settings) Check(refused func(string) string) (Settings, error) {
 	}
 	s.HostLocations.Hidden = hidden
 	return s.normal(), nil
+}
+
+// checkRclonePath is a program name or an absolute path to rclone. It is
+// run directly, never through a shell, so an absolute path may hold spaces
+// (as macOS folders do).
+func checkRclonePath(field, p string) error {
+	switch {
+	case strings.HasPrefix(p, "-"):
+		return bad(field, "a program cannot start with \"-\"")
+	case strings.IndexFunc(p, unicode.IsControl) >= 0:
+		return bad(field, "a program name or an absolute path")
+	case strings.ContainsAny(p, `/\\`) && !filepath.IsAbs(p):
+		return bad(field, "give a name looked up on PATH, or an absolute path")
+	case !strings.ContainsAny(p, `/\\`) && strings.ContainsAny(p, " \t"):
+		return bad(field, "a program name has no spaces")
+	}
+	return nil
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -464,6 +504,8 @@ func managedSettings(getenv func(string) string) Settings {
 		s.Defaults.Parallel = n
 	}
 	s.HostLocations.Enabled = false
+	// rclone would act with the server account's credentials for everyone.
+	s.Movers.Rclone.Enabled = false
 	return s.normal()
 }
 

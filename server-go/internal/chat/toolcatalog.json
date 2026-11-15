@@ -899,7 +899,7 @@
   },
   {
    "name": "transfer_locations",
-   "description": "List the places files can be transferred between: each library, folders on this computer, the user's clusters, saved hosts, and a CONDUIT service where one is set up. Each line gives the location id that browse_location and transfer_files take, its kind, label and where it is, whether it is writable and indexed, and whether it can be reached now, with why not. Call it first when the user names a place to move data to or from.",
+   "description": "List the places files can be transferred between: each library, folders on this computer, the user's clusters, saved hosts, the remotes of the user's rclone configuration (kind rclone, such as S3 buckets or cloud drives), and a CONDUIT service where one is set up. Each line gives the location id that browse_location and transfer_files take, its kind, label and where it is, whether it is writable and indexed, and whether it can be reached now, with why not. Call it first when the user names a place to move data to or from.",
    "parameters": {
     "type": "object",
     "properties": {}
@@ -913,7 +913,7 @@
     "properties": {
      "location": {
       "type": "string",
-      "description": "A location id from transfer_locations, e.g. \"library:main\", \"computer:Downloads\", \"cluster:gpu-cluster\""
+      "description": "A location id from transfer_locations, e.g. \"library:main\", \"computer:Downloads\", \"cluster:gpu-cluster\", \"rclone:archive\""
      },
      "path": {
       "type": "string",
@@ -927,7 +927,7 @@
   },
   {
    "name": "transfer_files",
-   "description": "Copy, move or sync files and folders from one transfer location to another (a library, a folder on this computer, a cluster, a saved host, CONDUIT) with the Studio's data movers (rsync, studio-copy, CONDUIT). Copies and moves inside the main library are copy_kb_files and move_kb_files; this tool is for anything between locations, between libraries included. The Studio plans the transfer first: a plan that cannot run (a missing path, a path outside the location, a read-only destination, a name already at the destination without replace) comes back as the reason and nothing is asked. A valid plan is shown to the user, who approves or declines it in the chat. Once approved, the transfer runs as a job on the Transfers page and this call returns at once with its id. Do not wait for it or check on it unless the user asks: the Studio adds a note to this conversation when it ends. copy puts each path under the destination folder with its name; move copies, checks, then removes the originals; sync makes the destination folder match one source folder by sending new and changed files, and deletes files the source does not have only with deleteExtra. If the user declines, do not call it again unless they ask.",
+   "description": "Copy, move or sync files and folders from one transfer location to another (a library, a folder on this computer, a cluster, a saved host, an rclone remote, CONDUIT) with the Studio's data movers (rsync, rclone, studio-copy, CONDUIT). Copies and moves inside the main library are copy_kb_files and move_kb_files; this tool is for anything between locations, between libraries included. The Studio plans the transfer first: a plan that cannot run (a missing path, a path outside the location, a read-only destination, a name already at the destination without replace) comes back as the reason and nothing is asked. A valid plan is shown to the user, who approves or declines it in the chat. Once approved, the transfer runs as a job on the Transfers page and this call returns at once with its id. Do not wait for it or check on it unless the user asks: the Studio adds a note to this conversation when it ends. copy puts each path under the destination folder with its name; move copies, checks, then removes the originals; sync makes the destination folder match one source folder by sending new and changed files, and deletes files the source does not have only with deleteExtra. If the user declines, do not call it again unless they ask.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -942,7 +942,7 @@
      },
      "source": {
       "type": "string",
-      "description": "A location id from transfer_locations, e.g. \"library:main\", \"computer:Downloads\", \"cluster:gpu-cluster\""
+      "description": "A location id from transfer_locations, e.g. \"library:main\", \"computer:Downloads\", \"cluster:gpu-cluster\", \"rclone:archive\""
      },
      "paths": {
       "type": "array",
@@ -964,6 +964,7 @@
       "enum": [
        "auto",
        "rsync",
+       "rclone",
        "studio-copy",
        "conduit"
       ],

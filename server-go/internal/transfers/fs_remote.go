@@ -48,6 +48,7 @@ mark=$1; cmd=$2; root=$3; shift 3
 [ "$cmd" = read ] || printf '%s\n' "$mark"
 fail() { printf '%s\n' "$2" >&2; exit "$1"; }
 [ "$cmd" = home ] && { cd -P ~ 2>/dev/null && pwd -P; exit; }
+[ "$cmd" = rclone ] && { command -v rclone >/dev/null 2>&1 || exit 9; rclone version 2>/dev/null | head -n 1; exit 0; }
 [ "$cmd" = rsync ] && { r=${1:-rsync}; command -v -- "$r" >/dev/null 2>&1 || exit 9; "$r" --version 2>&1 | head -n 20; printf '%s\n' "$mark"; "$r" --help 2>&1 | head -n 400; printf '%s\n' "$mark"; "$r" --trust-sender --version >/dev/null 2>&1 && echo trust-sender; exit 0; }
 [ -d "$root" ] || fail 3 "no such folder: $root"
 R=$(cd -P -- "$root" 2>/dev/null && pwd -P) || fail 3 "cannot open $root"

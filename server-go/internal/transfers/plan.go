@@ -44,6 +44,9 @@ type planRec struct {
 	expires time.Time
 	// set is the Transfers settings that applied to the viewer.
 	set Settings
+	// direct: the mover writes straight to the final names (rclone to an
+	// object store), so there is no staging folder and nothing to land.
+	direct bool
 }
 
 func newID() string {
@@ -91,7 +94,7 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 		return nil, apierr.New(400, "action: copy, move or sync")
 	}
 	if m := req.Options.Mover; m != "" && m != "auto" && s.mover(m) == nil {
-		return nil, apierr.New(400, "mover: auto, rsync, studio-copy or conduit")
+		return nil, apierr.New(400, "mover: auto, rsync, rclone, studio-copy or conduit")
 	}
 	if req.Options.DeleteExtra && req.Action != ActionSync {
 		return nil, apierr.New(400, "deleteExtra applies to a sync only")
@@ -176,6 +179,9 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 		return nil, err
 	}
 	p.IndexNotes = indexNotes(p)
+	if r, ok := asRclone(dst.fs); ok && p.Mover == MoverRclone && r.directWrite(ctx) {
+		p.direct = true
+	}
 	p.warn()
 	return p, nil
 }
@@ -411,7 +417,7 @@ func (s *Service) planSync(ctx context.Context, p *planRec, all []item, srcDirOu
 	dstFiles := map[string]FileInfo{}
 	var dstDirs []string
 	w, err := p.dst.fs.Walk(ctx, []string{p.dstPath}, 0)
-	if err != nil {
+	if err != nil && !(statusOf(err) == 404 && noFolders(ctx, p.dst.fs)) {
 		return err
 	}
 	for _, f := range w.Files {
@@ -426,6 +432,7 @@ func (s *Service) planSync(ctx context.Context, p *planRec, all []item, srcDirOu
 	for _, d := range dstDirs {
 		dirAt[d] = true
 	}
+	hashKind := syncRule(ctx, p)
 	var same []item
 	for _, f := range all {
 		p.sourceOuts[f.Out] = true
@@ -439,7 +446,7 @@ func (s *Service) planSync(ctx context.Context, p *planRec, all []item, srcDirOu
 		case d.Size != f.Size:
 			p.files = append(p.files, f)
 			p.replaceSet[f.Out] = true
-		case p.req.Options.checksum():
+		case p.req.Options.checksum() || hashKind != "":
 			same = append(same, f)
 		case d.Mtime != f.Mtime:
 			p.files = append(p.files, f)
@@ -452,15 +459,20 @@ func (s *Service) planSync(ctx context.Context, p *planRec, all []item, srcDirOu
 			srcRels = append(srcRels, f.Rel)
 			dstRels = append(dstRels, join(p.dstPath, f.Out))
 		}
-		a, err := p.src.fs.Sha256(ctx, srcRels)
-		if err != nil {
-			return err
-		}
-		b, err := p.dst.fs.Sha256(ctx, dstRels)
+		a, b, err := syncSums(ctx, p, hashKind, srcRels, dstRels)
 		if err != nil {
 			return err
 		}
 		for i, f := range same {
+			if hashKind != "" && (a[srcRels[i]] == "" || b[dstRels[i]] == "") {
+				// No shared hash for this file (an object uploaded in parts):
+				// size and modification time, as without one.
+				if dstFiles[f.Out].Mtime != f.Mtime {
+					p.files = append(p.files, f)
+					p.replaceSet[f.Out] = true
+				}
+				continue
+			}
 			if a[srcRels[i]] != b[dstRels[i]] {
 				p.files = append(p.files, f)
 				p.replaceSet[f.Out] = true
@@ -542,6 +554,9 @@ func (p *planRec) warn() {
 	}
 	if p.Action == ActionSync && p.Files == 0 && p.DeletesCount == 0 {
 		p.Warnings = append(p.Warnings, "nothing has changed: the destination already matches")
+	}
+	if p.direct {
+		p.Warnings = append(p.Warnings, directNote(p.dst.Label))
 	}
 	if p.Mover == MoverCopy && p.Files > 2000 {
 		p.Warnings = append(p.Warnings, "studio-copy sends one file at a time, which is slow on many small files")

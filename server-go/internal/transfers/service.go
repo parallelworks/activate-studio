@@ -99,6 +99,7 @@ type Service struct {
 	// viewerFor is the viewer a transfer's owner acts as with no request
 	// (clearing staging after a restart); nil: the owner without a key.
 	viewerFor func(owner string) Viewer
+	rc        *rcloneState
 }
 
 type homeEntry struct {
@@ -128,9 +129,10 @@ func New(d Deps) *Service {
 		d.Index = noIndex{}
 	}
 	s := &Service{d: d, plans: map[string]*planRec{}, homes: map[string]homeEntry{}, clusters: map[string]clusterEntry{},
-		slots: make(chan struct{}, 3), runs: map[string]*run{}, now: time.Now}
+		slots: make(chan struct{}, 3), runs: map[string]*run{}, now: time.Now,
+		rc: &rcloneState{remotes: map[string]rcloneRemotesEntry{}, features: map[string]rcloneFeaturesEntry{}}}
 	s.store = openStore(d.IndexBase, d.Log)
-	s.movers = []Mover{newConduitMover(s), newRsyncMover(s), newCopyMover(s)}
+	s.movers = []Mover{newConduitMover(s), newRsyncMover(s), newRcloneMover(s), newCopyMover(s)}
 	return s
 }
 
