@@ -45,7 +45,7 @@ A tool the assistant calls with arguments receives them as positional parameters
 
 ## Help content
 
-The in-app Help page renders `docs/HELP.md`: the text before the first heading is the Overview, each `##` heading is a page, and a `#` heading groups the pages after it in the rail. `{appName}` and `{kbLabel}` are substituted. Point `HELP_FILE` at your own markdown to replace it entirely.
+The in-app Help page renders `docs/HELP.md`: the text before the first heading is the Overview, each `##` heading is a page, and a `#` heading groups the pages after it in the rail. The guide calls the app Studio, its default name, so it reads the same on GitHub; a deployment given another product name shows that name in place of the word, except in "ACTIVATE Studio" and in code. `<!-- kbLabel -->` becomes a line naming the knowledge base, and the older `{appName}` and `{kbLabel}` placeholders are still filled in. Point `HELP_FILE` at your own markdown to replace it entirely.
 
 ## Platform identity (optional)
 

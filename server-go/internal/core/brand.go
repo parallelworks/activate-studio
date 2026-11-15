@@ -17,6 +17,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/helpdoc"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/version"
@@ -354,8 +355,7 @@ func (c *Core) help(w http.ResponseWriter, r *http.Request) error {
 		md = string(b)
 	}
 	eff := c.a.Settings.Effective()
-	md = strings.ReplaceAll(md, "{appName}", eff.AppName)
-	md = strings.ReplaceAll(md, "{kbLabel}", eff.KbLabel)
+	md = helpdoc.Fill(md, eff.AppName, eff.KbLabel)
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	_, err := io.WriteString(w, md)
 	return err
