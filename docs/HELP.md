@@ -79,11 +79,13 @@ A location is a library, a folder on this computer, one of your clusters on ACTI
 - **Move** copies, checks the copy, and only then removes the originals.
 - **Sync** makes the destination folder match one source folder by sending new and changed files. It deletes nothing unless **Delete files at the destination that are not in the source** is ticked, and then the plan lists every deletion.
 
-Every transfer is confirmed. **Start** shows the plan: what goes where, the file count and size, what is replaced or deleted, and how the files move: rsync where both ends have it, otherwise Studio's own copy over ssh, or CONDUIT. Files land in a staging folder and take their names only after Studio checks the count and sizes. A transfer into a library is indexed when it finishes.
+Every transfer is confirmed. **Start** shows the plan: what goes where, the file count and size, what is replaced or deleted, and how the files move: rsync where both ends have it, otherwise Studio's own copy over ssh or SFTP, or CONDUIT. Files land in a staging folder and take their names only after Studio checks the count and sizes. A transfer into a library is indexed when it finishes.
 
 <!-- ai -->You can also ask the assistant for a transfer, such as "copy the reports/2026 folder from the library to my cluster". If the plan cannot run, it says why. Otherwise the chat shows the plan and waits for **Yes, allow this call**, and the transfer is listed here as awaiting approval; **No** cancels it. Once allowed, the transfer runs on its own and the reply carries on. When it ends, a short note in the conversation says what it moved or why it failed, and its link opens it here. The assistant can also report on your transfers and cancel one, which asks first. Switch these tools off in the chat's Tools menu or in Settings, Assistant tools.<!-- /ai -->
 
-Settings, Transfers shows what is ready with no setup. **Add a location** there asks for a name, a host (user@host, or a name from your ssh config) and a folder, and tests the connection before saving. It also sets the folders on this computer that transfers may use, and the defaults.
+Settings, Transfers shows what is ready with no setup. **Add a location** there asks for a name, a host (user@host, or a name from your ssh config) and a folder, and tests the connection before saving.
+
+A host account that allows SFTP only, such as an upload drop, works as a location with no extra setup. Studio finds this on first use and reaches it over SFTP with the same ssh settings. Transfers to and from it use Studio's own copy, since rsync cannot run there, and the connection test says the account takes SFTP only. Checking a move or the **checksum** option reads each file back over the network, which takes longer on large files. It also sets the folders on this computer that transfers may use, and the defaults.
 
 With sign-in on, each person sees only their own transfers and reaches clusters with their own key, and the operator sets these settings.
 

@@ -131,10 +131,14 @@ type TestResult struct {
 	Writable     *bool  `json:"writable,omitempty"`
 	FreeBytes    *int64 `json:"freeBytes,omitempty"`
 	RoundTripMs  *int64 `json:"roundTripMs,omitempty"`
+	// SFTPOnly: the account takes SFTP only, so Studio reaches it over the
+	// SFTP protocol, copies use studio-copy and rsync is not available.
+	SFTPOnly bool `json:"sftpOnly,omitempty"`
 }
 
-// TestSettings checks a saved location or a CONDUIT server: over ssh, that
-// the root is a folder, whether rsync is there (and its version, and
+// TestSettings checks a saved location or a CONDUIT server: over ssh (or
+// SFTP, for an account that takes SFTP only), that the root is a folder,
+// whether rsync is there (and its version, and
 // whether the login prints text that would break it), whether Studio can
 // write there (a staging folder made and removed), the free space, and the
 // time of one round trip on the open connection.
@@ -186,7 +190,11 @@ func (s *Service) TestSettings(ctx context.Context, v Viewer, in TestRequest) (T
 	if ok {
 		out.FreeBytes = &free
 	}
-	line, clean := RsyncVersion(c, s.d.Runner, site, "", remoteRsync(fs))
+	out.SFTPOnly = fs.SFTPOnly(c)
+	line, clean := "", true
+	if !out.SFTPOnly {
+		line, clean = RsyncVersion(c, s.d.Runner, site, "", remoteRsync(fs))
+	}
 	has := line != ""
 	out.Rsync = &has
 	if has {

@@ -131,8 +131,9 @@ func (p *inProcess) cancel(ref string) bool {
 // ---- studio-copy ----
 
 // copyMover is studio-copy: the Studio reads each file (over ssh with cat,
-// or here) and writes it itself, up to four at once. It needs nothing but
-// ssh, sh and cat on a host, so it is the fallback every transfer can use.
+// over SFTP for an account that takes SFTP only, or here) and writes it
+// itself, up to four at once. It needs nothing but ssh, sh and cat on a
+// host, or SFTP, so it is the fallback every transfer can use.
 // A file name is always one quoted argument of a fixed script (fs_remote.go),
 // and the Studio opens every file it writes from a list it checked.
 type copyMover struct {
@@ -155,11 +156,19 @@ func (c *copyMover) CanReach(ctx context.Context, p *planRec) (bool, string) {
 	case srcRemote && dstRemote:
 		return true, "Studio reads each file from " + p.src.fs.Where() + " and writes it to " + p.dst.fs.Where()
 	case srcRemote:
-		return true, "Studio reads each file from " + p.src.fs.Where() + " over ssh"
+		return true, "Studio reads each file from " + p.src.fs.Where() + overWhat(ctx, p.src.fs)
 	case dstRemote:
-		return true, "Studio writes each file to " + p.dst.fs.Where() + " over ssh"
+		return true, "Studio writes each file to " + p.dst.fs.Where() + overWhat(ctx, p.dst.fs)
 	}
 	return true, "both ends are on this computer"
+}
+
+// overWhat is how studio-copy reaches a host.
+func overWhat(ctx context.Context, f FS) string {
+	if isSFTPOnly(ctx, f) {
+		return " over SFTP"
+	}
+	return " over ssh"
 }
 
 // streams is how many files studio-copy moves at once: the settings'

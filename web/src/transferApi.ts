@@ -141,6 +141,9 @@ export const HOST_LOCATIONS = 'hostLocations' as const
 export type TransferSettingsInput = Omit<TransferSettings, 'managed' | 'mcpServers' | 'detected'>
 export interface SettingTest {
   ok: boolean; why?: string; rsync?: boolean; rsyncVersion?: string; writable?: boolean; freeBytes?: number; roundTripMs?: number
+  /** The account takes SFTP only: Studio reaches it over SFTP, copies use
+   *  Studio copy, and rsync is not available there. */
+  sftpOnly?: boolean
 }
 export interface SettingTestBody { host: string; root: string; rsyncPath?: string; port?: number; sshOptions?: string }
 
@@ -148,8 +151,9 @@ export interface SettingTestBody { host: string; root: string; rsyncPath?: strin
 export function testText(r: SettingTest): string {
   if (!r.ok) return `Test failed: ${r.why ?? 'no reason given'}`
   // A test passes only once the folder was listed, so it exists.
-  const parts = ['Reached, folder exists']
-  if (r.rsync !== undefined) parts.push(r.rsync ? `rsync${r.rsyncVersion ? ` ${r.rsyncVersion}` : ''} found` : 'no rsync, Studio copy will be used')
+  const parts = [r.sftpOnly ? 'Reached over SFTP (the account takes SFTP only), folder exists' : 'Reached, folder exists']
+  if (r.sftpOnly) parts.push('rsync not available, Studio copy will be used')
+  else if (r.rsync !== undefined) parts.push(r.rsync ? `rsync${r.rsyncVersion ? ` ${r.rsyncVersion}` : ''} found` : 'no rsync, Studio copy will be used')
   if (r.writable !== undefined) parts.push(r.writable ? 'writable' : 'read only')
   if (r.freeBytes !== undefined) parts.push(`${bytesText(r.freeBytes)} free`)
   if (r.roundTripMs !== undefined) parts.push(`${Math.round(r.roundTripMs)} ms round trip`)

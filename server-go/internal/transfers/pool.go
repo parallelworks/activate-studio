@@ -24,6 +24,15 @@ func (p PoolRunner) Command(site, key string, argv []string) (Cmd, error) {
 	return &execCmd{c}, nil
 }
 
+// Subsystem starts an ssh subsystem (sftp) on a plain ssh site.
+func (p PoolRunner) Subsystem(site, key, name string) (Cmd, error) {
+	c, err := p.P.Subsystem(site, name)
+	if err != nil {
+		return nil, err
+	}
+	return &execCmd{c}, nil
+}
+
 // RemoteShell is how rsync's -e reaches the site.
 func (p PoolRunner) RemoteShell(site, key string) ([]string, []string, error) {
 	return p.P.RemoteShell(site, key)

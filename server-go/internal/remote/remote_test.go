@@ -207,3 +207,26 @@ func TestConcurrentRunsGetTheirOwnAnswers(t *testing.T) {
 		}
 	}
 }
+
+// Subsystem is ssh -s with every option a site's other calls use.
+func TestSubsystem(t *testing.T) {
+	env := map[string]string{"STUDIO_SSH_SHARE": "0"}
+	p := New(Options{Getenv: func(k string) string { return env[k] }, IndexBase: t.TempDir()})
+	defer p.Shutdown()
+	site, err := SSHSite("drop@files.example.com", 2222, []string{"-i", "/keys/drop", "-o", "IdentitiesOnly=yes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd, err := p.Subsystem(site, "sftp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(cmd.Args, " ")
+	want := "ssh -T -i /keys/drop -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o Compression=yes -s -p 2222 drop@files.example.com sftp"
+	if got != want {
+		t.Fatalf("argv\n got %s\nwant %s", got, want)
+	}
+	if _, err := p.Subsystem("gpu-cluster", "sftp"); err == nil {
+		t.Fatal("a pw ssh site has no subsystem")
+	}
+}
