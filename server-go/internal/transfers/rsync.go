@@ -11,6 +11,8 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,12 +32,18 @@ import (
 // neither -l nor -L is given, so a link put there since is skipped and then
 // missing at the check. rsync writes only into the job's staging folder,
 // and nothing takes its name until the Studio has walked that folder.
-// Pulling from a host needs rsync 3.2.5 or later here, which refuses names
-// the sender adds to the list it was given; where that is missing the plan
-// says so and studio-copy runs. A sync's change detection is the Studio's
-// own, the same rule as rsync's quick check (size and modification time,
-// or the file's sha256 with checksum), made at the plan so the plan can
-// list what is replaced; rsync is then given just those files.
+// A sync's change detection is the Studio's own, the same rule as rsync's
+// quick check (size and modification time, or the file's sha256 with
+// checksum), made at the plan so the plan can list what is replaced; rsync
+// is then given just those files.
+//
+// Studio uses the rsync installed on each end, and the two ends often run
+// different releases. Each end's rsync is read once (--version, --help and
+// a --trust-sender probe, kept five minutes) and the options for a
+// transfer are chosen from what the ends that must understand each one
+// offer (rsyncDecide). Pulling from a host needs an rsync here that
+// refuses names the sender adds to the list it was given (CVE-2022-29154);
+// where that is missing the plan says so and studio-copy runs.
 type rsyncMover struct {
 	s *Service
 	inProcess
@@ -45,9 +53,9 @@ type rsyncMover struct {
 }
 
 type rsyncKnown struct {
-	at  time.Time
-	ver [3]int
-	why string
+	at   time.Time
+	caps rsyncCaps
+	why  string
 }
 
 const rsyncKnownFor = 5 * time.Minute
@@ -86,9 +94,59 @@ func runnable(p string) bool {
 	return err == nil && fi.Mode().IsRegular() && fi.Mode()&0o111 != 0
 }
 
-// bin is the rsync program here under the settings a plan was made with.
-func (m *rsyncMover) bin(set Settings) string {
-	return FindRsync(m.s.d.Getenv, set.Movers.Rsync.Path)
+// rsyncGOOS and brewRsync are variables so tests can stand in for a Mac.
+var (
+	rsyncGOOS = runtime.GOOS
+	// brewRsync is where Homebrew installs rsync: Apple silicon, then
+	// Intel.
+	brewRsync = []string{"/opt/homebrew/bin/rsync", "/usr/local/bin/rsync"}
+)
+
+// rsyncCandidates are the programs the rsync setting may mean, in order.
+// On a Mac with the default setting ("rsync"), Homebrew's rsync is looked
+// for before PATH: macOS's own /usr/bin/rsync is 2.6.9 or openrsync, and a
+// login PATH that puts Homebrew first is not always what the app gets. An
+// explicit path is used as it is.
+func rsyncCandidates(getenv func(string) string, name string) []string {
+	if name == "" {
+		name = "rsync"
+	}
+	var out []string
+	if name == "rsync" && rsyncGOOS == "darwin" {
+		for _, p := range brewRsync {
+			if runnable(p) {
+				out = append(out, p)
+			}
+		}
+	}
+	if p := FindRsync(getenv, name); !slices.Contains(out, p) {
+		out = append(out, p)
+	}
+	return out
+}
+
+// local is the rsync this computer uses under the settings a plan was
+// made with: of the candidates, the best (rsyncCaps.better); why says what
+// is wrong when there is none.
+func (m *rsyncMover) local(ctx context.Context, set Settings) (string, rsyncCaps, string) {
+	var path, why string
+	var best rsyncCaps
+	for _, p := range rsyncCandidates(m.s.d.Getenv, set.Movers.Rsync.Path) {
+		c, w := m.caps(ctx, "", "", "this computer", p)
+		if w != "" {
+			if why == "" {
+				why = w
+			}
+			continue
+		}
+		if path == "" || c.better(best) {
+			path, best = p, c
+		}
+	}
+	if path == "" {
+		return "", rsyncCaps{}, why
+	}
+	return path, best, ""
 }
 
 // remoteRsync is the rsync program on a host: its saved location's, else
@@ -127,40 +185,59 @@ func atLeast(v, want [3]int) bool {
 	return true
 }
 
-// version is rsync's version on this computer (site "") or a host, kept
-// five minutes; why says what is wrong when there is none.
-func (m *rsyncMover) version(ctx context.Context, site, key, where, program string) ([3]int, string) {
+// rsyncProbe is what one rsync program said: its --version and --help
+// output, and whether it took --trust-sender.
+type rsyncProbe struct {
+	version, help string
+	trust         bool
+}
+
+// probeLocalRsync runs a program here; ok is false when it does not run.
+// openrsync may print its usage on standard error, so both are read.
+func probeLocalRsync(ctx context.Context, program string) (rsyncProbe, bool) {
+	out, err := exec.CommandContext(ctx, program, "--version").CombinedOutput()
+	var ee *exec.ExitError
+	if err != nil && !errors.As(err, &ee) {
+		return rsyncProbe{}, false
+	}
+	p := rsyncProbe{version: string(out)}
+	help, _ := exec.CommandContext(ctx, program, "--help").CombinedOutput()
+	p.help = string(help)
+	p.trust = exec.CommandContext(ctx, program, "--trust-sender", "--version").Run() == nil
+	return p, true
+}
+
+// caps is rsync's capabilities on this computer (site "") or a host, kept
+// five minutes; why says what is wrong when there is no usable rsync.
+func (m *rsyncMover) caps(ctx context.Context, site, key, where, program string) (rsyncCaps, string) {
 	k := site + "|" + keyTag(key) + "|" + program
 	m.mu.Lock()
 	e, ok := m.known[k]
 	m.mu.Unlock()
 	if ok && time.Since(e.at) < rsyncKnownFor {
-		return e.ver, e.why
+		return e.caps, e.why
 	}
-	var line string
-	clean := true
+	var p rsyncProbe
+	found, clean := false, true
 	if site == "" {
-		out, err := exec.CommandContext(ctx, program, "--version").Output()
-		if err == nil {
-			line, _, _ = strings.Cut(string(out), "\n")
-		}
+		p, found = probeLocalRsync(ctx, program)
 	} else {
-		line, clean = RsyncVersion(ctx, m.s.d.Runner, site, key, program)
+		p, found, clean = RsyncProbe(ctx, m.s.d.Runner, site, key, program)
 	}
 	e = rsyncKnown{at: time.Now()}
-	if line == "" {
+	if !found {
 		e.why = "rsync is not on " + where
 	} else if !clean {
 		e.why = "the login on " + where + " prints text before a command runs, which rsync's protocol cannot pass"
-	} else if v, ok := parseRsyncVersion(line); !ok {
+	} else if c, ok := parseRsyncCaps(p.version, p.help, p.trust); !ok {
 		e.why = "the rsync on " + where + " did not give its version"
 	} else {
-		e.ver = v
+		e.caps = c
 	}
 	m.mu.Lock()
 	m.known[k] = e
 	m.mu.Unlock()
-	return e.ver, e.why
+	return e.caps, e.why
 }
 
 // route is how one transfer runs.
@@ -171,6 +248,88 @@ type rsyncRoute struct {
 	key     string
 	dstKey  string
 	dstHost *remote.SSHHost
+	// bin is the client program for here, pull and push.
+	bin string
+	o   rsyncOpts
+}
+
+// rsyncOpts are the options chosen for one route from both ends' rsync.
+type rsyncOpts struct {
+	protect  bool   // -s
+	escapes  bool   // the client escapes remote file arguments itself
+	noIncRec bool   // --no-inc-recursive
+	maxSize  bool   // --max-size
+	timeout  bool   // --timeout
+	from0    string // --from0 or -0
+	progress bool   // --info=progress2
+}
+
+// rsyncDecide chooses a route's options from the capabilities of the rsync
+// that runs the command (client: this computer for here, push and pull;
+// the source host for onhost and hostToHost) and of the far end's (far:
+// the rsync the client starts over a remote shell; nil for here and
+// onhost, where no shell stands between the ends). It returns a reason
+// when rsync cannot carry the route. where names client and far for
+// messages.
+//
+// What the client passes to the far end follows server_options() in
+// rsync's options.c (checked against 3.0.9 and 3.4.1):
+//   - -s (protect args) goes in the server's flags: both ends need it.
+//   - -t goes in the server's flags; every release has it.
+//   - --timeout is always passed on: both ends need it.
+//   - --max-size is passed on only when the client sends (push,
+//     hostToHost), since the receiver applies it.
+//   - --files-from and --from0: a sending client reads the list itself and
+//     passes nothing; a receiving client (pull) passes --files-from=- and
+//     --from0 and sends the list over the connection, so the far end needs
+//     both.
+//   - --chmod is never passed on: the sender applies it as it lists files
+//     (send_file_name) and the receiver as it reads them (recv_file_entry),
+//     so the client's own is enough.
+//   - --no-inc-recursive only clears the "i" the client puts in its -e.
+//     capability string (protocol 30); it is not passed on.
+//   - --info=progress2 is the client's own output.
+//   - --trust-sender is only detected, never given.
+func rsyncDecide(kind string, client rsyncCaps, far *rsyncCaps, clientWhere, farWhere string) (rsyncOpts, string) {
+	if o := client.lacks(rsyncNeeds...); o != "" {
+		return rsyncOpts{}, "the rsync on " + clientWhere + " (" + client.name() + ") has no " + o + ", which Studio needs; studio-copy carries the data"
+	}
+	if kind == "pull" {
+		if !client.checksSender() {
+			return rsyncOpts{}, "the rsync on " + clientWhere + " (" + client.name() + ") trusts what a host sends (CVE-2022-29154); a pull " + pullNeedsFix + ", so studio-copy carries the transfer"
+		}
+		if o := far.lacks(pullNeeds...); o != "" {
+			return rsyncOpts{}, "the rsync on " + farWhere + " (" + far.name() + ") has no " + o + ", which a pull needs there; studio-copy carries the data"
+		}
+	}
+	o := rsyncOpts{
+		escapes:  client.escapesArgs(),
+		noIncRec: client.incRecursive(),
+		from0:    client.from0(),
+		progress: client.has("info") && (kind == "here" || kind == "push" || kind == "pull"),
+	}
+	if far != nil {
+		o.protect = client.protectArgs() && far.protectArgs()
+		o.timeout = client.has("timeout") && far.has("timeout")
+		o.maxSize = client.has("max-size") && (kind == "pull" || far.has("max-size"))
+	} else {
+		o.timeout = client.has("timeout")
+		o.maxSize = client.has("max-size")
+	}
+	return o, ""
+}
+
+// quotedNote is the plan's note on a route through a remote shell without
+// protect args.
+func quotedNote(o rsyncOpts, client rsyncCaps, far *rsyncCaps, clientWhere, farWhere string) string {
+	if far == nil || o.protect {
+		return ""
+	}
+	who := "the rsync on " + farWhere + " (" + far.name() + ")"
+	if !client.protectArgs() {
+		who = "the rsync on " + clientWhere + " (" + client.name() + ")"
+	}
+	return "; " + who + " has no --protect-args, so the folder on " + farWhere + " is quoted for its shell and file names go in the file list"
 }
 
 func (m *rsyncMover) route(ctx context.Context, p *planRec) (rsyncRoute, string) {
@@ -189,54 +348,56 @@ func (m *rsyncMover) route(ctx context.Context, p *planRec) (rsyncRoute, string)
 	}
 	sr, srcRemote := p.src.fs.(Remote)
 	dr, dstRemote := p.dst.fs.(Remote)
-	min3, min325 := [3]int{3, 0, 0}, [3]int{3, 2, 5}
-	here := func(want [3]int) string {
-		v, why := m.version(ctx, "", "", "this computer", m.bin(p.set))
-		if why != "" {
-			return why
-		}
-		if !atLeast(v, want) {
-			return fmt.Sprintf("the rsync on this computer (%d.%d.%d) is older than %d.%d.%d", v[0], v[1], v[2], want[0], want[1], want[2])
-		}
-		return ""
+	on := func(r Remote) (rsyncCaps, string) {
+		return m.caps(ctx, r.Site(), r.Key(), r.Where(), remoteRsync(r))
 	}
-	on := func(r Remote) string {
-		v, why := m.version(ctx, r.Site(), r.Key(), r.Where(), remoteRsync(r))
+	const here = "this computer"
+	if !srcRemote || !dstRemote {
+		bin, lc, why := m.local(ctx, p.set)
 		if why != "" {
-			return why
+			return rsyncRoute{}, why
 		}
-		if !atLeast(v, min3) {
-			return fmt.Sprintf("the rsync on %s (%d.%d.%d) is older than 3.0.0", r.Where(), v[0], v[1], v[2])
+		switch {
+		case !srcRemote && !dstRemote:
+			o, why := rsyncDecide("here", lc, nil, here, "")
+			if why != "" {
+				return rsyncRoute{}, why
+			}
+			return rsyncRoute{kind: "here", bin: bin, o: o}, "both ends are on this computer"
+		case srcRemote:
+			fc, why := on(sr)
+			if why != "" {
+				return rsyncRoute{}, why
+			}
+			o, why := rsyncDecide("pull", lc, &fc, here, sr.Where())
+			if why != "" {
+				return rsyncRoute{}, why
+			}
+			return rsyncRoute{kind: "pull", srcSite: sr.Site(), key: sr.Key(), bin: bin, o: o},
+				"rsync on this computer pulls from " + sr.Where() + quotedNote(o, lc, &fc, here, sr.Where())
+		default:
+			fc, why := on(dr)
+			if why != "" {
+				return rsyncRoute{}, why
+			}
+			o, why := rsyncDecide("push", lc, &fc, here, dr.Where())
+			if why != "" {
+				return rsyncRoute{}, why
+			}
+			return rsyncRoute{kind: "push", dstSite: dr.Site(), key: dr.Key(), bin: bin, o: o},
+				"rsync on this computer sends to " + dr.Where() + quotedNote(o, lc, &fc, here, dr.Where())
 		}
-		return ""
 	}
-	switch {
-	case !srcRemote && !dstRemote:
-		if why := here(min3); why != "" {
+	if sr.Site() == dr.Site() && sr.Key() == dr.Key() {
+		sc, why := on(sr)
+		if why != "" {
 			return rsyncRoute{}, why
 		}
-		return rsyncRoute{kind: "here"}, "both ends are on this computer"
-	case srcRemote && !dstRemote:
-		if why := here(min325); why != "" {
-			return rsyncRoute{}, why + ", which checks what a host sends"
-		}
-		if why := on(sr); why != "" {
+		o, why := rsyncDecide("onhost", sc, nil, sr.Where(), "")
+		if why != "" {
 			return rsyncRoute{}, why
 		}
-		return rsyncRoute{kind: "pull", srcSite: sr.Site(), key: sr.Key()}, "rsync on this computer pulls from " + sr.Where()
-	case !srcRemote && dstRemote:
-		if why := here(min3); why != "" {
-			return rsyncRoute{}, why
-		}
-		if why := on(dr); why != "" {
-			return rsyncRoute{}, why
-		}
-		return rsyncRoute{kind: "push", dstSite: dr.Site(), key: dr.Key()}, "rsync on this computer sends to " + dr.Where()
-	case sr.Site() == dr.Site() && sr.Key() == dr.Key():
-		if why := on(sr); why != "" {
-			return rsyncRoute{}, why
-		}
-		return rsyncRoute{kind: "onhost", srcSite: sr.Site(), key: sr.Key()}, "rsync runs on " + sr.Where() + ", so the data stays on that host"
+		return rsyncRoute{kind: "onhost", srcSite: sr.Site(), key: sr.Key(), o: o}, "rsync runs on " + sr.Where() + ", so the data stays on that host"
 	}
 	// Two hosts: rsync on the source sends straight to the destination when
 	// the source can reach it over plain ssh with no options of the
@@ -250,16 +411,23 @@ func (m *rsyncMover) route(ctx context.Context, p *planRec) (rsyncRoute, string)
 			return rsyncRoute{}, dr.Where() + " is reached with ssh options of this computer; studio-copy carries the data through Studio"
 		}
 	}
-	if why := on(sr); why != "" {
+	sc, why := on(sr)
+	if why != "" {
 		return rsyncRoute{}, why
 	}
-	if why := on(dr); why != "" {
+	dc, why := on(dr)
+	if why != "" {
+		return rsyncRoute{}, why
+	}
+	o, why := rsyncDecide("hostToHost", sc, &dc, sr.Where(), dr.Where())
+	if why != "" {
 		return rsyncRoute{}, why
 	}
 	if why := m.reaches(ctx, sr, h); why != "" {
 		return rsyncRoute{}, why
 	}
-	return rsyncRoute{kind: "hostToHost", srcSite: sr.Site(), key: sr.Key(), dstHost: h}, "rsync on " + sr.Where() + " sends straight to " + dr.Where()
+	return rsyncRoute{kind: "hostToHost", srcSite: sr.Site(), key: sr.Key(), dstHost: h, o: o},
+		"rsync on " + sr.Where() + " sends straight to " + dr.Where() + quotedNote(o, sc, &dc, sr.Where(), dr.Where())
 }
 
 func isRemote(f FS) bool { _, ok := f.(Remote); return ok }
@@ -335,12 +503,130 @@ func absUnder(root, rel string) string {
 	return path.Join(root, rel)
 }
 
-func (m *rsyncMover) options(j *MoveJob, largest int64) []string {
-	o := []string{"-s", "--chmod=Du+rwx,Fu+rw", fmt.Sprintf("--max-size=%d", max(largest, 1)), "--timeout=120", "--no-inc-recursive", "--from0"}
-	if j.Preserve {
-		o = append(o, "-t")
+// rsyncCmd is one rsync command line, built by argv.
+type rsyncCmd struct {
+	kind     string
+	o        rsyncOpts
+	program  string // the client: this computer's rsync, or the source host's
+	listFile string // the file list here; "" reads it from standard input
+	rsh      string // the remote shell script (push, pull)
+	farRsync string // the far end's rsync program
+	dstHost  *remote.SSHHost
+	from, to string
+	largest  int64
+	preserve bool
+}
+
+// shQuote quotes s for a POSIX shell: in single quotes, each single quote
+// written as '\”.
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// escapeWild puts a backslash before each of rsync's wildcard characters.
+// rsync 3.2.4 and later backslash-escapes the shell's characters in a
+// remote file argument but leaves *?[] for the remote shell to expand,
+// and keeps a backslash that stands before one (safe_arg in options.c).
+func escapeWild(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune(`*?[]`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
 	}
-	return o
+	return b.String()
+}
+
+// remotePath is a folder on the far end as the client is given it.
+//
+// Without protect args the client puts the folder on the remote shell's
+// command line. rsync 2.6.9 through 3.2.3 (and openrsync) pass it as it is
+// (2.6.9 handles remote arguments the same way 3.0 does without -s), so
+// it is quoted here for a POSIX shell. rsync 3.2.4 and later escapes it
+// itself, so it gets only the wildcard escapes, which that escaping
+// leaves out. With protect args it goes over the protocol as it is. File
+// names never take this path: they go in the --files-from list, which the
+// sender reads itself, or which a receiving client sends over the
+// connection.
+func (o rsyncOpts) remotePath(p string) string {
+	switch {
+	case o.protect:
+		return p
+	case o.escapes:
+		return escapeWild(p)
+	}
+	return shQuote(p)
+}
+
+// argv is the command line, program first. For onhost and hostToHost it
+// runs on the source host through env, which drops RSYNC_OLD_ARGS and
+// RSYNC_PROTECT_ARGS so a login's setting cannot change how the folder is
+// quoted; here the environment is cleaned the same way (rsyncEnv).
+func (c rsyncCmd) argv() []string {
+	var a []string
+	if c.kind == "onhost" || c.kind == "hostToHost" {
+		a = append(a, "env", "-u", "RSYNC_OLD_ARGS", "-u", "RSYNC_PROTECT_ARGS")
+	}
+	a = append(a, c.program)
+	if c.o.protect {
+		a = append(a, "-s")
+	}
+	a = append(a, "--chmod=Du+rwx,Fu+rw")
+	if c.o.maxSize {
+		a = append(a, fmt.Sprintf("--max-size=%d", max(c.largest, 1)))
+	}
+	if c.o.timeout {
+		a = append(a, "--timeout=120")
+	}
+	if c.o.noIncRec {
+		a = append(a, "--no-inc-recursive")
+	}
+	a = append(a, c.o.from0)
+	if c.preserve {
+		a = append(a, "-t")
+	}
+	list := c.listFile
+	if list == "" {
+		list = "-"
+	}
+	a = append(a, "--files-from="+list)
+	if c.o.progress {
+		a = append(a, "--info=progress2")
+	}
+	if c.rsh != "" {
+		a = append(a, "--rsh="+c.rsh)
+	}
+	if c.farRsync != "" && c.farRsync != "rsync" {
+		a = append(a, "--rsync-path="+c.farRsync)
+	}
+	switch c.kind {
+	case "pull":
+		return append(a, "studio:"+c.o.remotePath(c.from), c.to)
+	case "push":
+		return append(a, c.from, "studio:"+c.o.remotePath(c.to))
+	case "hostToHost":
+		sh := "ssh -o BatchMode=yes"
+		if c.dstHost.Port != 0 {
+			sh += " -p " + strconv.Itoa(c.dstHost.Port)
+		}
+		return append(a, "-e", sh, c.from, c.dstHost.Destination+":"+c.o.remotePath(c.to))
+	}
+	return append(a, c.from, c.to)
+}
+
+// rsyncEnv is the environment rsync runs with here: RSYNC_OLD_ARGS and
+// RSYNC_PROTECT_ARGS dropped, since they change how a remote folder is
+// quoted, and messages in the C locale.
+func rsyncEnv(env []string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if k, _, _ := strings.Cut(kv, "="); k == "RSYNC_OLD_ARGS" || k == "RSYNC_PROTECT_ARGS" || k == "LC_ALL" {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, "LC_ALL=C")
 }
 
 func (m *rsyncMover) runGroup(ctx context.Context, j *MoveJob, r rsyncRoute, g rsyncGroup, pj *procJob) error {
@@ -352,27 +638,22 @@ func (m *rsyncMover) runGroup(ctx context.Context, j *MoveJob, r rsyncRoute, g r
 		largest = max(largest, f.Size)
 		total += f.Size
 	}
-	from := absUnder(j.Src.Root(), g.base) + "/"
-	to := absUnder(j.Dst.Root(), j.Stage) + "/"
-	opts := m.options(j, largest)
+	c := rsyncCmd{
+		kind:     r.kind,
+		o:        r.o,
+		program:  r.bin,
+		from:     absUnder(j.Src.Root(), g.base) + "/",
+		to:       absUnder(j.Dst.Root(), j.Stage) + "/",
+		largest:  largest,
+		preserve: j.Preserve,
+	}
 	base := struct{ files, bytes int64 }{pj.files.Load(), pj.bytes.Load()}
 	switch r.kind {
 	case "onhost", "hostToHost":
-		argv := append([]string{remoteRsync(j.Src.(Remote))}, opts...)
-		argv = append(argv, "--files-from=-")
-		if p := remoteRsync(j.Dst.(Remote)); p != "rsync" {
-			argv = append(argv, "--rsync-path="+p)
-		}
-		if r.kind == "hostToHost" {
-			sh := "ssh -o BatchMode=yes"
-			if r.dstHost.Port != 0 {
-				sh += " -p " + strconv.Itoa(r.dstHost.Port)
-			}
-			argv = append(argv, "-e", sh, from, r.dstHost.Destination+":"+to)
-		} else {
-			argv = append(argv, from, to)
-		}
-		res, err := m.s.d.Runner.RunOnce(ctx, r.srcSite, r.key, argv, 24*time.Hour, &list)
+		c.program = remoteRsync(j.Src.(Remote))
+		c.farRsync = remoteRsync(j.Dst.(Remote))
+		c.dstHost = r.dstHost
+		res, err := m.s.d.Runner.RunOnce(ctx, r.srcSite, r.key, c.argv(), 24*time.Hour, &list)
 		if err != nil {
 			return err
 		}
@@ -388,52 +669,36 @@ func (m *rsyncMover) runGroup(ctx context.Context, j *MoveJob, r rsyncRoute, g r
 		return err
 	}
 	defer os.RemoveAll(dir)
-	listFile := filepath.Join(dir, "files")
-	if err := os.WriteFile(listFile, list.Bytes(), 0o600); err != nil {
+	c.listFile = filepath.Join(dir, "files")
+	if err := os.WriteFile(c.listFile, list.Bytes(), 0o600); err != nil {
 		return err
-	}
-	args := append(opts, "--files-from="+listFile)
-	if v, _ := m.version(ctx, "", "", "this computer", m.bin(j.Set)); atLeast(v, [3]int{3, 1, 0}) {
-		args = append(args, "--info=progress2")
 	}
 	env := os.Environ()
 	switch r.kind {
 	case "pull", "push":
 		site := r.srcSite
+		far := j.Src
 		if r.kind == "push" {
-			site = r.dstSite
+			site, far = r.dstSite, j.Dst
 		}
 		argv, extra, err := m.s.d.Shell(site, r.key)
 		if err != nil {
 			return err
 		}
-		rsh := filepath.Join(dir, "rsh")
+		c.rsh = filepath.Join(dir, "rsh")
 		// rsync runs the remote shell as `rsh <host> <command words>`; the
 		// script drops the host and hands the words to ssh or pw ssh as one
 		// command, as each takes it.
 		script := "#!/bin/sh\nshift\nexec " + remote.DirectCommand(argv) + " \"$*\"\n"
-		if err := os.WriteFile(rsh, []byte(script), 0o700); err != nil {
+		if err := os.WriteFile(c.rsh, []byte(script), 0o700); err != nil {
 			return err
 		}
 		env = append(env, extra...)
-		args = append(args, "--rsh="+rsh)
-		far := j.Dst
-		if r.kind == "pull" {
-			far = j.Src
-		}
-		if p := remoteRsync(far.(Remote)); p != "rsync" {
-			args = append(args, "--rsync-path="+p)
-		}
-		if r.kind == "pull" {
-			args = append(args, "studio:"+from, to)
-		} else {
-			args = append(args, from, "studio:"+to)
-		}
-	default:
-		args = append(args, from, to)
+		c.farRsync = remoteRsync(far.(Remote))
 	}
-	cmd := exec.CommandContext(ctx, m.bin(j.Set), args...)
-	cmd.Env = append(env, "LC_ALL=C")
+	args := c.argv()
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Env = rsyncEnv(env)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.StdoutPipe()

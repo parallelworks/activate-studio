@@ -169,6 +169,13 @@ jobs:
       - name: go test (the remote helper)
         working-directory: server-go
         run: go test ./cmd/studio-remote ./internal/remotepass && go test -run 'TestONNXRuntimeFromTheWheel|TestHelperPlatforms' ./internal/userlibs
+      # The rsync macOS ships (2.6.9 or openrsync) run with the command
+      # lines Studio builds for it: a copy on this computer and a send
+      # through a stand-in remote shell, to a folder whose name holds
+      # spaces, quotes, $() and wildcards. The log shows what it offers.
+      - name: go test (the system rsync)
+        working-directory: server-go
+        run: go test -v -run 'TestSystemRsync|TestRsync|TestRemotePathThroughShell' ./internal/transfers
       - name: install the document readers
         run: python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only
       # The runner's python3 can be newer than the pinned wheels; the map's

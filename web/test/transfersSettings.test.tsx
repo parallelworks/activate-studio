@@ -42,7 +42,7 @@ describe('Settings, Transfers', () => {
     // 8 locations less 1 unavailable, plus 1 offered library host.
     await waitFor(() => expect(within(box).getByText('8 places ready')).toBeInTheDocument())
     expect(within(box).getByText(/1 library host/)).toBeInTheDocument()
-    expect(within(box).getByText(/rsync 3\.2\.7 found/)).toBeInTheDocument()
+    expect(within(box).getByText(/rsync 3\.2\.7 at \/usr\/bin\/rsync: used on this computer, for sends to hosts and for pulls from hosts/)).toBeInTheDocument()
     expect(within(table).getByText('Scratch on archive-host')).toBeInTheDocument()
     expect(screen.getByText('Saved locations')).toBeInTheDocument()
     expect(screen.getByText('Folders on this computer')).toBeInTheDocument()
@@ -52,7 +52,7 @@ describe('Settings, Transfers', () => {
     expect(screen.getByRole('checkbox', { name: 'Offer storage-host' })).not.toBeChecked()
     expect(screen.getByText('/home/user/Projects')).toBeInTheDocument()
     expect(screen.getByText('Always on')).toBeInTheDocument()
-    expect(screen.getByText(/Found here, version 3\.2\.7/)).toBeInTheDocument()
+    expect(screen.getByText(/Found rsync 3\.2\.7 at \/usr\/bin\/rsync: used on this computer, for sends to hosts and for pulls from hosts\./)).toBeInTheDocument()
     // CONDUIT is off, so its server choice is hidden.
     expect(screen.queryByRole('combobox', { name: 'CONDUIT server' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
@@ -159,6 +159,15 @@ describe('Settings, Transfers', () => {
     const row = within(table).getAllByRole('row')[1].closest('tbody') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: 'Test' }))
     expect(await within(row).findByText(/^Reached, folder exists, rsync 3\.2\.7 found, writable, 2 TB free, 38 ms round trip\.$/)).toBeInTheDocument()
+  })
+
+  it('says what an old rsync on a host is used for', async () => {
+    serve({ testReply: { ok: true, rsync: true, rsyncVersion: '2.6.9', rsyncText: 'rsync 2.6.9 there: used for sends and pulls with this computer and for copies on that host', writable: true, freeBytes: 2 * 1024 ** 4, roundTripMs: 38 } })
+    render(<TransfersSettingsSection />)
+    const table = await screen.findByRole('table')
+    const row = within(table).getAllByRole('row')[1].closest('tbody') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Test' }))
+    expect(await within(row).findByText(/^Reached, folder exists, rsync 2\.6\.9 found, writable, 2 TB free, 38 ms round trip\. rsync 2\.6\.9 there: used for sends and pulls with this computer and for copies on that host\.$/)).toBeInTheDocument()
   })
 
   it('says plainly when the account takes SFTP only', async () => {

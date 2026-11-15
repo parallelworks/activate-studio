@@ -89,6 +89,8 @@ Settings, Transfers shows what is ready with no setup. **Add a location** there 
 
 A host account that allows SFTP only, such as an upload drop, works as a location with no extra setup. Studio finds this on first use and reaches it over SFTP with the same ssh settings. Transfers to and from it use Studio's own copy, since rsync cannot run there, and the connection test says the account takes SFTP only. Checking a move or the **checksum** option reads each file back over the network, which takes longer on large files. It also sets the folders on this computer that transfers may use, and the defaults.
 
+Studio uses the rsync installed on each end, and the two ends can run different versions. Copies within this computer and sends to a host work with rsync 2.6.9 and later, including the rsync 2.6.9 or openrsync that macOS ships. Pulling from a host needs rsync 3.2.5 or later on this computer, or a build that carries the fix for CVE-2022-29154, a flaw that lets the sending host write files outside the destination folder. Without it, Studio's own copy carries pulls and the plan says so. On a Mac, Studio also looks for Homebrew's rsync (`brew install rsync`) and uses it when it can do more. Settings, Transfers shows the rsync found, its version and what it is used for, and a connection test says the same of a host's rsync. A program path set there is always used as it is.
+
 With sign-in on, each person sees only their own transfers and reaches clusters with their own key, and the operator sets these settings.
 
 ## Search
