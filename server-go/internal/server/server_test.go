@@ -290,10 +290,21 @@ func TestProxyKeepsConnectionsForABurst(t *testing.T) {
 // one: Node here waits for the client to read each event, so a buffered
 // proxy would stall. This holds for both event streams, for an event
 // stream whose type carries a charset, and for a response with no length
-// (the session relay).
+// (the session relay). Each stream has its own signal, by path, and Node
+// answers any other request at once: a request the server's background
+// jobs make to Node on their own would otherwise wait on a shared signal
+// and take one meant for a stream.
 func TestStreamsAreNotBuffered(t *testing.T) {
-	next := make(chan struct{})
+	var mu sync.Mutex
+	nexts := map[string]chan struct{}{}
 	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		next := nexts[r.URL.Path]
+		mu.Unlock()
+		if next == nil {
+			http.NotFound(w, r)
+			return
+		}
 		switch r.URL.Path {
 		case "/api/__test/event-stream", "/v1/__test/event-stream":
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -307,7 +318,7 @@ func TestStreamsAreNotBuffered(t *testing.T) {
 			w.(http.Flusher).Flush()
 			select {
 			case <-next:
-			case <-time.After(5 * time.Second):
+			case <-time.After(30 * time.Second):
 				return
 			}
 		}
@@ -316,6 +327,10 @@ func TestStreamsAreNotBuffered(t *testing.T) {
 	u, _ := url.Parse(node.URL)
 	f := front(t, webDist(t), u)
 	for _, p := range []string{"/api/__test/event-stream", "/v1/__test/event-stream", "/api/__test/charset-stream", "/api/__test/relay/h/x"} {
+		next := make(chan struct{})
+		mu.Lock()
+		nexts[p] = next
+		mu.Unlock()
 		req, _ := http.NewRequest("POST", f.URL+p, strings.NewReader("{}"))
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -337,14 +352,21 @@ func TestStreamsAreNotBuffered(t *testing.T) {
 		}()
 		for i := 0; i < 3; i++ {
 			select {
-			case l := <-lines:
+			case l, ok := <-lines:
+				if !ok {
+					t.Fatalf("%s: the stream ended before event %d", p, i)
+				}
 				if l != fmt.Sprintf("data: %d\n", i) {
 					t.Fatalf("%s: event %d is %q", p, i, l)
 				}
 			case <-time.After(2 * time.Second):
 				t.Fatalf("%s: event %d did not arrive before Node wrote the next: buffered", p, i)
 			}
-			next <- struct{}{}
+			select {
+			case next <- struct{}{}:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("%s: Node stopped waiting after event %d", p, i)
+			}
 		}
 		res.Body.Close()
 	}
