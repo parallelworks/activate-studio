@@ -3,6 +3,7 @@ package settings
 import (
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -102,7 +103,36 @@ var deploymentPrompts = []string{
 	"Which workflows are available to run?",
 }
 
-var PersonalSections = []string{"chat", "library", "search", "query", "overview", "history", "agents", "settings", "help"}
+var PersonalSections = []string{"chat", "library", "transfers", "search", "query", "overview", "history", "agents", "settings", "help"}
+
+// SectionsGen is the generation of the pages a saved sections list
+// knows of, saved beside it as sectionsGen. Generation 1 added Transfers.
+const SectionsGen = 1
+
+// newPages are pages added after lists of sections were first saved,
+// each with the generation that added it and the page it follows.
+var newPages = []struct {
+	id, after string
+	gen       int
+}{{"transfers", "library", 1}}
+
+// WithNewPages is a saved sections list with the pages added since it
+// was saved, each after the page it follows. A list saved since a page
+// was added keeps the choice it records, on or off.
+func WithNewPages(sections []string, gen int) []string {
+	if len(sections) == 0 {
+		return sections
+	}
+	out := sections
+	for _, p := range newPages {
+		if gen >= p.gen || slices.Contains(out, p.id) {
+			continue
+		}
+		i := slices.Index(out, p.after)
+		out = slices.Insert(slices.Clone(out), i+1, p.id)
+	}
+	return out
+}
 
 var PersonalMission = strings.Join([]string{
 	"This Studio indexes one person's own files on their computer: notes, documents, papers, spreadsheets, code and other files in the indexed folder.",
@@ -201,7 +231,7 @@ func (s *Store) Effective() Effective {
 	e.KbLabel = or(str("kbLabel"), s.envOr("KB_LABEL", filepath.Base(s.kbRoot)))
 	switch {
 	case list("sections") != nil:
-		e.Sections = *list("sections")
+		e.Sections = WithNewPages(*list("sections"), int(or(num("sectionsGen"), 0)))
 	case env("STUDIO_SECTIONS") != "":
 		e.Sections = splitList(env("STUDIO_SECTIONS"))
 	case freshPersonal:

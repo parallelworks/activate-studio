@@ -9,6 +9,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
+	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
 
 func (c *Core) getSettings(w http.ResponseWriter, r *http.Request) error {
@@ -101,6 +102,7 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 		} else {
 			set("sections", nil)
 		}
+		set("sectionsGen", settings.SectionsGen)
 	}
 	if v, ok := in("workflowCollection"); ok {
 		var list []string

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileRows } from '../src/views/OverviewView'
+import { fileRows, fmtBytes } from '../src/views/OverviewView'
 
 describe('the Stats file lists', () => {
   it('read one library\'s rows by column name', () => {
@@ -17,5 +17,14 @@ describe('the Stats file lists', () => {
       ['notes/a.md', 2048, '2026-10-18', 'Knowledge base', 'kb/notes/a.md'],
       ['runs/b.log', 10, '2026-10-17', 'Cluster scratch', 'scratch/runs/b.log'],
     ])
+  })
+})
+
+describe('sizes on Stats', () => {
+  it('step up to TB and PB so a large library fits its tile', () => {
+    expect(fmtBytes(512)).toBe('512 B')
+    expect(fmtBytes(5 * 1024 ** 3)).toBe('5.00 GB')
+    expect(fmtBytes(3576601920278)).toBe('3.25 TB')
+    expect(fmtBytes(2 * 1024 ** 5)).toBe('2.00 PB')
   })
 })
