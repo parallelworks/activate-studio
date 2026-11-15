@@ -2,30 +2,43 @@ import { useEffect, useState } from 'react'
 import { currentLibrary, setLibrary, type PublicLibrary } from './api'
 
 /**
- * Which libraries Search and Query look in: all of them, or the ones
- * ticked. Each page keeps its own choice in this browser (localStorage), so
- * Search over two libraries and Query over one stay as they were left. A
- * page with no choice of its own covers every library, as a new tab does.
- * The choice is only ever a subset of the libraries that exist: ids no
- * longer there are dropped, and ticking every one is "all".
+ * Which libraries Search, Query and the chat look in: all of them, or the
+ * ones ticked. Each page keeps its own choice in this browser
+ * (localStorage), so Search over two libraries and Query over one stay as
+ * they were left. A page with no choice of its own covers every library, as
+ * a new tab does. The choice is only ever a subset of the libraries that
+ * exist: ids no longer there are dropped, and ticking every one is "all".
  */
 export type Scope = 'all' | string[]
-export type ScopePage = 'search' | 'query'
+export type ScopePage = 'search' | 'query' | 'chat'
 
 const ALL = 'all'
 const key = (page: ScopePage) => `ade-scope-${page}`
 const listeners = new Map<ScopePage, Set<(s: Scope) => void>>()
 const held = new Map<ScopePage, Scope>()
 
+/** Where the chat kept its one library before it took several: an id, or
+ *  "all"; nothing for the knowledge base, which was also the default. */
+const LEGACY_CHAT = 'ade-chat-library'
+
 function stored(page: ScopePage): Scope | null {
   try {
     const raw = localStorage.getItem(key(page))
-    if (!raw) return null
+    if (!raw) return page === 'chat' ? legacyChat() : null
     const v = JSON.parse(raw) as unknown
     if (v === ALL) return ALL
     if (Array.isArray(v) && v.every(x => typeof x === 'string') && v.length) return v as string[]
   } catch { /* storage unavailable or not ours */ }
   return null
+}
+
+/** The chat's choice as kept before: a library someone picked stays
+ *  picked. Nothing kept could be the default or a pick of the knowledge
+ *  base, the two stored alike, so it is all libraries, the new default. */
+function legacyChat(): Scope | null {
+  const v = localStorage.getItem(LEGACY_CHAT)
+  if (!v || v === ALL) return null
+  return [v]
 }
 
 /** The scope as it can be, given the libraries there are. */
@@ -44,7 +57,10 @@ export function readScope(page: ScopePage): Scope {
 
 export function saveScope(page: ScopePage, s: Scope): void {
   held.set(page, s)
-  try { localStorage.setItem(key(page), JSON.stringify(s)) } catch { /* kept for this page load only */ }
+  try {
+    localStorage.setItem(key(page), JSON.stringify(s))
+    if (page === 'chat') localStorage.removeItem(LEGACY_CHAT)
+  } catch { /* kept for this page load only */ }
   for (const fn of listeners.get(page) ?? []) fn(s)
 }
 
@@ -103,7 +119,8 @@ export function openInLibrary(onOpen: (path: string) => void, libraryId: string 
 /** For tests: forget every page's choice. */
 export function resetScopesForTests(): void {
   held.clear()
-  for (const page of ['search', 'query'] as const) {
+  for (const page of ['search', 'query', 'chat'] as const) {
     try { localStorage.removeItem(key(page)) } catch { /* none kept */ }
   }
+  try { localStorage.removeItem(LEGACY_CHAT) } catch { /* none kept */ }
 }

@@ -2407,11 +2407,14 @@ a.identity-btn { text-decoration: none; }
 /* A session shown under its card in a chat reply. */
 .session-inline { display: block; flex: 0 0 auto; width: 100%; height: 520px; border: 0; border-top: 1px solid var(--pw-border); margin-top: 8px; background: #fff; }
 .embed-unknown p { margin: 0; padding: 10px 12px; font-size: 13px; }
-/* The Scope menu holds the chat's library and its labels: the button names
-   the library after "Scope", and the menu scrolls when both are long. */
+/* The Scope menu holds the chat's libraries and its labels: the button
+   names the libraries after "Scope", and the menu scrolls when both are
+   long. */
 .scope-sub { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--pw-border); font-weight: 500; }
 .chat-scope-menu { width: 270px; max-height: min(70vh, 560px, var(--available-height)); }
-.scope-libs { display: flex; flex-direction: column; gap: 2px; }
+/* The menu's library ticks are Search's list (LibraryScope.tsx), fitted to
+   the menu's width. */
+.chat-scope-menu .scope-libs { min-width: 0; max-width: none; max-height: 220px; }
 /* A reply that is still streaming keeps a steady shape. The package shows
    the latest lines of the model's thinking under the label while it thinks
    and drops them when a tool or the answer starts, which opened and closed

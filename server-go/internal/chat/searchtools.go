@@ -50,26 +50,39 @@ func fileIn(path, library string) conversations.File {
 	return conversations.File{Path: path, Library: &library}
 }
 
-// scopeParam is String(name ?? ”).trim() || the conversation's library.
+// scopeParam is String(name ?? ”).trim() || the conversation's libraries.
 func scopeParam(v any, ctx ToolCtx) []string {
 	if s := jsTrim(jsString(v)); s != "" {
 		return []string{s}
 	}
-	if ctx.Library != nil && *ctx.Library != "" {
-		return []string{*ctx.Library}
+	return ctx.Library
+}
+
+// queryLibrary is a query body's library: one id as it is, several as a
+// list, nil for none.
+func queryLibrary(scope []string) any {
+	switch len(scope) {
+	case 0:
+		return nil
+	case 1:
+		return scope[0]
 	}
-	return nil
+	return scope
 }
 
 // namedLibrary is the library a read or a listing names, else the
-// conversation's; "all" is for search and query only.
+// conversation's one (defaultLibrary); "all" is for search and query only.
 func (m *Module) namedLibrary(v any, ctx ToolCtx) (libraries.Library, error) {
 	want := jsTrim(jsString(v))
-	if want == "" && ctx.Library != nil {
-		want = *ctx.Library
+	if want == "" {
+		d, err := defaultLibrary(ctx)
+		if err != nil {
+			return libraries.Library{}, err
+		}
+		want = d
 	}
 	if strings.ToLower(want) == "all" {
-		return libraries.Library{}, &toolError{`name one library (an id from list_libraries) to read or list; "all" is for search and query`}
+		return libraries.Library{}, &toolError{errOneLibrary}
 	}
 	return m.Corpus.Reg.Get(want, m.primaryLabel(), viewerOfCtx(ctx))
 }
@@ -392,8 +405,8 @@ func (m *Module) toolQueryCorpus(r *http.Request, args map[string]any, ctx ToolC
 	if jsTruthy(args["subtree"]) {
 		body["subtree"] = jsString(args["subtree"])
 	}
-	if lib := scopeParam(args["library"], ctx); lib != nil {
-		body["library"] = lib[0]
+	if lib := queryLibrary(scopeParam(args["library"], ctx)); lib != nil {
+		body["library"] = lib
 	}
 	raw, err := jsonv.Marshal(body)
 	if err != nil {

@@ -31,14 +31,6 @@ export function LibraryScope({ libraries, value, onChange, hint, single = false 
 }) {
   if (libraries.length < 2) return null
   if (single) return <OneLibrary libraries={libraries} value={value === 'all' ? libraries[0].id : value[0]} onChange={id => onChange([id])} hint={hint} />
-  const ticked = (id: string) => value === 'all' || value.includes(id)
-  const count = value === 'all' ? libraries.length : value.length
-  const toggle = (id: string, on: boolean) => {
-    const now = value === 'all' ? libraries.map(l => l.id) : value
-    const next = on ? [...now, id] : now.filter(x => x !== id)
-    if (!next.length) return
-    onChange(next.length === libraries.length ? 'all' : libraries.map(l => l.id).filter(x => next.includes(x)))
-  }
   const names = value === 'all' ? 'every library' : libraries.filter(l => value.includes(l.id)).map(l => l.label).join(', ')
   return (
     <Popover
@@ -53,28 +45,52 @@ export function LibraryScope({ libraries, value, onChange, hint, single = false 
         </button>
       }
     >
-      <div className="library-scope-list" role="group" aria-label="Libraries to include">
-        <label className="library-scope-row library-scope-all">
-          <Checkbox
-            aria-label="All libraries"
-            checked={value === 'all'}
-            indeterminate={value !== 'all' && count > 0}
-            onCheckedChange={on => { if (on) onChange('all') }}
-          />
-          <span>All libraries</span>
-        </label>
-        {libraries.map(l => {
-          const on = ticked(l.id)
-          const last = on && count === 1
-          return (
-            <label key={l.id} className="library-scope-row" title={last ? 'At least one library stays ticked' : undefined}>
-              <Checkbox aria-label={libraryName(l)} checked={on} disabled={last} onCheckedChange={v => toggle(l.id, !!v)} />
-              <span className="truncate">{libraryName(l)}</span>
-            </label>
-          )
-        })}
-      </div>
+      <LibraryTicks libraries={libraries} value={value} onChange={onChange} />
     </Popover>
+  )
+}
+
+/**
+ * The picker's list: All libraries, then a tick for each library. Ticking
+ * every one is All; the last one ticked cannot be unticked. The chat's Scope
+ * menu shows the same list.
+ */
+export function LibraryTicks({ libraries, value, onChange, className }: {
+  libraries: PublicLibrary[]
+  value: Scope
+  onChange: (s: Scope) => void
+  className?: string
+}) {
+  const ticked = (id: string) => value === 'all' || value.includes(id)
+  const count = value === 'all' ? libraries.length : value.length
+  const toggle = (id: string, on: boolean) => {
+    const now = value === 'all' ? libraries.map(l => l.id) : value
+    const next = on ? [...now, id] : now.filter(x => x !== id)
+    if (!next.length) return
+    onChange(next.length === libraries.length ? 'all' : libraries.map(l => l.id).filter(x => next.includes(x)))
+  }
+  return (
+    <div className={cx('library-scope-list', className)} role="group" aria-label="Libraries to include">
+      <label className="library-scope-row library-scope-all">
+        <Checkbox
+          aria-label="All libraries"
+          checked={value === 'all'}
+          indeterminate={value !== 'all' && count > 0}
+          onCheckedChange={on => { if (on) onChange('all') }}
+        />
+        <span>All libraries</span>
+      </label>
+      {libraries.map(l => {
+        const on = ticked(l.id)
+        const last = on && count === 1
+        return (
+          <label key={l.id} className="library-scope-row" title={last ? 'At least one library stays ticked' : undefined}>
+            <Checkbox aria-label={libraryName(l)} checked={on} disabled={last} onCheckedChange={v => toggle(l.id, !!v)} />
+            <span className="truncate">{libraryName(l)}</span>
+          </label>
+        )
+      })}
+    </div>
   )
 }
 

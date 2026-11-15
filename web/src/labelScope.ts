@@ -18,11 +18,14 @@ let persona: string | null = null
 export function setPersona(name: string | null): void { persona = name || null }
 export function getPersona(): string | null { return persona }
 
-/** The library the assistant searches and queries in this chat: an id, or
- *  "all"; null leaves it to the server, which means the knowledge base. */
-let chatLibrary: string | null = null
-export function setChatLibrary(id: string | null): void { chatLibrary = id || null }
-export function getChatLibrary(): string | null { return chatLibrary }
+/** The libraries the assistant searches and queries in this chat, as the
+ *  request sends them: "all", one id, or a list of ids; null leaves it to
+ *  the server, which means the knowledge base. Set from the chat's Scope
+ *  menu (scope.ts keeps the choice). */
+export type ChatLibraries = string | string[] | null
+let chatLibrary: ChatLibraries = null
+export function setChatLibrary(v: ChatLibraries): void { chatLibrary = (Array.isArray(v) ? (v.length ? v : null) : v || null) }
+export function getChatLibrary(): ChatLibraries { return chatLibrary }
 
 /** Reasoning effort for the chat's turns: '' leaves it to the model, else
  *  one of EFFORTS. Each conversation keeps its own, a new chat starts from

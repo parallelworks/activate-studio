@@ -58,7 +58,7 @@ type loopState struct {
 	groupsMu       *sync.Mutex
 	groupList      func() []string
 	labelScope     []string
-	library        *string
+	library        []string
 	pwToolKey      *string
 	convID         string
 	lastUser       *llm.Message

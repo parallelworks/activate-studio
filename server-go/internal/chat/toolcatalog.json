@@ -36,7 +36,7 @@
      },
      "library": {
       "type": "string",
-      "description": "Which library to search: an id from list_libraries, several ids separated by commas, or \"all\" for every library; default the one selected in this conversation"
+      "description": "Which library to search: an id from list_libraries, several ids separated by commas, or \"all\" for every library; default the libraries selected in this conversation"
      }
     },
     "required": []
@@ -65,7 +65,7 @@
      },
      "library": {
       "type": "string",
-      "description": "Which library: an id from list_libraries; default the one selected in this conversation"
+      "description": "Which library: an id from list_libraries; default the one selected in this conversation, or the knowledge base when it is among several selected"
      }
     }
    }
@@ -93,7 +93,7 @@
      },
      "library": {
       "type": "string",
-      "description": "Which library: an id from list_libraries; default the one selected in this conversation"
+      "description": "Which library: an id from list_libraries; default the one selected in this conversation, or the knowledge base when it is among several selected"
      }
     }
    }
@@ -110,7 +110,7 @@
      },
      "library": {
       "type": "string",
-      "description": "Which library: an id from list_libraries; default the one selected in this conversation"
+      "description": "Which library: an id from list_libraries; default the one selected in this conversation, or the knowledge base when it is among several selected"
      }
     },
     "required": []
@@ -665,7 +665,7 @@
      },
      "library": {
       "type": "string",
-      "description": "Which library: an id from list_libraries, or \"all\" for every library (ranked answers re-ranked across them); default the one selected in this conversation"
+      "description": "Which library: an id from list_libraries, or \"all\" for every library (ranked answers re-ranked across them); default the libraries selected in this conversation"
      }
     },
     "required": [
@@ -798,7 +798,7 @@
      },
      "library": {
       "type": "string",
-      "description": "Which library the paths are in: an id from list_libraries; default the one selected in this conversation, or the knowledge base when all are selected"
+      "description": "Which library the paths are in: an id from list_libraries; default the one selected in this conversation, or the knowledge base when all are selected or it is among several selected"
      }
     },
     "required": [

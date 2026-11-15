@@ -47,15 +47,16 @@ func (m *Module) toolApplyLabels(r *http.Request, args map[string]any, ctx ToolC
 	add, remove := csvList(args, "add"), csvList(args, "remove")
 	named := jsTrim(argString(args, "library"))
 	want := named
-	if want == "" {
-		scoped := deref(ctx.Library)
-		if strings.ToLower(scoped) == "all" {
-			scoped = "kb"
+	if want == "" && len(ctx.Library) > 0 {
+		// The chat's one library, or the main one among all or several.
+		scoped, err := defaultLibrary(ctx)
+		if err != nil {
+			return nil, err
 		}
 		want = scoped
 	}
 	if strings.ToLower(jsTrim(want)) == "all" {
-		return nil, &toolError{`name one library (an id from list_libraries) to read or list; "all" is for search and query`}
+		return nil, &toolError{errOneLibrary}
 	}
 	rels := make([]string, len(paths))
 	for i, p := range paths {
