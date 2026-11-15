@@ -584,3 +584,68 @@ func TestRcloneOnHost(t *testing.T) {
 		t.Fatalf("%q %v", v, ok)
 	}
 }
+
+// An object store has no folders, so the write check writes and deletes a
+// zero-byte staging-named object: a bucket read with read-only credentials
+// is refused at the plan, not at run time.
+func TestRcloneObjectStoreWriteCheck(t *testing.T) {
+	r, dir, log := rcloneRig(t)
+	write(t, filepath.Join(r.home, "Downloads", "data", "one.txt"), "one")
+	write(t, filepath.Join(dir, "s", "bucket", "keep.txt"), "keep")
+
+	// Writable: the probe is written, then deleted, and nothing is left.
+	r.mustPlan(single, req(ActionCopy, "computer:Downloads", []string{"data"}, "rclone:s", "bucket"))
+	var rcat, del []string
+	for _, a := range fakeLog(t, log) {
+		switch a[0] {
+		case "rcat":
+			rcat = a
+		case "delete":
+			del = a
+		case "mkdir":
+			t.Fatalf("mkdir on an object store: %q", a)
+		}
+	}
+	if len(rcat) == 0 || !strings.HasPrefix(rcat[len(rcat)-1], "s:bucket/"+stagingPrefix+"probe-") || len(del) == 0 {
+		t.Fatalf("probe rcat %q delete %q", rcat, del)
+	}
+	es, _ := os.ReadDir(filepath.Join(dir, "s", "bucket"))
+	if len(es) != 1 || es[0].Name() != "keep.txt" {
+		t.Fatalf("left in the bucket: %v", es)
+	}
+
+	// Read only: the plan is refused with the write-check message.
+	t.Setenv("FAKE_RCLONE_READONLY", "s")
+	_, err := r.plan(single, req(ActionCopy, "computer:Downloads", []string{"data"}, "rclone:s", "bucket"))
+	if statusOf(err) != 400 || !strings.Contains(messageOf(err), "you cannot write in s:bucket on the rclone remote s") {
+		t.Fatalf("read-only bucket: %v", err)
+	}
+	// A move out of it is refused too: the originals could not be removed.
+	_, err = r.plan(single, req(ActionMove, "rclone:s", []string{"bucket/keep.txt"}, "computer:Downloads", ""))
+	if statusOf(err) != 400 || !strings.Contains(messageOf(err), "originals could not be removed") {
+		t.Fatalf("move out of a read-only bucket: %v", err)
+	}
+
+	// Writes allowed, deletes refused: the plan goes ahead and the probe
+	// is left (a warning is logged).
+	t.Setenv("FAKE_RCLONE_READONLY", "")
+	t.Setenv("FAKE_RCLONE_NODELETE", "s")
+	r.mustPlan(single, req(ActionCopy, "computer:Downloads", []string{"data"}, "rclone:s", "bucket"))
+	es, _ = os.ReadDir(filepath.Join(dir, "s", "bucket"))
+	if len(es) != 2 {
+		t.Fatalf("expected the probe left behind: %v", es)
+	}
+
+	// A file system remote still checks with a folder.
+	t.Setenv("FAKE_RCLONE_NODELETE", "")
+	r.mustPlan(single, req(ActionCopy, "computer:Downloads", []string{"data"}, "rclone:a", ""))
+	sawMkdir := false
+	for _, a := range fakeLog(t, log) {
+		if a[0] == "mkdir" && strings.HasPrefix(a[len(a)-1], "a:"+stagingPrefix+"probe-") {
+			sawMkdir = true
+		}
+	}
+	if !sawMkdir {
+		t.Fatal("no folder probe on a file system remote")
+	}
+}

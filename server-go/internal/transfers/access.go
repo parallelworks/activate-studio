@@ -1,6 +1,7 @@
 package transfers
 
 import (
+	"bytes"
 	"context"
 	"path"
 	"sort"
@@ -67,13 +68,33 @@ const probesMax = 8
 // checkWritable checks that the account can write in each folder of l by
 // making and removing a staging-named folder there, as the Settings
 // connection test does; it works the same on this computer, over a shell
-// on a host, and over SFTP. what says what the write is for.
+// on a host, and over SFTP. An rclone remote with no real folders (an
+// object store) makes nothing for a folder, so there it writes and
+// deletes a zero-byte staging-named object instead; read-only credentials
+// are refused at that write. what says what the write is for.
 func (s *Service) checkWritable(ctx context.Context, l *loc, dirs []string, what string) error {
+	objects := noFolders(ctx, l.fs)
 	for _, d := range dirs {
 		probe := join(d, stagingPrefix+"probe-"+newID())
-		if err := l.fs.Mkdir(ctx, probe); err != nil {
+		var err error
+		if objects {
+			_, err = l.fs.Write(ctx, probe, bytes.NewReader(nil), 0, 0o644)
+		} else {
+			err = l.fs.Mkdir(ctx, probe)
+		}
+		if err != nil {
 			s.d.Log.Info("transfers: write check failed", "location", l.ID, "folder", d, "error", messageOf(err))
 			return apierr.New(400, "you cannot write in %s on %s (%s), so %s", folderName(d, l.fs), l.fs.Where(), l.Label, what)
+		}
+		if objects {
+			removed, err := l.fs.Remove(ctx, []string{probe}, nil)
+			if err == nil && len(removed) != 1 {
+				err = apierr.New(502, "it is still there")
+			}
+			if err != nil {
+				s.d.Log.Warn("transfers: a write check's object was not removed", "location", l.ID, "object", probe, "error", messageOf(err))
+			}
+			continue
 		}
 		if err := l.fs.RemoveStaging(ctx, probe); err != nil {
 			s.d.Log.Warn("transfers: a write check's folder was not removed", "location", l.ID, "folder", probe, "error", messageOf(err))
@@ -83,8 +104,11 @@ func (s *Service) checkWritable(ctx context.Context, l *loc, dirs []string, what
 }
 
 // folderName is a folder of a location as a person knows it: its path on
-// the host.
+// the host, or as rclone names it on a remote ("remote:folder").
 func folderName(rel string, fs FS) string {
+	if r, ok := asRclone(fs); ok {
+		return r.spec(rel)
+	}
 	return path.Join(fs.Root(), rel)
 }
 
