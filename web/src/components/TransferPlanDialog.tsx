@@ -30,13 +30,16 @@ function useNow(ms: number): number {
  * plan (a 409) offer a new plan in place of a start.
  */
 export function TransferPlanDialog({
-  plan, request, onClose, onStarted, onReplanned,
+  plan, request, onClose, onStarted, onReplanned, step,
 }: {
   plan: Plan
   request: PlanRequest
   onClose: () => void
   onStarted: (t: Transfer) => void
   onReplanned: (p: Plan) => void
+  /** Which of several plans this is, as one transfer per library from
+   *  Search or Query; its title says "1 of 2". */
+  step?: { index: number; count: number }
 }) {
   const [busy, setBusy] = useState<'start' | 'plan' | null>(null)
   const [error, setError] = useState<{ text: string; stale: boolean } | null>(null)
@@ -73,7 +76,7 @@ export function TransferPlanDialog({
       onClose={onClose}
       alert
       size="lg"
-      title={`${ACTION_TEXT[plan.action]}: confirm the plan`}
+      title={`${ACTION_TEXT[plan.action]}: confirm the plan${step && step.count > 1 ? ` (${step.index + 1} of ${step.count})` : ''}`}
       description={plan.label || undefined}
       footer={
         <>

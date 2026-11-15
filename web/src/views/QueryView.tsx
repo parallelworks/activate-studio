@@ -14,6 +14,8 @@ import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { SavedQuerySql } from '../components/SavedQuerySql'
 import { OmittedLine, type Omission } from '../components/OmittedLine'
 import { exportName, saveText, toCsv, toTsv } from '../tableExport'
+import { ResultsTransferDialog, itemKey, keyItem, keyPaths, useTransfersShown } from '../components/ResultsTransfer'
+import { libraryRelative } from '../transferApi'
 import {
   BLANK, DIR_FIELDS, FIELDS, OPS, PLACEHOLDER, PRESETS, fromCanned, newFilter, payloadOf, toState, withField,
   type BuilderState, type Filter,
@@ -109,6 +111,8 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   // multi-select labeling over result rows that carry a path
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const transfersShown = useTransfersShown()
 
   useEffect(() => {
     fetch('/api/query/saved').then(r => r.json()).then(setSaved).catch(() => {})
@@ -150,6 +154,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
       setResult(data)
       setSel(new Set())
       setTagMenuOpen(false)
+      setTransferOpen(false)
     } catch (e) {
       setError(String((e as Error).message ?? e))
       setResult(null)
@@ -215,10 +220,26 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
   // Labeling is offered only when the result set has an explicit path or
   // directory column; heuristic path-shaped cells are fine for opening a
   // viewer but too loose for writing xattrs.
+  // Transfers follow the same rule.
   const pathCol = result ? result.columns.findIndex(c => c === 'path' || c === 'directory') : -1
-  const rowKeys = pathCol >= 0 && result ? [...new Set(result.rows.map(r => r[pathCol]).filter(Boolean))] : []
+  // A row's library: its own across several, else the one queried. "all"
+  // is a row totalled over libraries, which is no single file or folder.
+  const oneLibrary = scope !== 'all' && scope.length === 1 ? scope[0] : libraries.length === 1 ? libraries[0].id : ''
+  const rowLibrary = (i: number) => result?.rowLibraries?.[i] ?? oneLibrary
+  // The selection is keyed by library and path, so the same path in two
+  // libraries is two rows.
+  const keyOfRow = (i: number) => itemKey(rowLibrary(i), result!.rows[i][pathCol])
+  const rowKeys = pathCol >= 0 && result ? [...new Set(result.rows.flatMap((r, i) => (r[pathCol] ? [keyOfRow(i)] : [])))] : []
   const allSelected = rowKeys.length > 0 && sel.size === rowKeys.length
   const labeling = pathCol >= 0 && rowKeys.length > 0
+  const selItems = [...sel].map(keyItem)
+  const transferItems = selItems.flatMap(it => {
+    const p = it.library && it.library !== 'all' ? libraryRelative(it.path) : null
+    return p ? [{ library: it.library, path: p }] : []
+  })
+  const leftOut = selItems.length - transferItems.length
+  const totalled = result?.rowLibraries?.includes('all') ?? false
+  const NOT_ONE = 'Totalled over all libraries: this row is no single file or folder, so it can be labeled but not transferred.'
 
   const toggleSel = (key: string) => {
     setSel(s => {
@@ -329,7 +350,7 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
           <Button variant="primary" loading={busy} onClick={() => runQuery()}>{busy ? 'Running…' : 'Run query'}</Button>
           <Button
             onClick={() => {
-              setResult(null); setError(null); setFailedGufi(undefined); setSel(new Set()); setTagMenuOpen(false)
+              setResult(null); setError(null); setFailedGufi(undefined); setSel(new Set()); setTagMenuOpen(false); setTransferOpen(false)
               setB(BLANK); setSubtree('')
             }}
           >Reset</Button>
@@ -375,6 +396,14 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
                     <Button size="sm" disabled={!sel.size} onClick={() => setTagMenuOpen(o => !o)}>
                       Labels…{sel.size ? ` (${sel.size})` : ''}
                     </Button>
+                    {transfersShown && (
+                      <Button size="sm" disabled={!transferItems.length} focusableWhenDisabled onClick={() => setTransferOpen(true)}
+                        title={leftOut
+                          ? `${leftOut.toLocaleString()} selected ${leftOut === 1 ? 'row names' : 'rows name'} no single file or folder in one library, and ${leftOut === 1 ? 'is' : 'are'} left out of a transfer.`
+                          : totalled && !sel.size ? NOT_ONE : 'Copy or move the selected items to another place'}>
+                        Transfer…{transferItems.length ? ` (${transferItems.length})` : ''}
+                      </Button>
+                    )}
                   </>
                 )}
                 {/* The rows as returned, sizes in bytes, for a spreadsheet or a script. */}
@@ -392,10 +421,10 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
             {/* Named as the server names them (a raw SELECT's AS aliases); two may share a name. */}
             {result.columns.map((c, j) => <Table.Header key={j}>{c}</Table.Header>)}
             {result.rows.map((r, i) => (
-              <tr key={i} className={pathCol >= 0 && sel.has(r[pathCol]) ? 'multi' : ''}>
+              <tr key={i} className={pathCol >= 0 && r[pathCol] && sel.has(keyOfRow(i)) ? 'multi' : ''}>
                 {pathCol >= 0 && (
-                  <Table.Item className="sel-col">
-                    {r[pathCol] && <RowCheck checked={sel.has(r[pathCol])} onToggle={() => toggleSel(r[pathCol])} />}
+                  <Table.Item className="sel-col" title={transfersShown && rowLibrary(i) === 'all' ? NOT_ONE : undefined}>
+                    {r[pathCol] && <RowCheck checked={sel.has(keyOfRow(i))} onToggle={() => toggleSel(keyOfRow(i))} />}
                   </Table.Item>
                 )}
                 {r.map((cell, j) => {
@@ -415,9 +444,15 @@ export function QueryView({ onOpen }: { onOpen: (path: string) => void }) {
       )}
       {tagMenuOpen && sel.size > 0 && (
         <TagMenu
-          paths={[...sel]}
+          paths={keyPaths(sel)}
           onClose={() => setTagMenuOpen(false)}
         />
+      )}
+      {transferOpen && transferItems.length > 0 && (
+        <ResultsTransferDialog items={transferItems} noun={result?.columns[pathCol] === 'directory' ? 'folder' : 'file'}
+          labels={Object.fromEntries(libraries.map(l => [l.id, l.label]))}
+          onClose={() => setTransferOpen(false)}
+          onDone={started => { setTransferOpen(false); if (started.length) setSel(new Set()) }} />
       )}
     </div>
   )

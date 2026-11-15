@@ -94,7 +94,7 @@ function LibraryLimit({ location, onSave }: { location: TransferLocation; onSave
 }
 
 export function TransferPane({
-  name, locations, state, onChange, onLoaded, refreshKey, role, onSaveLocation,
+  name, locations, state, onChange, onLoaded, refreshKey, role, onSaveLocation, selectable = true,
 }: {
   /** Names the pane for assistive technology, such as "First location". */
   name: string
@@ -111,6 +111,9 @@ export function TransferPane({
    *  one; with a library, prefilled for its files. Given only with sign-in
    *  off, where saved locations are offered. */
   onSaveLocation?: (from?: TransferLocation) => void
+  /** False for a pane that only chooses a folder, as the destination of a
+   *  transfer started from Search or Query: no boxes, nothing selected. */
+  selectable?: boolean
 }) {
   const location = locations.find(l => l.id === state.locationId) ?? null
   const [listing, setListing] = useState<BrowseResult | null>(null)
@@ -166,6 +169,7 @@ export function TransferPane({
     anchor.current = name
   }
   const rowClick = (e: ReactMouseEvent, name: string) => {
+    if (!selectable) return
     if ((e.target as HTMLElement).closest('button, a, input, [role="checkbox"]')) return
     if (e.shiftKey && anchor.current) { setSelected(rangeSelect(visibleNames, e.metaKey || e.ctrlKey ? state.selected : [], anchor.current, name)); return }
     if (e.metaKey || e.ctrlKey) toggle(name, false)
@@ -266,13 +270,13 @@ export function TransferPane({
               <table className="xfer-table">
                 <thead>
                   <tr>
-                    <th className="xfer-col-check">
+                    {selectable && <th className="xfer-col-check">
                       <Checkbox aria-label={`Select all in ${name}`} checked={allState === true} indeterminate={allState === 'some'}
                         disabled={!visible.length}
                         onCheckedChange={() => setSelected(allState === true
                           ? state.selected.filter(n => !visibleNames.includes(n))
                           : [...new Set([...state.selected, ...visibleNames])])} />
-                    </th>
+                    </th>}
                     <th>Name</th>
                     <th className="xfer-col-size">Size</th>
                     <th className="xfer-col-mtime">Modified</th>
@@ -280,15 +284,15 @@ export function TransferPane({
                 </thead>
                 <tbody>
                   {visible.map(e => {
-                    const on = selectedSet.has(e.name)
+                    const on = selectable && selectedSet.has(e.name)
                     return (
-                      <tr key={e.name} className={on ? 'on' : undefined} aria-selected={on}
+                      <tr key={e.name} className={on ? 'on' : undefined} aria-selected={selectable ? on : undefined}
                         onClick={ev => rowClick(ev, e.name)}
                         onDoubleClick={() => { if (e.type === 'dir') go(joinPath(state.path, e.name)) }}>
-                        <td className="xfer-col-check">
+                        {selectable && <td className="xfer-col-check">
                           <Checkbox aria-label={`Select ${e.name}`} checked={on}
                             onClick={ev => { ev.stopPropagation(); toggle(e.name, ev.shiftKey); ev.preventDefault() }} />
-                        </td>
+                        </td>}
                         <td><span className="xfer-name">
                           <span className={`xfer-glyph ${e.type}`}>{e.type === 'dir' ? <FolderGlyph /> : e.type === 'link' ? <LinkGlyph /> : <FileGlyph />}</span>
                           {e.type === 'dir'
@@ -308,9 +312,9 @@ export function TransferPane({
       </div>
       {listing && !error && (
         <div className="xfer-pane-foot muted">
-          {state.selected.length ? `${state.selected.length.toLocaleString()} of ${entries.length.toLocaleString()} selected` : `${entries.length.toLocaleString()} items`}
+          {selectable && state.selected.length ? `${state.selected.length.toLocaleString()} of ${entries.length.toLocaleString()} selected` : `${entries.length.toLocaleString()} items`}
           {listing.truncated && ' · showing the first 2,000 by name'}
-          {state.selected.length > 0 && <Button size="xs" variant="ghost" onClick={() => setSelected([])}>Clear</Button>}
+          {selectable && state.selected.length > 0 && <Button size="xs" variant="ghost" onClick={() => setSelected([])}>Clear</Button>}
         </div>
       )}
     </section>

@@ -99,6 +99,8 @@ Studio uses the rclone installed on your computer and its existing configuration
 
 With sign-in on, each person sees only their own transfers and reaches clusters with their own key, and the operator sets these settings.
 
+A transfer can also start from Search or Query: tick results and press **Transfer…**. The dialog says how many items there are and in which libraries, and offers **Copy** or **Move**, a destination chosen with the same location list and folder browsing as one side of this page, and **Replace files that already exist at the destination**. **Continue** plans the transfer and shows the plan to confirm, as **Start** does here. A transfer reads from one location, so a selection in several libraries makes one transfer per library, and their plans are confirmed one at a time ("1 of 2"); **Cancel** on a plan stops the ones after it. A library whose files Studio cannot reach is left out, and the dialog says so before **Continue**. A move out of a read-only library is refused, with **Copy instead**. Each transfer that starts shows a notice with **Open in Transfers**, which opens it here; the page you started from stays open with its results, and the selection clears.
+
 ## Search
 
 One box searches four ways, and each result says how it was found: **name** (any part of a file's name), **folder** (a folder it is in has the search in its name), **words** (whole words inside files: PDFs, office documents, notes, code, and text in images), and **meaning** (passages that say the same thing in other words, so a plain question finds a report that never uses its words). Hover the label to see every way a result was found. The line under the box says which libraries are searched by meaning; **How search works** explains each kind.
@@ -114,7 +116,7 @@ When a search leaves a library out, or searches it only in part, a line above th
 - Use "quotes" for a phrase, OR between alternatives, -word to leave a word out, and word* for words that start the same way.
 - Results found more than one way come first, then the best of each kind: a file that uses the words more, in less text; the exact name, then names that start with the search; the passage nearest in meaning. Each library's index is read once per search for all of them.
 - Label chips under the box narrow the results.
-- Tick results to label them together.
+- Tick results to label them together, or press **Transfer…** to copy or move them to another place (see Transfers). The same path in two libraries is two results.
 - **Export CSV** saves the results listed (with **Load more** for up to 1,000) as a CSV file: library, path, name, how each was found, size in bytes, modified time in UTC, labels and the snippet. **Copy** puts the same rows on the clipboard as tab-separated text, which a spreadsheet pastes into columns. In the macOS app the file goes to Downloads.
 - **GUFI commands**, under the results, shows the commands that found them, ready to copy and run in a terminal, with where each ran, when, how long it took, and its exit status. **Error output** under a command shows what it wrote to stderr. Lines saying "no such table" for the text or vector tables are expected, from folders without text or vectors, and are counted apart from the rest. On screen a search by meaning's query vector is shortened, as `X'3f2a1b0c…' (384-value query vector)`, and quotes read as SQL without the shell's escapes; a line under the commands says so. **Copy** gives the full command, and the command log keeps it in full.
 
@@ -139,6 +141,8 @@ In the knowledge base the labels are saved on the files. In any other library, i
 Structured questions about the files themselves (largest, oldest, totals by type or owner) answered in milliseconds, in the libraries ticked under **Querying**. Pick a preset under **Start from** and change it, add conditions (all must match, or any), or write read-only SQL, and save the ones you reuse. Sizes take units (`10 MB`), and dates take a day (`2026-01-01`) or a time ago (`7 days`). **GUFI commands** under the form shows what ran, ready to copy, with each command's error output, also when the query fails; the code button beside a saved query, or **Show SQL** for the form on screen, shows the SQL it runs and its command.
 
 The columns of your own SQL are named as SQLite names them: the name after `AS` (`SELECT name AS file, size AS bytes ...` heads the columns **file** and **bytes**), else the column's own name, else the expression as written. A column named `bytes` shows its sizes in units. With `*` in the list the columns are named col1, col2 and so on.
+
+When the rows have a **path** or **directory** column, tick rows to label them or press **Transfer…** to copy or move them (see Transfers). A row totalled over all libraries is no single file or folder, so it can be labeled but not transferred; hovering its box says so.
 
 **Export CSV** above the rows saves them as a CSV file, sizes in bytes, and **Copy** puts them on the clipboard for a spreadsheet. Both take the rows the query returned, up to its limit (2,000 at most); for more, narrow the query or run the command under **GUFI commands** in a terminal.
 

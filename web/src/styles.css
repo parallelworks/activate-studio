@@ -2899,6 +2899,12 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-dir:focus-visible { outline: 2px solid var(--pw-link); outline-offset: 1px; border-radius: 2px; }
 .xfer-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xfer-pane-foot { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--pw-border); font-size: 12px; min-height: 32px; box-sizing: border-box; }
+/* Transfer from Search or Query: the action, the destination pane at a
+   fixed height so the dialog does not grow with the folder, and options. */
+.xfer-results { display: flex; flex-direction: column; gap: 10px; }
+.xfer-results-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.xfer-results .xfer-pane { height: min(340px, 48vh); }
+.xfer-results-to { margin: 0; font-size: 12.5px; overflow-wrap: anywhere; }
 
 .xfer-plan { display: flex; flex-direction: column; gap: 10px; }
 .xfer-plan-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 13px; }

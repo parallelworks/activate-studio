@@ -12,6 +12,8 @@ import { openInLibrary, readScope, saveScope, scopeIsSeveral, scopeParam, useSco
 import { GufiCommands, type GufiCommand } from '../components/GufiCommands'
 import { OmittedLine, type Omission } from '../components/OmittedLine'
 import { exportName, saveText, toCsv, toTsv } from '../tableExport'
+import { ResultsTransferDialog, itemKey, keyItem, keyPaths, useTransfersShown } from '../components/ResultsTransfer'
+import { libraryRelative } from '../transferApi'
 
 /** A search as the address carries it, after #view=search?: the single
  *  box's q, or a refined search's name, text and match, and the libraries
@@ -112,6 +114,8 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const transfersShown = useTransfersShown()
   const [lastLimit, setLastLimit] = useState(50)
   const [gufi, setGufi] = useState<GufiCommand[] | undefined>(undefined)
 
@@ -125,6 +129,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     setOmitted(null)
     setSel(new Set())
     setTagMenuOpen(false)
+    setTransferOpen(false)
     try {
       const r = refineOpen
         ? await api.search('', [...activeTags], limit, { library: scopeParam(over), name: name.trim(), text: text.trim(), match })
@@ -169,14 +174,21 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const toggleSel = (path: string) => {
+  // The selection is keyed by library and path: the same path in two
+  // libraries is two results. A hit names its library in a search over
+  // several; in one library's search it is that library.
+  const oneLibrary = scope !== 'all' && scope.length === 1 ? scope[0] : libraries[0]?.id ?? 'kb'
+  const keyOf = (h: SearchHit) => itemKey(h.library?.id ?? oneLibrary, h.path)
+  const toggleSel = (key: string) => {
     setSel(s => {
       const next = new Set(s)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
+  const selItems = [...sel].map(keyItem)
+  const transferItems = selItems.flatMap(it => { const p = libraryRelative(it.path); return p ? [{ library: it.library, path: p }] : [] })
 
   const allSelected = hits !== null && hits.length > 0 && sel.size === hits.length
 
@@ -255,12 +267,18 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
             <span>{hits.length} result{hits.length === 1 ? '' : 's'}</span>
             {hits.length > 0 && (
               <span className="results-actions">
-                <Button size="sm" onClick={() => setSel(allSelected ? new Set() : new Set(hits.map(h => h.path)))}>
+                <Button size="sm" onClick={() => setSel(allSelected ? new Set() : new Set(hits.map(keyOf)))}>
                   {allSelected ? 'Clear selection' : 'Select all'}
                 </Button>
                 <Button size="sm" disabled={!sel.size} onClick={() => setTagMenuOpen(o => !o)}>
                   Labels…{sel.size ? ` (${sel.size})` : ''}
                 </Button>
+                {transfersShown && (
+                  <Button size="sm" disabled={!transferItems.length} onClick={() => setTransferOpen(true)}
+                    title="Copy or move the selected files to another place">
+                    Transfer…{transferItems.length ? ` (${transferItems.length})` : ''}
+                  </Button>
+                )}
                 <CopyButton size="sm" variant="outline" showLabel label="results" text={() => { const t = hitTable(hits, several); return toTsv(t.columns, t.rows) }}
                   title="Copy the results as tab-separated text, which a spreadsheet pastes into columns" />
                 <Button size="sm" variant="outline" title="Save the results as a CSV file"
@@ -273,10 +291,10 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
           <OmittedLine omitted={omitted} />
           {hits.length === 0 && <EmptyState variant="bare" title="No matches." />}
           {hits.map(h => (
-            <div key={`${h.library?.id ?? ''}/${h.path}`} className={`result-row ${sel.has(h.path) ? 'multi' : ''}`}
+            <div key={`${h.library?.id ?? ''}/${h.path}`} className={`result-row ${sel.has(keyOf(h)) ? 'multi' : ''}`}
               onClick={() => openInLibrary(p => onOpen(p, findFor(h, refineOpen ? text : q)), h.library?.id, h.path)}>
               <div className="result-top">
-                <RowCheck checked={sel.has(h.path)} onToggle={() => toggleSel(h.path)} />
+                <RowCheck checked={sel.has(keyOf(h))} onToggle={() => toggleSel(keyOf(h))} />
                 <span className="result-path">{h.path}</span>
                 <span className="result-pills">
                   {several && h.library && (
@@ -300,12 +318,18 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
       )}
       {tagMenuOpen && sel.size > 0 && (
         <TagMenu
-          paths={[...sel]}
+          paths={keyPaths(sel)}
           onClose={() => setTagMenuOpen(false)}
           onApplied={updated => {
             setHits(hs => hs?.map(h => (updated[h.path] ? { ...h, tags: updated[h.path] } : h)) ?? hs)
           }}
         />
+      )}
+      {transferOpen && transferItems.length > 0 && (
+        <ResultsTransferDialog items={transferItems}
+          labels={Object.fromEntries(libraries.map(l => [l.id, l.label]))}
+          onClose={() => setTransferOpen(false)}
+          onDone={started => { setTransferOpen(false); if (started.length) setSel(new Set()) }} />
       )}
     </div>
   )
