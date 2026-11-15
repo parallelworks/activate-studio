@@ -135,6 +135,7 @@ export function TransferPlanDialog({
         )}
         {short && <Callout tone="error" size="sm">The destination reports {bytesText(free!)} free, less than the {bytesText(plan.bytes)} to send.</Callout>}
         {plan.warnings.map(w => <Callout key={w} tone="warning" size="sm">{w}</Callout>)}
+        {(plan.indexNotes ?? []).map(n => <Callout key={n} tone="info" size="sm">{n}.</Callout>)}
         {expired && !error && <Callout tone="warning" size="sm" title="This plan expired">Plan again to see what would happen now.</Callout>}
         {error && <Callout tone="error" size="sm" live title={error.stale ? 'The files changed' : 'Not started'}>{error.text}</Callout>}
       </div>

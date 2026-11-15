@@ -99,6 +99,12 @@ describe('the plan card of a held transfer', () => {
     expect(screen.getByText(/This request expired/)).toBeInTheDocument()
   })
 
+  it('says when the index of a library other than the main one shows the change', () => {
+    const note = 'The index of Reference shows this change after the index is rebuilt where it is built'
+    render(<ToolApproval part={approval({ ...plan, indexNotes: [note] })} message={message} onApprovalAnswer={vi.fn()} />)
+    expect(screen.getByTestId('chat-xfer-index')).toHaveTextContent(note + '.')
+  })
+
   it('counts files later when the plan cannot list them, and says sizes as the page does', () => {
     render(<ToolApproval part={approval({ ...plan, files: -1, bytes: -1, freeBytes: null })} message={message} onApprovalAnswer={vi.fn()} />)
     expect(screen.getAllByText('Counted when the transfer starts')).toHaveLength(2)

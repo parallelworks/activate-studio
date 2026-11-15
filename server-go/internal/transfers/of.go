@@ -126,10 +126,11 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 	reg := libraries.Of(a)
 	var out []LibraryLoc
 	for _, l := range reg.List(a.Settings.Effective().KbLabel, libViewer(v)) {
-		x := LibraryLoc{ID: l.ID, Label: l.Label, Writable: l.Writable, Indexed: l.Primary}
+		x := LibraryLoc{ID: l.ID, Label: l.Label, Indexed: l.Primary, Refresh: libraryRefresh(l)}
+		by := AccessNone
 		switch {
 		case l.SourceRoot != "":
-			x.FS = &LocalFS{Dir: l.SourceRoot}
+			x.FS, by = &LocalFS{Dir: l.SourceRoot}, AccessServer
 		case l.Site != "":
 			t, err := reg.Users().Target(l.IndexRoot, viewerKeys{v.Key}, remote.SSHSite)
 			switch {
@@ -141,6 +142,12 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 				x.Why = remote.NoShell(t.Site)
 			default:
 				x.FS = &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site)}
+				// A library over ssh is reached with the server account's
+				// keys (sign-in off only); any other with the viewer's key.
+				by = AccessServer
+				if t.Key != "" {
+					by = AccessViewer
+				}
 			}
 		}
 		if x.FS == nil && l.ReadThrough != nil {
@@ -162,16 +169,32 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			case root == "":
 				x.Why = "the library's folder on its originals host is not known: name it in Settings, Indexing, Libraries"
 			default:
-				x.FS = &RemoteFS{R: run, SiteID: site, Dir: root, Name: remote.SiteName(site)}
-				x.Writable = false
+				// The server account's ssh keys, lent only with sign-in off.
+				x.FS, by = &RemoteFS{R: run, SiteID: site, Dir: root, Name: remote.SiteName(site)}, AccessServer
 			}
 		}
+		x.Writable, x.ReadOnly = LibraryWritable(l.Writable, by, v.AuthOn)
 		if x.FS == nil && x.Why == "" {
 			x.Why = "Studio has only its index, not its files"
 		}
 		out = append(out, x)
 	}
 	return out
+}
+
+// libraryRefresh is when the index of a library other than the main one
+// shows a transfer's change (LibraryLoc.Refresh): Studio re-indexes only
+// the main library after a transfer. A library Studio builds, here or on
+// another system, catches up when it is rebuilt; an index connected as it
+// is, when it is rebuilt where it is built.
+func libraryRefresh(l libraries.Library) string {
+	switch {
+	case l.Primary:
+		return ""
+	case l.Build != nil || l.Site != "":
+		return "after its next rebuild in Settings, Indexing, Libraries"
+	}
+	return "after the index is rebuilt where it is built"
 }
 
 // kbIndex is the index work for the main library, through the files

@@ -133,6 +133,7 @@ func (s *Service) newRec(v Viewer, p *planRec, by, conv, state string) *rec {
 	r.Files = Count{0, int64(p.Files)}
 	r.Bytes = Count{0, p.Bytes}
 	r.SkippedCount = p.Skipped.Hidden + p.Skipped.Links
+	r.IndexNotes = p.IndexNotes
 	r.Stage = join(p.dstPath, stagingPrefix+r.ID)
 	return r
 }

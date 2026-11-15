@@ -471,6 +471,7 @@ export function TransferDetail({
           </Callout>
         )}
         {t.state !== 'awaiting-approval' && <Progress t={t} />}
+        {(t.indexNotes ?? []).map(n => <Callout key={n} tone="info" size="sm">{n}.</Callout>)}
         <dl className="xfer-plan-facts">
           <dt>Action</dt><dd>{ACTION_TEXT[t.action]}</dd>
           <dt>From</dt>

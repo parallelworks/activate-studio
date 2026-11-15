@@ -21,6 +21,7 @@ export interface ChatPlan {
   skipped: { hidden: number; links: number }
   freeBytes: number | null
   warnings: string[]
+  indexNotes?: string[]
 }
 
 /** What an approval part for a held transfer carries besides the block's
@@ -122,6 +123,7 @@ export function ChatTransferPlan({ transfer }: { transfer: HeldTransfer }) {
       )}
       {short && <Callout tone="error" size="sm">The destination reports {sizeText(free!)} free, less than the {sizeText(plan.bytes)} to send.</Callout>}
       {warnings.map(w => <Callout key={w} tone="warning" size="sm">{w}</Callout>)}
+      {(plan.indexNotes ?? []).map(n => <Callout key={n} tone="info" size="sm" testId="chat-xfer-index">{n}.</Callout>)}
       <p className="chat-xfer-muted chat-xfer-foot">
         Listed on the <a href={transfer.link ?? '#view=transfers'}>Transfers page</a> as waiting for approval.
       </p>

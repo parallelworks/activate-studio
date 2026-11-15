@@ -117,13 +117,13 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 		return nil, apierr.New(400, "%s cannot be a destination: Studio checks every file that lands, and cannot read this location itself. In Settings, Transfers, mount a location for it and choose that", dst.Label)
 	}
 	if !dst.Writable {
-		return nil, apierr.New(400, "%s is read only", dst.Label)
+		return nil, apierr.New(400, "%s is read only%s", dst.Label, readOnlyWhy(dst))
 	}
 	if !src.Available {
 		return nil, apierr.New(502, "%s cannot be reached: %s", src.Label, src.Why)
 	}
 	if req.Action == ActionMove && !src.Writable {
-		return nil, apierr.New(400, "%s is read only, so nothing can be moved out of it; copy instead", src.Label)
+		return nil, apierr.New(400, "%s is read only%s, so nothing can be moved out of it; copy instead", src.Label, readOnlyWhy(src))
 	}
 	dstPath, err := CleanRel(req.Destination.Path)
 	if err != nil {
@@ -138,6 +138,11 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 		}
 		return nil, err
 	}
+	// The destination folder must take new files (and, for a sync with
+	// deleteExtra, lose some) before anything is offered.
+	if err := s.checkWritable(ctx, dst, []string{dstPath}, "nothing can be put there"); err != nil {
+		return nil, err
+	}
 	if src.fs == nil {
 		if src.Kind != KindConduit || req.Action != ActionCopy {
 			return nil, apierr.New(400, "%s can only be copied from: Studio cannot read it to check a move or a sync", src.Label)
@@ -147,6 +152,12 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 		}
 	} else if err := s.planListed(ctx, p); err != nil {
 		return nil, err
+	}
+	if req.Action == ActionMove {
+		// Removing a file takes write access to its folder.
+		if err := s.checkWritable(ctx, src, moveDirs(p.items, p.srcDirs), "the originals could not be removed after a move; copy instead"); err != nil {
+			return nil, err
+		}
 	}
 	p.Source = End{Location: src.ID, Label: src.Label, Paths: p.items}
 	dp := dstPath
@@ -164,8 +175,43 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 	if err := s.chooseMover(ctx, p); err != nil {
 		return nil, err
 	}
+	p.IndexNotes = indexNotes(p)
 	p.warn()
 	return p, nil
+}
+
+// readOnlyWhy is ": why" for a location that says why it is read only.
+func readOnlyWhy(l *loc) string {
+	if l.readOnly == "" {
+		return ""
+	}
+	return ": " + l.readOnly
+}
+
+// indexNotes says, for each library a plan changes whose index Studio does
+// not update after a transfer, when that index shows the change: the
+// destination always, and the source of a move.
+func indexNotes(p *planRec) []string {
+	note := func(l *loc) string {
+		if l.Kind != KindLibrary || l.Indexed {
+			return ""
+		}
+		when := l.refresh
+		if when == "" {
+			when = "after its next refresh"
+		}
+		return "The index of " + l.Label + " shows this change " + when
+	}
+	out := []string{}
+	if n := note(p.dst); n != "" {
+		out = append(out, n)
+	}
+	if p.Action == ActionMove && p.src.ID != p.dst.ID {
+		if n := note(p.src); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func defaultLabel(p *planRec) string {

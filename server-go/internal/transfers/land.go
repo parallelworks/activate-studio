@@ -197,6 +197,13 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 			return apierr.New(502, "the copy is in place, but %d of %d originals could not be removed", len(rels)-len(removed), len(rels))
 		}
 	}
+	if len(p.IndexNotes) > 0 {
+		s.set(r, func() {
+			for _, n := range p.IndexNotes {
+				r.event(s.now(), "%s", n)
+			}
+		})
+	}
 	return nil
 }
 
