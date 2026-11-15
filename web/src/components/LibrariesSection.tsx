@@ -9,6 +9,7 @@ import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
 import { LibraryExport } from './LibraryExport'
 import { LibraryImport } from './LibraryImport'
+import { CLUSTER_STARTED, IMPORT_ABOUT, addOptions, addedMessage } from './LibraryAddDialogs'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
 import { IndexControls, IndexJobView, LastBuild } from './IndexActivity'
 import { useIndexStatus } from '../indexActivity'
@@ -142,8 +143,8 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   const [canBuild, setCanBuild] = useState(false)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  // Opened from the Library's + Add menu (#view=settings:libraries?add=1)
-  // with the form already showing.
+  // Opened by its address with the form already showing
+  // (#view=settings:libraries?add=1, ADD_LIBRARY_HASH).
   const [adding, setAdding] = useState(() => /^#view=settings:libraries\?(?:.*&)?add=1(?:&|$)/.test(location.hash))
   const openedByLink = useRef(adding)
   const addForm = useRef<HTMLElement | null>(null)
@@ -152,7 +153,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   // the libraries arriving.
   const openedAt = useRef(Date.now())
   const [linked, setLinked] = useState(0)
-  // The + Add menu's link while this page is already open (Settings visited
+  // That address while this page is already open (Settings visited
   // earlier, the section kept): the address changes, the page does not load.
   useEffect(() => {
     const onHash = () => {
@@ -565,7 +566,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   const primary = libs?.find(l => l.primary)
   const primaryPath = standalone?.primary?.path ?? primary?.sourceRoot ?? null
   // pw ssh is a choice wherever it is offered; the form says why when it cannot be used yet.
-  const options = { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && !!cfg.platform && user.available }
+  const options = addOptions(canBuild, user, !!cfg.platform)
 
   return (
     <>
@@ -635,7 +636,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
         </div>
       )}
       <Modal open={importing} onClose={() => setImporting(false)} size="lg" title="Import libraries"
-        description="A library list exported from another Studio, such as one your administrator shares. Each library is checked and added as the Add a library form adds it."
+        description={IMPORT_ABOUT}
         footer={<Button variant="secondary" onClick={() => setImporting(false)}>Close</Button>}>
         {importing && <LibraryImport onDone={imported} />}
       </Modal>
@@ -649,10 +650,8 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
             <IconButton icon={<CloseIcon />} label="Close" size="sm" onClick={() => setAdding(false)} />
           </div>
           <AddLibrary options={options} browse={!!standalone} onImported={imported}
-            onAdded={(lib, started, here) => added(!started ? `Added ${lib.label}. It is in the Library switcher.`
-              : here ? `Building ${lib.label}. Its progress shows in the list. It is searchable by name once its folders are indexed; text and meaning, where its depth has them, follow in that order.`
-              : `Building ${lib.label}. Its progress shows in the list; it is searchable once the build is done.`)}
-            onStarted={() => added('Building the index on the cluster. It appears in the Library switcher when it is ready.')} />
+            onAdded={(lib, started, here) => added(addedMessage(lib, started, here))}
+            onStarted={() => added(CLUSTER_STARTED)} />
         </section>
       )}
 

@@ -3008,3 +3008,17 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-settings-mounts p { margin: 0; font-size: 12.5px; }
 .xfer-checks-note { margin: 6px 0 0; font-size: 12.5px; }
 
+/* The Library's + Add as a split button: + Add opens Add files, the arrow
+   beside it a menu that also adds a library or imports a library list. */
+.add-split { display: inline-flex; align-items: stretch; }
+.add-split .add-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.add-split .add-split-more {
+  border-top-left-radius: 0; border-bottom-left-radius: 0; padding-inline: 4px;
+  border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+}
+/* A library list outside the libraries table: its names and kinds, and the
+   dialog's drop target. */
+.lib-import .lib-name { font-weight: 600; color: var(--pw-text); }
+.lib-import .lib-id { font-size: 12px; color: var(--pw-muted); }
+.lib-import-drop { font-size: 12px; }
+.lib-import.drop-over { outline: 2px dashed var(--pw-link); outline-offset: 4px; border-radius: 6px; }

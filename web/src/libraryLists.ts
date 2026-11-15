@@ -9,6 +9,9 @@ import { postJson } from './components/LibraryFormParts'
  * same checks and connection tests run.
  */
 
+/** The `format` a library list names itself with. */
+export const LIST_FORMAT = 'activate-studio-libraries'
+
 export type EntryKind = 'index' | 'folder' | 'ssh' | 'pw'
 
 export interface ListReadThrough { destination: string; port?: number; sshOptions?: string[]; root?: string }
