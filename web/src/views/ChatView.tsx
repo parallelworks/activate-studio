@@ -19,7 +19,9 @@ import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
 import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
-import { setChatLibrary, setLabelScope, setPersona } from '../labelScope'
+import { setLabelScope, setPersona } from '../labelScope'
+import { LibraryTicks, scopeLabel } from '../components/LibraryScope'
+import { useChatScope } from '../chatScope'
 import { useLabelVocabulary } from '../labelVocabulary'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
@@ -181,13 +183,6 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   const [personaList, setPersonaList] = useState<{ name: string; description: string; shared: boolean; icon: string }[]>([])
   const [persona, setPersonaState] = useState<string | null>(() => localStorage.getItem('ade-persona'))
   const [personaOpen, setPersonaOpen] = useState(false)
-  // Which library the assistant searches here: the knowledge base unless
-  // the user names one, or all of them.
-  const [chatLib, setChatLib] = useState<string | null>(() => { try { return localStorage.getItem('ade-chat-library') } catch { return null } })
-  useEffect(() => {
-    setChatLibrary(chatLib)
-    try { chatLib ? localStorage.setItem('ade-chat-library', chatLib) : localStorage.removeItem('ade-chat-library') } catch { /* per session */ }
-  }, [chatLib])
   const [personaFilter, setPersonaFilter] = useState('')
   useEffect(() => {
     fetch('/api/extensions').then(r => r.json()).then(d => setPersonaList(d.personas ?? [])).catch(() => {})
@@ -387,11 +382,14 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
     )
   }, [startNewChat])
   const cfg = useAppConfig()
-  // The library the chat searches is part of its scope, chosen in the same
-  // menu as the labels; the button names it when there is more than one.
-  const hasLibraries = (cfg.libraries?.length ?? 0) > 1
-  const libraryIds = useMemo(() => (cfg.libraries ?? []).map(l => l.id), [cfg.libraries])
-  const libLabel = chatLib === 'all' ? 'All libraries' : (cfg.libraries?.find(l => chatLib ? l.id === chatLib : l.primary)?.label ?? chatLib ?? 'Knowledge base')
+  // The libraries the chat searches are part of its scope, ticked in the
+  // same menu as the labels: every library until the user narrows it. The
+  // button names the choice when there is more than one library.
+  const libraries = useMemo(() => cfg.libraries ?? [], [cfg.libraries])
+  const hasLibraries = libraries.length > 1
+  const libraryIds = useMemo(() => libraries.map(l => l.id), [libraries])
+  const [chatScope, setChatScope] = useChatScope(cfg.libraries)
+  const libLabel = scopeLabel(libraries, chatScope)
 
   const canvasRef = useRef<HTMLDivElement>(null)
   // The Persona and Scope buttons float over the top right of the thread,
@@ -631,8 +629,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
               className="scope-menu chat-scope-menu"
               trigger={
                 <button
-                  className={`scope-btn ${scope.size || chatLib ? 'active' : ''}`}
-                  title="What the assistant searches in this chat: which library, and which labels"
+                  className={`scope-btn ${scope.size || (hasLibraries && chatScope !== 'all') ? 'active' : ''}`}
+                  title="What the assistant searches in this chat: which libraries, and which labels"
                 >
                   <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3h13l-5 5.5V13l-3 1.5V8.5z"/></svg>
                   <span className="persona-label">Scope{hasLibraries && <span className="scope-sub">{libLabel}</span>}</span>
@@ -642,19 +640,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             >
               {hasLibraries && (
                 <>
-                  <div className="scope-menu-head">Library</div>
-                  <div className="scope-libs">
-                    {(cfg.libraries ?? []).map(l => (
-                      <button key={l.id} className={`persona-row ${(chatLib ?? 'kb') === l.id ? 'on' : ''}`} onClick={() => setChatLib(l.primary ? null : l.id)}>
-                        <span className="persona-name">{l.label}</span>
-                        <span className="muted">{l.primary ? 'the knowledge base' : l.site ? `your library on ${l.site}` : 'read only'}</span>
-                      </button>
-                    ))}
-                    <button className={`persona-row ${chatLib === 'all' ? 'on' : ''}`} onClick={() => setChatLib('all')}>
-                      <span className="persona-name">All libraries</span>
-                      <span className="muted">search and query every library at once</span>
-                    </button>
-                  </div>
+                  <div className="scope-menu-head">Libraries</div>
+                  <LibraryTicks className="scope-libs" libraries={libraries} value={chatScope} onChange={setChatScope} />
                 </>
               )}
               {vocab.length > 0 && (

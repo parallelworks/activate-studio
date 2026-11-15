@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
+	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
@@ -270,6 +271,9 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	if len(labelScope) > 0 {
 		scopeNote = "\n\nThe user has scoped this conversation to knowledge base material labeled: " + strings.Join(labelScope, ", ") + ". search_kb is restricted server-side to those labels for this conversation. Ground answers in that material, and say so when the scoped material has nothing relevant rather than answering from outside the scope."
 	}
+	// The libraries the chat's Scope selects, as this user can read them.
+	library := m.chatLibraries(body.Library, libraries.ViewerOf(userID(r)))
+	scopeNote += libraryScopeNote(library)
 	var userTexts []string
 	for _, mm := range raw {
 		if mm.Role == "user" {
@@ -365,7 +369,6 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	if body.Allocation == nil {
 		allocation = os.Getenv("PW_ALLOCATION")
 	}
-	library := strOrNil(jsString(body.Library))
 	// Files the user linked with @ go in the system prompt, read as this
 	// user (messages[0] points at sys).
 	for i := len(raw) - 1; i >= 0; i-- {
@@ -374,7 +377,7 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 			break
 		}
 	}
-	cited := &CitationContext{Known: map[string]string{}, Library: deref(library)}
+	cited := &CitationContext{Known: map[string]string{}, Library: scopeOne(library)}
 	var citedMu sync.Mutex
 	if c := m.Conv.Get(convID); c != nil {
 		for _, mm := range c.Messages {

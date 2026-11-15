@@ -80,8 +80,10 @@ type Outcome struct {
 
 // ToolCtx is executeTool's ctx.
 type ToolCtx struct {
-	LabelScope     []string `json:"labelScope"`
-	Library        *string  `json:"library"`
+	LabelScope []string `json:"labelScope"`
+	// Library is the libraries the chat searches (libscope.go): nil for
+	// the main one, ["all"] for every library, else their ids.
+	Library        []string `json:"library"`
 	UserKey        *string  `json:"userKey"`
 	Model          *string  `json:"model"`
 	ConversationID *string  `json:"conversationId"`

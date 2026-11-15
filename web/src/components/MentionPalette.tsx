@@ -49,10 +49,13 @@ export function MentionPalette({ canvas }: { canvas: React.RefObject<HTMLDivElem
   const stateRef = useRef({ open: false, index: 0, items: [] as MentionItem[] })
   stateRef.current = { open, index: Math.min(index, Math.max(0, items.length - 1)), items }
 
-  // The chat's library: one id, else the main one (All searches every
-  // library by name, and browses the main one's folders).
+  // The chat's libraries: names are searched in all of them, and folders
+  // browsed in the one chosen, else the main one when it is among them,
+  // else the first.
   const chatLib = getChatLibrary()
-  const libId = chatLib && chatLib !== 'all' ? chatLib : primaryId
+  const chosen = Array.isArray(chatLib) ? chatLib : chatLib && chatLib !== 'all' ? [chatLib] : []
+  const libId = !chosen.length || chosen.includes(primaryId) ? primaryId : chosen[0]
+  const chatLibKey = Array.isArray(chatLib) ? chatLib.join(',') : chatLib
   const labelOf = (id: string) => libs.find(l => l.id === id)?.label ?? id
 
   useEffect(() => {
@@ -79,7 +82,7 @@ export function MentionPalette({ canvas }: { canvas: React.RefObject<HTMLDivElem
           next = await listFolder(query.replace(/\/+$/, ''), '')
         } else {
           const base = query.slice(query.lastIndexOf('/') + 1)
-          const scope = chatLib === 'all' ? 'all' : libId
+          const scope = chatLib === 'all' ? 'all' : chosen.length ? chosen.join(',') : libId
           const r = await fetch(`/api/search?name=${encodeURIComponent(base)}&limit=40&library=${encodeURIComponent(scope)}`, { signal: ctl.signal })
           const d = r.ok ? ((await r.json()) as { hits?: Hit[] }) : {}
           const want = query.toLowerCase()
@@ -100,7 +103,7 @@ export function MentionPalette({ canvas }: { canvas: React.RefObject<HTMLDivElem
     return () => { gone = true; clearTimeout(t); ctl.abort() }
     // labelOf reads libs, which the config fixes for the page's life.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, query, libId, chatLib])
+  }, [open, query, libId, chatLibKey])
 
   const write = (ta: HTMLTextAreaElement, text: string, keepOpen: boolean) => {
     const caret = ta.selectionStart ?? ta.value.length

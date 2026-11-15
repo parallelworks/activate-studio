@@ -541,9 +541,14 @@ func (m *Module) toolSuggestLabels(r *http.Request, args map[string]any, ctx Too
 		limit = 40
 	}
 	// The library the chat's Scope selects, as apply_labels labels it;
-	// the main one when all are selected.
+	// the main one when all are selected or it is among those selected,
+	// else the first of several.
 	t := labelTarget{r: r, lib: kb.Library{ID: kb.PrimaryID}}
-	if scoped := jsTrim(deref(ctx.Library)); scoped != "" && strings.ToLower(scoped) != "all" && scoped != kb.PrimaryID {
+	scoped, err := defaultLibrary(ctx)
+	if err != nil {
+		scoped = ctx.Library[0]
+	}
+	if scoped != kb.PrimaryID {
 		lib, err := m.namedLibrary(scoped, ctx)
 		if err != nil {
 			return nil, &toolError{err.Error()}

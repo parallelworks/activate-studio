@@ -17,7 +17,8 @@ import (
 
 // CitationContext is what a repair knows: the files the tools returned in
 // the conversation, by path (their library, "" for the main folder), and
-// the library the conversation searches.
+// the library the conversation searches when it searches one (scopeOne:
+// "" for the main one, all of them, or several).
 type CitationContext struct {
 	Known   map[string]string
 	Library string
