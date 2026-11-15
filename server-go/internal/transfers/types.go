@@ -142,7 +142,10 @@ type Plan struct {
 	Skipped       Skipped       `json:"skipped"`
 	FreeBytes     *int64        `json:"freeBytes"`
 	Warnings      []string      `json:"warnings"`
-	ExpiresAt     string        `json:"expiresAt"`
+	// IndexNotes say when the index of a library the transfer changes,
+	// other than the main library, shows the change.
+	IndexNotes []string `json:"indexNotes"`
+	ExpiresAt  string   `json:"expiresAt"`
 }
 
 // States of a transfer.
@@ -199,7 +202,9 @@ type Transfer struct {
 	Deleted        int      `json:"deleted"`
 	SkippedCount   int      `json:"skipped"`
 	Error          string   `json:"error,omitempty"`
-	Events         []Event  `json:"events,omitempty"`
+	// IndexNotes are the plan's: when a changed library's index shows it.
+	IndexNotes []string `json:"indexNotes,omitempty"`
+	Events     []Event  `json:"events,omitempty"`
 }
 
 func iso(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }

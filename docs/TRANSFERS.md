@@ -8,12 +8,27 @@ A location is a place files live, by id `<kind>:<name>`.
 
 | Kind | What it is | Offered |
 | --- | --- | --- |
-| `library` | A library's files: the main folder, a folder on this computer, a library's own host, or the host its originals are read through (sign-in off only) | Always; writable only for the main library |
+| `library` | A library's files: the main folder, a folder on this computer, a library's own host, or the host its originals are read through (sign-in off only) | Always; writable as the next section says |
 | `computer` | Downloads, Desktop and Documents (those present and switched on), `STUDIO_TRANSFER_FOLDERS`, and folders added in Settings | Sign-in off; with sign-in on, `STUDIO_TRANSFER_FOLDERS` only |
 | `cluster` | The viewer's active ACTIVATE clusters, rooted at `/`, browsing from the home folder, over `pw ssh` with the viewer's key | When the viewer has a platform key |
 | `saved` | A host and folder saved in Settings, Transfers | Sign-in off only |
 | `host` | The home folder of each host a remote library is reached on, found with no setup; switched off or hidden per host in Settings | Sign-in off only |
 | `conduit` | Paths in a CONDUIT service's namespace, typed by hand | Sign-in off, when CONDUIT is switched on |
+
+### When a library is writable
+
+The library registry marks only the main library writable. That flag means Studio edits the library through its own file operations and index. Transfers do not use it alone. A transfer writes files, so a library location is writable when Studio can reach its files with write access, and the file system's permissions decide (`LibraryWritable` in `access.go`):
+
+| Files reached through | Sign-in off | Sign-in on |
+| --- | --- | --- |
+| The main folder | Writable | Writable |
+| A folder on this computer (`SourceRoot`) | Writable | Read only: the account the Studio runs as is not the viewer |
+| The library's own host, with the viewer's platform key | Writable | Writable: the viewer's own permissions apply there |
+| The library's own host over ssh, with the server account's keys | Writable | Not offered |
+| The host its originals are read through | Writable | Not offered |
+| Nothing (an index only) | Not a source or a destination | Not a source or a destination |
+
+A read-only library can still be copied from. Its location's `detail` says why it is read only.
 
 Paths are relative to the location's root. `""`, `"."` and `"/"` all mean the root. Hidden entries (a name starting with `.`) and symbolic links are never offered or moved; a plan counts them.
 
@@ -27,9 +42,13 @@ No program runs on such a host, so rsync is not offered for it and `studio-copy`
 
 ## Plan, confirm, run
 
+A plan checks that the account can write in the destination folder, and for a move in the folders the originals leave: the folder holding each item named and each folder named, at most 8. It makes a folder named `.studio-transfer-probe-<id>` there and removes it, as the Settings connection test does. This works the same on this computer, over a shell on a host, and over SFTP. When the folder cannot be made, the plan is refused with a 400 such as `you cannot write in /data/ref/reports on files.example.com (Reference), so nothing can be put there`. Folders deeper in a move are not checked. If one of them cannot be written, the originals there stay in place, the copy at the destination is kept, and the transfer fails with the count of originals not removed.
+
 A plan walks the source, works out what lands where, lists what would be replaced and (sync with `deleteExtra`) deleted, and picks a mover. It is kept 15 minutes. Starting it walks again and refuses (409) when the file count grew or a replacement or deletion appeared that the plan did not show. A sync makes the destination folder match the source folder's contents, as `rsync src/ dst/` does; its change detection is Studio's own (size and modification time, or sha256 with `checksum`).
 
 Every job writes into a staging folder `.studio-transfer-<id>` inside the destination. When the mover says it is done, Studio walks the staging folder and checks the files it expected are there with the right sizes, and with sha256 for a move or with `checksum`. A mover that reports success on a bad result fails the job and nothing is put in place. Files then take their names (a hard link where the name must not exist, a rename for a listed replacement), listed deletions run, a move removes the originals, and the main library re-indexes what changed.
+
+Only the main library is re-indexed after a transfer. For any other library a transfer writes into or moves out of, the plan and the transfer carry `indexNotes`, such as "The index of Reference shows this change after its next rebuild in Settings, Indexing, Libraries" for a library Studio builds, or "after the index is rebuilt where it is built" for an index connected as it is. The finished transfer's events repeat the note.
 
 ## Movers
 

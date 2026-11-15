@@ -462,4 +462,11 @@ func TestTransferNoteWaitsForTheReply(t *testing.T) {
 	if note != "Sync of 4 files to gpu-cluster failed: `rsync: 'rm -rf' said [click](http://x) no`." {
 		t.Errorf("note %q", note)
 	}
+	// A library whose index Studio does not update says when it catches up.
+	note = transferNote(transfers.Transfer{Action: "copy", State: transfers.StateSucceeded, Destination: transfers.End{Label: "Reference"},
+		Files: transfers.Count{Done: 2, Total: 2}, Bytes: transfers.Count{Done: 10, Total: 10},
+		IndexNotes: []string{"The index of Reference shows this change after the index is rebuilt where it is built"}})
+	if note != "Copy of 2 files to Reference finished: 10 bytes. The index of Reference shows this change after the index is rebuilt where it is built." {
+		t.Errorf("note %q", note)
+	}
 }

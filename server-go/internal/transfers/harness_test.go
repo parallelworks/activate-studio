@@ -39,7 +39,9 @@ func prefixed(lib string, a []string) []string {
 }
 
 // rig is a service over a temporary world: a main library on this
-// computer (writable, indexed), a read-only library, Downloads, and two
+// computer (writable, indexed), a second library in a folder on this
+// computer (writable by access with sign-in off, read only with sign-in
+// on, not indexed by Studio), an index-only library, Downloads, and two
 // saved hosts reached through localRunner (stand-ins for ssh: the
 // commands run here, against folders of their own).
 type rig struct {
@@ -50,8 +52,10 @@ type rig struct {
 	set                             *MemorySettings
 	env                             map[string]string
 	runner                          *localRunner
-	// more are libraries added to the rig's three.
-	more []LibraryLoc
+	// more are libraries added to the rig's three; moreFor, when set, adds
+	// libraries that depend on the viewer.
+	more    []LibraryLoc
+	moreFor func(v Viewer) []LibraryLoc
 }
 
 func newRig(t *testing.T) *rig {
@@ -81,9 +85,9 @@ func newRig(t *testing.T) *rig {
 		Libraries: func(ctx context.Context, v Viewer) []LibraryLoc {
 			return append([]LibraryLoc{
 				{ID: "kb", Label: "Knowledge base", Writable: true, Indexed: true, FS: &LocalFS{Dir: r.kb}},
-				{ID: "ro", Label: "Reference", FS: &LocalFS{Dir: r.ro}},
+				refLib(r.ro, v),
 				{ID: "far", Label: "Index only", Why: "Studio has only its index, not its files"},
-			}, r.more...)
+			}, append(append([]LibraryLoc{}, r.more...), r.libsFor(v)...)...)
 		},
 		Clusters: func(ctx context.Context, v Viewer) ([]string, error) { return []string{"gpu-" + v.ID}, nil },
 		Settings: r.set,
@@ -91,6 +95,23 @@ func newRig(t *testing.T) *rig {
 		Home:     r.home,
 	})
 	return r
+}
+
+// refNote is when the rig's second library shows a transfer's change.
+const refNote = "after the index is rebuilt where it is built"
+
+// refLib is a library other than the main one in a folder on this
+// computer, as libraryLocs makes it for v.
+func refLib(dir string, v Viewer) LibraryLoc {
+	w, why := LibraryWritable(false, AccessServer, v.AuthOn)
+	return LibraryLoc{ID: "ro", Label: "Reference", Writable: w, ReadOnly: why, Refresh: refNote, FS: &LocalFS{Dir: dir}}
+}
+
+func (r *rig) libsFor(v Viewer) []LibraryLoc {
+	if r.moreFor == nil {
+		return nil
+	}
+	return r.moreFor(v)
 }
 
 var single = Viewer{}

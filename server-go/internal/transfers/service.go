@@ -32,10 +32,21 @@ func (v Viewer) owner() string {
 // LibraryLoc is a library as transfers see it: where its files are.
 type LibraryLoc struct {
 	ID, Label string
-	Writable  bool
+	// Writable: a transfer may copy into the library and move out of it.
+	// It follows who reaches the files (libraryWritable), not whether
+	// Studio edits the library's index; the file system's permissions
+	// decide the rest, checked before a plan is offered.
+	Writable bool
+	// ReadOnly is why a library whose files are reachable is not writable,
+	// for the location's Detail; "" otherwise.
+	ReadOnly string
 	// Indexed: a landing here re-indexes the paths it wrote, and a move
 	// out drops the originals from the index (Index).
 	Indexed bool
+	// Refresh is when the index of a library that is not Indexed shows a
+	// transfer's change, finishing "The index of <label> shows this
+	// change ..."; "" says "after its next refresh".
+	Refresh string
 	// FS is where its files are, nil when Studio cannot reach them (Why).
 	FS  FS
 	Why string

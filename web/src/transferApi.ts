@@ -66,6 +66,9 @@ export interface Plan {
   skipped: { hidden: number; links: number }
   freeBytes: number | null
   warnings: string[]
+  /** When the index of a library the transfer changes, other than the
+   *  main one, shows the change. */
+  indexNotes?: string[]
   expiresAt: string
 }
 
@@ -92,6 +95,8 @@ export interface Transfer {
   deleted: number
   skipped: number
   error?: string
+  /** The plan's index notes. */
+  indexNotes?: string[]
   events?: { at: string; text: string }[]
 }
 

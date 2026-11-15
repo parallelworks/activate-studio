@@ -25,7 +25,9 @@ func TestLocationsForOneUser(t *testing.T) {
 			t.Fatalf("no %s in %v", id, ls)
 		}
 	}
-	if !by["library:kb"].Writable || !by["library:kb"].Indexed || by["library:ro"].Writable {
+	// Sign-in off: a second library in a folder Studio reaches is writable
+	// for transfers, though Studio does not index it after one.
+	if !by["library:kb"].Writable || !by["library:kb"].Indexed || !by["library:ro"].Writable || by["library:ro"].Indexed {
 		t.Fatalf("library flags %+v %+v", by["library:kb"], by["library:ro"])
 	}
 	if f := by["library:far"]; f.Available || f.Browsable || f.Why == "" {
@@ -101,16 +103,14 @@ func TestPlanCounts(t *testing.T) {
 	}
 	// Refusals a person can act on.
 	for name, q := range map[string]Request{
-		"read only":    req(ActionCopy, "saved:a", []string{"notes.md"}, "library:ro", ""),
-		"move from ro": req(ActionMove, "library:ro", []string{"x"}, "saved:b", ""),
-		"traversal":    req(ActionCopy, "saved:a", []string{"../etc"}, "saved:b", ""),
-		"absolute":     req(ActionCopy, "saved:a", []string{"/etc/passwd"}, "saved:b", ""),
-		"hidden":       req(ActionCopy, "saved:a", []string{"proj/.git"}, "saved:b", ""),
-		"nested":       req(ActionCopy, "saved:a", []string{"proj", "proj/a.txt"}, "saved:b", ""),
-		"into itself":  req(ActionCopy, "saved:a", []string{"proj"}, "saved:a", "proj/sub"),
-		"no dest":      req(ActionCopy, "saved:a", []string{"proj"}, "saved:b", "nope"),
-		"sync two":     req(ActionSync, "saved:a", []string{"proj", "notes.md"}, "saved:b", ""),
-		"sync file":    req(ActionSync, "saved:a", []string{"notes.md"}, "saved:b", ""),
+		"traversal":   req(ActionCopy, "saved:a", []string{"../etc"}, "saved:b", ""),
+		"absolute":    req(ActionCopy, "saved:a", []string{"/etc/passwd"}, "saved:b", ""),
+		"hidden":      req(ActionCopy, "saved:a", []string{"proj/.git"}, "saved:b", ""),
+		"nested":      req(ActionCopy, "saved:a", []string{"proj", "proj/a.txt"}, "saved:b", ""),
+		"into itself": req(ActionCopy, "saved:a", []string{"proj"}, "saved:a", "proj/sub"),
+		"no dest":     req(ActionCopy, "saved:a", []string{"proj"}, "saved:b", "nope"),
+		"sync two":    req(ActionSync, "saved:a", []string{"proj", "notes.md"}, "saved:b", ""),
+		"sync file":   req(ActionSync, "saved:a", []string{"notes.md"}, "saved:b", ""),
 		"delete extra": func() Request {
 			q := req(ActionCopy, "saved:a", []string{"proj"}, "saved:b", "")
 			q.Options.DeleteExtra = true

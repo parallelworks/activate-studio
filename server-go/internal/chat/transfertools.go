@@ -654,6 +654,7 @@ func (m *Module) answerTransfer(r *http.Request, rec *HeldCall, allowed bool) (r
 	result = fmt.Sprintf("Transfer %s started: %s, %s from %s to %s by %s. It runs on its own and the Transfers page (%s) shows its progress. "+
 		"Do not wait for it or check on it unless the user asks: a note is added to this conversation when it ends.",
 		t.ID, t.Label, transferSize(t), strings.Join(sourceNames(t.Source), ", "), endText(t.Destination), t.Mover, transfersLink(t.ID))
+	result += indexNoteText(t.IndexNotes)
 	return result, "started transfer " + shortTransferID(t.ID), false
 }
 
@@ -757,7 +758,7 @@ func transferNote(t transfers.Transfer) string {
 		if t.Deleted > 0 {
 			extra = append(extra, itoaInt(t.Deleted)+" deleted")
 		}
-		return what + " finished: " + strings.Join(extra, ", ") + "."
+		return what + " finished: " + strings.Join(extra, ", ") + "." + indexNoteText(t.IndexNotes)
 	case transfers.StateCancelled:
 		return what + " was cancelled."
 	case transfers.StateInterrupted:
@@ -771,6 +772,16 @@ func transferNote(t transfers.Transfer) string {
 		}
 		return what + " failed."
 	}
+}
+
+// indexNoteText is a transfer's index notes as sentences after a space:
+// when a library other than the main one shows the change.
+func indexNoteText(notes []string) string {
+	out := ""
+	for _, n := range notes {
+		out += " " + n + "."
+	}
+	return out
 }
 
 // byteText is a size as the Transfers page says it.
