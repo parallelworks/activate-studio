@@ -62,6 +62,8 @@ The in-app Help is the user guide: [`docs/HELP.md`](docs/HELP.md), with the deta
 
 ## Documentation
 
+The same documents, grouped by what you want to do, are listed in [`docs/README.md`](docs/README.md).
+
 | Document | Covers |
 |---|---|
 | [`docs/HELP.md`](docs/HELP.md) | the user guide, shown in the app and read by the assistant |

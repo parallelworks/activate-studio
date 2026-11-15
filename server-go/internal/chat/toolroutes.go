@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/helpdoc"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
@@ -211,7 +212,7 @@ func (m *Module) toolStudioDocs(r *http.Request, args map[string]any, _ ToolCtx)
 		return nil, nodeFSError(err, "open", filepath.Join(m.A.Cfg.ProjectRoot, "docs", file))
 	}
 	eff := m.eff()
-	md := strings.ReplaceAll(strings.ReplaceAll(string(b), "{appName}", eff.AppName), "{kbLabel}", eff.KbLabel)
+	md := helpdoc.Fill(string(b), eff.AppName, eff.KbLabel)
 	return &Outcome{Result: jsval.Slice(md, toolOutputCap), Summary: file + " (" + itoaInt(jsval.Len(md)) + " chars)"}, nil
 }
 
