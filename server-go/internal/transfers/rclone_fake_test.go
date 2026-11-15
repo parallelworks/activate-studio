@@ -26,7 +26,10 @@ import (
 // ("a=alias,s=s3"): an s3 remote behaves as an object store (no rename, no
 // empty folders, no free space, MD5 only), any other as a file system. It
 // prints what rclone prints for the commands Studio runs, and appends each
-// command line to FAKE_RCLONE_LOG as JSON.
+// command line to FAKE_RCLONE_LOG as JSON. Remotes named in
+// FAKE_RCLONE_READONLY ("s,t") refuse every write, as a bucket read with
+// read-only or anonymous credentials does; those in FAKE_RCLONE_NODELETE
+// take writes but refuse deletes.
 
 func TestMain(m *testing.M) {
 	if os.Getenv("STUDIO_FAKE_RCLONE") == "1" {
@@ -268,6 +271,9 @@ func fakeRclone(args []string) int {
 		return fakeFail(1, "no command")
 	}
 	types := fakeTypes()
+	if code, denied := fakeDenied(a); denied {
+		return code
+	}
 	switch a.cmd[0] {
 	case "version":
 		fmt.Println("rclone v1.76.0\n- os/version: test\n- go/version: go1.26")
@@ -391,6 +397,46 @@ func fakeRclone(args []string) int {
 		return fakeBulk(a)
 	}
 	return fakeFail(1, "unknown command "+a.cmd[0])
+}
+
+// fakeDenied refuses a write to a remote in FAKE_RCLONE_READONLY, and a
+// delete on one in FAKE_RCLONE_NODELETE.
+func fakeDenied(a fakeArgs) (int, bool) {
+	in := func(env, spec string) bool {
+		name, _, ok := strings.Cut(spec, ":")
+		if !ok || strings.HasPrefix(spec, "/") {
+			return false
+		}
+		for _, n := range strings.Split(os.Getenv(env), ",") {
+			if n != "" && n == name {
+				return true
+			}
+		}
+		return false
+	}
+	var written, deleted []string
+	switch a.cmd[0] {
+	case "rcat", "mkdir":
+		written = a.pos[:1]
+	case "copy", "moveto", "move":
+		written = a.pos[1:2]
+		if a.cmd[0] != "copy" {
+			deleted = a.pos[:1]
+		}
+	case "delete", "purge", "rmdir":
+		deleted = a.pos[:1]
+	}
+	for _, p := range written {
+		if in("FAKE_RCLONE_READONLY", p) {
+			return fakeFail(1, "AccessDenied: Access Denied"), true
+		}
+	}
+	for _, p := range deleted {
+		if in("FAKE_RCLONE_READONLY", p) || in("FAKE_RCLONE_NODELETE", p) {
+			return fakeFail(1, "AccessDenied: Access Denied"), true
+		}
+	}
+	return 0, false
 }
 
 // fakeBulk is move, delete and copy over a --files-from-raw list.
