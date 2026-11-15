@@ -65,7 +65,8 @@ describe('Transfers in the menu', () => {
     await waitFor(() => expect(within(nav).getByTitle('Library')).toBeInTheDocument())
     await waitFor(() => expect(location.hash).toBe(''))
     expect(within(nav).queryByTitle('Transfers')).toBeNull()
-    expect(container.textContent).not.toContain('TransfersView page')
+    // The address changes first; the page goes at the next render.
+    await waitFor(() => expect(container.textContent).not.toContain('TransfersView page'))
   })
 
   it('is left out when the pages setting switches it off', async () => {
@@ -79,6 +80,7 @@ describe('Transfers in the menu', () => {
     await waitFor(() => expect(within(nav).getByTitle('Library')).toBeInTheDocument())
     await waitFor(() => expect(location.hash).toBe(''))
     expect(within(nav).queryByTitle('Transfers')).toBeNull()
-    expect(container.textContent).not.toContain('TransfersView page')
+    // The address changes first; the page goes at the next render.
+    await waitFor(() => expect(container.textContent).not.toContain('TransfersView page'))
   })
 })
