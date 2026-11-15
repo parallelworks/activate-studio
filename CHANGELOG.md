@@ -2,6 +2,28 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.201 (2026-11-15)
+
+### Chat: all libraries by default, and any set of them (#696)
+
+With more than one library, the chat searched only the knowledge base unless Scope was changed, and Scope offered one library or all. A person whose material is in a second library found the chat could not see it.
+
+**Chat scope**
+- The chat searches all libraries by default. A browser that stored nothing, or "all", ends on All libraries; a library chosen before is kept; one that no longer exists falls back to all.
+- The Library part of the Scope menu is a list of checkboxes, the same list Search and Query use. At least one stays ticked. The button names the library, says "All libraries", or "N libraries".
+- The choice is stored under `ade-scope-chat` like Search's and Query's; the old key is read once and removed.
+
+**Server**
+- The request's `library` is one id, "all", a comma list, or an array; unknown ids are dropped.
+- Search and query run over the chosen set. A read, listing or label change that names no library uses the one chosen, else the knowledge base when chosen; among several without it, the model is asked to name one.
+- With some libraries chosen, the system prompt lists them.
+
+**Tests**
+- `libscope_test.go`, `chatScope.test.tsx`.
+
+**Docs**
+- HELP.md and REFERENCE.md.
+
 ## v1.200 (2026-11-14)
 
 ### Reports: written once, edited in place; agent status looked at again (#692)
@@ -97,6 +119,10 @@ With releases coming often, the bars above every page (a newer version is availa
 
 **Docs**
 - HELP.md, REFERENCE.md, UPDATES.md, MACOS.md and LINUX-APP.md.
+
+### Change log for v1.200 (#695)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.200` before tagging v1.200.
 
 ## v1.199 (2026-11-13)
 
