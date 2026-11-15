@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish a go-port commit as a Preview release (docs/UPDATES.md, "Publishing
+# Publish a commit as a Preview release (docs/UPDATES.md, "Publishing
 # a Preview release"): a prerelease that installs on the Preview channel
 # take and installs on Stable never see, signed, notarized, and never marked
 # "latest".
@@ -12,7 +12,7 @@
 # PATCH as numbers, with a missing PATCH as 0. A Preview install therefore
 # moves on to the next Stable release when it comes out.
 #
-# Steps: checks (the commit is on go-port and builds the Go version, the
+# Steps: checks (the commit is on the branch and builds the Go version, the
 # version is free and in that range, the signing and notary secrets are
 # set); an annotated tag pushed to origin; the GitHub release created as a
 # prerelease with --latest=false (and "latest" checked to be unchanged
@@ -23,12 +23,14 @@
 # runs and then checks the release with deploy/mark_preview.sh --check.
 #
 # Usage: deploy/release_preview.sh [COMMIT] [VERSION]
-#   COMMIT   default origin/go-port
+#   COMMIT   default the tip of the branch (origin/main)
 #   VERSION  default the next vMAJOR.MINOR.N after the newest Stable release
 # Environment:
+#   PREVIEW_BRANCH  the branch the commit must be on (default main)
 #   WORKFLOW_REF    the branch whose workflow files are dispatched (default
-#                   go-port; it must have the channel input)
+#                   PREVIEW_BRANCH; it must have the channel input)
 #   WAIT=1          wait for the two runs, then run mark_preview.sh --check
+#   PREVIEW_NOTES   text put before the standard release notes
 #   DRY_RUN=1       print what it would do after the checks, change nothing
 #   ALLOW_UNSIGNED=1  go on without the macOS signing secrets (the release
 #                   then carries the ad hoc signed app)
@@ -37,7 +39,8 @@
 set -euo pipefail
 
 REPO="${STUDIO_RELEASE_REPO:-parallelworks/activate-studio}"
-WORKFLOW_REF="${WORKFLOW_REF:-go-port}"
+BRANCH="${PREVIEW_BRANCH:-main}"
+WORKFLOW_REF="${WORKFLOW_REF:-$BRANCH}"
 fail() { echo "release_preview: $*" >&2; exit 1; }
 say() { echo "== $*"; }
 run() { if [ "${DRY_RUN:-0}" = 1 ]; then echo "   would run: $*"; else "$@"; fi; }
@@ -47,9 +50,9 @@ command -v git >/dev/null || fail "git is needed"
 command -v gh >/dev/null || fail "gh is needed"
 cd "$(git rev-parse --show-toplevel)"
 
-git fetch -q --tags origin go-port || fail "could not fetch go-port and the tags from origin"
-COMMIT="$(git rev-parse --verify "${1:-origin/go-port}^{commit}")" || fail "no commit ${1:-origin/go-port}"
-git merge-base --is-ancestor "$COMMIT" origin/go-port || fail "$COMMIT is not on origin/go-port"
+git fetch -q --tags origin "$BRANCH" || fail "could not fetch $BRANCH and the tags from origin"
+COMMIT="$(git rev-parse --verify "${1:-origin/$BRANCH}^{commit}")" || fail "no commit ${1:-origin/$BRANCH}"
+git merge-base --is-ancestor "$COMMIT" "origin/$BRANCH" || fail "$COMMIT is not on origin/$BRANCH"
 # grep -c reads to the end: grep -q would quit early and, under pipefail, git show's SIGPIPE would fail the check.
 # The build at that commit must be the Go version by default.
 git show "$COMMIT:deploy/linux/build_app.sh" | grep -c 'STUDIO_SERVER:-go-only' >/dev/null ||
@@ -106,7 +109,8 @@ say "newest Stable $STABLE, next Stable $NEXT_STABLE, latest $LATEST, workflows 
 
 run git tag -a "$VERSION" "$COMMIT" -m "ACTIVATE Studio $VERSION (Preview)"
 run git push -q origin "refs/tags/$VERSION"
-NOTES="ACTIVATE Studio $VERSION, a Preview release: the Go version, with no Node and no Python. Only installs set to the Preview channel (Settings, Updates) take it; Stable installs stay on $STABLE and move on at $NEXT_STABLE. See docs/UPDATES.md, \"The Go version\"."
+NOTES="ACTIVATE Studio $VERSION is a Preview release. Only installs set to the Preview channel (Settings, Updates) take it; Stable installs stay on $STABLE and move on at $NEXT_STABLE. See docs/UPDATES.md, \"Channels\"."
+[ -z "${PREVIEW_NOTES:-}" ] || NOTES="$PREVIEW_NOTES"$'\n\n'"$NOTES"
 run gh release create "$VERSION" -R "$REPO" --verify-tag --prerelease --latest=false --title "$VERSION (Preview)" --notes "$NOTES"
 if [ "${DRY_RUN:-0}" != 1 ]; then
   now="$(gh api "repos/$REPO/releases/latest" -q .tag_name 2>/dev/null || true)"
