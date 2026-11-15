@@ -425,6 +425,11 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
    it; only a longer one, such as a clone's git describe, is cut. */
 .footer-sync { margin-left: auto; flex-shrink: 1; min-width: 6em; white-space: normal; text-align: right; line-height: 1.2; }
 .status-line:has(> .footer-sync) > .identity-btn { flex-shrink: 0; max-width: calc(100% - 6em - 6px); }
+/* A newer version: "update available" carries the footer's one tint, the info
+   color the collapsed rail's dot uses, so it is seen without calling out. The
+   class is doubled to outrank the ghost button's own colors. */
+.footer-update-available.footer-update-available { color: var(--theme-info-text); background: var(--theme-info-muted); font-weight: 500; }
+.footer-update-available.footer-update-available:hover { color: var(--theme-info-text); background: color-mix(in srgb, var(--theme-info) 22%, transparent); }
 /* A long build name (a clone's git describe) stays on one line. */
 .status-line .identity-btn { min-width: 0; }
 .identity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
