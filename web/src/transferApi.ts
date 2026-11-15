@@ -137,7 +137,12 @@ export interface TransferSettings {
   defaults: { mover: MoverName; checksum: boolean; preserveTimes: boolean; parallel: number }
   mcpServers: { id: string; label: string; connected: boolean }[]
   /** Read only: what Studio found with no setup. */
-  detected?: { rsyncLocal: boolean; rsyncVersion?: string; clusters: number; libraryHosts: string[] }
+  detected?: {
+    rsyncLocal: boolean; rsyncVersion?: string
+    /** The rsync program found here, and which transfers it is used for. */
+    rsyncPath?: string; rsyncText?: string
+    clusters: number; libraryHosts: string[]
+  }
   /** The home folder of each host a remote library uses, offered as a
    *  `host` location (sign-in off). `hidden` holds host names. */
   hostLocations?: { enabled: boolean; hidden: string[] }
@@ -146,6 +151,8 @@ export const HOST_LOCATIONS = 'hostLocations' as const
 export type TransferSettingsInput = Omit<TransferSettings, 'managed' | 'mcpServers' | 'detected'>
 export interface SettingTest {
   ok: boolean; why?: string; rsync?: boolean; rsyncVersion?: string; writable?: boolean; freeBytes?: number; roundTripMs?: number
+  /** Which transfers the host's rsync is used for. */
+  rsyncText?: string
   /** The account takes SFTP only: Studio reaches it over SFTP, copies use
    *  Studio copy, and rsync is not available there. */
   sftpOnly?: boolean
@@ -162,7 +169,7 @@ export function testText(r: SettingTest): string {
   if (r.writable !== undefined) parts.push(r.writable ? 'writable' : 'read only')
   if (r.freeBytes !== undefined) parts.push(`${bytesText(r.freeBytes)} free`)
   if (r.roundTripMs !== undefined) parts.push(`${Math.round(r.roundTripMs)} ms round trip`)
-  return parts.join(', ') + '.' + (r.why ? ` Note: ${r.why}.` : '')
+  return parts.join(', ') + '.' + (r.rsync && r.rsyncText ? ` ${r.rsyncText}.` : '') + (r.why ? ` Note: ${r.why}.` : '')
 }
 
 /** A 400 from the settings routes starts with the field it is about
@@ -400,7 +407,7 @@ export interface PlacesReady {
   clusters: number
   saved: number
   hosts: number
-  rsync: { found: boolean; version?: string } | null
+  rsync: { found: boolean; version?: string; text?: string } | null
 }
 
 export function placesReady(locations: TransferLocation[], settings: TransferSettings | null): PlacesReady {
@@ -412,7 +419,7 @@ export function placesReady(locations: TransferLocation[], settings: TransferSet
   return {
     ...r,
     total: r.libraries + r.folders + r.clusters + r.saved + r.hosts,
-    rsync: settings?.detected ? { found: settings.detected.rsyncLocal, version: settings.detected.rsyncVersion } : null,
+    rsync: settings?.detected ? { found: settings.detected.rsyncLocal, version: settings.detected.rsyncVersion, text: settings.detected.rsyncText } : null,
   }
 }
 
@@ -423,7 +430,7 @@ export function readyParts(p: PlacesReady): string[] {
   const out = [plural(p.libraries, 'library', 'libraries'), plural(p.folders, 'folder on this computer', 'folders on this computer'), plural(p.clusters, 'cluster')]
   if (p.hosts) out.push(plural(p.hosts, 'library host'))
   if (p.saved) out.push(plural(p.saved, 'saved location'))
-  if (p.rsync) out.push(p.rsync.found ? `rsync ${p.rsync.version ?? ''}`.trim() + ' found' : 'no rsync here, Studio copy is used')
+  if (p.rsync) out.push(!p.rsync.found ? 'no rsync here, Studio copy is used' : p.rsync.text ?? `rsync ${p.rsync.version ?? ''}`.trim() + ' found')
   return out
 }
 export const placesText = (p: PlacesReady) => `${plural(p.total, 'place')} ready`

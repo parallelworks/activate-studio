@@ -52,9 +52,41 @@ Only the main library is re-indexed after a transfer. For any other library a tr
 
 ## Movers
 
-`rsync` runs on this computer for a pull or push (a pull needs rsync 3.2.5 or later here), on the host for a transfer within one host, and from one host straight to another when the destination is a plain ssh destination the source can reach. A host whose login prints text before a command runs breaks rsync's protocol, so rsync is refused there with that reason, and so is a host that takes SFTP only. `studio-copy` reads and writes each file through Studio, works between any two locations and is always on. `conduit` hands the copy to a CONDUIT service through an attached MCP server; it is only ever sent COPY, Studio verifies the result and removes originals itself, and it cannot be cancelled once started.
+`rsync` runs on this computer for a pull or push, on the host for a transfer within one host, and from one host straight to another when the destination is a plain ssh destination the source can reach. Which rsync releases it accepts is below. A host whose login prints text before a command runs breaks rsync's protocol, so rsync is refused there with that reason, and so is a host that takes SFTP only. `studio-copy` reads and writes each file through Studio, works between any two locations and is always on. `conduit` hands the copy to a CONDUIT service through an attached MCP server; it is only ever sent COPY, Studio verifies the result and removes originals itself, and it cannot be cancelled once started.
 
 The mover is the one the request names, else the settings' default where it can do the transfer, else the first that can, in the order conduit, rsync, studio-copy. At most three jobs run at once.
+
+### rsync versions
+
+Studio uses the rsync installed on each end, and the two ends often run different releases: macOS ships rsync 2.6.9 or openrsync, RHEL 8 ships 3.1.3, and a current Linux has 3.2 or later. rsync agrees a protocol version with the far end, but options are not negotiated, so an option the far end does not know makes it fail. Studio therefore reads each end's rsync once (`--version`, `--help` and a `--trust-sender --version` probe, kept five minutes; a host's through the helper) and gives each option only when the end or ends that must understand it have it. The plan's reason says why rsync was or was not picked.
+
+The rsync that runs the command needs `--files-from`, `--from0` (or `-0`) and `--chmod`; without one, rsync is not used for that transfer and the reason names the option. The file names travel only in the `--files-from` list, never on a command line. What else is given follows what rsync passes to the far end (`server_options()` in rsync's `options.c`):
+
+| Option | Needed on | Given when |
+| --- | --- | --- |
+| `-s` (`--protect-args`, or `--secluded-args` in newer releases) | both ends | both have it, for a pull, push or host-to-host send |
+| `--timeout=120` | both ends | both have it |
+| `--max-size` | the receiving end | the receiver has it |
+| `--no-inc-recursive` | the running rsync only | it has incremental recursion (3.0 and later) |
+| `--info=progress2` | the running rsync only | it has `--info` (3.1 and later); otherwise progress is reported at the end |
+| `--chmod`, `--files-from` | the running rsync only | always; it applies them itself |
+| `--files-from=-`, `--from0` | the sending host, in a pull | always; a pull needs both there |
+
+Without protect args, the folder on the far end passes through the far end's shell. Studio then quotes it for a POSIX shell (in single quotes) when the running rsync passes it on as it is (2.6.9 to 3.2.3, and openrsync), or escapes only its wildcard characters when the running rsync escapes the rest itself (3.2.4 and later). `RSYNC_OLD_ARGS` and `RSYNC_PROTECT_ARGS` are removed from rsync's environment so they cannot change this.
+
+Each kind of transfer then works as follows.
+
+| Transfer | rsync needed |
+| --- | --- |
+| Within this computer | any rsync with the options above, 2.6.9 and openrsync included |
+| This computer to a host | the same here; any release on the host |
+| A host to this computer | here, rsync 3.2.5 or later, or a build that accepts `--trust-sender`; any release on the host that has `--files-from` and `--from0` |
+| Within one host | the host's rsync with the options above |
+| One host to another | the source host's rsync with the options above; any release on the destination |
+
+A pull needs the fix for CVE-2022-29154 on this computer: before it, an rsync client trusts the file list the sending host returns, and a malicious or compromised host can write files outside the destination folder. Upstream fixed this in 3.2.5 and added `--trust-sender` in the same change, so a build that accepts `--trust-sender` is taken to carry the fix. RHEL 8's rsync 3.1.3 carries the fix from 3.1.3-18 (August 2022) but accepts `--trust-sender` only from 3.1.3-23 (May 2025), and does not list it in `--help`, which is why Studio probes for it; a build between those is refused for pulls. Without the fix, Studio copy carries pulls and the plan says so. A send to a host and a copy within this computer do not depend on it.
+
+macOS's openrsync has `--files-from`, `-0`, `--chmod`, `--max-size` and `--timeout`, but not `-s`, `--info`, `--no-inc-recursive` or `--trust-sender`: on a Mac it copies within the computer and sends to hosts, and pulls use Studio copy unless a newer rsync is installed. OpenBSD's openrsync has no `--files-from` and is not used.
 
 ## History
 
@@ -75,7 +107,7 @@ Active transfers are held in memory and in `INDEX_BASE/transfers/active.json`. A
 | `POST /api/transfers/{id}/cancel` | `{ cancelled, why? }` |
 | `DELETE /api/transfers/{id}` | `{ deleted }` for a finished one |
 | `GET`, `PUT /api/transfers/settings` | The Transfers settings (below) |
-| `POST /api/transfers/settings/test` | `{ ok, why?, rsync?, rsyncVersion?, writable?, freeBytes?, roundTripMs?, sftpOnly? }` |
+| `POST /api/transfers/settings/test` | `{ ok, why?, rsync?, rsyncVersion?, rsyncText?, writable?, freeBytes?, roundTripMs?, sftpOnly? }` |
 
 Errors are `{ "error": "..." }` with the status. With sign-in on every route acts for the signed-in user only, and another user's transfer is a 404.
 
@@ -92,9 +124,9 @@ Stored under the `transfers` key of the settings file:
   hostLocations: { enabled, hidden: [host] } }
 ```
 
-GET adds `managed`, `mcpServers` and `detected: { rsyncLocal, rsyncVersion?, clusters, libraryHosts }`. A PUT is validated field by field and a 400 names the field (`savedLocations[0].root: ...`). With sign-in on the section is `managed`, PUT and the test route are 403, and the values come from the environment: `STUDIO_TRANSFER_FOLDERS`, `STUDIO_RSYNC` (a path, or `off`), `STUDIO_TRANSFER_MOVER` and `STUDIO_TRANSFER_STREAMS`.
+GET adds `managed`, `mcpServers` and `detected: { rsyncLocal, rsyncVersion?, rsyncPath?, rsyncText?, clusters, libraryHosts }`. `rsyncText` says which transfers the rsync found is used for, for example `rsync 2.6.9 at /usr/bin/rsync: used on this computer and for sends to hosts; pulls use Studio copy (needs rsync 3.2.5 or a build with the CVE-2022-29154 fix)`; the test route's `rsyncText` says the same of a host's rsync. A PUT is validated field by field and a 400 names the field (`savedLocations[0].root: ...`). With sign-in on the section is `managed`, PUT and the test route are 403, and the values come from the environment: `STUDIO_TRANSFER_FOLDERS`, `STUDIO_RSYNC` (a path, or `off`), `STUDIO_TRANSFER_MOVER` and `STUDIO_TRANSFER_STREAMS`.
 
-The local rsync is the configured name on `PATH`, then `/usr/bin`, `/bin`, `/usr/local/bin`, `/opt/homebrew/bin` and `/opt/local/bin`, so a desktop launch with a short `PATH` still finds it. `ssh` and `pw` are found as the remote libraries find them.
+The local rsync is the configured name on `PATH`, then `/usr/bin`, `/bin`, `/usr/local/bin`, `/opt/homebrew/bin` and `/opt/local/bin`, so a desktop launch with a short `PATH` still finds it. On macOS with the default setting (`rsync`), Homebrew's `/opt/homebrew/bin/rsync` and `/usr/local/bin/rsync` are tried as well as the one on `PATH`, and the most capable is used: one that can pull, then one with protect args, then the newer. The desktop app takes the login shell's `PATH`, which finds Homebrew's rsync only when that `PATH` puts Homebrew ahead of `/usr/bin`, so this lookup does not depend on it. A path set in Settings is always used as it is. `ssh` and `pw` are found as the remote libraries find them.
 
 ## For the chat
 

@@ -206,7 +206,11 @@ export function mockSettings(): Record<string, unknown> {
     movers: { rsync: { enabled: true, path: 'rsync' }, studioCopy: { enabled: true }, conduit: { enabled: false, server: null, mounts: [{ location: 'saved:scratch', path: 'shared', conduit: '/site/scratch' }] } },
     defaults: { mover: 'auto', checksum: false, preserveTimes: true, parallel: 4 },
     mcpServers: [{ id: 'conduit', label: 'CONDUIT', connected: true }],
-    detected: { rsyncLocal: true, rsyncVersion: '3.2.7', clusters: 2, libraryHosts: ['archive-host', 'storage-host'] },
+    detected: {
+      rsyncLocal: true, rsyncVersion: '3.2.7', rsyncPath: '/usr/bin/rsync',
+      rsyncText: 'rsync 3.2.7 at /usr/bin/rsync: used on this computer, for sends to hosts and for pulls from hosts',
+      clusters: 2, libraryHosts: ['archive-host', 'storage-host'],
+    },
     hostLocations: { enabled: true, hidden: ['storage-host'] },
   }
 }

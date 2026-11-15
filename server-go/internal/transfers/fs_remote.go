@@ -48,7 +48,7 @@ mark=$1; cmd=$2; root=$3; shift 3
 [ "$cmd" = read ] || printf '%s\n' "$mark"
 fail() { printf '%s\n' "$2" >&2; exit "$1"; }
 [ "$cmd" = home ] && { cd -P ~ 2>/dev/null && pwd -P; exit; }
-[ "$cmd" = rsync ] && { r=${1:-rsync}; command -v -- "$r" >/dev/null 2>&1 || exit 9; "$r" --version 2>/dev/null | head -n 1; exit 0; }
+[ "$cmd" = rsync ] && { r=${1:-rsync}; command -v -- "$r" >/dev/null 2>&1 || exit 9; "$r" --version 2>&1 | head -n 20; printf '%s\n' "$mark"; "$r" --help 2>&1 | head -n 400; printf '%s\n' "$mark"; "$r" --trust-sender --version >/dev/null 2>&1 && echo trust-sender; exit 0; }
 [ -d "$root" ] || fail 3 "no such folder: $root"
 R=$(cd -P -- "$root" 2>/dev/null && pwd -P) || fail 3 "cannot open $root"
 cd -- "$R" || fail 3 "cannot open $root"
@@ -595,19 +595,34 @@ func Home(ctx context.Context, run Runner, site, key string) (string, error) {
 	return h, nil
 }
 
-// RsyncVersion is the first line of rsync --version on a host, "" without
-// rsync. clean is false when the login printed anything before it on
-// standard output, which breaks rsync's protocol over that connection.
-func RsyncVersion(ctx context.Context, run Runner, site, key, program string) (line string, clean bool) {
+// RsyncProbe is a host's rsync: its --version and --help output (each
+// cut short) and whether it takes --trust-sender. found is false without
+// rsync; clean is false when the login printed anything before the answer
+// on standard output, which breaks rsync's protocol over that connection.
+func RsyncProbe(ctx context.Context, run Runner, site, key, program string) (p rsyncProbe, found, clean bool) {
 	if program == "" {
 		program = "rsync"
 	}
 	if sftpOnlySite(ctx, run, site, key) {
-		return "", true
+		return rsyncProbe{}, false, true
 	}
-	res, banner, err := runTool(ctx, run, site, key, 60*time.Second, nil, "rsync", "/", program)
+	mark := marker()
+	res, err := run.RunOnce(ctx, site, key, toolArgv(mark, "rsync", "/", program), 60*time.Second, nil)
 	if err != nil || res.Code != 0 {
-		return "", true
+		return rsyncProbe{}, false, true
 	}
-	return strings.TrimSpace(lastLine(res.Stdout)), !banner
+	i := bytes.Index(res.Raw, []byte(mark+"\n"))
+	out, ok := afterMark(res.Raw, mark)
+	if !ok {
+		return rsyncProbe{}, false, true
+	}
+	parts := strings.SplitN(string(out), mark+"\n", 3)
+	p.version = parts[0]
+	if len(parts) > 1 {
+		p.help = parts[1]
+	}
+	if len(parts) > 2 {
+		p.trust = strings.TrimSpace(parts[2]) == "trust-sender"
+	}
+	return p, strings.TrimSpace(p.version) != "", i <= 0
 }

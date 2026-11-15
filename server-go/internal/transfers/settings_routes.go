@@ -2,7 +2,6 @@ package transfers
 
 import (
 	"context"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,8 +20,12 @@ type MCPServer struct {
 // Detected is what Studio found without any setup, so the page can show
 // what is ready before anything is tested.
 type Detected struct {
-	RsyncLocal   bool     `json:"rsyncLocal"`
-	RsyncVersion string   `json:"rsyncVersion,omitempty"`
+	RsyncLocal   bool   `json:"rsyncLocal"`
+	RsyncVersion string `json:"rsyncVersion,omitempty"`
+	// RsyncPath is the rsync program found here, and RsyncText says which
+	// transfers it is used for.
+	RsyncPath    string   `json:"rsyncPath,omitempty"`
+	RsyncText    string   `json:"rsyncText,omitempty"`
 	Clusters     int      `json:"clusters"`
 	LibraryHosts []string `json:"libraryHosts"`
 }
@@ -66,20 +69,26 @@ func (s *Service) SettingsView(ctx context.Context, v Viewer) SettingsView {
 	return out
 }
 
-// detect is local rsync and its version, the viewer's clusters and, with
+// rsyncMover is the service's rsync mover.
+func (s *Service) rsyncMover() *rsyncMover {
+	for _, m := range s.movers {
+		if r, ok := m.(*rsyncMover); ok {
+			return r
+		}
+	}
+	return nil
+}
+
+// detect is local rsync (the program found, its version and what it is
+// used for), the viewer's clusters and, with
 // sign-in off, the hosts libraries are reached on.
 func (s *Service) detect(ctx context.Context, v Viewer, set Settings) Detected {
 	d := Detected{LibraryHosts: []string{}}
 	c, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if set.Movers.Rsync.Enabled {
-		bin := FindRsync(s.d.Getenv, set.Movers.Rsync.Path)
-		if out, err := exec.CommandContext(c, bin, "--version").Output(); err == nil {
-			line, _, _ := strings.Cut(string(out), "\n")
-			if ver, ok := parseRsyncVersion(line); ok {
-				d.RsyncLocal = true
-				d.RsyncVersion = itoa(ver[0]) + "." + itoa(ver[1]) + "." + itoa(ver[2])
-			}
+	if m := s.rsyncMover(); m != nil && set.Movers.Rsync.Enabled {
+		if p, rc, why := m.local(c, set); why == "" {
+			d.RsyncLocal, d.RsyncVersion, d.RsyncPath, d.RsyncText = true, rc.version(), p, localUse(rc, p)
 		}
 	}
 	if s.d.Clusters != nil && v.Key != "" {
@@ -128,9 +137,11 @@ type TestResult struct {
 	Why          string `json:"why,omitempty"`
 	Rsync        *bool  `json:"rsync,omitempty"`
 	RsyncVersion string `json:"rsyncVersion,omitempty"`
-	Writable     *bool  `json:"writable,omitempty"`
-	FreeBytes    *int64 `json:"freeBytes,omitempty"`
-	RoundTripMs  *int64 `json:"roundTripMs,omitempty"`
+	// RsyncText says which transfers the host's rsync is used for.
+	RsyncText   string `json:"rsyncText,omitempty"`
+	Writable    *bool  `json:"writable,omitempty"`
+	FreeBytes   *int64 `json:"freeBytes,omitempty"`
+	RoundTripMs *int64 `json:"roundTripMs,omitempty"`
 	// SFTPOnly: the account takes SFTP only, so Studio reaches it over the
 	// SFTP protocol, copies use studio-copy and rsync is not available.
 	SFTPOnly bool `json:"sftpOnly,omitempty"`
@@ -191,15 +202,16 @@ func (s *Service) TestSettings(ctx context.Context, v Viewer, in TestRequest) (T
 		out.FreeBytes = &free
 	}
 	out.SFTPOnly = fs.SFTPOnly(c)
-	line, clean := "", true
+	var rp rsyncProbe
+	has, clean := false, true
 	if !out.SFTPOnly {
-		line, clean = RsyncVersion(c, s.d.Runner, site, "", remoteRsync(fs))
+		rp, has, clean = RsyncProbe(c, s.d.Runner, site, "", remoteRsync(fs))
 	}
-	has := line != ""
 	out.Rsync = &has
 	if has {
-		if ver, ok := parseRsyncVersion(line); ok {
-			out.RsyncVersion = itoa(ver[0]) + "." + itoa(ver[1]) + "." + itoa(ver[2])
+		if rc, ok := parseRsyncCaps(rp.version, rp.help, rp.trust); ok {
+			out.RsyncVersion = rc.version()
+			out.RsyncText = hostUse(rc)
 		}
 		if !clean {
 			out.Why = "the login prints text before a command runs, which rsync's protocol cannot pass; studio-copy will carry transfers"

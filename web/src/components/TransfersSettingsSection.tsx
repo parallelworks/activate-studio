@@ -155,6 +155,7 @@ function TestResult({ r }: { r: SettingTest }) {
         {r.roundTripMs !== undefined && <li>{Math.round(r.roundTripMs)} ms round trip</li>}
       </ul>
       {r.sftpOnly && <p className="xfer-checks-note">This account takes SFTP only. Copies use Studio copy over SFTP; rsync is not available there.</p>}
+      {r.rsync && r.rsyncText && <p className="xfer-checks-note">{r.rsyncText}.</p>}
       {r.why && <p className="xfer-checks-note">{r.why.charAt(0).toUpperCase() + r.why.slice(1)}.</p>}
     </Callout>
   )
@@ -389,7 +390,9 @@ export function TransfersSettingsSection() {
             onCheckedChange={v => movers({ rsync: { ...s.movers.rsync, enabled: v } })} aria-label="rsync" /> <b>rsync</b></label>
           <span className="muted">
             Used where both ends have it.{' '}
-            {s.detected && (s.detected.rsyncLocal ? `Found here${s.detected.rsyncVersion ? `, version ${s.detected.rsyncVersion}` : ''}.` : 'Not found on this computer.')}
+            {s.detected && (!s.detected.rsyncLocal ? 'Not found on this computer.'
+              : s.detected.rsyncText ? `Found ${s.detected.rsyncText}.`
+                : `Found here${s.detected.rsyncVersion ? `, version ${s.detected.rsyncVersion}` : ''}.`)}
           </span>
           {s.movers.rsync.enabled && (
             <Input size="sm" label="Program" mono value={s.movers.rsync.path} disabled={off}
