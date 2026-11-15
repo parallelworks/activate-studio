@@ -286,6 +286,10 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	toolCache := map[string]string{}
 	var cacheMu sync.Mutex
 	usedTools := false
+	// afterChange: the latest tool results came from a call that changed
+	// something, or from an answer to a held call. A short reply then is a
+	// confirmation, and stands as the answer.
+	afterChange := false
 	messages := st.messages
 	push := func(ms ...llm.Message) { *messages = append(*messages, ms...) }
 	toolCtx := func() ToolCtx {
@@ -346,6 +350,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			}
 		}
 		usedTools = true
+		afterChange = true
 	}
 
 	hasTool := func() bool {
@@ -423,6 +428,12 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		if turn.FinishReason != nil && *turn.FinishReason == "tool_calls" && len(turn.ToolCalls) > 0 {
 			usedTools = true
 			calls := turn.ToolCalls
+			afterChange = false
+			for _, tc := range calls {
+				if changingTools[tc.Function.Name] {
+					afterChange = true
+				}
+			}
 			iterParts := make([]conversations.Part, len(calls))
 			for i, tc := range calls {
 				id := tc.ID
@@ -579,7 +590,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			}
 			continue
 		}
-		if jsTrim(turn.Content) == "" || (usedTools && jsval.Len(jsTrim(turn.Content)) < 200) {
+		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && jsval.Len(jsTrim(turn.Content)) < 200) {
 			m.A.Log.Warn("empty turn with no tool calls; forcing final answer", "iter", iter)
 			hitLimit = false
 			break
