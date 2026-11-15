@@ -234,12 +234,48 @@ func (s *Store) RecordUserTurn(conversationID, userMessageID, content string, pa
 	if id == "" {
 		id = UUID()
 	}
+	parentID = afterNotes(c, parentID)
 	c.Messages = append(c.Messages, Message{ID: id, Role: "user", Content: strp(content), ParentID: parentID, Timestamp: now})
 	if userMessageID != "" {
 		c.ActiveBranchID = strp(userMessageID)
 	}
 	c.UpdatedAt = now
 	s.persist()
+}
+
+// afterNotes is the message a new user turn follows: its parent, or the
+// last of the notes added under that parent since (a transfer or a run that
+// finished), which a page that has not reloaded does not know of. Without
+// it the turn would start a branch beside the notes and hide them. Notes
+// that already have a reply below them are left as they are.
+func afterNotes(c *Conversation, parent *string) *string {
+	if parent == nil {
+		return nil
+	}
+	cur := *parent
+	for {
+		next := ""
+		for _, m := range c.Messages {
+			if m.ParentID == nil || *m.ParentID != cur {
+				continue
+			}
+			if !strings.HasPrefix(m.ID, "note-") {
+				if cur != *parent {
+					return parent
+				}
+				continue
+			}
+			next = m.ID
+		}
+		if next == "" {
+			break
+		}
+		cur = next
+	}
+	if cur == *parent {
+		return parent
+	}
+	return strp(cur)
 }
 
 // AppendNote is appendConversationNote.

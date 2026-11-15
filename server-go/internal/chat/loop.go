@@ -286,6 +286,10 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	toolCache := map[string]string{}
 	var cacheMu sync.Mutex
 	usedTools := false
+	// afterChange: the latest tool results came from a call that changed
+	// something, or from an answer to a held call. A short reply then is a
+	// confirmation, and stands as the answer.
+	afterChange := false
 	messages := st.messages
 	push := func(ms ...llm.Message) { *messages = append(*messages, ms...) }
 	toolCtx := func() ToolCtx {
@@ -346,6 +350,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			}
 		}
 		usedTools = true
+		afterChange = true
 	}
 
 	hasTool := func() bool {
@@ -423,6 +428,12 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		if turn.FinishReason != nil && *turn.FinishReason == "tool_calls" && len(turn.ToolCalls) > 0 {
 			usedTools = true
 			calls := turn.ToolCalls
+			afterChange = false
+			for _, tc := range calls {
+				if changingTools[tc.Function.Name] {
+					afterChange = true
+				}
+			}
 			iterParts := make([]conversations.Part, len(calls))
 			for i, tc := range calls {
 				id := tc.ID
@@ -472,7 +483,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 				}
 				why := ""
 				gate := st.changes
-				if isKBAsksFirst(name) {
+				if localAsksFirst(name) {
 					gate = st.kbChanges
 				}
 				switch {
@@ -579,7 +590,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			}
 			continue
 		}
-		if jsTrim(turn.Content) == "" || (usedTools && jsval.Len(jsTrim(turn.Content)) < 200) {
+		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && jsval.Len(jsTrim(turn.Content)) < 200) {
 			m.A.Log.Warn("empty turn with no tool calls; forcing final answer", "iter", iter)
 			hitLimit = false
 			break
@@ -660,6 +671,7 @@ func orEmptyCalls(c []llm.ToolCall) []llm.ToolCall {
 var liveTools = map[string]bool{
 	"agent_status": true, "agent_sessions": true, "watch_run": true, "workflow_runs": true, "workflow_run_detail": true,
 	"list_sessions": true, "list_clusters": true, "hpc_status": true, "task_status": true, "cluster_command": true,
+	"transfer_status": true, "browse_location": true,
 }
 
 // changingTools change what other tools read: a file, a label, an agent,
@@ -670,6 +682,7 @@ var changingTools = map[string]bool{
 	"start_agent": true, "agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true, "delegate": true,
 	"run_workflow": true, "serve_model": true, "cancel_workflow_run": true,
 	"start_cluster": true, "resume_cluster": true, "stop_cluster": true, "destroy_cluster": true,
+	"transfer_files": true, "cancel_transfer": true,
 }
 
 // repeatedCall is the result of this exact call made earlier in the

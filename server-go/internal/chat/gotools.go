@@ -279,6 +279,9 @@ func (t goTools) Execute(r *http.Request, name, args string, ctx ToolCtx) (*Outc
 
 func (t goTools) Prepare(r *http.Request, name, args, changeKey string) (*Prepared, error) {
 	m := t.m
+	if isTransferAsksFirst(name) {
+		return m.prepareTransfer(r, name, args), nil
+	}
 	pt := platformByName[name]
 	needsAccount := pt != nil && len(pt.Defaults) > 0
 	var account *Account
@@ -317,6 +320,16 @@ func (t goTools) Hold(r *http.Request, in map[string]any) (json.RawMessage, erro
 	}
 	remarshal(in, &b)
 	rec := newHold(b.ConversationID, b.MessageID, b.ToolCallID, b.Tool, b.Canonical, viewer, b.Turn, b.Groups, t.m.held.now())
+	if isTransferAsksFirst(b.Tool) {
+		canonical, approval, err := t.m.holdTransfer(r, b.ConversationID, b.ToolCallID, b.Tool, b.Canonical, b.Args, rec.ExpiresAt)
+		if err != nil {
+			return nil, err
+		}
+		rec.Args = canonical
+		t.m.held.hold(rec)
+		t.m.scheduleTransferExpiry(b.ConversationID, b.ToolCallID, canonical)
+		return jsonobj.Marshal(approval)
+	}
 	args, err := jsonobj.Parse(b.Args)
 	if err != nil || args == nil {
 		args = jsonobj.New()
@@ -333,7 +346,7 @@ func (t goTools) Answer(r *http.Request, ans map[string]any, changeKey *string) 
 	enabled := func(tool string) bool {
 		return slices.ContainsFunc(activeToolSpecs(m.eff(), m.Ext), func(s ToolSpec) bool { return s.Name == tool })
 	}
-	return m.answerHeld(r.Context(), a, m.viewerOf(r), changeKey, enabled), nil
+	return m.answerHeld(r, a, m.viewerOf(r), changeKey, enabled), nil
 }
 
 func (t goTools) Held(r *http.Request, conversationID string) ([]conversations.Holder, error) {

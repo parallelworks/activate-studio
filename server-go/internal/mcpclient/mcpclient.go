@@ -406,3 +406,107 @@ func (c *Client) Call(ctx context.Context, name string, args json.RawMessage) (s
 	b, _ := jsonobj.Marshal(res)
 	return string(b), nil
 }
+
+// Result is a tool call's answer with its parts kept apart: the text of
+// its content, its structuredContent (raw JSON, nil when absent) and
+// whether the server marked it an error. Call flattens all of it to text
+// for the model; a caller that acts on the answer (a transfer's status)
+// reads it here.
+type Result struct {
+	Text       string
+	Structured json.RawMessage
+	IsError    bool
+}
+
+// HasServer reports whether an attached server has this name.
+func (c *Client) HasServer(name string) bool {
+	for _, s := range c.RemoteServers() {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ServerTools is the names of a server's tools as it lists them (without
+// the server prefix), or why the listing failed.
+func (c *Client) ServerTools(ctx context.Context, server string) ([]string, error) {
+	for _, s := range c.RemoteServers() {
+		if s.Name != server {
+			continue
+		}
+		e := c.listFor(ctx, s)
+		if e.err != nil {
+			return nil, fmt.Errorf("%s", *e.err)
+		}
+		out := make([]string, 0, len(e.tools))
+		for _, t := range e.tools {
+			out = append(out, strings.TrimPrefix(t.Name, s.Name+Sep))
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("no such MCP server: %s", server)
+}
+
+// CallTool runs one tool of a server by its own name and keeps the
+// answer's parts. A session the server no longer knows (it restarted) is
+// opened again once.
+func (c *Client) CallTool(ctx context.Context, server, tool string, args any, timeout time.Duration) (Result, error) {
+	var s *Server
+	for _, x := range c.RemoteServers() {
+		if x.Name == server {
+			s = &x
+			break
+		}
+	}
+	if s == nil {
+		return Result{}, fmt.Errorf("no such MCP server: %s", server)
+	}
+	if timeout <= 0 {
+		timeout = callTimeout
+	}
+	e := c.listFor(ctx, *s)
+	if e.err != nil {
+		return Result{}, fmt.Errorf("%s", *e.err)
+	}
+	res, _, err := c.rpc(ctx, *s, "tools/call", reqbody.O("name", tool, "arguments", args), e.session, timeout)
+	var se *statusError
+	if errors.As(err, &se) && strings.HasPrefix(se.msg, "404") {
+		c.mu.Lock()
+		delete(c.cache, s.Name)
+		c.mu.Unlock()
+		e = c.listFor(ctx, *s)
+		if e.err != nil {
+			return Result{}, fmt.Errorf("%s", *e.err)
+		}
+		res, _, err = c.rpc(ctx, *s, "tools/call", reqbody.O("name", tool, "arguments", args), e.session, timeout)
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	var body struct {
+		Content    json.RawMessage `json:"content"`
+		Structured json.RawMessage `json:"structuredContent"`
+		IsError    bool            `json:"isError"`
+	}
+	if jsval.IsObject(res) {
+		_ = json.Unmarshal(res, &body)
+	}
+	out := Result{IsError: body.IsError}
+	if !jsonobj.IsNullish(body.Structured) && len(body.Structured) > 0 {
+		out.Structured = body.Structured
+	}
+	if items, ok := jsval.Array(body.Content); ok {
+		var parts []string
+		for _, it := range items {
+			var o map[string]json.RawMessage
+			if json.Unmarshal(it, &o) == nil {
+				if t, ok := jsonobj.String(o["text"]); ok {
+					parts = append(parts, t)
+				}
+			}
+		}
+		out.Text = strings.Join(parts, "\n")
+	}
+	return out, nil
+}

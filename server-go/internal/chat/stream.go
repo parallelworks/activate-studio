@@ -171,6 +171,8 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	defer done()
 	convID := deref(body.ConversationID)
 	defer m.Conv.BeginAnswer(convID)()
+	// A transfer's note waits until this reply is stored (transfertools.go).
+	defer m.notes.begin(convID)()
 	ctx := r.Context()
 	kctx, stopKeep := context.WithCancel(ctx)
 	defer stopKeep()

@@ -3,12 +3,14 @@ import { Disclosure } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
 import { api, IndexStatus, onAbout, onWhatsNew } from '../api'
 import { aiOn, useAppConfig } from '../config'
+import { transfersPresent } from '../transferApi'
 import { WhatsNew } from '../components/WhatsNew'
 import { About } from '../components/About'
 
 const SECTION_ICONS: Record<string, ReactElement> = {
   chat: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M14 10.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v7z"/></svg>,
   library: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3l1.5 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9z"/></svg>,
+  transfers: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 5h10.5M10 2.5 12.5 5 10 7.5"/><path d="M14 11H3.5M6 8.5 3.5 11 6 13.5"/></svg>,
   search: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>,
   query: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><ellipse cx="8" cy="3.5" rx="5.5" ry="2"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9"/><path d="M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg>,
   adding: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 10V2.5"/><path d="m5 5.5 3-3 3 3"/><path d="M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg>,
@@ -84,6 +86,8 @@ const slugOf = (t: string) => (t === WHATS_NEW ? WHATS_NEW_SLUG : t === ABOUT ? 
 
 /** The guide's pages about pages AI features off removes. */
 export const AI_HELP_PAGES = ['Chat', 'Agents']
+/** The guide's page about the Transfers page, shown where the server has it. */
+export const TRANSFERS_HELP_PAGE = 'Transfers'
 
 export function HelpView() {
   const cfg = useAppConfig()
@@ -109,7 +113,10 @@ export function HelpView() {
   const aiEnabled = aiOn(cfg)
   const parsed = parseHelp(aiGuideText(md, aiEnabled))
   const intro = parsed.intro
-  const sections = aiEnabled ? parsed.sections : parsed.sections.filter(s => !AI_HELP_PAGES.includes(s.title))
+  // Transfers likewise, on a server without the transfers API.
+  const [hasTransfers, setHasTransfers] = useState(true)
+  useEffect(() => { void transfersPresent().then(setHasTransfers) }, [])
+  const sections = parsed.sections.filter(s => (aiEnabled || !AI_HELP_PAGES.includes(s.title)) && (hasTransfers || s.title !== TRANSFERS_HELP_PAGE))
 
   // A link to a page of Help (#view=help:<page>) after this view is up, and
   // What's new asked for from the footer or Settings.

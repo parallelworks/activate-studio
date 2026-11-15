@@ -1,8 +1,8 @@
 package chat
 
 import (
-	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -235,6 +235,7 @@ func (m *Module) takeAnswer(a answer, viewer *Viewer, now time.Time) (*HeldCall,
 	}
 	if t, ok := parseISO(rec.ExpiresAt); !ok || !t.After(now) {
 		m.held.release(rec)
+		m.dropHeldTransfer(rec, "its approval expired")
 		return nil, "", "This request expired before it was answered; nothing ran. Ask again to run it."
 	}
 	if a.MessageID != rec.MessageID {
@@ -242,6 +243,7 @@ func (m *Module) takeAnswer(a answer, viewer *Viewer, now time.Time) (*HeldCall,
 	}
 	if toolHash(rec.Tool) != rec.Hash {
 		m.held.release(rec)
+		m.dropHeldTransfer(rec, "the tool changed")
 		return nil, "", "The " + rec.Tool + " tool changed after this was asked; nothing ran. Ask again to run it."
 	}
 	if a.Args != nil {
@@ -302,13 +304,14 @@ var doneVerb = map[string]string{
 
 // answerHeld settles an answer: refuses it, records a denial, or runs the
 // held call (or the alternative chosen) with the viewer's key.
-func (m *Module) answerHeld(ctx context.Context, a answer, viewer *Viewer, key *string, enabled func(string) bool) *Answered {
+func (m *Module) answerHeld(r *http.Request, a answer, viewer *Viewer, key *string, enabled func(string) bool) *Answered {
+	ctx := r.Context()
 	if pending := m.held.get(a.ConversationID, a.ToolCallID); a.Allowed && pending != nil && viewer != nil && viewer.ID == pending.Viewer {
 		tool := pending.Tool
 		if a.Tool != "" && a.Tool != pending.Tool {
 			tool = a.Tool
 		}
-		if (key == nil || *key == "") && !isKBAsksFirst(tool) {
+		if (key == nil || *key == "") && !localAsksFirst(tool) {
 			return &Answered{Why: "Running this needs your own platform key, which you can add under Settings, Model access; nothing ran."}
 		}
 		if !enabled(tool) {
@@ -325,7 +328,14 @@ func (m *Module) answerHeld(ctx context.Context, a answer, viewer *Viewer, key *
 		if f := jsTrim(a.Feedback); f != "" {
 			said = " They said: " + f
 		}
+		if isTransferAsksFirst(rec.Tool) {
+			m.answerTransfer(r, rec, false)
+		}
 		return &Answered{OK: true, Rec: hr, Tool: rec.Tool, Result: "The user declined this call, so it did not run. Do not call it again unless the user asks." + said, Summary: "declined"}
+	}
+	if isTransferAsksFirst(tool) {
+		out, summary, failed := m.answerTransfer(r, rec, true)
+		return &Answered{OK: true, Rec: hr, Tool: tool, Result: out, Summary: summary, Failed: failed}
 	}
 	args, err := jsonobj.Parse([]byte(rec.Args))
 	if err != nil || args == nil {

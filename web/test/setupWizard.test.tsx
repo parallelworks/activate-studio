@@ -2,7 +2,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SECTION_SWITCHES, sectionAllowed, sectionsSetting, shownView } from '../src/config'
 import { onThemeChoice } from '../src/theme'
+import { resetTransfersProbe } from '../src/transferApi'
 import { SetupWizard, SidebarSwitches, buildSummary, keyTestProblem } from '../src/views/SetupWizard'
+import { MOCK_LOCATIONS, mockSettings } from './transfersMock'
 
 // The ssh and cluster forms have their own tests; here each adds a library
 // the way it reports one.
@@ -128,6 +130,8 @@ interface Server {
   branding: { light: string | null; dark: string | null }
   pw: boolean
   settings: Record<string, unknown>
+  /** The server has the transfers API. */
+  transfers?: boolean
   calls: { method: string; url: string; body: unknown }[]
 }
 
@@ -222,6 +226,8 @@ function stubServer(s: Server) {
       return reply({ id: 7, state: 'done', ms: 2500, error: null, progress: { phase: 'done', done: 3, total: 3, current: null, failed: [] } })
     }
     if (url === '/api/setup/complete') return reply({ setupDone: true })
+    if (s.transfers && url === '/api/transfers/locations') return reply({ locations: MOCK_LOCATIONS })
+    if (s.transfers && url === '/api/transfers/settings') return reply(mockSettings())
     return reply({ error: 'not found' }, 404)
   }))
 }
@@ -239,7 +245,7 @@ function open(s: Server, onClose = vi.fn()) {
 }
 
 describe('the setup wizard', () => {
-  afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+  afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); resetTransfersProbe() })
 
   it('walks every step: name, icon, theme, accent, an AI endpoint, sidebar, a new folder, other libraries, done', async () => {
     const s = server()
@@ -326,7 +332,7 @@ describe('the setup wizard', () => {
     expect(screen.getByRole('link', { name: /Meridian/ })).toHaveAttribute('href', 'https://github.com/parallelworks/meridian')
     expect(screen.getByRole('switch', { name: 'Chat' })).not.toHaveAttribute('data-disabled')
     fireEvent.click(screen.getByRole('switch', { name: 'History' }))
-    await waitFor(() => expect(s.sections).toEqual(['chat', 'library', 'search', 'query', 'overview', 'workflows', 'agents', 'code', 'settings', 'help']))
+    await waitFor(() => expect(s.sections).toEqual(['chat', 'library', 'transfers', 'search', 'query', 'overview', 'workflows', 'agents', 'code', 'settings', 'help']))
     next()
 
     heading('Your folder')
@@ -387,7 +393,9 @@ describe('the setup wizard', () => {
     expect(screen.getByText('AI features: on, through models.example, default model small-model')).toBeInTheDocument()
     expect(screen.getByText('Folder: /home/u/Research. Indexed: 12 files.')).toBeInTheDocument()
     expect(screen.getByText('Other libraries: Research, Cluster index')).toBeInTheDocument()
-    expect(screen.getByText(/^Sidebar: Chat, Library, Search/)).not.toHaveTextContent('History')
+    expect(screen.getByText(/^Sidebar: Chat, Library, Transfers, Search/)).not.toHaveTextContent('History')
+    // This server has no transfers, so the step does not mention them.
+    expect(screen.queryByText(/^Transfers:/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(true))
     expect(s.calls.some(c => c.url === '/api/setup/complete' && c.method === 'POST')).toBe(true)
@@ -403,7 +411,7 @@ describe('the setup wizard', () => {
     await waitFor(() => expect(screen.getByRole('switch', { name: 'AI features' })).toHaveAttribute('aria-checked', 'true'))
     fireEvent.click(screen.getByRole('switch', { name: 'AI features' }))
     await waitFor(() => expect(s.aiEnabled).toBe(false))
-    expect(sent(s, 'PUT', '/api/settings').at(-1)).toEqual({ aiEnabled: false, sections: ['library', 'search', 'query', 'overview', 'history', 'workflows', 'code', 'settings', 'help'] })
+    expect(sent(s, 'PUT', '/api/settings').at(-1)).toEqual({ aiEnabled: false, sections: ['library', 'transfers', 'search', 'query', 'overview', 'history', 'workflows', 'code', 'settings', 'help'] })
     expect(await screen.findByText(/^Off: Chat and Agents leave the sidebar/)).toHaveTextContent('can be turned back on at any time in Settings, General, AI features')
     expect(screen.queryByLabelText('Base URL')).toBeNull()
     // Off is a choice made, so there is nothing to skip.
@@ -428,7 +436,7 @@ describe('the setup wizard', () => {
     next()
     heading('Done')
     expect(screen.getByText('AI features: off')).toBeInTheDocument()
-    expect(screen.getByText(/^Sidebar: Library, Search/)).not.toHaveTextContent('Chat')
+    expect(screen.getByText(/^Sidebar: Library, Transfers, Search/)).not.toHaveTextContent('Chat')
   })
 
   it('takes an endpoint with no key, such as a local model server', async () => {
@@ -469,7 +477,7 @@ describe('the setup wizard', () => {
     const s = server({
       appName: 'Lab Studio', accent: 'teal', theme: 'dark', indexed: true, sections: ['chat', 'library', 'search', 'settings', 'help'],
       branding: { light: '/api/brand-icon?v=1', dark: null }, key: { mode: 'stored', last4: 'abcd', baseUrl: 'https://models.example/v1' },
-      others: [{ id: 'lab', label: 'Lab index' }],
+      others: [{ id: 'lab', label: 'Lab index' }], transfers: true,
     })
     const onClose = open(s)
     const writes = () => s.calls.filter(c => c.method !== 'GET')
@@ -505,6 +513,9 @@ describe('the setup wizard', () => {
     expect(screen.getByText('AI features: on, through models.example')).toBeInTheDocument()
     expect(screen.getByText('Sidebar: Chat, Library, Search')).toBeInTheDocument()
     expect(screen.getByText('Other libraries: Lab index')).toBeInTheDocument()
+    // Where the server has transfers, the places they can use now.
+    expect(await screen.findByText(/^Transfers: 8 places ready\./)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Settings, Transfers' })).toHaveAttribute('href', '#view=settings:transfers')
     // Walking through saved nothing; Finish only records setup as done.
     expect(writes()).toEqual([])
     expect(localStorage.getItem('ade-theme')).toBeNull()

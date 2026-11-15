@@ -2,6 +2,8 @@ import { LibrariesSection } from '../components/LibrariesSection'
 import { ModelAccessSection } from '../components/ModelAccessSection'
 import { IndexBuildSettings, IndexStorageSettings } from '../components/IndexingSection'
 import { WorkflowsSection } from '../components/WorkflowsSection'
+import { TransfersSettingsSection } from '../components/TransfersSettingsSection'
+import { transfersPresent } from '../transferApi'
 import { useEffect, useRef, useState } from 'react'
 import { okJSON } from '../api'
 import {
@@ -78,6 +80,7 @@ interface Extensions { dir: string; tools: ExtDoc[]; skills: ExtDoc[]; agents: E
 
 const TOOL_GROUPS: [string, string[]][] = [
   ['Knowledge base', ['search_kb', 'read_kb_file', 'read_original', 'write_kb_file', 'edit_kb_file', 'move_kb_files', 'rename_kb_file', 'copy_kb_files', 'delete_kb_files', 'list_kb_dir', 'query_corpus', 'get_labels', 'suggest_labels', 'apply_labels']],
+  ['Transfers', ['transfer_locations', 'browse_location', 'transfer_files', 'transfer_status', 'cancel_transfer']],
   ['Workflows', ['list_workflows', 'list_github_workflows', 'get_workflow', 'compose_workflow', 'serve_model', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'cancel_workflow_run', 'list_sessions', 'pw_help']],
   ['Clusters and storage', ['list_clusters', 'start_cluster', 'resume_cluster', 'stop_cluster', 'destroy_cluster', 'list_storage', 'hpc_status', 'cluster_command']],
   ['pw code agents', ['agent_sites', 'agent_sessions', 'start_agent', 'agent_status', 'agent_steer', 'agent_goal', 'agent_approve', 'agent_stop']],
@@ -111,7 +114,7 @@ const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
   { value: 'both', label: 'Both, chosen per task' },
 ]
 
-type SectionId = 'general' | 'indexing' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
+type SectionId = 'general' | 'indexing' | 'transfers' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
 
 /** The tabs of Settings, General, in order. Each has an address of its own
  *  (#view=settings:<tab>); #view=settings:general opens the first. Branding
@@ -149,7 +152,7 @@ export function settingsTarget(id: string | null | undefined): { section: Sectio
   if (id === 'indexing') return { section: 'indexing', tab: 'sync-search' }
   const indexing = INDEXING_TABS.find(t => t.value === id)
   if (indexing) return { section: 'indexing', tab: indexing.value }
-  const sections: SectionId[] = ['general', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']
+  const sections: SectionId[] = ['general', 'transfers', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']
   return { section: sections.includes(id as SectionId) ? id as SectionId : 'general', tab: 'appearance' }
 }
 
@@ -174,13 +177,16 @@ export function shownSettingsTarget<T extends { section: SectionId; tab: Setting
  * find is off for everyone regardless of the switch. Workflows appears
  * only when the Studio runs on the platform, since it lists the platform's.
  */
-export function settingsSections(opts: { authEnabled: boolean; platform?: boolean; single?: boolean; aiEnabled?: boolean }): { id: SectionId; label: string; group: string | null }[] {
+export function settingsSections(opts: { authEnabled: boolean; platform?: boolean; single?: boolean; aiEnabled?: boolean; transfers?: boolean }): { id: SectionId; label: string; group: string | null }[] {
+  // Transfers, beside Indexing, where the server has transfers.
+  const xfer = opts.transfers ? [{ id: 'transfers' as SectionId, label: 'Transfers', group: 'Studio' }] : []
   // With AI features off, the assistant's sections leave the rail. Model
   // access keeps only its ACTIVATE credential, so it is named for that and
   // sits with the Studio's own sections.
   if (opts.aiEnabled === false) return [
     { id: 'general', label: 'General', group: 'Studio' },
     { id: 'indexing', label: 'Indexing', group: 'Studio' },
+    ...xfer,
     ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
     ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'ACTIVATE access', group: 'Studio' }] : []),
     { id: 'rag', label: 'External access', group: null },
@@ -188,6 +194,7 @@ export function settingsSections(opts: { authEnabled: boolean; platform?: boolea
   return [
     { id: 'general', label: 'General', group: 'Studio' },
     { id: 'indexing', label: 'Indexing', group: 'Studio' },
+    ...xfer,
     ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
     ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
     { id: 'tools', label: 'Assistant tools', group: 'Assistant' },
@@ -254,6 +261,8 @@ export function SettingsView() {
   const [setupAvailable, setSetupAvailable] = useState(false)
   const [branding, setBranding] = useState<Branding | null>(null)
   const [sectionsNote, setSectionsNote] = useState('')
+  const [hasTransfers, setHasTransfers] = useState(false)
+  useEffect(() => { void transfersPresent().then(setHasTransfers) }, [])
   const [target, setTarget] = useState(() => settingsTarget(location.hash.match(/^#view=settings:([a-z-]+)/)?.[1]))
   // The switch as this page last saved it, else as the app has it. Off
   // hides what only the assistant uses; on brings it back at once.
@@ -450,7 +459,7 @@ export function SettingsView() {
 
   const pickableModels = models.filter(m => !/studio-(agent|rag)/.test(m))
 
-  const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform, single: !!me?.single, aiEnabled })
+  const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform, single: !!me?.single, aiEnabled, transfers: hasTransfers })
 
   const mcpJson = JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)
   const saveRow = (reload = true) => (
@@ -1147,6 +1156,7 @@ export function SettingsView() {
           )}
 
           {section === 'workflows' && <WorkflowsSection />}
+          {section === 'transfers' && (hasTransfers ? <TransfersSettingsSection /> : <p className="muted">This server has no transfers.</p>)}
           {section === 'ext' && (
             <>
               <h1>Extensions</h1>

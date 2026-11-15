@@ -31,6 +31,7 @@ import { SideViewHost } from '../components/RunPane'
 import { PanelToggle } from '../components/StatusPanel'
 import { modelLabel, share } from '../statusShare'
 import { ToolApproval } from '../components/ToolApproval'
+import { TransferNoteWatcher } from '../components/TransferNoteWatcher'
 import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCommands'
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 
@@ -516,6 +517,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             </div>
           )}
           <FilterReloader />
+          <TransferNoteWatcher />
           <RetryWithModel />
           <ModelShare />
           <ChatLayout
