@@ -2,6 +2,7 @@ package transfers
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"time"
@@ -237,5 +238,95 @@ func (s *Service) TestSettings(ctx context.Context, v Viewer, in TestRequest) (T
 		fs.RemoveStaging(c, probe)
 	}
 	out.Writable = &w
+	return out, nil
+}
+
+// savedOff is why saved locations cannot be added with sign-in on.
+const savedOff = "with sign-in on, saved locations are off, since they would reach other systems with the ssh keys of the account the Studio runs as"
+
+// AddSavedLocation adds one saved location to the section, checked as a
+// PUT checks it, and returns it with its id. Its id is made from the
+// label (with -2, -3 when taken); an id given is ignored. 403 with sign-in
+// on. It does not test the location: the Transfers page tests it first
+// in the same dialog as Settings, and the assistant's
+// save_transfer_location uses TestAndSave.
+func (s *Service) AddSavedLocation(ctx context.Context, v Viewer, in SavedLocation) (SavedLocation, error) {
+	if v.AuthOn {
+		return SavedLocation{}, apierr.New(403, "%s", savedOff)
+	}
+	if s.d.Settings == nil {
+		return SavedLocation{}, apierr.New(503, "settings cannot be saved here")
+	}
+	s.savedMu.Lock()
+	defer s.savedMu.Unlock()
+	set := s.d.Settings.Load()
+	in.ID = ""
+	set.SavedLocations = append(append([]SavedLocation{}, set.SavedLocations...), in)
+	c, err := set.Check(s.refusedFolder)
+	if err != nil {
+		// The new entry's field errors name it by its place in the list;
+		// the caller sent one location, so they name the field alone.
+		return SavedLocation{}, renameField(err, len(set.SavedLocations)-1)
+	}
+	if err := s.d.Settings.Save(c); err != nil {
+		return SavedLocation{}, err
+	}
+	return c.SavedLocations[len(c.SavedLocations)-1], nil
+}
+
+// renameField drops "savedLocations[i]." from a 400 about entry i.
+func renameField(err error, i int) error {
+	var e *apierr.Error
+	prefix := "savedLocations[" + itoa(i) + "]."
+	if errors.As(err, &e) && e.Status == 400 && strings.HasPrefix(e.Message, prefix) {
+		return apierr.New(400, "%s", strings.TrimPrefix(e.Message, prefix))
+	}
+	return err
+}
+
+// Saved is the outcome of TestAndSave: the test, and the location saved
+// when the test passed.
+type Saved struct {
+	Test     TestResult
+	Location *SavedLocation
+	// ID is the saved location's location id ("saved:<id>").
+	ID string
+}
+
+// TestAndSave tests a saved location as Settings' Test and save does and,
+// when the test passes, adds it. A failed test saves nothing.
+func (s *Service) TestAndSave(ctx context.Context, v Viewer, in SavedLocation) (Saved, error) {
+	if v.AuthOn {
+		return Saved{}, apierr.New(403, "%s", savedOff)
+	}
+	r, err := s.TestSettings(ctx, v, TestRequest{Host: in.Host, Root: in.Root, RsyncPath: in.RsyncPath, Port: in.Port, SSHOptions: in.SSHOptions})
+	if err != nil {
+		return Saved{}, err
+	}
+	out := Saved{Test: r}
+	if !r.OK {
+		return out, nil
+	}
+	l, err := s.AddSavedLocation(ctx, v, in)
+	if err != nil {
+		return out, err
+	}
+	out.Location, out.ID = &l, KindSaved+":"+l.ID
+	return out, nil
+}
+
+// CheckSavedLocation checks one saved location as a PUT checks it and
+// returns it in its stored form (the label defaults to host:folder), with
+// errors naming the field alone. Its id is left empty.
+func CheckSavedLocation(l SavedLocation) (SavedLocation, error) {
+	set := DefaultSettings()
+	l.ID = ""
+	set.SavedLocations = []SavedLocation{l}
+	c, err := set.Check(nil)
+	if err != nil {
+		return l, renameField(err, 0)
+	}
+	out := c.SavedLocations[0]
+	out.ID = ""
 	return out, nil
 }

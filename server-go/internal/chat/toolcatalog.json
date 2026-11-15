@@ -899,7 +899,7 @@
   },
   {
    "name": "transfer_locations",
-   "description": "List the places files can be transferred between: each library, folders on this computer, the user's clusters, saved hosts, the remotes of the user's rclone configuration (kind rclone, such as S3 buckets or cloud drives), and a CONDUIT service where one is set up. Each line gives the location id that browse_location and transfer_files take, its kind, label and where it is, whether it is writable and indexed, and whether it can be reached now, with why not. Call it first when the user names a place to move data to or from.",
+   "description": "List the places files can be transferred between: each library, folders on this computer, the user's clusters, saved hosts, the remotes of the user's rclone configuration (kind rclone, such as S3 buckets or cloud drives), and a CONDUIT service where one is set up. Each line gives the location id that browse_location and transfer_files take, its kind, label and where it is, whether it is writable and indexed, and whether it can be reached now, with why not. A library that is read only or not reachable says what Studio knows of where its files are (host and folder), for save_transfer_location. Call it first when the user names a place to move data to or from.",
    "parameters": {
     "type": "object",
     "properties": {}
@@ -927,7 +927,7 @@
   },
   {
    "name": "transfer_files",
-   "description": "Copy, move or sync files and folders from one transfer location to another (a library, a folder on this computer, a cluster, a saved host, an rclone remote, CONDUIT) with the Studio's data movers (rsync, rclone, studio-copy, CONDUIT). Copies and moves inside the main library are copy_kb_files and move_kb_files; this tool is for anything between locations, between libraries included. The Studio plans the transfer first: a plan that cannot run (a missing path, a path outside the location, a read-only destination, a name already at the destination without replace) comes back as the reason and nothing is asked. A valid plan is shown to the user, who approves or declines it in the chat. Once approved, the transfer runs as a job on the Transfers page and this call returns at once with its id. Do not wait for it or check on it unless the user asks: the Studio adds a note to this conversation when it ends. copy puts each path under the destination folder with its name; move copies, checks, then removes the originals; sync makes the destination folder match one source folder by sending new and changed files, and deletes files the source does not have only with deleteExtra. If the user declines, do not call it again unless they ask.",
+   "description": "Copy, move or sync files and folders from one transfer location to another (a library, a folder on this computer, a cluster, a saved host, an rclone remote, CONDUIT) with the Studio's data movers (rsync, rclone, studio-copy, CONDUIT). Copies and moves inside the main library are copy_kb_files and move_kb_files; this tool is for anything between locations, between libraries included. The Studio plans the transfer first: a plan that cannot run (a missing path, a path outside the location, a read-only destination, a name already at the destination without replace) comes back as the reason and nothing is asked. A valid plan is shown to the user, who approves or declines it in the chat. Once approved, the transfer runs as a job on the Transfers page and this call returns at once with its id. Do not wait for it or check on it unless the user asks: the Studio adds a note to this conversation when it ends. copy puts each path under the destination folder with its name; move copies, checks, then removes the originals; sync makes the destination folder match one source folder by sending new and changed files, and deletes files the source does not have only with deleteExtra. If the user declines, do not call it again unless they ask. When the destination is read only or not reachable and the user has ssh access to its folder, propose save_transfer_location for that host and folder, then transfer to the new location.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1024,6 +1024,43 @@
     },
     "required": [
      "id"
+    ]
+   }
+  },
+  {
+   "name": "save_transfer_location",
+   "description": "Propose saving a Transfers location: a folder on another computer that Studio reaches over ssh with the keys of the account it runs as, so transfers can read and write there. Use it when a destination the user wants is read only or not reachable (transfer_locations says so, often with a suggested host and folder for a library's files) and the user says they have ssh access to that folder, or when the user asks to add a location. The user approves or declines the call in the chat. On approval Studio tests the connection as Settings, Transfers does (it reaches the host, the folder exists, whether it can write there, rsync) and saves the location only when the test passes; the result gives the test's outcome and the new location's id, which transfer_files takes. Nothing is saved before approval, after a decline, or when the test fails. Offered only with sign-in off. Do not guess a host or folder: use what transfer_locations suggests or what the user says, and ask when neither gives it.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "label": {
+      "type": "string",
+      "description": "How the location is named in the picker, e.g. \"Archive files\"; the host and folder when omitted"
+     },
+     "host": {
+      "type": "string",
+      "description": "An ssh destination: user@host, or a Host name from the ssh config"
+     },
+     "folder": {
+      "type": "string",
+      "description": "An absolute folder on the host, e.g. /srv/archive; transfers stay inside it"
+     },
+     "rsyncPath": {
+      "type": "string",
+      "description": "The rsync program on the host, when it is not the one found on PATH there"
+     },
+     "port": {
+      "type": "integer",
+      "description": "The ssh port, only when the ssh config does not give it"
+     },
+     "sshOptions": {
+      "type": "string",
+      "description": "Options passed to ssh for this location, such as \"-o IdentityFile=~/.ssh/archive_key\"; only when the user gives them"
+     }
+    },
+    "required": [
+     "host",
+     "folder"
     ]
    }
   },
@@ -1429,7 +1466,8 @@
   "browse_location": "lists one folder of a location through the transfers service (Browse), as the viewer, capped at 200 entries",
   "transfer_files": "plans the transfer (transfers Plan); a refused plan is the result. A valid one is recorded awaiting approval (Hold) and the call is held; approval queues the job (Approve) and returns its id at once, a denial cancels the record (Deny). The job runs apart from the reply, and its end adds a note to the conversation",
   "transfer_status": "reads one transfer of the viewer's (Get), or the active ones (List): state and counts",
-  "cancel_transfer": "held for the user's approval; then cancels the viewer's transfer (transfers Cancel)"
+  "cancel_transfer": "held for the user's approval; then cancels the viewer's transfer (transfers Cancel)",
+  "save_transfer_location": "held for the user's approval (always, with no auto-approve); then tests the location (transfers TestSettings) and, when the test passes, adds it to the saved locations (AddSavedLocation). Sign-in off only"
  },
  "groups": {
   "workflows": {
@@ -1498,13 +1536,14 @@
    "cue": "\\b(labels?|tags?|tagging|write|save|create|draft|edit|update|append|notes?|file it|add (a|an|the) |delete|remove|clean ?up|tidy|move|rename|copy|duplicate|reorgani[sz]e|archive|organi[sz]e)"
   },
   "transfers": {
-   "summary": "copying, moving and syncing files between libraries, this computer, clusters and hosts as jobs on the Transfers page, and reading or cancelling those jobs; the user approves each transfer",
+   "summary": "copying, moving and syncing files between libraries, this computer, clusters and hosts as jobs on the Transfers page, reading or cancelling those jobs, and saving a location on a host; the user approves each transfer and each saved location",
    "names": [
     "transfer_locations",
     "browse_location",
     "transfer_files",
     "transfer_status",
-    "cancel_transfer"
+    "cancel_transfer",
+    "save_transfer_location"
    ],
    "cue": "\\b(rsync|conduit|data ?movers?)\\b|\\btransfers? (page|list|status|progress|id)\\b|\\b(my|active|running|pending|waiting) transfers\\b|\\btransfer(ring)? (the |these |those |this |that |my |all |some )?(files?|folders?|data|datasets?|results?|outputs?)\\b|\\b(sync|syncing|synchroni[sz]e)\\b[^?!\\n]{0,60}\\b(to|with|from|onto)\\b|\\b(copy|copies|copying|move|moving|send|push|pull|download|upload|bring|fetch|mirror|transfer)\\b[^?!\\n]{0,80}\\b(to|from|onto|into|off|on)\\b[^?!\\n]{0,40}\\b(clusters?|computer|laptop|machine|workstation|desktop|downloads|documents|hosts?|servers?|remote|home (folder|directory)|scratch|(another|other|second|different) library|locations?)\\b"
   }

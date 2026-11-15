@@ -1,14 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, Checkbox, Disclosure, Input, Loader, SegmentedControl, Select, type SelectItem,
+  Button, Callout, Checkbox, Disclosure, Input, Loader, SegmentedControl, Select, toast, type SelectItem,
 } from '@parallelworks/ui'
 import { TransferPane, type PaneHandle, type PaneState } from '../components/TransferPane'
+import { LocationDialog, type LocationPrefill } from '../components/SavedLocationDialog'
 import { TransferPlanDialog } from '../components/TransferPlanDialog'
 import { TransferActivity } from '../components/TransferActivity'
 import {
   ACTION_TEXT, MOVER_TEXT, destinationWhy, sourcePaths, transferApi,
-  type MoverName, type Plan, type PlanOptions, type PlanRequest, type Transfer, type TransferAction, type TransferLocation,
+  type MoverName, type Plan, type PlanOptions, type PlanRequest, type SavedLocation, type Transfer, type TransferAction, type TransferLocation,
 } from '../transferApi'
+
+/** What the save dialog opens with for a library's files: what the server
+ *  suggests, and a line saying where it came from and what is missing. */
+export function prefillFor(loc: TransferLocation): { prefill: LocationPrefill; note: string } {
+  const s = loc.suggest ?? { label: `${loc.label} files` }
+  const prefill: LocationPrefill = { label: s.label, host: s.host, root: s.root, port: s.port, sshOptions: s.sshOptions }
+  const missing = [s.host ? '' : 'host', s.root ? '' : 'folder'].filter(Boolean)
+  let note = s.host || s.root
+    ? `Filled in with what Studio knows of where the files of ${loc.label} are.`
+    : `Studio does not know where the files of ${loc.label} are.`
+  if (missing.length) note += ` Enter the ${missing.join(' and the ')}.`
+  return { prefill, note }
+}
 
 /** The page's two views, kept in the hash so Back returns from one to the other. */
 export const ACTIVITY_HASH = '#view=transfers'
@@ -63,6 +77,10 @@ export function TransfersView() {
   const [pending, setPending] = useState<{ plan: Plan; request: PlanRequest } | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)
   const [added, setAdded] = useState<Transfer | null>(null)
+  // Saved locations are offered only with sign-in off (settings not
+  // managed); until the settings are read, they are not offered.
+  const [canSave, setCanSave] = useState(false)
+  const [saving, setSaving] = useState<{ side: Side; prefill?: LocationPrefill; note?: string } | null>(null)
   const narrow = useNarrow()
   // Which movers reach from the first location to the second, asked as
   // the locations change; a plan then gives the answer for its direction.
@@ -102,9 +120,10 @@ export function TransfersView() {
   useEffect(() => { if (mode === 'new') void loadLocations() }, [mode, loadLocations])
   // A new transfer starts from the defaults in Settings, Transfers.
   useEffect(() => {
-    transferApi.settings().then(st => setOptions(o => ({
-      ...o, mover: st.defaults.mover, checksum: st.defaults.checksum, preserveTimes: st.defaults.preserveTimes,
-    })), () => {})
+    transferApi.settings().then(st => {
+      setOptions(o => ({ ...o, mover: st.defaults.mover, checksum: st.defaults.checksum, preserveTimes: st.defaults.preserveTimes }))
+      setCanSave(!st.managed)
+    }, () => {})
   }, [])
 
   const setPane = (s: Side) => (next: PaneState) => {
@@ -164,6 +183,21 @@ export function TransfersView() {
     } finally { setPlanning(null) }
   }
 
+  const openSave = (side: Side) => (from?: TransferLocation) => {
+    setSaving(from ? { side, ...prefillFor(from) } : { side })
+  }
+  // The dialog tested the location; it is added, the list is read again,
+  // and the pane it was opened from switches to it.
+  const saveLocation = async (l: SavedLocation) => {
+    const at = saving?.side ?? 'b'
+    const { id, location: kept } = await transferApi.addLocation(l)
+    await loadLocations()
+    setPanes(p => ({ ...p, [at]: { locationId: id, path: '', selected: [] } }))
+    setPlanError('')
+    setSaving(null)
+    toast.success(`Saved ${kept.label}. It is also in Settings, Transfers.`)
+  }
+
   const started = (t: Transfer) => {
     setPending(null)
     setHighlight(t.id); setAdded(t)
@@ -212,7 +246,8 @@ export function TransfersView() {
   const pane = (s: Side, i: number) => (
     <TransferPane key={s} name={i === 0 ? 'First location' : 'Second location'} locations={locations ?? []} state={panes[s]}
       onChange={setPane(s)} onLoaded={s === 'a' ? loadedA : loadedB} refreshKey={refresh[s]}
-      role={narrow ? (s === narrowSource ? 'source' : 'destination') : undefined} />
+      role={narrow ? (s === narrowSource ? 'source' : 'destination') : undefined}
+      onSaveLocation={canSave ? openSave(s) : undefined} />
   )
 
   return (
@@ -289,6 +324,10 @@ export function TransfersView() {
           )
       )}
 
+      {saving && (
+        <LocationDialog first={null} prefill={saving.prefill} note={saving.note}
+          onClose={() => setSaving(null)} onSave={saveLocation} />
+      )}
       {pending && (
         <TransferPlanDialog plan={pending.plan} request={pending.request}
           onClose={() => setPending(null)} onStarted={started}

@@ -682,7 +682,7 @@ var changingTools = map[string]bool{
 	"start_agent": true, "agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true, "delegate": true,
 	"run_workflow": true, "serve_model": true, "cancel_workflow_run": true,
 	"start_cluster": true, "resume_cluster": true, "stop_cluster": true, "destroy_cluster": true,
-	"transfer_files": true, "cancel_transfer": true,
+	"transfer_files": true, "cancel_transfer": true, "save_transfer_location": true,
 }
 
 // repeatedCall is the result of this exact call made earlier in the

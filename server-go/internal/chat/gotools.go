@@ -234,7 +234,11 @@ func (t goTools) Specs(r *http.Request, tools []string, has bool, platform, chan
 	reader := readerFrom(tools, has)
 	local := t.m.localAgents()
 	var available []ToolSpec
+	signedIn := t.m.A.Cfg.AuthEnabled()
 	for _, s := range t.m.activeToolSpecsWithRemote() {
+		if signedIn && signedInOnlyOff[s.Name] {
+			continue
+		}
 		if t.m.readerAllows(s.Name, reader) && offered(s.Name, platform, changesOK, local) {
 			available = append(available, s)
 		}
