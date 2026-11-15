@@ -73,7 +73,7 @@ The folder tree beside a viewer. Markdown, code, CSV and TSV tables, images, PDF
 
 ## Transfers
 
-Transfers copies, moves and syncs files between the places Studio can reach, and lists every transfer with its progress. **New transfer** shows two locations side by side. Select files or folders on one side and press the **Start** button pointing to the other.
+Transfers copies, moves and syncs files between the places Studio can reach, and lists every transfer with its progress. **New transfer** shows two locations side by side. Select files or folders on one side and press the **Start** button pointing to the other. Once a transfer starts, the page goes back to the list with that transfer's details open beside it. A transfer runs on its own while Studio is running, so you can close its details, start another, or use other pages. **Back to activity** above the two sides, or **Transfers** in the navigation, returns to the list.
 
 A location is a library, a folder on this computer, one of your clusters on ACTIVATE, a folder on another computer over ssh (a saved location, or the home folder of a computer a library is on), a remote of your rclone configuration (such as an S3 bucket or a cloud drive), or CONDUIT where a site runs it. A read-only location can be a source but not a destination, and nothing can be moved out of it.
 

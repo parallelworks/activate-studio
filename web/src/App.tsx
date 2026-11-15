@@ -35,6 +35,10 @@ import { studioMark } from './studioMark'
 import { SEARCH_NOTE, searchReach, useSearchScope } from './searchReach'
 
 type ViewId = 'chat' | 'library' | 'transfers' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'code' | 'settings' | 'help'
+/** Pages whose sidebar item always leads to their main page: Workflows from a
+ *  workflow's form, Transfers from New transfer or a transfer's details. */
+const HOME_EVENT: Partial<Record<ViewId, string>> = { workflows: 'ade:workflows-home', transfers: 'ade:transfers-home' }
+const goHome = (id: ViewId) => { const e = HOME_EVENT[id]; if (e) window.dispatchEvent(new Event(e)) }
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
 
 // The destinations that keep a spot in the phone bottom bar; the rest
@@ -534,9 +538,9 @@ export default function App() {
                     // On a phone the conversations rail is a slide-over, and
                     // re-tapping the Chat item in the bottom bar is its toggle.
                     if (item.id === 'chat' && view === 'chat') window.dispatchEvent(new Event('ade:toggle-chat-rail'))
-                    // Workflows always opens on its main page, not on the
-                    // workflow form that was last open there.
-                    if (item.id === 'workflows') window.dispatchEvent(new Event('ade:workflows-home'))
+                    // Workflows and Transfers always open on their main page,
+                    // not on the form that was last open there.
+                    goHome(item.id)
                     setView(item.id)
                   }}
                 >
@@ -587,7 +591,7 @@ export default function App() {
                 <button
                   key={item.id}
                   className={`sidenav-item ${view === item.id ? 'active' : ''}`}
-                  onClick={() => { if (item.id === 'workflows') window.dispatchEvent(new Event('ade:workflows-home')); setView(item.id); setMoreOpen(false) }}
+                  onClick={() => { goHome(item.id); setView(item.id); setMoreOpen(false) }}
                 >
                   {item.icon}
                   <span>{item.label}</span>
