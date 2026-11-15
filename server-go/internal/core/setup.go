@@ -24,6 +24,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
+	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 	"github.com/parallelworks/activate-studio/server-go/internal/state"
 	"github.com/parallelworks/activate-studio/server-go/internal/wslpath"
 )
@@ -706,6 +707,7 @@ func (c *Core) setupComplete(w http.ResponseWriter, r *http.Request) error {
 	}
 	if (!saved.Has("sections") || jsonobj.IsNullish(saved.Get("sections"))) && len(eff.Sections) > 0 {
 		patch["sections"] = eff.Sections
+		patch["sectionsGen"] = settings.SectionsGen
 	}
 	if err := c.a.Settings.Update(patch); err != nil {
 		return err

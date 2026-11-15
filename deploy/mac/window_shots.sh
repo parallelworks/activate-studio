@@ -188,14 +188,16 @@ OPENED="$(ask fda "fetch('/api/libraries/suggestions/full-disk-access',{method:'
 echo "full disk access setting: $OPENED"
 
 # View, Zoom In twice: the web view's own page zoom (desktop/wails/zoom.go),
-# so the page lays out at 125% and a menu opens at its button. The zoom of
+# so the page lays out at 125% and a menu opens at its button. The
+# button is scrolled into view first: at 125% the sidebar scrolls, and
+# its footer can sit below the window. The zoom of
 # v1.190 and v1.191 (CSS zoom on the body) opened menus a quarter of the
 # way across the window from their buttons.
 state light 0 library; sleep 4
 W0="$(ask zoomw0 "String(innerWidth)")"
 ask zoomin "window.__studioShell.call('Zoom',['in']).then(()=>window.__studioShell.call('Zoom',['in'])).then(String)" >/dev/null
 sleep 2
-ZM="$(ask zoom "new Promise(r=>setTimeout(r,500)).then(()=>{const t=[...document.querySelectorAll('[aria-haspopup]')].find(e=>e.getBoundingClientRect().width>0);if(!t)return JSON.stringify({trigger:null});t.click();return new Promise(r=>setTimeout(r,800)).then(()=>{const a=t.getBoundingClientRect();const ps=[...document.querySelectorAll('[role=menu],[role=listbox],[role=dialog],[data-radix-popper-content-wrapper],[popover]')].filter(e=>e.getBoundingClientRect().width>0);const p=ps[ps.length-1];const b=p&&p.getBoundingClientRect();return JSON.stringify({zoom:window.__studioShell.zoom(),bodyZoom:document.body.style.zoom,innerWidth:innerWidth,innerHeight:innerHeight,trigger:[a.left,a.top,a.right,a.bottom].map(Math.round),menu:b?[b.left,b.top,b.right,b.bottom].map(Math.round):null})})})")"
+ZM="$(ask zoom "new Promise(r=>setTimeout(r,500)).then(()=>{const t=[...document.querySelectorAll('[aria-haspopup]')].find(e=>e.getBoundingClientRect().width>0);if(!t)return JSON.stringify({trigger:null});t.scrollIntoView({block:'nearest'});t.click();return new Promise(r=>setTimeout(r,800)).then(()=>{const a=t.getBoundingClientRect();const ps=[...document.querySelectorAll('[role=menu],[role=listbox],[role=dialog],[data-radix-popper-content-wrapper],[popover]')].filter(e=>e.getBoundingClientRect().width>0);const p=ps[ps.length-1];const b=p&&p.getBoundingClientRect();return JSON.stringify({zoom:window.__studioShell.zoom(),bodyZoom:document.body.style.zoom,innerWidth:innerWidth,innerHeight:innerHeight,trigger:[a.left,a.top,a.right,a.bottom].map(Math.round),menu:b?[b.left,b.top,b.right,b.bottom].map(Math.round):null})})})")"
 echo "zoom: $ZM (width at 100%: $W0)"
 shot "zoom-125-library-light-expanded" 1
 report zoomed
