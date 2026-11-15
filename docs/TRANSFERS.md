@@ -17,6 +17,14 @@ A location is a place files live, by id `<kind>:<name>`.
 
 Paths are relative to the location's root. `""`, `"."` and `"/"` all mean the root. Hidden entries (a name starting with `.`) and symbolic links are never offered or moved; a plan counts them.
 
+### Hosts that take SFTP only
+
+A `saved` or `host` location usually runs a small bash helper on the host for each call (`fs_remote.go`). An account set up for SFTP only (OpenSSH's `ForceCommand internal-sftp`, often with a chroot) answers every command with `This service allows sftp connections only.` and status 1. On first use of a plain ssh site, Studio runs `true` there once; that answer marks the site as SFTP only for 10 minutes, and a shell answer marks it as a shell host for the same time. A helper call that gets the SFTP-only answer marks the site too and asks for a retry. Clusters reached through `pw ssh` are never probed.
+
+For an SFTP-only site, every call opens an SFTP session with `ssh -s <destination> sftp` (`remote.Pool.Subsystem`), with the site's ssh options, port, BatchMode and connection sharing, and closes it when the call ends. The calls keep the helper's rules: hidden entries are left out of listings, links are never followed, every path's real folder must be inside the root's real folder (found by looking up each name, since some SFTP servers do not resolve links), a write never replaces a file (`O_EXCL`), landing never replaces a name the plan did not list (a hard link with `hardlink@openssh.com`, else SFTP's rename, which does not overwrite), and a staging folder is removed without following links. Free space comes from `statvfs@openssh.com` when the server offers it.
+
+No program runs on such a host, so rsync is not offered for it and `studio-copy` carries every transfer, over SFTP. A checksum (a move, or the `checksum` option) reads each file over the session and hashes it in Studio, so the data crosses the network a second time.
+
 ## Plan, confirm, run
 
 A plan walks the source, works out what lands where, lists what would be replaced and (sync with `deleteExtra`) deleted, and picks a mover. It is kept 15 minutes. Starting it walks again and refuses (409) when the file count grew or a replacement or deletion appeared that the plan did not show. A sync makes the destination folder match the source folder's contents, as `rsync src/ dst/` does; its change detection is Studio's own (size and modification time, or sha256 with `checksum`).
@@ -25,7 +33,7 @@ Every job writes into a staging folder `.studio-transfer-<id>` inside the destin
 
 ## Movers
 
-`rsync` runs on this computer for a pull or push (a pull needs rsync 3.2.5 or later here), on the host for a transfer within one host, and from one host straight to another when the destination is a plain ssh destination the source can reach. A host whose login prints text before a command runs breaks rsync's protocol, so rsync is refused there with that reason. `studio-copy` reads and writes each file through Studio, works between any two locations and is always on. `conduit` hands the copy to a CONDUIT service through an attached MCP server; it is only ever sent COPY, Studio verifies the result and removes originals itself, and it cannot be cancelled once started.
+`rsync` runs on this computer for a pull or push (a pull needs rsync 3.2.5 or later here), on the host for a transfer within one host, and from one host straight to another when the destination is a plain ssh destination the source can reach. A host whose login prints text before a command runs breaks rsync's protocol, so rsync is refused there with that reason, and so is a host that takes SFTP only. `studio-copy` reads and writes each file through Studio, works between any two locations and is always on. `conduit` hands the copy to a CONDUIT service through an attached MCP server; it is only ever sent COPY, Studio verifies the result and removes originals itself, and it cannot be cancelled once started.
 
 The mover is the one the request names, else the settings' default where it can do the transfer, else the first that can, in the order conduit, rsync, studio-copy. At most three jobs run at once.
 
@@ -48,7 +56,7 @@ Active transfers are held in memory and in `INDEX_BASE/transfers/active.json`. A
 | `POST /api/transfers/{id}/cancel` | `{ cancelled, why? }` |
 | `DELETE /api/transfers/{id}` | `{ deleted }` for a finished one |
 | `GET`, `PUT /api/transfers/settings` | The Transfers settings (below) |
-| `POST /api/transfers/settings/test` | `{ ok, why?, rsync?, rsyncVersion?, writable?, freeBytes?, roundTripMs? }` |
+| `POST /api/transfers/settings/test` | `{ ok, why?, rsync?, rsyncVersion?, writable?, freeBytes?, roundTripMs?, sftpOnly? }` |
 
 Errors are `{ "error": "..." }` with the status. With sign-in on every route acts for the signed-in user only, and another user's transfer is a 404.
 
@@ -77,4 +85,4 @@ The chat's `transfers` tool group (`server-go/internal/chat/transfertools.go`) h
 
 ## Tests
 
-`go test ./internal/transfers/` covers paths, plans, staging and verification (including movers that lie), restart, per-user isolation, settings, history at 10,000 records, CONDUIT against a fake MCP server, and end to end over HTTP. `STUDIO_TEST_SSHD=1 STUDIO_TEST_SSHD_PORTS=<first>-<last>` adds a run over two real sshd processes on loopback.
+`go test ./internal/transfers/` covers paths, plans, staging and verification (including movers that lie), restart, per-user isolation, settings, history at 10,000 records, CONDUIT against a fake MCP server, and end to end over HTTP. `STUDIO_TEST_SSHD=1 STUDIO_TEST_SSHD_PORTS=<first>-<last>` adds a run over three real sshd processes on loopback, one of them SFTP only. The SFTP path is also tested without ssh, against `github.com/pkg/sftp`'s server over in-process pipes.

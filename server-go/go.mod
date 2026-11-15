@@ -8,6 +8,7 @@ require (
 	github.com/giraffesyo/downmark v0.10.0
 	github.com/giraffesyo/pdf v0.6.0
 	github.com/pdfcpu/pdfcpu v0.11.1
+	github.com/pkg/sftp v1.13.12
 	github.com/richardlehane/mscfb v1.0.9
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/tetratelabs/wazero v1.12.0
@@ -32,6 +33,7 @@ require (
 	github.com/hhrutter/lzw v1.0.0 // indirect
 	github.com/hhrutter/pkcs7 v0.2.0 // indirect
 	github.com/hhrutter/tiff v1.0.2 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

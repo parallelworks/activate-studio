@@ -142,10 +142,10 @@ function TestResult({ r }: { r: SettingTest }) {
     )
   }
   const checks: [string, boolean | undefined][] = [
-    ['Reached over ssh', true],
+    [r.sftpOnly ? 'Reached over SFTP' : 'Reached over ssh', true],
     ['Folder exists', true],
     ['Writable', r.writable],
-    [r.rsync && r.rsyncVersion ? `rsync ${r.rsyncVersion} there` : 'rsync there', r.rsync],
+    [r.rsync && r.rsyncVersion ? `rsync ${r.rsyncVersion} there` : 'rsync there', r.sftpOnly ? undefined : r.rsync],
   ]
   return (
     <Callout tone={r.why ? 'warning' : 'success'} size="sm" live title="Connection works">
@@ -154,6 +154,7 @@ function TestResult({ r }: { r: SettingTest }) {
         {r.freeBytes !== undefined && <li>{bytesText(r.freeBytes)} free</li>}
         {r.roundTripMs !== undefined && <li>{Math.round(r.roundTripMs)} ms round trip</li>}
       </ul>
+      {r.sftpOnly && <p className="xfer-checks-note">This account takes SFTP only. Copies use Studio copy over SFTP; rsync is not available there.</p>}
       {r.why && <p className="xfer-checks-note">{r.why.charAt(0).toUpperCase() + r.why.slice(1)}.</p>}
     </Callout>
   )

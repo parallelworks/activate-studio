@@ -177,6 +177,13 @@ func (m *rsyncMover) route(ctx context.Context, p *planRec) (rsyncRoute, string)
 	if p.src.fs == nil {
 		return rsyncRoute{}, "it reads files Studio can list, and Studio cannot list " + p.src.Label
 	}
+	// rsync runs a program on each host it reaches; an account that takes
+	// SFTP only runs none.
+	for _, f := range []FS{p.src.fs, p.dst.fs} {
+		if isSFTPOnly(ctx, f) {
+			return rsyncRoute{}, f.Where() + " takes SFTP only, so rsync cannot run there; studio-copy carries the data over SFTP"
+		}
+	}
 	if m.s.d.Shell == nil && (isRemote(p.src.fs) || isRemote(p.dst.fs)) {
 		return rsyncRoute{}, "no remote shell is set up for it"
 	}

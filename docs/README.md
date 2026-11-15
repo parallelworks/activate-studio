@@ -9,7 +9,7 @@ These are the same pages the app shows under Help, and the guides for running an
 | [User guide](HELP.md) | every page of the app, as the in-app Help shows it; the assistant reads it too |
 | [Reference](REFERENCE.md) | the details behind the user guide, part by part |
 | [Libraries](LIBRARIES.md) | several indexes at once, building an index of a folder here or on a remote system over ssh or pw ssh, library lists to export and import, the Library's Details card, and which parts of the app appear |
-| [Transfers](TRANSFERS.md) | copying, moving and syncing files between libraries, this computer, clusters, other computers over ssh and CONDUIT: locations, plans, movers, history and settings |
+| [Transfers](TRANSFERS.md) | copying, moving and syncing files between libraries, this computer, clusters, other computers over ssh or SFTP and CONDUIT: locations, plans, movers, history and settings |
 | [Workflows](WORKFLOWS.md) | the Workflows tab |
 | [Agents](AGENTS.md) | delegated agents |
 

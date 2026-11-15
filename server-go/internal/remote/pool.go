@@ -362,6 +362,21 @@ func (p *Pool) Command(site, key string, argv []string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
+// Subsystem is an ssh subsystem (sftp) on a plain ssh site, not started,
+// with every option the site's other calls use: its own ssh options, the
+// port, batch mode and connection sharing. Sites reached through pw ssh
+// have none.
+func (p *Pool) Subsystem(site, name string) (*exec.Cmd, error) {
+	if !IsSSH(site) {
+		return nil, apierr.New(400, "%s is not reached over plain ssh", SiteName(site))
+	}
+	b, err := p.sshBase(site, "-s")
+	if err != nil {
+		return nil, err
+	}
+	return exec.Command("ssh", append(b, name)...), nil
+}
+
 // RemoteShell is how another program (rsync's -e) reaches a site: the
 // program and its leading arguments, to which the remote command is
 // appended as one word, and the environment it needs (a platform key for

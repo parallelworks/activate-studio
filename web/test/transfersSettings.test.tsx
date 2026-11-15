@@ -161,6 +161,15 @@ describe('Settings, Transfers', () => {
     expect(await within(row).findByText(/^Reached, folder exists, rsync 3\.2\.7 found, writable, 2 TB free, 38 ms round trip\.$/)).toBeInTheDocument()
   })
 
+  it('says plainly when the account takes SFTP only', async () => {
+    serve({ testReply: { ok: true, sftpOnly: true, rsync: false, writable: true, freeBytes: 2 * 1024 ** 4, roundTripMs: 40 } })
+    render(<TransfersSettingsSection />)
+    const table = await screen.findByRole('table')
+    const row = within(table).getAllByRole('row')[1].closest('tbody') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Test' }))
+    expect(await within(row).findByText(/^Reached over SFTP \(the account takes SFTP only\), folder exists, rsync not available, Studio copy will be used, writable, 2 TB free, 40 ms round trip\.$/)).toBeInTheDocument()
+  })
+
   it('sends the advanced fields, and shows a server refusal under the field it names', async () => {
     serve()
     render(<TransfersSettingsSection />)

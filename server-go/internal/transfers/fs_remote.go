@@ -217,6 +217,13 @@ func (r *RemoteFS) run(ctx context.Context, input io.Reader, cmd string, args ..
 	if res.Code == 0 {
 		return res, nil
 	}
+	if sftpAnswer(res) {
+		// The account changed to SFTP only since it was last looked at.
+		if _, ok := r.R.(Subsystemer); ok && remote.IsSSH(r.SiteID) {
+			markSFTP(r.SiteID, r.KeyText, true)
+		}
+		return res, r.named(502, "the account takes SFTP only; try again, and Studio will use SFTP")
+	}
 	msg := lastLine(remote.QuietStderr(res.Stderr))
 	if msg == "" {
 		msg = fmt.Sprintf("the command ended with status %d", res.Code)
@@ -287,6 +294,9 @@ func dotted(rel string) string {
 }
 
 func (r *RemoteFS) List(ctx context.Context, rel string, max int) ([]Entry, bool, error) {
+	if r.SFTPOnly(ctx) {
+		return r.sftpList(ctx, rel, max)
+	}
 	res, err := r.run(ctx, nil, "list", dotted(rel))
 	if err != nil {
 		return nil, false, err
@@ -308,6 +318,9 @@ func (r *RemoteFS) Stat(ctx context.Context, rels []string) (map[string]FileInfo
 	if len(rels) == 0 {
 		return out, nil
 	}
+	if r.SFTPOnly(ctx) {
+		return r.sftpStat(ctx, rels)
+	}
 	res, err := r.run(ctx, nulList(rels), "stat")
 	if err != nil {
 		return nil, err
@@ -323,6 +336,9 @@ func (r *RemoteFS) Stat(ctx context.Context, rels []string) (map[string]FileInfo
 }
 
 func (r *RemoteFS) Walk(ctx context.Context, rels []string, limit int) (Walked, error) {
+	if r.SFTPOnly(ctx) {
+		return r.sftpWalk(ctx, rels, limit)
+	}
 	in := make([]string, len(rels))
 	for i, p := range rels {
 		in[i] = dotted(p)
@@ -339,6 +355,9 @@ func (r *RemoteFS) Walk(ctx context.Context, rels []string, limit int) (Walked, 
 }
 
 func (r *RemoteFS) Free(ctx context.Context, rel string) (int64, bool) {
+	if r.SFTPOnly(ctx) {
+		return r.sftpFree(ctx, rel)
+	}
 	res, err := r.run(ctx, nil, "free", dotted(rel))
 	if err != nil {
 		return 0, false
@@ -351,6 +370,9 @@ func (r *RemoteFS) Free(ctx context.Context, rel string) (int64, bool) {
 }
 
 func (r *RemoteFS) Sha256(ctx context.Context, rels []string) (map[string]string, error) {
+	if r.SFTPOnly(ctx) {
+		return r.sftpSha256(ctx, rels)
+	}
 	out := map[string]string{}
 	for start := 0; start < len(rels); start += 2000 {
 		batch := rels[start:min(start+2000, len(rels))]
@@ -412,6 +434,9 @@ func (rc *readCloser) Close() error {
 }
 
 func (r *RemoteFS) Read(ctx context.Context, rel string) (io.ReadCloser, error) {
+	if r.SFTPOnly(ctx) {
+		return r.sftpRead(ctx, rel)
+	}
 	mark := marker()
 	cmd, err := r.command(toolArgv(mark, "read", r.Dir, rel))
 	if err != nil {
@@ -458,6 +483,9 @@ func touchTime(mtime int64) string {
 }
 
 func (r *RemoteFS) Write(ctx context.Context, rel string, src io.Reader, mtime int64, mode uint32) (int64, error) {
+	if r.SFTPOnly(ctx) {
+		return r.sftpWrite(ctx, rel, src, mtime, mode)
+	}
 	x := ""
 	if mode&0o100 != 0 {
 		x = "x"
@@ -493,11 +521,17 @@ func (r *RemoteFS) Write(ctx context.Context, rel string, src io.Reader, mtime i
 }
 
 func (r *RemoteFS) Mkdir(ctx context.Context, rel string) error {
+	if r.SFTPOnly(ctx) {
+		return r.sftpMkdir(ctx, rel)
+	}
 	_, err := r.run(ctx, nil, "mkdir", rel)
 	return err
 }
 
 func (r *RemoteFS) Land(ctx context.Context, pairs []LandPair) ([]string, error) {
+	if r.SFTPOnly(ctx) {
+		return r.sftpLand(ctx, pairs)
+	}
 	var in []string
 	for _, p := range pairs {
 		f := "n"
@@ -520,6 +554,9 @@ func splitNul(s string) []string {
 }
 
 func (r *RemoteFS) Remove(ctx context.Context, files, dirs []string) ([]string, error) {
+	if r.SFTPOnly(ctx) {
+		return r.sftpRemove(ctx, files, dirs)
+	}
 	var in []string
 	for _, f := range files {
 		in = append(in, "f", f)
@@ -534,12 +571,19 @@ func (r *RemoteFS) Remove(ctx context.Context, files, dirs []string) ([]string, 
 }
 
 func (r *RemoteFS) RemoveStaging(ctx context.Context, rel string) error {
+	if r.SFTPOnly(ctx) {
+		return r.sftpRemoveStaging(ctx, rel)
+	}
 	_, err := r.run(ctx, nil, "rmstage", rel)
 	return err
 }
 
-// Home is the account's home folder on a host.
+// Home is the account's home folder on a host: for an account that takes
+// SFTP only, the folder its SFTP session starts in.
 func Home(ctx context.Context, run Runner, site, key string) (string, error) {
+	if sftpOnlySite(ctx, run, site, key) {
+		return sftpHome(ctx, run, site, key)
+	}
 	res, _, err := runTool(ctx, run, site, key, 60*time.Second, nil, "home", "/")
 	if err != nil {
 		return "", err
@@ -557,6 +601,9 @@ func Home(ctx context.Context, run Runner, site, key string) (string, error) {
 func RsyncVersion(ctx context.Context, run Runner, site, key, program string) (line string, clean bool) {
 	if program == "" {
 		program = "rsync"
+	}
+	if sftpOnlySite(ctx, run, site, key) {
+		return "", true
 	}
 	res, banner, err := runTool(ctx, run, site, key, 60*time.Second, nil, "rsync", "/", program)
 	if err != nil || res.Code != 0 {

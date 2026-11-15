@@ -66,16 +66,22 @@ func TestOverRealSSH(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "authorized_keys"), b, 0o600)
 	u, _ := user.Current()
 	next := 0
-	host := func(name, banner string) (int, string) {
+	// force is sshd's ForceCommand: "" for a login script that runs what it
+	// is asked, else as given (%h is the host's home).
+	host := func(name, banner, force string) (int, string) {
 		h := filepath.Join(dir, name)
 		home := filepath.Join(h, "home")
 		os.MkdirAll(home, 0o755)
 		login := filepath.Join(h, "login.sh")
 		os.WriteFile(login, []byte("#!/bin/bash\nexport HOME="+home+"\n"+banner+"\nif [ -n \"$SSH_ORIGINAL_COMMAND\" ]; then exec bash -c \"$SSH_ORIGINAL_COMMAND\"; fi\nexec bash\n"), 0o755)
+		if force == "" {
+			force = login
+		}
+		force = strings.ReplaceAll(force, "%h", home)
 		port := freePort(t, &next)
 		conf := filepath.Join(h, "sshd.conf")
-		os.WriteFile(conf, []byte(fmt.Sprintf("Port %d\nListenAddress 127.0.0.1\nHostKey %s\nPidFile %s\nAuthorizedKeysFile %s\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nUsePAM no\nStrictModes no\nLogLevel ERROR\nForceCommand %s\n",
-			port, filepath.Join(dir, "host"), filepath.Join(h, "sshd.pid"), filepath.Join(dir, "authorized_keys"), login)), 0o644)
+		os.WriteFile(conf, []byte(fmt.Sprintf("Port %d\nListenAddress 127.0.0.1\nHostKey %s\nPidFile %s\nAuthorizedKeysFile %s\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nUsePAM no\nStrictModes no\nLogLevel ERROR\nSubsystem sftp internal-sftp\nForceCommand %s\n",
+			port, filepath.Join(dir, "host"), filepath.Join(h, "sshd.pid"), filepath.Join(dir, "authorized_keys"), force)), 0o644)
 		d := exec.Command(sshd, "-D", "-e", "-f", conf)
 		if err := d.Start(); err != nil {
 			t.Fatal(err)
@@ -91,8 +97,10 @@ func TestOverRealSSH(t *testing.T) {
 		}
 		return port, home
 	}
-	portA, homeA := host("host-a", "echo 'Welcome to host A'")
-	portB, homeB := host("host-b", "")
+	portA, homeA := host("host-a", "echo 'Welcome to host A'", "")
+	portB, homeB := host("host-b", "", "")
+	// Host C takes SFTP only, as an upload drop is set up.
+	portC, homeC := host("host-c", "", "internal-sftp -d %h")
 	opts := fmt.Sprintf("-i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=%s -o StrictHostKeyChecking=no", filepath.Join(dir, "id"), filepath.Join(dir, "kh"))
 	env := map[string]string{"XDG_RUNTIME_DIR": run, "PATH": os.Getenv("PATH"), "HOME": os.Getenv("HOME")}
 	pool := remote.New(remote.Options{IndexBase: filepath.Join(dir, "ix"), Getenv: func(k string) string { return env[k] }})
@@ -106,6 +114,7 @@ func TestOverRealSSH(t *testing.T) {
 	set.S.SavedLocations = []SavedLocation{
 		{ID: "a", Label: "Host A", Host: u.Username + "@127.0.0.1", Port: portA, SSHOptions: opts, Root: homeA},
 		{ID: "b", Label: "Host B", Host: u.Username + "@127.0.0.1", Port: portB, SSHOptions: opts, Root: homeB},
+		{ID: "c", Label: "Host C", Host: u.Username + "@127.0.0.1", Port: portC, SSHOptions: opts, Root: homeC},
 	}
 	s := New(Deps{IndexBase: filepath.Join(dir, "ix"), Getenv: func(k string) string { return env[k] }, Runner: runner, Shell: runner.RemoteShell,
 		Libraries: func(context.Context, Viewer) []LibraryLoc {
@@ -185,4 +194,33 @@ func TestOverRealSSH(t *testing.T) {
 	}
 	noStaging(t, homeA)
 	noStaging(t, homeB)
+
+	// Host C takes SFTP only: browsing, a push and a move back go over SFTP
+	// with the same ssh options, through studio-copy.
+	write(t, filepath.Join(kb, "drop", "one.txt"), "one")
+	write(t, filepath.Join(kb, "drop", "sub", "two.bin"), strings.Repeat("y", 2<<20))
+	if _, err := s.Browse(context.Background(), single, "saved:c", nil); err != nil {
+		t.Fatalf("browse C %v", err)
+	}
+	p = r.mustPlan(single, req(ActionCopy, "library:kb", []string{"drop"}, "saved:c", ""))
+	if p.Mover != MoverCopy || !strings.Contains(p.Movers[1].Why, "SFTP only") {
+		t.Fatalf("plan to C %+v", p.Movers)
+	}
+	tr = r.run(single, req(ActionCopy, "library:kb", []string{"drop"}, "saved:c", ""))
+	if tr.State != StateSucceeded || len(read(t, filepath.Join(homeC, "drop", "sub", "two.bin"))) != 2<<20 {
+		t.Fatalf("push to C %+v", tr)
+	}
+	os.RemoveAll(filepath.Join(kb, "drop"))
+	q = req(ActionMove, "saved:c", []string{"drop"}, "library:kb", "")
+	q.Options.Checksum = yes
+	tr = r.run(single, q)
+	if tr.State != StateSucceeded || read(t, filepath.Join(kb, "drop", "one.txt")) != "one" {
+		t.Fatalf("move from C %+v", tr)
+	}
+	gone(t, filepath.Join(homeC, "drop"))
+	noStaging(t, homeC)
+	res, err = s.TestSettings(context.Background(), single, TestRequest{Host: u.Username + "@127.0.0.1", Port: portC, SSHOptions: opts, Root: homeC})
+	if err != nil || !res.OK || !res.SFTPOnly || res.Writable == nil || !*res.Writable || res.FreeBytes == nil {
+		t.Fatalf("test C %+v %v", res, err)
+	}
 }
