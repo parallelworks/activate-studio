@@ -1,8 +1,9 @@
 // Package transfers is the Transfers page's server side: locations where
 // files live (libraries, folders on this computer, the viewer's clusters,
-// saved hosts, a CONDUIT service), browsing them, planning a copy, move or
-// sync, running it as a job through a mover (rsync, studio-copy, CONDUIT),
-// checking what landed, and the job list with progress, cancel and events.
+// saved hosts, rclone remotes, a CONDUIT service), browsing them, planning a
+// copy, move or sync, running it as a job through a mover (rsync, rclone,
+// studio-copy, CONDUIT), checking what landed, and the job list with
+// progress, cancel and events.
 //
 // The design and the HTTP contract are docs/TRANSFERS.md. In short:
 //
@@ -35,6 +36,9 @@ const (
 	// on, offered with no setup (sign-in off only).
 	KindHost    = "host"
 	KindConduit = "conduit"
+	// KindRclone is a remote of the user's rclone configuration (sign-in
+	// off only).
+	KindRclone = "rclone"
 )
 
 // Location is a place files live, as the page sees it.
@@ -146,6 +150,9 @@ type Plan struct {
 	// other than the main library, shows the change.
 	IndexNotes []string `json:"indexNotes"`
 	ExpiresAt  string   `json:"expiresAt"`
+	// Compare is how a sync tells changed files: "size and modification
+	// time", or size and a hash.
+	Compare string `json:"compare,omitempty"`
 }
 
 // States of a transfer.

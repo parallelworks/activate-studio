@@ -108,6 +108,7 @@ export function TransferPlanDialog({
               </ul>
             )}
           </dd>
+          {plan.compare && <><dt>Compared by</dt><dd>{plan.compare}</dd></>}
           <dt>Plan good until</dt>
           <dd>{Number.isFinite(expires) ? new Date(expires).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : plan.expiresAt}
             {expired && <span className="xfer-warn-text"> (expired)</span>}</dd>

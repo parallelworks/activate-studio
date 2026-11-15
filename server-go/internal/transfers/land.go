@@ -15,6 +15,9 @@ import (
 // report that it is done counts for nothing until this passes.
 func (s *Service) verify(ctx context.Context, r *rec, p *planRec) error {
 	dst := p.dst.fs
+	if p.direct {
+		return s.verifyDirect(ctx, r, p)
+	}
 	w, err := dst.Walk(ctx, []string{r.Stage}, 0)
 	if err != nil {
 		if statusOf(err) == 404 && len(p.files) == 0 && !p.bare {
@@ -56,28 +59,65 @@ func (s *Service) verify(ctx context.Context, r *rec, p *planRec) error {
 		return apierr.New(502, "%d of %d files did not arrive (the first is %s); nothing was put in place", len(missing), len(want), missing[0])
 	}
 	if p.req.Options.checksum() || p.Action == ActionMove {
-		var srcRels, dstRels []string
-		for _, f := range p.files {
-			srcRels = append(srcRels, f.Rel)
-			dstRels = append(dstRels, join(r.Stage, f.Out))
-		}
-		a, err := p.src.fs.Sha256(ctx, srcRels)
-		if err != nil {
-			return apierr.New(502, "the source's checksums could not be read: %s", messageOf(err))
-		}
-		b, err := dst.Sha256(ctx, dstRels)
-		if err != nil {
-			return apierr.New(502, "the checksums of what arrived could not be read: %s", messageOf(err))
-		}
-		for i, f := range p.files {
-			if a[srcRels[i]] == "" || a[srcRels[i]] != b[dstRels[i]] {
-				return apierr.New(502, "%s arrived with different contents (sha256); nothing was put in place", f.Out)
-			}
-		}
-		s.set(r, func() { r.event(s.now(), "sha256 matches for all %d files", len(p.files)) })
-	} else {
-		s.set(r, func() { r.event(s.now(), "All %d files arrived with their sizes", len(p.files)) })
+		return s.verifySums(ctx, r, p, r.Stage, "nothing was put in place")
 	}
+	s.set(r, func() { r.event(s.now(), "All %d files arrived with their sizes", len(p.files)) })
+	return nil
+}
+
+// verifySums compares the contents of every file at both ends: sha256, or
+// a hash both ends share where one is an rclone remote (pairSums).
+func (s *Service) verifySums(ctx context.Context, r *rec, p *planRec, under, after string) error {
+	var srcRels, dstRels []string
+	for _, f := range p.files {
+		srcRels = append(srcRels, f.Rel)
+		dstRels = append(dstRels, join(under, f.Out))
+	}
+	a, b, kind, err := pairSums(ctx, p.src.fs, p.dst.fs, srcRels, dstRels)
+	if err != nil {
+		return apierr.New(502, "the checksums could not be read: %s", messageOf(err))
+	}
+	for i, f := range p.files {
+		if a[srcRels[i]] == "" || a[srcRels[i]] != b[dstRels[i]] {
+			return apierr.New(502, "%s arrived with different contents (%s); %s", f.Out, kind, after)
+		}
+	}
+	s.set(r, func() { r.event(s.now(), "%s matches for all %d files", kind, len(p.files)) })
+	return nil
+}
+
+// verifyDirect checks files a mover wrote straight to their names: each
+// is there with its size, and for a move or with checksum the same
+// contents. Other files in the folder are not the transfer's and are not
+// looked at.
+func (s *Service) verifyDirect(ctx context.Context, r *rec, p *planRec) error {
+	const after = "the files already written stay at the destination"
+	var finals []string
+	for _, f := range p.files {
+		finals = append(finals, join(p.dstPath, f.Out))
+	}
+	got, err := p.dst.fs.Stat(ctx, finals)
+	if err != nil {
+		return apierr.New(502, "what arrived could not be listed: %s", messageOf(err))
+	}
+	var missing []string
+	for i, f := range p.files {
+		fi, ok := got[finals[i]]
+		if !ok {
+			missing = append(missing, f.Out)
+			continue
+		}
+		if fi.Type != 'f' || fi.Size != f.Size {
+			return apierr.New(502, "%s is there with %d bytes where the source has %d; %s", f.Out, fi.Size, f.Size, after)
+		}
+	}
+	if len(missing) > 0 {
+		return apierr.New(502, "%d of %d files did not arrive (the first is %s); %s", len(missing), len(p.files), missing[0], after)
+	}
+	if p.req.Options.checksum() || p.Action == ActionMove {
+		return s.verifySums(ctx, r, p, p.dstPath, after)
+	}
+	s.set(r, func() { r.event(s.now(), "All %d files arrived with their sizes", len(p.files)) })
 	return nil
 }
 
@@ -124,6 +164,13 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 		pairs = append(pairs, LandPair{Staged: join(r.Stage, f.Out), Final: join(p.dstPath, f.Out), Replace: p.replaceSet[f.Out]})
 	}
 	var landed []string
+	if p.direct {
+		// Written straight to their names: nothing to land.
+		for _, x := range pairs {
+			landed = append(landed, x.Final)
+		}
+		pairs = nil
+	}
 	for start := 0; start < len(pairs); start += 1000 {
 		done, err := dst.Land(ctx, pairs[start:min(start+1000, len(pairs))])
 		landed = append(landed, done...)

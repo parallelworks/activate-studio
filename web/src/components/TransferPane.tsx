@@ -29,6 +29,10 @@ const FileGlyph = () => (
 const LinkGlyph = () => (
   <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><path d="M6.5 9.5 9.5 6.5"/><path d="M7 4.5 8.5 3a2.5 2.5 0 0 1 3.5 3.5L10.5 8"/><path d="M9 11.5 7.5 13A2.5 2.5 0 0 1 4 9.5L5.5 8"/></svg>
 )
+/** rclone remotes: a cloud, since most are cloud storage. */
+const CloudGlyph = () => (
+  <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><path d="M4.5 12.5h7.25a2.75 2.75 0 0 0 .4-5.47A4 4 0 0 0 4.4 6.6 3 3 0 0 0 4.5 12.5z"/></svg>
+)
 const UpGlyph = () => (
   <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M8 13V3.5M4 7l4-4 4 4"/></svg>
 )
@@ -46,6 +50,7 @@ function modifiedText(iso: string): string {
 function locationItems(locations: TransferLocation[]): ComboboxGroup<string>[] {
   return KIND_ORDER.map(({ kind, label }) => ({
     label,
+    icon: kind === 'rclone' ? <CloudGlyph /> : undefined,
     items: locations.filter(l => l.kind === kind).map(l => ({
       value: l.id,
       label: l.label,

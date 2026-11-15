@@ -108,6 +108,9 @@ func (s *Service) all(ctx context.Context, v Viewer, kind string) []*loc {
 	if want(KindHost) && !v.AuthOn && set.HostLocations.Enabled {
 		out = append(out, s.hostLocs(ctx, v, set)...)
 	}
+	if want(KindRclone) && !v.AuthOn {
+		out = append(out, s.rcloneLocs(ctx, v, set)...)
+	}
 	if cs, on := set.conduit(); want(KindConduit) && !v.AuthOn && s.d.Conduit != nil && on {
 		x := &loc{Location: Location{ID: KindConduit + ":" + cs.Server, Kind: KindConduit, Label: cs.Label,
 			Detail: "paths in the service's namespace, typed by hand", Writable: true}, conduit: &cs}

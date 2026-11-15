@@ -34,6 +34,11 @@ type MoveJob struct {
 	Preserve bool
 	// Set is the Transfers settings the plan was made under.
 	Set Settings
+	// Direct: Stage is the destination folder itself, for a mover that
+	// writes straight to the final names (rclone to an object store);
+	// Replace is the Outs the plan listed as replaced.
+	Direct  bool
+	Replace map[string]bool
 }
 
 // MoverStatus is where a mover's transfer stands.
@@ -47,7 +52,7 @@ type MoverStatus struct {
 }
 
 // Mover moves bytes. The registry asks movers in order (conduit, rsync,
-// studio-copy) and takes the first that can reach both ends.
+// rclone, studio-copy) and takes the first that can reach both ends.
 type Mover interface {
 	Name() string
 	// PollEvery is how often the job asks Status.

@@ -95,7 +95,7 @@ func TestPlanCounts(t *testing.T) {
 	if p.ReplacesCount != 0 || len(p.Replaces) != 0 || p.DeletesCount != 0 || p.FreeBytes == nil {
 		t.Fatalf("lists %+v", p)
 	}
-	if p.Mover == "" || len(p.Movers) != 3 || p.ExpiresAt == "" || len(p.Warnings) < 2 {
+	if p.Mover == "" || len(p.Movers) != 4 || p.ExpiresAt == "" || len(p.Warnings) < 2 {
 		t.Fatalf("mover %+v", p)
 	}
 	if p.Destination.Path == nil || *p.Destination.Path != "" || p.Source.Label != "Host A" {

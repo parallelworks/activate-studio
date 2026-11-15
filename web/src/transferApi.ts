@@ -7,7 +7,7 @@
  * inside one library from the Library page.
  */
 
-export type LocationKind = 'library' | 'computer' | 'cluster' | 'saved' | 'host' | 'conduit'
+export type LocationKind = 'library' | 'computer' | 'cluster' | 'saved' | 'host' | 'rclone' | 'conduit'
 
 export interface TransferLocation {
   id: string
@@ -25,7 +25,7 @@ export interface BrowseEntry { name: string; type: 'file' | 'dir' | 'link'; size
 export interface BrowseResult { location: string; path: string; parent: string | null; entries: BrowseEntry[]; truncated: boolean }
 
 export type TransferAction = 'copy' | 'move' | 'sync'
-export type MoverName = 'auto' | 'rsync' | 'studio-copy' | 'conduit'
+export type MoverName = 'auto' | 'rsync' | 'rclone' | 'studio-copy' | 'conduit'
 
 export interface PlanOptions {
   mover?: MoverName
@@ -45,7 +45,7 @@ export interface PlanRequest {
 
 export interface MoverChoice { name: string; ok: boolean; why?: string }
 /** A mover's name as the page shows it. */
-export const MOVER_TEXT: Record<string, string> = { rsync: 'rsync', 'studio-copy': 'Studio copy', conduit: 'CONDUIT' }
+export const MOVER_TEXT: Record<string, string> = { rsync: 'rsync', rclone: 'rclone', 'studio-copy': 'Studio copy', conduit: 'CONDUIT' }
 
 export interface Plan {
   id: string
@@ -70,6 +70,8 @@ export interface Plan {
    *  main one, shows the change. */
   indexNotes?: string[]
   expiresAt: string
+  /** How a sync tells changed files, such as "size and md5". */
+  compare?: string
 }
 
 export type TransferState = 'awaiting-approval' | 'queued' | 'running' | 'verifying' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted'
@@ -133,6 +135,8 @@ export interface TransferSettings {
     rsync: { enabled: boolean; path: string }
     studioCopy: { enabled: true }
     conduit: { enabled: boolean; server: string | null; mounts?: ConduitMount[] }
+    /** rclone on this computer; its own configuration is used as it is. */
+    rclone?: { enabled: boolean; path: string }
   }
   defaults: { mover: MoverName; checksum: boolean; preserveTimes: boolean; parallel: number }
   mcpServers: { id: string; label: string; connected: boolean }[]
@@ -142,12 +146,24 @@ export interface TransferSettings {
     /** The rsync program found here, and which transfers it is used for. */
     rsyncPath?: string; rsyncText?: string
     clusters: number; libraryHosts: string[]
+    rclone?: RcloneDetected
   }
   /** The home folder of each host a remote library uses, offered as a
    *  `host` location (sign-in off). `hidden` holds host names. */
   hostLocations?: { enabled: boolean; hidden: string[] }
 }
 export const HOST_LOCATIONS = 'hostLocations' as const
+/** rclone as Settings found it: whether it is on, the program and its
+ *  version, and the remotes of its configuration with their types. */
+export interface RcloneDetected {
+  enabled: boolean
+  found: boolean
+  path?: string
+  version?: string
+  remotes: { name: string; type: string }[]
+  /** What is missing, in words: not installed, no remotes, sign-in on. */
+  why?: string
+}
 export type TransferSettingsInput = Omit<TransferSettings, 'managed' | 'mcpServers' | 'detected'>
 export interface SettingTest {
   ok: boolean; why?: string; rsync?: boolean; rsyncVersion?: string; writable?: boolean; freeBytes?: number; roundTripMs?: number
@@ -156,6 +172,8 @@ export interface SettingTest {
   /** The account takes SFTP only: Studio reaches it over SFTP, copies use
    *  Studio copy, and rsync is not available there. */
   sftpOnly?: boolean
+  /** Whether rclone is on the host, for information (transfers do not run it there). */
+  rclone?: boolean; rcloneVersion?: string
 }
 export interface SettingTestBody { host: string; root: string; rsyncPath?: string; port?: number; sshOptions?: string }
 
@@ -166,6 +184,7 @@ export function testText(r: SettingTest): string {
   const parts = [r.sftpOnly ? 'Reached over SFTP (the account takes SFTP only), folder exists' : 'Reached, folder exists']
   if (r.sftpOnly) parts.push('rsync not available, Studio copy will be used')
   else if (r.rsync !== undefined) parts.push(r.rsync ? `rsync${r.rsyncVersion ? ` ${r.rsyncVersion}` : ''} found` : 'no rsync, Studio copy will be used')
+  if (r.rclone !== undefined) parts.push(r.rclone ? `rclone${r.rcloneVersion ? ` ${r.rcloneVersion}` : ''} there` : 'no rclone there')
   if (r.writable !== undefined) parts.push(r.writable ? 'writable' : 'read only')
   if (r.freeBytes !== undefined) parts.push(`${bytesText(r.freeBytes)} free`)
   if (r.roundTripMs !== undefined) parts.push(`${Math.round(r.roundTripMs)} ms round trip`)
@@ -265,6 +284,7 @@ export const KIND_ORDER: { kind: LocationKind; label: string }[] = [
   { kind: 'cluster', label: 'Clusters' },
   { kind: 'saved', label: 'Saved locations' },
   { kind: 'host', label: 'Library hosts' },
+  { kind: 'rclone', label: 'rclone remotes' },
   { kind: 'conduit', label: 'CONDUIT' },
 ]
 
@@ -407,7 +427,11 @@ export interface PlacesReady {
   clusters: number
   saved: number
   hosts: number
+  /** rclone remotes listed as places. */
+  rclone: number
   rsync: { found: boolean; version?: string; text?: string } | null
+  /** Why rclone offers no remotes (not installed, none configured), when it is on. */
+  rcloneWhy: string | null
 }
 
 export function placesReady(locations: TransferLocation[], settings: TransferSettings | null): PlacesReady {
@@ -415,11 +439,13 @@ export function placesReady(locations: TransferLocation[], settings: TransferSet
   const by = (k: LocationKind) => on.filter(l => l.kind === k).length
   // Library hosts are listed as `host` locations once offered, so they are
   // counted from the list, as the rest are.
-  const r = { libraries: by('library'), folders: by('computer'), clusters: by('cluster'), saved: by('saved') + by('conduit'), hosts: by('host') }
+  const r = { libraries: by('library'), folders: by('computer'), clusters: by('cluster'), saved: by('saved') + by('conduit'), hosts: by('host'), rclone: by('rclone') }
+  const rc = settings?.detected?.rclone
   return {
     ...r,
-    total: r.libraries + r.folders + r.clusters + r.saved + r.hosts,
+    total: r.libraries + r.folders + r.clusters + r.saved + r.hosts + r.rclone,
     rsync: settings?.detected ? { found: settings.detected.rsyncLocal, version: settings.detected.rsyncVersion, text: settings.detected.rsyncText } : null,
+    rcloneWhy: rc?.enabled && !r.rclone ? rcloneMissing(rc) : null,
   }
 }
 
@@ -430,7 +456,15 @@ export function readyParts(p: PlacesReady): string[] {
   const out = [plural(p.libraries, 'library', 'libraries'), plural(p.folders, 'folder on this computer', 'folders on this computer'), plural(p.clusters, 'cluster')]
   if (p.hosts) out.push(plural(p.hosts, 'library host'))
   if (p.saved) out.push(plural(p.saved, 'saved location'))
+  if (p.rclone) out.push(plural(p.rclone, 'rclone remote'))
+  else if (p.rcloneWhy) out.push(p.rcloneWhy)
   if (p.rsync) out.push(!p.rsync.found ? 'no rsync here, Studio copy is used' : p.rsync.text ?? `rsync ${p.rsync.version ?? ''}`.trim() + ' found')
   return out
+}
+/** Why rclone offers no remotes, in a few words for the Ready line. */
+export function rcloneMissing(d: RcloneDetected): string {
+  if (!d.found) return 'rclone not found'
+  if (!d.remotes.length) return 'rclone has no remotes'
+  return 'no rclone remotes'
 }
 export const placesText = (p: PlacesReady) => `${plural(p.total, 'place')} ready`

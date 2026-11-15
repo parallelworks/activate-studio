@@ -364,12 +364,19 @@ func (s *Service) execute(ctx context.Context, r *rec, h *run) {
 		cleanup()
 		s.finish(r, StateFailed, why)
 	}
-	if err := dst.Mkdir(ctx, r.Stage); err != nil {
+	stage := r.Stage
+	if p.direct {
+		// Written straight to the final names: no staging folder to make or
+		// clear, and what was written stays if the job fails.
+		stage = p.dstPath
+		cleanup = func() {}
+		fail = func(why string) { s.finish(r, StateFailed, why) }
+	} else if err := dst.Mkdir(ctx, r.Stage); err != nil {
 		s.finish(r, StateFailed, "the staging folder could not be made: "+messageOf(err))
 		return
 	}
 	job := &MoveJob{ID: r.ID, Src: p.src.fs, Dst: dst, SrcLoc: p.src, DstLoc: p.dst, Files: p.files, Items: p.items,
-		Stage: r.Stage, Preserve: p.req.Options.preserve(), Set: p.set}
+		Stage: stage, Preserve: p.req.Options.preserve(), Set: p.set, Direct: p.direct, Replace: p.replaceSet}
 	if len(p.files) > 0 || p.bare {
 		ref, err := mover.Start(ctx, job)
 		if err != nil {

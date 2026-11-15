@@ -371,10 +371,10 @@ func transferRequest(args map[string]any) (transfers.Request, map[string]any, st
 	o := &q.Options
 	if mv := jsTrim(argString(args, "mover")); mv != "" && mv != "auto" {
 		switch mv {
-		case transfers.MoverRsync, transfers.MoverCopy, transfers.MoverConduit:
+		case transfers.MoverRsync, transfers.MoverCopy, transfers.MoverConduit, transfers.MoverRclone:
 			o.Mover = mv
 		default:
-			return q, nil, "mover must be auto, rsync, studio-copy or conduit."
+			return q, nil, "mover must be auto, rsync, rclone, studio-copy or conduit."
 		}
 	}
 	for _, k := range []string{"replace", "deleteExtra", "checksum", "preserveTimes"} {
