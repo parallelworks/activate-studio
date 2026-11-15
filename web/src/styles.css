@@ -2815,7 +2815,7 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-mono { font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
 .xfer-warn-text { color: var(--theme-warning); }
 
-.xfer-activity { display: flex; flex-direction: column; gap: 12px; max-width: 1100px; width: 100%; }
+.xfer-activity { display: flex; flex-direction: column; gap: 12px; width: 100%; }
 .xfer-activity-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .xfer-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--pw-muted); margin: 6px 2px 6px; }
 .xfer-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--pw-border); border-radius: 8px; overflow: hidden; background: var(--pw-panel); }
