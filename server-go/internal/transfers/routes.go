@@ -169,6 +169,19 @@ func (s *Service) Routes(mux *http.ServeMux, log *slog.Logger, viewer func(*http
 		}
 		return s.SaveSettings(r.Context(), v, in)
 	})
+	h("POST /api/transfers/settings/locations", func(w http.ResponseWriter, r *http.Request, v Viewer) (any, error) {
+		var in SavedLocation
+		if !v.AuthOn {
+			if err := decode(r, &in); err != nil {
+				return nil, err
+			}
+		}
+		l, err := s.AddSavedLocation(r.Context(), v, in)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"location": l, "id": KindSaved + ":" + l.ID}, nil
+	})
 	h("POST /api/transfers/settings/test", func(w http.ResponseWriter, r *http.Request, v Viewer) (any, error) {
 		var in TestRequest
 		if err := decode(r, &in); err != nil {

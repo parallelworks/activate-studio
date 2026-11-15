@@ -19,7 +19,18 @@ export interface TransferLocation {
   browsable: boolean
   available: boolean
   why?: string
+  /** Why a reachable library is read only for transfers. */
+  readOnly?: string
+  /** For a library whose files Studio cannot reach or write, with sign-in
+   *  off: a saved location for its files, with what Studio knows of their
+   *  host and folder. A field Studio does not know is left out. */
+  suggest?: LocationSuggest
+  /** For such a library with sign-in on, where saved locations are off:
+   *  what can be written instead. */
+  hint?: string
 }
+
+export interface LocationSuggest { label: string; host?: string; root?: string; port?: number; sshOptions?: string }
 
 export interface BrowseEntry { name: string; type: 'file' | 'dir' | 'link'; size: number; mtime: string }
 export interface BrowseResult { location: string; path: string; parent: string | null; entries: BrowseEntry[]; truncated: boolean }
@@ -250,6 +261,9 @@ export const transferApi = {
   saveSettings: (s: TransferSettingsInput) =>
     call<TransferSettings>(`${BASE}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) }),
   testSetting: (body: SettingTestBody | { conduit: string }) => call<SettingTest>(`${BASE}/settings/test`, post(body)),
+  /** Adds one saved location (sign-in off), as tested in the dialog; the
+   *  answer has it with its id, and its location id. */
+  addLocation: (l: SavedLocation) => call<{ location: SavedLocation; id: string }>(`${BASE}/settings/locations`, post(l)),
   get: (id: string) => call<{ transfer: Transfer }>(`${BASE}/${encodeURIComponent(id)}`).then(r => ends(r.transfer)),
   cancel: (id: string) => call<{ cancelled: boolean; why?: string }>(`${BASE}/${encodeURIComponent(id)}/cancel`, post({})),
   remove: (id: string) => call<unknown>(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
@@ -381,7 +395,7 @@ export function sourcePaths(
 ): { paths: string[] } | { why: string } {
   const loc = pane.location
   if (!loc) return { why: 'Choose a location to send from.' }
-  if (!loc.available) return { why: `${loc.label} is not reachable${loc.why ? `: ${loc.why}` : ''}.` }
+  if (!loc.available) return { why: `${loc.label} is not reachable${loc.why ? `: ${loc.why.replace(/\.$/, '')}` : ''}.` }
   if (action === 'move' && !loc.writable) return { why: `${loc.label} is read only, so nothing can be moved out of it.` }
   if (!loc.browsable) {
     // Nothing to tick: the path typed is what is sent.
@@ -401,7 +415,7 @@ export function sourcePaths(
 /** Why a pane cannot receive, or null when it can. */
 export function destinationWhy(loc: TransferLocation | null): string | null {
   if (!loc) return 'Choose a location to send to.'
-  if (!loc.available) return `${loc.label} is not reachable${loc.why ? `: ${loc.why}` : ''}.`
+  if (!loc.available) return `${loc.label} is not reachable${loc.why ? `: ${loc.why.replace(/\.$/, '')}` : ''}.`
   if (!loc.writable) return `${loc.label} is read only.`
   return null
 }

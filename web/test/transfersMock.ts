@@ -8,6 +8,9 @@
 export interface MockLocation {
   id: string; kind: string; label: string; detail: string
   writable: boolean; indexed: boolean; browsable: boolean; available: boolean; why?: string
+  readOnly?: string
+  suggest?: { label: string; host?: string; root?: string; port?: number; sshOptions?: string }
+  hint?: string
 }
 type Entry = { name: string; type: 'file' | 'dir' | 'link'; size: number; mtime: string }
 type Tree = { [name: string]: Tree | number | 'link' }
@@ -219,7 +222,8 @@ export interface MockReply { status: number; body: unknown }
 
 /** A server in memory. `handle` answers one request; `calls` records them. */
 export function createTransfersMock(opts: MockOptions = {}) {
-  const locations = opts.locations ?? MOCK_LOCATIONS
+  // Saved locations added through the page join the list.
+  const locations = [...(opts.locations ?? MOCK_LOCATIONS)]
   const transfers = [...(opts.transfers ?? mockTransfers()), ...generatedFinished(opts.finished ?? 0)]
   const plans = new Map<string, Record<string, unknown>>()
   const calls: { method: string; path: string; body?: unknown }[] = []
@@ -318,6 +322,17 @@ export function createTransfersMock(opts: MockOptions = {}) {
       void _m; void _x; void _d
       settings = { ...settings, ...input, savedLocations: locs }
       return { status: 200, body: settings }
+    }
+    if (path === '/api/transfers/settings/locations' && method === 'POST') {
+      if (settings.managed) return { status: 403, body: { error: 'with sign-in on, saved locations are off' } }
+      const b = body as { label?: string; host: string; root: string }
+      if (!b.root?.startsWith('/')) return { status: 400, body: { error: 'root: give an absolute path, starting with /' } }
+      const label = b.label || `${b.host}:${b.root}`
+      const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      const saved = { ...b, id, label }
+      settings = { ...settings, savedLocations: [...(settings.savedLocations as unknown[]), saved] }
+      locations.push({ id: `saved:${id}`, kind: 'saved', label, detail: `${b.host}, ${b.root}`, writable: true, indexed: false, browsable: true, available: true })
+      return { status: 200, body: { location: saved, id: `saved:${id}` } }
     }
     if (path === '/api/transfers/settings/test' && method === 'POST') {
       const b = body as { host?: string; root?: string; conduit?: string }

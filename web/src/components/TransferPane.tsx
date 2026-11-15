@@ -45,10 +45,15 @@ function modifiedText(iso: string): string {
   return d.toLocaleString(undefined, { year, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+/** The chooser's value for "Save a location…", which opens the dialog
+ *  and picks nothing itself. No location id has a NUL in it. */
+export const SAVE_LOCATION = '\u0000save-location'
+
 /** The location chooser's groups, in the page's order, each location with
- *  its detail line, and unavailable ones disabled with their reason. */
-function locationItems(locations: TransferLocation[]): ComboboxGroup<string>[] {
-  return KIND_ORDER.map(({ kind, label }) => ({
+ *  its detail line, and unavailable ones disabled with their reason. With
+ *  `canSave`, a last group offers to save a new location. */
+function locationItems(locations: TransferLocation[], canSave: boolean): ComboboxGroup<string>[] {
+  const groups: ComboboxGroup<string>[] = KIND_ORDER.map(({ kind, label }) => ({
     label,
     icon: kind === 'rclone' ? <CloudGlyph /> : undefined,
     items: locations.filter(l => l.kind === kind).map(l => ({
@@ -56,13 +61,40 @@ function locationItems(locations: TransferLocation[]): ComboboxGroup<string>[] {
       label: l.label,
       description: l.available ? l.detail : `${l.detail ? `${l.detail}. ` : ''}Unavailable: ${l.why ?? 'not reachable now'}`,
       hint: [l.indexed ? 'Indexed' : '', l.writable ? '' : 'Read only'].filter(Boolean).join(', ') || undefined,
-      disabled: !l.available,
+      // A library Studio cannot reach can still be chosen when the pane
+      // has something to offer for it: saving a location for its files,
+      // or what can be written instead.
+      disabled: !l.available && !(l.kind === 'library' && (l.suggest || l.hint)),
     })),
   })).filter(g => g.items.length)
+  if (canSave) {
+    groups.push({ label: 'New', items: [{ value: SAVE_LOCATION, label: 'Save a location…', description: 'A folder on another computer that Studio reaches over ssh' }] })
+  }
+  return groups
+}
+
+/** A library a transfer cannot write: why, and what can be done. With
+ *  `onSave` and a suggestion from the server (sign-in off), it offers to
+ *  save a location for the library's files; with sign-in on it says what
+ *  can be written instead. */
+function LibraryLimit({ location, onSave }: { location: TransferLocation; onSave?: (l: TransferLocation) => void }) {
+  const unreachable = !location.available
+  const why = unreachable ? location.why ?? 'Try again later.' : location.readOnly ?? 'Studio cannot write there.'
+  const save = onSave && location.suggest
+    ? <Button size="sm" variant="secondary" onClick={() => onSave(location)}>Save a location for its files…</Button>
+    : undefined
+  return (
+    <Callout tone={unreachable ? 'warning' : 'muted'} size="sm" className="xfer-limit"
+      title={unreachable ? `${location.label} is not reachable` : `${location.label} is read only for transfers`} action={save}>
+      <span className="xfer-limit-why">{why}{/[.!?]$/.test(why) ? '' : '.'}</span>
+      {save && <span className="xfer-limit-hint"> If you can reach its folder over ssh, save a location for it and transfer there.</span>}
+      {location.hint && <span className="xfer-limit-hint"> {location.hint}</span>}
+    </Callout>
+  )
 }
 
 export function TransferPane({
-  name, locations, state, onChange, onLoaded, refreshKey, role,
+  name, locations, state, onChange, onLoaded, refreshKey, role, onSaveLocation,
 }: {
   /** Names the pane for assistive technology, such as "First location". */
   name: string
@@ -75,6 +107,10 @@ export function TransferPane({
   refreshKey: number
   /** Which way this pane faces on a narrow screen, shown as a tag. */
   role?: 'source' | 'destination'
+  /** Opens the dialog that saves a location: with no argument, an empty
+   *  one; with a library, prefilled for its files. Given only with sign-in
+   *  off, where saved locations are offered. */
+  onSaveLocation?: (from?: TransferLocation) => void
 }) {
   const location = locations.find(l => l.id === state.locationId) ?? null
   const [listing, setListing] = useState<BrowseResult | null>(null)
@@ -152,9 +188,12 @@ export function TransferPane({
           <Combobox<string>
             aria-label={`${name}: location`}
             placeholder="Choose a location"
-            items={locationItems(locations)}
+            items={locationItems(locations, !!onSaveLocation)}
             value={state.locationId}
-            onValueChange={v => { if (v) onChange({ locationId: v, path: '', selected: [] }) }}
+            onValueChange={v => {
+              if (v === SAVE_LOCATION) onSaveLocation?.()
+              else if (v) onChange({ locationId: v, path: '', selected: [] })
+            }}
             itemToStringLabel={v => locations.find(l => l.id === v)?.label ?? v}
             size="sm"
           />
@@ -167,6 +206,9 @@ export function TransferPane({
             {location.indexed && <StatusBadge size="sm" variant="muted">Indexed</StatusBadge>}
             {!location.writable && <StatusBadge size="sm" variant="muted">Read only</StatusBadge>}
           </div>
+        )}
+        {location?.kind === 'library' && location.available && !location.writable && (
+          <LibraryLimit location={location} onSave={onSaveLocation} />
         )}
       </div>
 
@@ -201,9 +243,9 @@ export function TransferPane({
         {locations.length > 0 && !location && (
           <EmptyState variant="bare" title="Choose a location" description="Pick a library, a folder on this computer, a cluster or a saved location." />
         )}
-        {location && !location.available && (
-          <Callout tone="warning" size="sm" title={`${location.label} is not reachable`}>{location.why ?? 'Try again later.'}</Callout>
-        )}
+        {location && !location.available && (location.kind === 'library'
+          ? <LibraryLimit location={location} onSave={onSaveLocation} />
+          : <Callout tone="warning" size="sm" title={`${location.label} is not reachable`}>{location.why ?? 'Try again later.'}</Callout>)}
         {location?.available && !location.browsable && (
           <EmptyState variant="bare" title="This location cannot be listed" description="Type a path above. As a source, the path typed is what is sent; as a destination, files land in it." />
         )}

@@ -133,6 +133,10 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			x.FS, by = &LocalFS{Dir: l.SourceRoot}, AccessServer
 		case l.Site != "":
 			t, err := reg.Users().Target(l.IndexRoot, viewerKeys{v.Key}, remote.SSHSite)
+			x.Site = sshOnly(l.Site)
+			if t != nil {
+				x.Site, x.Folder = sshOnly(t.Site), t.SourceRoot
+			}
 			switch {
 			case err != nil:
 				x.Why = messageOf(err)
@@ -161,6 +165,11 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 				port = *rt.Port
 			}
 			site, err := remote.SSHSite(rt.Destination, port, rt.SSHOptions)
+			// The originals host stands in when the library's own host or
+			// folder is not known.
+			if err == nil && (x.Site == "" || (x.Folder == "" && root != "")) {
+				x.Site, x.Folder = site, root
+			}
 			switch {
 			case v.AuthOn:
 				x.Why = readThroughOff
@@ -180,6 +189,15 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 		out = append(out, x)
 	}
 	return out
+}
+
+// sshOnly is site when it is reached over plain ssh, which a saved
+// location can name; "" for a platform cluster or anything else.
+func sshOnly(site string) string {
+	if remote.IsSSH(site) {
+		return site
+	}
+	return ""
 }
 
 // libraryRefresh is when the index of a library other than the main one

@@ -50,6 +50,11 @@ type LibraryLoc struct {
 	// FS is where its files are, nil when Studio cannot reach them (Why).
 	FS  FS
 	Why string
+	// Site and Folder are where its files are, as far as Studio knows,
+	// whether or not it reaches them: the ssh site of their host ("" when
+	// not known or not an ssh host) and the folder there ("" when not
+	// known). They prefill a saved location for them (Location.Suggest).
+	Site, Folder string
 }
 
 // Index is the index work around a transfer: the paths a transfer wrote in
@@ -100,6 +105,9 @@ type Service struct {
 	// (clearing staging after a restart); nil: the owner without a key.
 	viewerFor func(owner string) Viewer
 	rc        *rcloneState
+	// savedMu keeps saved locations added one at a time
+	// (AddSavedLocation reads, appends and writes the section).
+	savedMu sync.Mutex
 }
 
 type homeEntry struct {

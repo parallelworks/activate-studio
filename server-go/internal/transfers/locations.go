@@ -71,12 +71,20 @@ func (s *Service) all(ctx context.Context, v Viewer, kind string) []*loc {
 				x.Detail = l.FS.Where() + ", " + l.FS.Root()
 				if !x.Writable {
 					x.readOnly = l.ReadOnly
+					x.ReadOnly = l.ReadOnly
 					if x.readOnly != "" {
 						x.Detail += "; " + x.readOnly
 					}
 				}
 			} else {
 				x.Detail = "files not reachable from Studio"
+			}
+			if !x.Writable {
+				if v.AuthOn {
+					x.Hint = signedInHint(v)
+				} else {
+					x.Suggest = suggestFor(l)
+				}
 			}
 			out = append(out, x)
 		}
@@ -122,6 +130,26 @@ func (s *Service) all(ctx context.Context, v Viewer, kind string) []*loc {
 		out = append(out, x)
 	}
 	return out
+}
+
+// suggestFor is a saved location for a library's files, with what Studio
+// knows of their host and folder; nothing is filled in that it does not
+// know.
+func suggestFor(l LibraryLoc) *Suggest {
+	out := &Suggest{Label: l.Label + " files", Root: l.Folder}
+	if h, err := remote.ParseSSHSite(l.Site); err == nil && h != nil {
+		out.Host, out.Port, out.SSHOptions = h.Destination, h.Port, strings.Join(h.Options, " ")
+	}
+	return out
+}
+
+// signedInHint is what can be written with sign-in on, where saved
+// locations are off: the viewer's clusters, reached with their own key.
+func signedInHint(v Viewer) string {
+	if v.Key == "" {
+		return "With sign-in on, saved locations are off. Your clusters can be written once you add your own platform key in Settings, Model access."
+	}
+	return "With sign-in on, saved locations are off. Your clusters, reached with your own key, can be written."
 }
 
 // libraryHosts is each host a library's files are reached on (its own

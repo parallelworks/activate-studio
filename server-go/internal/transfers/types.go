@@ -52,6 +52,28 @@ type Location struct {
 	Browsable bool   `json:"browsable"`
 	Available bool   `json:"available"`
 	Why       string `json:"why,omitempty"`
+	// ReadOnly is why a reachable library is read only for transfers
+	// (also in Detail); "" otherwise.
+	ReadOnly string `json:"readOnly,omitempty"`
+	// Suggest is what Studio knows of where a library's files are, so the
+	// page and the assistant can offer to save a location for them. It is
+	// set with sign-in off for a library whose files Studio cannot reach
+	// or write; a field Studio does not know is "".
+	Suggest *Suggest `json:"suggest,omitempty"`
+	// Hint says what can be written instead, for such a library with
+	// sign-in on, where saved locations are off.
+	Hint string `json:"hint,omitempty"`
+}
+
+// Suggest is a saved location proposed for a library's files: a label,
+// and the ssh host (with port and options) and folder they are on, where
+// known.
+type Suggest struct {
+	Label      string `json:"label"`
+	Host       string `json:"host,omitempty"`
+	Root       string `json:"root,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	SSHOptions string `json:"sshOptions,omitempty"`
 }
 
 // Entry is one name in a browsed folder.

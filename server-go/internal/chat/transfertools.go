@@ -19,8 +19,9 @@ import (
 
 // The assistant's transfers, over the transfers service (internal/
 // transfers, docs/TRANSFERS.md): transfer_locations, browse_location and
-// transfer_status read; transfer_files and cancel_transfer change
-// something and wait for the user's approval as a held call does.
+// transfer_status read; transfer_files, cancel_transfer and
+// save_transfer_location change something and wait for the user's
+// approval as a held call does.
 //
 // transfer_files plans first, so a plan the service refuses goes back to
 // the model with nothing asked. A held call is also a transfer record
@@ -37,11 +38,21 @@ func init() {
 	goExecutors["transfer_status"] = (*Module).toolTransferStatus
 	goExecutors["transfer_files"] = (*Module).toolTransferHeldOnly
 	goExecutors["cancel_transfer"] = (*Module).toolTransferHeldOnly
+	goExecutors["save_transfer_location"] = (*Module).toolTransferHeldOnly
 }
 
 // transferAsksFirst are the transfer tools whose calls wait for the
 // user's approval.
-var transferAsksFirst = map[string]bool{"transfer_files": true, "cancel_transfer": true}
+// Every call waits: no setting lets one run unasked.
+var transferAsksFirst = map[string]bool{"transfer_files": true, "cancel_transfer": true, saveLocationTool: true}
+
+// saveLocationTool proposes a saved location (sign-in off only): a held
+// call with no transfer record, like cancel_transfer, whose approval
+// tests the location and saves it when the test passes.
+const saveLocationTool = "save_transfer_location"
+
+// signedInOnlyOff are the tools not offered with sign-in on.
+var signedInOnlyOff = map[string]bool{saveLocationTool: true}
 
 func isTransferAsksFirst(name string) bool { return transferAsksFirst[name] }
 
@@ -154,9 +165,33 @@ func (m *Module) toolTransferLocations(r *http.Request, _ map[string]any, tc Too
 				line += ": " + l.Why
 			}
 		}
+		if l.Suggest != nil {
+			line += "; " + suggestText(l.Suggest)
+		} else if l.Hint != "" {
+			line += "; " + l.Hint
+		}
 		lines = append(lines, line)
 	}
 	return &Outcome{Result: capOutput(strings.Join(lines, "\n")), Summary: countOf(len(locs), "location", "locations") + ", " + itoaInt(usable) + " reachable"}, nil
+}
+
+// suggestText is what Studio knows of where a library's files are, for
+// save_transfer_location: a field not known is said to be unknown.
+func suggestText(g *transfers.Suggest) string {
+	host, folder := "host not known", "folder not known"
+	if g.Host != "" {
+		host = "host " + g.Host
+		if g.Port != 0 {
+			host += ", port " + itoaInt(g.Port)
+		}
+		if g.SSHOptions != "" {
+			host += ", ssh options " + g.SSHOptions
+		}
+	}
+	if g.Root != "" {
+		folder = "folder " + g.Root
+	}
+	return "to save a location for its files (save_transfer_location, if the user has ssh access): label " + g.Label + ", " + host + ", " + folder
 }
 
 func (m *Module) toolBrowseLocation(r *http.Request, args map[string]any, tc ToolCtx) (*Outcome, error) {
@@ -440,6 +475,17 @@ func (m *Module) prepareTransfer(r *http.Request, name, raw string) *Prepared {
 		return &Prepared{Problem: "The transfer could not be prepared: " + errText(err) + " Nothing ran."}
 	}
 	s := m.transfers()
+	if name == saveLocationTool {
+		if v.AuthOn {
+			return &Prepared{Problem: "Saved locations are off with sign-in on: they would reach other systems with the ssh keys of the account the Studio runs as. Nothing was asked and nothing was saved."}
+		}
+		l, kept, problem := saveLocationArgs(args)
+		if problem != "" {
+			return &Prepared{Problem: problem + " Nothing was asked and nothing was saved."}
+		}
+		card, _ := json.Marshal(map[string]any{"savedLocation": l})
+		return &Prepared{Args: card, Canonical: sortedJSON(kept)}
+	}
 	if name == "cancel_transfer" {
 		id := jsTrim(argString(args, "id"))
 		if id == "" {
@@ -494,6 +540,13 @@ func (m *Module) holdTransfer(r *http.Request, conv, toolCallID, tool, canonical
 	}
 	if tool == "cancel_transfer" {
 		return canonical, cancelApprovalPart(card.ID, card.Label, card.State, toolCallID, expiresAt), nil
+	}
+	if tool == saveLocationTool {
+		var l struct {
+			SavedLocation transfers.SavedLocation `json:"savedLocation"`
+		}
+		_ = json.Unmarshal(cardArgs, &l)
+		return canonical, saveLocationApprovalPart(l.SavedLocation, toolCallID, expiresAt), nil
 	}
 	planID, _ := held["plan"].(string)
 	if planID == "" || card.Plan == nil {
@@ -616,6 +669,127 @@ func cancelApprovalPart(id, label, state, toolCallID, expiresAt string) *jsonobj
 	return o
 }
 
+/* ---- saving a location ---- */
+
+// saveLocationArgs is a save_transfer_location call as a saved location,
+// checked as Settings checks one, with the arguments kept for the held
+// call; or what is wrong with it.
+func saveLocationArgs(args map[string]any) (transfers.SavedLocation, map[string]any, string) {
+	l := transfers.SavedLocation{
+		Label: jsval.Slice(jsTrim(argString(args, "label")), 120), Host: jsTrim(argString(args, "host")),
+		Root: jsTrim(argString(args, "folder")), RsyncPath: jsTrim(argString(args, "rsyncPath")), SSHOptions: jsTrim(argString(args, "sshOptions")),
+	}
+	if l.Root == "" {
+		l.Root = jsTrim(argString(args, "root"))
+	}
+	if l.Host == "" || l.Root == "" {
+		return l, nil, "host and folder are required: the ssh destination and an absolute folder on it."
+	}
+	switch p := args["port"].(type) {
+	case nil:
+	case float64:
+		if p != float64(int(p)) {
+			return l, nil, "port must be a whole number from 1 to 65535."
+		}
+		l.Port = int(p)
+	default:
+		return l, nil, "port must be a whole number from 1 to 65535."
+	}
+	c, err := transfers.CheckSavedLocation(l)
+	if err != nil {
+		return l, nil, "The location cannot be saved as given: " + errText(err) + "."
+	}
+	kept := map[string]any{"label": c.Label, "host": c.Host, "folder": c.Root}
+	if c.RsyncPath != "" {
+		kept["rsyncPath"] = c.RsyncPath
+	}
+	if c.Port != 0 {
+		kept["port"] = c.Port
+	}
+	if c.SSHOptions != "" {
+		kept["sshOptions"] = c.SSHOptions
+	}
+	return c, kept, ""
+}
+
+// heldLocation is the saved location a held call's arguments name.
+func heldLocation(args string) transfers.SavedLocation {
+	o, _ := argObject(args)
+	str := func(k string) string { s, _ := o[k].(string); return s }
+	l := transfers.SavedLocation{Label: str("label"), Host: str("host"), Root: str("folder"), RsyncPath: str("rsyncPath"), SSHOptions: str("sshOptions")}
+	if p, ok := o["port"].(float64); ok {
+		l.Port = int(p)
+	}
+	return l
+}
+
+// saveLocationApprovalPart is the approval card for a held
+// save_transfer_location call: the label, host and folder.
+func saveLocationApprovalPart(l transfers.SavedLocation, toolCallID, expiresAt string) *jsonobj.Object {
+	reason := "Studio tests the connection first, as Settings, Transfers does, and saves the location only when the test passes. " +
+		"It reaches the host with the ssh keys of the account Studio runs as, and appears in the Transfers location picker and in Settings, Transfers."
+	o := reqbody.O("kind", "approval", "id", toolCallID, "approvalKind", "confirm", "toolName", saveLocationTool, "subject", "call",
+		"header", "Save the Transfers location "+l.Label+"?", "reason", reason)
+	o.SetValue("canAllowDirectory", false)
+	o.SetValue("expiresAt", expiresAt)
+	loc := reqbody.O("label", l.Label, "host", l.Host, "root", l.Root)
+	if l.RsyncPath != "" {
+		loc.SetValue("rsyncPath", l.RsyncPath)
+	}
+	if l.Port != 0 {
+		loc.SetValue("port", l.Port)
+	}
+	if l.SSHOptions != "" {
+		loc.SetValue("sshOptions", l.SSHOptions)
+	}
+	o.SetValue("savedLocation", loc)
+	return o
+}
+
+// testText is a passed test in a sentence, as Settings lists its checks.
+func testText(t transfers.TestResult) string {
+	parts := []string{yesNo(t.SFTPOnly, "reached over SFTP", "reached over ssh"), "the folder exists"}
+	if t.Writable != nil {
+		parts = append(parts, yesNo(*t.Writable, "Studio can write there", "Studio cannot write there"))
+	}
+	if t.SFTPOnly {
+		parts = append(parts, "copies use Studio copy over SFTP")
+	} else if t.Rsync != nil {
+		if *t.Rsync {
+			parts = append(parts, strings.TrimSpace("rsync "+t.RsyncVersion)+" is there")
+		} else {
+			parts = append(parts, "no rsync there, so Studio copy is used")
+		}
+	}
+	out := strings.Join(parts, ", ")
+	if t.Why != "" {
+		out += "; " + t.Why
+	}
+	return out
+}
+
+// saveLocation runs an approved save_transfer_location call: the test,
+// then the save when it passed.
+func (m *Module) saveLocation(r *http.Request, v transfers.Viewer, args string) (string, string, bool) {
+	l := heldLocation(args)
+	got, err := m.transfers().TestAndSave(context.WithoutCancel(r.Context()), v, l)
+	if err != nil {
+		return "The location was not saved: " + errText(err) + ".", "not saved", true
+	}
+	where := l.Host + ":" + l.Root
+	if got.Location == nil {
+		why := orStr(got.Test.Why, "no reason was given")
+		return "The test of " + where + " failed, so nothing was saved: " + why + ". Check the host and folder with the user; they can also add it in Settings, Transfers and save it anyway.",
+			"test failed", true
+	}
+	result := fmt.Sprintf("Saved the Transfers location %s as %s (%s). Test: %s. transfer_files takes %s as a source or destination.",
+		got.Location.Label, got.ID, where, testText(got.Test), got.ID)
+	if w := got.Test.Writable; w != nil && !*w {
+		result += " It is saved, but Studio could not write in the folder, so it cannot be a destination until that changes."
+	}
+	return result, "saved " + got.ID, false
+}
+
 /* ---- answering a held call ---- */
 
 // answerTransfer runs an approved transfer call, or settles a declined
@@ -636,6 +810,9 @@ func (m *Module) answerTransfer(r *http.Request, rec *HeldCall, allowed bool) (r
 	v, err := m.transferViewer(r)
 	if err != nil {
 		return "Nothing ran: " + errText(err), "not run", true
+	}
+	if rec.Tool == saveLocationTool {
+		return m.saveLocation(r, v, rec.Args)
 	}
 	if rec.Tool == "cancel_transfer" {
 		ok, why := s.Cancel(v, id)
