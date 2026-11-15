@@ -71,7 +71,7 @@ func isPlatformTool(name string) bool { _, ok := platformByName[name]; return ok
 // asksFirst is whether the tool's calls wait for the user's approval.
 func asksFirst(name string) bool {
 	t := platformByName[name]
-	return (t != nil && t.Method == "POST") || isKBAsksFirst(name)
+	return (t != nil && t.Method == "POST") || localAsksFirst(name)
 }
 
 // insteadOf is the tools the user may run in place of a held call.
@@ -89,7 +89,7 @@ func insteadOf(name string) []string {
 
 // toolHash identifies what a call to the tool does.
 func toolHash(name string) string {
-	if isKBAsksFirst(name) {
+	if localAsksFirst(name) {
 		return kbToolHash(name)
 	}
 	t := platformByName[name]
@@ -108,6 +108,9 @@ var pathParam = regexp.MustCompile(`\{(\w+)\}`)
 func prepareArgs(name string, raw any, viewerUsername string) (args *jsonobj.Object, canonical string, problem string) {
 	if isKBAsksFirst(name) {
 		return prepareKBArgs(name, raw)
+	}
+	if isTransferAsksFirst(name) {
+		return canonicalTransferArgs(raw)
 	}
 	t := platformByName[name]
 	if t == nil {

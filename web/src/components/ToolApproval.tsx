@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@parallelworks/ui'
 import { ApprovalBlock, type ApprovalPart, type PartRendererProps } from '@parallelworks/ui/ai'
+import { ChatTransferPlan, type HeldTransfer } from './ChatTransferPlan'
 
 /** A tool the user may run in place of the held call, with the same
  *  arguments. The server lists these on the approval it sends. */
 export interface ApprovalAlternative { tool: string; label: string; description?: string }
 
-type HeldApproval = ApprovalPart & { instead?: ApprovalAlternative[] }
+type HeldApproval = ApprovalPart & { instead?: ApprovalAlternative[]; transfer?: HeldTransfer }
 
 /** Whether the ISO time has passed, turning true when it does. */
 function useExpired(at: string | undefined): boolean {
@@ -28,7 +29,9 @@ function useExpired(at: string | undefined): boolean {
  * asked to stop. The package's block has no control for that alternative,
  * though its answer carries one (`instead`). A call someone else asked for
  * names them and offers no buttons; the server refuses anyone else's answer
- * regardless.
+ * regardless. A transfer the assistant asked for shows its plan above the
+ * block while it waits; once answered, the package draws the answer on the
+ * call's line, and the call's result names the transfer.
  */
 export function ToolApproval({ part, onApprovalAnswer }: PartRendererProps) {
   const held = part as HeldApproval
@@ -36,8 +39,10 @@ export function ToolApproval({ part, onApprovalAnswer }: PartRendererProps) {
   if (part.kind !== 'approval') return null
   const answer = held.waitingOn ? undefined : onApprovalAnswer
   const alternatives = answer && !held.resolved && !expired && held.approvalKind === 'confirm' ? held.instead ?? [] : []
+  const transfer = held.transfer?.plan ? held.transfer : undefined
   return (
     <div className="tool-approval">
+      {transfer && !held.resolved && !expired && <ChatTransferPlan transfer={transfer} />}
       <ApprovalBlock part={held} {...(answer ? { onApprovalAnswer: answer } : {})} />
       {alternatives.map(alt => (
         <div key={alt.tool} className="tool-approval-alt">

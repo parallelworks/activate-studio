@@ -171,7 +171,7 @@ In the macOS app's window the page can ask the window for three things through `
 
 On a single-user install (sign-in off and not deployed by the platform) the suggested questions and the mission default to ones for one person's own files: `SUGGESTED_PROMPTS` and `KB_MISSION` replace them, and saved settings replace both.
 
-The sidebar switches save the `sections` setting (`PUT /api/settings {sections}`). An empty list shows every page, including pages a later version adds. The wizard's name and accent save `appName` and `accent` the same way, and its library step uses the Libraries routes ([`LIBRARIES.md`](LIBRARIES.md)), including the import of a library list.
+The sidebar switches save the `sections` setting (`PUT /api/settings {sections}`). An empty list shows every page, including pages a later version adds. Transfers shows only when its switch is on and the server answers `/api/transfers/locations`. The wizard's name and accent save `appName` and `accent` the same way, and its library step uses the Libraries routes ([`LIBRARIES.md`](LIBRARIES.md)), including the import of a library list.
 
 Brand images (`/api/brand-icon`, `/api/favicon`) are served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox` and `X-Content-Type-Options: nosniff`, so an SVG opened on its own runs nothing and loads nothing.
 

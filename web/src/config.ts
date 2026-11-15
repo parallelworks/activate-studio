@@ -206,6 +206,7 @@ export function reloadAppConfig(): void { window.dispatchEvent(new Event('ade:co
 export const SECTION_SWITCHES: { id: string; label: string }[] = [
   { id: 'chat', label: 'Chat' },
   { id: 'library', label: 'Library' },
+  { id: 'transfers', label: 'Transfers' },
   { id: 'search', label: 'Search' },
   { id: 'query', label: 'Query' },
   { id: 'overview', label: 'Stats' },

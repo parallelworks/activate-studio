@@ -383,7 +383,8 @@ func prepareKBArgs(name string, raw any) (*jsonobj.Object, string, string) {
 	return args, string(b), ""
 }
 
-// kbToolHash identifies what a held library call does: its spec.
+// kbToolHash identifies what a held library or transfer call does: its
+// spec.
 func kbToolHash(name string) string {
 	for _, s := range builtinSpecs {
 		if s.Name == name {

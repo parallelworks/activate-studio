@@ -320,6 +320,7 @@ var toolOptionText = []optionText{
 	{"changes", "Platform changes", "Start, stop, and destroy clusters and cancel runs"},
 	{"agents", "Agents", "Start pw code agents and subtasks"},
 	{"editing", "Editing the library", "Write files and apply labels"},
+	{"transfers", "Transfers", "Copy, move and sync files between libraries, this computer, clusters and hosts"},
 	{"extensions", "Extensions", "This deployment's own tools and skills"},
 }
 
@@ -349,7 +350,7 @@ func (m *Module) readerToolOptions() []*jsonobj.Object {
 			continue
 		}
 		e := reqbody.O("id", o.ID, "label", o.Label, "description", o.Description)
-		if o.ID == "changes" {
+		if o.ID == "changes" || o.ID == "transfers" {
 			e.SetValue("asksFirst", true)
 		}
 		out = append(out, e)

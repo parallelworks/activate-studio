@@ -79,6 +79,10 @@ func (m *Module) toolOptions(w http.ResponseWriter, r *http.Request) error {
 		if id == "changes" && !ok {
 			continue
 		}
+		// Transfers need no platform key, only someone here to approve them.
+		if id == "transfers" && m.viewerOf(r) == nil {
+			continue
+		}
 		if !platform && slices.Contains(PlatformGroups, id) && (id != "agents" || !m.localAgents()) {
 			continue
 		}

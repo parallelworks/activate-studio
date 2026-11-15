@@ -12,6 +12,8 @@ import { LocalLibraryForm } from '../components/LocalLibraryForm'
 import { MainFolderDepth } from '../components/IndexDepth'
 import { FolderPicker, IndexBuildProgress, json, post, errText, useIndexBuild, type IndexJob, type SetupStatus } from '../components/PrimaryFolder'
 import { SshLibraryForm } from '../components/SshLibraryForm'
+import { useTransfersReady } from '../components/TransfersReady'
+import { placesText, transfersPresent } from '../transferApi'
 import {
   AI_SECTIONS, SECTION_SWITCHES, accessLabel, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
 } from '../config'
@@ -389,6 +391,19 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
     await finish()
     location.hash = '#view=settings:access'
   }
+  const openTransfers = async () => {
+    await finish()
+    location.hash = '#view=settings:transfers'
+  }
+  // Transfers are listed on the last step only where the server has them.
+  const [hasTransfers, setHasTransfers] = useState(false)
+  useEffect(() => {
+    if (step !== STEP.done) return
+    let live = true
+    void transfersPresent().then(v => { if (live) setHasTransfers(v) })
+    return () => { live = false }
+  }, [step])
+  const transfersReady = useTransfersReady(step === STEP.done && hasTransfers)
 
   const changeSections = (next: string[]) => {
     setStepError('')
@@ -595,6 +610,12 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
               <li>Sidebar: {shownLabels.length ? shownLabels.join(', ') : 'Settings and Help only'}</li>
               <li>Folder: {primary ? `${primary.path}. ${indexState}` : 'unknown'}</li>
               <li>Other libraries: {others.length ? others.map(l => l.label).join(', ') : 'none'}</li>
+              {hasTransfers && transfersReady && (
+                <li>
+                  Transfers: {placesText(transfersReady)}. Add more in{' '}
+                  <a href="#view=settings:transfers" onClick={e => { e.preventDefault(); void openTransfers() }}>Settings, Transfers</a>.
+                </li>
+              )}
             </ul>
             {aiOn && !endpoint && (
               <p className="muted" style={{ margin: 0 }}>

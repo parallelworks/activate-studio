@@ -25,6 +25,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
+	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows"
 )
 
@@ -88,6 +89,18 @@ type Module struct {
 
 	// Corpus is the libraries and search pair the corpus tools read.
 	Corpus *Corpus
+
+	// The transfer tools' service (made by xferOf on first use) and the
+	// viewer they act as (transfertools.go); approved and noted are the
+	// assistant's transfers that ran and those whose note is written.
+	xferMu     sync.Mutex
+	xfer       *transfers.Service
+	xferOf     func() *transfers.Service
+	xferViewer func(r *http.Request) (transfers.Viewer, error)
+	approved   map[string]bool
+	noted      map[string]bool
+	// notes holds a conversation's notes back while a reply streams there.
+	notes *noteQueue
 }
 
 // Default is the registered module.
@@ -127,6 +140,10 @@ func New(a *app.App) *Module {
 	m.noCap = loadNoTokenCap(a.Cfg.IndexBase)
 	m.Corpus = newCorpus(a)
 	m.rag = newRagState(m)
+	m.xferOf = func() *transfers.Service { return transfers.Of(a) }
+	m.xferViewer = func(r *http.Request) (transfers.Viewer, error) { return transfers.ViewerOf(a, r) }
+	m.approved, m.noted = map[string]bool{}, map[string]bool{}
+	m.notes = newNoteQueue()
 	return m
 }
 
@@ -336,6 +353,10 @@ func Register(mux *http.ServeMux, a *app.App) {
 		}
 	})
 
+	// The transfers the assistant started end with a note in their
+	// conversation; listen before the server starts, so one approved
+	// before a restart and ended by it is noted too.
+	m.transfers()
 	a.OnStart("chat: personal key vault scrub", func(context.Context) {
 		a.Log.Info("personal key vault scrub", "removed", m.Keys.ScrubPersonal())
 	})

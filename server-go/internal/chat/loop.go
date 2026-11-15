@@ -472,7 +472,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 				}
 				why := ""
 				gate := st.changes
-				if isKBAsksFirst(name) {
+				if localAsksFirst(name) {
 					gate = st.kbChanges
 				}
 				switch {
@@ -660,6 +660,7 @@ func orEmptyCalls(c []llm.ToolCall) []llm.ToolCall {
 var liveTools = map[string]bool{
 	"agent_status": true, "agent_sessions": true, "watch_run": true, "workflow_runs": true, "workflow_run_detail": true,
 	"list_sessions": true, "list_clusters": true, "hpc_status": true, "task_status": true, "cluster_command": true,
+	"transfer_status": true, "browse_location": true,
 }
 
 // changingTools change what other tools read: a file, a label, an agent,
@@ -670,6 +671,7 @@ var changingTools = map[string]bool{
 	"start_agent": true, "agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true, "delegate": true,
 	"run_workflow": true, "serve_model": true, "cancel_workflow_run": true,
 	"start_cluster": true, "resume_cluster": true, "stop_cluster": true, "destroy_cluster": true,
+	"transfer_files": true, "cancel_transfer": true,
 }
 
 // repeatedCall is the result of this exact call made earlier in the

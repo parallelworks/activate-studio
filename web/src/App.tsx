@@ -1,5 +1,5 @@
 import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
-import { IconButton, SearchInput } from '@parallelworks/ui'
+import { CountBadge, IconButton, SearchInput, StatusDot } from '@parallelworks/ui'
 import { buildOpenHash, parseOpenHash } from './nav'
 import { currentLibrary, linkTarget, setLibrary, settleLibraries } from './api'
 import { rememberHash } from './lastLocation'
@@ -19,6 +19,8 @@ import { CodeView } from './views/CodeView'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
+import { TransfersView } from './views/TransfersView'
+import { transferApi, transfersPresent, type TransferSummary } from './transferApi'
 import { SetupWizard } from './views/SetupWizard'
 import { StatusFooter } from './components/StatusFooter'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
@@ -32,7 +34,7 @@ import { setPanelView } from './panelState'
 import { studioMark } from './studioMark'
 import { SEARCH_NOTE, searchReach, useSearchScope } from './searchReach'
 
-type ViewId = 'chat' | 'library' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'code' | 'settings' | 'help'
+type ViewId = 'chat' | 'library' | 'transfers' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'code' | 'settings' | 'help'
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
 
 // The destinations that keep a spot in the phone bottom bar; the rest
@@ -50,6 +52,7 @@ const PAGE_NOTES: Partial<Record<ViewId, string>> = {
   workflows: 'Each runs under your own account',
   code: 'Your pw code sessions on the platform\'s machines',
   history: 'The corpus at each index pass',
+  transfers: 'Copy, move and sync files between libraries, this computer, clusters and saved locations',
 }
 
 const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
@@ -62,6 +65,11 @@ const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
     id: 'library',
     label: 'Library',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3l1.5 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9z"/></svg>,
+  },
+  {
+    id: 'transfers',
+    label: 'Transfers',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 5h10.5M10 2.5 12.5 5 10 7.5"/><path d="M14 11H3.5M6 8.5 3.5 11 6 13.5"/></svg>,
   },
   {
     id: 'search',
@@ -117,7 +125,7 @@ type NavEntry = { id: ViewId } | { group: string; label: string; items: ViewId[]
 const NAV_LAYOUT: NavEntry[] = [
   { id: 'chat' },
   {
-    group: 'knowledge', label: 'Knowledge', items: ['library', 'search', 'query', 'overview', 'history'],
+    group: 'knowledge', label: 'Knowledge', items: ['library', 'transfers', 'search', 'query', 'overview', 'history'],
   },
   {
     group: 'run', label: 'Run', items: ['workflows', 'agents', 'code'],
@@ -183,11 +191,34 @@ export default function App() {
   // A deployment can leave sections out, which is how the Studio becomes an
   // index viewer with no assistant. Settings and Help always stay reachable.
   // The Workflows tab lists platform workflows, so it exists only there.
-  const allowed = (id: ViewId) => sectionAllowed(id, cfg)
+  // Transfers needs a server that has them: an older one answers 404 and
+  // the page stays out of the menu, so the page can ship before the server.
+  const [hasTransfers, setHasTransfers] = useState<boolean | null>(null)
+  useEffect(() => { void transfersPresent().then(setHasTransfers) }, [])
+  // The menu entry's mark: how many transfers are under way, or a warning
+  // when one failed in the last day. Read every 15 seconds while shown.
+  const [xferSummary, setXferSummary] = useState<TransferSummary | null>(null)
+  useEffect(() => {
+    if (!hasTransfers) return
+    const read = () => { if (document.visibilityState !== 'hidden') transferApi.summary().then(setXferSummary, () => {}) }
+    read()
+    const t = setInterval(read, 15_000)
+    return () => clearInterval(t)
+  }, [hasTransfers])
+  // It shows when the server has it and the pages setting allows it.
+  const allowed = (id: ViewId) => (id === 'transfers' ? hasTransfers === true && sectionAllowed(id, cfg) : sectionAllowed(id, cfg))
+  useEffect(() => {
+    if (view !== 'transfers') return
+    if (hasTransfers === false || (cfg.loaded && !sectionAllowed('transfers', cfg))) {
+      history.replaceState(null, '', location.pathname + location.search)
+      setView('chat')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasTransfers, view, cfg.loaded, cfg.sections])
   // A hidden page is not reachable by a link or the address either: asking
   // for one shows the first page that is shown, in place of the request.
   useEffect(() => {
-    if (!cfg.loaded) return
+    if (!cfg.loaded || view === 'transfers') return
     const next = shownView(view, NAV.map(n => n.id), cfg)
     if (next === view) return
     history.replaceState(null, '', location.pathname + location.search + (next === 'chat' ? '' : `#view=${next}`))
@@ -511,6 +542,7 @@ export default function App() {
                 >
                   {item.icon}
                   <span>{item.label}</span>
+                  {item.id === 'transfers' && <TransferMark summary={xferSummary} />}
                 </button>
               )
             }
@@ -615,6 +647,7 @@ export default function App() {
           <LibraryView display={display} onDisplay={setDisplay} />
           {view === 'library' && <PanelToggle className="panel-toggle-float" />}
         </div>
+        {view === 'transfers' && hasTransfers && <div className="view"><TransfersView /></div>}
         <div className={view === 'search' ? 'view' : 'view hidden'}><SearchView onOpen={openFile} /></div>
         <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
         <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView onOpen={openFile} /></div>
@@ -636,6 +669,25 @@ export default function App() {
       </div>
       {setupOpen && <SetupWizard onClose={changed => { setSetupOpen(false); if (changed) location.reload() }} />}
     </div>
+  )
+}
+
+/** The Transfers entry's mark: the count under way, or a warning dot when
+ *  one failed in the last day, with the same said for a screen reader. */
+function TransferMark({ summary }: { summary: TransferSummary | null }) {
+  if (!summary) return null
+  const said = [
+    summary.active ? `${summary.active} under way` : '',
+    summary.awaitingApproval ? `${summary.awaitingApproval} awaiting approval` : '',
+    summary.failedLast24h ? `${summary.failedLast24h} failed in the last day` : '',
+  ].filter(Boolean).join(', ')
+  if (!said) return null
+  return (
+    <span className="nav-xfer-mark" title={said}>
+      {summary.active > 0 && <CountBadge count={summary.active} max={99} size="sm" variant={summary.awaitingApproval ? 'warning' : 'accent'} />}
+      {summary.failedLast24h > 0 && <StatusDot variant="error" />}
+      <span className="sr-only">{said}</span>
+    </span>
   )
 }
 

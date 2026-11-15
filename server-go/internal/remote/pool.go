@@ -344,6 +344,49 @@ func (p *Pool) spawn(site, key, command string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
+// Command is argv on the site as one ssh (or pw ssh) call, not started,
+// for a caller that streams its input or output (a file transfer). Each
+// word is quoted as DirectCommand quotes it, so no name passes through the
+// remote shell unquoted. The caller starts, waits for and kills it.
+func (p *Pool) Command(site, key string, argv []string) (*exec.Cmd, error) {
+	if len(argv) == 0 {
+		return nil, apierr.New(400, "no command")
+	}
+	if p.IsDirect(site) {
+		return nil, apierr.New(409, "%s", NoShell(site))
+	}
+	cmd, err := p.spawn(site, key, DirectCommand(argv))
+	if err != nil {
+		return nil, apierr.New(502, "%s: %s", SiteName(site), err.Error())
+	}
+	return cmd, nil
+}
+
+// RemoteShell is how another program (rsync's -e) reaches a site: the
+// program and its leading arguments, to which the remote command is
+// appended as one word, and the environment it needs (a platform key for
+// pw ssh). The host name rsync puts first must be dropped by the caller.
+func (p *Pool) RemoteShell(site, key string) (argv []string, env []string, err error) {
+	if prog := p.o.Getenv("STUDIO_REMOTE_SPAWN"); prog != "" {
+		return []string{prog, site}, []string{"PW_API_KEY=" + key}, nil
+	}
+	if IsSSH(site) {
+		b, err := p.sshBase(site)
+		if err != nil {
+			return nil, nil, err
+		}
+		return append([]string{"ssh"}, b...), nil, nil
+	}
+	args := []string{p.o.PwCLI(), "ssh"}
+	if u, err := url.Parse(p.o.GatewayBase()); err == nil && u.Hostname() != "" {
+		args = append(args, "--platform-host", u.Hostname())
+	}
+	if key != "" {
+		env = []string{"PW_API_KEY=" + key}
+	}
+	return append(args, site), env, nil
+}
+
 // ---- hosts that run only gufi_query ----
 
 // SetDirect marks or clears a site whose login runs nothing but gufi_query.

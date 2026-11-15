@@ -1,0 +1,207 @@
+package transfers
+
+import (
+	"context"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
+)
+
+// MCPServer is an attached MCP server, for choosing CONDUIT's.
+type MCPServer struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Connected bool   `json:"connected"`
+}
+
+// Detected is what Studio found without any setup, so the page can show
+// what is ready before anything is tested.
+type Detected struct {
+	RsyncLocal   bool     `json:"rsyncLocal"`
+	RsyncVersion string   `json:"rsyncVersion,omitempty"`
+	Clusters     int      `json:"clusters"`
+	LibraryHosts []string `json:"libraryHosts"`
+}
+
+// SettingsView is GET /api/transfers/settings: the section, with the
+// read-only fields.
+type SettingsView struct {
+	Managed bool `json:"managed"`
+	Settings
+	MCPServers []MCPServer `json:"mcpServers"`
+	Detected   Detected    `json:"detected"`
+}
+
+// SettingsView is the section as the viewer sees it. Computer folders list
+// the built-in ones first, with their paths here, then the added ones.
+func (s *Service) SettingsView(ctx context.Context, v Viewer) SettingsView {
+	set := s.settingsFor(v)
+	out := SettingsView{Managed: v.AuthOn, Settings: set, MCPServers: []MCPServer{}}
+	if !v.AuthOn {
+		var folders []ComputerFolder
+		for _, n := range BuiltInFolders {
+			p := ""
+			if s.d.Home != "" {
+				p = filepath.Join(s.d.Home, n)
+			}
+			folders = append(folders, ComputerFolder{Path: p, Label: n, BuiltIn: true, Enabled: set.builtInOn(n)})
+		}
+		for _, f := range set.ComputerFolders {
+			if !f.BuiltIn {
+				folders = append(folders, f)
+			}
+		}
+		out.ComputerFolders = folders
+		if s.d.Conduit != nil {
+			c, cancel := context.WithTimeout(ctx, 5*time.Second)
+			out.MCPServers = s.d.Conduit.Servers(c)
+			cancel()
+		}
+	}
+	out.Detected = s.detect(ctx, v, set)
+	return out
+}
+
+// detect is local rsync and its version, the viewer's clusters and, with
+// sign-in off, the hosts libraries are reached on.
+func (s *Service) detect(ctx context.Context, v Viewer, set Settings) Detected {
+	d := Detected{LibraryHosts: []string{}}
+	c, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if set.Movers.Rsync.Enabled {
+		bin := FindRsync(s.d.Getenv, set.Movers.Rsync.Path)
+		if out, err := exec.CommandContext(c, bin, "--version").Output(); err == nil {
+			line, _, _ := strings.Cut(string(out), "\n")
+			if ver, ok := parseRsyncVersion(line); ok {
+				d.RsyncLocal = true
+				d.RsyncVersion = itoa(ver[0]) + "." + itoa(ver[1]) + "." + itoa(ver[2])
+			}
+		}
+	}
+	if s.d.Clusters != nil && v.Key != "" {
+		if names, err := s.clusterNames(c, v); err == nil {
+			d.Clusters = len(names)
+		}
+	}
+	if !v.AuthOn {
+		for _, r := range s.libraryHosts(c, v) {
+			d.LibraryHosts = append(d.LibraryHosts, remote.SiteName(r.SiteID))
+		}
+	}
+	return d
+}
+
+// SaveSettings validates and stores the section (403 with sign-in on).
+func (s *Service) SaveSettings(ctx context.Context, v Viewer, in Settings) (SettingsView, error) {
+	if v.AuthOn {
+		return SettingsView{}, apierr.New(403, "with sign-in on, the operator's environment sets transfers (STUDIO_TRANSFER_FOLDERS, STUDIO_RSYNC, STUDIO_TRANSFER_MOVER, STUDIO_TRANSFER_STREAMS)")
+	}
+	c, err := in.Check(s.refusedFolder)
+	if err != nil {
+		return SettingsView{}, err
+	}
+	if err := s.d.Settings.Save(c); err != nil {
+		return SettingsView{}, err
+	}
+	return s.SettingsView(ctx, v), nil
+}
+
+// TestRequest is POST /api/transfers/settings/test: a saved location
+// (host and root, with its optional rsyncPath, port and sshOptions), or a
+// CONDUIT server by id.
+type TestRequest struct {
+	Host       string  `json:"host"`
+	Root       string  `json:"root"`
+	RsyncPath  string  `json:"rsyncPath"`
+	Port       int     `json:"port"`
+	SSHOptions string  `json:"sshOptions"`
+	Conduit    *string `json:"conduit"`
+}
+
+// TestResult says whether Studio reaches the place and what it found.
+type TestResult struct {
+	OK           bool   `json:"ok"`
+	Why          string `json:"why,omitempty"`
+	Rsync        *bool  `json:"rsync,omitempty"`
+	RsyncVersion string `json:"rsyncVersion,omitempty"`
+	Writable     *bool  `json:"writable,omitempty"`
+	FreeBytes    *int64 `json:"freeBytes,omitempty"`
+	RoundTripMs  *int64 `json:"roundTripMs,omitempty"`
+}
+
+// TestSettings checks a saved location or a CONDUIT server: over ssh, that
+// the root is a folder, whether rsync is there (and its version, and
+// whether the login prints text that would break it), whether Studio can
+// write there (a staging folder made and removed), the free space, and the
+// time of one round trip on the open connection.
+func (s *Service) TestSettings(ctx context.Context, v Viewer, in TestRequest) (TestResult, error) {
+	if v.AuthOn {
+		return TestResult{}, apierr.New(403, "with sign-in on, saved locations and CONDUIT are not used")
+	}
+	if in.Conduit != nil {
+		if s.d.Conduit == nil {
+			return TestResult{Why: "no MCP client"}, nil
+		}
+		c, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		t0 := time.Now()
+		ok, why := s.d.Conduit.Ready(c, *in.Conduit)
+		ms := time.Since(t0).Milliseconds()
+		return TestResult{OK: ok, Why: why, RoundTripMs: &ms}, nil
+	}
+	host := strings.TrimSpace(in.Host)
+	if err := CheckHost("host", host); err != nil {
+		return TestResult{}, err
+	}
+	root, err := CheckRoot("root", strings.TrimSpace(in.Root))
+	if err != nil {
+		return TestResult{}, err
+	}
+	if in.RsyncPath != "" {
+		if err := checkProgram("rsyncPath", in.RsyncPath); err != nil {
+			return TestResult{}, err
+		}
+	}
+	site, err := SavedLocation{Host: host, Port: in.Port, SSHOptions: in.SSHOptions}.site()
+	if err != nil {
+		return TestResult{}, bad("host", "%s", messageOf(err))
+	}
+	c, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	fs := &RemoteFS{R: s.d.Runner, SiteID: site, Dir: root, Name: remote.SiteName(site), RsyncPath: in.RsyncPath, Timeout: 30 * time.Second}
+	// The first call opens the connection; the round trip is timed on the
+	// second, as later calls see it.
+	if _, _, err := fs.List(c, "", 1); err != nil {
+		return TestResult{Why: messageOf(err)}, nil
+	}
+	out := TestResult{OK: true}
+	t0 := time.Now()
+	free, ok := fs.Free(c, "")
+	ms := time.Since(t0).Milliseconds()
+	out.RoundTripMs = &ms
+	if ok {
+		out.FreeBytes = &free
+	}
+	line, clean := RsyncVersion(c, s.d.Runner, site, "", remoteRsync(fs))
+	has := line != ""
+	out.Rsync = &has
+	if has {
+		if ver, ok := parseRsyncVersion(line); ok {
+			out.RsyncVersion = itoa(ver[0]) + "." + itoa(ver[1]) + "." + itoa(ver[2])
+		}
+		if !clean {
+			out.Why = "the login prints text before a command runs, which rsync's protocol cannot pass; studio-copy will carry transfers"
+		}
+	}
+	probe := stagingPrefix + "test-" + newID()
+	w := fs.Mkdir(c, probe) == nil
+	if w {
+		fs.RemoveStaging(c, probe)
+	}
+	out.Writable = &w
+	return out, nil
+}
