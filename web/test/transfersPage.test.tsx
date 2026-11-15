@@ -203,7 +203,8 @@ describe('new transfer and the plan', () => {
     expect(within(dialog).getByRole('button', { name: 'Copy 7 files' })).toBeInTheDocument()
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Copy 7 files' }))
-    await waitFor(() => expect(location.hash).toBe('#view=transfers'))
+    // Back to the list, with the new transfer's details open beside it.
+    await waitFor(() => expect(location.hash).toMatch(/^#view=transfers\?transfer=t-new-/))
     window.dispatchEvent(new HashChangeEvent('hashchange'))
     expect(mock.calls.find(c => c.method === 'POST' && c.path === '/api/transfers')?.body).toEqual({ planId: 'plan-1' })
     const row = await waitFor(() => {
@@ -212,9 +213,21 @@ describe('new transfer and the plan', () => {
       return r
     })
     expect(row).toHaveTextContent('Copy 7 files')
-    // The new transfer heads the active list.
-    const active = screen.getByRole('region', { name: 'Active' })
+    // The new transfer heads the active list, behind its details.
+    const active = screen.getByRole('region', { name: 'Active', hidden: true })
     expect(active.querySelector('.xfer-row')).toBe(row)
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Copy 7 files')
+    expect(screen.queryByRole('region', { name: /: files$/ })).toBeNull()
+  })
+
+  it('goes back to the list from New transfer when the sidebar\'s Transfers is clicked', async () => {
+    serve()
+    await openNew()
+    act(() => { window.dispatchEvent(new Event('ade:transfers-home')) })
+    expect(location.hash).toBe('#view=transfers')
+    act(() => { window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    await waitFor(() => expect(screen.queryByRole('region', { name: /: files$/ })).toBeNull())
+    expect(screen.getAllByRole('button', { name: 'New transfer' }).length).toBeGreaterThan(0)
   })
 
   it('names a move by what it does, in a warning button', async () => {

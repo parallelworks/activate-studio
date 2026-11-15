@@ -2980,7 +2980,10 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-ready-head { display: flex; align-items: center; gap: 8px; font-size: 13.5px; flex-wrap: wrap; }
 .xfer-ready-parts { margin: 0; font-size: 12.5px; padding-left: 16px; }
 .xfer-ready.compact { padding: 8px 12px; }
-.xfer-empty-ready { display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(560px, 100%); }
+/* Centered with auto margins: the empty state's action box sizes itself to
+   the ready line's full length, wider than the card, and the card sat at
+   its left. */
+.xfer-empty-ready { display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(560px, 100%); margin-inline: auto; }
 .xfer-empty-ready .xfer-ready { text-align: left; width: 100%; }
 .xfer-empty-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .xfer-settings-add { align-self: flex-start; }

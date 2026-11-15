@@ -214,8 +214,11 @@ export function TransferActivity({
       if (m) transferApi.get(decodeURIComponent(m[1])).then(setOpen, () => {})
     }
     show()
+    // The sidebar's Transfers item closes the details too.
+    const home = () => setOpen(null)
     window.addEventListener('hashchange', show)
-    return () => window.removeEventListener('hashchange', show)
+    window.addEventListener('ade:transfers-home', home)
+    return () => { window.removeEventListener('hashchange', show); window.removeEventListener('ade:transfers-home', home) }
   }, [])
   const closeDetail = () => {
     setOpen(null)

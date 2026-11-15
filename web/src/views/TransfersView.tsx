@@ -27,6 +27,8 @@ export function prefillFor(loc: TransferLocation): { prefill: LocationPrefill; n
 /** The page's two views, kept in the hash so Back returns from one to the other. */
 export const ACTIVITY_HASH = '#view=transfers'
 export const NEW_HASH = '#view=transfers:new'
+/** The list with one transfer's details open. */
+export const transferHash = (id: string) => `${ACTIVITY_HASH}?transfer=${encodeURIComponent(id)}`
 const isNewHash = () => location.hash.startsWith(NEW_HASH)
 
 function useNarrow(query = '(max-width: 900px)'): boolean {
@@ -61,6 +63,11 @@ export function TransfersView() {
   }, [])
   const openNew = () => { location.hash = NEW_HASH }
   const backToActivity = () => { location.hash = ACTIVITY_HASH }
+  // The sidebar's Transfers item always leads back to the list.
+  useEffect(() => {
+    window.addEventListener('ade:transfers-home', backToActivity)
+    return () => window.removeEventListener('ade:transfers-home', backToActivity)
+  }, [])
 
   const [locations, setLocations] = useState<TransferLocation[] | null>(null)
   const [locError, setLocError] = useState('')
@@ -202,7 +209,9 @@ export function TransfersView() {
     setPending(null)
     setHighlight(t.id); setAdded(t)
     setPanes(p => ({ a: { ...p.a, selected: [] }, b: { ...p.b, selected: [] } }))
-    backToActivity()
+    // Back to the list, with the new transfer's details open beside it, as
+    // a click on its row opens them; it runs on the server either way.
+    location.hash = transferHash(t.id)
   }
 
   const moverItems: SelectItem<MoverName>[] = [
