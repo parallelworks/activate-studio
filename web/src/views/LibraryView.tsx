@@ -11,7 +11,9 @@ import { api } from '../api'
 import { Explorer, visibleRowPaths } from '../components/Explorer'
 import { Viewer } from '../components/Viewer'
 import { DagViewer } from '../components/DagViewer'
-import { UploadMenu } from '../components/UploadMenu'
+import { LibraryAddMenu } from '../components/UploadMenu'
+import { AddLibraryDialog, ImportLibrariesDialog, useLibraryAddOffer, type DroppedList } from '../components/LibraryAddDialogs'
+import { checkList, LIST_FORMAT } from '../libraryLists'
 import { TagMenu } from '../components/TagMenu'
 import { sectionAllowed, useAppConfig } from '../config'
 import { collectDropped, collectListed, type UploadItem } from '../upload'
@@ -375,18 +377,44 @@ export function LibraryView({ display, onDisplay }: {
     }
   }, [onDisplay])
 
+  // Adding a library, and importing a library list, in dialogs over this
+  // page, for a viewer who may add libraries (as Settings decides).
+  const libOffer = useLibraryAddOffer()
+  const [addingLibrary, setAddingLibrary] = useState(false)
+  const [importing, setImporting] = useState<{ dropped: DroppedList | null } | null>(null)
+  const libraryAdded = () => { libOffer.reload(); setRefreshKey(k => k + 1) }
+
+  /** A drop of one .json file that the server reads as a library list
+   *  offers its import, with adding the file as it is still a choice. Any
+   *  other drop, or a file the check refuses, is added as files. */
+  const dropped = useCallback(async (dir: string, files: UploadItem[]) => {
+    const one = files.length === 1 ? files[0] : null
+    if (libOffer.allowed && one && !one.linked && /\.json$/i.test(one.rel) && one.file.size <= LIST_MAX_BYTES) {
+      const text = await one.file.text().catch(() => '')
+      const check = text.includes(LIST_FORMAT) ? await checkList(text).catch(() => null) : null
+      if (check) {
+        setImporting({ dropped: { text, check, upload: writableAt(dir) ? () => void uploadItems(dir, files) : undefined } })
+        return
+      }
+    }
+    if (writableAt(dir)) await uploadItems(dir, files)
+  }, [libOffer.allowed, uploadItems, writableAt])
+
   const uploadTo = useCallback(async (dir: string, items: DataTransferItemList) => {
-    await uploadItems(dir, await collectDropped(items))
-  }, [uploadItems])
+    await dropped(dir, await collectDropped(items))
+  }, [dropped])
 
   // The Linux window takes a file manager's drop itself and says where it
-  // landed: a folder row, a file's folder, or the destination in use.
+  // landed: a folder row, a file's folder, or the destination in use. Not
+  // while a dialog about libraries is open over the page.
+  const dialogOpen = addingLibrary || importing !== null
   useEffect(() => onShellDrop(({ x, y, files }) => {
+    if (dialogOpen) return
     const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('.tree-row[data-path]')
     const at = row?.dataset.path
     const dir = at === undefined ? targetDir : row?.classList.contains('dir') ? at : at.split('/').slice(0, -1).join('/')
     if (writableAt(dir)) void uploadItems(dir, collectListed(files))
-  }), [targetDir, uploadItems, writableAt])
+  }), [targetDir, uploadItems, writableAt, dialogOpen])
 
   const selectedFile = display?.kind === 'file' ? display.target : null
   const [dropOver, setDropOver] = useState(false)
@@ -396,11 +424,12 @@ export function LibraryView({ display, onDisplay }: {
   useEffect(() => () => selectLibraryEntry(null), [])
 
   return (
+    <>
     <div
       className={`library ${dropOver ? 'drop-over' : ''}`}
       onDragOver={e => { e.preventDefault(); setDropOver(true) }}
       onDragLeave={() => setDropOver(false)}
-      onDrop={e => { e.preventDefault(); setDropOver(false); if (writableAt(targetDir)) void uploadTo(targetDir, e.dataTransfer.items) }}
+      onDrop={e => { e.preventDefault(); setDropOver(false); if (writableAt(targetDir) || libOffer.allowed) void uploadTo(targetDir, e.dataTransfer.items) }}
     >
       <div className="library-card card">
         {railCollapsed ? (
@@ -434,7 +463,9 @@ export function LibraryView({ display, onDisplay }: {
                     icon={<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="8" height="8" rx="2"/><path d="M4.5 6l1.6 1.6L9 4.7"/><path d="M12.5 6.5v5a1.5 1.5 0 0 1-1.5 1.5H6"/></svg>}
                   />
                   <RefreshButton iconOnly size="sm" onRefresh={() => setRefreshKey(k => k + 1)} />
-                  <UploadMenu
+                  <LibraryAddMenu
+                    onAddLibrary={libOffer.allowed ? () => setAddingLibrary(true) : undefined}
+                    onImport={libOffer.allowed ? () => setImporting({ dropped: null }) : undefined}
                     readOnly={inAll ? null : readOnlyAt('')}
                     targetDir={targetDir}
                     onTargetDir={setTargetDir}
@@ -488,7 +519,7 @@ export function LibraryView({ display, onDisplay }: {
                 rootLabel={cfg.kbLabel}
                 multiSelected={multiSel}
                 onToggleMulti={toggleMulti}
-                onDropInto={(dir, items) => { if (writableAt(dir)) void uploadTo(dir, items) }}
+                onDropInto={(dir, items) => { if (writableAt(dir) || libOffer.allowed) void uploadTo(dir, items) }}
                 onSelectRange={selectRange}
                 onMoveInto={(dir, paths) => void moveInto(dir, paths)}
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
@@ -612,5 +643,18 @@ export function LibraryView({ display, onDisplay }: {
         {deleteTarget?.error ? <Callout tone="error" size="sm">{deleteTarget.error}</Callout> : undefined}
       </ConfirmModal>
     </div>
+    {/* Outside the page's drop target, so a file dropped on a dialog is the
+        dialog's alone. */}
+    {libOffer.allowed && (
+      <>
+        <AddLibraryDialog open={addingLibrary} onClose={() => setAddingLibrary(false)} offer={libOffer} onAdded={libraryAdded} />
+        <ImportLibrariesDialog open={importing !== null} dropped={importing?.dropped} onClose={() => setImporting(null)} onImported={libraryAdded} />
+      </>
+    )}
+    </>
   )
 }
+
+/** The largest .json file a drop reads to see whether it is a library
+ *  list; a list is a few kilobytes. */
+const LIST_MAX_BYTES = 1 << 20

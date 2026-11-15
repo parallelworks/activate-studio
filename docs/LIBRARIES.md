@@ -63,8 +63,22 @@ kept in `libraries.json` under the index base, or, for those over ssh or
 built on a cluster, in the user's own list (below).
 
 *From a library list:* a file exported from another Studio, imported in
-Settings, Indexing, Libraries, in Add a library, or in setup (see "Library
-lists").
+Settings, Indexing, Libraries, in Add a library, from the Library's Add
+menu, or in setup (see "Library lists").
+
+*From the Library page:* the arrow beside **+ Add** opens a menu of **Add
+files…**, **Add a library…** and **Import a library list…**. The last two
+open the Settings components (`AddLibrary`, `LibraryImport`) in dialogs
+over the page (`web/src/components/LibraryAddDialogs.tsx`), so they work
+with Settings out of view. The arrow is shown when the viewer may add a
+library, from the same answers the forms use: `canBuild` in `GET
+/api/libraries` (sign-in off) offers everything; with sign-in on, a
+viewer who has a list of their own (`available`) and can use pw ssh
+(`pwOffered`) or the platform's workflow (`workflow` with the client
+config's `platform`). Otherwise **+ Add** is the button alone. An import
+that adds every ticked library closes its dialog and reloads the client
+config, so the libraries join the switcher; one with a failure stays open
+on each entry's result.
 
 ## The Libraries page
 
@@ -237,9 +251,16 @@ index and searches it as themselves. That is the administrator's export of
 a root-built index ([`ACCESS-CONTROL.md`](ACCESS-CONTROL.md)).
 
 *Import:* **Import…** in Settings, Indexing, Libraries, **Import a library
-list from a file…** in Add a library, and **Import a library list from
-your administrator** on setup's Other libraries step take the file,
-chosen or pasted. `POST /api/libraries/import/check` reads it and answers
+list from a file…** in Add a library, **Import a library list…** in the
+Library's Add menu, and **Import a library list from your administrator**
+on setup's Other libraries step take the file, chosen, pasted, or dropped
+onto the import. On the Library page, where the Add menu offers
+libraries, one `.json` file dropped onto the page or a folder in the
+tree, under 1 MB and naming the list format, is checked with `POST
+/api/libraries/import/check` first: a list opens the import with
+**Add the file to the library instead** beside it, and anything the check
+refuses is added as a file, as before. The Linux window's own drop, which
+hands over paths and not the file's text, always adds files. `POST /api/libraries/import/check` reads it and answers
 each entry normalized, with a state:
 
 - *new*: ticked;

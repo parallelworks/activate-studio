@@ -1,8 +1,17 @@
-import { useState } from 'react'
+import { useState, type DragEvent } from 'react'
 import { Button, Callout, Checkbox, FileButton, Input, StatusLabel, Textarea } from '@parallelworks/ui'
 import { type CheckedEntry, type ImportResult, type ListCheck, checkList, destinationWith, importEntry, kindLabel } from '../libraryLists'
 
 const errText = (e: unknown) => String((e as Error)?.message ?? e)
+
+/** The entries ticked at first: those not added yet. */
+const tickedOf = (c: ListCheck) => new Set(c.entries.filter(e => e.state === 'new').map(e => e.index))
+/** The user name for each ssh entry: the file's, or the login here. */
+function usersOf(c: ListCheck): Record<number, string> {
+  const u: Record<number, string> = {}
+  for (const e of c.entries) if (e.entry?.kind === 'ssh') u[e.index] = e.user || c.localUser || ''
+  return u
+}
 
 const STATE_TEXT: Record<CheckedEntry['state'], string> = {
   new: 'Not added yet', present: 'Already added', invalid: 'Cannot be read', unavailable: 'Cannot be added here',
@@ -19,42 +28,54 @@ const RESULT_TEXT = { added: 'Added', failed: 'Failed', skipped: 'Skipped' } as 
  * ssh has a user name to connect as, the login name here when the file
  * names none. Import adds each ticked entry in turn through the Add a
  * library routes, and says for each one whether it was added, failed and
- * why, or was skipped.
+ * why, or was skipped. A file can also be dropped onto it.
  */
-export function LibraryImport({ onAdded, onDone }: {
+export function LibraryImport({ onAdded, onDone, initial }: {
   /** One library was added. */
   onAdded?: (lib: { id: string; label: string }) => void
-  /** The import finished; `added` is how many were added. */
-  onDone?: (added: number) => void
+  /** The import finished; `added` is how many were added, `failed` how
+   *  many could not be. */
+  onDone?: (added: number, failed: number) => void
+  /** A list already read and checked, such as a file dropped on the
+   *  Library page: shown at once. */
+  initial?: { check: ListCheck }
 }) {
   const [pasting, setPasting] = useState(false)
   const [text, setText] = useState('')
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState('')
-  const [check, setCheck] = useState<ListCheck | null>(null)
-  const [ticked, setTicked] = useState<Set<number>>(new Set())
-  const [users, setUsers] = useState<Record<number, string>>({})
+  const [check, setCheck] = useState<ListCheck | null>(initial?.check ?? null)
+  const [ticked, setTicked] = useState<Set<number>>(() => (initial ? tickedOf(initial.check) : new Set()))
+  const [users, setUsers] = useState<Record<number, string>>(() => (initial ? usersOf(initial.check) : {}))
   const [running, setRunning] = useState(false)
   const [results, setResults] = useState<Record<number, ImportResult>>({})
+  const [over, setOver] = useState(false)
 
   const read = async (t: string) => {
     setChecking(true); setError(''); setCheck(null); setResults({})
     try {
       const c = await checkList(t)
       setCheck(c)
-      setTicked(new Set(c.entries.filter(e => e.state === 'new').map(e => e.index)))
-      const u: Record<number, string> = {}
-      for (const e of c.entries) if (e.entry?.kind === 'ssh') u[e.index] = e.user || c.localUser || ''
-      setUsers(u)
+      setTicked(tickedOf(c))
+      setUsers(usersOf(c))
     } catch (e) { setError(errText(e)) } finally { setChecking(false) }
   }
   const onFiles = (files: File[]) => { void files[0]?.text().then(read, e => setError(errText(e))) }
+  // A file dropped here is read as one chosen; the drop goes no further, so
+  // the page under the dialog does not take it as files to add.
+  const dragOver = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); if (!running) setOver(true) }
+  const drop = (e: DragEvent) => {
+    e.preventDefault(); e.stopPropagation(); setOver(false)
+    const files = [...(e.dataTransfer?.files ?? [])]
+    if (!running && files.length) onFiles(files)
+  }
 
   const toggle = (i: number, on: boolean) => setTicked(t => { const n = new Set(t); if (on) n.add(i); else n.delete(i); return n })
   const run = async () => {
     if (!check) return
     setRunning(true)
     let added = 0
+    let failed = 0
     for (const c of check.entries) {
       if (!ticked.has(c.index) || !c.entry) {
         if (c.state === 'new') setResults(r => ({ ...r, [c.index]: { state: 'skipped', text: 'Not ticked.' } }))
@@ -63,19 +84,22 @@ export function LibraryImport({ onAdded, onDone }: {
       const r = await importEntry(c.entry, c.entry.kind === 'ssh' ? users[c.index] ?? '' : undefined)
       setResults(rs => ({ ...rs, [c.index]: r }))
       if (r.state === 'added' && r.id) { added++; onAdded?.({ id: r.id, label: r.label ?? c.entry.label ?? r.id }) }
+      if (r.state === 'failed') failed++
     }
     setTicked(new Set())
     setRunning(false)
-    onDone?.(added)
+    onDone?.(added, failed)
   }
 
   const done = Object.keys(results).length > 0
   const count = ticked.size
   return (
-    <div className="lib-import">
+    <div className={`lib-import${over ? ' drop-over' : ''}`} data-testid="library-import"
+      onDragOver={dragOver} onDragEnter={dragOver} onDragLeave={() => setOver(false)} onDrop={drop}>
       <div className="lib-import-source">
         <FileButton variant="secondary" size="sm" accept=".json,application/json" loading={checking} disabled={running} onFiles={onFiles}>Choose a file…</FileButton>
         <Button variant="ghost" size="sm" aria-expanded={pasting} disabled={running} onClick={() => setPasting(p => !p)}>{pasting ? 'Hide the text box' : 'Paste the list instead'}</Button>
+        <span className="muted lib-import-drop">or drop the file here</span>
       </div>
       {pasting && (
         <div className="lib-import-paste">

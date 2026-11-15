@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
-import { Button, Input, Popover, Tooltip } from '@parallelworks/ui'
+import { ActionMenu, Button, buttonClasses, Input, Popover, Tooltip, type MenuEntry } from '@parallelworks/ui'
+import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { api } from '../api'
 import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
 import { chooseUpload, shellListsFolders } from '../nativeShell'
@@ -8,13 +9,21 @@ import { startUpload } from '../transfers'
 /** Settings > Indexing > Libraries with its Add a library form open. */
 export const ADD_LIBRARY_HASH = '#view=settings:libraries?add=1'
 
-export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly }: {
+/** Add files: the + Add button and the panel it opens, to choose or drop
+ *  files and folders, make a folder, or fetch a page by URL. */
+export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onOpenChange, onAddLibrary }: {
   /** Why nothing can be added here (a read-only library): the button is
    *  disabled and says so. */
   readOnly?: string | null
   targetDir: string
   onTargetDir: (dir: string) => void
   onDone: (savedPaths: string[]) => void
+  /** The panel's state, where the page opens it too (the Add menu's Add
+   *  files). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Offers Add a library at the foot of the panel. */
+  onAddLibrary?: () => void
 }) {
   const [url, setUrl] = useState('')
   const [newDir, setNewDir] = useState('')
@@ -76,12 +85,14 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly }: {
   }
 
   if (readOnly) {
-    return <Tooltip content={readOnly}><Button variant="primary" size="sm" disabled focusableWhenDisabled>+ Add</Button></Tooltip>
+    return <Tooltip content={readOnly}><Button variant="primary" size="sm" disabled focusableWhenDisabled className={onAddLibrary ? 'add-split-main' : undefined}>+ Add</Button></Tooltip>
   }
 
   return (
     <Popover
-      trigger={<Button variant="primary" size="sm">+ Add</Button>}
+      trigger={<Button variant="primary" size="sm" className={onAddLibrary ? 'add-split-main' : undefined}>+ Add</Button>}
+      open={open}
+      onOpenChange={onOpenChange}
       align="start"
       initialFocus="popup"
       aria-label="Add to the library"
@@ -145,8 +156,56 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly }: {
         <Button variant="primary" size="sm" onClick={sendUrl} disabled={busy}>Add</Button>
       </div>
       {note && <div className="upload-status">{note}</div>}
-      <div className="field-label">Or add another library</div>
-      <Button variant="outline" size="sm" onClick={() => { location.hash = ADD_LIBRARY_HASH }}>Add a library…</Button>
+      {onAddLibrary && (
+        <>
+          <div className="field-label">Or add another library</div>
+          <Button variant="outline" size="sm" onClick={() => { onOpenChange?.(false); onAddLibrary() }}>Add a library…</Button>
+        </>
+      )}
     </Popover>
+  )
+}
+
+/**
+ * The Library's + Add: a split button. + Add opens the Add files panel as
+ * it always has; the arrow beside it opens a menu of Add files, Add a
+ * library and Import a library list. The arrow is there only for a viewer
+ * who may add libraries (`onAddLibrary` and `onImport` given); otherwise
+ * + Add is the button alone.
+ */
+export function LibraryAddMenu({ onAddLibrary, onImport, readOnly, ...files }: Omit<Parameters<typeof UploadMenu>[0], 'open' | 'onOpenChange' | 'onAddLibrary'> & {
+  /** Opens Add a library; absent where the viewer may not add one. */
+  onAddLibrary?: () => void
+  /** Opens Import a library list; absent where the viewer may not. */
+  onImport?: () => void
+}) {
+  const [filesOpen, setFilesOpen] = useState(false)
+  // A choice that opens a panel or dialog runs once the menu has closed and
+  // handed focus back, so the panel keeps the focus it takes.
+  const pending = useRef<(() => void) | null>(null)
+  const later = (fn: () => void) => () => { pending.current = fn }
+  const button = <UploadMenu {...files} readOnly={readOnly} open={filesOpen} onOpenChange={setFilesOpen} onAddLibrary={onAddLibrary} />
+  if (!onAddLibrary && !onImport) return button
+  const items: MenuEntry[] = [
+    readOnly
+      ? { label: 'Add files…', onClick: () => {}, disabled: true, disabledReason: readOnly }
+      : { label: 'Add files…', description: 'Files, folders, or a page by URL', onClick: later(() => setFilesOpen(true)) },
+    ...(onAddLibrary ? [{ label: 'Add a library…', description: 'An index or folder here or on another system', onClick: later(onAddLibrary) }] : []),
+    ...(onImport ? [{ label: 'Import a library list…', description: 'A file exported from another Studio', onClick: later(onImport) }] : []),
+  ]
+  return (
+    <span className="add-split">
+      {button}
+      <ActionMenu label="More ways to add" align="end" size="sm" items={items}
+        triggerClassName={`${buttonClasses({ variant: 'primary', size: 'sm' })} add-split-more`}
+        onOpenChange={o => {
+          if (o || !pending.current) return
+          const fn = pending.current
+          pending.current = null
+          window.setTimeout(fn, 0)
+        }}>
+        <ChevronDownIcon aria-hidden="true" />
+      </ActionMenu>
+    </span>
   )
 }

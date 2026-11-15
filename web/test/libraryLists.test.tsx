@@ -83,7 +83,7 @@ describe('importing a library list', () => {
     expect(screen.getByText(/Connects as alice@index.example/)).toBeInTheDocument()
 
     fireEvent.click(button('Add 2 libraries'))
-    await waitFor(() => expect(onDone).toHaveBeenCalledWith(1))
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(1, 1))
     expect(calls[1]).toMatchObject({ method: 'POST', url: '/api/libraries', body: { label: 'Shared drive', indexRoot: '/mnt/gufi/shared' } })
     expect(calls[2]).toMatchObject({
       method: 'POST', url: '/api/user-libraries/ssh',
