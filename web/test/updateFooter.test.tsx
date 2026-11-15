@@ -119,6 +119,8 @@ describe('a newer version, in the footer', () => {
   it('in the app: "update available" beside the version, and the Build panel\'s What\'s new opens every newer version\'s changes, newest first, each opening to its description', async () => {
     stubServer(server())
     render(<StatusFooter />)
+    // The one tinted action in the footer.
+    expect(await action('update available')).toHaveClass('footer-update-available')
     fireEvent.click(await action('update available'))
     const panel = await screen.findByTestId('build-updates')
     expect(panel.textContent).toContain('Version v1.142 is available')

@@ -570,7 +570,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
               update failed
             </Button>
           ) : update ? (
-            <Button variant="ghost" size="xs" className="footer-sync footer-update" title={`Version ${update} is available. Opens the Build panel, with Update now.`}
+            <Button variant="ghost" size="xs" className="footer-sync footer-update footer-update-available" title={`Version ${update} is available. Opens the Build panel, with Update now.`}
               onClick={() => setBuildOpen(true)}>
               update available
             </Button>
