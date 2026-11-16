@@ -388,15 +388,23 @@ export function durationText(seconds: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 
+/** Why a location cannot be the source of an action, or null when it can:
+ *  it must be reachable, and writable for a move. */
+export function sourceWhy(action: TransferAction, loc: TransferLocation | null): string | null {
+  if (!loc) return 'Choose a location to send from.'
+  if (!loc.available) return `${loc.label} is not reachable${loc.why ? `: ${loc.why.replace(/\.$/, '')}` : ''}.`
+  if (action === 'move' && !loc.writable) return `${loc.label} is read only, so nothing can be moved out of it.`
+  return null
+}
+
 /** The source paths a pane offers for an action, or why it offers none. */
 export function sourcePaths(
   action: TransferAction,
   pane: { location: TransferLocation | null; path: string; selected: string[]; entries: BrowseEntry[] },
 ): { paths: string[] } | { why: string } {
   const loc = pane.location
-  if (!loc) return { why: 'Choose a location to send from.' }
-  if (!loc.available) return { why: `${loc.label} is not reachable${loc.why ? `: ${loc.why.replace(/\.$/, '')}` : ''}.` }
-  if (action === 'move' && !loc.writable) return { why: `${loc.label} is read only, so nothing can be moved out of it.` }
+  const why = sourceWhy(action, loc)
+  if (why || !loc) return { why: why ?? '' }
   if (!loc.browsable) {
     // Nothing to tick: the path typed is what is sent.
     return pane.path ? { paths: [pane.path] } : { why: `Type a path in ${loc.label} to send.` }
@@ -410,6 +418,20 @@ export function sourcePaths(
   }
   if (!pane.selected.length) return { why: 'Select files or folders to send.' }
   return { paths: pane.selected.map(n => joinPath(pane.path, n)) }
+}
+
+/** The library location id Transfers uses for a library. */
+export const libraryLocation = (libraryId: string) => `library:${libraryId}`
+
+/** A Search or Query path as a transfer takes it: relative to the
+ *  library's root, with no leading "./" or "/" and no trailing "/". Both
+ *  pages print paths relative to the index root, which mirrors the
+ *  library's root; a cell that is absolute (the index root itself, or a raw
+ *  SELECT's own text) names no path inside the library, and gives null. */
+export function libraryRelative(p: string): string | null {
+  const s = p.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '')
+  if (!s || s === '.' || s.startsWith('/') || s.split('/').includes('..')) return null
+  return s
 }
 
 /** Why a pane cannot receive, or null when it can. */

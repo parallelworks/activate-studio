@@ -312,8 +312,17 @@ describe('the plan dialog', () => {
   })
 })
 
+/** The list groups finished transfers by day, and the mock dates them
+ *  hours before now: near midnight, "2 hours ago" is yesterday. Tests that
+ *  name the day run at a fixed afternoon, with only the date faked. */
+function atAfternoon() {
+  vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 10, 14, 15, 0, 0))
+}
+
 describe('activity', () => {
   it('opens on the list, active first: progress, rate and time left, the assistant\'s with a link, failures with their reason', async () => {
+    atAfternoon()
     serve()
     history.replaceState(null, '', `${location.pathname}#view=transfers`)
     render(<TransfersView />)
@@ -444,6 +453,7 @@ describe('history at scale', () => {
   const doneReads = () => mock.calls.filter(c => c.path.startsWith('/api/transfers?state=done')).map(c => new URL(c.path, 'http://x').searchParams)
 
   it('pages 2,000 finished transfers 50 at a time, searches and filters on the server, and stays quick with all of them loaded', async () => {
+    atAfternoon()
     serve({ transfers: [], finished: 2000 })
     render(<TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />)
     await waitFor(() => expect(lines()).toBe(50))
