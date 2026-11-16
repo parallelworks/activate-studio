@@ -2,7 +2,631 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
-## v1.201 (2026-11-15)
+## v1.201 (2026-11-16)
+
+### Fix two CI flakes: Node proxy in full duplex (a streamed POST answer could be cut), and the Transfers history test's time limit (#716)
+
+The proxy's transport sends a request body to Node from its own goroutine,
+and after the body's last byte it reads once more to see the end. In half
+duplex, net/http closes an unread request body when the answer's header is
+written. When Node answered a POST with a stream between those two reads,
+the transport's last read failed after the close, and the transport dropped
+its connection to Node, ending the stream after its first event.
+
+This is the cause of the occasional TestStreamsAreNotBuffered failure in
+CI, and a chat stream (/api/chat/stream) could be cut the same way. In a
+stress run of 400,000 streamed POSTs through a ReverseProxy, 17 were cut
+without full duplex and none with it.
+
+- nodeProxy enables full duplex (http.ResponseController) for requests
+  with a body, then hands them to the ReverseProxy. The server still
+  drains or closes what is left of a body when the handler returns.
+- TestProxyIsFullDuplex sends the second half of a body only after the
+  answer's first event. It fails in half duplex.
+- The streaming test's fake Node ends when the proxy hangs up, so a
+  failure no longer waits 30 s.
+
+Second commit: The history test paged, searched, filtered and then loaded every one of
+2,000 finished transfers under one 60 s limit. It takes about 18 s in
+jsdom on a fast machine at every commit since it was added (no
+regression), and a CI runner running test files in parallel took it past
+60 s on #716. Loading every page is now its own test with its own setup
+and a 180 s limit. Its bound on adding a page to a 1,950-row list (under
+1.5 s) is unchanged, so a slower list still fails it.
+
+### Refresh library views after any index change; steady Transfers settings; sidebar footer on short windows (#717)
+
+Fixes from the third desktop run on Preview v1.200.7.
+
+## Library tree and Details stale after a transfer that ended while Transfers was closed
+
+Cause: the shared index status poll runs every 15 s when idle and told the views (`ade-kb-changed`) only when it saw a job go from running to idle. The re-index after a transfer takes well under 15 s, so the poll never saw it run. The Transfers drawer sends the event itself, but only while it is open.
+
+Fix: `GET /api/index/status` now carries `changes`, a count that `afterChange` increments on every change to the main folder's index (job, re-index after a transfer or upload, sync). `indexActivity.ts` sends `ade-kb-changed` when the count differs from the last read. No first read, no new timer. The Library tree reloads through its existing `refreshTick`, which keeps open folders and the selection. Library Details now reads the selection again on the event.
+
+## Stats and Library Details counts stale
+
+Cause: Stats never refetched, because the event above was never sent. On the server, Library Details counts (`search` count cache, 10 min for the main library, plus a 20 s details cache) were never dropped in Go-only mode, because nothing handled a `dbList` change. `InvalidateCounts` was only called from library builds.
+
+Fix: `search.Of` wraps `Providers.Changed` so that `dbList` calls `InvalidateCounts`, which now also clears the details cache. `kb.New` does the same for the Stats cache, so a change made outside the kb module, such as a sweep, also drops it. Go tests: `TestInvalidateCountsDropsDetails`, `TestIndexChangeDropsStatsCounts`, `TestAfterChangeCounts`, and a `changes` check in `TestBuildSyncAndDelete`.
+
+## Settings, Transfers: "Rclone is switched off in Settings, Transfers" on that page
+
+The rclone line showed the server's detection reason for the saved setting. A switch that differs from the saved value now shows "Turns on when you save." or "Turns off when you save." (for rclone, followed by "Studio then looks for the program and its remotes."). When saved off, it shows "Off." and never the server's reason. rsync, CONDUIT and library hosts use the same note.
+
+## Switching rclone on moved the controls below it
+
+The Program fields and the CONDUIT server and folders now stay in place, disabled while their mover is off. Each switch note stacks its saved-state text and its pending text in one grid cell, with the inactive one hidden, so the line keeps the size of the longer text. The rclone remotes table describes the saved setting and only changes on Save.
+
+## Sidebar footer cut off at 600 px tall
+
+The whole sidebar scrolled, so the footer went below the fold. On desktop widths, the sidebar no longer scrolls. Only the page list scrolls, and a hairline marks an edge that has more items past it. The brand, search, Settings, Help, Dark mode and the status footer stay whole. The footer's content is unchanged, and the phone layout is untouched.
+
+## Line through the Transfer dialog (investigated, not changed)
+
+There is no stacking cause. The dialog is portalled with `position: fixed` and z 1200. The only layered sidebar element is the resize edge, at z 6. The dialog's 150 ms opacity and scale entry would show everything behind it faintly, but only the border showed. Playwright WebKit and Chromium frames at 0, 30, 60, 100, 160 and 400 ms at 900x700 show no line. This points to a WebKitGTK compositing artifact.
+
+## Tests
+
+- vitest:
+  - `indexChanged.test.ts` (new).
+  - Details refetch in `libraryDetails.test.tsx`.
+  - Switch notes and steady fields in `transfersSettings.test.tsx`.
+  - CSS rules in `transfersLayout.test.ts`.
+- tsc and both web test configs: 654 and 640 pass.
+- Go: `go vet ./...` and `go test ./...` pass.
+- Playwright WebKit and Chromium against a scratch server with GUFI:
+  - Each Save switch (rclone, rsync twice, library hosts twice) leaves Save and the default mover at the same offset.
+  - The footer is fully visible at 1280x600, 900x600 and 1280x500. The list scrolls only at 500.
+  - A move started from Search in a second window: the Library page drops the file from the tree in 11 to 13 s, keeps the folder open and selected, and Details and Stats both drop by one.
+
+## v1.200.7 (2026-11-16)
+
+### Transfers: start a transfer from selected Search and Query results (#713)
+
+Adds **Transfer…** to the selection toolbars of Search and Query, beside Labels…, so selected results can be copied or moved to another place.
+
+## What it does
+
+- **Button.** Shown only when this viewer has the Transfers page (the server answers the locations probe and the pages setting shows Transfers). It is enabled once something is selected. In Query it follows the labels rule: an explicit `path` or `directory` column. A row whose library is `all` (totalled over libraries) can still be labeled but is not counted for a transfer. Its checkbox cell and the button's tooltip say why.
+- **Dialog** (`web/src/components/ResultsTransfer.tsx`). The title is "Transfer N items" and the line under it groups the items by library ("12 files in Projects, 3 in Archive"). It offers Copy or Move, a destination, and Replace files that already exist. The destination is the Transfers page's own `TransferPane` with a new `selectable={false}` prop: the same location picker, breadcrumbs, path box, filter and folder browsing, with no checkboxes. It opens on the first item's library when that can take files.
+- **Several libraries.** A transfer reads from one location, so the dialog makes one plan per library and the existing `TransferPlanDialog` confirms them one at a time. A new `step` prop adds "(1 of 2)" to its title. Cancel stops the plans after it. A library whose files cannot be reached is left out, and the dialog shows why before Continue. A move out of a read-only library is refused the same way, with a **Copy instead** button. When the server refuses a plan, its reason is shown and the rest can continue without that library. The source checks come from a new `sourceWhy()` in `transferApi.ts`, which `sourcePaths()` now uses too.
+- **After a start.** The page stays on Search or Query. Each started transfer shows a toast ("Transfer started", "Copy 3 files from Projects to Archive") with an **Open in Transfers** link to `#view=transfers?transfer=<id>`, and the selection clears. This is a deliberate choice: the person is working on this page and may start several transfers from it, so it should not jump to Transfers.
+- **Paths.** Both pages print paths relative to the index root, which mirrors the library root, and that is the form transfer paths take. I checked this against a live server. `libraryRelative()` removes a leading `./` and rejects absolute cells such as the index root's own row in a directory query.
+- **Selection keys.** Search and Query now key the selection by library and path, so the same path in two libraries counts as two items. Labels still get each path once.
+- **Server.** Nothing changed on the server. The dialog uses the same `locations`, `settings`, `plan` and `start` calls as the Transfers page, and the server decides what is readable, writable and reachable.
+
+Rebased onto main after #712 merged, and uses its `transferHash(id)`.
+
+Also fixes two Transfers list tests that failed shortly after midnight UTC, on main as well: the mock dates finished transfers hours before now, so "Today" and "Yesterday" moved. They now run at a fixed afternoon, faking only the date.
+
+## Tests
+
+- `web/test/resultsTransfer.test.tsx` covers:
+  - when the button shows: Transfers available or not, and Query with and without a path column;
+  - Query rows totalled over all libraries;
+  - grouping by library;
+  - one plan for one library;
+  - two plans stepped "1 of 2" and "2 of 2", with Cancel stopping the rest;
+  - an unreachable library left out with its reason;
+  - Move refused for a read-only source, with Copy instead;
+  - a plan the server refuses, with its reason shown;
+  - the toast and its link after a start;
+  - the selection keyed by library and path;
+  - labels still working.
+- `tsc` passes, and the web suite passes under both configs.
+- Live check against a scratch server, in Chromium and WebKit, light and dark, at 1400 px and 800 px. A real copy of two Search results into another folder of the same library landed both files. The toast link opened that transfer in Transfers, and the selection cleared.
+
+### Transfers: layout and correctness fixes from the desktop runs (#715)
+
+Fixes for what two desktop runs of the Linux app found in Transfers, Search and Query, at 1920x1080, 1280x800 and 900x700.
+
+**New transfer**
+- The file lists size their columns by the pane's width (a container query), not the window's. Modified hides below a 440px pane and Size below 270px, and the Name column keeps at least 120px and ends long names with an ellipsis. Before, at 1280 wide with the Status pane open, the Name column was zero wide.
+- The two Start buttons stay put when their notes change: each has half of the middle column, with the first button's note above it and the second's below.
+
+**Query**
+- The results never shrink. They take the rest of the pane where there is room, and the page scrolls to them where there is not; the rows keep at least 240px. This predates #713: the same build at 935dfb7 shrank the results the same way (248px at 1280x800, 84px at 900x700).
+
+**Transfer from Search or Query**
+- The destination starts at a place that takes files other than the items' libraries, a place other than a library first, as the Transfers page picks its second side. With none, nothing is chosen.
+- A refused plan's reason is scrolled into view and focused.
+- Several starts show one toast, updated in place: "2 transfers started", with Open Transfers to the list. One start keeps Open in Transfers.
+
+**Transfers list**
+- The details drawer covers the Transfers view below the page header, so its close button and the Status pane toggle no longer overlap.
+- Counts are singular where they are one ("1 of 1 file", "1 original removed", "sha256 matches for the file"), in the web and in the server's events and errors.
+- When the list sees a transfer end that wrote into the main library or moved files out of it, it fires `ade-kb-changed`, which the Library tree and its details already listen to. The server's re-index after a move out was already in place; a Go test now covers it with one file.
+
+**Locations API**
+- `indexed` now means the library has an index (`Primary || Caps.Index`), as the web shows it with its Indexed badge. The old meaning, that Studio updates the index after a transfer, is `LibraryLoc.Reindexed` and is used only on the server.
+
+**Tests**
+- vitest: CSS rules for the columns, container queries and minimum name width, the Start buttons and the Query results; the default destination; the refusal focus; plurals; the change event; the combined toast; the contained drawer.
+- Go: `indexed` for an imported library with an index, singular event text, and a move out of the main library telling its index.
+- Checked in Playwright WebKit and Chromium against a scratch server: names show at 1280x800, 1440x900 and 1920x1080 with the Status pane open; Query rows are reachable at 1280x800, 900x700 and 1280x600; the details close button and the toggle are apart.
+
+**For the desktop rerun**
+- WebKitGTK's support for container queries in the packaged app.
+- The Library tree refresh is fired by the Transfers list, so it needs the Transfers page open when the transfer ends. A transfer started from Search that ends while you are on another page does not refresh the tree.
+
+### Transfers settings: a revision stops a stale Save from deleting saved locations (#714)
+
+Settings, Transfers could delete saved locations. The section read the
+settings once and kept that copy while the Settings page stayed mounted.
+A location saved later from the Transfers page or the chat never showed
+there, and the next Save sent the old list back. The server replaced the
+whole section, so the new location was gone.
+
+Server: a revision on the section
+- GET /api/transfers/settings and every PUT return `revision`, a short
+  hash of the stored section. A PUT must send back the revision it was
+  edited from. A stale one is refused with 409 ("Transfers settings
+  changed since this page loaded ...") and nothing is written; a missing
+  one is a 400 that names `revision`.
+- The revision check and the write, and each AddSavedLocation, run under
+  one service lock, so an add cannot land between a PUT's check and its
+  write.
+- Settings.Check copies the lists it cleans, instead of changing the
+  caller's in place.
+
+Why a revision and not a merge by id: the PUT carries every field of the
+section (folders, movers, defaults, library hosts), and a stale PUT can
+undo any of them, not only saved locations. A revision stops all of
+those with one rule, keeps PUT as a plain replace, and needs no new
+routes or removal fields. The client already knows each change it makes
+(add, edit by id, remove by id, add or remove a folder), so it can
+replay that change on a fresh read after a 409.
+
+Settings, Transfers
+- The section reads the settings again each time it is shown, when the
+  window regains focus or becomes visible, and when the Transfers page
+  saves a location (a window event). With unsaved edits, only the saved
+  locations and folders are taken from that read; the edits stay.
+- Saved locations: Add uses POST /api/transfers/settings/locations.
+  Edit and Remove act by id and save at once against the latest read,
+  reading again and retrying once on a 409.
+- Folders on this computer: Add folder, Remove and the built-in folder
+  switches save at once, with a toast, the same way. A refused folder
+  shows its reason under the field and keeps what was typed.
+- The other fields save with Save, and "Unsaved changes" shows beside it.
+  On a 409 the page reads again and lays the edits over it. With no
+  conflict it saves them on top, and the toast says the settings had
+  changed elsewhere and those changes are kept. When another change touched the same field, nothing is
+  saved, a callout says which fields, and Reload takes the saved
+  settings.
+- A long folder path ends in an ellipsis with the full path in its title,
+  and the row's Remove stays in view. The section no longer scrolls
+  sideways at 900 or 1280 px.
+- Saved locations: a long name, host or folder ends in an ellipsis with
+  the full value in its title, never breaking inside a word. Where the
+  section is narrow, each location stacks one field per line.
+- Add folder sits on its own line at the left, so a new row's Remove
+  never lands where Add folder was.
+
+Transfers page: "Save a location..." now puts the test result in the
+success toast, in the words Settings uses (for example "Reached over SFTP
+(the account takes SFTP only), folder exists, rsync not available,
+Studio copy will be used, ...").
+
+Why the chat-saved location did not show after Ctrl+R: the chat's save
+(TestAndSave, then AddSavedLocation) writes the same settings store that
+GET reads, and the store's cache follows the file's size, time and inode,
+so the server side was right (now covered by a test). On Linux the app
+window has no menu, and WebKitGTK has no reload key of its own, so
+Ctrl+R did not reload the page. The section kept its old copy, which is
+the same stale copy as above. The section now reads again on show and on
+focus, so no reload is needed.
+
+Tests
+- Go: a stale PUT is refused and the location stays; a PUT without a
+  revision is refused; concurrent adds and PUTs lose neither (this test
+  fails without the shared lock); GET after TestAndSave lists the new
+  location, through the file-backed store.
+- vitest: reload when shown again, on focus and on the Transfers page's
+  event, without touching unsaved edits; the reported loss end to end; a
+  409 merged and saved; a 409 with a conflict and Reload; remove by id
+  after a 409; folders saved at once; the long-path rules; the toast
+  carries the test summary.
+- Checked in WebKit against a scratch server: the original repro keeps
+  the location, and Settings, Transfers has no horizontal scroll at 900
+  or 1280 px with a long folder path.
+
+Docs: HELP.md (Settings, Transfers) and TRANSFERS.md (the revision rule
+and how the page saves).
+
+## v1.200.6 (2026-11-15)
+
+### Transfers: center the empty state; a start opens the transfer's details (#712)
+
+Three fixes from testing the v1.200.5 Preview in the macOS app.
+
+**Empty state centering.** On a wide window the "Ready to use" card and its buttons sat left of center under "No transfers yet". The empty state's action box shrink-wraps to its content's max-content width, and the card's `width: min(560px, 100%)` counts as auto there, so a long ready line (the openrsync line on macOS) widened the box past the card, and the card sat at the box's left. The card now centers with `margin-inline: auto`. Measured in WebKit and Chromium at 2000, 1280, 800 and 420 px: the card's center matches the title's, it stays inside its box, and the page does not scroll sideways.
+
+**After a start.** Starting a transfer from the plan now goes to `#view=transfers?transfer=<id>`: the list, with that transfer's details open in the side drawer, the same drawer a click on its row opens. Before it went to the list with the row marked and nothing open. The transfer runs on the server either way.
+
+**Sidebar Transfers.** From New transfer, the navigation's Transfers item left you on New transfer, since the view was already Transfers. It now always leads to the list, through an `ade:transfers-home` event like the existing `ade:workflows-home`; App.tsx maps both through one table. The event also closes an open details drawer.
+
+Tests: the start test now expects the details drawer and the list behind it; a new test covers the sidebar event from New transfer. Web suite 608 passed; tsc clean. Checked live in WebKit against a scratch server: the sidebar leaves New transfer for the list, and a real copy opens its details with progress and Cancel.
+
+HELP.md says where a start leads and how to get back to the list.
+
+## v1.200.5 (2026-11-15)
+
+### Footer: tint "update available" so a newer version is noticed (#709)
+
+When a newer version is available, the footer's "update available" action now has a soft info tint (info text color on the info muted background, slightly stronger on hover), matching the blue dot the collapsed rail already shows. The other footer actions (updating, update failed, what's new, check for updates) are unchanged.
+
+Automatic checks are unchanged: the server checks a minute after start and every 15 minutes, and the page reads the answer every two minutes and when the window is shown.
+
+- web/src/components/StatusFooter.tsx: `footer-update-available` on the "update available" button only
+- web/src/styles.css: the tint, using the theme info tokens, so light and dark both follow the theme
+- web/test/updateFooter.test.tsx: asserts the class
+- docs/HELP.md: says the line is tinted blue
+
+Checked in Chromium in light and dark with the update status stubbed.
+
+### feat(transfers): save a location from the Transfers page and from the chat (#711)
+
+A person could add a saved location only in Settings, Transfers. When a
+library is read only or Studio cannot reach its files, but the person
+has ssh access to its folder, a saved location for that host and folder
+gives Transfers a place it can write.
+
+Transfers page (sign-in off)
+- Each side's location list ends with "Save a location...", which opens
+  the Settings dialog. The dialog moved to SavedLocationDialog.tsx and
+  both places use it.
+- A library that is read only or not reachable says why, with the
+  reason it already had, and offers "Save a location for its files...".
+  Such a library can now be chosen when there is something to offer.
+- The dialog is prefilled from the location's new `suggest` field: the
+  label "<library> files", and the ssh host (port, options) and folder
+  where Studio knows them. A field Studio does not know stays empty and
+  the dialog says so.
+- Saving tests as Settings does, adds the location with the new
+  POST /api/transfers/settings/locations, reads the locations again and
+  switches that side to the new one.
+
+Sign-in on: saved locations stay off. A read-only or unreachable
+library gets a `hint` instead, naming the viewer's clusters reached
+with their own key (or adding that key when there is none).
+
+Chat
+- New tool save_transfer_location (label, host, folder, optional
+  rsyncPath, port, sshOptions). It is held for approval like
+  cancel_transfer, with no transfer record; the card shows the label,
+  host and folder. Approval tests the location and saves it only when
+  the test passes; the result gives the test outcome and the new id.
+  A decline, an expired hold or a failed test saves nothing. There is no
+  auto-approve setting, so every call asks.
+- Not offered with sign-in on, and refused with the reason if called.
+- transfer_locations lists each library's suggestion or hint, and the
+  tool descriptions point the model at the new tool when a destination
+  is read only or not reachable and the user has ssh access.
+
+Also: a location's `readOnly` reason is in the API, badges in the pane
+header no longer wrap, and an unreachable reason ending in a period is
+not given a second one.
+
+Tests: saveloc_test.go (suggestions, hint, add route, test and save),
+savelocation_test.go (held, approve, decline, failed test, refusals,
+sign-in on), transfersSaveLocation.test.tsx (picker entry, prefilled
+dialog, switch after saving, sign-in on, approval card).
+
+Docs: HELP.md and TRANSFERS.md.
+
+Checks: `go vet ./...` and `go test ./...` pass; `tsc` and the web suite (both vitest configs) pass. Checked in Chromium against a scratch Go server built from this branch, light and dark: the chooser entry, the library offer, the prefilled dialog and the approval card (the unreachable library was added to the real locations response by the test script, and the approval card was a seeded conversation).
+
+### fix(transfers): check writes on object stores with a probe object (#710)
+
+A plan checks that the destination can be written by making and removing
+a staging-named folder. On an rclone remote with no real folders (an
+object store), rclone mkdir makes nothing below a bucket, so the check
+passed on a bucket read with read-only or anonymous credentials, and the
+transfer failed when it ran.
+
+On such a remote the check now writes a zero-byte object named
+.studio-transfer-probe-<id> and deletes it. A refused write gives the
+existing "you cannot write in ..." message; a probe that cannot be
+deleted is logged as a warning and the plan goes ahead, as with the
+folder probe. Messages name a folder on a remote as rclone does
+(remote:folder) instead of "remote:/folder".
+
+The fake rclone takes FAKE_RCLONE_READONLY and FAKE_RCLONE_NODELETE to
+stand in for read-only and no-delete credentials.
+
+Tests: `TestRcloneObjectStoreWriteCheck` in `rclone_test.go` (writable bucket, read-only bucket for copy and move, delete refused, file system remote still uses a folder). `go vet ./...` and `go test ./internal/transfers/` pass. Checked by hand that rclone v1.76 `rcat` takes empty piped input and writes a zero-byte object.
+
+Docs: TRANSFERS.md and HELP.md.
+
+### feat(library): add a library or import a library list from the Library's + Add (#706)
+
+A person who receives a library list file had to know to open Settings, Indexing, Libraries to import it. This adds adding a library and importing a library list to the Library page's + Add.
+
+**Menu**
+- + Add is a split button. + Add opens the Add files panel, unchanged, including its drop zone. The arrow beside it opens a menu: Add files…, Add a library…, Import a library list….
+- Add a library and Import a library list open the Settings components (`AddLibrary`, `LibraryImport`) in dialogs over the page (`LibraryAddDialogs.tsx`). They do not depend on Settings being open. Settings cannot be hidden by the sections setting (it is always shown), and a test renders the Library with only `library` in `sections`.
+- The panel's "Add a library…" link at its foot now opens the dialog in place of going to Settings.
+- In a read-only library, + Add stays disabled with its reason, and the menu's Add files is disabled with the same reason; the library items stay available.
+
+**Who sees it**
+- The arrow is shown only to a viewer who may add a library, from the answers Settings' forms use: `canBuild` from `GET /api/libraries` (sign-in off) offers everything. With sign-in on, a viewer with a list of their own (`available`) who can use pw ssh (`pwOffered`) or the platform's workflow. Libraries on the Studio's own computer are the deployment's where people sign in, which is how the import check already treats them. Otherwise + Add is the button alone, as before.
+- Settings itself still shows Add a library to everyone; that is unchanged.
+
+**Import**
+- The dialog takes a chosen file, a pasted list, or a file dropped onto it. `LibraryImport` gained the drop target and an `initial` check; `onDone` now also reports how many failed.
+- When every ticked library is added, the dialog closes, the client config reloads, the tree refreshes, and the libraries appear in the switcher. If one fails, it stays open on each entry's result. The Settings import dialog behaves as before.
+
+**Dropping a list on the Library page**
+- One `.json` file under 1 MB dropped on the page or a folder in the tree, for a viewer the menu offers libraries to, is read; if it names the list format it is checked with `POST /api/libraries/import/check`. A list opens the import with "Add the file to the library instead". Anything the check refuses, and every other drop, is uploaded as before.
+- Not covered: the Linux app's native drop from a file manager, which hands over paths and not the file's text. Those are always added as files.
+
+**Also**
+- `LibrariesSection` uses the shared add options, add messages and import description, so Settings and the Library say the same thing.
+
+**Tests**
+- `web/test/libraryAddMenu.test.tsx`: the menu's options; visibility with sign-in off, sign-in on without pw ssh, and sign-in on with pw ssh; each dialog opening; a pasted import that closes the dialog, reloads the config and shows the library in the switcher; a file dropped onto the import dialog; Add files from + Add and from the menu; a dropped list versus an ordinary JSON file; a list dropped by a viewer who may not add libraries.
+- `libraryLists.test.tsx` updated for `onDone(added, failed)`.
+- tsc and both web vitest configs pass. No server changes.
+- Checked in a scratch server with Playwright: the menu and both dialogs, light and dark, at 1440 and 800 px, and a real import that adds a library to the switcher.
+
+**Docs**
+- HELP.md (Library, and Settings, Indexing, Libraries), LIBRARIES.md, ACCESS-CONTROL.md, README.
+
+## v1.200.4 (2026-11-15)
+
+### Transfers fills the page width, as the other list pages do (#704)
+
+The Transfers activity view had a 1,100 px cap and sat at the left of the page, so on a wide window New transfer sat partway across the page and the empty state was off center. History, Search and the Library fill the page and cap only their controls; Transfers now does the same. Checked at 2000 px wide in Chromium: the list spans the page, New transfer sits at its right edge, and the empty state is centered.
+
+### Transfers: libraries are writable when Studio can reach their files (#705)
+
+## Problem
+
+Transfers took a library location's writable flag from the library registry. There only the main library is writable, because the flag means Studio edits the library through its own file operations and index. So every other library refused copies into it and moves out of it, and read-through libraries were forced read only, even when the files sit in the user's own folder or on a host reached with their own key.
+
+## Rule as built
+
+`LibraryWritable` in `server-go/internal/transfers/access.go` decides from who reaches the files:
+
+| Files reached through | Sign-in off | Sign-in on |
+| --- | --- | --- |
+| Main folder | writable | writable |
+| Folder on this computer (`SourceRoot`) | writable | read only (server account's permissions are not the viewer's) |
+| Library's own host with the viewer's platform key | writable | writable |
+| Library's own host over ssh with the server account's keys | writable | not offered (unchanged) |
+| Read-through host | writable | not offered (unchanged) |
+| Index only | no files | no files |
+
+A read-only library's location `detail` says why, and the plan's refusal repeats it.
+
+## Pre-flight write check
+
+Before a plan is offered, it makes and removes a `.studio-transfer-probe-<id>` folder in the destination folder, and for a move in the folders the originals leave (the folder holding each item named and each folder named, at most 8). This is the Settings connection test's pattern (`Mkdir` then `RemoveStaging`), so it works on `LocalFS`, `RemoteFS` with a shell, and `RemoteFS` over SFTP. A failure is a 400: `you cannot write in <folder> on <host> (<label>), so ...`. It runs for every location kind, and again when a plan is confirmed. Deeper folders in a move are not probed. A removal failure there already leaves the originals and the landed copy in place and fails the transfer with the count not removed (`land.go`), which is unchanged.
+
+## Index staleness
+
+Only the main library is re-indexed after a transfer. Plans and transfers gain `indexNotes`: for a library other than the main one that the transfer writes into or moves out of, "The index of <label> shows this change after its next rebuild in Settings, Indexing, Libraries" (a library Studio builds, here or remote) or "after the index is rebuilt where it is built" (an index connected as it is, including read-through). The finished transfer's events repeat it. Refreshing the affected folders of a non-main library that Studio builds is left for later: the only existing incremental path (`kb.ReindexRoots`) is bound to the main library's indexer.
+
+## Web and chat
+
+The web already drives the "Read only" badge and disabled controls from `writable`, so libraries writable by access now show as writable. The plan dialog, the chat plan card and the transfer drawer show `indexNotes` as info callouts. The chat tools call the same `Plan`, so the rule and the pre-flight check apply to them; the started result and the end note in the conversation carry the index notes.
+
+## Tests
+
+- `go vet ./...` and `go test ./...` in server-go pass.
+- New `access_test.go`: the rule table; copy into and move out of a non-main LocalFS library with sign-in off, and refusals with sign-in on; a RemoteFS library through the viewer's key with sign-in on; a read-through library with sign-in off; the pre-flight refusal for a 0555 folder on this computer, on a shell host (stand-in runner) and over SFTP; staleness notes in the plan, the transfer and its events. The test rig's second library now follows the rule, and the old "read only" refusal cases moved to the sign-in-on test.
+- Chat: the end note carries the index notes.
+- Web: `tsc` passes; vitest for chatTransferPlan, transfersPage, transfers and transfersHelp pass, with a new case for the index note on the chat card.
+
+Docs: docs/TRANSFERS.md and docs/HELP.md.
+
+### Transfers: use older rsync where it is safe, chosen by capability (#707)
+
+## Problem
+
+The rsync mover decided by version number: 3.0.0 on every end (for `-s` and `--no-inc-recursive`), and 3.2.5 on this computer for a pull. macOS ships rsync 2.6.9 or openrsync, so a Mac never used rsync, not even for a copy between two of its own folders. RHEL 8 and 9 ship 3.1.3 and 3.2.3 with security fixes backported under the old number, so a number check refused them. The two ends of a transfer often run different releases, and rsync negotiates its protocol but not its options, so an option the far end does not know makes it fail.
+
+## What changes
+
+Each end's rsync is read once and kept five minutes: `--version`, `--help` (GNU's option list or openrsync's usage synopsis; only the option column is read), and a `--trust-sender --version` probe. A host's is read through the remote helper as before. Each option is then given only when the end or ends that must understand it have it. Which end needs what follows `server_options()` in rsync's `options.c` (checked in 3.0.9 and 3.4.1), cited in a comment on `rsyncDecide`:
+
+| Option | Needed on | Given when |
+| --- | --- | --- |
+| `-s` | both ends | both have `--protect-args` or `--secluded-args`; pull, push and host to host only |
+| `--timeout=120` | both ends (always passed on) | both have it |
+| `--max-size` | the receiver (passed on when the client sends) | the receiver has it |
+| `--no-inc-recursive` | the client only (it clears the `i` in `-e.`) | the client is GNU rsync with protocol 30 or later |
+| `--info=progress2` | the client only | the client has `--info` |
+| `--chmod`, `--files-from`, `--from0` (or `-0`) | the client | required; missing means no rsync, and the reason names the option |
+| `--files-from=-`, `--from0` | the sending host, in a pull | required there |
+
+`--chmod` is never passed on: the sender applies it in `send_file_name` and the receiver in `recv_file_entry`, so the client's own is enough.
+
+Without protect args the far folder passes through the far end's shell. It is quoted in single quotes (with `'\''`) when the client passes it on as is (2.6.9 to 3.2.3, openrsync), and gets only wildcard escapes when the client escapes the rest itself (3.2.4 and later, detected by `--old-args`; `safe_arg` leaves `*?[]` for the remote shell). File names only ever travel in the `--files-from` list. `RSYNC_OLD_ARGS` and `RSYNC_PROTECT_ARGS` are removed from rsync's environment here and through `env -u` on a host.
+
+Routes:
+- Here (both ends on this computer): any rsync with the required options.
+- Push: the same here, any release on the host. `-s` when both ends have it, else the quoted folder.
+- Pull: this computer's rsync must be 3.2.5 or later, or accept `--trust-sender`. Otherwise the reason names CVE-2022-29154 and Studio copy carries it. The host needs `--files-from` and `--from0`.
+- On one host: the host's rsync with the required options; no shell between ends.
+- Host to host: the source host's rsync with the required options; any release on the destination.
+
+On macOS with the default setting (`rsync`), `/opt/homebrew/bin/rsync` and `/usr/local/bin/rsync` are tried along with PATH's, and the most capable is used (can pull, then protect args, then newer). The desktop app does take the login shell's PATH (`deploy/mac/studio-run.sh`), so Homebrew's rsync was found when that PATH puts Homebrew ahead of `/usr/bin`, but not otherwise, since the fallback PATH and `FindRsync`'s own list put `/usr/bin` first. An explicit path in Settings is always used as is.
+
+Settings and the Ready line now say what the rsync found is used for, for example `rsync 2.6.9 at /usr/bin/rsync: used on this computer and for sends to hosts; pulls use Studio copy (needs rsync 3.2.5 or a build with the CVE-2022-29154 fix)`. The connection test says the same of a host's rsync. New fields: `detected.rsyncPath`, `detected.rsyncText`, and `rsyncText` on the test result. Plan reasons say when the folder is quoted because an end has no `--protect-args`.
+
+Studio uses the rsync installed on each end.
+
+## Findings
+
+- macOS openrsync (man page in Xcode): has `--files-from`, `-0`/`--from0`, `--chmod`, `--max-size`, `--timeout`, `-t`, `--rsync-path`, `-e`; no `-s`, `--info`, `--no-inc-recursive` or `--trust-sender`; protocol 27 to 29. OpenBSD's openrsync has no `--files-from` and is not used.
+- RHEL 8 (CentOS Stream 8 `rsync.spec`): the CVE-2022-29154 fix landed in 3.1.3-18 (August 2022); `rsync-3.1.3-trust-sender.patch` came with 3.1.3-23 (May 2025, RHEL-52004). That patch adds the option but no `--help` line, hence the probe. A build from -18 to -22 is fixed but is refused for pulls, since nothing marks it.
+- RHEL 9: CentOS Stream 9 is now on 3.2.5 and later (3.2.7), which passes on version. I did not confirm whether the earlier 3.2.3 RHEL 9 builds accept `--trust-sender`; those are refused for pulls unless they do.
+
+## Tests
+
+- `TestRsyncCapsFromHelp`: fake `--version`/`--help` for GNU 2.6.9, 3.0.9, 3.1.3, 3.1.3 with `--trust-sender`, 3.2.3, 3.2.7, 3.4.1, macOS openrsync and OpenBSD openrsync.
+- `TestRsyncArgvAcrossVersions`: exact argv or refusal for every route, crossing this computer's and the host's versions (2.6.9 with 3.1.3, openrsync with 3.2.7, 3.4.1 with 2.6.9, 3.1.3 with `--trust-sender` with 3.0.9, both 3.4.1, and more), with a destination root holding spaces, a quote, `$()` and wildcards.
+- `TestRemotePathThroughShell`: the quoted and escaped forms come through `sh` unchanged.
+- `TestRsyncFindsHomebrew`: Homebrew before PATH on a stand-in Mac, the best one picked, an explicit path respected, and the Settings text.
+- `TestSystemRsync`: the system `/usr/bin/rsync` run with the argv Studio builds: a copy here, a push and a pull through a stand-in remote shell, with and without `-s`, and the single-quoted form. Added to the macOS job, so it runs against the rsync macOS ships.
+- Existing tests pass, including `TestOverRealSSH` with `STUDIO_TEST_SSHD=1` locally (rsync 3.2.7). `go vet ./...`, `go test ./...` and the web suite pass.
+
+## Left for later
+
+- Progress for clients without `--info` (2.6.9, openrsync) is reported when each group ends.
+- A pull from an openrsync host is allowed by its listed options; no openrsync server was available to try it.
+
+### Transfers: rclone remotes as locations, and rclone as a mover (#708)
+
+Transfers gains rclone: each remote of the installed rclone's configuration is a location, and rclone is a mover for transfers with a remote at one end and this computer or another remote at the other.
+
+**Product rules**
+- Studio uses the installed rclone and never bundles it. It looks in this order: the path set in Settings, Transfers (default `rclone`); on macOS, `/opt/homebrew/bin/rclone` and `/usr/local/bin/rclone`; then `PATH`.
+- Studio never writes rclone's configuration. Remotes come from `rclone listremotes --long` (names and types, no secrets) and are named in rclone's own commands, so `RCLONE_CONFIG` and the rest apply as the user set them. When rclone is missing or has no remotes, Settings and the Ready line say so, and nothing else changes.
+- Single-user only. With sign-in on there are no `rclone` locations, the mover refuses a signed-in viewer's plan, and the managed settings switch rclone off, following saved locations and CONDUIT.
+
+**Locations**
+- New kind `rclone`, id `rclone:<remote>`, one per configured remote, rooted at the remote's top. Browsable in the two-pane view, usable from the assistant's transfer tools (the catalog's mover enum and descriptions name it), with a cloud icon and the group "rclone remotes" in the picker.
+- `RcloneFS` (`fs_rclone.go`) maps the FS interface to rclone subcommands, each name its own argv element after `--`, never a shell:
+
+| FS call | rclone |
+| --- | --- |
+| List, Walk | `lsjson`, `lsjson -R` streamed and stopped at the file limit, always `--no-mimetype --use-server-modtime` |
+| Stat | `lsjson --stat` for up to 16 paths on a file system; otherwise a listing of the folders holding them |
+| Read, Write | `cat`; `rcat --metadata --metadata-set mtime=...` after checking the name is free |
+| Mkdir, Free | `mkdir`; `about --json` where the backend has About |
+| Sha256 | `lsjson --hash --hash-type sha256` where the backend has it, else read through `cat` and hashed here |
+| Land | one `move --files-from-raw` of exactly the staged files, after checking each final name |
+| Remove | one `delete --files-from-raw` with `--max-delete` equal to the number of files, then `rmdir` deepest first (skipped on object stores) |
+| RemoveStaging | `purge`, only for a staging-named folder; not found counts as removed |
+
+- Containment: paths are checked by `CleanRel` like every location's, and rclone's local backend skips links. Features come from `rclone backend features` (its output has trailing commas, which are stripped), cached ten minutes.
+- Object stores have no folders. `Mkdir` makes nothing below a bucket, a path with no objects lists as empty and can be a destination (a sync into a new prefix plans as empty), folders vanish with their last object, so `Remove` does no `rmdir` there. S3 answers `lsjson --stat` for a missing path with a folder and status 0, so on object stores Stat lists the parent folder, and falls back to `--stat` when the parent cannot be listed (anonymous access to a public bucket cannot list the buckets).
+
+**Mover**
+- Order is conduit, rsync, rclone, studio-copy. rsync now refuses rclone ends. rclone is offered when one end is an rclone remote and the other is this computer or another remote. The plan's reason names the ends and the staging mode, or says why not (sign-in on, neither end a remote, a cluster or ssh host at the other end).
+- Always `rclone copy`, also for move and sync, with the plan's file list:
+
+```
+rclone copy --files-from-raw <list> --no-traverse --use-json-log --stats 1s --stats-log-level NOTICE \
+  --transfers <n> --checkers <n> [--ignore-existing | --ignore-times] -- <src> <dst>
+```
+
+  The reason: Studio's plan decides what goes and Studio checks what arrived before it deletes anything. `rclone move` would delete originals before that check, and `rclone sync` would delete what its own listing found extra, which is not necessarily what the plan showed.
+- Progress comes from the JSON stats line (`stats.bytes`, `stats.transfers`). I chose this over `--progress` because it is one JSON object per line and needs no terminal-output parsing. Error text is taken from the last `error` level JSON line.
+- Cancel sends an interrupt, so rclone aborts multipart uploads, and kills after 15 s (`cmd.Cancel` and `WaitDelay`).
+- Transfers between an rclone remote and a cluster or ssh host use studio-copy, with `cat`/`rcat` on the rclone side. Studio never configures a remote to reach a host.
+
+**Staging decision**
+- On a remote with server-side rename (`Move` feature: file systems, SFTP, most drives), rclone writes into the staging folder and files take their names after the check, the same guarantee as every other mover.
+- On a remote without it (object stores), landing a staged object is a server-side copy of every byte plus a delete. That doubles the work for large data. So the rclone mover writes straight to the final names (`plan.direct`). The trade-off:
+  - Guaranteed: an object store shows an object only once its upload is complete, so nothing appears half written. Files the plan does not list as replaced are sent with `--ignore-existing`, so a name that appeared since the plan is not overwritten. Listed replacements are sent with `--ignore-times`. Studio checks each file's size (and hash for a move or with checksum) at its final name before it removes originals or deletes extras.
+  - Not guaranteed: if the transfer fails or is cancelled, objects already sent stay, and a replaced object is replaced when its new copy arrives, before the check.
+  - The plan states this as a warning, and the reason text says which mode applies.
+  - studio-copy into an object store (from a cluster or ssh host) still stages, so that path keeps the full guarantee at the cost of the server-side copy.
+
+**Sync comparison and checks**
+- With an rclone end, a sync compares size plus a hash both ends have, preferring MD5 (an object store gives it from its listing; this computer reads its files). It falls back to size and modification time for a file with no such hash, such as an S3 multipart object, or when the ends share no hash. The plan has a new `compare` field showing which rule applied, and the confirm dialog shows it under "Compared by".
+- Verification for a move or with checksum uses the shared hash in place of sha256 when one end is a remote, so an S3 object is not downloaded again. A file without the shared hash falls back to sha256.
+
+**Settings and Ready line**
+- Settings, Transfers, How files move has an rclone block: on/off switch, Program path, "Found at <path>, version <v>" or the plain reason it is missing, and a table of remotes with their types (or "rclone has no remotes. Add them with `rclone config`").
+- `detected.rclone` is `{ enabled, found, path, version, remotes, why }`. `movers.rclone` is `{ enabled, path }`. The path is a bare name or an absolute path, and spaces are allowed in absolute paths because rclone is run directly. rclone is also a choice for the default mover.
+- The Ready line counts "N rclone remotes", or says "rclone not found" or "rclone has no remotes" when rclone is on.
+- Host detection: the helper has an `rclone` command (`command -v rclone`, then its version). A saved location's test reports `rclone`/`rcloneVersion`, shown as information. Clusters have no location test in the UI yet.
+
+**Coordination**
+- Rebased on #705 (library writable). Its write probe works on rclone locations: on object stores `Mkdir` is a no-op and the probe always passes.
+- Edits to shared files are small and additive: `plan.go` (direct flag, sync rule hook, a 404 allowance for object-store sync destinations, mover list text), `land.go` (verify through `verifySums`/`verifyDirect`, no landing in direct mode), `jobs.go` (direct mode skips the staging folder), `rsync.go` (refuses rclone ends), `settings*.go`, the helper's one `rclone` line in `fs_remote.go`, and two tests that count movers (3 to 4).
+
+**Tests**
+- Fake rclone: the test binary re-executed through a script on `PATH` (`rclone_fake_test.go`). It keeps remotes in folders, one behaving as S3 (no rename, no empty folders, MD5 only, `.parts` objects without MD5, `--stat` answering a missing path as a folder). It prints rclone's listremotes, version, features (with trailing commas), lsjson and JSON stats, and logs every argv.
+- `rclone_test.go` covers:
+  - discovery order, including Homebrew on darwin and a set path with spaces;
+  - detection: found, missing, no remotes, off, sign-in on;
+  - settings validation;
+  - locations and the sign-in refusal (no locations, 404 on browse, mover refusal);
+  - every FS method on both kinds, including a name with spaces and quotes, `--` before each spec, the fast listing flags on every lsjson, the walk limit, land conflicts and replace, `--max-delete`, and `RemoveStaging` refusing a non-staging folder;
+  - mover argv for staging, new and replace;
+  - stats and message parsing;
+  - copy, move and sync through jobs, including the direct mode, MD5 verification, `--ignore-times` for replacements, sync and copy into an empty prefix, and refusal of a name already in the store;
+  - the time fallback for an object with no MD5;
+  - cancel mid-copy (nothing left in place, no staging);
+  - remote to ssh host and back via studio-copy;
+  - host detection.
+- `go vet ./...`, `go test ./...` and `scripts/crossvet.sh` pass. Web: `tsc` and vitest (both configs) pass; new tests cover the settings block, the Ready line and the plain rules.
+- End to end with real rclone v1.76.0, a scratch server on 127.0.0.1 with sign-in off and its own data folders, and a scratch `RCLONE_CONFIG` with two alias remotes (the user's own rclone config was not read or touched). Over HTTP:
+  - browse;
+  - copy this computer to remote;
+  - sync with one change and one extra deleted (compare: size and md5);
+  - sync remote to remote, then a second plan with 0 files;
+  - move remote to this computer (md5 verified);
+  - move remote to remote;
+  - no staging folders left anywhere.
+- Also end to end:
+  - a cancel of a 6 GB copy stopped rclone and removed the staging folder;
+  - an anonymous read from a public S3 bucket (2 small objects) listed with the fast flags and was verified by MD5 from the listing;
+  - the settings PUT took an absolute path and refused a relative one.
+
+**Limits and later**
+- Direct writes to a writable object store were tested against the fake only; no writable S3 endpoint was available here.
+- On S3, the write probe from #705 cannot detect a read-only bucket before the transfer. The transfer then fails on the first write.
+- With no shared hash, a sync to an object store resends same-size files, because listed times are upload times.
+- Later: rclone remotes as Studio libraries; a location rooted at a folder inside a remote (`RcloneFS.Base` exists, but there is no setting for it yet); rclone run on clusters or ssh hosts; a location test for clusters.
+
+## v1.200.3 (2026-11-15)
+
+### Test flakes: stream signals in TestStreamsAreNotBuffered, the Transfers page in transfersNav (#702)
+
+TestStreamsAreNotBuffered failed now and then in CI with "event 1 is \"\"". Its fake Node shared one unbuffered signal channel across every request it got, and any request the server's background jobs make to Node landed in the same streaming handler and waited on that channel, so it could take a signal meant for a stream. Each stream now has its own channel, keyed by its path, and the fake Node answers any other request with a 404 at once. The handler waits up to 30 s for its signal, the test gives up on a send after 10 s with a clear message, and a stream that ends early says so in place of an empty event.
+
+transfersNav.test.tsx failed on both runners in this PR's first CI run. Its two "left out" tests waited for the address to change and then checked at once that the Transfers page was gone, but the app changes the address before the render that removes the page. They now wait for the page to go.
+
+Ran the Go test 30 times with the race detector and the whole server package, and the web test five times, locally.
+
+### Transfers: SFTP-only ssh locations over SFTP (#703)
+
+## What changed
+
+Transfers can now use a saved ssh location, or a host location, whose account takes SFTP only (OpenSSH `ForceCommand internal-sftp`, usually with a chroot). Such an account answers every command with `This service allows sftp connections only.` and status 1, so the bash helper in `fs_remote.go` could not browse or copy.
+
+- **Detection.** On first use of a plain ssh site, Studio runs `true` there once. The SFTP-only answer (OpenSSH prints it on standard output) marks the site as SFTP only for 10 minutes; a shell answer marks it as a shell host for the same time. A helper call that later gets the SFTP-only answer marks the site and asks for a retry. Sites reached through pw ssh, and runners without a subsystem, are never probed.
+- **SFTP client.** `remote.Pool.Subsystem` builds `ssh -s <destination> sftp` from `sshBase`, so the site's options, port, BatchMode and ControlMaster sharing all apply. Transfers reaches it through an optional `Subsystemer` interface on the Runner (`PoolRunner` has it), so existing fake Runners compile unchanged. The client is `github.com/pkg/sftp` (BSD-2).
+- **FS.** `RemoteFS` stays the one type. Each method takes the SFTP path (`fs_sftp.go`) for an SFTP-only site, opening a session per call and closing it after; `Read`'s closer ends the session. The helper's rules hold: hidden entries left out of listings and walks, links never followed, a missing path a 404 and a link a 400 in a walk, every real folder inside the real root, exclusive writes with folders made and mtime and u+x set, landing never over a name the plan did not list (hard link, else SFTP rename; `posix-rename` for a listed replacement), removal of plain files then empty folders deepest first, and recursive removal only of a staging folder, never through a link. Free space comes from `statvfs@openssh.com`. Sha256 reads each file over the session and hashes it in Studio.
+- **Movers.** rsync refuses an SFTP-only location with that reason, so studio-copy carries the transfer; its plan line says "over SFTP".
+- **Settings.** The connection test returns `sftpOnly: true`, skips the rsync probe, and the web page says the account takes SFTP only, that copies use Studio copy over SFTP, and that rsync is not available there.
+- **Docs.** HELP.md, README.md, docs/README.md and docs/TRANSFERS.md.
+
+One change from the first design: path containment does not rely on the server's realpath. Some SFTP servers (pkg/sftp's own) only clean the path and do not resolve links, so Studio finds each real folder by looking up each name with lstat and readlink, from the root's real path, cached for the call.
+
+## How it was tested
+
+- `go vet ./...` and `go test ./...` in server-go pass.
+- New unit tests run pkg/sftp's server over in-process pipes, with no ssh: every FS method, root containment through links (including a linked root), links in listings and walks, exclusive create, land with and without replace, remove, staging removal, free space, session cleanup, detection and caching, and plans and transfers through the service (studio-copy chosen, rsync refused, a push, a move back with checksum, the settings test).
+- `remote.Pool.Subsystem` argv test.
+- `STUDIO_TEST_SSHD=1` run: the real-sshd harness gains a third host with `ForceCommand internal-sftp`; browse, push, move back with checksum and the settings test pass over real ssh.
+- Web: vitest for the Settings test result text.
+- End to end against a real chrooted SFTP-only account on a test host, through a scratch Studio server's HTTP API with a throwaway key: settings test (`sftpOnly: true`, writable, free space), browse, a copy of a folder of four files to the upload folder and back (hashes and mtimes match), a move of one file in, a refused copy over an existing name, a copy with replace, a move of the folder back out with checksum (originals and folders removed from the host), and rsync named explicitly refused. No staging folders were left. The key and test files were removed afterwards.
+
+## v1.200.2 (2026-11-15)
+
+### Transfers shows on personal installs; Stats sizes step up to TB and PB (#701)
+
+Transfers was left out of the sidebar on every personal install, the macOS app among them. A personal install starts from a default page list (`PersonalSections`) that did not name Transfers, and setup saves that list. Since #700 the sidebar honors the pages setting for Transfers, so the page was hidden.
+
+- The personal default now names Transfers.
+- A saved list from before a page existed shows that page: the server adds it, after the page it follows, to the list it reports.
+- Saving the page switches records `sectionsGen`, the generation of pages the list knows of, so a page switched off since stays off.
+- Stats wrote sizes past 1,024 GB in GB ("3330.97 GB"), which overflowed its tile. It now steps to TB and PB.
+
+Found while connecting an index of a 3.6 TB object store to a scratch Studio on the Preview build.
+
+Tests: `go test ./...` passes, including a new test for lists saved before and after Transfers. The settings golden data is updated for the new personal default. Web: 581 tests, with one timing-sensitive update footer test that fails only under load and passes alone.
+
+## v1.200.1 (2026-11-15)
 
 ### Chat: all libraries by default, and any set of them (#696)
 
@@ -23,6 +647,93 @@ With more than one library, the chat searched only the knowledge base unless Sco
 
 **Docs**
 - HELP.md and REFERENCE.md.
+
+### Change log for v1.201 (#697)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.201` before tagging v1.201.
+
+### Docs: the user guide reads on GitHub, and an index of the documents (#698)
+
+The user guide is read on GitHub as well as in the app, and on GitHub it showed `{appName}` 45 times. The docs folder had no index of its own.
+
+**User guide**
+- HELP.md calls the app Studio, its default name. A deployment with its own product name sees that name in place of the word, except in "ACTIVATE Studio" and in code (`internal/helpdoc`, used by the Help page and the assistant's docs tool).
+- The knowledge base line at the end is a comment, `<!-- kbLabel -->`, filled in by the server and hidden on GitHub. The older placeholders still work.
+
+**Docs index**
+- `docs/README.md` lists every document, grouped: using it, installing and updating, running it for others, how it is built. GitHub shows it on the docs folder, and the README links to it.
+
+**Docs**
+- CUSTOMIZATION.md describes the help text's naming.
+
+**Tests**
+- `helpdoc_test.go`.
+
+### release_preview.sh: Preview releases from main (#699)
+
+The go-port branch no longer exists, since the Go server shipped on main, so the Preview script could not run. It now takes a commit on main by default. PREVIEW_BRANCH names another branch, and the workflows are dispatched from that branch.
+
+The release notes no longer describe the Go version as new. PREVIEW_NOTES puts text before the standard notes. docs/UPDATES.md is updated to match.
+
+A dry run (DRY_RUN=1) on main picks v1.200.1, which is after v1.200 and before v1.201. It dispatches linux-app and mac-app from main with channel=preview.
+
+### Transfers: copy, move and sync between libraries, this computer, clusters, ssh hosts and CONDUIT (#700)
+
+A Transfers page for copying, moving and syncing files between libraries, folders on this computer, ACTIVATE clusters, other computers over ssh and CONDUIT. There are matching tools for the assistant. This goes to a Preview build for testing before any Stable release.
+
+## The page
+
+- The activity list is the default view. Active transfers come first, with progress, rate and time left. Finished ones are paged 50 at a time from the server, with search and filters, and stay quick with thousands kept (180 days, at most 10,000).
+- **New transfer** opens two panes with location pickers and drill-down file lists. A Start button points each way.
+- Copy, move and sync (new and changed files, with deletions only when ticked). Every transfer shows its plan before it starts: what goes where, the file count and size, what is replaced or deleted, and the mover.
+- The sidebar entry shows how many transfers are under way, and a warning after a failure. The pages setting has a Transfers switch.
+
+## Server (`server-go/internal/transfers`)
+
+- **Locations:** libraries, folders on this computer (Downloads, Desktop, Documents and added ones), the viewer's clusters over `pw ssh`, saved ssh locations, the hosts libraries are on, and CONDUIT paths.
+- **Movers:** rsync (pull, push, on-host and host to host), Studio's own copy through the server, and CONDUIT through an attached MCP server. CONDUIT is sent COPY only, and Studio verifies the result and removes originals itself.
+- **Staging:** every job writes into `.studio-transfer-<id>`. Files take their names only after the count and sizes (or sha256) check. A mover that reports success on a bad result fails the job.
+- **Limits:** at most three jobs at once. A transfer into the main library is indexed when it ends.
+- **Sign-in on:** each person sees only their own transfers and uses their own platform key. Settings come from `STUDIO_TRANSFER_*` environment variables, and the settings routes answer 403.
+- **Shared code:** `mcpclient` keeps `structuredContent` and `isError`, and `remote` gains streaming commands.
+
+## Settings, Transfers
+
+- A summary of what is ready with no setup.
+- Saved locations, each tested before it is saved, with port and ssh options under Advanced.
+- Folders on this computer, library hosts, how files move (rsync path, streams, CONDUIT and its folder mapping), and defaults.
+- The setup wizard's last step says how many places are ready.
+
+## Assistant
+
+- Tools: `transfer_locations`, `browse_location`, `transfer_files`, `transfer_status`, `cancel_transfer`.
+- A plan that cannot run goes back to the model with its reason. A valid one is held for approval with the plan on the card, and the Transfers list shows it as awaiting approval.
+- **Yes** starts the transfer, and the tool returns at once. **No**, or a hold that expires, cancels it.
+- When the transfer ends, a note is added to the conversation. The chat page shows the note without a reload, and a question sent before it arrives is placed after it. A link `#view=transfers?transfer=<id>` opens the transfer.
+
+## Docs
+
+- HELP.md has a Transfers section.
+- docs/TRANSFERS.md covers the server and the HTTP contract.
+- The documents index and README are updated.
+
+## Tested
+
+- `go test ./...` and `go vet ./...` pass. Tests run over two real sshd processes, and against a fake MCP server for CONDUIT.
+- Web: 76 files, 580 tests pass, and the build passes.
+- Against a real server through the UI: a copy of 1,503 files (1.3 GB, byte-identical on spot checks), a move, and a sync (a second identical sync sent nothing). Progress was followed on a 5.9 GB copy.
+- 2,000 finished transfers page in the browser: 380 to 560 ms for the first page and 60 to 125 ms for each further page.
+- Against a real ACTIVATE cluster through the API (pw ssh):
+  - A copy from this computer with rsync: 4 files, sha256 identical, and no staging folder left.
+  - A sync back with Studio's copy: identical.
+  - A move off the cluster with rsync: identical, with the originals removed.
+- Against a real model: an assistant copy (approved, returned at once, note written once) and a sync with deletions (denied, record cancelled, nothing deleted). A transfer outlived the reply and the client closing.
+
+## Not yet tested
+
+- Saved hosts and library hosts over real ssh from the page.
+- CONDUIT against a running service.
+- Sign-in on against a real server.
 
 ## v1.200 (2026-11-14)
 
