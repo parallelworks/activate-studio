@@ -189,8 +189,8 @@ echo "full disk access setting: $OPENED"
 
 # View, Zoom In twice: the web view's own page zoom (desktop/wails/zoom.go),
 # so the page lays out at 125% and a menu opens at its button. The
-# button is scrolled into view first: at 125% the sidebar scrolls, and
-# its footer can sit below the window. The zoom of
+# button is scrolled into view first, which costs nothing now that the
+# sidebar's footer stays in the window. The zoom of
 # v1.190 and v1.191 (CSS zoom on the body) opened menus a quarter of the
 # way across the window from their buttons.
 state light 0 library; sleep 4
@@ -216,9 +216,17 @@ if abs(z["innerWidth"] * 1.25 - w0) > w0 * 0.03:
 if not t or not m:
     problems.append("no menu button, or its menu did not open")
 else:
-    overlap = min(m[2], t[2]) - max(m[0], t[0])
-    gap = max(m[1] - t[3], t[1] - m[3], 0)
-    if overlap <= 0 or gap > 16:
+    # At its button: above or below it (overlapping across, at most 16 px
+    # apart), or beside it (overlapping down, at most 16 px apart). The
+    # sidebar's footer stays pinned to the window's bottom, so on a short
+    # zoomed window a menu taller than the room above or below its button
+    # opens beside it. The bug this catches, the CSS zoom of v1.190 and
+    # v1.191, put menus a quarter of the window away, far past 16 px.
+    across = min(m[2], t[2]) - max(m[0], t[0])
+    down = min(m[3], t[3]) - max(m[1], t[1])
+    vgap = max(m[1] - t[3], t[1] - m[3], 0)
+    hgap = max(m[0] - t[2], t[0] - m[2], 0)
+    if not ((across > 0 and vgap <= 16) or (down > 0 and hgap <= 16)):
         problems.append(f"the menu {m} is not at its button {t}")
     if m[0] < 0 or m[1] < 0 or m[2] > z["innerWidth"] or m[3] > z["innerHeight"]:
         problems.append(f"the menu {m} runs off the window")
