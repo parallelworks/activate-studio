@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button, Callout, Checkbox, ConfirmModal, Input, Loader, NumberInput, Select, StatusLabel, Switch, toast, type SelectItem,
 } from '@parallelworks/ui'
 import {
-  HOST_LOCATIONS, placesReady, testText, transferApi,
+  HOST_LOCATIONS, TRANSFER_SETTINGS_CHANGED, TransferError, placesReady, testText, transferApi,
   type ComputerFolder, type ConduitMount, type MoverName, type RcloneDetected, type SavedLocation, type SettingTest, type TransferLocation, type TransferSettings,
 } from '../transferApi'
 import { ReadySummary } from './TransfersReady'
@@ -91,33 +91,135 @@ function ConduitMounts({ mounts, locations, disabled, onChange }: {
   )
 }
 
+/** The fields that save with the Save button, each with how it is named
+ *  when it changed elsewhere. Saved locations and computer folders save as
+ *  they change, so they are never held as unsaved edits. */
+type Group = { name: string; get: (s: TransferSettings) => unknown; set: (s: TransferSettings, v: unknown) => TransferSettings }
+const GROUPS: Group[] = [
+  { name: 'rsync', get: s => s.movers.rsync, set: (s, v) => ({ ...s, movers: { ...s.movers, rsync: v as TransferSettings['movers']['rsync'] } }) },
+  { name: 'rclone', get: s => s.movers.rclone, set: (s, v) => ({ ...s, movers: { ...s.movers, rclone: v as TransferSettings['movers']['rclone'] } }) },
+  { name: 'CONDUIT', get: s => s.movers.conduit, set: (s, v) => ({ ...s, movers: { ...s.movers, conduit: v as TransferSettings['movers']['conduit'] } }) },
+  { name: 'the defaults for a new transfer', get: s => s.defaults, set: (s, v) => ({ ...s, defaults: v as TransferSettings['defaults'] }) },
+  { name: 'library hosts', get: s => s[HOST_LOCATIONS], set: (s, v) => ({ ...s, [HOST_LOCATIONS]: v as TransferSettings['hostLocations'] }) },
+]
+/** The lists that save at once, for saying what changed elsewhere. */
+const LISTS: Pick<Group, 'name' | 'get'>[] = [
+  { name: 'saved locations', get: s => s.savedLocations },
+  { name: 'folders on this computer', get: s => s.computerFolders },
+]
+
+/** JSON with sorted keys, so two reads of the same value compare equal. */
+function stable(v: unknown): string {
+  return JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x)
+    ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+    : x))
+}
+const same = (a: unknown, b: unknown) => stable(a) === stable(b)
+
+/** The Save fields the draft changed from the copy it was edited from. */
+export function editedGroups(base: TransferSettings, draft: TransferSettings): string[] {
+  return GROUPS.filter(g => !same(g.get(base), g.get(draft))).map(g => g.name)
+}
+
+/** The draft's unsaved edits laid over a newer read (`fresh`) of what it
+ *  was edited from (`base`). `elsewhere` names what changed in between,
+ *  and `conflicts` the edited fields that changed there to something
+ *  else. */
+export function mergeEdits(base: TransferSettings, draft: TransferSettings, fresh: TransferSettings) {
+  let next = fresh
+  const conflicts: string[] = []
+  for (const g of GROUPS) {
+    if (same(g.get(base), g.get(draft))) continue
+    next = g.set(next, g.get(draft))
+    if (!same(g.get(fresh), g.get(base)) && !same(g.get(fresh), g.get(draft))) conflicts.push(g.name)
+  }
+  const elsewhere = [...LISTS, ...GROUPS].filter(g => !same(g.get(fresh), g.get(base))).map(g => g.name)
+  return { draft: next, elsewhere, conflicts }
+}
+
+const listText = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`)
+
+/** What a PUT takes: the section without its read-only fields. */
+function input(s: TransferSettings) {
+  const { managed: _m, mcpServers: _x, detected: _d, ...rest } = s
+  void _m; void _x; void _d
+  return rest
+}
+
 /**
  * Settings, Transfers. It opens on what works with no setup: the places
  * found and whether rsync is here. Then saved locations (each added through
  * a dialog that tests it), folders on this computer, library hosts, how
- * files move, and defaults. Saved locations save as they are added or
- * removed; the rest saves with Save. With `managed` (sign-in on), the
- * operator's environment decides and everything shows disabled.
+ * files move, and defaults. Saved locations and folders save as they are
+ * added, changed or removed; the rest saves with Save. With `managed`
+ * (sign-in on), the operator's environment decides and everything shows
+ * disabled.
+ *
+ * The section is read again each time it is shown (`active` turning true),
+ * when the window regains focus, and when the Transfers page saves a
+ * location. Unsaved Save edits are kept: a read then updates only the lists
+ * that save at once. Every save names the revision it was edited from, so a
+ * save from an older read is refused (409) and never drops a location saved
+ * elsewhere; the page then reads the section again and keeps the edits.
  */
-export function TransfersSettingsSection() {
-  const [s, setS] = useState<TransferSettings | null>(null)
+export function TransfersSettingsSection({ active = true }: { active?: boolean } = {}) {
+  const [st, setSt] = useState<{ base: TransferSettings; draft: TransferSettings } | null>(null)
+  const stRef = useRef(st)
+  const put = (next: { base: TransferSettings; draft: TransferSettings }) => { stRef.current = next; setSt(next) }
   const [locations, setLocations] = useState<TransferLocation[]>([])
   const [loadError, setLoadError] = useState('')
-  const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [dialog, setDialog] = useState<{ index: number | null } | null>(null)
-  const [removing, setRemoving] = useState<number | null>(null)
+  const [changed, setChanged] = useState<{ elsewhere: string[]; conflicts: string[] } | null>(null)
+  const [dialog, setDialog] = useState<{ id: string | null } | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
   const [tests, setTests] = useState<Record<string, { busy?: boolean; result?: SettingTest; error?: string }>>({})
   const [folder, setFolder] = useState({ path: '', label: '' })
+  const [folderError, setFolderError] = useState('')
+  const reads = useRef(0)
+  const activeRef = useRef(active)
+  activeRef.current = active
 
   const reloadLocations = () => transferApi.locations().then(setLocations, () => {})
-  useEffect(() => {
-    transferApi.settings().then(setS, e => setLoadError((e as Error).message))
+  /** Takes a newer read of the section. With no unsaved edits it replaces
+   *  the page's copy; with some, only the lists that save at once. */
+  const take = (fresh: TransferSettings) => {
+    const cur = stRef.current
+    if (!cur || !editedGroups(cur.base, cur.draft).length) { put({ base: fresh, draft: fresh }); return }
+    const lists = { savedLocations: fresh.savedLocations, computerFolders: fresh.computerFolders, detected: fresh.detected, mcpServers: fresh.mcpServers }
+    put({ base: { ...cur.base, ...lists }, draft: { ...cur.draft, ...lists } })
+  }
+  /** Takes a newer read with its revision, the unsaved edits laid over it. */
+  const adopt = (fresh: TransferSettings) => {
+    const cur = stRef.current
+    const m = cur ? mergeEdits(cur.base, cur.draft, fresh) : { draft: fresh, elsewhere: [], conflicts: [] }
+    put({ base: fresh, draft: m.draft })
+    return m
+  }
+  const reload = async () => {
+    const n = ++reads.current
+    try {
+      const fresh = await transferApi.settings()
+      if (n === reads.current) { take(fresh); setLoadError('') }
+    } catch (e) {
+      if (!stRef.current) setLoadError((e as Error).message)
+    }
     void reloadLocations()
+  }
+  useEffect(() => { if (active) void reload() }, [active])
+  useEffect(() => {
+    const again = () => { if (activeRef.current && document.visibilityState !== 'hidden') void reload() }
+    window.addEventListener('focus', again)
+    document.addEventListener('visibilitychange', again)
+    window.addEventListener(TRANSFER_SETTINGS_CHANGED, again)
+    return () => {
+      window.removeEventListener('focus', again)
+      document.removeEventListener('visibilitychange', again)
+      window.removeEventListener(TRANSFER_SETTINGS_CHANGED, again)
+    }
   }, [])
 
-  if (!s) {
+  if (!st) {
     return (
       <>
         <h1>Transfers</h1>
@@ -126,36 +228,107 @@ export function TransfersSettingsSection() {
     )
   }
 
+  const s = st.draft
   const off = s.managed
-  const change = (patch: Partial<TransferSettings>) => { setS({ ...s, ...patch }); setDirty(true); setSaveError('') }
+  const dirty = editedGroups(st.base, st.draft).length > 0
+  const change = (patch: Partial<TransferSettings>) => {
+    const cur = stRef.current!
+    put({ ...cur, draft: { ...cur.draft, ...patch } }); setSaveError('')
+  }
   const movers = (patch: Partial<TransferSettings['movers']>) => change({ movers: { ...s.movers, ...patch } })
   const defaults = (patch: Partial<TransferSettings['defaults']>) => change({ defaults: { ...s.defaults, ...patch } })
-  const setFolders = (computerFolders: ComputerFolder[]) => change({ computerFolders })
   const hostLocations = s[HOST_LOCATIONS]
   const hosts = s.detected?.libraryHosts ?? []
 
-  const persist = async (next: TransferSettings) => {
-    const { managed: _m, mcpServers: _x, detected: _d, ...input } = next
-    void _m; void _x; void _d
-    const saved = await transferApi.saveSettings(input)
-    setS(saved); setDirty(false)
+  /** Saves one change to the lists that save at once, made to the section
+   *  as last read; when that read is stale (409), the section is read
+   *  again and the change made to it. The Save fields go as last read, so
+   *  unsaved edits stay unsaved. */
+  const now = async (op: (b: TransferSettings) => TransferSettings) => {
+    const send = () => { const b = stRef.current!.base; return transferApi.saveSettings(input(op(b))) }
+    let saved: TransferSettings
+    try {
+      saved = await send()
+    } catch (e) {
+      if (!(e instanceof TransferError && e.status === 409)) throw e
+      adopt(await transferApi.settings())
+      saved = await send()
+    }
+    adopt(saved)
     void reloadLocations()
     return saved
   }
+  /** Save: the Save fields as edited, with the lists as last read (they
+   *  save on their own). On a 409 the section is read again and the edits
+   *  laid over it; with no conflict they are saved on top at once, and
+   *  what changed elsewhere is said. A conflict waits for the person. */
   const save = async () => {
-    setBusy(true); setSaveError('')
-    try { await persist(s); toast.success('Saved. New transfers use these settings.') } catch (e) { setSaveError((e as Error).message) } finally { setBusy(false) }
+    setBusy(true); setSaveError(''); setChanged(null)
+    const send = () => {
+      const cur = stRef.current!
+      return transferApi.saveSettings(input({ ...cur.draft, savedLocations: cur.base.savedLocations, computerFolders: cur.base.computerFolders, revision: cur.base.revision }))
+    }
+    const done = (saved: TransferSettings, note = '') => {
+      put({ base: saved, draft: saved })
+      void reloadLocations()
+      toast.success(`Saved. New transfers use these settings.${note}`)
+    }
+    try {
+      try {
+        done(await send())
+      } catch (e) {
+        if (!(e instanceof TransferError && e.status === 409)) throw e
+        const m = adopt(await transferApi.settings())
+        void reloadLocations()
+        if (m.conflicts.length) { setChanged({ elsewhere: m.elsewhere, conflicts: m.conflicts }); return }
+        const note = m.elsewhere.length ? ` Meanwhile ${listText(m.elsewhere)} changed elsewhere, and those changes are kept.` : ''
+        done(await send(), note)
+      }
+    } catch (e) {
+      setSaveError((e as Error).message)
+    } finally { setBusy(false) }
+  }
+  const discard = async () => {
+    setChanged(null); setSaveError('')
+    const fresh = await transferApi.settings().catch((e: Error) => { setSaveError(e.message); return null })
+    if (fresh) put({ base: fresh, draft: fresh })
   }
   const saveLocation = async (l: SavedLocation, result: SettingTest | null) => {
-    const list = [...s.savedLocations]
-    const at = dialog?.index ?? list.length
-    list[at] = l
-    const saved = await persist({ ...s, savedLocations: list })
+    const id = dialog?.id ?? null
+    let kept: SavedLocation | undefined
+    if (id === null) {
+      kept = (await transferApi.addLocation(l)).location
+      adopt(await transferApi.settings())
+      void reloadLocations()
+    } else {
+      const saved = await now(b => {
+        if (!b.savedLocations.some(x => x.id === id)) throw new Error(`${l.label} was removed elsewhere. Close this and add it again to keep it.`)
+        return { ...b, savedLocations: b.savedLocations.map(x => (x.id === id ? l : x)) }
+      })
+      kept = saved.savedLocations.find(x => x.id === id)
+    }
     // The test's result stays beside the row it was for.
-    const kept = saved.savedLocations[at]
-    if (result && kept) setTests(t => ({ ...t, [`loc-${kept.id || at}`]: { result } }))
+    if (result && kept) setTests(t => ({ ...t, [`loc-${kept.id}`]: { result } }))
     setDialog(null)
     toast.success(`Saved ${l.label}.`)
+  }
+  /** A change to the folders, saved at once. */
+  const folders = async (op: (fs: ComputerFolder[]) => ComputerFolder[], done: string) => {
+    setFolderError('')
+    try {
+      await now(b => ({ ...b, computerFolders: op(b.computerFolders) }))
+      toast.success(done)
+      return true
+    } catch (e) {
+      setFolderError((e as Error).message)
+      return false
+    }
+  }
+  const addFolder = async () => {
+    const path = folder.path.trim()
+    const label = folder.label.trim() || path.split('/').filter(Boolean).pop() || path
+    const ok = await folders(fs => (fs.some(f => f.path === path) ? fs : [...fs, { path, label, builtIn: false, enabled: true }]), `Added ${label}. Transfers can use it now.`)
+    if (ok) setFolder({ path: '', label: '' })
   }
 
   const runTest = async (key: string, body: Parameters<typeof transferApi.testSetting>[0]) => {
@@ -194,7 +367,7 @@ export function TransfersSettingsSection() {
       {off && <Callout tone="muted" className="xfer-settings-managed">The operator of this Studio sets these, in its environment. They are shown here read only.</Callout>}
 
       <div className="tool-group">Saved locations</div>
-      <p className="muted">Folders on other computers, reached over ssh.</p>
+      <p className="muted">Folders on other computers, reached over ssh. Adding, editing or removing one saves at once.</p>
       {s.savedLocations.length === 0 && <p className="muted">None yet.</p>}
       {s.savedLocations.length > 0 && (
         <table className="xfer-settings-table">
@@ -211,8 +384,8 @@ export function TransfersSettingsSection() {
                   <td className="xfer-mono">{l.root}</td>
                   <td className="xfer-settings-actions">
                     <Button size="sm" variant="ghost" disabled={off} onClick={() => void runTest(k, { host: l.host, root: l.root, rsyncPath: l.rsyncPath, port: l.port, sshOptions: l.sshOptions })}>Test</Button>
-                    <Button size="sm" variant="ghost" disabled={off} onClick={() => setDialog({ index: i })}>Edit</Button>
-                    <Button size="sm" variant="ghost" disabled={off} onClick={() => setRemoving(i)}>Remove</Button>
+                    <Button size="sm" variant="ghost" disabled={off} onClick={() => setDialog({ id: l.id })}>Edit</Button>
+                    <Button size="sm" variant="ghost" disabled={off} onClick={() => setRemoving(l.id)}>Remove</Button>
                   </td>
                 </tr>
                 {tests[k] && <tr className="xfer-settings-testrow"><td colSpan={4}><TestLine k={k} /></td></tr>}
@@ -221,38 +394,36 @@ export function TransfersSettingsSection() {
           })}
         </table>
       )}
-      <Button size="sm" variant="secondary" className="xfer-settings-add" disabled={off} onClick={() => setDialog({ index: null })}>Add a location</Button>
+      <Button size="sm" variant="secondary" className="xfer-settings-add" disabled={off} onClick={() => setDialog({ id: null })}>Add a location</Button>
 
       <div className="tool-group">Folders on this computer</div>
-      <p className="muted">Folders on the computer Studio runs on that transfers may read and write.</p>
+      <p className="muted">Folders on the computer Studio runs on that transfers may read and write. Changes here save at once.</p>
       <ul className="xfer-settings-folders">
-        {s.computerFolders.map((f, i) => (
-          <li key={f.path}>
+        {s.computerFolders.map(f => (
+          <li key={f.builtIn ? f.label : f.path}>
             {f.builtIn
               ? <Switch size="sm" checked={f.enabled} disabled={off} aria-label={`Use ${f.label}`}
-                  onCheckedChange={v => setFolders(s.computerFolders.map((x, j) => (j === i ? { ...x, enabled: v } : x)))} />
+                  onCheckedChange={v => void folders(fs => fs.map(x => (x.builtIn && x.label === f.label ? { ...x, enabled: v } : x)), `Saved. ${f.label} is ${v ? 'offered' : 'no longer offered'} to transfers.`)} />
               : <span className="xfer-settings-spacer" />}
-            <span className="xfer-settings-folder-label">{f.label}</span>
-            <code className="muted">{f.path}</code>
-            {!f.builtIn && <Button size="sm" variant="ghost" disabled={off} onClick={() => setFolders(s.computerFolders.filter((_, j) => j !== i))}>Remove</Button>}
+            <span className="xfer-settings-folder-label" title={f.label}>{f.label}</span>
+            <code className="muted xfer-settings-folder-path" title={f.path}>{f.path}</code>
+            {!f.builtIn && <Button size="sm" variant="ghost" className="xfer-settings-folder-remove" disabled={off} aria-label={`Remove ${f.label}`}
+              onClick={() => void folders(fs => fs.filter(x => x.builtIn || x.path !== f.path), `Removed ${f.label}. Its files are not touched.`)}>Remove</Button>}
           </li>
         ))}
       </ul>
       {!off && (
         <div className="xfer-settings-inline xfer-settings-addfolder">
           <Input size="sm" aria-label="Folder to add" mono placeholder="/home/user/Projects" value={folder.path}
-            onChange={e => setFolder({ ...folder, path: e.target.value })}
+            onChange={e => { setFolder({ ...folder, path: e.target.value }); setFolderError('') }}
             error={folder.path && !folder.path.trim().startsWith('/') ? 'Start the folder with /' : undefined} />
           <Input size="sm" aria-label="Its name" placeholder="Name" value={folder.label}
             onChange={e => setFolder({ ...folder, label: e.target.value })} />
           <Button size="sm" variant="secondary" disabled={!folder.path.trim().startsWith('/') || s.computerFolders.some(f => f.path === folder.path.trim())}
-            onClick={() => {
-              const path = folder.path.trim()
-              setFolders([...s.computerFolders, { path, label: folder.label.trim() || path.split('/').filter(Boolean).pop() || path, builtIn: false, enabled: true }])
-              setFolder({ path: '', label: '' })
-            }}>Add folder</Button>
+            onClick={() => void addFolder()}>Add folder</Button>
         </div>
       )}
+      {folderError && <Callout tone="error" size="sm" live>{folderError}</Callout>}
 
       {hostLocations && (
         <>
@@ -338,23 +509,37 @@ export function TransfersSettingsSection() {
       </div>
 
       {!off && (
-        <div className="query-actions">
+        <div className="query-actions xfer-settings-save">
           <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button>
+          {dirty && <StatusLabel variant="warning">Unsaved changes</StatusLabel>}
+          <span className="muted">Save keeps how files move, library hosts and the defaults.</span>
         </div>
+      )}
+      {changed && (
+        <Callout tone="warning" live className="xfer-settings-changed">
+          Transfers settings changed elsewhere since this page loaded{changed.elsewhere.length ? ` (${listText(changed.elsewhere)})` : ''}.
+          {' '}Your unsaved changes to {listText(changed.conflicts)} differ from what was saved there, so nothing was saved.
+          {' '}Save again to keep your changes, or Reload to show the saved settings and drop them.{' '}
+          <Button size="sm" variant="secondary" onClick={() => void discard()}>Reload</Button>
+        </Callout>
       )}
       {saveError && <Callout tone="error" live>{saveError}</Callout>}
 
       {dialog && (
-        <LocationDialog first={dialog.index === null ? null : s.savedLocations[dialog.index]}
+        <LocationDialog first={dialog.id === null ? null : s.savedLocations.find(l => l.id === dialog.id) ?? null}
           onClose={() => setDialog(null)} onSave={saveLocation} />
       )}
       <ConfirmModal open={removing !== null} onClose={() => setRemoving(null)} destructive
-        title={`Remove ${removing !== null ? s.savedLocations[removing]?.label : ''}?`}
+        title={`Remove ${removing !== null ? s.savedLocations.find(l => l.id === removing)?.label ?? '' : ''}?`}
         description="It leaves the location picker. Files there are not touched."
         confirmLabel="Remove"
         onConfirm={async () => {
           if (removing === null) return
-          await persist({ ...s, savedLocations: s.savedLocations.filter((_, j) => j !== removing) })
+          const label = s.savedLocations.find(l => l.id === removing)?.label ?? removing
+          try {
+            await now(b => ({ ...b, savedLocations: b.savedLocations.filter(l => l.id !== removing) }))
+            toast.success(`Removed ${label}.`)
+          } catch (e) { toast.error((e as Error).message) }
         }} />
     </div>
   )

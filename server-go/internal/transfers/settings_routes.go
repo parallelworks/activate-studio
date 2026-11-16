@@ -37,6 +37,9 @@ type Detected struct {
 // read-only fields.
 type SettingsView struct {
 	Managed bool `json:"managed"`
+	// Revision names the stored section this view was read from. A PUT
+	// carries it back, and is refused when the section changed since.
+	Revision string `json:"revision"`
 	Settings
 	MCPServers []MCPServer `json:"mcpServers"`
 	Detected   Detected    `json:"detected"`
@@ -46,7 +49,7 @@ type SettingsView struct {
 // the built-in ones first, with their paths here, then the added ones.
 func (s *Service) SettingsView(ctx context.Context, v Viewer) SettingsView {
 	set := s.settingsFor(v)
-	out := SettingsView{Managed: v.AuthOn, Settings: set, MCPServers: []MCPServer{}}
+	out := SettingsView{Managed: v.AuthOn, Revision: set.revision(), Settings: set, MCPServers: []MCPServer{}}
 	if !v.AuthOn {
 		var folders []ComputerFolder
 		for _, n := range BuiltInFolders {
@@ -108,19 +111,50 @@ func (s *Service) detect(ctx context.Context, v Viewer, set Settings) Detected {
 	return d
 }
 
-// SaveSettings validates and stores the section (403 with sign-in on).
-func (s *Service) SaveSettings(ctx context.Context, v Viewer, in Settings) (SettingsView, error) {
+// SettingsPut is PUT /api/transfers/settings: the section, and the
+// revision of the view it was edited from.
+type SettingsPut struct {
+	Settings
+	Revision string `json:"revision"`
+}
+
+// staleSettings is the 409 of a PUT made from an older read.
+const staleSettings = "Transfers settings changed since this page loaded, for example a location was saved from the Transfers page or the chat. Load them again and save your changes on top"
+
+// SaveSettings validates and stores the section (403 with sign-in on). The
+// PUT replaces the whole section, so it must name the revision it was
+// edited from: a PUT made from an older read (a saved location added
+// since, or another window's save) is refused with 409, and nothing it
+// did not see is lost.
+func (s *Service) SaveSettings(ctx context.Context, v Viewer, in SettingsPut) (SettingsView, error) {
 	if v.AuthOn {
 		return SettingsView{}, apierr.New(403, "with sign-in on, the operator's environment sets transfers (STUDIO_TRANSFER_FOLDERS, STUDIO_RSYNC, STUDIO_TRANSFER_MOVER, STUDIO_TRANSFER_STREAMS)")
 	}
-	c, err := in.Check(s.refusedFolder)
-	if err != nil {
-		return SettingsView{}, err
+	if s.d.Settings == nil {
+		return SettingsView{}, apierr.New(503, "settings cannot be saved here")
 	}
-	if err := s.d.Settings.Save(c); err != nil {
+	if in.Revision == "" {
+		return SettingsView{}, bad("revision", "send the revision GET /api/transfers/settings returned, so a save cannot undo a change made since")
+	}
+	if err := s.saveIfCurrent(in); err != nil {
 		return SettingsView{}, err
 	}
 	return s.SettingsView(ctx, v), nil
+}
+
+// saveIfCurrent checks and stores in when the stored section is still the
+// revision it names, under settingsMu.
+func (s *Service) saveIfCurrent(in SettingsPut) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	if s.d.Settings.Load().revision() != in.Revision {
+		return apierr.New(409, "%s", staleSettings)
+	}
+	c, err := in.Settings.Check(s.refusedFolder)
+	if err != nil {
+		return err
+	}
+	return s.d.Settings.Save(c)
 }
 
 // TestRequest is POST /api/transfers/settings/test: a saved location
@@ -257,8 +291,8 @@ func (s *Service) AddSavedLocation(ctx context.Context, v Viewer, in SavedLocati
 	if s.d.Settings == nil {
 		return SavedLocation{}, apierr.New(503, "settings cannot be saved here")
 	}
-	s.savedMu.Lock()
-	defer s.savedMu.Unlock()
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
 	set := s.d.Settings.Load()
 	in.ID = ""
 	set.SavedLocations = append(append([]SavedLocation{}, set.SavedLocations...), in)

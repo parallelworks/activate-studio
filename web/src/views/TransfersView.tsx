@@ -7,8 +7,8 @@ import { LocationDialog, type LocationPrefill } from '../components/SavedLocatio
 import { TransferPlanDialog } from '../components/TransferPlanDialog'
 import { TransferActivity } from '../components/TransferActivity'
 import {
-  ACTION_TEXT, MOVER_TEXT, destinationWhy, sourcePaths, transferApi,
-  type MoverName, type Plan, type PlanOptions, type PlanRequest, type SavedLocation, type Transfer, type TransferAction, type TransferLocation,
+  ACTION_TEXT, MOVER_TEXT, TRANSFER_SETTINGS_CHANGED, destinationWhy, sourcePaths, testText, transferApi,
+  type MoverName, type Plan, type PlanOptions, type PlanRequest, type SavedLocation, type SettingTest, type Transfer, type TransferAction, type TransferLocation,
 } from '../transferApi'
 
 /** What the save dialog opens with for a library's files: what the server
@@ -194,15 +194,18 @@ export function TransfersView() {
     setSaving(from ? { side, ...prefillFor(from) } : { side })
   }
   // The dialog tested the location; it is added, the list is read again,
-  // and the pane it was opened from switches to it.
-  const saveLocation = async (l: SavedLocation) => {
+  // and the pane it was opened from switches to it. The toast carries the
+  // test's result in Settings' words, since the dialog closes.
+  const saveLocation = async (l: SavedLocation, result: SettingTest | null) => {
     const at = saving?.side ?? 'b'
     const { id, location: kept } = await transferApi.addLocation(l)
+    window.dispatchEvent(new Event(TRANSFER_SETTINGS_CHANGED))
     await loadLocations()
     setPanes(p => ({ ...p, [at]: { locationId: id, path: '', selected: [] } }))
     setPlanError('')
     setSaving(null)
-    toast.success(`Saved ${kept.label}. It is also in Settings, Transfers.`)
+    const test = result ? ` ${testText(result)}${result.ok ? '' : '.'}` : ''
+    toast.success(`Saved ${kept.label}.${test} It is also in Settings, Transfers.`)
   }
 
   const started = (t: Transfer) => {

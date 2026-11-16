@@ -660,7 +660,7 @@ export default function App() {
         {cfg.platform && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
         {cfg.platform && view === 'code' && <div className="view"><CodeView /></div>}
         <div className={view === 'settings' ? 'view with-toggle' : 'view hidden'}>
-          <SettingsView />
+          <SettingsView active={view === 'settings'} />
           {view === 'settings' && <PanelToggle className="panel-toggle-float" />}
         </div>
         <div className={view === 'help' ? 'view with-toggle' : 'view hidden'}>

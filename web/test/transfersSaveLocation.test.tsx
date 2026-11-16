@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { toast } from '@parallelworks/ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TransfersView, prefillFor } from '../src/views/TransfersView'
 import { ToolApproval } from '../src/components/ToolApproval'
+import { TRANSFER_SETTINGS_CHANGED } from '../src/transferApi'
 import { MOCK_LOCATIONS, createTransfersMock, mockSettings, type MockLocation, type MockOptions } from './transfersMock'
 
 // A checkbox forwards its press to its hidden input as a PointerEvent, which
@@ -151,6 +153,40 @@ describe('saving a location from the Transfers page', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Second location: location' })).toHaveValue('Project X files'))
     expect(within(second()).getByText('user@files.example.com, /srv/project-x')).toBeInTheDocument()
     expect(within(second()).queryByText('Project X is not reachable')).toBeNull()
+  })
+
+  it('says what the test found in the toast, in Settings\' words, and tells Settings to read again', async () => {
+    serve({ testReply: { ok: true, sftpOnly: true, rsync: false, writable: true, freeBytes: 2 * 1024 ** 4, roundTripMs: 40 } })
+    const success = vi.spyOn(toast, 'success')
+    const heard = vi.fn()
+    window.addEventListener(TRANSFER_SETTINGS_CHANGED, heard)
+    try {
+      await openNew()
+      await pick('Second location', 'Project X')
+      fireEvent.click(await within(second()).findByRole('button', { name: 'Save a location for its files…' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Add a saved location' })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Test and save' }))
+      await waitFor(() => expect(success).toHaveBeenCalled())
+      expect(success).toHaveBeenLastCalledWith('Saved Project X files. Reached over SFTP (the account takes SFTP only), folder exists, rsync not available, Studio copy will be used, writable, 2 TB free, 40 ms round trip. It is also in Settings, Transfers.')
+      expect(heard).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener(TRANSFER_SETTINGS_CHANGED, heard)
+      success.mockRestore()
+    }
+  })
+
+  it('says in the toast that a location saved anyway failed its test', async () => {
+    serve({ testReply: { ok: false, why: 'Permission denied (publickey)' } })
+    const success = vi.spyOn(toast, 'success')
+    try {
+      await openNew()
+      await pick('Second location', 'Project X')
+      fireEvent.click(await within(second()).findByRole('button', { name: 'Save a location for its files…' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Add a saved location' })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Test and save' }))
+      fireEvent.click(await within(dialog).findByRole('button', { name: 'Save anyway' }))
+      await waitFor(() => expect(success).toHaveBeenLastCalledWith('Saved Project X files. Test failed: Permission denied (publickey). It is also in Settings, Transfers.'))
+    } finally { success.mockRestore() }
   })
 
   it('saves nothing when the test fails, until asked to save anyway', async () => {

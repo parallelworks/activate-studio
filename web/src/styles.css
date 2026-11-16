@@ -2994,8 +2994,14 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-empty-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .xfer-settings-add { align-self: flex-start; }
 .xfer-settings-folders { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.xfer-settings-folders li { display: flex; align-items: center; gap: 10px; font-size: 13px; min-height: 28px; }
-.xfer-settings-folder-label { min-width: 90px; }
+.xfer-settings-folders li { display: flex; align-items: center; gap: 10px; font-size: 13px; min-height: 28px; min-width: 0; }
+.xfer-settings-folder-label { min-width: 90px; max-width: 30%; flex: none; overflow-wrap: anywhere; }
+/* A long path ends in an ellipsis (its title has it whole), so the row's
+   Remove stays in view and the section never scrolls sideways. */
+.xfer-settings-folder-path { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xfer-settings-folders li > button, .xfer-settings-folders li > [role="switch"] { flex: none; }
+.xfer-settings > * { min-width: 0; max-width: 100%; }
+.xfer-settings-save { align-items: center; flex-wrap: wrap; }
 .xfer-settings-spacer { width: 36px; flex: none; }
 .xfer-settings-addfolder > * { width: auto; }
 .xfer-settings-addfolder > :first-child { flex: 2 1 260px; }
