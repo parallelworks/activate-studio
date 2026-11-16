@@ -7,7 +7,8 @@ import { TransferPane, type PaneState } from '../src/components/TransferPane'
 import { TransferActivity, progressText } from '../src/components/TransferActivity'
 import { TransferPlanDialog } from '../src/components/TransferPlanDialog'
 import {
-  confirmText, rangeSelect, resetTransfersProbe, sourcePaths, transfersPresent, type Plan, type Transfer,
+  confirmText, plural, rangeSelect, resetTransfersProbe, sourcePaths, touchesMainLibrary, transferTitle, transfersPresent,
+  type Plan, type Transfer,
 } from '../src/transferApi'
 import { MOCK_LOCATIONS, createTransfersMock, mockTransfers, type MockOptions } from './transfersMock'
 
@@ -213,8 +214,9 @@ describe('new transfer and the plan', () => {
       return r
     })
     expect(row).toHaveTextContent('Copy 7 files')
-    // The new transfer heads the active list, behind its details.
-    const active = screen.getByRole('region', { name: 'Active', hidden: true })
+    // The new transfer heads the active list, behind its details, which
+    // cover the view below the page header.
+    const active = document.querySelector('section.xfer-group[aria-label="Active"]') as HTMLElement
     expect(active.querySelector('.xfer-row')).toBe(row)
     expect(await screen.findByRole('dialog')).toHaveTextContent('Copy 7 files')
     expect(screen.queryByRole('region', { name: /: files$/ })).toBeNull()
@@ -390,6 +392,57 @@ describe('activity', () => {
     run.state = 'succeeded'
     await act(async () => { await vi.advanceTimersByTimeAsync(2100) })
     await waitFor(() => expect(landed).toHaveBeenCalledWith(expect.objectContaining({ id: 't-run', state: 'succeeded' })))
+  })
+
+  it('tells the Library to read the main library again when a transfer that wrote there ends', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const m = serve()
+    const changed = vi.fn()
+    window.addEventListener('ade-kb-changed', changed)
+    try {
+      render(<TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />)
+      await screen.findByRole('region', { name: 'Active' })
+      expect(changed).not.toHaveBeenCalled()
+      // t-run copies into Projects, the main library.
+      const run = m.transfers.find(t => t.id === 't-run')!
+      run.state = 'succeeded'; run.endedAt = new Date().toISOString()
+      await act(async () => { await vi.advanceTimersByTimeAsync(2100) })
+      await waitFor(() => expect(changed).toHaveBeenCalledTimes(1))
+    } finally {
+      window.removeEventListener('ade-kb-changed', changed)
+    }
+  })
+
+  it('counts a move out of the main library, or a write into it, as a change to it, and nothing else', () => {
+    const t = (action: Transfer['action'], from: string, to: string) =>
+      ({ action, source: { location: from, label: '', paths: [] }, destination: { location: to, label: '', path: '' } })
+    expect(touchesMainLibrary(t('copy', 'cluster:gpu-cluster', 'library:kb'))).toBe(true)
+    expect(touchesMainLibrary(t('sync', 'cluster:gpu-cluster', 'library:kb'))).toBe(true)
+    expect(touchesMainLibrary(t('move', 'library:kb', 'computer:Downloads'))).toBe(true)
+    expect(touchesMainLibrary(t('copy', 'library:kb', 'computer:Downloads'))).toBe(false)
+    expect(touchesMainLibrary(t('move', 'library:archive', 'computer:Downloads'))).toBe(false)
+  })
+
+  it('says one file, one item and one transfer in the singular', () => {
+    const one = { ...(mockTransfers().find(x => x.id === 't-run') as unknown as Transfer), state: 'succeeded' as const }
+    one.files = { done: 1, total: 1 }; one.bytes = { done: 18, total: 18 }
+    expect(progressText(one)).toBe('1 of 1 file · 18 B of 18 B')
+    expect(progressText({ ...one, files: { done: 1, total: -1 }, bytes: { done: 18, total: -1 } })).toBe('1 file, counting · 18 B')
+    expect(progressText({ ...one, files: { done: 2, total: 3 } })).toMatch(/^2 of 3 files · /)
+    expect(transferTitle({ label: '', action: 'move', files: { done: 0, total: -1 }, source: { location: '', label: '', paths: ['a', 'b'] } })).toBe('Move 2 items')
+    expect(transferTitle({ label: '', action: 'copy', files: { done: 0, total: 1 }, source: { location: '', label: '', paths: ['a'] } })).toBe('Copy 1 file')
+    expect(plural(1, 'transfer')).toBe('1 transfer')
+    expect(plural(2, 'library', 'libraries')).toBe('2 libraries')
+  })
+
+  it('opens the details over the list below the page header, not over the whole window', async () => {
+    serve()
+    render(<div className="view"><div className="xfer-view"><TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} /></div></div>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Details of Copy 12 files' }))
+    const drawer = await screen.findByRole('dialog')
+    // Contained in the view, so its close button sits under the header's
+    // Status pane toggle, never on it.
+    expect(drawer.closest('.xfer-view')).not.toBeNull()
   })
 
   it('shows the events and error in the detail, says why a cancel was refused, and removes a finished one', async () => {

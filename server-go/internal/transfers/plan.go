@@ -199,7 +199,7 @@ func readOnlyWhy(l *loc) string {
 // destination always, and the source of a move.
 func indexNotes(p *planRec) []string {
 	note := func(l *loc) string {
-		if l.Kind != KindLibrary || l.Indexed {
+		if l.Kind != KindLibrary || l.reindexed {
 			return ""
 		}
 		when := l.refresh
@@ -570,6 +570,28 @@ func plural(n int, one, many string) string {
 	return many
 }
 
+// count is "1 file" or "3 files".
+func count(n int, one, many string) string {
+	return fmt.Sprintf("%d %s", n, plural(n, one, many))
+}
+
+// arrivedAll is "The file arrived" for one, "All 3 files arrived" for more.
+func arrivedAll(n int) string {
+	if n == 1 {
+		return "The file arrived"
+	}
+	return fmt.Sprintf("All %d files arrived", n)
+}
+
+// matchesAll is "matches for the file" for one, "matches for all 3 files"
+// for more.
+func matchesAll(n int) string {
+	if n == 1 {
+		return "matches for the file"
+	}
+	return fmt.Sprintf("matches for all %d files", n)
+}
+
 func typeWord(t byte) string {
 	switch t {
 	case 'd':
@@ -665,7 +687,7 @@ func (s *Service) confirm(ctx context.Context, v Viewer, old *planRec) (*planRec
 		return nil, err
 	}
 	if !old.bare && p.Files > old.Files {
-		return nil, apierr.New(409, "the source has changed since the plan: %d files to send where the plan showed %d; plan it again", p.Files, old.Files)
+		return nil, apierr.New(409, "the source has changed since the plan: %s to send where the plan showed %d; plan it again", count(p.Files, "file", "files"), old.Files)
 	}
 	for out := range p.replaceSet {
 		if !old.replaceSet[out] {

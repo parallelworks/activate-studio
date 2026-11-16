@@ -406,7 +406,7 @@ func TestSFTPTransfers(t *testing.T) {
 	shell := func(site, key string) ([]string, []string, error) { return []string{"false"}, nil, nil }
 	s := New(Deps{IndexBase: filepath.Join(dir, "ix"), Getenv: func(string) string { return "" }, Runner: run, Shell: shell,
 		Libraries: func(context.Context, Viewer) []LibraryLoc {
-			return []LibraryLoc{{ID: "kb", Label: "Knowledge base", Writable: true, Indexed: true, FS: &LocalFS{Dir: kb}}}
+			return []LibraryLoc{{ID: "kb", Label: "Knowledge base", Writable: true, Reindexed: true, FS: &LocalFS{Dir: kb}}}
 		},
 		Settings: &MemorySettings{S: set}, Index: ix})
 	r := &rig{t: t, s: s, ix: ix}

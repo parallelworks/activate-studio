@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as ui from '@parallelworks/ui'
 import { SearchView } from '../src/views/SearchView'
 import { QueryView } from '../src/views/QueryView'
-import { groupByLibrary, groupsText, itemKey, keyItem, keyPaths } from '../src/components/ResultsTransfer'
+import userEvent from '@testing-library/user-event'
+import { defaultDestination, groupByLibrary, groupsText, itemKey, keyItem, keyPaths } from '../src/components/ResultsTransfer'
 import { libraryRelative, resetTransfersProbe } from '../src/transferApi'
 import { resetScopesForTests } from '../src/scope'
 import { MOCK_LOCATIONS, createTransfersMock, type MockLocation } from './transfersMock'
@@ -91,6 +92,23 @@ const transferButton = () => screen.queryByRole('button', { name: /^Transfer…/
 async function openDialog() {
   fireEvent.click(transferButton()!)
   return await screen.findByRole('dialog', { name: /^Transfer \d+ items?$/ })
+}
+/** Picks the destination from the dialog's chooser. Its list draws only the
+ *  rows that fit its height, which jsdom measures as zero, so layout is
+ *  given a size while it is open. */
+async function pickDestination(label: string) {
+  const rect = Element.prototype.getBoundingClientRect
+  const sizes = ['offsetHeight', 'clientHeight', 'offsetWidth', 'clientWidth'] as const
+  for (const k of sizes) Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => 400 })
+  Element.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, width: 400, height: 400, right: 400, bottom: 400, toJSON() {} }) as DOMRect
+  try {
+    const u = userEvent.setup()
+    await u.click(screen.getByRole('combobox', { name: 'Destination: location' }))
+    await u.click(await screen.findByRole('option', { name: new RegExp(`^${label}`) }))
+  } finally {
+    Element.prototype.getBoundingClientRect = rect
+    for (const k of sizes) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k]
+  }
 }
 /** Waits for the destination pane to list the folder it opened on. */
 async function destListed(dialog: HTMLElement, name: string) {
@@ -200,13 +218,17 @@ describe('the dialog', () => {
     const dialog = await openDialog()
     expect(dialog).toHaveAccessibleName('Transfer 2 items')
     expect(within(dialog).getByText('2 files in Projects')).toBeInTheDocument()
-    // The destination opens on the first item's library, browsed as on
-    // the Transfers page, with nothing to tick.
-    const files = await destListed(dialog, 'simulations')
+    // The destination opens on a place other than the items' library, a
+    // folder on this computer first, browsed as on the Transfers page,
+    // with nothing to tick.
+    await destListed(dialog, 'dataset-v2.tar.gz')
+    expect(within(dialog).getByRole('combobox', { name: 'Destination: location' })).toHaveValue('Downloads')
+    await pickDestination('gpu-cluster')
+    const files = await destListed(dialog, 'scratch')
     expect(within(files).queryByRole('checkbox')).toBeNull()
-    fireEvent.click(within(files).getByRole('button', { name: 'simulations' }))
-    await within(files).findByText('README.md')
-    expect(within(dialog).getByText('To Projects: simulations')).toBeInTheDocument()
+    fireEvent.click(within(files).getByRole('button', { name: 'scratch' }))
+    await within(files).findByText('empty')
+    expect(within(dialog).getByText('To gpu-cluster: scratch')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
     const plan = await screen.findByRole('alertdialog')
     expect(plan).toHaveAccessibleName('Copy: confirm the plan')
@@ -215,7 +237,7 @@ describe('the dialog', () => {
     expect(posts[0].body).toMatchObject({
       action: 'copy',
       source: { location: 'library:kb', paths: ['datasets/labels.json', 'reports/q3-review.pdf'] },
-      destination: { location: 'library:kb', path: 'simulations' },
+      destination: { location: 'cluster:gpu-cluster', path: 'scratch' },
       options: { replace: false, mover: 'auto' },
     })
   })
@@ -226,9 +248,7 @@ describe('the dialog', () => {
     const dialog = await openDialog()
     expect(dialog).toHaveAccessibleName('Transfer 3 items')
     expect(within(dialog).getByText('2 files in Projects, 1 in Archive')).toBeInTheDocument()
-    const files = await destListed(dialog, 'simulations')
-    fireEvent.click(within(files).getByRole('button', { name: 'simulations' }))
-    await within(files).findByText('README.md')
+    await destListed(dialog, 'dataset-v2.tar.gz')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
     const first = await screen.findByRole('alertdialog', { name: 'Copy: confirm the plan (1 of 2)' })
     expect(mock.calls.filter(c => c.path === '/api/transfers/plan').map(c => (c.body as { source: { location: string } }).source.location))
@@ -249,7 +269,7 @@ describe('the dialog', () => {
     const dialog = await openDialog()
     expect(await within(dialog).findByText('2 files in Remote left out')).toBeInTheDocument()
     expect(within(dialog).getByText('Remote is not reachable: the host did not answer.')).toBeInTheDocument()
-    await destListed(dialog, 'simulations')
+    await destListed(dialog, 'dataset-v2.tar.gz')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
     await screen.findByRole('alertdialog', { name: 'Copy: confirm the plan' })
     const posts = mock.calls.filter(c => c.path === '/api/transfers/plan')
@@ -275,14 +295,26 @@ describe('the dialog', () => {
   })
 
   it('shows the server\'s reason when it refuses a plan', async () => {
+    const scrolled = vi.fn()
+    Element.prototype.scrollIntoView = scrolled
     await search([hit('kb', 'Projects', 'notes.md')])
     fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
     const dialog = await openDialog()
+    await destListed(dialog, 'dataset-v2.tar.gz')
+    // Chosen by hand: notes.md is already at the top of Projects, and
+    // Replace is off.
+    await pickDestination('Projects')
     await destListed(dialog, 'simulations')
-    // notes.md is already at the top of Projects, and Replace is off.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
     expect(await within(dialog).findByText(/notes\.md already exists in Projects/)).toBeInTheDocument()
     expect(screen.queryByRole('alertdialog')).toBeNull()
+    // The reason is where it is seen: scrolled into view and focused, as it
+    // sits below the destination pane, under the fold in a short window.
+    const refused = within(dialog).getByTestId('xfer-results-refused')
+    await waitFor(() => expect(document.activeElement).toBe(refused))
+    expect(scrolled).toHaveBeenCalled()
+    expect(scrolled.mock.contexts.at(-1)).toBe(refused)
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
   })
 
   it('after a start, stays on the page with a toast that opens the transfer, and clears the selection', async () => {
@@ -290,21 +322,67 @@ describe('the dialog', () => {
     await search([hit('kb', 'Projects', 'datasets/labels.json')])
     fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
     const dialog = await openDialog()
-    const files = await destListed(dialog, 'simulations')
-    fireEvent.click(within(files).getByRole('button', { name: 'reports' }))
-    await within(files).findByText('q3-review.pdf')
+    await destListed(dialog, 'dataset-v2.tar.gz')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
     const plan = await screen.findByRole('alertdialog')
     fireEvent.click(within(plan).getByRole('button', { name: 'Copy 1 file' }))
     await waitFor(() => expect(success).toHaveBeenCalledTimes(1))
     const [message, opts] = success.mock.calls[0]
     const id = (mock.transfers[0] as { id: string }).id
-    expect(message).toBe('Copy 1 file from Projects to Projects')
+    expect(message).toBe('Copy 1 file from Projects to Downloads')
     expect(opts).toMatchObject({ title: 'Transfer started', action: { label: 'Open in Transfers', href: `#view=transfers?transfer=${encodeURIComponent(id)}` } })
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(location.hash).not.toMatch(/transfers/)
     expect(transferButton()).toBeDisabled()
     expect(screen.getByText('datasets/labels.json').closest('.result-row')).not.toHaveClass('multi')
+  })
+})
+
+describe('the destination it starts at', () => {
+  const loc = (id: string, kind: string, writable = true, available = true): MockLocation =>
+    ({ id, kind, label: id, detail: '', writable, indexed: kind === 'library', browsable: true, available })
+  it('is never the items\' own library: a place of another kind first, then another library, else none', () => {
+    const items = [{ library: 'kb', path: 'a.txt' }]
+    expect(defaultDestination(LOCATIONS, items)?.id).toBe('computer:Downloads')
+    // Only libraries take files: another library, never the items' own.
+    const libs = [loc('library:kb', 'library'), loc('library:ro', 'library', false), loc('library:archive', 'library')]
+    expect(defaultDestination(libs, items)?.id).toBe('library:archive')
+    // Items in both writable libraries: nothing else takes files.
+    expect(defaultDestination(libs, [...items, { library: 'archive', path: 'b.txt' }])).toBeNull()
+    expect(defaultDestination([loc('library:kb', 'library'), loc('computer:x', 'computer', true, false)], items)).toBeNull()
+  })
+
+  it('leaves the chooser empty when no place other than the items\' libraries takes files', async () => {
+    await search([hit('kb', 'Projects', 'datasets/labels.json')])
+    // Projects and the read-only Reference are the only places.
+    mock = createTransfersMock({ locations: [MOCK_LOCATIONS[0], MOCK_LOCATIONS[1]] })
+    fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+    const dialog = await openDialog()
+    await within(dialog).findByText('Choose a location')
+    expect(within(dialog).getByRole('button', { name: 'Continue' })).toHaveAttribute('aria-disabled', 'true')
+    expect(mock.calls.filter(c => c.path === '/api/transfers/plan')).toHaveLength(0)
+  })
+})
+
+describe('the notice of what started', () => {
+  it('is one toast for several starts, updated in place, that opens the Transfers list', async () => {
+    const success = vi.spyOn(ui.toast, 'success')
+    await search([hit('kb', 'Projects', 'datasets/labels.json'), hit('archive', 'Archive', '2025/run-001/out.h5')])
+    fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+    const dialog = await openDialog()
+    await destListed(dialog, 'dataset-v2.tar.gz')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    const first = await screen.findByRole('alertdialog', { name: 'Copy: confirm the plan (1 of 2)' })
+    fireEvent.click(within(first).getByRole('button', { name: /^Copy / }))
+    const second = await screen.findByRole('alertdialog', { name: 'Copy: confirm the plan (2 of 2)' })
+    fireEvent.click(within(second).getByRole('button', { name: /^Copy / }))
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(2))
+    const [[, one], [message, two]] = success.mock.calls as [unknown, { id?: string; title?: string; action?: unknown }][]
+    expect(one.title).toBe('Transfer started')
+    // The second start updates the first's toast: one toast, not two.
+    expect(two.id).toBe(one.id)
+    expect(two).toMatchObject({ title: '2 transfers started', action: { label: 'Open Transfers', href: '#view=transfers' } })
+    expect(message).toBe('From Projects, Archive to Downloads')
   })
 })

@@ -118,7 +118,7 @@ func TestOverRealSSH(t *testing.T) {
 	}
 	s := New(Deps{IndexBase: filepath.Join(dir, "ix"), Getenv: func(k string) string { return env[k] }, Runner: runner, Shell: runner.RemoteShell,
 		Libraries: func(context.Context, Viewer) []LibraryLoc {
-			return []LibraryLoc{{ID: "kb", Label: "Knowledge base", Writable: true, Indexed: true, FS: &LocalFS{Dir: kb}}}
+			return []LibraryLoc{{ID: "kb", Label: "Knowledge base", Writable: true, Reindexed: true, FS: &LocalFS{Dir: kb}}}
 		},
 		Settings: set, Index: ix})
 	r := &rig{t: t, s: s, ix: ix}

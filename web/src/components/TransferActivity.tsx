@@ -3,7 +3,8 @@ import {
   Button, Callout, Drawer, EmptyState, Loader, ProgressBar, SearchInput, Select, StatusDot, StatusLabel, Tabs, type BadgeVariant,
 } from '@parallelworks/ui'
 import {
-  ACTION_TEXT, STATE_TEXT, bytesText, destLine, durationText, isActive, sourceLine, transferApi, transferTitle,
+  ACTION_TEXT, KB_CHANGED_EVENT, STATE_TEXT, bytesText, destLine, durationText, isActive, plural, sourceLine, touchesMainLibrary,
+  transferApi, transferTitle,
   type Outcome, type Transfer, type TransferState,
 } from '../transferApi'
 import { ReadySummary, useTransfersReady } from './TransfersReady'
@@ -42,7 +43,7 @@ function timeText(iso?: string): string {
 /** The amounts behind a progress bar: files and bytes done of total, and
  *  while running the rate and time left. */
 export function progressText(t: Transfer): string {
-  const files = t.files.total < 0 ? `${t.files.done.toLocaleString()} files, counting` : `${t.files.done.toLocaleString()} of ${t.files.total.toLocaleString()} files`
+  const files = t.files.total < 0 ? `${plural(t.files.done, 'file')}, counting` : `${t.files.done.toLocaleString()} of ${plural(t.files.total, 'file')}`
   const bytes = t.bytes.total < 0 ? `${bytesText(t.bytes.done)}` : `${bytesText(t.bytes.done)} of ${bytesText(t.bytes.total)}`
   const parts = [files, bytes]
   if (t.state === 'running' && t.rate) parts.push(`${bytesText(t.rate)}/s`)
@@ -280,6 +281,10 @@ export function TransferActivity({
       if (!fresh.length) return
       note(fresh)
       for (const t of fresh) if (t.state === 'succeeded') onLandedRef.current(t)
+      // The Library tree and its details read the main library again when
+      // a transfer wrote there or moved files out of it. Any ending counts:
+      // a move that failed part way may have removed some originals.
+      if (fresh.some(touchesMainLibrary)) window.dispatchEvent(new Event(KB_CHANGED_EVENT))
       const keep = fresh.filter(t => matchesFilters(t, filters.current))
       if (keep.length) setHist(h => ({ ...h, rows: [...keep, ...h.rows.filter(x => !keep.some(k => k.id === x.id))].sort(byNewest) }))
     } catch { /* the next tick asks again */ }
@@ -456,7 +461,9 @@ export function TransferDetail({
 
   const events = t.events ?? []
   return (
-    <Drawer open onClose={onClose} title={transferTitle(t)} width={520}
+    // Contained: it covers the page below its header, so its close button
+    // sits under the header's Status pane toggle, never on top of it.
+    <Drawer open contained onClose={onClose} title={transferTitle(t)} width={520}
       description={<StateLabel state={t.state} />}
       footer={
         <>

@@ -41,7 +41,8 @@ const (
 	KindRclone = "rclone"
 )
 
-// Location is a place files live, as the page sees it.
+// Location is a place files live, as the page sees it. Indexed is a
+// library with an index, so its files are searchable.
 type Location struct {
 	ID        string `json:"id"`
 	Kind      string `json:"kind"`

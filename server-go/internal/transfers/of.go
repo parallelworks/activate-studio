@@ -126,7 +126,7 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 	reg := libraries.Of(a)
 	var out []LibraryLoc
 	for _, l := range reg.List(a.Settings.Effective().KbLabel, libViewer(v)) {
-		x := LibraryLoc{ID: l.ID, Label: l.Label, Indexed: l.Primary, Refresh: libraryRefresh(l)}
+		x := LibraryLoc{ID: l.ID, Label: l.Label, Indexed: l.Primary || l.Caps.Index, Reindexed: l.Primary, Refresh: libraryRefresh(l)}
 		by := AccessNone
 		switch {
 		case l.SourceRoot != "":
