@@ -315,6 +315,9 @@ export interface IndexStatus {
   last?: IndexJob | null
   lastBuild?: IndexJob | null
   runs?: IndexJob[]
+  /** How many times the main folder's index has changed since the server
+   *  started: a job, a re-index after a transfer or an upload, a sync. */
+  changes?: number
   indexed?: boolean
   incomplete?: boolean
   threads?: number

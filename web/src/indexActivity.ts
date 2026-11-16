@@ -6,21 +6,26 @@ import { api, type IndexJob, type IndexPhase, type IndexStatus } from './api'
  * index line, the status panel, Settings, Indexing, Libraries and Statistics all
  * subscribe here, so they agree. While a job runs it is read every second;
  * otherwise every 15 seconds, and not while the tab is hidden. When a job
- * ends, or a first build makes the names searchable, the views that read
- * the index are told (ade-kb-changed), as after any other change.
+ * ends, a first build makes the names searchable, or the index changed
+ * since the last read (its change count grew: a re-index after a transfer
+ * or an upload, or a sync that found changes made outside Studio), the
+ * views that read the index are told (ade-kb-changed), whatever page is
+ * open.
  */
 
 let state: IndexStatus | null = null
 const subs = new Set<() => void>()
 let inflight: Promise<void> | null = null
 let loop = 0
-let seen: { running: boolean; searchable: string | null } = { running: false, searchable: null }
+let seen: { running: boolean; searchable: string | null; changes: number | null } = { running: false, searchable: null, changes: null }
 
 let FAST_MS = 1000
 let SLOW_MS = 15_000
 
 /** Tests poll faster. */
 export function setIndexPollingForTests(fastMs: number, slowMs: number): void { FAST_MS = fastMs; SLOW_MS = slowMs }
+/** Tests start from nothing read. */
+export function resetIndexStatusForTests(): void { state = null; seen = { running: false, searchable: null, changes: null } }
 
 function notify(): void { for (const fn of subs) fn() }
 
@@ -29,8 +34,12 @@ export function refreshIndexStatus(): Promise<IndexStatus | null> {
   if (!inflight) {
     inflight = api.indexStatus().then(s => {
       const searchable = s.job?.searchableAt ?? null
-      const changed = (seen.running && !s.running) || (!!searchable && searchable !== seen.searchable)
-      seen = { running: s.running, searchable }
+      const changes = typeof s.changes === 'number' ? s.changes : null
+      // A count that differs from the last one read, either way: a server
+      // that restarted counts from 0 again.
+      const counted = changes !== null && seen.changes !== null && changes !== seen.changes
+      const changed = (seen.running && !s.running) || (!!searchable && searchable !== seen.searchable) || counted
+      seen = { running: s.running, searchable, changes }
       state = s
       if (changed) window.dispatchEvent(new Event('ade-kb-changed'))
     }).catch(() => { /* the next read */ }).finally(() => { inflight = null; notify() })

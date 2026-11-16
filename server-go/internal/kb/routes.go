@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,17 @@ func New(a *app.App) *Module {
 	roots := RootsFrom(a.Cfg)
 	m := &Module{A: a, Roots: roots, Office: &Office{}, Jobs: &Jobs{}, Fetch: &http.Client{}}
 	ix := forgetting{ProviderIndexer{A: a}, m}
+	// Any change to the index drops the counts Stats shows, including one
+	// not made through this module, such as a sweep's.
+	changed := a.Providers.Changed
+	a.Providers.Changed = func(ctx context.Context, what ...string) {
+		if slices.Contains(what, "dbList") {
+			m.stats.forget()
+		}
+		if changed != nil {
+			changed(ctx, what...)
+		}
+	}
 	m.Libs = &Libraries{Roots: roots, Pinned: os.Getenv("STUDIO_LIBRARIES"), AuthEnabled: a.Cfg.AuthEnabled(),
 		Label: func() string { return a.Settings.Effective().KbLabel }}
 	m.Previews = &Previews{Roots: roots}

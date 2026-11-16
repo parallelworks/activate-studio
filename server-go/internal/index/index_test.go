@@ -187,7 +187,7 @@ func TestBuildSyncAndDelete(t *testing.T) {
 	for _, k := range objectKeys([]byte(raw)) {
 		keys = append(keys, k)
 	}
-	want := []string{"lastSweepAt", "lastSweepMs", "lastChanges", "lastError", "sweepIntervalSec", "running", "job", "queued", "last", "lastBuild", "runs", "indexed", "incomplete", "threads", "folder", "indexDir", "log"}
+	want := []string{"lastSweepAt", "lastSweepMs", "lastChanges", "lastError", "sweepIntervalSec", "running", "job", "queued", "last", "lastBuild", "runs", "indexed", "incomplete", "threads", "folder", "indexDir", "changes", "log"}
 	if !slices.Equal(keys, want) {
 		t.Fatalf("status keys %v", keys)
 	}
@@ -205,6 +205,7 @@ func TestBuildSyncAndDelete(t *testing.T) {
 	if fmt.Sprint(body["changed"]) != "[alpha beta]" {
 		t.Fatalf("sweep %v", body)
 	}
+	before := f.ix.Changes()
 	st := f.ix.Status()["\x00ordered"].(ordered)
 	if fmt.Sprint(st[2][1]) != "[alpha beta beta/inner (removed)]" {
 		t.Fatalf("lastChanges %v", st[2][1])
@@ -223,6 +224,15 @@ func TestBuildSyncAndDelete(t *testing.T) {
 	}
 	if j := f.finished(int(body["id"].(float64))); j.State != "done" {
 		t.Fatalf("%v", j.Error)
+	}
+	// The status counts the change, so a page that sees the count grow
+	// reads the index again, however short the job.
+	for i := 0; i < 100 && f.ix.Changes() <= before; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	_, status, _ := f.do("GET", "/api/index/status", nil)
+	if n, _ := status["changes"].(float64); f.ix.Changes() <= before || int64(n) != f.ix.Changes() {
+		t.Fatalf("changes %v, before %d, now %d", status["changes"], before, f.ix.Changes())
 	}
 	code, body, _ = f.do("GET", "/api/index/job/12345", nil)
 	if code != 404 || body["error"] != "no such job" {
@@ -384,5 +394,17 @@ func TestFmtMs(t *testing.T) {
 	}
 	if enUS(1234567) != "1,234,567" || enUS(12) != "12" {
 		t.Error(enUS(1234567))
+	}
+}
+
+// Each change to the index is counted, for the status.
+func TestAfterChangeCounts(t *testing.T) {
+	ix := &Indexer{}
+	seen := ""
+	ix.OnChange(func(rel string) { seen = rel })
+	ix.afterChange("alpha")
+	ix.afterChange("")
+	if ix.Changes() != 2 || seen != "" {
+		t.Fatalf("changes %d, last %q", ix.Changes(), seen)
 	}
 }

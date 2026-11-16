@@ -52,6 +52,14 @@ export function useEntryDetails(active = true): DetailsState {
   const [lib, setLib] = useState(currentLibrary())
   useEffect(() => onLibraryChange(id => { setLib(id); forget(); selectLibraryEntry(null) }), [])
   const [state, setState] = useState<{ key: string; details: EntryDetails | null; error: string; loading: boolean }>({ key: '', details: null, error: '', loading: false })
+  // A change to the library (a transfer, an upload, a sync) reads what is
+  // selected again; the kept details were dropped (forget, above).
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const again = () => setTick(t => t + 1)
+    window.addEventListener('ade-kb-changed', again)
+    return () => window.removeEventListener('ade-kb-changed', again)
+  }, [])
   const all = lib === 'all'
   const path = !active ? null : sel?.path ?? (all ? null : '')
   const key = path === null ? '' : `${lib}|${path}`
@@ -67,7 +75,7 @@ export function useEntryDetails(active = true): DetailsState {
         .catch(e => { if (live) setState({ key, details: null, error: String((e as Error).message ?? e), loading: false }) })
     }, 120)
     return () => { live = false; window.clearTimeout(t) }
-  }, [key, path])
+  }, [key, path, tick])
   const countWhole = () => {
     if (path === null) return
     setState(s => ({ ...s, loading: true, error: '' }))

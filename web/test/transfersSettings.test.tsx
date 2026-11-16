@@ -41,7 +41,7 @@ describe('Settings, Transfers', () => {
   it('opens on what is ready, then the locations, folders, movers and defaults', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    const table = await screen.findByRole('table')
+    const table = await screen.findByRole('table', { name: 'Saved locations' })
     const ready = await screen.findByText('Ready to use')
     const box = ready.closest('.xfer-ready') as HTMLElement
     // 8 locations less 1 unavailable, plus 1 offered library host.
@@ -58,15 +58,15 @@ describe('Settings, Transfers', () => {
     expect(screen.getByText('/home/user/Projects')).toBeInTheDocument()
     expect(screen.getByText('Always on')).toBeInTheDocument()
     expect(screen.getByText(/Found rsync 3\.2\.7 at \/usr\/bin\/rsync: used on this computer, for sends to hosts and for pulls from hosts\./)).toBeInTheDocument()
-    // CONDUIT is off, so its server choice is hidden.
-    expect(screen.queryByRole('combobox', { name: 'CONDUIT server' })).toBeNull()
+    // CONDUIT is off, so its server choice is in place but disabled.
+    expect(screen.getByRole('combobox', { name: 'CONDUIT server' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
   it('checks the fields before testing, tests on save, and saves a location that passes', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.click(screen.getByRole('button', { name: 'Add a location' }))
     const dialog = await screen.findByRole('dialog', { name: 'Add a saved location' })
     expect(within(dialog).getByText(/An ssh destination: user@host/)).toBeInTheDocument()
@@ -86,14 +86,14 @@ describe('Settings, Transfers', () => {
     expect(mock.calls.find(c => c.path === '/api/transfers/settings/test')?.body).toEqual({ host: 'user@archive-host', root: '/srv/archive' })
     expect(added()[0]).toEqual({ id: '', label: 'Archive', host: 'user@archive-host', root: '/srv/archive' })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    const row = within(screen.getByRole('table')).getByText('Archive').closest('tbody') as HTMLElement
+    const row = within(screen.getByRole('table', { name: 'Saved locations' })).getByText('Archive').closest('tbody') as HTMLElement
     expect(within(row).getByText(/^Reached, folder exists, rsync 3\.2\.7 found, writable/)).toBeInTheDocument()
   })
 
   it('shows why a test failed and can save the location anyway', async () => {
     serve({ testReply: { ok: false, why: 'Permission denied (publickey)' } })
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.click(screen.getByRole('button', { name: 'Add a location' }))
     const dialog = await screen.findByRole('dialog')
     fireEvent.change(within(dialog).getByLabelText('Host', { exact: false }), { target: { value: 'user@offline-host' } })
@@ -104,14 +104,14 @@ describe('Settings, Transfers', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save anyway' }))
     await waitFor(() => expect(added()).toHaveLength(1))
     expect(added()[0]).toMatchObject({ label: 'user@offline-host', host: 'user@offline-host', root: '/data' })
-    const row = (await within(screen.getByRole('table')).findByText('user@offline-host', { selector: 'td:first-child' })).closest('tbody') as HTMLElement
+    const row = (await within(screen.getByRole('table', { name: 'Saved locations' })).findByText('user@offline-host', { selector: 'td:first-child' })).closest('tbody') as HTMLElement
     expect(within(row).getByText('Test failed: Permission denied (publickey)')).toBeInTheDocument()
   })
 
   it('edits a location through the dialog, and removes one only after confirming', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    const table = await screen.findByRole('table')
+    const table = await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.click(within(within(table).getAllByRole('row')[1]).getByRole('button', { name: 'Edit' }))
     const dialog = await screen.findByRole('dialog', { name: 'Edit saved location' })
     fireEvent.change(within(dialog).getByLabelText('Label', { exact: false }), { target: { value: 'Shared scratch' } })
@@ -120,7 +120,7 @@ describe('Settings, Transfers', () => {
     expect(saved()[0].savedLocations.map(l => l.label)).toEqual(['Shared scratch', 'Results'])
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    const results = within(screen.getByRole('table')).getByText('Results').closest('tr') as HTMLElement
+    const results = within(screen.getByRole('table', { name: 'Saved locations' })).getByText('Results').closest('tr') as HTMLElement
     fireEvent.click(within(results).getByRole('button', { name: 'Remove' }))
     const confirm = await screen.findByRole('alertdialog', { name: 'Remove Results?' })
     expect(saved()).toHaveLength(1)
@@ -133,7 +133,7 @@ describe('Settings, Transfers', () => {
     serve()
     const success = vi.spyOn(toast, 'success')
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.change(screen.getByRole('textbox', { name: 'Folder to add' }), { target: { value: '/home/user/Data' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add folder' }))
     await waitFor(() => expect(saved()).toHaveLength(1))
@@ -160,7 +160,7 @@ describe('Settings, Transfers', () => {
   it('says why a folder could not be added, and keeps what was typed', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     const handle = mock.handle
     mock.handle = (m, url, body) => (m === 'PUT' ? { status: 400, body: { error: 'computerFolders[4].path: /home/user/Gone is not there' } } : handle(m, url, body))
     fireEvent.change(screen.getByRole('textbox', { name: 'Folder to add' }), { target: { value: '/home/user/Gone' } })
@@ -173,7 +173,7 @@ describe('Settings, Transfers', () => {
   it('marks Save fields as unsaved and saves them with Save', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.click(screen.getByRole('checkbox', { name: 'Offer archive-host' }))
     expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -209,7 +209,7 @@ describe('Settings, Transfers', () => {
   it('shows each row test\'s result beside what was tested', async () => {
     serve({ testReply: { ok: false, why: 'Permission denied (publickey)' } })
     render(<TransfersSettingsSection />)
-    const table = await screen.findByRole('table')
+    const table = await screen.findByRole('table', { name: 'Saved locations' })
     const row = within(table).getAllByRole('row')[2].closest('tbody') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: 'Test' }))
     expect(await within(row).findByText('Test failed: Permission denied (publickey)')).toBeInTheDocument()
@@ -219,7 +219,7 @@ describe('Settings, Transfers', () => {
   it('describes a good test plainly', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    const table = await screen.findByRole('table')
+    const table = await screen.findByRole('table', { name: 'Saved locations' })
     const row = within(table).getAllByRole('row')[1].closest('tbody') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: 'Test' }))
     expect(await within(row).findByText(/^Reached, folder exists, rsync 3\.2\.7 found, writable, 2 TB free, 38 ms round trip\.$/)).toBeInTheDocument()
@@ -228,7 +228,7 @@ describe('Settings, Transfers', () => {
   it('says what an old rsync on a host is used for', async () => {
     serve({ testReply: { ok: true, rsync: true, rsyncVersion: '2.6.9', rsyncText: 'rsync 2.6.9 there: used for sends and pulls with this computer and for copies on that host', writable: true, freeBytes: 2 * 1024 ** 4, roundTripMs: 38 } })
     render(<TransfersSettingsSection />)
-    const table = await screen.findByRole('table')
+    const table = await screen.findByRole('table', { name: 'Saved locations' })
     const row = within(table).getAllByRole('row')[1].closest('tbody') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: 'Test' }))
     expect(await within(row).findByText(/^Reached, folder exists, rsync 2\.6\.9 found, writable, 2 TB free, 38 ms round trip\. rsync 2\.6\.9 there: used for sends and pulls with this computer and for copies on that host\.$/)).toBeInTheDocument()
@@ -237,7 +237,7 @@ describe('Settings, Transfers', () => {
   it('says plainly when the account takes SFTP only', async () => {
     serve({ testReply: { ok: true, sftpOnly: true, rsync: false, writable: true, freeBytes: 2 * 1024 ** 4, roundTripMs: 40 } })
     render(<TransfersSettingsSection />)
-    const table = await screen.findByRole('table')
+    const table = await screen.findByRole('table', { name: 'Saved locations' })
     const row = within(table).getAllByRole('row')[1].closest('tbody') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: 'Test' }))
     expect(await within(row).findByText(/^Reached over SFTP \(the account takes SFTP only\), folder exists, rsync not available, Studio copy will be used, writable, 2 TB free, 40 ms round trip\.$/)).toBeInTheDocument()
@@ -246,7 +246,7 @@ describe('Settings, Transfers', () => {
   it('sends the advanced fields, and shows a server refusal under the field it names', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.click(screen.getByRole('button', { name: 'Add a location' }))
     const dialog = await screen.findByRole('dialog')
     fireEvent.change(within(dialog).getByLabelText('Host', { exact: false }), { target: { value: 'user@archive-host' } })
@@ -267,7 +267,7 @@ describe('Settings, Transfers', () => {
     serve()
     const real = mock
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     // A refusal the page's own checks let through, as the server words it.
     const handle = real.handle
     real.handle = (m, url, body) => (url.endsWith('/settings/test') ? { status: 400, body: { error: 'root: give an absolute path with no ".."' } } : handle(m, url, body))
@@ -280,13 +280,15 @@ describe('Settings, Transfers', () => {
     expect(added()).toHaveLength(0)
   })
 
-  it('shows the CONDUIT server and folders only when CONDUIT is on', async () => {
+  it('enables the CONDUIT server and folders only when CONDUIT is on', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     expect(screen.getByText(/A site's data transfer service/)).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'CONDUIT server' })).toBeDisabled()
     fireEvent.click(screen.getByRole('switch', { name: 'CONDUIT' }))
-    expect(await screen.findByRole('combobox', { name: 'CONDUIT server' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'CONDUIT server' })).toBeEnabled())
+    expect(shownNote('conduit-state')).toBe('Turns on when you save.')
     const mounts = screen.getByRole('table', { name: 'CONDUIT folders' })
     expect(within(mounts).getByDisplayValue('/site/scratch')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Add a CONDUIT folder' }))
@@ -308,7 +310,7 @@ describe('Settings, Transfers', () => {
     const off = (el: HTMLElement) => el.hasAttribute('data-disabled') || el.getAttribute('aria-disabled') === 'true'
     expect(off(screen.getByRole('switch', { name: 'Use Downloads' }))).toBe(true)
     expect(off(screen.getByRole('switch', { name: 'rsync' }))).toBe(true)
-    for (const b of within(screen.getByRole('table')).getAllByRole('button')) expect(b).toBeDisabled()
+    for (const b of within(screen.getByRole('table', { name: 'Saved locations' })).getAllByRole('button')) expect(b).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
   })
 
@@ -323,7 +325,8 @@ describe('Settings, Transfers', () => {
 /** A location saved somewhere else: the Transfers page or the chat. */
 const saveElsewhere = (label = 'Chat drop') =>
   mock.handle('POST', '/api/transfers/settings/locations', { label, host: 'user@drop-host', root: '/srv/drop' })
-const table = () => screen.getByRole('table')
+const shownNote = (id: string) => screen.getByTestId(id).querySelector(':scope > [data-shown]')?.textContent ?? ''
+const table = () => screen.getByRole('table', { name: 'Saved locations' })
 
 describe('Settings, Transfers never holds a stale copy', () => {
   it('keeps a location saved elsewhere when Save runs from an older read (the reported loss)', async () => {
@@ -331,7 +334,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
     const success = vi.spyOn(toast, 'success')
     // Settings, Transfers is opened once, and stays mounted while hidden.
     const { rerender } = render(<TransfersSettingsSection active />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     rerender(<TransfersSettingsSection active={false} />)
     saveElsewhere()
     // Back to it: it reads the section again and lists the location.
@@ -350,7 +353,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
   it('reads the section again when the window regains focus, unless it has unsaved edits', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     saveElsewhere('First')
     act(() => { window.dispatchEvent(new Event('focus')) })
     expect(await within(table()).findByText('First')).toBeInTheDocument()
@@ -369,7 +372,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
   it('reads again when the Transfers page saves a location', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     saveElsewhere('From the page')
     act(() => { window.dispatchEvent(new Event(TRANSFER_SETTINGS_CHANGED)) })
     expect(await within(table()).findByText('From the page')).toBeInTheDocument()
@@ -379,7 +382,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
     serve()
     const success = vi.spyOn(toast, 'success')
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
     // Saved elsewhere after the edit, with no focus in between.
     saveElsewhere()
@@ -398,7 +401,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
     serve()
     const success = vi.spyOn(toast, 'success')
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
     // Saved from the chat; focus brings the location onto the page, while
     // the unsaved edit keeps the older revision.
@@ -417,7 +420,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
     st.savedLocations = [{ id: 'drop', label: 'Upload drop', host, root: '/upload/incoming/projects/2026' }]
     serve({ settings: st })
     render(<TransfersSettingsSection />)
-    const cell = await within(await screen.findByRole('table')).findByText(host)
+    const cell = await within(await screen.findByRole('table', { name: 'Saved locations' })).findByText(host)
     expect(cell).toHaveAttribute('title', host)
     expect(cell).toHaveClass('xfer-settings-cut')
     expect(cell).not.toHaveClass('xfer-mono')
@@ -430,7 +433,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
   it('puts Add folder on its own line at the left, apart from where a row\'s Remove sits', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     const add = screen.getByRole('button', { name: 'Add folder' })
     expect(add.closest('.xfer-settings-addfolder')).toBeNull()
     expect(add).toHaveClass('xfer-settings-add')
@@ -439,7 +442,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
   it('on a 409 that conflicts with an edit, saves nothing, says so, and Reload takes the saved settings', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
     // Another window changed rsync too, and saved.
     const other = mock.handle('GET', '/api/transfers/settings').body as Record<string, unknown>
@@ -463,7 +466,7 @@ describe('Settings, Transfers never holds a stale copy', () => {
   it('removes and edits a location by its id, against the section as saved now', async () => {
     serve()
     render(<TransfersSettingsSection />)
-    await screen.findByRole('table')
+    await screen.findByRole('table', { name: 'Saved locations' })
     // Saved elsewhere after this page read the section.
     saveElsewhere()
     const results = within(table()).getByText('Results').closest('tr') as HTMLElement
@@ -539,5 +542,29 @@ describe('rclone in the plain rules', () => {
     const off = placesReady([], { ...st!, detected: { ...st!.detected!, rclone: { enabled: false, found: false, remotes: [] } } })
     expect(readyParts(off).join(' ')).not.toContain('rclone')
     expect(testText({ ok: true, rsync: true, rclone: true, rcloneVersion: '1.76.0' })).toContain('rclone 1.76.0 there')
+  })
+})
+
+describe('a mover switch changed and not saved', () => {
+  it('says when it takes effect, never sends the user to this page, and keeps the program field in place', async () => {
+    serve({ settings: { ...mockSettings(), movers: { ...mockSettings().movers, rclone: { enabled: false, path: 'rclone' } } } })
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table', { name: 'Saved locations' })
+    const program = () => screen.getAllByRole('textbox', { name: 'Program' })
+    const before = program().length
+    expect(shownNote('rclone-state')).toBe('Off.')
+    fireEvent.click(screen.getByRole('switch', { name: 'rclone' }))
+    expect(shownNote('rclone-state')).toMatch(/^Turns on when you save\./)
+    expect(screen.getByTestId('rclone-state').textContent).not.toMatch(/Settings, Transfers/)
+    expect(program()).toHaveLength(before)
+    const found = shownNote('rsync-state')
+    fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
+    expect(shownNote('rsync-state')).toBe('Turns off when you save.')
+    // What was found stays in the line, hidden, holding its room.
+    expect(screen.getByTestId('rsync-state').textContent).toContain(found)
+    expect(program()).toHaveLength(before)
+    fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
+    expect(shownNote('rsync-state')).toBe(found)
+    expect(found).toMatch(/^Found/)
   })
 })

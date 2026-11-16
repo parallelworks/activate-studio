@@ -51,6 +51,18 @@ const card = () => screen.getByRole('button', { name: /^Details/ }).closest('sec
 const detailsAsked = () => asked.filter(u => u.startsWith('/api/kb/details'))
 
 describe('the Details card', () => {
+  it('reads what is selected again when the library changes, as after a transfer', async () => {
+    const { unmount } = render(<StatusPanel view="library" cfg={cfg} />)
+    expect(await within(card()).findByText('120')).toBeInTheDocument()
+    DETAILS[''] = { ...(DETAILS[''] as object), files: 119 }
+    act(() => { window.dispatchEvent(new Event('ade-kb-changed')) })
+    expect(await within(card()).findByText('119')).toBeInTheDocument()
+    expect(detailsAsked()).toEqual(['/api/kb/details?path=', '/api/kb/details?path='])
+    DETAILS[''] = { ...(DETAILS[''] as object), files: 120 }
+    unmount()
+    window.dispatchEvent(new Event('ade-kb-changed'))
+  })
+
   it('describes the library with nothing selected, then the folder chosen', async () => {
     render(<StatusPanel view="library" cfg={cfg} />)
     expect(await within(card()).findByText(`Notes · ${formatBytes(5_300_000)}`)).toBeInTheDocument()

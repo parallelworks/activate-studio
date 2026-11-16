@@ -1,7 +1,9 @@
 package search
 
 import (
+	"context"
 	"os"
+	"slices"
 	"sync"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
@@ -42,6 +44,18 @@ func Of(a *app.App) *Engine {
 	}
 	if kb.Default != nil {
 		e.Tags = kb.Default.Tags
+	}
+	// A change to the main folder's index ("dbList": a re-index after a
+	// transfer or an upload, a sweep, a build) makes the counts Library
+	// Details shows stale; they were kept ten minutes.
+	changed := a.Providers.Changed
+	a.Providers.Changed = func(ctx context.Context, what ...string) {
+		if slices.Contains(what, "dbList") {
+			InvalidateCounts()
+		}
+		if changed != nil {
+			changed(ctx, what...)
+		}
 	}
 	ofs[a] = e
 	return e
