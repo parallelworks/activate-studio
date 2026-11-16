@@ -41,16 +41,26 @@ var loop = strings.Join([]string{
 	"set -f",
 	`d=-d; [ "$(printf eA== | base64 -d 2>/dev/null)" = x ] || d=-D`,
 	"os=$(uname -s 2>/dev/null)",
+	`t=$(mktemp -d 2>/dev/null) || { t="${TMPDIR:-/tmp}/studio-loop.$$"; mkdir -p "$t"; }`,
+	// Requests reach the loop through a fifo. When the session ends, its
+	// input closes: the reader stops the command that is running and the
+	// loop, so nothing it started runs on after it. The reader is given
+	// the input on fd 3, since a background job without job control reads
+	// /dev/null unless told otherwise.
+	`if mkfifo "$t/q" 2>/dev/null; then`,
+	`  exec 3<&0`,
+	`  (while IFS= read -r l; do printf '%s\n' "$l"; done; p=$(cat "$t/p" 2>/dev/null); [ -z "$p" ] || kill "$p" 2>/dev/null; kill $$ 2>/dev/null; rm -rf "$t") <&3 >"$t/q" &`,
+	`  exec 3<&- <"$t/q"`,
+	"fi",
 	"while IFS= read -r line; do",
 	`  args=(); for a in $line; do args+=("$(printf %s "${a#x}" | base64 $d)"); done`,
 	`  if [ "$os" = Darwin ]; then`,
 	`    case "${args[0]}" in /*/*/*) case "${args[0]##*/}" in gufi_*) args=(env "DYLD_LIBRARY_PATH=${args[0]%/*/*}/lib" "${args[@]}") ;; esac ;; esac`,
 	"  fi",
-	"  o=$(mktemp); e=$(mktemp)",
-	`  "${args[@]}" </dev/null >"$o" 2>"$e"; rc=$?`,
-	"  printf '%s o%s e%s\\n' \"$rc\" \"$(base64 <\"$o\" | tr -d '\\n')\" \"$(tail -c " + strconv.Itoa(stderrTail) + " \"$e\" | base64 | tr -d '\\n')\"",
-	`  rm -f "$o" "$e"`,
+	`  "${args[@]}" </dev/null >"$t/o" 2>"$t/e" & echo $! >"$t/p"; wait $!; rc=$?; : >"$t/p"`,
+	"  printf '%s o%s e%s\\n' \"$rc\" \"$(base64 <\"$t/o\" | tr -d '\\n')\" \"$(tail -c " + strconv.Itoa(stderrTail) + " \"$t/e\" | base64 | tr -d '\\n')\"",
 	"done",
+	`rm -rf "$t"`,
 }, "\n")
 
 // BootstrapCommand is bootstrapCommand: the command that starts the loop.
@@ -521,7 +531,13 @@ type pending struct {
 	timeout time.Duration
 	ch      chan pendingResult
 	timer   *time.Timer
+	sent    time.Time
 }
+
+// stopAfter is how long a command runs before giving up on it ends its
+// session, which stops it on the host. One given up on sooner finishes
+// there and its answer is dropped, which costs less than a new session.
+var stopAfter = time.Second
 
 type pendingResult struct {
 	r   Result
@@ -559,7 +575,12 @@ type channel struct {
 	killed bool
 }
 
+// kill ends the session. Its input is closed first, which the loop on
+// the host reads as the end: it stops the command it runs and exits.
 func (c *channel) kill() {
+	if c.stdin != nil {
+		c.stdin.Close()
+	}
 	if c.cmd.Process != nil {
 		c.cmd.Process.Kill()
 	}
@@ -808,6 +829,7 @@ func (p *Pool) Run(ctx context.Context, site, key string, argv []string, timeout
 		deliver(pd, pendingResult{err: apierr.New(504, "%s: the command did not finish in %d s", SiteName(site), secs(timeout))})
 		c.kill()
 	})
+	pd.sent = time.Now()
 	c.queue = append(c.queue, pd)
 	c.mu.Unlock()
 	c.stdin.Write([]byte(strings.Join(enc, " ") + "\n"))
@@ -816,7 +838,22 @@ func (p *Pool) Run(ctx context.Context, site, key string, argv []string, timeout
 	case r := <-pd.ch:
 		return r.r, r.err
 	case <-ctx.Done():
-		// The answer still comes and is dropped; the session stays.
+		// Given up on, as when a search is stopped or passes its time
+		// limit. A command that has been running a while is stopped: its
+		// session ends, the loop stops what it runs when its input closes,
+		// and any request behind it fails as after a timeout. Otherwise the
+		// answer still comes and is dropped, and the session stays.
+		c.mu.Lock()
+		stop := len(c.queue) > 0 && c.queue[0] == pd && !c.killed && time.Since(pd.sent) >= stopAfter
+		if stop {
+			c.queue = c.queue[1:]
+			c.killed = true
+		}
+		c.mu.Unlock()
+		if stop {
+			pd.timer.Stop()
+			c.kill()
+		}
 		return Result{}, ctx.Err()
 	}
 }

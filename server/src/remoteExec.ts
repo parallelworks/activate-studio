@@ -52,20 +52,30 @@ const STDERR_TAIL = 4000
 // so a GUFI tool there, which finds its libraries through
 // DYLD_LIBRARY_PATH, is started through env(1) with <prefix>/lib set, the
 // prefix being the one its own bin directory is in.
+// Requests reach the loop through a fifo. When the session ends, its input
+// closes: the reader stops the command that is running and the loop, so
+// nothing it started runs on after it. The reader is given the input on
+// fd 3, since a background job without job control reads /dev/null unless
+// told otherwise.
 const LOOP = [
   'set -f',
   'd=-d; [ "$(printf eA== | base64 -d 2>/dev/null)" = x ] || d=-D',
   'os=$(uname -s 2>/dev/null)',
+  't=$(mktemp -d 2>/dev/null) || { t="${TMPDIR:-/tmp}/studio-loop.$$"; mkdir -p "$t"; }',
+  'if mkfifo "$t/q" 2>/dev/null; then',
+  '  exec 3<&0',
+  '  (while IFS= read -r l; do printf \'%s\\n\' "$l"; done; p=$(cat "$t/p" 2>/dev/null); [ -z "$p" ] || kill "$p" 2>/dev/null; kill $$ 2>/dev/null; rm -rf "$t") <&3 >"$t/q" &',
+  '  exec 3<&- <"$t/q"',
+  'fi',
   'while IFS= read -r line; do',
   '  args=(); for a in $line; do args+=("$(printf %s "${a#x}" | base64 $d)"); done',
   '  if [ "$os" = Darwin ]; then',
   '    case "${args[0]}" in /*/*/*) case "${args[0]##*/}" in gufi_*) args=(env "DYLD_LIBRARY_PATH=${args[0]%/*/*}/lib" "${args[@]}") ;; esac ;; esac',
   '  fi',
-  '  o=$(mktemp); e=$(mktemp)',
-  '  "${args[@]}" </dev/null >"$o" 2>"$e"; rc=$?',
-  `  printf '%s o%s e%s\\n' "$rc" "$(base64 <"$o" | tr -d '\\n')" "$(tail -c ${STDERR_TAIL} "$e" | base64 | tr -d '\\n')"`,
-  '  rm -f "$o" "$e"',
+  '  "${args[@]}" </dev/null >"$t/o" 2>"$t/e" & echo $! >"$t/p"; wait $!; rc=$?; : >"$t/p"',
+  `  printf '%s o%s e%s\\n' "$rc" "$(base64 <"$t/o" | tr -d '\\n')" "$(tail -c ${STDERR_TAIL} "$t/e" | base64 | tr -d '\\n')"`,
   'done',
+  'rm -rf "$t"',
 ].join('\n')
 
 export interface RemoteResult {

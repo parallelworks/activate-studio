@@ -34,10 +34,30 @@ type HitLibrary struct {
 type ScopeOpts struct {
 	Semantic   bool
 	NameLimit  int // 0: the default
-	DeadlineMs int // 0: SEARCH_DEADLINE_MS
+	DeadlineMs int // 0: the search time limit (TimeLimitMs); below 0, none
 	Slow       *[]string
 	Omitted    *libraries.Omissions
 	Refine     *gufi.RefineSpec
+}
+
+// TimeLimitMs is how long each library's search runs before it is
+// stopped and left out, 0 for no limit: o.DeadlineMs when set, else
+// Settings, Indexing, Sync and search, "Search time limit", else
+// STUDIO_SEARCH_DEADLINE_MS or 20 s.
+func (e *Engine) TimeLimitMs(o ScopeOpts) int {
+	switch {
+	case o.DeadlineMs < 0:
+		return 0
+	case o.DeadlineMs > 0:
+		return o.DeadlineMs
+	case e.TimeLimitSec != nil:
+		s := e.TimeLimitSec()
+		if s <= 0 || math.IsNaN(s) {
+			return 0
+		}
+		return int(math.Round(min(s, 86400) * 1000))
+	}
+	return DeadlineMs()
 }
 
 // DeadlineMs is SEARCH_DEADLINE_MS.
@@ -288,13 +308,11 @@ func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q st
 		}
 		groups[key] = append(groups[key], l)
 	}
-	deadline := 0
-	if len(libs) > 1 {
-		deadline = o.DeadlineMs
-		if deadline == 0 {
-			deadline = DeadlineMs()
-		}
-	}
+	// Each library's search runs until the time limit, then is stopped
+	// (its gufi_query ends, here or on its host) and left out. A search
+	// stopped as a whole (ctx) stops them all.
+	deadline := e.TimeLimitMs(o)
+	ctx = withBudget(ctx, deadline)
 	var slowMu sync.Mutex
 	late := func(ls []libraries.Library) {
 		for _, l := range ls {
@@ -303,7 +321,7 @@ func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q st
 				*o.Slow = append(*o.Slow, l.Label)
 				slowMu.Unlock()
 			}
-			o.Omitted.Add(libraries.Omission{ID: l.ID, Label: l.Label, Reason: "did not answer within " + deadlineText(deadline), Partial: false})
+			o.Omitted.Add(libraries.Omission{ID: l.ID, Label: l.Label, Reason: "did not answer within " + deadlineText(deadline), TimeLimit: true})
 		}
 	}
 	results := make([][]gufi.WalkRow, len(order))
@@ -315,7 +333,8 @@ func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q st
 			defer wg.Done()
 			words, vec := e.Reg.WordsSearched(members[0]), wantVec(members[0]) && len(vectors) > 0
 			done := make(chan []gufi.WalkRow, 1)
-			wctx := ctx
+			wctx, stop := context.WithCancel(ctx)
+			defer stop()
 			go func() {
 				var roots []string
 				byRoot := map[string][]libraries.Library{}
@@ -332,8 +351,11 @@ func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q st
 				raw, err := e.WalkSearch(wctx, q, limitsFor(words, vec), roots, vs, refine)
 				var rows []gufi.WalkRow
 				if err != nil {
-					for _, l := range members {
-						failed(l, err, false, "")
+					// Stopped: at the time limit it is left out as late.
+					if wctx.Err() == nil {
+						for _, l := range members {
+							failed(l, err, false, "")
+						}
 					}
 				} else {
 					for _, r := range raw {
@@ -363,7 +385,9 @@ func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q st
 					}
 					hits, err := e.SearchVector(wctx, phrase, vecLimit, l.IndexRoot)
 					if err != nil {
-						failed(l, err, true, "not searched by meaning: ")
+						if wctx.Err() == nil {
+							failed(l, err, true, "not searched by meaning: ")
+						}
 						continue
 					}
 					for _, h := range hits {
@@ -385,6 +409,8 @@ func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q st
 				results[gi] = r
 			case <-t.C:
 				late(members)
+				stop()
+			case <-ctx.Done():
 			}
 		}(gi, members)
 	}

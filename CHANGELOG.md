@@ -4,7 +4,13 @@ Every version, newest first. Each entry is the description of the pull request t
 
 ## v1.202 (2026-11-16)
 
-Stable release of Preview v1.201.1, with no further changes: a library kept as a copy of a Transfers location (#720), and GUFI's common external database tables (#719). See v1.201.1 below.
+### Libraries: a copy of a Transfers location, kept in step and indexed (#720)
+
+Stable release of this change from Preview v1.201.1, with nothing further. See v1.201.1 below.
+
+### Read GUFI's common external database schema (ext_bm25, ext_vectors) (#719)
+
+Stable release of this change from Preview v1.201.1, with nothing further. See v1.201.1 below.
 
 ## v1.201.1 (2026-11-16)
 

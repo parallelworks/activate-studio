@@ -42,6 +42,7 @@ type Effective struct {
 	IconURL                string            `json:"iconUrl"`
 	IconURLDark            string            `json:"iconUrlDark"`
 	SweepIntervalSec       Number            `json:"sweepIntervalSec"`
+	SearchTimeLimitSec     Number            `json:"searchTimeLimitSec"`
 	SearchEngine           string            `json:"searchEngine"`
 	GufiLog                bool              `json:"gufiLog"`
 	SuggestedPrompts       []string          `json:"suggestedPrompts"`
@@ -257,6 +258,7 @@ func (s *Store) Effective() Effective {
 	e.IconURL = or(str("iconUrl"), env("APP_ICON"))
 	e.IconURLDark = or(str("iconUrlDark"), env("APP_ICON_DARK"))
 	e.SweepIntervalSec = or(num("sweepIntervalSec"), envNum("SWEEP_INTERVAL_SEC", "300"))
+	e.SearchTimeLimitSec = or(num("searchTimeLimitSec"), defaultSearchTimeLimit(env("STUDIO_SEARCH_DEADLINE_MS")))
 	engine := "parallel"
 	if env("STUDIO_SEARCH_ENGINE") == "gufi_vt" {
 		engine = "gufi_vt"
@@ -367,4 +369,14 @@ func (s *Store) DefaultMission() string {
 		return PersonalMission
 	}
 	return ""
+}
+
+// defaultSearchTimeLimit is the search time limit before one is saved:
+// STUDIO_SEARCH_DEADLINE_MS in seconds when it is a number other than 0,
+// else 20.
+func defaultSearchTimeLimit(ms string) Number {
+	if n := JSNumber(ms); n != 0 && n == n {
+		return Number(n / 1000)
+	}
+	return 20
 }

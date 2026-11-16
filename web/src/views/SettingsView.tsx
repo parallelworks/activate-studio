@@ -33,6 +33,8 @@ interface Effective {
   iconUrl: string
   iconUrlDark: string
   sweepIntervalSec: number
+  /** Seconds each library's search runs before it is stopped; 0 is no limit. */
+  searchTimeLimitSec: number
   searchEngine: 'parallel' | 'gufi_vt'
   gufiLog: boolean
   historyIntervalSec: number
@@ -107,6 +109,27 @@ const SEARCH_ENGINES: SelectItem<Effective['searchEngine']>[] = [
   { value: 'parallel', label: 'Each library in parallel, merged (faster)' },
   { value: 'gufi_vt', label: 'One gufi_vt statement over all libraries' },
 ]
+
+/** The search time limits offered, in seconds (the server takes 0 to 86400). */
+export const SEARCH_TIME_LIMITS: SelectItem<number>[] = [
+  { value: 10, label: '10 seconds' },
+  { value: 20, label: '20 seconds' },
+  { value: 30, label: '30 seconds' },
+  { value: 60, label: '1 minute' },
+  { value: 120, label: '2 minutes' },
+  { value: 300, label: '5 minutes' },
+  { value: 600, label: '10 minutes' },
+  { value: 1800, label: '30 minutes' },
+  { value: 3600, label: '1 hour' },
+  { value: 0, label: 'No limit' },
+]
+
+/** The choices, with a limit set some other way (the deployment's
+ *  STUDIO_SEARCH_DEADLINE_MS) among them as it is. */
+export function searchTimeLimits(current: number | undefined): SelectItem<number>[] {
+  if (current === undefined || SEARCH_TIME_LIMITS.some(i => i.value === current)) return SEARCH_TIME_LIMITS
+  return [{ value: current, label: `${current} seconds` }, ...SEARCH_TIME_LIMITS]
+}
 
 const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
   { value: 'runner', label: 'Studio runner: one-shot pw code runs' },
@@ -744,6 +767,11 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     <Field label="Search across libraries"
                       description="Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.">
                       <Select items={SEARCH_ENGINES} value={form.searchEngine ?? 'parallel'} onValueChange={v => v && setForm({ ...form, searchEngine: v })} />
+                    </Field>
+                    <Field label="Search time limit"
+                      description="How long each library's search runs before it is stopped and left out of the results. Very large indexes may need longer. Chat and the Search page both use it, and each can also be stopped by hand.">
+                      <Select items={searchTimeLimits(form.searchTimeLimitSec)} value={form.searchTimeLimitSec ?? 20}
+                        onValueChange={v => typeof v === 'number' && setForm({ ...form, searchTimeLimitSec: v })} />
                     </Field>
                     <Field label="Background sync interval (seconds, 0 pauses)">
                       <NumberInput min={0} max={86400} value={form.sweepIntervalSec}

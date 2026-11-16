@@ -58,6 +58,9 @@ export interface StudioSettings {
   iconUrl?: string
   iconUrlDark?: string
   sweepIntervalSec?: number
+  /** How long a library's search runs before it is stopped and left out,
+   *  in seconds; 0 is no limit (Settings, Indexing, Sync and search). */
+  searchTimeLimitSec?: number
   /** How a search across libraries runs: each library in parallel, merged
    *  here (the default), or as one gufi_vt statement. */
   searchEngine?: 'parallel' | 'gufi_vt'
@@ -230,6 +233,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     iconUrl: s.iconUrl ?? process.env.APP_ICON ?? '',
     iconUrlDark: s.iconUrlDark ?? process.env.APP_ICON_DARK ?? '',
     sweepIntervalSec: s.sweepIntervalSec ?? Number(process.env.SWEEP_INTERVAL_SEC ?? 300),
+    searchTimeLimitSec: s.searchTimeLimitSec ?? (Number(process.env.STUDIO_SEARCH_DEADLINE_MS) ? Number(process.env.STUDIO_SEARCH_DEADLINE_MS) / 1000 : 20),
     searchEngine: s.searchEngine ?? (process.env.STUDIO_SEARCH_ENGINE === 'gufi_vt' ? 'gufi_vt' : 'parallel'),
     gufiLog: s.gufiLog ?? process.env.STUDIO_GUFI_LOG === '1',
     suggestedPrompts: promptsOf(s.suggestedPrompts),
@@ -378,6 +382,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       const n = Number(body.sweepIntervalSec)
       if (!Number.isFinite(n) || n < 0 || n > 86400) throw new KbError(400, 'sweep interval must be 0 to 86400 seconds')
       next.sweepIntervalSec = n
+    }
+    if (body.searchTimeLimitSec !== undefined) {
+      const n = Number(body.searchTimeLimitSec)
+      if (!Number.isFinite(n) || n < 0 || n > 86400) throw new KbError(400, 'search time limit must be 0 to 86400 seconds (0 is no limit)')
+      next.searchTimeLimitSec = n
     }
     if (body.suggestedPrompts !== undefined) {
       if (!Array.isArray(body.suggestedPrompts)) throw new KbError(400, 'suggestedPrompts must be an array')

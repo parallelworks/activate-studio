@@ -23,7 +23,10 @@ jobs:
   # indexer, which only the earlier builds carry (STUDIO_SERVER=node or go
   # in the build scripts); releases ship the Go version (the go job).
   build-and-test:
-    runs-on: ubuntu-latest
+    # 24.04: ubuntu-latest became 26.04, whose python3 is 3.14, and the
+    # indexer's pinned wheels (indexer/fetch_embed.py) go up to 3.13. Move
+    # to ubuntu-latest again once they cover 3.14.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       # Dependency installs run package scripts, so allow only GitHub,
