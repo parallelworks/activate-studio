@@ -682,6 +682,7 @@ func OnePassStages(queryText string, lim WalkLimits, roots []string, vectors []Q
 			"JOIN vrpentries e ON CAST(x.vinode AS INT64) = e.inode AND CAST(x.vmtime AS INT64) = e.mtime "+
 			fmt.Sprintf("WHERE length(x.embedding) >= 1536%s ORDER BY 2, 3 LIMIT %d;", and("e."), lim.VectorsPerDir))
 	}
+	common := commonExternal(external, expr, vecs, lim, and)
 	if studioVecs {
 		const qe = "(SELECT qe FROM qv WHERE (SELECT model FROM gvecmodel LIMIT 1) LIKE pat LIMIT 1)"
 		if filter != nil {
@@ -708,6 +709,9 @@ func OnePassStages(queryText string, lim WalkLimits, roots []string, vectors []Q
 	if len(ext) > 0 {
 		out = append(out, "--external-copy", external, strings.Join(ext, " "))
 	}
+	for _, s := range common {
+		out = append(out, "--external-copy", external, s)
+	}
 	return append(out,
 		"-E", strings.Join(E, " "),
 		"-J", "INSERT INTO agg SELECT * FROM t;",
@@ -717,6 +721,37 @@ func OnePassStages(queryText string, lim WalkLimits, roots []string, vectors []Q
 			fmt.Sprintf("fused AS (SELECT p AS fp, sum(1.0 / (%d.0 + rn)) AS score FROM kept GROUP BY p) ", RRFK)+
 			"SELECT k, r, p, n, s, m, x FROM kept JOIN fused ON p = fp ORDER BY score DESC, p, k;",
 	)
+}
+
+// commonExternal is the walk's reading of GUFI's common external database
+// schema (ext_assets, the fts5 table ext_bm25 and the vec0 table
+// ext_vectors, published in GUFI's examples): the best text by bm25 and,
+// for a model whose query vector the Studio has, the nearest chunks by
+// cosine distance on vec0's scale for unit vectors, each matched to the
+// directory's entries by inode and mtime. A vector counts its native
+// dimensions, the first part of the 4096 floats stored. Each statement is
+// an --external-copy of its own: GUFI attaches the file for each, so one
+// that holds the earlier schema, or text without vectors, fails only the
+// statements whose tables it lacks.
+func commonExternal(external, expr string, vecs []QueryVector, lim WalkLimits, and func(string) string) []string {
+	if external == "" {
+		return nil
+	}
+	var out []string
+	if expr != "" {
+		out = append(out, "INSERT INTO t SELECT 'f', bm25(ext_bm25), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, "+
+			"replace(replace(snippet(ext_bm25, -1, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') "+
+			"FROM extdb.ext_bm25 JOIN vrpentries e ON CAST(ext_bm25.inode AS INT64) = e.inode AND CAST(ext_bm25.mtime AS INT64) = e.mtime "+
+			fmt.Sprintf("WHERE ext_bm25 MATCH %s%s ORDER BY 2, 3 LIMIT %d;", q(expr), and("e."), lim.WordsPerDir))
+	}
+	if len(vecs) > 0 {
+		out = append(out, "INSERT INTO t SELECT 'v', sqrt(2.0 * vec_distance_cosine(substr(x.embedding, 1, length(qv.qe)), qv.qe)), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, "+
+			fmt.Sprintf("replace(replace(substr(x.chunk_content, 1, %d), char(10), ' '), char(13), ' ') ", PassageChars)+
+			"FROM extdb.ext_vectors x JOIN qv ON x.vector_model_name LIKE qv.pat "+
+			"JOIN vrpentries e ON CAST(x.inode AS INT64) = e.inode AND CAST(x.mtime AS INT64) = e.mtime "+
+			fmt.Sprintf("WHERE x.vector_native_dimensions * 4 = length(qv.qe)%s ORDER BY 2, 3 LIMIT %d;", and("e."), lim.VectorsPerDir))
+	}
+	return out
 }
 
 // FTSColumns, FTSFrom and ChunkSnippet are the word and passage SQL other

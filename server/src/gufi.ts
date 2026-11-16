@@ -633,6 +633,28 @@ export function onePassStages(queryText: string, lim: WalkLimits, roots: string[
       `JOIN vrpentries e ON CAST(x.vinode AS INT64) = e.inode AND CAST(x.vmtime AS INT64) = e.mtime ` +
       `WHERE length(x.embedding) >= 1536${and('e.')} ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`)
   }
+  // GUFI's common external schema (ext_assets, the fts5 table ext_bm25 and
+  // the vec0 table ext_vectors, published in GUFI's examples), matched to
+  // the directory's entries by inode and mtime; a vector counts its native
+  // dimensions, the first part of the 4096 floats stored. Each statement is
+  // an --external-copy of its own, so a file that holds the earlier schema,
+  // or text without vectors, fails only the statements whose tables it lacks.
+  const common: string[] = []
+  if (external && expr) {
+    common.push(
+      `INSERT INTO t SELECT 'f', bm25(ext_bm25), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
+      `replace(replace(snippet(ext_bm25, -1, '[', ']', ' … ', 12), char(10), ' '), char(13), ' ') ` +
+      `FROM extdb.ext_bm25 JOIN vrpentries e ON CAST(ext_bm25.inode AS INT64) = e.inode AND CAST(ext_bm25.mtime AS INT64) = e.mtime ` +
+      `WHERE ext_bm25 MATCH ${q(expr)}${and('e.')} ORDER BY 2, 3 LIMIT ${lim.wordsPerDir};`)
+  }
+  if (external && vecs.length) {
+    common.push(
+      `INSERT INTO t SELECT 'v', sqrt(2.0 * vec_distance_cosine(substr(x.embedding, 1, length(qv.qe)), qv.qe)), rpath(e.sname, e.sroll)||'/'||e.name, e.name, e.size, e.mtime, ` +
+      `replace(replace(substr(x.chunk_content, 1, ${PASSAGE_CHARS}), char(10), ' '), char(13), ' ') ` +
+      `FROM extdb.ext_vectors x JOIN qv ON x.vector_model_name LIKE qv.pat ` +
+      `JOIN vrpentries e ON CAST(x.inode AS INT64) = e.inode AND CAST(x.mtime AS INT64) = e.mtime ` +
+      `WHERE x.vector_native_dimensions * 4 = length(qv.qe)${and('e.')} ORDER BY 2, 3 LIMIT ${lim.vectorsPerDir};`)
+  }
   if (studioVecs) {
     // The directory's own model picks the query vector; a directory whose
     // model has none here fails this step alone, as the last one.
@@ -657,6 +679,7 @@ export function onePassStages(queryText: string, lim: WalkLimits, roots: string[
     '-I', I.join(' '),
     '-K', `CREATE TABLE agg (${cols});`,
     ...(ext.length ? ['--external-copy', external!, ext.join(' ')] : []),
+    ...common.flatMap(s => ['--external-copy', external!, s]),
     '-E', E.join(' '),
     '-J', 'INSERT INTO agg SELECT * FROM t;',
     // Each file once per kind (its best row: several chunks of one file can

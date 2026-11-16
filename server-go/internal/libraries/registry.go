@@ -412,6 +412,45 @@ func sampleDbs(root string, max int) []string {
 	return out
 }
 
+var extTextRe = regexp.MustCompile(`\bext_bm25(_by_file)?\b`)
+
+// externalText says whether an external database beside db (a db.db), one
+// a search walk attaches (gufi.ExternalPattern), holds text a search reads:
+// GUFI's common schema's ext_bm25 or the earlier ext_bm25_by_file. The
+// first such file in the folder is looked at.
+func (r *Registry) externalText(ctx context.Context, db string) bool {
+	ext := externalBeside(filepath.Dir(db))
+	if ext == "" {
+		return false
+	}
+	out, err := r.sqlite(ctx, "ATTACH '"+sqlQuote(ext)+"' AS x;\nSELECT name FROM x.sqlite_master WHERE name IN ('ext_bm25','ext_bm25_by_file');\n")
+	return err == nil && extTextRe.MatchString(out)
+}
+
+// externalBeside is the first file in dir, other than db.db, whose name
+// matches the external database pattern; "" when none does or the pattern
+// is off or not a valid expression.
+func externalBeside(dir string) string {
+	p := gufi.ExternalPattern()
+	if p == nil {
+		return ""
+	}
+	re, err := regexp.Compile(*p)
+	if err != nil {
+		return ""
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.Name() != "db.db" && e.Type().IsRegular() && re.MatchString(e.Name()) {
+			return filepath.Join(dir, e.Name())
+		}
+	}
+	return ""
+}
+
 func sqlQuote(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
 func probeThreads() int { return min(max(runtime.NumCPU(), 1), 8) }
@@ -533,6 +572,9 @@ func (r *Registry) probeNow(ctx context.Context, a string) (Caps, error) {
 					continue
 				}
 				if wordsRe.MatchString(out) {
+					caps.FullText = true
+				}
+				if !caps.FullText && r.externalText(ctx, db) {
 					caps.FullText = true
 				}
 				if gvecRe.MatchString(out) {
