@@ -140,6 +140,9 @@ export interface ConduitMount { location: string; path: string; conduit: string 
 export interface ComputerFolder { path: string; label: string; builtIn: boolean; enabled: boolean }
 export interface TransferSettings {
   managed: boolean
+  /** The stored section this was read from. A save sends it back and is
+   *  refused (409) when the section changed since. */
+  revision?: string
   savedLocations: SavedLocation[]
   computerFolders: ComputerFolder[]
   movers: {
@@ -164,6 +167,9 @@ export interface TransferSettings {
   hostLocations?: { enabled: boolean; hidden: string[] }
 }
 export const HOST_LOCATIONS = 'hostLocations' as const
+/** Sent on window when this page changed the Transfers settings outside
+ *  Settings (a location saved from the Transfers page). */
+export const TRANSFER_SETTINGS_CHANGED = 'ade-transfer-settings-changed'
 /** rclone as Settings found it: whether it is on, the program and its
  *  version, and the remotes of its configuration with their types. */
 export interface RcloneDetected {

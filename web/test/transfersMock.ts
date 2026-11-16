@@ -228,7 +228,10 @@ export function createTransfersMock(opts: MockOptions = {}) {
   const plans = new Map<string, Record<string, unknown>>()
   const calls: { method: string; path: string; body?: unknown }[] = []
   let n = 0
-  let settings = opts.settings ?? mockSettings()
+  // As the server does: each change gives a new revision, and a PUT that
+  // names an older one is refused.
+  let rev = 1
+  let settings: Record<string, unknown> = { revision: 'r1', ...(opts.settings ?? mockSettings()) }
 
   function plan(req: { action: string; source: { location: string; paths: string[] }; destination: { location: string; path: string }; options?: Record<string, unknown> }): MockReply {
     const src = locations.find(l => l.id === req.source.location)
@@ -317,10 +320,11 @@ export function createTransfersMock(opts: MockOptions = {}) {
     if (path === '/api/transfers/settings' && method === 'PUT') {
       if (settings.managed) return { status: 403, body: { error: 'The operator sets these.' } }
       const b = body as Record<string, unknown>
+      if (b.revision !== settings.revision) return { status: 409, body: { error: 'Transfers settings changed since this page loaded, for example a location was saved from the Transfers page or the chat. Load them again and save your changes on top' } }
       const locs = (b.savedLocations as Record<string, unknown>[]).map((l, i) => ({ ...l, id: l.id || `saved-${i}-${++n}` }))
       const { managed: _m, mcpServers: _x, detected: _d, ...input } = b
       void _m; void _x; void _d
-      settings = { ...settings, ...input, savedLocations: locs }
+      settings = { ...settings, ...input, savedLocations: locs, revision: `r${++rev}` }
       return { status: 200, body: settings }
     }
     if (path === '/api/transfers/settings/locations' && method === 'POST') {
@@ -330,7 +334,7 @@ export function createTransfersMock(opts: MockOptions = {}) {
       const label = b.label || `${b.host}:${b.root}`
       const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       const saved = { ...b, id, label }
-      settings = { ...settings, savedLocations: [...(settings.savedLocations as unknown[]), saved] }
+      settings = { ...settings, savedLocations: [...(settings.savedLocations as unknown[]), saved], revision: `r${++rev}` }
       locations.push({ id: `saved:${id}`, kind: 'saved', label, detail: `${b.host}, ${b.root}`, writable: true, indexed: false, browsable: true, available: true })
       return { status: 200, body: { location: saved, id: `saved:${id}` } }
     }

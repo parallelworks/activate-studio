@@ -235,7 +235,10 @@ export function navWidthPreset(px: number): keyof typeof NAV_WIDTHS | null {
   return (Object.keys(NAV_WIDTHS) as (keyof typeof NAV_WIDTHS)[]).find(k => NAV_WIDTHS[k] === px) ?? null
 }
 
-export function SettingsView() {
+/** `active`: whether the Settings page is the one shown; it stays mounted
+ *  while hidden, and sections that must not hold a stale copy read again
+ *  when it is shown. */
+export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const cfg = useAppConfig()
   const [form, setForm] = useState<Effective | null>(null)
   const [deploymentCred, setDeploymentCred] = useState<boolean | null>(null)
@@ -1156,7 +1159,7 @@ export function SettingsView() {
           )}
 
           {section === 'workflows' && <WorkflowsSection />}
-          {section === 'transfers' && (hasTransfers ? <TransfersSettingsSection /> : <p className="muted">This server has no transfers.</p>)}
+          {section === 'transfers' && (hasTransfers ? <TransfersSettingsSection active={active} /> : <p className="muted">This server has no transfers.</p>)}
           {section === 'ext' && (
             <>
               <h1>Extensions</h1>

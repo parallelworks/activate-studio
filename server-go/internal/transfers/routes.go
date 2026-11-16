@@ -161,9 +161,9 @@ func (s *Service) Routes(mux *http.ServeMux, log *slog.Logger, viewer func(*http
 	})
 	h("PUT /api/transfers/settings", func(w http.ResponseWriter, r *http.Request, v Viewer) (any, error) {
 		if v.AuthOn {
-			return s.SaveSettings(r.Context(), v, Settings{})
+			return s.SaveSettings(r.Context(), v, SettingsPut{})
 		}
-		var in Settings
+		var in SettingsPut
 		if err := decode(r, &in); err != nil {
 			return nil, err
 		}

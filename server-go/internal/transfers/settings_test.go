@@ -158,6 +158,7 @@ func TestSettingsApplyLive(t *testing.T) {
 	m["movers"].(map[string]any)["rsync"].(map[string]any)["enabled"] = true
 	m["defaults"] = map[string]any{"mover": "studio-copy", "checksum": false, "preserveTimes": true, "parallel": 4}
 	m["computerFolders"] = out["computerFolders"]
+	m["revision"] = out["revision"]
 	if st, out := a.do("PUT", "/api/transfers/settings", "", m); st != 200 {
 		t.Fatalf("%d %v", st, out)
 	}

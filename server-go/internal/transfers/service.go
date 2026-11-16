@@ -110,9 +110,10 @@ type Service struct {
 	// (clearing staging after a restart); nil: the owner without a key.
 	viewerFor func(owner string) Viewer
 	rc        *rcloneState
-	// savedMu keeps saved locations added one at a time
-	// (AddSavedLocation reads, appends and writes the section).
-	savedMu sync.Mutex
+	// settingsMu makes each change to the section one read, check and
+	// write: AddSavedLocation and SaveSettings both hold it, so an add
+	// cannot fall between a PUT's revision check and its write.
+	settingsMu sync.Mutex
 }
 
 type homeEntry struct {

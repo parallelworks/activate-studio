@@ -1,6 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { toast } from '@parallelworks/ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TransfersSettingsSection } from '../src/components/TransfersSettingsSection'
+import { TRANSFER_SETTINGS_CHANGED } from '../src/transferApi'
 import { settingsSections } from '../src/views/SettingsView'
 import { createTransfersMock, mockSettings, type MockOptions } from './transfersMock'
 
@@ -26,6 +30,7 @@ beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserv
 afterEach(() => { vi.unstubAllGlobals() })
 
 const saved = () => mock.calls.filter(c => c.method === 'PUT' && c.path === '/api/transfers/settings').map(c => c.body as ReturnType<typeof mockSettings>)
+const added = () => mock.calls.filter(c => c.method === 'POST' && c.path === '/api/transfers/settings/locations').map(c => c.body as Record<string, unknown>)
 
 describe('Settings, Transfers', () => {
   it('sits beside Indexing only where the server has transfers', () => {
@@ -74,13 +79,12 @@ describe('Settings, Transfers', () => {
     fireEvent.change(within(dialog).getByLabelText('Folder', { exact: false }), { target: { value: '/srv/archive' } })
     fireEvent.change(within(dialog).getByLabelText('Label', { exact: false }), { target: { value: 'Archive' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Test and save' }))
-    await waitFor(() => expect(saved()).toHaveLength(1))
+    // A new location is added on its own (POST), so it cannot undo or be
+    // undone by any other change.
+    await waitFor(() => expect(added()).toHaveLength(1))
+    expect(saved()).toHaveLength(0)
     expect(mock.calls.find(c => c.path === '/api/transfers/settings/test')?.body).toEqual({ host: 'user@archive-host', root: '/srv/archive' })
-    const body = saved()[0]
-    expect(body).not.toHaveProperty('managed')
-    expect(body).not.toHaveProperty('mcpServers')
-    expect(body).not.toHaveProperty('detected')
-    expect(body.savedLocations.at(-1)).toEqual({ id: '', label: 'Archive', host: 'user@archive-host', root: '/srv/archive' })
+    expect(added()[0]).toEqual({ id: '', label: 'Archive', host: 'user@archive-host', root: '/srv/archive' })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const row = within(screen.getByRole('table')).getByText('Archive').closest('tbody') as HTMLElement
     expect(within(row).getByText(/^Reached, folder exists, rsync 3\.2\.7 found, writable/)).toBeInTheDocument()
@@ -96,10 +100,10 @@ describe('Settings, Transfers', () => {
     fireEvent.change(within(dialog).getByLabelText('Folder', { exact: false }), { target: { value: '/data' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Test and save' }))
     expect(await within(dialog).findByText(/Permission denied \(publickey\)/)).toBeInTheDocument()
-    expect(saved()).toHaveLength(0)
+    expect(added()).toHaveLength(0)
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save anyway' }))
-    await waitFor(() => expect(saved()).toHaveLength(1))
-    expect(saved()[0].savedLocations.at(-1)).toMatchObject({ label: 'user@offline-host', host: 'user@offline-host', root: '/data' })
+    await waitFor(() => expect(added()).toHaveLength(1))
+    expect(added()[0]).toMatchObject({ label: 'user@offline-host', host: 'user@offline-host', root: '/data' })
     const row = (await within(screen.getByRole('table')).findByText('user@offline-host', { selector: 'td:first-child' })).closest('tbody') as HTMLElement
     expect(within(row).getByText('Test failed: Permission denied (publickey)')).toBeInTheDocument()
   })
@@ -125,21 +129,81 @@ describe('Settings, Transfers', () => {
     expect(saved()[1].savedLocations.map(l => l.label)).toEqual(['Shared scratch'])
   })
 
-  it('adds a folder, switches one off, hides a library host, and saves them with Save', async () => {
+  it('saves an added or removed folder and a switched built-in folder at once', async () => {
     serve()
+    const success = vi.spyOn(toast, 'success')
     render(<TransfersSettingsSection />)
     await screen.findByRole('table')
     fireEvent.change(screen.getByRole('textbox', { name: 'Folder to add' }), { target: { value: '/home/user/Data' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add folder' }))
+    await waitFor(() => expect(saved()).toHaveLength(1))
+    expect(saved()[0].computerFolders.at(-1)).toEqual({ path: '/home/user/Data', label: 'Data', builtIn: false, enabled: true })
+    expect(saved()[0].revision).toBe('r1')
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Added Data. Transfers can use it now.'))
+    // Nothing is left unsaved, and the field is cleared for the next one.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.queryByText('Unsaved changes')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Folder to add' })).toHaveValue('')
+
     fireEvent.click(screen.getByRole('switch', { name: 'Use Downloads' }))
+    await waitFor(() => expect(saved()).toHaveLength(2))
+    expect(saved()[1].computerFolders.find(f => f.label === 'Downloads')!.enabled).toBe(false)
+    expect(saved()[1].revision).toBe('r2')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Data' }))
+    await waitFor(() => expect(saved()).toHaveLength(3))
+    expect(saved()[2].computerFolders.map(f => f.path)).not.toContain('/home/user/Data')
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Removed Data. Its files are not touched.'))
+    success.mockRestore()
+  })
+
+  it('says why a folder could not be added, and keeps what was typed', async () => {
+    serve()
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    const handle = mock.handle
+    mock.handle = (m, url, body) => (m === 'PUT' ? { status: 400, body: { error: 'computerFolders[4].path: /home/user/Gone is not there' } } : handle(m, url, body))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Folder to add' }), { target: { value: '/home/user/Gone' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add folder' }))
+    expect(await screen.findByText(/\/home\/user\/Gone is not there/)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Folder to add' })).toHaveValue('/home/user/Gone')
+    expect(screen.queryByText('/home/user/Gone', { selector: 'code' })).toBeNull()
+  })
+
+  it('marks Save fields as unsaved and saves them with Save', async () => {
+    serve()
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
     fireEvent.click(screen.getByRole('checkbox', { name: 'Offer archive-host' }))
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(saved()).toHaveLength(1))
-    const body = saved()[0]
-    expect(body.computerFolders.find(f => f.label === 'Downloads')!.enabled).toBe(false)
-    expect(body.computerFolders.at(-1)).toEqual({ path: '/home/user/Data', label: 'Data', builtIn: false, enabled: true })
-    expect(body.hostLocations).toEqual({ enabled: true, hidden: ['storage-host', 'archive-host'] })
+    expect(saved()[0].hostLocations).toEqual({ enabled: true, hidden: ['storage-host', 'archive-host'] })
+    expect(saved()[0].revision).toBe('r1')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled())
+    expect(screen.queryByText('Unsaved changes')).toBeNull()
+  })
+
+  it('keeps a long folder path inside the section, whole in its title, with Remove beside it', async () => {
+    const long = `/home/user/${'very-long-folder-name-'.repeat(8)}end`
+    const st = mockSettings()
+    st.computerFolders = [...(st.computerFolders as object[]), { path: long, label: 'Long', builtIn: false, enabled: true }]
+    serve({ settings: st })
+    render(<TransfersSettingsSection />)
+    const path = await screen.findByText(long, { selector: 'code' })
+    expect(path).toHaveAttribute('title', long)
+    expect(path).toHaveClass('xfer-settings-folder-path')
+    const row = path.closest('li') as HTMLElement
+    expect(within(row).getByRole('button', { name: 'Remove Long' })).toBeInTheDocument()
+    // jsdom has no layout, so the rules that keep it in place are checked.
+    const css = readFileSync(resolve(__dirname, '../src/styles.css'), 'utf8')
+    const rule = (sel: string) => new RegExp(`(^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? ''
+    expect(rule('.xfer-settings-folder-path')).toMatch(/min-width: 0/)
+    expect(rule('.xfer-settings-folder-path')).toMatch(/text-overflow: ellipsis/)
+    expect(rule('.xfer-settings-folder-path')).toMatch(/white-space: nowrap/)
+    expect(rule('.xfer-settings-folders li')).toMatch(/min-width: 0/)
+    expect(rule('.xfer-settings > *')).toMatch(/min-width: 0/)
+    expect(css).toMatch(/\.xfer-settings-folders li > button[^{]*\{[^}]*flex: none/)
   })
 
   it('shows each row test\'s result beside what was tested', async () => {
@@ -194,9 +258,9 @@ describe('Settings, Transfers', () => {
     fireEvent.change(within(dialog).getByLabelText('Port', { exact: false }), { target: { value: '2222' } })
     fireEvent.change(within(dialog).getByLabelText('ssh options', { exact: false }), { target: { value: '-o IdentityFile=/home/user/.ssh/k' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Test and save' }))
-    await waitFor(() => expect(saved()).toHaveLength(1))
+    await waitFor(() => expect(added()).toHaveLength(1))
     expect(mock.calls.find(c => c.path === '/api/transfers/settings/test')?.body).toEqual({ host: 'user@archive-host', root: '/srv/archive', port: 2222, sshOptions: '-o IdentityFile=/home/user/.ssh/k' })
-    expect(saved()[0].savedLocations.at(-1)).toEqual({ id: '', label: 'user@archive-host', host: 'user@archive-host', root: '/srv/archive', port: 2222, sshOptions: '-o IdentityFile=/home/user/.ssh/k' })
+    expect(added()[0]).toEqual({ id: '', label: 'user@archive-host', host: 'user@archive-host', root: '/srv/archive', port: 2222, sshOptions: '-o IdentityFile=/home/user/.ssh/k' })
   })
 
   it('puts a 400 that names a field under that field', async () => {
@@ -213,7 +277,7 @@ describe('Settings, Transfers', () => {
     fireEvent.change(within(dialog).getByLabelText('Folder', { exact: false }), { target: { value: '/srv/archive' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Test and save' }))
     expect(await within(dialog).findByText('Give an absolute path with no ".."')).toBeInTheDocument()
-    expect(saved()).toHaveLength(0)
+    expect(added()).toHaveLength(0)
   })
 
   it('shows the CONDUIT server and folders only when CONDUIT is on', async () => {
@@ -253,6 +317,162 @@ describe('Settings, Transfers', () => {
     render(<TransfersSettingsSection />)
     const link = await screen.findByRole('link', { name: 'Assistant tools, Attached MCP servers' })
     expect(link).toHaveAttribute('href', '#view=settings:tools')
+  })
+})
+
+/** A location saved somewhere else: the Transfers page or the chat. */
+const saveElsewhere = (label = 'Chat drop') =>
+  mock.handle('POST', '/api/transfers/settings/locations', { label, host: 'user@drop-host', root: '/srv/drop' })
+const table = () => screen.getByRole('table')
+
+describe('Settings, Transfers never holds a stale copy', () => {
+  it('keeps a location saved elsewhere when Save runs from an older read (the reported loss)', async () => {
+    serve()
+    const success = vi.spyOn(toast, 'success')
+    // Settings, Transfers is opened once, and stays mounted while hidden.
+    const { rerender } = render(<TransfersSettingsSection active />)
+    await screen.findByRole('table')
+    rerender(<TransfersSettingsSection active={false} />)
+    saveElsewhere()
+    // Back to it: it reads the section again and lists the location.
+    rerender(<TransfersSettingsSection active />)
+    expect(await within(table()).findByText('Chat drop')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(saved()).toHaveLength(1))
+    expect(saved()[0].savedLocations.map(l => l.label)).toContain('Chat drop')
+    const now = mock.handle('GET', '/api/transfers/settings').body as ReturnType<typeof mockSettings>
+    expect((now.savedLocations as { label: string }[]).map(l => l.label)).toContain('Chat drop')
+    expect((now.movers as { rsync: { enabled: boolean } }).rsync.enabled).toBe(false)
+    success.mockRestore()
+  })
+
+  it('reads the section again when the window regains focus, unless it has unsaved edits', async () => {
+    serve()
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    saveElsewhere('First')
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(await within(table()).findByText('First')).toBeInTheDocument()
+
+    // With an unsaved edit, the edit stays and Save stays on; the lists
+    // that save at once still show what is saved.
+    fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+    saveElsewhere('Second')
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(await within(table()).findByText('Second')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'rsync' })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it('reads again when the Transfers page saves a location', async () => {
+    serve()
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    saveElsewhere('From the page')
+    act(() => { window.dispatchEvent(new Event(TRANSFER_SETTINGS_CHANGED)) })
+    expect(await within(table()).findByText('From the page')).toBeInTheDocument()
+  })
+
+  it('on a 409 with no conflict, reads again, keeps the edits, saves them on top and says what changed', async () => {
+    serve()
+    const success = vi.spyOn(toast, 'success')
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
+    // Saved elsewhere after the edit, with no focus in between.
+    saveElsewhere()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(saved()).toHaveLength(2))
+    expect(saved()[0].revision).toBe('r1')
+    expect(saved()[1].revision).toBe('r2')
+    expect(saved()[1].savedLocations.map(l => l.label)).toContain('Chat drop')
+    expect(saved()[1].movers.rsync.enabled).toBe(false)
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Saved. New transfers use these settings. Transfers settings had changed elsewhere (saved locations); those changes are kept.'))
+    expect(await within(table()).findByText('Chat drop')).toBeInTheDocument()
+    success.mockRestore()
+  })
+
+  it('says a save was redone even when the change elsewhere was already on the page', async () => {
+    serve()
+    const success = vi.spyOn(toast, 'success')
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
+    // Saved from the chat; focus brings the location onto the page, while
+    // the unsaved edit keeps the older revision.
+    saveElsewhere()
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(await within(table()).findByText('Chat drop')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(saved()).toHaveLength(2))
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Saved. New transfers use these settings. Transfers settings had changed elsewhere, such as a location saved from Transfers or the chat; those changes are kept.'))
+    success.mockRestore()
+  })
+
+  it('cuts a long name, host or folder with an ellipsis, whole in its title, never inside a word', async () => {
+    const st = mockSettings()
+    const host = 'upload-account@storage-host.example.com'
+    st.savedLocations = [{ id: 'drop', label: 'Upload drop', host, root: '/upload/incoming/projects/2026' }]
+    serve({ settings: st })
+    render(<TransfersSettingsSection />)
+    const cell = await within(await screen.findByRole('table')).findByText(host)
+    expect(cell).toHaveAttribute('title', host)
+    expect(cell).toHaveClass('xfer-settings-cut')
+    expect(cell).not.toHaveClass('xfer-mono')
+    const css = readFileSync(resolve(__dirname, '../src/styles.css'), 'utf8')
+    expect(css).toMatch(/\.xfer-settings-cut \{[^}]*text-overflow: ellipsis[^}]*white-space: nowrap/)
+    expect(css).toMatch(/\.xfer-settings-saved \{[^}]*table-layout: fixed/)
+    expect(/\.xfer-settings-(cut|saved|mono)[^{]*\{[^}]*anywhere/.test(css)).toBe(false)
+  })
+
+  it('puts Add folder on its own line at the left, apart from where a row\'s Remove sits', async () => {
+    serve()
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    const add = screen.getByRole('button', { name: 'Add folder' })
+    expect(add.closest('.xfer-settings-addfolder')).toBeNull()
+    expect(add).toHaveClass('xfer-settings-add')
+  })
+
+  it('on a 409 that conflicts with an edit, saves nothing, says so, and Reload takes the saved settings', async () => {
+    serve()
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
+    // Another window changed rsync too, and saved.
+    const other = mock.handle('GET', '/api/transfers/settings').body as Record<string, unknown>
+    const movers = other.movers as Record<string, unknown>
+    mock.handle('PUT', '/api/transfers/settings', { ...other, movers: { ...movers, rsync: { enabled: true, path: '/opt/rsync/bin/rsync' } } })
+    const puts = saved().length
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const note = await screen.findByText(/Transfers settings changed elsewhere since this page loaded \(rsync\)/)
+    expect(note).toHaveTextContent('Your unsaved changes to rsync differ from what was saved there, so nothing was saved.')
+    // One PUT, refused; nothing sent again.
+    expect(saved()).toHaveLength(puts + 1)
+    // The edit is still there to save on top.
+    expect(screen.getByRole('switch', { name: 'rsync' })).not.toBeChecked()
+    fireEvent.click(within(note.closest('.xfer-settings-changed') as HTMLElement ?? note).getByRole('button', { name: 'Reload' }))
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'rsync' })).toBeChecked())
+    expect(screen.getByDisplayValue('/opt/rsync/bin/rsync')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.queryByText(/changed elsewhere/)).toBeNull()
+  })
+
+  it('removes and edits a location by its id, against the section as saved now', async () => {
+    serve()
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    // Saved elsewhere after this page read the section.
+    saveElsewhere()
+    const results = within(table()).getByText('Results').closest('tr') as HTMLElement
+    fireEvent.click(within(results).getByRole('button', { name: 'Remove' }))
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove' }))
+    // The first try is refused (409); the removal is made again to what is
+    // saved now, so the location saved elsewhere stays.
+    await waitFor(() => expect(saved()).toHaveLength(2))
+    expect(saved()[1].savedLocations.map(l => l.label)).toEqual(['Scratch on archive-host', 'Chat drop'])
   })
 })
 

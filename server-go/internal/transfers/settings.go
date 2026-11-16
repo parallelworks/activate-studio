@@ -1,6 +1,8 @@
 package transfers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
@@ -162,6 +165,14 @@ func (s Settings) off() map[string]bool {
 	return off
 }
 
+// revision is a short hash of the stored section: the same section
+// always has the same revision, and any change gives another.
+func (s Settings) revision() string {
+	b, _ := json.Marshal(s.normal())
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:8])
+}
+
 func (s Settings) builtInOn(label string) bool {
 	for _, f := range s.ComputerFolders {
 		if f.BuiltIn && f.Label == label {
@@ -194,10 +205,23 @@ func (f FileSettings) Save(s Settings) error {
 }
 
 // MemorySettings is a SettingsStore in memory (tests).
-type MemorySettings struct{ S Settings }
+type MemorySettings struct {
+	mu sync.Mutex
+	S  Settings
+}
 
-func (m *MemorySettings) Load() Settings        { return m.S.normal() }
-func (m *MemorySettings) Save(s Settings) error { m.S = s; return nil }
+func (m *MemorySettings) Load() Settings {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.S.normal()
+}
+
+func (m *MemorySettings) Save(s Settings) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.S = s
+	return nil
+}
 
 func (s Settings) normal() Settings {
 	d := DefaultSettings()
@@ -300,6 +324,10 @@ func (l SavedLocation) site() (string, error) {
 // refused says why a computer folder may not be offered ("" when it may).
 func (s Settings) Check(refused func(string) string) (Settings, error) {
 	s = s.normal()
+	// Its lists are cleaned in place, so they are copies: the caller's
+	// (a store's own, in tests) stay as they were.
+	s.SavedLocations = append([]SavedLocation{}, s.SavedLocations...)
+	s.Movers.Conduit.Mounts = append([]ConduitMount{}, s.Movers.Conduit.Mounts...)
 	if len(s.SavedLocations) > 50 || len(s.ComputerFolders) > 50+len(BuiltInFolders) {
 		return s, apierr.New(400, "too many entries: at most 50 saved locations and 50 added folders")
 	}
