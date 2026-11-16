@@ -2971,11 +2971,30 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-settings-actions { white-space: nowrap; text-align: right; }
 .xfer-settings-table tr:has(+ .xfer-settings-testrow) td { border-bottom: 0; }
 .xfer-settings-testrow td { font-size: 12px; padding-top: 0; }
+/* Saved locations: fixed columns, and a long name, host or folder ends in
+   an ellipsis (its title has it whole) instead of breaking inside words. */
+.xfer-settings-saved { table-layout: fixed; }
+.xfer-settings-saved th:nth-child(1) { width: 26%; }
+.xfer-settings-saved th:nth-child(4) { width: 184px; }
+/* Where the section is narrow (900 px windows), each location is a
+   stack: name, host, folder, then its buttons, each line full width. */
+.xfer-settings { container-type: inline-size; }
+@container (max-width: 620px) {
+  .xfer-settings-saved thead { display: none; }
+  .xfer-settings-saved tr { display: grid; grid-template-columns: minmax(0, 1fr); padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--pw-border) 60%, transparent); }
+  .xfer-settings-saved tr:has(+ .xfer-settings-testrow) { border-bottom: 0; }
+  .xfer-settings-saved td { display: block; padding: 2px 4px; border-bottom: 0; }
+  .xfer-settings-saved td:first-child { font-weight: 500; }
+  .xfer-settings-saved .xfer-settings-actions { text-align: left; }
+}
+.xfer-settings-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xfer-settings-mono { font-family: ui-monospace, monospace; font-size: 12px; }
 @media (max-width: 760px) {
   .xfer-settings-table thead { display: none; }
   .xfer-settings-table tr { display: grid; grid-template-columns: minmax(0, 1fr); padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--pw-border) 60%, transparent); }
   .xfer-settings-table td { display: block; padding: 2px 4px; border-bottom: 0; overflow-wrap: anywhere; }
   .xfer-settings-actions { text-align: left; }
+  .xfer-settings-saved .xfer-settings-cut { overflow-wrap: normal; }
 }
 .xfer-test.good { color: var(--theme-success); }
 .xfer-test.bad { color: var(--theme-error); }

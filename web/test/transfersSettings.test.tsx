@@ -389,9 +389,51 @@ describe('Settings, Transfers never holds a stale copy', () => {
     expect(saved()[1].revision).toBe('r2')
     expect(saved()[1].savedLocations.map(l => l.label)).toContain('Chat drop')
     expect(saved()[1].movers.rsync.enabled).toBe(false)
-    await waitFor(() => expect(success).toHaveBeenCalledWith('Saved. New transfers use these settings. Meanwhile saved locations changed elsewhere, and those changes are kept.'))
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Saved. New transfers use these settings. Transfers settings had changed elsewhere (saved locations); those changes are kept.'))
     expect(await within(table()).findByText('Chat drop')).toBeInTheDocument()
     success.mockRestore()
+  })
+
+  it('says a save was redone even when the change elsewhere was already on the page', async () => {
+    serve()
+    const success = vi.spyOn(toast, 'success')
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByRole('switch', { name: 'rsync' }))
+    // Saved from the chat; focus brings the location onto the page, while
+    // the unsaved edit keeps the older revision.
+    saveElsewhere()
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(await within(table()).findByText('Chat drop')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(saved()).toHaveLength(2))
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Saved. New transfers use these settings. Transfers settings had changed elsewhere, such as a location saved from Transfers or the chat; those changes are kept.'))
+    success.mockRestore()
+  })
+
+  it('cuts a long name, host or folder with an ellipsis, whole in its title, never inside a word', async () => {
+    const st = mockSettings()
+    const host = 'upload-account@storage-host.example.com'
+    st.savedLocations = [{ id: 'drop', label: 'Upload drop', host, root: '/upload/incoming/projects/2026' }]
+    serve({ settings: st })
+    render(<TransfersSettingsSection />)
+    const cell = await within(await screen.findByRole('table')).findByText(host)
+    expect(cell).toHaveAttribute('title', host)
+    expect(cell).toHaveClass('xfer-settings-cut')
+    expect(cell).not.toHaveClass('xfer-mono')
+    const css = readFileSync(resolve(__dirname, '../src/styles.css'), 'utf8')
+    expect(css).toMatch(/\.xfer-settings-cut \{[^}]*text-overflow: ellipsis[^}]*white-space: nowrap/)
+    expect(css).toMatch(/\.xfer-settings-saved \{[^}]*table-layout: fixed/)
+    expect(/\.xfer-settings-(cut|saved|mono)[^{]*\{[^}]*anywhere/.test(css)).toBe(false)
+  })
+
+  it('puts Add folder on its own line at the left, apart from where a row\'s Remove sits', async () => {
+    serve()
+    render(<TransfersSettingsSection />)
+    await screen.findByRole('table')
+    const add = screen.getByRole('button', { name: 'Add folder' })
+    expect(add.closest('.xfer-settings-addfolder')).toBeNull()
+    expect(add).toHaveClass('xfer-settings-add')
   })
 
   it('on a 409 that conflicts with an edit, saves nothing, says so, and Reload takes the saved settings', async () => {

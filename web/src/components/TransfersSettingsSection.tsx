@@ -281,7 +281,12 @@ export function TransfersSettingsSection({ active = true }: { active?: boolean }
         const m = adopt(await transferApi.settings())
         void reloadLocations()
         if (m.conflicts.length) { setChanged({ elsewhere: m.elsewhere, conflicts: m.conflicts }); return }
-        const note = m.elsewhere.length ? ` Meanwhile ${listText(m.elsewhere)} changed elsewhere, and those changes are kept.` : ''
+        // Said whenever the save was redone. What changed may already be on
+        // the page (a read on focus took a new location) and so not in
+        // `elsewhere`, but the save still met a newer section.
+        const note = m.elsewhere.length
+          ? ` Transfers settings had changed elsewhere (${listText(m.elsewhere)}); those changes are kept.`
+          : ' Transfers settings had changed elsewhere, such as a location saved from Transfers or the chat; those changes are kept.'
         done(await send(), note)
       }
     } catch (e) {
@@ -370,7 +375,7 @@ export function TransfersSettingsSection({ active = true }: { active?: boolean }
       <p className="muted">Folders on other computers, reached over ssh. Adding, editing or removing one saves at once.</p>
       {s.savedLocations.length === 0 && <p className="muted">None yet.</p>}
       {s.savedLocations.length > 0 && (
-        <table className="xfer-settings-table">
+        <table className="xfer-settings-table xfer-settings-saved">
           <thead><tr><th>Name</th><th>Host</th><th>Folder</th><th><span className="sr-only">Actions</span></th></tr></thead>
           {s.savedLocations.map((l, i) => {
             const k = `loc-${l.id || i}`
@@ -379,9 +384,9 @@ export function TransfersSettingsSection({ active = true }: { active?: boolean }
             return (
               <tbody key={k}>
                 <tr>
-                  <td>{l.label}</td>
-                  <td className="xfer-mono">{l.host}</td>
-                  <td className="xfer-mono">{l.root}</td>
+                  <td className="xfer-settings-cut" title={l.label}>{l.label}</td>
+                  <td className="xfer-settings-cut xfer-settings-mono" title={l.host}>{l.host}</td>
+                  <td className="xfer-settings-cut xfer-settings-mono" title={l.root}>{l.root}</td>
                   <td className="xfer-settings-actions">
                     <Button size="sm" variant="ghost" disabled={off} onClick={() => void runTest(k, { host: l.host, root: l.root, rsyncPath: l.rsyncPath, port: l.port, sshOptions: l.sshOptions })}>Test</Button>
                     <Button size="sm" variant="ghost" disabled={off} onClick={() => setDialog({ id: l.id })}>Edit</Button>
@@ -419,9 +424,14 @@ export function TransfersSettingsSection({ active = true }: { active?: boolean }
             error={folder.path && !folder.path.trim().startsWith('/') ? 'Start the folder with /' : undefined} />
           <Input size="sm" aria-label="Its name" placeholder="Name" value={folder.label}
             onChange={e => setFolder({ ...folder, label: e.target.value })} />
-          <Button size="sm" variant="secondary" disabled={!folder.path.trim().startsWith('/') || s.computerFolders.some(f => f.path === folder.path.trim())}
-            onClick={() => void addFolder()}>Add folder</Button>
         </div>
+      )}
+      {/* On its own line at the left, as Add a location is: a row's Remove
+          sits at the right, so the two never share a spot when the new
+          row pushes this down. */}
+      {!off && (
+        <Button size="sm" variant="secondary" className="xfer-settings-add" disabled={!folder.path.trim().startsWith('/') || s.computerFolders.some(f => f.path === folder.path.trim())}
+          onClick={() => void addFolder()}>Add folder</Button>
       )}
       {folderError && <Callout tone="error" size="sm" live>{folderError}</Callout>}
 
