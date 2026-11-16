@@ -110,6 +110,11 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
   const [note, setNote] = useState<string | null>(null)
   const [omitted, setOmitted] = useState<Omission[] | null>(null)
   const [busy, setBusy] = useState(false)
+  // The search running, so Stop, a new search or leaving the page stops it:
+  // the server then stops every library's query, here or on its host.
+  const running = useRef<AbortController | null>(null)
+  useEffect(() => () => running.current?.abort(), [])
+  const stop = () => running.current?.abort()
   const vocab = useLabelVocabulary()
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
   const [sel, setSel] = useState<Set<string>>(new Set())
@@ -124,6 +129,9 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     if (refineOpen ? !(name.trim() || text.trim()) : !query.trim()) return
     // The address carries the search, so it can be shared or kept.
     history.replaceState(null, '', location.pathname + location.search + searchHash({ q: refineOpen ? '' : query, name: refineOpen ? name : '', text: refineOpen ? text : '', match, scope: over }))
+    running.current?.abort()
+    const ctl = new AbortController()
+    running.current = ctl
     setBusy(true)
     setNote(null)
     setOmitted(null)
@@ -132,21 +140,26 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
     setTransferOpen(false)
     try {
       const r = refineOpen
-        ? await api.search('', [...activeTags], limit, { library: scopeParam(over), name: name.trim(), text: text.trim(), match })
-        : await api.search(query, [...activeTags], limit, { library: scopeParam(over) })
+        ? await api.search('', [...activeTags], limit, { library: scopeParam(over), name: name.trim(), text: text.trim(), match, signal: ctl.signal })
+        : await api.search(query, [...activeTags], limit, { library: scopeParam(over), signal: ctl.signal })
       setHits(r.hits)
       setGufi(r.gufi)
       setLastLimit(limit)
       // Every library left out, or searched in part, with the reason; one
-      // that had not answered in time is among them.
+      // stopped at the search time limit is among them, with a way to the
+      // setting.
       setOmitted(r.omitted ?? null)
       if (r.error) setNote(r.error)
-      else if (r.slow?.length) setNote(`Choose ${r.slow.length === 1 ? 'a library that did not answer in time' : 'one of the libraries that did not answer in time'} alone in Searching to wait for it.`)
     } catch (e) {
+      // A newer search took its place: that one shows its own answer.
+      if (running.current !== ctl) return
       setHits(null)
-      setNote(String((e as Error).message ?? e))
+      setNote(ctl.signal.aborted ? 'Search stopped.' : String((e as Error).message ?? e))
     } finally {
-      setBusy(false)
+      if (running.current === ctl) {
+        running.current = null
+        setBusy(false)
+      }
     }
   }
 
@@ -216,6 +229,7 @@ export function SearchView({ onOpen }: { onOpen: (path: string, q?: string) => v
           )}
           {refineOpen && <span className="search-refine-title">Refined search</span>}
           <Button variant="primary" loading={busy} onClick={() => run()}>{busy ? 'Searching…' : 'Search'}</Button>
+          {busy && <Button variant="secondary" onClick={stop} title="Stop this search and every library's query">Stop</Button>}
           <Button variant="ghost" size="sm" aria-expanded={refineOpen} onClick={() => setRefineOpen(o => !o)}
             title={refineOpen ? 'Back to one search box' : 'Search names and paths apart from the text and meaning of files'}>
             {refineOpen ? 'One box' : 'Refine'}

@@ -53,6 +53,10 @@ type Engine struct {
 	// SearchEngine is Settings, General, "Search across libraries":
 	// "gufi_vt" or the default.
 	SearchEngine func() string
+	// TimeLimitSec is Settings, Indexing, Sync and search, "Search time
+	// limit": how long a library's search runs before it is stopped, in
+	// seconds, 0 for no limit. Nil: STUDIO_SEARCH_DEADLINE_MS or 20 s.
+	TimeLimitSec func() float64
 	Log          *slog.Logger
 	// VtURL is where gufi_vt's remote command reaches this server
 	// (/internal/gufi-vt).
@@ -89,7 +93,7 @@ func lastLine(s string) string {
 // option is unknown.
 func (e *Engine) runLocal(ctx context.Context, args []string, timeout time.Duration) (string, error) {
 	t0 := time.Now()
-	res, err := e.Local.Run(ctx, gufi.Command{Tool: gufi.ToolQuery, Args: args, Timeout: timeout})
+	res, err := e.Local.Run(ctx, gufi.Command{Tool: gufi.ToolQuery, Args: args, Timeout: budget(ctx, timeout)})
 	argv := append([]string{filepath.Join(e.GufiBin, "gufi_query")}, args...)
 	o := gufitrace.Run{Start: t0, Elapsed: res.Elapsed}
 	if res.Signal != "" {
@@ -163,6 +167,7 @@ func (e *Engine) RemoteGufi(ctx context.Context, site, key string, argv []string
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}
+	timeout = budget(ctx, timeout)
 	// The tool's directory and name: the runner's executor puts them back together.
 	bin, tool := path.Split(argv[0])
 	bin = strings.TrimSuffix(bin, "/")
@@ -421,4 +426,27 @@ func (e *Engine) CheckFTS(ctx context.Context, expr string) string {
 	// gufi_sqlite3 writes "Error: SQL error: <sqlite's message>".
 	line = strings.TrimPrefix(line, "Error: ")
 	return strings.TrimPrefix(line, "SQL error: ")
+}
+
+type budgetKey struct{}
+
+// withBudget marks ctx as a search's whose libraries each run until
+// limitMs (0: no limit), so the GUFI commands it runs are not cut short by
+// their own timeouts first.
+func withBudget(ctx context.Context, limitMs int) context.Context {
+	return context.WithValue(ctx, budgetKey{}, limitMs)
+}
+
+// budget is the timeout of a GUFI command run under ctx: d, or longer
+// under a search whose time limit is longer, which stops it itself (a day
+// with no limit, as a last bound).
+func budget(ctx context.Context, d time.Duration) time.Duration {
+	ms, ok := ctx.Value(budgetKey{}).(int)
+	if !ok {
+		return d
+	}
+	if ms <= 0 {
+		return max(d, 24*time.Hour)
+	}
+	return max(d, time.Duration(ms)*time.Millisecond+10*time.Second)
 }

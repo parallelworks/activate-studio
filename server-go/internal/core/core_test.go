@@ -285,6 +285,8 @@ func TestSettingsValidation(t *testing.T) {
 		{map[string]any{"accent": "Bad Accent"}, "invalid accent"},
 		{map[string]any{"iconUrl": "relative.png"}, "icon must be an http(s) URL or an absolute path"},
 		{map[string]any{"sweepIntervalSec": 90000}, "sweep interval must be 0 to 86400 seconds"},
+		{map[string]any{"searchTimeLimitSec": -1}, "search time limit must be 0 to 86400 seconds (0 is no limit)"},
+		{map[string]any{"searchTimeLimitSec": 90000}, "search time limit must be 0 to 86400 seconds (0 is no limit)"},
 		{map[string]any{"maxToolRounds": 4}, "tool rounds must be 5 to 200"},
 		{map[string]any{"chatModelWindows": "{nope"}, "chatModelWindows must be JSON"},
 		{map[string]any{"updates": []int{}}, "updates must be an object"},
@@ -296,6 +298,9 @@ func TestSettingsValidation(t *testing.T) {
 		if r.status != 400 || r.body["error"] != c.err {
 			t.Errorf("%v: %d %s", c.body, r.status, r.raw)
 		}
+	}
+	if r := e.do("PUT", "/api/settings", map[string]any{"searchTimeLimitSec": 0}); r.status != 200 || r.body["effective"].(map[string]any)["searchTimeLimitSec"] != float64(0) {
+		t.Fatalf("no limit: %s", r.raw)
 	}
 	r := e.do("PUT", "/api/settings", map[string]any{"appName": "  My Studio  ", "theme": "dark", "mcpServers": []any{map[string]any{"name": "My Server!", "url": " https://m.example/mcp "}}, "updates": map[string]any{"channel": "prerelease"}, "ragEndpointName": "--My RAG__ end--", "sections": []any{"chat", nil}})
 	saved := r.body["saved"].(map[string]any)

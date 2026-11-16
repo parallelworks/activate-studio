@@ -308,7 +308,8 @@ export interface FileContent {
 }
 
 /** A search's scope and refined fields (refine.ts on the server). */
-export interface SearchOpts { library?: string; name?: string; text?: string; match?: 'any' | 'all' }
+/** `signal` stops the search: the server stops every library's query. */
+export interface SearchOpts { library?: string; name?: string; text?: string; match?: 'any' | 'all'; signal?: AbortSignal }
 
 export interface SearchHit {
   path: string
@@ -398,8 +399,8 @@ export interface IndexSettingsInfo {
   location: { current: string; default: string; folder: string; canChange: boolean; saved: string }
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(withLibrary(url))
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(withLibrary(url), signal ? { signal } : undefined)
   if (!res.ok) {
     // The server's own sentence where it gave one, such as why a search's
     // text cannot be read.
@@ -462,7 +463,7 @@ export const api = {
     if (opts.match && (opts.name || opts.text)) params.set('match', opts.match)
     if (tags?.length) params.set('tags', tags.join(','))
     if (opts.library) params.set('library', opts.library)
-    return getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[]; omitted?: Omission[] }>(`/api/search?${params}`)
+    return getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[]; omitted?: Omission[] }>(`/api/search?${params}`, opts.signal)
   },
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   mkdir: async (path: string) => {

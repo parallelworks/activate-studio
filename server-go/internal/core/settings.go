@@ -179,6 +179,13 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 		}
 		set("sweepIntervalSec", n)
 	}
+	if v, ok := in("searchTimeLimitSec"); ok {
+		n := jsval.Number(v)
+		if !jsval.IsFinite(n) || n < 0 || n > 86400 {
+			return bad("search time limit must be 0 to 86400 seconds (0 is no limit)")
+		}
+		set("searchTimeLimitSec", n)
+	}
 	if v, ok := in("suggestedPrompts"); ok {
 		a, isArr := jsval.Array(v)
 		if !isArr {

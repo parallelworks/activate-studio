@@ -132,13 +132,8 @@ func (e *Engine) searchScopeVt(ctx context.Context, libs []libraries.Library, q 
 		go func() { defer wg.Done(); across("names", nSQL, libs, nameLimit, NameHit) }()
 	}
 	wg.Wait()
-	deadline := 0
-	if len(libs) > 1 {
-		deadline = o.DeadlineMs
-		if deadline == 0 {
-			deadline = DeadlineMs()
-		}
-	}
+	deadline := e.TimeLimitMs(o)
+	ctx = withBudget(ctx, deadline)
 	type kinds struct{ fts, names, vec []gufi.SearchHit }
 	tag := func(l libraries.Library, hs []gufi.SearchHit) []gufi.SearchHit {
 		out := make([]gufi.SearchHit, len(hs))
@@ -162,6 +157,8 @@ func (e *Engine) searchScopeVt(ctx context.Context, libs []libraries.Library, q 
 				namesLimit = nameLimit
 			}
 			done := make(chan kinds, 1)
+			lctx, stop := context.WithCancel(ctx)
+			defer stop()
 			go func() {
 				var k kinds
 				var inner sync.WaitGroup
@@ -169,9 +166,11 @@ func (e *Engine) searchScopeVt(ctx context.Context, libs []libraries.Library, q 
 					inner.Add(1)
 					go func() {
 						defer inner.Done()
-						f, n, err := e.SearchWordsAndNames(ctx, q, ftsLimit, namesLimit, l.IndexRoot)
+						f, n, err := e.SearchWordsAndNames(lctx, q, ftsLimit, namesLimit, l.IndexRoot)
 						if err != nil {
-							failed(l, err, false, "")
+							if lctx.Err() == nil {
+								failed(l, err, false, "")
+							}
 							return
 						}
 						k.fts, k.names = tag(l, f), tag(l, n)
@@ -181,9 +180,11 @@ func (e *Engine) searchScopeVt(ctx context.Context, libs []libraries.Library, q 
 					inner.Add(1)
 					go func() {
 						defer inner.Done()
-						v, err := e.SearchVector(ctx, q, min(limit, 10), l.IndexRoot)
+						v, err := e.SearchVector(lctx, q, min(limit, 10), l.IndexRoot)
 						if err != nil {
-							failed(l, err, true, "not searched by meaning: ")
+							if lctx.Err() == nil {
+								failed(l, err, true, "not searched by meaning: ")
+							}
 							return
 						}
 						k.vec = tag(l, v)
@@ -207,7 +208,9 @@ func (e *Engine) searchScopeVt(ctx context.Context, libs []libraries.Library, q 
 					*o.Slow = append(*o.Slow, l.Label)
 					slowMu.Unlock()
 				}
-				o.Omitted.Add(libraries.Omission{ID: l.ID, Label: l.Label, Reason: "did not answer within " + deadlineText(deadline), Partial: false})
+				o.Omitted.Add(libraries.Omission{ID: l.ID, Label: l.Label, Reason: "did not answer within " + deadlineText(deadline), TimeLimit: true})
+				stop()
+			case <-ctx.Done():
 			}
 		}(i, l)
 	}

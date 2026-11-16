@@ -20,6 +20,9 @@ type Omission struct {
 	Label   string `json:"label"`
 	Reason  string `json:"reason"`
 	Partial bool   `json:"partial"`
+	// TimeLimit: it was stopped at the search time limit, which Settings,
+	// Indexing, Sync and search changes.
+	TimeLimit bool `json:"timeLimit,omitempty"`
 }
 
 // Omissions is a list that joins a second reason for the same library.
@@ -41,6 +44,7 @@ func (l *Omissions) Add(o Omission) {
 			w.Reason += "; " + o.Reason
 		}
 		w.Partial = w.Partial && o.Partial
+		w.TimeLimit = w.TimeLimit || o.TimeLimit
 		return
 	}
 	l.List = append(l.List, o)

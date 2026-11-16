@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -245,4 +246,64 @@ func TestSiteSaidNamesTheSiteOnce(t *testing.T) {
 			t.Errorf("siteSaid(%q, %q) = %q, want %q", c.site, c.said, got, c.want)
 		}
 	}
+}
+
+// running says whether a process whose command line is exactly cmd runs.
+func running(cmd string) bool {
+	return exec.Command("pgrep", "-f", "^"+regexp.QuoteMeta(cmd)+"$").Run() == nil
+}
+
+// gone waits a few seconds for the process running cmd to end.
+func gone(t *testing.T, cmd string) {
+	t.Helper()
+	for end := time.Now().Add(5 * time.Second); running(cmd); time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("%q still runs on the host", cmd)
+		}
+	}
+}
+
+// A command given up on after it has run a while is stopped on the host:
+// its session ends, and the loop stops what it runs when its input closes.
+// The next request gets a new session. One given up on at once finishes
+// there and leaves the session as it was.
+func TestStoppingACommandEndsItOnTheHost(t *testing.T) {
+	saved := stopAfter
+	stopAfter = 300 * time.Millisecond
+	t.Cleanup(func() { stopAfter = saved })
+	p := localPool(t, map[string]string{"STUDIO_REMOTE_SESSIONS": "1"})
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(time.Second, cancel)
+	if _, err := p.Run(ctx, "cluster", "k", []string{"sleep", "41.25"}, time.Minute); !errors.Is(err, context.Canceled) {
+		t.Fatalf("stopped: %v", err)
+	}
+	gone(t, "sleep 41.25")
+	if r, err := p.Run(context.Background(), "cluster", "k", []string{"echo", "after"}, 10*time.Second); err != nil || strings.TrimSpace(r.Stdout) != "after" {
+		t.Fatalf("after a stop: %+v %v", r, err)
+	}
+
+	quick, cancelQuick := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancelQuick)
+	if _, err := p.Run(quick, "cluster", "k", []string{"sleep", "0.6"}, 10*time.Second); !errors.Is(err, context.Canceled) {
+		t.Fatalf("given up on at once: %v", err)
+	}
+	p.mu.Lock()
+	n := len(p.channels[channelID("cluster", "k")])
+	p.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("a request given up on at once ended its session: %d sessions", n)
+	}
+	if r, err := p.Run(context.Background(), "cluster", "k", []string{"echo", "same"}, 10*time.Second); err != nil || strings.TrimSpace(r.Stdout) != "same" {
+		t.Fatalf("after a quick cancel: %+v %v", r, err)
+	}
+}
+
+// A command that outlives its timeout no longer runs on after its session
+// is dropped.
+func TestTimeoutEndsTheCommandOnTheHost(t *testing.T) {
+	p := localPool(t, nil)
+	if _, err := p.Run(context.Background(), "cluster", "k", []string{"sleep", "42.75"}, time.Second); err == nil || !strings.Contains(err.Error(), "did not finish in 1 s") {
+		t.Fatalf("timeout: %v", err)
+	}
+	gone(t, "sleep 42.75")
 }

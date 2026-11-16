@@ -8,7 +8,12 @@ export interface Omission {
   reason: string
   /** Searched in part (by name, say, but not its words). */
   partial: boolean
+  /** Stopped at the search time limit (Settings, Indexing, Sync and search). */
+  timeLimit?: boolean
 }
+
+/** Where the search time limit is set. */
+export const TIME_LIMIT_SETTING = '#view=settings:sync-search'
 
 /** The key Settings, Indexing, Libraries reads to bring a library's row into view. */
 export const FOCUS_LIBRARY_KEY = 'studio.focusLibrary'
@@ -27,7 +32,9 @@ export function openLibraryRow(id: string): void {
 /**
  * One line under the results naming every library a search or a query
  * left out, or searched only in part, with the reason; each name opens the
- * library's row in Settings, Indexing, Libraries. Nothing when nothing was left out.
+ * library's row in Settings, Indexing, Libraries. A library stopped at the
+ * search time limit adds a button to that setting. Nothing when nothing was
+ * left out.
  */
 export function OmittedLine({ omitted, what = 'search' }: { omitted?: Omission[] | null; what?: 'search' | 'query' }) {
   if (!omitted?.length) return null
@@ -45,6 +52,10 @@ export function OmittedLine({ omitted, what = 'search' }: { omitted?: Omission[]
       {out.length > 0 && <span>Left out: {list(out)}.</span>}
       {out.length > 0 && part.length > 0 && ' '}
       {part.length > 0 && <span>{what === 'query' ? 'Answered in part' : 'Searched in part'}: {list(part)}.</span>}
+      {omitted.some(o => o.timeLimit) && <>
+        {' '}
+        <button type="button" className="omitted-lib" title="Settings, Indexing, Sync and search" onClick={() => { location.hash = TIME_LIMIT_SETTING }}>Change the search time limit</button>
+      </>}
     </p>
   )
 }

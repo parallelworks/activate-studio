@@ -6,5 +6,8 @@
   {"name": "env odd numbers", "env": {"SWEEP_INTERVAL_SEC": "0x10", "DELEGATION_MAX_DEPTH": " 3 ", "RAG_TOP_K": "-4", "STUDIO_MAX_TOOL_ROUNDS": "12", "HISTORY_INTERVAL_SEC": "1e3", "SUGGESTED_PROMPTS": "not json", "AGENT_EXECUTION": "weird"}, "saved": null},
   {"name": "saved over env", "env": {"APP_NAME": "Env", "THEME": "dark", "PW_PLATFORM_HOST": "platform.example.com"}, "saved": {"appName": "Saved", "theme": "light", "sections": [], "suggestedPrompts": [], "sweepIntervalSec": 900, "mcpServers": [{"name": "m", "url": "https://mcp.example.org"}], "customTools": [{"name": "t", "description": "d", "command": "c"}], "updates": {"check": false, "install": "auto", "channel": "beta"}, "kbMission": "   ", "ragTopK": 50, "agentExecution": "sessions", "aiEnabled": false, "appIcon": "unknown key kept"}},
   {"name": "personal with deployment prompts saved", "env": {}, "saved": {"suggestedPrompts": ["What tools can you use and what can I ask you to do?", "What is in this knowledge base?", "Which workflows are available to run?"], "setupDone": true}},
-  {"name": "saved nulls", "env": {"APP_NAME": "Env"}, "saved": {"appName": null, "updates": null, "sections": null}}
+  {"name": "saved nulls", "env": {"APP_NAME": "Env"}, "saved": {"appName": null, "updates": null, "sections": null}},
+  {"name": "search time limit from the environment", "env": {"STUDIO_SEARCH_DEADLINE_MS": "45000"}, "saved": null},
+  {"name": "search time limit saved", "env": {"STUDIO_SEARCH_DEADLINE_MS": "45000"}, "saved": {"searchTimeLimitSec": 0}},
+  {"name": "search time limit env not a number", "env": {"STUDIO_SEARCH_DEADLINE_MS": "soon"}, "saved": null}
 ]

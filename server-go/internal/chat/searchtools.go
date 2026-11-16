@@ -225,10 +225,10 @@ func (m *Module) toolSearchKB(r *http.Request, args map[string]any, ctx ToolCtx)
 		late := ""
 		if items := om.Items(); len(items) > 0 {
 			late = "\n" + libraries.OmissionsText(items)
-			if len(slow) == 1 {
-				late += " Search one that did not answer in time on its own to wait for it."
-			} else if len(slow) > 1 {
-				late += " Search one of those that did not answer in time on its own to wait for it."
+			// Stopped at the search time limit, which searching again does
+			// not lift: the user sets it.
+			if len(slow) > 0 {
+				late += " A library that passes the search time limit is stopped. The user can raise the limit in Settings, Indexing, Sync and search; tell them so rather than searching it again."
 			}
 		}
 		if len(libs) > 1 || libs[0].ID != libraries.PrimaryID {

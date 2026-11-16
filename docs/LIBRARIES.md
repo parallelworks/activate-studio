@@ -1064,12 +1064,15 @@ storage, so a reload keeps it and a new tab starts from the default. Every route
   `<library id>/<path>`, and files open and download from their library;
 - search, which runs in each library what that library supports (full
   text and semantic where its index has them, names always) and blends the
-  hits, each tagged with its library. Each library has 20 seconds to
-  answer (`STUDIO_SEARCH_DEADLINE_MS`); one that has not is left out of
-  the results and named in the answer's `slow`, and the Search page and
-  the chat's `search_kb` say so. A library searched on its own is waited
-  for. With `gufi_vt` as the engine, its one statement waits for every
-  library;
+  hits, each tagged with its library. Each library's search runs until
+  the search time limit (Settings, Indexing, Sync and search,
+  `searchTimeLimitSec`: 20 seconds by default, or
+  `STUDIO_SEARCH_DEADLINE_MS` before one is saved; 0 is no limit), a
+  library searched on its own too. One still running then is stopped,
+  here or on its host, left out of the results with `timeLimit` in its
+  `omitted` entry, and named in the answer's `slow`; the Search page links
+  the setting and the chat's `search_kb` points to it. With `gufi_vt` as
+  the engine, its one statement across libraries waits for every library;
 - the Query page, where the rows gain a leading library column. For the
   canned queries and the builder, whose order the Studio knows, the rows
   are the overall top rows and grouped totals (by extension) are added up;
