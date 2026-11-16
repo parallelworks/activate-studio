@@ -2,6 +2,86 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.202 (2026-11-16)
+
+Stable release of Preview v1.201.1, with no further changes: a library kept as a copy of a Transfers location (#720), and GUFI's common external database tables (#719). See v1.201.1 below.
+
+## v1.201.1 (2026-11-16)
+
+### Read GUFI's common external database schema (ext_bm25, ext_vectors) (#719)
+
+Search, the connected-index probe, and the indexed text of a file now read GUFI's common external database schema: `ext_assets`, the fts5 table `ext_bm25` and the vec0 table `ext_vectors`, with their views, as GUFI's examples publish it. The earlier schema (`ext_bm25_by_file`, `ext_vectors_by_file`) is still read.
+
+### What changes
+
+- **Search** (`OnePassStages`, Go and the Node reference): two more `--external-copy` statements in the same walk. Text comes from `ext_bm25` by `bm25`. Vectors come from `ext_vectors` for a model whose query vector Studio has, comparing the first `vector_native_dimensions` of the 4096 floats stored. Both are matched to the directory's entries by `inode` and `mtime`. Each statement is a copy of its own. A file holding the earlier schema, or text without vectors, fails only the statements whose tables it lacks, and the other copies still run (checked on GUFI 0.8.1).
+- **Connected index on this computer**: the probe marks it as having full text when an external database beside a sampled `db.db` has `ext_bm25` or `ext_bm25_by_file`. Before, an index whose text was only in external databases was marked as having no text.
+- **Indexed text** (`read_kb_file`, the remote file view): a folder with no `words` row for the file, but with a common-schema external database, gives the file's `ext_bm25` chunks, joined in order of asset and sequence. GUFI 0.8.1 attaches a folder's external databases only in folders above `--max-level`. So this walk goes to level 1, and every statement keeps to level 0. A local folder without an external database skips the extra walk.
+- The missing-table warnings for `ext_bm25` and `ext_vectors` are counted as expected, as the earlier names were.
+- `ExternalPattern` moves to `internal/gufi`, so the libraries probe can use it.
+
+### Tests
+
+- `TestCommonExternalStages` checks the walk's copies (runs in CI).
+- `TestCommonExternalWalk` builds the fixture index plus a common-schema `ext_all.db` and runs a real walk. Text and meaning each find the one current file. A stale row, another model's vector and a vector of other dimensions are left out.
+- `TestProbeFindsExternalText` covers the common schema, the earlier schema, assets only, and none.
+- `TestIndexedTextFromExternalChunks` checks the chunks come in order, a same-named file in a subfolder adds nothing, and a file without chunks keeps its answer.
+- `TestSplitStderrExternalSchemas` checks that the missing-table warnings for both schemas are counted as expected.
+- `testdata/golden.json` was regenerated from the Node reference. `TestGoldenIsCurrent` passes with `STUDIO_GOLDEN_NODE` set.
+- The GUFI tests ran locally with the bundled GUFI 0.8.1 (`STUDIO_GUFI_BIN`). CI's Go job has no GUFI, so they skip there, as the fixture tests do.
+- `go vet ./...` and `go test ./...` pass. The Node tests `searchOnePass` and `gufiCommands` pass, 19 of 19.
+- `TestFixtureWalkAndPlans` fails with this GUFI build on main too, on the last digits of bm25 ranks against the Node golden. It is unchanged here.
+- End to end: a v1.201 payload running this server, with a sample GUFI tree of two folders whose text and vectors are only in `ext_all.db` files. The library probes as `fullText: true`. Search returns text matches with snippets from both folders. The MCP `read_kb_file` returns a file's text from its chunks, and `search_kb` finds text matches.
+
+### Not in this change
+
+- Query vectors for other models: the sample tree's vectors use a 768-dimension model Studio does not embed with, so they are compared only when a matching query vector exists.
+- A metadata lane over `ext_assets.file_metadata` (author, title).
+- Writing Studio's own text and vectors into these tables.
+- The remote connection test's text detection.
+
+### Libraries: a copy of a Transfers location, kept in step and indexed (#720)
+
+Adds a library that is a copy of a folder in a Transfers location: a saved ssh or SFTP location, a library host, a cluster, or an rclone remote. Studio copies the folder into its own data on this computer, indexes the copy as it indexes a folder here, and looks for changes on an interval. This makes a host account that allows SFTP only, such as an upload drop, searchable, since nothing can run there to build an index. It also covers rclone remotes.
+
+## What it does
+
+- **Add a library, A remote system, Copy here and index it.** Choose a location, browse to the folder, set how often Studio looks for changes (every 5 minutes to once a day, or only when asked; 15 minutes by default) and the index depth. `POST /api/libraries/copy`.
+- The library is a managed built library under `INDEX_BASE/libraries/<id>`: the copy in `files`, the index in `index`, the extraction cache in `extract`. Its definition carries `copyOf { location, path, label, every }`. The first build copies, then indexes.
+- **Copying is a transfer.** `transfers.Service.Pull` plans and runs a sync with `deleteExtra` into the copy's folder:
+  - It uses the mover the location allows: rsync, rclone, or Studio's own copy over ssh or SFTP.
+  - Files land through staging, and what arrives is checked.
+  - A look that changes nothing leaves no transfer behind.
+  - One that does is listed in Transfers as started by Studio (`startedBy: "library"`, accepted by the list filter), and the library's sync then indexes the changed folders.
+- **Settings row.**
+  - Shows where the copy comes from and the copy's folder, with an interval picker (`PUT /api/libraries/{id}/copy`).
+  - Shows when Studio last looked and what that look brought or removed, with a link to the transfer, or why it failed.
+  - **Update now** (`POST /api/libraries/{id}/update`), **Rebuild** and **Remove**. Remove deletes the copy and index and never touches the location.
+  - `copyOf.looking` is true from the Update now answer until the look ends, and the row follows it.
+- The copy's Transfers location is read only, with a reason that points to the source, since the next look would delete what landed there.
+- Library list export leaves copies out, with a reason.
+- Offered with sign-in off only: copies use the Studio account's own access.
+
+Limits: a sync takes at most 50,000 files, and the copy uses as much local disk as the folder holds.
+
+## Also fixed
+
+- An ssh error no longer names the host twice ("me@host: me@host: Permission denied (publickey)."). The pool now adds the site name only when ssh has not already put it there.
+- The Libraries rows say "1 folder" and "1 file" in the singular.
+
+## Testing
+
+- Go:
+  - `transfers` pull tests: first copy, a look with no change, changes and removals, a copy over SFTP-only, refusals.
+  - `libapi` `TestCopyLibrary` end to end with GUFI: add, search, Update now and `looking`, interval, a location that is gone, remove.
+  - Export test; `remote.siteSaid` test.
+  - `go vet ./...` and `go test ./...` pass.
+- Web: Add a library choices, the copy form against a stubbed Transfers, and the copy row (notes, transfer link, Update now following the look, interval, remove text, failed look). The full vitest suite passes.
+- Manual: a scratch Studio running this branch against a real SFTP-only account.
+  - Added the drop's folder as a library: 2 files copied and indexed, found by search, the tree, file reads and MCP `read_kb_file`.
+  - Changed the drop and pressed Update now: 1 file brought and 1 removed, and search followed.
+  - Removed the key: the next look recorded "Permission denied (publickey)" on the row, and the copy and its index stayed.
+
 ## v1.201 (2026-11-16)
 
 ### Fix two CI flakes: Node proxy in full duplex (a streamed POST answer could be cut), and the Transfers history test's time limit (#716)
@@ -79,6 +159,10 @@ There is no stacking cause. The dialog is portalled with `position: fixed` and z
   - Each Save switch (rclone, rsync twice, library hosts twice) leaves Save and the default mover at the same offset.
   - The footer is fully visible at 1280x600, 900x600 and 1280x500. The list scrolls only at 500.
   - A move started from Search in a second window: the Library page drops the file from the tree in 11 to 13 s, keeps the folder open and selected, and Details and Stats both drop by one.
+
+### Change log through v1.201 (#718)
+
+Regenerated with `node scripts/release-notes.mjs --changelog --next v1.201` before tagging v1.201. Replaces the v1.201 section written early on 15 November (#697), whose tag and draft release were deleted; the Preview releases v1.200.1 to v1.200.7 keep their own sections.
 
 ## v1.200.7 (2026-11-16)
 
