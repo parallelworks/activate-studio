@@ -318,6 +318,8 @@ func TestStreamsAreNotBuffered(t *testing.T) {
 			w.(http.Flusher).Flush()
 			select {
 			case <-next:
+			case <-r.Context().Done(): // the proxy hung up: end now, so a failure does not wait 30 s
+				return
 			case <-time.After(30 * time.Second):
 				return
 			}
@@ -369,6 +371,58 @@ func TestStreamsAreNotBuffered(t *testing.T) {
 			}
 		}
 		res.Body.Close()
+	}
+}
+
+// Requests reach Node in full duplex (nodeProxy). Here the client sends the
+// second half of its body only after the answer's first event. In half
+// duplex the server closes the unread body as the answer's header goes out,
+// and that close waits to drain a body still on its way, so the header
+// never leaves and the event never comes.
+func TestProxyIsFullDuplex(t *testing.T) {
+	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Node reads the body while answering, as the proxy now lets it.
+		_ = http.NewResponseController(w).EnableFullDuplex()
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: ready\n\n")
+		w.(http.Flusher).Flush()
+		b, _ := io.ReadAll(r.Body)
+		fmt.Fprintf(w, "data: %s\n\n", b)
+	}))
+	t.Cleanup(node.Close)
+	u, _ := url.Parse(node.URL)
+	f := front(t, webDist(t), u)
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { pw.CloseWithError(io.ErrUnexpectedEOF) }) // runs before the servers close
+	req, _ := http.NewRequest("POST", f.URL+"/api/__test/duplex", pr)
+	req.Header.Set("Content-Type", "application/json")
+	go pw.Write([]byte(`{"half":`))
+	type result struct {
+		res *http.Response
+		err error
+	}
+	done := make(chan result, 1)
+	go func() { res, err := http.DefaultClient.Do(req); done <- result{res, err} }()
+	var res *http.Response
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		res = r.res
+	case <-time.After(5 * time.Second):
+		t.Fatal("the answer's header waited for the whole request body: the proxy is half duplex")
+	}
+	defer res.Body.Close()
+	br := bufio.NewReader(res.Body)
+	if l, _ := br.ReadString('\n'); l != "data: ready\n" {
+		t.Fatalf("first event %q", l)
+	}
+	pw.Write([]byte(`2}`))
+	pw.Close()
+	br.ReadString('\n')
+	if l, _ := br.ReadString('\n'); l != `data: {"half":2}`+"\n" {
+		t.Fatalf("Node did not get the whole body after answering: %q", l)
 	}
 }
 
