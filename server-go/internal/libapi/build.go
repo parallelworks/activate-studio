@@ -50,6 +50,7 @@ type builds struct {
 	stopping atomic.Bool
 	ctx      context.Context
 	cancel   context.CancelFunc
+	copies   copies
 }
 
 func newBuilds(s *Service) *builds {
@@ -63,6 +64,7 @@ func newBuilds(s *Service) *builds {
 		p := j.Progress
 		return &libraries.BuildProgress{Phase: p.Phase, Done: int64(p.Done), Total: int64(p.Total), Current: p.Current}
 	})
+	s.Reg.SetCopyRunningSource(b.copies.runningOf)
 	return b
 }
 
@@ -881,6 +883,13 @@ func (b *builds) fullBuild(id string, own *index.OwnJob) (int64, error) {
 	}
 	b.s.Reg.UpdateBuild(id, func(lb *libraries.LocalBuild) { lb.State, lb.Error = state, nil })
 	err := func() error {
+		// A copy library's folder is brought in step with its location first.
+		if d.CopyOf != nil {
+			progress("Copying from "+copyWhere(d.CopyOf), 0, nil)
+			if _, _, err := b.pull(b.ctx, id, true, progress); err != nil {
+				return fmt.Errorf("copying from %s: %w", copyWhere(d.CopyOf), err)
+			}
+		}
 		if !isDir(src) {
 			return fmt.Errorf("%s is not a folder any more", src)
 		}

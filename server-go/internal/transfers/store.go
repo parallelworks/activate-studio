@@ -405,7 +405,7 @@ type ListQuery struct {
 	Before string
 	// Q matches the label, the location labels and the paths, in any case.
 	Q string
-	// Outcome is one finished state; StartedBy user or assistant.
+	// Outcome is one finished state; StartedBy user, assistant or library.
 	Outcome, StartedBy string
 	Since              time.Time
 }

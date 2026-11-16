@@ -121,7 +121,7 @@ func (s *Service) dropPlan(id string) {
 }
 
 func (s *Service) newRec(v Viewer, p *planRec, by, conv, state string) *rec {
-	if by != ByAssistant {
+	if by != ByAssistant && by != ByLibrary {
 		by = ByUser
 	}
 	r := &rec{Owner: v.owner(), plan: p, viewer: v}

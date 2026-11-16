@@ -47,6 +47,10 @@ For an SFTP-only site, every call opens an SFTP session with `ssh -s <destinatio
 
 No program runs on such a host, so rsync is not offered for it and `studio-copy` carries every transfer, over SFTP. A checksum (a move, or the `checksum` option) reads each file over the session and hashes it in Studio, so the data crosses the network a second time.
 
+### Copies of a location
+
+A copy library (docs/LIBRARIES.md, Copies of a location) is kept in step by `Service.Pull`: a sync with `deleteExtra` from the location's folder into the library's folder in the Studio's data, planned and run as any transfer and waited on. The destination is the copy's folder itself (`Request.into`, which no request body can set). For every other transfer the library's location is read only, with the reason "it is a copy of <location> that Studio keeps in step, so put files there instead", since the next pull would delete what landed. A pull whose plan has nothing to send or delete is dropped and leaves no record. One that runs is recorded with `startedBy: "library"`, which the list's `startedBy` filter takes, and the page shows as Studio. Its index note says the change shows as soon as the update ends, because the library's sync runs right after. `OwnerViewer` is the viewer a pull acts as with no request: the single owner, with sign-in off only.
+
 ### rclone remotes
 
 Studio uses the rclone installed on this computer and never bundles it. It looks for the program in this order: the path set in Settings, Transfers (default `rclone`); on macOS, Homebrew's `/opt/homebrew/bin/rclone` and `/usr/local/bin/rclone`; then `PATH`. It never writes rclone's configuration. It reads the remotes with `rclone listremotes --long`, which gives names and types and no secrets, and names them in rclone's own commands, so they are used as configured (`RCLONE_CONFIG` applies as usual). The remotes are read again after 30 seconds. When rclone is missing or has no remotes, Settings, Transfers and its Ready line say so, and nothing else changes.

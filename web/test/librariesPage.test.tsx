@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { addChoices } from '../src/components/AddLibrary'
 
@@ -31,6 +32,16 @@ const BUILT_HERE = {
 const BUILT_REMOTE = {
   ...SSH, id: 'u-box-data', label: 'data on box', existing: false, built: true, indexDir: '/home/me/.activate-studio/indexes/data-1a2b3c4d', sourceDir: '/home/me/data',
   indexRoot: null, state: 'building', directories: null, files: null, builtAt: null, progress: { phase: 'Extracting text', done: 0, total: 0, current: null },
+}
+/** A copy of a folder in a Transfers location: an SFTP drop's upload folder. */
+const COPY = {
+  id: 'upload', label: 'upload', primary: false, writable: false, pinned: false, source: true, caps: caps(true),
+  indexRoot: '/data/studio/libraries/upload/index/files', sourceRoot: '/data/studio/libraries/upload/files',
+  build: { indexDir: '/data/studio/libraries/upload/index', managed: true, state: 'ready', error: null, builtAt: '2026-11-16T12:00:00Z', files: 3, dirs: 1, progress: null },
+  copyOf: {
+    location: 'saved:drop', path: 'upload', label: 'Drop', every: 15, checkedAt: '2026-11-16T12:30:00Z', changedAt: '2026-11-16T12:00:00Z',
+    transfer: 'abc', files: 3, deleted: 0, error: null as string | null, looking: false, running: null as string | null,
+  },
 }
 /** A build job as /api/index/status carries it, in its text phase. */
 const phases = (state: 'running' | 'done') => [
@@ -120,6 +131,34 @@ function stubServer(s: Server) {
       return reply({ library: BUILT_HERE, job: { id: 9 } })
     }
     if (/^\/api\/libraries\/[^/]+\/rebuild$/.test(path)) return reply({ library: s.libs.find(l => path.includes(String(l.id))) })
+    if (path === '/api/transfers/locations') {
+      return reply({ locations: [
+        { id: 'library:kb', kind: 'library', label: 'Notes', available: true, writable: true, browsable: true, indexed: true, detail: 'this computer' },
+        { id: 'saved:drop', kind: 'saved', label: 'Drop', available: true, writable: true, browsable: true, indexed: false, detail: 'drop@files.example.com, /srv/drop' },
+      ] })
+    }
+    if (path === '/api/transfers/browse') {
+      const q = new URL(url, 'http://x').searchParams
+      const at = q.get('path') ?? ''
+      return reply(at === ''
+        ? { location: q.get('location'), path: '', parent: null, truncated: false, entries: [
+          { name: 'upload', type: 'dir', size: 0, mtime: '2026-11-16T00:00:00Z' }, { name: 'readme.txt', type: 'file', size: 9, mtime: '2026-11-16T00:00:00Z' }] }
+        : { location: q.get('location'), path: at, parent: '', truncated: false, entries: [{ name: 'poster.pdf', type: 'file', size: 9, mtime: '2026-11-16T00:00:00Z' }] })
+    }
+    if (path === '/api/libraries/copy') {
+      s.libs = [...s.libs, { ...COPY, build: { ...COPY.build, state: 'building', builtAt: null, files: null, dirs: null, progress: { phase: 'Copying from Drop, upload', done: 1, total: 0, current: '1 of 3 files' } } }]
+      return reply({ library: s.libs.at(-1), job: { id: 9 } })
+    }
+    if (/^\/api\/libraries\/[^/]+\/update$/.test(path)) {
+      // The look is on from the answer until it ends.
+      s.libs = s.libs.map(l => (l.copyOf && path.includes(String(l.id)) ? { ...l, copyOf: { ...(l.copyOf as object), looking: true } } : l))
+      return reply({ library: s.libs.find(l => path.includes(String(l.id))), started: true })
+    }
+    const every = /^\/api\/libraries\/([^/]+)\/copy$/.exec(path)
+    if (every && method === 'PUT') {
+      s.libs = s.libs.map(l => (l.id === every[1] ? { ...l, copyOf: { ...(l.copyOf as object), every: (body as { every: number }).every } } : l))
+      return reply({ library: s.libs.find(l => l.id === every[1]) })
+    }
     if (path === '/api/user-libraries/ssh/build/test') {
       return reply({ ok: true, create: ['/home/me/data'], indexDir: '/home/me/.activate-studio/indexes/data-1a2b3c4d', gufiBin: '/opt/gufi/bin', steps: [
         { name: 'ssh', ok: true, detail: 'Connected to me@box on port 2222, a Linux host.' },
@@ -235,8 +274,34 @@ describe('what Add a library offers', () => {
     expect(hosted.via('remote', 'connect')).toEqual(['pw'])
     const workflowOnly = addChoices({ buildHere: false, ssh: false, pw: false, workflow: true })
     expect(workflowOnly.how('remote')).toEqual(['build'])
+    // A copy of a folder in a Transfers location: a remote system with no ssh choice.
+    const copyOnly = addChoices({ buildHere: true, ssh: false, pw: false, workflow: false, copy: true })
+    expect(copyOnly.where).toEqual(['here', 'remote'])
+    expect(copyOnly.how('remote')).toEqual(['copy'])
+    expect(copyOnly.via('remote', 'copy')).toEqual([])
+    expect(addChoices({ buildHere: true, ssh: true, pw: true, workflow: false, copy: true }).how('remote')).toEqual(['build', 'connect', 'copy'])
   })
 })
+
+/** Opens a picker and chooses an option. Its list draws only the rows that
+ *  fit its height, which jsdom measures as zero, so layout is given a size
+ *  while it is open; `absent` are options that must not be offered. */
+async function pickOption(name: string, label: string, absent: string[] = []) {
+  const rect = Element.prototype.getBoundingClientRect
+  const sizes = ['offsetHeight', 'clientHeight', 'offsetWidth', 'clientWidth'] as const
+  for (const k of sizes) Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => 400 })
+  Element.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, width: 400, height: 400, right: 400, bottom: 400, toJSON() {} }) as DOMRect
+  try {
+    const u = userEvent.setup()
+    await u.click(screen.getByRole('combobox', { name }))
+    const option = await screen.findByRole('option', { name: new RegExp(`^${label}`) })
+    for (const a of absent) expect(screen.queryByRole('option', { name: new RegExp(`^${a}`) })).toBeNull()
+    await u.click(option)
+  } finally {
+    Element.prototype.getBoundingClientRect = rect
+    for (const k of sizes) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k]
+  }
+}
 
 describe('Settings, Indexing, Libraries', () => {
   afterEach(() => { vi.unstubAllGlobals() })
@@ -487,8 +552,12 @@ describe('Settings, Indexing, Libraries', () => {
     const success = vi.spyOn((await import('@parallelworks/ui')).toast, 'success')
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    // Only this computer here: no Where choice, and build comes first.
-    expect(screen.queryByRole('button', { name: 'A remote system' })).toBeNull()
+    // Building here comes first. Without ssh libraries, a remote system is
+    // still offered, as a copy through a Transfers location.
+    fireEvent.click(await screen.findByRole('button', { name: 'A remote system' }))
+    expect(screen.getByText(/^A folder on an SFTP or ssh host, a cluster or an rclone remote, as Transfers reaches it/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Build an index of a folder' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'This computer' }))
     fireEvent.change(await screen.findByLabelText('Folder to index'), { target: { value: '~/papers' } })
     // The depth starts at Meaning on documents, with what it costs, the
     // order the phases run in, and the faster stop for a very large folder.
@@ -539,6 +608,68 @@ describe('Settings, Indexing, Libraries', () => {
     expect(within(row).getByText('Index built on me@box over ssh, read only')).toBeInTheDocument()
     expect(within(row).getByTitle('me@box:/home/me/data')).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: /Extracting text/ })).toBeInTheDocument()
+  })
+
+  it('copies a folder from a Transfers location here and indexes it, for a host that takes SFTP only', async () => {
+    const s = server({ ssh: true, canBuild: true })
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'A remote system' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy here and index it' }))
+    expect(screen.getByText(/The only way for a host that takes SFTP only\. Read only in the Studio\.$/)).toBeInTheDocument()
+    // A copy names no way to connect: Transfers reaches the location.
+    expect(screen.queryByRole('button', { name: 'SSH' })).toBeNull()
+    // Hosts, clusters and remotes are offered; a library is not.
+    await waitFor(() => expect(s.calls.some(c => c.url === '/api/transfers/locations')).toBe(true))
+    await pickOption('Location', 'Drop', ['Notes'])
+    // Browsing starts where the location does; a folder opens into it.
+    fireEvent.click(await screen.findByRole('button', { name: 'upload/' }))
+    expect(await screen.findByText('Drop/upload')).toBeInTheDocument()
+    expect(screen.getByText('No folders in it; 1 file.')).toBeInTheDocument()
+    expect(screen.getByText(/takes as much space as the folder holds/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy and index' }))
+    await waitFor(() => expect(posted(s, '/api/libraries/copy')).toHaveLength(1))
+    expect(posted(s, '/api/libraries/copy')[0].body).toEqual({ location: 'saved:drop', path: 'upload', every: 15, depth: 'text' })
+    const row = await waitFor(() => rowOf('upload'))
+    expect(within(row).getByText('Copy of Drop, upload, kept in step with it, read only')).toBeInTheDocument()
+    expect(within(row).getByText('Copying and indexing')).toBeInTheDocument()
+    expect(screen.getByText('1 of 3 files')).toBeInTheDocument()
+  })
+
+  it('a copy library says where it comes from and what the last look found, looks now on Update now, and takes another interval', { timeout: 15_000 }, async () => {
+    const s = server({ libs: [PRIMARY, COPY] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('upload'))
+    expect(within(row).getByText('Ready')).toBeInTheDocument()
+    expect(row.textContent).toMatch(/looked for changes .*last brought 3 files/)
+    expect(row.querySelector('a[href="#view=transfers?transfer=abc"]')).not.toBeNull()
+    expect(row.textContent).toContain('/data/studio/libraries/upload/files')
+    fireEvent.click(within(row).getByRole('button', { name: 'Update now' }))
+    await waitFor(() => expect(posted(s, '/api/libraries/upload/update')).toHaveLength(1))
+    // The row follows the look until it ends, then shows what it found.
+    expect(await within(rowOf('upload')).findByText('Looking for changes')).toBeInTheDocument()
+    expect(screen.getByText('Looking for changes at Drop, upload.')).toBeInTheDocument()
+    expect(within(rowOf('upload')).getByRole('button', { name: 'Update now' })).toBeDisabled()
+    s.libs = s.libs.map(l => (l.id === 'upload' ? { ...l, copyOf: { ...COPY.copyOf, checkedAt: '2026-11-16T12:45:00Z', changedAt: '2026-11-16T12:45:00Z', files: 0, deleted: 2, transfer: 'def' } } : l))
+    await waitFor(() => expect(within(rowOf('upload')).getByText('Ready')).toBeInTheDocument(), { timeout: 5000 })
+    expect(rowOf('upload').textContent).toMatch(/last brought 0 files and removed 2/)
+    await pickOption('How often upload looks for changes', 'Every hour')
+    await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/upload/copy')?.body).toEqual({ every: 60 }))
+    // Removing it says the copy goes and the location's files stay.
+    fireEvent.click(within(rowOf('upload')).getByRole('button', { name: 'Remove upload' }))
+    const ask = await screen.findByRole('alertdialog', { name: 'Remove upload?' })
+    expect(ask.textContent).toMatch(/Its copy and its index, which .* keeps in a folder of its own, are deleted\. The files at Drop, upload are not touched\./)
+  })
+
+  it('a copy library whose last look failed says why and stays Ready', async () => {
+    const s = server({ libs: [PRIMARY, { ...COPY, build: { ...COPY.build, dirs: 1, files: 1 }, copyOf: { ...COPY.copyOf, error: 'its location, Drop, upload, is no longer in Transfers' } }] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('upload'))
+    expect(within(row).getByText('1 folder, 1 file')).toBeInTheDocument()
+    expect(within(row).getByText('Ready; the last pass failed')).toBeInTheDocument()
+    expect(row.textContent).toMatch(/the last look failed: its location, Drop, upload, is no longer in Transfers/)
   })
 
   it('removing a built library whose index the Studio keeps is red and asks as an alert', async () => {

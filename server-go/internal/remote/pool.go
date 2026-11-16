@@ -357,7 +357,7 @@ func (p *Pool) Command(site, key string, argv []string) (*exec.Cmd, error) {
 	}
 	cmd, err := p.spawn(site, key, DirectCommand(argv))
 	if err != nil {
-		return nil, apierr.New(502, "%s: %s", SiteName(site), err.Error())
+		return nil, apierr.New(502, "%s", siteSaid(site, err.Error()))
 	}
 	return cmd, nil
 }
@@ -458,7 +458,7 @@ func (p *Pool) RunOnce(ctx context.Context, site, key string, argv []string, tim
 	}
 	cmd, err := p.spawn(site, key, DirectCommand(argv))
 	if err != nil {
-		return Result{}, apierr.New(502, "%s: %s", SiteName(site), err.Error())
+		return Result{}, apierr.New(502, "%s", siteSaid(site, err.Error()))
 	}
 	var out bytes.Buffer
 	var errb tailBuf
@@ -467,7 +467,7 @@ func (p *Pool) RunOnce(ctx context.Context, site, key string, argv []string, tim
 		cmd.Stdin = input
 	}
 	if err := cmd.Start(); err != nil {
-		return Result{}, apierr.New(502, "%s: %s", SiteName(site), err.Error())
+		return Result{}, apierr.New(502, "%s", siteSaid(site, err.Error()))
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -494,7 +494,7 @@ func (p *Pool) RunOnce(ctx context.Context, site, key string, argv []string, tim
 		if last == "" {
 			last = "the ssh connection failed"
 		}
-		return Result{}, apierr.New(502, "%s: %s", SiteName(site), last)
+		return Result{}, apierr.New(502, "%s", siteSaid(site, last))
 	}
 	raw := out.Bytes()
 	return Result{Code: code, Stdout: string(raw), Raw: raw, Stderr: stderr, StderrCut: errb.total > len(errb.b)}, nil
@@ -590,7 +590,7 @@ func (p *Pool) open(id, site, key string) (*channel, error) {
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
-		return nil, apierr.New(502, "%s: %s", SiteName(site), err.Error())
+		return nil, apierr.New(502, "%s", siteSaid(site, err.Error()))
 	}
 	ch := &channel{cmd: cmd, stdin: stdin, last: time.Now()}
 	errDone := make(chan struct{})
@@ -697,7 +697,7 @@ func (p *Pool) fail(id, site, key string, ch *channel, why string, code int) {
 	}
 	for _, pd := range waiting {
 		pd.timer.Stop()
-		deliver(pd, pendingResult{err: apierr.New(502, "%s: %s", SiteName(site), said)})
+		deliver(pd, pendingResult{err: apierr.New(502, "%s", siteSaid(site, said))})
 	}
 }
 

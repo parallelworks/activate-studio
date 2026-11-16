@@ -80,6 +80,7 @@ type Registry struct {
 
 	removedHooks []func(id string)
 	progressOf   func(id string) *BuildProgress
+	copyRunning  func(id string) (bool, *string)
 	mapSchedule  func(id string, delay time.Duration)
 }
 
@@ -128,7 +129,8 @@ func New(o Options) *Registry {
 		o.Users = &Users{IndexBase: o.IndexBase, AuthEnabled: o.AuthEnabled}
 	}
 	return &Registry{o: o, probeCache: map[string]probeEntry{}, probing: map[string]*probeCall{},
-		generation: map[string]int{}, counting: map[string]bool{}, progressOf: func(string) *BuildProgress { return nil }}
+		generation: map[string]int{}, counting: map[string]bool{}, progressOf: func(string) *BuildProgress { return nil },
+		copyRunning: func(string) (bool, *string) { return false, nil }}
 }
 
 // Users is the user library store.
@@ -793,7 +795,7 @@ func (r *Registry) fromDef(d Def, pinned bool) Library {
 	a := abs(d.IndexRoot)
 	l := Library{ID: d.ID, Label: d.Label, IndexRoot: a, Build: d.Build, Pinned: pinned,
 		Caps:   r.capsOf(a, func() Caps { return Caps{Index: exists(filepath.Join(a, "db.db"))} }),
-		Format: r.formatOf(a), ReadThrough: StoredReadThrough(d.ReadThrough, d.ID, r.o.Log)}
+		Format: r.formatOf(a), ReadThrough: StoredReadThrough(d.ReadThrough, d.ID, r.o.Log), CopyOf: d.CopyOf}
 	if l.Label == "" {
 		l.Label = filepath.Base(a)
 		if l.Label == "" || l.Label == "/" {
@@ -1058,7 +1060,7 @@ func (r *Registry) AddBuilt(def Def) (Library, error) {
 	if err := r.CheckNewID(def.ID); err != nil {
 		return Library{}, err
 	}
-	d := Def{ID: def.ID, Label: truncRunes(def.Label, 60), IndexRoot: abs(def.IndexRoot), Build: def.Build}
+	d := Def{ID: def.ID, Label: truncRunes(def.Label, 60), IndexRoot: abs(def.IndexRoot), Build: def.Build, CopyOf: def.CopyOf}
 	if def.SourceRoot != nil && *def.SourceRoot != "" {
 		d.SourceRoot = ptr(abs(*def.SourceRoot))
 	}
@@ -1133,6 +1135,52 @@ func (r *Registry) OnRemoved(fn func(id string)) { r.removedHooks = append(r.rem
 // SetBuildProgressSource is setBuildProgressSource.
 func (r *Registry) SetBuildProgressSource(fn func(id string) *BuildProgress) { r.progressOf = fn }
 
+// SetCopyRunningSource sets what says whether a copy library's look for
+// changes is running now, and its transfer once it has one (nil for none).
+func (r *Registry) SetCopyRunningSource(fn func(id string) (bool, *string)) { r.copyRunning = fn }
+
+// SetCopyEvery sets how often Studio looks for changes to a copy library's
+// location, in minutes (one of CopyEvery).
+func (r *Registry) SetCopyEvery(id string, every int) bool {
+	return r.ModifyAdded(id, func(d *Def) {
+		if d.CopyOf != nil {
+			c := *d.CopyOf
+			c.Every = every
+			d.CopyOf = &c
+		}
+	})
+}
+
+func (r *Registry) copyStateFile(id string) string {
+	return filepath.Join(r.BuiltLibraryDir(id), "copy.json")
+}
+
+// CopyState is what the last look at a copy library's location found; the
+// zero value before the first.
+func (r *Registry) CopyState(id string) CopyState {
+	var st CopyState
+	if raw, err := os.ReadFile(r.copyStateFile(id)); err == nil {
+		json.Unmarshal(raw, &st)
+	}
+	return st
+}
+
+// WriteCopyState records what a look at a copy library's location found.
+func (r *Registry) WriteCopyState(id string, st CopyState) error {
+	raw, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(r.BuiltLibraryDir(id), 0o755); err != nil {
+		return err
+	}
+	tmp := r.copyStateFile(id) + ".tmp"
+	if err := os.WriteFile(tmp, append(raw, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, r.copyStateFile(id))
+}
+
 // Remove is removeLibrary.
 func (r *Registry) Remove(id string) error {
 	lib, err := r.Get(id, "", Deployment)
@@ -1170,6 +1218,10 @@ func (r *Registry) SettingsView(l Library) SettingsLibrary {
 	v := SettingsLibrary{PublicLibrary: Public(l), IndexRoot: l.IndexRoot, SourceRoot: strOrNil(l.SourceRoot), ReadThrough: PublicReadThrough(l.ReadThrough)}
 	if b := l.Build; b != nil {
 		v.Build = &PublicBuild{IndexDir: b.IndexDir, Managed: b.Managed, State: b.State, Error: b.Error, BuiltAt: b.BuiltAt, Files: b.Files, Dirs: b.Dirs, Progress: r.progressOf(l.ID)}
+	}
+	if c := l.CopyOf; c != nil {
+		looking, running := r.copyRunning(l.ID)
+		v.CopyOf = &PublicCopyOf{CopyOf: *c, CopyState: r.CopyState(l.ID), Looking: looking, Running: running}
 	}
 	return v
 }

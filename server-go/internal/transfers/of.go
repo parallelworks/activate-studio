@@ -183,12 +183,29 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			}
 		}
 		x.Writable, x.ReadOnly = LibraryWritable(l.Writable, by, v.AuthOn)
+		if l.CopyOf != nil {
+			// Studio's next look at its location would remove what lands here.
+			x.Writable, x.ReadOnly = false, copyReadOnly(l.CopyOf)
+		}
 		if x.FS == nil && x.Why == "" {
 			x.Why = "Studio has only its index, not its files"
 		}
 		out = append(out, x)
 	}
 	return out
+}
+
+// copyReadOnly is why a copy library takes no transfers: it names where
+// files go instead.
+func copyReadOnly(c *libraries.CopyOf) string {
+	where := c.Label
+	if where == "" {
+		where = c.Location
+	}
+	if c.Path != "" {
+		where += ", " + c.Path
+	}
+	return "it is a copy of " + where + " that Studio keeps in step, so put files there instead"
 }
 
 // sshOnly is site when it is reached over plain ssh, which a saved

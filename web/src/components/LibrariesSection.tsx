@@ -1,9 +1,9 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, StatusLabel, Table, toast, useConfirm,
+  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, Select, StatusLabel, Table, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
-import { api, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
+import { COPY_EVERY, api, copyWhere, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
@@ -115,10 +115,13 @@ interface Row {
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '')
+/** A transfer's details on the Transfers page (TransfersView's transferHash). */
+const transferHash = (id: string) => `#view=transfers?transfer=${encodeURIComponent(id)}`
 /** Why a library the deployment set has no Remove, and where it is removed. */
 const PINNED_NOTE = 'Named in the server\'s STUDIO_LIBRARIES setting; remove it there and restart the Studio.'
+const many = (n: number, one: string, more: string) => `${n.toLocaleString()} ${n === 1 ? one : more}`
 const counts = (dirs: number | null, files: number | null) =>
-  dirs != null ? `${dirs.toLocaleString()} folders, ${(files ?? 0).toLocaleString()} files` : null
+  dirs != null ? `${many(dirs, 'folder', 'folders')}, ${many(files ?? 0, 'file', 'files')}` : null
 
 /**
  * Settings > Indexing > Libraries: one list of every library the Studio searches, and
@@ -250,7 +253,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   // Follow running builds: every few seconds for those the Studio runs
   // itself (here, or on a remote system over the session), every 15 s for
   // the platform's workflow runs.
-  const followHere = (libs ?? []).some(l => isBuilding(l.build?.state))
+  const followHere = (libs ?? []).some(l => isBuilding(l.build?.state) || l.copyOf?.looking)
   const followRemote = user.libraries.some(l => l.built && isBuilding(l.state))
   const followRuns = user.libraries.some(l => !l.built && isBuilding(l.state))
   useEffect(() => {
@@ -362,6 +365,60 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
             <IndexControls part="secondary" canDelete={!!standalone} folder={l.sourceRoot} />
           </div>
         ),
+      })
+      continue
+    }
+    if (l.build && l.copyOf) {
+      const b = l.build
+      const c = l.copyOf
+      const from = copyWhere(c)
+      const notes: ReactNode[] = [
+        counts(b.dirs, b.files),
+        c.checkedAt && `looked for changes ${when(c.checkedAt)}`,
+        c.changedAt && c.transfer && <>last brought {c.files} {c.files === 1 ? 'file' : 'files'}{c.deleted ? ` and removed ${c.deleted}` : ''} <a href={transferHash(c.transfer)}>{when(c.changedAt)}</a></>,
+        c.error && `the last look failed: ${c.error}`,
+        b.error,
+      ].filter(Boolean)
+      const looking = c.looking || !!c.running
+      rows.push({
+        key: l.id, name: l.label, kind: `Copy of ${from}, kept in step with it, read only`,
+        where: (
+          <DescriptionList className="lib-paths" stacked>
+            <DescriptionListItem label="Copied from" mono>{from}</DescriptionListItem>
+            <DescriptionListItem label="Copy" mono copy>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
+            <DescriptionListItem label="Look for changes">
+              <Select<number> aria-label={`How often ${l.label} looks for changes`} size="sm" items={COPY_EVERY} value={c.every}
+                disabled={busy !== null}
+                onValueChange={v => void act(l.id, async () => { await api.setCopyEvery(l.id, v); await loadLibs() })} />
+            </DescriptionListItem>
+          </DescriptionList>
+        ),
+        state: b.state === 'building' ? { tone: 'info', text: 'Copying and indexing', pulse: true, notes }
+          : b.state === 'updating' || c.running ? { tone: 'info', text: 'Updating', pulse: true, notes }
+          : looking ? { tone: 'info', text: 'Looking for changes', pulse: true, notes }
+          : b.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
+          : !l.caps.index ? { tone: 'error', text: 'Index not found', notes: [...notes, 'Rebuild makes it again.'] }
+          : c.error || b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
+          : { tone: 'success', text: 'Ready', notes },
+        fullText: l.caps.fullText, meaning: l.caps.vectors,
+        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync' },
+        actions: (
+          <>
+            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state) || looking}
+              onClick={() => void act(l.id, async () => { await api.updateCopy(l.id); await loadLibs() }, `Looking for changes at ${from}.`)}>Update now</Button>
+            <Button variant="secondary" size="sm" disabled={busy !== null || isBuilding(b.state) || looking}
+              onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Rebuilding ${l.label}.`)}>Rebuild</Button>
+            <Button variant="danger-outline" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state) || looking}
+              onClick={() => askRemove(l.label,
+                <>Its copy and its index, which {cfg.appName} keeps in a folder of its own, are deleted. The files at {from} are not touched.</>,
+                true,
+                () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }, `Removed ${l.label}, its copy and its index.`))}>Remove</Button>
+          </>
+        ),
+        detail: isBuilding(b.state) ? <BuildLine progress={b.progress} />
+          : c.running ? <p className="muted">Bringing changes from {from}. <a href={transferHash(c.running)}>Open the transfer</a></p>
+          : looking ? <p className="muted">Looking for changes at {from}.</p>
+          : undefined,
       })
       continue
     }

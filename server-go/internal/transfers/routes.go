@@ -133,9 +133,9 @@ func (s *Service) Routes(mux *http.ServeMux, log *slog.Logger, viewer func(*http
 			return nil, apierr.New(400, "outcome: succeeded, failed, cancelled or interrupted")
 		}
 		switch q.StartedBy {
-		case "", ByUser, ByAssistant:
+		case "", ByUser, ByAssistant, ByLibrary:
 		default:
-			return nil, apierr.New(400, "startedBy: user or assistant")
+			return nil, apierr.New(400, "startedBy: user, assistant or library")
 		}
 		if t := r.URL.Query().Get("since"); t != "" {
 			at, err := time.Parse(time.RFC3339, t)

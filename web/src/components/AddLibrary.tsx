@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Field, SegmentedControl } from '@parallelworks/ui'
 import type { UserLibrary } from '../api'
 import { ClusterLibraryForm } from './ClusterLibraryForm'
+import { CopyLibraryForm } from './CopyLibraryForm'
 import { LibraryImport } from './LibraryImport'
 import { LocalLibraryForm } from './LocalLibraryForm'
 import { SshLibraryForm } from './SshLibraryForm'
@@ -12,11 +13,14 @@ import { SshLibraryForm } from './SshLibraryForm'
  * connect a GUFI index that exists). A remote system is reached over ssh
  * or over pw ssh, a choice shown side by side. Building through the platform's index workflow is a
  * third way only on a Studio the platform hosts (`workflow`); a Studio on
- * someone's own computer builds on a remote system over the session.
+ * someone's own computer builds on a remote system over the session. A
+ * folder on a remote system can also be copied here and indexed (`copy`,
+ * sign-in off): from a Transfers location, which reaches hosts that take
+ * SFTP only and rclone remotes, where nothing can be built.
  */
 
 export type Where = 'here' | 'remote'
-export type How = 'build' | 'connect'
+export type How = 'build' | 'connect' | 'copy'
 export type Via = 'ssh' | 'pw' | 'workflow'
 
 export interface AddOptions {
@@ -29,22 +33,24 @@ export interface AddOptions {
   pw: boolean
   /** The platform's index workflow: a hosted Studio that reaches a platform. */
   workflow: boolean
+  /** A copy of a folder in a Transfers location, indexed here (sign-in off). */
+  copy?: boolean
 }
 
 /** What can be chosen, given what this Studio offers. */
 export function addChoices(o: AddOptions) {
-  const where: Where[] = ['here', ...(o.ssh || o.pw || o.workflow ? ['remote' as const] : [])]
+  const where: Where[] = ['here', ...(o.ssh || o.pw || o.workflow || o.copy ? ['remote' as const] : [])]
   const how = (w: Where): How[] => (w === 'here'
     ? [...(o.buildHere ? ['build' as const] : []), 'connect']
-    : [...(o.ssh || o.pw || o.workflow ? ['build' as const] : []), ...(o.ssh || o.pw ? ['connect' as const] : [])])
-  const via = (w: Where, h: How): Via[] => (w === 'here' ? [] : [
+    : [...(o.ssh || o.pw || o.workflow ? ['build' as const] : []), ...(o.ssh || o.pw ? ['connect' as const] : []), ...(o.copy ? ['copy' as const] : [])])
+  const via = (w: Where, h: How): Via[] => (w === 'here' || h === 'copy' ? [] : [
     ...(o.ssh ? ['ssh' as const] : []), ...(o.pw ? ['pw' as const] : []), ...(h === 'build' && o.workflow ? ['workflow' as const] : []),
   ])
   return { where, how, via }
 }
 
 const WHERE_LABEL: Record<Where, string> = { here: 'This computer', remote: 'A remote system' }
-const HOW_LABEL: Record<How, string> = { build: 'Build an index of a folder', connect: 'Connect an existing index' }
+const HOW_LABEL: Record<How, string> = { build: 'Build an index of a folder', connect: 'Connect an existing index', copy: 'Copy here and index it' }
 const VIA_LABEL: Record<Via, string> = { ssh: 'SSH', pw: 'ACTIVATE (pw ssh)', workflow: 'Platform workflow' }
 
 function describe(where: Where, how: How, via: Via | undefined): string {
@@ -53,6 +59,7 @@ function describe(where: Where, how: How, via: Via | undefined): string {
       ? 'A folder on this computer, indexed with GUFI and kept in step with the folder as it changes. Read only in the Studio.'
       : 'A GUFI index already built on this computer. Read only: the Studio searches it and never writes to it.'
   }
+  if (how === 'copy') return 'A folder on an SFTP or ssh host, a cluster or an rclone remote, as Transfers reaches it: Studio copies it to this computer, indexes the copy, and looks for changes on an interval. The only way for a host that takes SFTP only. Read only in the Studio.'
   if (via === 'workflow') return 'A folder on one of your clusters, indexed there by the platform\'s index workflow with your own key, on the login node or as a Slurm job. Only you see it.'
   const over = via === 'pw' ? 'over pw ssh with this computer\'s pw sign-in' : 'over ssh with your own keys (no password prompts)'
   return how === 'build'
@@ -121,8 +128,9 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
       {where === 'here' && (how === 'build'
         ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />
         : <LocalLibraryForm key="here-connect" compact browse={browse} onAdded={lib => onAdded(lib, false)} />)}
-      {where === 'remote' && v === 'workflow' && <ClusterLibraryForm compact onStarted={lib => onStarted?.(lib)} />}
-      {where === 'remote' && (v === 'ssh' || v === 'pw') && (
+      {where === 'remote' && how === 'copy' && <CopyLibraryForm onAdded={lib => onAdded(lib, true, true)} />}
+      {where === 'remote' && how !== 'copy' && v === 'workflow' && <ClusterLibraryForm compact onStarted={lib => onStarted?.(lib)} />}
+      {where === 'remote' && how !== 'copy' && (v === 'ssh' || v === 'pw') && (
         <SshLibraryForm key={`${v}-${how}`} compact transport={v} mode={how === 'build' ? 'build' : 'connect'}
           onAdded={lib => onAdded(lib, how === 'build')} />
       )}

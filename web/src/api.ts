@@ -51,6 +51,33 @@ export interface SettingsLibrary extends PublicLibrary {
     indexDir: string; managed: boolean; state: 'building' | 'ready' | 'updating' | 'failed'
     error: string | null; builtAt: string | null; files: number | null; dirs: number | null; progress: BuildProgress | null
   }
+  /** A copy library: a folder in a Transfers location that Studio copies here and keeps in step. */
+  copyOf?: LibraryCopyOf | null
+}
+/** Where a copy library's files come from, how often Studio looks, and
+ *  what the last look found (POST /api/libraries/copy). */
+export interface LibraryCopyOf {
+  /** The Transfers location id, and the folder in it ('' for its top). */
+  location: string; path: string
+  /** The location's label when the library was added. */
+  label?: string
+  /** Minutes between looks for changes; 0 only when asked. */
+  every: number
+  checkedAt: string | null; changedAt: string | null; transfer: string | null
+  files: number; deleted: number; error: string | null
+  /** The transfer of a look running now. */
+  /** A look for changes is asked for or running. */
+  looking: boolean
+  running: string | null
+}
+/** How often a copy library looks for changes, as offered. */
+export const COPY_EVERY: { value: number; label: string }[] = [
+  { value: 5, label: 'Every 5 minutes' }, { value: 15, label: 'Every 15 minutes' }, { value: 60, label: 'Every hour' },
+  { value: 360, label: 'Every 6 hours' }, { value: 1440, label: 'Once a day' }, { value: 0, label: 'Only when I ask' },
+]
+/** Where a copy library comes from, in words: the location and the folder. */
+export function copyWhere(c: Pick<LibraryCopyOf, 'location' | 'path' | 'label'>): string {
+  return `${c.label || c.location}${c.path ? `, ${c.path}` : ''}`
 }
 /** The host a library's originals are also read through, as Settings shows it. */
 export interface ReadThrough { destination: string; port: number | null; sshOptions: string | null; root: string | null }
@@ -616,6 +643,15 @@ export const api = {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
     return data as { readThrough: ReadThrough | null }
+  },
+  /** A copy library: look for changes at its location now, in the background. */
+  updateCopy: (id: string) => postJson<{ library: SettingsLibrary; started: boolean }>(`/api/libraries/${encodeURIComponent(id)}/update`, {}),
+  /** How often a copy library looks for changes, in minutes (0: only when asked). */
+  setCopyEvery: async (id: string, every: number) => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/copy`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ every }) })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
+    return data as { library: SettingsLibrary }
   },
   addLibrary: (def: { id: string; label?: string; indexRoot: string; sourceRoot?: string }) =>
     postJson<{ library: SettingsLibrary }>('/api/libraries', def),

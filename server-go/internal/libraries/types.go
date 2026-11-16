@@ -89,6 +89,46 @@ type ReadThrough struct {
 	Root        *string  `json:"root"`
 }
 
+// CopyOf is where a copy library's files come from: a folder in a
+// Transfers location (an SFTP or ssh host, an rclone remote, a cluster),
+// which Studio copies into the library's own folder, builds like a folder
+// on this computer, and keeps in step (docs/LIBRARIES.md, Copies of a
+// location).
+type CopyOf struct {
+	// Location is the Transfers location id; Path the folder in it, "" for
+	// its top.
+	Location string `json:"location"`
+	Path     string `json:"path"`
+	// Label is the location's label when the library was added, for
+	// messages once the location is renamed or gone.
+	Label string `json:"label,omitempty"`
+	// Every is how often Studio looks for changes, in minutes; 0 only when
+	// asked.
+	Every int `json:"every"`
+}
+
+// CopyEvery is the choices of CopyOf.Every, in minutes.
+var CopyEvery = []int{0, 5, 15, 60, 360, 1440}
+
+// DefaultCopyEvery is a new copy library's CopyOf.Every.
+const DefaultCopyEvery = 15
+
+// CopyState is what the last look at a copy library's location found
+// (INDEX_BASE/libraries/<id>/copy.json).
+type CopyState struct {
+	// CheckedAt is when Studio last finished looking for changes.
+	CheckedAt *string `json:"checkedAt"`
+	// ChangedAt, Transfer, Files and Deleted are the last look that found
+	// changes: when it ended, its transfer, the files it brought and the
+	// files it removed.
+	ChangedAt *string `json:"changedAt"`
+	Transfer  *string `json:"transfer"`
+	Files     int     `json:"files"`
+	Deleted   int     `json:"deleted"`
+	// Error is why the last look failed; nil when it did not.
+	Error *string `json:"error"`
+}
+
 // Def is a library as stored (LibraryDef).
 type Def struct {
 	ID          string       `json:"id"`
@@ -97,6 +137,7 @@ type Def struct {
 	SourceRoot  *string      `json:"sourceRoot"`
 	Build       *LocalBuild  `json:"build,omitempty"`
 	ReadThrough *ReadThrough `json:"readThrough,omitempty"`
+	CopyOf      *CopyOf      `json:"copyOf,omitempty"`
 }
 
 // Library is a mounted library, as every module sees it.
@@ -123,6 +164,8 @@ type Library struct {
 	Site        string
 	Format      *FormatRecord
 	ReadThrough *ReadThrough
+	// CopyOf is set for a copy library: SourceRoot is its copy here.
+	CopyOf *CopyOf
 }
 
 // Remote reports whether the library is on another system.
@@ -219,4 +262,15 @@ type SettingsLibrary struct {
 	SourceRoot  *string                `json:"sourceRoot"`
 	ReadThrough *PublicReadThroughView `json:"readThrough"`
 	Build       *PublicBuild           `json:"build,omitempty"`
+	CopyOf      *PublicCopyOf          `json:"copyOf,omitempty"`
+}
+
+// PublicCopyOf is what Settings shows of a copy library: where its files
+// come from, how often Studio looks, what the last look found, whether a
+// look is running now, and its transfer once it has one.
+type PublicCopyOf struct {
+	CopyOf
+	CopyState
+	Looking bool    `json:"looking"`
+	Running *string `json:"running"`
 }
