@@ -2,8 +2,11 @@ package search
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,8 +29,66 @@ type IndexedText struct {
 // IndexedTextState is indexedTextState: the text a library's index holds
 // for one file, from the words table in its folder, without the
 // converter's provenance line; an index on another system is read there.
+// A folder without that text is read for the file's chunks in an external
+// database in GUFI's common schema (ext_bm25), joined in order.
 func (e *Engine) IndexedTextState(ctx context.Context, indexRoot, dir, name string) IndexedText {
 	args := []string{"-n", "1", "--min-level", "0", "--max-level", "0", "-E", "SELECT wordf FROM words WHERE fname = " + q(name) + " LIMIT 1;"}
+	got := e.indexedText(ctx, indexRoot, dir, args)
+	if got.State == "text" {
+		return got
+	}
+	remote := strings.HasPrefix(indexRoot, libraries.RemotePrefix)
+	if ext := externalTextArgs(name); ext != nil && (remote || hasExternal(filepath.Join(indexRoot, dir))) {
+		if alt := e.indexedText(ctx, indexRoot, dir, ext); alt.State == "text" {
+			return alt
+		}
+	}
+	return got
+}
+
+// hasExternal says whether a folder of an index here holds a file other
+// than db.db that a walk attaches as an external database.
+func hasExternal(dir string) bool {
+	p := gufi.ExternalPattern()
+	if p == nil {
+		return false
+	}
+	re, err := regexp.Compile(*p)
+	if err != nil {
+		return false
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name() != "db.db" && e.Type().IsRegular() && re.MatchString(e.Name()) {
+			return true
+		}
+	}
+	return false
+}
+
+// externalTextArgs is a walk of one folder that joins a file's chunks in
+// the folder's external databases (ext_bm25, matched to the entry by inode
+// and mtime) in the order of their asset and sequence, kept to
+// IndexTextCap characters; nil when external databases are off. GUFI
+// attaches a folder's external databases only in a folder above
+// --max-level, so the walk goes to level 1 and every statement keeps to
+// level 0 (the table lasts from one folder to the next in a thread).
+func externalTextArgs(name string) []string {
+	p := gufi.ExternalPattern()
+	if p == nil {
+		return nil
+	}
+	return []string{"-n", "1", "--min-level", "0", "--max-level", "1",
+		"-I", "CREATE TABLE c (a TEXT, s INT64, x TEXT);",
+		"--external-copy", *p, "INSERT INTO c SELECT b.asset_id, CAST(b.chunk_sequence AS INT64), b.content FROM extdb.ext_bm25 b " +
+			"JOIN vrpentries e ON CAST(b.inode AS INT64) = e.inode AND CAST(b.mtime AS INT64) = e.mtime WHERE level() = 0 AND e.name = " + q(name) + ";",
+		"-E", fmt.Sprintf("SELECT substr(group_concat(x, char(10) || char(10)), 1, %d) FROM (SELECT x FROM c WHERE level() = 0 ORDER BY a, s) HAVING count(*) > 0;", IndexTextCap)}
+}
+
+func (e *Engine) indexedText(ctx context.Context, indexRoot, dir string, args []string) IndexedText {
 	var out string
 	var err error
 	if strings.HasPrefix(indexRoot, libraries.RemotePrefix) {

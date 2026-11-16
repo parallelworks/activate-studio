@@ -51,17 +51,8 @@ func DeadlineMs() int {
 // StackLocal is STACK_LOCAL.
 func StackLocal() bool { return os.Getenv("STUDIO_STACK_LOCAL") == "1" }
 
-// ExternalPattern is EXTERNAL_DB_PATTERN || null.
-func ExternalPattern() *string {
-	v, ok := os.LookupEnv("STUDIO_EXTERNAL_DB_PATTERN")
-	if !ok {
-		v = `\.db$`
-	}
-	if v == "" {
-		return nil
-	}
-	return &v
-}
+// ExternalPattern is EXTERNAL_DB_PATTERN || null (gufi.ExternalPattern).
+func ExternalPattern() *string { return gufi.ExternalPattern() }
 
 var (
 	reNear   = regexp.MustCompile(`\bNEAR\s*\(`)

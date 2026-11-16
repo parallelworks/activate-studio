@@ -100,7 +100,7 @@ export function execRun(err: (Error & { code?: unknown; signal?: unknown; killed
 /** A line of error output that is expected: a statement that reads the
  *  Studio's or an external database's text or vector tables, in a
  *  directory without them. --no-print-sql-on-err keeps each to one line. */
-const EXPECTED = /no such table: (?:\w+\.)?(?:words|gvec|gchunks|gvecmodel|gvec_rowids|ext_bm25_by_file|ext_vectors_by_file)\b/
+const EXPECTED = /no such table: (?:\w+\.)?(?:words|gvec|gchunks|gvecmodel|gvec_rowids|ext_bm25_by_file|ext_vectors_by_file|ext_bm25|ext_vectors)\b/
 
 export function splitStderr(text: string): { other: string; expected: number; example?: string } {
   const other: string[] = []

@@ -82,7 +82,7 @@ type Run struct {
 	Source    string // outside a trace
 }
 
-var expected = regexp.MustCompile(`no such table: (?:\w+\.)?(?:words|gvec|gchunks|gvecmodel|gvec_rowids|ext_bm25_by_file|ext_vectors_by_file)\b`)
+var expected = regexp.MustCompile(`no such table: (?:\w+\.)?(?:words|gvec|gchunks|gvecmodel|gvec_rowids|ext_bm25_by_file|ext_vectors_by_file|ext_bm25|ext_vectors)\b`)
 
 // SplitStderr is splitStderr.
 func SplitStderr(text string) (other string, n int, example string) {

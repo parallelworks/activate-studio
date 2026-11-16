@@ -77,3 +77,17 @@ func EnvFor(bin string, base []string, extra map[string]string, o EnvOptions) []
 	sort.Strings(out)
 	return out
 }
+
+// ExternalPattern is EXTERNAL_DB_PATTERN || null: the basename pattern of
+// the external databases a walk attaches in each directory
+// (STUDIO_EXTERNAL_DB_PATTERN, default `\.db$`; empty turns them off).
+func ExternalPattern() *string {
+	v, ok := os.LookupEnv("STUDIO_EXTERNAL_DB_PATTERN")
+	if !ok {
+		v = `\.db$`
+	}
+	if v == "" {
+		return nil
+	}
+	return &v
+}
