@@ -384,6 +384,24 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 .sidenav-item svg, .help-nav svg { flex-shrink: 0; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
 .sidenav-secondary { margin-top: auto; padding-bottom: 8px; }
+/* On a short window the page list scrolls and the rest stays whole: the
+   brand, search, Settings and Help, and the status footer at the bottom.
+   The sidebar itself scrolling carried the footer out of sight. */
+@media (min-width: 761px) {
+  .sidenav { overflow: hidden; }
+  .sidenav > * { flex-shrink: 0; }
+  .sidenav > .sidenav-items:not(.sidenav-secondary) {
+    flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    /* A hairline at an edge with more pages past it: the two nav-colored
+       layers move with the list and cover each line once its end is
+       reached, so a list that fits shows none. */
+    background:
+      linear-gradient(var(--pw-nav-bg), var(--pw-nav-bg)) top / 100% 1px no-repeat local,
+      linear-gradient(var(--pw-nav-bg), var(--pw-nav-bg)) bottom / 100% 1px no-repeat local,
+      linear-gradient(var(--pw-border), var(--pw-border)) top / 100% 1px no-repeat scroll,
+      linear-gradient(var(--pw-border), var(--pw-border)) bottom / 100% 1px no-repeat scroll;
+  }
+}
 /* The sidebar's search box, after the platform's: full width under the
    brand, with the shortcut beside it. */
 .sidenav-search { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
@@ -3066,6 +3084,14 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-settings-movers { display: flex; flex-direction: column; gap: 12px; }
 .xfer-settings-mover { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 4px 12px; align-items: center; font-size: 13px; }
 .xfer-settings-mover > :nth-child(3) { grid-column: 2; max-width: 360px; }
+/* A switch's line: what the saved setting says, and when an unsaved
+   change takes effect, in one cell with the one not shown hidden, so the
+   line keeps the room of the longer and a switch moves nothing. */
+.switch-note { display: grid; }
+.switch-note > * { grid-area: 1 / 1; }
+.switch-note > .switch-note-hidden { visibility: hidden; }
+.xfer-settings-mover-state { line-height: 1.45; }
+.xfer-settings-switch-state { display: inline-grid; margin-left: 8px; color: var(--pw-muted); font-size: 12.5px; }
 .xfer-settings-managed { margin: 4px 0; }
 @media (max-width: 760px) { .xfer-settings-mover { grid-template-columns: 1fr; } .xfer-settings-mover > :nth-child(3) { grid-column: 1; } }
 .xfer-settings-mover > .xfer-settings-conduit { display: flex; flex-direction: column; gap: 8px; grid-column: 1 / -1; max-width: none; margin-top: 4px; }

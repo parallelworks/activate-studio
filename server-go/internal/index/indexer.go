@@ -120,6 +120,10 @@ type Indexer struct {
 
 	changeMu sync.Mutex
 	onChange []func(rel string)
+	// changes counts the changes to the index (afterChange), shown in the
+	// status: a page that sees it grow reads the index again, whether the
+	// change came from a job, a transfer, an upload or a sweep.
+	changes int64
 
 	reconcileMu sync.Mutex
 	mapState    mapState
@@ -203,8 +207,17 @@ func (ix *Indexer) OnChange(fn func(rel string)) {
 	ix.changeMu.Unlock()
 }
 
+// Changes is how many times the index has changed since the server
+// started; the status shows it.
+func (ix *Indexer) Changes() int64 {
+	ix.changeMu.Lock()
+	defer ix.changeMu.Unlock()
+	return ix.changes
+}
+
 func (ix *Indexer) afterChange(rel string) {
 	ix.changeMu.Lock()
+	ix.changes++
 	fns := make([]func(string), len(ix.onChange))
 	copy(fns, ix.onChange)
 	ix.changeMu.Unlock()
@@ -811,6 +824,7 @@ func (ix *Indexer) Status() map[string]any {
 	st.LastChanges = append([]string{}, st.LastChanges...)
 	running := ix.current != nil || len(ix.queue) > 0
 	ix.mu.Unlock()
+	changes := ix.Changes()
 	_, err := os.Stat(filepath.Join(ix.P.GufiIndex, "db.db"))
 	return ordered{
 		{"lastSweepAt", st.LastSweepAt}, {"lastSweepMs", st.LastSweepMs}, {"lastChanges", st.LastChanges},
@@ -818,6 +832,7 @@ func (ix *Indexer) Status() map[string]any {
 		{"running", running}, {"job", job}, {"queued", queued}, {"last", last}, {"lastBuild", lastBuild}, {"runs", runs},
 		{"indexed", err == nil}, {"incomplete", string(lastBuild) != "null" && lb.Kind == "build" && lb.State != "done"},
 		{"threads", ix.Settings.Threads("kb")}, {"folder", ix.P.KBRoot}, {"indexDir", ix.P.IndexDir},
+		{"changes", changes},
 	}.Map()
 }
 

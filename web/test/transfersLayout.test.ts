@@ -98,3 +98,23 @@ describe('the Query page', () => {
     expect(all.some(r => r.selector === '.query-results' && r.at.startsWith('@media'))).toBe(false)
   })
 })
+
+describe('the sidebar on a short window', () => {
+  it('scrolls the page list and keeps the footer in view', () => {
+    const at = '@media (min-width: 761px)'
+    expect(decl('.sidenav', 'overflow', at)).toBe('hidden')
+    expect(decl('.sidenav > *', 'flex-shrink', at)).toBe('0')
+    const list = '.sidenav > .sidenav-items:not(.sidenav-secondary)'
+    expect(decl(list, 'overflow-y', at)).toBe('auto')
+    expect(decl(list, 'min-height', at)).toBe('0')
+    expect(decl(list, 'flex', at)).toBe('0 1 auto')
+  })
+})
+
+describe('Settings, Transfers, how files move', () => {
+  it('stacks a switch\'s two lines in one cell, the one not shown hidden, so a switch moves nothing', () => {
+    expect(decl('.switch-note', 'display')).toBe('grid')
+    expect(decl('.switch-note > *', 'grid-area')).toBe('1 / 1')
+    expect(decl('.switch-note > .switch-note-hidden', 'visibility')).toBe('hidden')
+  })
+})

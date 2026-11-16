@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Button, Callout, Checkbox, ConfirmModal, Input, Loader, NumberInput, Select, StatusLabel, Switch, toast, type SelectItem,
 } from '@parallelworks/ui'
@@ -11,35 +11,68 @@ import { LocationDialog } from './SavedLocationDialog'
 
 export { locationProblems } from './SavedLocationDialog'
 
+/** What a Save switch says while it differs from what is saved: it takes
+ *  effect on Save. `saved` is the saved value, so the text is the same
+ *  whichever way the switch is now. */
+export function pendingSwitchText(saved: boolean): string {
+  return saved ? 'Turns off when you save.' : 'Turns on when you save.'
+}
+
+/** A switch's line: what the saved setting says (`now`), or, while the
+ *  switch differs from it, when the change takes effect (`pending`). Both
+ *  sit in one grid cell and the one not shown is hidden, so the line keeps
+ *  the height and width of the longer and a switch moves nothing around
+ *  it. The shown one carries data-shown. */
+function SwitchNote({ now, pending, shown, className = 'xfer-settings-mover-state', testId }: {
+  now: ReactNode; pending: string; shown: 'now' | 'pending'; className?: string; testId?: string
+}) {
+  return (
+    <span className={`switch-note ${className}`} data-testid={testId}>
+      <span className={shown === 'now' ? undefined : 'switch-note-hidden'} aria-hidden={shown === 'now' ? undefined : true} data-shown={shown === 'now' ? '' : undefined}>{now}</span>
+      <span className={shown === 'pending' ? undefined : 'switch-note-hidden'} aria-hidden={shown === 'pending' ? undefined : true} data-shown={shown === 'pending' ? '' : undefined}>{pending}</span>
+    </span>
+  )
+}
+
 /** rclone: on or off, the program, and what was found: its version and
  *  the remotes of its configuration, each a location. Studio never
- *  changes that configuration, so remotes are added with rclone config. */
-function RcloneMover({ value, detected, disabled, onChange }: {
+ *  changes that configuration, so remotes are added with rclone config.
+ *  What was found describes the saved setting, so while the switch is
+ *  unsaved the line says when it takes effect. The program field stays in
+ *  place, disabled while off, so a switch moves nothing below it. */
+function RcloneMover({ value, saved, detected, disabled, onChange }: {
   value: { enabled: boolean; path: string }
+  /** Whether rclone is on in the saved settings. */
+  saved: boolean
   detected?: RcloneDetected
   disabled: boolean
   onChange: (v: { enabled: boolean; path: string }) => void
 }) {
-  let found = ''
-  if (detected && value.enabled && !disabled) {
-    if (!detected.found) found = detected.why ? `${detected.why.charAt(0).toUpperCase()}${detected.why.slice(1)}.` : 'Not found on this computer.'
-    else found = `Found${detected.path ? ` at ${detected.path}` : ''}${detected.version ? `, version ${detected.version}` : ''}.`
+  // What the saved setting says: off, or what was found. It never repeats
+  // the server's reason for an off rclone, which names this page.
+  let state = ''
+  if (disabled) state = 'With sign-in on it is not used, since everyone would act with this server\'s rclone credentials.'
+  else if (!saved) state = 'Off.'
+  else if (detected) {
+    if (!detected.found) state = detected.why ? `${detected.why.charAt(0).toUpperCase()}${detected.why.slice(1)}.` : 'Not found on this computer.'
+    else state = `Found${detected.path ? ` at ${detected.path}` : ''}${detected.version ? `, version ${detected.version}` : ''}.`
   }
+  const on = value.enabled && !disabled
   return (
     <div className="xfer-settings-mover">
-      <label className="xfer-check"><Switch size="sm" checked={value.enabled && !disabled} disabled={disabled}
+      <label className="xfer-check"><Switch size="sm" checked={on} disabled={disabled}
         onCheckedChange={v => onChange({ ...value, enabled: v })} aria-label="rclone" /> <b>rclone</b></label>
       <span className="muted">
         Each remote of your rclone configuration is a location, and rclone moves files between it and this computer or another remote.
-        Studio uses rclone and its configuration as they are and never changes them.{' '}
-        {disabled ? 'With sign-in on it is not used, since everyone would act with this server\'s rclone credentials.' : found}
+        Studio uses rclone and its configuration as they are and never changes them.
+        <SwitchNote testId="rclone-state" now={state} shown={!disabled && value.enabled !== saved ? 'pending' : 'now'}
+          pending={saved ? pendingSwitchText(saved) : `${pendingSwitchText(saved)} Studio then looks for the program and its remotes.`} />
       </span>
-      {value.enabled && !disabled && (
-        <Input size="sm" label="Program" mono value={value.path}
-          description="A name looked for in Homebrew's folders on macOS, then on PATH; or an absolute path."
-          onChange={e => onChange({ ...value, path: e.target.value })} />
-      )}
-      {value.enabled && !disabled && detected?.found && (
+      <Input size="sm" label="Program" mono value={value.path} disabled={!on}
+        description="A name looked for in Homebrew's folders on macOS, then on PATH; or an absolute path."
+        onChange={e => onChange({ ...value, path: e.target.value })} />
+      {/* What the saved setting found, shown until a Save changes it. */}
+      {!disabled && saved && detected?.found && (
         detected.remotes.length
           ? (
             <table className="xfer-settings-table" aria-label="rclone remotes">
@@ -375,7 +408,7 @@ export function TransfersSettingsSection({ active = true }: { active?: boolean }
       <p className="muted">Folders on other computers, reached over ssh. Adding, editing or removing one saves at once.</p>
       {s.savedLocations.length === 0 && <p className="muted">None yet.</p>}
       {s.savedLocations.length > 0 && (
-        <table className="xfer-settings-table xfer-settings-saved">
+        <table className="xfer-settings-table xfer-settings-saved" aria-label="Saved locations">
           <thead><tr><th>Name</th><th>Host</th><th>Folder</th><th><span className="sr-only">Actions</span></th></tr></thead>
           {s.savedLocations.map((l, i) => {
             const k = `loc-${l.id || i}`
@@ -442,19 +475,23 @@ export function TransfersSettingsSection({ active = true }: { active?: boolean }
             <Switch size="sm" checked={hostLocations.enabled} disabled={off} aria-label="Offer library hosts"
               onCheckedChange={v => change({ [HOST_LOCATIONS]: { ...hostLocations, enabled: v } })} />
             Offer the home folder of each computer a library is on
+            <SwitchNote className="xfer-settings-switch-state" testId="hosts-state" now={null}
+              pending={pendingSwitchText(st.base[HOST_LOCATIONS]?.enabled ?? hostLocations.enabled)}
+              shown={hostLocations.enabled !== (st.base[HOST_LOCATIONS]?.enabled ?? hostLocations.enabled) ? 'pending' : 'now'} />
           </label>
-          {hostLocations.enabled && hosts.length > 0 && (
+          {/* In place while off, disabled, so the switch moves nothing below it. */}
+          {hosts.length > 0 && (
             <ul className="xfer-settings-folders">
               {hosts.map(h => (
                 <li key={h}>
-                  <Checkbox checked={!hostLocations.hidden.includes(h)} disabled={off} aria-label={`Offer ${h}`}
+                  <Checkbox checked={!hostLocations.hidden.includes(h)} disabled={off || !hostLocations.enabled} aria-label={`Offer ${h}`}
                     onCheckedChange={v => change({ [HOST_LOCATIONS]: { ...hostLocations, hidden: v ? hostLocations.hidden.filter(x => x !== h) : [...hostLocations.hidden, h] } })} />
                   <code>{h}</code>
                 </li>
               ))}
             </ul>
           )}
-          {hostLocations.enabled && !hosts.length && <p className="muted">No library is on another computer.</p>}
+          {!hosts.length && <p className="muted">No library is on another computer.</p>}
         </>
       )}
 
@@ -464,17 +501,18 @@ export function TransfersSettingsSection({ active = true }: { active?: boolean }
           <label className="xfer-check"><Switch size="sm" checked={s.movers.rsync.enabled} disabled={off}
             onCheckedChange={v => movers({ rsync: { ...s.movers.rsync, enabled: v } })} aria-label="rsync" /> <b>rsync</b></label>
           <span className="muted">
-            Used where both ends have it.{' '}
-            {s.detected && (!s.detected.rsyncLocal ? 'Not found on this computer.'
-              : s.detected.rsyncText ? `Found ${s.detected.rsyncText}.`
-                : `Found here${s.detected.rsyncVersion ? `, version ${s.detected.rsyncVersion}` : ''}.`)}
+            Used where both ends have it.
+            <SwitchNote testId="rsync-state" pending={pendingSwitchText(st.base.movers.rsync.enabled)}
+              shown={s.movers.rsync.enabled !== st.base.movers.rsync.enabled ? 'pending' : 'now'}
+              now={s.detected && (!s.detected.rsyncLocal ? 'Not found on this computer.'
+                : s.detected.rsyncText ? `Found ${s.detected.rsyncText}.`
+                  : `Found here${s.detected.rsyncVersion ? `, version ${s.detected.rsyncVersion}` : ''}.`)} />
           </span>
-          {s.movers.rsync.enabled && (
-            <Input size="sm" label="Program" mono value={s.movers.rsync.path} disabled={off}
-              onChange={e => movers({ rsync: { ...s.movers.rsync, path: e.target.value } })} />
-          )}
+          {/* In place while off, so the switch moves nothing below it. */}
+          <Input size="sm" label="Program" mono value={s.movers.rsync.path} disabled={off || !s.movers.rsync.enabled}
+            onChange={e => movers({ rsync: { ...s.movers.rsync, path: e.target.value } })} />
         </div>
-        <RcloneMover value={rclone} detected={s.detected?.rclone} disabled={off}
+        <RcloneMover value={rclone} saved={st.base.movers.rclone?.enabled ?? true} detected={s.detected?.rclone} disabled={off}
           onChange={v => movers({ rclone: v })} />
         <div className="xfer-settings-mover">
           <span className="xfer-check"><b>Studio copy</b> <StatusLabel variant="success">Always on</StatusLabel></span>
@@ -483,21 +521,26 @@ export function TransfersSettingsSection({ active = true }: { active?: boolean }
         <div className="xfer-settings-mover">
           <label className="xfer-check"><Switch size="sm" checked={s.movers.conduit.enabled} disabled={off || !s.mcpServers.length}
             onCheckedChange={v => movers({ conduit: { ...s.movers.conduit, enabled: v } })} aria-label="CONDUIT" /> <b>CONDUIT</b></label>
-          <span className="muted">A site's data transfer service, used when both ends are in its storage.</span>
+          <span className="muted">
+            A site's data transfer service, used when both ends are in its storage.
+            <SwitchNote testId="conduit-state" now={null} pending={pendingSwitchText(st.base.movers.conduit.enabled)}
+              shown={s.movers.conduit.enabled !== st.base.movers.conduit.enabled ? 'pending' : 'now'} />
+          </span>
           {!s.mcpServers.length && (
             <span className="muted">To use it, attach it in <a href="#view=settings:tools">Assistant tools, Attached MCP servers</a>.</span>
           )}
-          {s.mcpServers.length > 0 && s.movers.conduit.enabled && (
+          {/* In place while off, disabled, so the switch moves nothing below it. */}
+          {s.mcpServers.length > 0 && (
             <div className="xfer-settings-conduit">
               <div className="xfer-settings-inline">
                 <Select<string> aria-label="CONDUIT server" size="sm" items={serverItems} value={s.movers.conduit.server ?? undefined}
-                  placeholder="Choose the attached server" disabled={off}
+                  placeholder="Choose the attached server" disabled={off || !s.movers.conduit.enabled}
                   onValueChange={v => movers({ conduit: { ...s.movers.conduit, server: v } })} />
-                <Button size="sm" variant="secondary" disabled={off || !s.movers.conduit.server}
+                <Button size="sm" variant="secondary" disabled={off || !s.movers.conduit.enabled || !s.movers.conduit.server}
                   onClick={() => void runTest('conduit', { conduit: s.movers.conduit.server! })}>Test</Button>
                 <TestLine k="conduit" />
               </div>
-              <ConduitMounts mounts={s.movers.conduit.mounts ?? []} locations={locations} disabled={off}
+              <ConduitMounts mounts={s.movers.conduit.mounts ?? []} locations={locations} disabled={off || !s.movers.conduit.enabled}
                 onChange={mounts => movers({ conduit: { ...s.movers.conduit, mounts } })} />
             </div>
           )}

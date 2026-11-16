@@ -87,11 +87,15 @@ var counts = struct {
 	order []string
 }{m: map[string]*countEntry{}}
 
-// InvalidateCounts is the count cache's part of invalidateDbList.
+// InvalidateCounts is the count cache's part of invalidateDbList. It
+// drops the details kept for a moment too, which hold counts.
 func InvalidateCounts() {
 	counts.Lock()
 	counts.m, counts.order = map[string]*countEntry{}, nil
 	counts.Unlock()
+	detailsCache.Lock()
+	detailsCache.m, detailsCache.order = map[string]detailsEntry{}, nil
+	detailsCache.Unlock()
 }
 
 func (e *Engine) countStamp(root string) (string, bool) {
