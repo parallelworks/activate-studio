@@ -109,9 +109,11 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 	if err != nil {
 		return nil, err
 	}
-	dst, err := s.resolve(ctx, v, req.Destination.Location)
-	if err != nil {
-		return nil, err
+	dst := req.into
+	if dst == nil {
+		if dst, err = s.resolve(ctx, v, req.Destination.Location); err != nil {
+			return nil, err
+		}
 	}
 	if !dst.Available {
 		return nil, apierr.New(502, "%s cannot be reached: %s", dst.Label, dst.Why)

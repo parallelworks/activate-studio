@@ -230,3 +230,19 @@ func TestSubsystem(t *testing.T) {
 		t.Fatal("a pw ssh site has no subsystem")
 	}
 }
+
+// An ssh error already names its destination; the site's name is not put
+// before it again.
+func TestSiteSaidNamesTheSiteOnce(t *testing.T) {
+	for _, c := range []struct{ site, said, want string }{
+		{SSHScheme + "me@host", "me@host: Permission denied (publickey).", "me@host: Permission denied (publickey)."},
+		{SSHScheme + "me@host:2222", "me@host: Permission denied (publickey).", "me@host: Permission denied (publickey)."},
+		{SSHScheme + "me@host", "Connection refused", "me@host: Connection refused"},
+		{SSHScheme + "me@host:2222", "Connection refused", "me@host:2222: Connection refused"},
+		{"cluster-a", "the ssh connection failed", "cluster-a: the ssh connection failed"},
+	} {
+		if got := siteSaid(c.site, c.said); got != c.want {
+			t.Errorf("siteSaid(%q, %q) = %q, want %q", c.site, c.said, got, c.want)
+		}
+	}
+}

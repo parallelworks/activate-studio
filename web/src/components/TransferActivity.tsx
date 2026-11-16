@@ -66,6 +66,7 @@ function Progress({ t }: { t: Transfer }) {
 }
 
 function StartedBy({ t }: { t: Transfer }) {
+  if (t.startedBy === 'library') return <span>Studio, updating a library's copy</span>
   if (t.startedBy !== 'assistant') return <span>You</span>
   return t.conversationId
     ? <span>Assistant, <a href={`#chat=${t.conversationId}`}>open the conversation</a></span>
@@ -103,7 +104,7 @@ function Row({ t, highlight, onOpen }: { t: Transfer; highlight: boolean; onOpen
 }
 
 type Tab = 'all' | 'active' | 'done'
-type Who = 'user' | 'assistant'
+type Who = 'user' | 'assistant' | 'library'
 
 /** How often newly finished transfers are asked for when nothing has been
  *  seen to finish: the active list catches most, this catches one that
@@ -153,7 +154,7 @@ const Line = memo(function Line({ t, highlight, onOpen }: { t: Transfer; highlig
       <span className="xfer-line-mover">{t.mover}</span>
       <span className="xfer-line-who">{t.startedBy === 'assistant'
         ? (t.conversationId ? <a href={`#chat=${t.conversationId}`} title="Open the conversation">Assistant</a> : 'Assistant')
-        : 'You'}</span>
+        : t.startedBy === 'library' ? 'Studio' : 'You'}</span>
       <span className="xfer-line-time" title={endOf(t)}>{timeText(endOf(t))}</span>
       <span className="xfer-line-size">{bytesText(size)}</span>
     </li>
@@ -400,7 +401,7 @@ export function TransferActivity({
               items={[{ value: 'any', label: 'Any outcome' }, { value: 'succeeded', label: 'Succeeded' }, { value: 'failed', label: 'Failed' }, { value: 'cancelled', label: 'Cancelled' }, { value: 'interrupted', label: 'Interrupted' }]} />
             <Select<Who | 'any'> aria-label="Started by" size="sm" value={who ?? 'any'}
               onValueChange={v => setWho(v === 'any' || !v ? null : v)}
-              items={[{ value: 'any', label: 'Anyone' }, { value: 'user', label: 'You' }, { value: 'assistant', label: 'The assistant' }]} />
+              items={[{ value: 'any', label: 'Anyone' }, { value: 'user', label: 'You' }, { value: 'assistant', label: 'The assistant' }, { value: 'library', label: 'Studio (library copies)' }]} />
           </div>
           {hist.error && <Callout tone="warning" size="sm" className="xfer-callout">{hist.error}</Callout>}
           {!hist.loaded && hist.loading && <div className="muted xfer-pad"><Loader inline size={16} label="Reading finished transfers…" /></div>}

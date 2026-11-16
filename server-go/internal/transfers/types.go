@@ -113,6 +113,9 @@ type Request struct {
 		Path     string `json:"path"`
 	} `json:"destination"`
 	Options Options `json:"options"`
+	// into is the destination in place of Destination.Location's: a copy
+	// library's folder, which Pull writes and no request can name.
+	into *loc
 }
 
 // Options are a request's choices.

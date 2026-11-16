@@ -133,6 +133,22 @@ func TestExportSharesBuiltIndexesWhenAsked(t *testing.T) {
 	}
 }
 
+// A copy of a Transfers location is left out, with why, shared indexes or
+// not: its location is this Studio's and its folder is in its own data.
+func TestExportLeavesOutCopies(t *testing.T) {
+	src := source()
+	files := "/data/studio/libraries/drop/files"
+	src.Libraries = append(src.Libraries, libraries.Library{ID: "drop", Label: "Drop", IndexRoot: "/data/studio/libraries/drop/index/files", SourceRoot: files,
+		Build:  &libraries.LocalBuild{IndexDir: "/data/studio/libraries/drop/index", Managed: true, State: "ready"},
+		CopyOf: &libraries.CopyOf{Location: "saved:drop", Path: "upload", Label: "Drop", Every: 15}})
+	for _, share := range []bool{false, true} {
+		f, skipped := Export(src, Options{ShareBuilt: share, IDs: []string{"drop"}})
+		if len(f.Libraries) != 0 || len(skipped) != 1 || skipped[0].ID != "drop" || !strings.Contains(skipped[0].Why, "a copy of a location in this Studio's Transfers") {
+			t.Fatalf("share %v: %+v %+v", share, f.Libraries, skipped)
+		}
+	}
+}
+
 func TestExportPrimaryOnlyWhenTicked(t *testing.T) {
 	_, f, _ := export(t, Options{IDs: []string{"kb", "projects"}})
 	if len(f.Libraries) != 1 || f.Libraries[0].Label != "Projects" {

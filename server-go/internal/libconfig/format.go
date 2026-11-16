@@ -579,6 +579,13 @@ func Export(src Source, o Options) (File, []Skipped) {
 		if !picked(l.ID) {
 			continue
 		}
+		// A copy's source is a location of this Studio's Transfers, which
+		// another Studio does not have, and its folder is in this Studio's
+		// own data.
+		if l.CopyOf != nil {
+			skipped = append(skipped, Skipped{l.ID, l.Label, "It is a copy of a location in this Studio's Transfers; in another Studio, save that location in Transfers and add the copy from it."})
+			continue
+		}
 		if l.Build != nil && o.ShareBuilt && l.IndexRoot != "" {
 			f.Libraries = append(f.Libraries, Entry{Kind: KindIndex, Label: l.Label, IndexRoot: l.IndexRoot, SourceRoot: l.SourceRoot})
 			continue

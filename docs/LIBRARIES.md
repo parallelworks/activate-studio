@@ -110,6 +110,7 @@ the index has, as built: names, text, or text and meaning:
 |---|---|---|
 | Main folder, read and write | `KB_ROOT` | **Change folder**, **Build index** or **Update index** (**Stop indexing** while it runs), and under the row **Delete index** and **View log**, on a single-user install; **View log** anywhere |
 | Index of a folder on this machine, kept in step with it | `POST /api/libraries/build` | **Rebuild**, **Remove** |
+| Copy of a folder in a Transfers location, kept in step with it | `POST /api/libraries/copy` | **Update now**, how often it looks for changes, **Rebuild**, **Remove** |
 | GUFI index on this machine | `POST /api/libraries`, or `STUDIO_LIBRARIES` (set by the deployment) | **Remove**, except for one the deployment set |
 | Index built on a remote system over ssh or pw ssh | `POST /api/user-libraries/ssh/build`, `POST /api/user-libraries/pw/build` | **Rebuild**, **Remove** |
 | GUFI index over ssh | `POST /api/user-libraries/ssh` | **Check**, **Remove** |
@@ -392,6 +393,65 @@ overlay, and the incremental indexer, which all assume the main folder
 today, to take a library's own folder, index, and caches; that is one
 change across the indexing code, left for when it can be made in one
 piece.
+
+## Copies of a location
+
+On a Studio with sign-in off, **Add a library**, "A remote system", "Copy
+here and index it" keeps a copy of a folder in a Transfers location on
+this computer and indexes the copy (`server-go/internal/libapi/copy.go`).
+The location is a saved ssh location, a library host, a cluster, or an
+rclone remote, chosen from the Transfers locations, with the folder
+picked by browsing it. This is the way to make a library of a host
+account that allows SFTP only, such as an upload drop, where no program
+runs and nothing can be built, and of an rclone remote.
+
+`POST /api/libraries/copy` takes `location` (a location id from `GET
+/api/transfers/locations`), `path` (the folder in it, empty for its top),
+and optional `label`, `id`, `every` (minutes between looks for changes:
+0, 5, 15, 60, 360 or 1440; 15 by default; 0 looks only when asked), and
+`depth` or `meaning`. It refuses a library, a folder on this computer
+(build that in place) and CONDUIT (its paths cannot be listed), a
+location that cannot be reached, and a folder that is not there. The
+library is a built library (`build`, managed) whose folder is
+`INDEX_BASE/libraries/<id>/files`, with its index and caches beside it,
+and `copyOf: { location, path, label, every }` in `libraries.json`. Its
+first build copies the folder, then indexes it as a folder on this
+computer is indexed, so search, the Library tree, previews, Stats and the
+assistant's tools read it as any built library.
+
+Copying is a transfer (`transfers.Pull`): a sync from the location's
+folder into the copy that deletes what the source no longer has, planned
+and run as any transfer, so it uses the mover the location allows (rsync
+where a host has it, rclone for a remote, Studio's own copy over ssh or
+SFTP), lands through a staging folder, and checks what arrives. A look
+that finds nothing to bring or remove leaves no transfer behind; one that
+does is listed in Transfers, started by Studio (`startedBy: "library"`),
+and the library's sync then indexes the folders that changed. Hidden
+names are left out, as transfers leave them out. A sync takes at most
+50,000 files, and the copy needs as much free space as the folder holds;
+the plan refuses one that does not fit.
+
+Studio looks for changes on the library's interval (`every`), one look
+at a time per library, and **Update now** looks at once (`POST
+/api/libraries/<id>/update`, answered at once). From that answer until
+the look ends, `copyOf.looking` is true and the row says it is looking;
+`copyOf.running` is the look's transfer once it has one. `PUT /api/libraries/<id>/copy` with `{ every }`
+changes the interval. **Rebuild** looks and then builds the whole index
+again. What the last look found is kept in
+`INDEX_BASE/libraries/<id>/copy.json` and shown on the row: when it
+looked, what it last brought or removed with a link to that transfer, and
+why it failed. A location that is gone or cannot be reached leaves the
+copy and its index as they were and says why. The library shows as
+updating while a look that changes something runs, and cannot be removed
+then. **Remove** deletes the copy, its index and caches, and never touches
+the location.
+
+The copy is read only. Transfers lists the library as a location that
+takes no transfers, saying where to put files instead, since the next
+look would remove anything put there. A library list leaves copies out,
+with that reason, since the location belongs to this Studio's Transfers.
+Copies use the Studio account's own access to the location, so they are
+offered only with sign-in off.
 
 ## Indexes built on a remote system
 

@@ -13,9 +13,10 @@ export interface UserOffer { available: boolean; ssh: boolean; pwOffered: boolea
 /** The choices Add a library offers, from what the server says this viewer
  *  may add: building here (`canBuild`, sign-in off), ssh (sign-in off), pw
  *  ssh wherever it is offered (the form says why when it cannot be used
- *  yet), and the platform's workflow on a Studio the platform hosts. */
+ *  yet), the platform's workflow on a Studio the platform hosts, and a copy
+ *  of a folder in a Transfers location (`canBuild` too). */
 export function addOptions(canBuild: boolean, user: UserOffer, platform: boolean): AddOptions {
-  return { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && platform && user.available }
+  return { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && platform && user.available, copy: canBuild }
 }
 
 /**

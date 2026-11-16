@@ -309,6 +309,23 @@ func ParseSSHSite(site string) (*SSHHost, error) {
 	return &SSHHost{Destination: m[1], Port: port, Options: options}, nil
 }
 
+// siteSaid is what a site said, after its name, unless ssh already put
+// it there, as in "me@host: Permission denied (publickey).", which names
+// the destination without its port.
+func siteSaid(site, said string) string {
+	name := SiteName(site)
+	host := name
+	if i := strings.LastIndex(name, ":"); i > 0 && !strings.Contains(name[i:], "]") {
+		if _, err := strconv.Atoi(name[i+1:]); err == nil {
+			host = name[:i]
+		}
+	}
+	if strings.HasPrefix(said, name+": ") || strings.HasPrefix(said, host+": ") {
+		return said
+	}
+	return name + ": " + said
+}
+
 // SiteName is siteName: the destination (and port) of a site over ssh,
 // without its options; a cluster's name as it is.
 func SiteName(site string) string {

@@ -95,7 +95,8 @@ export interface Transfer {
   source: { location: string; label: string; paths: string[] }
   destination: { location: string; label: string; path: string }
   state: TransferState
-  startedBy: 'user' | 'assistant'
+  /** `library`: Studio, bringing a copy library in step with its location. */
+  startedBy: 'user' | 'assistant' | 'library'
   conversationId?: string
   requestedAt: string
   startedAt?: string
@@ -123,7 +124,7 @@ export interface ListQuery {
   before?: string | null
   q?: string
   outcome?: Outcome | null
-  startedBy?: 'user' | 'assistant' | null
+  startedBy?: 'user' | 'assistant' | 'library' | null
   /** RFC 3339: only transfers that finished at or after this time. */
   since?: string | null
 }
@@ -245,8 +246,9 @@ const post = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'Cont
 
 export const transferApi = {
   locations: () => call<{ locations: TransferLocation[] }>(`${BASE}/locations`).then(r => r.locations ?? []),
-  browse: (location: string, path: string) =>
-    call<BrowseResult>(`${BASE}/browse?${new URLSearchParams({ location, path })}`),
+  /** A folder's listing; with no path, where browsing starts (a cluster's home folder). */
+  browse: (location: string, path: string | null) =>
+    call<BrowseResult>(`${BASE}/browse?${new URLSearchParams(path === null ? { location } : { location, path })}`),
   plan: (req: PlanRequest) => call<{ plan: Plan }>(`${BASE}/plan`, post(req)).then(r => ends(r.plan)),
   start: (planId: string) => call<{ transfer: Transfer }>(BASE, post({ planId })).then(r => ends(r.transfer)),
   list: (query: ListQuery) => {
