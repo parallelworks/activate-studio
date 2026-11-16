@@ -505,7 +505,7 @@ describe('history at scale', () => {
   const lines = () => document.querySelectorAll('.xfer-line').length
   const doneReads = () => mock.calls.filter(c => c.path.startsWith('/api/transfers?state=done')).map(c => new URL(c.path, 'http://x').searchParams)
 
-  it('pages 2,000 finished transfers 50 at a time, searches and filters on the server, and stays quick with all of them loaded', async () => {
+  it('pages 2,000 finished transfers 50 at a time, and searches and filters on the server', async () => {
     atAfternoon()
     serve({ transfers: [], finished: 2000 })
     render(<TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />)
@@ -534,13 +534,23 @@ describe('history at scale', () => {
     await u.click(await screen.findByRole('option', { name: 'The assistant' }))
     await waitFor(() => expect(doneReads().at(-1)!.get('startedBy')).toBe('assistant'))
     await waitFor(() => expect([...document.querySelectorAll('.xfer-line-who')].every(e => e.textContent === 'Assistant')).toBe(true))
-
-    // Every page loaded: 40 more reads, and the list still renders in time.
     await u.click(screen.getByRole('combobox', { name: 'Outcome' }))
     await u.click(await screen.findByRole('option', { name: 'Any outcome' }))
     await u.click(screen.getByRole('combobox', { name: 'Started by' }))
     await u.click(await screen.findByRole('option', { name: 'Anyone' }))
     await waitFor(() => expect(lines()).toBe(50))
+  }, 60_000)
+
+  // Its own test, with its own time limit: loading every page takes about
+  // 18 s in jsdom on a fast machine, and a CI runner running test files in
+  // parallel took it past a shared 60 s limit. The bound that matters is
+  // the per-page one below.
+  it('stays quick with all 2,000 loaded', async () => {
+    atAfternoon()
+    serve({ transfers: [], finished: 2000 })
+    render(<TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />)
+    await waitFor(() => expect(lines()).toBe(50))
+    // Every page loaded: 39 more reads, and the list still renders in time.
     let slowest = 0
     while (screen.queryByRole('button', { name: 'Show more' })) {
       const before = lines()
@@ -553,7 +563,7 @@ describe('history at scale', () => {
     // jsdom is far slower than a browser; this bounds a page added to the
     // end of a 1,950-row list, which re-renders only the new rows.
     expect(slowest).toBeLessThan(1500)
-  }, 60_000)
+  }, 180_000)
 
   it('asks only for transfers finished since the newest seen, and reports one that landed', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
