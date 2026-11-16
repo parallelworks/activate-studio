@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Callout, Checkbox, Loader, Modal, SegmentedControl, toast } from '@parallelworks/ui'
 import { sectionAllowed, useAppConfig } from '../config'
 import { TransferPane, type PaneState } from './TransferPane'
 import { TransferPlanDialog } from './TransferPlanDialog'
-import { transferHash } from '../views/TransfersView'
+import { ACTIVITY_HASH, transferHash } from '../views/TransfersView'
 import {
-  destinationWhy, libraryLocation, sourceWhy, transferApi, transferTitle, transfersPresent,
+  destinationWhy, libraryLocation, plural, sourceWhy, transferApi, transferTitle, transfersPresent,
   type Plan, type PlanOptions, type PlanRequest, type Transfer, type TransferLocation,
 } from '../transferApi'
 
@@ -48,12 +48,45 @@ export function groupByLibrary(items: ResultItem[], labelOf: (id: string) => str
   return [...by.values()]
 }
 
-const plural = (n: number, noun: string) => `${n.toLocaleString()} ${noun}${n === 1 ? '' : 's'}`
-
 /** "12 files in Projects, 3 in Archive". */
 export function groupsText(groups: { label: string; paths: string[] }[], noun: string): string {
   return groups.map((g, i) => `${i === 0 ? plural(g.paths.length, noun) : g.paths.length.toLocaleString()} in ${g.label}`).join(', ')
 }
+
+/** Where a transfer of these items goes first: a place that takes files
+ *  other than the items' own libraries, so the plan is no copy onto itself
+ *  or into its own root. A place of another kind than a library first, as
+ *  the Transfers page picks its second side; null when there is none, and
+ *  the person chooses. */
+export function defaultDestination(locations: TransferLocation[], items: ResultItem[]): TransferLocation | null {
+  const own = new Set(items.map(it => libraryLocation(it.library)))
+  const open = locations.filter(l => !own.has(l.id) && !destinationWhy(l))
+  return open.find(l => l.kind !== 'library') ?? open[0] ?? null
+}
+
+/** The toast for what a dialog started: one transfer opens in Transfers;
+ *  several are one toast, updated in place as each starts, that opens the
+ *  list. */
+export function startedToast(all: Transfer[], id: string): void {
+  const t = all[all.length - 1]
+  if (!t) return
+  if (all.length === 1) {
+    // Named by what it does and where, not by the server's label, which
+    // names the destination already.
+    toast.success(`${transferTitle({ ...t, label: '' })} from ${t.source.label} to ${t.destination.label}`, {
+      id, title: 'Transfer started',
+      action: { label: 'Open in Transfers', href: transferHash(t.id) },
+    })
+    return
+  }
+  const to = [...new Set(all.map(x => x.destination.label))]
+  toast.success(`From ${[...new Set(all.map(x => x.source.label))].join(', ')} to ${to.join(', ')}`, {
+    id, title: `${plural(all.length, 'transfer')} started`,
+    action: { label: 'Open Transfers', href: ACTIVITY_HASH },
+  })
+}
+
+let toastSeq = 0
 
 type Action = 'copy' | 'move'
 type Step = { plan: Plan; request: PlanRequest; label: string }
@@ -65,8 +98,10 @@ type Step = { plan: Plan; request: PlanRequest; label: string }
  * several libraries makes one transfer per library: each is planned, then
  * the plans are confirmed one at a time in the Transfers page's plan
  * dialog. A library that cannot be a source is left out, with its reason,
- * before Continue. Each start is a toast that opens it in Transfers; the
- * page stays where it is.
+ * before Continue. The destination starts at a place other than the
+ * items' libraries (defaultDestination). What starts is one toast: one
+ * transfer opens in Transfers, several open the list. The page stays where
+ * it is.
  */
 export function ResultsTransferDialog({
   items, noun = 'file', labels = {}, onClose, onDone,
@@ -92,17 +127,16 @@ export function ResultsTransferDialog({
   const [steps, setSteps] = useState<Step[] | null>(null)
   const [at, setAt] = useState(0)
   const [started, setStarted] = useState<Transfer[]>([])
+  // One toast for this dialog's starts, updated as each starts.
+  const toastId = useRef(`results-transfer-${++toastSeq}`)
+  const refusedRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     transferApi.locations().then(locs => {
       setLocations(locs)
       setDest(d => {
         if (d.locationId) return d
-        // The library of the first item, as a folder beside the files;
-        // else the first place that takes files.
-        const first = locs.find(l => l.id === libraryLocation(items[0]?.library ?? ''))
-        const pick = first && !destinationWhy(first) ? first : locs.find(l => !destinationWhy(l))
-        return { locationId: pick?.id ?? null, path: '', selected: [] }
+        return { locationId: defaultDestination(locs, items)?.id ?? null, path: '', selected: [] }
       })
     }, e => { setLocError((e as Error).message); setLocations([]) })
     // A transfer starts from the defaults in Settings, Transfers, as on the Transfers page.
@@ -159,15 +193,20 @@ export function ResultsTransferDialog({
     setRefused(bad); setReady(good)
   }
 
+  // A refusal shows where it is seen: scrolled into view and focused, as
+  // the callouts sit under the destination pane, below the fold of a
+  // dialog in a short window.
+  useEffect(() => {
+    const el = refusedRef.current
+    if (!refused.length || !el) return
+    el.scrollIntoView?.({ block: 'nearest' })
+    el.focus({ preventScroll: true })
+  }, [refused])
+
   const finish = (all: Transfer[]) => { onDone(all) }
   const onStarted = (t: Transfer) => {
-    // Named by what it does and where, not by the server's label, which
-    // names the destination already.
-    toast.success(`${transferTitle({ ...t, label: '' })} from ${t.source.label} to ${t.destination.label}`, {
-      title: 'Transfer started',
-      action: { label: 'Open in Transfers', href: transferHash(t.id) },
-    })
     const all = [...started, t]
+    startedToast(all, toastId.current)
     setStarted(all)
     if (steps && at + 1 < steps.length) setAt(at + 1)
     else finish(all)
@@ -226,9 +265,13 @@ export function ResultsTransferDialog({
         <label className="xfer-check"><Checkbox checked={replace} onCheckedChange={v => { setReplace(!!v); changed() }} />
           Replace files that already exist at the destination</label>
         {destLoc && !destWhy && <p className="muted xfer-results-to">To {destLoc.label}: {dest.path || '/'}</p>}
-        {refused.map(r => (
-          <Callout key={r.label} tone="error" size="sm" live title={`No plan for ${r.label}`}>{r.text}</Callout>
-        ))}
+        {refused.length > 0 && (
+          <div ref={refusedRef} tabIndex={-1} className="xfer-results-refused" data-testid="xfer-results-refused">
+            {refused.map(r => (
+              <Callout key={r.label} tone="error" size="sm" live title={`No plan for ${r.label}`}>{r.text}</Callout>
+            ))}
+          </div>
+        )}
       </div>
     </Modal>
   )

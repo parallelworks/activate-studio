@@ -40,7 +40,7 @@ func (s *Service) Start(ctx context.Context, v Viewer, planID, startedBy, conver
 	s.dropPlan(planID)
 	r := s.newRec(v, p, startedBy, conversationID, StateQueued)
 	s.store.mu.Lock()
-	r.event(s.now(), "Queued: %d files, %s, by %s", max(p.Files, 0), humanBytes(max(p.Bytes, 0)), p.Mover)
+	r.event(s.now(), "Queued: %s, %s, by %s", count(max(p.Files, 0), "file", "files"), humanBytes(max(p.Bytes, 0)), p.Mover)
 	s.store.active[r.ID] = r
 	s.store.saveActiveLocked(true, s.now())
 	t := r.view(false)

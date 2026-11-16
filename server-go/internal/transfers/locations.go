@@ -20,7 +20,10 @@ type loc struct {
 	// readOnly is why a reachable library is read only; refresh is when
 	// its index shows a transfer's change (LibraryLoc).
 	readOnly, refresh string
-	conduit           *ConduitServer
+	// reindexed: Studio updates this library's index after a transfer
+	// (LibraryLoc.Reindexed).
+	reindexed bool
+	conduit   *ConduitServer
 	// home is the folder browsing starts in, relative to the root (a
 	// cluster's home folder); "" for the root.
 	home    string
@@ -65,8 +68,8 @@ func (s *Service) all(ctx context.Context, v Viewer, kind string) []*loc {
 	if want(KindLibrary) && s.d.Libraries != nil {
 		for _, l := range s.d.Libraries(ctx, v) {
 			x := &loc{Location: Location{ID: KindLibrary + ":" + l.ID, Kind: KindLibrary, Label: l.Label,
-				Writable: l.Writable && l.FS != nil, Indexed: l.Indexed, Browsable: l.FS != nil, Available: l.FS != nil, Why: l.Why},
-				fs: l.FS, libID: l.ID, refresh: l.Refresh}
+				Writable: l.Writable && l.FS != nil, Indexed: l.Indexed || l.Reindexed, Browsable: l.FS != nil, Available: l.FS != nil, Why: l.Why},
+				fs: l.FS, libID: l.ID, refresh: l.Refresh, reindexed: l.Reindexed}
 			if l.FS != nil {
 				x.Detail = l.FS.Where() + ", " + l.FS.Root()
 				if !x.Writable {

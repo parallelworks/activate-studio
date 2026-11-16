@@ -721,11 +721,15 @@ textarea.field { line-height: 1.5; }
 .saved-sql pre { margin: 0; padding: 8px 2.75rem 8px 10px; font-size: 0.76rem; white-space: pre-wrap; word-break: normal; overflow-wrap: anywhere; }
 .query-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .query-error { margin-top: 12px; }
-.query-results { overflow: hidden; }
-/* Where the controls fill the pane, the results keep their height and the
-   pane scrolls; they used to shrink to nothing. */
-@media (max-width: 760px), (max-height: 620px) { .query-results { flex: none; } }
-.table-scroll { overflow: auto; max-height: calc(100vh - 320px); }
+/* The results never shrink: where the controls fill the pane, the results
+   keep their height and the pane scrolls to them. They used to shrink to
+   the toolbar and column heads, with no rows and nothing to scroll, on a
+   window under about 1050px tall. Where there is room they take the rest
+   of the pane. */
+.query-results { overflow: hidden; flex: 1 0 auto; }
+/* The rows scroll inside the results, at least 240px of them however short
+   the window. */
+.table-scroll { overflow: auto; max-height: max(240px, calc(100vh - 320px)); }
 .table-scroll td.cell-path { font-family: ui-monospace, monospace; font-size: 12px; color: var(--pw-text); cursor: pointer; }
 .table-scroll td.cell-path:hover { color: var(--pw-link); }
 .table-scroll td.cell-path:hover { text-decoration: underline; }
@@ -2815,6 +2819,10 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
    between them. */
 .xfer-view { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 32px; display: flex; flex-direction: column; gap: 12px; }
 .xfer-view[hidden] { display: none; }
+/* The transfer details drawer covers the Transfers view, below the page
+   header, so its close button and the header's Status pane toggle never
+   overlap. */
+.view:has(> .xfer-view) { position: relative; }
 .xfer-pad { padding: 10px 4px; }
 .xfer-callout { max-width: 900px; }
 .xfer-mono { font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
@@ -2853,8 +2861,14 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-options-note { font-size: 12px; margin: 8px 0 0; }
 
 .xfer-panes { display: grid; grid-template-columns: minmax(0, 1fr) 112px minmax(0, 1fr); gap: 12px; min-height: 420px; flex: 1; }
-.xfer-middle { display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+/* The two Start buttons stay put as their notes change: each has half the
+   column, the first at the foot of the top half with its note above it,
+   the second at the head of the bottom half with its note below, so a
+   note that grows or goes moves neither button. */
+.xfer-middle { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); row-gap: 18px; }
 .xfer-start { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.xfer-middle > .xfer-start { min-height: 0; justify-content: flex-start; }
+.xfer-middle > .xfer-start:first-child { flex-direction: column-reverse; }
 .xfer-start > button { justify-content: center; gap: 6px; }
 .xfer-start-why { font-size: 11px; line-height: 1.35; color: var(--pw-muted); text-align: center; }
 .xfer-stack { display: flex; flex-direction: column; gap: 10px; }
@@ -2865,6 +2879,9 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-pane {
   display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--pw-border);
   border-radius: 8px; background: var(--pw-panel); overflow: hidden;
+  /* The file list's columns follow the pane's width, not the window's:
+     the Status pane or a narrow window takes the same width away. */
+  container: xfer-pane / inline-size;
 }
 .xfer-pane-head { padding: 10px 10px 6px; display: flex; flex-direction: column; gap: 6px; }
 .xfer-pane-picker { display: flex; align-items: center; gap: 8px; }
@@ -2879,7 +2896,25 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-filter { width: 40%; min-width: 110px; }
 .xfer-list { flex: 1; min-height: 0; overflow: auto; padding: 0 0 4px; }
 .xfer-list > .xfer-pad, .xfer-list > [class*="callout"], .xfer-list > div:not(:has(table)) { margin: 10px; }
-.xfer-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+/* The Name column takes what the fixed columns leave, never less than
+   --xfer-name-min: the table is at least that much wider than the fixed
+   columns shown (--xfer-fixed, each column's width and padding), and the
+   list scrolls sideways before a name is lost. Modified goes first, then
+   Size, as the pane narrows. */
+.xfer-table {
+  --xfer-name-min: 120px; --xfer-fixed: 286px;
+  width: 100%; min-width: calc(var(--xfer-fixed) + var(--xfer-name-min));
+  border-collapse: collapse; font-size: 13px; table-layout: fixed;
+}
+.xfer-col-name { min-width: var(--xfer-name-min); }
+@container xfer-pane (max-width: 440px) {
+  .xfer-col-mtime { display: none; }
+  .xfer-table { --xfer-fixed: 142px; }
+}
+@container xfer-pane (max-width: 270px) {
+  .xfer-col-size { display: none; }
+  .xfer-table { --xfer-fixed: 50px; }
+}
 .xfer-table th {
   position: sticky; top: 0; z-index: 1; background: var(--pw-panel); text-align: left; font-weight: 500;
   font-size: 11.5px; color: var(--pw-muted); padding: 6px 8px; border-bottom: 1px solid var(--pw-border);
@@ -2905,6 +2940,8 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-results-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .xfer-results .xfer-pane { height: min(340px, 48vh); }
 .xfer-results-to { margin: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.xfer-results-refused { display: flex; flex-direction: column; gap: 8px; scroll-margin-bottom: 12px; }
+.xfer-results-refused:focus { outline: none; }
 
 .xfer-plan { display: flex; flex-direction: column; gap: 10px; }
 .xfer-plan-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 13px; }
@@ -2924,7 +2961,6 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 
 @media (max-width: 900px) {
   .xfer-view { padding: 12px 12px 24px; }
-  .xfer-col-mtime { display: none; }
 }
 [data-theme='dark'] .xfer-row-error { color: var(--theme-error); }
 .xfer-finished-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 4px; }

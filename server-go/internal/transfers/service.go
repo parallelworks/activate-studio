@@ -40,10 +40,15 @@ type LibraryLoc struct {
 	// ReadOnly is why a library whose files are reachable is not writable,
 	// for the location's Detail; "" otherwise.
 	ReadOnly string
-	// Indexed: a landing here re-indexes the paths it wrote, and a move
-	// out drops the originals from the index (Index).
+	// Indexed: the library has an index, so it is searchable. The
+	// location's Indexed shows it.
 	Indexed bool
-	// Refresh is when the index of a library that is not Indexed shows a
+	// Reindexed: Studio updates the index after a transfer here: a landing
+	// re-indexes the paths it wrote, and a move out drops the originals
+	// from the index (Index). Only the main library is. A Reindexed library
+	// is also Indexed.
+	Reindexed bool
+	// Refresh is when the index of a library that is not Reindexed shows a
 	// transfer's change, finishing "The index of <label> shows this
 	// change ..."; "" says "after its next refresh".
 	Refresh string

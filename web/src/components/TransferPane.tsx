@@ -277,7 +277,7 @@ export function TransferPane({
                           ? state.selected.filter(n => !visibleNames.includes(n))
                           : [...new Set([...state.selected, ...visibleNames])])} />
                     </th>}
-                    <th>Name</th>
+                    <th className="xfer-col-name">Name</th>
                     <th className="xfer-col-size">Size</th>
                     <th className="xfer-col-mtime">Modified</th>
                   </tr>
@@ -293,7 +293,7 @@ export function TransferPane({
                           <Checkbox aria-label={`Select ${e.name}`} checked={on}
                             onClick={ev => { ev.stopPropagation(); toggle(e.name, ev.shiftKey); ev.preventDefault() }} />
                         </td>}
-                        <td><span className="xfer-name">
+                        <td className="xfer-col-name"><span className="xfer-name">
                           <span className={`xfer-glyph ${e.type}`}>{e.type === 'dir' ? <FolderGlyph /> : e.type === 'link' ? <LinkGlyph /> : <FileGlyph />}</span>
                           {e.type === 'dir'
                             ? <button type="button" className="xfer-dir" onClick={() => go(joinPath(state.path, e.name))} title={`Open ${e.name}`}>{e.name}</button>
@@ -312,7 +312,7 @@ export function TransferPane({
       </div>
       {listing && !error && (
         <div className="xfer-pane-foot muted">
-          {selectable && state.selected.length ? `${state.selected.length.toLocaleString()} of ${entries.length.toLocaleString()} selected` : `${entries.length.toLocaleString()} items`}
+          {selectable && state.selected.length ? `${state.selected.length.toLocaleString()} of ${entries.length.toLocaleString()} selected` : `${entries.length.toLocaleString()} ${entries.length === 1 ? 'item' : 'items'}`}
           {listing.truncated && ' · showing the first 2,000 by name'}
           {selectable && state.selected.length > 0 && <Button size="xs" variant="ghost" onClick={() => setSelected([])}>Clear</Button>}
         </div>

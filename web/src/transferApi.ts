@@ -354,7 +354,7 @@ export function transferTitle(t: Pick<Transfer, 'label' | 'action' | 'files' | '
   const n = t.files.total >= 0 ? countWords(t.files.total) : ''
   if (n) return `${ACTION_TEXT[t.action]} ${n}`
   const one = t.source.paths.length === 1 ? baseName(t.source.paths[0]) : ''
-  return one ? `${ACTION_TEXT[t.action]} ${one}` : `${ACTION_TEXT[t.action]} ${t.source.paths.length} items`
+  return one ? `${ACTION_TEXT[t.action]} ${one}` : `${ACTION_TEXT[t.action]} ${plural(t.source.paths.length, 'item')}`
 }
 
 export function baseName(p: string): string {
@@ -423,6 +423,19 @@ export function sourcePaths(
 /** The library location id Transfers uses for a library. */
 export const libraryLocation = (libraryId: string) => `library:${libraryId}`
 
+/** The main library's location; Studio updates its index after a transfer. */
+export const MAIN_LIBRARY_LOCATION = libraryLocation('kb')
+
+/** Whether a transfer changed the main library's files: it wrote there, or
+ *  moved files out of it. */
+export function touchesMainLibrary(t: Pick<Transfer, 'action' | 'source' | 'destination'>): boolean {
+  return t.destination.location === MAIN_LIBRARY_LOCATION || (t.action === 'move' && t.source.location === MAIN_LIBRARY_LOCATION)
+}
+
+/** The event the Library tree and its details listen to, to read the main
+ *  library's files again. */
+export const KB_CHANGED_EVENT = 'ade-kb-changed'
+
 /** A Search or Query path as a transfer takes it: relative to the
  *  library's root, with no leading "./" or "/" and no trailing "/". Both
  *  pages print paths relative to the index root, which mirrors the
@@ -485,7 +498,8 @@ export function placesReady(locations: TransferLocation[], settings: TransferSet
   }
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`
+/** A count and its noun: "1 file", "3 files", "2 libraries". */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 
 /** The ready summary's parts, as short phrases. */
 export function readyParts(p: PlacesReady): string[] {

@@ -84,7 +84,7 @@ func newRig(t *testing.T) *rig {
 		Shell:     func(site, key string) ([]string, []string, error) { return []string{shell}, nil, nil },
 		Libraries: func(ctx context.Context, v Viewer) []LibraryLoc {
 			return append([]LibraryLoc{
-				{ID: "kb", Label: "Knowledge base", Writable: true, Indexed: true, FS: &LocalFS{Dir: r.kb}},
+				{ID: "kb", Label: "Knowledge base", Writable: true, Reindexed: true, FS: &LocalFS{Dir: r.kb}},
 				refLib(r.ro, v),
 				{ID: "far", Label: "Index only", Why: "Studio has only its index, not its files"},
 			}, append(append([]LibraryLoc{}, r.more...), r.libsFor(v)...)...)

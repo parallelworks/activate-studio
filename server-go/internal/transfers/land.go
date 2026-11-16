@@ -56,12 +56,14 @@ func (s *Service) verify(ctx context.Context, r *rec, p *planRec) error {
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return apierr.New(502, "%d of %d files did not arrive (the first is %s); nothing was put in place", len(missing), len(want), missing[0])
+		return apierr.New(502, "%d of %s did not arrive (the first is %s); nothing was put in place", len(missing), count(len(want), "file", "files"), missing[0])
 	}
 	if p.req.Options.checksum() || p.Action == ActionMove {
 		return s.verifySums(ctx, r, p, r.Stage, "nothing was put in place")
 	}
-	s.set(r, func() { r.event(s.now(), "All %d files arrived with their sizes", len(p.files)) })
+	s.set(r, func() {
+		r.event(s.now(), "%s with %s", arrivedAll(len(p.files)), plural(len(p.files), "its size", "their sizes"))
+	})
 	return nil
 }
 
@@ -82,7 +84,7 @@ func (s *Service) verifySums(ctx context.Context, r *rec, p *planRec, under, aft
 			return apierr.New(502, "%s arrived with different contents (%s); %s", f.Out, kind, after)
 		}
 	}
-	s.set(r, func() { r.event(s.now(), "%s matches for all %d files", kind, len(p.files)) })
+	s.set(r, func() { r.event(s.now(), "%s %s", kind, matchesAll(len(p.files))) })
 	return nil
 }
 
@@ -112,12 +114,14 @@ func (s *Service) verifyDirect(ctx context.Context, r *rec, p *planRec) error {
 		}
 	}
 	if len(missing) > 0 {
-		return apierr.New(502, "%d of %d files did not arrive (the first is %s); %s", len(missing), len(p.files), missing[0], after)
+		return apierr.New(502, "%d of %s did not arrive (the first is %s); %s", len(missing), count(len(p.files), "file", "files"), missing[0], after)
 	}
 	if p.req.Options.checksum() || p.Action == ActionMove {
 		return s.verifySums(ctx, r, p, p.dstPath, after)
 	}
-	s.set(r, func() { r.event(s.now(), "All %d files arrived with their sizes", len(p.files)) })
+	s.set(r, func() {
+		r.event(s.now(), "%s with %s", arrivedAll(len(p.files)), plural(len(p.files), "its size", "their sizes"))
+	})
 	return nil
 }
 
@@ -133,7 +137,7 @@ func (s *Service) verifyBare(r *rec, p *planRec, got map[string]FileInfo) error 
 	reported := r.Files.Done
 	s.store.mu.Unlock()
 	if reported > 0 && reported != int64(len(got)) {
-		return apierr.New(502, "CONDUIT reported %d files and %d arrived; nothing was put in place", reported, len(got))
+		return apierr.New(502, "CONDUIT reported %s and %d arrived; nothing was put in place", count(int(reported), "file", "files"), len(got))
 	}
 	p.files = nil
 	var bytes int64
@@ -150,7 +154,7 @@ func (s *Service) verifyBare(r *rec, p *planRec, got map[string]FileInfo) error 
 	s.set(r, func() {
 		r.Files = Count{int64(len(got)), int64(len(got))}
 		r.Bytes = Count{bytes, bytes}
-		r.event(s.now(), "%d files arrived (%s); checked against CONDUIT's count only", len(got), humanBytes(bytes))
+		r.event(s.now(), "%s arrived (%s); checked against CONDUIT's count only", count(len(got), "file", "files"), humanBytes(bytes))
 	})
 	return nil
 }
@@ -176,7 +180,7 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 		landed = append(landed, done...)
 		if err != nil {
 			s.indexLanded(ctx, p, landed)
-			return apierr.New(statusOrDefault(err), "%s. %d of %d files are in place; the rest were removed", messageOf(err), len(landed), len(pairs))
+			return apierr.New(statusOrDefault(err), "%s. %d of %s %s in place; the rest were removed", messageOf(err), len(landed), count(len(pairs), "file", "files"), plural(len(landed), "is", "are"))
 		}
 	}
 	replaced := 0
@@ -188,7 +192,7 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 	s.set(r, func() {
 		r.Replaced = replaced
 		r.Files.Done, r.Bytes.Done = int64(len(landed)), max(r.Bytes.Total, r.Bytes.Done)
-		r.event(s.now(), "%d files in place in %s%s", len(landed), orRoot(p.dstPath), when(replaced > 0, fmt.Sprintf(", %d replaced", replaced)))
+		r.event(s.now(), "%s in place in %s%s", count(len(landed), "file", "files"), orRoot(p.dstPath), when(replaced > 0, fmt.Sprintf(", %d replaced", replaced)))
 	})
 	s.indexLanded(ctx, p, landed)
 
@@ -213,9 +217,9 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 		removed, err := dst.Remove(ctx, del, p.deleteDirs)
 		s.set(r, func() {
 			r.Deleted = len(removed)
-			r.event(s.now(), "%d extra files deleted at the destination", len(removed))
+			r.event(s.now(), "%s deleted at the destination", count(len(removed), "extra file", "extra files"))
 		})
-		if p.dst.Indexed && p.dst.libID != "" {
+		if p.dst.reindexed && p.dst.libID != "" {
 			s.d.Index.Removed(ctx, p.dst.libID, removed, p.deleteDirs)
 		}
 		if err != nil {
@@ -228,11 +232,11 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 			rels = append(rels, f.Rel)
 		}
 		removed, err := p.src.fs.Remove(ctx, rels, p.srcDirs)
-		if p.src.Indexed && p.src.libID != "" {
+		if p.src.reindexed && p.src.libID != "" {
 			s.d.Index.Removed(ctx, p.src.libID, removed, p.srcDirs)
 		}
 		s.set(r, func() {
-			r.event(s.now(), "%d originals removed from %s", len(removed), p.src.Label)
+			r.event(s.now(), "%s removed from %s", count(len(removed), "original", "originals"), p.src.Label)
 			if p.Skipped.Hidden+p.Skipped.Links > 0 {
 				r.event(s.now(), "Folders holding hidden entries or links stay at the source with those in them")
 			}
@@ -241,7 +245,7 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 			return apierr.New(502, "the copy is in place, but removing the originals stopped: %s", messageOf(err))
 		}
 		if len(removed) != len(rels) {
-			return apierr.New(502, "the copy is in place, but %d of %d originals could not be removed", len(rels)-len(removed), len(rels))
+			return apierr.New(502, "the copy is in place, but %d of %s could not be removed", len(rels)-len(removed), count(len(rels), "original", "originals"))
 		}
 	}
 	if len(p.IndexNotes) > 0 {
@@ -255,7 +259,7 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 }
 
 func (s *Service) indexLanded(ctx context.Context, p *planRec, landed []string) {
-	if len(landed) > 0 && p.dst.Indexed && p.dst.libID != "" {
+	if len(landed) > 0 && p.dst.reindexed && p.dst.libID != "" {
 		s.d.Index.Landed(ctx, p.dst.libID, landed)
 	}
 }
