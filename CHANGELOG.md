@@ -2,6 +2,34 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.203 (2026-11-16)
+
+### Search time limit setting, Stop, and queries that end on the host (#722)
+
+Each library's search runs until a time limit, now a setting, and a search can be stopped. Either way the query ends on the library's host instead of running on after Studio stops waiting.
+
+**Setting.** Settings, Indexing, Sync and search, **Search time limit**: 10 s, 20 s (default), 30 s, 1, 2, 5, 10, 30 min, 1 hour, or No limit. Saved as `searchTimeLimitSec` (server accepts 0 to 86400). Before one is saved, `STUDIO_SEARCH_DEADLINE_MS` still sets it. The limit now applies to a library searched alone as well, which previously waited without limit.
+
+**At the limit.** The library's search is cancelled and it is left out, with `timeLimit: true` on its `omitted` entry. The Search page's left-out line shows **Change the search time limit**, opening the setting. The chat's `search_kb` tells the model the user can raise the limit there, replacing the old advice to search the library alone.
+
+**Stop.** The Search page shows **Stop** while a search runs; it aborts the request, and the server cancels every library's query. The chat's stop already cancels the request context the search tool uses.
+
+**Ending the query on the host.** The remote session loop (Go `loop`, Node `LOOP`, byte for byte; golden regenerated) reads requests through a fifo and runs each command in the background with its pid kept. When the session's input closes, the reader kills the running command and the loop and removes its temp dir. Where `mkfifo` fails, it reads stdin as before. `Pool.Run` on a cancelled context ends the session of a command that has run for a second or more (sooner, the answer is dropped and the session kept). `channel.kill` closes stdin before killing, so a timeout also ends the command on the host. GUFI command timeouts under a search are raised to the limit plus 10 s (a day with no limit).
+
+**Tests.**
+- Go remote: a stopped command and a timed-out command are gone on the host, and the next request gets a new session; a quick cancel keeps the session.
+- Gated real-sshd test (`STUDIO_TEST_SSHD=1`), passed locally.
+- Go search: one library hangs, the other answers, a 2 s limit leaves the hung one out marked `timeLimit` and kills its gufi_query; a single library has the limit; a search stopped with no limit kills its query and leaves nothing out on that account.
+- Settings validation and the effective-settings golden.
+- Web: the setting link, Stop aborting the request, and the choices.
+
+Docs: HELP, README, LIBRARIES, REFERENCE.
+
+
+**Also.** The change log test on main fails since #721: its v1.202 section was a paragraph with no pull request entry. The second commit lists #720 and #719 there, each pointing to Preview v1.201.1.
+
+**CI.** `ubuntu-latest` moved to 26.04, whose Python 3.14 has no pinned indexer wheels, so `build-and-test` failed in `fetch_embed.py` before its tests. The third commit runs that job on `ubuntu-24.04`, with a note to move back once the wheels cover 3.14.
+
 ## v1.202 (2026-11-16)
 
 ### Libraries: a copy of a Transfers location, kept in step and indexed (#720)
