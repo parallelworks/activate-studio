@@ -31,7 +31,7 @@ type Server struct {
 	cfg    config.Config
 	log    *slog.Logger
 	ported *http.ServeMux
-	node   *httputil.ReverseProxy // nil without a Node server
+	node   http.Handler // a nodeProxy; nil without a Node server
 	static *compressCache
 	// front verifies identity and hands it to Node (docs/GO-PORT.md,
 	// Stage 1); nil passes identity headers through to Node unchanged.
@@ -259,8 +259,33 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) string {
 	return "none"
 }
 
-func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) *httputil.ReverseProxy {
-	return &httputil.ReverseProxy{
+// nodeProxy hands a request to Node in full duplex, so that the request
+// body and the answer can be in flight together.
+//
+// The proxy's transport sends the request body to Node from its own
+// goroutine, and after the body's last byte it reads once more to see the
+// end. net/http's default (half duplex) closes an unread request body when
+// the answer's header is written. For a POST whose answer streams
+// (/api/chat/stream), Node can answer between those two reads; the header
+// then went out, the body was closed, the transport's last read failed with
+// "read after close", and the transport dropped its connection to Node,
+// cutting the stream after its first event (seen as the occasional
+// TestStreamsAreNotBuffered failure in CI). Full duplex leaves the body to
+// the transport, and the server still drains or closes what is left when
+// the handler returns.
+type nodeProxy struct{ rp *httputil.ReverseProxy }
+
+func (p nodeProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.ContentLength != 0 {
+		// Reaches the connection through recorder.Unwrap. A writer that
+		// cannot (httptest.ResponseRecorder) keeps the default.
+		_ = http.NewResponseController(w).EnableFullDuplex()
+	}
+	p.rp.ServeHTTP(w, r)
+}
+
+func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) http.Handler {
+	return nodeProxy{rp: &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			// Node sees the host the browser asked for, as it does today.
@@ -292,7 +317,7 @@ func newProxy(target *url.URL, log *slog.Logger, front *auth.Front) *httputil.Re
 			log.Warn("node unreachable", "path", r.URL.Path, "err", err.Error())
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "the Node server is not answering"})
 		},
-	}
+	}}
 }
 
 // nodeTransport is how the proxy reaches Node. http.DefaultTransport keeps
