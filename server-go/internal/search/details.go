@@ -13,6 +13,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
@@ -361,6 +362,14 @@ func (e *Engine) kindOf(l libraries.Library, viewer libraries.Viewer) string {
 		return "GUFI index on this computer"
 	}
 	d := e.userDef(viewer, l.ID)
+	// The card adds whether it is read only, so these say whose account
+	// reads it.
+	if d != nil && d.Space != nil {
+		return "Your space on " + remote.ShortName(l.Site) + ", as " + d.Space.Account
+	}
+	if d != nil && d.Shared != nil {
+		return "Shared by " + d.Shared.From + " on " + remote.ShortName(l.Site) + ", as " + d.Shared.Account
+	}
 	if d != nil && d.Build != nil {
 		over := "pw ssh"
 		if d.IsSSH() {
@@ -599,7 +608,7 @@ func (e *Engine) withKeptLabels(l libraries.Library, sub string, v Details) Deta
 	if l.Primary || e.Tags == nil {
 		return v
 	}
-	ents := e.Tags.Library.Entries(l.ID)
+	ents := e.Tags.Library.Entries(kb.StateKey(l.ID, l.IndexRoot))
 	m := entriesMap(ents)
 	key := strings.Trim(sub, "/")
 	own := uniqStr(append(append([]string{}, v.Labels.Own...), m[key]...))

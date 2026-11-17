@@ -425,7 +425,7 @@ func (m *Module) retryChoices(r *http.Request, failed string) []choice {
 	if u := user(r); u != nil {
 		viewer = strings.ToLower(u.Username)
 	}
-	key := m.listingKey(m.Keys.Resolve(userID(r)), viewer)
+	key := m.listingKey(m.Keys.ResolveOrSignIn(userID(r)), viewer)
 	m.listings.mu.Lock()
 	hit, ok := m.listings.hits[key]
 	m.listings.mu.Unlock()

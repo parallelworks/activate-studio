@@ -339,6 +339,17 @@ func SiteName(site string) string {
 	return rest
 }
 
+// ShortName is a site as a person reads it: SiteName, with a cluster
+// named by its platform address (pw://owner/name) shown by its name.
+func ShortName(site string) string {
+	if rest, ok := strings.CutPrefix(site, "pw://"); ok {
+		if i := strings.LastIndex(rest, "/"); i >= 0 && i < len(rest)-1 {
+			return rest[i+1:]
+		}
+	}
+	return SiteName(site)
+}
+
 // IsSSH reports whether a site is reached over plain ssh.
 func IsSSH(site string) bool { return strings.HasPrefix(site, SSHScheme) }
 

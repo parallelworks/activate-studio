@@ -44,6 +44,11 @@ type Providers struct {
 	// cookieHeader rehydrates the session first, as main.ts's onRequest hook
 	// does. Owner: chat track. Default: nil, none known.
 	PersonalCred func(sub, cookieHeader string) (key, baseURL string, ok bool)
+	// SignInKey is the access token of the person's own pw CLI sign-in,
+	// made through the Studio (internal/personal), "" for none. Work on the
+	// person's clusters prefers it to a pasted key, and model calls use it
+	// when no key was added. Owner: personal. Default: nil, none.
+	SignInKey func(sub string) string
 	// InvalidateMCP is mcpClient.ts's invalidateRemote(), after a settings
 	// write. Owner: chat track. Node rereads its MCP status when the
 	// settings file changes (mcpClient.ts), so the default does nothing.

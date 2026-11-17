@@ -5,6 +5,7 @@ import {
 } from '@parallelworks/ui'
 import { CloseIcon } from '@parallelworks/ui/icons'
 import './ModelAccessSection.css'
+import { PlatformSignInPanel } from './PlatformSignInPanel'
 
 /**
  * Settings, Model access: where the Studio's model calls and platform calls
@@ -634,6 +635,8 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
       {aiEnabled && !offline && (single ? access.platform.source !== 'none' : access.platform.source === 'key') && (
         <SubscriptionsPanel platformOrigin={access.platformOrigin} host={access.platform.host} onChanged={() => { announceChange(); void load(true) }} />
       )}
+
+      {!single && <PlatformSignInPanel />}
 
       <p className="muted key-trust">
         {single

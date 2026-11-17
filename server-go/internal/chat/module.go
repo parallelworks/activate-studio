@@ -119,6 +119,12 @@ func New(a *app.App) *Module {
 	m.held = newHeldStore(a.Cfg.IndexBase)
 	m.made = newRenderStore(a.Cfg.IndexBase)
 	m.Keys = modelkeys.New(a.Cfg.IndexBase, a.Cfg.AuthEnabled)
+	m.Keys.SignIn = func(sub string) string {
+		if f := a.Providers.SignInKey; f != nil {
+			return f(sub)
+		}
+		return ""
+	}
 	m.LLM = llm.New(m.gatewayBase, m.GatewayKey)
 	m.Conv = conversations.New(a.Cfg.IndexBase, a.Cfg.KBRoot, conversations.Hooks{
 		Label: func(ctx context.Context, paths, add []string) error {
@@ -190,7 +196,7 @@ func (m *Module) cred(r *http.Request) *modelkeys.Cred {
 	if id != "" {
 		m.Keys.Hydrate(id, r.Header.Get("Cookie"))
 	}
-	return m.Keys.Resolve(id)
+	return m.Keys.ResolveOrSignIn(id)
 }
 
 /* ---- the gateway and the deployment credential ---- */

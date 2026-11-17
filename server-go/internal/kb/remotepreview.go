@@ -38,7 +38,7 @@ func (m *Module) previewSource(r *http.Request, fresh bool) (Library, string, st
 		return Library{}, "", "", Error(409, "%s has no files on this host", lib.Label)
 	}
 	rel := qs(r, "path")
-	abs, err := Resolve(rel, m.Roots.remoteCopies(lib.ID))
+	abs, err := Resolve(rel, m.Roots.remoteCopies(lib.StateKey()))
 	if err != nil {
 		return Library{}, "", "", err
 	}
@@ -54,11 +54,18 @@ func (m *Module) previewSource(r *http.Request, fresh bool) (Library, string, st
 	if old, err := os.ReadFile(abs); err == nil && bytes.Equal(old, data) {
 		return lib, rel, abs, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+	// The copies are closed to other accounts on this host, whatever the
+	// index base's own mode: they are whole files from libraries elsewhere.
+	top := filepath.Join(m.Roots.IndexBase, "remote-previews")
+	if err := os.MkdirAll(top, 0o700); err != nil {
+		return Library{}, "", "", err
+	}
+	os.Chmod(top, 0o700)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o700); err != nil {
 		return Library{}, "", "", err
 	}
 	tmp := abs + ".part"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return Library{}, "", "", err
 	}
 	if err := os.Rename(tmp, abs); err != nil {

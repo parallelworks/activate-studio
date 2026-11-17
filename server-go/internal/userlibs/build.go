@@ -387,6 +387,22 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 	if err != nil {
 		return nil, 0, err
 	}
+	return m.addBuildFor(ctx, w, transport, r, b, nil)
+}
+
+// addOpts make a built library a person's space or a folder shared with
+// them (spaces.go, shares.go).
+type addOpts struct {
+	IDBase, Label string
+	Space         *libraries.SpaceInfo
+	Shared        *libraries.SharedInfo
+}
+
+// addBuildFor is addBuild for a host already chosen.
+func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *buildReq, b *jsonv.Object, o *addOpts) (*libraries.UserDef, int, error) {
+	if o == nil {
+		o = &addOpts{}
+	}
 	p := m.probeBuild(ctx, r.host, r.spec)
 	if !p.OK {
 		return nil, 0, notPassed("The check did not pass.", p)
@@ -406,6 +422,13 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 	}
 	host := r.conn.Site[strings.LastIndex(r.conn.Site, "@")+1:]
 	id := uniqueID(defs, idBase(host+"-"+name))
+	fallback := name
+	switch {
+	case o.Space != nil:
+		id, fallback = uniqueID(defs, idBase("space-"+name)), "My space"
+	case o.IDBase != "":
+		id, fallback = uniqueID(defs, idBase(o.IDBase)), o.Label
+	}
 	// The depth is stored with the library, the default included, so a
 	// later default leaves it as built.
 	settings := map[string]any{"depth": string(libraries.NewLibraryDepth)}
@@ -414,11 +437,11 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 	} else if b.Has("meaning") {
 		settings = map[string]any{"meaning": field(b, "meaning")}
 	}
-	if err := m.Settings.Save(id, settings); err != nil {
+	if err := m.Settings.Save(settingsKey(w.owner(), id), settings); err != nil {
 		return nil, 0, err
 	}
 	build := &libraries.RemoteBuild{ID: newBuildID(id), IndexDir: *p.IndexDir, SourceRoot: *p.SourceRoot, GufiBin: deref(p.GufiBin),
-		Model: p.Model, StartedAt: isoNow(), Depth: m.Settings.Depth(id), Progress: preparing()}
+		Model: p.Model, StartedAt: isoNow(), Depth: m.Settings.Depth(settingsKey(w.owner(), id)), Progress: preparing()}
 	creating := false
 	for _, c := range p.Create {
 		if c == build.SourceRoot {
@@ -432,9 +455,9 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 	if transport == "ssh" {
 		resource = r.host.Site
 	}
-	d := libraries.UserDef{ID: id, Label: label(field(b, "label"), name), Transport: transport, Existing: ptr(false), Site: r.conn.Site,
+	d := libraries.UserDef{ID: id, Label: label(field(b, "label"), fallback), Transport: transport, Existing: ptr(false), Site: r.conn.Site,
 		Destination: r.conn.Destination, OS: nonEmpty(p.OS), GufiVersion: p.GufiVersion, Resource: resource, SourceDir: build.SourceRoot,
-		State: "building", Build: build}
+		State: "building", Build: build, Space: o.Space, Shared: o.Shared}
 	if r.conn.Port != 0 {
 		d.Port = ptr(r.conn.Port)
 	}
@@ -470,7 +493,7 @@ func (m *Module) rebuildRemote(ctx context.Context, w who, owner string, d *libr
 			build.Model = &md
 		}
 	}
-	build.ID, build.StartedAt, build.Depth, build.Progress = newBuildID(d.ID), isoNow(), m.Settings.Depth(d.ID), preparing()
+	build.ID, build.StartedAt, build.Depth, build.Progress = newBuildID(d.ID), isoNow(), m.Settings.Depth(settingsKey(owner, d.ID)), preparing()
 	if err := m.startRemote(ctx, site, key, &build, false); err != nil {
 		return nil, err
 	}

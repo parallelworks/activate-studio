@@ -45,6 +45,12 @@ type Cmd interface {
 // break is refused since that output is line based.
 const tool = `set -f
 mark=$1; cmd=$2; root=$3; shift 3
+# like: in a private location (PRIV=1, a person's space), what a write
+# makes is closed to other accounts, unless the folder it lands in is
+# already open to them, when it is readable as they read the folder. The
+# nearest folder that exists decides, so a path made in several levels
+# takes one answer. A default ACL, where there is one, wins over either.
+like() { [ "${PRIV:-}" = 1 ] || return 0; local a=$1; while [ ! -d "$a" ]; do a=$(dirof "$a"); done; if [ -n "$(find -- "$a" -maxdepth 0 -perm -004 2>/dev/null)" ]; then umask 022; else umask 077; fi; }
 [ "$cmd" = read ] || printf '%s\n' "$mark"
 fail() { printf '%s\n' "$2" >&2; exit "$1"; }
 [ "$cmd" = home ] && { cd -P ~ 2>/dev/null && pwd -P; exit; }
@@ -56,6 +62,19 @@ cd -- "$R" || fail 3 "cannot open $root"
 Rp=${R%/}/
 inside() { local d; d=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1; case "$d/" in "$Rp"*) return 0;; esac; return 1; }
 dirof() { case "$1" in */*) printf '%s' "${1%/*}";; *) printf .;; esac; }
+# plain: in a private location, the way to a folder a write changes goes
+# through no link. A person a folder is shared with for writing can make
+# links in it, and the owner's writes must not follow one to another of
+# their folders (one open to more people, say). The nearest part that
+# exists is looked at, before anything is made.
+plain() {
+  [ "${PRIV:-}" = 1 ] || return 0
+  local a=$1
+  while [ ! -e "$a" ] && [ ! -L "$a" ]; do a=$(dirof "$a"); done
+  [ -L "$a" ] && return 1
+  [ -d "$a" ] || a=$(dirof "$a")
+  [ "$(cd -P -- "$a" 2>/dev/null && pwd -P)" = "$(cd -L -- "$a" 2>/dev/null && pwd -L)" ]
+}
 G=0; find . -maxdepth 0 -printf '' >/dev/null 2>&1 && G=1
 F='%y\t%s\t%T@\t%m\t%p\0'
 SF='%HT%t%z%t%m%t%Lp%t%N'
@@ -106,16 +125,18 @@ read)
   printf '%s\n' "$mark"; exec cat -- "./$n" ;;
 write)
   p=$1; d=$(dirof "$p"); n=${p##*/}
-  mkdir -p -- "$d" 2>/dev/null; inside "$d" || fail 6 "$p leads outside the location"
+  plain "$d" || fail 6 "$p goes through a link"
+  like "$p"; mkdir -p -- "$d" 2>/dev/null; inside "$d" || fail 6 "$p leads outside the location"
   cd -P -- "$d" || fail 8 "$p: the folder cannot be opened"
   set -C; cat > "./$n" || fail 8 "$p could not be written"
   [ -n "$2" ] && TZ=UTC touch -t "$2" -- "./$n" 2>/dev/null
   [ "$3" = x ] && chmod u+x -- "./$n" 2>/dev/null
   exit 0 ;;
-mkdir) [ -z "$1" ] && exit 0; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] || fail 8 "$1 could not be made"; inside "$1" || fail 6 "$1 leads outside the location" ;;
+mkdir) [ -z "$1" ] && exit 0; plain "$1" || fail 6 "$1 goes through a link"; like "$1"; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] || fail 8 "$1 could not be made"; inside "$1" || fail 6 "$1 leads outside the location" ;;
 land)
   while IFS= read -r -d '' a && IFS= read -r -d '' b && IFS= read -r -d '' f; do
-    d=$(dirof "$b"); mkdir -p -- "$d" 2>/dev/null
+    d=$(dirof "$b"); plain "$d" || fail 6 "$b goes through a link"; plain "$(dirof "$a")" || fail 6 "$a goes through a link"
+    like "$b"; mkdir -p -- "$d" 2>/dev/null
     inside "$d" || fail 6 "$b leads outside the location"
     inside "$(dirof "$a")" || fail 6 "$a leads outside the location"
     if [ -e "$b" ] || [ -L "$b" ]; then
@@ -131,6 +152,7 @@ land)
 remove)
   while IFS= read -r -d '' k && IFS= read -r -d '' p; do
     inside "$(dirof "$p")" || fail 6 "$p leads outside the location"
+    plain "$(dirof "$p")" || fail 6 "$p goes through a link"
     if [ "$k" = f ]; then [ -f "$p" ] && [ ! -L "$p" ] && { rm -f -- "$p" || fail 9 "$p could not be removed"; printf '%s\0' "$p"; }
     else rmdir -- "$p" 2>/dev/null; fi
   done; exit 0 ;;
@@ -140,6 +162,15 @@ rmstage)
   inside "$(dirof "$1")" || fail 6 "$1 leads outside the location"
   [ -L "$1" ] && fail 7 "$1 is a link"
   rm -rf -- "$1" ;;
+rmtree)
+  while IFS= read -r -d '' p; do
+    case "$p" in ''|.|./) fail 6 "refusing the location itself";; esac
+    [ -e "$p" ] || [ -L "$p" ] || continue
+    inside "$(dirof "$p")" || fail 6 "$p leads outside the location"
+    plain "$(dirof "$p")" || fail 6 "$p goes through a link"
+    rm -rf -- "$p" || fail 9 "$p could not be removed"
+    printf '%s\0' "$p"
+  done; exit 0 ;;
 *) fail 2 "unknown command" ;;
 esac`
 
@@ -154,6 +185,9 @@ type RemoteFS struct {
 	Timeout time.Duration
 	// RsyncPath is the rsync program on the host, "" for rsync on its PATH.
 	RsyncPath string
+	// Private: a person's own space, where what the helper writes is closed
+	// to other accounts unless the folder it lands in is open to them.
+	Private bool
 }
 
 func (r *RemoteFS) Where() string { return r.Name }
@@ -164,7 +198,18 @@ func (r *RemoteFS) Key() string   { return r.KeyText }
 // toolArgv is the helper's command line: the marker it prints first, so
 // what a login prints before it is dropped, then the command.
 func toolArgv(mark, cmd, root string, args ...string) []string {
-	return append([]string{"bash", "-c", tool, "studio", mark, cmd, root}, args...)
+	return toolArgvFor(false, mark, cmd, root, args...)
+}
+
+// privateTool is the helper for a private location (RemoteFS.Private).
+const privateTool = "PRIV=1\n" + tool
+
+func toolArgvFor(private bool, mark, cmd, root string, args ...string) []string {
+	script := tool
+	if private {
+		script = privateTool
+	}
+	return append([]string{"bash", "-c", script, "studio", mark, cmd, root}, args...)
 }
 
 // afterMark is a helper's output after its marker line; ok false when the
@@ -179,8 +224,12 @@ func afterMark(out []byte, mark string) ([]byte, bool) {
 
 // runTool runs a helper command on a site and drops a login's output.
 func runTool(ctx context.Context, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
+	return runToolFor(ctx, false, run, site, key, timeout, input, cmd, root, args...)
+}
+
+func runToolFor(ctx context.Context, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
 	mark := marker()
-	res, err := run.RunOnce(ctx, site, key, toolArgv(mark, cmd, root, args...), timeout, input)
+	res, err := run.RunOnce(ctx, site, key, toolArgvFor(private, mark, cmd, root, args...), timeout, input)
 	if err != nil {
 		return res, false, err
 	}
@@ -211,7 +260,7 @@ func (r *RemoteFS) run(ctx context.Context, input io.Reader, cmd string, args ..
 	if t <= 0 {
 		t = 10 * time.Minute
 	}
-	res, _, err := runTool(ctx, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
+	res, _, err := runToolFor(ctx, r.Private, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
 	if err != nil {
 		return res, r.named(502, messageOf(err))
 	}
@@ -491,7 +540,7 @@ func (r *RemoteFS) Write(ctx context.Context, rel string, src io.Reader, mtime i
 	if mode&0o100 != 0 {
 		x = "x"
 	}
-	cmd, err := r.command(toolArgv(marker(), "write", r.Dir, rel, touchTime(mtime), x))
+	cmd, err := r.command(toolArgvFor(r.Private, marker(), "write", r.Dir, rel, touchTime(mtime), x))
 	if err != nil {
 		return 0, err
 	}
@@ -568,6 +617,14 @@ func (r *RemoteFS) Remove(ctx context.Context, files, dirs []string) ([]string, 
 		}
 	}
 	res, err := r.run(ctx, nulList(in), "remove")
+	return splitNul(res.Stdout), err
+}
+
+// RemoveTrees removes files and folders, folders with everything in them;
+// a link is removed itself, never what it points to. It answers what it
+// removed.
+func (r *RemoteFS) RemoveTrees(ctx context.Context, rels []string) ([]string, error) {
+	res, err := r.run(ctx, nulList(rels), "rmtree")
 	return splitNul(res.Stdout), err
 }
 

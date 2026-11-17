@@ -77,6 +77,12 @@ type Module struct {
 	// Helpers is a folder of the helpers by platform
 	// (<platform>/studio-remote), looked in first (STUDIO_REMOTE_HELPERS).
 	Helpers string
+	// GufiBin is the Studio's own GUFI (GUFI_BIN); a space gets a copy of
+	// the bundle above it (spaces.go).
+	GufiBin string
+	spaceState
+	spaceWrites
+	shareStore
 }
 
 type follower struct {
@@ -108,6 +114,7 @@ func Of(a *app.App) *Module {
 	m.Settings = libraries.Of(a).FileSettings()
 	m.eng = search.Of(a)
 	m.Helpers = os.Getenv("STUDIO_REMOTE_HELPERS")
+	m.GufiBin = a.Cfg.GufiBin
 	m.Jobs = func() *kb.Jobs {
 		if kb.Default != nil {
 			return kb.Default.Jobs
@@ -116,6 +123,13 @@ func Of(a *app.App) *Module {
 	}
 	m.Background = func() context.Context { return context.Background() }
 	m.OwnerKey = func(owner, cookie string) (string, bool) {
+		// The person's own platform sign-in first: it renews itself and
+		// was checked to be theirs.
+		if f := a.Providers.SignInKey; f != nil && owner != single {
+			if k := f(owner); k != "" {
+				return k, true
+			}
+		}
 		if a.Providers.PersonalCred == nil {
 			return "", false
 		}
@@ -154,6 +168,17 @@ func New(p *platform.Platform, pool *remote.Pool, runners *remote.Runners, index
 		followers: map[string]*follower{},
 	}
 	m.Jobs = m.ownJobs
+	// What earlier versions kept for each person under the index base
+	// (their libraries, maps with text from their files, preview copies)
+	// was open to the index base's group; it is closed when the Studio
+	// starts (libraries.PrivateDir).
+	if indexBase != "" {
+		for _, d := range []string{"users", "remote-previews"} {
+			if p := filepath.Join(indexBase, d); dirExists(p) {
+				os.Chmod(p, 0o700)
+			}
+		}
+	}
 	m.Background = context.Background
 	m.Notify = func(string, string) {}
 	return m
@@ -374,6 +399,7 @@ func intOf(p *int) int {
 func Register(mux *http.ServeMux, a *app.App) {
 	m := Of(a)
 	m.Routes(mux, a.Log)
+	kb.SpaceFiles = m.SpaceFiles()
 	if !a.Cfg.FrontAuth {
 		registerWhoami(mux, a)
 	}
@@ -408,7 +434,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	mux.HandleFunc("POST "+base+"/ssh/test", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
 		if !w.sshAllowed() {
@@ -429,7 +455,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	mux.HandleFunc("POST "+base+"/pw/test", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
 		_, key, err := m.pwKey(w)
@@ -447,7 +473,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	for _, t := range []string{"ssh", "pw"} {
 		mux.HandleFunc("POST "+base+"/"+t+"/build/test", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
@@ -462,22 +488,57 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 			if err != nil {
 				return nil, err
 			}
-			return m.public(d, job), nil
+			return m.public(w.owner(), d, job), nil
 		}))
 	}
+	mux.HandleFunc("GET "+base+"/space", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		return m.spaceStatus(w), nil
+	}))
+	mux.HandleFunc("POST "+base+"/space/test", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		return m.testSpace(r.Context(), w, b)
+	}))
+	mux.HandleFunc("POST "+base+"/space", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		d, job, err := m.addSpace(context.WithoutCancel(r.Context()), w, b)
+		if err != nil {
+			return nil, err
+		}
+		return m.public(w.owner(), d, job), nil
+	}))
+	mux.HandleFunc("GET "+base+"/{id}/shares", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		return m.listShares(w, r.PathValue("id"))
+	}))
+	mux.HandleFunc("POST "+base+"/{id}/shares", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		return m.addShare(context.WithoutCancel(r.Context()), w, r.PathValue("id"), b)
+	}))
+	mux.HandleFunc("DELETE "+base+"/{id}/shares/{share}", h(true, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		if err := m.removeShare(context.WithoutCancel(r.Context()), w, r.PathValue("id"), r.PathValue("share")); err != nil {
+			return nil, err
+		}
+		return jsonv.NewObject("ok", true), nil
+	}))
+	mux.HandleFunc("GET "+base+"/shared-with-me", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		return m.sharedWithMe(r.Context(), w)
+	}))
+	mux.HandleFunc("POST "+base+"/shared-with-me/{share}/add", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		d, job, err := m.addShared(context.WithoutCancel(r.Context()), w, r.PathValue("share"), b)
+		if err != nil {
+			return nil, err
+		}
+		return m.public(w.owner(), d, job), nil
+	}))
 	mux.HandleFunc("POST "+base+"/{id}/refresh", h(true, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 		d, err := m.refresh(r.Context(), w, r.PathValue("id"))
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	mux.HandleFunc("PUT "+base+"/{id}/ssh-options", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
 		d, err := m.setSSHOptions(r.Context(), w, r.PathValue("id"), field(b, "sshOptions"))
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	// Search and Query call this as they open, so the first query after a
 	// long gap does not wait for the ssh login.
@@ -495,7 +556,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 func (m *Module) list(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 	libs := []any{}
 	for _, d := range m.listDefs(r.Context(), w) {
-		libs = append(libs, m.public(&d, 0))
+		libs = append(libs, m.public(w.owner(), &d, 0))
 	}
 	why := m.pwUnavailable(w)
 	return jsonv.NewObject("libraries", libs, "available", w.owner() != "", "ssh", w.sshAllowed(), "pw", why == "",
@@ -544,7 +605,7 @@ func (m *Module) pwSystems(r *http.Request, w who, _ *jsonv.Object) (any, error)
 }
 
 // public is publicUserLibrary: the shape Settings shows, no keys.
-func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
+func (m *Module) public(owner string, d *libraries.UserDef, job int) *jsonv.Object {
 	transport := d.Transport
 	if transport == "" {
 		transport = "pw"
@@ -552,7 +613,7 @@ func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
 	built := d.Build != nil
 	var meaning, depth any
 	if built {
-		meaning, depth = m.Settings.Meaning(d.ID), m.Settings.Depth(d.ID)
+		meaning, depth = m.Settings.Meaning(settingsKey(owner, d.ID)), m.Settings.Depth(settingsKey(owner, d.ID))
 	}
 	var reached any
 	if site := sshSiteOf(d); site != "" {
@@ -617,6 +678,12 @@ func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
 		"fullText", d.FullText != nil && *d.FullText, "vectors", d.Vectors != nil && *d.Vectors, "formatNote", formatNote, "readThrough", readThrough,
 		"built", built, "indexDir", indexDir, "progress", progress, "builtDepth", optional(d.BuiltDepth), "gaps", gaps,
 		"buildingDepth", buildingDepth)
+	if d.Space != nil {
+		o.Set("space", jsonv.NewObject("account", d.Space.Account, "acl", d.Space.ACL, "fs", d.Space.FS))
+	}
+	if d.Shared != nil {
+		o.Set("shared", jsonv.NewObject("from", d.Shared.From, "access", d.Shared.Access, "share", d.Shared.ShareID))
+	}
 	if job != 0 {
 		o.Set("job", float64(job))
 	}
@@ -971,6 +1038,16 @@ func (m *Module) remove(w who, id string) error {
 	if owner == "" {
 		return apierr.New(404, "no such library")
 	}
+	var gone *libraries.UserDef
+	if d := find(m.load(owner), id); d != nil {
+		x := *d
+		gone = &x
+	}
+	// A space's shares end with it; a library made from a share leaves it.
+	if gone != nil && gone.Space != nil {
+		m.endShares(w, owner, gone)
+	}
+	defer m.forgetAdopted(owner, gone)
 	err := m.Users.Modify(owner, func(defs []libraries.UserDef) ([]libraries.UserDef, error) {
 		if find(defs, id) == nil {
 			return nil, apierr.New(404, "no such library")
@@ -986,11 +1063,12 @@ func (m *Module) remove(w who, id string) error {
 	if err != nil {
 		return err
 	}
-	m.Settings.Forget(id)
+	m.Settings.Forget(settingsKey(owner, id))
 	root := libraries.RemoteRootOf(owner, id)
 	if home, err := m.Users.RemoteMapHome(root); err == nil {
 		os.RemoveAll(home)
 	}
+	m.forgetKept(owner, id)
 	m.Users.TellRemoved(root)
 	m.Notify("removed", root)
 	return nil
@@ -1081,4 +1159,30 @@ func posixNormalize(p string) string {
 
 func (m *Module) workflowFile() string {
 	return filepath.Join(m.ProjectRoot, "deploy", "gufi-index.yaml")
+}
+
+// settingsKey is the key a person's library's index settings are kept
+// under, which two people's libraries of one id do not share.
+func settingsKey(owner, id string) string {
+	return kb.StateKey(id, libraries.RemoteRootOf(owner, id))
+}
+
+// forgetKept drops what this host kept for a person's library that is
+// gone: the copies its previews were made from, and its labels, where
+// they are the person's own (a Studio with sign-in on). A folder shared
+// and then taken back leaves no copy of its files here.
+func (m *Module) forgetKept(owner, id string) {
+	if m.IndexBase == "" {
+		return
+	}
+	key := settingsKey(owner, id)
+	os.RemoveAll(filepath.Join(m.IndexBase, "remote-previews", key))
+	if key != id {
+		os.RemoveAll(filepath.Join(m.IndexBase, "libraries", key))
+	}
+}
+
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }

@@ -33,6 +33,10 @@ export interface PublicLibrary {
   /** Said of an index written by a GUFI before 0.8.0 that reads wrongly (it
    *  was rolled up); null for any other, which reads as it always did. */
   formatNote?: string | null
+  /** The viewer's own space on the Studio's cluster, written as them. */
+  space?: boolean
+  /** A folder another account shared with the viewer: that account. */
+  sharedFrom?: string
 }
 /** How much of a library search by meaning covers; follows the depth. */
 export type MeaningLevel = 'off' | 'documents' | 'full'
@@ -128,6 +132,42 @@ export interface UserLibrary {
   buildingDepth?: IndexDepth | null
   /** What its last finished build could not read or embed, in words. */
   gaps?: string[]
+  /** The viewer's own space: the cluster account, and whether its file
+   *  system takes POSIX ACLs. */
+  space?: { account: string; acl: boolean; fs: string } | null
+  /** A folder another account shared with the viewer. */
+  shared?: { from: string; access: 'read' | 'write'; share: string } | null
+}
+
+/** What GET /api/user-libraries/space says: whether a space can be made,
+ *  or why not, on which cluster, and the viewer's spaces. */
+export interface SpaceStatus { available: boolean; why: string; cluster: string; suggested: string; spaces: string[] }
+/** The space check: its steps, the folder, and what it would create. */
+export interface SpaceCheck {
+  ok: boolean; steps: { name: string; ok: boolean; detail: string; warn?: boolean }[]
+  sourceRoot: string; create: string[]; account: string; acl: boolean; fs: string
+}
+/** A folder of a space shared with an account, a group or every account. */
+export interface FolderShare {
+  id: string; from: string; space: string; path: string; label: string; folder: string
+  kind: 'user' | 'group' | 'everyone'; name: string; access: 'read' | 'write'; createdAt: string
+  recipients: number
+  /** Shared with the viewer: their library of it, once added. */
+  library?: string
+}
+/** The viewer's pw CLI sign-in on a Studio several people use. */
+export interface PlatformSignIn {
+  state: 'none' | 'starting' | 'waiting' | 'signed-in' | 'failed'
+  host?: string; url?: string; code?: string; account?: string; signedInAt?: string; message?: string; startedAt?: string
+}
+
+async function sendJson<T>(method: string, url: string, body?: unknown): Promise<T> {
+  // A request with no body carries no JSON content type, which the server
+  // refuses with an empty body.
+  const res = await fetch(url, body === undefined ? { method } : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw Object.assign(new Error((data as { error?: string }).error ?? `${url}: ${res.status}`), { status: res.status })
+  return data as T
 }
 
 let warmedAt = 0
@@ -635,6 +675,23 @@ export const api = {
   /** The systems pw ssh reaches, running first; or why it cannot be used,
    *  or why the list could not be had. */
   pwSystems: () => getJson<PwSystems>('/api/user-libraries/pw/systems'),
+  spaceStatus: () => getJson<SpaceStatus>('/api/user-libraries/space'),
+  testSpace: (body: { sourceRoot: string }) => sendJson<SpaceCheck>('POST', '/api/user-libraries/space/test', body),
+  addSpace: (body: { sourceRoot: string; label?: string; depth?: IndexDepth; create?: boolean }) =>
+    sendJson<UserLibrary>('POST', '/api/user-libraries/space', body),
+  spaceShares: (id: string) =>
+    sendJson<{ shares: FolderShare[]; acl: boolean; fs: string; account: string }>('GET', `/api/user-libraries/${encodeURIComponent(id)}/shares`),
+  addShare: (id: string, body: { path: string; kind: FolderShare['kind']; name?: string; access: FolderShare['access'] }) =>
+    sendJson<FolderShare>('POST', `/api/user-libraries/${encodeURIComponent(id)}/shares`, body),
+  removeShare: (id: string, share: string) =>
+    sendJson<{ ok: boolean }>('DELETE', `/api/user-libraries/${encodeURIComponent(id)}/shares/${encodeURIComponent(share)}`),
+  sharedWithMe: () => sendJson<{ shares: FolderShare[]; account?: string; why?: string }>('GET', '/api/user-libraries/shared-with-me'),
+  addShared: (share: string, body: { depth?: IndexDepth }) =>
+    sendJson<UserLibrary>('POST', `/api/user-libraries/shared-with-me/${encodeURIComponent(share)}/add`, body),
+  platformSignIn: () => sendJson<PlatformSignIn>('GET', '/api/me/platform-sign-in'),
+  startPlatformSignIn: () => sendJson<PlatformSignIn>('POST', '/api/me/platform-sign-in', {}),
+  cancelPlatformSignIn: () => sendJson<PlatformSignIn>('POST', '/api/me/platform-sign-in/cancel', {}),
+  signOutPlatform: () => sendJson<PlatformSignIn>('POST', '/api/me/platform-sign-in/sign-out', {}),
   /** The connection test for the host a library's originals are also read through. */
   testReadThrough: (id: string, body: ReadThroughInput) =>
     postJson<{ ok: boolean; steps: { name: string; ok: boolean; detail: string; warn?: boolean }[] }>(`/api/libraries/${encodeURIComponent(id)}/read-through/test`, body),

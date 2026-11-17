@@ -129,6 +129,10 @@ type Viewer struct {
 	Cred        *Cred           `json:"cred"`
 	KeyStatus   json.RawMessage `json:"keyStatus"`
 	SharedLast4 *string         `json:"sharedLast4"`
+	// SignIn is the access token of the person's own pw CLI sign-in made
+	// through the Studio (Platform.SignInKey), "" for none. It comes before
+	// a pasted key for work on the platform.
+	SignIn string `json:"-"`
 }
 
 // UserID is req.user?.id, or "".
@@ -150,6 +154,9 @@ func (v *Viewer) Username() string {
 // PlatformKey is the viewer's own platform key: a stored credential with
 // no base URL (a provider key is chat-only), or "".
 func (v *Viewer) PlatformKey() string {
+	if v != nil && v.SignIn != "" {
+		return v.SignIn
+	}
 	if v == nil || v.Cred == nil || v.Cred.BaseURL != "" {
 		return ""
 	}
@@ -218,6 +225,9 @@ func (p *Platform) nativeViewer(r *http.Request) *Viewer {
 	case v.User != nil && v.User.ID != "":
 		if k, ok := sealer.FromCookies(v.User.ID, r.Header.Get("Cookie")); ok {
 			v.Cred = &Cred{Key: k.Key, BaseURL: deref(k.BaseURL), Endpoint: k.Options}
+		}
+		if v.AuthEnabled && p.SignInKey != nil {
+			v.SignIn = p.SignInKey(v.User.ID)
 		}
 	}
 	return v

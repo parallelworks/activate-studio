@@ -54,6 +54,54 @@ type UserDef struct {
 	BuiltDepth  *string       `json:"builtDepth,omitempty"`
 	Gaps        []string      `json:"gaps,omitempty"`
 	ReadThrough *ReadThrough  `json:"readThrough,omitempty"`
+	// Space marks a person's own space on the Studio's cluster, read and
+	// written as that person (docs/MULTI-USER.md, Personal spaces); nil for
+	// every other library.
+	Space *SpaceInfo `json:"space,omitempty"`
+	// Shared marks a folder another person shared with this library's
+	// owner, indexed and read as the owner; nil for every other library.
+	Shared *SharedInfo `json:"shared,omitempty"`
+}
+
+// SharedInfo is a library made from someone else's share.
+type SharedInfo struct {
+	ShareID string `json:"shareId"`
+	// From is the sharer's account on the cluster.
+	From string `json:"from"`
+	// Access is read or write; written as the library's owner.
+	Access string `json:"access"`
+	// Account and UID are the owner's on the cluster, as for a space.
+	Account string `json:"account"`
+	UID     int    `json:"uid"`
+}
+
+// WrittenAsOwner: the Library writes in it as its owner (a space, or a
+// folder shared with them for writing).
+func (d *UserDef) WrittenAsOwner() bool {
+	return d.Space != nil || (d.Shared != nil && d.Shared.Access == "write")
+}
+
+// Account is the cluster account and uid a space or a shared library was
+// made for; ok false for any other library.
+func (d *UserDef) Account() (account string, uid int, ok bool) {
+	switch {
+	case d.Space != nil:
+		return d.Space.Account, d.Space.UID, true
+	case d.Shared != nil:
+		return d.Shared.Account, d.Shared.UID, true
+	}
+	return "", 0, false
+}
+
+// SpaceInfo is what the check found about a space's folder when it was made.
+type SpaceInfo struct {
+	// Account is the login the person's session reaches, and UID its uid.
+	Account string `json:"account"`
+	UID     int    `json:"uid"`
+	// ACL: the folder's file system takes POSIX ACLs (setfacl).
+	ACL bool `json:"acl"`
+	// FS is the file system type, as stat -f names it.
+	FS string `json:"fs,omitempty"`
 }
 
 // WorkflowRun is the index workflow's run for a library.
@@ -92,6 +140,9 @@ func ownerHash(owner string) string {
 	s := sha256.Sum256([]byte(owner))
 	return hex.EncodeToString(s[:])[:16]
 }
+
+// OwnerHash names an owner's folder under INDEX_BASE/users.
+func OwnerHash(owner string) string { return ownerHash(owner) }
 
 // Users keeps each owner's libraries (INDEX_BASE/users/<hash>/libraries.json).
 // Node reads the file afresh at every use, so it has no cache to fall out
@@ -139,13 +190,27 @@ func (u *Users) Load(owner string) []UserDef {
 	return out
 }
 
+// PrivateDir makes dir, and keeps it, open to this account alone: what
+// the Studio keeps for one person (their libraries, maps with text from
+// their files, their platform sign-in) must not be readable through an
+// INDEX_BASE that is open to a group.
+func PrivateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(dir, 0o700)
+}
+
 // Save is saveUserLibraries.
 func (u *Users) Save(owner string, defs []UserDef) error {
 	f := u.fileFor(owner)
-	if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+	if err := PrivateDir(filepath.Join(u.IndexBase, "users")); err != nil {
 		return err
 	}
-	os.WriteFile(filepath.Join(filepath.Dir(f), "owner"), []byte(owner), 0o644)
+	if err := PrivateDir(filepath.Dir(f)); err != nil {
+		return err
+	}
+	os.WriteFile(filepath.Join(filepath.Dir(f), "owner"), []byte(owner), 0o600)
 	if defs == nil {
 		defs = []UserDef{}
 	}
@@ -153,7 +218,10 @@ func (u *Users) Save(owner string, defs []UserDef) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(f, b)
+	if err := writeAtomic(f, b); err != nil {
+		return err
+	}
+	return os.Chmod(f, 0o600)
 }
 
 // Update is updateDef: patch applied to one library under the lock.

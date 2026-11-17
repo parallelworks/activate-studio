@@ -249,10 +249,18 @@ func (c corpusJSON) corpus() corpus {
 // remoteTree is a folder of a library on another system, from its index
 // there (which holds dot entries too), with the labels the Studio keeps.
 func (m *Module) remoteTree(r *http.Request, lib Library, rel string, showHidden bool) ([]Entry, error) {
-	if LibraryResolver == nil {
+	var list []Entry
+	var err error
+	switch {
+	case lib.Space && SpaceFiles != nil:
+		// A space lists as its folder is now, so a file just written shows
+		// before the index catches up.
+		list, err = SpaceFiles.List(r, lib, rel)
+	case LibraryResolver == nil:
 		return []Entry{}, nil
+	default:
+		list, err = LibraryResolver.Tree(r, lib, rel)
 	}
-	list, err := LibraryResolver.Tree(r, lib, rel)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +270,7 @@ func (m *Module) remoteTree(r *http.Request, lib Library, rel string, showHidden
 			out = append(out, e)
 		}
 	}
-	kept := m.Tags.Library.Map(lib.ID)
+	kept := m.Tags.Library.Map(lib.StateKey())
 	if len(kept) == 0 {
 		return out, nil
 	}

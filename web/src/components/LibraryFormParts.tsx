@@ -7,6 +7,7 @@ export interface CheckStep { name: string; ok: boolean; detail: string; warn?: b
 
 export const STEP_LABEL: Record<string, string> = {
   ssh: 'Connection', gufi: 'GUFI', index: 'Index', source: 'Source folder', extract: 'Text extraction',
+  account: 'Account', folder: 'Folder', path: 'Folders above it', sharing: 'Sharing',
 }
 
 /** A check's steps, each with what it found or what to change. */

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwhome"
 )
 
 const (
@@ -332,7 +333,7 @@ func (p *Pool) spawn(site, key, command string) (*exec.Cmd, error) {
 	}
 	if prog := p.o.Getenv("STUDIO_REMOTE_SPAWN"); prog != "" {
 		cmd := exec.Command(prog, site, command)
-		cmd.Env = append(os.Environ(), "PW_API_KEY="+key)
+		cmd.Env = append(append(os.Environ(), "PW_API_KEY="+key), pwhome.Env(key)...)
 		return cmd, nil
 	}
 	if IsSSH(site) {
@@ -349,7 +350,7 @@ func (p *Pool) spawn(site, key, command string) (*exec.Cmd, error) {
 	cmd := exec.Command(p.o.PwCLI(), append(args, site, command)...)
 	// Without a key of its own the CLI uses its own sign-in.
 	if key != "" {
-		cmd.Env = append(os.Environ(), "PW_API_KEY="+key)
+		cmd.Env = append(append(os.Environ(), "PW_API_KEY="+key), pwhome.Env(key)...)
 	}
 	return cmd, nil
 }
@@ -393,7 +394,7 @@ func (p *Pool) Subsystem(site, name string) (*exec.Cmd, error) {
 // pw ssh). The host name rsync puts first must be dropped by the caller.
 func (p *Pool) RemoteShell(site, key string) (argv []string, env []string, err error) {
 	if prog := p.o.Getenv("STUDIO_REMOTE_SPAWN"); prog != "" {
-		return []string{prog, site}, []string{"PW_API_KEY=" + key}, nil
+		return []string{prog, site}, append([]string{"PW_API_KEY=" + key}, pwhome.Env(key)...), nil
 	}
 	if IsSSH(site) {
 		b, err := p.sshBase(site)
@@ -407,7 +408,7 @@ func (p *Pool) RemoteShell(site, key string) (argv []string, env []string, err e
 		args = append(args, "--platform-host", u.Hostname())
 	}
 	if key != "" {
-		env = []string{"PW_API_KEY=" + key}
+		env = append([]string{"PW_API_KEY=" + key}, pwhome.Env(key)...)
 	}
 	return append(args, site), env, nil
 }

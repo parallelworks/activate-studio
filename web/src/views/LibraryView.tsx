@@ -21,6 +21,7 @@ import { onShellDrop } from '../nativeShell'
 import { startPathJob, startUpload } from '../transfers'
 import { TransferPanel } from '../components/TransferPanel'
 import { selectLibraryEntry } from '../components/LibraryDetails'
+import { ShareDialog } from '../components/ShareDialog'
 
 const RAIL_MIN = 220
 const RAIL_MAX = 520
@@ -64,6 +65,8 @@ export function LibraryView({ display, onDisplay }: {
     error: string
   } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ path: string; isDir: boolean; error: string } | null>(null)
+  /** A folder of the viewer's space being shared: the space and the folder in it. */
+  const [shareTarget, setShareTarget] = useState<{ library: string; path: string } | null>(null)
   /** A menu choice that opens a dialog, run once the menu has closed and
    *  handed focus back, so the dialog keeps the focus it takes. */
   const afterMenu = useRef<(() => void) | null>(null)
@@ -154,6 +157,15 @@ export function LibraryView({ display, onDisplay }: {
     if (writableAt(p)) return null
     const id = inAll ? p.replace(/^\/+/, '').split('/')[0] : libId
     return `${cfg.libraries?.find(l => l.id === id)?.label ?? 'This library'} is read only`
+  }
+  // A folder of the viewer's own space, which they can share: the space and
+  // the folder within it ('' for all of it).
+  const spaceAt = (p: string): { library: string; path: string } | null => {
+    const clean = p.replace(/^\/+/, '')
+    const id = inAll ? clean.split('/')[0] : libId
+    const lib = cfg.libraries?.find(l => l.id === id)
+    if (!lib?.space || lib.sharedFrom) return null
+    return { library: id, path: inAll ? clean.split('/').slice(1).join('/') : clean }
   }
   // A selection in a read-only library can be labeled but not moved or deleted.
   const selLocked = selPaths.map(p => readOnlyAt(p)).find(Boolean) ?? null
@@ -318,6 +330,8 @@ export function LibraryView({ display, onDisplay }: {
     if (path && !libraryTop) {
       items.push({ label: 'Rename…', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' })) })
     }
+    const space = isDir ? spaceAt(path) : null
+    if (space) items.push({ label: 'Share…', onClick: later(() => setShareTarget(space)) })
     // Both call a model, so they are offered only with AI features on.
     if (isDir && cfg.aiEnabled !== false) items.push({ label: 'Suggest labels…', onClick: () => void runSuggest(path) })
     if (path && sectionAllowed('chat', cfg)) items.push({ label: 'Add to chat', onClick: () => addToChat(path) })
@@ -598,6 +612,9 @@ export function LibraryView({ display, onDisplay }: {
         </section>
       </div>
       {contextMenu}
+      {shareTarget && (
+        <ShareDialog open onClose={() => setShareTarget(null)} library={shareTarget.library} path={shareTarget.path} />
+      )}
       {nameDialog && (
         <Modal
           open

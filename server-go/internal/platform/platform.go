@@ -18,6 +18,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/pwhome"
 )
 
 // Options configure a Platform.
@@ -42,6 +44,10 @@ type Platform struct {
 	log               *slog.Logger
 	home              string
 	authEnabled       func() bool
+
+	// SignInKey is the access token of a person's own sign-in made through
+	// the Studio, "" for none (internal/personal sets it).
+	SignInKey func(owner string) string
 
 	// startupContext is PW_CONTEXT as the server started with it, which
 	// following the CLI restores.
@@ -153,6 +159,12 @@ func (p *Platform) Environ(set map[string]string) []string {
 	over := map[string]string{"PW_CONTEXT": p.PWContext()}
 	for k, v := range set {
 		over[k] = v
+	}
+	// A person's credential runs the CLI in their own home (internal/pwhome).
+	if _, ok := set["HOME"]; !ok {
+		if h := pwhome.Of(set["PW_API_KEY"]); h != "" {
+			over["HOME"] = h
+		}
 	}
 	base := os.Environ()
 	out := make([]string, 0, len(base)+len(over))

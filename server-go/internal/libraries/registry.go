@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 )
 
 // PrimaryID names the main folder's library.
@@ -848,8 +849,17 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 		if d.Vectors == nil && d.Build == nil {
 			l.VectorsUnknown = true
 		}
+		// A person's space is theirs to write in, and so is a folder shared
+		// with them for writing; every write runs as them.
+		if d.WrittenAsOwner() {
+			l.Space, l.Writable = true, true
+		}
+		if d.Shared != nil {
+			l.SharedFrom = d.Shared.From
+		}
 		if d.Build != nil {
-			l.Meaning, l.Depth = r.o.Settings.Meaning(d.ID), r.o.Settings.Depth(d.ID)
+			k := kb.StateKey(l.ID, l.IndexRoot)
+			l.Meaning, l.Depth = r.o.Settings.Meaning(k), r.o.Settings.Depth(k)
 		}
 		out = append(out, l)
 	}

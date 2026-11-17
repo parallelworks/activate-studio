@@ -7,6 +7,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 )
@@ -48,10 +49,12 @@ func (s *Service) removeLibrary(w http.ResponseWriter, r *http.Request) error {
 
 // builtLibrary is a library the Studio builds, by the route's id: 404 for
 // none, 409 for an index it only reads.
-func (s *Service) builtLibrary(r *http.Request) (string, error) {
+// builtLibrary is the id of a library the viewer may set the depth of,
+// and the key its settings are kept under (kb.StateKey).
+func (s *Service) builtLibrary(r *http.Request) (string, string, error) {
 	viewer, err := s.viewer(r)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	id := r.PathValue("id")
 	for _, l := range s.Reg.List(s.kbLabel(), viewer) {
@@ -59,11 +62,11 @@ func (s *Service) builtLibrary(r *http.Request) (string, error) {
 			continue
 		}
 		if l.Depth == "" {
-			return "", apierr.New(409, "%s is an index the Studio reads but does not build, so it stays as it was built.", l.Label)
+			return "", "", apierr.New(409, "%s is an index the Studio reads but does not build, so it stays as it was built.", l.Label)
 		}
-		return id, nil
+		return id, kb.StateKey(l.ID, l.IndexRoot), nil
 	}
-	return "", apierr.New(404, "There is no such library.")
+	return "", "", apierr.New(404, "There is no such library.")
 }
 
 func (s *Service) depthChanged(id string) {
@@ -95,15 +98,15 @@ func (s *Service) setDepth(w http.ResponseWriter, r *http.Request) error {
 	if !index.IsDepth(depth) {
 		return apierr.New(400, "depth: names, text, ocr, meaning-documents or meaning-full")
 	}
-	id, err := s.builtLibrary(r)
+	id, key, err := s.builtLibrary(r)
 	if err != nil {
 		return err
 	}
-	if _, err := s.ix().Settings.Save(id, map[string]any{"depth": depth}); err != nil {
+	if _, err := s.ix().Settings.Save(key, map[string]any{"depth": depth}); err != nil {
 		return err
 	}
 	s.depthChanged(id)
-	st := s.ix().Settings.Get(id)
+	st := s.ix().Settings.Get(key)
 	apierr.JSON(w, 200, depthAnswer{id, string(st.Depth), string(st.Meaning)})
 	return nil
 }
@@ -117,15 +120,15 @@ func (s *Service) setMeaning(w http.ResponseWriter, r *http.Request) error {
 	if !index.IsMeaningLevel(level) {
 		return apierr.New(400, "level: off, documents or full")
 	}
-	id, err := s.builtLibrary(r)
+	id, key, err := s.builtLibrary(r)
 	if err != nil {
 		return err
 	}
-	if _, err := s.ix().Settings.Save(id, map[string]any{"meaning": level}); err != nil {
+	if _, err := s.ix().Settings.Save(key, map[string]any{"meaning": level}); err != nil {
 		return err
 	}
 	s.depthChanged(id)
-	st := s.ix().Settings.Get(id)
+	st := s.ix().Settings.Get(key)
 	apierr.JSON(w, 200, meaningAnswer{id, string(st.Meaning), string(st.Depth)})
 	return nil
 }

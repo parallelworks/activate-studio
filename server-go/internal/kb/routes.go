@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 // Module is the files track's state: one per server.
@@ -134,15 +135,15 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	h("GET /api/kb/office-media", m.officeMedia)
 	h("GET /api/kb/dirs", m.dirs)
 	h("GET /api/kb/stats", m.statsRoute)
-	h("POST /api/kb/move", m.move)
-	h("POST /api/kb/copy", m.copy)
-	h("POST /api/kb/rename", m.rename)
-	h("POST /api/kb/delete", m.bulkDelete)
-	h("DELETE /api/kb/dir", m.deleteDir)
-	h("DELETE /api/kb/file", m.deleteFile)
-	h("POST /api/kb/mkdir", m.mkdir)
-	h("POST /api/kb/upload", m.upload)
-	h("POST /api/kb/upload-url", m.uploadURL)
+	h("POST /api/kb/move", m.spaceAware("move", m.move))
+	h("POST /api/kb/copy", m.spaceAware("copy", m.copy))
+	h("POST /api/kb/rename", m.spaceAware("rename", m.rename))
+	h("POST /api/kb/delete", m.spaceAware("delete", m.bulkDelete))
+	h("DELETE /api/kb/dir", m.spaceAware("dir", m.deleteDir))
+	h("DELETE /api/kb/file", m.spaceAware("file", m.deleteFile))
+	h("POST /api/kb/mkdir", m.spaceAware("mkdir", m.mkdir))
+	h("POST /api/kb/upload", m.spaceAware("upload", m.upload))
+	h("POST /api/kb/upload-url", m.spaceAware("upload-url", m.uploadURL))
 	h("GET /api/tags", m.vocabulary)
 	h("GET /api/kb/tags", m.getTags)
 	h("POST /api/kb/tags", m.postTags)
@@ -340,7 +341,7 @@ func (m *Module) treeBody(w http.ResponseWriter, r *http.Request) error {
 			for _, l := range libs {
 				name := l.Label
 				if l.Site != "" {
-					name = l.Label + " (on " + l.Site + ")"
+					name = l.Label + " (on " + remote.ShortName(l.Site) + ")"
 				}
 				entries = append(entries, Entry{Name: name, Path: l.ID, Type: "dir", Kind: "dir"})
 			}
@@ -411,7 +412,7 @@ func (m *Module) withLocalLabels(lib Library, root string, entries []Entry) []En
 		}
 	}
 	if !lib.Primary {
-		kept := m.Tags.Library.Map(lib.ID)
+		kept := m.Tags.Library.Map(lib.StateKey())
 		for i := range entries {
 			if k := kept[entries[i].Path]; len(k) > 0 {
 				entries[i].Tags = uniq(append(append([]string{}, entries[i].Tags...), k...))
@@ -1210,7 +1211,7 @@ func (m *Module) getTags(w http.ResponseWriter, r *http.Request) error {
 	if lib.ID == PrimaryID {
 		out = m.Tags.Effective(r.Context(), rel)
 	} else {
-		out = m.Tags.Library.Effective(lib.ID, rel)
+		out = m.Tags.Library.Effective(lib.StateKey(), rel)
 	}
 	writeJSON(w, 200, out.Set("stored", stored(lib)))
 	return nil
@@ -1235,7 +1236,7 @@ func (m *Module) applyLibraryLabels(lib Library, rels, addRaw, removeRaw []strin
 			return nil, Error(404, "no such file: %s", rel)
 		}
 		var next []string
-		for _, t := range m.Tags.Library.Of(lib.ID, rel) {
+		for _, t := range m.Tags.Library.Of(lib.StateKey(), rel) {
 			if !removeSet[t] {
 				next = append(next, t)
 			}
