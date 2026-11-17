@@ -140,6 +140,14 @@ rmstage)
   inside "$(dirof "$1")" || fail 6 "$1 leads outside the location"
   [ -L "$1" ] && fail 7 "$1 is a link"
   rm -rf -- "$1" ;;
+rmtree)
+  while IFS= read -r -d '' p; do
+    case "$p" in ''|.|./) fail 6 "refusing the location itself";; esac
+    [ -e "$p" ] || [ -L "$p" ] || continue
+    inside "$(dirof "$p")" || fail 6 "$p leads outside the location"
+    rm -rf -- "$p" || fail 9 "$p could not be removed"
+    printf '%s\0' "$p"
+  done; exit 0 ;;
 *) fail 2 "unknown command" ;;
 esac`
 
@@ -568,6 +576,14 @@ func (r *RemoteFS) Remove(ctx context.Context, files, dirs []string) ([]string, 
 		}
 	}
 	res, err := r.run(ctx, nulList(in), "remove")
+	return splitNul(res.Stdout), err
+}
+
+// RemoveTrees removes files and folders, folders with everything in them;
+// a link is removed itself, never what it points to. It answers what it
+// removed.
+func (r *RemoteFS) RemoveTrees(ctx context.Context, rels []string) ([]string, error) {
+	res, err := r.run(ctx, nulList(rels), "rmtree")
 	return splitNul(res.Stdout), err
 }
 

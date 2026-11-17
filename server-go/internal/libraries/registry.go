@@ -848,6 +848,10 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 		if d.Vectors == nil && d.Build == nil {
 			l.VectorsUnknown = true
 		}
+		// A person's space is theirs to write in; every write runs as them.
+		if d.Space != nil {
+			l.Space, l.Writable = true, true
+		}
 		if d.Build != nil {
 			l.Meaning, l.Depth = r.o.Settings.Meaning(d.ID), r.o.Settings.Depth(d.ID)
 		}

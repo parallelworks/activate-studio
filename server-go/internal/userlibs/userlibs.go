@@ -77,6 +77,11 @@ type Module struct {
 	// Helpers is a folder of the helpers by platform
 	// (<platform>/studio-remote), looked in first (STUDIO_REMOTE_HELPERS).
 	Helpers string
+	// GufiBin is the Studio's own GUFI (GUFI_BIN); a space gets a copy of
+	// the bundle above it (spaces.go).
+	GufiBin string
+	spaceState
+	spaceWrites
 }
 
 type follower struct {
@@ -108,6 +113,7 @@ func Of(a *app.App) *Module {
 	m.Settings = libraries.Of(a).FileSettings()
 	m.eng = search.Of(a)
 	m.Helpers = os.Getenv("STUDIO_REMOTE_HELPERS")
+	m.GufiBin = a.Cfg.GufiBin
 	m.Jobs = func() *kb.Jobs {
 		if kb.Default != nil {
 			return kb.Default.Jobs
@@ -381,6 +387,7 @@ func intOf(p *int) int {
 func Register(mux *http.ServeMux, a *app.App) {
 	m := Of(a)
 	m.Routes(mux, a.Log)
+	kb.SpaceFiles = m.SpaceFiles()
 	if !a.Cfg.FrontAuth {
 		registerWhoami(mux, a)
 	}
@@ -472,6 +479,19 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 			return m.public(d, job), nil
 		}))
 	}
+	mux.HandleFunc("GET "+base+"/space", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		return m.spaceStatus(w), nil
+	}))
+	mux.HandleFunc("POST "+base+"/space/test", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		return m.testSpace(r.Context(), w, b)
+	}))
+	mux.HandleFunc("POST "+base+"/space", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		d, job, err := m.addSpace(context.WithoutCancel(r.Context()), w, b)
+		if err != nil {
+			return nil, err
+		}
+		return m.public(d, job), nil
+	}))
 	mux.HandleFunc("POST "+base+"/{id}/refresh", h(true, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 		d, err := m.refresh(r.Context(), w, r.PathValue("id"))
 		if err != nil {
@@ -624,6 +644,9 @@ func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
 		"fullText", d.FullText != nil && *d.FullText, "vectors", d.Vectors != nil && *d.Vectors, "formatNote", formatNote, "readThrough", readThrough,
 		"built", built, "indexDir", indexDir, "progress", progress, "builtDepth", optional(d.BuiltDepth), "gaps", gaps,
 		"buildingDepth", buildingDepth)
+	if d.Space != nil {
+		o.Set("space", jsonv.NewObject("account", d.Space.Account, "acl", d.Space.ACL, "fs", d.Space.FS))
+	}
 	if job != 0 {
 		o.Set("job", float64(job))
 	}

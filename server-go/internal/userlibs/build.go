@@ -387,6 +387,12 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 	if err != nil {
 		return nil, 0, err
 	}
+	return m.addBuildFor(ctx, w, transport, r, b, nil)
+}
+
+// addBuildFor is addBuild for a host already chosen; space, when set,
+// makes the library the person's own space (spaces.go).
+func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *buildReq, b *jsonv.Object, space *libraries.SpaceInfo) (*libraries.UserDef, int, error) {
 	p := m.probeBuild(ctx, r.host, r.spec)
 	if !p.OK {
 		return nil, 0, notPassed("The check did not pass.", p)
@@ -406,6 +412,10 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 	}
 	host := r.conn.Site[strings.LastIndex(r.conn.Site, "@")+1:]
 	id := uniqueID(defs, idBase(host+"-"+name))
+	fallback := name
+	if space != nil {
+		id, fallback = uniqueID(defs, idBase("space-"+name)), "My space"
+	}
 	// The depth is stored with the library, the default included, so a
 	// later default leaves it as built.
 	settings := map[string]any{"depth": string(libraries.NewLibraryDepth)}
@@ -432,9 +442,9 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 	if transport == "ssh" {
 		resource = r.host.Site
 	}
-	d := libraries.UserDef{ID: id, Label: label(field(b, "label"), name), Transport: transport, Existing: ptr(false), Site: r.conn.Site,
+	d := libraries.UserDef{ID: id, Label: label(field(b, "label"), fallback), Transport: transport, Existing: ptr(false), Site: r.conn.Site,
 		Destination: r.conn.Destination, OS: nonEmpty(p.OS), GufiVersion: p.GufiVersion, Resource: resource, SourceDir: build.SourceRoot,
-		State: "building", Build: build}
+		State: "building", Build: build, Space: space}
 	if r.conn.Port != 0 {
 		d.Port = ptr(r.conn.Port)
 	}

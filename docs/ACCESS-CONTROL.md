@@ -47,10 +47,12 @@ Tested with GUFI 0.8.0 and the Studio's own build as root: a share with an open 
 
 ## Several people on one Studio
 
-A Studio that several people use through the ACTIVATE session proxy or an OpenID Connect sign-in runs as one service account. Every query runs as that account, so every user sees what that account can read. Sign-in separates conversations, model keys and attribution, and does not separate file access. Point a shared Studio at material its whole audience may read, or run one per group. Running each query as the signed-in person's own uid is the plan in [`MULTI-USER.md`](MULTI-USER.md), and is not scheduled.
+A Studio that several people use through the ACTIVATE session proxy or an OpenID Connect sign-in runs as one service account. Every query runs as that account, so every user sees what that account can read. Sign-in separates conversations, model keys and attribution, and does not separate file access. Point a shared Studio at material its whole audience may read, or run one per group.
+
+Personal spaces are the exception, in Preview. A person who signs the pw CLI in under Settings, Model access, can make a space: a folder of theirs on the Studio's cluster, indexed, read and written as their own account over `pw ssh`, so the cluster's permissions decide what they can open there. Other people's searches never reach it. The service account still carries what a search returns and what the assistant reads, as [`MULTI-USER.md`](MULTI-USER.md) explains under Personal spaces and folder sharing, which also covers the steps that follow.
 
 ## What the Studio does not do yet
 
 - Build GUFI external databases itself. The Studio's own extraction writes its folder level tables, and a root build leaves a file narrower than its folder to its name; writing per-permission external databases, which would give such a file its text for the people who can read it, is step 3 of [`MULTI-USER.md`](MULTI-USER.md). Until then, that comes from GUFI's extraction workflow.
-- Run a query as anyone other than the account it runs under, as described above for a shared Studio.
-- Change modes or groups from the Library. Uploads, new folders and moves are made as the Studio's account, with that account's default mode.
+- Run a query as anyone other than the account it runs under, as described above for a shared Studio, outside a personal space.
+- Change modes or groups from the Library. Uploads, new folders and moves are made as the Studio's account, with that account's default mode, and in a personal space as its owner.

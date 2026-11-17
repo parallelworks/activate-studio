@@ -33,6 +33,9 @@ type Library struct {
 	ReadThrough bool
 	// Site is the system a viewer's own library lives on; "" for one here.
 	Site string
+	// Space: the viewer's own space, whose files are read and written as
+	// them through SpaceFiles.
+	Space bool
 }
 
 // libraryDef is an entry of STUDIO_LIBRARIES or INDEX_BASE/libraries.json.
@@ -198,7 +201,10 @@ func (l *Libraries) ScopeAll() []Library {
 
 // RequireWritable is the guard every mutation runs.
 func RequireWritable(lib Library) error {
-	if !lib.Writable {
+	// This module's own file operations work in this host's folders only;
+	// a library on another system is written through SpaceFiles or not at
+	// all.
+	if !lib.Writable || lib.Site != "" || lib.Space {
 		return Error(403, "%s is read only", lib.Label)
 	}
 	return nil

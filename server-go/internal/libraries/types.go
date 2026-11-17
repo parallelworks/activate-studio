@@ -166,6 +166,8 @@ type Library struct {
 	ReadThrough *ReadThrough
 	// CopyOf is set for a copy library: SourceRoot is its copy here.
 	CopyOf *CopyOf
+	// Space: the viewer's own space, read and written as them.
+	Space bool
 }
 
 // Remote reports whether the library is on another system.
@@ -194,6 +196,7 @@ type PublicLibrary struct {
 	Meaning    *string `json:"meaning"`
 	Depth      *string `json:"depth"`
 	FormatNote *string `json:"formatNote"`
+	Space      bool    `json:"space,omitempty"`
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -209,7 +212,7 @@ func strOrNil(s string) *string {
 func Public(l Library) PublicLibrary {
 	return PublicLibrary{ID: l.ID, Label: l.Label, Primary: l.Primary, Writable: l.Writable, Pinned: l.Pinned,
 		Source: l.SourceRoot != "" || l.Site != "", Caps: l.Caps, Site: strOrNil(l.Site), Meaning: strOrNil(l.Meaning),
-		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format)}
+		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space}
 }
 
 // PublicReadThroughView is what Settings shows of a read-through host.

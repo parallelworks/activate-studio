@@ -54,6 +54,21 @@ type UserDef struct {
 	BuiltDepth  *string       `json:"builtDepth,omitempty"`
 	Gaps        []string      `json:"gaps,omitempty"`
 	ReadThrough *ReadThrough  `json:"readThrough,omitempty"`
+	// Space marks a person's own space on the Studio's cluster, read and
+	// written as that person (docs/MULTI-USER.md, Personal spaces); nil for
+	// every other library.
+	Space *SpaceInfo `json:"space,omitempty"`
+}
+
+// SpaceInfo is what the check found about a space's folder when it was made.
+type SpaceInfo struct {
+	// Account is the login the person's session reaches, and UID its uid.
+	Account string `json:"account"`
+	UID     int    `json:"uid"`
+	// ACL: the folder's file system takes POSIX ACLs (setfacl).
+	ACL bool `json:"acl"`
+	// FS is the file system type, as stat -f names it.
+	FS string `json:"fs,omitempty"`
 }
 
 // WorkflowRun is the index workflow's run for a library.
