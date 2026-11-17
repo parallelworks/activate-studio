@@ -234,18 +234,18 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 	}
 	res, err := m.Pool.Run(ctx, site, key, []string{"bash", "-c", spaceCheckSh, "_", folder, v, flag}, 90*time.Second)
 	if err != nil {
-		return nil, apierr.New(502, "Your session to %s did not open: %s", remote.SiteName(site), err.Error())
+		return nil, apierr.New(502, "Your session to %s did not open: %s", remote.ShortName(site), err.Error())
 	}
 	kv := keyValues(res.Stdout)
 	uid, err := strconv.Atoi(kv["uid"])
 	if err != nil {
-		return nil, apierr.New(502, "%s did not say which account your session reaches: %s", remote.SiteName(site), lastOrExit(res.Stderr, res.Code))
+		return nil, apierr.New(502, "%s did not say which account your session reaches: %s", remote.ShortName(site), lastOrExit(res.Stderr, res.Code))
 	}
 	user, home := kv["user"], kv["home"]
 	f := &spaceFound{Home: home, Info: libraries.SpaceInfo{Account: user, UID: uid, FS: kv["fs"], ACL: kv["acl"] == "1"}}
 	add := func(s step) { f.Steps = append(f.Steps, s) }
 	done := func() *spaceFound { f.OK = allOK(f.Steps); return f }
-	add(step{Name: "account", OK: true, Detail: fmt.Sprintf("Your session reaches %s as %s (uid %d). The space is read and written as that account.", remote.SiteName(site), user, uid)})
+	add(step{Name: "account", OK: true, Detail: fmt.Sprintf("Your session reaches %s as %s (uid %d). The space is read and written as that account.", remote.ShortName(site), user, uid)})
 	if kv["path"] == "relative" {
 		add(step{Name: "folder", Detail: "Give an absolute folder, or one under ~."})
 		return done(), nil
@@ -353,11 +353,11 @@ func (m *Module) sendGufi(ctx context.Context, site, key string) error {
 		r, err = m.Pool.RunOnce(ctx, site, key, []string{"bash", "-c", gufiUnpackSh, "_", version}, 15*time.Minute, pr)
 		pr.Close()
 		if err != nil {
-			err = apierr.New(502, "GUFI could not be copied to %s: %s", remote.SiteName(site), err.Error())
+			err = apierr.New(502, "GUFI could not be copied to %s: %s", remote.ShortName(site), err.Error())
 			return
 		}
 		if r.Code != 0 || !(strings.Contains(r.Stdout, "installed") || strings.Contains(r.Stdout, "present")) {
-			err = apierr.New(502, "GUFI could not be copied to your ~/.activate-studio on %s: %s", remote.SiteName(site), lastOrExit(r.Stderr, r.Code))
+			err = apierr.New(502, "GUFI could not be copied to your ~/.activate-studio on %s: %s", remote.ShortName(site), lastOrExit(r.Stderr, r.Code))
 		}
 	})
 	return err
@@ -466,7 +466,7 @@ func (m *Module) spaceStatus(w who) *jsonv.Object {
 	}
 	cluster := ""
 	if site != "" {
-		cluster = remote.SiteName(site)
+		cluster = remote.ShortName(site)
 	}
 	return jsonv.NewObject("available", why == "", "why", why, "cluster", cluster, "suggested", SuggestedSpace, "spaces", spaces)
 }
@@ -533,7 +533,7 @@ func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*librari
 		}
 	}
 	if r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", spacePrepareSh}, 60*time.Second); err != nil || !strings.Contains(r.Stdout, "ready") {
-		return nil, 0, apierr.New(502, "Your ~/.activate-studio could not be kept to you alone on %s.", remote.SiteName(site))
+		return nil, 0, apierr.New(502, "Your ~/.activate-studio could not be kept to you alone on %s.", remote.ShortName(site))
 	}
 	if f.SendGufi {
 		if err := m.sendGufi(ctx, site, key); err != nil {
@@ -547,7 +547,7 @@ func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*librari
 	}
 	bin := f.GufiBin
 	r := &buildReq{owner: owner,
-		host: probeHost{Site: site, Key: key, Name: remote.SiteName(site), Reached: remote.SiteName(site),
+		host: probeHost{Site: site, Key: key, Name: remote.ShortName(site), Reached: remote.ShortName(site),
 			Advice: func(msg string) string { return pwAdvice(msg, site) }},
 		conn: buildConn{SSHOptions: []string{}, Site: site},
 		spec: buildSpec{SourceRoot: f.Real, GufiBin: &bin}}

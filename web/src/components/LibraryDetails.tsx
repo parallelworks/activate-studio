@@ -156,6 +156,13 @@ export function DetailsBody({ state }: { state: DetailsState }) {
   )
 }
 
+/** A site as a person reads it: a cluster named by its platform address
+ *  (pw://owner/name) by its name. */
+export function shortSite(site: string | null): string {
+  const m = /^pw:\/\/[^/]+\/(.+)$/.exec(site ?? '')
+  return m ? m[1] : site ?? ''
+}
+
 /** A remote library's whole index before it is counted: the counts from
  *  its connection test, and a button that counts it. */
 function Uncounted({ state, d }: { state: DetailsState; d: EntryDetails }) {
@@ -167,13 +174,13 @@ function Uncounted({ state, d }: { state: DetailsState; d: EntryDetails }) {
         <div><dt>Folders</dt><dd>{d.dirs.toLocaleString()}</dd></div>
       </dl>
       <p className="details-note">
-        As of its connection test. Size and types need a pass over the whole index on {d.library.site}, which can take minutes on a large one.
+        As of its connection test. Size and types need a pass over the whole index on {shortSite(d.library.site)}, which can take minutes on a large one.
       </p>
       {state.error && <p className="details-note">{state.error}</p>}
       <Button size="sm" loading={state.loading} onClick={() => state.count?.()}>{state.loading ? 'Counting…' : 'Count size and types'}</Button>
       <div className="details-section details-source">
         <div className="details-label">Library</div>
-        <div>{d.library.label} <span className="details-muted">· {d.library.kind}, read only</span></div>
+        <div>{d.library.label} <span className="details-muted">· {d.library.kind}{d.library.writable ? ', read and write' : ', read only'}</span></div>
         {d.index && (
           <div className="details-index">
             <code title={d.index}>{breakAtSlashes(d.index)}</code>

@@ -45,6 +45,12 @@ type Cmd interface {
 // break is refused since that output is line based.
 const tool = `set -f
 mark=$1; cmd=$2; root=$3; shift 3
+# like: in a private location (PRIV=1, a person's space), what a write
+# makes is closed to other accounts, unless the folder it lands in is
+# already open to them, when it is readable as they read the folder. The
+# nearest folder that exists decides, so a path made in several levels
+# takes one answer. A default ACL, where there is one, wins over either.
+like() { [ "${PRIV:-}" = 1 ] || return 0; local a=$1; while [ ! -d "$a" ]; do a=$(dirof "$a"); done; if [ -n "$(find -- "$a" -maxdepth 0 -perm -004 2>/dev/null)" ]; then umask 022; else umask 077; fi; }
 [ "$cmd" = read ] || printf '%s\n' "$mark"
 fail() { printf '%s\n' "$2" >&2; exit "$1"; }
 [ "$cmd" = home ] && { cd -P ~ 2>/dev/null && pwd -P; exit; }
@@ -106,16 +112,16 @@ read)
   printf '%s\n' "$mark"; exec cat -- "./$n" ;;
 write)
   p=$1; d=$(dirof "$p"); n=${p##*/}
-  mkdir -p -- "$d" 2>/dev/null; inside "$d" || fail 6 "$p leads outside the location"
+  like "$p"; mkdir -p -- "$d" 2>/dev/null; inside "$d" || fail 6 "$p leads outside the location"
   cd -P -- "$d" || fail 8 "$p: the folder cannot be opened"
   set -C; cat > "./$n" || fail 8 "$p could not be written"
   [ -n "$2" ] && TZ=UTC touch -t "$2" -- "./$n" 2>/dev/null
   [ "$3" = x ] && chmod u+x -- "./$n" 2>/dev/null
   exit 0 ;;
-mkdir) [ -z "$1" ] && exit 0; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] || fail 8 "$1 could not be made"; inside "$1" || fail 6 "$1 leads outside the location" ;;
+mkdir) [ -z "$1" ] && exit 0; like "$1"; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] || fail 8 "$1 could not be made"; inside "$1" || fail 6 "$1 leads outside the location" ;;
 land)
   while IFS= read -r -d '' a && IFS= read -r -d '' b && IFS= read -r -d '' f; do
-    d=$(dirof "$b"); mkdir -p -- "$d" 2>/dev/null
+    d=$(dirof "$b"); like "$b"; mkdir -p -- "$d" 2>/dev/null
     inside "$d" || fail 6 "$b leads outside the location"
     inside "$(dirof "$a")" || fail 6 "$a leads outside the location"
     if [ -e "$b" ] || [ -L "$b" ]; then
@@ -162,6 +168,9 @@ type RemoteFS struct {
 	Timeout time.Duration
 	// RsyncPath is the rsync program on the host, "" for rsync on its PATH.
 	RsyncPath string
+	// Private: a person's own space, where what the helper writes is closed
+	// to other accounts unless the folder it lands in is open to them.
+	Private bool
 }
 
 func (r *RemoteFS) Where() string { return r.Name }
@@ -172,7 +181,18 @@ func (r *RemoteFS) Key() string   { return r.KeyText }
 // toolArgv is the helper's command line: the marker it prints first, so
 // what a login prints before it is dropped, then the command.
 func toolArgv(mark, cmd, root string, args ...string) []string {
-	return append([]string{"bash", "-c", tool, "studio", mark, cmd, root}, args...)
+	return toolArgvFor(false, mark, cmd, root, args...)
+}
+
+// privateTool is the helper for a private location (RemoteFS.Private).
+const privateTool = "PRIV=1\n" + tool
+
+func toolArgvFor(private bool, mark, cmd, root string, args ...string) []string {
+	script := tool
+	if private {
+		script = privateTool
+	}
+	return append([]string{"bash", "-c", script, "studio", mark, cmd, root}, args...)
 }
 
 // afterMark is a helper's output after its marker line; ok false when the
@@ -187,8 +207,12 @@ func afterMark(out []byte, mark string) ([]byte, bool) {
 
 // runTool runs a helper command on a site and drops a login's output.
 func runTool(ctx context.Context, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
+	return runToolFor(ctx, false, run, site, key, timeout, input, cmd, root, args...)
+}
+
+func runToolFor(ctx context.Context, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
 	mark := marker()
-	res, err := run.RunOnce(ctx, site, key, toolArgv(mark, cmd, root, args...), timeout, input)
+	res, err := run.RunOnce(ctx, site, key, toolArgvFor(private, mark, cmd, root, args...), timeout, input)
 	if err != nil {
 		return res, false, err
 	}
@@ -219,7 +243,7 @@ func (r *RemoteFS) run(ctx context.Context, input io.Reader, cmd string, args ..
 	if t <= 0 {
 		t = 10 * time.Minute
 	}
-	res, _, err := runTool(ctx, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
+	res, _, err := runToolFor(ctx, r.Private, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
 	if err != nil {
 		return res, r.named(502, messageOf(err))
 	}
@@ -499,7 +523,7 @@ func (r *RemoteFS) Write(ctx context.Context, rel string, src io.Reader, mtime i
 	if mode&0o100 != 0 {
 		x = "x"
 	}
-	cmd, err := r.command(toolArgv(marker(), "write", r.Dir, rel, touchTime(mtime), x))
+	cmd, err := r.command(toolArgvFor(r.Private, marker(), "write", r.Dir, rel, touchTime(mtime), x))
 	if err != nil {
 		return 0, err
 	}

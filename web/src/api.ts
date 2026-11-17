@@ -162,7 +162,9 @@ export interface PlatformSignIn {
 }
 
 async function sendJson<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+  // A request with no body carries no JSON content type, which the server
+  // refuses with an empty body.
+  const res = await fetch(url, body === undefined ? { method } : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw Object.assign(new Error((data as { error?: string }).error ?? `${url}: ${res.status}`), { status: res.status })
   return data as T

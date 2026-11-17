@@ -1,3 +1,5 @@
+//go:build !windows
+
 package userlibs
 
 import (
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -68,6 +71,10 @@ func TestShareSetsAndTakesBackACLs(t *testing.T) {
 	if err != nil || !strings.Contains(out, "shared") {
 		t.Fatalf("apply: %v %s", err, out)
 	}
+	// It says which folders above it it opened, the ones that had no entry.
+	if !strings.Contains(out, "opened="+space+"\n") || !strings.Contains(out, "opened="+base+"\n") {
+		t.Fatalf("opened: %s", out)
+	}
 	for p, want := range map[string]string{
 		sub: "user:nobody:r-x", filepath.Join(sub, "a.txt"): "user:nobody:r--", proj: "default:user:nobody:r-x",
 		space: "user:nobody:--x", base: "user:nobody:--x",
@@ -87,20 +94,34 @@ func TestShareSetsAndTakesBackACLs(t *testing.T) {
 	if !strings.Contains(acl(t, filepath.Join(sub, "new.txt")), "user:nobody:r") {
 		t.Error("a new file did not inherit the share")
 	}
+	// Applied again, nothing more is opened.
+	if again, _ := runShareSh(t, "", "apply", proj, "user", "nobody", "r", space); strings.Contains(again, "opened=") {
+		t.Fatalf("opened twice: %s", again)
+	}
 
-	// Taken back, with another share of theirs keeping space reachable.
-	if out, err := runShareSh(t, space+"\n"+base, "revoke", proj, "user", "nobody", "r", space); err != nil {
+	// Taken back, closing base only, as when another share needs space.
+	if out, err := runShareSh(t, base, "revoke", proj, "user", "nobody", "r", space); err != nil {
 		t.Fatalf("revoke: %v %s", err, out)
 	}
 	if strings.Contains(acl(t, sub), "nobody") || strings.Contains(acl(t, proj), "nobody") {
 		t.Errorf("left after the revoke:\n%s", acl(t, sub))
 	}
-	if !strings.Contains(acl(t, space), "user:nobody:--x") {
-		t.Error("a folder another share needs was closed")
+	if !strings.Contains(acl(t, space), "user:nobody:--x") || strings.Contains(acl(t, base), "nobody") {
+		t.Errorf("closed the wrong folders:\n%s\n%s", acl(t, space), acl(t, base))
 	}
-	runShareSh(t, "", "revoke", proj, "user", "nobody", "r", space)
-	if strings.Contains(acl(t, space), "nobody") || strings.Contains(acl(t, base), "nobody") {
+	runShareSh(t, space, "revoke", proj, "user", "nobody", "r", space)
+	if strings.Contains(acl(t, space), "nobody") {
 		t.Error("the way in stayed open with no share needing it")
+	}
+	// Nothing is left behind where there was no ACL before: no mask, no
+	// default ACL that would set what new files get. The ACL proj had stays.
+	for _, p := range []string{sub, filepath.Join(sub, "a.txt"), filepath.Join(sub, "new.txt"), space, base} {
+		if out, _ := exec.Command("getfacl", "-s", "-p", p).CombinedOutput(); len(strings.TrimSpace(string(out))) > 0 {
+			t.Errorf("an ACL is left on %s:\n%s", p, out)
+		}
+	}
+	if !strings.Contains(acl(t, proj), "user:root:r") {
+		t.Errorf("the ACL proj had before is gone:\n%s", acl(t, proj))
 	}
 
 	if out, err := runShareSh(t, "", "apply", proj, "user", "no-such-account-x", "r", space); err == nil || !strings.Contains(out, "There is no account no-such-account-x there.") {
@@ -109,7 +130,8 @@ func TestShareSetsAndTakesBackACLs(t *testing.T) {
 	if out, err := runShareSh(t, "", "apply", base, "user", "nobody", "r", space); err == nil || !strings.Contains(out, "is not in the space") {
 		t.Fatalf("outside the space: %v %s", err, out)
 	}
-	if out, err := runShareSh(t, "", "apply", proj, "everyone", "", "r", space); err != nil {
+	out, err = runShareSh(t, "", "apply", proj, "everyone", "", "r", space)
+	if err != nil || !strings.Contains(out, "opened="+space+"\n") {
 		t.Fatalf("everyone: %v %s", err, out)
 	}
 	if perm(t, filepath.Join(sub, "a.txt"))&0o004 == 0 || perm(t, space)&0o001 == 0 {
@@ -117,6 +139,10 @@ func TestShareSetsAndTakesBackACLs(t *testing.T) {
 	}
 	if perm(t, filepath.Join(space, "other.txt"))&0o004 != 0 && perm(t, space)&0o004 != 0 {
 		t.Error("the space was opened for listing")
+	}
+	runShareSh(t, space, "revoke", proj, "everyone", "", "r", space)
+	if perm(t, space)&0o007 != 0 || perm(t, filepath.Join(sub, "a.txt"))&0o007 != 0 {
+		t.Error("every account can still reach it")
 	}
 }
 
@@ -155,6 +181,32 @@ func TestSharingAFolderWithAnotherPerson(t *testing.T) {
 	space := sp.Body["id"].(string)
 	h.waitFor(space)
 	write(t, filepath.Join(home, "studio", "proj", "plan.md"), "# plan\n")
+
+	// What the Studio writes in a space is closed to other accounts, whatever
+	// the account's umask, unless it lands in a folder open to them.
+	s := h.m.SpaceFiles()
+	adaReq := auth.WithUser(httptest.NewRequest(http.MethodPost, "/api/kb/upload", nil), ada)
+	mine := kb.Library{ID: space, IndexRoot: libraries.RemoteRootOf("ada", space), Space: true}
+	old := syscall.Umask(0o002)
+	defer syscall.Umask(old)
+	if err := s.Put(adaReq, mine, "private.txt", strings.NewReader("p"), 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mkdir(adaReq, mine, "pub/inner"); err != nil {
+		t.Fatal(err)
+	}
+	eq(t, []any{perm(t, filepath.Join(home, "studio", "private.txt")), perm(t, filepath.Join(home, "studio", "pub", "inner"))}, []any{os.FileMode(0o600), os.FileMode(0o700)}, "private by default")
+	if r := h.post("/api/user-libraries/"+space+"/shares", map[string]any{"path": "pub", "kind": "everyone"}); r.Status != 200 {
+		t.Fatalf("everyone: %v", r.Body)
+	}
+	if err := s.Put(adaReq, mine, "pub/open.txt", strings.NewReader("o"), 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mkdir(adaReq, mine, "pub/new/deeper"); err != nil {
+		t.Fatal(err)
+	}
+	eq(t, []any{perm(t, filepath.Join(home, "studio", "pub", "open.txt")), perm(t, filepath.Join(home, "studio", "pub", "new")), perm(t, filepath.Join(home, "studio", "pub", "new", "deeper"))},
+		[]any{os.FileMode(0o644), os.FileMode(0o755), os.FileMode(0o755)}, "open where the folder is")
 	if r := h.post("/api/user-libraries/"+space+"/shares", map[string]any{"path": "proj", "kind": "user", "name": strings.TrimSpace(string(account))}); r.Status != 400 {
 		t.Fatalf("with oneself: %v", r.Body)
 	}
@@ -162,10 +214,11 @@ func TestSharingAFolderWithAnotherPerson(t *testing.T) {
 	if sh.Status != 200 {
 		t.Fatalf("share: %v", sh.Body)
 	}
-	if !strings.Contains(acl(t, filepath.Join(home, "studio", "proj")), "group:"+grp+":rwx") {
+	// For writing, what others make there stays open to the owner.
+	if a := acl(t, filepath.Join(home, "studio", "proj")); !strings.Contains(a, "group:"+grp+":rwx") || !strings.Contains(a, "default:user:"+strings.TrimSpace(string(account))+":rwx") {
 		t.Fatalf("not set:\n%s", acl(t, filepath.Join(home, "studio", "proj")))
 	}
-	if l := h.do(http.MethodGet, "/api/user-libraries/"+space+"/shares", nil); len(l.Body["shares"].([]any)) != 1 {
+	if l := h.do(http.MethodGet, "/api/user-libraries/"+space+"/shares", nil); len(l.Body["shares"].([]any)) != 2 {
 		t.Fatalf("listed: %v", l.Body)
 	}
 	if mine := h.do(http.MethodGet, "/api/user-libraries/shared-with-me", nil); len(mine.Body["shares"].([]any)) != 0 {
@@ -175,10 +228,15 @@ func TestSharingAFolderWithAnotherPerson(t *testing.T) {
 	h.user = bob
 	got := h.do(http.MethodGet, "/api/user-libraries/shared-with-me", nil)
 	list, _ := got.Body["shares"].([]any)
-	if len(list) != 1 {
+	var share map[string]any
+	for _, x := range list {
+		if x.(map[string]any)["path"] == "proj" {
+			share = x.(map[string]any)
+		}
+	}
+	if len(list) != 2 || share == nil {
 		t.Fatalf("shared with bob: %v", got.Body)
 	}
-	share := list[0].(map[string]any)
 	eq(t, []any{share["label"], share["access"], share["path"]}, []any{"proj", "write", "proj"}, "the share")
 	add := h.post("/api/user-libraries/shared-with-me/"+share["id"].(string)+"/add", map[string]any{"depth": "names"})
 	if add.Status != 200 {
@@ -195,7 +253,6 @@ func TestSharingAFolderWithAnotherPerson(t *testing.T) {
 	}
 
 	// Bob writes in it, as himself; ada's space is indexed again.
-	s := h.m.SpaceFiles()
 	req := auth.WithUser(httptest.NewRequest(http.MethodPost, "/api/kb/upload", nil), bob)
 	klib := kb.Library{ID: lib, IndexRoot: libraries.RemoteRootOf("bob", lib), Space: true}
 	if err := s.Put(req, klib, "notes.md", strings.NewReader("from bob"), 100); err != nil {
@@ -207,10 +264,11 @@ func TestSharingAFolderWithAnotherPerson(t *testing.T) {
 	s.Changed(req, klib, []string{"notes.md"})
 	h.user = ada
 	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) && fmt.Sprint(h.waitFor(space)["files"]) != "2" {
+	// plan.md, private.txt, pub/open.txt and bob's notes.md.
+	for time.Now().Before(deadline) && fmt.Sprint(h.waitFor(space)["files"]) != "4" {
 		time.Sleep(100 * time.Millisecond)
 	}
-	eq(t, fmt.Sprint(h.waitFor(space)["files"]), "2", "the owner's index caught up")
+	eq(t, fmt.Sprint(h.waitFor(space)["files"]), "4", "the owner's index caught up")
 
 	// Taken back: bob's library and his index of it go.
 	h.user = bob
@@ -234,7 +292,7 @@ func TestSharingAFolderWithAnotherPerson(t *testing.T) {
 		t.Fatalf("bob's index of it is still there: %q", indexDir)
 	}
 	h.user = bob
-	if l := h.do(http.MethodGet, "/api/user-libraries/shared-with-me", nil); len(l.Body["shares"].([]any)) != 0 {
+	if l := h.do(http.MethodGet, "/api/user-libraries/shared-with-me", nil); len(l.Body["shares"].([]any)) != 1 {
 		t.Fatalf("after the revoke: %v", l.Body)
 	}
 }

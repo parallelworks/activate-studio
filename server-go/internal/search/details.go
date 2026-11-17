@@ -361,6 +361,14 @@ func (e *Engine) kindOf(l libraries.Library, viewer libraries.Viewer) string {
 		return "GUFI index on this computer"
 	}
 	d := e.userDef(viewer, l.ID)
+	// The card adds whether it is read only, so these say whose account
+	// reads it.
+	if d != nil && d.Space != nil {
+		return "Your space on " + remote.ShortName(l.Site) + ", as " + d.Space.Account
+	}
+	if d != nil && d.Shared != nil {
+		return "Shared by " + d.Shared.From + " on " + remote.ShortName(l.Site) + ", as " + d.Shared.Account
+	}
 	if d != nil && d.Build != nil {
 		over := "pw ssh"
 		if d.IsSSH() {

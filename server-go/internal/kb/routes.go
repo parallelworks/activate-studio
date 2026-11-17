@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 // Module is the files track's state: one per server.
@@ -340,7 +341,7 @@ func (m *Module) treeBody(w http.ResponseWriter, r *http.Request) error {
 			for _, l := range libs {
 				name := l.Label
 				if l.Site != "" {
-					name = l.Label + " (on " + l.Site + ")"
+					name = l.Label + " (on " + remote.ShortName(l.Site) + ")"
 				}
 				entries = append(entries, Entry{Name: name, Path: l.ID, Type: "dir", Kind: "dir"})
 			}

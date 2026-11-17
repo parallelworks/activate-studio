@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +48,9 @@ type Share struct {
 	Access    string    `json:"access"`
 	CreatedAt string    `json:"createdAt"`
 	Adopters  []Adopter `json:"adopters,omitempty"`
+	// Opened is the folders above Folder the share opened for passing
+	// through, which a revoke closes again where no other share needs them.
+	Opened []string `json:"opened,omitempty"`
 }
 
 // Adopter is a recipient's library made from a share.
@@ -135,9 +139,11 @@ func newShareID() string {
 
 // shareSh applies ($1 apply) or takes back ($1 revoke) a share, as the
 // owner: $2 the folder, $3 user, group or everyone, $4 the account or
-// group, $5 r or w, $6 the space's folder. A revoke reads, on standard
-// input, one per line, the folders that other shares to the same
-// recipient need reachable.
+// group, $5 r or w, $6 the space's folder. An apply prints opened=<folder>
+// for each folder above the shared one that it opened for passing through,
+// which had no entry for the recipient before. A revoke reads, on standard
+// input, one per line, the folders above it to close again: those the
+// share opened that no other share to the same recipient needs.
 const shareSh = `set -f
 op=$1 f=$2 kind=$3 name=$4 perm=$5 root=$6
 uid=$(id -u)
@@ -171,14 +177,33 @@ pin() {
   [ "$e" = "$g" ] || setfacl -m "g::$e" -- "$1"
 }
 has() { getfacl -cpE -- "$1" 2>/dev/null | sed -n "s/^$2:\(...\).*/\1/p" | head -n 1; }
+# tidy: an ACL left with base entries only goes, so the folder or file is
+# as it was before any share: a default ACL with no named entry, which
+# would set what new files get in place of the umask, and a mask that is
+# the only extended entry and equals the owning group's.
+tidy() {
+  a=$(getfacl -cpE -- "$1" 2>/dev/null) || return 0
+  printf '%s\n' "$a" | grep -q '^default:\(user\|group\):[^:]' && return 0
+  printf '%s\n' "$a" | grep -q '^default:' && setfacl -k -- "$1"
+  printf '%s\n' "$a" | grep -q '^\(user\|group\):[^:]' && return 0
+  m=$(printf '%s\n' "$a" | sed -n 's/^mask::\(...\).*/\1/p'); [ -n "$m" ] || return 0
+  [ "$m" = "$(printf '%s\n' "$a" | sed -n 's/^group::\(...\).*/\1/p')" ] && setfacl -b -- "$1"
+  return 0
+}
+# Only what the owner owns is changed: a recipient who writes owns what
+# they made, and its ACL came from the folder's default ACL.
+mine() { find "$F" -user "$uid" ! -type l "$@"; }
+me=$(id -un)
 case "$op" in
 apply)
   if [ "$kind" = everyone ]; then
-    chmod -R o+rX -- "$F" || fail 10 "$F could not be opened to every account."
+    mine -exec chmod o+rX -- {} + || fail 10 "$F could not be opened to every account."
   else
-    getfacl -R -P -s -p -- "$F" 2>/dev/null | sed -n 's/^# file: //p' | while IFS= read -r x; do pin "$x"; done
-    setfacl -R -P -m "$who:$p" -- "$F" || fail 10 "The ACL could not be set on $F."
-    setfacl -R -P -d -m "$who:$p" -- "$F" || fail 10 "The default ACL could not be set on $F."
+    mine -exec getfacl -P -s -p -- {} + 2>/dev/null | sed -n 's/^# file: //p' | while IFS= read -r x; do pin "$x"; done
+    mine -exec setfacl -m "$who:$p" -- {} + || fail 10 "The ACL could not be set on $F."
+    mine -type d -exec setfacl -d -m "$who:$p" -- {} + || fail 10 "The default ACL could not be set on $F."
+    # What a recipient writes there stays open to the owner.
+    [ "$perm" = w ] && { mine -type d -exec setfacl -d -m "u:$me:rwX" -- {} + || fail 10 "The default ACL could not be set on $F."; }
   fi
   groups=
   [ "$kind" = user ] && groups=$(id -Gn -- "$name" 2>/dev/null)
@@ -187,10 +212,17 @@ apply)
     d=${d%/*}; [ -n "$d" ] || d=/
     if [ "$(stat -c %u -- "$d")" = "$uid" ]; then
       if [ "$kind" = everyone ]; then
-        chmod o+x -- "$d" || fail 10 "$d could not be opened to every account."
+        if [ $((8#$(stat -c %a -- "$d") & 1)) -eq 0 ]; then
+          chmod o+x -- "$d" || fail 10 "$d could not be opened to every account."
+          printf 'opened=%s\n' "$d"
+        fi
       else
-        cur=$(has "$d" "$long"); [ -n "$cur" ] || cur=---
-        case "$cur" in ??x) ;; *) pin "$d"; setfacl -m "$who:${cur%?}x" -- "$d" || fail 10 "$d could not be opened to $name.";; esac
+        cur=$(has "$d" "$long")
+        case "$cur" in
+        ??x) ;;
+        '') pin "$d"; setfacl -m "$who:--x" -- "$d" || fail 10 "$d could not be opened to $name."; printf 'opened=%s\n' "$d" ;;
+        *) pin "$d"; setfacl -m "$who:${cur%?}x" -- "$d" || fail 10 "$d could not be opened to $name." ;;
+        esac
       fi
     else
       mm=$((8#$(stat -c %a -- "$d")))
@@ -205,20 +237,21 @@ apply)
   done
   echo shared ;;
 revoke)
-  keep=$(cat)
   if [ "$kind" = everyone ]; then
-    chmod -R o-rwx -- "$F" || fail 10 "$F could not be closed to other accounts."
+    mine -exec chmod o-rwx -- {} + || fail 10 "$F could not be closed to other accounts."
   else
-    setfacl -R -P -x "$who" -- "$F" 2>/dev/null
-    setfacl -R -P -x "d:$who" -- "$F" 2>/dev/null
-    d=$F
-    while [ "$d" != / ]; do
-      d=${d%/*}; [ -n "$d" ] || d=/
-      [ "$(stat -c %u -- "$d")" = "$uid" ] || continue
-      printf '%s\n' "$keep" | grep -qxF -- "$d" && continue
-      [ "$(has "$d" "$long")" = "--x" ] && setfacl -x "$who" -- "$d"
-    done
+    mine -exec setfacl -x "$who" -- {} + 2>/dev/null
+    mine -type d -exec setfacl -x "d:$who" -- {} + 2>/dev/null
+    mine -exec getfacl -P -s -p -- {} + 2>/dev/null | sed -n 's/^# file: //p' | while IFS= read -r x; do tidy "$x"; done
   fi
+  while IFS= read -r d || [ -n "$d" ]; do
+    [ -n "$d" ] && [ -d "$d" ] && [ ! -L "$d" ] || continue
+    [ "$(stat -c %u -- "$d")" = "$uid" ] || continue
+    case "$F/" in "${d%/}"/*) ;; *) continue ;; esac
+    if [ "$kind" = everyone ]; then chmod o-x -- "$d"
+    elif [ "$(has "$d" "$long")" = "--x" ]; then setfacl -x "$who" -- "$d"; tidy "$d"
+    fi
+  done
   echo revoked ;;
 *) fail 2 "unknown command" ;;
 esac`
@@ -283,20 +316,67 @@ func (m *Module) listShares(w who, id string) (*jsonv.Object, error) {
 	return jsonv.NewObject("shares", list, "acl", d.Space.ACL, "fs", d.Space.FS, "account", d.Space.Account), nil
 }
 
-func (m *Module) runShare(ctx context.Context, site, key string, s Share, op string, keep []string) error {
+// runShare runs shareSh; close is a revoke's folders to close again. It
+// returns the folders an apply opened.
+func (m *Module) runShare(ctx context.Context, site, key string, s Share, op string, close []string) ([]string, error) {
 	perm := "r"
 	if s.Access == "write" {
 		perm = "w"
 	}
-	input := strings.NewReader(strings.Join(keep, "\n"))
+	input := strings.NewReader(strings.Join(append(close, ""), "\n"))
 	r, err := m.Pool.RunOnce(ctx, site, key, []string{"bash", "-c", shareSh, "_", op, s.Folder, s.Kind, s.Name, perm, s.Root}, 30*time.Minute, input)
 	if err != nil {
-		return apierr.New(502, "Your session to %s did not open: %s", remote.SiteName(site), err.Error())
+		return nil, apierr.New(502, "Your session to %s did not open: %s", remote.ShortName(site), err.Error())
 	}
 	if r.Code != 0 {
-		return apierr.New(409, "%s", lastOrExit(remote.QuietStderr(r.Stderr), r.Code))
+		return nil, apierr.New(409, "%s", lastOrExit(remote.QuietStderr(r.Stderr), r.Code))
 	}
-	return nil
+	var opened []string
+	for _, line := range strings.Split(r.Stdout, "\n") {
+		if d, ok := strings.CutPrefix(line, "opened="); ok && strings.HasPrefix(d, "/") {
+			opened = append(opened, d)
+		}
+	}
+	return opened, nil
+}
+
+// union is a and the paths of b not in it.
+func union(a, b []string) []string {
+	out := append([]string{}, a...)
+	for _, x := range b {
+		if !slices.Contains(out, x) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// closeFor is what a revoke of s closes again above its folder: what s
+// opened, less what other shares to the same recipient need.
+func (m *Module) closeFor(s Share) []string {
+	keep := m.keepFor(s)
+	var out []string
+	for _, d := range s.Opened {
+		if !slices.Contains(keep, d) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// noteOpened adds folders a share opened to its record.
+func (m *Module) noteOpened(id string, opened []string) {
+	if len(opened) == 0 {
+		return
+	}
+	m.modifyShares(func(list []Share) ([]Share, error) {
+		for i := range list {
+			if list[i].ID == id {
+				list[i].Opened = union(list[i].Opened, opened)
+			}
+		}
+		return list, nil
+	})
 }
 
 // addShare grants a share, or changes the access of one already there.
@@ -346,15 +426,17 @@ func (m *Module) addShare(ctx context.Context, w who, id string, b *jsonv.Object
 	}
 	if was != nil && was.Access == "write" && access == "read" {
 		// Write taken back to read: the old entry goes first.
-		if err := m.runShare(ctx, d.Site, key, *was, "revoke", m.keepFor(*was)); err != nil {
+		if _, err := m.runShare(ctx, d.Site, key, *was, "revoke", m.closeFor(*was)); err != nil {
 			return nil, err
 		}
 	}
-	if err := m.runShare(ctx, d.Site, key, s, "apply", nil); err != nil {
+	opened, err := m.runShare(ctx, d.Site, key, s, "apply", nil)
+	if err != nil {
 		return nil, err
 	}
+	s.Opened = opened
 	if was != nil {
-		s.ID, s.CreatedAt, s.Adopters = was.ID, was.CreatedAt, was.Adopters
+		s.ID, s.CreatedAt, s.Adopters, s.Opened = was.ID, was.CreatedAt, was.Adopters, union(was.Opened, opened)
 	}
 	err = m.modifyShares(func(list []Share) ([]Share, error) {
 		out := []Share{}
@@ -409,9 +491,11 @@ func (m *Module) reapplyOverlapping(ctx context.Context, site, key string, s Sha
 			continue
 		}
 		if inside(x.Folder, s.Folder) || inside(s.Folder, x.Folder) {
-			if err := m.runShare(ctx, site, key, x, "apply", nil); err != nil && m.Log != nil {
+			opened, err := m.runShare(ctx, site, key, x, "apply", nil)
+			if err != nil && m.Log != nil {
 				m.Log.Warn("a share was not set again", "share", x.ID, "err", err.Error())
 			}
+			m.noteOpened(x.ID, opened)
 		}
 	}
 }
@@ -433,7 +517,7 @@ func (m *Module) removeShare(ctx context.Context, w who, id, shareID string) err
 	if s == nil {
 		return apierr.New(404, "no such share")
 	}
-	if err := m.runShare(ctx, d.Site, key, *s, "revoke", m.keepFor(*s)); err != nil {
+	if _, err := m.runShare(ctx, d.Site, key, *s, "revoke", m.closeFor(*s)); err != nil {
 		return err
 	}
 	if err := m.modifyShares(func(list []Share) ([]Share, error) {
@@ -481,12 +565,12 @@ func (m *Module) identity(ctx context.Context, site, key string) (clusterIdent, 
 	}
 	r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", `echo "uid=$(id -u)"; echo "user=$(id -un)"; echo "groups=$(id -Gn)"`}, 60*time.Second)
 	if err != nil {
-		return id, apierr.New(502, "Your session to %s did not open: %s", remote.SiteName(site), err.Error())
+		return id, apierr.New(502, "Your session to %s did not open: %s", remote.ShortName(site), err.Error())
 	}
 	kv := keyValues(r.Stdout)
 	uid, err := strconv.Atoi(kv["uid"])
 	if err != nil || kv["user"] == "" {
-		return id, apierr.New(502, "%s did not say which account your session reaches.", remote.SiteName(site))
+		return id, apierr.New(502, "%s did not say which account your session reaches.", remote.ShortName(site))
 	}
 	id = clusterIdent{account: kv["user"], uid: uid, groups: strings.Fields(kv["groups"]), at: time.Now()}
 	m.sharesMu.Lock()
@@ -574,7 +658,7 @@ func (m *Module) addShared(ctx context.Context, w who, shareID string, b *jsonv.
 		return nil, 0, spaceNotPassed(f)
 	}
 	if r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", spacePrepareSh}, 60*time.Second); err != nil || !strings.Contains(r.Stdout, "ready") {
-		return nil, 0, apierr.New(502, "Your ~/.activate-studio could not be kept to you alone on %s.", remote.SiteName(site))
+		return nil, 0, apierr.New(502, "Your ~/.activate-studio could not be kept to you alone on %s.", remote.ShortName(site))
 	}
 	if f.SendGufi {
 		if err := m.sendGufi(ctx, site, key); err != nil {
@@ -583,7 +667,7 @@ func (m *Module) addShared(ctx context.Context, w who, shareID string, b *jsonv.
 	}
 	bin := f.GufiBin
 	r := &buildReq{owner: owner,
-		host: probeHost{Site: site, Key: key, Name: remote.SiteName(site), Reached: remote.SiteName(site),
+		host: probeHost{Site: site, Key: key, Name: remote.ShortName(site), Reached: remote.ShortName(site),
 			Advice: func(msg string) string { return pwAdvice(msg, site) }},
 		conn: buildConn{SSHOptions: []string{}, Site: site},
 		spec: buildSpec{SourceRoot: f.Real, GufiBin: &bin}}
@@ -693,7 +777,7 @@ func (m *Module) endShares(w who, owner string, d *libraries.UserDef) {
 	}
 	for _, s := range mine {
 		if key != "" {
-			if err := m.runShare(ctx, d.Site, key, s, "revoke", m.keepFor(s)); err != nil && m.Log != nil {
+			if _, err := m.runShare(ctx, d.Site, key, s, "revoke", m.closeFor(s)); err != nil && m.Log != nil {
 				m.Log.Warn("a share of a removed space was not taken back", "share", s.ID, "err", err.Error())
 			}
 		}
