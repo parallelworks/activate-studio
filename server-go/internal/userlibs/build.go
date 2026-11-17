@@ -390,9 +390,19 @@ func (m *Module) addBuild(ctx context.Context, w who, transport string, b *jsonv
 	return m.addBuildFor(ctx, w, transport, r, b, nil)
 }
 
-// addBuildFor is addBuild for a host already chosen; space, when set,
-// makes the library the person's own space (spaces.go).
-func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *buildReq, b *jsonv.Object, space *libraries.SpaceInfo) (*libraries.UserDef, int, error) {
+// addOpts make a built library a person's space or a folder shared with
+// them (spaces.go, shares.go).
+type addOpts struct {
+	IDBase, Label string
+	Space         *libraries.SpaceInfo
+	Shared        *libraries.SharedInfo
+}
+
+// addBuildFor is addBuild for a host already chosen.
+func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *buildReq, b *jsonv.Object, o *addOpts) (*libraries.UserDef, int, error) {
+	if o == nil {
+		o = &addOpts{}
+	}
 	p := m.probeBuild(ctx, r.host, r.spec)
 	if !p.OK {
 		return nil, 0, notPassed("The check did not pass.", p)
@@ -413,8 +423,11 @@ func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *bu
 	host := r.conn.Site[strings.LastIndex(r.conn.Site, "@")+1:]
 	id := uniqueID(defs, idBase(host+"-"+name))
 	fallback := name
-	if space != nil {
+	switch {
+	case o.Space != nil:
 		id, fallback = uniqueID(defs, idBase("space-"+name)), "My space"
+	case o.IDBase != "":
+		id, fallback = uniqueID(defs, idBase(o.IDBase)), o.Label
 	}
 	// The depth is stored with the library, the default included, so a
 	// later default leaves it as built.
@@ -444,7 +457,7 @@ func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *bu
 	}
 	d := libraries.UserDef{ID: id, Label: label(field(b, "label"), fallback), Transport: transport, Existing: ptr(false), Site: r.conn.Site,
 		Destination: r.conn.Destination, OS: nonEmpty(p.OS), GufiVersion: p.GufiVersion, Resource: resource, SourceDir: build.SourceRoot,
-		State: "building", Build: build, Space: space}
+		State: "building", Build: build, Space: o.Space, Shared: o.Shared}
 	if r.conn.Port != 0 {
 		d.Port = ptr(r.conn.Port)
 	}

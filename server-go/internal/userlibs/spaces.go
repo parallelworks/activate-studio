@@ -89,6 +89,8 @@ else
   r=$(cd -P -- "$r" 2>/dev/null && pwd -P) || { echo kind=unreadable; exit 0; }
 fi
 echo "real=$r"
+[ -r "$r" ] && [ -x "$r" ] && echo readable=1
+[ -w "$r" ] && echo writable=1
 echo "owner=$(st %u "$r")"
 echo "mode=$(st %a "$r")"
 echo "fgroup=$(st %G "$r")"
@@ -150,6 +152,8 @@ type spaceFound struct {
 	GufiBin string
 	// SendGufi: the Studio's copy goes to GufiBin first.
 	SendGufi bool
+	// readable and writable: the account can open the folder, and write in it.
+	readable, writable bool
 }
 
 func (f *spaceFound) json() *jsonv.Object {
@@ -247,6 +251,7 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 		return done(), nil
 	}
 	f.Target, f.Real = kv["target"], kv["real"]
+	f.readable, f.writable = kv["readable"] == "1", kv["writable"] == "1"
 	switch kv["kind"] {
 	case "notdir":
 		add(step{Name: "folder", Detail: f.Target + " is a file, not a folder."})
@@ -547,7 +552,7 @@ func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*librari
 		conn: buildConn{SSHOptions: []string{}, Site: site},
 		spec: buildSpec{SourceRoot: f.Real, GufiBin: &bin}}
 	info := f.Info
-	return m.addBuildFor(ctx, w, "pw", r, b, &info)
+	return m.addBuildFor(ctx, w, "pw", r, b, &addOpts{Space: &info})
 }
 
 func spaceNotPassed(f *spaceFound) error {

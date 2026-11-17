@@ -62,10 +62,12 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	if err != nil {
 		return nil, w, "", nil, err
 	}
-	// Only the person whose space it is writes in it.
-	if d == nil || d.Space == nil || o != owner {
+	// Only the person whose library it is writes in it, and only in a
+	// space or a folder shared with them for writing.
+	if d == nil || !d.WrittenAsOwner() || o != owner {
 		return nil, w, "", nil, apierr.New(404, "no such space")
 	}
+	_, uid, _ := d.Account()
 	key := m.keyOf(w, owner)
 	if key == "" {
 		return nil, w, "", nil, apierr.New(409, "Sign the pw CLI in under Settings, Model access, so the Studio can reach your space as you.")
@@ -80,7 +82,7 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	if !strings.HasPrefix(root, "/") {
 		return nil, w, "", nil, apierr.New(409, "%s has no folder yet.", d.Label)
 	}
-	if err := m.sameAccount(r.Context(), d.Site, key, d.Space.UID); err != nil {
+	if err := m.sameAccount(r.Context(), d.Site, key, uid); err != nil {
 		return nil, w, "", nil, err
 	}
 	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: d.Site, KeyText: key, Dir: root, Name: d.Label, Timeout: 10 * time.Minute}
@@ -313,10 +315,12 @@ func (s spaceFiles) Changed(r *http.Request, lib kb.Library, _ []string) {
 	}
 	owner := w.owner()
 	o, d, err := m.Users.FindRoot(lib.IndexRoot)
-	if err != nil || d == nil || d.Space == nil || o != owner {
+	if err != nil || d == nil || !d.WrittenAsOwner() || o != owner {
 		return
 	}
 	m.queueSpaceBuild(w, owner, d.ID, SpaceEvery, 0)
+	// Everyone else who indexes the same folder builds again too.
+	m.sharesChanged(owner, d)
 }
 
 func (m *Module) queueSpaceBuild(w who, owner, id string, after time.Duration, tries int) {
@@ -347,7 +351,7 @@ func (m *Module) spaceBuild(w who, owner, id string, tries int) {
 			break
 		}
 	}
-	if d == nil || d.Space == nil {
+	if d == nil || (d.Space == nil && d.Shared == nil) {
 		return
 	}
 	if d.State == "building" || d.State == "updating" {

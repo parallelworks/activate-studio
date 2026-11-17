@@ -82,6 +82,7 @@ type Module struct {
 	GufiBin string
 	spaceState
 	spaceWrites
+	shareStore
 }
 
 type follower struct {
@@ -492,6 +493,28 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		}
 		return m.public(d, job), nil
 	}))
+	mux.HandleFunc("GET "+base+"/{id}/shares", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		return m.listShares(w, r.PathValue("id"))
+	}))
+	mux.HandleFunc("POST "+base+"/{id}/shares", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		return m.addShare(context.WithoutCancel(r.Context()), w, r.PathValue("id"), b)
+	}))
+	mux.HandleFunc("DELETE "+base+"/{id}/shares/{share}", h(true, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		if err := m.removeShare(context.WithoutCancel(r.Context()), w, r.PathValue("id"), r.PathValue("share")); err != nil {
+			return nil, err
+		}
+		return jsonv.NewObject("ok", true), nil
+	}))
+	mux.HandleFunc("GET "+base+"/shared-with-me", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		return m.sharedWithMe(r.Context(), w)
+	}))
+	mux.HandleFunc("POST "+base+"/shared-with-me/{share}/add", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		d, job, err := m.addShared(context.WithoutCancel(r.Context()), w, r.PathValue("share"), b)
+		if err != nil {
+			return nil, err
+		}
+		return m.public(d, job), nil
+	}))
 	mux.HandleFunc("POST "+base+"/{id}/refresh", h(true, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 		d, err := m.refresh(r.Context(), w, r.PathValue("id"))
 		if err != nil {
@@ -646,6 +669,9 @@ func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
 		"buildingDepth", buildingDepth)
 	if d.Space != nil {
 		o.Set("space", jsonv.NewObject("account", d.Space.Account, "acl", d.Space.ACL, "fs", d.Space.FS))
+	}
+	if d.Shared != nil {
+		o.Set("shared", jsonv.NewObject("from", d.Shared.From, "access", d.Shared.Access, "share", d.Shared.ShareID))
 	}
 	if job != 0 {
 		o.Set("job", float64(job))
@@ -1001,6 +1027,16 @@ func (m *Module) remove(w who, id string) error {
 	if owner == "" {
 		return apierr.New(404, "no such library")
 	}
+	var gone *libraries.UserDef
+	if d := find(m.load(owner), id); d != nil {
+		x := *d
+		gone = &x
+	}
+	// A space's shares end with it; a library made from a share leaves it.
+	if gone != nil && gone.Space != nil {
+		m.endShares(w, owner, gone)
+	}
+	defer m.forgetAdopted(owner, gone)
 	err := m.Users.Modify(owner, func(defs []libraries.UserDef) ([]libraries.UserDef, error) {
 		if find(defs, id) == nil {
 			return nil, apierr.New(404, "no such library")

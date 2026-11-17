@@ -58,6 +58,39 @@ type UserDef struct {
 	// written as that person (docs/MULTI-USER.md, Personal spaces); nil for
 	// every other library.
 	Space *SpaceInfo `json:"space,omitempty"`
+	// Shared marks a folder another person shared with this library's
+	// owner, indexed and read as the owner; nil for every other library.
+	Shared *SharedInfo `json:"shared,omitempty"`
+}
+
+// SharedInfo is a library made from someone else's share.
+type SharedInfo struct {
+	ShareID string `json:"shareId"`
+	// From is the sharer's account on the cluster.
+	From string `json:"from"`
+	// Access is read or write; written as the library's owner.
+	Access string `json:"access"`
+	// Account and UID are the owner's on the cluster, as for a space.
+	Account string `json:"account"`
+	UID     int    `json:"uid"`
+}
+
+// WrittenAsOwner: the Library writes in it as its owner (a space, or a
+// folder shared with them for writing).
+func (d *UserDef) WrittenAsOwner() bool {
+	return d.Space != nil || (d.Shared != nil && d.Shared.Access == "write")
+}
+
+// Account is the cluster account and uid a space or a shared library was
+// made for; ok false for any other library.
+func (d *UserDef) Account() (account string, uid int, ok bool) {
+	switch {
+	case d.Space != nil:
+		return d.Space.Account, d.Space.UID, true
+	case d.Shared != nil:
+		return d.Shared.Account, d.Shared.UID, true
+	}
+	return "", 0, false
 }
 
 // SpaceInfo is what the check found about a space's folder when it was made.

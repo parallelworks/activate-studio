@@ -848,9 +848,13 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 		if d.Vectors == nil && d.Build == nil {
 			l.VectorsUnknown = true
 		}
-		// A person's space is theirs to write in; every write runs as them.
-		if d.Space != nil {
+		// A person's space is theirs to write in, and so is a folder shared
+		// with them for writing; every write runs as them.
+		if d.WrittenAsOwner() {
 			l.Space, l.Writable = true, true
+		}
+		if d.Shared != nil {
+			l.SharedFrom = d.Shared.From
 		}
 		if d.Build != nil {
 			l.Meaning, l.Depth = r.o.Settings.Meaning(d.ID), r.o.Settings.Depth(d.ID)
