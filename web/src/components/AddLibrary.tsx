@@ -6,6 +6,8 @@ import { CopyLibraryForm } from './CopyLibraryForm'
 import { LibraryImport } from './LibraryImport'
 import { LocalLibraryForm } from './LocalLibraryForm'
 import { SshLibraryForm } from './SshLibraryForm'
+import { SharedWithMe } from './SharedWithMe'
+import { SpaceForm } from './SpaceForm'
 
 /**
  * Add a library, as two choices: where the folder or index is (this
@@ -16,10 +18,13 @@ import { SshLibraryForm } from './SshLibraryForm'
  * someone's own computer builds on a remote system over the session. A
  * folder on a remote system can also be copied here and indexed (`copy`,
  * sign-in off): from a Transfers location, which reaches hosts that take
- * SFTP only and rclone remotes, where nothing can be built.
+ * SFTP only and rclone remotes, where nothing can be built. Beside the
+ * cluster it runs on, a Studio also offers a space of the viewer's own
+ * (`space`) and the folders others shared with them (`shared`), both read
+ * and written as them.
  */
 
-export type Where = 'here' | 'remote'
+export type Where = 'here' | 'remote' | 'space' | 'shared'
 export type How = 'build' | 'connect' | 'copy'
 export type Via = 'ssh' | 'pw' | 'workflow'
 
@@ -35,25 +40,31 @@ export interface AddOptions {
   workflow: boolean
   /** A copy of a folder in a Transfers location, indexed here (sign-in off). */
   copy?: boolean
+  /** A space of the viewer's own on the cluster the Studio runs beside, and
+   *  folders shared with them there: offered wherever the Studio knows that
+   *  cluster, the form saying why when one cannot be made yet. */
+  space?: boolean
 }
 
 /** What can be chosen, given what this Studio offers. */
 export function addChoices(o: AddOptions) {
-  const where: Where[] = ['here', ...(o.ssh || o.pw || o.workflow || o.copy ? ['remote' as const] : [])]
-  const how = (w: Where): How[] => (w === 'here'
+  const where: Where[] = ['here', ...(o.ssh || o.pw || o.workflow || o.copy ? ['remote' as const] : []), ...(o.space ? ['space' as const, 'shared' as const] : [])]
+  const how = (w: Where): How[] => (w === 'space' || w === 'shared' ? [] : w === 'here'
     ? [...(o.buildHere ? ['build' as const] : []), 'connect']
     : [...(o.ssh || o.pw || o.workflow ? ['build' as const] : []), ...(o.ssh || o.pw ? ['connect' as const] : []), ...(o.copy ? ['copy' as const] : [])])
-  const via = (w: Where, h: How): Via[] => (w === 'here' || h === 'copy' ? [] : [
+  const via = (w: Where, h: How): Via[] => (w !== 'remote' || h === 'copy' ? [] : [
     ...(o.ssh ? ['ssh' as const] : []), ...(o.pw ? ['pw' as const] : []), ...(h === 'build' && o.workflow ? ['workflow' as const] : []),
   ])
   return { where, how, via }
 }
 
-const WHERE_LABEL: Record<Where, string> = { here: 'This computer', remote: 'A remote system' }
+const WHERE_LABEL: Record<Where, string> = { here: 'This computer', remote: 'A remote system', space: 'My space', shared: 'Shared with me' }
 const HOW_LABEL: Record<How, string> = { build: 'Build an index of a folder', connect: 'Connect an existing index', copy: 'Copy here and index it' }
 const VIA_LABEL: Record<Via, string> = { ssh: 'SSH', pw: 'ACTIVATE (pw ssh)', workflow: 'Platform workflow' }
 
-function describe(where: Where, how: How, via: Via | undefined): string {
+function describe(where: Where, how: How | undefined, via: Via | undefined): string {
+  if (where === 'space') return 'A folder of your own on the cluster this Studio runs beside, closed to other accounts, indexed there as you. You can add, move and delete files in it from the Library, and share folders in it with other accounts.'
+  if (where === 'shared') return 'Folders other accounts on this Studio\'s cluster shared with you. Each is indexed there as you, so it holds what your account can read, and it can be written where the share allows.'
   if (where === 'here') {
     return how === 'build'
       ? 'A folder on this computer, indexed with GUFI and kept in step with the folder as it changes. Read only in the Studio.'
@@ -125,6 +136,8 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
         )}
       </div>
       <p className="muted lib-add-about">{describe(where, how, v)}</p>
+      {where === 'space' && <SpaceForm onAdded={lib => onAdded(lib, true)} />}
+      {where === 'shared' && <SharedWithMe onAdded={lib => onAdded(lib, true)} />}
       {where === 'here' && (how === 'build'
         ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />
         : <LocalLibraryForm key="here-connect" compact browse={browse} onAdded={lib => onAdded(lib, false)} />)}
