@@ -10,6 +10,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwhome"
 )
 
 // Module is the personal sign-ins of one server.
@@ -47,6 +48,17 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	a.Providers.SignInKey = key
 	platform.Of(a).SignInKey = key
+	pwhome.Set(func(k string) string {
+		owner := m.SignIns.OwnerOfToken(k)
+		if owner == "" {
+			return ""
+		}
+		h := m.SignIns.Home(owner)
+		if os.MkdirAll(h, 0o700) != nil {
+			return ""
+		}
+		return h
+	})
 	m.Routes(mux)
 }
 

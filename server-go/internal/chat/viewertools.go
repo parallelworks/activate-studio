@@ -14,6 +14,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libapi"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwhome"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 )
 
@@ -246,7 +247,7 @@ func (m *Module) pwToolCLI(ctx context.Context, args []string, timeout time.Dura
 	cmd := exec.CommandContext(ctx, m.Plat.CLI(), args...)
 	cmd.Env = os.Environ()
 	if userKey != "" {
-		cmd.Env = append(cmd.Env, "PW_API_KEY="+userKey)
+		cmd.Env = append(append(cmd.Env, "PW_API_KEY="+userKey), pwhome.Env(userKey)...)
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &limitBuf{&stdout, customMaxBuffer}, &limitBuf{&stderr, customMaxBuffer}

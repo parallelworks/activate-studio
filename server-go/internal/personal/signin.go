@@ -44,6 +44,13 @@ type SignIns struct {
 	runs     map[string]*run
 	tokens   map[string]token
 	renewing map[string]*renewCall
+	// issued is whose each token handed out is, until it expires.
+	issued map[string]issue
+}
+
+type issue struct {
+	owner string
+	until time.Time
 }
 
 // State is one person's sign-in as the Settings page shows it.
@@ -115,11 +122,28 @@ func (s *SignIns) Dir(owner string) string {
 	return filepath.Join(s.Base, "users", libraries.OwnerHash(owner), "pw")
 }
 
+// Home is the home folder owner's pw CLI runs in, here: its ssh key
+// (~/.ssh/pwcli), which the CLI registers with the account it acts for, is
+// the person's own, never the service account's (internal/pwhome).
+func (s *SignIns) Home(owner string) string {
+	return filepath.Join(s.Base, "users", libraries.OwnerHash(owner), "home")
+}
+
+// homeFor is the person's home beside a sign-in folder (Dir, or a staging
+// or old one next to it), made if missing.
+func homeFor(dir string) string {
+	h := filepath.Join(filepath.Dir(dir), "home")
+	os.MkdirAll(h, 0o700)
+	return h
+}
+
 // env is the CLI's environment for the sign-in in dir: no deployment key
 // or context, no desktop keyring (the sign-in must stay in dir's file),
-// and no host other than the one named on the command line.
+// no host other than the one named on the command line, and the person's
+// own home.
 func (s *SignIns) env(dir string) []string {
 	return s.Environ(map[string]string{
+		"HOME":                     homeFor(dir),
 		"PW_CREDENTIALS_DIR":       dir,
 		"PW_API_KEY":               "",
 		"PW_CONTEXT":               "",
@@ -402,8 +426,30 @@ func (s *SignIns) SignOut(owner string) State {
 	s.signOut(s.Dir(owner))
 	s.mu.Lock()
 	delete(s.tokens, owner)
+	for k, v := range s.issued {
+		if v.owner == owner {
+			delete(s.issued, k)
+		}
+	}
 	s.mu.Unlock()
+	// The ssh key the CLI made for the person goes too; the public half it
+	// registered stays on their account, where it can be removed.
+	os.RemoveAll(s.Home(owner))
 	return s.Status(owner)
+}
+
+// OwnerOfToken is whose sign-in issued key, "" for a key it did not issue
+// or one that has expired.
+func (s *SignIns) OwnerOfToken(key string) string {
+	if key == "" {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v, ok := s.issued[key]; ok && v.until.After(s.now()) {
+		return v.owner
+	}
+	return ""
 }
 
 // Token is an access token of owner's sign-in with at least a few minutes
@@ -451,6 +497,15 @@ func (s *SignIns) Token(ctx context.Context, owner string) (string, error) {
 	s.mu.Lock()
 	if err == nil {
 		s.tokens[owner] = token{value: value, until: until, asked: s.now()}
+		if s.issued == nil {
+			s.issued = map[string]issue{}
+		}
+		for k, v := range s.issued {
+			if !v.until.After(s.now()) {
+				delete(s.issued, k)
+			}
+		}
+		s.issued[value] = issue{owner: owner, until: until}
 	}
 	delete(s.renewing, owner)
 	s.mu.Unlock()

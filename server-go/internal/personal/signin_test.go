@@ -15,7 +15,7 @@ import (
 // logout is counted. It records the PW_API_KEY and PW_CONTEXT it saw.
 const fakeCLI = `#!/bin/bash
 ctl="$FAKE_CTL"
-echo "key=${PW_API_KEY-unset} ctx=${PW_CONTEXT-unset} dbus=${DBUS_SESSION_BUS_ADDRESS-unset}" >> "$ctl/env"
+echo "key=${PW_API_KEY-unset} ctx=${PW_CONTEXT-unset} dbus=${DBUS_SESSION_BUS_ADDRESS-unset} home=$HOME" >> "$ctl/env"
 case "$1 $2" in
 "auth login")
   echo "To sign in, open this page on any device:"
@@ -134,6 +134,24 @@ func TestSignInIsKeptForTheSamePerson(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(ctl, "env"))
 	if strings.Contains(string(b), "deployment-key") || strings.Contains(string(b), "deployment-context") || strings.Contains(string(b), "/run/bus") {
 		t.Fatalf("the CLI saw the deployment's credential or keyring:\n%s", b)
+	}
+	// Every run was in the person's own home, so the ssh key the CLI makes
+	// and registers is theirs.
+	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if !strings.HasSuffix(l, " home="+s.Home("user:alice")) {
+			t.Fatalf("a CLI run outside the person's home: %q", l)
+		}
+	}
+	// The token maps back to the person while it lasts, and to no one after.
+	if s.OwnerOfToken("tok-1") != "user:alice" || s.OwnerOfToken("tok-x") != "" {
+		t.Fatal("token owner lookup")
+	}
+	s.SignOut("user:alice")
+	if s.OwnerOfToken("tok-1") != "" {
+		t.Fatal("a signed-out token still maps to its owner")
+	}
+	if _, err := os.Stat(s.Home("user:alice")); err == nil {
+		t.Fatal("the person's CLI home (and its ssh key) was kept after sign out")
 	}
 }
 
