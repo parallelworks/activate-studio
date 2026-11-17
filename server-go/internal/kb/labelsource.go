@@ -67,7 +67,7 @@ func (m *Module) LibraryLabelled(ctx context.Context, lib Library, rel string) b
 	if lib.ID == PrimaryID {
 		eff = m.Tags.Effective(ctx, rel)
 	} else {
-		eff = m.Tags.Library.Effective(lib.ID, rel)
+		eff = m.Tags.Library.Effective(lib.StateKey(), rel)
 	}
 	own, _ := eff.Get("own")
 	inh, _ := eff.Get("inherited")

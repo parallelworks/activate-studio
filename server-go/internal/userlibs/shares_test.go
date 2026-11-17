@@ -296,3 +296,28 @@ func TestSharingAFolderWithAnotherPerson(t *testing.T) {
 		t.Fatalf("after the revoke: %v", l.Body)
 	}
 }
+
+// What the Studio keeps for one person on the server (their library list
+// and the folder their maps and sign-in live in) is closed to other
+// accounts, even under an index base open to a group, and an older
+// index base's per-person folder is closed when the Studio starts.
+func TestPerPersonStateIsPrivate(t *testing.T) {
+	base := t.TempDir()
+	os.Chmod(base, 0o750)
+	old := filepath.Join(base, "users")
+	os.MkdirAll(old, 0o755)
+	New(nil, nil, nil, base, "", nil)
+	if fi, _ := os.Stat(old); fi.Mode().Perm() != 0o700 {
+		t.Fatalf("users is %v after start", fi.Mode().Perm())
+	}
+	u := &libraries.Users{IndexBase: base}
+	if err := u.Save("user:ada", nil); err != nil {
+		t.Fatal(err)
+	}
+	filepath.WalkDir(old, func(p string, d os.DirEntry, err error) error {
+		if fi, err := d.Info(); err == nil && fi.Mode().Perm()&0o077 != 0 {
+			t.Errorf("%s is %v", p, fi.Mode().Perm())
+		}
+		return nil
+	})
+}

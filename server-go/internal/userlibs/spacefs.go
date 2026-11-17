@@ -119,7 +119,44 @@ func (m *Module) sameAccount(ctx context.Context, site, key string, uid int) err
 	return nil
 }
 
+// inSpace is a path the Library names in a space, relative to its folder:
+// a leading slash is dropped, and a ".." part is refused here, before
+// anything runs on the cluster. The cluster's own check comes after the
+// name is looked up, so a person a folder is shared with could otherwise
+// tell from the answer whether a name exists beside that folder.
+func inSpace(rel string) (string, error) {
+	var parts []string
+	for _, p := range strings.Split(rel, "/") {
+		switch {
+		case p == "" || p == ".":
+			continue
+		case p == "..":
+			return "", apierr.New(400, "%s leads outside the folder", rel)
+		case strings.ContainsRune(p, 0):
+			return "", apierr.New(400, "unusable path")
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, "/"), nil
+}
+
+func inSpaceAll(rels []string) ([]string, error) {
+	out := make([]string, len(rels))
+	for i, p := range rels {
+		c, err := inSpace(p)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = c
+	}
+	return out, nil
+}
+
 func (s spaceFiles) List(r *http.Request, lib kb.Library, rel string) ([]kb.Entry, error) {
+	rel, err := inSpace(rel)
+	if err != nil {
+		return nil, err
+	}
 	fs, _, _, _, err := s.target(r, lib)
 	if err != nil {
 		return nil, err
@@ -155,6 +192,10 @@ func (s spaceFiles) List(r *http.Request, lib kb.Library, rel string) ([]kb.Entr
 }
 
 func (s spaceFiles) Mkdir(r *http.Request, lib kb.Library, rel string) error {
+	rel, err := inSpace(rel)
+	if err != nil {
+		return err
+	}
 	fs, _, _, _, err := s.target(r, lib)
 	if err != nil {
 		return err
@@ -196,6 +237,13 @@ func stagingName(dir string) string {
 
 // Put writes beside the file, then puts it in place in one rename.
 func (s spaceFiles) Put(r *http.Request, lib kb.Library, rel string, src io.Reader, max int64) error {
+	rel, err := inSpace(rel)
+	if err != nil {
+		return err
+	}
+	if rel == "" {
+		return apierr.New(400, "a file needs a name")
+	}
 	fs, _, _, _, err := s.target(r, lib)
 	if err != nil {
 		return err
@@ -222,6 +270,13 @@ func (s spaceFiles) Put(r *http.Request, lib kb.Library, rel string, src io.Read
 }
 
 func (s spaceFiles) Rename(r *http.Request, lib kb.Library, rel, name string) (string, error) {
+	rel, err := inSpace(rel)
+	if err != nil {
+		return "", err
+	}
+	if rel == "" || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\x00") {
+		return "", apierr.New(400, "unusable name")
+	}
 	fs, _, _, _, err := s.target(r, lib)
 	if err != nil {
 		return "", err
@@ -237,6 +292,13 @@ func (s spaceFiles) Rename(r *http.Request, lib kb.Library, rel, name string) (s
 }
 
 func (s spaceFiles) Move(r *http.Request, lib kb.Library, rels []string, dest string) ([]kb.Moved, []kb.Skipped, error) {
+	rels, err := inSpaceAll(rels)
+	if err == nil {
+		dest, err = inSpace(dest)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
 	fs, _, _, _, err := s.target(r, lib)
 	if err != nil {
 		return nil, nil, err
@@ -285,6 +347,15 @@ func (s spaceFiles) Move(r *http.Request, lib kb.Library, rels []string, dest st
 }
 
 func (s spaceFiles) Delete(r *http.Request, lib kb.Library, rels []string) ([]string, []kb.Skipped, error) {
+	rels, err := inSpaceAll(rels)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, rel := range rels {
+		if rel == "" {
+			return nil, nil, apierr.New(400, "refusing to remove the space's own folder")
+		}
+	}
 	fs, _, _, _, err := s.target(r, lib)
 	if err != nil {
 		return nil, nil, err

@@ -28,6 +28,17 @@ type ScopedHit struct {
 type HitLibrary struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
+	// key is what the Studio keeps the library's labels under
+	// (kb.StateKey); "" for the id.
+	key string
+}
+
+// StateKey is the hit's library's kb.StateKey.
+func (h HitLibrary) StateKey() string {
+	if h.key != "" {
+		return h.key
+	}
+	return h.ID
 }
 
 // ScopeOpts is searchScope's options.
@@ -456,7 +467,7 @@ func (e *Engine) SearchScope(ctx context.Context, libs []libraries.Library, q st
 		i := strings.Index(h.Path, sep)
 		l := byID[h.Path[:i]]
 		h.Path = h.Path[i+1:]
-		out = append(out, ScopedHit{SearchHit: h, Library: HitLibrary{ID: l.ID, Label: l.Label}})
+		out = append(out, ScopedHit{SearchHit: h, Library: HitLibrary{ID: l.ID, Label: l.Label, key: kb.StateKey(l.ID, l.IndexRoot)}})
 	}
 	return out
 }
@@ -493,7 +504,7 @@ func (e *Engine) Annotate(ctx context.Context, hits []ScopedHit, filter []string
 	}
 	pathOf := func(h ScopedHit) string { return h.Path }
 	prim = kb.AnnotateHits(ctx, e.Tags, prim, pathOf, with, filter)
-	other = kb.AnnotateLibraryHits(e.Tags, other, func(h ScopedHit) string { return h.Library.ID }, pathOf,
+	other = kb.AnnotateLibraryHits(e.Tags, other, func(h ScopedHit) string { return h.Library.StateKey() }, pathOf,
 		func(h ScopedHit) []string {
 			if h.Tags == nil {
 				return nil

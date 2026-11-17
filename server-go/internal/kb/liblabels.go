@@ -64,7 +64,13 @@ func (l *LibraryLabels) load(id string) *libLabelStore {
 
 func (l *LibraryLabels) persist(id string) error {
 	f := l.LabelsFile(id)
-	if err := os.MkdirAll(filepath.Dir(f), 0o777); err != nil {
+	// A person's labels (a key with an owner, StateKey) name their files:
+	// closed to other accounts on this host.
+	dirMode, fileMode := os.FileMode(0o777), os.FileMode(0o666)
+	if strings.Contains(id, "@") {
+		dirMode, fileMode = 0o700, 0o600
+	}
+	if err := os.MkdirAll(filepath.Dir(f), dirMode); err != nil {
 		return err
 	}
 	var b bytes.Buffer
@@ -75,7 +81,7 @@ func (l *LibraryLabels) persist(id string) error {
 		return err
 	}
 	tmp := fmt.Sprintf("%s.%d.tmp", f, os.Getpid())
-	if err := os.WriteFile(tmp, bytes.TrimRight(b.Bytes(), "\n"), 0o666); err != nil {
+	if err := os.WriteFile(tmp, bytes.TrimRight(b.Bytes(), "\n"), fileMode); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, f); err != nil {
@@ -89,7 +95,7 @@ func (l *LibraryLabels) persist(id string) error {
 func (l *LibraryLabels) Set(lib Library, rel string, tags []string) ([]string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	store := l.load(lib.ID)
+	store := l.load(lib.StateKey())
 	key := trimSlashes(rel)
 	next := uniqueTags(tags)
 	store.IndexRoot = lib.IndexRoot
@@ -98,7 +104,7 @@ func (l *LibraryLabels) Set(lib Library, rel string, tags []string) ([]string, e
 	} else {
 		delete(store.Entries, key)
 	}
-	return next, l.persist(lib.ID)
+	return next, l.persist(lib.StateKey())
 }
 
 func uniqueTags(tags []string) []string {
@@ -185,11 +191,11 @@ func (l *LibraryLabels) Prune(lib Library, force bool) int {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	store := l.load(lib.ID)
-	if !force && time.Since(l.pruned[lib.ID]) < 10*time.Minute {
+	store := l.load(lib.StateKey())
+	if !force && time.Since(l.pruned[lib.StateKey()]) < 10*time.Minute {
 		return 0
 	}
-	l.pruned[lib.ID] = time.Now()
+	l.pruned[lib.StateKey()] = time.Now()
 	if len(store.Entries) == 0 {
 		return 0
 	}

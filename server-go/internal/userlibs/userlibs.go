@@ -168,6 +168,17 @@ func New(p *platform.Platform, pool *remote.Pool, runners *remote.Runners, index
 		followers: map[string]*follower{},
 	}
 	m.Jobs = m.ownJobs
+	// What earlier versions kept for each person under the index base
+	// (their libraries, maps with text from their files, preview copies)
+	// was open to the index base's group; it is closed when the Studio
+	// starts (libraries.PrivateDir).
+	if indexBase != "" {
+		for _, d := range []string{"users", "remote-previews"} {
+			if p := filepath.Join(indexBase, d); dirExists(p) {
+				os.Chmod(p, 0o700)
+			}
+		}
+	}
 	m.Background = context.Background
 	m.Notify = func(string, string) {}
 	return m
@@ -423,7 +434,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	mux.HandleFunc("POST "+base+"/ssh/test", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
 		if !w.sshAllowed() {
@@ -444,7 +455,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	mux.HandleFunc("POST "+base+"/pw/test", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
 		_, key, err := m.pwKey(w)
@@ -462,7 +473,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	for _, t := range []string{"ssh", "pw"} {
 		mux.HandleFunc("POST "+base+"/"+t+"/build/test", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
@@ -477,7 +488,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 			if err != nil {
 				return nil, err
 			}
-			return m.public(d, job), nil
+			return m.public(w.owner(), d, job), nil
 		}))
 	}
 	mux.HandleFunc("GET "+base+"/space", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
@@ -491,7 +502,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, job), nil
+		return m.public(w.owner(), d, job), nil
 	}))
 	mux.HandleFunc("GET "+base+"/{id}/shares", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 		return m.listShares(w, r.PathValue("id"))
@@ -513,21 +524,21 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, job), nil
+		return m.public(w.owner(), d, job), nil
 	}))
 	mux.HandleFunc("POST "+base+"/{id}/refresh", h(true, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 		d, err := m.refresh(r.Context(), w, r.PathValue("id"))
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	mux.HandleFunc("PUT "+base+"/{id}/ssh-options", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
 		d, err := m.setSSHOptions(r.Context(), w, r.PathValue("id"), field(b, "sshOptions"))
 		if err != nil {
 			return nil, err
 		}
-		return m.public(d, 0), nil
+		return m.public(w.owner(), d, 0), nil
 	}))
 	// Search and Query call this as they open, so the first query after a
 	// long gap does not wait for the ssh login.
@@ -545,7 +556,7 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 func (m *Module) list(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 	libs := []any{}
 	for _, d := range m.listDefs(r.Context(), w) {
-		libs = append(libs, m.public(&d, 0))
+		libs = append(libs, m.public(w.owner(), &d, 0))
 	}
 	why := m.pwUnavailable(w)
 	return jsonv.NewObject("libraries", libs, "available", w.owner() != "", "ssh", w.sshAllowed(), "pw", why == "",
@@ -594,7 +605,7 @@ func (m *Module) pwSystems(r *http.Request, w who, _ *jsonv.Object) (any, error)
 }
 
 // public is publicUserLibrary: the shape Settings shows, no keys.
-func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
+func (m *Module) public(owner string, d *libraries.UserDef, job int) *jsonv.Object {
 	transport := d.Transport
 	if transport == "" {
 		transport = "pw"
@@ -602,7 +613,7 @@ func (m *Module) public(d *libraries.UserDef, job int) *jsonv.Object {
 	built := d.Build != nil
 	var meaning, depth any
 	if built {
-		meaning, depth = m.Settings.Meaning(d.ID), m.Settings.Depth(d.ID)
+		meaning, depth = m.Settings.Meaning(settingsKey(owner, d.ID)), m.Settings.Depth(settingsKey(owner, d.ID))
 	}
 	var reached any
 	if site := sshSiteOf(d); site != "" {
@@ -1052,11 +1063,12 @@ func (m *Module) remove(w who, id string) error {
 	if err != nil {
 		return err
 	}
-	m.Settings.Forget(id)
+	m.Settings.Forget(settingsKey(owner, id))
 	root := libraries.RemoteRootOf(owner, id)
 	if home, err := m.Users.RemoteMapHome(root); err == nil {
 		os.RemoveAll(home)
 	}
+	m.forgetKept(owner, id)
 	m.Users.TellRemoved(root)
 	m.Notify("removed", root)
 	return nil
@@ -1147,4 +1159,30 @@ func posixNormalize(p string) string {
 
 func (m *Module) workflowFile() string {
 	return filepath.Join(m.ProjectRoot, "deploy", "gufi-index.yaml")
+}
+
+// settingsKey is the key a person's library's index settings are kept
+// under, which two people's libraries of one id do not share.
+func settingsKey(owner, id string) string {
+	return kb.StateKey(id, libraries.RemoteRootOf(owner, id))
+}
+
+// forgetKept drops what this host kept for a person's library that is
+// gone: the copies its previews were made from, and its labels, where
+// they are the person's own (a Studio with sign-in on). A folder shared
+// and then taken back leaves no copy of its files here.
+func (m *Module) forgetKept(owner, id string) {
+	if m.IndexBase == "" {
+		return
+	}
+	key := settingsKey(owner, id)
+	os.RemoveAll(filepath.Join(m.IndexBase, "remote-previews", key))
+	if key != id {
+		os.RemoveAll(filepath.Join(m.IndexBase, "libraries", key))
+	}
+}
+
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }

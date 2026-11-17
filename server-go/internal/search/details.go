@@ -13,6 +13,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
@@ -607,7 +608,7 @@ func (e *Engine) withKeptLabels(l libraries.Library, sub string, v Details) Deta
 	if l.Primary || e.Tags == nil {
 		return v
 	}
-	ents := e.Tags.Library.Entries(l.ID)
+	ents := e.Tags.Library.Entries(kb.StateKey(l.ID, l.IndexRoot))
 	m := entriesMap(ents)
 	key := strings.Trim(sub, "/")
 	own := uniqStr(append(append([]string{}, v.Labels.Own...), m[key]...))

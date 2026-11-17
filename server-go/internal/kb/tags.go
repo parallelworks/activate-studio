@@ -346,7 +346,7 @@ func (t *Tags) Vocabulary(ctx context.Context, others []Library) []*Obj {
 	ids := make([]string, len(others))
 	for i, l := range others {
 		t.Library.Prune(l, false)
-		ids[i] = l.ID
+		ids[i] = l.StateKey()
 	}
 	t.Library.Counts(ids, counts)
 	keys := append([]string(nil), counts.keys...)

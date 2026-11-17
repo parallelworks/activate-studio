@@ -412,7 +412,7 @@ func (m *Module) withLocalLabels(lib Library, root string, entries []Entry) []En
 		}
 	}
 	if !lib.Primary {
-		kept := m.Tags.Library.Map(lib.ID)
+		kept := m.Tags.Library.Map(lib.StateKey())
 		for i := range entries {
 			if k := kept[entries[i].Path]; len(k) > 0 {
 				entries[i].Tags = uniq(append(append([]string{}, entries[i].Tags...), k...))
@@ -1211,7 +1211,7 @@ func (m *Module) getTags(w http.ResponseWriter, r *http.Request) error {
 	if lib.ID == PrimaryID {
 		out = m.Tags.Effective(r.Context(), rel)
 	} else {
-		out = m.Tags.Library.Effective(lib.ID, rel)
+		out = m.Tags.Library.Effective(lib.StateKey(), rel)
 	}
 	writeJSON(w, 200, out.Set("stored", stored(lib)))
 	return nil
@@ -1236,7 +1236,7 @@ func (m *Module) applyLibraryLabels(lib Library, rels, addRaw, removeRaw []strin
 			return nil, Error(404, "no such file: %s", rel)
 		}
 		var next []string
-		for _, t := range m.Tags.Library.Of(lib.ID, rel) {
+		for _, t := range m.Tags.Library.Of(lib.StateKey(), rel) {
 			if !removeSet[t] {
 				next = append(next, t)
 			}

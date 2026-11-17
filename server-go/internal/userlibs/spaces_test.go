@@ -119,6 +119,19 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 	if got["state"] != "ready" {
 		t.Fatalf("%v", got)
 	}
+	// What the build wrote (index, logs, records) is closed to every other
+	// account, below the closed ~/.activate-studio too.
+	filepath.WalkDir(filepath.Join(home, ".activate-studio"), func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.Type()&os.ModeSymlink != 0 || strings.Contains(p, "/gufi/") {
+			return nil
+		}
+		if fi, err := d.Info(); err == nil && fi.Mode().Perm()&0o077 != 0 && !strings.Contains(p, "/indexes/") {
+			t.Errorf("%s is %v", p, fi.Mode().Perm())
+		} else if err == nil && !d.IsDir() && fi.Mode().Perm()&0o077 != 0 {
+			t.Errorf("%s is %v", p, fi.Mode().Perm())
+		}
+		return nil
+	})
 	defs := h.m.Users.Load("single")
 	if defs[0].Space == nil || defs[0].Build == nil || !strings.HasPrefix(defs[0].Build.GufiBin, own) {
 		t.Fatalf("stored: %+v", defs[0])
@@ -154,6 +167,22 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 	}
 	if err := s.Mkdir(req, lib, "docs"); err != nil {
 		t.Fatal(err)
+	}
+	// A path that climbs out of the space is refused before it reaches the
+	// cluster, the same way whether or not the name exists there.
+	for _, p := range []string{"..", "../studio", "notes/../../x", "docs/.."} {
+		if _, err := s.List(req, lib, p); err == nil || !strings.Contains(err.Error(), "leads outside") {
+			t.Errorf("list %q: %v", p, err)
+		}
+	}
+	if err := s.Mkdir(req, lib, "../escape"); err == nil {
+		t.Error("a folder outside the space was made")
+	}
+	if _, err := os.Stat(filepath.Join(home, "escape")); err == nil {
+		t.Error("escape exists")
+	}
+	if _, err := s.Rename(req, lib, "docs", "../moved"); err == nil {
+		t.Error("a rename out of the space was taken")
 	}
 	list, err := s.List(req, lib, "")
 	if err != nil {

@@ -140,7 +140,7 @@ func goGolden(t *testing.T) []byte {
 			t.Fatal(err)
 		}
 		job, _ := get(jsonv.Obj(x), "job").(float64)
-		public = append(public, m.public(&d, int(job)))
+		public = append(public, m.public("single", &d, int(job)))
 	}
 	out.Set("keyValues", kvs).Set("statuses", statuses).Set("vectorsMade", made).Set("gaps", gaps).Set("dests", dests).Set("sshSpecs", specs)
 	out.Set("pwSpecs", pws).Set("advice", advice).Set("indexDirs", dirs).Set("manifestFrom", manifests).Set("public", public)

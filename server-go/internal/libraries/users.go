@@ -190,13 +190,27 @@ func (u *Users) Load(owner string) []UserDef {
 	return out
 }
 
+// PrivateDir makes dir, and keeps it, open to this account alone: what
+// the Studio keeps for one person (their libraries, maps with text from
+// their files, their platform sign-in) must not be readable through an
+// INDEX_BASE that is open to a group.
+func PrivateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(dir, 0o700)
+}
+
 // Save is saveUserLibraries.
 func (u *Users) Save(owner string, defs []UserDef) error {
 	f := u.fileFor(owner)
-	if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+	if err := PrivateDir(filepath.Join(u.IndexBase, "users")); err != nil {
 		return err
 	}
-	os.WriteFile(filepath.Join(filepath.Dir(f), "owner"), []byte(owner), 0o644)
+	if err := PrivateDir(filepath.Dir(f)); err != nil {
+		return err
+	}
+	os.WriteFile(filepath.Join(filepath.Dir(f), "owner"), []byte(owner), 0o600)
 	if defs == nil {
 		defs = []UserDef{}
 	}
@@ -204,7 +218,10 @@ func (u *Users) Save(owner string, defs []UserDef) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(f, b)
+	if err := writeAtomic(f, b); err != nil {
+		return err
+	}
+	return os.Chmod(f, 0o600)
 }
 
 // Update is updateDef: patch applied to one library under the lock.

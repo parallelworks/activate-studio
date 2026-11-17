@@ -270,7 +270,7 @@ func (m *Module) remoteTree(r *http.Request, lib Library, rel string, showHidden
 			out = append(out, e)
 		}
 	}
-	kept := m.Tags.Library.Map(lib.ID)
+	kept := m.Tags.Library.Map(lib.StateKey())
 	if len(kept) == 0 {
 		return out, nil
 	}

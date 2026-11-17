@@ -437,11 +437,11 @@ func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *bu
 	} else if b.Has("meaning") {
 		settings = map[string]any{"meaning": field(b, "meaning")}
 	}
-	if err := m.Settings.Save(id, settings); err != nil {
+	if err := m.Settings.Save(settingsKey(w.owner(), id), settings); err != nil {
 		return nil, 0, err
 	}
 	build := &libraries.RemoteBuild{ID: newBuildID(id), IndexDir: *p.IndexDir, SourceRoot: *p.SourceRoot, GufiBin: deref(p.GufiBin),
-		Model: p.Model, StartedAt: isoNow(), Depth: m.Settings.Depth(id), Progress: preparing()}
+		Model: p.Model, StartedAt: isoNow(), Depth: m.Settings.Depth(settingsKey(w.owner(), id)), Progress: preparing()}
 	creating := false
 	for _, c := range p.Create {
 		if c == build.SourceRoot {
@@ -493,7 +493,7 @@ func (m *Module) rebuildRemote(ctx context.Context, w who, owner string, d *libr
 			build.Model = &md
 		}
 	}
-	build.ID, build.StartedAt, build.Depth, build.Progress = newBuildID(d.ID), isoNow(), m.Settings.Depth(d.ID), preparing()
+	build.ID, build.StartedAt, build.Depth, build.Progress = newBuildID(d.ID), isoNow(), m.Settings.Depth(settingsKey(owner, d.ID)), preparing()
 	if err := m.startRemote(ctx, site, key, &build, false); err != nil {
 		return nil, err
 	}

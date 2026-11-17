@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 )
 
@@ -246,7 +247,7 @@ func (e *Engine) searchScopeVt(ctx context.Context, libs []libraries.Library, q 
 		i := strings.Index(h.Path, sep)
 		l := byID[h.Path[:i]]
 		h.Path = h.Path[i+1:]
-		out = append(out, ScopedHit{SearchHit: h, Library: HitLibrary{ID: l.ID, Label: l.Label}})
+		out = append(out, ScopedHit{SearchHit: h, Library: HitLibrary{ID: l.ID, Label: l.Label, key: kb.StateKey(l.ID, l.IndexRoot)}})
 	}
 	return out
 }

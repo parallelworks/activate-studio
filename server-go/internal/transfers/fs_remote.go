@@ -62,6 +62,19 @@ cd -- "$R" || fail 3 "cannot open $root"
 Rp=${R%/}/
 inside() { local d; d=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1; case "$d/" in "$Rp"*) return 0;; esac; return 1; }
 dirof() { case "$1" in */*) printf '%s' "${1%/*}";; *) printf .;; esac; }
+# plain: in a private location, the way to a folder a write changes goes
+# through no link. A person a folder is shared with for writing can make
+# links in it, and the owner's writes must not follow one to another of
+# their folders (one open to more people, say). The nearest part that
+# exists is looked at, before anything is made.
+plain() {
+  [ "${PRIV:-}" = 1 ] || return 0
+  local a=$1
+  while [ ! -e "$a" ] && [ ! -L "$a" ]; do a=$(dirof "$a"); done
+  [ -L "$a" ] && return 1
+  [ -d "$a" ] || a=$(dirof "$a")
+  [ "$(cd -P -- "$a" 2>/dev/null && pwd -P)" = "$(cd -L -- "$a" 2>/dev/null && pwd -L)" ]
+}
 G=0; find . -maxdepth 0 -printf '' >/dev/null 2>&1 && G=1
 F='%y\t%s\t%T@\t%m\t%p\0'
 SF='%HT%t%z%t%m%t%Lp%t%N'
@@ -112,16 +125,18 @@ read)
   printf '%s\n' "$mark"; exec cat -- "./$n" ;;
 write)
   p=$1; d=$(dirof "$p"); n=${p##*/}
+  plain "$d" || fail 6 "$p goes through a link"
   like "$p"; mkdir -p -- "$d" 2>/dev/null; inside "$d" || fail 6 "$p leads outside the location"
   cd -P -- "$d" || fail 8 "$p: the folder cannot be opened"
   set -C; cat > "./$n" || fail 8 "$p could not be written"
   [ -n "$2" ] && TZ=UTC touch -t "$2" -- "./$n" 2>/dev/null
   [ "$3" = x ] && chmod u+x -- "./$n" 2>/dev/null
   exit 0 ;;
-mkdir) [ -z "$1" ] && exit 0; like "$1"; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] || fail 8 "$1 could not be made"; inside "$1" || fail 6 "$1 leads outside the location" ;;
+mkdir) [ -z "$1" ] && exit 0; plain "$1" || fail 6 "$1 goes through a link"; like "$1"; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] || fail 8 "$1 could not be made"; inside "$1" || fail 6 "$1 leads outside the location" ;;
 land)
   while IFS= read -r -d '' a && IFS= read -r -d '' b && IFS= read -r -d '' f; do
-    d=$(dirof "$b"); like "$b"; mkdir -p -- "$d" 2>/dev/null
+    d=$(dirof "$b"); plain "$d" || fail 6 "$b goes through a link"; plain "$(dirof "$a")" || fail 6 "$a goes through a link"
+    like "$b"; mkdir -p -- "$d" 2>/dev/null
     inside "$d" || fail 6 "$b leads outside the location"
     inside "$(dirof "$a")" || fail 6 "$a leads outside the location"
     if [ -e "$b" ] || [ -L "$b" ]; then
@@ -137,6 +152,7 @@ land)
 remove)
   while IFS= read -r -d '' k && IFS= read -r -d '' p; do
     inside "$(dirof "$p")" || fail 6 "$p leads outside the location"
+    plain "$(dirof "$p")" || fail 6 "$p goes through a link"
     if [ "$k" = f ]; then [ -f "$p" ] && [ ! -L "$p" ] && { rm -f -- "$p" || fail 9 "$p could not be removed"; printf '%s\0' "$p"; }
     else rmdir -- "$p" 2>/dev/null; fi
   done; exit 0 ;;
@@ -151,6 +167,7 @@ rmtree)
     case "$p" in ''|.|./) fail 6 "refusing the location itself";; esac
     [ -e "$p" ] || [ -L "$p" ] || continue
     inside "$(dirof "$p")" || fail 6 "$p leads outside the location"
+    plain "$(dirof "$p")" || fail 6 "$p goes through a link"
     rm -rf -- "$p" || fail 9 "$p could not be removed"
     printf '%s\0' "$p"
   done; exit 0 ;;

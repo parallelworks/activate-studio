@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 )
 
 // PrimaryID names the main folder's library.
@@ -857,7 +858,8 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 			l.SharedFrom = d.Shared.From
 		}
 		if d.Build != nil {
-			l.Meaning, l.Depth = r.o.Settings.Meaning(d.ID), r.o.Settings.Depth(d.ID)
+			k := kb.StateKey(l.ID, l.IndexRoot)
+			l.Meaning, l.Depth = r.o.Settings.Meaning(k), r.o.Settings.Depth(k)
 		}
 		out = append(out, l)
 	}
