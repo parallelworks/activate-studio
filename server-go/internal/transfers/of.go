@@ -69,9 +69,14 @@ func Of(a *app.App) *Service {
 		key := ""
 		if !auth {
 			key = (&agentsites.Sites{P: p}).AgentKey("", false)
-		} else if a.Providers.PersonalCred != nil {
-			if k, base, ok := a.Providers.PersonalCred(owner, ""); ok && base == "" {
-				key = k
+		} else {
+			if f := a.Providers.SignInKey; f != nil {
+				key = f(owner)
+			}
+			if key == "" && a.Providers.PersonalCred != nil {
+				if k, base, ok := a.Providers.PersonalCred(owner, ""); ok && base == "" {
+					key = k
+				}
 			}
 		}
 		return Viewer{ID: owner, AuthOn: auth, Key: key}

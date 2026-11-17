@@ -108,6 +108,10 @@ type Store struct {
 	disabled    func() bool
 	now         func() time.Time
 
+	// SignIn is the person's own platform sign-in token, "" for none
+	// (ResolveOrSignIn).
+	SignIn func(sub string) string
+
 	mu       sync.Mutex
 	sessions map[string]*session
 	vaultMu  sync.Mutex
@@ -744,6 +748,23 @@ func (s *Store) Status(sub string) Status {
 
 // Resolve is resolveUserCred(sub): the caller's own credential, or nil.
 // With sign-in off, a request without a user is the one user's.
+// ResolveOrSignIn is Resolve, else the person's own platform sign-in
+// (SignIn), for model calls by a person who signed in instead of adding a
+// key. A one-person Studio and a deployment without personal keys never
+// use one.
+func (s *Store) ResolveOrSignIn(sub string) *Cred {
+	if c := s.Resolve(sub); c != nil {
+		return c
+	}
+	if s.SignIn == nil || sub == "" || sub == SingleOwner || sub == sharedSub || s.Disabled() || !s.authEnabled() {
+		return nil
+	}
+	if k := s.SignIn(sub); k != "" {
+		return &Cred{Key: k}
+	}
+	return nil
+}
+
 func (s *Store) Resolve(sub string) *Cred {
 	if sub == "" && !s.authEnabled() {
 		sub = SingleOwner

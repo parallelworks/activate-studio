@@ -74,6 +74,11 @@ func (k OwnerKeys) KeyOf(owner string) string {
 		}
 		return platform.Of(k.A).GatewayKey()
 	}
+	if f := k.A.Providers.SignInKey; f != nil {
+		if key := f(owner); key != "" {
+			return key
+		}
+	}
 	if f := k.A.Providers.PersonalCred; f != nil {
 		if key, base, ok := f(owner, ""); ok && base == "" {
 			return key

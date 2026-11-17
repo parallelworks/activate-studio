@@ -43,6 +43,10 @@ type Platform struct {
 	home              string
 	authEnabled       func() bool
 
+	// SignInKey is the access token of a person's own sign-in made through
+	// the Studio, "" for none (internal/personal sets it).
+	SignInKey func(owner string) string
+
 	// startupContext is PW_CONTEXT as the server started with it, which
 	// following the CLI restores.
 	startupContext string

@@ -93,6 +93,9 @@ func ownerHash(owner string) string {
 	return hex.EncodeToString(s[:])[:16]
 }
 
+// OwnerHash names an owner's folder under INDEX_BASE/users.
+func OwnerHash(owner string) string { return ownerHash(owner) }
+
 // Users keeps each owner's libraries (INDEX_BASE/users/<hash>/libraries.json).
 // Node reads the file afresh at every use, so it has no cache to fall out
 // of step with; writes here are atomic.

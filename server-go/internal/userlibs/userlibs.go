@@ -116,6 +116,13 @@ func Of(a *app.App) *Module {
 	}
 	m.Background = func() context.Context { return context.Background() }
 	m.OwnerKey = func(owner, cookie string) (string, bool) {
+		// The person's own platform sign-in first: it renews itself and
+		// was checked to be theirs.
+		if f := a.Providers.SignInKey; f != nil && owner != single {
+			if k := f(owner); k != "" {
+				return k, true
+			}
+		}
 		if a.Providers.PersonalCred == nil {
 			return "", false
 		}
