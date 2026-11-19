@@ -188,7 +188,7 @@ function gufiTree(root, { minos = '14.0', target = '14.0' } = {}) {
     write(lib(l), macho({ id: `@rpath/${l}` }))
   }
   write(lib('gufi_vt.dylib'), macho({ minos, id: '@rpath/gufi_vt.dylib', deps: ['@loader_path/libpcre2-8.0.dylib', '@loader_path/libomp.dylib', '/usr/lib/libSystem.B.dylib'] }))
-  for (const b of ['gufi_query', 'gufi_dir2index', 'gufi_sqlite3']) {
+  for (const b of ['gufi_query', 'gufi_dir2index', 'gufi_trace2index', 'gufi_sqlite3']) {
     write(path.join(root, 'bin', b), macho({ deps: ['@loader_path/../lib/libpcre2-8.0.dylib', '@loader_path/../lib/libomp.dylib', '/usr/lib/libSystem.B.dylib'] }))
   }
   write(path.join(root, 'bin', 'gufi_find'), '#!/usr/bin/env python3\n')
