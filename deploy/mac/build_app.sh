@@ -84,7 +84,9 @@ MAC_SHELL="${MAC_SHELL:-$([ "$SERVER" = go-only ] && echo wails || echo swift)}"
 case "$MAC_SHELL" in swift | wails) ;; *) echo "build_app: MAC_SHELL is swift or wails" >&2; exit 1 ;; esac
 # The ONNX runtime's own release for macOS arm64, for the Go server's embedder.
 ORT_VERSION=1.31.0
-ORT_SHA256=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+# The onnxruntime wheel the library comes out of (indexer/embed_deps.json
+# pins it by SHA-256); the library is the same for every Python.
+ORT_WHEEL=macos-arm64-cp312
 TOOLS="python3 curl tar git pnpm"
 [ "$SERVER" = node ] && [ "$MAC_SHELL" = swift ] || TOOLS="$TOOLS go"
 for tool in $TOOLS; do
@@ -259,15 +261,11 @@ else
 fi
 if [ "$SERVER" != node ]; then
   echo "The ONNX runtime $ORT_VERSION library, for the Go server's embedder..."
-  ORT_DIST="onnxruntime-osx-arm64-$ORT_VERSION"
-  fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_DIST.tgz" "$CACHE_DIR/$ORT_DIST.tgz" "$ORT_SHA256"
-  # The macOS archive's paths start with ./ (the Linux one's do not).
-  tar -xzf "$CACHE_DIR/$ORT_DIST.tgz" -C "$WORK" "./$ORT_DIST/lib/libonnxruntime.$ORT_VERSION.dylib" "./$ORT_DIST/LICENSE" "./$ORT_DIST/ThirdPartyNotices.txt"
-  # In app/lib: the embedder looks beside studio-server and in ../lib.
-  mkdir -p "$RES/app/lib" "$RES/licenses"
-  cp "$WORK/$ORT_DIST/lib/libonnxruntime.$ORT_VERSION.dylib" "$RES/app/lib/libonnxruntime.dylib"
-  cp "$WORK/$ORT_DIST/LICENSE" "$RES/licenses/onnxruntime-LICENSE.txt"
-  cp "$WORK/$ORT_DIST/ThirdPartyNotices.txt" "$RES/licenses/onnxruntime-ThirdPartyNotices.txt"
+  # Out of the pinned onnxruntime wheel, since Microsoft's release archives
+  # left GitHub. In app/lib: the embedder looks beside studio-server and in
+  # ../lib.
+  python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --platform "$ORT_WHEEL" --cache "$CACHE_DIR/embed" \
+    --ort-library "$RES/app/lib/libonnxruntime.dylib" --ort-licenses "$RES/licenses" --ort-version "$ORT_VERSION"
 fi
 
 G="$RES/gufi"
