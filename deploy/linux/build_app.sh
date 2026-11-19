@@ -73,7 +73,9 @@ case "$SERVER" in node | go | go-only) ;; *) die "STUDIO_SERVER is node, go or g
 # What only this platform pins (the rest is deploy/common/pins.sh).
 # The ONNX runtime's own release for Linux x64, for the Go server's embedder.
 ORT_VERSION=1.31.0
-ORT_SHA256=cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57
+# The onnxruntime wheel the library comes out of (indexer/embed_deps.json
+# pins it by SHA-256); the library is the same for every Python.
+ORT_WHEEL=linux-x86_64-cp312
 NODE_SHA256=cb5c9ce9c80d7b8821e3a258543c71b939138cf17c74d5cc44bbe85d6dbc5ad8
 PY_SHA256=178d3d83b6e8e99285a65d3fce9c16b87952cc5efdb4d1a0e3ff3be18ff0fc9c
 # The oldest targets' libraries: RHEL 8's glibc, and the libstdc++ GCC 8
@@ -257,14 +259,11 @@ else
 fi
 if [ "$SERVER" != node ]; then
   echo "The ONNX runtime $ORT_VERSION library, for the Go server's embedder..."
-  ORT_DIST="onnxruntime-linux-x64-$ORT_VERSION"
-  fetch "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_DIST.tgz" "$CACHE_DIR/$ORT_DIST.tgz" "$ORT_SHA256"
-  tar -xzf "$CACHE_DIR/$ORT_DIST.tgz" -C "$WORK" "$ORT_DIST/lib/libonnxruntime.so.$ORT_VERSION" "$ORT_DIST/LICENSE" "$ORT_DIST/ThirdPartyNotices.txt"
-  # In app/lib: the embedder looks beside studio-server and in ../lib.
-  mkdir -p "$APP/app/lib" "$APP/licenses"
-  mv "$WORK/$ORT_DIST/lib/libonnxruntime.so.$ORT_VERSION" "$APP/app/lib/libonnxruntime.so.1"
-  mv "$WORK/$ORT_DIST/LICENSE" "$APP/licenses/onnxruntime-LICENSE.txt"
-  mv "$WORK/$ORT_DIST/ThirdPartyNotices.txt" "$APP/licenses/onnxruntime-ThirdPartyNotices.txt"
+  # Out of the pinned onnxruntime wheel, since Microsoft's release archives
+  # left GitHub. In app/lib: the embedder looks beside studio-server and in
+  # ../lib.
+  python3 "$PROJECT_ROOT/indexer/fetch_embed.py" --platform "$ORT_WHEEL" --cache "$CACHE_DIR/embed" \
+    --ort-library "$APP/app/lib/libonnxruntime.so.1" --ort-licenses "$APP/licenses" --ort-version "$ORT_VERSION"
 fi
 
 echo "GUFI from $GUFI_TARBALL (deploy/linux/build_gufi.sh)..."
