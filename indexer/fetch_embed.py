@@ -19,6 +19,15 @@ pinned in embed_deps.json.
                 Studio sends to another system before its text pass, which
                 runs this script with that cache, --readers-only and no
                 network
+  --ort-library FILE
+                the ONNX Runtime C library alone, out of the onnxruntime
+                wheel pinned for --platform, written to FILE, with its
+                LICENSE and ThirdPartyNotices.txt in --ort-licenses: what
+                the Go server's embedder loads. Microsoft's release
+                archives on GitHub carried the same library until the
+                repository was taken down in November 2026; the wheel's
+                gives the same vectors. --ort-version, when given, must be
+                the pinned onnxruntime version.
 
 Every download is checked against its SHA-256, and kept in --cache so a
 second run needs no network. --platform names the wheels to take (for
@@ -33,6 +42,7 @@ import argparse
 import hashlib
 import json
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -147,6 +157,42 @@ def download_readers(cache: Path) -> None:
     print(f'the document readers in {cache}')
 
 
+# The C library in an onnxruntime wheel: libonnxruntime.so.1.31.0 on Linux,
+# libonnxruntime.1.31.0.dylib on macOS (as server-go/internal/userlibs
+# finds it for a build on another system).
+ORT_MEMBER = re.compile(r'onnxruntime/capi/libonnxruntime(\.so\.\d[\d.]*|\.\d[\d.]*\.dylib)')
+ORT_LICENSES = (('onnxruntime/LICENSE', 'onnxruntime-LICENSE.txt'),
+                ('onnxruntime/ThirdPartyNotices.txt', 'onnxruntime-ThirdPartyNotices.txt'))
+
+
+def install_ort_library(dest: Path, licenses, plat: str, cache: Path, version: str) -> None:
+    """The ONNX Runtime library out of the pinned onnxruntime wheel."""
+    pinned = PINS['packages']['onnxruntime']
+    if version and version != pinned:
+        raise SystemExit(f'the build wants ONNX Runtime {version}, but embed_deps.json pins onnxruntime {pinned}')
+    w = PINS['wheels'].get(plat, {}).get('onnxruntime')
+    if not w:
+        known = ', '.join(sorted(PINS['wheels']))
+        raise SystemExit(f'no pinned onnxruntime wheel for {plat} (there are: {known})')
+    whl = fetch(w['url'], w['sha256'], cache)
+    with zipfile.ZipFile(whl) as z:
+        libs = [n for n in z.namelist() if ORT_MEMBER.fullmatch(n)]
+        if len(libs) != 1:
+            raise SystemExit(f'{whl.name} has {len(libs)} ONNX Runtime libraries, not one: {libs}')
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f'.{dest.name}.part')
+        with z.open(libs[0]) as src, tmp.open('wb') as out:
+            shutil.copyfileobj(src, out)
+        tmp.chmod(0o755)
+        tmp.replace(dest)
+        if licenses:
+            licenses.mkdir(parents=True, exist_ok=True)
+            for member, name in ORT_LICENSES:
+                with z.open(member) as src, (licenses / name).open('wb') as out:
+                    shutil.copyfileobj(src, out)
+    print(f'ONNX Runtime {pinned} ({libs[0].rsplit("/", 1)[-1]} from the {plat} wheel) as {dest}')
+
+
 def install_model(target: Path, cache: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     for name, f in PINS['model']['files'].items():
@@ -168,9 +214,12 @@ def main() -> int:
     ap.add_argument('--no-readers', action='store_true', help='with --deps, leave out the document readers')
     ap.add_argument('--download', action='store_true', help='only download the wheels for --platform and the model into --cache')
     ap.add_argument('--download-readers', action='store_true', help='only download the document readers into --cache')
+    ap.add_argument('--ort-library', help='write the ONNX Runtime C library from the onnxruntime wheel for --platform to this file')
+    ap.add_argument('--ort-licenses', help='with --ort-library, put its LICENSE and ThirdPartyNotices.txt in this directory')
+    ap.add_argument('--ort-version', default='', help='with --ort-library, the ONNX Runtime version the build expects')
     args = ap.parse_args()
-    if not args.deps and not args.model and not args.download and not args.download_readers:
-        ap.error('give --deps, --model, or both, or --download or --download-readers')
+    if not args.deps and not args.model and not args.download and not args.download_readers and not args.ort_library:
+        ap.error('give --deps, --model, or both, or --download, --download-readers or --ort-library')
     cache = Path(args.cache) if args.cache else Path(tempfile.gettempdir()) / 'studio-embed-cache'
     if args.download:
         download(args.platform or this_platform(), cache)
@@ -183,6 +232,9 @@ def main() -> int:
             install_deps(Path(args.deps), args.platform or this_platform(), cache)
     if args.model:
         install_model(Path(args.model), cache)
+    if args.ort_library:
+        install_ort_library(Path(args.ort_library), Path(args.ort_licenses) if args.ort_licenses else None,
+                            args.platform or this_platform(), cache, args.ort_version)
     return 0
 
 
