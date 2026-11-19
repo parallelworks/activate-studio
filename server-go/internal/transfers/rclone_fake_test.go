@@ -91,7 +91,7 @@ type fakeArgs struct {
 
 // valued are the flags that take a value.
 var fakeValued = map[string]bool{"--hash-type": true, "--files-from-raw": true, "--stats": true, "--stats-log-level": true,
-	"--transfers": true, "--checkers": true, "--max-delete": true, "--metadata-set": true}
+	"--transfers": true, "--checkers": true, "--max-delete": true, "--metadata-set": true, "--count": true}
 
 func parseFake(args []string) fakeArgs {
 	a := fakeArgs{flags: map[string]string{}}
@@ -341,7 +341,29 @@ func fakeRclone(args []string) int {
 		if err != nil {
 			return fakeFail(4, "object not found")
 		}
-		io.Copy(os.Stdout, f)
+		var r io.Reader = f
+		if c := a.flags["--count"]; c != "" {
+			n, _ := strconv.ParseInt(c, 10, 64)
+			r = io.LimitReader(f, n)
+		}
+		io.Copy(os.Stdout, r)
+		return 0
+	case "config":
+		// `config redacted NAME`: the remote's type and, from
+		// FAKE_RCLONE_PROVIDERS ("s=AWS"), its provider, with a secret
+		// rclone would have redacted.
+		if len(a.pos) < 2 || a.pos[0] != "redacted" {
+			return fakeFail(1, "unknown config command")
+		}
+		name := strings.TrimSuffix(a.pos[1], ":")
+		fmt.Printf("[%s]\ntype = %s\n", name, types[name])
+		for _, kv := range strings.Split(os.Getenv("FAKE_RCLONE_PROVIDERS"), ",") {
+			if n, v, ok := strings.Cut(kv, "="); ok && n == name {
+				fmt.Printf("provider = %s\n", v)
+			}
+		}
+		fmt.Println("secret_access_key = XXX")
+		fmt.Println("### Double check the config for sensitive info before posting publicly")
 		return 0
 	case "rcat":
 		p, _ := fakePath(a.pos[0])

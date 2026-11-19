@@ -3,7 +3,7 @@ import {
   Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, Select, StatusLabel, Table, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
-import { COPY_EVERY, api, copyWhere, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
+import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, listingCost, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
@@ -15,6 +15,7 @@ import { IndexControls, IndexJobView, LastBuild } from './IndexActivity'
 import { useIndexStatus } from '../indexActivity'
 import { FOCUS_LIBRARY_EVENT, FOCUS_LIBRARY_KEY } from './OmittedLine'
 import { ReadThroughControl } from './ReadThroughControl'
+import { bytesText } from '../transferApi'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
@@ -365,6 +366,52 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
             <IndexControls part="secondary" canDelete={!!standalone} folder={l.sourceRoot} />
           </div>
         ),
+      })
+      continue
+    }
+    if (l.build && l.bucket) {
+      const b = l.build
+      const k = l.bucket
+      const from = bucketWhere(k)
+      const notes: ReactNode[] = [
+        k.listedAt && `${k.objects.toLocaleString()} ${k.objects === 1 ? 'object' : 'objects'}, ${bytesText(k.bytes)}, listed ${when(k.listedAt)}`,
+        k.listedAt && listingCost(k),
+        k.skipped > 0 && `${k.skipped.toLocaleString()} ${k.skipped === 1 ? 'entry' : 'entries'} could not be indexed (a path longer than GUFI holds, or a name "." or "..")`,
+        k.error && `the last listing failed: ${k.error}`,
+        b.error && b.error !== k.error && b.error,
+      ].filter(Boolean)
+      rows.push({
+        key: l.id, name: l.label, kind: `Index of ${from}, from its listing, read only`,
+        where: (
+          <DescriptionList className="lib-paths" stacked>
+            <DescriptionListItem label="Listed from" mono>{from}</DescriptionListItem>
+            <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
+            <DescriptionListItem label="List again">
+              <Select<number> aria-label={`How often ${l.label} is listed again`} size="sm" items={BUCKET_EVERY} value={k.every}
+                disabled={busy !== null}
+                onValueChange={v => void act(l.id, async () => { await api.setBucketEvery(l.id, v); await loadLibs() })} />
+            </DescriptionListItem>
+          </DescriptionList>
+        ),
+        state: b.state === 'building' ? { tone: 'info', text: 'Listing and indexing', pulse: true, notes }
+          : b.state === 'updating' ? { tone: 'info', text: 'Listing again', pulse: true, notes }
+          : b.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
+          : !l.caps.index ? { tone: 'error', text: 'Index not found', notes: [...notes, 'List again makes it.'] }
+          : k.error ? { tone: 'warning', text: 'Ready; the last listing failed', notes }
+          : { tone: 'success', text: 'Ready', notes },
+        fullText: l.caps.fullText, meaning: l.caps.vectors,
+        actions: (
+          <>
+            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
+              onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Listing ${from} again.`)}>List again</Button>
+            <Button variant="danger-outline" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state)}
+              onClick={() => askRemove(l.label,
+                <>Its index, which {cfg.appName} keeps in a folder of its own, is deleted. The objects in {from} are not touched.</>,
+                true,
+                () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }, `Removed ${l.label} and its index.`))}>Remove</Button>
+          </>
+        ),
+        detail: isBuilding(b.state) ? <BuildLine progress={b.progress} /> : undefined,
       })
       continue
     }

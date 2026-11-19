@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { addChoices } from '../src/components/AddLibrary'
+import { addedMessage } from '../src/components/LibraryAddDialogs'
 
 const caps = (fullText: boolean, vectors = false) => ({ index: true, fullText, vectors })
 
@@ -43,6 +44,16 @@ const COPY = {
     transfer: 'abc', files: 3, deleted: 0, error: null as string | null, looking: false, running: null as string | null,
   },
 }
+/** A bucket of an rclone remote, indexed from its listing. */
+const BUCKET = {
+  id: 'research', label: 'research', primary: false, writable: false, pinned: false, source: false, caps: caps(false), fromBucket: true,
+  indexRoot: '/data/studio/libraries/research/index/files', sourceRoot: null,
+  build: { indexDir: '/data/studio/libraries/research/index', managed: true, state: 'ready', error: null, builtAt: '2026-11-19T12:00:00Z', files: 2_500_000, dirs: 4_000, progress: null },
+  bucket: {
+    location: 'rclone:store', path: 'research', label: 'store', every: 60, listedAt: '2026-11-19T12:00:00Z',
+    objects: 2_500_000, bytes: 3 * 1024 ** 4, folders: 4_000, skipped: 0, requests: 2_500, provider: 'AWS', seconds: 95, error: null as string | null, listing: false,
+  },
+}
 /** A build job as /api/index/status carries it, in its text phase. */
 const phases = (state: 'running' | 'done') => [
   { id: 'names', label: 'Names and folders', state: 'done', done: 3, total: 3, unit: 'folders', step: null, ms: 40, note: null },
@@ -66,6 +77,8 @@ interface Server {
   pwWhy?: string
   workflow?: boolean
   canBuild?: boolean
+  /** An rclone remote among the Transfers locations. */
+  rclone?: boolean
   libs: Record<string, unknown>[]
   user: Record<string, unknown>[]
   primary: string
@@ -135,6 +148,7 @@ function stubServer(s: Server) {
       return reply({ locations: [
         { id: 'library:kb', kind: 'library', label: 'Notes', available: true, writable: true, browsable: true, indexed: true, detail: 'this computer' },
         { id: 'saved:drop', kind: 'saved', label: 'Drop', available: true, writable: true, browsable: true, indexed: false, detail: 'drop@files.example.com, /srv/drop' },
+        ...(s.rclone ? [{ id: 'rclone:store', kind: 'rclone', label: 'store', available: true, writable: true, browsable: true, indexed: false, detail: 'rclone remote (s3)' }] : []),
       ] })
     }
     if (path === '/api/transfers/browse') {
@@ -153,6 +167,15 @@ function stubServer(s: Server) {
       // The look is on from the answer until it ends.
       s.libs = s.libs.map(l => (l.copyOf && path.includes(String(l.id)) ? { ...l, copyOf: { ...(l.copyOf as object), looking: true } } : l))
       return reply({ library: s.libs.find(l => path.includes(String(l.id))), started: true })
+    }
+    if (path === '/api/libraries/bucket') {
+      s.libs = [...s.libs, { ...BUCKET, build: { ...BUCKET.build, state: 'building', builtAt: null, files: null, dirs: null, progress: { phase: 'Listing store, research', done: 0, total: 0, current: '12,000 objects' } }, bucket: { ...BUCKET.bucket, listedAt: null, objects: 0, bytes: 0, requests: 0 } }]
+      return reply({ library: s.libs.at(-1), job: { id: 9 } })
+    }
+    const bucketEvery = /^\/api\/libraries\/([^/]+)\/bucket$/.exec(path)
+    if (bucketEvery && method === 'PUT') {
+      s.libs = s.libs.map(l => (l.id === bucketEvery[1] ? { ...l, bucket: { ...(l.bucket as object), every: (body as { every: number }).every } } : l))
+      return reply({ library: s.libs.find(l => l.id === bucketEvery[1]) })
     }
     const every = /^\/api\/libraries\/([^/]+)\/copy$/.exec(path)
     if (every && method === 'PUT') {
@@ -280,6 +303,12 @@ describe('what Add a library offers', () => {
     expect(copyOnly.how('remote')).toEqual(['copy'])
     expect(copyOnly.via('remote', 'copy')).toEqual([])
     expect(addChoices({ buildHere: true, ssh: true, pw: true, workflow: false, copy: true }).how('remote')).toEqual(['build', 'connect', 'copy'])
+    // A bucket is its own place, with nothing more to choose.
+    const buckets = addChoices({ buildHere: true, ssh: false, pw: false, workflow: false, copy: true, bucket: true })
+    expect(buckets.where).toEqual(['here', 'remote', 'bucket'])
+    expect(buckets.how('bucket')).toEqual([])
+    expect(addedMessage({ label: 'research', bucket: {} }, true, true)).toBe('Listing research. Its progress shows in the list. It is searchable by name once the listing is indexed.')
+    expect(addedMessage({ label: 'Papers' }, true, true)).toMatch(/^Building Papers\./)
   })
 })
 
@@ -670,6 +699,57 @@ describe('Settings, Indexing, Libraries', () => {
     expect(within(row).getByText('1 folder, 1 file')).toBeInTheDocument()
     expect(within(row).getByText('Ready; the last pass failed')).toBeInTheDocument()
     expect(row.textContent).toMatch(/the last look failed: its location, Drop, upload, is no longer in Transfers/)
+  })
+
+  it('indexes a bucket of an rclone remote from its listing', async () => {
+    const s = server({ ssh: true, canBuild: true, rclone: true })
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'A bucket' }))
+    expect(screen.getByText(/any S3 compatible store, AWS or on premises/)).toBeInTheDocument()
+    // Only rclone remotes are offered: not an SFTP host, not a library.
+    await waitFor(() => expect(s.calls.some(c => c.url === '/api/transfers/locations')).toBe(true))
+    await pickOption('Remote', 'store', ['Drop', 'Notes'])
+    fireEvent.click(await screen.findByRole('button', { name: 'upload/' }))
+    expect(await screen.findByText('store/upload')).toBeInTheDocument()
+    expect(screen.getByText('No folders in it; 1 object.')).toBeInTheDocument()
+    // What the listing reads and costs is said before anything is listed.
+    expect(screen.getByText(/one fast list, about one request per 1,000 objects/)).toBeInTheDocument()
+    expect(screen.getByText(/No object is read to index it/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'List and index' }))
+    await waitFor(() => expect(posted(s, '/api/libraries/bucket')).toHaveLength(1))
+    expect(posted(s, '/api/libraries/bucket')[0].body).toEqual({ location: 'rclone:store', path: 'upload', every: 1440 })
+    const row = await waitFor(() => rowOf('research'))
+    expect(within(row).getByText('Index of store, research, from its listing, read only')).toBeInTheDocument()
+    expect(within(row).getByText('Listing and indexing')).toBeInTheDocument()
+  })
+
+  it('a bucket library says what it holds and what a listing costs, lists again when asked, and takes another interval', async () => {
+    const s = server({ libs: [PRIMARY, BUCKET] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('research'))
+    expect(within(row).getByText('Ready')).toBeInTheDocument()
+    expect(row.textContent).toMatch(/2,500,000 objects, 3(\.0)? TB, listed /)
+    expect(row.textContent).toContain('2,500 list requests a listing, about $0.01 at S3 Standard prices, about $9.00 a month at this interval')
+    // A bucket stays at names for now: no depth to choose.
+    expect(within(row).queryByRole('combobox', { name: /depth/i })).toBeNull()
+    fireEvent.click(within(row).getByRole('button', { name: 'List again' }))
+    await waitFor(() => expect(posted(s, '/api/libraries/research/rebuild')).toHaveLength(1))
+    await pickOption('How often research is listed again', 'Once a day')
+    await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/research/bucket')?.body).toEqual({ every: 1440 }))
+    fireEvent.click(within(rowOf('research')).getByRole('button', { name: 'Remove research' }))
+    const ask = await screen.findByRole('alertdialog', { name: 'Remove research?' })
+    expect(ask.textContent).toMatch(/Its index, which .* keeps in a folder of its own, is deleted\. The objects in store, research are not touched\./)
+  })
+
+  it('a bucket library whose last listing failed says why and stays Ready', async () => {
+    const s = server({ libs: [PRIMARY, { ...BUCKET, bucket: { ...BUCKET.bucket, provider: 'Minio', error: 'rclone: directory not found' } }] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('research'))
+    expect(within(row).getByText('Ready; the last listing failed')).toBeInTheDocument()
+    expect(row.textContent).toContain('the last listing failed: rclone: directory not found')
+    expect(row.textContent).toContain("2,500 list requests a listing; Minio's own request prices apply, and a store on premises has none")
   })
 
   it('removing a built library whose index the Studio keeps is red and asks as an alert', async () => {

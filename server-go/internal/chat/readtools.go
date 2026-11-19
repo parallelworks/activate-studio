@@ -279,6 +279,10 @@ func (m *Module) originalTextForTool(c context.Context, lib libraries.Library, r
 			return toolText{why: rel + " is there (" + what + ", " + fileField(fc, "size") + " bytes on " + where + ") but " + lib.Label +
 				" has no extracted text for it, and reading a file does not extract it. read_kb_file returns the index's text for it, when it has any."}, nil
 		}
+		if lib.Bucket != nil {
+			return toolText{why: rel + " is there (" + what + ", " + fileField(fc, "size") + " bytes in " + where +
+				"), but the Studio reads only plain text objects from a bucket and does not extract documents or images from one yet. The user can open it in the Library viewer."}, nil
+		}
 		return toolText{why: rel + " is there (" + what + ", " + fileField(fc, "size") + " bytes on " + where +
 			"), but the Studio opens only plain text files over ssh and does not extract documents or images from another host. read_kb_file returns the index's text for it, when it has any."}, nil
 	}
@@ -287,7 +291,7 @@ func (m *Module) originalTextForTool(c context.Context, lib libraries.Library, r
 
 // noFilesHere is noFilesHere: what a library with no files here cannot do.
 func noFilesHere(lib libraries.Library, needsFiles bool) error {
-	if needsFiles && lib.Site == "" && lib.SourceRoot == "" && lib.ReadThrough == nil {
+	if needsFiles && lib.Site == "" && lib.SourceRoot == "" && lib.ReadThrough == nil && lib.Bucket == nil {
 		return &toolError{lib.Label + " has no files on this host; it can be searched and read from its index (read_kb_file), but its originals cannot be opened. Settings, Indexing, Libraries can name another host that has them."}
 	}
 	if !needsFiles && lib.Site == "" && lib.SourceRoot == "" && !lib.Caps.Index {

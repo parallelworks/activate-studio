@@ -453,6 +453,69 @@ with that reason, since the location belongs to this Studio's Transfers.
 Copies use the Studio account's own access to the location, so they are
 offered only with sign-in off.
 
+## Buckets
+
+Preview. On a Studio with sign-in off, **Add a library**, "A bucket"
+indexes a bucket, or a folder in one, of an rclone remote from its
+listing alone (`server-go/internal/libapi/bucket.go`). Any S3 compatible
+store works, AWS or on premises (MinIO, Ceph and the like), since rclone
+needs only its endpoint and keys, and so does any other store rclone
+lists. The remote is one of the rclone remotes Transfers lists, used with
+this computer's rclone configuration, which Studio never changes. No
+object is read to index it and nothing is copied out of the store.
+
+`POST /api/libraries/bucket` takes `location` (`rclone:<remote>` from `GET
+/api/transfers/locations`), `path` (the bucket and folder in it, empty for
+the remote's top), and optional `label`, `id` and `every` (minutes
+between listings: 0, 60, 360 or 1440; 1440 by default; 0 lists only when
+asked). It refuses any other kind of location, a folder that cannot be
+listed, and a GUFI without `gufi_trace2index`, which the app ships. The
+library is a built library (`build`, managed) with no folder here
+(`sourceRoot` is null), its index at `INDEX_BASE/libraries/<id>/index/files`,
+and `bucket: { location, path, label, every }` in `libraries.json`. Its
+depth is names: a listing has names, sizes and times only, so `PUT
+/api/libraries/<id>/depth` answers 409 for anything deeper and search by
+meaning stays off.
+
+A listing is one `rclone lsjson -R --fast-list --no-mimetype
+--use-server-modtime` of the folder. On S3 a fast list is one run of
+ListObjectsV2 pages of 1,000 keys, so it takes about one request per
+1,000 objects (100 million objects take about 100,000 requests). Each
+entry is written to a GUFI trace (`server-go/internal/tracefile`),
+grouped by folder in sorted runs on disk, so a listing of any size is
+written in bounded memory and each folder appears once. Folders take mode
+0700 and objects 0600, owned by the account the Studio runs as, and a
+folder's time is that of its newest object. `gufi_trace2index` builds the
+trace into a staging folder, which is checked and then swapped in, so
+search answers from the last listing while a new one runs. Paths longer
+than GUFI holds, names "." or "..", and a name listed twice are left out
+and counted. What the last listing found is kept in
+`INDEX_BASE/libraries/<id>/bucket.json`: when it ran, objects, bytes,
+folders, entries left out, the requests it took, the provider rclone's
+configuration names, its seconds, and why it failed.
+
+The Settings row shows how many objects and how much data the bucket
+holds and when it was listed, and what a listing costs: the requests it
+takes and, where the provider is AWS, their price at the S3 Standard
+LIST rate ($0.005 per 1,000 requests), for one listing and for a month at
+the library's interval. Other providers set their own prices, and a store
+on premises has none. A ready bucket library is listed again when its
+interval has passed (checked each minute), **List again** (`POST
+/api/libraries/<id>/rebuild`) lists it at once, and `PUT
+/api/libraries/<id>/bucket` with `{ every }` changes the interval. A
+listing that fails leaves the last index in place and says why.
+
+The Library tree, search and Stats read the index and send nothing to the
+store. Opening a file reads that object alone: `rclone lsjson --stat` for
+its size and time, then for a text file `rclone cat --count` for its
+first 512 KB. A download, or a document preview, reads the whole object
+up to 50 MB; a larger one answers 413 and points to Transfers. The
+assistant's `read_original` reads plain text objects the same way. A
+bucket library is not a Transfers location (its remote is), and a library
+list leaves it out, with that reason, since the remote is in this
+computer's rclone configuration. **Remove** deletes its index and never
+touches the bucket.
+
 ## Indexes built on a remote system
 
 **Add a library**, "A remote system", "Build an index of a folder" builds
@@ -1184,6 +1247,10 @@ and a reload land in the right library.
 
 ## Not yet
 
+For buckets: reading text from their objects, with what that read costs
+shown first, on this computer or through the platform next to the data,
+bringing back only the index; a bucket read through an rclone mount; and
+owners, groups and modes per entry for a Studio that people sign in to.
 Writing to a library built from a folder on this computer (uploads, new
 folders, renames, deletes, labels), which needs the indexing code to take
 a library's own folder, index, and caches. Results by meaning from an

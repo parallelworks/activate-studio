@@ -31,7 +31,7 @@ func (m *Module) previewSource(r *http.Request, fresh bool) (Library, string, st
 	if err != nil {
 		return Library{}, "", "", err
 	}
-	if !lib.ReadThrough && lib.Site == "" {
+	if !lib.Elsewhere() {
 		return m.sourceFile(r)
 	}
 	if LibraryResolver == nil {

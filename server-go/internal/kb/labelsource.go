@@ -40,7 +40,7 @@ func (m *Module) LibraryListing(r *http.Request, lib Library, rel string) ([]Ent
 func (m *Module) LibraryFileText(r *http.Request, lib Library, rel string) string {
 	var o *Obj
 	var err error
-	if lib.ReadThrough || lib.Site != "" {
+	if lib.Elsewhere() {
 		o, err = m.remoteFile(r, lib, rel)
 	} else {
 		if b, rerr := os.ReadFile(filepath.Join(m.cacheRoot(lib), rel+".txt")); rerr == nil && JSTrim(string(b)) != "" {

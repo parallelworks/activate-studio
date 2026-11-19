@@ -34,6 +34,9 @@ func TestMain(m *testing.M) {
 	if os.Getenv("LIBAPI_TEST_CHILD") == "extract" {
 		os.Exit(cli.Main(os.Args[1:], os.Stdout, os.Stderr))
 	}
+	if os.Getenv("LIBAPI_TEST_CHILD") == "rclone" {
+		os.Exit(fakeRclone(os.Args[1:]))
+	}
 	os.Exit(m.Run())
 }
 

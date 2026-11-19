@@ -353,7 +353,7 @@ func (m *Module) treeBody(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		labeled := []Entry{}
-		if lib.Site != "" {
+		if lib.Site != "" || lib.Bucket {
 			list, err := m.remoteTree(r, lib, sub, showHidden)
 			if err != nil {
 				return err
@@ -376,8 +376,9 @@ func (m *Module) treeBody(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// A user's library on another system lists from its index there.
-	if lib.Site != "" {
+	// A user's library on another system lists from its index there, and
+	// a bucket library from its index here.
+	if lib.Site != "" || lib.Bucket {
 		list, err := m.remoteTree(r, lib, rel, showHidden)
 		if err != nil {
 			return err
@@ -429,7 +430,7 @@ func (m *Module) file(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if lib.ReadThrough || lib.Site != "" {
+		if lib.Elsewhere() {
 			out, err := m.remoteFile(r, lib, sub)
 			if err != nil {
 				return err
@@ -451,7 +452,7 @@ func (m *Module) file(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if lib.ReadThrough || lib.Site != "" {
+	if lib.Elsewhere() {
 		out, err := m.remoteFile(r, lib, rel)
 		if err != nil {
 			return err
@@ -550,7 +551,7 @@ func (m *Module) download(w http.ResponseWriter, r *http.Request) error {
 	} else if lib, err = m.lib(r, body{}); err != nil {
 		return err
 	}
-	if lib.ReadThrough || lib.Site != "" {
+	if lib.Elsewhere() {
 		if LibraryResolver == nil {
 			return Error(409, "%s has no files on this host", lib.Label)
 		}

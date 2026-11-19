@@ -85,7 +85,7 @@ fi
 LEMBED_FILES="lib/lembed0.dylib licenses/sqlite-lembed-LICENSE.txt licenses/llama.cpp-LICENSE.txt"
 [ "$LEMBED" = 1 ] || LEMBED_FILES=
 echo "Layout"
-for f in bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 \
+for f in bin/gufi_query bin/gufi_dir2index bin/gufi_trace2index bin/gufi_sqlite3 \
   lib/gufi_vt.dylib lib/vec0.dylib lib/libsqlite3-pcre.dylib lib/libomp.dylib lib/libpcre2-8.0.dylib \
   licenses/GUFI-LICENSE.txt licenses/sqlite-vec-LICENSE-MIT.txt $LEMBED_FILES \
   licenses/jemalloc-COPYING.txt licenses/libomp-LICENSE.txt licenses/pcre2-LICENCE.md \

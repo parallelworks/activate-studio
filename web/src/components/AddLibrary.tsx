@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Field, SegmentedControl } from '@parallelworks/ui'
 import type { UserLibrary } from '../api'
+import { BucketLibraryForm } from './BucketLibraryForm'
 import { ClusterLibraryForm } from './ClusterLibraryForm'
 import { CopyLibraryForm } from './CopyLibraryForm'
 import { LibraryImport } from './LibraryImport'
@@ -21,10 +22,11 @@ import { SpaceForm } from './SpaceForm'
  * SFTP only and rclone remotes, where nothing can be built. Beside the
  * cluster it runs on, a Studio also offers a space of the viewer's own
  * (`space`) and the folders others shared with them (`shared`), both read
- * and written as them.
+ * and written as them. A bucket of an rclone remote (`bucket`, sign-in
+ * off) is indexed from its listing alone, its objects read when opened.
  */
 
-export type Where = 'here' | 'remote' | 'space' | 'shared'
+export type Where = 'here' | 'remote' | 'bucket' | 'space' | 'shared'
 export type How = 'build' | 'connect' | 'copy'
 export type Via = 'ssh' | 'pw' | 'workflow'
 
@@ -40,6 +42,8 @@ export interface AddOptions {
   workflow: boolean
   /** A copy of a folder in a Transfers location, indexed here (sign-in off). */
   copy?: boolean
+  /** A bucket of an rclone remote, indexed here from its listing (sign-in off). */
+  bucket?: boolean
   /** A space of the viewer's own on the cluster the Studio runs beside, and
    *  folders shared with them there: offered wherever the Studio knows that
    *  cluster, the form saying why when one cannot be made yet. */
@@ -48,8 +52,8 @@ export interface AddOptions {
 
 /** What can be chosen, given what this Studio offers. */
 export function addChoices(o: AddOptions) {
-  const where: Where[] = ['here', ...(o.ssh || o.pw || o.workflow || o.copy ? ['remote' as const] : []), ...(o.space ? ['space' as const, 'shared' as const] : [])]
-  const how = (w: Where): How[] => (w === 'space' || w === 'shared' ? [] : w === 'here'
+  const where: Where[] = ['here', ...(o.ssh || o.pw || o.workflow || o.copy ? ['remote' as const] : []), ...(o.bucket ? ['bucket' as const] : []), ...(o.space ? ['space' as const, 'shared' as const] : [])]
+  const how = (w: Where): How[] => (w === 'space' || w === 'shared' || w === 'bucket' ? [] : w === 'here'
     ? [...(o.buildHere ? ['build' as const] : []), 'connect']
     : [...(o.ssh || o.pw || o.workflow ? ['build' as const] : []), ...(o.ssh || o.pw ? ['connect' as const] : []), ...(o.copy ? ['copy' as const] : [])])
   const via = (w: Where, h: How): Via[] => (w !== 'remote' || h === 'copy' ? [] : [
@@ -58,11 +62,12 @@ export function addChoices(o: AddOptions) {
   return { where, how, via }
 }
 
-const WHERE_LABEL: Record<Where, string> = { here: 'This computer', remote: 'A remote system', space: 'My space', shared: 'Shared with me' }
+const WHERE_LABEL: Record<Where, string> = { here: 'This computer', remote: 'A remote system', bucket: 'A bucket', space: 'My space', shared: 'Shared with me' }
 const HOW_LABEL: Record<How, string> = { build: 'Build an index of a folder', connect: 'Connect an existing index', copy: 'Copy here and index it' }
 const VIA_LABEL: Record<Via, string> = { ssh: 'SSH', pw: 'ACTIVATE (pw ssh)', workflow: 'Platform workflow' }
 
 function describe(where: Where, how: How | undefined, via: Via | undefined): string {
+  if (where === 'bucket') return 'A bucket, or a folder in one, of an rclone remote: any S3 compatible store, AWS or on premises (MinIO, Ceph and the like), or another store rclone lists. Studio indexes its listing for finding and searching by name, size and time, and reads an object only when you open it. Read only in the Studio.'
   if (where === 'space') return 'A folder of your own on the cluster this Studio runs beside, closed to other accounts, indexed there as you. You can add, move and delete files in it from the Library, and share folders in it with other accounts.'
   if (where === 'shared') return 'Folders other accounts on this Studio\'s cluster shared with you. Each is indexed there as you, so it holds what your account can read, and it can be written where the share allows.'
   if (where === 'here') {
@@ -138,6 +143,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
       <p className="muted lib-add-about">{describe(where, how, v)}</p>
       {where === 'space' && <SpaceForm onAdded={lib => onAdded(lib, true)} />}
       {where === 'shared' && <SharedWithMe onAdded={lib => onAdded(lib, true)} />}
+      {where === 'bucket' && <BucketLibraryForm onAdded={lib => onAdded(lib, true, true)} />}
       {where === 'here' && (how === 'build'
         ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />
         : <LocalLibraryForm key="here-connect" compact browse={browse} onAdded={lib => onAdded(lib, false)} />)}

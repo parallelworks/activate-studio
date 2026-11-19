@@ -79,10 +79,11 @@ type Registry struct {
 	generation map[string]int
 	counting   map[string]bool
 
-	removedHooks []func(id string)
-	progressOf   func(id string) *BuildProgress
-	copyRunning  func(id string) (bool, *string)
-	mapSchedule  func(id string, delay time.Duration)
+	removedHooks  []func(id string)
+	progressOf    func(id string) *BuildProgress
+	copyRunning   func(id string) (bool, *string)
+	bucketListing func(id string) bool
+	mapSchedule   func(id string, delay time.Duration)
 }
 
 // SetMapScheduler sets what makes a library's semantic map again after a
@@ -796,7 +797,7 @@ func (r *Registry) fromDef(d Def, pinned bool) Library {
 	a := abs(d.IndexRoot)
 	l := Library{ID: d.ID, Label: d.Label, IndexRoot: a, Build: d.Build, Pinned: pinned,
 		Caps:   r.capsOf(a, func() Caps { return Caps{Index: exists(filepath.Join(a, "db.db"))} }),
-		Format: r.formatOf(a), ReadThrough: StoredReadThrough(d.ReadThrough, d.ID, r.o.Log), CopyOf: d.CopyOf}
+		Format: r.formatOf(a), ReadThrough: StoredReadThrough(d.ReadThrough, d.ID, r.o.Log), CopyOf: d.CopyOf, Bucket: d.Bucket}
 	if l.Label == "" {
 		l.Label = filepath.Base(a)
 		if l.Label == "" || l.Label == "/" {
@@ -1070,7 +1071,7 @@ func (r *Registry) AddBuilt(def Def) (Library, error) {
 	if err := r.CheckNewID(def.ID); err != nil {
 		return Library{}, err
 	}
-	d := Def{ID: def.ID, Label: truncRunes(def.Label, 60), IndexRoot: abs(def.IndexRoot), Build: def.Build, CopyOf: def.CopyOf}
+	d := Def{ID: def.ID, Label: truncRunes(def.Label, 60), IndexRoot: abs(def.IndexRoot), Build: def.Build, CopyOf: def.CopyOf, Bucket: def.Bucket}
 	if def.SourceRoot != nil && *def.SourceRoot != "" {
 		d.SourceRoot = ptr(abs(*def.SourceRoot))
 	}
@@ -1161,6 +1162,52 @@ func (r *Registry) SetCopyEvery(id string, every int) bool {
 	})
 }
 
+// SetBucketEvery sets how often Studio lists a bucket library again, in
+// minutes (one of BucketEvery).
+func (r *Registry) SetBucketEvery(id string, every int) bool {
+	return r.ModifyAdded(id, func(d *Def) {
+		if d.Bucket != nil {
+			b := *d.Bucket
+			b.Every = every
+			d.Bucket = &b
+		}
+	})
+}
+
+// SetBucketListingSource is how Settings learns whether a bucket library
+// is being listed now.
+func (r *Registry) SetBucketListingSource(fn func(id string) bool) { r.bucketListing = fn }
+
+func (r *Registry) bucketStateFile(id string) string {
+	return filepath.Join(r.BuiltLibraryDir(id), "bucket.json")
+}
+
+// BucketState is what the last listing of a bucket library found; the
+// zero value before the first.
+func (r *Registry) BucketState(id string) BucketState {
+	var st BucketState
+	if raw, err := os.ReadFile(r.bucketStateFile(id)); err == nil {
+		json.Unmarshal(raw, &st)
+	}
+	return st
+}
+
+// WriteBucketState records what a listing of a bucket library found.
+func (r *Registry) WriteBucketState(id string, st BucketState) error {
+	raw, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(r.BuiltLibraryDir(id), 0o755); err != nil {
+		return err
+	}
+	tmp := r.bucketStateFile(id) + ".tmp"
+	if err := os.WriteFile(tmp, append(raw, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, r.bucketStateFile(id))
+}
+
 func (r *Registry) copyStateFile(id string) string {
 	return filepath.Join(r.BuiltLibraryDir(id), "copy.json")
 }
@@ -1232,6 +1279,13 @@ func (r *Registry) SettingsView(l Library) SettingsLibrary {
 	if c := l.CopyOf; c != nil {
 		looking, running := r.copyRunning(l.ID)
 		v.CopyOf = &PublicCopyOf{CopyOf: *c, CopyState: r.CopyState(l.ID), Looking: looking, Running: running}
+	}
+	if b := l.Bucket; b != nil {
+		listing := false
+		if r.bucketListing != nil {
+			listing = r.bucketListing(l.ID)
+		}
+		v.Bucket = &PublicBucket{BucketOf: *b, BucketState: r.BucketState(l.ID), Listing: listing}
 	}
 	return v
 }

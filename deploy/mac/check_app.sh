@@ -78,7 +78,7 @@ LAYOUT=("MacOS/ACTIVATE Studio" Resources/launcher.sh Resources/studio-run.sh Re
   Resources/node/bin/node Resources/models/minilm-l6/model.onnx Resources/models/minilm-l6/tokenizer.json
   Resources/app/build-info.json Resources/app/package.json Resources/app/server/dist/main.js
   Resources/app/web/dist/index.html Resources/app/docs/HELP.md Resources/app/CHANGELOG.md Resources/app/deploy/gufi-index.yaml
-  Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_sqlite3
+  Resources/gufi/bin/gufi_query Resources/gufi/bin/gufi_dir2index Resources/gufi/bin/gufi_trace2index Resources/gufi/bin/gufi_sqlite3
   Resources/gufi/lib/gufi_vt.dylib Resources/gufi/lib/vec0.dylib
   Resources/gufi/lib/libomp.dylib Resources/gufi/lib/libpcre2-8.0.dylib Resources/gufi/licenses/GUFI-LICENSE.txt)
 if [ "$SERVER" != go-only ]; then
