@@ -463,6 +463,9 @@ describe('the setup wizard', () => {
     heading('Your folder')
     expect(await screen.findByText('Indexed: 12 files.')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Rebuild the index' })).toBeInTheDocument()
+    // Up stays disabled until the folder's listing has come; a click before
+    // then does nothing, which a slow runner showed.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Up' })).toBeEnabled(), { timeout: 4000 })
     fireEvent.click(screen.getByRole('button', { name: 'Up' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Research' }, { timeout: 4000 }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('/home/u/Research'))
