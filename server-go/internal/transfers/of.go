@@ -192,12 +192,32 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			// Studio's next look at its location would remove what lands here.
 			x.Writable, x.ReadOnly = false, copyReadOnly(l.CopyOf)
 		}
+		if l.Bucket != nil {
+			// Its objects are in the remote, which Transfers lists itself.
+			x.Writable, x.ReadOnly = false, bucketReadOnly(l.Bucket)
+			if x.FS == nil {
+				x.Why = bucketReadOnly(l.Bucket)
+			}
+		}
 		if x.FS == nil && x.Why == "" {
 			x.Why = "Studio has only its index, not its files"
 		}
 		out = append(out, x)
 	}
 	return out
+}
+
+// bucketReadOnly is why a bucket library is not a place for transfers: its
+// objects are in an rclone remote, which is a location of its own.
+func bucketReadOnly(b *libraries.BucketOf) string {
+	where := strings.TrimPrefix(b.Location, KindRclone+":")
+	if b.Label != "" {
+		where = b.Label
+	}
+	if b.Path != "" {
+		where += ", " + b.Path
+	}
+	return "it is an index of " + where + "; transfer to and from that rclone remote instead"
 }
 
 // copyReadOnly is why a copy library takes no transfers: it names where

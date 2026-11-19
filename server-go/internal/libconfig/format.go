@@ -586,6 +586,11 @@ func Export(src Source, o Options) (File, []Skipped) {
 			skipped = append(skipped, Skipped{l.ID, l.Label, "It is a copy of a location in this Studio's Transfers; in another Studio, save that location in Transfers and add the copy from it."})
 			continue
 		}
+		// A bucket's remote is in this computer's rclone configuration.
+		if l.Bucket != nil {
+			skipped = append(skipped, Skipped{l.ID, l.Label, "It is an index of a bucket listed with this computer's rclone configuration; in another Studio, set up that remote in rclone and add the bucket from it."})
+			continue
+		}
 		if l.Build != nil && o.ShareBuilt && l.IndexRoot != "" {
 			f.Libraries = append(f.Libraries, Entry{Kind: KindIndex, Label: l.Label, IndexRoot: l.IndexRoot, SourceRoot: l.SourceRoot})
 			continue

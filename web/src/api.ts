@@ -37,6 +37,8 @@ export interface PublicLibrary {
   space?: boolean
   /** A folder another account shared with the viewer: that account. */
   sharedFrom?: string
+  /** A bucket library: its files are objects read one at a time. */
+  fromBucket?: boolean
 }
 /** How much of a library search by meaning covers; follows the depth. */
 export type MeaningLevel = 'off' | 'documents' | 'full'
@@ -57,6 +59,54 @@ export interface SettingsLibrary extends PublicLibrary {
   }
   /** A copy library: a folder in a Transfers location that Studio copies here and keeps in step. */
   copyOf?: LibraryCopyOf | null
+  /** A bucket library: an rclone remote's folder indexed from its listing. */
+  bucket?: LibraryBucket | null
+}
+/** Where a bucket library's listing comes from, how often Studio lists it,
+ *  and what the last listing found (POST /api/libraries/bucket). */
+export interface LibraryBucket {
+  /** The Transfers location id (rclone:<remote>), and the bucket and prefix in it. */
+  location: string; path: string
+  label?: string
+  /** Minutes between listings; 0 only when asked. */
+  every: number
+  listedAt: string | null
+  objects: number; bytes: number; folders: number; skipped: number
+  /** List requests the last listing took, about one per 1,000 objects. */
+  requests: number
+  /** The s3 provider rclone's configuration names, '' when none. */
+  provider: string
+  seconds: number
+  error: string | null
+  /** A listing is running now. */
+  listing: boolean
+}
+/** How often a bucket library is listed again, as offered. */
+export const BUCKET_EVERY: { value: number; label: string }[] = [
+  { value: 60, label: 'Every hour' }, { value: 360, label: 'Every 6 hours' }, { value: 1440, label: 'Once a day' }, { value: 0, label: 'Only when I ask' },
+]
+/** AWS S3 Standard prices the estimates use, in US dollars: LIST requests
+ *  per 1,000, and data out to the internet per GB (the first 10 TB a
+ *  month). Other providers set their own. */
+export const S3_LIST_PER_1000 = 0.005
+export const S3_EGRESS_PER_GB = 0.09
+/** What one listing of a bucket library costs, in words: the requests it
+ *  takes, priced at AWS's rate where rclone names AWS as the provider. */
+export function listingCost(b: Pick<LibraryBucket, 'requests' | 'provider' | 'every'>): string {
+  const reqs = `${b.requests.toLocaleString()} list ${b.requests === 1 ? 'request' : 'requests'}`
+  if (b.provider === 'AWS') {
+    const each = b.requests / 1000 * S3_LIST_PER_1000
+    const month = b.every > 0 ? each * (30 * 24 * 60 / b.every) : 0
+    const money = (n: number) => (n < 0.01 ? 'under $0.01' : `about $${n.toFixed(2)}`)
+    return `${reqs} a listing, ${money(each)} at S3 Standard prices${b.every > 0 ? `, ${money(month)} a month at this interval` : ''}`
+  }
+  // rclone names a store it has no profile for "Other".
+  const whose = b.provider && b.provider !== 'Other' ? `${b.provider}'s` : "the store's"
+  return `${reqs} a listing; ${whose} own request prices apply, and a store on premises has none`
+}
+/** Where a bucket library's listing comes from, in words. */
+export function bucketWhere(b: Pick<LibraryBucket, 'location' | 'path' | 'label'>): string {
+  return `${b.label || b.location.replace(/^rclone:/, '')}${b.path ? `, ${b.path}` : ''}`
 }
 /** Where a copy library's files come from, how often Studio looks, and
  *  what the last look found (POST /api/libraries/copy). */
@@ -704,6 +754,13 @@ export const api = {
   },
   /** A copy library: look for changes at its location now, in the background. */
   updateCopy: (id: string) => postJson<{ library: SettingsLibrary; started: boolean }>(`/api/libraries/${encodeURIComponent(id)}/update`, {}),
+  /** How often a bucket library is listed again, in minutes (0: only when asked). */
+  setBucketEvery: async (id: string, every: number) => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ every }) })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
+    return data as { library: SettingsLibrary }
+  },
   /** How often a copy library looks for changes, in minutes (0: only when asked). */
   setCopyEvery: async (id: string, every: number) => {
     const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/copy`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ every }) })

@@ -356,6 +356,15 @@ func (e *Engine) kindOf(l libraries.Library, viewer libraries.Viewer) string {
 	switch {
 	case l.Primary:
 		return "Main folder"
+	case l.Bucket != nil:
+		where := l.Bucket.Label
+		if where == "" {
+			where = strings.TrimPrefix(l.Bucket.Location, "rclone:")
+		}
+		if l.Bucket.Path != "" {
+			where += ", " + l.Bucket.Path
+		}
+		return "Indexed from a listing of " + where
 	case l.Build != nil:
 		return "Built from a folder on this computer"
 	case l.Site == "":

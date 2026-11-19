@@ -16,7 +16,7 @@ export interface UserOffer { available: boolean; ssh: boolean; pwOffered: boolea
  *  yet), the platform's workflow on a Studio the platform hosts, and a copy
  *  of a folder in a Transfers location (`canBuild` too). */
 export function addOptions(canBuild: boolean, user: UserOffer, platform: boolean): AddOptions {
-  return { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && platform && user.available, copy: canBuild, space: !!user.space }
+  return { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && platform && user.available, copy: canBuild, bucket: canBuild, space: !!user.space }
 }
 
 /**
@@ -35,8 +35,9 @@ export function mayAddLibraries(canBuild: boolean, user: UserOffer | null, platf
 }
 
 /** The toast after one library is added, or its build started. */
-export function addedMessage(lib: { label: string }, started: boolean, here?: boolean): string {
+export function addedMessage(lib: { label: string; bucket?: unknown }, started: boolean, here?: boolean): string {
   if (!started) return `Added ${lib.label}. It is in the Library switcher.`
+  if (lib.bucket) return `Listing ${lib.label}. Its progress shows in the list. It is searchable by name once the listing is indexed.`
   return here
     ? `Building ${lib.label}. Its progress shows in the list. It is searchable by name once its folders are indexed; text and meaning, where its depth has them, follow in that order.`
     : `Building ${lib.label}. Its progress shows in the list; it is searchable once the build is done.`

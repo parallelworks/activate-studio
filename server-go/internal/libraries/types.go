@@ -129,6 +129,52 @@ type CopyState struct {
 	Error *string `json:"error"`
 }
 
+// BucketOf is where a bucket library's listing comes from: a folder (a
+// bucket, or a prefix in one) of an rclone remote in Transfers. Studio
+// indexes the listing alone and reads an object only when it is opened
+// (docs/LIBRARIES.md, Buckets). The library has no folder on this host.
+type BucketOf struct {
+	// Location is the Transfers location id (rclone:<remote>); Path the
+	// bucket and prefix in it.
+	Location string `json:"location"`
+	Path     string `json:"path"`
+	// Label is the location's label when the library was added.
+	Label string `json:"label,omitempty"`
+	// Every is how often Studio lists it again, in minutes; 0 only when
+	// asked.
+	Every int `json:"every"`
+}
+
+// BucketEvery is the choices of BucketOf.Every, in minutes. Each listing
+// is a request for every 1,000 objects, so the shortest is an hour.
+var BucketEvery = []int{0, 60, 360, 1440}
+
+// DefaultBucketEvery is a new bucket library's BucketOf.Every.
+const DefaultBucketEvery = 1440
+
+// BucketState is what the last listing of a bucket library found
+// (INDEX_BASE/libraries/<id>/bucket.json).
+type BucketState struct {
+	// ListedAt is when the last listing that was indexed ended.
+	ListedAt *string `json:"listedAt"`
+	// Objects, Bytes and Folders are what it held; Skipped the entries the
+	// index cannot hold (a path past GUFI's limit, a name "." or "..").
+	Objects int64 `json:"objects"`
+	Bytes   int64 `json:"bytes"`
+	Folders int64 `json:"folders"`
+	Skipped int64 `json:"skipped"`
+	// Requests estimates the list requests the listing took: an object
+	// store answers up to 1,000 keys a request.
+	Requests int64 `json:"requests"`
+	// Provider is the s3 provider rclone's configuration names (AWS,
+	// Minio, Ceph, ...), "" when it names none.
+	Provider string `json:"provider"`
+	// Seconds is how long the listing took.
+	Seconds float64 `json:"seconds"`
+	// Error is why the last listing failed; nil when it did not.
+	Error *string `json:"error"`
+}
+
 // Def is a library as stored (LibraryDef).
 type Def struct {
 	ID          string       `json:"id"`
@@ -138,6 +184,7 @@ type Def struct {
 	Build       *LocalBuild  `json:"build,omitempty"`
 	ReadThrough *ReadThrough `json:"readThrough,omitempty"`
 	CopyOf      *CopyOf      `json:"copyOf,omitempty"`
+	Bucket      *BucketOf    `json:"bucket,omitempty"`
 }
 
 // Library is a mounted library, as every module sees it.
@@ -166,6 +213,9 @@ type Library struct {
 	ReadThrough *ReadThrough
 	// CopyOf is set for a copy library: SourceRoot is its copy here.
 	CopyOf *CopyOf
+	// Bucket is set for a bucket library: its index is here, its objects
+	// are read from the remote one at a time.
+	Bucket *BucketOf
 	// Space: written as the viewer (their own space, or a folder shared
 	// with them for writing).
 	Space bool
@@ -202,6 +252,8 @@ type PublicLibrary struct {
 	FormatNote *string `json:"formatNote"`
 	Space      bool    `json:"space,omitempty"`
 	SharedFrom string  `json:"sharedFrom,omitempty"`
+	// FromBucket: its files are objects read from a bucket one at a time.
+	FromBucket bool `json:"fromBucket,omitempty"`
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -217,7 +269,7 @@ func strOrNil(s string) *string {
 func Public(l Library) PublicLibrary {
 	return PublicLibrary{ID: l.ID, Label: l.Label, Primary: l.Primary, Writable: l.Writable, Pinned: l.Pinned,
 		Source: l.SourceRoot != "" || l.Site != "", Caps: l.Caps, Site: strOrNil(l.Site), Meaning: strOrNil(l.Meaning),
-		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, SharedFrom: l.SharedFrom}
+		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil}
 }
 
 // PublicReadThroughView is what Settings shows of a read-through host.
@@ -271,6 +323,7 @@ type SettingsLibrary struct {
 	ReadThrough *PublicReadThroughView `json:"readThrough"`
 	Build       *PublicBuild           `json:"build,omitempty"`
 	CopyOf      *PublicCopyOf          `json:"copyOf,omitempty"`
+	Bucket      *PublicBucket          `json:"bucket,omitempty"`
 }
 
 // PublicCopyOf is what Settings shows of a copy library: where its files
@@ -281,4 +334,13 @@ type PublicCopyOf struct {
 	CopyState
 	Looking bool    `json:"looking"`
 	Running *string `json:"running"`
+}
+
+// PublicBucket is what Settings shows of a bucket library: where its
+// listing comes from, how often Studio lists it, what the last listing
+// found, and whether one is running now.
+type PublicBucket struct {
+	BucketOf
+	BucketState
+	Listing bool `json:"listing"`
 }

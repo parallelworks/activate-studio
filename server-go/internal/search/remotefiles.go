@@ -2,7 +2,9 @@ package search
 
 import (
 	"context"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -89,6 +91,51 @@ func (e *Engine) RemoteTree(ctx context.Context, root, rel string) ([]kb.Entry, 
 	if dr.err != nil {
 		return nil, dr.err
 	}
+	return treeEntries(sub, fr.r.Stdout, dr.r.Stdout), nil
+}
+
+// LocalTree is one folder of a library whose index is on this host and
+// whose files are not (a bucket library), from its index, as RemoteTree
+// lists one on another system.
+func (e *Engine) LocalTree(ctx context.Context, indexRoot, rel string) ([]kb.Entry, error) {
+	sub, err := CleanRel(rel)
+	if err != nil {
+		return nil, err
+	}
+	target := indexRoot
+	if sub != "" {
+		target = filepath.Join(indexRoot, filepath.FromSlash(sub))
+	}
+	if st, err := os.Stat(filepath.Join(target, "db.db")); err != nil || st.IsDir() {
+		return nil, apierr.New(404, "no such folder: %s", sub)
+	}
+	type res struct {
+		out string
+		err error
+	}
+	files, dirs := make(chan res, 1), make(chan res, 1)
+	go func() {
+		out, err := e.runLocal(ctx, []string{"-d", "\x1e", "-n", "1", "--min-level", "0", "--max-level", "0", "-E", "SELECT name, type, size, mtime FROM vrpentries;", target}, 60*time.Second)
+		files <- res{out, err}
+	}()
+	go func() {
+		out, err := e.runLocal(ctx, []string{"-d", "\x1e", "-n", "1", "--min-level", "1", "--max-level", "1", "-S", "SELECT name, mtime FROM vrsummary;", target}, 60*time.Second)
+		dirs <- res{out, err}
+	}()
+	fr, dr := <-files, <-dirs
+	if fr.err != nil {
+		return nil, fr.err
+	}
+	if dr.err != nil {
+		return nil, dr.err
+	}
+	return treeEntries(sub, fr.out, dr.out), nil
+}
+
+// treeEntries is a folder's listing from its two gufi_query answers: its
+// subfolders (name, mtime) and its files (name, type, size, mtime[,
+// atroot]), subfolders first, then files, each by name.
+func treeEntries(sub, filesOut, dirsOut string) []kb.Entry {
 	rows := func(s string) [][]string {
 		var out [][]string
 		for _, l := range strings.Split(s, "\n") {
@@ -116,7 +163,7 @@ func (e *Engine) RemoteTree(ctx context.Context, root, rel string) ([]kb.Entry, 
 	}
 	var ds, fs []kb.Entry
 	seen := map[string]int{}
-	for _, x := range rows(dr.r.Stdout) {
+	for _, x := range rows(dirsOut) {
 		// A rolled-up child's descendants come as "child/sub": each stands
 		// for its first part, which is listed once.
 		name, deeper := x[0], false
@@ -139,7 +186,7 @@ func (e *Engine) RemoteTree(ctx context.Context, root, rel string) ([]kb.Entry, 
 		seen[name] = len(ds)
 		ds = append(ds, kb.Entry{Name: name, Path: at(name), Type: "dir", Mtime: mtime, Kind: kb.KindDir})
 	}
-	for _, x := range rows(fr.r.Stdout) {
+	for _, x := range rows(filesOut) {
 		if len(x) >= 5 && strings.TrimSpace(x[4]) == "0" {
 			continue // a file of a subfolder, in a rolled-up folder's database
 		}
@@ -152,7 +199,7 @@ func (e *Engine) RemoteTree(ctx context.Context, root, rel string) ([]kb.Entry, 
 	}
 	byName(ds)
 	byName(fs)
-	return append(append([]kb.Entry{}, ds...), fs...), nil
+	return append(append([]kb.Entry{}, ds...), fs...)
 }
 
 // noFilesThere is why a file cannot be opened from a host whose login

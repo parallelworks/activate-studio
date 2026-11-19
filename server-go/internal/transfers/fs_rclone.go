@@ -302,9 +302,14 @@ func (r *RcloneFS) Walk(ctx context.Context, rels []string, limit int) (Walked, 
 // walkDir streams `lsjson -R` of a folder entry by entry, so a listing
 // past a limit stops rclone at once.
 func (r *RcloneFS) walkDir(ctx context.Context, rel string, fn func(lsEntry) error) error {
+	return r.walkDirArgs(ctx, rel, []string{"-R"}, fn)
+}
+
+// walkDirArgs is walkDir with the listing's own flags.
+func (r *RcloneFS) walkDirArgs(ctx context.Context, rel string, extra []string, fn func(lsEntry) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, r.Bin, append(lsArgs("-R"), "--", r.spec(rel))...)
+	cmd := exec.CommandContext(ctx, r.Bin, append(lsArgs(extra...), "--", r.spec(rel))...)
 	cmd.Env = rcloneEnv()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

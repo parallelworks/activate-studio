@@ -149,6 +149,21 @@ func TestExportLeavesOutCopies(t *testing.T) {
 	}
 }
 
+// A bucket library is left out, with why, shared indexes or not: its
+// remote is in this computer's rclone configuration.
+func TestExportLeavesOutBuckets(t *testing.T) {
+	src := source()
+	src.Libraries = append(src.Libraries, libraries.Library{ID: "research", Label: "research", IndexRoot: "/data/studio/libraries/research/index/files",
+		Build:  &libraries.LocalBuild{IndexDir: "/data/studio/libraries/research/index", Managed: true, State: "ready"},
+		Bucket: &libraries.BucketOf{Location: "rclone:store", Path: "research", Label: "store", Every: 1440}})
+	for _, share := range []bool{false, true} {
+		f, skipped := Export(src, Options{ShareBuilt: share, IDs: []string{"research"}})
+		if len(f.Libraries) != 0 || len(skipped) != 1 || skipped[0].ID != "research" || !strings.Contains(skipped[0].Why, "this computer's rclone configuration") {
+			t.Fatalf("share %v: %+v %+v", share, f.Libraries, skipped)
+		}
+	}
+}
+
 func TestExportPrimaryOnlyWhenTicked(t *testing.T) {
 	_, f, _ := export(t, Options{IDs: []string{"kb", "projects"}})
 	if len(f.Libraries) != 1 || f.Libraries[0].Label != "Projects" {

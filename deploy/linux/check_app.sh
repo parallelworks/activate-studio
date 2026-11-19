@@ -71,7 +71,7 @@ if [ "$STATIC" = 1 ]; then
     node/bin/node models/minilm-l6/model.onnx models/minilm-l6/tokenizer.json
     app/build-info.json app/package.json app/server/dist/main.js
     app/web/dist/index.html app/docs/HELP.md app/CHANGELOG.md app/deploy/gufi-index.yaml
-    gufi/bin/gufi_query gufi/bin/gufi_dir2index gufi/bin/gufi_sqlite3 gufi/lib/gufi_vt.so gufi/lib/vec0.so
+    gufi/bin/gufi_query gufi/bin/gufi_dir2index gufi/bin/gufi_trace2index gufi/bin/gufi_sqlite3 gufi/lib/gufi_vt.so gufi/lib/vec0.so
     gufi/lib/libgomp.so.1 gufi/lib/libpcre2-8.so.0 gufi/licenses/GUFI-LICENSE.txt gufi/manifest.json
     ocr/bin/tesseract ocr/lib/libleptonica.so.6 ocr/share/tessdata/eng.traineddata ocr/share/tessdata/configs/tsv
     ocr/licenses/tesseract-LICENSE.txt ocr/licenses/leptonica-LICENSE.txt ocr/manifest.json"

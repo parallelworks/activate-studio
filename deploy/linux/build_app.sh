@@ -276,17 +276,18 @@ tar -xzf "$GUFI_TARBALL" -C "$WORK/gufi-tarball"
 # The Go version needs no sqlite-lembed: the lean GUFI (GUFI_LEMBED=0) will do.
 NEED_LEMBED=lib/lembed0.so
 [ "$SERVER" != go-only ] || NEED_LEMBED=
-for f in manifest.json bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 lib/gufi_vt.so lib/vec0.so $NEED_LEMBED \
+for f in manifest.json bin/gufi_query bin/gufi_dir2index bin/gufi_trace2index bin/gufi_sqlite3 lib/gufi_vt.so lib/vec0.so $NEED_LEMBED \
   lib/libgomp.so.1 lib/libpcre2-8.so.0 licenses/GUFI-LICENSE.txt; do
   [ -e "$WORK/gufi-tarball/gufi/$f" ] || die "$GUFI_TARBALL has no gufi/$f; it is not an archive from build_gufi.sh"
 done
 mv "$WORK/gufi-tarball/gufi" "$APP/gufi"
 if [ "$SERVER" = go-only ]; then
-  # The Go version keeps the three GUFI tools the server runs (and gufi_vt,
-  # which runs gufi_query). The lean GUFI's programs come stripped
+  # The Go version keeps the GUFI tools the server runs (and gufi_vt,
+  # which runs gufi_query); gufi_trace2index builds a bucket library's
+  # index from its listing. The lean GUFI's programs come stripped
   # (build_gufi.sh GUFI_LEMBED=0): stripped here, after patchelf, they
   # would not load.
-  find "$APP/gufi/bin" -mindepth 1 -maxdepth 1 ! -name gufi_query ! -name gufi_dir2index ! -name gufi_sqlite3 -exec rm -f {} +
+  find "$APP/gufi/bin" -mindepth 1 -maxdepth 1 ! -name gufi_query ! -name gufi_dir2index ! -name gufi_trace2index ! -name gufi_sqlite3 -exec rm -f {} +
   rm -f "$APP"/gufi/lib/*.py
 fi
 

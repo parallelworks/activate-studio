@@ -102,6 +102,9 @@ func (s *Service) setDepth(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if d := s.Reg.AddedDef(id); d != nil && d.Bucket != nil && depth != string(index.DepthNames) {
+		return apierr.New(409, "%s", bucketNamesOnly)
+	}
 	if _, err := s.ix().Settings.Save(key, map[string]any{"depth": depth}); err != nil {
 		return err
 	}
@@ -123,6 +126,9 @@ func (s *Service) setMeaning(w http.ResponseWriter, r *http.Request) error {
 	id, key, err := s.builtLibrary(r)
 	if err != nil {
 		return err
+	}
+	if d := s.Reg.AddedDef(id); d != nil && d.Bucket != nil && level != "off" {
+		return apierr.New(409, "%s", bucketNamesOnly)
 	}
 	if _, err := s.ix().Settings.Save(key, map[string]any{"meaning": level}); err != nil {
 		return err

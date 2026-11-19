@@ -163,6 +163,16 @@ func (s *Service) readThroughSite(rt *libraries.ReadThrough) (string, error) {
 func (s *Service) OpenOriginal(ctx context.Context, l libraries.Library, rel string, viewer libraries.Viewer) (Opened, error) {
 	var tried []Attempt
 	switch {
+	case l.Bucket != nil:
+		where := bucketWhere(l.Bucket)
+		f, err := s.bucketFile(ctx, l, rel)
+		if err == nil {
+			return Opened{f, where, "library"}, nil
+		}
+		if statusOf(err) == 400 {
+			return Opened{}, err
+		}
+		tried = append(tried, Attempt{where, failReason(err), isMissing(err)})
 	case l.Site != "":
 		where := l.Site
 		f, err := s.readOwnRemote(ctx, l, rel)
@@ -265,6 +275,15 @@ func (s *Service) DownloadOriginal(ctx context.Context, l libraries.Library, rel
 			return "", nil, err
 		}
 		tried = append(tried, Attempt{l.Site, without(l.Site, failReason(err)), isMissing(err)})
+	} else if l.Bucket != nil {
+		name, body, err := s.bucketDownload(ctx, l, rel)
+		if err == nil {
+			return name, body, nil
+		}
+		if final(err) {
+			return "", nil, err
+		}
+		tried = append(tried, Attempt{bucketWhere(l.Bucket), failReason(err), isMissing(err)})
 	} else {
 		tried = append(tried, Attempt{"this computer", "this library has no files here", true})
 	}

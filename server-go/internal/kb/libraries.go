@@ -36,7 +36,14 @@ type Library struct {
 	// Space: the viewer's own space, whose files are read and written as
 	// them through SpaceFiles.
 	Space bool
+	// Bucket: its index is here and its files are objects in a bucket,
+	// listed from the index and read one at a time.
+	Bucket bool
 }
+
+// Elsewhere: the library's files are not on this host, so they are
+// listed, read and fetched through LibraryResolver.
+func (l Library) Elsewhere() bool { return l.ReadThrough || l.Site != "" || l.Bucket }
 
 // libraryDef is an entry of STUDIO_LIBRARIES or INDEX_BASE/libraries.json.
 type libraryDef struct {
@@ -48,6 +55,7 @@ type libraryDef struct {
 		CacheRoot *string `json:"cacheRoot"`
 	} `json:"build"`
 	ReadThrough json.RawMessage `json:"readThrough"`
+	Bucket      json.RawMessage `json:"bucket"`
 }
 
 var libraryIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
@@ -143,6 +151,9 @@ func fromDef(d libraryDef, pinned bool) Library {
 	}
 	if rt := strings.TrimSpace(string(d.ReadThrough)); rt != "" && rt != "null" {
 		lib.ReadThrough = true
+	}
+	if b := strings.TrimSpace(string(d.Bucket)); b != "" && b != "null" {
+		lib.Bucket = true
 	}
 	return lib
 }

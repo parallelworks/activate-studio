@@ -120,11 +120,14 @@ func Register(mux *http.ServeMux, a *app.App) {
 		mux.HandleFunc("POST /api/libraries/copy", h(s.copyAdd))
 		mux.HandleFunc("POST /api/libraries/{id}/update", h(s.copyUpdate))
 		mux.HandleFunc("PUT /api/libraries/{id}/copy", h(s.copySettings))
+		mux.HandleFunc("POST /api/libraries/bucket", h(s.bucketAdd))
+		mux.HandleFunc("PUT /api/libraries/{id}/bucket", h(s.bucketSettings))
 		mux.HandleFunc("PUT /api/libraries/{id}/read-through", h(s.readThroughSave))
 		mux.HandleFunc("POST /api/libraries/{id}/read-through/test", h(s.readThroughTest))
 		index.Of(a).Hooks.RequestAllLibrarySyncs = s.builds.requestAllSyncs
 		a.OnIndexWork("libraries: sync", s.builds.startSync)
 		a.OnIndexWork("libraries: copies", s.builds.startCopies)
+		a.OnIndexWork("libraries: buckets", s.builds.startBuckets)
 		a.OnStop("libraries: stop builds", s.builds.stop)
 	}
 	logLibraryStates(a, s)

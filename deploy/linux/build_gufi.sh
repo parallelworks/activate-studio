@@ -331,7 +331,7 @@ PY
 echo "Checking the tree..."
 NEED_LEMBED=lib/lembed0.so
 [ "$LEMBED" = 1 ] || NEED_LEMBED=
-for f in bin/gufi_query bin/gufi_dir2index bin/gufi_sqlite3 lib/gufi_vt.so lib/vec0.so $NEED_LEMBED \
+for f in bin/gufi_query bin/gufi_dir2index bin/gufi_trace2index bin/gufi_sqlite3 lib/gufi_vt.so lib/vec0.so $NEED_LEMBED \
   lib/libgomp.so.1 lib/libpcre2-8.so.0 licenses/GUFI-LICENSE.txt manifest.json; do
   [ -s "$TREE/$f" ] || die "the tree has no $f"
 done

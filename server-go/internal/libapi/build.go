@@ -51,6 +51,7 @@ type builds struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	copies   copies
+	buckets  buckets
 }
 
 func newBuilds(s *Service) *builds {
@@ -65,6 +66,7 @@ func newBuilds(s *Service) *builds {
 		return &libraries.BuildProgress{Phase: p.Phase, Done: int64(p.Done), Total: int64(p.Total), Current: p.Current}
 	})
 	s.Reg.SetCopyRunningSource(b.copies.runningOf)
+	s.Reg.SetBucketListingSource(b.buckets.isListing)
 	return b
 }
 
@@ -524,6 +526,9 @@ func (b *builds) start(id string) (index.IndexJob, error) {
 	job, err := b.ix().StartOwnJob("library:"+id, func(own *index.OwnJob) (int64, error) {
 		unlock := b.lock(id)
 		defer unlock()
+		if d := b.s.Reg.AddedDef(id); d != nil && d.Bucket != nil {
+			return b.bucketBuild(id, own)
+		}
 		return b.fullBuild(id, own)
 	})
 	if err != nil {
@@ -538,7 +543,7 @@ func (b *builds) start(id string) (index.IndexJob, error) {
 func (b *builds) paths(d *libraries.Def) index.LibraryPaths {
 	own := b.s.Reg.BuiltLibraryDir(d.ID)
 	return index.LibraryPaths{
-		Source: *d.SourceRoot, Index: d.IndexRoot, IndexDir: d.Build.IndexDir, Cache: d.Build.CacheRoot,
+		Source: deref(d.SourceRoot), Index: d.IndexRoot, IndexDir: d.Build.IndexDir, Cache: d.Build.CacheRoot,
 		EmbedCache: filepath.Join(own, "embed-cache.db"), SkipFile: filepath.Join(own, "skip-dirs.txt"),
 	}
 }
@@ -679,6 +684,15 @@ type counts struct {
 
 // settle is the counts, the manifest, and the caches that remember the
 // old tree.
+// sourceOf is where a built library's files are, for its manifest: its
+// folder here, or a bucket library's remote and path.
+func sourceOf(d *libraries.Def) string {
+	if d.Bucket != nil {
+		return d.Bucket.Location + "/" + d.Bucket.Path
+	}
+	return deref(d.SourceRoot)
+}
+
 func (b *builds) settle(d *libraries.Def) (counts, error) {
 	// Probed again at once. Until it answers, the library keeps the
 	// capabilities last found, never "none".
@@ -700,7 +714,7 @@ func (b *builds) settle(d *libraries.Def) (counts, error) {
 		GufiBin     string `json:"gufiBin"`
 		Directories int64  `json:"directories"`
 		Files       int64  `json:"files"`
-	}{1, *d.SourceRoot, d.IndexRoot, d.Build.IndexDir, c.builtAt, b.s.a.Cfg.GufiBin, c.dirs, c.files}
+	}{1, sourceOf(d), d.IndexRoot, d.Build.IndexDir, c.builtAt, b.s.a.Cfg.GufiBin, c.dirs, c.files}
 	raw, err := marshalIndent(m, "  ")
 	if err != nil {
 		return c, err

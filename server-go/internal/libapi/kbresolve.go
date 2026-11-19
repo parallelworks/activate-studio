@@ -21,7 +21,7 @@ func ToKB(l libraries.Library) kb.Library {
 	return kb.Library{
 		ID: l.ID, Label: l.Label, IndexRoot: l.IndexRoot, SourceRoot: l.SourceRoot, CacheRoot: l.CacheRoot,
 		Writable: l.Writable, Primary: l.Primary, Pinned: l.Pinned, Indexed: l.Caps.Index,
-		ReadThrough: l.ReadThrough != nil, Site: l.Site, Space: l.Space,
+		ReadThrough: l.ReadThrough != nil, Site: l.Site, Space: l.Space, Bucket: l.Bucket != nil,
 	}
 }
 
@@ -64,6 +64,9 @@ func (k kbResolver) All(r *http.Request) ([]kb.Library, error) {
 }
 
 func (k kbResolver) Tree(r *http.Request, lib kb.Library, rel string) ([]kb.Entry, error) {
+	if lib.Bucket {
+		return k.s.Engine.LocalTree(r.Context(), lib.IndexRoot, rel)
+	}
 	return k.s.Engine.RemoteTree(r.Context(), lib.IndexRoot, rel)
 }
 
@@ -71,6 +74,9 @@ func (k kbResolver) File(r *http.Request, lib kb.Library, rel string) (*kb.Obj, 
 	l, viewer, err := k.full(r, lib)
 	if err != nil {
 		return nil, err
+	}
+	if l.Bucket != nil {
+		return k.s.bucketFile(r.Context(), l, rel)
 	}
 	if l.ReadThrough != nil {
 		o, err := k.s.OpenOriginal(r.Context(), l, rel, viewer)
@@ -89,6 +95,9 @@ func (k kbResolver) Download(r *http.Request, lib kb.Library, rel string) (strin
 	l, viewer, err := k.full(r, lib)
 	if err != nil {
 		return "", nil, err
+	}
+	if l.Bucket != nil {
+		return k.s.bucketDownload(r.Context(), l, rel)
 	}
 	if l.ReadThrough != nil {
 		return k.s.DownloadOriginal(r.Context(), l, rel, viewer)
