@@ -47,6 +47,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		return m.SignIns.Key(owner)
 	}
 	a.Providers.SignInKey = key
+	a.Providers.SignInOwner = m.SignIns.OwnerOfToken
 	platform.Of(a).SignInKey = key
 	pwhome.Set(func(k string) string {
 		owner := m.SignIns.OwnerOfToken(k)

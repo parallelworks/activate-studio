@@ -191,7 +191,13 @@ export interface UserLibrary {
 
 /** What GET /api/user-libraries/space says: whether a space can be made,
  *  or why not, on which cluster, and the viewer's spaces. */
-export interface SpaceStatus { available: boolean; why: string; cluster: string; suggested: string; spaces: string[] }
+export interface SpaceStatus {
+  available: boolean; why: string; cluster: string; suggested: string; spaces: string[]
+  /** What reaches the cluster as the person: their ACTIVATE sign-in, a key they pasted, or nothing yet. */
+  credential?: 'sign-in' | 'key' | ''
+  /** Each person can sign in with ACTIVATE on this Studio. */
+  signInOffered?: boolean
+}
 /** The space check: its steps, the folder, and what it would create. */
 export interface SpaceCheck {
   ok: boolean; steps: { name: string; ok: boolean; detail: string; warn?: boolean }[]

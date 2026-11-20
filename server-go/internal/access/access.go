@@ -124,9 +124,14 @@ func (s *Routes) sources(v *platform.Viewer) (models, plat *jsonv.Object) {
 			"last4", jsonv.Path(status, "last4"), "kind", jsonv.Path(status, "kind"))
 	}
 	gw := hostOf(s.p.GatewayBase())
+	// The person's own platform sign-in comes before a pasted key, for
+	// models and the platform; an endpoint still serves models.
+	signIn := jsonv.NewObject("source", "signin", "host", gw, "context", nil)
 	switch {
 	case cred != nil && cred.BaseURL != "":
 		models = mine("endpoint", hostOf(cred.BaseURL))
+	case v.SignIn != "":
+		models = signIn
 	case cred != nil:
 		models = mine("key", gw)
 	case jsonv.Str(jsonv.Path(dep, "source")) != "none":
@@ -136,7 +141,9 @@ func (s *Routes) sources(v *platform.Viewer) (models, plat *jsonv.Object) {
 	default:
 		models = dep
 	}
-	if cred != nil && cred.BaseURL == "" {
+	if v.SignIn != "" {
+		plat = signIn
+	} else if cred != nil && cred.BaseURL == "" {
 		plat = mine("key", gw)
 	} else {
 		plat = dep
@@ -161,7 +168,9 @@ func (s *Routes) get(w http.ResponseWriter, r *http.Request) (any, error) {
 	models, plat := s.sources(v)
 	fresh := platform.Q(r, "fresh") == "1"
 	out := jsonv.NewObject("single", single, "authEnabled", v.AuthEnabled, "models", models, "platform", plat,
-		"deployment", s.deploymentSource(v, single), "gatewayHost", hostOf(s.p.GatewayBase()), "platformOrigin", nullable(s.p.Origin()))
+		"deployment", s.deploymentSource(v, single), "gatewayHost", hostOf(s.p.GatewayBase()), "platformOrigin", nullable(s.p.Origin()),
+		// Each person can sign in with ACTIVATE (internal/personal).
+		"signInOffered", v.AuthEnabled && s.p.Getenv("DISABLE_PERSONAL_KEYS") != "1")
 	if single {
 		info := s.p.Info(fresh)
 		contexts := s.p.ListContexts()
@@ -329,11 +338,11 @@ func (s *Routes) loginCancel(w http.ResponseWriter, r *http.Request) (any, error
 /* ---- the platform API, for subscriptions ---- */
 
 // ownPlatformKey is the platform credential that is the person's own:
-// their platform key, or, with sign-in off, whatever the one user's Studio
+// their platform sign-in or key, or, with sign-in off, whatever the one user's Studio
 // runs with. Never the deployment's on a shared deployment.
 func (s *Routes) ownPlatformKey(v *platform.Viewer) string {
-	if v.Cred != nil && v.Cred.BaseURL == "" {
-		return v.Cred.Key
+	if k := v.PlatformKey(); k != "" {
+		return k
 	}
 	if !v.AuthEnabled {
 		return s.p.GatewayKey()

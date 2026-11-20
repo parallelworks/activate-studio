@@ -186,7 +186,7 @@ func (m *Module) toolSaveChat(r *http.Request, _ map[string]any, ctx ToolCtx) (*
 	res := fmt.Sprintf("Saved this conversation, up to the user's last message, to %s as %s.", d.Label, d.Path)
 	switch {
 	case d.Space:
-		res += " That is the user's own space, which only they can read."
+		res += " That is the user's own library, which only they can read."
 	case d.Shared:
 		res += " Everyone who uses this Studio can read that library."
 	}

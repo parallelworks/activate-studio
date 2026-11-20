@@ -42,7 +42,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 - **pw code from the chat**: ask the assistant to have pw code do a piece of work, such as a report built with code. The agent works in a library folder when it runs where the library is, and the assistant waits for it, then indexes and links what it wrote. It also finds your existing sessions by name or topic, follows them, and gives them direction.
 - **Code**, on ACTIVATE, lists your pw code sessions across the platform's machines, shows each one's conversation, and opens it in ACTIVATE.
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
-- **Sign-in**, on a Studio several people share: through the ACTIVATE session proxy, or through ACTIVATE or any other OpenID Connect provider ([`docs/DEPLOY.md`](docs/DEPLOY.md)).
+- **Sign-in**, on a Studio several people share: through the ACTIVATE session proxy, or through ACTIVATE or any other OpenID Connect provider ([`docs/DEPLOY.md`](docs/DEPLOY.md)). Each person can also sign in with ACTIVATE under Settings, Model access, which the Studio renews and uses as their own credential for models, the platform, and My library, a folder of theirs on the Studio's cluster ([`docs/MULTI-USER.md`](docs/MULTI-USER.md)).
 - **Other tools**, such as pw code, can search and read the same knowledge base over MCP (search, the text the index holds, and the original files) or an OpenAI-compatible endpoint.
 
 ### Index depth

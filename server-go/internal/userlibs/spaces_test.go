@@ -2,6 +2,7 @@ package userlibs
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -101,7 +102,7 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 		t.Fatalf("%v", b.Body)
 	}
 	id := b.Body["id"].(string)
-	eq(t, []any{b.Body["label"], b.Body["site"], b.Body["state"]}, []any{"My space", "cluster-a", "building"}, "started")
+	eq(t, []any{b.Body["label"], b.Body["site"], b.Body["state"]}, []any{"My library", "cluster-a", "building"}, "started")
 	if sp, _ := b.Body["space"].(map[string]any); sp == nil || sp["account"] == "" {
 		t.Fatalf("space: %v", b.Body["space"])
 	}
@@ -137,13 +138,13 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 		t.Fatalf("stored: %+v", defs[0])
 	}
 	again := h.post("/api/user-libraries/space", map[string]any{"sourceRoot": "~/studio"})
-	match(t, again.Body["error"], `is already your space My space`, "once")
+	match(t, again.Body["error"], `is already your library My library`, "once")
 
 	// The Library's writes, as the person, in the space's folder.
 	SpaceEvery = 50 * time.Millisecond
 	t.Cleanup(func() { SpaceEvery = 20 * time.Second })
 	s := h.m.SpaceFiles()
-	lib := kb.Library{ID: id, Label: "My space", IndexRoot: libraries.RemoteRootOf("single", id), Space: true, Site: "cluster-a"}
+	lib := kb.Library{ID: id, Label: "My library", IndexRoot: libraries.RemoteRootOf("single", id), Space: true, Site: "cluster-a"}
 	req := httptest.NewRequest(http.MethodPost, "/api/kb/upload", nil)
 	dir := filepath.Join(home, "studio")
 	if err := s.Put(req, lib, "notes/a.txt", strings.NewReader("hello"), 100); err != nil {
@@ -240,5 +241,22 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 	h.m.accounts = nil
 	if err := s.Mkdir(req, lib, "x"); err == nil || !strings.Contains(err.Error(), "another account") {
 		t.Fatalf("another account: %v", err)
+	}
+}
+
+// TestSessionErrSaysToSignIn: a session the platform refused says to sign
+// in with ACTIVATE, or to sign in again when the key came from the
+// sign-in; any other failure keeps what pw ssh said.
+func TestSessionErrSaysToSignIn(t *testing.T) {
+	m := &Module{FromSignIn: func(k string) bool { return k == "from-sign-in" }}
+	refused := errors.New("pw://alice/cluster-a: 2026-11-20T03:14:37Z [ERROR] Unauthorized")
+	if got := m.sessionErr("cluster-a", "pasted", refused).Error(); !strings.Contains(got, "refused the credential") || !strings.Contains(got, "Sign in with ACTIVATE") {
+		t.Errorf("a pasted key: %q", got)
+	}
+	if got := m.sessionErr("cluster-a", "from-sign-in", refused).Error(); !strings.Contains(got, "refused your ACTIVATE sign-in") || !strings.Contains(got, "sign in again") {
+		t.Errorf("the sign-in: %q", got)
+	}
+	if got := m.sessionErr("cluster-a", "k", errors.New("connection reset")).Error(); got != "Your session to cluster-a did not open: connection reset" {
+		t.Errorf("other: %q", got)
 	}
 }

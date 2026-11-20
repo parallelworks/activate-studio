@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -182,6 +183,41 @@ func firstLine(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// codeLine is a line holding only a device code, such as ABCD-EFGH.
+var codeLine = regexp.MustCompile(`^[A-Z0-9]{3,}(?:-[A-Z0-9]{3,})+$`)
+
+// failureOf is what the CLI said went wrong in a sign-in's output: its
+// last line that is not the device prompt or an update notice, "" when it
+// said nothing else.
+func failureOf(out string) string {
+	last := ""
+	for _, l := range strings.Split(platform.StripANSI(out), "\n") {
+		l = strings.TrimSpace(l)
+		switch {
+		case l == "", strings.HasPrefix(l, "To sign in"), strings.HasPrefix(l, "and enter the code"),
+			strings.HasPrefix(l, "Waiting for approval"), strings.Contains(l, "new version of the PW CLI"),
+			strings.HasPrefix(l, "Run 'pw upgrade'"), strings.HasPrefix(l, "http://"), strings.HasPrefix(l, "https://"),
+			codeLine.MatchString(l):
+			continue
+		}
+		last = l
+	}
+	return last
+}
+
+// misplaced is a sign-in the CLI saved under its home folder instead of
+// PW_CREDENTIALS_DIR, as a pw CLI older than that setting does, written
+// since the sign-in started; "" for none.
+func misplaced(staging string, since time.Time) string {
+	home := homeFor(staging)
+	for _, p := range []string{filepath.Join(home, ".config", "pw", "credentials"), filepath.Join(home, "pw", ".credentials")} {
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && !fi.ModTime().Before(since.Add(-time.Second)) {
+			return p
+		}
+	}
+	return ""
+}
+
 func (s *SignIns) has(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, "credentials"))
 	return err == nil
@@ -262,6 +298,7 @@ func (s *SignIns) Start(owner, username string, wait time.Duration) (State, erro
 		s.mu.Unlock()
 		return State{}, err
 	}
+	started := time.Now()
 	r := &run{st: State{State: "starting", Host: host, StartedAt: s.now().UTC().Format(time.RFC3339)}}
 	s.runs[owner] = r
 	cmd := exec.Command(s.CLI(), "auth", "login", "--device", host)
@@ -313,7 +350,7 @@ func (s *SignIns) Start(owner, username string, wait time.Duration) (State, erro
 			answer()
 			return
 		}
-		st := s.finish(owner, username, host, staging, err, out.String())
+		st := s.finish(owner, username, host, staging, started, err, out.String())
 		s.mu.Lock()
 		r.st = st
 		s.mu.Unlock()
@@ -330,17 +367,32 @@ func (s *SignIns) Start(owner, username string, wait time.Duration) (State, erro
 }
 
 // finish keeps a sign-in that belongs to username and drops any other.
-func (s *SignIns) finish(owner, username, host, staging string, waitErr error, out string) State {
+func (s *SignIns) finish(owner, username, host, staging string, started time.Time, waitErr error, out string) State {
 	fail := func(msg string) State {
 		os.RemoveAll(staging)
 		return State{State: "failed", Host: host, Message: msg}
 	}
-	if waitErr != nil || !s.has(staging) {
-		msg := firstLine(platform.StripANSI(out))
-		if msg == "" || strings.HasPrefix(msg, "To sign in") {
-			msg = "The sign-in did not finish."
+	if waitErr == nil && !s.has(staging) {
+		// A CLI that does not know PW_CREDENTIALS_DIR saves the sign-in in
+		// the person's home here, where it also looks for it later; a copy
+		// in the sign-in folder marks it as kept.
+		if p := misplaced(staging, started); p != "" {
+			if b, err := os.ReadFile(p); err == nil && os.WriteFile(filepath.Join(staging, "credentials"), b, 0o600) == nil {
+				s.logOutput("personal sign-in: the pw CLI saved it under its home folder, not PW_CREDENTIALS_DIR, and it was kept from there", staging, out)
+			}
 		}
-		return fail(msg)
+	}
+	if waitErr != nil || !s.has(staging) {
+		s.logOutput("personal sign-in did not finish", staging, out)
+		said := failureOf(out)
+		switch {
+		case waitErr != nil && said != "":
+			return fail("The pw CLI stopped: " + said)
+		case waitErr != nil:
+			return fail("The pw CLI stopped before the sign-in finished (" + waitErr.Error() + "). The server log has its output.")
+		default:
+			return fail("The pw CLI reported the sign-in as finished but saved it where the Studio cannot find it, which a pw CLI older than the Studio expects does. Ask the operator to update the pw CLI on this server; the server log has its version and output.")
+		}
 	}
 	who, err := s.exec(context.Background(), staging, 30*time.Second, "auth", "whoami")
 	who = strings.TrimSpace(firstLine(who))
@@ -387,6 +439,16 @@ func (s *SignIns) finish(owner, username, host, staging string, waitErr error, o
 		s.Log.Info("personal sign-in kept", "owner", libraries.OwnerHash(owner), "host", host)
 	}
 	return State{State: "signed-in", Host: host, Account: who, SignedIn: rec.SignedIn}
+}
+
+// logOutput writes the CLI's output from a sign-in to the server log with
+// its version, so an operator can see what the page summarizes.
+func (s *SignIns) logOutput(msg, dir, out string) {
+	if s.Log == nil {
+		return
+	}
+	version, _ := s.exec(context.Background(), dir, 10*time.Second, "--version")
+	s.Log.Warn(msg, "cli", s.CLI(), "version", strings.TrimSpace(firstLine(version)), "output", strings.TrimSpace(platform.StripANSI(out)))
 }
 
 // signOut ends the sign-in in dir on the platform, best effort, and removes it.

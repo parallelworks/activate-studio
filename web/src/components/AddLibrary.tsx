@@ -62,13 +62,13 @@ export function addChoices(o: AddOptions) {
   return { where, how, via }
 }
 
-const WHERE_LABEL: Record<Where, string> = { here: 'This computer', remote: 'A remote system', bucket: 'A bucket', space: 'My space', shared: 'Shared with me' }
+const WHERE_LABEL: Record<Where, string> = { here: 'This computer', remote: 'A remote system', bucket: 'A bucket', space: 'My library', shared: 'Shared with me' }
 const HOW_LABEL: Record<How, string> = { build: 'Build an index of a folder', connect: 'Connect an existing index', copy: 'Copy here and index it' }
 const VIA_LABEL: Record<Via, string> = { ssh: 'SSH', pw: 'ACTIVATE (pw ssh)', workflow: 'Platform workflow' }
 
 function describe(where: Where, how: How | undefined, via: Via | undefined): string {
   if (where === 'bucket') return 'A bucket, or a folder in one, of an rclone remote: any S3 compatible store, AWS or on premises (MinIO, Ceph and the like), or another store rclone lists. Studio indexes its listing for finding and searching by name, size and time, and reads an object only when you open it. Read only in the Studio.'
-  if (where === 'space') return 'A folder of your own on the cluster this Studio runs beside, closed to other accounts, indexed there as you. You can add, move and delete files in it from the Library, and share folders in it with other accounts.'
+  if (where === 'space') return 'A folder of your own on the cluster this Studio runs beside, reached with your ACTIVATE sign-in as your own account, closed to other accounts, and indexed there as you. You can add, move and delete files in it from the Library, and share folders in it with other accounts.'
   if (where === 'shared') return 'Folders other accounts on this Studio\'s cluster shared with you. Each is indexed there as you, so it holds what your account can read, and it can be written where the share allows.'
   if (where === 'here') {
     return how === 'build'

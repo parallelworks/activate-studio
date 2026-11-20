@@ -46,9 +46,13 @@ type Providers struct {
 	PersonalCred func(sub, cookieHeader string) (key, baseURL string, ok bool)
 	// SignInKey is the access token of the person's own pw CLI sign-in,
 	// made through the Studio (internal/personal), "" for none. Work on the
-	// person's clusters prefers it to a pasted key, and model calls use it
-	// when no key was added. Owner: personal. Default: nil, none.
+	// person's clusters and their model calls prefer it to a pasted key; an
+	// endpoint they chose still serves models. Owner: personal. Default:
+	// nil, none.
 	SignInKey func(sub string) string
+	// SignInOwner is whose sign-in issued key, "" for a key no sign-in
+	// issued (internal/personal).
+	SignInOwner func(key string) string
 	// InvalidateMCP is mcpClient.ts's invalidateRemote(), after a settings
 	// write. Owner: chat track. Node rereads its MCP status when the
 	// settings file changes (mcpClient.ts), so the default does nothing.

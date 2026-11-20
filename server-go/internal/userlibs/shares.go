@@ -121,11 +121,11 @@ func shareRel(v any) (string, error) {
 	}
 	parts := strings.Split(p, "/")
 	if len(parts) > 64 || strings.ContainsAny(p, "\x00\n\r") {
-		return "", apierr.New(400, "path: a folder in the space")
+		return "", apierr.New(400, "path: a folder in your library")
 	}
 	for _, s := range parts {
 		if s == "" || s == "." || s == ".." || strings.HasPrefix(s, ".") {
-			return "", apierr.New(400, "path: a folder in the space")
+			return "", apierr.New(400, "path: a folder in your library")
 		}
 	}
 	return p, nil
@@ -151,7 +151,7 @@ fail() { printf '%s\n' "$2" >&2; exit "$1"; }
 [ -d "$f" ] && [ ! -L "$f" ] || fail 4 "$f is not a folder."
 F=$(cd -P -- "$f" 2>/dev/null && pwd -P) || fail 4 "$f cannot be opened."
 R=$(cd -P -- "$root" 2>/dev/null && pwd -P) || fail 4 "$root cannot be opened."
-case "$F/" in "${R%/}"/*) ;; *) fail 6 "$f is not in the space.";; esac
+case "$F/" in "${R%/}"/*) ;; *) fail 6 "$f is not in your library.";; esac
 [ "$(stat -c %u -- "$F")" = "$uid" ] || fail 7 "$F belongs to another account, so it cannot be shared from here."
 case "$kind" in
 user) id -u -- "$name" >/dev/null 2>&1 || fail 8 "There is no account $name there."; who=u:$name; long=user:$name ;;
@@ -326,7 +326,7 @@ func (m *Module) runShare(ctx context.Context, site, key string, s Share, op str
 	input := strings.NewReader(strings.Join(append(close, ""), "\n"))
 	r, err := m.Pool.RunOnce(ctx, site, key, []string{"bash", "-c", shareSh, "_", op, s.Folder, s.Kind, s.Name, perm, s.Root}, 30*time.Minute, input)
 	if err != nil {
-		return nil, apierr.New(502, "Your session to %s did not open: %s", remote.ShortName(site), err.Error())
+		return nil, m.sessionErr(remote.ShortName(site), key, err)
 	}
 	if r.Code != 0 {
 		return nil, apierr.New(409, "%s", lastOrExit(remote.QuietStderr(r.Stderr), r.Code))
@@ -565,7 +565,7 @@ func (m *Module) identity(ctx context.Context, site, key string) (clusterIdent, 
 	}
 	r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", `echo "uid=$(id -u)"; echo "user=$(id -un)"; echo "groups=$(id -Gn)"`}, 60*time.Second)
 	if err != nil {
-		return id, apierr.New(502, "Your session to %s did not open: %s", remote.ShortName(site), err.Error())
+		return id, m.sessionErr(remote.ShortName(site), key, err)
 	}
 	kv := keyValues(r.Stdout)
 	uid, err := strconv.Atoi(kv["uid"])

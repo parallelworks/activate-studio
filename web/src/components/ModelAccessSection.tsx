@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, type CalloutTone, Checkbox, CopyButton, Disclosure, ExternalLink, Field, IconButton, Input, Loader, SegmentedControl, Select,
-  type SelectItem, StatusBadge, StatusLabel, Table, Textarea,
+  Button, Callout, type CalloutTone, Checkbox, CopyButton, Disclosure, ExternalLink, Field, IconButton, Input, Loader, RadioGroup, Select,
+  type SelectItem, SettingModeOption, StatusBadge, StatusLabel, Table, Textarea,
 } from '@parallelworks/ui'
 import { CloseIcon } from '@parallelworks/ui/icons'
 import './ModelAccessSection.css'
@@ -11,8 +11,10 @@ import { PlatformSignInPanel } from './PlatformSignInPanel'
  * Settings, Model access: where the Studio's model calls and platform calls
  * get their credential, and the controls that change it.
  *
- * Three sources, in the order the server applies them: a key or endpoint
- * stored here, a deployment credential (a key someone shared, PW_API_KEY),
+ * Three sources, in the order the server applies them: the person's own
+ * (their ACTIVATE sign-in, made here with the pw CLI's device code, before
+ * a key or endpoint stored here; an endpoint still serves models), a
+ * deployment credential (a key someone shared, PW_API_KEY),
  * and the pw CLI's sign-in on the server's computer. On a Studio with
  * sign-in off the CLI is the one user's own, so its contexts are listed and
  * one can be chosen, or the CLI signed in to another platform with its
@@ -23,7 +25,7 @@ import { PlatformSignInPanel } from './PlatformSignInPanel'
  * tools, which chat needs to search the libraries.
  */
 
-type Source = 'endpoint' | 'key' | 'shared' | 'env' | 'cli' | 'sidecar' | 'none'
+type Source = 'endpoint' | 'key' | 'signin' | 'shared' | 'env' | 'cli' | 'sidecar' | 'none'
 type CliSource = 'env' | 'chosen' | 'path' | 'common' | 'none'
 interface SourceInfo { source: Source; host: string | null; context: string | null; baseUrl?: string | null; last4?: string | null; kind?: string | null }
 interface CliContext { name: string; server: string; organization: string | null; kind: 'sign-in' | 'api-key' | 'token' | null; expiresAt: string | null; expired: boolean; current: boolean; renewError: string | null }
@@ -37,6 +39,9 @@ export interface AccessStatus {
   deployment: SourceInfo
   gatewayHost: string | null
   platformOrigin: string | null
+  /** Each person can sign in with ACTIVATE (a Studio several people use,
+   *  keeping personal credentials). */
+  signInOffered?: boolean
   cli: {
     available: boolean; version: string | null
     /** Where the Studio found the CLI, and how. */
@@ -73,7 +78,7 @@ interface Subscriptions {
  *  ignores the bearer token the Studio sends. The setup wizard stores the same. */
 const NO_KEY = 'none'
 
-type Tab = 'cli' | 'deployment' | 'key' | 'endpoint'
+type Tab = 'cli' | 'signin' | 'key' | 'endpoint' | 'deployment'
 
 const PRESETS: { value: string; label: string; url: string }[] = [
   { value: 'ollama', label: 'Ollama on this computer', url: 'http://127.0.0.1:11434/v1' },
@@ -167,6 +172,7 @@ export function describeSource(s: SourceInfo, single: boolean): string {
   const at = s.host ? ` (${s.host})` : ''
   switch (s.source) {
     case 'cli': return s.context ? `pw CLI context ${s.context}${at}` : `the pw CLI sign-in on the server${at}`
+    case 'signin': return `your ACTIVATE sign-in${at}`
     case 'key': return `your ${s.kind === 'token' ? 'token' : 'key'}${s.last4 ? ` ending ${s.last4}` : ''}${at}`
     case 'endpoint': return `the endpoint ${s.baseUrl ?? s.host ?? ''}`
     case 'shared': return `the key${s.last4 ? ` ending ${s.last4}` : ''} shared with everyone here${at}`
@@ -227,7 +233,13 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
       setMe(k)
       setLoadError('')
       setLogin(l => a.login ?? l)
-      setTab(t => t ?? (a.models.source === 'endpoint' && aiEnabled ? 'endpoint' : a.models.source === 'key' ? 'key' : a.single ? 'cli' : 'deployment'))
+      // The tab of the credential in use; on a shared Studio with none of
+      // the person's own yet, the ACTIVATE sign-in.
+      setTab(t => t ?? (a.models.source === 'endpoint' && aiEnabled ? 'endpoint'
+        : a.platform.source === 'signin' ? 'signin'
+        : a.models.source === 'key' ? 'key'
+        : a.single ? 'cli'
+        : a.signInOffered ? 'signin' : 'deployment'))
       if (!filled.current && a.models.source === 'endpoint' && a.models.baseUrl) {
         setPreset(presetOf(a.models.baseUrl)); setBaseUrl(a.models.baseUrl); fillEndpoint(k.endpoint)
       }
@@ -417,13 +429,25 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
     : 'error'
   const modelCount = models?.length ?? health?.models ?? 0
 
-  // Named for what each is, since "API key" and "Endpoint" alone did not
-  // say which kind of key or endpoint; short enough to fit a phone's width.
-  const tabs: { value: Tab; label: string }[] = [
-    single ? { value: 'cli', label: 'ACTIVATE (pw CLI)' } : { value: 'deployment', label: 'ACTIVATE (deployment)' },
-    { value: 'key', label: 'ACTIVATE API key' },
-    ...(aiEnabled ? [{ value: 'endpoint' as Tab, label: 'OpenAI-compatible endpoint' }] : []),
+  // Each source is named for what it is, since "API key" and "Endpoint"
+  // alone did not say which kind, and says in one line what it covers. On
+  // a shared Studio, signing in with ACTIVATE comes first: it is the
+  // person's own and renews itself.
+  const signInTab = !single && !!access.signInOffered
+  const covers = aiEnabled ? 'its models and its platform' : 'its platform'
+  const tabs: { value: Tab; label: string; description: string }[] = [
+    ...(single
+      ? [{ value: 'cli' as Tab, label: 'ACTIVATE (pw CLI)', description: aiEnabled
+        ? 'The ACTIVATE platforms the pw CLI on this computer is signed in to, for their models and the platform.'
+        : 'The ACTIVATE platforms the pw CLI on this computer is signed in to, for the Workflows page and libraries on ACTIVATE systems.' }]
+      : signInTab
+        ? [{ value: 'signin' as Tab, label: 'Sign in with ACTIVATE', description: `Recommended. Your own ACTIVATE account, approved once on the platform and renewed by the Studio, for ${aiEnabled ? 'your models, the platform,' : 'the platform'} and My library.` }]
+        : []),
+    { value: 'key', label: 'ACTIVATE API key', description: `A token or API key from an ACTIVATE account, for ${covers}, until it expires.` },
+    ...(aiEnabled ? [{ value: 'endpoint' as Tab, label: 'OpenAI-compatible endpoint', description: 'Any service that speaks the OpenAI API, such as a site AI portal, a provider, or a model server on this computer.' }] : []),
+    ...(single ? [] : [{ value: 'deployment' as Tab, label: 'ACTIVATE (deployment)', description: 'The ACTIVATE credential this deployment runs with, for anyone without a credential of their own.' }]),
   ]
+  const signedIn = access.platform.source === 'signin'
   // An endpoint chosen before AI features were switched off is not offered.
   const shownTab = tab && tabs.some(t => t.value === tab) ? tab : tabs[0].value
   const presets: SelectItem<string>[] = PRESETS.map(p => ({ value: p.value, label: p.label }))
@@ -472,7 +496,9 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
           <p className="muted key-note">
             {single
               ? 'Sign the pw CLI in to an ACTIVATE platform below, paste an ACTIVATE API key, or connect an OpenAI-compatible endpoint, such as a site AI portal or a model server on this computer.'
-              : 'Add an ACTIVATE API key or an OpenAI-compatible endpoint below.'}
+              : signInTab
+                ? 'Sign in with ACTIVATE below, add an ACTIVATE API key, or connect an OpenAI-compatible endpoint.'
+                : 'Add an ACTIVATE API key or an OpenAI-compatible endpoint below.'}
           </p>
         ) : health && health.status !== 'ok' && (health.message || modelsError) && (
           <p className="muted key-note">{health.message || modelsError}</p>
@@ -497,7 +523,10 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
       <UsesTable access={access} aiEnabled={aiEnabled} />
 
       <Field group label="Where access comes from" className="access-source">
-        <SegmentedControl options={tabs} value={shownTab} onValueChange={v => { setTab(v); setNote(null) }} />
+        <RadioGroup className="access-choices" aria-label="Where access comes from" value={shownTab}
+          onValueChange={v => { setTab(v as Tab); setNote(null) }}>
+          {tabs.map(t => <SettingModeOption key={t.value} value={t.value} label={t.label} description={t.description} />)}
+        </RadioGroup>
       </Field>
 
       {shownTab === 'cli' && access.cli && (
@@ -506,14 +535,31 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
           onChoosePath={p => void chooseCliPath(p)} aiEnabled={aiEnabled} />
       )}
 
+      {shownTab === 'signin' && (
+        <div className="access-panel">
+          <p className="muted view-sub">
+            The pw CLI on this server shows a code, which you approve on the platform. Nobody else here can use the sign-in,
+            and it lasts until you sign out.
+          </p>
+          <PlatformSignInPanel onChanged={() => { announceChange(); void load(true) }} />
+          {signedIn && stored && access.models.source !== 'endpoint' && (
+            <p className="identity-note access-override">
+              The key you added under ACTIVATE API key is kept, and used only while you are signed out.{' '}
+              <Button variant="secondary" size="sm" disabled={busy} onClick={() => void removeKey()}>Remove the key</Button>
+            </p>
+          )}
+        </div>
+      )}
+
       {shownTab === 'deployment' && (
         <div className="access-panel">
-          <p className="access-lead">The ACTIVATE credential this deployment runs with, for anyone without a key of their own.</p>
           <p className="muted view-sub">
             {access.deployment.source === 'none'
               ? 'This deployment has no credential of its own, so each person adds a key or an endpoint.'
               : `Without a key of your own, requests use ${describeSource(access.deployment, false)}.`}
-            {requirePersonalKey && ' This deployment requires each person to add their own, under ACTIVATE API key or OpenAI-compatible endpoint.'}
+            {requirePersonalKey && (signInTab
+              ? ' This deployment requires each person to use their own: sign in with ACTIVATE, or add an ACTIVATE API key or an OpenAI-compatible endpoint.'
+              : ' This deployment requires each person to add their own, under ACTIVATE API key or OpenAI-compatible endpoint.')}
           </p>
           {stored && (
             <div className="key-row">
@@ -525,12 +571,16 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
 
       {shownTab === 'key' && (
         <div className="access-panel">
-          <p className="access-lead">A token or API key from an ACTIVATE account, for its models and its platform.</p>
           <p className="muted view-sub">
             A platform token or platform API key (Account, API keys) covers models and the platform; an AI gateway key covers
             models only. The host is the platform's own, such as platform.example.com. A site AI portal or another API goes
-            under OpenAI-compatible endpoint.{stored && access.models.source !== 'key' ? ' Saving one replaces your endpoint.' : ''}
+            under OpenAI-compatible endpoint.{stored && access.models.source === 'endpoint' ? ' Saving one replaces your endpoint.' : ''}
           </p>
+          {signedIn && (
+            <p className="identity-note access-override">
+              You are signed in with ACTIVATE, which the Studio uses before a key. A key saved here is used after you sign out.
+            </p>
+          )}
           <div className="key-row">
             <div className="grow">
               <Input type="password" aria-label="Platform key or token" value={keyInput} autoComplete="off"
@@ -579,7 +629,6 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
 
       {shownTab === 'endpoint' && (
         <div className="access-panel">
-          <p className="access-lead">Any service that speaks the OpenAI API, such as a site AI portal, a provider, or a model server on this computer.</p>
           <p className="muted view-sub">
             The base URL usually ends in /v1. An endpoint covers models only; platform tools keep using {single ? 'the pw CLI' : 'the deployment credential'}.
             A model server on this computer keeps working with no network.
@@ -632,16 +681,14 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
       )}
 
       {/* Offline, the banner already says the platform cannot be reached. */}
-      {aiEnabled && !offline && (single ? access.platform.source !== 'none' : access.platform.source === 'key') && (
+      {aiEnabled && !offline && (single ? access.platform.source !== 'none' : access.platform.source === 'key' || signedIn) && (
         <SubscriptionsPanel platformOrigin={access.platformOrigin} host={access.platform.host} onChanged={() => { announceChange(); void load(true) }} />
       )}
-
-      {!single && <PlatformSignInPanel />}
 
       <p className="muted key-trust">
         {single
           ? 'A key or endpoint added here, with its header values, is stored on this computer, encrypted, beside the index, and header values are never shown again. The pw CLI keeps its own sign-ins; the Studio reads them and asks the CLI to renew them, and never sends them to the browser.'
-          : 'A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. A key bound to an endpoint is never passed to platform commands.'}
+          : `${signInTab ? 'Your ACTIVATE sign-in is kept on this server in a folder of yours and renewed by the pw CLI there; its tokens never reach the browser. ' : ''}A key added here is available to this server and its operator; encryption at rest protects the stored file, not the running process. Use a key you can revoke. A key bound to an endpoint is never passed to platform commands.`}
       </p>
     </div>
   )
@@ -677,17 +724,11 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   )
   return (
     <div className="access-panel">
-      {aiEnabled ? (
-        <>
-          <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for their models and the platform.</p>
-          <p className="muted view-sub">The context in use covers models, the Workflows page, clusters, and runs.</p>
-        </>
-      ) : (
-        <>
-          <p className="access-lead">The ACTIVATE platforms the pw CLI on this computer is signed in to, for the Workflows page and libraries on ACTIVATE systems.</p>
-          <p className="muted view-sub">The context in use covers the Workflows page, clusters, runs, and libraries on ACTIVATE systems.</p>
-        </>
-      )}
+      <p className="muted view-sub">
+        {aiEnabled
+          ? 'The context in use covers models, the Workflows page, clusters, and runs.'
+          : 'The context in use covers the Workflows page, clusters, runs, and libraries on ACTIVATE systems.'}
+      </p>
       <CliLocation cli={cli} busy={busy} onChoose={onChoosePath} />
       {overridden && (
         <p className="identity-note access-override">

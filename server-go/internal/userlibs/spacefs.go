@@ -56,7 +56,7 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	}
 	owner := w.owner()
 	if owner == "" {
-		return nil, w, "", nil, apierr.New(401, "Sign in to change your space.")
+		return nil, w, "", nil, apierr.New(401, "Sign in to change your library.")
 	}
 	o, d, err := m.Users.FindRoot(lib.IndexRoot)
 	if err != nil {
@@ -70,7 +70,7 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	_, uid, _ := d.Account()
 	key := m.keyOf(w, owner)
 	if key == "" {
-		return nil, w, "", nil, apierr.New(409, "Sign the pw CLI in under Settings, Model access, so the Studio can reach your space as you.")
+		return nil, w, "", nil, apierr.New(409, "Sign in with ACTIVATE under Settings, Model access, so the Studio can reach your library as you.")
 	}
 	root := ""
 	if d.Build != nil {
@@ -99,7 +99,7 @@ func (m *Module) sameAccount(ctx context.Context, site, key string, uid int) err
 	if !ok || time.Since(a.at) > 10*time.Minute {
 		r, err := m.Pool.Run(ctx, site, key, []string{"id", "-u"}, 60*time.Second)
 		if err != nil {
-			return apierr.New(502, "Your session to %s did not open: %s", remote.SiteName(site), err.Error())
+			return m.sessionErr(remote.SiteName(site), key, err)
 		}
 		n, err := strconv.Atoi(strings.TrimSpace(lastLine(r.Stdout)))
 		if err != nil {
@@ -114,7 +114,7 @@ func (m *Module) sameAccount(ctx context.Context, site, key string, uid int) err
 		m.mu.Unlock()
 	}
 	if a.uid != uid {
-		return apierr.New(409, "Your session reaches %s as another account (uid %d) than the one this space was made for (uid %d).", remote.SiteName(site), a.uid, uid)
+		return apierr.New(409, "Your session reaches %s as another account (uid %d) than the one this library was made for (uid %d).", remote.SiteName(site), a.uid, uid)
 	}
 	return nil
 }
