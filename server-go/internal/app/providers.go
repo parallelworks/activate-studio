@@ -53,6 +53,9 @@ type Providers struct {
 	// SignInOwner is whose sign-in issued key, "" for a key no sign-in
 	// issued (internal/personal).
 	SignInOwner func(key string) string
+	// SpaceFolder is owner's own space, My library: the site it is on
+	// and its folder there; "" and "" for none.
+	SpaceFolder func(owner string) (site, folder string)
 	// InvalidateMCP is mcpClient.ts's invalidateRemote(), after a settings
 	// write. Owner: chat track. Node rereads its MCP status when the
 	// settings file changes (mcpClient.ts), so the default does nothing.

@@ -1891,6 +1891,14 @@ a.identity-btn { text-decoration: none; }
 .agents-filter { padding: 10px 14px; }
 /* A long library scrolls inside the menu instead of running off screen. */
 .persona-menu { max-height: min(60vh, 520px, var(--available-height)); }
+.engine-menu { width: min(360px, calc(100vw - 32px)); }
+.engine-menu .persona-row:disabled { opacity: .6; cursor: not-allowed; }
+.engine-web { margin: 6px 10px 4px; font-size: 13px; }
+/* An approval comes while a reply runs, so it sits above the composer,
+   clear of the newest message. */
+.cred-banner.pwcode-approval { top: auto; bottom: 124px; width: min(680px, calc(100% - 32px)); }
+.pwcode-approval .pwcode-command { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+.pwcode-approval .pwcode-plan { margin: 4px 0 0; white-space: pre-wrap; }
 .agents-kind { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 /* A file input laid over a label drawn as a button. */
 .agents-file { overflow: hidden; }

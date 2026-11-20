@@ -89,6 +89,9 @@ type streamBody struct {
 	// Effort is the composer's reasoning effort for this turn; empty
 	// leaves it to the model (and chatTemplateKwargs).
 	Effort *string `json:"effort"`
+	// Engine is the composer's choice of what answers: "pwcode",
+	// "studio", or empty for the deployment's (pwcodechat.go).
+	Engine *string `json:"engine"`
 }
 
 func sp(s string) *string { return &s }
@@ -188,6 +191,19 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}()
+
+	// pw code answers where it is chosen or, by default, offered; a
+	// resumed Studio approval is the Studio assistant's.
+	if _, isResume := body.Resume.(map[string]any); !isResume {
+		engine, err := m.engineFor(r, deref(body.Engine))
+		if err != nil {
+			res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
+			return nil
+		}
+		if engine == enginePWCode {
+			return m.streamPWCode(r, res, &body, convID)
+		}
+	}
 
 	userCred := m.cred(r)
 	if userCred == nil {

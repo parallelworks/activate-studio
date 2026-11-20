@@ -101,6 +101,8 @@ type Module struct {
 	noted      map[string]bool
 	// notes holds a conversation's notes back while a reply streams there.
 	notes *noteQueue
+	// pw is pw code chat's state (pwcodechat.go).
+	pw pwState
 }
 
 // Default is the registered module.
@@ -272,6 +274,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	m.Convs.Register(mux, h)
 	m.chatSaveRoutes(h)
+	m.pwcodeRoutes(h)
 	m.keyRoutes(h)
 	h("GET /api/chat/models", m.models)
 	h("GET /api/ai/health", m.health)

@@ -55,6 +55,10 @@ Where it stops:
 - Folder names are visible to whoever can read the parent, as with `ls`.
 - The server process handles what a search returns and what the assistant reads, and keeps conversations in its data folder. Other users cannot see a person's space, but the account the Studio runs under can see what passes through it. One Studio per person, as in [`ACCESS-CONTROL.md`](ACCESS-CONTROL.md), is the arrangement without that.
 
+## pw code in chat
+
+Where pw code answers a chat (CUSTOMIZATION.md, Chat), the session runs as the person chatting. The Studio reaches that person's pw code daemon on the Studio's cluster (`STUDIO_HOME_CLUSTER`, or the cluster the Studio was deployed on) through `pw ssh`, with the platform key from their own ACTIVATE sign-in under Settings, Model access, and never with the deployment's key or service account. Without that sign-in pw code is not offered to them and the Studio assistant answers. The session works in the person's space when they have one on that cluster, and otherwise in `~/studio-chat` in their home. Its library tools reach the Studio's MCP server with a token sealed for that person and that conversation, so its searches see what the person's own chat would. Only the conversation's owner can answer its approvals or interrupt it.
+
 ## The mechanism for point 4: permission-permutation external dbs
 
 GUFI's external-db design stores per-file extracted content in the index tree under the same access control as the source. The pieces:

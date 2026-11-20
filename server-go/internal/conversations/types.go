@@ -350,13 +350,32 @@ type Conversation struct {
 	UpdatedAt      string    `json:"updatedAt"`
 	ActiveBranchID *string   `json:"activeBranchId"`
 	Messages       []Message `json:"messages"`
+	// PWCode is the pw code session this conversation runs in, when its
+	// replies come from pw code.
+	PWCode *PWCodeLink `json:"pwcode,omitempty"`
 	// Extra is the stored conversation's other fields and key order.
 	Extra Extra `json:"-"`
 }
 
+// PWCodeLink is a conversation's pw code session: the site whose daemon
+// holds it ("local" for this host's), its id, the folder it works in,
+// its PW Code on the web address, and when the Studio made it.
+type PWCodeLink struct {
+	Site      string `json:"site"`
+	Session   string `json:"session"`
+	Workspace string `json:"workspace,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Model     string `json:"model,omitempty"`
+	CreatedAt string `json:"createdAt"`
+	// LastMessage is the id of the last reply the session gave here, so
+	// a later turn tells it what came after (a reply from the Studio
+	// assistant, say).
+	LastMessage string `json:"lastMessage,omitempty"`
+}
+
 type conversationFields Conversation
 
-var conversationKeys = keys("id", "title", "owner", "createdAt", "updatedAt", "activeBranchId", "messages")
+var conversationKeys = keys("id", "title", "owner", "createdAt", "updatedAt", "activeBranchId", "messages", "pwcode")
 
 // MarshalJSON writes the fields in their declared order over the stored object.
 func (c Conversation) MarshalJSON() ([]byte, error) {
@@ -385,6 +404,10 @@ func (c *Conversation) OwnerName() string {
 // Clone is a deep enough copy for the read-time decorations.
 func (c *Conversation) Clone() *Conversation {
 	d := *c
+	if c.PWCode != nil {
+		l := *c.PWCode
+		d.PWCode = &l
+	}
 	d.Messages = make([]Message, len(c.Messages))
 	for i, m := range c.Messages {
 		d.Messages[i] = m

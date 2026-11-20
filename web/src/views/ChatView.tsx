@@ -35,6 +35,7 @@ import { TransferNoteWatcher } from '../components/TransferNoteWatcher'
 import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCommands'
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 import { SaveChatButton } from '../components/SaveChatButton'
+import { PWCodeApprovals, PWCodeEngine, PWCodeWatcher } from '../components/PWCodeEngine'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -517,8 +518,10 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
               </Callout>
             </div>
           )}
+          {!showAttachments && !showManage && <PWCodeApprovals conversationId={activeId} />}
           <FilterReloader />
           <TransferNoteWatcher />
+          <PWCodeWatcher />
           <RetryWithModel />
           <ModelShare />
           <ChatLayout
@@ -681,6 +684,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
               </div>
             </Popover>
             )}
+            {!showAttachments && <PWCodeEngine conversationId={activeId} />}
             {activeId && !showAttachments && <SaveChatButton conversationId={activeId} />}
             <PanelToggle className="chat-panel-toggle" />
           </div>

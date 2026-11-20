@@ -365,6 +365,19 @@ func (m *Module) workflowOffered(w who) bool { return w.Auth || m.getenv("PW_PLA
 
 func (m *Module) load(owner string) []libraries.UserDef { return m.Users.Load(owner) }
 
+// SpaceFolder is owner's own space: its site and folder, or "" and "".
+func (m *Module) SpaceFolder(owner string) (string, string) {
+	if owner == "" {
+		return "", ""
+	}
+	for _, d := range m.load(owner) {
+		if d.Space != nil && d.Shared == nil && d.SourceDir != "" {
+			return d.Site, d.SourceDir
+		}
+	}
+	return "", ""
+}
+
 func find(defs []libraries.UserDef, id string) *libraries.UserDef {
 	for i := range defs {
 		if defs[i].ID == id {
@@ -427,6 +440,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	m := Of(a)
 	m.Routes(mux, a.Log)
 	kb.SpaceFiles = m.SpaceFiles()
+	a.Providers.SpaceFolder = m.SpaceFolder
 	if !a.Cfg.FrontAuth {
 		registerWhoami(mux, a)
 	}

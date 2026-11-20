@@ -82,7 +82,24 @@ type Effective struct {
 	ChatTemplateKwargs     string            `json:"chatTemplateKwargs"`
 	ChatModelWindows       string            `json:"chatModelWindows"`
 	ServeWorkflows         string            `json:"serveWorkflows"`
+	// ChatEngine is what answers in chat: "auto" (pw code where a pw code
+	// daemon is usable under ACTIVATE, else the Studio assistant),
+	// "pwcode" or "studio".
+	ChatEngine string `json:"chatEngine"`
+	// PWCodeModel is the model pw code chat sessions start with; "" for
+	// the daemon's default.
+	PWCodeModel string `json:"pwcodeModel"`
+	// PWCodePermissionMode is the permission mode they start in; "" for
+	// the daemon's default.
+	PWCodePermissionMode string `json:"pwcodePermissionMode"`
 }
+
+// ChatEngines are chatEngine's values; PWCodeModes are
+// pwcodePermissionMode's (never bypass-permissions).
+var (
+	ChatEngines = []string{"auto", "pwcode", "studio"}
+	PWCodeModes = []string{"", "read-only", "accept-edits", "auto", "plan"}
+)
 
 // PersonalPrompts, PersonalSections and PersonalMission are settings.ts's.
 var PersonalPrompts = []string{
@@ -332,6 +349,15 @@ func (s *Store) Effective() Effective {
 	e.ChatTemplateKwargs = or(str("chatTemplateKwargs"), s.envOr("CHAT_TEMPLATE_KWARGS", `{"qwen":{"enable_thinking":false},"gpt-oss":{"reasoning_effort":"low"}}`))
 	e.ChatModelWindows = or(str("chatModelWindows"), s.envOr("CHAT_MODEL_WINDOWS", `{"qwen":57344,"gpt-oss":65536}`))
 	e.ServeWorkflows = or(str("serveWorkflows"), s.envOr("SERVE_WORKFLOWS", `{"vllm":{"workflow":"vllm-endpoint","inputs":{}},"ollama":{"workflow":"ollama-endpoint","inputs":{}}}`))
+	e.ChatEngine = or(str("chatEngine"), env("CHAT_ENGINE"))
+	if !slices.Contains(ChatEngines, e.ChatEngine) {
+		e.ChatEngine = "auto"
+	}
+	e.PWCodeModel = or(str("pwcodeModel"), env("PWCODE_MODEL"))
+	e.PWCodePermissionMode = or(str("pwcodePermissionMode"), env("PWCODE_PERMISSION_MODE"))
+	if !slices.Contains(PWCodeModes, e.PWCodePermissionMode) {
+		e.PWCodePermissionMode = ""
+	}
 	return e
 }
 

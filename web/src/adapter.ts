@@ -1,5 +1,5 @@
 import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
-import { getChatLibrary, getEffort, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
+import { getChatLibrary, getEffort, getEngine, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
 import { fetchModels } from './api'
 import { rememberToolCommands } from './components/GufiCommands'
 
@@ -41,6 +41,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       library: getChatLibrary(),
       agent: getPersona(),
       effort: effortFor(req.conversationId) || null,
+      engine: getEngine(req.conversationId) || null,
       tools: req.tools,
       // The user's answer to a call held for approval; the server runs what
       // it held for that call, never what the request says to run.
@@ -56,6 +57,14 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
   let model: string | null = null
   let messageId = `local-${Date.now()}`
   let errorMessage: string | null = null
+  // Set once pw code answers: Stop then interrupts its turn as well.
+  let pwcodeSession = ''
+  const interruptPWCode = () => {
+    if (pwcodeSession && req.conversationId) {
+      void fetch(`/api/chat/pwcode/${encodeURIComponent(req.conversationId)}/interrupt`, { method: 'POST' }).catch(() => {})
+    }
+  }
+  signal?.addEventListener('abort', interruptPWCode, { once: true })
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -108,6 +117,16 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         // A call the server holds until the user answers it; the package
         // draws the request and sends the answer back as req.resume.
         if (payload.approval?.id) handlers.onPart?.({ type: 'approval_request', approval: payload.approval })
+        break
+      case 'pwcode':
+        // pw code answers: its session, and where PW Code on the web shows it.
+        pwcodeSession = String(payload.session ?? '')
+        window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: req.conversationId, ...payload } }))
+        break
+      case 'pwcode_approval':
+      case 'pwcode_approval_resolved':
+        // pw code asks before a command; the chat's approval bar answers.
+        window.dispatchEvent(new CustomEvent(event === 'pwcode_approval' ? 'ade-pwcode-approval' : 'ade-pwcode-approval-resolved', { detail: payload }))
         break
       case 'steer':
         // The running reply took a message queued during it (SteerBridge).
