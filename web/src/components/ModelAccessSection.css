@@ -36,13 +36,9 @@
 .model-access .advanced-label { font-size: 13px; font-weight: 500; margin-top: 4px; }
 .model-access .header-row .header-name { flex: 0 1 200px; min-width: 140px; }
 .model-access .endpoint-advanced-body .key-note { margin: 0; }
-/* The sources' names are read whole: where the row is narrower than they
-   need (a phone, or the page beside the status panel), they stack. */
-.model-access .access-source { container-type: inline-size; }
-@container (max-width: 520px) {
-  .model-access .access-source [role='group'] { display: flex; flex-direction: column; align-items: stretch; }
-  .model-access .access-source [role='group'] > button { justify-content: flex-start; }
-}
+/* The sources, one described choice each, in one bordered list. */
+.model-access .access-choices { display: flex; flex-direction: column; border: 1px solid var(--theme-border); border-radius: 8px; overflow: hidden; }
+.model-access .access-choices > label { padding: 10px 14px; }
 @media (max-width: 520px) {
   /* A header's name on its own line, its value beside the remove button. */
   .model-access .header-row .header-name { flex: 1 1 100%; }

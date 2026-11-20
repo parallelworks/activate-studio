@@ -374,7 +374,7 @@ func (e *Engine) kindOf(l libraries.Library, viewer libraries.Viewer) string {
 	// The card adds whether it is read only, so these say whose account
 	// reads it.
 	if d != nil && d.Space != nil {
-		return "Your space on " + remote.ShortName(l.Site) + ", as " + d.Space.Account
+		return "Your library on " + remote.ShortName(l.Site) + ", as " + d.Space.Account
 	}
 	if d != nil && d.Shared != nil {
 		return "Shared by " + d.Shared.From + " on " + remote.ShortName(l.Site) + ", as " + d.Shared.Account

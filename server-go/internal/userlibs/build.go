@@ -425,7 +425,7 @@ func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *bu
 	fallback := name
 	switch {
 	case o.Space != nil:
-		id, fallback = uniqueID(defs, idBase("space-"+name)), "My space"
+		id, fallback = uniqueID(defs, idBase("space-"+name)), "My library"
 	case o.IDBase != "":
 		id, fallback = uniqueID(defs, idBase(o.IDBase)), o.Label
 	}

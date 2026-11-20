@@ -61,6 +61,11 @@ type Module struct {
 	// key now (ok false for none or a provider key), after rehydrating the
 	// session from cookie when one is given. nil: the viewer's key only.
 	OwnerKey func(owner, cookie string) (key string, ok bool)
+	// SignedIn: owner has their own ACTIVATE sign-in (internal/personal),
+	// which OwnerKey uses before a pasted key.
+	SignedIn func(owner string) bool
+	// FromSignIn: key is an access token of someone's ACTIVATE sign-in.
+	FromSignIn func(key string) bool
 	// Background is the context builds are followed and files sent in.
 	Background func() context.Context
 
@@ -122,6 +127,14 @@ func Of(a *app.App) *Module {
 		return m.ownJobs()
 	}
 	m.Background = func() context.Context { return context.Background() }
+	m.SignedIn = func(owner string) bool {
+		f := a.Providers.SignInKey
+		return f != nil && owner != single && f(owner) != ""
+	}
+	m.FromSignIn = func(key string) bool {
+		f := a.Providers.SignInOwner
+		return f != nil && f(key) != ""
+	}
 	m.OwnerKey = func(owner, cookie string) (string, bool) {
 		// The person's own platform sign-in first: it renews itself and
 		// was checked to be theirs.
@@ -264,6 +277,20 @@ func (m *Module) keyOf(w who, owner string) string {
 		return ""
 	}
 	return m.P.GatewayKey()
+}
+
+// sessionErr is why a person's session with key to the cluster named name
+// did not open, saying what to do when the platform refused the key: sign
+// in again when it came from their ACTIVATE sign-in, else sign in.
+func (m *Module) sessionErr(name, key string, err error) error {
+	msg := err.Error()
+	if l := strings.ToLower(msg); strings.Contains(l, "unauthorized") || strings.Contains(l, "status 401") {
+		if m.FromSignIn != nil && m.FromSignIn(key) {
+			return apierr.New(502, "The platform refused your ACTIVATE sign-in for %s (Unauthorized). Sign out under Settings, Model access, sign in again, then try again.", name)
+		}
+		return apierr.New(502, "The platform refused the credential the Studio used for you on %s (Unauthorized). Sign in with ACTIVATE under Settings, Model access, then try again.", name)
+	}
+	return apierr.New(502, "Your session to %s did not open: %s", name, msg)
 }
 
 // sshAllowed: libraries over ssh only for the one user of a Studio with

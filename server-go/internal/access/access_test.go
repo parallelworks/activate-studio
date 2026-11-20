@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 )
 
@@ -124,7 +125,7 @@ func TestAccessSourcesAndChoice(t *testing.T) {
 	s := newStudio(t, map[string]string{"PW_CREDENTIALS_DIR": credsDir(t), "PW_CLI": cli, "PATH": "/usr/bin:/bin"}, n)
 
 	_, body, raw := s.do("GET", "/api/access", nil)
-	if !strings.HasPrefix(raw, `{"single":true,"authEnabled":false,"models":{"source":"endpoint","host":"127.0.0.1:11434","context":null,"baseUrl":"http://127.0.0.1:11434/v1","last4":"ocal","kind":"api-key"},"platform":{"source":"cli","host":"platform-a.example.com","context":"work"},"deployment":{"source":"cli","host":"platform-a.example.com","context":"work"},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","cli":{"available":true,"version":"v7.1.0","path":"`+cli+`","source":"env","chosenPath":null,"commonDirs":[`) {
+	if !strings.HasPrefix(raw, `{"single":true,"authEnabled":false,"models":{"source":"endpoint","host":"127.0.0.1:11434","context":null,"baseUrl":"http://127.0.0.1:11434/v1","last4":"ocal","kind":"api-key"},"platform":{"source":"cli","host":"platform-a.example.com","context":"work"},"deployment":{"source":"cli","host":"platform-a.example.com","context":"work"},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":false,"cli":{"available":true,"version":"v7.1.0","path":"`+cli+`","source":"env","chosenPath":null,"commonDirs":[`) {
 		t.Fatal(raw)
 	}
 	if !strings.HasSuffix(raw, `"chosen":null,"active":"work","used":"work","gatewayFromEnv":false,"envKey":false},"login":null}`) || strings.Contains(raw, "work-api-key") {
@@ -162,7 +163,7 @@ func TestAccessOnASignedInDeployment(t *testing.T) {
 		"cred": nil, "keyStatus": map[string]any{"mode": "none"}, "sharedLast4": nil})
 	s := newStudio(t, map[string]string{"PW_CREDENTIALS_DIR": credsDir(t), "PW_API_KEY": "env-key"}, n)
 	_, _, raw := s.do("GET", "/api/access", nil)
-	if raw != `{"single":false,"authEnabled":true,"models":{"source":"env","host":"platform-a.example.com","context":null},"platform":{"source":"env","host":"platform-a.example.com","context":null},"deployment":{"source":"env","host":"platform-a.example.com","context":null},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","cli":null,"login":null}` {
+	if raw != `{"single":false,"authEnabled":true,"models":{"source":"env","host":"platform-a.example.com","context":null},"platform":{"source":"env","host":"platform-a.example.com","context":null},"deployment":{"source":"env","host":"platform-a.example.com","context":null},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":true,"cli":null,"login":null}` {
 		t.Fatal(raw)
 	}
 	for _, c := range [][2]string{{"PUT", "/api/access/cli/path"}, {"PUT", "/api/access/source"}, {"POST", "/api/access/cli/login"}, {"GET", "/api/access/cli/login"}, {"POST", "/api/access/cli/login/cancel"}} {
@@ -370,4 +371,28 @@ func TestPlatformRefusalsAndReach(t *testing.T) {
 		t.Fatal(st, body)
 	}
 	_ = time.Second
+}
+
+// TestSignInComesBeforeAPastedKey: a person's own platform sign-in is the
+// source for the platform and for models over a key they pasted; an
+// endpoint they chose still serves models.
+func TestSignInComesBeforeAPastedKey(t *testing.T) {
+	n := newNode(t, map[string]any{"authEnabled": true, "user": map[string]any{"id": "u1", "username": "alex", "name": "Alex"},
+		"cred": nil, "keyStatus": map[string]any{"mode": "none"}, "sharedLast4": nil})
+	s := newStudio(t, map[string]string{"PW_CREDENTIALS_DIR": credsDir(t), "PW_API_KEY": "env-key"}, n)
+	src := func(o any) string { return jsonv.Str(jsonv.Path(o, "source")) }
+
+	v := &platform.Viewer{AuthEnabled: true, SignIn: "signed-in-token", Cred: &platform.Cred{Key: "pasted"}}
+	models, plat := s.routes.sources(v)
+	if src(models) != "signin" || src(plat) != "signin" || s.routes.ownPlatformKey(v) != "signed-in-token" {
+		t.Fatalf("with a key: models %s, platform %s", src(models), src(plat))
+	}
+	v.Cred = &platform.Cred{Key: "k", BaseURL: "http://127.0.0.1:11434/v1"}
+	if models, plat = s.routes.sources(v); src(models) != "endpoint" || src(plat) != "signin" {
+		t.Fatalf("with an endpoint: models %s, platform %s", src(models), src(plat))
+	}
+	v.SignIn, v.Cred = "", &platform.Cred{Key: "pasted"}
+	if models, plat = s.routes.sources(v); src(models) != "key" || src(plat) != "key" || s.routes.ownPlatformKey(v) != "pasted" {
+		t.Fatalf("without a sign-in: models %s, platform %s", src(models), src(plat))
+	}
 }

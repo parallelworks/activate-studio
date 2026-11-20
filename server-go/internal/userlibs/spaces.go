@@ -234,7 +234,7 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 	}
 	res, err := m.Pool.Run(ctx, site, key, []string{"bash", "-c", spaceCheckSh, "_", folder, v, flag}, 90*time.Second)
 	if err != nil {
-		return nil, apierr.New(502, "Your session to %s did not open: %s", remote.ShortName(site), err.Error())
+		return nil, m.sessionErr(remote.ShortName(site), key, err)
 	}
 	kv := keyValues(res.Stdout)
 	uid, err := strconv.Atoi(kv["uid"])
@@ -245,7 +245,7 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 	f := &spaceFound{Home: home, Info: libraries.SpaceInfo{Account: user, UID: uid, FS: kv["fs"], ACL: kv["acl"] == "1"}}
 	add := func(s step) { f.Steps = append(f.Steps, s) }
 	done := func() *spaceFound { f.OK = allOK(f.Steps); return f }
-	add(step{Name: "account", OK: true, Detail: fmt.Sprintf("Your session reaches %s as %s (uid %d). The space is read and written as that account.", remote.ShortName(site), user, uid)})
+	add(step{Name: "account", OK: true, Detail: fmt.Sprintf("Your session reaches %s as %s (uid %d). The library is read and written as that account.", remote.ShortName(site), user, uid)})
 	if kv["path"] == "relative" {
 		add(step{Name: "folder", Detail: "Give an absolute folder, or one under ~."})
 		return done(), nil
@@ -290,7 +290,7 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 	case f.Missing:
 		add(step{Name: "folder", OK: true, Detail: f.Target + " does not exist yet. It is made, open to you alone, when you confirm."})
 	case !mine:
-		add(step{Name: "folder", Detail: fmt.Sprintf("%s belongs to another account (uid %s). A space must be a folder you own.", f.Real, owner)})
+		add(step{Name: "folder", Detail: fmt.Sprintf("%s belongs to another account (uid %s). My library must be a folder you own.", f.Real, owner)})
 	case mode&0o002 != 0:
 		add(step{Name: "folder", Detail: fmt.Sprintf("Every account there can write in %s (mode %s). Make it yours alone first (chmod o-w), or choose another folder.", f.Real, kv["mode"])})
 	case mode&0o020 != 0 && kv["fgroup"] != user:
@@ -433,18 +433,18 @@ func writeTarGz(w io.Writer, dir string, names []string) error {
 func (m *Module) spaceSession(w who) (owner, site, key string, err error) {
 	site = HomeCluster()
 	if site == "" {
-		return "", "", "", apierr.New(409, "This Studio does not know the cluster it runs beside, so it cannot make spaces. The operator can set STUDIO_HOME_CLUSTER.")
+		return "", "", "", apierr.New(409, "This Studio does not know the cluster it runs beside, so it cannot offer My library. The operator can set STUDIO_HOME_CLUSTER.")
 	}
 	owner = w.owner()
 	if owner == "" {
-		return "", "", "", apierr.New(401, "Sign in to make a space.")
+		return "", "", "", apierr.New(401, "Sign in to the Studio to make your library.")
 	}
 	key = m.keyOf(w, owner)
 	if key == "" {
 		if owner == single {
 			return "", "", "", apierr.New(409, "The pw CLI on this computer is not signed in. Run pw auth, then try again.")
 		}
-		return "", "", "", apierr.New(409, "Sign the pw CLI in under Settings, Model access, so the Studio can reach the cluster as you.")
+		return "", "", "", apierr.New(409, "My library reaches the cluster with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then come back here.")
 	}
 	return owner, site, key, nil
 }
@@ -468,7 +468,18 @@ func (m *Module) spaceStatus(w who) *jsonv.Object {
 	if site != "" {
 		cluster = remote.ShortName(site)
 	}
-	return jsonv.NewObject("available", why == "", "why", why, "cluster", cluster, "suggested", SuggestedSpace, "spaces", spaces)
+	// Which credential reaches the cluster for the person: their ACTIVATE
+	// sign-in, a key they pasted, or none yet.
+	credential := ""
+	if owner := w.owner(); owner != "" && owner != single {
+		if m.SignedIn != nil && m.SignedIn(owner) {
+			credential = "sign-in"
+		} else if m.keyOf(w, owner) != "" {
+			credential = "key"
+		}
+	}
+	return jsonv.NewObject("available", why == "", "why", why, "cluster", cluster, "suggested", SuggestedSpace, "spaces", spaces,
+		"credential", credential, "signInOffered", w.Auth && os.Getenv("DISABLE_PERSONAL_KEYS") != "1")
 }
 
 func spaceFolder(b *jsonv.Object) (string, error) {
@@ -542,7 +553,7 @@ func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*librari
 	}
 	for _, d := range m.load(owner) {
 		if d.Space != nil && d.Build != nil && d.Site == site && d.Build.SourceRoot == f.Real {
-			return nil, 0, apierr.New(409, "%s is already your space %s.", f.Real, d.Label)
+			return nil, 0, apierr.New(409, "%s is already your library %s.", f.Real, d.Label)
 		}
 	}
 	bin := f.GufiBin

@@ -127,7 +127,7 @@ func TestShareSetsAndTakesBackACLs(t *testing.T) {
 	if out, err := runShareSh(t, "", "apply", proj, "user", "no-such-account-x", "r", space); err == nil || !strings.Contains(out, "There is no account no-such-account-x there.") {
 		t.Fatalf("unknown account: %v %s", err, out)
 	}
-	if out, err := runShareSh(t, "", "apply", base, "user", "nobody", "r", space); err == nil || !strings.Contains(out, "is not in the space") {
+	if out, err := runShareSh(t, "", "apply", base, "user", "nobody", "r", space); err == nil || !strings.Contains(out, "is not in your library") {
 		t.Fatalf("outside the space: %v %s", err, out)
 	}
 	out, err = runShareSh(t, "", "apply", proj, "everyone", "", "r", space)

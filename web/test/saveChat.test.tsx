@@ -32,7 +32,7 @@ describe('Save to library', () => {
   })
 
   it('names who can read the copy', () => {
-    expect(readersNote({ ...MAIN, space: true, label: 'My space' })).toBe('Only you can read it there.')
+    expect(readersNote({ ...MAIN, space: true, label: 'My library' })).toBe('Only you can read it there.')
     expect(readersNote({ ...MAIN, shared: true })).toBe('Everyone who uses this Studio can read it there.')
     expect(readersNote(MAIN)).toBe('')
   })

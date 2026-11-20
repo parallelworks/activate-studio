@@ -44,36 +44,69 @@ describe('a space of one\'s own', () => {
     expect(mayAddLibraries(false, withSpace, false)).toBe(true)
   })
 
-  it('says why a space cannot be made yet', async () => {
-    stub((m, u) => (u === '/api/user-libraries/space' ? json({ ...STATUS, available: false, why: 'Sign the pw CLI in under Settings, Model access, so the Studio can reach the cluster as you.' }) : undefined))
+  it('asks a person without a sign-in to sign in with ACTIVATE, right there', async () => {
+    let signedIn = false
+    stub((m, u) => {
+      if (u === '/api/user-libraries/space') {
+        return json(signedIn ? { ...STATUS, credential: 'sign-in', signInOffered: true }
+          : { ...STATUS, available: false, why: 'My library reaches the cluster with your ACTIVATE sign-in.', credential: '', signInOffered: true })
+      }
+      if (u === '/api/me/platform-sign-in' && m === 'GET') return json(signedIn ? { state: 'signed-in', account: 'ada', host: 'platform.example.com' } : { state: 'none', host: 'platform.example.com' })
+      if (u === '/api/me/platform-sign-in' && m === 'POST') { signedIn = true; return json({ state: 'signed-in', account: 'ada', host: 'platform.example.com' }) }
+    })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true }} onAdded={() => {}} />)
-    fireEvent.click(button('My space'))
-    expect(await screen.findByText(/Sign the pw CLI in under Settings/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Make my space' })).toBeNull()
+    fireEvent.click(button('My library'))
+    expect(await screen.findByText('My library needs your ACTIVATE sign-in')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Make my library' })).toBeNull()
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
+    expect(await screen.findByLabelText('Folder')).toHaveValue('~/studio')
+    expect(screen.getByText('Reached on cluster-a as you with your ACTIVATE sign-in.')).toBeInTheDocument()
+  })
+
+  it('says why My library is not available for another reason', async () => {
+    stub((m, u) => (u === '/api/user-libraries/space' ? json({ ...STATUS, cluster: '', available: false, why: 'This Studio does not know the cluster it runs beside.', signInOffered: true }) : undefined))
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true }} onAdded={() => {}} />)
+    fireEvent.click(button('My library'))
+    expect(await screen.findByText('My library is not available')).toBeInTheDocument()
+    expect(screen.getByText(/does not know the cluster/)).toBeInTheDocument()
+  })
+
+  it('offers the sign-in again when the platform refuses the credential', async () => {
+    stub((m, u) => {
+      if (u === '/api/user-libraries/space' && m === 'GET') return json({ ...STATUS, credential: 'key', signInOffered: true })
+      if (u === '/api/user-libraries/space/test') return json({ error: 'The platform refused the credential the Studio used for you on cluster-a (Unauthorized). Sign in with ACTIVATE under Settings, Model access, then try again.' }, 502)
+      if (u === '/api/me/platform-sign-in') return json({ state: 'none', host: 'platform.example.com' })
+    })
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true }} onAdded={() => {}} />)
+    fireEvent.click(button('My library'))
+    expect(await screen.findByText(/with the API key you added under Settings, Model access/)).toBeInTheDocument()
+    fireEvent.click(button('Check the folder'))
+    expect(await screen.findByText(/refused the credential/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' })).toBeInTheDocument()
   })
 
   it('checks the folder first, asks before making it, then makes the space', async () => {
     const calls = stub((m, u) => {
       if (u === '/api/user-libraries/space' && m === 'GET') return json(STATUS)
       if (u === '/api/user-libraries/space/test') return json(PASSED)
-      if (u === '/api/user-libraries/space' && m === 'POST') return json({ id: 'space-studio', label: 'My space', state: 'building' })
+      if (u === '/api/user-libraries/space' && m === 'POST') return json({ id: 'space-studio', label: 'My library', state: 'building' })
     })
     const onAdded = vi.fn()
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true }} onAdded={onAdded} />)
-    fireEvent.click(button('My space'))
+    fireEvent.click(button('My library'))
     const folder = await screen.findByLabelText('Folder')
     expect(folder).toHaveValue('~/studio')
-    expect(button('Make my space')).toBeDisabled()
+    expect(button('Make my library')).toBeDisabled()
     fireEvent.click(button('Check the folder'))
     expect(await screen.findByText('Reached cluster-a as ada.')).toBeInTheDocument()
-    fireEvent.click(button('Make my space'))
+    fireEvent.click(button('Make my library'))
     fireEvent.click(await screen.findByRole('button', { name: 'Create it and build' }))
     await waitFor(() => expect(onAdded).toHaveBeenCalled())
     const made = calls.find(c => c.method === 'POST' && c.url === '/api/user-libraries/space')
     expect(made?.body).toMatchObject({ sourceRoot: '~/studio', create: true })
     // A folder changed after the check is checked again before it is made.
     fireEvent.change(folder, { target: { value: '~/other' } })
-    expect(button('Make my space')).toBeDisabled()
+    expect(button('Make my library')).toBeDisabled()
   })
 
   it('lists what others shared, and adds one as the viewer\'s own library', async () => {
@@ -134,7 +167,7 @@ describe('sharing a folder of a space', () => {
   })
 })
 
-describe('the per-person pw CLI sign-in', () => {
+describe('signing in with ACTIVATE', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
   it('shows the code to approve, looks again while it waits, and says who is signed in', async () => {
@@ -147,13 +180,24 @@ describe('the per-person pw CLI sign-in', () => {
       }
       if (u.endsWith('/sign-out')) { state = { state: 'none' }; return json(state) }
     })
-    render(<PlatformSignInPanel />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign in with the pw CLI' }))
+    const changed = vi.fn()
+    render(<PlatformSignInPanel onChanged={changed} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
     expect(await screen.findByText('ABCD-EFGH')).toBeInTheDocument()
     state = { state: 'signed-in', account: 'ada', host: 'platform.example.com', signedInAt: '2026-11-17T12:00:00Z' }
     expect(await screen.findByText('Signed in as ada on platform.example.com', {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(changed).toHaveBeenCalledTimes(1)
     fireEvent.click(button('Sign out'))
-    expect(await screen.findByRole('button', { name: 'Sign in with the pw CLI' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' })).toBeInTheDocument()
+    expect(changed).toHaveBeenCalledTimes(2)
+  })
+
+  it('says what the pw CLI said when the sign-in fails, once', async () => {
+    stub((m, u) => (u === '/api/me/platform-sign-in' ? json({ state: 'failed', host: 'platform.example.com', message: 'The pw CLI stopped: Error: expired_token' }) : undefined))
+    render(<PlatformSignInPanel />)
+    expect(await screen.findByText('The pw CLI stopped: Error: expired_token')).toBeInTheDocument()
+    expect(screen.getAllByText('The sign-in did not finish')).toHaveLength(1)
+    expect(button('Try again')).toBeInTheDocument()
   })
 
   it('is hidden where the Studio keeps no personal sign-ins', async () => {

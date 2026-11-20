@@ -29,6 +29,10 @@ case "$1 $2" in
   echo "Waiting for approval..."
   for i in $(seq 1 200); do
     if [ -e "$ctl/approve" ]; then
+      if [ -e "$ctl/fail" ]; then echo "Error: the platform refused the device code" >&2; exit 1; fi
+      if [ -e "$ctl/oldcli" ]; then
+        mkdir -p "$HOME/.config/pw"; echo '{"identities":{}}' > "$HOME/.config/pw/credentials"; exit 0
+      fi
       echo '{"identities":{}}' > "$PW_CREDENTIALS_DIR/credentials"
       exit 0
     fi
@@ -36,6 +40,7 @@ case "$1 $2" in
   done
   exit 1 ;;
 "auth whoami") cat "$ctl/who" ;;
+"--version ") echo "pw version v0.0.1" ;;
 "auth token")
   if [ -e "$ctl/busy" ]; then echo overlap >> "$ctl/overlap"; fi
   touch "$ctl/busy"; echo x >> "$ctl/token-calls"; sleep 0.2; rm -f "$ctl/busy"
@@ -255,5 +260,50 @@ func TestStartingAgainReplacesTheWaitingCode(t *testing.T) {
 		if strings.HasPrefix(e.Name(), "pw.new-") {
 			t.Fatalf("staging left behind: %s", e.Name())
 		}
+	}
+}
+
+// TestSignInFailureSaysWhy: when the CLI stops after the prompt, the page
+// gets what it said, never the prompt.
+func TestSignInFailureSaysWhy(t *testing.T) {
+	s, ctl := newTest(t)
+	os.WriteFile(filepath.Join(ctl, "who"), []byte("alice\n"), 0o600)
+	os.WriteFile(filepath.Join(ctl, "fail"), nil, 0o600)
+	if _, err := s.Start("user:alice", "alice", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(ctl, "approve"), nil, 0o600)
+	st := waitState(t, s, "user:alice", "failed")
+	if st.Message != "The pw CLI stopped: Error: the platform refused the device code" {
+		t.Fatalf("message: %q", st.Message)
+	}
+}
+
+// TestSignInSavedUnderHomeIsKept: a CLI that saves the sign-in under its
+// home, not PW_CREDENTIALS_DIR, still leaves the person signed in.
+func TestSignInSavedUnderHomeIsKept(t *testing.T) {
+	s, ctl := newTest(t)
+	os.WriteFile(filepath.Join(ctl, "who"), []byte("alice\n"), 0o600)
+	os.WriteFile(filepath.Join(ctl, "oldcli"), nil, 0o600)
+	if _, err := s.Start("user:alice", "alice", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(ctl, "approve"), nil, 0o600)
+	st := waitState(t, s, "user:alice", "signed-in")
+	if st.Account != "alice" {
+		t.Fatalf("account %q", st.Account)
+	}
+	if tok, err := s.Token(context.Background(), "user:alice"); err != nil || tok == "" {
+		t.Fatalf("token %q %v", tok, err)
+	}
+}
+
+func TestFailureOf(t *testing.T) {
+	prompt := "To sign in, open this page on any device:\n\n  https://platform.example.com/device\n\nand enter the code:\n\n  ABCD-EFGH\n\nWaiting for approval...\n"
+	if got := failureOf(prompt); got != "" {
+		t.Errorf("the prompt alone: %q", got)
+	}
+	if got := failureOf(prompt + "\x1b[31mError: expired_token\x1b[0m\n"); got != "Error: expired_token" {
+		t.Errorf("after the prompt: %q", got)
 	}
 }

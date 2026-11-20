@@ -188,9 +188,9 @@ func (m *Module) spaceOp(op string, w http.ResponseWriter, r *http.Request, lib 
 		fs.Changed(r, lib, saved)
 		writeJSON(w, 200, O("saved", saved, "indexed", false, "deferred", true, "reindexing", true))
 	case "copy":
-		return Error(409, "Copying inside your space is not available yet. Download and upload the file, or move it.")
+		return Error(409, "Copying inside your library is not available yet. Download and upload the file, or move it.")
 	case "upload-url":
-		return Error(409, "Adding a file from a web address is not available in your space yet. Download it, then upload it.")
+		return Error(409, "Adding a file from a web address is not available in your library yet. Download it, then upload it.")
 	default:
 		return Error(400, "unknown action")
 	}

@@ -748,21 +748,23 @@ func (s *Store) Status(sub string) Status {
 
 // Resolve is resolveUserCred(sub): the caller's own credential, or nil.
 // With sign-in off, a request without a user is the one user's.
-// ResolveOrSignIn is Resolve, else the person's own platform sign-in
-// (SignIn), for model calls by a person who signed in instead of adding a
-// key. A one-person Studio and a deployment without personal keys never
-// use one.
+// ResolveOrSignIn is the credential for a person's model calls: an
+// OpenAI-compatible endpoint they chose, else their own platform sign-in
+// (SignIn), else a key they pasted. The sign-in comes before a pasted
+// ACTIVATE key, as it does for the platform (platform.Viewer.PlatformKey),
+// since it renews itself. A one-person Studio and a deployment without
+// personal keys never use one.
 func (s *Store) ResolveOrSignIn(sub string) *Cred {
-	if c := s.Resolve(sub); c != nil {
+	c := s.Resolve(sub)
+	if c != nil && c.Base() != "" {
 		return c
 	}
-	if s.SignIn == nil || sub == "" || sub == SingleOwner || sub == sharedSub || s.Disabled() || !s.authEnabled() {
-		return nil
+	if s.SignIn != nil && sub != "" && sub != SingleOwner && sub != sharedSub && !s.Disabled() && s.authEnabled() {
+		if k := s.SignIn(sub); k != "" {
+			return &Cred{Key: k}
+		}
 	}
-	if k := s.SignIn(sub); k != "" {
-		return &Cred{Key: k}
-	}
-	return nil
+	return c
 }
 
 func (s *Store) Resolve(sub string) *Cred {

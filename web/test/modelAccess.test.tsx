@@ -11,6 +11,15 @@ const contexts = [
   { name: 'lab', server: 'platform-b.example.com', organization: 'org-b', kind: 'sign-in', expiresAt: null, expired: false, current: false, renewError: null },
 ] as const
 
+/** Picks a source by clicking its name, as a person does. */
+const choose = (name: string) => {
+  const r = screen.getByRole('radio', { name })
+  fireEvent.click(document.getElementById(r.getAttribute('aria-labelledby') ?? '')!)
+}
+/** The sources offered, in order, by name. */
+const choices = () => within(screen.getByRole('radiogroup', { name: 'Where access comes from' })).getAllByRole('radio')
+  .map(r => document.getElementById(r.getAttribute('aria-labelledby') ?? '')?.textContent ?? '')
+
 function accessOf(over: Partial<AccessStatus> = {}): AccessStatus {
   const cli = { source: 'cli' as const, host: 'platform-a.example.com', context: 'work' }
   return {
@@ -193,26 +202,56 @@ describe('Model access on a deployment that signs people in', () => {
       : base(input, init)))
     render(<ModelAccessSection />)
     expect(await screen.findByText('Models: the pw CLI sign-in on the server (platform-a.example.com)')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ACTIVATE (deployment)' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'ACTIVATE (pw CLI)' })).toBeNull()
+    expect(screen.getByRole('radio', { name: 'ACTIVATE (deployment)' })).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'ACTIVATE (pw CLI)' })).toBeNull()
     expect(screen.getByText(/Without a key of your own, requests use the pw CLI sign-in on the server/)).toBeInTheDocument()
     expect(screen.queryByText('Subscriptions through ACTIVATE')).toBeNull()
+  })
+
+  it('puts signing in with ACTIVATE first, and names the sign-in once it is in use', async () => {
+    const dep = { source: 'env' as const, host: 'platform-a.example.com', context: null }
+    const s = srv({ access: accessOf({ single: false, authEnabled: true, models: dep, platform: dep, deployment: dep, cli: null, signInOffered: true }) })
+    stub(s)
+    let signIn: Record<string, unknown> = { state: 'none', host: 'platform-a.example.com' }
+    const base = globalThis.fetch as unknown as (input: string, init?: RequestInit) => Promise<Response>
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/me/model-key') return reply({ authEnabled: true, verified: true, mode: 'stored', last4: 'abcd', sharingAllowed: false, shared: { active: false } })
+      if (url === '/api/me/platform-sign-in' && init?.method === 'POST') {
+        signIn = { state: 'signed-in', account: 'alex', host: 'platform-a.example.com' }
+        const me = { source: 'signin' as const, host: 'platform-a.example.com', context: null }
+        s.access = { ...s.access, models: me, platform: me }
+        return reply(signIn)
+      }
+      if (url === '/api/me/platform-sign-in') return reply(signIn)
+      return base(input, init)
+    }))
+    render(<ModelAccessSection />)
+    await screen.findByRole('radio', { name: 'Sign in with ACTIVATE' })
+    expect(choices()).toEqual(['Sign in with ACTIVATE', 'ACTIVATE API key', 'OpenAI-compatible endpoint', 'ACTIVATE (deployment)'])
+    expect(screen.getByRole('radio', { name: 'Sign in with ACTIVATE' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Sign in with ACTIVATE' })).toHaveAccessibleDescription(/^Recommended\./)
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
+    expect(await screen.findByText('Models: your ACTIVATE sign-in (platform-a.example.com)')).toBeInTheDocument()
+    expect(screen.getByText('Signed in as alex on platform-a.example.com')).toBeInTheDocument()
+    expect(screen.getByText(/The key you added under ACTIVATE API key is kept, and used only while you are signed out\./)).toBeInTheDocument()
+    expect(await screen.findByText('Subscriptions through ACTIVATE')).toBeInTheDocument()
   })
 })
 
 describe('the sources, named for what they are', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
-  it('labels each tab and leads each with one line on what it is for', async () => {
+  it('names each source and says in one line what it is for', async () => {
     stub(srv())
     render(<ModelAccessSection />)
     await screen.findByText('Models: pw CLI context work (platform-a.example.com)')
-    for (const name of ['ACTIVATE (pw CLI)', 'ACTIVATE API key', 'OpenAI-compatible endpoint']) expect(screen.getByRole('button', { name })).toBeInTheDocument()
-    expect(screen.getByText(/^The ACTIVATE platforms the pw CLI on this computer is signed in to/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'ACTIVATE API key' }))
-    expect(screen.getByText(/^A token or API key from an ACTIVATE account/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'OpenAI-compatible endpoint' }))
-    expect(screen.getByText(/^Any service that speaks the OpenAI API, such as a site AI portal/)).toBeInTheDocument()
+    expect(choices()).toEqual(['ACTIVATE (pw CLI)', 'ACTIVATE API key', 'OpenAI-compatible endpoint'])
+    expect(screen.getByRole('radio', { name: 'ACTIVATE (pw CLI)' })).toHaveAccessibleDescription(/^The ACTIVATE platforms the pw CLI on this computer is signed in to/)
+    expect(screen.getByRole('radio', { name: 'ACTIVATE API key' })).toHaveAccessibleDescription(/^A token or API key from an ACTIVATE account/)
+    expect(screen.getByRole('radio', { name: 'OpenAI-compatible endpoint' })).toHaveAccessibleDescription(/^Any service that speaks the OpenAI API, such as a site AI portal/)
+    choose('OpenAI-compatible endpoint')
+    expect(screen.getByRole('radio', { name: 'OpenAI-compatible endpoint' })).toBeChecked()
   })
 })
 
@@ -235,7 +274,7 @@ describe('an endpoint address on the ACTIVATE API key tab', () => {
     stub(s)
     render(<ModelAccessSection />)
     await screen.findByText('Models: pw CLI context work (platform-a.example.com)')
-    fireEvent.click(screen.getByRole('button', { name: 'ACTIVATE API key' }))
+    choose('ACTIVATE API key')
     fireEvent.change(screen.getByLabelText('Platform key or token'), { target: { value: 'sk-virtual' } })
     fireEvent.change(screen.getByLabelText('Platform host'), { target: { value: 'portal.example.org/v1/chat/completions' } })
     expect(screen.getByText('This is an endpoint address, not a platform host')).toBeInTheDocument()
@@ -255,7 +294,7 @@ describe('an endpoint address on the ACTIVATE API key tab', () => {
     stub(s)
     render(<ModelAccessSection />)
     await screen.findByText('Models: pw CLI context work (platform-a.example.com)')
-    fireEvent.click(screen.getByRole('button', { name: 'ACTIVATE API key' }))
+    choose('ACTIVATE API key')
     fireEvent.change(screen.getByLabelText('Platform key or token'), { target: { value: 'sk-virtual' } })
     fireEvent.change(screen.getByLabelText('Platform host'), { target: { value: 'portal.example.org' } })
     fireEvent.click(screen.getByRole('button', { name: 'Test' }))
@@ -318,7 +357,7 @@ describe('an endpoint\'s Advanced options and the tool check', () => {
     stub(srv())
     render(<ModelAccessSection />)
     await screen.findByText('Models: pw CLI context work (platform-a.example.com)')
-    fireEvent.click(screen.getByRole('button', { name: 'OpenAI-compatible endpoint' }))
+    choose('OpenAI-compatible endpoint')
     fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://portal.example.org/v1' } })
     expect(screen.getByRole('button', { name: 'Save and use' })).toBeDisabled()
     fireEvent.click(screen.getByText('Advanced, for portals that differ'))
