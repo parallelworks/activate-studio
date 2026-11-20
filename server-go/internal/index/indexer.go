@@ -51,8 +51,10 @@ type Paths struct {
 	KBRoot, IndexBase, IndexDir, GufiIndex, GufiBin, ProjectRoot string
 	ExtractCache, EmbedCache, SemanticMapDir                     string
 	SkipFile, SweepState, DepthState, EmbedModel, RunsFile       string
-	RootMark, OldRootMark, Stash                                 string
-	LogDir                                                       string
+	// LaunchMark asks for a full index as the server starts.
+	LaunchMark                   string
+	RootMark, OldRootMark, Stash string
+	LogDir                       string
 }
 
 // PathsOf are the paths for a configuration.
@@ -63,6 +65,7 @@ func PathsOf(c config.Config) Paths {
 	p.SemanticMapDir = filepath.Join(c.IndexDir, "semantic-map")
 	p.SkipFile = filepath.Join(c.IndexBase, "skip-dirs.txt")
 	p.SweepState = filepath.Join(c.IndexBase, "sweep-state.json")
+	p.LaunchMark = filepath.Join(c.IndexBase, "index-on-launch")
 	p.DepthState = filepath.Join(c.IndexBase, "index-depth.json")
 	p.EmbedModel = filepath.Join(c.IndexBase, "models", "minilm384.gguf")
 	p.RunsFile = filepath.Join(c.IndexBase, "index-runs.json")
