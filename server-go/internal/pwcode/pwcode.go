@@ -361,6 +361,22 @@ func SessionMCP(ctx context.Context, c Client, id string) (any, error) {
 	return c.Call(ctx, http.MethodGet, sid(id)+"/mcp", nil, 0)
 }
 
+// ReconnectMCP is POST /v1/sessions/:id/mcp/:name/reconnect: the session
+// connects to that MCP server again and lists its tools anew.
+func ReconnectMCP(ctx context.Context, c Client, id, name string) (any, error) {
+	return c.Call(ctx, http.MethodPost, sid(id)+"/mcp/"+platform.EncodeURIComponent(name)+"/reconnect", jsonv.NewObject(), 0)
+}
+
+// SetMCPEnabled is POST /v1/sessions/:id/mcp/:name/enabled.
+func SetMCPEnabled(ctx context.Context, c Client, id, name string, on bool) (any, error) {
+	return c.Call(ctx, http.MethodPost, sid(id)+"/mcp/"+platform.EncodeURIComponent(name)+"/enabled", jsonv.NewObject("enabled", on), 0)
+}
+
+// ArchiveSession is POST /v1/sessions/:id/archive.
+func ArchiveSession(ctx context.Context, c Client, id string) (any, error) {
+	return c.Call(ctx, http.MethodPost, sid(id)+"/archive", jsonv.NewObject(), 0)
+}
+
 // SendMessage queues a message as the session's next turn.
 func SendMessage(ctx context.Context, c Client, id, text string) (*jsonv.Object, error) {
 	return obj(c.Call(ctx, http.MethodPost, sid(id)+"/messages", jsonv.NewObject("text", text), 0))

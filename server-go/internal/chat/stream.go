@@ -96,6 +96,25 @@ type streamBody struct {
 
 func sp(s string) *string { return &s }
 
+// labelScopeOf is the labels a chat is scoped to, as the composer sends
+// them: at most 16, without empty ones.
+func labelScopeOf(v any) []string {
+	labelScope := []string{}
+	if ls, ok := v.([]any); ok {
+		for _, x := range ls {
+			// String(x), then filter(Boolean)
+			s := reqbody.JSString(x)
+			if x == nil {
+				s = "null"
+			}
+			if s != "" && len(labelScope) < 16 {
+				labelScope = append(labelScope, s)
+			}
+		}
+	}
+	return labelScope
+}
+
 func strOrNil(s string) *string {
 	if s == "" {
 		return nil
@@ -201,7 +220,16 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 		if engine == enginePWCode {
-			return m.streamPWCode(r, res, &body, convID)
+			err := m.streamPWCode(r, res, &body, convID)
+			var down *studioToolsError
+			if !errors.As(err, &down) {
+				return err
+			}
+			// pw code could not reach the Studio's tools: the Studio
+			// assistant answers this message with them, and says why.
+			m.A.Log.Warn("pw code chat: the Studio assistant answers in pw code's place", "conversation", convID, "detail", down.detail)
+			res.event("pwcode_fallback", reqbody.O("conversationId", convID,
+				"reason", down.Error()+", so the Studio assistant answered this message with the Studio's own tools."))
 		}
 	}
 
@@ -272,19 +300,7 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	} else if k := m.GatewayKey(); k != "" {
 		changeKey = &k
 	}
-	labelScope := []string{}
-	if ls, ok := body.LabelScope.([]any); ok {
-		for _, x := range ls {
-			// String(x), then filter(Boolean)
-			v := reqbody.JSString(x)
-			if x == nil {
-				v = "null"
-			}
-			if v != "" && len(labelScope) < 16 {
-				labelScope = append(labelScope, v)
-			}
-		}
-	}
+	labelScope := labelScopeOf(body.LabelScope)
 	scopeNote := ""
 	if len(labelScope) > 0 {
 		scopeNote = "\n\nThe user has scoped this conversation to knowledge base material labeled: " + strings.Join(labelScope, ", ") + ". search_kb is restricted server-side to those labels for this conversation. Ground answers in that material, and say so when the scoped material has nothing relevant rather than answering from outside the scope."

@@ -949,13 +949,18 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               </CopyCodeBlock>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
               {aiEnabled && <>
+              {/* pw code needs ACTIVATE: a Studio run on its own answers with the
+                  Studio assistant and shows nothing of it, unless set otherwise. */}
+              {(cfg.platform || (form.chatEngine ?? 'auto') !== 'auto') && <>
               <div className="tool-group">What answers in chat</div>
               <p className="muted view-sub">
-                pw code is the ACTIVATE agent harness. A chat it answers runs in a pw code session of the person
-                chatting, which works in files, runs commands they approve, searches these libraries through this
-                Studio's MCP server, and shows in PW Code on the web. On a Studio several people use, each session
+                pw code is the ACTIVATE agent harness, and answers chat by default under ACTIVATE. A chat it answers
+                runs in a pw code session of the person chatting, which uses this Studio's tools through its MCP
+                server (search and statistics from the index, library files, workflows), works in files, runs
+                commands they approve, and shows in PW Code on the web. On a Studio several people use, each session
                 runs as its person through their own ACTIVATE sign-in. The Studio assistant answers with this
-                Studio's own tools and models. People can switch either way in the chat bar.
+                Studio's own tools and models, and is what answers on a Studio without ACTIVATE. People can switch
+                either way in the chat bar.
               </p>
               <div className="settings-grid">
                 <Field label="Chat engine">
@@ -964,11 +969,12 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 <Field label="pw code model" description="The model new pw code chats start with. Empty uses the pw code default.">
                   <Input value={form.pwcodeModel ?? ''} placeholder="pw code default" onChange={e => setForm({ ...form, pwcodeModel: e.target.value })} />
                 </Field>
-                <Field label="pw code permissions" description="What new pw code chats may do without asking. The library tools only read, so they never ask.">
+                <Field label="pw code permissions" description="What new pw code chats may do without asking. Studio tools that only read never ask.">
                   <Select items={PWCODE_MODES} value={form.pwcodePermissionMode ?? ''} onValueChange={v => setForm({ ...form, pwcodePermissionMode: v ?? '' })} />
                 </Field>
               </div>
               {saveRow(false)}
+              </>}
 
               <div className="tool-group">Delegation (the assistant working in parallel)</div>
               <p className="muted view-sub">

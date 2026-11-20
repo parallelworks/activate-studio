@@ -40,6 +40,7 @@ import (
 const (
 	engineStudio = "studio"
 	enginePWCode = "pwcode"
+	engineAuto   = "auto"
 
 	chatTokenPrefix = "studio-chat."
 	chatTokenKind   = "chat-mcp"
@@ -59,6 +60,8 @@ type pwState struct {
 
 	mu    sync.Mutex
 	avail map[string]pwAvail
+	// down is, by site, why pw code last could not reach the Studio's tools.
+	down map[string]pwAvail
 	// turns is the turn the Studio follows in each conversation.
 	turns map[string]*pwTurn
 }
@@ -91,6 +94,9 @@ func (m *Module) unfollow(t *pwTurn) {
 type pwAvail struct {
 	why string
 	at  time.Time
+	// ttl is how long the answer holds: a minute, and longer when this
+	// host's pw code did not start, so a chat does not wait on it often.
+	ttl time.Duration
 }
 
 func (m *Module) pwSealer() *keycookie.Sealer {
@@ -157,51 +163,56 @@ var pwSites = tasks.CurrentSites
 func (m *Module) pwcodeUnavailable(ctx context.Context, r *http.Request) string {
 	who := userID(r)
 	m.pw.mu.Lock()
-	if a, ok := m.pw.avail[who]; ok && time.Since(a.at) < time.Minute {
+	if a, ok := m.pw.avail[who]; ok && time.Since(a.at) < a.ttl {
 		m.pw.mu.Unlock()
 		return a.why
 	}
 	m.pw.mu.Unlock()
-	why := m.pwcodeCheck(ctx, r)
+	why, ttl := m.pwcodeCheck(ctx, r)
 	m.pw.mu.Lock()
 	if m.pw.avail == nil {
 		m.pw.avail = map[string]pwAvail{}
 	}
-	m.pw.avail[who] = pwAvail{why: why, at: time.Now()}
+	m.pw.avail[who] = pwAvail{why: why, at: time.Now(), ttl: ttl}
 	m.pw.mu.Unlock()
 	return why
 }
 
-func (m *Module) pwcodeCheck(ctx context.Context, r *http.Request) string {
+// pwcodeCheck is pwcodeUnavailable's answer and how long it holds. pw code
+// is offered only under ACTIVATE: a Studio with no platform connected (one
+// run on its own, with any OpenAI-compatible endpoint) answers with the
+// Studio assistant, and asks nothing of pw code.
+func (m *Module) pwcodeCheck(ctx context.Context, r *http.Request) (string, time.Duration) {
 	s := pwSites()
 	if s == nil {
-		return "pw code is not set up on this Studio."
+		return "pw code is not set up on this Studio.", time.Minute
 	}
 	if m.A.Cfg.AuthEnabled() {
 		if user(r) == nil {
-			return "Sign in to use pw code."
+			return "Sign in to use pw code.", time.Minute
 		}
 		if m.viewerPlatformKey(r) == "" {
-			return "pw code runs as you: sign in with ACTIVATE under Settings, Model access."
+			return "pw code runs as you: sign in with ACTIVATE under Settings, Model access.", time.Minute
 		}
 		if userlibs.HomeCluster() == "" {
-			return "This Studio does not know the cluster it runs on (STUDIO_HOME_CLUSTER), so it cannot reach your pw code."
+			return "This Studio does not know the cluster it runs on (STUDIO_HOME_CLUSTER), so it cannot reach your pw code.", time.Minute
 		}
-		return ""
+		return "", time.Minute
 	}
-	if m.GatewayKey() == "" {
-		return "pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Model access."
+	needs := "pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Model access."
+	if f := m.A.Providers.PlatformAvailable; f == nil || !f(r, userID(r)) || m.GatewayKey() == "" {
+		return needs, time.Minute
 	}
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	st, err := s.Daemon.EnsureDaemon(cctx)
 	if err != nil {
-		return "pw code did not start here: " + err.Error()
+		return "pw code did not start here: " + err.Error(), 5 * time.Minute
 	}
 	if why := pwcode.UnusableReason(st); why != "" {
-		return why
+		return why, 5 * time.Minute
 	}
-	return ""
+	return "", time.Minute
 }
 
 // viewerPlatformKey is the viewer's own ACTIVATE credential (their sign-in
@@ -234,7 +245,7 @@ func (m *Module) engineFor(r *http.Request, asked string) (string, error) {
 	case setting == engineStudio:
 		return engineStudio, nil
 	}
-	if m.pwcodeUnavailable(r.Context(), r) == "" {
+	if m.pwcodeUnavailable(r.Context(), r) == "" && m.toolsDown(m.pwSite()) == "" {
 		return enginePWCode, nil
 	}
 	return engineStudio, nil
@@ -296,14 +307,29 @@ func sameCluster(a, b string) bool {
 	return a != "" && last(a) == last(b)
 }
 
-// pwcodePrompt is what the Studio tells each pw code chat session.
-func (m *Module) pwcodePrompt() string {
+// pwcodePrompt is what the Studio tells each pw code chat session: that
+// the studio MCP server is the fastest way into the libraries, and which of
+// its tools to reach for, by the names pw code gives them.
+func (m *Module) pwcodePrompt(tools []ToolSpec) string {
 	e := m.eff()
+	has := map[string]bool{}
+	for _, s := range tools {
+		has[s.Name] = true
+	}
+	t := func(n string) string { return studioToolPrefix + n }
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are answering in %s, an ACTIVATE Studio, through the person's chat.", e.AppName)
-	b.WriteString(" The studio MCP server gives you this Studio's libraries: search_kb finds documents, read_kb_file and read_original read them, list_kb_dir lists folders, query_corpus queries tables, and get_labels lists labels.")
-	b.WriteString(" Search the libraries before you answer a question about their content, and name the files you used by their library path.")
-	b.WriteString(" Your working folder is where you may write files the person asks for.")
+	b.WriteString(" The studio MCP server is this Studio's index and tools. It answers from the index in under a second, across every library, including libraries on hosts this session cannot reach, so use it before the shell for anything about the libraries and their files:")
+	b.WriteString("\n- Find files with " + t("search_kb") + " (file names, the words inside files, and meaning), not find, grep or ls. " + t("list_libraries") + " names the libraries; its library argument takes an id or \"all\", and without one it searches the libraries the person chose for this chat.")
+	b.WriteString("\n- Ask " + t("query_corpus") + " about many files at once: the largest, newest or oldest, recent changes, totals by type, and the biggest folders.")
+	b.WriteString("\n- Read a file with " + t("read_kb_file") + ", which returns the text the index holds, PDFs and Office files included. " + t("read_original") + " opens the file itself, and " + t("list_kb_dir") + " lists a folder.")
+	if has["write_kb_file"] {
+		b.WriteString("\n- Save what the person asks to keep with " + t("write_kb_file") + " (Markdown, PDF, Word or Excel), which writes it into the library and indexes it, and change a library file with " + t("edit_kb_file") + ".")
+	}
+	if has["run_workflow"] {
+		b.WriteString("\n- Platform workflows, clusters and runs: " + t("list_workflows") + ", " + t("run_workflow") + ", " + t("workflow_runs") + " and " + t("hpc_status") + ".")
+	}
+	b.WriteString("\nUse the shell for work these tools do not cover, such as running code. Name each file you used by its library path; " + t("show_in_viewer") + " gives a link that opens it in the Studio. Your working folder is where you may write other files the person asks for.")
 	if m := strings.TrimSpace(e.KbMission); m != "" {
 		b.WriteString("\n\nAbout the libraries: ")
 		b.WriteString(m)
@@ -311,65 +337,84 @@ func (m *Module) pwcodePrompt() string {
 	return b.String()
 }
 
-// mcpURL is this Studio's MCP endpoint as a daemon on this machine
-// reaches it.
-func (m *Module) mcpURL() string {
-	return "http://127.0.0.1:" + strconv.Itoa(m.A.Cfg.Port) + "/api/mcp"
-}
-
-// pwcodeSession is the conversation's live session on t, made when it has
-// none (or its own is gone), and whether it is new.
+// pwcodeSession is the conversation's live session on t with the Studio's
+// tools connected, made when it has none, its own is gone, or its own lost
+// the tools; and whether it is new. A session that cannot reach the tools
+// at any of this Studio's addresses is a *studioToolsError.
 func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget, c *conversations.Conversation) (*conversations.PWCodeLink, bool, error) {
+	tools := m.chatTools(r)
+	want := specNames(tools)
 	// A session is kept while its MCP token has a day left.
 	if l := c.PWCode; l != nil && l.Site == t.site && l.Session != "" && pwFresh(l.CreatedAt) {
 		if d, err := pwcode.GetSession(ctx, t.client, l.Session); err == nil && jsonv.String(jsonv.Path(d, "archivedAt")) == "" {
-			return l, false, nil
+			ck := ensureStudioMCP(ctx, t.client, l.Session, want)
+			if ck.OK {
+				m.setToolsDown(t.site, "")
+				return l, false, nil
+			}
+			m.A.Log.Warn("pw code chat: the session lost the Studio's tools, so another starts", "session", l.Session, "detail", ck.Detail)
+			_, _ = pwcode.ArchiveSession(ctx, t.client, l.Session)
 		}
 	}
 	token, err := m.issueChatToken(user(r), c.ID)
 	if err != nil {
 		return nil, false, err
 	}
-	agents := jsonv.NewObject("studio", jsonv.NewObject(
-		"description", "ACTIVATE Studio chat",
-		"prompt", m.pwcodePrompt(),
-		"mcpServers", []any{jsonv.NewObject("studio", jsonv.NewObject(
-			"type", "http", "url", m.mcpURL(),
-			"headers", jsonv.NewObject("Authorization", "Bearer "+token)))},
-	))
-	agentsJSON, err := jsonv.Marshal(agents)
-	if err != nil {
-		return nil, false, err
-	}
 	e := m.eff()
-	// The library tools only read, so they are allowed without asking, in
-	// read-only mode too.
+	// The tools that only read run without asking, in read-only mode too.
 	allowed := []any{}
-	for _, raw := range m.exposedTools() {
-		allowed = append(allowed, studioToolPrefix+boardToolName(raw))
+	for _, s := range tools {
+		if chatReadTools[s.Name] {
+			allowed = append(allowed, studioToolPrefix+s.Name)
+		}
 	}
-	req := jsonv.NewObject("workspace", t.workspace, "remoteControl", true, "agent", "studio", "agentsJson", string(agentsJSON), "allowedTools", allowed)
-	if e.PWCodePermissionMode != "" {
-		req.Set("permissionMode", e.PWCodePermissionMode)
+	prompt := m.pwcodePrompt(tools)
+	var tried []string
+	for _, url := range m.mcpURLs(t.site != agentsites.Local) {
+		agents := jsonv.NewObject("studio", jsonv.NewObject(
+			"description", "ACTIVATE Studio chat",
+			"prompt", prompt,
+			"mcpServers", []any{jsonv.NewObject(studioMCPName, jsonv.NewObject(
+				"type", "http", "url", url,
+				"headers", jsonv.NewObject("Authorization", "Bearer "+token)))},
+		))
+		agentsJSON, err := jsonv.Marshal(agents)
+		if err != nil {
+			return nil, false, err
+		}
+		req := jsonv.NewObject("workspace", t.workspace, "remoteControl", true, "agent", "studio", "agentsJson", string(agentsJSON), "allowedTools", allowed)
+		if e.PWCodePermissionMode != "" {
+			req.Set("permissionMode", e.PWCodePermissionMode)
+		}
+		if e.PWCodeModel != "" {
+			req.Set("model", e.PWCodeModel)
+		}
+		s, err := pwcode.CreateSession(ctx, t.client, req)
+		if err != nil {
+			return nil, false, err
+		}
+		id := jsonv.String(jsonv.Path(s, "id"))
+		if id == "" {
+			return nil, false, errors.New("pw code made no session")
+		}
+		if ck := ensureStudioMCP(ctx, t.client, id, want); !ck.OK {
+			m.A.Log.Warn("pw code chat: the session could not reach the Studio's tools", "url", url, "detail", ck.Detail)
+			tried = append(tried, url+" ("+shortMCPError(ck.Detail)+")")
+			_, _ = pwcode.ArchiveSession(ctx, t.client, id)
+			continue
+		}
+		link := &conversations.PWCodeLink{Site: t.site, Session: id, Workspace: t.workspace, CreatedAt: m.Conv.Now(), MCPURL: url}
+		if st, err := pwcode.SessionState(ctx, t.client, id); err == nil {
+			link.URL = jsonv.String(jsonv.Path(st, "remoteUrl"))
+			link.Model = jsonv.String(jsonv.Path(st, "model"))
+		}
+		m.Conv.SetPWCode(c.ID, link)
+		m.setToolsDown(t.site, "")
+		return link, true, nil
 	}
-	if e.PWCodeModel != "" {
-		req.Set("model", e.PWCodeModel)
-	}
-	s, err := pwcode.CreateSession(ctx, t.client, req)
-	if err != nil {
-		return nil, false, err
-	}
-	id := jsonv.String(jsonv.Path(s, "id"))
-	if id == "" {
-		return nil, false, errors.New("pw code made no session")
-	}
-	link := &conversations.PWCodeLink{Site: t.site, Session: id, Workspace: t.workspace, CreatedAt: m.Conv.Now()}
-	if st, err := pwcode.SessionState(ctx, t.client, id); err == nil {
-		link.URL = jsonv.String(jsonv.Path(st, "remoteUrl"))
-		link.Model = jsonv.String(jsonv.Path(st, "model"))
-	}
-	m.Conv.SetPWCode(c.ID, link)
-	return link, true, nil
+	why := strings.Join(tried, " or ")
+	m.setToolsDown(t.site, why)
+	return nil, false, &studioToolsError{detail: why}
 }
 
 // pwFresh: a session made at created still has a day of its token left.
@@ -400,6 +445,9 @@ func pwcodeContext(c *conversations.Conversation, fresh bool, current string) st
 		who := "The person"
 		if mm.Role == "assistant" {
 			who = "The Studio assistant"
+			if mm.Model != nil && strings.HasPrefix(*mm.Model, "pw code") {
+				who = "You, in an earlier session"
+			}
 		}
 		text := *mm.Content
 		if r := []rune(text); len(r) > pwcodeContextChars {
@@ -452,11 +500,24 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	}
 	link, fresh, err := m.pwcodeSession(ctx, r, t, c)
 	if err != nil {
+		// The Studio assistant answers when pw code cannot have the tools.
+		var down *studioToolsError
+		if errors.As(err, &down) {
+			return err
+		}
 		return fail(err)
 	}
 	if c = m.Conv.Get(convID); c == nil {
 		return fail(errors.New("the conversation is gone"))
 	}
+	// The session's tool calls run in the scope of this message; the
+	// session is told of a scope it has not seen.
+	scopeNote := ""
+	if note := m.pwScope(r, body, link); note != link.ScopeNote || (fresh && note != "") {
+		link.ScopeNote = note
+		scopeNote = "Scope from the Studio's chat bar: " + firstNonEmpty(note, "the person's default libraries.") + "\n\n"
+	}
+	m.Conv.SetPWCode(convID, link)
 	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model))
 	d, err := pwcode.GetSession(ctx, t.client, link.Session)
 	if err != nil {
@@ -466,7 +527,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if n, ok := jsonv.Num(jsonv.Path(d, "lastSeq")); ok {
 		after = int64(n)
 	}
-	text := pwcodeContext(c, fresh, msgID) + content
+	text := scopeNote + pwcodeContext(c, fresh, msgID) + content
 
 	// The turn runs on past the request, so its reply is recorded when the
 	// person has left; the request writes its events while it lasts.
@@ -594,6 +655,12 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 	case "approval_request":
 		a := jsonv.Obj(jsonv.Path(ev, "approval"))
 		if a != nil {
+			// A Studio tool is asked for by its own name.
+			for _, k := range []string{"tool", "command"} {
+				if v := jsonv.String(jsonv.Path(a, k)); strings.HasPrefix(v, studioToolPrefix) {
+					a.Set(k, strings.TrimPrefix(v, studioToolPrefix))
+				}
+			}
 			t.res.event("pwcode_approval", reqbody.O("conversationId", t.convID, "session", t.link.Session, "url", t.link.URL, "approval", a))
 		}
 	case "approval_resolved":
@@ -718,11 +785,18 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		if why == "" && setting != engineStudio {
 			def = enginePWCode
 		}
-		var reason any
+		var reason, tools any
 		if why != "" {
 			reason = why
+		} else if down := m.toolsDown(m.pwSite()); down != "" {
+			// pw code could not reach the Studio's tools a few minutes ago:
+			// it stays a choice, and auto answers with the Studio assistant.
+			tools = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio assistant answers by default for now."
+			if setting == engineAuto {
+				def = engineStudio
+			}
 		}
-		return reqbody.OK(w, reqbody.O("setting", setting, "default", def, "pwcode", why == "", "reason", reason))
+		return reqbody.OK(w, reqbody.O("setting", setting, "default", def, "pwcode", why == "", "reason", reason, "toolsDown", tools))
 	})
 	// The conversation's pw code session as it is now: whether a turn is
 	// running, what it waits to be approved, and where it shows on the web,
@@ -746,8 +820,15 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		if approvals == nil {
 			approvals = []any{}
 		}
+		// How the session's studio server stands, for the chat bar's menu.
+		var tools any
+		if s, err := studioMCPState(r.Context(), t.client, c.PWCode.Session); err == nil && s != nil {
+			v, _ := s.Get("connected")
+			_, n := serverTools(s)
+			tools = reqbody.O("connected", jsonv.Truthy(v) && jsonv.String(jsonv.Path(s, "err")) == "", "count", n, "error", jsonv.String(jsonv.Path(s, "err")))
+		}
 		return reqbody.OK(w, reqbody.O("session", c.PWCode.Session, "url", c.PWCode.URL, "status", jsonv.String(jsonv.Path(d, "status")),
-			"answering", m.following(c.ID), "approvals", approvals))
+			"answering", m.following(c.ID), "approvals", approvals, "tools", tools))
 	})
 	h("POST /api/chat/pwcode/{id}/interrupt", func(w http.ResponseWriter, r *http.Request) error {
 		c, t, err := m.ownPWCode(r)

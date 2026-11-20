@@ -31,6 +31,15 @@ type fakePW struct {
 	turn     int
 	// script is the events of a turn (without seq and turnId).
 	script []map[string]any
+	// mcp is how the session's studio MCP server stands: "" (a daemon
+	// without the route), "ok", "fail" or "stale" (connected, one tool);
+	// fix makes a reconnect leave it "ok".
+	mcp string
+	fix bool
+	// calls counts the requests the daemon got.
+	calls      int
+	reconnects int
+	archived   int
 }
 
 func (f *fakePW) add(ev map[string]any) {
@@ -46,6 +55,9 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(v)
 	}
 	p := r.URL.Path
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
 	switch {
 	case p == "/v1/status":
 		send(map[string]any{"protocolVersion": pwcode.ProtocolVersion})
@@ -86,6 +98,32 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		f.answers = append(f.answers, strings.TrimPrefix(p, "/v1/sessions/s1/approvals/")+" "+string(b))
+		f.mu.Unlock()
+		w.WriteHeader(204)
+	case p == "/v1/sessions/s1/mcp":
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		switch f.mcp {
+		case "":
+			w.WriteHeader(404)
+		case "ok":
+			send([]any{map[string]any{"name": "studio", "connected": true, "transport": "http", "tools": 999}})
+		case "stale":
+			send([]any{map[string]any{"name": "studio", "connected": true, "transport": "http", "tools": []any{map[string]any{"name": "search_kb"}}}})
+		default:
+			send([]any{map[string]any{"name": "studio", "transport": "http", "err": "connect: dial tcp 127.0.0.1:1: connect: connection refused"}})
+		}
+	case p == "/v1/sessions/s1/mcp/studio/reconnect":
+		f.mu.Lock()
+		f.reconnects++
+		if f.fix {
+			f.mcp = "ok"
+		}
+		f.mu.Unlock()
+		w.WriteHeader(204)
+	case p == "/v1/sessions/s1/archive":
+		f.mu.Lock()
+		f.archived++
 		f.mu.Unlock()
 		w.WriteHeader(204)
 	case p == "/v1/sessions/s1":
@@ -129,6 +167,8 @@ func pwModule(t *testing.T, f *fakePW, env map[string]string) (*Module, string) 
 		e[k] = v
 	}
 	m, srv, _, _ := newTestModule(t, e)
+	// The Studio runs under ACTIVATE: the platform is connected.
+	m.A.Providers.PlatformAvailable = func(*http.Request, string) bool { return true }
 	daemon := pwcode.New(m.pf)
 	was := pwSites
 	pwSites = func() *agentsites.Sites { return &agentsites.Sites{P: m.pf, Daemon: daemon} }
@@ -223,13 +263,15 @@ func TestPWCodeApprovalReachesTheChatAndIsAnswered(t *testing.T) {
 		{"type": "approval_request", "approval": map[string]any{"id": "ap-1", "kind": "confirm", "tool": "Bash", "command": "date"}},
 		{"type": "approval_resolved", "approvalId": "ap-1"},
 		{"type": "tool_end", "name": "Bash", "result": "denied", "callId": "c1"},
+		{"type": "approval_request", "approval": map[string]any{"id": "ap-2", "kind": "confirm", "tool": "mcp__studio__write_kb_file", "command": `mcp__studio__write_kb_file {"path":"a.pdf"}`}},
 		{"type": "done", "content": "Not run."},
 	}}
 	m, base := pwModule(t, f, nil)
 	c := m.Conv.Create(nil, "")
 	sse := post(t, base, map[string]any{"conversationId": c.ID, "userMessageId": "u1",
 		"messages": []any{map[string]any{"role": "user", "content": "run date"}}})
-	if !strings.Contains(sse, "event: pwcode_approval\ndata: {\"conversationId\":\""+c.ID+"\",\"session\":\"s1\"") || !strings.Contains(sse, `"command":"date"`) || !strings.Contains(sse, "event: pwcode_approval_resolved") {
+	if !strings.Contains(sse, "event: pwcode_approval\ndata: {\"conversationId\":\""+c.ID+"\",\"session\":\"s1\"") || !strings.Contains(sse, `"command":"date"`) || !strings.Contains(sse, "event: pwcode_approval_resolved") ||
+		!strings.Contains(sse, `"tool":"write_kb_file"`) || !strings.Contains(sse, `"command":"write_kb_file {\"path\":\"a.pdf\"}"`) {
 		t.Errorf("%s", sse)
 	}
 	if st := get(t, base+"/api/chat/pwcode/"+c.ID); st["session"] != "s1" || st["status"] != "idle" || st["answering"] != false || st["url"] == "" {

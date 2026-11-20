@@ -4,17 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 )
 
 // The knowledge base as an MCP server at POST /api/mcp (mcp.ts):
 // streamable-HTTP MCP, stateless, one JSON-RPC message per POST. Only the
-// corpus-reading tools are exposed; a bearer that is a task token adds that
-// task's board tools, which the task board answers
+// corpus-reading tools are exposed, except to a pw code chat's token, which
+// gets the Studio's own tools (pwcodetools.go); a bearer that is a task
+// token adds that task's board tools, which the task board answers
 // (app.Providers.TaskBoard). Until the task board is Go's, a request with a
 // bearer goes to Node, whose board checks it.
 
@@ -114,7 +117,9 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 	// A pw code chat session's token acts as the person it was made for
 	// (pwcodechat.go); it is not a task token.
 	chatGrant := false
+	var chat *chatToken
 	if ct, ok := m.openChatToken(token); ok {
+		chat = ct
 		cfg := m.A.Cfg
 		if ct.User == nil && cfg.AuthEnabled() {
 			return reqbody.JSON(w, 401, reqbody.O("error", "authentication required"))
@@ -195,6 +200,13 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 	case "ping":
 		return reqbody.OK(w, rpcResult(id, jsonobj.New()))
 	case "tools/list":
+		if chatGrant {
+			tools := []json.RawMessage{}
+			for _, s := range m.chatTools(r) {
+				tools = append(tools, chatToolJSON(s))
+			}
+			return reqbody.OK(w, rpcResult(id, reqbody.O("tools", tools)))
+		}
 		tools := m.exposedTools()
 		if isTask() {
 			tools = append(tools, mcpBoardTools...)
@@ -219,10 +231,22 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 			}
 			return reqbody.OK(w, rpcResult(id, reqbody.O("content", []any{reqbody.O("type", "text", "text", string(jsRestringify(out)))}, "isError", false)))
 		}
-		if !contains(mcpExposed, name) {
+		tc := ToolCtx{}
+		if chatGrant {
+			// A pw code chat's call runs as the Studio assistant's would: the
+			// conversation's scope, the person's key, the tools they left on.
+			if !slices.Contains(specNames(m.chatTools(r)), name) {
+				return reqbody.OK(w, rpcError(id, -32602, "unknown tool: "+name))
+			}
+			var link *conversations.PWCodeLink
+			tc, link = m.chatToolCtx(r, chat.Conv)
+			if why := m.chatToolOff(name, link); why != "" {
+				return reqbody.OK(w, rpcResult(id, reqbody.O("content", []any{reqbody.O("type", "text", "text", why)}, "isError", true)))
+			}
+		} else if !contains(mcpExposed, name) {
 			return reqbody.OK(w, rpcError(id, -32602, "unknown tool: "+name))
 		}
-		out, err := m.Tools.Execute(r, name, string(jsRestringify(args)), ToolCtx{})
+		out, err := m.Tools.Execute(r, name, string(jsRestringify(args)), tc)
 		if err != nil {
 			// A tool's failure is a result for the calling model to read.
 			return reqbody.OK(w, rpcResult(id, reqbody.O("content", []any{reqbody.O("type", "text", "text", err.Error())}, "isError", true)))

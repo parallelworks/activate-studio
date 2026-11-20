@@ -35,7 +35,7 @@ import { TransferNoteWatcher } from '../components/TransferNoteWatcher'
 import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCommands'
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 import { SaveChatButton } from '../components/SaveChatButton'
-import { PWCodeApprovals, PWCodeEngine, PWCodeWatcher } from '../components/PWCodeEngine'
+import { PWCodeApprovals, PWCodeEngine, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -519,6 +519,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             </div>
           )}
           {!showAttachments && !showManage && <PWCodeApprovals conversationId={activeId} />}
+          {!showAttachments && !showManage && <PWCodeNotice conversationId={activeId} />}
           <FilterReloader />
           <TransferNoteWatcher />
           <PWCodeWatcher />
