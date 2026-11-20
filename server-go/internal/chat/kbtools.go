@@ -130,7 +130,7 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	// (Markdown, or rows); other office formats are refused with what to
 	// write instead, so no text lands in a file named as a binary format.
 	data, made := []byte(content), ""
-	var missing, problems []string
+	var missing, problems, style []string
 	if why := docwrite.Unsupported(ext); why != "" {
 		return fail(why, "refused")
 	}
@@ -147,7 +147,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 		if err != nil {
 			return fail("Could not write "+rel+": "+err.Error(), "error")
 		}
-		data, made, missing, problems = out.Data, out.Note, out.Missing, out.Problems
+		data, made, missing, problems, style = out.Data, out.Note, out.Missing, out.Problems, out.Style
+	} else if isReport(ext) {
+		style = docwrite.StyleCheck(content)
 	}
 	if err := m.writeLibraryFile(abs, data); err != nil {
 		return nil, err
@@ -171,6 +173,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 		alsoMade = append(alsoMade, x.rel+" ("+out.Note+")")
 		links = append(links, libraryLink(x.rel))
 		missing, problems = addNew(missing, out.Missing), addNew(problems, out.Problems)
+		if len(style) == 0 {
+			style = out.Style
+		}
 	}
 	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
 	base := rel[strings.LastIndex(rel, "/")+1:]
@@ -208,9 +213,29 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 		show = "The document was made with these problems: " + strings.Join(problems, "; ") + ". A front matter option that was not understood kept its default. Correct the text or the options and make the document again (edit_kb_file on its Markdown, or this call again with overwrite=true), and tell the user of any that stand. " + show
 	}
 	return &Outcome{
-		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show,
+		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show + styleAdvice(style),
 		Summary: "wrote " + rel,
 	}, nil
+}
+
+// isReport reports a suffix of prose written for people to read, whose
+// writing the style check reads: Markdown, and the PDF and Word documents
+// made from it.
+func isReport(ext string) bool {
+	switch ext {
+	case ".md", ".markdown", ".pdf", ".docx":
+		return true
+	}
+	return false
+}
+
+// styleAdvice is what the style check found in a report's writing, for the
+// model to weigh before it hands the file over, or "".
+func styleAdvice(style []string) string {
+	if len(style) == 0 {
+		return ""
+	}
+	return " A check of the writing found: " + strings.Join(style, "; ") + ". This is advice for plain, factual writing: where it applies, revise the text with edit_kb_file (documents made from it are made again) before you hand the file over; where a word is the right one, keep it."
 }
 
 /* ---- label suggestions (labeling.ts) ---- */

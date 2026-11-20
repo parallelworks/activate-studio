@@ -29,6 +29,7 @@ type docxw struct {
 	drawn    int            // drawings placed, for their ids
 	check    int8           // the box of the task list item being written
 	meas     *pdfw          // measures table text; made for the first table
+	center   bool           // writing the cover page, whose text is centered
 	problems []string
 }
 
@@ -43,10 +44,13 @@ func (o Options) page() (w, h, m int) {
 
 // bodyJc is the alignment a body paragraph carries.
 func (d *docxw) bodyJc() string {
-	if d.o.Justify {
-		return `<w:jc w:val="both"/>`
+	switch {
+	case d.center:
+		return `<w:jc w:val="center"/>`
+	case d.o.Left:
+		return ""
 	}
-	return ""
+	return `<w:jc w:val="both"/>`
 }
 
 func esc(s string) string {
@@ -146,6 +150,16 @@ func (d *docxw) blocks(bs []Block, list string, level int) {
 		}
 		switch b.Kind {
 		case KHeading:
+			if d.center {
+				// The cover's title and subtitle stay out of the document's
+				// outline and its table of contents.
+				style := "Title"
+				if b.Level > 1 {
+					style = "Subtitle"
+				}
+				d.para(style, d.bodyJc(), b.Runs)
+				continue
+			}
 			d.para(fmt.Sprintf("Heading%d", min(b.Level, 4)), "", b.Runs)
 		case KPara:
 			style := ""
@@ -204,11 +218,17 @@ func (d *docxw) blocks(bs []Block, list string, level int) {
 				}
 			}
 		case KRule:
-			d.body.WriteString(`<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="BFBFBF"/></w:pBdr></w:pPr></w:p>`)
+			// A thematic break is space between sections; the document
+			// draws no divider lines.
+			d.body.WriteString(`<w:p/>`)
 		case KTable:
 			d.table(b)
 		case KImage:
-			d.image(b, numPr, i+1 < len(bs) && isCaption(bs[i+1]))
+			props := numPr
+			if d.center {
+				props += d.bodyJc()
+			}
+			d.image(b, props, i+1 < len(bs) && isCaption(bs[i+1]))
 		}
 	}
 }
@@ -420,12 +440,14 @@ const docxStylesTmpl = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="200" w:after="100"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="27"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="160" w:after="80"/><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading4"><w:name w:val="heading 4"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="120" w:after="60"/><w:outlineLvl w:val="3"/></w:pPr><w:rPr><w:b/><w:i/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="240" w:after="160"/></w:pPr><w:rPr><w:b/><w:sz w:val="36"/><w:szCs w:val="36"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="120" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="60"/><w:ind w:left="720"/><w:contextualSpacing/></w:pPr></w:style>
 <w:style w:type="paragraph" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="F4F5F7"/><w:spacing w:after="120" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/><w:sz w:val="18"/></w:rPr></w:style>
-<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:pBdr><w:left w:val="single" w:sz="18" w:space="8" w:color="BFBFBF"/></w:pBdr><w:ind w:left="360"/></w:pPr><w:rPr><w:color w:val="555555"/></w:rPr></w:style>
-<w:style w:type="paragraph" w:styleId="Header"><w:name w:val="header"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="808080"/><w:sz w:val="18"/></w:rPr></w:style>
-<w:style w:type="paragraph" w:styleId="Footer"><w:name w:val="footer"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="808080"/><w:sz w:val="18"/></w:rPr></w:style>
-<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="1F4E9E"/><w:u w:val="single"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:pBdr><w:left w:val="single" w:sz="18" w:space="8" w:color="BFBFBF"/></w:pBdr><w:ind w:left="360"/></w:pPr></w:style>
+<w:style w:type="paragraph" w:styleId="Header"><w:name w:val="header"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="18"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Footer"><w:name w:val="footer"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="18"/></w:rPr></w:style>
+<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="000000"/><w:u w:val="single"/></w:rPr></w:style>
 <w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:left w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:right w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="C8C8C8"/></w:tblBorders><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>
 </w:styles>`
 
@@ -453,11 +475,14 @@ func numberingXML(starts []int) string {
 const wNS = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`
 
 // docxFooter numbers the pages, under the footer's line of text when the
-// document has one.
-func docxFooter(text string) string {
+// document has one; a cover page's footer has the line and no number.
+func docxFooter(text string, numbered bool) string {
 	line := ""
-	if text != "" {
+	if text != "" || !numbered {
 		line = `<w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr><w:r><w:t xml:space="preserve">` + esc(text) + `</w:t></w:r></w:p>`
+	}
+	if !numbered {
+		return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ` + wNS + `>` + line + `</w:ftr>`
 	}
 	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ` + wNS + `>` + line + `<w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>`
 }
@@ -473,10 +498,9 @@ func docxHeader(text string) string {
 // (Word's current layout rules).
 const docxSettings = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ` + wNS + `><w:compat><w:doNotExpandShiftReturn/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`
 
-func renderDOCX(blocks []Block, pics map[string]*picture, o Options) ([]byte, []string, error) {
+func renderDOCX(doc doc, pics map[string]*picture, o Options) ([]byte, []string, error) {
 	pw, ph, m := o.page()
 	d := &docxw{o: o, tw: pw - 2*m, th: ph - 2*m - 360, pics: pics, ids: map[string]int{}}
-	d.blocks(blocks, "", 0)
 	orient := ""
 	if o.Landscape {
 		orient = ` w:orient="landscape"`
@@ -487,12 +511,27 @@ func renderDOCX(blocks []Block, pics map[string]*picture, o Options) ([]byte, []
 		headerRel = `<Relationship Id="rIdHdr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`
 		headerType = `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`
 	}
-	doc := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>` +
+	page := fmt.Sprintf(`<w:pgSz w:w="%d" w:h="%d"%s/><w:pgMar w:top="%d" w:right="%d" w:bottom="%d" w:left="%d" w:header="%d" w:footer="%d" w:gutter="0"/>`, pw, ph, orient, m, m, m, m, m/2, m/2)
+	numbering, coverRel, coverType := "", "", ""
+	if doc.cover != nil {
+		// The cover is a section of its own: its text centered, its footer
+		// without a number. The body's section numbers its pages from 1,
+		// which a page break could not do.
+		d.center = true
+		d.blocks(doc.cover, "", 0)
+		d.center = false
+		d.body.WriteString(`<w:p><w:pPr><w:sectPr>` + headerRef + `<w:footerReference w:type="default" r:id="rIdFtrCover"/>` + page + `</w:sectPr></w:pPr></w:p>`)
+		numbering = `<w:pgNumType w:start="1"/>`
+		coverRel = `<Relationship Id="rIdFtrCover" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/>`
+		coverType = `<Override PartName="/word/footer2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`
+	}
+	d.blocks(doc.body, "", 0)
+	blocks := doc.all()
+	document := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>` +
 		d.body.String() +
-		fmt.Sprintf(`<w:sectPr>`+headerRef+`<w:footerReference w:type="default" r:id="rIdFtr"/><w:pgSz w:w="%d" w:h="%d"%s/><w:pgMar w:top="%d" w:right="%d" w:bottom="%d" w:left="%d" w:header="%d" w:footer="%d" w:gutter="0"/></w:sectPr></w:body></w:document>`,
-			pw, ph, orient, m, m, m, m, m/2, m/2)
+		`<w:sectPr>` + headerRef + `<w:footerReference w:type="default" r:id="rIdFtr"/>` + page + numbering + `</w:sectPr></w:body></w:document>`
 	var rels strings.Builder
-	rels.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rIdFtr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdSet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>` + headerRel)
+	rels.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rIdFtr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdSet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>` + headerRel + coverRel)
 	for i, t := range d.rels {
 		rels.WriteString(fmt.Sprintf(`<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="%s" TargetMode="External"/>`, 100+i, esc(t)))
 	}
@@ -503,18 +542,21 @@ func renderDOCX(blocks []Block, pics map[string]*picture, o Options) ([]byte, []
 	now := time.Now().UTC().Format(time.RFC3339)
 	core := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>` + esc(Title(blocks)) + `</dc:title><dc:creator>ACTIVATE Studio</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">` + now + `</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">` + now + `</dcterms:modified></cp:coreProperties>`
 	parts := []struct{ name, body string }{
-		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>` + headerType + `<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`},
+		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>` + headerType + coverType + `<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`},
 		{"_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`},
-		{"word/document.xml", doc},
+		{"word/document.xml", document},
 		{"word/styles.xml", docxStyles(o)},
 		{"word/settings.xml", docxSettings},
-		{"word/footer1.xml", docxFooter(o.Footer)},
+		{"word/footer1.xml", docxFooter(o.Footer, true)},
 		{"word/numbering.xml", numberingXML(d.nums)},
 		{"word/_rels/document.xml.rels", rels.String()},
 		{"docProps/core.xml", core},
 	}
 	if o.Header != "" {
 		parts = append(parts, struct{ name, body string }{"word/header1.xml", docxHeader(o.Header)})
+	}
+	if doc.cover != nil {
+		parts = append(parts, struct{ name, body string }{"word/footer2.xml", docxFooter(o.Footer, false)})
 	}
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)

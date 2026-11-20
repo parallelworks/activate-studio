@@ -404,6 +404,9 @@ func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx)
 	if len(problems) > 0 {
 		res += " Made with these problems: " + strings.Join(problems, "; ") + "."
 	}
+	if isReport(strings.ToLower(filepath.Ext(rel))) || len(remade) > 0 {
+		res += styleAdvice(docwrite.StyleCheck(next))
+	}
 	if len(links) > 1 {
 		res += " Links: " + strings.Join(links, " ")
 	} else {

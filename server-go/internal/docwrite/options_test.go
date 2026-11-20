@@ -11,7 +11,7 @@ import (
 
 func TestSplitFrontMatter(t *testing.T) {
 	o, body, problems := SplitFrontMatter("---\nalign: justify\norientation: Landscape\nfont: \"Times New Roman\"\nsize: 11pt\nmargin: 0.75in\ntitle: Ignored\n---\n# Report\n\nText.\n")
-	if !o.Justify || !o.Landscape || !o.Serif || o.Font != "Times New Roman" || o.Size != 11 || o.Margin != 0.75 {
+	if o.Left || !o.Landscape || !o.Serif || o.Font != "Times New Roman" || o.Size != 11 || o.Margin != 0.75 {
 		t.Errorf("options = %+v", o)
 	}
 	if body != "# Report\n\nText.\n" {
@@ -22,7 +22,7 @@ func TestSplitFrontMatter(t *testing.T) {
 	}
 
 	o, _, problems = SplitFrontMatter("---\r\nalign: centre\r\nsize: 30\r\ncolour: red\r\nfont: Arial\r\n---\r\nText")
-	if o.Justify || o.Size != 0 || o.Serif || o.Font != "Arial" {
+	if o.Left || o.Size != 0 || o.Serif || o.Font != "Arial" {
 		t.Errorf("options = %+v", o)
 	}
 	if len(problems) != 3 {
@@ -74,7 +74,7 @@ func TestPDFOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r.Note, "(justified, landscape, Times New Roman, 12 pt, 0.75 inch margins)") {
+	if !strings.Contains(r.Note, "(landscape, Times New Roman, 12 pt, 0.75 inch margins)") {
 		t.Errorf("note %q", r.Note)
 	}
 	if !bytes.Contains(r.Data, []byte("/MediaBox [0 0 792.00 612.00]")) {

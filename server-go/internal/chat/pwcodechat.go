@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -324,7 +326,10 @@ func (m *Module) pwcodePrompt(tools []ToolSpec) string {
 	b.WriteString("\n- Ask " + t("query_corpus") + " about many files at once: the largest, newest or oldest, recent changes, totals by type, and the biggest folders.")
 	b.WriteString("\n- Read a file with " + t("read_kb_file") + ", which returns the text the index holds, PDFs and Office files included. " + t("read_original") + " opens the file itself, and " + t("list_kb_dir") + " lists a folder.")
 	if has["write_kb_file"] {
-		b.WriteString("\n- Save what the person asks to keep with " + t("write_kb_file") + " (Markdown, PDF, Word or Excel), which writes it into the library and indexes it, and change a library file with " + t("edit_kb_file") + ".")
+		b.WriteString("\n- Save what the person asks to keep with " + t("write_kb_file") + " (Markdown, PDF, Word or Excel), which writes it into the library and indexes it, and change a library file with " + t("edit_kb_file") + ". Its description gives the document layout and writing style, and its result reports a check of the writing.")
+		if _, err := os.Stat(filepath.Join(m.A.Cfg.KBRoot, conventionsFile)); err == nil {
+			b.WriteString(" This library's conventions, " + conventionsFile + " at its top, set its own writing and document style; read it with " + t("read_kb_file") + " before you write a document, and follow it where it differs.")
+		}
 	}
 	if has["run_workflow"] {
 		b.WriteString("\n- Platform workflows, clusters and runs: " + t("list_workflows") + ", " + t("run_workflow") + ", " + t("workflow_runs") + " and " + t("hpc_status") + ".")
