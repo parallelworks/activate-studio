@@ -454,6 +454,29 @@ func TestCampaign(t *testing.T) {
 	}
 	e.Stop(m3.ID)
 	second.Stop(m3.ID)
+	quiet(t, filepath.Join(state, "calls.log"))
+}
+
+// quiet waits until the stand-in CLI has made no call for a while. Stopping
+// cancels the pollers, but a call already running still writes into the
+// test's temp folder, and the folder's removal fails if it lands then.
+func quiet(t *testing.T, log string) {
+	t.Helper()
+	last, since := int64(-1), time.Now()
+	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		size := int64(0)
+		if fi, err := os.Stat(log); err == nil {
+			size = fi.Size()
+		}
+		if size != last {
+			last, since = size, time.Now()
+			continue
+		}
+		if time.Since(since) > 750*time.Millisecond {
+			return
+		}
+	}
+	t.Log("the stand-in CLI was still being called after 10 s")
 }
 
 func TestExtractRunnerResult(t *testing.T) {
