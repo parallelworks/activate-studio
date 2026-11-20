@@ -398,7 +398,8 @@ permissions:
               identity header; shared keeps everyone on the deployment credential
               with key collection hard-disabled, personal lets users add their own
               model keys, strict requires them for chat. Multi-user postures need
-              the platform host below.
+              the platform host below, and require every request to be signed in
+              (AUTH_REQUIRED=1), which personal spaces need.
           platform_host:
             label: Platform Host (multi-user postures)
             type: string
@@ -894,9 +895,15 @@ jobs:
           if [ -n "$PW_BIN_HOST" ]; then
             echo "export PW_BIN_HOST='${PW_BIN_HOST}'" >> ${SCRIPT}
           fi
+          AUTH_REQ=""
           if [ "$POSTURE" != "single" ] && [ -n "$PLATFORM_HOST" ]; then
             echo "export AUTH_JWKS_URL='https://${PLATFORM_HOST}/api/platform/keys'" >> ${SCRIPT}
             echo "export AUTH_ISSUER='pw-session-proxy'" >> ${SCRIPT}
+            # Every request signed in: a request without the session token
+            # gets 401, not the signed-out view, so nobody reaches a person's
+            # space or the Studio's data around the session proxy.
+            echo "export AUTH_REQUIRED=1" >> ${SCRIPT}
+            AUTH_REQ=1
           fi
           if [ "$POSTURE" = "multi-shared" ]; then
             echo "export DISABLE_PERSONAL_KEYS=1" >> ${SCRIPT}
@@ -955,6 +962,7 @@ jobs:
             ${PW_GATEWAY_URL:+--env PW_GATEWAY_URL="${PW_GATEWAY_URL}"} \
             ${AUTH_JWKS_URL:+--env AUTH_JWKS_URL="${AUTH_JWKS_URL}"} \
             ${AUTH_ISSUER:+--env AUTH_ISSUER="${AUTH_ISSUER}"} \
+            ${AUTH_REQUIRED:+--env AUTH_REQUIRED="${AUTH_REQUIRED}"} \
             ${DISABLE_PERSONAL_KEYS:+--env DISABLE_PERSONAL_KEYS="${DISABLE_PERSONAL_KEYS}"} \
             ${REQUIRE_PERSONAL_KEY:+--env REQUIRE_PERSONAL_KEY="${REQUIRE_PERSONAL_KEY}"} \
             --env PW_CLI="/usr/local/bin/pw" \
@@ -963,6 +971,12 @@ jobs:
             "$IMG" > app.log 2>&1 < /dev/null &
           CONTAINER_LAUNCH
           else
+            # With every request signed in, the launch cannot ask for its
+            # first index over HTTP (expose_session's POST /api/reindex), so
+            # it leaves a file the server takes once as it starts.
+            if [ -n "$AUTH_REQ" ] && [ "${{ inputs.kb_settings.run_index }}" = "true" ]; then
+              echo 'mkdir -p "$INDEX_BASE" && : > "$INDEX_BASE/index-on-launch"' >> ${SCRIPT}
+            fi
             cat >> ${SCRIPT} << 'APP_LAUNCH'
           echo "Starting Studio server on port ${PORT} over ${KB_ROOT} ..."
           [ -f app.log ] && mv -f app.log app.log.prev
@@ -1151,7 +1165,11 @@ jobs:
           fi
           [ "$up" = "1" ] || echo "WARNING: app never responded; check app.log. Continuing."
           # The index on launch (the container's image starts its own).
-          if [ "$up" = "1" ] && [ "${{ inputs.kb_settings.run_index }}" = "true" ] && [ "${{ inputs.app_settings.source }}" != "container" ]; then
+          if [ "$up" = "1" ] && [ "${{ inputs.kb_settings.run_index }}" = "true" ] && [ "${{ inputs.app_settings.source }}" != "container" ] \
+            && [ "${{ inputs.model_settings.posture }}" != "single" ] && [ -n "${{ inputs.model_settings.platform_host }}" ]; then
+            # Sign-in is required, so run_app.sh left index-on-launch instead.
+            echo "The Studio started a full index as it came up; it serves while it builds."
+          elif [ "$up" = "1" ] && [ "${{ inputs.kb_settings.run_index }}" = "true" ] && [ "${{ inputs.app_settings.source }}" != "container" ]; then
             if curl -fsS -m 30 -X POST -H 'content-type: application/json' -d '{}' "http://localhost:${PORT}/api/reindex" > /dev/null; then
               echo "Started a full index; the Studio serves while it builds."
             else
@@ -1517,6 +1535,7 @@ jobs:
             ${BANNER_COLOR:+--env BANNER_COLOR="$BANNER_COLOR"} \
             ${JWKS:+--env AUTH_JWKS_URL="$JWKS"} \
             ${JWKS:+--env AUTH_ISSUER="pw-session-proxy"} \
+            ${JWKS:+--env AUTH_REQUIRED=1} \
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
             ${SIDECAR_URL:+--env SIDECAR_MODEL_URL="$SIDECAR_URL"} \

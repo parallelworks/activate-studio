@@ -408,3 +408,27 @@ func TestAfterChangeCounts(t *testing.T) {
 		t.Fatalf("changes %d, last %q", ix.Changes(), seen)
 	}
 }
+
+// TestIndexOnLaunch: the file a launch leaves starts one full index and is
+// taken, so starting again does not index again.
+func TestIndexOnLaunch(t *testing.T) {
+	f := newFixture(t)
+	f.ix.indexOnLaunch()
+	if j := f.ix.CurrentBuild(); j != nil {
+		t.Fatalf("an index started with no file: %+v", j)
+	}
+	write(t, f.ix.P.LaunchMark, "")
+	f.ix.indexOnLaunch()
+	j := f.ix.CurrentBuild()
+	if j == nil {
+		t.Fatal("no full index started")
+	}
+	if _, err := os.Stat(f.ix.P.LaunchMark); !os.IsNotExist(err) {
+		t.Fatalf("the file was not taken: %v", err)
+	}
+	f.finished(j.ID)
+	f.ix.indexOnLaunch()
+	if again := f.ix.CurrentBuild(); again != nil {
+		t.Fatalf("a second start indexed again: %+v", again)
+	}
+}

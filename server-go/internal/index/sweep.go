@@ -554,6 +554,7 @@ func (ix *Indexer) Start(ctx context.Context, afterSweep func(ctx context.Contex
 	if !exists(ix.P.DepthState) {
 		ix.pendingDepthChange(ix.Settings.Get("kb"))
 	}
+	ix.indexOnLaunch()
 	wait := func() time.Duration { return time.Duration(max(ix.sweepInterval(), 60) * float64(time.Second)) }
 	ix.mu.Lock()
 	ix.status.SweepIntervalSec = ix.sweepInterval()
@@ -694,4 +695,23 @@ func (ix *Indexer) logInfo(msg string) {
 	if ix.App != nil && ix.App.Log != nil {
 		ix.App.Log.Info(msg)
 	}
+}
+
+// indexOnLaunch starts a full index when the launch left LaunchMark: the
+// deployment workflow does where every request must be signed in, so it
+// cannot ask over HTTP. The file is taken once, so a restart, as after an
+// update, does not index again.
+func (ix *Indexer) indexOnLaunch() {
+	if !exists(ix.P.LaunchMark) {
+		return
+	}
+	if err := os.Remove(ix.P.LaunchMark); err != nil {
+		ix.Log.Write("index: could not take " + filepath.Base(ix.P.LaunchMark) + ", so the launch's index did not start: " + err.Error())
+		return
+	}
+	if _, err := ix.StartBuild(); err != nil {
+		ix.Log.Write("index: the full index the launch asked for did not start: " + err.Error())
+		return
+	}
+	ix.Log.Write("index: started the full index the launch asked for")
 }
