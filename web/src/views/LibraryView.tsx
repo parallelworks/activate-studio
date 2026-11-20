@@ -1,7 +1,7 @@
 import { ALL_LIBRARIES, LibrarySwitch, libraryWritable } from '../components/LibrarySwitch'
 import { currentLibrary, onLibraryChange } from '../api'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   Button, Callout, Checkbox, ConfirmModal, EmptyState, IconButton, Input, Modal, ProgressBar, RefreshButton,
   toast, Tooltip, useContextMenu, type MenuEntry,
@@ -16,8 +16,9 @@ import { AddLibraryDialog, ImportLibrariesDialog, useLibraryAddOffer, type Dropp
 import { checkList, LIST_FORMAT } from '../libraryLists'
 import { TagMenu } from '../components/TagMenu'
 import { sectionAllowed, useAppConfig } from '../config'
-import { collectDropped, collectListed, type UploadItem } from '../upload'
-import { onShellDrop } from '../nativeShell'
+import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
+import { chooseUpload, onShellDrop, shellListsFolders } from '../nativeShell'
+import { downloadPath } from '../libraryDownload'
 import { startPathJob, startUpload } from '../transfers'
 import { TransferPanel } from '../components/TransferPanel'
 import { selectLibraryEntry } from '../components/LibraryDetails'
@@ -70,6 +71,11 @@ export function LibraryView({ display, onDisplay }: {
   /** A menu choice that opens a dialog, run once the menu has closed and
    *  handed focus back, so the dialog keeps the focus it takes. */
   const afterMenu = useRef<(() => void) | null>(null)
+  // Upload files and Upload a folder in the right-click menu: the folder
+  // they go into, and the choosers they open.
+  const uploadDir = useRef('')
+  const filesInput = useRef<HTMLInputElement>(null)
+  const folderInput = useRef<HTMLInputElement>(null)
   /** Cut or copied paths, waiting for a destination. */
   const [clipboard, setClipboard] = useState<{ mode: 'cut' | 'copy'; paths: string[] } | null>(null)
   const selPaths = useMemo(() => [...multiSel], [multiSel])
@@ -327,6 +333,25 @@ export function LibraryView({ display, onDisplay }: {
     if (isDir) {
       items.push({ label: 'New folder', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setNameDialog({ mode: 'mkdir', path, isDir, value: '', busy: false, error: '' })) })
     }
+    // With All libraries the top of the tree is no folder: it holds the
+    // libraries, so nothing is uploaded to it or downloaded from it.
+    const allTop = inAll && !path
+    if (isDir && !allTop) {
+      // The choosers open from the click itself, which a browser requires.
+      const choose = (input: RefObject<HTMLInputElement | null>) => () => { uploadDir.current = path; input.current?.click() }
+      items.push(
+        { label: 'Upload files…', disabled: !!locked, disabledReason: locked ?? undefined, onClick: choose(filesInput) },
+        {
+          label: 'Upload a folder…', disabled: !!locked, disabledReason: locked ?? undefined,
+          // The Linux and Windows window's chooser cannot pick a folder, so
+          // the window lists one itself.
+          onClick: shellListsFolders()
+            ? () => void chooseUpload('Choose a folder to upload').then(files => uploadItems(path, collectListed(files)))
+            : choose(folderInput),
+        },
+      )
+    }
+    if (!allTop) items.push({ label: isDir ? 'Download as zip' : 'Download', onClick: () => void downloadPath(path, isDir) })
     if (path && !libraryTop) {
       items.push({ label: 'Rename…', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' })) })
     }
@@ -612,6 +637,15 @@ export function LibraryView({ display, onDisplay }: {
         </section>
       </div>
       {contextMenu}
+      <input
+        ref={filesInput} type="file" multiple hidden aria-hidden="true" tabIndex={-1}
+        onChange={e => { void uploadItems(uploadDir.current, collectChosen([...(e.target.files ?? [])])); e.target.value = '' }}
+      />
+      <input
+        ref={el => { folderInput.current = el; el?.setAttribute('webkitdirectory', '') }}
+        type="file" hidden aria-hidden="true" tabIndex={-1}
+        onChange={e => { void uploadItems(uploadDir.current, collectChosen([...(e.target.files ?? [])])); e.target.value = '' }}
+      />
       {shareTarget && (
         <ShareDialog open onClose={() => setShareTarget(null)} library={shareTarget.library} path={shareTarget.path} />
       )}
