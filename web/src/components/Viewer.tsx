@@ -1,5 +1,6 @@
-import { ReactElement, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Callout, ConfirmModal, EmptyState, Loader, TabPanel, Tabs, Tooltip } from '@parallelworks/ui'
+import { ReactElement, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Callout, ConfirmModal, EmptyState, IconButton, Loader, TabPanel, Tabs, Tooltip } from '@parallelworks/ui'
+import { ZoomInIcon, ZoomOutIcon } from '@parallelworks/ui/icons'
 import { Streamdown } from 'streamdown'
 import { api, withLibrary, FileContent, type OfficeBlock, type OfficeOutline } from '../api'
 import { forgetHash } from '../lastLocation'
@@ -8,6 +9,7 @@ const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.M
 import { DataTree } from './DataTree'
 import { DagViewer } from './DagViewer'
 import { PdfJsPages } from './PdfJsPages'
+import { pageWidth, stepZoom, useSettled, ZOOM_MAX, ZOOM_MIN, ZoomView, type ZoomControl, type Zooming } from './ZoomView'
 import { CsvTable, DELIMITED_SUFFIXES } from './CsvTable'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
@@ -48,13 +50,14 @@ function officeLabel(suffix: string): string {
  * over, and only a file that is as it was falls back. A page past the end
  * of a file that still reads the same gets the page count read again.
  */
-function PagedPreview({ path, version, office, markdown, recheck, onUnavailable }: {
+function PagedPreview({ path, version, office, markdown, recheck, onUnavailable, zooming }: {
   path: string
   version?: number
   office: boolean
   markdown: boolean
   recheck: () => Promise<FileCheck>
   onUnavailable: (why: string) => void
+  zooming: Zooming
 }) {
   const [pages, setPages] = useState<number | null>(null)
   // Counts the times the page count was read again, so the pages are
@@ -135,7 +138,7 @@ function PagedPreview({ path, version, office, markdown, recheck, onUnavailable 
       .catch(() => onUnavailable(why))
   }
 
-  if (stage === 'pdfjs') return <PdfJsPages url={api.rawUrl(path, version)} cap={PDF_PAGE_CAP} onFail={why => showText(error ? `${error}; ${why}` : why)} />
+  if (stage === 'pdfjs') return <PdfJsPages url={api.rawUrl(path, version)} cap={PDF_PAGE_CAP} zooming={zooming} onFail={why => showText(error ? `${error}; ${why}` : why)} />
   if (stage === 'outline') return <OfficeOutlineView path={path} onFail={why => onUnavailable(why || error || '')} />
   if (stage === 'text') {
     if (fallbackText == null) return <div className="muted pad"><Loader inline size={16} label="Reading the text…" /></div>
@@ -151,21 +154,89 @@ function PagedPreview({ path, version, office, markdown, recheck, onUnavailable 
   if (pages === null) return <div className="muted pad"><Loader inline size={16} label="Rendering preview…" /></div>
   const shown = Math.min(pages, PDF_PAGE_CAP)
   return (
+    <ZoomView zooming={zooming} label="Pages">
+      {fit => (
+        <ServerPages
+          width={pageWidth(fit, zooming.zoom)} zoomed={zooming.zoom > 1}
+          url={n => api.pdfPageUrl(path, n, version) + (recount ? `&r=${recount}` : '')}
+          recount={recount} shown={shown} pages={pages} onError={pageFailed}
+        />
+      )}
+    </ZoomView>
+  )
+}
+
+/** The resolutions the server draws a page at (kb.PageDPIs). */
+const PAGE_DPIS = [130, 200, 300, 400]
+
+/** The resolution to ask for a page shown `width` CSS pixels wide: the
+ *  first, unless zoomed in, and then the one that gives the screen a pixel
+ *  for each of its own (a letter page is 8.5 inches wide). */
+export function pageDpi(width: number, zoomed: boolean, ratio = window.devicePixelRatio || 1): number {
+  if (!zoomed || !width) return PAGE_DPIS[0]
+  const want = (width * Math.min(ratio, 3)) / 8.5
+  return PAGE_DPIS.find(d => want <= d) ?? PAGE_DPIS[PAGE_DPIS.length - 1]
+}
+
+/** The server's page images, each `width` wide. Zoomed in, they are asked
+ *  for again finer once the zoom settles; a finer image once shown is kept
+ *  for the rest of the file, so zooming back out asks for nothing. */
+function ServerPages({ width, zoomed, url, recount, shown, pages, onError }: {
+  width: number
+  zoomed: boolean
+  url: (n: number) => string
+  recount: number
+  shown: number
+  pages: number
+  onError: () => void
+}) {
+  const settled = useSettled(width)
+  const [dpi, setDpi] = useState(PAGE_DPIS[0])
+  useEffect(() => { setDpi(d => Math.max(d, pageDpi(settled, zoomed))) }, [settled, zoomed])
+  return (
     <div className="pdf-pages">
       {Array.from({ length: shown }, (_, i) => (
-        <img
+        <PageImage
           key={`${recount}:${i}`}
-          className="pdf-page-img"
-          src={api.pdfPageUrl(path, i + 1, version) + (recount ? `&r=${recount}` : '')}
+          src={url(i + 1) + (dpi !== PAGE_DPIS[0] ? `&dpi=${dpi}` : '')}
           alt={`page ${i + 1}`}
-          loading="lazy"
-          onError={pageFailed}
+          width={width}
+          onError={onError}
         />
       ))}
       {pages > shown && (
         <p className="muted pad">Showing the first {shown} of {pages} pages; use Download for the full document.</p>
       )}
     </div>
+  )
+}
+
+/** One page image. A page not loaded yet takes a new address at once; one
+ *  on screen keeps its image until the new one has loaded, so a finer
+ *  drawing replaces it without the page going blank, and a finer one that
+ *  fails leaves the page as it was. */
+function PageImage({ src, alt, width, onError }: { src: string; alt: string; width: number; onError: () => void }) {
+  const [shown, setShown] = useState(src)
+  const loaded = useRef(false)
+  useEffect(() => {
+    if (src === shown) return
+    if (!loaded.current) { setShown(src); return }
+    const img = new Image()
+    img.onload = () => setShown(src)
+    img.src = src
+    return () => { img.onload = null }
+  }, [src, shown])
+  return (
+    <img
+      data-zoom-item
+      className="pdf-page-img"
+      src={shown}
+      alt={alt}
+      loading="lazy"
+      style={width ? { width, maxWidth: 'none' } : undefined}
+      onLoad={() => { loaded.current = true }}
+      onError={onError}
+    />
   )
 }
 
@@ -293,6 +364,26 @@ export function findPattern(terms: string[]): RegExp {
  *  in WebKit (the Linux and macOS windows), about a second in Chromium. */
 export const MARKDOWN_FORMAT_MAX = 60_000
 
+/** Each file's zoom while the Studio is open, so a file opened again
+ *  shows as it was left. */
+const zoomByPath = new Map<string, number>()
+
+/** An image at the pane's width, or its own when narrower, times the zoom. */
+function ZoomImage({ src, alt, fit, zoom, onError }: { src: string; alt: string; fit: number; zoom: number; onError: () => void }) {
+  const [natural, setNatural] = useState(0)
+  const base = natural && fit ? Math.min(natural, fit) : 0
+  return (
+    <img
+      data-zoom-item
+      src={src}
+      alt={alt}
+      style={base ? { width: Math.round(base * zoom), maxWidth: 'none' } : { maxWidth: '100%' }}
+      onLoad={e => setNatural(e.currentTarget.naturalWidth)}
+      onError={onError}
+    />
+  )
+}
+
 export function Viewer({ path, find, onDeleted, readOnly }: {
   path: string | null
   /** Text to land on and highlight, typically the search query that led here. */
@@ -310,6 +401,31 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   // by something else (the assistant, another window, the file system).
   const [gone, setGone] = useState(false)
   const [tab, setTab] = useState<Tab>('preview')
+  // Zoom for a PDF's or Office file's pages, or an image (ZoomView). The
+  // buttons show while such a preview is on screen.
+  const [zoom, setZoomState] = useState(() => (path && zoomByPath.get(path)) || 1)
+  const [zoomShown, setZoomShown] = useState(false)
+  const zoomControl = useRef<ZoomControl | null>(null)
+  useEffect(() => { setZoomState((path && zoomByPath.get(path)) || 1) }, [path])
+  const setZoom = useCallback((z: number) => {
+    if (path) zoomByPath.set(path, z)
+    setZoomState(z)
+  }, [path])
+  const zooming = useMemo<Zooming>(() => ({ zoom, onZoom: setZoom, control: zoomControl, onShown: setZoomShown }), [zoom, setZoom])
+  // The header's height, for the tab row that stays under it: in a narrow
+  // pane the buttons wrap onto a second line, and a fixed offset left the
+  // tabs under the header.
+  const headSize = useRef<ResizeObserver | null>(null)
+  const headRef = useCallback((el: HTMLDivElement | null) => {
+    headSize.current?.disconnect()
+    headSize.current = null
+    if (!el) return
+    const set = () => el.parentElement?.style.setProperty('--viewer-head-h', `${el.offsetHeight}px`)
+    set()
+    if (typeof ResizeObserver === 'undefined') return
+    headSize.current = new ResizeObserver(set)
+    headSize.current.observe(el)
+  }, [])
   // Set when the file has no preview to show (no page images and nothing
   // read from it): the Preview tab goes and the indexed text says why.
   const [previewGone, setPreviewGone] = useState<string | null>(null)
@@ -549,7 +665,9 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   ) : isModel ? (
     <Suspense fallback={<div className="muted pad"><Loader inline size={16} label="Loading the 3D viewer…" /></div>}><ModelViewer path={path} /></Suspense>
   ) : isImage ? (
-    <div className="viewer-body"><img src={api.rawUrl(path, file.mtime)} alt={path} style={{ maxWidth: '100%' }} onError={() => { void recheck() }} /></div>
+    <ZoomView zooming={zooming} label="Image" className="image-zoom">
+      {fit => <ZoomImage src={api.rawUrl(path, file.mtime)} alt={path} fit={fit} zoom={zoom} onError={() => { void recheck() }} />}
+    </ZoomView>
   ) : isPdf || isOffice ? (
     // Keyed by the file and its version: kept across files, the first
     // render of the next one used the last one's page count, asked for
@@ -562,6 +680,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
       office={isOffice}
       markdown={extractedMarkdown}
       recheck={recheck}
+      zooming={zooming}
       onUnavailable={why => { void recheck().then(state => { if (state === 'same') { setPreviewGone(why); setTab('indexed') } }) }}
     />
   ) : isText ? (
@@ -594,7 +713,7 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
 
   return (
     <div className="viewer">
-      <div className="viewer-head">
+      <div className="viewer-head" ref={headRef}>
         <span className="viewer-path">
           {file.path}
           {(tags.own.length > 0 || tags.inherited.length > 0) && (
@@ -606,6 +725,13 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
         </span>
         <span className="viewer-meta">
           <span>{new Date(file.mtime * 1000).toISOString().slice(0, 10)}</span>
+          {zoomShown && (
+            <span className="zoom-controls" role="group" aria-label="Zoom">
+              <IconButton variant="secondary" size="sm" icon={<ZoomOutIcon />} label="Zoom out" disabled={zoom <= ZOOM_MIN + 0.001} onClick={() => zoomControl.current?.zoomTo(stepZoom(zoom, -1))} />
+              <Button variant="ghost" size="sm" className="zoom-level" onClick={() => zoomControl.current?.zoomTo(1)} title="Fit to the width of the pane">{Math.round(zoom * 100)}%</Button>
+              <IconButton variant="secondary" size="sm" icon={<ZoomInIcon />} label="Zoom in" disabled={zoom >= ZOOM_MAX - 0.001} onClick={() => zoomControl.current?.zoomTo(stepZoom(zoom, 1))} />
+            </span>
+          )}
           <Button variant="secondary" size="sm" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</Button>
           <TagMenu
             paths={[file.path]}

@@ -23,7 +23,7 @@ func TestPDFPagesWithoutPopplerSayWhy(t *testing.T) {
 	}
 	p := &Previews{Roots: Roots{KBRoot: base, IndexBase: filepath.Join(base, "state"), IndexDir: filepath.Join(base, "state")}}
 	_, err := p.PageCount(context.Background(), pdf)
-	_, err2 := p.PagePNG(context.Background(), pdf, "a.pdf", 1)
+	_, err2 := p.PagePNG(context.Background(), pdf, "a.pdf", 1, 130)
 	for tool, e := range map[string]error{"pdfinfo": err, "pdftoppm": err2} {
 		var ae *apierr.Error
 		if !errors.As(e, &ae) || ae.Status != 415 || !strings.Contains(e.Error(), "poppler's "+tool+" is not installed") {

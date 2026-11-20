@@ -178,9 +178,26 @@ func (p *Previews) PageCount(ctx context.Context, pdf string) (int, error) {
 
 var pageFile = regexp.MustCompile(`^p-?0*(\d+)\.png$`)
 
-// PagePNG renders one page (1-based) at 130 dpi, cached by the PDF's
-// modification time, and returns the image's path.
-func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page int) (string, error) {
+// PageDPIs are the resolutions a page image is drawn at. The first fits
+// the Viewer's column; it asks for the others as a page is zoomed in.
+var PageDPIs = []int{130, 200, 300, 400}
+
+// PageDPI is the resolution in PageDPIs for a wanted one: the least that
+// is at least as fine, and the finest past the last.
+func PageDPI(want float64) int {
+	for _, d := range PageDPIs {
+		if want <= float64(d) {
+			return d
+		}
+	}
+	return PageDPIs[len(PageDPIs)-1]
+}
+
+// PagePNG renders one page (1-based) at dpi, one of PageDPIs, cached by
+// the PDF's modification time, and returns the image's path. Each
+// resolution but the first is kept in a folder of its own.
+func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page, dpi int) (string, error) {
+	dpi = PageDPI(float64(dpi))
 	pdf, err := p.PreviewPDF(ctx, abs, rel)
 	if err != nil {
 		return "", err
@@ -190,6 +207,9 @@ func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page int) (stri
 		return "", err
 	}
 	dir := p.pageDir(rel)
+	if dpi != PageDPIs[0] {
+		dir = filepath.Join(dir, "r"+strconv.Itoa(dpi))
+	}
 	outFile := filepath.Join(dir, fmt.Sprintf("p%d.png", page))
 	if c, err := os.Stat(outFile); err == nil && mtimeMs(c) >= mtimeMs(src) {
 		return outFile, nil
@@ -206,7 +226,7 @@ func (p *Previews) PagePNG(ctx context.Context, abs, rel string, page int) (stri
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	n := strconv.Itoa(page)
-	cmd := exec.CommandContext(cctx, "pdftoppm", "-f", n, "-l", n, "-r", "130", "-png", pdf, filepath.Join(dir, "p"))
+	cmd := exec.CommandContext(cctx, "pdftoppm", "-f", n, "-l", n, "-r", strconv.Itoa(dpi), "-png", pdf, filepath.Join(dir, "p"))
 	var se strings.Builder
 	cmd.Stderr = &se
 	if err := cmd.Run(); err != nil {
