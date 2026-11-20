@@ -36,6 +36,9 @@ type Library struct {
 	// Space: the viewer's own space, whose files are read and written as
 	// them through SpaceFiles.
 	Space bool
+	// SharedFrom is who shared a space's folder with the viewer; "" for
+	// the viewer's own space and for every other library.
+	SharedFrom string
 	// Bucket: its index is here and its files are objects in a bucket,
 	// listed from the index and read one at a time.
 	Bucket bool

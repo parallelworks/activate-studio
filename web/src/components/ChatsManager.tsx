@@ -107,8 +107,8 @@ export function ChatsManager({ activeId, onOpen, onActiveDeleted, onClose }: {
       <ConfirmModal
         open={confirming}
         onClose={() => setConfirming(false)}
-        title={`Delete ${picked.size} conversation${picked.size === 1 ? '' : 's'} and their transcripts?`}
-        description="This cannot be undone."
+        title={`Delete ${picked.size} conversation${picked.size === 1 ? '' : 's'}?`}
+        description="This cannot be undone. A copy saved to a library stays there."
         confirmLabel={busy ? 'Deleting…' : 'Delete'}
         destructive
         onConfirm={remove}

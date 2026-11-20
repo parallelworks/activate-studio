@@ -275,7 +275,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
             <span className="ov-row-meta">{activity?.conversations ?? '…'}</span>
           </div>
           <div className="ov-row ov-click" onClick={() => jumpToQuery([{ field: 'label', op: 'eq', value: 'chat-session' }], 'modified')}>
-            <span className="ov-row-path">Exported session transcripts, searchable in the corpus</span>
+            <span className="ov-row-path">Chats saved to the library, searchable in the corpus</span>
             <span className="ov-row-meta">{activity?.transcripts ?? '…'}</span>
           </div>
           <div className="ov-row">

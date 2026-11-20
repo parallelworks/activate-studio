@@ -23,7 +23,7 @@ The macOS app needs no administrator rights. Opened from its disk image, it offe
 
 ## Chat
 
-Ask in plain language. The assistant searches the knowledge base, reads the files that matter, and links each source; a source link opens the file in the Library, in the library it came from. Past conversations are kept and are searchable themselves.
+Ask in plain language. The assistant searches the knowledge base, reads the files that matter, and links each source; a source link opens the file in the Library, in the library it came from. Past conversations are kept in the Studio. A chat goes into a library only when you save it, and a saved chat is searchable like any other file.
 
 - **Attach** files or images with **+**, then **Add files**; they are added to the library and indexed.
 - **+**, then **Tools**, switches kinds of tools on or off for your chats: the knowledge base, platform workflows, platform changes, agents, editing the library, transfers, extensions, and each attached MCP server. Switch off workflows to keep a chat from launching anything, or editing to keep it read only. A dot on **+** means something is off; the choice is kept in this browser. A Studio with no platform connected (no ACTIVATE credential and no pw CLI sign-in) offers only the library tools, and the platform switches are not shown.
@@ -39,6 +39,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 - Ask what storage you have, or ask it to start, resume, stop, or destroy a cloud cluster or cancel a workflow run. Each of these changes asks first: the chat shows the exact call and waits. **Yes, allow this call** runs it, **No, deny this call** does not, and when stopping or destroying a cluster you can choose the other instead. A request left unanswered for 30 minutes expires. Only the person who asked can answer, and the change runs with their own platform key.
 - **Select chats**, above New chat, deletes old conversations together.
 - **Download**, in a conversation's menu in the list, saves it as a Markdown file. A notice says where it went: the folder in the Linux and Windows app, Downloads in the macOS app, or your browser's downloads folder; if it cannot be saved, the notice says why. Export CSV in Search and Query shows the same notice.
+- **Save**, at the top right of an open chat, saves a copy of it as a Markdown file in `chat-sessions/` of your own space when you have one, where only you can read it, or of the main library otherwise. Before it writes anything it says where the copy goes and who can read it there. Saving again replaces the copy, and deleting the chat leaves the copy in the library. You can also ask the assistant to save or remember the chat; it does the same and says where the copy went.
 - **Model access**, at the foot of the conversations list, opens the Settings page for models and keys.
 - In a shared session, add your own model key under Settings, "Model access", to chat as yourself.
 - A reply with no answer says why: the model reasoned without answering, ran tools without answering, or returned an empty reply, which some providers do when they decline a request. A provider that is rate limiting is retried twice after short waits. Either way the reply ends with **Retry with** links to the other models; nothing is sent to another model until you click one.

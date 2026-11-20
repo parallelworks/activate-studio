@@ -127,19 +127,6 @@ func New(a *app.App) *Module {
 	}
 	m.LLM = llm.New(m.gatewayBase, m.GatewayKey)
 	m.Conv = conversations.New(a.Cfg.IndexBase, a.Cfg.KBRoot, conversations.Hooks{
-		Label: func(ctx context.Context, paths, add []string) error {
-			if a.Providers.ApplyLabels == nil {
-				return nil
-			}
-			return a.Providers.ApplyLabels(ctx, nil, paths, add, nil)
-		},
-		Reindex: func(ctx context.Context, rel string) error {
-			if a.Providers.IndexDirMS == nil {
-				return nil
-			}
-			_, err := a.Providers.IndexDirMS(ctx, rel)
-			return err
-		},
 		Log: func(msg string) { a.Log.Warn(msg) },
 	})
 	m.listings = newListingCache()
@@ -284,6 +271,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		ToNode: m.toNode,
 	}
 	m.Convs.Register(mux, h)
+	m.chatSaveRoutes(h)
 	m.keyRoutes(h)
 	h("GET /api/chat/models", m.models)
 	h("GET /api/ai/health", m.health)
