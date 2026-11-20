@@ -28,7 +28,7 @@ func TestPagePNGFollowsARewrittenPDF(t *testing.T) {
 		}
 		os.WriteFile(pdf, r.Data, 0o644)
 		os.Chtimes(pdf, at, at)
-		png, err := p.PagePNG(context.Background(), pdf, "a.pdf", 1)
+		png, err := p.PagePNG(context.Background(), pdf, "a.pdf", 1, 130)
 		if err != nil {
 			t.Fatal(err)
 		}

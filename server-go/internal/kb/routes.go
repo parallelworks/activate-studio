@@ -762,10 +762,19 @@ func (m *Module) pdfPage(w http.ResponseWriter, r *http.Request) error {
 	if f := jsNumberOr(page, 1); f >= 1 {
 		n = int(f)
 	}
-	if fresh(w, r, abs, "p"+strconv.Itoa(n)) {
+	// dpi: the Viewer asks for a finer image of a page it has zoomed in.
+	dpi := PageDPIs[0]
+	if f := jsNumberOr(qs(r, "dpi"), 0); f > 0 {
+		dpi = PageDPI(f)
+	}
+	part := "p" + strconv.Itoa(n)
+	if dpi != PageDPIs[0] {
+		part += "@" + strconv.Itoa(dpi)
+	}
+	if fresh(w, r, abs, part) {
 		return nil
 	}
-	png, err := m.Previews.PagePNG(r.Context(), abs, previewKey(lib, rel), n)
+	png, err := m.Previews.PagePNG(r.Context(), abs, previewKey(lib, rel), n, dpi)
 	if err != nil {
 		// The tag belongs to a page image, not to an error.
 		w.Header().Del("ETag")

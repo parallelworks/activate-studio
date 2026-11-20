@@ -673,8 +673,9 @@ textarea.field { line-height: 1.5; }
   background: var(--theme-muted-panel-bg); border: 1px solid var(--pw-border); padding: 14px; border-radius: 8px;
 }
 
-/* The file viewer's tab row stays under the header as the file scrolls. */
-.file-tabs { padding: 8px 20px 0; background: var(--pw-panel); position: sticky; top: 49px; z-index: 4; }
+/* The file viewer's tab row stays under the header as the file scrolls, at
+   the header's height as measured (Viewer), one line or two. */
+.file-tabs { padding: 8px 20px 0; background: var(--pw-panel); position: sticky; top: var(--viewer-head-h, 49px); z-index: 4; }
 .index-note { margin: 0 0 14px; }
 .confirm-group { display: inline-flex; gap: 6px; }
 
@@ -2742,6 +2743,19 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 }
 .pdf-pages > img.pdf-page-img { height: auto; aspect-ratio: auto 17 / 22; }
 .pdf-pages > .muted { align-self: stretch; text-align: center; margin: 0; }
+/* A document zoomed in the Viewer (ZoomView): its own pane, which scrolls
+   across when the pages or the image are wider than it, while the Library
+   pane scrolls down. The page column takes the width of its widest page,
+   so its backdrop runs under every page; centered children stay inside it,
+   where they can be scrolled to. */
+.zoom-view { overflow-x: auto; overflow-y: hidden; }
+.zoom-view:focus { outline: none; }
+.zoom-view:focus-visible { outline: 2px solid var(--theme-link); outline-offset: -2px; }
+.zoom-view > .pdf-pages { width: max-content; min-width: 100%; }
+.image-zoom { padding: 18px 24px; text-align: center; }
+.image-zoom > img { display: inline-block; vertical-align: top; }
+.zoom-controls { display: inline-flex; align-items: center; gap: 2px; }
+.zoom-level { min-width: 52px; font-variant-numeric: tabular-nums; }
 /* The same pages drawn here by pdf.js (PdfJsPages), where the server has
    no poppler. */
 .pdf-page-js { margin: 0; }

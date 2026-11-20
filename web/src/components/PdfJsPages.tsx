@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader } from '@parallelworks/ui'
+import { pageWidth, useSettled, ZoomView, type Zooming } from './ZoomView'
 
 /** Where the build puts pdf.js's fonts, maps and decoders (vite.config). */
 const PDFJS_ASSETS = new URL('pdfjs/', document.baseURI).href
@@ -9,10 +10,11 @@ const PDFJS_ASSETS = new URL('pdfjs/', document.baseURI).href
  * draw them (no poppler on this computer, as in the macOS app). The file
  * comes from `url` (the raw file, fetched from another system for a
  * library there); each page is drawn when it scrolls near, at the width
- * of the column, up to `cap` pages. `onFail` says the file could not be
- * read or drawn, and the viewer shows its text instead.
+ * of the column times the zoom, up to `cap` pages, and drawn again finer
+ * once a zoom settles. `onFail` says the file could not be read or drawn,
+ * and the viewer shows its text instead.
  */
-export function PdfJsPages({ url, cap, onFail }: { url: string; cap: number; onFail: (why: string) => void }) {
+export function PdfJsPages({ url, cap, onFail, zooming }: { url: string; cap: number; onFail: (why: string) => void; zooming: Zooming }) {
   const [pages, setPages] = useState<number | null>(null)
   const doc = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
   const failed = useRef(false)
@@ -50,25 +52,36 @@ export function PdfJsPages({ url, cap, onFail }: { url: string; cap: number; onF
   if (pages === null) return <div className="muted pad"><Loader inline size={16} label="Rendering preview…" /></div>
   const shown = Math.min(pages, cap)
   return (
-    <div className="pdf-pages">
-      {Array.from({ length: shown }, (_, i) => <PdfJsPage key={`${url}#${i}`} doc={doc} n={i + 1} onFail={fail} />)}
-      {pages > shown && (
-        <p className="muted pad">Showing the first {shown} of {pages} pages; use Download for the full document.</p>
+    <ZoomView zooming={zooming} label="Pages">
+      {fit => (
+        <div className="pdf-pages">
+          {Array.from({ length: shown }, (_, i) => <PdfJsPage key={`${url}#${i}`} doc={doc} n={i + 1} width={pageWidth(fit, zooming.zoom)} onFail={fail} />)}
+          {pages > shown && (
+            <p className="muted pad">Showing the first {shown} of {pages} pages; use Download for the full document.</p>
+          )}
+        </div>
       )}
-    </div>
+    </ZoomView>
   )
 }
 
+/** Browsers refuse a canvas much past 16 million pixels (Safari's limit),
+ *  so a page zoomed far in is drawn no finer than that. */
+const CANVAS_MAX_PIXELS = 16_000_000
+
 /** One page: a placeholder until it comes near the view, then a canvas. */
-function PdfJsPage({ doc, n, onFail }: {
+function PdfJsPage({ doc, n, width, onFail }: {
   doc: React.MutableRefObject<import('pdfjs-dist').PDFDocumentProxy | null>
   n: number
+  /** The page's width on screen in CSS pixels; 0 until the pane is measured. */
+  width: number
   onFail: (why: string) => void
 }) {
   const box = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const [near, setNear] = useState(n <= 2)
   const [aspect, setAspect] = useState(1.294)
+  const drawWidth = useSettled(width)
 
   useEffect(() => {
     if (near || !box.current) return
@@ -91,23 +104,32 @@ function PdfJsPage({ doc, n, onFail }: {
         if (!alive) return
         const base = page.getViewport({ scale: 1 })
         setAspect(base.height / base.width)
-        const width = Math.max(320, box.current?.clientWidth ?? 800)
+        const w = Math.max(320, drawWidth || box.current?.clientWidth || 800)
         const ratio = Math.min(window.devicePixelRatio || 1, 2)
-        const vp = page.getViewport({ scale: (width / base.width) * ratio })
-        c.width = Math.floor(vp.width)
-        c.height = Math.floor(vp.height)
-        render = page.render({ canvas: c, viewport: vp })
+        let scale = (w / base.width) * ratio
+        scale = Math.min(scale, Math.sqrt(CANVAS_MAX_PIXELS / (base.width * base.height)))
+        const vp = page.getViewport({ scale })
+        // Drawn off screen and copied in at once, so the page on screen
+        // stays until its finer drawing is ready.
+        const off = document.createElement('canvas')
+        off.width = Math.floor(vp.width)
+        off.height = Math.floor(vp.height)
+        render = page.render({ canvas: off, viewport: vp })
         await render.promise
+        if (!alive) return
+        c.width = off.width
+        c.height = off.height
+        c.getContext('2d')?.drawImage(off, 0, 0)
       } catch (e) {
         const name = (e as Error)?.name
         if (alive && name !== 'RenderingCancelledException') onFail('a page could not be rendered')
       }
     })()
     return () => { alive = false; render?.cancel() }
-  }, [near, n])
+  }, [near, n, drawWidth])
 
   return (
-    <div ref={box} className="pdf-page-js" style={{ aspectRatio: `1 / ${aspect}` }}>
+    <div ref={box} data-zoom-item className="pdf-page-js" style={{ aspectRatio: `1 / ${aspect}`, ...(width ? { width, maxWidth: 'none' } : {}) }}>
       {near && <canvas ref={canvas} className="pdf-page-img" aria-label={`page ${n}`} role="img" />}
     </div>
   )
