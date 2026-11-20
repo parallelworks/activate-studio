@@ -2455,6 +2455,10 @@ a.identity-btn { text-decoration: none; }
    long. */
 .scope-sub { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--pw-border); font-weight: 500; }
 .chat-scope-menu { width: 270px; max-height: min(70vh, 560px, var(--available-height)); }
+/* Save to library: where the copy goes, then where it went. */
+.save-chat-menu { width: 300px; }
+.save-chat-body p { margin: 0 0 6px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.save-chat-body p:last-child { margin-bottom: 0; }
 /* The menu's library ticks are Search's list (LibraryScope.tsx), fitted to
    the menu's width. */
 .chat-scope-menu .scope-libs { min-width: 0; max-width: none; max-height: 220px; }

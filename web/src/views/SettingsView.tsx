@@ -702,7 +702,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     <label className="key-persist">
                       <Checkbox checked={form.chatSharedHistory}
                         onCheckedChange={v => setForm({ ...form, chatSharedHistory: v })} />
-                      Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; exported transcripts remain in the knowledge base tree either way)
+                      Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; chats someone saved to the main library stay there either way)
                     </label>
                   )}
                   <Field className="settings-field" label="Mission and context"

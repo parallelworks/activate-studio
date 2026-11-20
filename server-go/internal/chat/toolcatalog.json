@@ -734,6 +734,14 @@
    }
   },
   {
+   "name": "save_chat_to_library",
+   "description": "Save this conversation's transcript to a library as Markdown, for the user to keep. Use it only when the user asks to save, keep or remember this chat or conversation. It goes to chat-sessions/ in the user's own space when they have one (only they can read it), otherwise in the main library, named for the day the chat started; saving the chat again replaces that copy. The transcript holds the conversation up to the user's last message. Chats are not saved anywhere unless someone asks.",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   }
+  },
+  {
    "name": "edit_kb_file",
    "description": "Change part of a text file in the knowledge base in place: a report's Markdown, a note, a script, a case file. Send only the text to change, not the file again. Each edit replaces find, the text as it is in the file (enough of it to occur once), with replace; all=true replaces every place it occurs; an empty replace removes it. append adds text at the end. Either every edit applies or nothing is changed, and the result says which edit did not apply and why. A .pdf or .docx made from the file (write_kb_file with also or source) is made again from the edited text, so use this for every correction to a report after it is written. A PDF, Word or Excel file is not edited itself: edit the Markdown it was made from. Read the file first (read_kb_file) when you do not have its current text.",
    "parameters": {
@@ -1419,6 +1427,7 @@
   "query_corpus": "canned gufi_query aggregations over the per-directory index databases",
   "get_labels": "reads the user.studio.tags xattr maps cached from the filesystem",
   "write_kb_file": "fs write into the knowledge base (path-checked, excluded dirs refused) followed by an incremental reindex of the touched subtree; a .pdf or .docx is rendered from Markdown (docwrite), embedding the library images it refers to; with also, the same Markdown is also rendered to the named formats beside it, and with source the content is read from a text file in the library; each document made that way is recorded with its source (made-documents.json beside the index)",
+  "save_chat_to_library": "writes the conversation's Markdown transcript to chat-sessions/ in the viewer's own space (SpaceFiles, as them), or in the main library with the chat-session and owner labels and a reindex of the folder",
   "edit_kb_file": "reads the text file in the main library, applies each find and replace (exact, then ignoring spacing) and the appended text, all or none, writes it back and re-indexes; then renders again the .pdf and .docx recorded as made from it whose bytes are still the ones written here",
   "suggest_labels": "reads the first ~1200 characters of each unlabelled file and asks the deployment model to propose labels from the existing vocabulary (proposals only, nothing applied)",
   "apply_labels": "setfattr user.studio.tags on the main library's paths plus an in-place upsert into the index databases; another library's labels are kept by the Studio",
@@ -1522,9 +1531,10 @@
    "cue": "\\b(agents?|delegat|pw[ -]?code|cod(e|ing) sessions?|subtasks?|steer|in parallel)"
   },
   "editing": {
-   "summary": "writing and editing files in the knowledge base (a report as Markdown, PDF and Word), moving, renaming, copying and deleting them (deletes are approved by the user), and suggesting or applying labels",
+   "summary": "writing and editing files in the knowledge base (a report as Markdown, PDF and Word), saving this chat to a library, moving, renaming, copying and deleting them (deletes are approved by the user), and suggesting or applying labels",
    "names": [
     "write_kb_file",
+    "save_chat_to_library",
     "edit_kb_file",
     "move_kb_files",
     "rename_kb_file",
@@ -1533,7 +1543,7 @@
     "suggest_labels",
     "apply_labels"
    ],
-   "cue": "\\b(labels?|tags?|tagging|write|save|create|draft|edit|update|append|notes?|file it|add (a|an|the) |delete|remove|clean ?up|tidy|move|rename|copy|duplicate|reorgani[sz]e|archive|organi[sz]e)"
+   "cue": "\\b(labels?|tags?|tagging|write|save|remember|create|draft|edit|update|append|notes?|file it|add (a|an|the) |delete|remove|clean ?up|tidy|move|rename|copy|duplicate|reorgani[sz]e|archive|organi[sz]e)"
   },
   "transfers": {
    "summary": "copying, moving and syncing files between libraries, this computer, clusters and hosts as jobs on the Transfers page, reading or cancelling those jobs, and saving a location on a host; the user approves each transfer and each saved location",

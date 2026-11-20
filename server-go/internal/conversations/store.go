@@ -1,9 +1,9 @@
 // Package conversations is server/src/conversations.ts: the server-side
 // conversation store, one JSON file beside the index
 // (INDEX_BASE/conversations.json, JSON.stringify(all, null, 1), written
-// through a rename), the markdown export of each conversation into the
-// knowledge base (chat-sessions/), the steering queue of a running reply,
-// and the seven conversation routes.
+// through a rename), the markdown transcript of a conversation that a
+// person saves to a library (chat-sessions/), the steering queue of a
+// running reply, and the conversation routes.
 //
 // The file is reread when its size, modification time or inode changes,
 // so a note another process appends (Node's run watcher, while it runs)
@@ -11,7 +11,6 @@
 package conversations
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -28,7 +27,8 @@ import (
 
 const maxConversations = 500
 
-// ExportDir is the knowledge-base folder the transcripts go to.
+// ExportDir is the folder of a library that saved transcripts go to.
+// Nothing is written there unless someone saves a chat.
 const ExportDir = "chat-sessions"
 
 // NoReplyNote is NO_REPLY_NOTE.
@@ -36,11 +36,7 @@ const NoReplyNote = "No reply was saved for this message. It was stopped or inte
 
 // Hooks are what the store asks of other modules.
 type Hooks struct {
-	// Label is applyTagsCore(paths, add, []) on the main folder.
-	Label func(ctx context.Context, paths, add []string) error
-	// Reindex is reindexForDir(rel).
-	Reindex func(ctx context.Context, rel string) error
-	// Log reports a failed export reindex.
+	// Log reports a problem the store cannot return.
 	Log func(msg string)
 }
 
@@ -57,36 +53,8 @@ type Store struct {
 
 	writeMu sync.Mutex
 
-	exportDirLabeled bool
-	ownerLabeled     map[string]bool
-	indexTimer       *time.Timer
-
 	answering map[string]int
 	steers    map[string][]Steer
-
-	// exports counts the chat exports being written (exportSoon).
-	exports sync.WaitGroup
-}
-
-// exportSoon writes a conversation's export to the library without
-// holding up the caller.
-func (s *Store) exportSoon(c *Conversation) {
-	s.exports.Add(1)
-	go func() {
-		defer s.exports.Done()
-		s.exportToKB(c)
-	}()
-}
-
-// Flush waits for the exports being written, and stops a pending reindex
-// of the export folder; a test calls it before its folder is removed.
-func (s *Store) Flush() {
-	s.exports.Wait()
-	s.mu.Lock()
-	if s.indexTimer != nil {
-		s.indexTimer.Stop()
-	}
-	s.mu.Unlock()
 }
 
 // Steer is a message sent while a reply runs.
@@ -98,7 +66,7 @@ type Steer struct {
 // New is the store of indexBase's conversations.json.
 func New(indexBase, kbRoot string, hooks Hooks) *Store {
 	return &Store{file: filepath.Join(indexBase, "conversations.json"), kbRoot: kbRoot, hooks: hooks, now: time.Now,
-		ownerLabeled: map[string]bool{}, answering: map[string]int{}, steers: map[string][]Steer{}}
+		answering: map[string]int{}, steers: map[string][]Steer{}}
 }
 
 // Now is the store's clock as an ISO string.
@@ -312,9 +280,7 @@ func (s *Store) RecordAssistantTurn(conversationID string, m Message) {
 	c.ActiveBranchID = strp(m.ID)
 	c.UpdatedAt = m.Timestamp
 	s.persist()
-	snap := c.Clone()
 	s.mu.Unlock()
-	s.exportSoon(snap)
 }
 
 // SettleHeld is settleHeldPart.
@@ -527,9 +493,12 @@ func WithOwnCommands(c *Conversation, viewerID string, authEnabled bool) *Conver
 	return d
 }
 
-/* ---- export to the knowledge base ---- */
+/* ---- a transcript saved to a library ---- */
 
-func (s *Store) exportPath(c *Conversation) string {
+// TranscriptName is the file a conversation's transcript is saved as in a
+// library's chat-sessions/ folder: the day it started and the start of its
+// id, so saving the chat again replaces the copy saved before.
+func TranscriptName(c *Conversation) string {
 	created := c.CreatedAt
 	if len(created) > 10 {
 		created = created[:10]
@@ -538,7 +507,16 @@ func (s *Store) exportPath(c *Conversation) string {
 	if len(id) > 8 {
 		id = id[:8]
 	}
-	return filepath.Join(s.kbRoot, ExportDir, created+"-"+id+".md")
+	return created + "-" + id + ".md"
+}
+
+// OwnerTag is the label that names who a saved transcript belongs to,
+// user-<name>; "" for a conversation with no owner.
+func OwnerTag(c *Conversation) string {
+	if c.OwnerName() == "" {
+		return ""
+	}
+	return "user-" + ownerTagRe.ReplaceAllString(strings.ToLower(c.OwnerName()), "-")
 }
 
 var ownerTagRe = regexp.MustCompile(`[^a-z0-9_-]+`)
@@ -551,22 +529,9 @@ func sliceRunes(s string, n int) string {
 	return s
 }
 
-func (s *Store) exportToKB(c *Conversation) {
-	ctx := context.Background()
-	if os.MkdirAll(filepath.Join(s.kbRoot, ExportDir), 0o755) != nil {
-		return
-	}
-	s.mu.Lock()
-	label := !s.exportDirLabeled
-	s.exportDirLabeled = true
-	s.mu.Unlock()
-	if label && s.hooks.Label != nil {
-		if s.hooks.Label(ctx, []string{ExportDir}, []string{"chat-session"}) != nil {
-			s.mu.Lock()
-			s.exportDirLabeled = false
-			s.mu.Unlock()
-		}
-	}
+// Transcript is a conversation as Markdown: its title, who started it and
+// when, then each message of the user and the assistant.
+func Transcript(c *Conversation) string {
 	firstUser := ""
 	for _, m := range c.Messages {
 		if m.Role == "user" {
@@ -608,45 +573,12 @@ func (s *Store) exportToKB(c *Conversation) {
 		}
 		lines = append(lines, body, "")
 	}
-	if os.WriteFile(s.exportPath(c), []byte(strings.Join(lines, "\n")), 0o644) != nil {
-		return
-	}
-	if c.OwnerName() != "" {
-		s.mu.Lock()
-		first := !s.ownerLabeled[c.ID]
-		s.ownerLabeled[c.ID] = true
-		s.mu.Unlock()
-		if first && s.hooks.Label != nil {
-			rel, _ := filepath.Rel(s.kbRoot, s.exportPath(c))
-			tag := "user-" + ownerTagRe.ReplaceAllString(strings.ToLower(c.OwnerName()), "-")
-			if s.hooks.Label(ctx, []string{filepath.ToSlash(rel)}, []string{tag}) != nil {
-				s.mu.Lock()
-				delete(s.ownerLabeled, c.ID)
-				s.mu.Unlock()
-			}
-		}
-	}
-	s.scheduleReindex(5*time.Second, true)
-}
-
-func (s *Store) scheduleReindex(after time.Duration, logFailure bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.indexTimer != nil {
-		s.indexTimer.Stop()
-	}
-	s.indexTimer = time.AfterFunc(after, func() {
-		if s.hooks.Reindex == nil {
-			return
-		}
-		if err := s.hooks.Reindex(context.Background(), ExportDir); err != nil && logFailure && s.hooks.Log != nil {
-			s.hooks.Log("chat-session export reindex failed (sweep will retry): " + err.Error())
-		}
-	})
+	return strings.Join(lines, "\n")
 }
 
 // Delete removes the conversations ids names that keep(c) allows; it
-// returns the ids removed.
+// returns the ids removed. A transcript someone saved to a library stays
+// there: it is a file of that library now.
 func (s *Store) Delete(ids map[string]bool, keep func(*Conversation) bool) []string {
 	s.mu.Lock()
 	var gone []*Conversation
@@ -669,10 +601,6 @@ func (s *Store) Delete(ids map[string]bool, keep func(*Conversation) bool) []str
 	var out []string
 	for _, c := range gone {
 		out = append(out, c.ID)
-		_ = os.Remove(s.exportPath(c))
-	}
-	if len(gone) > 0 {
-		s.scheduleReindex(2*time.Second, false)
 	}
 	return out
 }

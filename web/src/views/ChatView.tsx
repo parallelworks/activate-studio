@@ -34,6 +34,7 @@ import { ToolApproval } from '../components/ToolApproval'
 import { TransferNoteWatcher } from '../components/TransferNoteWatcher'
 import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCommands'
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
+import { SaveChatButton } from '../components/SaveChatButton'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -680,6 +681,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
               </div>
             </Popover>
             )}
+            {activeId && !showAttachments && <SaveChatButton conversationId={activeId} />}
             <PanelToggle className="chat-panel-toggle" />
           </div>
           {/* Managing chats hides the controls above; the panel toggle stays. */}

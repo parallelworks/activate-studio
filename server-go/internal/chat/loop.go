@@ -683,6 +683,7 @@ var changingTools = map[string]bool{
 	"run_workflow": true, "serve_model": true, "cancel_workflow_run": true,
 	"start_cluster": true, "resume_cluster": true, "stop_cluster": true, "destroy_cluster": true,
 	"transfer_files": true, "cancel_transfer": true, "save_transfer_location": true,
+	"save_chat_to_library": true,
 }
 
 // repeatedCall is the result of this exact call made earlier in the

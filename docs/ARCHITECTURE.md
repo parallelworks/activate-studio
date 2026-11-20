@@ -94,7 +94,7 @@ The provider's tokens identify the person and do nothing else. They are never se
 
 The username is a name from the provider, not a host account. `AUTH_ACCOUNT_CLAIM`, `AUTH_UID_CLAIM` and `AUTH_GID_CLAIM` name the claims that carry a host account, uid and gid where a provider releases them; the values are recorded on `req.user` and nothing acts on them yet (MULTI-USER.md, Identity mapping).
 
-That identity drives three things: conversations are stamped with an owner and the chat rail defaults to showing your own, exported transcripts record who wrote them, and model credentials are per user.
+That identity drives three things: conversations are stamped with an owner and the chat rail defaults to showing your own, a chat saved to a library records who wrote it, and model credentials are per user.
 
 Personal credentials live in a vault beside the index (`server/src/credentials.ts`), encrypted with AES-256-GCM under a key file written 0600, and never leave the server: status APIs expose the last four characters and timestamps only. A key can be stored or held in memory for a session. The interface states the trust model: a key pasted here is available to the server and its operator.
 
@@ -167,7 +167,7 @@ server/src/
   labeling.ts      label proposals for unlabelled material
   credentials.ts   per-user credential vault, shared-key promotion
   auth.ts          platform JWT verification
-  conversations.ts chat history, ownership, transcript export
+  conversations.ts chat history, ownership, saved transcripts
   attachments.ts   chat attachments
   preview.ts       office-to-PDF conversion, PDF page rendering
   model.ts         3D model parsing and cache

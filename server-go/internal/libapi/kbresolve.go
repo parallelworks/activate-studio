@@ -21,7 +21,7 @@ func ToKB(l libraries.Library) kb.Library {
 	return kb.Library{
 		ID: l.ID, Label: l.Label, IndexRoot: l.IndexRoot, SourceRoot: l.SourceRoot, CacheRoot: l.CacheRoot,
 		Writable: l.Writable, Primary: l.Primary, Pinned: l.Pinned, Indexed: l.Caps.Index,
-		ReadThrough: l.ReadThrough != nil, Site: l.Site, Space: l.Space, Bucket: l.Bucket != nil,
+		ReadThrough: l.ReadThrough != nil, Site: l.Site, Space: l.Space, SharedFrom: l.SharedFrom, Bucket: l.Bucket != nil,
 	}
 }
 
