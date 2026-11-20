@@ -5,7 +5,10 @@ import { type Engine, getEngine, setEngine } from '../labelScope'
 
 /** GET /api/chat/engine: what answers by default, and whether pw code is
  *  offered to this person (with why not). */
-interface EngineInfo { setting: 'auto' | 'pwcode' | 'studio'; default: 'pwcode' | 'studio'; pwcode: boolean; reason: string | null }
+interface EngineInfo { setting: 'auto' | 'pwcode' | 'studio'; default: 'pwcode' | 'studio'; pwcode: boolean; reason: string | null; toolsDown?: string | null }
+
+/** How the Studio's tools stand in the conversation's pw code session. */
+interface ToolsState { connected: boolean; count: number; error?: string }
 
 interface SessionInfo { url?: string; session?: string; model?: string }
 
@@ -53,10 +56,26 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
   }, [])
   useEffect(() => {
     read()
+    // A fallback changes what answers by default for a while.
     window.addEventListener('ade:model-access-changed', read)
-    return () => window.removeEventListener('ade:model-access-changed', read)
+    window.addEventListener('ade-pwcode-fallback', read)
+    return () => {
+      window.removeEventListener('ade:model-access-changed', read)
+      window.removeEventListener('ade-pwcode-fallback', read)
+    }
   }, [read])
   useEffect(() => { setChosen(getEngine(conversationId)) }, [conversationId])
+  const [tools, setTools] = useState<ToolsState | null>(null)
+  useEffect(() => {
+    setTools(null)
+    if (!open || !conversationId || !session.session) return
+    let gone = false
+    fetch(`/api/chat/pwcode/${encodeURIComponent(conversationId)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(st => { if (!gone) setTools(st?.tools ?? null) })
+      .catch(() => {})
+    return () => { gone = true }
+  }, [open, conversationId, session.session])
 
   if (!info || (!info.pwcode && info.setting !== 'pwcode' && !session.url)) return null
   const current: 'pwcode' | 'studio' = chosen || info.default
@@ -92,6 +111,14 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
           </button>
         )
       })}
+      {tools && (
+        <p className={`engine-tools ${tools.connected ? '' : 'engine-tools-off'}`}>
+          {tools.connected
+            ? `This chat's pw code session has the Studio's tools: ${tools.count} of them, the index included.`
+            : `This chat's pw code session does not have the Studio's tools${tools.error ? `: ${tools.error}` : ''}. The next message reconnects them or starts a session that has them.`}
+        </p>
+      )}
+      {!tools && info.toolsDown && <p className="engine-tools engine-tools-off">{info.toolsDown}</p>}
       {session.url && (
         <p className="engine-web">
           <ExternalLink href={session.url}>Open this chat in PW Code on the web</ExternalLink>
@@ -225,6 +252,42 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
         {a.approval.kind === 'plan' && a.approval.plan && <p className="pwcode-plan">{a.approval.plan.slice(0, 600)}</p>}
         {a.url && <p className="muted key-note"><ExternalLink href={a.url}>See it in PW Code on the web</ExternalLink></p>}
         {error && <p role="alert">{error}</p>}
+      </Callout>
+    </div>
+  )
+}
+
+/**
+ * Says why the Studio assistant answered a message pw code was to answer:
+ * pw code could not reach the Studio's tools. Shown in that conversation
+ * until it is dismissed or pw code answers there again.
+ */
+export function PWCodeNotice({ conversationId }: { conversationId: string | null }) {
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent).detail as { conversationId?: string; reason?: string }
+      if (d?.conversationId && d.reason) setNotes(n => ({ ...n, [d.conversationId as string]: d.reason as string }))
+    }
+    const answered = (e: Event) => {
+      const id = (e as CustomEvent).detail?.conversationId as string | undefined
+      if (id) setNotes(n => { const { [id]: _, ...rest } = n; return rest })
+    }
+    window.addEventListener('ade-pwcode-fallback', on)
+    window.addEventListener('ade-pwcode-session', answered)
+    return () => {
+      window.removeEventListener('ade-pwcode-fallback', on)
+      window.removeEventListener('ade-pwcode-session', answered)
+    }
+  }, [])
+  const note = conversationId ? notes[conversationId] : undefined
+  if (!note || !conversationId) return null
+  const close = () => setNotes(n => { const { [conversationId]: _, ...rest } = n; return rest })
+  return (
+    <div className="cred-banner pwcode-notice">
+      <Callout variant="bar" tone="info" title="The Studio assistant answered this message"
+        action={<Button variant="ghost" size="sm" onClick={close}>Dismiss</Button>}>
+        <p>{note}</p>
       </Callout>
     </div>
   )

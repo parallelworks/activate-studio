@@ -42,7 +42,7 @@ function stub(over: Record<string, unknown> = {}): Server {
     if (url === '/api/settings') return reply({ effective: s.saved, deploymentCredential: false })
     if (url.startsWith('/api/setup/status')) return reply({ firstRun: false, standalone: true, branding: { light: null, dark: null } })
     if (url === '/api/me/model-key') return reply({ authEnabled: false, single: true, verified: true, mode: 'none' })
-    if (url === '/api/config') return reply({ appName: 'Studio', aiEnabled: s.saved.aiEnabled, user: { id: 'u', username: 'u' } })
+    if (url === '/api/config') return reply({ appName: 'Studio', aiEnabled: s.saved.aiEnabled, platform: !!s.saved.platform, user: { id: 'u', username: 'u' } })
     if (url === '/api/chat/tools') return reply({ tools: [{ name: 'search_kb', description: 'Search the corpus', builtin: true, enabled: true }] })
     if (url === '/api/updates') return reply({ error: 'not here' }, 404)
     return reply({})
@@ -154,6 +154,32 @@ describe('Settings with AI features off', () => {
     fireEvent.click(screen.getByRole('button', { name: 'External access' }))
     expect(await screen.findByRole('switch', { name: 'Serve the grounded model' })).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: 'Delegate to concurrent agents' })).toBeInTheDocument()
+  })
+})
+
+describe('Settings, External access, What answers in chat', () => {
+  it('shows the pw code settings only on a Studio under ACTIVATE, or one set to pw code', async () => {
+    // A Studio run on its own: the Studio assistant answers, and nothing of pw code shows.
+    stub({ aiEnabled: true })
+    at('#view=settings:rag')
+    const { unmount } = render(<SettingsView />)
+    expect(await screen.findByRole('switch', { name: 'Serve MCP' })).toBeInTheDocument()
+    expect(screen.queryByText('What answers in chat')).toBeNull()
+    expect(screen.queryByText('Chat engine')).toBeNull()
+    unmount()
+
+    // Under ACTIVATE. The app's config is read once and again on this event.
+    stub({ aiEnabled: true, platform: true })
+    render(<SettingsView />)
+    window.dispatchEvent(new Event('ade:config-changed'))
+    expect(await screen.findByText('What answers in chat')).toBeInTheDocument()
+    expect(screen.getByText('Chat engine')).toBeInTheDocument()
+    expect(screen.getByText(/is what answers on a Studio without ACTIVATE/)).toBeInTheDocument()
+
+    // Leave the shared config as the other tests expect it.
+    stub()
+    window.dispatchEvent(new Event('ade:config-changed'))
+    await waitFor(() => expect(screen.queryByText('What answers in chat')).toBeNull())
   })
 })
 

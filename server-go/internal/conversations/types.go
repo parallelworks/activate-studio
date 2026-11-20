@@ -371,6 +371,16 @@ type PWCodeLink struct {
 	// a later turn tells it what came after (a reply from the Studio
 	// assistant, say).
 	LastMessage string `json:"lastMessage,omitempty"`
+	// MCPURL is where the session reaches this Studio's MCP server.
+	MCPURL string `json:"mcpUrl,omitempty"`
+	// Library and LabelScope are the conversation's scope as of its latest
+	// message, which the session's Studio tool calls run in; Tools is the
+	// kinds of tools the person left on (nil for all); ScopeNote is what
+	// the session was last told of the scope.
+	Library    []string  `json:"library,omitempty"`
+	LabelScope []string  `json:"labelScope,omitempty"`
+	Tools      *[]string `json:"tools,omitempty"`
+	ScopeNote  string    `json:"scopeNote,omitempty"`
 }
 
 type conversationFields Conversation

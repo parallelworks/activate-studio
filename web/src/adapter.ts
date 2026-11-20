@@ -128,6 +128,11 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         // pw code asks before a command; the chat's approval bar answers.
         window.dispatchEvent(new CustomEvent(event === 'pwcode_approval' ? 'ade-pwcode-approval' : 'ade-pwcode-approval-resolved', { detail: payload }))
         break
+      case 'pwcode_fallback':
+        // pw code could not reach the Studio's tools, so the Studio assistant
+        // answers this message; the chat says why.
+        window.dispatchEvent(new CustomEvent('ade-pwcode-fallback', { detail: payload }))
+        break
       case 'steer':
         // The running reply took a message queued during it (SteerBridge).
         window.dispatchEvent(new CustomEvent('ade-steer-applied', { detail: String(payload.id ?? '') }))

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PWCodeApprovals, PWCodeEngine, PWCodeWatcher } from '../src/components/PWCodeEngine'
+import { PWCodeApprovals, PWCodeEngine, PWCodeNotice, PWCodeWatcher } from '../src/components/PWCodeEngine'
 import { getEngine } from '../src/labelScope'
 
 const chat = vi.hoisted(() => ({ loadConversation: vi.fn(async () => {}) }))
@@ -8,13 +8,16 @@ vi.mock('@parallelworks/ui/ai', () => ({
   useChat: () => ({ currentConversation: { id: 'c9' }, isStreaming: false, loadConversation: chat.loadConversation }),
 }))
 
-type Engine = { setting: string; default: string; pwcode: boolean; reason: string | null }
+type Engine = { setting: string; default: string; pwcode: boolean; reason: string | null; toolsDown?: string | null }
 
 function serve(engine: Engine, conversation: Record<string, unknown> = {}) {
   const calls: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push(`${init?.method ?? 'GET'} ${url}${init?.body ? ' ' + String(init.body) : ''}`)
-    const body = url === '/api/chat/engine' ? engine : url.startsWith('/api/chat/conversations/') ? conversation : { ok: true }
+    const body = url === '/api/chat/engine' ? engine
+      : url.startsWith('/api/chat/conversations/') ? conversation
+      : url.startsWith('/api/chat/pwcode/') ? { session: 's1', status: 'idle', tools: { connected: true, count: 31 } }
+      : { ok: true }
     return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }))
   return calls
@@ -30,6 +33,7 @@ describe('What answers a conversation', () => {
     const button = await screen.findByRole('button', { name: /pw code/ })
     fireEvent.click(button)
     expect(await screen.findByRole('link', { name: /Open this chat in PW Code on the web/ })).toHaveAttribute('href', 'https://platform.example/code?session=s1')
+    expect(await screen.findByText(/has the Studio's tools: 31 of them, the index included/)).toBeInTheDocument()
     expect(screen.getByText('default')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Studio assistant/ }))
     expect(getEngine('c1')).toBe('studio')
@@ -92,5 +96,20 @@ describe('A pw code turn that outlived its stream', () => {
     await waitFor(() => expect(chat.loadConversation).toHaveBeenCalledWith('c9'))
     expect(screen.queryByText('make test')).not.toBeInTheDocument()
     vi.useRealTimers()
+  })
+})
+
+describe('When pw code cannot reach the Studio tools', () => {
+  it('says the Studio assistant answered, in that chat only, until pw code answers again', async () => {
+    serve({ setting: 'auto', default: 'studio', pwcode: true, reason: null, toolsDown: 'down' } as Engine)
+    render(<PWCodeNotice conversationId="c1" />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent('ade-pwcode-fallback', { detail: { conversationId: 'other', reason: 'not this one' } }))
+      window.dispatchEvent(new CustomEvent('ade-pwcode-fallback', { detail: { conversationId: 'c1', reason: 'pw code could not reach this Studio\'s tools (refused)' } }))
+    })
+    expect(await screen.findByText(/could not reach this Studio's tools \(refused\)/)).toBeInTheDocument()
+    expect(screen.queryByText('not this one')).not.toBeInTheDocument()
+    act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: 'c1', session: 's2' } })) })
+    await waitFor(() => expect(screen.queryByText(/could not reach/)).not.toBeInTheDocument())
   })
 })
