@@ -228,14 +228,8 @@ func (w *pdfw) drawLine(ln []lword, x, y, width, size, line float64, align strin
 		}
 		for _, p := range wd.pieces {
 			w.font(p.r, size)
-			if p.r.Link != "" {
-				w.p.SetTextColor(20, 70, 160)
-			}
 			w.p.SetXY(x, y-w.rise(p.r, size))
 			w.p.CellFormat(p.w, line, p.text, "", 0, "L", false, 0, p.r.Link)
-			if p.r.Link != "" {
-				w.p.SetTextColor(w.color[0], w.color[1], w.color[2])
-			}
 			x += p.w
 		}
 	}

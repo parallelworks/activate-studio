@@ -178,11 +178,11 @@ type pdfw struct {
 	left       float64             // content's left edge (moves with list indent)
 	right      float64             // page's right content edge
 	bottom     float64
-	color      [3]int
 	pics       map[string]*picture
 	top        float64 // the page's top margin
 	size, line float64 // body text size and line height
 	justify    bool
+	center     bool    // writing the cover page, whose text is centered
 	cm         float64 // the library's cell margin, restored after a block that changes it
 	wide       float64 // how wide the body font sets text, against Arial as 1
 	problems   []string
@@ -201,7 +201,7 @@ func newPDFWriter(pics map[string]*picture, o Options) *pdfw {
 	p := fpdf.New(orient, "pt", "Letter", "")
 	p.SetMargins(m, m, m)
 	p.SetAutoPageBreak(true, m)
-	w := &pdfw{p: p, o: o, body: "Helvetica", mono: "Courier", pics: pics, top: m, size: o.pdfSize(), justify: o.Justify}
+	w := &pdfw{p: p, o: o, body: "Helvetica", mono: "Courier", pics: pics, top: m, size: o.pdfSize(), justify: !o.Left}
 	w.line = o.pdfLine(w.size)
 	w.cm = p.GetCellMargin()
 	w.wide = 1
@@ -278,14 +278,13 @@ func (w *pdfw) running(text string, y float64) {
 		}
 		t = w.tr(strings.TrimSpace(string(rs)) + "...")
 	}
-	w.p.SetTextColor(120, 120, 120)
 	w.p.SetXY(m, y)
 	w.p.CellFormat(pw-2*m, 10, t, "", 0, "C", false, 0, "")
-	w.p.SetTextColor(w.color[0], w.color[1], w.color[2])
 	w.cov = cov
 }
 
-func renderPDF(blocks []Block, pics map[string]*picture, o Options) ([]byte, int, []string, error) {
+func renderPDF(doc doc, pics map[string]*picture, o Options) ([]byte, int, []string, error) {
+	blocks := doc.all()
 	w := newPDFWriter(pics, o)
 	p, m := w.p, w.top
 	if t := Title(blocks); t != "" {
@@ -302,14 +301,28 @@ func renderPDF(blocks []Block, pics map[string]*picture, o Options) ([]byte, int
 		})
 	}
 	p.SetFooterFunc(func() {
-		// The footer's text sits on the line above the page's number.
+		// The footer's text sits on the line above the page's number. A
+		// cover page has no number, and the pages after it are numbered
+		// from 1.
 		if o.Footer != "" {
 			w.running(o.Footer, ph-m/2-11)
 		}
-		w.running(strconv.Itoa(p.PageNo()), ph-m/2)
+		n := p.PageNo()
+		if doc.cover != nil {
+			n--
+		}
+		if n > 0 {
+			w.running(strconv.Itoa(n), ph-m/2)
+		}
 	})
 	p.AddPage()
-	w.blocks(blocks, 0)
+	if doc.cover != nil {
+		w.center = true
+		w.blocks(doc.cover, 0)
+		w.center = false
+		p.AddPage()
+	}
+	w.blocks(doc.body, 0)
 	if err := p.Error(); err != nil {
 		return nil, 0, nil, err
 	}
@@ -369,9 +382,7 @@ func (w *pdfw) runs(rs []Run, size, line float64) {
 	for _, r := range rs {
 		w.font(r, size)
 		if r.Link != "" {
-			w.p.SetTextColor(20, 70, 160)
 			w.p.WriteLinkString(line, w.tr(r.Text), r.Link)
-			w.p.SetTextColor(w.color[0], w.color[1], w.color[2])
 			continue
 		}
 		if up := w.rise(r, size); up > 0 {
@@ -391,6 +402,12 @@ func (w *pdfw) runs(rs []Run, size, line float64) {
 // only a single-style MultiCell, so the words are placed here one by one.
 // It leaves the cursor on the paragraph's last line, as runs does.
 func (w *pdfw) flow(rs []Run, size, line float64) {
+	w.flowAligned(rs, size, line, "J")
+}
+
+// flowAligned writes inline text in lines justified (J), or centered (C)
+// or left-aligned (L) without stretching.
+func (w *pdfw) flowAligned(rs []Run, size, line float64, align string) {
 	// Between the same edges as unjustified text, which the library sets
 	// a cell margin inside the page margins.
 	width := w.right - w.left - 2*w.p.GetCellMargin()
@@ -405,7 +422,7 @@ func (w *pdfw) flow(rs []Run, size, line float64) {
 			y = w.p.GetY()
 		}
 		// Stretched unless the paragraph or a hard break ends the line.
-		if i+1 < len(lines) && len(lines[i+1]) > 0 && lines[i+1][0].brk == 0 {
+		if align == "J" && i+1 < len(lines) && len(lines[i+1]) > 0 && lines[i+1][0].brk == 0 {
 			gaps := 0
 			for k := 1; k < len(ln); k++ {
 				if ln[k].space > 0 {
@@ -422,7 +439,11 @@ func (w *pdfw) flow(rs []Run, size, line float64) {
 				}
 			}
 		}
-		w.drawLine(ln, w.left, y, width, size, line, "L")
+		draw := align
+		if draw == "J" {
+			draw = "L"
+		}
+		w.drawLine(ln, w.left, y, width, size, line, draw)
 	}
 	w.p.SetXY(w.left, y)
 }
@@ -517,6 +538,13 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 		switch b.Kind {
 		case KHeading:
 			size := w.headingSize(b.Level)
+			if w.center {
+				// The cover's title and subtitle, as in the Word document.
+				size = 13
+				if b.Level == 1 {
+					size = 18
+				}
+			}
 			if i > 0 {
 				w.space(size * 0.8)
 			}
@@ -533,7 +561,11 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 				r.Bold = true
 				rs[k] = r
 			}
-			w.runs(rs, size, size*1.3)
+			if w.center {
+				w.flowAligned(rs, size, size*1.3, "C")
+			} else {
+				w.runs(rs, size, size*1.3)
+			}
 			w.p.Ln(size * 1.3)
 			w.space(size * 0.35)
 		case KPara:
@@ -542,7 +574,9 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 				w.ensure(w.room(bs[i:]))
 			}
 			w.p.SetX(w.left)
-			if w.justify {
+			if w.center {
+				w.flowAligned(b.Runs, w.size, w.line, "C")
+			} else if w.justify {
 				w.flow(b.Runs, w.size, w.line)
 			} else {
 				w.runs(b.Runs, w.size, w.line)
@@ -596,11 +630,7 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 			saved := w.left
 			w.left = saved + 14
 			w.p.SetLeftMargin(w.left)
-			w.color = [3]int{85, 85, 85}
-			w.p.SetTextColor(85, 85, 85)
 			w.blocks(b.Children, depth)
-			w.color = [3]int{0, 0, 0}
-			w.p.SetTextColor(0, 0, 0)
 			w.left = saved
 			w.p.SetLeftMargin(saved)
 			if y1 := w.p.GetY(); y1 > y0 {
@@ -610,11 +640,8 @@ func (w *pdfw) blocks(bs []Block, depth int) {
 				w.p.SetLineWidth(0.5)
 			}
 		case KRule:
-			y := w.p.GetY() + 4
-			w.p.SetDrawColor(200, 200, 200)
-			w.p.SetLineWidth(0.5)
-			w.p.Line(w.left, y, w.right, y)
-			w.p.Ln(12)
+			// Space between sections; the document draws no divider lines.
+			w.space(w.line)
 		case KTable:
 			w.table(b)
 			w.space(8)

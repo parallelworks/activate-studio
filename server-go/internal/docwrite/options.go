@@ -10,7 +10,8 @@ import (
 // the top of its Markdown:
 //
 //	---
-//	align: justify
+//	cover: true
+//	align: left
 //	orientation: landscape
 //	font: Times New Roman
 //	size: 11
@@ -20,12 +21,20 @@ import (
 //	footer: Quarterly report
 //	---
 //
-// Anything left out keeps its default: left-aligned body text, portrait
-// US Letter, a sans-serif font at 10.5 pt (11 pt in Word), one-inch
-// margins, lines 1.15 apart, a page number alone at the foot of the page.
+// Anything left out keeps its default: justified body text, portrait US
+// Letter, a sans-serif font at 10.5 pt (11 pt in Word), one-inch margins,
+// lines 1.15 apart, a page number alone at the foot of the page, no cover,
+// and a paragraph's leading label set in italic with a colon.
 type Options struct {
-	Justify   bool
+	Left      bool // body text left-aligned, not justified
 	Landscape bool
+	// Cover makes what comes before the first page break a cover page:
+	// centered, and not numbered, with the pages after it numbered from 1.
+	Cover bool
+	// AsWritten keeps a paragraph's leading label as the Markdown sets it,
+	// where by default a bold or italic label that ends in a period or a
+	// colon is set in italic with a colon (see leaders.go).
+	AsWritten bool
 	Serif     bool    // a serif face (Times New Roman or its metric twin)
 	Font      string  // the Word font name; "" for Calibri, or Times New Roman when Serif
 	Size      float64 // body size in points; 0 for the default
@@ -39,7 +48,7 @@ type Options struct {
 const maxRunningText = 120
 
 // OptionKeys names the front matter keys, for the tool's description.
-const OptionKeys = "align (left or justify), orientation (portrait or landscape), font (a family such as Times New Roman, Arial or Calibri, or serif or sans), size (body text in points, 8 to 16), margin (inches, 0.5 to 2), spacing (line spacing, 1 to 2), header and footer (a short line of text centered at the top and bottom of every page)"
+const OptionKeys = "cover (true makes what comes before the first \\newpage a centered cover page without a number, with the pages after it numbered from 1), align (justify or left), leaders (italic, the default, or as-written), orientation (portrait or landscape), font (a family such as Times New Roman, Arial or Calibri, or serif or sans), size (body text in points, 8 to 16), margin (inches, 0.5 to 2), spacing (line spacing, 1 to 2), header and footer (a short line of text centered at the top and bottom of every page)"
 
 // SplitFrontMatter takes the options from Markdown that opens with a ---
 // block of key: value lines, and returns the rest. Markdown without one
@@ -87,11 +96,27 @@ func SplitFrontMatter(src string) (Options, string, []string) {
 		switch k {
 		case "align", "alignment", "text-align", "text_align":
 			switch lv {
-			case "justify", "justified", "both":
-				o.Justify = true
-			case "left", "":
+			case "justify", "justified", "both", "":
+			case "left":
+				o.Left = true
 			default:
-				problems = append(problems, fmt.Sprintf("align %q is not left or justify", v))
+				problems = append(problems, fmt.Sprintf("align %q is not justify or left", v))
+			}
+		case "cover", "cover-page", "cover_page", "coverpage":
+			switch lv {
+			case "true", "yes", "on", "1":
+				o.Cover = true
+			case "false", "no", "off", "0", "":
+			default:
+				problems = append(problems, fmt.Sprintf("cover %q is not true or false", v))
+			}
+		case "leaders", "leader", "lead-ins", "leadins":
+			switch lv {
+			case "italic", "":
+			case "as-written", "as written", "keep", "off", "none":
+				o.AsWritten = true
+			default:
+				problems = append(problems, fmt.Sprintf("leaders %q is not italic or as-written", v))
 			}
 		case "orientation", "layout":
 			switch lv {
@@ -206,8 +231,11 @@ func (o Options) marginPt() float64 {
 // describe names the options set, for the note on what was made.
 func (o Options) describe() string {
 	var parts []string
-	if o.Justify {
-		parts = append(parts, "justified")
+	if o.Cover {
+		parts = append(parts, "with a cover page")
+	}
+	if o.Left {
+		parts = append(parts, "left-aligned")
 	}
 	if o.Landscape {
 		parts = append(parts, "landscape")

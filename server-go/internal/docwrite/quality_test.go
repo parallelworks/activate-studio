@@ -133,7 +133,7 @@ func TestPDFTableKeepsWordsWhole(t *testing.T) {
 		o        Options
 	}{
 		{"six columns", narrowTable, Options{}},
-		{"six columns, serif, justified", narrowTable, Options{Serif: true, Justify: true, Size: 11}},
+		{"six columns, serif, justified", narrowTable, Options{Serif: true, Size: 11}},
 		{"eleven columns", wideTable, Options{}},
 		{"eleven columns, serif", wideTable, Options{Serif: true, Size: 11}},
 		{"eleven columns, large text", wideTable, Options{Size: 14, Landscape: true}},
@@ -312,7 +312,10 @@ func TestFrontMatterPageFurniture(t *testing.T) {
 		{"footer:   spaced    out  ", Options{Footer: "spaced out"}, 0, `(footer "spaced out")`},
 		{"header: " + strings.Repeat("long ", 30), Options{}, 1, ""},
 		{"header:", Options{}, 0, ""},
-		{"align: justify\nfooter: Sample\nheadr: x", Options{Justify: true, Footer: "Sample"}, 1, `(justified, footer "Sample")`},
+		{"align: justify\nfooter: Sample\nheadr: x", Options{Footer: "Sample"}, 1, `(footer "Sample")`},
+		{"align: left\ncover: true", Options{Left: true, Cover: true}, 0, "(with a cover page, left-aligned)"},
+		{"leaders: as-written", Options{AsWritten: true}, 0, ""},
+		{"cover: maybe\nleaders: bold", Options{}, 2, ""},
 	}
 	for _, c := range cases {
 		o, body, problems := SplitFrontMatter("---\n" + c.front + "\n---\nText\n")
@@ -642,7 +645,7 @@ func TestKeepTogether(t *testing.T) {
 		}
 	}
 	parts, _ := docxParts(t, "*Table 1:* Figures.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n")
-	if doc := parts["word/document.xml"]; !strings.Contains(doc, "<w:p><w:pPr><w:keepNext/></w:pPr>") || !strings.Contains(doc, "<w:pPr><w:keepNext/><w:spacing") {
+	if doc := parts["word/document.xml"]; !strings.Contains(doc, "<w:p><w:pPr><w:keepNext/><w:jc w:val=\"both\"/></w:pPr>") || !strings.Contains(doc, "<w:pPr><w:keepNext/><w:spacing") {
 		t.Error("the caption and header row are not kept with what follows")
 	}
 }
