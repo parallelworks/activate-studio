@@ -555,6 +555,16 @@ func (m *Module) download(w http.ResponseWriter, r *http.Request) error {
 		if LibraryResolver == nil {
 			return Error(409, "%s has no files on this host", lib.Label)
 		}
+		// A folder, which the Library names with folder=1, comes down as a
+		// zip of its files, each read as a download of it is.
+		if qs(r, "folder") == "1" {
+			name := zipName(lib, sub)
+			files, err := m.remoteFolderFiles(r, lib, sub, name)
+			if err != nil {
+				return err
+			}
+			return m.zipOrSize(w, r, lib, name, files)
+		}
 		name, data, err := LibraryResolver.Download(r, lib, sub)
 		if err != nil {
 			return err
@@ -577,6 +587,16 @@ func (m *Module) download(w http.ResponseWriter, r *http.Request) error {
 	abs, err := Resolve(sub, root)
 	if err != nil {
 		return err
+	}
+	// A folder comes down as a zip when the Library names it a folder;
+	// otherwise a folder is not a file to download.
+	if st, err := os.Lstat(abs); err == nil && st.IsDir() && qs(r, "folder") == "1" {
+		name := zipName(lib, sub)
+		files, err := localFolderFiles(abs, name)
+		if err != nil {
+			return err
+		}
+		return m.zipOrSize(w, r, lib, name, files)
 	}
 	return sendFile(w, abs, map[string]string{"Content-Type": MimeFor(abs), "Content-Disposition": contentDisposition(filepath.Base(abs))})
 }

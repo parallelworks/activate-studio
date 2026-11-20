@@ -162,7 +162,10 @@ func (b *Bridge) SaveURL(path, name string) (string, error) {
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
 		return "", errors.New("not a path on the Studio")
 	}
-	res, err := (&http.Client{Timeout: 5 * time.Minute}).Get(fmt.Sprintf("http://127.0.0.1:%d%s", b.app.sup.Port(), path))
+	// The Studio answers within minutes; a folder's zip is made as it is
+	// sent, so the whole transfer may take far longer.
+	client := &http.Client{Timeout: 2 * time.Hour, Transport: &http.Transport{ResponseHeaderTimeout: 5 * time.Minute}}
+	res, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d%s", b.app.sup.Port(), path))
 	if err != nil {
 		return "", err
 	}
