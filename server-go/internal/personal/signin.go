@@ -218,9 +218,10 @@ func misplaced(staging string, since time.Time) string {
 	return ""
 }
 
+// has: dir holds a sign-in the CLI saved there as PW_CREDENTIALS_DIR.
 func (s *SignIns) has(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "credentials"))
-	return err == nil
+	fi, err := os.Stat(platform.CredentialsIn(dir))
+	return err == nil && fi.Mode().IsRegular()
 }
 
 func readRecord(dir string) *record {
@@ -377,7 +378,7 @@ func (s *SignIns) finish(owner, username, host, staging string, started time.Tim
 		// the person's home here, where it also looks for it later; a copy
 		// in the sign-in folder marks it as kept.
 		if p := misplaced(staging, started); p != "" {
-			if b, err := os.ReadFile(p); err == nil && os.WriteFile(filepath.Join(staging, "credentials"), b, 0o600) == nil {
+			if b, err := os.ReadFile(p); err == nil && os.WriteFile(filepath.Join(staging, ".credentials"), b, 0o600) == nil {
 				s.logOutput("personal sign-in: the pw CLI saved it under its home folder, not PW_CREDENTIALS_DIR, and it was kept from there", staging, out)
 			}
 		}
@@ -391,7 +392,7 @@ func (s *SignIns) finish(owner, username, host, staging string, started time.Tim
 		case waitErr != nil:
 			return fail("The pw CLI stopped before the sign-in finished (" + waitErr.Error() + "). The server log has its output.")
 		default:
-			return fail("The pw CLI reported the sign-in as finished but saved it where the Studio cannot find it, which a pw CLI older than the Studio expects does. Ask the operator to update the pw CLI on this server; the server log has its version and output.")
+			return fail("The pw CLI reported the sign-in as finished, but the Studio did not find it where the CLI saves it. The server log lists what the CLI left and its version.")
 		}
 	}
 	who, err := s.exec(context.Background(), staging, 30*time.Second, "auth", "whoami")
@@ -448,7 +449,14 @@ func (s *SignIns) logOutput(msg, dir, out string) {
 		return
 	}
 	version, _ := s.exec(context.Background(), dir, 10*time.Second, "--version")
-	s.Log.Warn(msg, "cli", s.CLI(), "version", strings.TrimSpace(firstLine(version)), "output", strings.TrimSpace(platform.StripANSI(out)))
+	// The names of what the CLI left in the sign-in folder, never contents.
+	var left []string
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			left = append(left, e.Name())
+		}
+	}
+	s.Log.Warn(msg, "cli", s.CLI(), "version", strings.TrimSpace(firstLine(version)), "left", strings.Join(left, " "), "output", strings.TrimSpace(platform.StripANSI(out)))
 }
 
 // signOut ends the sign-in in dir on the platform, best effort, and removes it.

@@ -11,6 +11,7 @@ import (
 )
 
 // fakeCLI is a pw CLI for tests: device sign-in waits for $CTL/approve,
+// then saves .credentials in PW_CREDENTIALS_DIR, as the real CLI does;
 // whoami prints $CTL/who, token prints a numbered token and notes overlap,
 // logout is counted. It records the PW_API_KEY and PW_CONTEXT it saw.
 const fakeCLI = `#!/bin/bash
@@ -33,7 +34,7 @@ case "$1 $2" in
       if [ -e "$ctl/oldcli" ]; then
         mkdir -p "$HOME/.config/pw"; echo '{"identities":{}}' > "$HOME/.config/pw/credentials"; exit 0
       fi
-      echo '{"identities":{}}' > "$PW_CREDENTIALS_DIR/credentials"
+      echo '{"identities":{}}' > "$PW_CREDENTIALS_DIR/.credentials"
       exit 0
     fi
     sleep 0.05

@@ -43,14 +43,33 @@ type storeCache struct {
 	ok    bool
 }
 
-// CredentialsFile is pwCredentialsFile: PW_CREDENTIALS_DIR, as the CLI
-// reads it, else ~/.config/pw, then credentials.
+// CredentialsFile is the pw CLI's credentials file, as the CLI finds it:
+// in PW_CREDENTIALS_DIR (CredentialsIn), else ~/.config/pw/credentials.
 func (p *Platform) CredentialsFile() string {
-	dir := p.Getenv("PW_CREDENTIALS_DIR")
-	if dir == "" {
-		dir = filepath.Join(p.home, ".config", "pw")
+	if dir := p.Getenv("PW_CREDENTIALS_DIR"); dir != "" {
+		return CredentialsIn(dir)
 	}
-	return filepath.Join(dir, "credentials")
+	return filepath.Join(p.home, ".config", "pw", "credentials")
+}
+
+// CredentialsIn is the pw CLI's credentials file in dir, a
+// PW_CREDENTIALS_DIR. The CLI reads and writes .credentials there (seen
+// with v7.135 to v7.141); credentials, the name in ~/.config/pw, is read
+// where only it exists, as in a folder copied from there.
+func CredentialsIn(dir string) string {
+	dot := filepath.Join(dir, ".credentials")
+	if _, err := os.Stat(dot); err == nil {
+		return dot
+	}
+	if plain := filepath.Join(dir, "credentials"); fileExists(plain) {
+		return plain
+	}
+	return dot
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.Mode().IsRegular()
 }
 
 func str(v any) string { s, _ := v.(string); return s }
