@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 )
 
 // Keys is the platform key a library's owner acts with (userLibraries.ts
@@ -52,12 +54,14 @@ func (k DeploymentKeys) KeyOf(owner string) string {
 // token about to expire.
 // TODO(access track): replace with the access package's, which renews.
 func CLICredential(get func(string) string) string {
-	dir := get("PW_CREDENTIALS_DIR")
-	if dir == "" {
+	file := ""
+	if dir := get("PW_CREDENTIALS_DIR"); dir != "" {
+		file = platform.CredentialsIn(dir)
+	} else {
 		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".config", "pw")
+		file = filepath.Join(home, ".config", "pw", "credentials")
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "credentials"))
+	b, err := os.ReadFile(file)
 	if err != nil {
 		return ""
 	}
