@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
@@ -399,6 +400,23 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 			return bad(f.key + " must be JSON")
 		}
 		set(f.key, raw)
+	}
+	if _, ok := in("chatEngine"); ok {
+		v := jsval.Trim(str("chatEngine"))
+		if !slices.Contains(settings.ChatEngines, v) {
+			return bad("chatEngine must be auto, pwcode or studio")
+		}
+		set("chatEngine", v)
+	}
+	if _, ok := in("pwcodeModel"); ok {
+		set("pwcodeModel", orNil(jsval.Slice(jsval.Trim(str("pwcodeModel")), 120)))
+	}
+	if _, ok := in("pwcodePermissionMode"); ok {
+		v := jsval.Trim(str("pwcodePermissionMode"))
+		if !slices.Contains(settings.PWCodeModes, v) {
+			return bad("pwcodePermissionMode must be read-only, accept-edits, auto, plan or empty")
+		}
+		set("pwcodePermissionMode", orNil(v))
 	}
 	if v, ok := in("updates"); ok {
 		if !jsval.IsObject(v) {

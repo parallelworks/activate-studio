@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 )
@@ -50,7 +51,7 @@ func boardToolName(raw json.RawMessage) string {
 }
 
 // exposedTools is the corpus tools this deployment exposes, in TOOL_SPECS
-// order, without those turned off.
+// order, without those turned off. mcpExposed holds only tools that read.
 func (m *Module) exposedTools() []json.RawMessage {
 	disabled := map[string]bool{}
 	for _, n := range m.eff().DisabledTools {
@@ -59,7 +60,10 @@ func (m *Module) exposedTools() []json.RawMessage {
 	out := []json.RawMessage{}
 	for _, s := range builtinSpecs {
 		if contains(mcpExposed, s.Name) && !disabled[s.Name] {
-			b, _ := jsonobj.Marshal(reqbody.O("name", s.Name, "description", s.Description, "inputSchema", s.Parameters))
+			// Each only reads (MCP's readOnlyHint), so an agent in a read-only
+			// mode may call it.
+			b, _ := jsonobj.Marshal(reqbody.O("name", s.Name, "description", s.Description, "inputSchema", s.Parameters,
+				"annotations", reqbody.O("readOnlyHint", true, "destructiveHint", false, "openWorldHint", false)))
 			out = append(out, b)
 		}
 	}
@@ -107,6 +111,21 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	token := taskBearer(r)
+	// A pw code chat session's token acts as the person it was made for
+	// (pwcodechat.go); it is not a task token.
+	chatGrant := false
+	if ct, ok := m.openChatToken(token); ok {
+		cfg := m.A.Cfg
+		if ct.User == nil && cfg.AuthEnabled() {
+			return reqbody.JSON(w, 401, reqbody.O("error", "authentication required"))
+		}
+		if ct.User != nil {
+			r = auth.WithUser(r, ct.User)
+		}
+		token, chatGrant = "", true
+	} else if strings.HasPrefix(token, chatTokenPrefix) {
+		return reqbody.JSON(w, 401, reqbody.O("error", "this chat's pw code token is not valid here; send a new message to renew it"))
+	}
 	board := m.A.Providers.TaskBoard
 	if token != "" && board == nil {
 		// TODO(platform track): the task board's tokens are Node's (tasks.ts).
@@ -134,7 +153,7 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if !m.eff().McpEnabled {
+	if !m.eff().McpEnabled && !chatGrant {
 		return reqbody.JSON(w, 403, reqbody.O("error", "MCP access is disabled for this deployment (Settings, MCP access)"))
 	}
 	msg := jsonobj.New()

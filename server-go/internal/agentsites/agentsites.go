@@ -268,6 +268,12 @@ func (s *Sites) defaultWorkspace(objective string) string {
 	return "~/studio-agents/" + stamp + "-" + slug
 }
 
+// MakeWorkspace makes ws on site (as the key's owner there) and gives it
+// as an absolute path; ws is absolute or under ~, $HOME or $WORKDIR.
+func (s *Sites) MakeWorkspace(ctx context.Context, site, key, ws string) (string, error) {
+	return s.makeWorkspace(ctx, site, key, ws)
+}
+
 // makeWorkspace makes the workspace and gives it as an absolute path.
 func (s *Sites) makeWorkspace(ctx context.Context, site, key, ws string) (string, error) {
 	if !workspaceRe.MatchString(ws) {

@@ -54,6 +54,9 @@ interface Effective {
   maxToolRounds: number
   delegationMaxDepth: number
   agentExecution: 'runner' | 'sessions' | 'both'
+  chatEngine: 'auto' | 'pwcode' | 'studio'
+  pwcodeModel: string
+  pwcodePermissionMode: '' | 'read-only' | 'accept-edits' | 'auto' | 'plan'
   voiceEnabled: boolean
   voiceUrl: string
   ragProxyEnabled: boolean
@@ -135,6 +138,20 @@ const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
   { value: 'runner', label: 'Studio runner: one-shot pw code runs' },
   { value: 'sessions', label: 'pw code sessions' },
   { value: 'both', label: 'Both, chosen per task' },
+]
+
+const CHAT_ENGINES: SelectItem<Effective['chatEngine']>[] = [
+  { value: 'auto', label: 'Automatic: pw code under ACTIVATE, else the Studio assistant' },
+  { value: 'pwcode', label: 'pw code' },
+  { value: 'studio', label: 'The Studio assistant' },
+]
+
+const PWCODE_MODES: SelectItem<Effective['pwcodePermissionMode']>[] = [
+  { value: '', label: "pw code's default (asks before commands)" },
+  { value: 'read-only', label: 'Read only: no edits or commands' },
+  { value: 'accept-edits', label: 'Accept edits, ask before commands' },
+  { value: 'auto', label: 'Auto: pw code decides what to ask' },
+  { value: 'plan', label: 'Plan first' },
 ]
 
 type SectionId = 'general' | 'indexing' | 'transfers' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
@@ -932,6 +949,27 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               </CopyCodeBlock>
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
               {aiEnabled && <>
+              <div className="tool-group">What answers in chat</div>
+              <p className="muted view-sub">
+                pw code is the ACTIVATE agent harness. A chat it answers runs in a pw code session of the person
+                chatting, which works in files, runs commands they approve, searches these libraries through this
+                Studio's MCP server, and shows in PW Code on the web. On a Studio several people use, each session
+                runs as its person through their own ACTIVATE sign-in. The Studio assistant answers with this
+                Studio's own tools and models. People can switch either way in the chat bar.
+              </p>
+              <div className="settings-grid">
+                <Field label="Chat engine">
+                  <Select items={CHAT_ENGINES} value={form.chatEngine ?? 'auto'} onValueChange={v => v && setForm({ ...form, chatEngine: v })} />
+                </Field>
+                <Field label="pw code model" description="The model new pw code chats start with. Empty uses the pw code default.">
+                  <Input value={form.pwcodeModel ?? ''} placeholder="pw code default" onChange={e => setForm({ ...form, pwcodeModel: e.target.value })} />
+                </Field>
+                <Field label="pw code permissions" description="What new pw code chats may do without asking. The library tools only read, so they never ask.">
+                  <Select items={PWCODE_MODES} value={form.pwcodePermissionMode ?? ''} onValueChange={v => setForm({ ...form, pwcodePermissionMode: v ?? '' })} />
+                </Field>
+              </div>
+              {saveRow(false)}
+
               <div className="tool-group">Delegation (the assistant working in parallel)</div>
               <p className="muted view-sub">
                 With this on, the assistant may split a request into subtasks and run them concurrently as headless

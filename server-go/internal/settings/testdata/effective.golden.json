@@ -78,7 +78,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -142,7 +145,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -206,7 +212,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -276,7 +285,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -358,7 +370,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -433,7 +448,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -504,7 +522,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -586,7 +607,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -668,7 +692,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -750,7 +777,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  },
  {
@@ -832,7 +862,10 @@
    "hpcStatusWorkflow": "hpc_status",
    "chatTemplateKwargs": "{\"qwen\":{\"enable_thinking\":false},\"gpt-oss\":{\"reasoning_effort\":\"low\"}}",
    "chatModelWindows": "{\"qwen\":57344,\"gpt-oss\":65536}",
-   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}"
+   "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
+   "chatEngine": "auto",
+   "pwcodeModel": "",
+   "pwcodePermissionMode": ""
   }
  }
 ]

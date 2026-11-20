@@ -638,6 +638,20 @@ func (s *Store) Rename(id string, title *string) *Conversation {
 	return c.Clone()
 }
 
+// SetPWCode records (or, with nil, forgets) the pw code session a
+// conversation runs in; false when the conversation is gone.
+func (s *Store) SetPWCode(id string, link *PWCodeLink) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.find(id)
+	if c == nil {
+		return false
+	}
+	c.PWCode = link
+	s.persist()
+	return true
+}
+
 // Sorted is the conversations newest first by creation.
 func Sorted(cs []*Conversation) []*Conversation {
 	sort.SliceStable(cs, func(i, j int) bool { return cs[i].CreatedAt > cs[j].CreatedAt })
