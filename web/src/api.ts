@@ -283,9 +283,9 @@ async function sendJson<T>(method: string, url: string, body?: unknown): Promise
 }
 
 let warmedAt = 0
-/** Asks the server to open the ssh connections to the hosts of the viewer's
- *  libraries, at most every two minutes, without waiting; Search and Query
- *  call it as they open. Nothing is shown either way. */
+/** Asks the server to open the sessions to the hosts of the viewer's
+ *  libraries, at most every two minutes, without waiting; the Library, Search
+ *  and Query call it as they open. Nothing is shown either way. */
 export function warmRemoteHosts(now = Date.now()): void {
   if (now - warmedAt < 120_000) return
   warmedAt = now

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
@@ -103,6 +104,26 @@ func (k kbResolver) Download(r *http.Request, lib kb.Library, rel string) (strin
 		return k.s.DownloadOriginal(r.Context(), l, rel, viewer)
 	}
 	return k.s.Engine.RemoteDownload(r.Context(), l.IndexRoot, rel)
+}
+
+// Stat is a file's size and time on the system a viewer's own library is
+// on, read with their key in one round trip; -1 for every other library.
+func (k kbResolver) Stat(r *http.Request, lib kb.Library, rel string) (int64, int64, error) {
+	if lib.Site == "" || lib.Bucket || lib.ReadThrough {
+		return -1, 0, nil
+	}
+	t, err := k.s.Engine.Target(lib.IndexRoot)
+	if err != nil {
+		return 0, 0, err
+	}
+	if t == nil || t.SourceRoot == "" || k.s.Engine.Pool.IsDirect(t.Site) {
+		return -1, 0, nil
+	}
+	o, err := k.s.Engine.StatRemoteFile(r.Context(), t.Site, t.Key, t.SourceRoot, rel, 60*time.Second)
+	if err != nil {
+		return 0, 0, err
+	}
+	return o.Size, o.Mtime, nil
 }
 
 func (k kbResolver) Aggregate(ctx context.Context, indexRoot string, stages []string) (string, error) {

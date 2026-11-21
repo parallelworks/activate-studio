@@ -85,7 +85,7 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	if err := m.sameAccount(r.Context(), d.Site, key, uid); err != nil {
 		return nil, w, "", nil, err
 	}
-	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: d.Site, KeyText: key, Dir: root, Name: d.Label, Timeout: 10 * time.Minute, Private: true}
+	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: d.Site, KeyText: key, Dir: root, Name: d.Label, Timeout: 10 * time.Minute, Private: true, Kept: true}
 	return fs, w, owner, d, nil
 }
 

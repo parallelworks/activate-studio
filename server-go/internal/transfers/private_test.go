@@ -15,6 +15,13 @@ import (
 // removals to where it points, even inside the location; elsewhere a link
 // inside the location is followed as before.
 func TestPrivateWritesDoNotFollowLinks(t *testing.T) {
+	privateLinks(t, func(root string, private bool) *RemoteFS {
+		return &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: private}
+	})
+}
+
+// privateLinks is the test above over the location mk makes.
+func privateLinks(t *testing.T, mk func(root string, private bool) *RemoteFS) {
 	ctx := context.Background()
 	root := t.TempDir()
 	write(t, filepath.Join(root, "private", "diary.txt"), "mine")
@@ -25,7 +32,7 @@ func TestPrivateWritesDoNotFollowLinks(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "private", "diary.txt"), filepath.Join(root, "team", "diary-link")); err != nil {
 		t.Fatal(err)
 	}
-	fs := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: true}
+	fs := mk(root, true)
 	if _, err := fs.Write(ctx, "team/door/dropped.txt", bytes.NewReader([]byte("x")), 0, 0o644); err == nil {
 		t.Fatal("a write through a link was taken")
 	}
@@ -67,7 +74,7 @@ func TestPrivateWritesDoNotFollowLinks(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "private"), filepath.Join(root, "team", "door")); err != nil {
 		t.Fatal(err)
 	}
-	open := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "loc"}
+	open := mk(root, false)
 	if err := open.Mkdir(ctx, "team/door/sub"); err != nil {
 		t.Fatal(err)
 	}

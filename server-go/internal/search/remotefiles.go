@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -284,6 +285,36 @@ func (e *Engine) ReadRemoteFile(ctx context.Context, site, key, sourceRoot, rel 
 		return o.Set("truncated", false).Set("content", nil).Set("source", "none"), nil
 	}
 	return o.Set("truncated", kb.UTF16Len(body) > PreviewBytes).Set("content", kb.SliceUTF16(body, PreviewBytes)).Set("source", "raw"), nil
+}
+
+// RemoteStat is a file's size and modification time on a host.
+type RemoteStat struct{ Size, Mtime int64 }
+
+// StatRemoteFile is the size and time of one file under sourceRoot on a
+// host, in one round trip.
+func (e *Engine) StatRemoteFile(ctx context.Context, site, key, sourceRoot, rel string, timeout time.Duration) (RemoteStat, error) {
+	if e.Pool.IsDirect(site) {
+		return RemoteStat{}, apierr.New(409, "%s", noFilesThere(site))
+	}
+	if sourceRoot == "" {
+		return RemoteStat{}, apierr.New(409, "%s", noSourceRoot)
+	}
+	sub, err := CleanRel(rel)
+	if err != nil {
+		return RemoteStat{}, err
+	}
+	r, err := e.Pool.Run(ctx, site, key, []string{"bash", "-c", statFn + ` "%s %Y" "%z %m" "$1"`, "_", path.Join(sourceRoot, sub)}, timeout)
+	if err != nil {
+		return RemoteStat{}, err
+	}
+	if r.Code != 0 {
+		return RemoteStat{}, apierr.New(404, "%s: %s", remote.SiteName(site), lastStderrLine(r.Stderr))
+	}
+	var st RemoteStat
+	if _, err := fmt.Sscanf(strings.TrimSpace(r.Stdout), "%d %d", &st.Size, &st.Mtime); err != nil {
+		return RemoteStat{}, apierr.New(502, "%s did not say the file's size", remote.SiteName(site))
+	}
+	return st, nil
 }
 
 // RemoteDownload is remoteDownload: a file of a library on another
