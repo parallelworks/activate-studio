@@ -89,7 +89,7 @@ describe('Continue in Studio', () => {
     localStorage.clear(); location.hash = ''; calls = []
   })
   afterEach(() => { vi.unstubAllGlobals() })
-  function serve(chats: Here['chats'] = []) {
+  function serve(chats: Here['chats'] = [], refuse = '') {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}${init?.body ? ' ' + String(init.body) : ''}`)
       const confirmed = String(init?.body ?? '').includes('"confirmed":true')
@@ -101,6 +101,9 @@ describe('Continue in Studio', () => {
         : url.startsWith('/api/code-sessions/item') ? { session: row({ machineId: url.includes('m2') ? 'm2' : 'm1', machine: url.includes('m2') ? 'laptop' : 'box', id: url.includes('s2') ? 's2' : 's1', title: 't' }), history: [], earlier: 0 }
         : url === '/api/chat/pwcode/continue' ? (confirmed ? { conversationId: 'c-new' } : { confirm: 'This session is open on laptop.example. Continuing it here takes it over from there.' })
         : {}
+      if (refuse && url === '/api/chat/pwcode/continue' && confirmed) {
+        return new Response(JSON.stringify({ error: refuse }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+      }
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
   }
@@ -118,6 +121,21 @@ describe('Continue in Studio', () => {
     await waitFor(() => expect(location.hash).toBe('#chat=c-new'))
     expect(calls).toContain('POST /api/chat/pwcode/continue {"machine":"m1","session":"s1","confirmed":true}')
     expect(getEngine('c-new')).toBe('pwcode')
+  })
+
+  it('says in the dialog why the Studio could not continue, and stays on the session', async () => {
+    location.hash = '#view=code'
+    serve([], 'Your pw code on box did not answer.')
+    render(<CodeView />)
+    fireEvent.click(await screen.findByText('Fix the build'))
+    const go = await screen.findByRole('button', { name: 'Continue in Studio' })
+    await waitFor(() => expect(go).toBeEnabled())
+    fireEvent.click(go)
+    expect(await screen.findByText(/takes it over from there/)).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue in Studio' }).at(-1)!)
+    expect(await screen.findByText('Your pw code on box did not answer.')).toBeInTheDocument()
+    expect(location.hash).toBe('#view=code')
+    expect(screen.getByText(/takes it over from there/)).toBeInTheDocument()
   })
 
   it('opens the session a chat links back to', async () => {
