@@ -21,12 +21,16 @@ const usage = `usage: index-extract <command> [options]
 
 commands:
   files    read the files of a list and write their text to an extraction artifact
+  spread   put the records of extraction artifacts into a spread tree
+  shards   write each folder's permission shards of an index from a spread tree
   schema   print the SQL of the tables the artifact and the index's external databases hold
 
 index-extract files --list FILE|- --out ARTIFACT.db [--root DIR] [--strip PREFIX] [--delim D]
   [--extra-info S] [--shard K/N] [--retry] [--extract-cache DIR] [--jobs N] [--progress]
   [--no-ocr] [--no-documents] [--pdf-reader auto|pdftotext|pypdf] [--soffice PATH]
   [--extractors FILE] [--report FILE]
+index-extract spread --spread DIR --fsid NAME [--prefix studio] ARTIFACT.db...
+index-extract shards --spread DIR --fsid NAME --index DIR [--prefix studio] [--extra-info S]
 `
 
 // Main is the index-extract command: args without the program name; the
@@ -39,6 +43,8 @@ func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "files":
 		return filesMain(args[1:], stdin, stdout, stderr)
+	case "spread", "shards":
+		return loadMain(args[0], args[1:], stdout, stderr)
 	case "schema":
 		fmt.Fprint(stdout, extdb.Schema)
 		return 0
@@ -164,4 +170,57 @@ func countLines(file string) int {
 		n++
 	}
 	return n
+}
+
+// loadMain is the spread and shards commands.
+func loadMain(cmd string, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("index-extract "+cmd, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	top := fs.String("spread", "", "the spread tree's top folder")
+	fsid := fs.String("fsid", "", "the name of the file system or store the records are of, a folder of the spread tree")
+	prefix := fs.String("prefix", extdb.Prefix, "the prefix family")
+	index := fs.String("index", "", "shards: the index whose folders get the shards")
+	extra := fs.String("extra-info", "", "shards: the extra_info of the records to copy")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	s := extdb.Spread{Top: *top, Prefix: *prefix, Fsid: *fsid}
+	if err := s.Check(); err != nil {
+		fmt.Fprintln(stderr, "index-extract:", err)
+		return 2
+	}
+	var out any
+	switch cmd {
+	case "spread":
+		if fs.NArg() == 0 {
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		var total extdb.SpreadStats
+		for _, a := range fs.Args() {
+			st, err := extdb.LoadSpread(s, a)
+			total.Files += st.Files
+			total.Chunks += st.Chunks
+			total.DBs += st.DBs
+			if err != nil {
+				fmt.Fprintf(stderr, "index-extract: %s: %v\n", a, err)
+				return 1
+			}
+		}
+		out = total
+	case "shards":
+		if *index == "" || fs.NArg() > 0 {
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		st, err := extdb.FillShards(s, *index, *extra)
+		if err != nil {
+			fmt.Fprintln(stderr, "index-extract:", err)
+			return 1
+		}
+		out = st
+	}
+	b, _ := json.Marshal(out)
+	fmt.Fprintf(stdout, "%s\n", b)
+	return 0
 }
