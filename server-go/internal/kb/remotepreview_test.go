@@ -88,3 +88,61 @@ func TestPreviewOfARemoteFileReadsAFetchedCopy(t *testing.T) {
 		t.Fatal("a path outside the library was accepted")
 	}
 }
+
+// statStub is remoteStub that also reads a file's size and time there.
+type statStub struct {
+	remoteStub
+	mtime int64
+	stats int
+	deny  bool
+}
+
+func (s *statStub) Stat(_ *http.Request, _ Library, rel string) (int64, int64, error) {
+	s.stats++
+	if s.deny {
+		return 0, 0, Error(403, "box: permission denied")
+	}
+	b, ok := s.files[rel]
+	if !ok {
+		return 0, 0, Error(404, "box: no such file")
+	}
+	return int64(len(b)), s.mtime, nil
+}
+
+// Opening a file on another system again checks its size and time there
+// and uses the copy kept from the same ones, without fetching it whole; a
+// change fetches it, and a file the viewer can no longer read is refused
+// though a copy is kept.
+func TestPreviewReusesACopyOfAnUnchangedFile(t *testing.T) {
+	base := t.TempDir()
+	roots := Roots{KBRoot: filepath.Join(base, "kb"), IndexBase: filepath.Join(base, "state"), IndexDir: filepath.Join(base, "state")}
+	m := &Module{Roots: roots, Libs: &Libraries{Roots: roots, Label: func() string { return "Notes" }}}
+	stub := &statStub{remoteStub: remoteStub{files: map[string][]byte{"papers/a.pdf": []byte("%PDF-1.4 one")}}, mtime: 100}
+	old := LibraryResolver
+	LibraryResolver = stub
+	defer func() { LibraryResolver = old }()
+	req := func() *http.Request {
+		return httptest.NewRequest("GET", "/api/kb/pdf-info?library=far&path=papers/a.pdf", nil)
+	}
+	for i := 0; i < 3; i++ {
+		if _, _, _, err := m.previewSource(req(), true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if stub.downloads != 1 || stub.stats != 3 {
+		t.Fatalf("%d downloads and %d checks for three opens of an unchanged file", stub.downloads, stub.stats)
+	}
+	stub.files["papers/a.pdf"] = []byte("%PDF-1.4 two!")
+	stub.mtime = 200
+	_, _, abs, err := m.previewSource(req(), true)
+	if err != nil || stub.downloads != 2 {
+		t.Fatalf("after a change: err %v, %d downloads", err, stub.downloads)
+	}
+	if b, _ := os.ReadFile(abs); string(b) != "%PDF-1.4 two!" {
+		t.Fatalf("copy holds %q", b)
+	}
+	stub.deny = true
+	if _, _, _, err := m.previewSource(req(), true); err == nil {
+		t.Fatal("a kept copy was shown to a viewer who can no longer read the file")
+	}
+}

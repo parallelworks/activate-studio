@@ -2,6 +2,7 @@ package kb
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -47,11 +48,29 @@ func (m *Module) previewSource(r *http.Request, fresh bool) (Library, string, st
 	if !fresh && exists(abs) {
 		return lib, rel, abs, nil
 	}
+	// The file's size and time, read as the viewer in one round trip: a
+	// copy kept from the same size and time is used again, so opening a
+	// file seen before does not fetch it whole. A file the viewer can no
+	// longer read is refused here, copy or not.
+	seen := ""
+	if st, ok := LibraryResolver.(Stater); ok {
+		size, mtime, err := st.Stat(r, lib, rel)
+		if err != nil {
+			return Library{}, "", "", err
+		}
+		if size >= 0 {
+			seen = fmt.Sprintf("%d %d", size, mtime)
+			if exists(abs) && string(readFileOr(abs+".seen")) == seen {
+				return lib, rel, abs, nil
+			}
+		}
+	}
 	_, data, err := LibraryResolver.Download(r, lib, rel)
 	if err != nil {
 		return Library{}, "", "", err
 	}
 	if old, err := os.ReadFile(abs); err == nil && bytes.Equal(old, data) {
+		writeSeen(abs, seen)
 		return lib, rel, abs, nil
 	}
 	// The copies are closed to other accounts on this host, whatever the
@@ -72,5 +91,22 @@ func (m *Module) previewSource(r *http.Request, fresh bool) (Library, string, st
 		os.Remove(tmp)
 		return Library{}, "", "", err
 	}
+	writeSeen(abs, seen)
 	return lib, rel, abs, nil
+}
+
+// Stater is a Resolver that reads a file's size and modification time on
+// another system as the viewer; size -1 when it cannot say, for a library
+// whose files are not reached that way.
+type Stater interface {
+	Stat(r *http.Request, lib Library, rel string) (size, mtime int64, err error)
+}
+
+// writeSeen keeps the size and time a copy was fetched at, beside it.
+func writeSeen(abs, seen string) {
+	if seen == "" {
+		os.Remove(abs + ".seen")
+		return
+	}
+	os.WriteFile(abs+".seen", []byte(seen), 0o600)
 }

@@ -16,6 +16,11 @@ func (p PoolRunner) RunOnce(ctx context.Context, site, key string, argv []string
 	return p.P.RunOnce(ctx, site, key, argv, timeout, input)
 }
 
+// Run sends argv over the session the pool keeps open to the site.
+func (p PoolRunner) Run(ctx context.Context, site, key string, argv []string, timeout time.Duration) (remote.Result, error) {
+	return p.P.Run(ctx, site, key, argv, timeout)
+}
+
 func (p PoolRunner) Command(site, key string, argv []string) (Cmd, error) {
 	c, err := p.P.Command(site, key, argv)
 	if err != nil {

@@ -1,5 +1,5 @@
 import { ALL_LIBRARIES, LibrarySwitch, libraryWritable } from '../components/LibrarySwitch'
-import { currentLibrary, onLibraryChange } from '../api'
+import { currentLibrary, onLibraryChange, warmRemoteHosts } from '../api'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
@@ -145,6 +145,14 @@ export function LibraryView({ display, onDisplay }: {
   // Switching library re-reads the tree and clears whatever was open,
   // since a path only means something inside its own library.
   const [libId, setLibId] = useState(currentLibrary())
+  // The sessions to the clusters the viewer's own libraries are on, opened
+  // before the first click, and again when the tab comes back.
+  useEffect(() => {
+    warmRemoteHosts()
+    const back = () => { if (document.visibilityState === 'visible') warmRemoteHosts() }
+    document.addEventListener('visibilitychange', back)
+    return () => document.removeEventListener('visibilitychange', back)
+  }, [])
   useEffect(() => onLibraryChange(id => { setLibId(id); setRefreshKey(k => k + 1); onDisplay(null); setTargetDir(id === ALL_LIBRARIES ? 'kb/uploads' : 'uploads') }), [onDisplay])
   // A library added, imported or removed in Settings changes the folders
   // of All libraries: read the tree again when the set of libraries does.

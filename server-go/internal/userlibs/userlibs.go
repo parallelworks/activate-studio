@@ -1165,22 +1165,57 @@ func (m *Module) setSSHOptions(ctx context.Context, w who, id string, text any) 
 }
 
 // warm opens the shared ssh connection to each host the viewer's
-// libraries are on, without waiting for it.
+// libraries are on, and the session kept open with their own key to each
+// cluster they reach with pw ssh, without waiting for either. A session to
+// a cluster takes about a second to start, which the first click in the
+// Library would otherwise wait for.
 func (m *Module) warm(w who) int {
-	if !w.sshAllowed() {
+	owner := w.owner()
+	if owner == "" {
 		return 0
 	}
 	sites := map[string]bool{}
-	for _, d := range m.load(w.owner()) {
-		if site := sshSiteOf(&d); site != "" {
-			sites[site] = true
+	clusters := map[string]int{}
+	for _, d := range m.load(owner) {
+		if d.IsSSH() {
+			if site := sshSiteOf(&d); site != "" && w.sshAllowed() {
+				sites[site] = true
+			}
+			continue
+		}
+		if d.Site == "" {
+			continue
+		}
+		uid := -1
+		if _, u, ok := d.Account(); ok {
+			uid = u
+		}
+		if _, seen := clusters[d.Site]; !seen || uid >= 0 {
+			clusters[d.Site] = uid
 		}
 	}
 	for site := range sites {
 		wait := m.Pool.Warm(site)
 		go wait()
 	}
-	return len(sites)
+	key := m.keyOf(w, owner)
+	if key == "" {
+		return len(sites)
+	}
+	for site, uid := range clusters {
+		go func() {
+			ctx, cancel := context.WithTimeout(m.Background(), 90*time.Second)
+			defer cancel()
+			if uid >= 0 {
+				// Also reads which account the session reaches, which
+				// the first write would otherwise wait for.
+				m.sameAccount(ctx, site, key, uid)
+				return
+			}
+			m.Pool.Run(ctx, site, key, []string{"true"}, 60*time.Second)
+		}()
+	}
+	return len(sites) + len(clusters)
 }
 
 // ---- helpers shared by the build ----

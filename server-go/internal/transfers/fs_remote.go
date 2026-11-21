@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -193,6 +194,12 @@ type RemoteFS struct {
 	// Private: a person's own space, where what the helper writes is closed
 	// to other accounts unless the folder it lands in is open to them.
 	Private bool
+	// Kept: commands other than reading and writing a file go over the
+	// session kept open to the host (Kept), as the Library's searches do,
+	// rather than a session started for each. A session to a cluster
+	// takes about a second to start; a command over one kept open takes
+	// one round trip.
+	Kept bool
 }
 
 func (r *RemoteFS) Where() string { return r.Name }
@@ -233,8 +240,23 @@ func runTool(ctx context.Context, run Runner, site, key string, timeout time.Dur
 }
 
 func runToolFor(ctx context.Context, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
+	return runToolOver(ctx, false, private, run, site, key, timeout, input, cmd, root, args...)
+}
+
+// runToolOver is runToolFor, over the session kept open to the host when
+// kept is set and the runner keeps one, and the input is a list short
+// enough to go as arguments.
+func runToolOver(ctx context.Context, kept, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
 	mark := marker()
-	res, err := run.RunOnce(ctx, site, key, toolArgvFor(private, mark, cmd, root, args...), timeout, input)
+	argv := toolArgvFor(private, mark, cmd, root, args...)
+	var res remote.Result
+	var err error
+	k, canKeep := run.(Kept)
+	if kept && canKeep && keepable(input) {
+		res, err = k.Run(ctx, site, key, keptArgv(argv, input), timeout)
+	} else {
+		res, err = run.RunOnce(ctx, site, key, argv, timeout, input)
+	}
 	if err != nil {
 		return res, false, err
 	}
@@ -248,15 +270,88 @@ func runToolFor(ctx context.Context, private bool, run Runner, site, key string,
 	return res, banner, nil
 }
 
+// nulInput is a helper command's list, sent on standard input separated
+// by NUL, or as arguments over a kept-open session (RemoteFS.Kept).
+type nulInput struct {
+	*bytes.Reader
+	items []string
+	size  int
+}
+
 func nulList(items ...[]string) io.Reader {
 	var b bytes.Buffer
+	var all []string
 	for _, list := range items {
 		for _, s := range list {
 			b.WriteString(s)
 			b.WriteByte(0)
+			all = append(all, s)
 		}
 	}
-	return &b
+	return &nulInput{Reader: bytes.NewReader(b.Bytes()), items: all, size: b.Len()}
+}
+
+// Kept is a Runner that also sends a command over the session it keeps
+// open to a host (remote.Pool.Run), where nothing arrives on standard
+// input.
+type Kept interface {
+	Run(ctx context.Context, site, key string, argv []string, timeout time.Duration) (remote.Result, error)
+}
+
+// keptMax is the most a list sent as arguments may hold, and smallWrite
+// the largest file written that way; more goes over a session of its own,
+// on standard input. The session reads each command as one line, a byte
+// at a time, so what it carries stays small.
+const (
+	keptMax    = 64 << 10
+	smallWrite = 48 << 10
+)
+
+// smallFile is a file's bytes for the write command, sent as an argument
+// in base64 over a kept-open session.
+type smallFile struct {
+	*bytes.Reader
+	data []byte
+}
+
+func keepable(input io.Reader) bool {
+	switch in := input.(type) {
+	case nil:
+		return true
+	case *nulInput:
+		return in.size <= keptMax
+	case *smallFile:
+		return len(in.data) <= smallWrite
+	}
+	return false
+}
+
+// feedSh runs the helper with its list from arguments: $1 is how many
+// arguments are the helper's own, $2 its script; the rest are the list,
+// written to its standard input separated by NUL.
+const feedSh = `n=$1; s=$2; shift 2
+a=(); while [ "$n" -gt 0 ]; do a+=("$1"); shift; n=$((n-1)); done
+{ [ $# -eq 0 ] || printf '%s\0' "$@"; } | bash -c "$s" "${a[@]}"`
+
+// feedFileSh runs the helper ($1) with the file in $2, in base64, on its
+// standard input.
+const feedFileSh = `s=$1; b=$2; shift 2
+d=-d; [ "$(printf eA== | base64 -d 2>/dev/null)" = x ] || d=-D
+printf '%s' "$b" | base64 $d | bash -c "$s" "$@"`
+
+// keptArgv is argv (a helper command line) with input fed to it.
+func keptArgv(argv []string, input io.Reader) []string {
+	switch in := input.(type) {
+	case *nulInput:
+		if len(in.items) == 0 {
+			return argv
+		}
+		out := append([]string{"bash", "-c", feedSh, "feed", strconv.Itoa(len(argv) - 3), argv[2]}, argv[3:]...)
+		return append(out, in.items...)
+	case *smallFile:
+		return append([]string{"bash", "-c", feedFileSh, "feed", argv[2], base64.StdEncoding.EncodeToString(in.data)}, argv[3:]...)
+	}
+	return argv
 }
 
 // run runs a helper command and maps its exit status to an error.
@@ -265,7 +360,7 @@ func (r *RemoteFS) run(ctx context.Context, input io.Reader, cmd string, args ..
 	if t <= 0 {
 		t = 10 * time.Minute
 	}
-	res, _, err := runToolFor(ctx, r.Private, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
+	res, _, err := runToolOver(ctx, r.Kept, r.Private, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
 	if err != nil {
 		return res, r.named(502, messageOf(err))
 	}
@@ -544,6 +639,20 @@ func (r *RemoteFS) Write(ctx context.Context, rel string, src io.Reader, mtime i
 	x := ""
 	if mode&0o100 != 0 {
 		x = "x"
+	}
+	if _, ok := r.R.(Kept); ok && r.Kept {
+		// A small file goes over the kept-open session in one command.
+		head, err := io.ReadAll(io.LimitReader(src, smallWrite+1))
+		if err != nil {
+			return 0, err
+		}
+		if len(head) <= smallWrite {
+			if _, err := r.run(ctx, &smallFile{Reader: bytes.NewReader(head), data: head}, "write", rel, touchTime(mtime), x); err != nil {
+				return 0, err
+			}
+			return int64(len(head)), nil
+		}
+		src = io.MultiReader(bytes.NewReader(head), src)
 	}
 	cmd, err := r.command(toolArgvFor(r.Private, marker(), "write", r.Dir, rel, touchTime(mtime), x))
 	if err != nil {
