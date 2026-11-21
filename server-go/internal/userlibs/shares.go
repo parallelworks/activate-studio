@@ -517,6 +517,9 @@ func (m *Module) removeShare(ctx context.Context, w who, id, shareID string) err
 	if s == nil {
 		return apierr.New(404, "no such share")
 	}
+	// Whatever happens next, nobody is answered from listings of the
+	// folder kept while it was shared.
+	m.lists.changed(d.Site, s.Folder)
 	if _, err := m.runShare(ctx, d.Site, key, *s, "revoke", m.closeFor(*s)); err != nil {
 		return err
 	}

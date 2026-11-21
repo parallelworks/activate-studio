@@ -652,6 +652,7 @@ func (m *Module) keyRoutes(h func(string, func(http.ResponseWriter, *http.Reques
 				m.LLM.InvalidateProbes()
 				m.listings.clear()
 			}
+			m.A.Providers.ForgetCredential(owner)
 			if user(r) != nil {
 				if p, has := b.M()["persist"]; has && p == false {
 					clearKeyCookies(w)
@@ -670,6 +671,7 @@ func (m *Module) keyRoutes(h func(string, func(http.ResponseWriter, *http.Reques
 			return apierr.New(403, "not verified")
 		}
 		m.Keys.Clear(owner)
+		m.A.Providers.ForgetCredential(owner)
 		if user(r) != nil {
 			clearKeyCookies(w)
 		}

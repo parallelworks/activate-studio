@@ -95,6 +95,22 @@ list)
   inside "$p" || fail 6 "$p leads outside the location"
   if [ $G = 1 ]; then find -- "$p" -mindepth 1 -maxdepth 1 ! -name '.*' -printf "$F"
   else bsd "$p"; find -- "$p" -mindepth 1 -maxdepth 1 ! -name '.*' -exec stat -f "$SF" {} + | tr '\n' '\0'; fi ;;
+list2)
+  # A folder and, in the same answer, the folders in it: its entries, then
+  # after the marker the folders in it this account cannot list, then the
+  # entries of the others, at most $2, then the marker again once all of
+  # them were read. Only where find and head know -printf and -z.
+  p=${1:-.}
+  [ -e "$p" ] || [ -L "$p" ] || fail 4 "$p: no such folder"
+  [ -d "$p" ] && [ ! -L "$p" ] || fail 5 "$p is not a folder"
+  inside "$p" || fail 6 "$p leads outside the location"
+  if [ $G = 1 ]; then find -- "$p" -mindepth 1 -maxdepth 1 ! -name '.*' -printf "$F"
+  else bsd "$p"; find -- "$p" -mindepth 1 -maxdepth 1 ! -name '.*' -exec stat -f "$SF" {} + | tr '\n' '\0'; exit 0; fi
+  printf '%s\0' "$mark"
+  find -- "$p" -mindepth 1 -maxdepth 1 -type d ! -name '.*' \( ! -readable -o ! -executable \) -printf '%p\0' 2>/dev/null
+  printf '%s\0' "$mark"
+  { find -- "$p" -mindepth 2 -maxdepth 2 ! -path '*/.*' -printf "$F" 2>/dev/null | head -z -n "${2:-2000}" && printf '%s\0' "$mark"; } 2>/dev/null
+  exit 0 ;;
 walk)
   while IFS= read -r -d '' p; do
     [ -e "$p" ] || [ -L "$p" ] || fail 4 "$p: no such file or folder"
@@ -247,7 +263,12 @@ func runToolFor(ctx context.Context, private bool, run Runner, site, key string,
 // kept is set and the runner keeps one, and the input is a list short
 // enough to go as arguments.
 func runToolOver(ctx context.Context, kept, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
-	mark := marker()
+	return runToolWith(ctx, marker(), kept, private, run, site, key, timeout, input, cmd, root, args...)
+}
+
+// runToolWith is runToolOver with the marker given, for a command that
+// also marks the parts of its answer with it.
+func runToolWith(ctx context.Context, mark string, kept, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
 	argv := toolArgvFor(private, mark, cmd, root, args...)
 	var res remote.Result
 	var err error
@@ -356,11 +377,20 @@ func keptArgv(argv []string, input io.Reader) []string {
 
 // run runs a helper command and maps its exit status to an error.
 func (r *RemoteFS) run(ctx context.Context, input io.Reader, cmd string, args ...string) (remote.Result, error) {
+	return r.runWith(ctx, marker(), input, cmd, args...)
+}
+
+// runMarked is run with the marker given (runToolWith).
+func (r *RemoteFS) runMarked(ctx context.Context, mark, cmd string, args ...string) (remote.Result, error) {
+	return r.runWith(ctx, mark, nil, cmd, args...)
+}
+
+func (r *RemoteFS) runWith(ctx context.Context, mark string, input io.Reader, cmd string, args ...string) (remote.Result, error) {
 	t := r.Timeout
 	if t <= 0 {
 		t = 10 * time.Minute
 	}
-	res, _, err := runToolOver(ctx, r.Kept, r.Private, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
+	res, _, err := runToolWith(ctx, mark, r.Kept, r.Private, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
 	if err != nil {
 		return res, r.named(502, messageOf(err))
 	}
@@ -461,6 +491,92 @@ func (r *RemoteFS) List(ctx context.Context, rel string, max int) ([]Entry, bool
 	}
 	es, more := sortEntries(out, max)
 	return es, more, nil
+}
+
+// TwoLevels is a folder's entries and, where the host could say, those of
+// the folders in it, by their paths under the location.
+type TwoLevels struct {
+	Entries  []Entry
+	Children map[string][]Entry
+}
+
+// ListTwo is List with the entries of the folders in rel too, in one
+// command, up to max of them. A folder in rel is in Children only when all
+// of its entries were read: not one this account cannot list, nor one
+// past where max cut the answer off. Hosts without GNU find answer rel
+// alone.
+func (r *RemoteFS) ListTwo(ctx context.Context, rel string, max int) (TwoLevels, error) {
+	if r.SFTPOnly(ctx) {
+		es, _, err := r.sftpList(ctx, rel, 0)
+		return TwoLevels{Entries: es}, err
+	}
+	if max <= 0 {
+		max = 2000
+	}
+	mark := marker()
+	res, err := r.runMarked(ctx, mark, "list2", dotted(rel), strconv.Itoa(max))
+	if err != nil {
+		return TwoLevels{}, err
+	}
+	parts := bytes.SplitN(res.Raw, []byte(mark+"\x00"), 4)
+	recs, err := parseRecords(parts[0])
+	if err != nil {
+		return TwoLevels{}, err
+	}
+	var out TwoLevels
+	var dirs []string
+	for _, e := range recs {
+		out.Entries = append(out.Entries, entryOf(e, baseName(e.Rel)))
+		if e.Type == 'd' {
+			dirs = append(dirs, e.Rel)
+		}
+	}
+	out.Entries, _ = sortEntries(out.Entries, 0)
+	if len(parts) < 3 {
+		return out, nil
+	}
+	closed := map[string]bool{}
+	for _, p := range splitNul(string(parts[1])) {
+		closed[strings.TrimPrefix(p, "./")] = true
+	}
+	deeper, err := parseRecords(parts[2])
+	if err != nil {
+		return out, nil
+	}
+	whole := len(parts) == 4
+	// find reads the folders in the order it listed them, each whole
+	// before the next: cut off, the folder it stopped in and those after
+	// it are not known.
+	known := map[string]bool{}
+	if whole && len(deeper) < max {
+		for _, d := range dirs {
+			known[d] = true
+		}
+	} else if len(deeper) > 0 {
+		last := dirOf(deeper[len(deeper)-1].Rel)
+		for _, d := range dirs {
+			if d == last {
+				break
+			}
+			known[d] = true
+		}
+	}
+	out.Children = map[string][]Entry{}
+	for _, d := range dirs {
+		if known[d] && !closed[d] {
+			out.Children[d] = []Entry{}
+		}
+	}
+	for _, e := range deeper {
+		d := dirOf(e.Rel)
+		if es, ok := out.Children[d]; ok {
+			out.Children[d] = append(es, entryOf(e, baseName(e.Rel)))
+		}
+	}
+	for d, es := range out.Children {
+		out.Children[d], _ = sortEntries(es, 0)
+	}
+	return out, nil
 }
 
 func (r *RemoteFS) Stat(ctx context.Context, rels []string) (map[string]FileInfo, error) {
