@@ -14,6 +14,26 @@ When delegation is on (Settings, External access, Delegation), the chat's `deleg
 
 *Code page without the platform.* When the platform is not available to the viewer (the same test as the Workflows tab: no credential for it) and the Studio offers its own host as an agent site (sign-in off, or `AGENT_LOCAL_SITE=1`), `/api/code-sessions` reads this host's pw code daemon over its socket (`/v1/status`, `/v1/sessions`, `/v1/sessions/<id>`), in the shapes the platform passes on, as one machine named "This computer". `/api/config` then has `localCode: true`, and the Code tab shows.
 
+## Standing agents (fleet)
+
+A standing agent on the Fleet page is a long-lived pw code session on this Studio's host, working in a library folder of its own, `agents/fleet/<id>/` (in `INDEX_BASE/fleet/<id>/work` when the main library cannot be written here). Its `AGENTS.md` holds its agent instructions (the persona chosen for it) and a `standing_agent` section with its name, its goal, the system it works on if one is named, and how to answer a wake-up. Both are written again before every wake-up, so an edited goal or instruction reaches the session.
+
+*Wake-ups.* An agent wakes on its schedule (15 minutes to a day, or manual), when a platform run ends (where this process owns the platform's jobs), when files change under a watched library folder, when a person writes to it, or with **Wake now**. A wake-up is a message to its session saying what woke it, with the person's messages, and a goal for that round: the round's work is done and its status reported, within the agent's turns per wake-up (default 10). The session carries the Studio's tools through the same MCP server and token a pw code chat gets, acting for the person who made the agent; the token lasts 7 days, so a session older than 6 days is archived at the next wake-up and a new one started, which is told the agent's latest results. When the Studio's tools cannot be attached the session starts without them and the journal says so. A session that is gone (archived elsewhere, or the daemon lost it) is replaced the same way.
+
+*Journal and decisions.* The session's history is the agent's working record, shown in its detail and on the Code page. The Studio keeps a short event log beside the record (`INDEX_BASE/fleet/<id>/journal.jsonl`): created, each wake-up and why, each round's final answer, messages, errors and state changes. A round that ends with a line starting `NEEDS DECISION:` puts the agent under **Needs you** with that question; so does a session waiting for an approval. A message while the agent works is given to the running turn; otherwise it wakes the agent now in the same session.
+
+*Budget.* Maximum wake-ups and maximum tokens pause the agent when reached; tokens are the input and output tokens of its pw code sessions. Pause stops wake-ups and lets a round under way finish; Retire stops the agent and archives its session, which stays readable on the Code page.
+
+*Agents made before this change.* A record from the task engine (where a tick was one delegated task) is taken over in place the first time the Studio reads it. Goal, persona, triggers, budget, counts and journal carry over; the record and its journal say what did not:
+
+- a campaign agent's ticks were platform workflow runs on a named system; it now runs on this host, with that system named in its `AGENTS.md` so it can still submit runs there;
+- a model that is not a pw code model id (a Studio model) falls back to pw code's default model;
+- tokens counted before were the Studio model's; pw code session tokens add to them from then on;
+- a tick that was running is not resumed; its result, if any, stays under `tasks/`;
+- the task board's tools (posting to the board, spawning helpers) are gone; pw code splits its own work.
+
+`/api/fleet` keeps its routes and record shape: `GET /api/fleet/{id}` adds `session` (`id`, `earlier` sessions, and `recent`, the last 40 lines of its history), and a record has `engine: "pwcode"`, `folder`, `session`, `sessions` and `migrated`.
+
 ## The task engine (earlier delegation)
 
 Before delegation moved to pw code sessions, the assistant split a request into subtasks and gave each to an agent; `task_status` still reads those tasks. The task tree, the board, and results under `tasks/<task id>/` in the knowledge base are the same however the agents run. The same section's "Agent execution" (environment variable `AGENT_EXECUTION`) chooses how they run:

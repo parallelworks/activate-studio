@@ -3181,3 +3181,7 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-delegated-files { margin: 6px 0 0; padding-left: 18px; }
 .code-delegated-files li { margin: 2px 0; overflow-wrap: anywhere; }
 .task-moved { margin-bottom: 12px; }
+.fleet-migrated { margin: 8px 0; }
+.fleet-folder { margin: 4px 0 8px; font-size: 13px; }
+.fleet-session { margin: 8px 0; font-size: 13px; }
+.fleet-session-line { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
