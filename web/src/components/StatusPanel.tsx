@@ -23,8 +23,13 @@ import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
  * rather than repeats. Closed, it asks for nothing.
  */
 
-export interface TaskRow { id: string; objective: string; state: string; running?: number; waiting?: number }
-export interface FleetAgent { id: string; name: string; state: string; currentTaskId?: string | null }
+/** Work delegated to a pw code session, as the Code page lists it. */
+export interface TaskRow { id: string; objective: string; state: string }
+export interface FleetAgent { id: string; name: string; state: string }
+interface DelegatedRow { session: string; objective: string; state: string }
+// A delegated session waiting for an approval needs a person, as an agent
+// does under input-required.
+const delegatedState = (s: string) => s === 'waiting' ? 'input-required' : s
 export interface RunRow { slug: string; workflow: string; owner?: string | null; launchedAt: string; state: string; endedAt: string | null }
 export interface McpRow { name: string; tools: number; error: string | null; checkedAt?: string | null }
 
@@ -243,7 +248,9 @@ function useStatusData(agents: boolean, runs: boolean, mcp = true): [StatusData,
     const put = (p: Partial<StatusData>) => { if (live) patch(p) }
     const fast = () => {
       if (agents) {
-        getJson<{ tasks: TaskRow[] }>('/api/tasks').then(d => put({ tasks: d.tasks ?? [] })).catch(() => {})
+        getJson<{ sessions: DelegatedRow[] }>('/api/delegated')
+          .then(d => put({ tasks: (d.sessions ?? []).map(s => ({ id: s.session, objective: s.objective, state: delegatedState(s.state) })) }))
+          .catch(() => {})
         if (!fleetRefused) {
           getJson<{ agents: FleetAgent[] }>('/api/fleet').then(d => put({ fleet: d.agents ?? [] }))
             .catch(e => { if ((e as { status?: number }).status === 403) { fleetRefused = true; put({ fleet: [] }) } })
@@ -425,7 +432,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
               {tasks.map(t => (
                 <Row key={t.id} tone={t.state === 'input-required' ? 'warning' : 'info'} pulse={t.state !== 'input-required'}
                   name={t.objective} meta={t.state === 'input-required' ? 'needs you' : t.state === 'submitted' ? 'starting' : 'working'}
-                  title={t.objective} onClick={() => go(`#view=agents:${t.id}`)} />
+                  title={t.objective} onClick={() => go(`#view=code?session=${encodeURIComponent(t.id)}`)} />
               ))}
               {fleet.map(a => (
                 <Row key={a.id} tone={a.state === 'working' ? 'info' : a.state === 'input-required' ? 'warning' : 'muted'}

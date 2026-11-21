@@ -13,7 +13,6 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
-	"github.com/parallelworks/activate-studio/server-go/internal/tasks"
 )
 
 // localAgentTools reach a pw code daemon, which runs without the
@@ -23,7 +22,7 @@ var localAgentTools = map[string]bool{"agent_sites": true, "agent_sessions": tru
 	"agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true, "delegate": true}
 
 func (m *Module) localAgents() bool {
-	s := tasks.CurrentSites()
+	s := agentsites.Current()
 	return s != nil && s.LocalSiteAllowed(m.A.Cfg.AuthEnabled())
 }
 

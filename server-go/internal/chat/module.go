@@ -309,7 +309,6 @@ func Register(mux *http.ServeMux, a *app.App) {
 		}
 		return c.Key, base, true
 	}
-	a.Providers.TaskToolNames = m.TaskToolNames
 	// The MCP listing is Go's. Node's, which only its RAG proxy and /api/mcp
 	// still read, drops itself when the saved server list changes
 	// (mcpClient.ts) and otherwise expires within a minute, so Node is not

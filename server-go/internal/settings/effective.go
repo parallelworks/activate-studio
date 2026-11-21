@@ -31,31 +31,34 @@ type CustomTool struct {
 
 // Effective is effectiveSettings()'s object, its keys in Node's order.
 type Effective struct {
-	AppName                string            `json:"appName"`
-	KbLabel                string            `json:"kbLabel"`
-	Sections               []string          `json:"sections"`
-	WorkflowCollection     []string          `json:"workflowCollection"`
-	Theme                  string            `json:"theme"`
-	Accent                 string            `json:"accent"`
-	Surface                string            `json:"surface"`
-	NavWidth               Number            `json:"navWidth"`
-	IconURL                string            `json:"iconUrl"`
-	IconURLDark            string            `json:"iconUrlDark"`
-	SweepIntervalSec       Number            `json:"sweepIntervalSec"`
-	SearchTimeLimitSec     Number            `json:"searchTimeLimitSec"`
-	SearchEngine           string            `json:"searchEngine"`
-	GufiLog                bool              `json:"gufiLog"`
-	SuggestedPrompts       []string          `json:"suggestedPrompts"`
-	VisionModel            string            `json:"visionModel"`
-	DisabledTools          []string          `json:"disabledTools"`
-	McpEnabled             bool              `json:"mcpEnabled"`
-	RagProxyEnabled        bool              `json:"ragProxyEnabled"`
-	HistoryIntervalSec     Number            `json:"historyIntervalSec"`
-	McpServers             []json.RawMessage `json:"mcpServers"`
-	DelegationEnabled      bool              `json:"delegationEnabled"`
-	DelegationMaxAgents    Number            `json:"delegationMaxAgents"`
-	MaxToolRounds          Number            `json:"maxToolRounds"`
-	DelegationMaxDepth     Number            `json:"delegationMaxDepth"`
+	AppName             string            `json:"appName"`
+	KbLabel             string            `json:"kbLabel"`
+	Sections            []string          `json:"sections"`
+	WorkflowCollection  []string          `json:"workflowCollection"`
+	Theme               string            `json:"theme"`
+	Accent              string            `json:"accent"`
+	Surface             string            `json:"surface"`
+	NavWidth            Number            `json:"navWidth"`
+	IconURL             string            `json:"iconUrl"`
+	IconURLDark         string            `json:"iconUrlDark"`
+	SweepIntervalSec    Number            `json:"sweepIntervalSec"`
+	SearchTimeLimitSec  Number            `json:"searchTimeLimitSec"`
+	SearchEngine        string            `json:"searchEngine"`
+	GufiLog             bool              `json:"gufiLog"`
+	SuggestedPrompts    []string          `json:"suggestedPrompts"`
+	VisionModel         string            `json:"visionModel"`
+	DisabledTools       []string          `json:"disabledTools"`
+	McpEnabled          bool              `json:"mcpEnabled"`
+	RagProxyEnabled     bool              `json:"ragProxyEnabled"`
+	HistoryIntervalSec  Number            `json:"historyIntervalSec"`
+	McpServers          []json.RawMessage `json:"mcpServers"`
+	DelegationEnabled   bool              `json:"delegationEnabled"`
+	DelegationMaxAgents Number            `json:"delegationMaxAgents"`
+	MaxToolRounds       Number            `json:"maxToolRounds"`
+	DelegationMaxDepth  Number            `json:"delegationMaxDepth"`
+	// AgentExecution chose how the retired task engine ran its agents;
+	// nothing reads it now. Kept so saved settings and the legacy Node
+	// server keep their shape.
 	AgentExecution         string            `json:"agentExecution"`
 	VoiceEnabled           bool              `json:"voiceEnabled"`
 	VoiceURL               string            `json:"voiceUrl"`

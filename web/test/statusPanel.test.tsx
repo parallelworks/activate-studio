@@ -17,9 +17,9 @@ const cfg = (over: Partial<AppConfig> = {}): AppConfig => ({
 
 const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString()
 const DATA: Record<string, unknown> = {
-  '/api/tasks': { tasks: [
-    { id: '2026-10-21-review-ab12', objective: 'Review the results', state: 'input-required', running: 1, waiting: 1 },
-    { id: '2026-10-20-old-cd34', objective: 'Finished long ago', state: 'completed' },
+  '/api/delegated': { sessions: [
+    { session: '20261021-120000-ab12cd34', objective: 'Review the results', state: 'waiting' },
+    { session: '20261020-120000-cd34ef56', objective: 'Finished long ago', state: 'finished' },
   ] },
   '/api/fleet': { agents: [{ id: 'watcher-1', name: 'Queue watcher', state: 'working' }, { id: 'gone-1', name: 'Retired one', state: 'retired' }] },
   '/api/runs': { runs: [
@@ -168,7 +168,7 @@ describe('the cards', () => {
     await waitFor(() => expect(head('Activity')).toBeInTheDocument())
     expect(screen.queryByText('Review the results')).toBeNull()
     expect(screen.getByText('bench')).toBeInTheDocument()
-    expect(asked).not.toContain('/api/tasks')
+    expect(asked).not.toContain('/api/delegated')
     expect(asked).not.toContain('/api/fleet')
     unmount()
     resetStatusPanelForTests(); asked = []
@@ -186,9 +186,9 @@ describe('the cards', () => {
       openPanel()
       const { unmount } = render(<StatusPanel view="search" cfg={cfg()} />)
       await waitFor(() => expect(asked).toContain('/api/settings/mcp-servers'))
-      const first = asked.filter(u => u === '/api/tasks').length
+      const first = asked.filter(u => u === '/api/delegated').length
       await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
-      expect(asked.filter(u => u === '/api/tasks').length).toBe(first + 1)
+      expect(asked.filter(u => u === '/api/delegated').length).toBe(first + 1)
       expect(asked).toContain('/api/settings/mcp-servers?cached=1')
       // The platform's session list waits for its minute.
       expect(asked.filter(u => u === '/api/sessions').length).toBe(1)
@@ -225,7 +225,7 @@ describe('opening from the panel', () => {
     openPanel()
     render(<StatusPanel view="library" cfg={cfg()} />)
     fireEvent.click(await screen.findByText('Review the results'))
-    expect(location.hash).toBe('#view=agents:2026-10-21-review-ab12')
+    expect(location.hash).toBe('#view=code?session=20261021-120000-ab12cd34')
     fireEvent.click(screen.getByText('Queue watcher'))
     expect(location.hash).toBe('#view=agents:fleet')
   })

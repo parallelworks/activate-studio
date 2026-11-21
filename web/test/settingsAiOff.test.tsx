@@ -106,7 +106,7 @@ describe('Settings with AI features off', () => {
     fireEvent.click(screen.getByRole('button', { name: 'External access' }))
     expect(await screen.findByRole('switch', { name: 'Serve MCP' })).toBeInTheDocument()
     expect(screen.getByText('Other MCP clients (settings JSON)')).toBeInTheDocument()
-    for (const name of ['Delegate to concurrent agents', 'Serve the grounded model']) expect(screen.queryByRole('switch', { name })).toBeNull()
+    for (const name of ['Delegate to pw code agents', 'Serve the grounded model']) expect(screen.queryByRole('switch', { name })).toBeNull()
     expect(screen.queryByText('Attached MCP servers (tools from elsewhere)')).toBeNull()
     expect(screen.queryByText(/Individual tools can be disabled/)).toBeNull()
 
@@ -153,7 +153,7 @@ describe('Settings with AI features off', () => {
     expect(await screen.findByRole('checkbox', { name: 'search_kb' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'External access' }))
     expect(await screen.findByRole('switch', { name: 'Serve the grounded model' })).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: 'Delegate to concurrent agents' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Delegate to pw code agents' })).toBeInTheDocument()
   })
 })
 

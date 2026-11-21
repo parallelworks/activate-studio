@@ -188,7 +188,7 @@ Ask the assistant to delegate a piece of work, for example "delegate the Q3 pump
 
 The Agents tab has three pages:
 
-- **Tasks**: tasks delegated before delegation moved to pw code, with their results under `tasks/`. Work you delegate now is on the Code page.
+- **Earlier tasks**: tasks of the earlier task engine, kept to read: their agents, board and output, with a link to their results under `tasks/`. Work you delegate now is on the Code page.
 - **Fleet**: standing agents that wake on a schedule or when something changes, and ask you when they need a decision. Each is a pw code session on this computer working in its own folder, `agents/fleet/<name>`, whose `AGENTS.md` holds its instructions and goal; its detail shows the session's latest conversation and links it on the Code page. Agents made before this change are moved over the first time the Studio reads them, and each says what did not carry over.
 - **Instructions and skills**: how agents should work, written once and applied to the folders they work in. **Apply to a folder** writes instructions into that folder's `AGENTS.md`, which pw code reads in every session there, beside your own text in the file, and a skill into the folder's `.agents/skills`. The list of folders under them shows where each is applied, with **take off** to remove it. pw code uses a folder's skills once you have opened that folder in pw code and approved it; its `AGENTS.md` applies at once.
 
@@ -219,7 +219,7 @@ The address bar follows what you are looking at, so back and forward work and a 
 - The bottom of the navigation shows who you are signed in as, whether the models are reachable, and the state of the index; click any of them for details.
 - A status reads the same everywhere: a blue pulsing lamp is work under way, green is done or ready, red is a failure, amber needs a look or an answer, and an unlit ring is idle.
 - **About**, at the foot of Help's list and in the version's panel at the bottom of the navigation, shows the version and license. ACTIVATE Studio is built and maintained by Parallel Works.
-- The **status panel** at the right shows what is running (agent tasks, standing agents, workflow runs, open sessions), your libraries and the last index sync, the model in use (while AI features are on), and **Connections**, when there are any: the ACTIVATE platform, attached MCP servers, and the machines that hold remote libraries, each with its state. The panel button at the top right of each page opens and closes it, and Studio remembers. Click a card's header for its detail; click a run or session to open it beside the chat or on the Workflows page. While a run or session is open beside the chat, the panel steps aside. Phones do not show it.
+- The **status panel** at the right shows what is running (delegated pw code sessions, standing agents, workflow runs, open sessions), your libraries and the last index sync, the model in use (while AI features are on), and **Connections**, when there are any: the ACTIVATE platform, attached MCP servers, and the machines that hold remote libraries, each with its state. The panel button at the top right of each page opens and closes it, and Studio remembers. Click a card's header for its detail; click a run or session to open it beside the chat or on the Workflows page. While a run or session is open beside the chat, the panel steps aside. Phones do not show it.
 
 ## Setup and the sidebar
 

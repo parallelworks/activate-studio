@@ -5,15 +5,16 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/chat"
 	"github.com/parallelworks/activate-studio/server-go/internal/fleet"
+	"github.com/parallelworks/activate-studio/server-go/internal/pasttasks"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/ragendpoint"
-	"github.com/parallelworks/activate-studio/server-go/internal/tasks"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows/runs"
 )
@@ -27,7 +28,12 @@ func registerPackages(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 
 	workflows.Register(mux, a, p) // workflows, runs
 
-	daemon := tasks.Register(mux, a, p) // agent sites, pwcode, tasks
+	// One pw code daemon access for agent sites, delegation and the fleet.
+	daemon := pwcode.New(p)
+	daemon.Start(a)
+	agentsites.Register(mux, a, p, daemon)
+	// The retired task engine's tasks, read-only.
+	pasttasks.Register(mux, a)
 	// Standing agents are pw code sessions on this host, with the Studio's
 	// tools through the chat module (registered later, so looked up when a
 	// session starts).

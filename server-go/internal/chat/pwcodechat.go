@@ -22,7 +22,6 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/keycookie"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
-	"github.com/parallelworks/activate-studio/server-go/internal/tasks"
 	"github.com/parallelworks/activate-studio/server-go/internal/userlibs"
 )
 
@@ -165,7 +164,7 @@ func pwErr(status int, msg string) error { return &apierr.Error{Status: status, 
 
 // pwSites is the agent sites service, or nil where agents are not set up
 // (a test seam).
-var pwSites = tasks.CurrentSites
+var pwSites = agentsites.Current
 
 // pwcodeUnavailable says why pw code chat is not offered to r's viewer
 // (cheap: no workspace is made), or "" when it is. Answers are kept a
