@@ -687,11 +687,16 @@ def write_cache(cache_file: Path, text: str) -> bool:
     place), so a pass stopped part way never leaves half an entry that a
     later pass would take as current. A cache that cannot be written (read
     only or full shared storage) must not abort the pass: the text is still
-    indexed, and the next pass retries the write."""
+    indexed, and the next pass retries the write. An entry is the text of a
+    file that may be private, so it is the builder's alone (0600, in folders
+    of 0700)."""
     try:
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         tmp = cache_file.with_name(f'{cache_file.name}.{os.getpid()}.tmp')
-        tmp.write_text(text)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(text)
+        os.chmod(tmp, 0o600)
         os.replace(tmp, cache_file)
         return True
     except OSError as exc:

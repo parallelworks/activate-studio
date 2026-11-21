@@ -591,3 +591,29 @@ func TestSuffix(t *testing.T) {
 		}
 	}
 }
+
+// An entry holds the text of a file that may be private: it is the
+// builder's alone, and one an earlier version left open is closed when met.
+func TestEntriesAreClosedToOthers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no POSIX modes")
+	}
+	dir := t.TempDir()
+	f := CacheFile(filepath.Join(dir, "cache"), "private/plan.pdf")
+	if err := writeEntry(f, "secret text"); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]os.FileMode{f: 0o600, filepath.Dir(f): 0o700} {
+		st, err := os.Stat(p)
+		if err != nil || st.Mode().Perm() != want {
+			t.Fatalf("%s: %v %v, want %v", p, st.Mode().Perm(), err, want)
+		}
+	}
+	os.Chmod(f, 0o644)
+	if ok, _, exists := fresh(f, time.Time{}); !ok || !exists {
+		t.Fatal("entry not fresh")
+	}
+	if st, _ := os.Stat(f); st.Mode().Perm() != 0o600 {
+		t.Fatalf("an open entry stayed %v", st.Mode().Perm())
+	}
+}
