@@ -268,6 +268,9 @@ type Library struct {
 	// SharedFrom is the account that shared the folder, for a library made
 	// from someone else's share.
 	SharedFrom string
+	// Access is what the library is and how the viewer reaches it
+	// (access.go); set for every library listed.
+	Access Access
 }
 
 // Remote reports whether the library is on another system.
@@ -305,6 +308,9 @@ type PublicLibrary struct {
 	// name, where the Studio knows the cluster it runs beside, so it is
 	// named as a library on a remote system is.
 	Host *string `json:"host,omitempty"`
+	// Access: where it is, whose account reads it, whether the viewer may
+	// write in it, and whether its index was built or connected.
+	Access Access `json:"access"`
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -321,7 +327,15 @@ func Public(l Library) PublicLibrary {
 	return PublicLibrary{ID: l.ID, Label: l.Label, Primary: l.Primary, Writable: l.Writable, Pinned: l.Pinned,
 		Source: l.SourceRoot != "" || l.Site != "", Caps: l.Caps, Site: strOrNil(l.Site), Meaning: strOrNil(l.Meaning),
 		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, Mine: l.Mine, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil,
-		Host: localHost(l)}
+		Host: localHost(l), Access: accessOf(l)}
+}
+
+// accessOf is l.Access, worked out for a library listed without it.
+func accessOf(l Library) Access {
+	if l.Access.Where != "" {
+		return l.Access
+	}
+	return localAccess(l)
 }
 
 // localHost is the home cluster's name for a library in a folder here: no

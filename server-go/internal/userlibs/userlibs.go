@@ -737,9 +737,11 @@ func (m *Module) public(owner string, d *libraries.UserDef, job int) *jsonv.Obje
 		"buildingDepth", buildingDepth)
 	// A library the person built on one of their systems is written as
 	// them; over plain ssh, only on a Studio one person uses.
-	if d.Mine() && (!d.IsSSH() || (owner == single && !m.Users.AuthEnabled)) {
+	writable := d.WritableBy(owner, m.Users.AuthEnabled)
+	if d.Mine() && writable {
 		o.Set("mine", true)
 	}
+	o.Set("access", libraries.UserAccess(*d, writable))
 	if d.Space != nil {
 		o.Set("space", jsonv.NewObject("account", d.Space.Account, "acl", d.Space.ACL, "fs", d.Space.FS))
 	}

@@ -100,6 +100,13 @@ type SharedInfo struct {
 	UID     int    `json:"uid"`
 }
 
+// WritableBy: the Library writes in it as owner, the viewer it is listed
+// for. Over plain ssh, only on a Studio one person uses with sign-in off,
+// whose ssh keys are theirs.
+func (d *UserDef) WritableBy(owner string, authEnabled bool) bool {
+	return d.WrittenAsOwner() && (!d.IsSSH() || (owner == "single" && !authEnabled))
+}
+
 // WrittenAsOwner: the Library writes in it as its owner (a space, a
 // folder shared with them for writing, or a library of theirs, Mine).
 func (d *UserDef) WrittenAsOwner() bool {

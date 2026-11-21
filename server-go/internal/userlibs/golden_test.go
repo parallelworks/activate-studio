@@ -174,12 +174,13 @@ func TestMatchesNodeGolden(t *testing.T) {
 	delete(w, "embed")
 	delete(w, "readers")
 	w["scripts"] = map[string]any{"build_status": w["scripts"].(map[string]any)["build_status"]}
-	// Go writes in a library the person built on their system (mine),
-	// which Node never did.
+	// Go writes in a library the person built on their system (mine), and
+	// says what each library is (access), which Node never did.
 	if pub, ok := g["public"].([]any); ok {
 		for _, p := range pub {
 			if o, ok := p.(map[string]any); ok {
 				delete(o, "mine")
+				delete(o, "access")
 			}
 		}
 	}

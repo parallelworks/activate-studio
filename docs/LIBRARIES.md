@@ -18,6 +18,28 @@ own systems ([Indexes built on a remote system](#indexes-built-on-a-remote-syste
 | `indexRoot` | the GUFI tree: a directory with a `db.db` at its root |
 | `sourceRoot`, optional | whether files can be opened, or only searched and described |
 | writable | whether the Studio may add files, index, and enrich; the primary only |
+| `access` | what the library is, in the terms Add a library uses (below) |
+
+`access` is worked out from the library's record each time it is listed
+(`server-go/internal/libraries/access.go`), so a library added before it,
+and a library list exported from one, reads the same as one added now;
+nothing is stored or migrated. It has four parts:
+
+- `where`: `here` (this computer), `system` (a cluster or host, with
+  `system` its name and `via` one of `pw`, `ssh` or `workflow`), or
+  `bucket`.
+- `readAs`: `you`, the viewer's own sign-in or ssh keys, for every library
+  a person adds on one of their systems, or `studio`, the account the
+  Studio runs as, for the libraries on this computer and in buckets, which
+  on a shared Studio are the deployment's.
+- `write`: whether the viewer may change its files from the Library. Only
+  libraries read as the viewer can be: My library, a folder shared with
+  them for writing, and an index they built on one of their systems.
+- `index`: `built` by the Studio, or `connected` as it was, which is always
+  read only, and `sharedFrom`, the account that shared a folder.
+
+The switcher, the scope pickers and Settings name a library by these:
+Read/write, Read only or Shared, then "(on" its system")".
 
 When a library is added the Studio probes it once and records what it
 found: whether it is a GUFI index, whether the Studio's full-text tables

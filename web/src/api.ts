@@ -40,6 +40,9 @@ export interface PublicLibrary {
   space?: boolean
   /** A library the viewer built on one of their systems, written as them. */
   mine?: boolean
+  /** Where it is, whose account reads it, whether the viewer may write in
+   *  it, and whether its index was built or connected. */
+  access?: LibraryAccess
   /** A folder another account shared with the viewer: that account. */
   sharedFrom?: string
   /** A bucket library: its files are objects read one at a time. */
@@ -246,8 +249,21 @@ export interface UserLibrary {
   /** Built by the Studio on one of the viewer's systems, so read and
    *  written as them in the Library. */
   mine?: boolean
+  access?: LibraryAccess
   /** A folder another account shared with the viewer. */
   shared?: { from: string; access: 'read' | 'write'; share: string } | null
+}
+
+/** A library in the terms Add a library asks them in (server
+ *  libraries.Access). */
+export interface LibraryAccess {
+  where: 'here' | 'system' | 'bucket'
+  system?: string
+  via?: 'pw' | 'ssh' | 'workflow'
+  readAs: 'you' | 'studio'
+  write: boolean
+  sharedFrom?: string
+  index: 'built' | 'connected'
 }
 
 /** What GET /api/user-libraries/space says: whether a space can be made,
