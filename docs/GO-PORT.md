@@ -280,6 +280,7 @@ The track serves 62 routes of the inventory, all of `accessRoutes.ts`, `sessions
 
 Differences from Node:
 
+- New in Go: the desktop relay, `GET /api/session-desktop/<user>/<name>/websockify` and `/logs` (`internal/sessions/desktop.go`; WORKFLOWS.md, The side view). It is the server's one WebSocket route, carried by `httputil.ReverseProxy`, which hijacks the connection through the access log's writer (`recorder.Unwrap`). Node has no such route, so a Node server alone shows a desktop only in a window of its own.
 - The relay has no websocket upgrade, as Node's has none; an `Upgrade` request is fetched as a plain GET. It sends `Accept: */*` and `User-Agent: node` when the client sends none, and not undici's other defaults. Invalid UTF-8 in relayed HTML becomes one U+FFFD per byte.
 - Workflow install writes YAML with a js-yaml-compatible writer, shared values in full without anchors; schema errors are ajv's set in another order; names sort with `x/text/collate`, close to `localeCompare`; a cycle in `needs` is a 500 where Node overflows its stack; `/api/kb/dag` parse errors are worded differently.
 - Task finish listeners run on their own goroutine; a runner stopped before it starts is never launched; campaign polls never overlap; at stop Go sends SIGTERM to one-shot runners, which outlive Node.

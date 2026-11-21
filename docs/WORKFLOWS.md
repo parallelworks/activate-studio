@@ -88,6 +88,8 @@ A session card in a reply also shows the session under its bar, through the same
 
 The session reaches the pane through the Studio. A session's host signs browsers in through the platform's login page, which refuses frames, but it accepts the platform key as a bearer token from a server. So the Studio fetches the session's pages with the viewer's key and serves them at `/api/session-proxy/<host>/`, on its own origin. Only hosts of sessions the viewer's key can see, served on their own host, are relayed, and the address fetched comes from the platform's session record. The relay passes GET and HEAD requests and no cookies; a page that loads its data by relative address works unchanged, which covers the study viewers. A session that needs websockets, a form post, or its own sign-in opens in a new tab from the pane's footer instead.
 
+A platform desktop session (type `desktop`, a VNC desktop on one of the person's clusters) has no host of its own, and its page on the platform refuses frames, so the Studio draws the desktop itself with an RFB client and relays the desktop's socket at `/api/session-desktop/<user>/<name>/websockify`. The relay takes only a WebSocket from the Studio's own pages: its `Origin` must name the host the request was sent to, or the host a proxy in front says it was sent to (`X-Forwarded-Host`, which the desktop app's window sets). It relays only a desktop that the viewer's key lists under that user and name, connects to the platform's own address for that record (`/me/session/<user>/<name>/websockify` on the platform's host, never an address from the request), and connects as the viewer. With sign-in on that is the person's own ACTIVATE sign-in or platform key, never the deployment's, and a person without one is refused; with sign-in off the Studio is one person's, and their key is the deployment's. None of the Studio's cookies or headers go to the platform. The socket stays open as long as both sides keep it open, with no time limit, and either side closing it closes the other. `/api/session-desktop/<user>/<name>/logs` returns the desktop's start-up logs (`xstartup`, `xvnc`) under the same checks, and its error says why a socket would not open: not signed in, no credential of the person's own, a credential the platform refused, no such desktop, or a cluster that is not answering.
+
 ## Endpoints
 
 | Route | Purpose |
@@ -107,4 +109,6 @@ The session reaches the pane through the Studio. A session's host signs browsers
 | `GET /api/sessions/item?user=&name=` | one session |
 | `GET /api/runs/item?slug=` | one run as the run pane draws it: status, inputs, and executed jobs |
 | `GET /api/session-proxy/<host>/<path>` | a page of one of the viewer's sessions, relayed with the viewer's key |
+| `GET /api/session-desktop/<user>/<name>/websockify` | the VNC socket of one of the viewer's desktop sessions (WebSocket only, from the Studio's own pages), relayed as the viewer |
+| `GET /api/session-desktop/<user>/<name>/logs` | that desktop's start-up logs, `{xstartup, xvnc}` |
 | `GET /api/platform/clusters`, `/partitions?cluster=`, `/buckets` | data for the pickers |

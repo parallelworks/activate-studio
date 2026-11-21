@@ -38,6 +38,10 @@ type SessionRow struct {
 	Run                      *SessionRun
 	Resource                 string // "" is null
 	CreatedAt                string // "" is null
+	// Desktop is a platform desktop (type "desktop", software "vnc"),
+	// which the Studio draws itself through the desktop relay. It is not
+	// a key of its own in the row: the page reads the type.
+	Desktop bool
 }
 
 func orNull(s string) any {
@@ -113,7 +117,7 @@ func Row(raw any, platformOrigin string) *SessionRow {
 	}
 	row := &SessionRow{
 		Name: name, User: jsString(jsonv.Path(o, "user")), Type: jsString(jsonv.Path(o, "type")),
-		Status: jsString(jsonv.Path(o, "status")), URL: u, OwnHost: own,
+		Status: jsString(jsonv.Path(o, "status")), URL: u, OwnHost: own, Desktop: isDesktop(o),
 	}
 	if h, ok := jsonv.Path(o, "healthy").(bool); ok {
 		row.Healthy = &h
@@ -257,6 +261,9 @@ type Routes struct {
 	pw  workspaceStarter
 	mu  sync.Mutex
 	run map[string]time.Time // the last workspace start per key
+
+	viewer    func(r *http.Request) (*platform.Viewer, error)
+	transport http.RoundTripper // the desktop relay's, for tests
 }
 
 type workspaceStarter func(key string)
@@ -265,6 +272,7 @@ type workspaceStarter func(key string)
 func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Routes {
 	s := &Routes{p: p, a: a, run: map[string]time.Time{}}
 	s.pw = s.startWorkspace
+	s.viewer = p.ViewerOf
 	h := func(f func(w http.ResponseWriter, r *http.Request) (any, error)) http.HandlerFunc {
 		return platform.Handler(a.Log, f)
 	}
@@ -274,6 +282,8 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Routes {
 	mux.HandleFunc("GET /api/runs/file", h(s.runFile))
 	mux.HandleFunc("GET /api/session-proxy/{host}", s.redirect)
 	mux.HandleFunc("GET /api/session-proxy/{host}/{rest...}", h(s.relay))
+	mux.HandleFunc("GET /api/session-desktop/{user}/{name}/websockify", s.desktopSocket)
+	mux.HandleFunc("GET /api/session-desktop/{user}/{name}/logs", h(s.desktopLogs))
 	return s
 }
 

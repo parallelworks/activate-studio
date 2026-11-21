@@ -63,6 +63,10 @@ Where it stops:
 
 Where pw code answers a chat (CUSTOMIZATION.md, Chat), the session runs as the person chatting. The Studio reaches that person's pw code daemon on the Studio's cluster (`STUDIO_HOME_CLUSTER`, or the cluster the Studio was deployed on) through `pw ssh`, with the platform key from their own ACTIVATE sign-in under Settings, Model access, and never with the deployment's key or service account. Without that sign-in pw code is not offered to them and the Studio assistant answers. The session works in the person's space when they have one on that cluster, and otherwise in `~/studio-chat` in their home. Its Studio tools reach the Studio's MCP server with a token sealed for that person and that conversation, so its searches see what the person's own chat would. The daemon reaches that server at `127.0.0.1` when the Studio runs on the cluster's controller, as a workflow deployment does, and otherwise at the Studio's host name, such as a Studio run as a batch job on a compute node; `STUDIO_MCP_URL` overrides both. Only the conversation's owner can answer its approvals or interrupt it.
 
+## Platform desktops
+
+A platform desktop shown in the Studio (WORKFLOWS.md, The side view) is relayed as the person viewing it. The Studio opens the desktop's socket on the platform with that person's own ACTIVATE sign-in or platform key, and only for a desktop that credential lists. On a Studio with sign-in on, a person signed out is refused, and so is a person without a credential of their own, including on a Studio that keeps no personal credentials (`DISABLE_PERSONAL_KEYS=1`); the deployment's key is never used for them. The socket is accepted only from the Studio's own pages, so a page on another site cannot open a person's desktop through their browser.
+
 ## The mechanism for point 4: permission-permutation external dbs
 
 GUFI's external-db design stores per-file extracted content in the index tree under the same access control as the source. The pieces:

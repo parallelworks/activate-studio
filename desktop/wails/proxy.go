@@ -50,6 +50,10 @@ func NewProxy(app *App) *Proxy {
 	p.studio = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(&url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", p.Port())})
+			// The page's origin is the shell's port, not the server's: the
+			// server checks a WebSocket's Origin (the desktop viewer's)
+			// against the host the page asked for.
+			r.Out.Header.Set("X-Forwarded-Host", r.In.Host)
 			// Loopback: compression buys nothing, and the HTML is edited.
 			r.Out.Header.Del("Accept-Encoding")
 			// No 304s: the HTML is edited, so a validator the server sent
