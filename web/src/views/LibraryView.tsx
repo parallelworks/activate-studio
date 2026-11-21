@@ -23,6 +23,7 @@ import { startPathJob, startUpload } from '../transfers'
 import { TransferPanel } from '../components/TransferPanel'
 import { selectLibraryEntry } from '../components/LibraryDetails'
 import { ShareDialog } from '../components/ShareDialog'
+import { ResultsTransferDialog, useTransfersShown, type ResultItem } from '../components/ResultsTransfer'
 
 const RAIL_MIN = 220
 const RAIL_MAX = 520
@@ -76,6 +77,10 @@ export function LibraryView({ display, onDisplay }: {
   const uploadDir = useRef('')
   const filesInput = useRef<HTMLInputElement>(null)
   const folderInput = useRef<HTMLInputElement>(null)
+  /** Rows being copied to another library through Transfers, and the
+   *  folder to start at when they were dropped or pasted on one. */
+  const [copyTo, setCopyTo] = useState<{ items: ResultItem[]; noun: string; destination?: { location: string; path: string } } | null>(null)
+  const transfersShown = useTransfersShown()
   /** Cut or copied paths, waiting for a destination. */
   const [clipboard, setClipboard] = useState<{ mode: 'cut' | 'copy'; paths: string[] } | null>(null)
   const selPaths = useMemo(() => [...multiSel], [multiSel])
@@ -173,6 +178,16 @@ export function LibraryView({ display, onDisplay }: {
     if (!lib?.space || lib.sharedFrom) return null
     return { library: id, path: inAll ? clean.split('/').slice(1).join('/') : clean }
   }
+  // A tree path as Transfers names it: its library and the path there.
+  const itemAt = (p: string): ResultItem => {
+    const clean = p.replace(/^\/+/, '')
+    if (!inAll) return { library: libId, path: clean }
+    const [id, ...rest] = clean.split('/')
+    return { library: id, path: rest.join('/') }
+  }
+  // Copy to another library: with Transfers shown and another library to
+  // copy to; never a library's own top folder in All libraries.
+  const canCopyOut = transfersShown && (cfg.libraries?.length ?? 0) > 1
   // A selection in a read-only library can be labeled but not moved or deleted.
   const selLocked = selPaths.map(p => readOnlyAt(p)).find(Boolean) ?? null
   const uploadsDir = inAll ? `${primaryId}/uploads` : 'uploads'
@@ -360,6 +375,13 @@ export function LibraryView({ display, onDisplay }: {
     // Both call a model, so they are offered only with AI features on.
     if (isDir && cfg.aiEnabled !== false) items.push({ label: 'Suggest labels…', onClick: () => void runSuggest(path) })
     if (path && sectionAllowed('chat', cfg)) items.push({ label: 'Add to chat', onClick: () => addToChat(path) })
+    if (path && !libraryTop && canCopyOut) {
+      const rows = targets().filter(p => !inAll || p.includes('/'))
+      items.push({
+        label: rows.length > 1 ? `Copy ${rows.length} items to another library…` : 'Copy to another library…',
+        onClick: later(() => setCopyTo({ items: rows.map(itemAt), noun: rows.length > 1 ? 'item' : isDir ? 'folder' : 'file' })),
+      })
+    }
     if (path) {
       items.push(
         { label: 'Copy path', copy: { text: path, label: 'path' } },
@@ -646,6 +668,11 @@ export function LibraryView({ display, onDisplay }: {
         type="file" hidden aria-hidden="true" tabIndex={-1}
         onChange={e => { void uploadItems(uploadDir.current, collectChosen([...(e.target.files ?? [])])); e.target.value = '' }}
       />
+      {copyTo && (
+        <ResultsTransferDialog items={copyTo.items} noun={copyTo.noun} copyOnly prefer="library" destination={copyTo.destination}
+          labels={Object.fromEntries((cfg.libraries ?? []).map(l => [l.id, l.label]))}
+          onClose={() => setCopyTo(null)} onDone={() => setCopyTo(null)} />
+      )}
       {shareTarget && (
         <ShareDialog open onClose={() => setShareTarget(null)} library={shareTarget.library} path={shareTarget.path} />
       )}
