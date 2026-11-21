@@ -624,6 +624,32 @@ func (s *Store) Create(title *string, owner string) *Conversation {
 	return c.Clone()
 }
 
+// CreateWith makes a conversation that starts with msgs (each already
+// linked to the one before) and runs in the pw code session link.
+func (s *Store) CreateWith(title *string, owner string, msgs []Message, link *PWCodeLink) *Conversation {
+	now := iso(s.now())
+	var o *string
+	if owner != "" {
+		o = strp(owner)
+	}
+	if msgs == nil {
+		msgs = []Message{}
+	}
+	c := &Conversation{ID: UUID(), Title: title, Owner: o, CreatedAt: now, UpdatedAt: now, Messages: msgs, PWCode: link}
+	if n := len(msgs); n > 0 {
+		c.ActiveBranchID = strp(msgs[n-1].ID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	all := append(s.load(), c)
+	if len(all) > maxConversations {
+		all = all[len(all)-maxConversations:]
+	}
+	s.all = all
+	s.persist()
+	return c.Clone()
+}
+
 // Rename sets a conversation's title; nil when it is gone.
 func (s *Store) Rename(id string, title *string) *Conversation {
 	s.mu.Lock()
