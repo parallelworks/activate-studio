@@ -42,7 +42,7 @@ func (r *Routes) credentialRemedy(req *http.Request, cliError string) string {
 		if v.Cred.BaseURL != "" {
 			yours = "your stored credential is a provider key, which covers chat only and is never sent to the platform"
 		} else {
-			yours = "your stored credential was rejected by the platform API; an AI gateway API key works for chat but does not grant platform access, so use a platform token or platform API key"
+			yours = "your stored credential was rejected by the platform API, so it may have expired or been revoked"
 		}
 	}
 	return "no platform credential available (this deployment has none, and " + yours + "), and the pw CLI on this host is not usable (" +

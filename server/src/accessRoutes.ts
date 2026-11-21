@@ -94,7 +94,7 @@ async function platformCall(key: string, method: 'GET' | 'POST', path: string, b
   try { data = JSON.parse(text) } catch { /* plain text, as whoami answers */ }
   if (!res.ok) {
     const said = (data && typeof data === 'object' ? String((data as { message?: string; error?: string; detail?: string }).message ?? (data as { error?: string }).error ?? (data as { detail?: string }).detail ?? '') : text).slice(0, 300)
-    if (res.status === 401 || res.status === 403) throw new KbError(res.status, `The platform refused this credential (${res.status})${said ? `: ${said}` : ''}. A platform token or platform API key is needed; an AI gateway key is not enough.`)
+    if (res.status === 401 || res.status === 403) throw new KbError(res.status, `The platform refused this credential (${res.status})${said ? `: ${said}` : ''}. It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Model access.`)
     throw new KbError(res.status === 404 ? 404 : 502, `The platform answered ${res.status}${said ? `: ${said}` : ''}`)
   }
   return data
