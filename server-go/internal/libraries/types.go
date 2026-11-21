@@ -147,6 +147,43 @@ type BucketOf struct {
 	// Every is how often Studio lists it again, in minutes; 0 only when
 	// asked.
 	Every int `json:"every"`
+	// Text is whether Studio reads the text of the objects after each
+	// listing (docs/LIBRARIES.md, Reading text from a bucket): off until
+	// asked, since each object read is a request and its bytes leave the
+	// store.
+	Text bool `json:"text"`
+	// Fsid names the bucket's records in a spread tree; set at the first
+	// text pass (libapi.BucketFsid).
+	Fsid string `json:"fsid,omitempty"`
+}
+
+// BucketTextMax is the largest object a bucket library's text pass reads;
+// a larger one is left unread.
+const BucketTextMax = 100 << 20
+
+// BucketText is what the last text pass of a bucket library did.
+type BucketText struct {
+	// At is when it ended.
+	At string `json:"at"`
+	// Read counts the objects it read, by outcome (text, empty, skipped,
+	// changed, missing, failed); Bytes their size, Requests the GET
+	// requests that took (one an object).
+	Read     map[string]int64 `json:"read"`
+	Bytes    int64            `json:"bytes"`
+	Requests int64            `json:"requests"`
+	Seconds  float64          `json:"seconds"`
+	// Files is how many objects of the library have text now.
+	Files int64 `json:"files"`
+	// Rate is the bytes a second of the last pass that read at least a
+	// megabyte, kept by passes that read less; 0 before one.
+	Rate float64 `json:"rate"`
+	// Missing says what was not read for want of a helper program.
+	Missing []string `json:"missing"`
+	// Stopped is set when it was stopped before the end; the next pass
+	// goes on from there.
+	Stopped bool `json:"stopped,omitempty"`
+	// Error is why it failed; nil when it did not.
+	Error *string `json:"error"`
 }
 
 // BucketEvery is the choices of BucketOf.Every, in minutes. Each listing
@@ -177,6 +214,8 @@ type BucketState struct {
 	Seconds float64 `json:"seconds"`
 	// Error is why the last listing failed; nil when it did not.
 	Error *string `json:"error"`
+	// TextPass is what the last text pass did; nil before the first.
+	TextPass *BucketText `json:"textPass,omitempty"`
 }
 
 // Def is a library as stored (LibraryDef).
@@ -361,4 +400,6 @@ type PublicBucket struct {
 	BucketOf
 	BucketState
 	Listing bool `json:"listing"`
+	// Reading is set while the objects' text is being read.
+	Reading bool `json:"reading"`
 }

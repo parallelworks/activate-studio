@@ -76,6 +76,36 @@ type indexFile struct {
 	inode, mtime, uid, gid, mode int64
 }
 
+// IndexEntry is a file of an index folder's db.db.
+type IndexEntry struct {
+	Name                               string
+	Inode, Mtime, Size, UID, GID, Mode int64
+}
+
+// WalkIndex calls fn with each folder of the index at root that has a
+// db.db, as a path relative to root ("" for root itself, with slashes),
+// and the files its db.db lists.
+func WalkIndex(root string, fn func(dir string, files []IndexEntry) error) error {
+	return filepath.WalkDir(root, func(dir string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		dbFile := filepath.Join(dir, "db.db")
+		if _, err := os.Stat(dbFile); err != nil {
+			return nil
+		}
+		files, _, _, err := readEntries(dbFile)
+		if err != nil {
+			return fmt.Errorf("%s: %w", dbFile, err)
+		}
+		rel, _ := filepath.Rel(root, dir)
+		if rel == "." {
+			rel = ""
+		}
+		return fn(filepath.ToSlash(rel), files)
+	})
+}
+
 // FillShards writes the permission shards of every folder of the index
 // at root from the spread tree: each file in a folder's db.db whose inode
 // and mtime have records there (with this extra_info) gets them in the
@@ -101,7 +131,7 @@ func FillShards(s Spread, root, extraInfo string) (ShardStats, error) {
 		p := s.Path(inode)
 		db, ok := spreads[p]
 		if !ok {
-			db, _ = openShard(p, false)
+			db, _ = openShard(p, false, false)
 			spreads[p] = db
 		}
 		return db
@@ -170,6 +200,16 @@ func FillShards(s Spread, root, extraInfo string) (ShardStats, error) {
 
 // readDir is a folder's files from its db.db, and the folder's owner.
 func readDir(dbFile string) ([]indexFile, int64, int64, error) {
+	es, duid, dgid, err := readEntries(dbFile)
+	out := make([]indexFile, len(es))
+	for i, e := range es {
+		out[i] = indexFile{inode: e.Inode, mtime: e.Mtime, uid: e.UID, gid: e.GID, mode: e.Mode}
+	}
+	return out, duid, dgid, err
+}
+
+// readEntries is a folder's files from its db.db, and the folder's owner.
+func readEntries(dbFile string) ([]IndexEntry, int64, int64, error) {
 	db, err := sql.Open("sqlite", "file:"+dbFile+"?mode=ro&_pragma=busy_timeout(60000)")
 	if err != nil {
 		return nil, 0, 0, err
@@ -181,20 +221,22 @@ func readDir(dbFile string) ([]indexFile, int64, int64, error) {
 			return nil, 0, 0, err
 		}
 	}
-	rows, err := db.Query("SELECT inode, mtime, uid, gid, mode FROM entries WHERE type = 'f'")
+	rows, err := db.Query("SELECT name, inode, mtime, size, uid, gid, mode FROM entries WHERE type = 'f'")
 	if err != nil {
 		return nil, 0, 0, err
 	}
 	defer rows.Close()
-	var out []indexFile
+	var out []IndexEntry
 	for rows.Next() {
 		var ino string
-		var f indexFile
-		if err := rows.Scan(&ino, &f.mtime, &f.uid, &f.gid, &f.mode); err != nil {
+		var f IndexEntry
+		var size sql.NullInt64
+		if err := rows.Scan(&f.Name, &ino, &f.Mtime, &size, &f.UID, &f.GID, &f.Mode); err != nil {
 			return nil, 0, 0, err
 		}
+		f.Size = size.Int64
 		// GUFI keeps the inode as text.
-		if f.inode, err = strconv.ParseInt(strings.TrimSpace(ino), 10, 64); err != nil {
+		if f.Inode, err = strconv.ParseInt(strings.TrimSpace(ino), 10, 64); err != nil {
 			continue
 		}
 		out = append(out, f)
@@ -207,11 +249,11 @@ func readDir(dbFile string) ([]indexFile, int64, int64, error) {
 func writeShard(file string, files []indexFile, spread func(int64) *sql.DB, extraInfo string, mode os.FileMode) (bool, error) {
 	tmp := file + ".tmp"
 	os.Remove(tmp)
-	db, err := openShard(tmp, true)
+	db, err := openShard(tmp, true, true)
 	if err != nil {
 		return false, err
 	}
-	tx, err := db.Begin()
+	tx, err := begin(db, tmp)
 	if err != nil {
 		db.Close()
 		return false, err
@@ -232,6 +274,16 @@ func writeShard(file string, files []indexFile, spread func(int64) *sql.DB, extr
 		return fail(err)
 	}
 	db.Close()
+	// Written with no syncs; synced once, so the rename puts a whole file
+	// in place.
+	if f, err := os.OpenFile(tmp, os.O_RDWR, 0); err == nil {
+		serr := f.Sync()
+		f.Close()
+		if serr != nil {
+			os.Remove(tmp)
+			return false, serr
+		}
+	}
 	if err := os.Chmod(tmp, mode); err != nil {
 		os.Remove(tmp)
 		return false, err

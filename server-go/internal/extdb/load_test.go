@@ -2,6 +2,7 @@ package extdb
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -75,7 +76,7 @@ func fakeDir(t *testing.T, dir string, duid, dgid int64, files [][5]int64) {
 	for _, s := range []string{
 		"DROP TABLE IF EXISTS summary", "DROP TABLE IF EXISTS entries",
 		"CREATE TABLE summary (name TEXT, uid INT64, gid INT64, isroot INT64)",
-		"CREATE TABLE entries (name TEXT, type TEXT, inode TEXT, mode INT64, uid INT64, gid INT64, mtime INT64)",
+		"CREATE TABLE entries (name TEXT, type TEXT, inode TEXT, mode INT64, uid INT64, gid INT64, mtime INT64, size INT64)",
 	} {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatal(err)
@@ -83,7 +84,7 @@ func fakeDir(t *testing.T, dir string, duid, dgid int64, files [][5]int64) {
 	}
 	db.Exec("INSERT INTO summary VALUES ('d', ?, ?, 1)", duid, dgid)
 	for _, f := range files { // inode, mtime, uid, gid, mode
-		db.Exec("INSERT INTO entries VALUES ('f', 'f', ?, ?, ?, ?, ?)", f[0], f[4], f[2], f[3], f[1])
+		db.Exec("INSERT INTO entries VALUES (?, 'f', ?, ?, ?, ?, ?, 10)", fmt.Sprintf("f%d", f[0]), f[0], f[4], f[2], f[3], f[1])
 	}
 }
 
@@ -190,5 +191,37 @@ func TestSpreadAndShards(t *testing.T) {
 	}
 	if got := texts(t, filepath.Join(ix, "a", or)); got[101] != "alpha changed" || len(got) != 1 {
 		t.Errorf("after: %v", got)
+	}
+}
+
+func TestLoadSpreadSinceAndWalkIndex(t *testing.T) {
+	s := Spread{Top: filepath.Join(t.TempDir(), "spread"), Prefix: Prefix, Fsid: "f"}
+	p := filepath.Join(t.TempDir(), "a.db")
+	a, err := Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Put(File{Key: Key{Inode: 1, Mtime: 1}, State: StateText, Chunks: Split("one", 100)})
+	a.Close()
+	if st, err := LoadSpreadSince(s, p, 1<<40); err != nil || st.Files != 0 {
+		t.Fatalf("nothing is that new: %+v %v", st, err)
+	}
+	if st, err := LoadSpreadSince(s, p, 1); err != nil || st.Files != 1 {
+		t.Fatalf("%+v %v", st, err)
+	}
+	ix := t.TempDir()
+	fakeDir(t, ix, 1, 1, [][5]int64{{7, 70, 1, 1, 0o644}})
+	fakeDir(t, filepath.Join(ix, "x", "y"), 1, 1, [][5]int64{{8, 80, 1, 1, 0o644}})
+	got := map[string]IndexEntry{}
+	if err := WalkIndex(ix, func(dir string, fs []IndexEntry) error {
+		for _, f := range fs {
+			got[dir+"|"+f.Name] = f
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["|f7"].Inode != 7 || got["x/y|f8"].Mtime != 80 || got["x/y|f8"].Size != 10 {
+		t.Errorf("%+v", got)
 	}
 }

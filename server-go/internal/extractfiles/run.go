@@ -73,6 +73,9 @@ type Options struct {
 	// one beside Out, removed at the end.
 	Cache string
 	Jobs  int
+	// MaxSize skips, unread, a file listed as larger than this many bytes;
+	// 0 for no limit.
+	MaxSize int64
 	// Progress gets the list lines handled, of Total, and the bytes read.
 	Progress func(done, total int, bytes int64)
 	// Log gets one line per file that could not be read.
@@ -271,6 +274,10 @@ func one(ctx context.Context, x *extract.Extractor, o Options, cache string, tmp
 	if kind == extract.KindNone || extract.LockFile(name) {
 		// Nothing reads it: the file is not opened at all.
 		f.State = extdb.StateSkipped
+		return r
+	}
+	if o.MaxSize > 0 && e.Size > o.MaxSize {
+		f.State, f.Err = extdb.StateSkipped, fmt.Sprintf("listed at %d bytes, over the %d read", e.Size, o.MaxSize)
 		return r
 	}
 	local, size, mtime, release, err := o.Source.Fetch(ctx, e)
