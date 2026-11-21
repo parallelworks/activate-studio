@@ -39,14 +39,19 @@ import { PWCodeApprovals, PWCodeEngine, PWCodeNotice, PWCodeWatcher } from '../c
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
-/** Re-lists the conversation rail when the scope toggle changes, without
+/** Re-lists the conversation rail when the scope toggle changes, or a chat
+ *  was made elsewhere (Continue in Studio on the Code page), without
  *  remounting the provider and tearing down an open stream. */
 function FilterReloader() {
   const { loadConversations } = useChat()
   useEffect(() => {
     const on = () => { void loadConversations() }
     window.addEventListener('ade:chat-filter-changed', on)
-    return () => window.removeEventListener('ade:chat-filter-changed', on)
+    window.addEventListener('ade:chats-changed', on)
+    return () => {
+      window.removeEventListener('ade:chat-filter-changed', on)
+      window.removeEventListener('ade:chats-changed', on)
+    }
   }, [loadConversations])
   return null
 }

@@ -92,6 +92,16 @@ export function getEngine(conversationId?: string | null): Engine {
     return validEngine(localStorage.getItem(ENGINE_LAST))
   } catch { return '' }
 }
+/** Keeps an engine for one conversation only, leaving the last choice for
+ *  new chats as it is: a chat that continues a pw code session answers
+ *  there. */
+export function keepEngineFor(conversationId: string, value: Engine): void {
+  try {
+    const all = enginesByChat()
+    all[conversationId] = validEngine(value)
+    localStorage.setItem(ENGINE_BY_CHAT, JSON.stringify(all))
+  } catch { /* storage unavailable: the server answers a continued chat in pw code */ }
+}
 export function setEngine(value: Engine, conversationId?: string | null): void {
   const v = validEngine(value)
   try {

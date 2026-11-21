@@ -197,7 +197,9 @@ To pick up a session you already have, name it or say what it was about, for exa
 
 ## Code
 
-On ACTIVATE, Code lists your pw code sessions on the platform's machines, the same ones the platform's Code page shows: those waiting for you first, then those working, then the rest, with archived sessions behind **Show archived**. The line under the filter names the machines whose pw code daemon is running. Choose a session to read its conversation, with each tool call folded under one line; it updates while the session works. **Open in ACTIVATE** opens the session on the platform, where you answer, approve and steer it, and **New session in ACTIVATE** starts one there. Code is read only for now.
+On ACTIVATE, Code lists your pw code sessions on the platform's machines, the same ones the platform's Code page shows: those waiting for you first, then those working, then the rest, with archived sessions behind **Show archived**. The line under the filter names the machines whose pw code daemon is running. Choose a session to read its conversation, with each tool call folded under one line; it updates while the session works. **Open in ACTIVATE** opens the session on the platform, where you answer, approve and steer it, and **New session in ACTIVATE** starts one there.
+
+**Continue in Studio** carries a session on in a chat here, when it is on the machine where this Studio's pw code runs for you: this computer, or, on a Studio several people share, your own pw code on the Studio's cluster. It asks first, since the session may also be open in a terminal or in PW Code on the web, and messages from there reach it too; a session open on another machine is taken over from there. The chat starts with the session's earlier turns, and each message, approval and stop goes to that same session, which pw code answers. Sessions on other machines and archived ones stay read only, and the line under the button says why. A session that is in a Studio chat says so in the list, and **Open the Studio chat** opens it. A session started outside the Studio keeps its own tools: pw code cannot add the Studio's library tools to a session that already exists.
 
 # More
 
