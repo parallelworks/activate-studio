@@ -485,7 +485,12 @@ entry is written to a GUFI trace (`server-go/internal/tracefile`),
 grouped by folder in sorted runs on disk, so a listing of any size is
 written in bounded memory and each folder appears once. Folders take mode
 0700 and objects 0600, owned by the account the Studio runs as, and a
-folder's time is that of its newest object. `gufi_trace2index` builds the
+folder's time is that of its newest object. An entry's inode is a 63-bit
+hash of its path, so an object keeps its inode from one listing to the
+next while its path is the same, and text extracted from it, which is
+keyed by inode and modification time, stays valid until the object
+changes. Two paths in one folder that hash alike are told apart by
+hashing again, in path order. `gufi_trace2index` builds the
 trace into a staging folder, which is checked and then swapped in, so
 search answers from the last listing while a new one runs. Paths longer
 than GUFI holds, names "." or "..", and a name listed twice are left out

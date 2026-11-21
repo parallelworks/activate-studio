@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -207,5 +208,131 @@ func TestGufiBuildsTheTrace(t *testing.T) {
 	}
 	if st, err := os.Stat(filepath.Join(idx, "files", "projects")); err != nil || st.Mode().Perm() != 0o700 {
 		t.Errorf("index folders should be the Studio account's alone: %v %v", st.Mode(), err)
+	}
+}
+
+// inodes are the inodes of a trace's entries, by path.
+func inodes(t *testing.T, trace string) map[string]string {
+	t.Helper()
+	m := map[string]string{}
+	for _, l := range parse(t, trace) {
+		m[l.name] = l.ino
+	}
+	return m
+}
+
+// An entry keeps its inode from one listing to the next, whatever is
+// added before it, after it or beside it, or taken away.
+func TestInodesSurviveAListing(t *testing.T) {
+	first := inodes(t, func() string { s, _ := write(t, listing); return s }())
+	if again := inodes(t, func() string { s, _ := write(t, listing); return s }()); len(again) != len(first) {
+		t.Fatal("the same listing gave other entries")
+	} else {
+		for p, ino := range first {
+			if again[p] != ino {
+				t.Errorf("%s: %s, then %s", p, ino, again[p])
+			}
+		}
+	}
+	changed := append([]entry{
+		{"aaa-first.txt", 1, 1700000000, false},
+		{"projects/alpha/0-new.txt", 1, 1700000000, false},
+		{"projects/aaa/new.txt", 1, 1700000000, false},
+	}, listing[1:]...) // projects/beta/raw/run1.bin is gone
+	second := inodes(t, func() string { s, _ := write(t, changed); return s }())
+	kept := 0
+	for p, ino := range first {
+		if strings.HasPrefix(p, "files/projects/beta/raw") {
+			// Gone, and its folder with it.
+			continue
+		}
+		if second[p] != ino {
+			t.Errorf("%s changed inode: %s, then %s", p, ino, second[p])
+		}
+		kept++
+	}
+	if kept < 10 {
+		t.Fatalf("compared only %d entries", kept)
+	}
+	seen := map[string]string{}
+	for p, ino := range second {
+		if q, dup := seen[ino]; dup {
+			t.Errorf("%s and %s share inode %s", p, q, ino)
+		}
+		seen[ino] = p
+	}
+	if Inode("readme.txt", false, 0) == Inode("readme.txt", true, 0) || Inode("x", false, 0) == Inode("x", false, 1) {
+		t.Error("the kind or the try does not change the hash")
+	}
+}
+
+// With a hash that collides often, folders never share an inode, no file
+// takes a folder's, files of one folder never share one, and the result
+// is the same each time.
+func TestInodeCollisionsProbedApart(t *testing.T) {
+	old := inodeFunc
+	inodeFunc = func(rel string, isDir bool, try int) uint64 { return 2 + Inode(rel, isDir, try)%13 }
+	defer func() { inodeFunc = old }()
+	var es []entry
+	for i := 0; i < 4; i++ {
+		es = append(es, entry{path: "d" + string(rune('0'+i)), size: -1, mtime: 1, dir: true})
+	}
+	for i := 0; i < 6; i++ {
+		es = append(es, entry{path: "f" + string(rune('a'+i)), size: 1, mtime: 1})
+	}
+	trace, _ := write(t, es)
+	again, _ := write(t, es)
+	if trace != again {
+		t.Error("probing is not deterministic")
+	}
+	dirs, files := map[string]string{}, map[string]string{}
+	for _, l := range parse(t, trace) {
+		if l.typ == "d" {
+			if dirs[l.ino] != "" {
+				t.Errorf("folders %s and %s share %s", l.name, dirs[l.ino], l.ino)
+			}
+			dirs[l.ino] = l.name
+			continue
+		}
+		if dirs[l.ino] != "" || files[l.ino] != "" {
+			t.Errorf("file %s takes inode %s of %s%s", l.name, l.ino, dirs[l.ino], files[l.ino])
+		}
+		files[l.ino] = l.name
+	}
+	if len(files) != 6 || len(dirs) != 5 {
+		t.Fatalf("%d files, %d folders", len(files), len(dirs))
+	}
+}
+
+// GUFI keeps the trace's inodes, which use all 63 bits.
+func TestGufiKeepsTheInodes(t *testing.T) {
+	bin := gufiBin(t)
+	noDev, err := Layout(bin, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace, _ := writeLayout(t, listing, noDev)
+	dir := t.TempDir()
+	tf := filepath.Join(dir, "t.trace")
+	os.WriteFile(tf, []byte(trace), 0o600)
+	idx := filepath.Join(dir, "idx")
+	if out, err := exec.Command(filepath.Join(bin, "gufi_trace2index"), "-n", "2", tf, idx).CombinedOutput(); err != nil {
+		t.Fatalf("gufi_trace2index: %v\n%s", err, out)
+	}
+	out, err := exec.Command(filepath.Join(bin, "gufi_query"), "-d", "|", "-E", "SELECT rpath(sname, sroll, name), inode FROM vrpentries;", filepath.Join(idx, "files")).CombinedOutput()
+	if err != nil {
+		t.Fatalf("gufi_query: %v\n%s", err, out)
+	}
+	n := 0
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		p, ino, _ := strings.Cut(strings.TrimPrefix(l, idx+"/"), "|")
+		// No two of these paths collide, so each has its first try.
+		if want := strconv.FormatUint(Inode(strings.TrimPrefix(p, "files/"), false, 0), 10); want != ino {
+			t.Errorf("%s: index has inode %s, want %s", p, ino, want)
+		}
+		n++
+	}
+	if n != 6 {
+		t.Errorf("checked %d files", n)
 	}
 }
