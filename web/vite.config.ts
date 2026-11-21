@@ -1,7 +1,8 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
-import { cpSync, createReadStream, existsSync, statSync } from 'node:fs'
-import { dirname, join, normalize } from 'node:path'
+import { cpSync, createReadStream, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { fillShell, shellOf } from './shell/build'
+import { dirname, join, normalize, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 
 // pdf.js (PdfJsPages) loads its standard fonts, character maps, colour
@@ -35,8 +36,25 @@ function pdfjsAssets(): Plugin {
   }
 }
 
+/** Writes web/shell/sw.js into the build as sw.js, with this build's shell
+ *  (shellOf) in place of its SHELL placeholder. */
+function shellWorker(): Plugin {
+  let outDir = 'dist'
+  return {
+    name: 'shell-worker',
+    apply: 'build',
+    configResolved(c) { outDir = resolve(c.root, c.build.outDir) },
+    closeBundle() {
+      const html = readFileSync(join(outDir, 'index.html'), 'utf8')
+      const icons = readdirSync(join(__dirname, 'public')).filter(f => /\.(png|svg|ico)$/.test(f)).sort()
+      const src = readFileSync(join(__dirname, 'shell', 'sw.js'), 'utf8')
+      writeFileSync(join(outDir, 'sw.js'), fillShell(src, shellOf(html, icons)))
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), pdfjsAssets()],
+  plugins: [react(), pdfjsAssets(), shellWorker()],
   // The parser loads parseWorkflow.wasm from beside its own module (since
   // 0.6.1). Pre-bundling moves the module into .vite/deps without the
   // file, so dev served the SPA's HTML in its place and the workflow form

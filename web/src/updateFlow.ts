@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { updatesApi, type UpdatePolicy, type UpdateState, type UpdatesStatus } from './api'
 import { reopenApp } from './nativeShell'
+import { reloadOntoNewest } from './shellWorker'
 
 /**
  * The page's one view of updates: the status the server reports, a check,
@@ -73,7 +74,7 @@ export function isNewer(a: string, b: string): boolean {
 
 export const isVersion = (v: string) => parts(v) !== null
 
-const DEFAULTS = { pollMs: 1500, giveUpMs: 180_000, refreshMs: 2 * 60_000, focusGapMs: 10_000, checkingMs: 2000, reload: () => location.reload() }
+const DEFAULTS = { pollMs: 1500, giveUpMs: 180_000, refreshMs: 2 * 60_000, focusGapMs: 10_000, checkingMs: 2000, reload: () => { void reloadOntoNewest() } }
 const options = { ...DEFAULTS }
 
 /** Reloads the page, onto the version now running. */
