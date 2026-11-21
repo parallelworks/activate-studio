@@ -578,7 +578,6 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	m.follow(turn)
 	go func() {
 		defer cancel()
-		defer m.unfollow(turn)
 		turn.run(events, followErr)
 	}()
 	select {
@@ -612,7 +611,10 @@ func (t *pwTurn) mine(ev *jsonv.Object) bool {
 }
 
 func (t *pwTurn) run(events <-chan *jsonv.Object, followErr <-chan error) {
+	// The turn stops being followed before done is closed, so a status read
+	// as soon as the reply ends does not still say answering.
 	defer close(t.done)
+	defer t.m.unfollow(t)
 	for ev := range events {
 		if t.handle(ev) {
 			t.finish()
