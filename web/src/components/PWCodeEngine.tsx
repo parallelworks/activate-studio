@@ -10,7 +10,14 @@ interface EngineInfo { setting: 'auto' | 'pwcode' | 'studio'; default: 'pwcode' 
 /** How the Studio's tools stand in the conversation's pw code session. */
 interface ToolsState { connected: boolean; count: number; error?: string }
 
-interface SessionInfo { url?: string; session?: string; model?: string }
+/** continued: the chat continues a session from the Code page, on the
+ *  platform's machine `machine`. */
+interface SessionInfo { url?: string; session?: string; model?: string; continued?: boolean; machine?: string }
+
+/** The address of a pw code session on the Code page. */
+export function codePageLink(machine: string, session: string): string {
+  return `#view=code?${new URLSearchParams({ machine, session })}`
+}
 
 const ENGINES: { value: 'pwcode' | 'studio'; label: string; hint: string }[] = [
   { value: 'pwcode', label: 'pw code', hint: 'The ACTIVATE agent harness: works in files, runs commands you approve, searches these libraries, and shows in PW Code on the web.' },
@@ -27,11 +34,11 @@ function useSession(conversationId: string | null): SessionInfo {
     let gone = false
     fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}`)
       .then(r => (r.ok ? r.json() : null))
-      .then(c => { if (!gone && c?.pwcode) setS({ url: c.pwcode.url, session: c.pwcode.session, model: c.pwcode.model }) })
+      .then(c => { if (!gone && c?.pwcode) setS({ url: c.pwcode.url, session: c.pwcode.session, model: c.pwcode.model, continued: !!c.pwcode.continued, machine: c.pwcode.machine }) })
       .catch(() => {})
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail as SessionInfo & { conversationId?: string }
-      if (d.conversationId === conversationId) setS({ url: d.url, session: d.session, model: d.model })
+      if (d.conversationId === conversationId) setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model }))
     }
     window.addEventListener('ade-pwcode-session', on)
     return () => { gone = true; window.removeEventListener('ade-pwcode-session', on) }
@@ -115,10 +122,20 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
         <p className={`engine-tools ${tools.connected ? '' : 'engine-tools-off'}`}>
           {tools.connected
             ? `This chat's pw code session has the Studio's tools: ${tools.count} of them, the index included.`
-            : `This chat's pw code session does not have the Studio's tools${tools.error ? `: ${tools.error}` : ''}. The next message reconnects them or starts a session that has them.`}
+            : session.continued
+              ? `This chat's pw code session does not have the Studio's tools${tools.error ? `: ${tools.error}` : ''}. The next message tries to reconnect them.`
+              : `This chat's pw code session does not have the Studio's tools${tools.error ? `: ${tools.error}` : ''}. The next message reconnects them or starts a session that has them.`}
         </p>
       )}
-      {!tools && info.toolsDown && <p className="engine-tools engine-tools-off">{info.toolsDown}</p>}
+      {!tools && session.continued && (
+        <p className="engine-tools engine-tools-off">This session began outside the Studio, so it works with its own tools and not the Studio's library tools: pw code cannot add them to a session that already exists.</p>
+      )}
+      {!tools && !session.continued && info.toolsDown && <p className="engine-tools engine-tools-off">{info.toolsDown}</p>}
+      {session.continued && session.machine && session.session && (
+        <p className="engine-web">
+          This chat continues a pw code session. <a href={codePageLink(session.machine, session.session)} onClick={() => setOpen(false)}>See it on the Code page</a>
+        </p>
+      )}
       {session.url && (
         <p className="engine-web">
           <ExternalLink href={session.url}>Open this chat in PW Code on the web</ExternalLink>

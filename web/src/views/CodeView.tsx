@@ -93,6 +93,16 @@ async function getJSON<T>(url: string): Promise<T> {
   return body as T
 }
 
+/** The session the address names, as a chat's link back gives it:
+ *  #view=code?machine=<id>&session=<id>. */
+export function sessionInHash(hash: string): { machine: string; session: string } | null {
+  const m = hash.match(/^#view=code\?(.*)$/)
+  if (!m) return null
+  const q = new URLSearchParams(m[1])
+  const machine = q.get('machine') ?? '', session = q.get('session') ?? ''
+  return machine && session ? { machine, session } : null
+}
+
 export function CodeView() {
   const [machines, setMachines] = useState<Machine[]>([])
   const [rows, setRows] = useState<CodeSession[] | null>(null)
@@ -126,6 +136,19 @@ export function CodeView() {
     const t = setInterval(() => { if (document.visibilityState === 'visible') { void load(); void loadHere() } }, 20_000)
     return () => clearInterval(t)
   }, [load, loadHere])
+  // A session named in the address opens once the list has it.
+  const [asked, setAsked] = useState(() => sessionInHash(location.hash))
+  useEffect(() => {
+    const on = () => { const a = sessionInHash(location.hash); if (a) setAsked(a) }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
+  useEffect(() => {
+    if (!asked || !rows) return
+    const s = rows.find(r => r.machineId === asked.machine && r.id === asked.session)
+    if (s) { setOpen(s); if (s.archived) setShowArchived(true) }
+    setAsked(null)
+  }, [asked, rows])
   const chatFor = useMemo(() => new Map((here?.chats ?? []).map(c => [c.session, c.conversationId])), [here])
 
   const loadDetail = useCallback(async (s: CodeSession) => {

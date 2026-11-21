@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ago, argSummary, CodeView, continuable, groupSessions, shortPath, Transcript, type CodeSession, type Here } from '../src/views/CodeView'
+import { ago, argSummary, CodeView, continuable, groupSessions, sessionInHash, shortPath, Transcript, type CodeSession, type Here } from '../src/views/CodeView'
 import { getEngine } from '../src/labelScope'
 
 const row = (o: Partial<CodeSession>): CodeSession => ({ machineId: 'm', machine: 'm1', id: 'x', title: 't', messages: 1, status: 'idle', url: '', ...o })
@@ -118,6 +118,17 @@ describe('Continue in Studio', () => {
     await waitFor(() => expect(location.hash).toBe('#chat=c-new'))
     expect(calls).toContain('POST /api/chat/pwcode/continue {"machine":"m1","session":"s1","confirmed":true}')
     expect(getEngine('c-new')).toBe('pwcode')
+  })
+
+  it('opens the session a chat links back to', async () => {
+    expect(sessionInHash('#view=code?machine=m1&session=s1')).toEqual({ machine: 'm1', session: 's1' })
+    expect(sessionInHash('#view=code')).toBeNull()
+    expect(sessionInHash('#view=search?machine=m1&session=s1')).toBeNull()
+    serve([{ session: 's1', conversationId: 'c-old', continued: true }])
+    location.hash = '#view=code?machine=m1&session=s1'
+    render(<CodeView />)
+    expect(await screen.findByRole('button', { name: 'Open the Studio chat' })).toBeInTheDocument()
+    expect(calls.some(c => c.startsWith('GET /api/code-sessions/item?machine=m1&id=s1'))).toBe(true)
   })
 
   it('keeps a session on another machine read only, and opens a chat that continues one', async () => {
