@@ -36,7 +36,9 @@ export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) 
   const [host, setHost] = useState('')
 
   const readStatus = useCallback(() => {
-    api.spaceStatus().then(s => { setStatus(s); setFolder(f => f || s.suggested); setStatusError('') }, e => setStatusError(String((e as Error).message ?? e)))
+    // The Studio's own cluster is the system to begin with, before the
+    // list of the person's systems answers.
+    api.spaceStatus().then(s => { setStatus(s); setFolder(f => f || s.suggested); setCluster(c => c || s.cluster); setStatusError('') }, e => setStatusError(String((e as Error).message ?? e)))
   }, [])
   useEffect(() => { readStatus() }, [readStatus])
   // Signing in here, or again after the platform refused a credential,
