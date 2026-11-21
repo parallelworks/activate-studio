@@ -822,16 +822,16 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
 
   // The failure message has to name the caller's actual situation. "You
   // have not added a credential" was written for the empty case and kept
-  // being shown to users who had added one of the wrong kind: an AI
-  // gateway key or a provider key works for chat and is never sent to the
-  // platform API, so every workflow surface failed while Settings said
-  // connected.
+  // being shown to users who had added one that does not work there: a
+  // provider key works for chat and is never sent to the platform API, and
+  // an expired or revoked platform key is refused by it, so every workflow
+  // surface failed while Settings said connected.
   const credentialRemedy = (userId: string | undefined, cliError: string): string => {
     const cred = resolveUserCred(userId)
     const yours = cred
       ? (cred.baseUrl
         ? 'your stored credential is a provider key, which covers chat only and is never sent to the platform'
-        : 'your stored credential was rejected by the platform API; an AI gateway API key works for chat but does not grant platform access, so use a platform token or platform API key')
+        : 'your stored credential was rejected by the platform API, so it may have expired or been revoked')
       : 'you have not added your own under Settings, Model access'
     return `no platform credential available (this deployment has none, and ${yours}), and the pw CLI on this host is not usable (${cliError.slice(0, 120)}). Add a platform token or API key in Settings, authenticate the CLI here, or set PW_API_KEY.`
   }

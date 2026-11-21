@@ -789,10 +789,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     await ensureFreshAccess(5_000)
     const health = await aiHealth(cred?.key, cred?.baseUrl, { endpoint: cred?.endpoint })
     // Whether the credential also reaches the platform API, which is what
-    // the workflow tools and the DAG viewer use. Two different products
-    // both sell "API keys": an AI gateway key answers the model routes and
-    // nothing else, and a user who pasted one sees models work while every
-    // workflow surface fails 502, with nothing connecting the two. A
+    // the workflow tools and the DAG viewer use. A key the model routes
+    // accept can still be refused there (a platform that still issues
+    // separate AI gateway keys, or one limited to models), and the user
+    // would see models work while every workflow surface fails 502. A
     // provider key with a base URL is never sent to the platform, so it is
     // reported as no-access rather than probed.
     let platformAccess: boolean | null = null

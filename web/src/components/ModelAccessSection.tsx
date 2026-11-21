@@ -511,8 +511,8 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
         )}
         {health?.status === 'ok' && health.platformAccess === false && access.models.source === 'key' && (
           <p className="identity-note">
-            This key reaches models only. Workflows, run monitoring, and the DAG viewer use the platform API, which needs a
-            platform token or a platform API key; an AI gateway key does not grant that access.
+            Models accept this key, but the platform API refuses it. Workflows, run monitoring, and the DAG viewer use the
+            platform API. Sign in with ACTIVATE, or add a key from your ACTIVATE account (Account, API keys).
           </p>
         )}
         {stored && me.credExpired && me.credExpiresAt && (
@@ -572,8 +572,7 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
       {shownTab === 'key' && (
         <div className="access-panel">
           <p className="muted view-sub">
-            A platform token or platform API key (Account, API keys) covers models and the platform; an AI gateway key covers
-            models only. The host is the platform's own, such as platform.example.com. A site AI portal or another API goes
+            A token or API key from your ACTIVATE account (Account, API keys) covers models and the platform. The host is the platform's own, such as platform.example.com. A site AI portal or another API goes
             under OpenAI-compatible endpoint.{stored && access.models.source === 'endpoint' ? ' Saving one replaces your endpoint.' : ''}
           </p>
           {signedIn && (
