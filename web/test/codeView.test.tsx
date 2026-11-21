@@ -21,7 +21,37 @@ describe('Code sessions', () => {
     expect(ago('2026-11-10T12:00:00Z', now)).toBe('2d')
     expect(shortPath('/home/u/work/project/src')).toBe('…/project/src')
     expect(argSummary('{"path":"a/b.go","limit":5}')).toBe('a/b.go')
-    expect(argSummary('{"x":1}')).toBe('{"x":1}')
+    expect(argSummary('{"x":1}')).toBe('')
+  })
+  it('reads tool arguments the server cut short, and never shows them raw', () => {
+    // The server keeps the first 600 characters, so long arguments are not JSON.
+    const cut = '{"command":"ssh host \'python3 -c \\"\\n# Check the coordinates\\nimport os\\nprint(1)'
+    expect(argSummary(cut, 'Bash')).toBe("ssh host 'python3 -c \" …")
+    expect(argSummary('{"todos":[{"activeForm":"Checking the mesh","content":"Check the mesh","status":"completed"},{"activeForm":"Validating the domain","status":"in_progress"', 'TodoWrite'))
+      .toBe('Validating the domain')
+    expect(argSummary('{"todos":[{"activeForm":"Checking the mesh","content":"Check the mesh","status":"in_progress"}]}', 'TodoWrite')).toBe('Checking the mesh')
+    expect(argSummary('{"pattern":"radarAxes","path":"app/explorer.html"}', 'GrepSearch')).toBe('radarAxes in app/explorer.html')
+    expect(argSummary('{"file_path":"app/explorer.html","old_string":"a","new_string":" .d-actions { display: flex', 'EditFile')).toBe('app/explorer.html')
+    expect(argSummary('{"new_string":" .d-actions { display: flex; }\\n .d-note { margin: 0', 'EditFile')).toBe('.d-actions { display: flex; } …')
+  })
+  it('folds a run of tool calls into one line that opens to each', () => {
+    const call = (n: string, a: string) => ({ kind: 'tool_call', toolName: n, toolArgs: a })
+    const { container } = render(<Transcript earlier={0} items={[
+      { kind: 'user', text: 'Tidy the explorer' },
+      call('ReadFile', '{"path":"a.html"}'), { kind: 'tool_result', text: '<html>' },
+      call('ReadFile', '{"path":"a.html"}'),
+      call('EditFile', '{"path":"a.html"}'),
+      call('Bash', '{"command":"git status -s"}'),
+      { kind: 'assistant', text: 'Done.' },
+      call('ReadFile', '{"path":"b.html"}'),
+    ]} />)
+    const runs = container.querySelectorAll('details.code-tool-run')
+    expect(runs.length).toBe(1)
+    expect(runs[0].querySelector('summary')?.textContent).toBe('4 tool calls ReadFile 2, EditFile, Bash')
+    expect(runs[0].querySelectorAll('.code-tool-run-body details.code-tool').length).toBe(4)
+    expect((runs[0] as HTMLDetailsElement).open).toBe(false)
+    // A lone call after the reply stays a line of its own.
+    expect(container.querySelectorAll('.code-transcript > details.code-tool:not(.code-tool-run)').length).toBe(1)
   })
   it('folds each tool result under its call', () => {
     const { container } = render(<Transcript earlier={2} items={[

@@ -195,7 +195,7 @@ To pick up a session you already have, name it or say what it was about, for exa
 
 ## Code
 
-On ACTIVATE, Code lists your pw code sessions on the platform's machines, the same ones the platform's Code page shows: those waiting for you first, then those working, then the rest, with archived sessions behind **Show archived**. The line under the filter names the machines whose pw code daemon is running. Choose a session to read its conversation, with each tool call folded under one line; it updates while the session works. **Open in ACTIVATE** opens the session on the platform, where you answer, approve and steer it, and **New session in ACTIVATE** starts one there. Code is read only for now.
+On ACTIVATE, Code lists your pw code sessions on the platform's machines, the same ones the platform's Code page shows: those waiting for you first, then those working, then the rest, with archived sessions behind **Show archived**. The line under the filter names the machines whose pw code daemon is running. Choose a session to read its conversation; it updates while the session works. Tool calls in a row fold into one line, such as "6 tool calls: ReadFile 3, EditFile 2, Bash"; click it to see each call by what it worked on (the file, the command's first line, the search, or the to-do item under way), and click a call to see its result. **Open in ACTIVATE** opens the session on the platform, where you answer, approve and steer it, and **New session in ACTIVATE** starts one there. Code is read only for now.
 
 # More
 
