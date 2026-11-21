@@ -70,6 +70,9 @@ type store struct {
 	// frozen: the server is stopping, and what is on disk stays as it is,
 	// so the next start finds running jobs as they were and settles them.
 	frozen bool
+	// seen is what each owner has seen of their failures, kept in
+	// INDEX_BASE/transfers/seen.json (seen.go).
+	seen map[string]*seenRec
 }
 
 type activeFile struct {
@@ -82,11 +85,12 @@ type doneLine struct {
 }
 
 func openStore(indexBase string, log *slog.Logger) *store {
-	s := &store{active: map[string]*rec{}, byID: map[string]*doneRec{}, log: log}
+	s := &store{active: map[string]*rec{}, byID: map[string]*doneRec{}, log: log, seen: map[string]*seenRec{}}
 	if indexBase == "" {
 		return s
 	}
 	s.dir = filepath.Join(indexBase, "transfers")
+	s.loadSeen()
 	if b, err := os.ReadFile(filepath.Join(s.dir, "active.json")); err == nil {
 		var f activeFile
 		if json.Unmarshal(b, &f) == nil {
@@ -507,19 +511,32 @@ func (s *store) summary(owner string, now time.Time) Summary {
 			out.AwaitingApproval++
 		}
 	}
+	// Newest first, so each success is met before the failures it clears.
+	succeeded := map[string]bool{}
 	for _, d := range s.done {
-		if now.Sub(d.end) > 24*time.Hour {
+		if now.Sub(d.end) > FailedFor {
 			break
 		}
-		if d.owner == owner && d.t.State == StateFailed {
-			out.FailedLast24h++
+		if d.owner != owner {
+			continue
+		}
+		switch d.t.State {
+		case StateSucceeded:
+			succeeded[sameKey(d.t)] = true
+		case StateFailed:
+			if !succeeded[sameKey(d.t)] && s.unseen(owner, d) {
+				out.FailedLast24h++
+			}
 		}
 	}
 	return out
 }
 
 // Summary is GET /api/transfers/summary: active counts those waiting for
-// approval too.
+// approval too. FailedLast24h counts the failures of the last 24 hours
+// the viewer has not seen (the Transfers page or the transfer's details
+// was not open since) and that no later run of the same transfer
+// succeeded.
 type Summary struct {
 	Active           int `json:"active"`
 	AwaitingApproval int `json:"awaitingApproval"`

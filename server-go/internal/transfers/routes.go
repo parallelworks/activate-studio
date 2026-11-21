@@ -149,6 +149,15 @@ func (s *Service) Routes(mux *http.ServeMux, log *slog.Logger, viewer func(*http
 	h("GET /api/transfers/summary", func(w http.ResponseWriter, r *http.Request, v Viewer) (any, error) {
 		return s.Summary(v), nil
 	})
+	h("POST /api/transfers/seen", func(w http.ResponseWriter, r *http.Request, v Viewer) (any, error) {
+		var body struct {
+			ID string `json:"id"`
+		}
+		if err := decode(r, &body); err != nil {
+			return nil, err
+		}
+		return s.Seen(v, body.ID)
+	})
 	h("GET /api/transfers/movers", func(w http.ResponseWriter, r *http.Request, v Viewer) (any, error) {
 		ms, err := s.Movers(r.Context(), v, r.URL.Query().Get("source"), r.URL.Query().Get("destination"))
 		if err != nil {
