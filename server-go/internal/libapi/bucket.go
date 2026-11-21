@@ -36,12 +36,12 @@ import (
 // the bucket's folders from that index, and opening a file reads that
 // object alone, its first bytes for a text preview, whole for a download
 // or a document preview up to search.DownloadMax. The index holds names,
-// sizes and times; reading text from the objects comes later.
+// sizes and times; the objects' text is read when asked (buckettext.go).
 
 const singleUserBucket = "Bucket libraries use this computer's rclone configuration, so they are kept only on a Studio with sign-in off."
 
 // bucketNamesOnly is why a bucket library's depth stays at names.
-const bucketNamesOnly = "A bucket library is indexed from its listing: names, sizes and times. Reading text from its objects comes in a later release."
+const bucketNamesOnly = "A bucket library is indexed from its listing: names, sizes and times. Its objects' text is read when Read text is on for it, in Settings, Indexing, Libraries."
 
 // bucketTick is how often the background loop sees which listings are due.
 var bucketTick = time.Minute
@@ -184,6 +184,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 	b.buckets.setListing(id, true)
 	defer b.buckets.setListing(id, false)
 	st := b.s.Reg.BucketState(id)
+	var bk *transfers.Bucket
 	err := func() error {
 		bin := b.s.a.Cfg.GufiBin
 		if !exists(filepath.Join(bin, "gufi_trace2index")) {
@@ -196,7 +197,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		if err != nil {
 			return err
 		}
-		bk, err := b.s.bucketOf(b.ctx, bc)
+		bk, err = b.s.bucketOf(b.ctx, bc)
 		if err != nil {
 			return err
 		}
@@ -260,6 +261,14 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		if err := wk.VerifyTree(built); err != nil {
 			return err
 		}
+		// The text earlier passes read goes into the new index before it
+		// is swapped in, so search finds it through the new listing.
+		if bc.Text || bc.Fsid != "" {
+			progress("Adding the text read before", 0, nil)
+			if _, err := b.refillShards(id, bc, built); err != nil {
+				b.log(fmt.Sprintf("library %s: the text read before could not be added to its new index: %s", id, err))
+			}
+		}
 		old := filepath.Join(bd.IndexDir, ".old")
 		if err := index.RmTree(old); err != nil {
 			return err
@@ -285,7 +294,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		}
 		now := isoNow()
 		st = libraries.BucketState{ListedAt: &now, Objects: stats.Objects, Bytes: stats.Bytes, Folders: stats.Dirs, Skipped: stats.Skipped,
-			Requests: listRequests(stats.Objects), Provider: bk.Provider(b.ctx), Seconds: float64(int(listSecs*10)) / 10}
+			Requests: listRequests(stats.Objects), Provider: bk.Provider(b.ctx), Seconds: float64(int(listSecs*10)) / 10, TextPass: st.TextPass}
 		if stats.Skipped > 0 {
 			b.log(fmt.Sprintf("library %s: %d entries of %s could not be indexed (a path longer than GUFI holds, a name \".\" or \"..\", or a name listed twice)", id, stats.Skipped, where))
 		}
@@ -312,6 +321,11 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 	}
 	if werr := b.s.Reg.WriteBucketState(id, st); werr != nil {
 		b.log(fmt.Sprintf("library %s: recording its listing: %s", id, werr))
+	}
+	// The index is searchable now; the objects' text is read after it.
+	if d := b.s.Reg.AddedDef(id); d != nil && d.Bucket != nil && d.Bucket.Text && !b.stopping.Load() {
+		b.buckets.setListing(id, false)
+		b.bucketText(id, d.Bucket, bk, tree, progress)
 	}
 	return time.Since(t0).Milliseconds(), nil
 }
@@ -501,7 +515,10 @@ func (s *Service) bucketAdd(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// bucketSettings changes how often Studio lists a bucket library again.
+// bucketSettings changes how often Studio lists a bucket library again,
+// and whether it reads the objects' text. Turning text on lists the
+// bucket and reads it now; turning it off stops a pass that is running,
+// and the text read so far stays searchable.
 func (s *Service) bucketSettings(w http.ResponseWriter, r *http.Request) error {
 	if !s.localBuildOffered(r) {
 		return apierr.New(403, singleUserBucket)
@@ -515,11 +532,35 @@ func (s *Service) bucketSettings(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	n, ok := body.Get("every").(float64)
-	if !ok || !slices.Contains(libraries.BucketEvery, int(n)) || float64(int(n)) != n {
-		return apierr.New(400, "every: %s minutes", joinInts(libraries.BucketEvery))
+	if !body.Has("every") && !body.Has("text") {
+		return apierr.New(400, "every or text")
 	}
-	s.Reg.SetBucketEvery(id, int(n))
+	if body.Has("every") {
+		n, ok := body.Get("every").(float64)
+		if !ok || !slices.Contains(libraries.BucketEvery, int(n)) || float64(int(n)) != n {
+			return apierr.New(400, "every: %s minutes", joinInts(libraries.BucketEvery))
+		}
+		s.Reg.SetBucketEvery(id, int(n))
+	}
+	if body.Has("text") {
+		on, ok := body.Get("text").(bool)
+		if !ok {
+			return apierr.New(400, "text: true or false")
+		}
+		if on && !d.Bucket.Text {
+			if _, err := indexExtractBin(); err != nil {
+				return apierr.New(409, "%s", err.Error())
+			}
+		}
+		s.Reg.SetBucketText(id, on)
+		if !on {
+			s.builds.texts.stop(id)
+		} else if !d.Bucket.Text {
+			if _, err := s.builds.start(id); err != nil {
+				return err
+			}
+		}
+	}
 	lib, err := s.settingsLibrary(id)
 	if err != nil {
 		return err

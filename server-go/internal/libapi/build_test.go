@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/parallelworks/activate-studio/server-go/internal/extractfiles"
 	"io"
 	"log/slog"
 	"net/http"
@@ -36,6 +37,9 @@ func TestMain(m *testing.M) {
 	}
 	if os.Getenv("LIBAPI_TEST_CHILD") == "rclone" {
 		os.Exit(fakeRclone(os.Args[1:]))
+	}
+	if os.Getenv("LIBAPI_TEST_CHILD") == "index-extract" {
+		os.Exit(extractfiles.Main(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	os.Exit(m.Run())
 }

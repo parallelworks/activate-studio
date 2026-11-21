@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -25,8 +26,8 @@ commands:
   shards   write each folder's permission shards of an index from a spread tree
   schema   print the SQL of the tables the artifact and the index's external databases hold
 
-index-extract files --list FILE|- --out ARTIFACT.db [--root DIR] [--strip PREFIX] [--delim D]
-  [--extra-info S] [--shard K/N] [--retry] [--extract-cache DIR] [--jobs N] [--progress]
+index-extract files --list FILE|- --out ARTIFACT.db [--root DIR | --rclone REMOTE:PATH] [--strip PREFIX] [--delim D]
+  [--extra-info S] [--shard K/N] [--retry] [--max-size BYTES] [--extract-cache DIR] [--jobs N] [--progress]
   [--no-ocr] [--no-documents] [--pdf-reader auto|pdftotext|pypdf] [--soffice PATH]
   [--extractors FILE] [--report FILE]
 index-extract spread --spread DIR --fsid NAME [--prefix studio] ARTIFACT.db...
@@ -68,6 +69,10 @@ func filesMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	shard := fs.String("shard", "", "K/N: read only the files whose inode modulo N is K, as one job of an array of N")
 	retry := fs.Bool("retry", false, "read again every file the artifact holds without text (skipped, empty, missing, changed or failed)")
 	cache := fs.String("extract-cache", "", "an extract cache to use and keep (default: a temporary one)")
+	rcloneRoot := fs.String("rclone", "", "read the files from this rclone remote and path (store:bucket/prefix) instead of a folder: one request for each object")
+	rcloneBin := fs.String("rclone-bin", "rclone", "with --rclone: the rclone program")
+	rcloneConf := fs.String("rclone-config", "", "with --rclone: an rclone configuration file (default: rclone's own)")
+	maxSize := fs.Int64("max-size", 0, "leave unread, as skipped, a file listed as larger than this many bytes (0: no limit)")
 	ef := cli.AddExtractorFlags(fs)
 	progress := fs.Bool("progress", false, "print @progress lines on stdout")
 	report := fs.String("report", "", "also write the summary to this JSON file")
@@ -103,6 +108,19 @@ func filesMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			total = countLines(*list)
 		}
 	}
+	var src Source = Local{Root: *root, Strip: *strip}
+	if *rcloneRoot != "" {
+		if *root != "" {
+			fmt.Fprintln(stderr, "index-extract: --root and --rclone name two places to read from; give one")
+			return 2
+		}
+		r, err := ParseRcloneRoot(*rcloneRoot)
+		if err != nil {
+			fmt.Fprintln(stderr, "index-extract:", err)
+			return 2
+		}
+		src = Rclone{Bin: *rcloneBin, Root: r, Config: *rcloneConf, Strip: *strip, Tmp: filepath.Dir(*out)}
+	}
 	x, rc := ef.Extractor(stderr)
 	if x == nil {
 		return rc
@@ -112,7 +130,7 @@ func filesMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var mu sync.Mutex
 	o := Options{
 		List: in, Total: total, Delim: d,
-		Source: Local{Root: *root, Strip: *strip}, Strip: *strip,
+		Source: src, Strip: *strip, MaxSize: *maxSize,
 		ExtraInfo: *extra, Shard: sh, Out: *out, Retry: *retry, Cache: *cache, Jobs: ef.Jobs(),
 		Log: func(s string) { mu.Lock(); fmt.Fprintln(stderr, s); mu.Unlock() },
 	}

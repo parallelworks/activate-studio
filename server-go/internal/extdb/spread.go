@@ -101,9 +101,14 @@ func (s Spread) configure() error {
 
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-// openShard opens a db of the prefix's tables, making it when create is
-// set, and taking the write lock at the start of each transaction.
-func openShard(file string, create bool) (*sql.DB, error) {
+// openShard opens a db of the prefix's tables, taking the write lock at
+// the start of each transaction. With create, its folder is made, and
+// with temp the db is a file of its own being written (a shard before it
+// is renamed into place): it is written with no journal and no syncs, and
+// synced once by the caller. begin starts a transaction that first makes
+// the prefix's tables where they are missing, so a new db costs one
+// commit.
+func openShard(file string, create, temp bool) (*sql.DB, error) {
 	if !create {
 		if _, err := os.Stat(file); err != nil {
 			return nil, err
@@ -111,18 +116,30 @@ func openShard(file string, create bool) (*sql.DB, error) {
 	} else if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", "file:"+file+"?_pragma=busy_timeout(60000)&_txlock=immediate")
+	dsn := "file:" + file + "?_pragma=busy_timeout(60000)&_txlock=immediate&_pragma=synchronous(NORMAL)"
+	if temp {
+		dsn = "file:" + file + "?_pragma=journal_mode(OFF)&_pragma=synchronous(OFF)&_txlock=immediate"
+	}
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if create {
-		if _, err := db.Exec(Schema); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("%s: %w", file, err)
-		}
-	}
 	return db, nil
+}
+
+// begin starts a write to a db of the prefix's tables, making them first
+// where they are missing.
+func begin(db *sql.DB, file string) (*sql.Tx, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(Schema); err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("%s: %w", file, err)
+	}
+	return tx, nil
 }
 
 // SpreadStats is what loading artifacts into a spread tree did.
@@ -140,6 +157,13 @@ const assetCols = "inode, mtime, extra_info, outer_file_uuid, asset_id, componen
 // the same inode, mtime and extra_info, under the db's write lock. Other
 // versions of a file (other mtimes) are kept.
 func LoadSpread(s Spread, artifact string) (SpreadStats, error) {
+	return LoadSpreadSince(s, artifact, 0)
+}
+
+// LoadSpreadSince is LoadSpread of only the files the artifact recorded at
+// or after since (Unix seconds): what one run added to an artifact that
+// runs keep adding to.
+func LoadSpreadSince(s Spread, artifact string, since int64) (SpreadStats, error) {
 	var st SpreadStats
 	if err := s.Check(); err != nil {
 		return st, err
@@ -162,7 +186,12 @@ func LoadSpread(s Spread, artifact string) (SpreadStats, error) {
 		inode int64
 		vals  []any
 	}
-	rows, err := art.Query("SELECT " + assetCols + " FROM ext_assets")
+	q, args := "SELECT "+assetCols+" FROM ext_assets", []any{}
+	if since > 0 {
+		q += " a WHERE EXISTS (SELECT 1 FROM studio_extract_files f WHERE f.inode = a.inode AND f.mtime = a.mtime AND f.extra_info = a.extra_info AND f.at >= ?)"
+		args = append(args, since)
+	}
+	rows, err := art.Query(q, args...)
 	if err != nil {
 		return st, fmt.Errorf("%s: %w", artifact, err)
 	}
@@ -195,11 +224,11 @@ func LoadSpread(s Spread, artifact string) (SpreadStats, error) {
 	sort.Strings(paths)
 	files := map[[3]any]bool{}
 	for _, p := range paths {
-		db, err := openShard(p, true)
+		db, err := openShard(p, true, false)
 		if err != nil {
 			return st, err
 		}
-		tx, err := db.Begin()
+		tx, err := begin(db, p)
 		if err != nil {
 			db.Close()
 			return st, err

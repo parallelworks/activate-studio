@@ -472,10 +472,11 @@ asked). It refuses any other kind of location, a folder that cannot be
 listed, and a GUFI without `gufi_trace2index`, which the app ships. The
 library is a built library (`build`, managed) with no folder here
 (`sourceRoot` is null), its index at `INDEX_BASE/libraries/<id>/index/files`,
-and `bucket: { location, path, label, every }` in `libraries.json`. Its
-depth is names: a listing has names, sizes and times only, so `PUT
-/api/libraries/<id>/depth` answers 409 for anything deeper and search by
-meaning stays off.
+and `bucket: { location, path, label, every, text, fsid }` in
+`libraries.json`. Its depth is names: a listing has names, sizes and times
+only, so `PUT /api/libraries/<id>/depth` answers 409 for anything deeper
+and search by meaning stays off. The objects' text is read only when
+asked (below).
 
 A listing is one `rclone lsjson -R --fast-list --no-mimetype
 --use-server-modtime` of the folder. On S3 a fast list is one run of
@@ -520,6 +521,55 @@ bucket library is not a Transfers location (its remote is), and a library
 list leaves it out, with that reason, since the remote is in this
 computer's rclone configuration. **Remove** deletes its index and never
 touches the bucket.
+
+### Reading text from a bucket
+
+Off until asked, for each bucket library: every object read is a request,
+and its bytes leave the store (`server-go/internal/libapi/buckettext.go`).
+`GET /api/libraries/<id>/bucket/text` says what a pass would read now:
+`objects` and `bytes` not yet read, `done` and `doneBytes` read before,
+`over` and `overBytes` larger than a pass reads (`maxBytes`, 100 MB),
+`other` the objects no reader reads, the `provider` as for a listing, and
+`rate`, the bytes a second of the last pass that read at least a
+megabyte (0 before one). Readable
+objects are text files and documents (PDF, Office, OpenDocument, mail);
+images are not read, since reading one is OCR of the whole image.
+
+`PUT /api/libraries/<id>/bucket` with `{ text: true }` lists the bucket
+and then reads its text; with `{ text: false }` a pass that is running
+stops, nothing more is read, and the text read so far stays searchable.
+`POST /api/libraries/<id>/bucket/text/stop` stops a pass, and the next
+goes on from there. Each listing of a library with text on is followed by
+a pass, in the same job, after the new index is swapped in, so search
+answers from the new listing while the text is read.
+
+A pass writes a file list of the readable objects of the index that no
+pass has a record of at that modification time, and runs `index-extract
+files --rclone <remote>:<path> --max-size 104857600 --no-ocr --jobs 8`
+(docs/EXTRACTION.md), the program beside studio-server
+(`STUDIO_INDEX_EXTRACT_BIN` to name another), one `rclone cat` request for
+each object. Its artifact, `INDEX_BASE/libraries/<id>/text.db`, keeps every
+object version's outcome, so an object is read once until it changes,
+and a stopped pass goes on from where it stopped. What a pass added goes
+into the library's spread tree (`INDEX_BASE/libraries/<id>/spread`, under
+the library's fsid), and from there into the index's permission shards,
+`studio_UR_<uid>_<gid>.db` beside each `db.db` (objects are indexed as
+mode 0600 of the Studio's account), which search attaches as
+external databases. A new listing's index gets its shards from the spread
+tree before it is swapped in, so the text stays searchable through every
+listing, and an object that changed or went loses its old text with the
+listing that finds it. The library's `textPass` in `bucket.json` records
+the last pass: when it ended, the objects it read by outcome, their
+bytes, the requests, its seconds, how many objects have text now, any
+helper it lacked, whether it was stopped, and why it failed.
+
+The fsid names the bucket's records in a spread tree: the store's
+endpoint host (for AWS `s3.<region>.amazonaws.com`, else the backend
+type), the bucket and the library's prefix, as one folder name, lower
+case, other characters than `a-z0-9.-` made `_`, at most 80 characters
+with a hash of the whole when cut. It never uses the remote's name, which
+each computer chooses, so the same bucket gets the same name wherever its
+text is read.
 
 ## Indexes built on a remote system
 
@@ -1252,9 +1302,10 @@ and a reload land in the right library.
 
 ## Not yet
 
-For buckets: reading text from their objects, with what that read costs
-shown first, on this computer or through the platform next to the data,
-bringing back only the index; a bucket read through an rclone mount; and
+For buckets: choosing to read their text, with what that read costs shown
+first, in Settings; reading it through the platform next to the data,
+bringing back only the index; images (OCR) and search by meaning; a
+bucket read through an rclone mount; and
 owners, groups and modes per entry for a Studio that people sign in to.
 Writing to a library built from a folder on this computer (uploads, new
 folders, renames, deletes, labels), which needs the indexing code to take

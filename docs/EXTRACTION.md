@@ -22,6 +22,10 @@ index-extract files --list files.list --out text.db --strip /index/top --root /d
 
 Each file is read only when it is the version the list names: a file whose mtime or size differs is recorded as `changed` and not read, since its text would be keyed to the wrong version. A file of a kind nothing reads (`.bin`, say) is not opened at all. The summary is one JSON line on standard output: lines, bad lines, files by state, chunks, bytes read, seconds, the helper programs found (`helpers`) and what this run's files lost for want of one (`missing`). With `--progress`, `@progress {"phase":"files","done":N,"total":M,"bytes":B}` lines come first. Problems with single files go to standard error, one line each, and do not fail the run. The exit status is 0, 1 when the artifact could not be written or the run was stopped, and 2 for a bad command line.
 
+### Reading from an object store
+
+`--rclone REMOTE:PATH` reads each listed path from an rclone remote instead of a folder, for example `--rclone store:bucket/prefix`, with `--rclone-bin` naming the program and `--rclone-config` a configuration file other than rclone's own. Each object is one request (`rclone cat`), written to a temporary file beside the artifact, read, and removed. A store gives no modification time without a second request, so the listed mtime is used, and an object whose size is not the listed one is recorded as `changed`. `--max-size BYTES` leaves a file listed as larger than that unread, recorded as `skipped`, with no request for it. This is how the Studio reads a bucket library's text (docs/LIBRARIES.md, "Reading text from a bucket").
+
 `--list -` reads standard input, so `gufi_query ... | index-extract files --out text.db ...` works. The extractor's own options are those of the Studio's pass: `--jobs`, `--no-ocr`, `--no-documents`, `--pdf-reader`, `--soffice`, `--extractors` (contributed extractors, as in Settings), and `--report FILE` to keep the summary. `--extract-cache DIR` keeps the converted text in a cache of the Studio's layout; by default a temporary one is used and removed.
 
 ## Shards and job arrays

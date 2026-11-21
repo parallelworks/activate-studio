@@ -122,6 +122,8 @@ func Register(mux *http.ServeMux, a *app.App) {
 		mux.HandleFunc("PUT /api/libraries/{id}/copy", h(s.copySettings))
 		mux.HandleFunc("POST /api/libraries/bucket", h(s.bucketAdd))
 		mux.HandleFunc("PUT /api/libraries/{id}/bucket", h(s.bucketSettings))
+		mux.HandleFunc("GET /api/libraries/{id}/bucket/text", h(s.bucketTextEstimate))
+		mux.HandleFunc("POST /api/libraries/{id}/bucket/text/stop", h(s.bucketTextStop))
 		mux.HandleFunc("PUT /api/libraries/{id}/read-through", h(s.readThroughSave))
 		mux.HandleFunc("POST /api/libraries/{id}/read-through/test", h(s.readThroughTest))
 		index.Of(a).Hooks.RequestAllLibrarySyncs = s.builds.requestAllSyncs

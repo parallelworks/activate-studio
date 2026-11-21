@@ -83,6 +83,7 @@ type Registry struct {
 	progressOf    func(id string) *BuildProgress
 	copyRunning   func(id string) (bool, *string)
 	bucketListing func(id string) bool
+	bucketReading func(id string) bool
 	mapSchedule   func(id string, delay time.Duration)
 }
 
@@ -1174,6 +1175,21 @@ func (r *Registry) SetBucketEvery(id string, every int) bool {
 	})
 }
 
+// SetBucketText turns reading a bucket library's text on or off.
+func (r *Registry) SetBucketText(id string, on bool) bool {
+	return r.ModifyAdded(id, func(d *Def) {
+		if d.Bucket != nil {
+			b := *d.Bucket
+			b.Text = on
+			d.Bucket = &b
+		}
+	})
+}
+
+// SetBucketReadingSource is how Settings learns whether a bucket
+// library's text is being read now.
+func (r *Registry) SetBucketReadingSource(fn func(id string) bool) { r.bucketReading = fn }
+
 // SetBucketListingSource is how Settings learns whether a bucket library
 // is being listed now.
 func (r *Registry) SetBucketListingSource(fn func(id string) bool) { r.bucketListing = fn }
@@ -1285,7 +1301,11 @@ func (r *Registry) SettingsView(l Library) SettingsLibrary {
 		if r.bucketListing != nil {
 			listing = r.bucketListing(l.ID)
 		}
-		v.Bucket = &PublicBucket{BucketOf: *b, BucketState: r.BucketState(l.ID), Listing: listing}
+		reading := false
+		if r.bucketReading != nil {
+			reading = r.bucketReading(l.ID)
+		}
+		v.Bucket = &PublicBucket{BucketOf: *b, BucketState: r.BucketState(l.ID), Listing: listing, Reading: reading}
 	}
 	return v
 }

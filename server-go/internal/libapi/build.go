@@ -52,6 +52,7 @@ type builds struct {
 	cancel   context.CancelFunc
 	copies   copies
 	buckets  buckets
+	texts    bucketTexts
 }
 
 func newBuilds(s *Service) *builds {
@@ -67,6 +68,7 @@ func newBuilds(s *Service) *builds {
 	})
 	s.Reg.SetCopyRunningSource(b.copies.runningOf)
 	s.Reg.SetBucketListingSource(b.buckets.isListing)
+	s.Reg.SetBucketReadingSource(b.texts.isReading)
 	return b
 }
 

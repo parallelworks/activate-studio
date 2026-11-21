@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -66,6 +67,39 @@ func NewBucket(bin, remote, typ string) *Bucket {
 
 // Remote is the remote's name.
 func (b *Bucket) Remote() string { return b.fs.Remote }
+
+// Spec is a path of the remote as rclone names it, "remote:path".
+func (b *Bucket) Spec(rel string) string { return b.fs.spec(rel) }
+
+// Bin is the rclone program.
+func (b *Bucket) Bin() string { return b.fs.Bin }
+
+// Endpoint names the store the remote reaches, the same on every computer
+// whatever the remote is called: its endpoint's host, for AWS
+// s3.<region>.amazonaws.com, or else its backend type. From rclone's
+// configuration with its secrets redacted; "" when rclone does not say.
+func (b *Bucket) Endpoint(ctx context.Context) string {
+	c, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, err := runRclone(c, b.fs.Bin, nil, "config", "redacted", b.fs.Remote)
+	if err != nil {
+		return ""
+	}
+	if ep := redactedValue(out, "endpoint"); ep != "" {
+		if u, err := url.Parse(ep); err == nil && u.Host != "" {
+			return u.Host
+		}
+		return strings.TrimRight(ep, "/")
+	}
+	if redactedValue(out, "provider") == "AWS" {
+		region := redactedValue(out, "region")
+		if region == "" {
+			region = "us-east-1"
+		}
+		return "s3." + region + ".amazonaws.com"
+	}
+	return redactedValue(out, "type")
+}
 
 // Type is the remote's backend type (s3, azureblob, ...), "" when not known.
 func (b *Bucket) Type() string { return b.fs.Type }
