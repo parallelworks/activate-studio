@@ -66,6 +66,16 @@ interface NodeProps {
   onSelectRange: (path: string) => void
   /** Internal drag: move these corpus paths into this directory. */
   onMoveInto: (dir: string, paths: string[]) => void
+  /** Internal drag across libraries: copy these paths into this directory. */
+  onCopyInto: (dir: string, paths: string[]) => void
+  /** What a drag that starts on this row may do; null: it does not drag. */
+  dragKind: (path: string) => DragKind
+  /** What dropping these paths on this folder does: none when it cannot
+   *  take them (a read-only library, or a folder into itself). */
+  dropKind: (dir: string, paths: string[]) => DropKind
+  /** The paths being dragged in the tree now, null for none. */
+  dragging: string[] | null
+  onDragging: (paths: string[] | null) => void
   onLabel: (path: string) => void
   onContext: (path: string, isDir: boolean, x: number, y: number) => void
   selectMode: boolean
@@ -81,11 +91,23 @@ interface NodeProps {
  *  no such type, which is how a move is told apart from an upload. */
 const DRAG_TYPE = 'application/x-studio-paths'
 
-function startRowDrag(e: React.DragEvent, path: string, multiSelected: Set<string>): void {
+/** A drag from a row: a move within its library, a copy to another one
+ *  (from a read-only library, only that), or either. */
+export type DragKind = 'move' | 'copy' | 'copyMove' | null
+export type DropKind = 'move' | 'copy' | 'none'
+
+/** The drag under way in the tree: a drop target cannot read the paths
+ *  until the drop, so they are kept here from its start. */
+let current: string[] | null = null
+
+function startRowDrag(e: React.DragEvent, path: string, multiSelected: Set<string>, kind: DragKind, onDragging: (p: string[] | null) => void): void {
   // Dragging one of several selected rows moves the whole selection.
   const paths = multiSelected.has(path) ? [...multiSelected] : [path]
   e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(paths))
-  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.effectAllowed = kind ?? 'none'
+  current = paths
+  // Shown once the browser has taken its drag image of the row.
+  setTimeout(() => { if (current === paths) onDragging(paths) }, 0)
 
   // What is being dragged should be visible while dragging it: one row
   // shows its name, several show how many.
@@ -99,6 +121,20 @@ function startRowDrag(e: React.DragEvent, path: string, multiSelected: Set<strin
   // The browser snapshots the element for the drag image, so it can go as
   // soon as the current task yields.
   setTimeout(() => chip.remove(), 0)
+}
+
+function endRowDrag(onDragging: (p: string[] | null) => void): void {
+  current = null
+  onDragging(null)
+}
+
+/** A drag over a folder row: whether it takes it, with the cursor that
+ *  says so. A drag from the desktop (an upload) is left as it was. */
+function overRow(e: React.DragEvent, dir: string, dropKind: NodeProps['dropKind']): DropKind | 'upload' {
+  if (!e.dataTransfer.types.includes(DRAG_TYPE)) return 'upload'
+  const kind = current ? dropKind(dir, current) : 'none'
+  e.dataTransfer.dropEffect = kind
+  return kind
 }
 
 function draggedPaths(e: React.DragEvent): string[] {
@@ -119,7 +155,7 @@ export function visibleRowPaths(): string[] {
 }
 
 function DirNode(props: NodeProps) {
-  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, tags } = props
+  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, tags, dragKind, dropKind, dragging, onDragging } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
   const [dropOver, setDropOver] = useState(false)
@@ -135,24 +171,39 @@ function DirNode(props: NodeProps) {
     if (selected && path && (selected === path || selected.startsWith(path + '/'))) setOpen(true)
   }, [selected, path])
 
+  // While a row is dragged, each folder says whether it takes the drop:
+  // a copy into another library, a move within this one, or neither.
+  const takes = dragging && depth > 0 ? dropKind(path, dragging) : null
+  const kind = dragKind(path)
   return (
     <div>
       {depth > 0 && (
         <div
           data-path={path}
-          className={`tree-row dir ${multiSelected.has(path) ? 'multi' : ''} ${dropOver ? 'drop-target' : ''}`}
+          data-drop={takes ?? undefined}
+          className={`tree-row dir ${multiSelected.has(path) ? 'multi' : ''} ${dropOver ? 'drop-target' : ''} ${takes === 'none' ? 'drop-refused' : takes ? 'drop-ok' : ''}`}
           style={{ paddingLeft: 8 + depth * 14 }}
-          draggable
-          onDragStart={e => { e.stopPropagation(); startRowDrag(e, path, multiSelected) }}
-          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDropOver(true) }}
+          draggable={kind !== null}
+          onDragStart={e => { e.stopPropagation(); if (kind) startRowDrag(e, path, multiSelected, kind, onDragging); else e.preventDefault() }}
+          onDragEnd={() => endRowDrag(onDragging)}
+          onDragOver={e => {
+            e.stopPropagation()
+            const over = overRow(e, path, dropKind)
+            if (over === 'none') { setDropOver(false); return }
+            e.preventDefault()
+            setDropOver(true)
+          }}
           onDragLeave={() => setDropOver(false)}
           onDrop={e => {
             e.preventDefault()
             e.stopPropagation()
             setDropOver(false)
             const dragged = draggedPaths(e)
-            if (dragged.length) onMoveInto(path, dragged)
-            else onDropInto(path, e.dataTransfer.items)
+            endRowDrag(onDragging)
+            if (!dragged.length) { onDropInto(path, e.dataTransfer.items); return }
+            const k = dropKind(path, dragged)
+            if (k === 'copy') onCopyInto(path, dragged)
+            else if (k === 'move') onMoveInto(path, dragged)
           }}
           onClick={e => {
             if (e.shiftKey) { onSelectRange(path); return }
@@ -181,8 +232,14 @@ function DirNode(props: NodeProps) {
             data-path={e.path}
             className={`tree-row file ${selected === e.path ? 'selected' : ''} ${multiSelected.has(e.path) ? 'multi' : ''}`}
             style={{ paddingLeft: 8 + (depth + 1) * 14 }}
-            draggable
-            onDragStart={ev => { ev.stopPropagation(); startRowDrag(ev, e.path, multiSelected) }}
+            draggable={dragKind(e.path) !== null}
+            onDragStart={ev => {
+              ev.stopPropagation()
+              const k = dragKind(e.path)
+              if (k) startRowDrag(ev, e.path, multiSelected, k, onDragging)
+              else ev.preventDefault()
+            }}
+            onDragEnd={() => endRowDrag(onDragging)}
             onClick={ev => {
               if (ev.shiftKey) { onSelectRange(e.path); return }
               if (ev.ctrlKey || ev.metaKey) { onToggleMulti(e.path); return }
@@ -207,7 +264,7 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick }: {
+export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, dragKind, dropKind }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
@@ -217,6 +274,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   onDropInto: (dir: string, items: DataTransferItemList) => void
   onSelectRange: (path: string) => void
   onMoveInto: (dir: string, paths: string[]) => void
+  onCopyInto: (dir: string, paths: string[]) => void
   onLabel: (path: string) => void
   onContext: (path: string, isDir: boolean, x: number, y: number) => void
   selectMode: boolean
@@ -224,10 +282,13 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
   showHidden: boolean
   tagsTick: number
   refreshTick: number
+  dragKind: (path: string) => DragKind
+  dropKind: (dir: string, paths: string[]) => DropKind
 }) {
+  const [dragging, setDragging] = useState<string[] | null>(null)
   return (
     <div
-      className={`explorer ${selectMode ? 'has-sel' : ''}`}
+      className={`explorer ${selectMode ? 'has-sel' : ''} ${dragging ? 'dragging' : ''}`}
       // Right-clicking the empty space below the tree targets the root, so a
       // folder can be created at the top level; rows handle their own menu.
       onContextMenu={e => {
@@ -240,7 +301,8 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
         path="" name={rootLabel} depth={0}
         onOpen={onOpen} onDirFocus={onDirFocus} selected={selected}
         multiSelected={multiSelected} onToggleMulti={onToggleMulti}
-        onDropInto={onDropInto} onSelectRange={onSelectRange} onMoveInto={onMoveInto}
+        onDropInto={onDropInto} onSelectRange={onSelectRange} onMoveInto={onMoveInto} onCopyInto={onCopyInto}
+        dragKind={dragKind} dropKind={dropKind} dragging={dragging} onDragging={setDragging}
         onLabel={onLabel} onContext={onContext} selectMode={selectMode}
         showLabels={showLabels} showHidden={showHidden} tagsTick={tagsTick} refreshTick={refreshTick}
       />

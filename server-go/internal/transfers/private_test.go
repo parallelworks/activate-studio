@@ -72,3 +72,40 @@ func TestPrivateWritesDoNotFollowLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestPrivateLandingClosesWhatAMoverWrote: a file a mover staged with the
+// source's mode (rsync keeps it) lands closed to other accounts in a
+// folder that is closed to them, and as it was in a folder open to them.
+func TestPrivateLandingClosesWhatAMoverWrote(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	os.Chmod(root, 0o700)
+	for _, d := range []string{"closed", "open", "stage"} {
+		os.MkdirAll(filepath.Join(root, d), 0o700)
+	}
+	os.Chmod(filepath.Join(root, "closed"), 0o750)
+	os.Chmod(filepath.Join(root, "open"), 0o755)
+	for _, f := range []string{"a", "b"} {
+		write(t, filepath.Join(root, "stage", f), f)
+		os.Chmod(filepath.Join(root, "stage", f), 0o644)
+	}
+	fs := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: true}
+	if _, err := fs.Land(ctx, []LandPair{{Staged: "stage/a", Final: "closed/a"}, {Staged: "stage/b", Final: "open/b"}}); err != nil {
+		t.Fatal(err)
+	}
+	if m := perm(t, filepath.Join(root, "closed", "a")); m != 0o600 {
+		t.Errorf("in a closed folder: %v", m)
+	}
+	if m := perm(t, filepath.Join(root, "open", "b")); m != 0o644 {
+		t.Errorf("in an open folder: %v", m)
+	}
+}
+
+func perm(t *testing.T, p string) os.FileMode {
+	t.Helper()
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi.Mode().Perm()
+}

@@ -66,7 +66,12 @@ const app = Fastify()
 await app.register(chatRoutes)
 await app.register(conversationRoutes)
 await app.ready()
-test.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+// The chat-session export writes into dir a moment after a turn, so the
+// server stops first and the removal retries while a late write lands.
+test.after(async () => {
+  await app.close()
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+})
 
 function parseSSE(text) {
   return text.split('\n\n').filter(b => /^data:/m.test(b)).map(b => {

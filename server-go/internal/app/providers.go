@@ -56,6 +56,16 @@ type Providers struct {
 	// SpaceFolder is owner's own space, My library: the site it is on
 	// and its folder there; "" and "" for none.
 	SpaceFolder func(owner string) (site, folder string)
+	// SpaceChanged queues the index build of a person's space (a library
+	// written as them, named by its index root) after a transfer changed
+	// its files, as a write from the Library does. viewer is the signed-in
+	// user ("" with sign-in off) and key the platform key the transfer
+	// reached the space with. Owner: libraries track. Default: nil.
+	SpaceChanged func(viewer string, authOn bool, key, indexRoot string)
+	// SpaceAccount refuses a key that reaches another cluster account than
+	// the one the space was made for, as a write from the Library is
+	// refused. Owner: libraries track. Default: nil, no check.
+	SpaceAccount func(ctx context.Context, viewer string, authOn bool, key, indexRoot string) error
 	// InvalidateMCP is mcpClient.ts's invalidateRemote(), after a settings
 	// write. Owner: chat track. Node rereads its MCP status when the
 	// settings file changes (mcpClient.ts), so the default does nothing.

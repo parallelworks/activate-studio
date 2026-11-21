@@ -3,7 +3,7 @@ import {
   Button, Callout, Drawer, EmptyState, Loader, ProgressBar, SearchInput, Select, StatusDot, StatusLabel, Tabs, type BadgeVariant,
 } from '@parallelworks/ui'
 import {
-  ACTION_TEXT, KB_CHANGED_EVENT, STATE_TEXT, bytesText, destLine, durationText, isActive, plural, sourceLine, touchesMainLibrary,
+  ACTION_TEXT, KB_CHANGED_EVENT, STATE_TEXT, TRANSFERS_SEEN, bytesText, destLine, durationText, isActive, plural, sourceLine, touchesMainLibrary,
   transferApi, transferTitle,
   type Outcome, type Transfer, type TransferState,
 } from '../transferApi'
@@ -446,6 +446,13 @@ export function TransferDetail({
     void read()
     return () => { stop = true; clearTimeout(timer) }
   }, [first.id])
+
+  // A failure open here is seen: it stops counting in the navigation mark.
+  const failed = t.state === 'failed'
+  useEffect(() => {
+    if (!failed) return
+    transferApi.seen(first.id).then(sum => { window.dispatchEvent(new CustomEvent(TRANSFERS_SEEN, { detail: sum })) }, () => {})
+  }, [failed, first.id])
 
   const cancel = async () => {
     setBusy(true); setRefused('')

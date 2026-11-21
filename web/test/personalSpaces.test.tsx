@@ -186,10 +186,12 @@ describe('signing in with ACTIVATE', () => {
     expect(await screen.findByText('ABCD-EFGH')).toBeInTheDocument()
     state = { state: 'signed-in', account: 'ada', host: 'platform.example.com', signedInAt: '2026-11-17T12:00:00Z' }
     expect(await screen.findByText('Signed in as ada on platform.example.com', {}, { timeout: 4000 })).toBeInTheDocument()
-    expect(changed).toHaveBeenCalledTimes(1)
+    // onChanged runs in an effect after the panel shows the new state, so
+    // each count is waited for rather than read at once.
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(1))
     fireEvent.click(button('Sign out'))
     expect(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' })).toBeInTheDocument()
-    expect(changed).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
   })
 
   it('says what the pw CLI said when the sign-in fails, once', async () => {

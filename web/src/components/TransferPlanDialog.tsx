@@ -142,6 +142,10 @@ export function TransferPlanDialog({
         {(plan.indexNotes ?? []).map(n => <Callout key={n} tone="info" size="sm">{n}.</Callout>)}
         {expired && !error && <Callout tone="warning" size="sm" title="This plan expired">Plan again to see what would happen now.</Callout>}
         {error && <Callout tone="error" size="sm" live title={error.stale ? 'The files changed' : 'Not started'}>{error.text}</Callout>}
+        {/* A start lists the source again and checks both ends before it
+            queues, which takes a few seconds on a cluster; the dialog
+            closes as soon as it is queued. */}
+        {busy === 'start' && <p className="muted" role="status">Checking both ends again before it starts. This closes once the transfer is queued; follow it in Transfers.</p>}
       </div>
     </Modal>
   )
