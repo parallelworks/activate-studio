@@ -34,7 +34,8 @@ function Scope({ libraries }: { libraries: PublicLibrary[] | undefined }) {
   )
 }
 
-const tick = (name: string) => fireEvent.click(within(screen.getByRole('group', { name: 'Libraries to include' })).getByRole('checkbox', { name }))
+const named = (name: string) => (name === 'All libraries' ? name : new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( · |$)`))
+const tick = (name: string) => fireEvent.click(within(screen.getByRole('group', { name: 'Libraries to include' })).getByRole('checkbox', { name: named(name) }))
 const label = () => screen.getByTestId('label').textContent
 
 beforeEach(() => { resetScopesForTests() })
@@ -86,7 +87,7 @@ describe("the chat's libraries", () => {
     expect(label()).toBe('Desktop')
     expect(getChatLibrary()).toBe('desktop')
     const group = screen.getByRole('group', { name: 'Libraries to include' })
-    expect(within(group).getByRole('checkbox', { name: 'Desktop' })).toHaveAttribute('aria-disabled', 'true')
+    expect(within(group).getByRole('checkbox', { name: named('Desktop') })).toHaveAttribute('aria-disabled', 'true')
     expect(within(group).getByRole('checkbox', { name: 'All libraries' })).toHaveAttribute('aria-checked', 'mixed')
     act(() => tick('Projects'))
     expect(label()).toBe('2 libraries')

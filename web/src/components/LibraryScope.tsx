@@ -8,10 +8,19 @@ import type { Scope } from '../scope'
  *  read only. */
 /** A library as the switcher names it: where it is, a remote system's or the
  *  cluster the Studio runs beside, else whether it is read only. */
-export const libraryName = (l: Pick<PublicLibrary, 'label' | 'site' | 'host' | 'writable'>) => {
-  const on = l.site || l.host
-  return `${l.label}${on ? ` (on ${on})` : l.writable ? '' : ' (read only)'}`
+type Named = Pick<PublicLibrary, 'label' | 'site' | 'host' | 'writable'> & Partial<Pick<PublicLibrary, 'access' | 'sharedFrom'>>
+
+/** What the viewer may do in a library and where it is: Read/write, Read
+ *  only or Shared, then "(on <system>)" for one on a cluster or host. */
+export const libraryAccess = (l: Named) => {
+  const a = l.access
+  const kind = (a?.sharedFrom ?? l.sharedFrom) ? 'Shared' : (a?.write ?? l.writable) ? 'Read/write' : 'Read only'
+  const on = a?.where === 'system' ? (a.system || l.site) : a?.where === 'bucket' ? null : (l.site || l.host)
+  return `${kind}${on ? ` (on ${on})` : ''}`
 }
+
+/** A library as pickers name it: its label and its access. */
+export const libraryName = (l: Named) => `${l.label} · ${libraryAccess(l)}`
 
 /** What the picker's button says: all, the one, or how many. */
 export function scopeLabel(libraries: PublicLibrary[], s: Scope): string {

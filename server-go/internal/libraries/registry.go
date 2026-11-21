@@ -851,21 +851,15 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 		if d.Vectors == nil && d.Build == nil {
 			l.VectorsUnknown = true
 		}
-		// A person's space is theirs to write in, and so is a folder shared
-		// with them for writing; every write runs as them.
-		switch {
-		case d.Mine():
-			// A library the viewer built on one of their systems is
-			// written as them too; on a Studio with sign-in on, only over
-			// pw ssh, which reaches the system with their own key.
-			if !d.IsSSH() || (owner == "single" && !u.AuthEnabled) {
-				l.Mine, l.Writable = true, true
-			}
-		case d.WrittenAsOwner():
-			// A space over plain ssh is made only on a Studio one person
-			// uses with sign-in off, and written only there.
-			if !d.IsSSH() || (owner == "single" && !u.AuthEnabled) {
-				l.Space, l.Writable = true, true
+		// A person's space is theirs to write in, and so are a folder shared
+		// with them for writing and a library they built on one of their
+		// systems; every write runs as them (UserDef.WritableBy).
+		if d.WritableBy(owner, u.AuthEnabled) {
+			l.Writable = true
+			if d.Mine() {
+				l.Mine = true
+			} else {
+				l.Space = true
 			}
 		}
 		if d.Shared != nil {
@@ -875,6 +869,7 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 			k := kb.StateKey(l.ID, l.IndexRoot)
 			l.Meaning, l.Depth = r.o.Settings.Meaning(k), r.o.Settings.Depth(k)
 		}
+		l.Access = userAccess(d, l)
 		out = append(out, l)
 	}
 	return out

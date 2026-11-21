@@ -502,10 +502,11 @@ const LIBS = [
   lib('lab', 'Lab index', { meaning: null, depth: null }),
   lib('far', 'Scratch', { site: 'cluster-a', meaning: null, depth: null }),
 ]
+const named = (name: string) => (name === 'All libraries' ? name : new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( · |$)`))
 const pick = async (name: string) => {
   fireEvent.click(screen.getByRole('button', { name: /^Library: / }))
   const group = await screen.findByRole('radiogroup', { name: 'Library to show' })
-  fireEvent.click(within(group).getByRole('radio', { name }))
+  fireEvent.click(within(group).getByRole('radio', { name: named(name) }))
 }
 
 describe('the library a map starts on', () => {
@@ -586,15 +587,15 @@ describe('maps of each library', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Set to Meaning on documents' }))
     expect(await screen.findByText('Reading the documents of Desktop for search by meaning; the map appears when that is done.')).toBeInTheDocument()
     expect(calls.find(c => c.method === 'PUT')).toEqual({ url: '/api/libraries/desk/depth', method: 'PUT', body: JSON.stringify({ depth: 'meaning-documents' }) })
-    await pick('Lab index (read only)')
+    await pick('Lab index · Read only')
     expect(await screen.findByText('This index was built elsewhere and has no meaning vectors the Studio can read.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Set to Meaning on documents' })).toBeNull()
-    await pick('Scratch (on cluster-a)')
+    await pick('Scratch · Read only (on cluster-a)')
     expect(await screen.findByText('Scratch has no meaning vectors on cluster-a, so there is no map of it.')).toBeInTheDocument()
     // One the Studio built there says its build made none.
     overviews['/api/libraries/far/semantic-map'] = { ...overviews['/api/libraries/far/semantic-map'], library: { id: 'far', label: 'Scratch', kind: 'remote', depth: 'meaning-documents', vectors: false, host: 'cluster-a' } }
-    await pick('Lab index (read only)')
-    await pick('Scratch (on cluster-a)')
+    await pick('Lab index · Read only')
+    await pick('Scratch · Read only (on cluster-a)')
     expect(await screen.findByText('Scratch has no meaning vectors on cluster-a, so there is no map of it. Its last build there made none.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Set to Meaning on documents' })).toBeNull()
   })
@@ -620,14 +621,14 @@ describe('maps of each library', () => {
     render(<TopologyMap libraries={LIBS} />)
     expect(await screen.findByRole('button', { name: /kb-top/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Library: Notes' })).toBeInTheDocument()
-    await pick('Scratch (on cluster-a)')
+    await pick('Scratch · Read only (on cluster-a)')
     const chip = await screen.findByRole('button', { name: /far-top/ })
     expect(calls.map(c => c.url)).toContain('/api/libraries/far/topology')
     // Opening a folder at the last level fetched asks for the levels below it.
     fireEvent.click(chip)
     await waitFor(() => expect(calls.map(c => c.url)).toContain('/api/libraries/far/topology?dir=far-top'))
     expect(localStorage.getItem('ade-map-library-topology')).toBe('far')
-    await pick('Lab index (read only)')
+    await pick('Lab index · Read only')
     expect(await screen.findByText('Lab index has no index yet, so there is nothing to draw.')).toBeInTheDocument()
   })
 })
@@ -667,7 +668,7 @@ describe('a map filling the window', () => {
   const choose = async (panel: HTMLElement, name: string) => {
     fireEvent.click(within(panel).getByRole('button', { name: /^Library: / }))
     const group = await screen.findByRole('radiogroup', { name: 'Library to show' })
-    fireEvent.click(within(group).getByRole('radio', { name }))
+    fireEvent.click(within(group).getByRole('radio', { name: named(name) }))
   }
 
   it('the semantic map switches library in place, through one still loading, one with no map and a remote one', async () => {
@@ -679,7 +680,7 @@ describe('a map filling the window', () => {
     expect(screen.getAllByRole('button', { name: /^Library: / })).toHaveLength(1)
     expect(panel.querySelector('.map-full-head')).toContainElement(within(panel).getByRole('button', { name: 'Library: Notes' }))
 
-    await choose(panel, 'Papers (read only)')
+    await choose(panel, 'Papers · Read only')
     expect(await within(panel).findByText('Loading the map.')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Semantic map' }), 'the same window, not one made again').toBe(panel)
     await waitFor(() => expect(hold).not.toBeNull())
@@ -688,13 +689,13 @@ describe('a map filling the window', () => {
     expect(panel.querySelector('canvas.semantic-map')).not.toBeNull()
     expect(localStorage.getItem('ade-map-library-semantic')).toBe('papers')
 
-    await choose(panel, 'Desktop (read only)')
+    await choose(panel, 'Desktop · Read only')
     expect(await within(panel).findByText(/Desktop has no search by meaning/)).toBeInTheDocument()
     expect(within(panel).getByRole('button', { name: 'Set to Meaning on documents' })).toBeInTheDocument()
     expect(within(panel).queryByRole('button', { name: 'Zoom in' }), 'no map, so nothing to zoom').toBeNull()
     expect(screen.getByRole('dialog', { name: 'Semantic map' })).toBe(panel)
 
-    await choose(panel, 'Scratch (on cluster-a)')
+    await choose(panel, 'Scratch · Read only (on cluster-a)')
     expect(await within(panel).findByText(/fetched from cluster-a/)).toBeInTheDocument()
     expect(within(panel).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
     expect(calls).toContain('/api/libraries/far/semantic-map')
@@ -712,12 +713,12 @@ describe('a map filling the window', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Full screen' }))
     const panel = await dialog('Corpus topology')
     expect(screen.getAllByRole('button', { name: /^Library: / })).toHaveLength(1)
-    await choose(panel, 'Scratch (on cluster-a)')
+    await choose(panel, 'Scratch · Read only (on cluster-a)')
     expect(await within(panel).findByRole('button', { name: /far-top/ })).toBeInTheDocument()
     expect(panel.querySelector('canvas.treemap-canvas')).not.toBeNull()
     expect(screen.getByRole('dialog', { name: 'Corpus topology' })).toBe(panel)
     expect(localStorage.getItem('ade-map-library-topology')).toBe('far')
-    await choose(panel, 'Lab index (read only)')
+    await choose(panel, 'Lab index · Read only')
     expect(await within(panel).findByText('Lab index has no index yet, so there is nothing to draw.')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Corpus topology' })).toBe(panel)
     await choose(panel, 'Notes')

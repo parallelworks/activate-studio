@@ -6,6 +6,7 @@ import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, listingCost, textCost, type BucketTextEstimate, type BucketTextPass, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
+import { libraryAccess } from './LibraryScope'
 import { AddLibrary } from './AddLibrary'
 import { LibraryExport } from './LibraryExport'
 import { LibraryImport } from './LibraryImport'
@@ -758,7 +759,14 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
             <Fragment key={r.key}>
               <tr className={[r.detail ? 'lib-has-detail' : '', focused === r.key ? 'lib-focus' : ''].filter(Boolean).join(' ') || undefined} data-library={r.key}>
                 <Table.Item wrap>
-                  <div className="lib-name">{r.name}</div>
+                  <div className="lib-name">
+                    {r.name}
+                    {(() => {
+                      // Its access, as the Library switcher names it.
+                      const l = cfg.libraries?.find(x => x.id === r.key)
+                      return l ? <span className="lib-access"> · {libraryAccess(l)}</span> : null
+                    })()}
+                  </div>
                   <div className="lib-id">{r.kind}</div>
                   {r.where}
                 </Table.Item>

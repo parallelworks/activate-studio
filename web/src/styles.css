@@ -2084,6 +2084,7 @@ a.identity-btn { text-decoration: none; }
 
 /* ---- Settings > Indexing > Libraries ---- */
 .libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }
+.libraries-table .lib-access { font-weight: 400; color: var(--pw-muted); }
 .libraries-table .lib-id { font-size: 12px; color: var(--pw-muted); margin-top: 2px; }
 .libraries-table .depth-select { min-width: 11rem; }
 .lib-depth-note { font-size: 12px; margin: 8px 0 0; max-width: var(--settings-measure); }
