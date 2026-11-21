@@ -214,7 +214,7 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	// pw code answers where it is chosen or, by default, offered; a
 	// resumed Studio approval is the Studio assistant's.
 	if _, isResume := body.Resume.(map[string]any); !isResume {
-		engine, err := m.engineFor(r, deref(body.Engine))
+		engine, err := m.engineFor(r, deref(body.Engine), convID)
 		if err != nil {
 			res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
 			return nil
