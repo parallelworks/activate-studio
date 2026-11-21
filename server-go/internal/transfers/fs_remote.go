@@ -160,6 +160,7 @@ land)
     like "$b"; mkdir -p -- "$d" 2>/dev/null
     inside "$d" || fail 6 "$b leads outside the location"
     inside "$(dirof "$a")" || fail 6 "$a leads outside the location"
+    [ -e "$a" ] || [ -L "$a" ] || fail 4 "$a is not there"
     if [ -e "$b" ] || [ -L "$b" ]; then
       if [ "$f" = r ] && [ -f "$b" ] && [ ! -L "$b" ]; then mv -f -- "$a" "$b" || fail 9 "$b could not be replaced"
       else fail 10 "$b is already there and the plan did not list it"; fi

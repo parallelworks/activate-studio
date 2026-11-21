@@ -204,6 +204,13 @@ func TestListReadWriteLand(t *testing.T) {
 			if err != nil || sums[stage+"/x/it's.txt"] != "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824" {
 				t.Fatalf("sha %v %v", sums, err)
 			}
+			// A file that is not there does not land, and says so.
+			if done, err := fs.Land(ctx, []LandPair{{Staged: "docs/no-such.txt", Final: "docs/moved.txt"}}); err == nil || len(done) != 0 {
+				t.Fatalf("landed a file that is not there: %v %v", done, err)
+			}
+			if _, err := os.Lstat(filepath.Join(root, "docs", "moved.txt")); err == nil {
+				t.Fatal("a missing file left a name behind")
+			}
 			// Landing over a name not listed fails; listed, it replaces.
 			if _, err := fs.Land(ctx, []LandPair{{Staged: stage + "/x/it's.txt", Final: "top.txt"}}); statusOf(err) != 409 {
 				t.Fatalf("landed over an unlisted file: %v", err)
