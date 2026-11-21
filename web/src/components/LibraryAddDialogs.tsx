@@ -116,7 +116,10 @@ export function AddLibraryDialog({ open, onClose, offer, onAdded }: {
     onClose()
   }
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="Add a library"
+    // One size whatever the choice shows, so switching Where or How, or a
+    // check's results appearing, never resizes the dialog: the form
+    // scrolls inside it.
+    <Modal open={open} onClose={onClose} size="xl" align="center" className="lib-add-modal" title="Add a library"
       description="An index or a folder, on this computer or on a remote system. A library added here is read only in the Studio, except a space of your own and folders shared with you for writing."
       footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
       {open && (

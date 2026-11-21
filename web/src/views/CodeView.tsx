@@ -1,15 +1,40 @@
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Callout, EmptyState, Loader, SearchInput, StatusDot } from '@parallelworks/ui'
+import { Button, Callout, ConfirmModal, EmptyState, Loader, SearchInput, StatusDot } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
+import { keepEngineFor } from '../labelScope'
 
 /**
  * The viewer's pw code sessions on the platform (PW Code on the web): every
  * machine's sessions, as the platform's Code page lists them, and the one
- * chosen with its transcript. Read only for now; each session opens on the
- * platform, where it is answered, approved and steered.
+ * chosen with its transcript. The page reads; a session on the machine
+ * whose pw code this Studio's chat reaches for the viewer can be continued
+ * in a Studio chat, and every session opens on the platform, where it is
+ * answered, approved and steered.
  */
 
-interface Machine { id: string; name: string; kind: string; hostname?: string; status: string; error?: string }
+interface Machine { id: string; name: string; kind: string; hostname?: string; status: string; error?: string; daemonId?: string }
+
+/** GET /api/chat/pwcode/here: the daemon this viewer's pw code chat
+ *  reaches (or why there is none), and their chats that run in a session. */
+export interface Here {
+  available: boolean; reason?: string; daemonId?: string; hostname?: string
+  chats: { session: string; conversationId: string; title?: string; continued?: boolean }[]
+}
+
+/** Whether the Studio can continue s in a chat for this viewer, and why
+ *  not: it must be on the machine whose daemon the chat reaches. */
+export function continuable(s: CodeSession, machines: Machine[], here: Here | null): { ok: boolean; why: string } {
+  if (!here) return { ok: false, why: 'Checking where this Studio runs pw code…' }
+  if (!here.available) return { ok: false, why: here.reason || 'pw code chat is not offered to you on this Studio.' }
+  const m = machines.find(x => x.id === s.machineId)
+  // By the daemon id the platform keeps for the machine, else its host name.
+  const same = !!m && (m.daemonId || !here.daemonId
+    ? !!m.daemonId && m.daemonId === here.daemonId
+    : !!m.hostname && m.hostname.toLowerCase() === (here.hostname ?? '').toLowerCase())
+  if (!same) return { ok: false, why: `This session is on ${s.machine}, and this Studio's pw code runs on ${here.hostname || 'another machine'}, so it is read only here.` }
+  if (s.archived) return { ok: false, why: 'This session is archived. Restore it in ACTIVATE to continue it here.' }
+  return { ok: true, why: '' }
+}
 export interface CodeSession {
   machineId: string; machine: string; id: string; title: string; model?: string; workspace?: string
   createdAt?: string; updatedAt?: string; messages: number; status: string; permissionMode?: string
@@ -82,6 +107,7 @@ export function CodeView() {
   // of the same session leave the scroll where the reader put it.
   const detailRef = useRef<HTMLDivElement>(null)
   const scrolledFor = useRef('')
+  const [here, setHere] = useState<Here | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -91,12 +117,16 @@ export function CodeView() {
       setError((e as Error).message); setRows(r => r ?? [])
     }
   }, [])
+  const loadHere = useCallback(async () => {
+    try { setHere(await getJSON<Here>('/api/chat/pwcode/here')) } catch (e) { setHere({ available: false, reason: (e as Error).message, chats: [] }) }
+  }, [])
   // The list follows the platform's every 20 seconds while the page is open.
   useEffect(() => {
-    void load()
-    const t = setInterval(() => { if (document.visibilityState === 'visible') void load() }, 20_000)
+    void load(); void loadHere()
+    const t = setInterval(() => { if (document.visibilityState === 'visible') { void load(); void loadHere() } }, 20_000)
     return () => clearInterval(t)
-  }, [load])
+  }, [load, loadHere])
+  const chatFor = useMemo(() => new Map((here?.chats ?? []).map(c => [c.session, c.conversationId])), [here])
 
   const loadDetail = useCallback(async (s: CodeSession) => {
     try {
@@ -167,7 +197,7 @@ export function CodeView() {
                       <StatusDot variant={dot.variant} off={dot.off} pulse={dot.pulse} />
                       <span className="code-row-main">
                         <span className="code-row-title">{s.title}</span>
-                        <span className="code-row-meta">{s.machine}{s.workspace ? ` · ${shortPath(s.workspace)}` : ''}</span>
+                        <span className="code-row-meta">{s.machine}{s.workspace ? ` · ${shortPath(s.workspace)}` : ''}{chatFor.has(s.id) ? ' · in a Studio chat' : ''}</span>
                       </span>
                       <span className="code-row-when">{ago(s.updatedAt)}</span>
                     </button>
@@ -184,14 +214,67 @@ export function CodeView() {
         )}
       </div>
       <div className="code-detail" ref={detailRef}>
-        {!open && <EmptyState variant="bare" title="Choose a session" description="Its conversation shows here, read only. Open it in ACTIVATE to answer, approve or steer it." />}
-        {open && <SessionDetail s={detail?.session ?? open} detail={detail} error={detailError} />}
+        {!open && <EmptyState variant="bare" title="Choose a session" description="Its conversation shows here. Continue it in a Studio chat, or open it in ACTIVATE to answer, approve or steer it." />}
+        {open && <SessionDetail s={detail?.session ?? open} detail={detail} error={detailError}
+          can={continuable(detail?.session ?? open, machines, here)} chat={chatFor.get(open.id)} onContinued={() => void loadHere()} />}
       </div>
     </div>
   )
 }
 
-function SessionDetail({ s, detail, error }: { s: CodeSession; detail: Detail | null; error: string }) {
+/** Opens a Studio chat by its id. */
+function openChat(id: string) { location.hash = `#chat=${id}` }
+
+async function postJSON<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const out = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((out as { error?: string }).error ?? `HTTP ${res.status}`)
+  return out as T
+}
+
+interface ContinueAnswer { confirm?: string; conversationId?: string; existing?: boolean }
+
+/**
+ * Continue in Studio: asks the Studio, which checks the session is the
+ * viewer's and on the machine its pw code reaches, and says what to ask;
+ * once the person agrees, the Studio makes a chat linked to the session,
+ * which opens. A session that already has a chat opens that chat.
+ */
+function ContinueButton({ s, can, chat, onContinued }: { s: CodeSession; can: { ok: boolean; why: string }; chat?: string; onContinued: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [ask, setAsk] = useState('')
+  const [error, setError] = useState('')
+  if (chat) return <Button variant="primary" size="sm" onClick={() => openChat(chat)}>Open the Studio chat</Button>
+  const body = { machine: s.machineId, session: s.id }
+  const start = async () => {
+    setBusy(true); setError('')
+    try {
+      const a = await postJSON<ContinueAnswer>('/api/chat/pwcode/continue', body)
+      if (a.conversationId) { onContinued(); openChat(a.conversationId); return }
+      setAsk(a.confirm ?? 'Your messages from this chat go to the same session.')
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  const confirm = async () => {
+    const a = await postJSON<ContinueAnswer>('/api/chat/pwcode/continue', { ...body, confirmed: true })
+    if (!a.conversationId) throw new Error('The Studio made no chat.')
+    keepEngineFor(a.conversationId, 'pwcode')
+    onContinued()
+    window.dispatchEvent(new CustomEvent('ade:chats-changed'))
+    openChat(a.conversationId)
+  }
+  return (
+    <>
+      <Button variant="primary" size="sm" disabled={!can.ok} loading={busy} onClick={() => void start()} title={can.why || undefined}>Continue in Studio</Button>
+      {error && <span className="code-continue-error" role="alert">{error}</span>}
+      <ConfirmModal open={!!ask} onClose={() => setAsk('')} title="Continue this session in a Studio chat?" description={ask}
+        confirmLabel="Continue in Studio" onConfirm={confirm} closeOnConfirm={false} />
+    </>
+  )
+}
+
+function SessionDetail({ s, detail, error, can, chat, onContinued }: {
+  s: CodeSession; detail: Detail | null; error: string; can: { ok: boolean; why: string }; chat?: string; onContinued: () => void
+}) {
   const dot = dotFor(s)
   return (
     <>
@@ -207,8 +290,12 @@ function SessionDetail({ s, detail, error }: { s: CodeSession; detail: Detail | 
             {s.pullRequests?.map(u => <a key={u} href={u} target="_blank" rel="noopener noreferrer">{u.replace(/^https?:\/\/(www\.)?github\.com\//, '')}</a>)}
           </div>
         </div>
-        <Button variant="primary" size="sm" href={s.url} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>
+        <div className="code-detail-actions">
+          <ContinueButton s={s} can={can} chat={chat} onContinued={onContinued} />
+          <Button variant="secondary" size="sm" href={s.url} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>
+        </div>
       </div>
+      {!chat && !can.ok && <p className="muted code-continue-why">{can.why}</p>}
       {s.lastError && <Callout tone="error" size="sm" className="code-callout">{s.lastError}</Callout>}
       {error && <Callout tone="warning" size="sm" className="code-callout">{error}</Callout>}
       {!detail && !error && <div className="muted pad"><Loader inline size={16} label="Reading the conversation…" /></div>}

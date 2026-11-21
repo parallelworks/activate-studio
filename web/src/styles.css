@@ -2107,6 +2107,14 @@ a.identity-btn { text-decoration: none; }
 /* Add a library: where and how, then the form for that pair. */
 .lib-add-form { margin-top: 12px; }
 .lib-add-flow { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+/* The Add a library dialog keeps one height; its body scrolls. */
+.lib-add-modal { height: min(720px, 100%); }
+/* A form's own buttons stay in view at the foot of the scrolling body. */
+.lib-add-modal .lib-add-flow .query-actions {
+  position: sticky; bottom: -16px; z-index: 1;
+  margin: 4px 0 -16px; padding: 12px 0 16px;
+  background: var(--theme-panel-bg); border-top: 1px solid var(--theme-border);
+}
 .lib-add-choices { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 .lib-add-choices > * { min-width: 0; max-width: 100%; }
 .lib-add-about { margin: 0; max-width: var(--settings-measure); }
@@ -2838,6 +2846,9 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-archived-toggle { align-self: flex-start; margin: 6px 4px; }
 .code-detail { overflow: auto; min-height: 0; padding: 16px 24px 32px; }
 .code-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.code-detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; flex: none; max-width: 50%; }
+.code-continue-why { font-size: 12px; margin: -4px 0 12px; }
+.code-continue-error { font-size: 12px; color: var(--theme-error-text); flex-basis: 100%; text-align: right; }
 .code-detail-title { min-width: 0; }
 .code-detail-title h2 { font-size: 17px; margin: 0 0 6px; font-weight: 600; overflow-wrap: anywhere; }
 .code-detail-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--pw-muted); align-items: center; }

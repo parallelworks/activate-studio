@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Select, cx, fieldBox } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { currentLibrary, onLibraryChange, setLibrary, type PublicLibrary } from '../api'
+import { libraryName } from './LibraryScope'
 
 /**
  * The library picker in the Library rail header. Only rendered when more
@@ -15,7 +16,7 @@ export function LibrarySwitch({ libraries }: { libraries: PublicLibrary[] }) {
   const known = id === ALL_LIBRARIES || libraries.some(l => l.id === id) ? id : (libraries[0]?.id ?? 'kb')
   if (libraries.length < 2) return null
   const items = [
-    ...libraries.map(l => ({ value: l.id, label: `${l.label}${l.site ? ` (on ${l.site})` : l.writable ? '' : ' (read only)'}` })),
+    ...libraries.map(l => ({ value: l.id, label: libraryName(l) })),
     { value: ALL_LIBRARIES, label: 'All libraries' },
   ]
   // A trigger of its own, drawn as the default one is, so the picker can
