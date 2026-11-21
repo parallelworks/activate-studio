@@ -8,6 +8,12 @@
 // replaces the first), so the files are grouped by folder before they are
 // written. Listings can be far larger than memory, so files are kept in
 // sorted runs on disk and merged; only the folders are held in memory.
+//
+// An entry's inode is a hash of its path below the top folder (see
+// Inode), so an object keeps its inode from one listing to the next while
+// its path stays the same, whatever else is added or removed. Text
+// extracted from an object, which is keyed by inode and mtime, so stays
+// valid across listings until the object itself changes.
 package tracefile
 
 import (
@@ -17,6 +23,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"os/exec"
@@ -61,7 +68,6 @@ type Stats struct {
 
 type dirInfo struct {
 	ino   uint64
-	pino  uint64
 	mtime int64
 }
 
@@ -80,7 +86,6 @@ type Writer struct {
 	uid, gid int
 	now      int64
 	dirs     map[string]*dirInfo
-	nextIno  uint64
 	run      []rec
 	runs     []string
 	stats    Stats
@@ -101,12 +106,47 @@ func New(tmp, root string, now int64) (*Writer, error) {
 	if uid < 0 {
 		uid, gid = 0, 0
 	}
-	w := &Writer{root: root, tmp: tmp, uid: uid, gid: gid, now: now, dirs: map[string]*dirInfo{}, nextIno: 1}
-	w.dirs[""] = &dirInfo{ino: w.ino()}
+	w := &Writer{root: root, tmp: tmp, uid: uid, gid: gid, now: now, dirs: map[string]*dirInfo{}}
+	w.dirs[""] = &dirInfo{}
 	return w, nil
 }
 
-func (w *Writer) ino() uint64 { n := w.nextIno; w.nextIno++; return n }
+// Inode is the inode a trace gives the entry at rel, its path below the
+// top folder ("" for the top folder itself), for a folder or a file, on
+// its try-th attempt: 63 bits of the FNV-1a hash of the kind and the
+// path, and of try when it is not 0. Never 0 or 1. A trace takes the
+// first try that no folder, and no other file of the same folder, has
+// already taken, in path order, so the inode depends on the path alone
+// unless two paths collide. Across a whole listing that happens with odds
+// of about n squared over 2 to the 64th for n entries (one in 18 million
+// for a million entries); a pair of files in one folder, which is what an
+// external database's join on inode and mtime could confuse, is probed
+// apart.
+func Inode(rel string, isDir bool, try int) uint64 {
+	return fnvInode(rel, isDir, try)
+}
+
+// inodeFunc is Inode; a test puts a weaker hash here to make collisions.
+var inodeFunc = Inode
+
+func fnvInode(rel string, isDir bool, try int) uint64 {
+	h := fnv.New64a()
+	if isDir {
+		h.Write([]byte{'d', 0})
+	} else {
+		h.Write([]byte{'f', 0})
+	}
+	h.Write([]byte(rel))
+	if try > 0 {
+		h.Write([]byte{0})
+		h.Write([]byte(strconv.Itoa(try)))
+	}
+	v := h.Sum64() & (1<<63 - 1)
+	if v < 2 {
+		v += 2
+	}
+	return v
+}
 
 // clean is a listing path split into its names, or false when it cannot
 // be kept. Empty names (a doubled slash) are dropped.
@@ -140,7 +180,7 @@ func (w *Writer) dir(parts []string) (*dirInfo, bool) {
 		}
 		d := w.dirs[next]
 		if d == nil {
-			d = &dirInfo{ino: w.ino(), pino: cur.ino}
+			d = &dirInfo{}
 			w.dirs[next] = d
 		}
 		cur, path = d, next
@@ -371,6 +411,16 @@ func (w *Writer) Write(out io.Writer) (Stats, error) {
 	}
 	// Byte order puts a folder before everything under it.
 	sort.Strings(paths)
+	taken := make(map[uint64]bool, len(paths))
+	for _, p := range paths {
+		d := w.dirs[p]
+		for try := 0; ; try++ {
+			if d.ino = inodeFunc(p, true, try); !taken[d.ino] {
+				break
+			}
+		}
+		taken[d.ino] = true
+	}
 	bw := bufio.NewWriterSize(out, 1<<20)
 	pending, have, err := src.next()
 	if err != nil {
@@ -387,14 +437,35 @@ func (w *Writer) Write(out io.Writer) (Stats, error) {
 		if p != "" {
 			name += "/" + p
 		}
-		w.line(bw, name, 'd', d.ino, DirMode, 2, 0, mt, d.pino)
+		var pino uint64
+		if p != "" {
+			parent := ""
+			if i := strings.LastIndexByte(p, '/'); i >= 0 {
+				parent = p[:i]
+			}
+			pino = w.dirs[parent].ino
+		}
+		w.line(bw, name, 'd', d.ino, DirMode, 2, 0, mt, pino)
 		w.stats.Dirs++
+		// The files of this folder, for probing a collision apart.
+		local := map[uint64]bool{}
 		for have && pending.dir == p {
 			r := pending
 			if prev != nil && prev.dir == r.dir && prev.name == r.name {
 				w.stats.Skipped++
 			} else {
-				w.line(bw, name+"/"+r.name, 'f', w.ino(), FileMode, 1, r.size, r.mtime, d.ino)
+				rel := r.name
+				if p != "" {
+					rel = p + "/" + r.name
+				}
+				var ino uint64
+				for try := 0; ; try++ {
+					if ino = inodeFunc(rel, false, try); !taken[ino] && !local[ino] {
+						break
+					}
+				}
+				local[ino] = true
+				w.line(bw, name+"/"+r.name, 'f', ino, FileMode, 1, r.size, r.mtime, d.ino)
 				w.stats.Objects++
 				w.stats.Bytes += r.size
 			}
