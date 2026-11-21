@@ -262,7 +262,8 @@ func (s Share) json(adopted string) *jsonv.Object {
 		label = path.Base(s.Rel)
 	}
 	o := jsonv.NewObject("id", s.ID, "from", s.OwnerAccount, "space", s.Space, "path", s.Rel, "label", label, "folder", s.Folder,
-		"kind", s.Kind, "name", s.Name, "access", s.Access, "createdAt", s.CreatedAt, "recipients", float64(len(s.Adopters)))
+		"kind", s.Kind, "name", s.Name, "access", s.Access, "createdAt", s.CreatedAt, "recipients", float64(len(s.Adopters)),
+		"site", remote.ShortName(s.Site))
 	if adopted != "" {
 		o.Set("library", adopted)
 	}

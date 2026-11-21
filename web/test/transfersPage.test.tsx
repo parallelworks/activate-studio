@@ -60,6 +60,25 @@ function PaneHarness({ start, onState }: { start: PaneState; onState?: (s: PaneS
 
 const rowNames = (region: HTMLElement) => within(region).getAllByRole('row').slice(1).map(r => within(r).getAllByRole('cell')[1].textContent)
 
+describe('keeping a local copy', () => {
+  it('is offered on the activity page where libraries are built here, and opens the copy form', async () => {
+    serve({ canBuild: true })
+    history.replaceState(null, '', `${location.pathname}#view=transfers`)
+    render(<TransfersView />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Keep a local copy and index it…' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Keep a local copy and index it' })
+    expect(within(dialog).getByText(/Read only: put files in the location itself/)).toBeInTheDocument()
+  })
+
+  it('is not offered with sign-in on', async () => {
+    const m = serve()
+    history.replaceState(null, '', `${location.pathname}#view=transfers`)
+    render(<TransfersView />)
+    await waitFor(() => expect(m.calls.some(c => c.path === '/api/libraries')).toBe(true))
+    expect(screen.queryByRole('button', { name: 'Keep a local copy and index it…' })).toBeNull()
+  })
+})
+
 describe('a pane', () => {
   it('lists folders first, drills into a folder by its name and by double-click, and climbs with the breadcrumb and Up', async () => {
     serve()
