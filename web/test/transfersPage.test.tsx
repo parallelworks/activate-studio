@@ -1,7 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { Profiler, useState } from 'react'
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// transferTitle passes through; the scale test counts its calls to count
+// the history rows that render.
+const titled = vi.hoisted(() => ({ fn: null as unknown as ReturnType<typeof vi.fn> }))
+vi.mock('../src/transferApi', async (orig) => {
+  const real = await orig<typeof import('../src/transferApi')>()
+  titled.fn = vi.fn(real.transferTitle)
+  return { ...real, transferTitle: titled.fn }
+})
 import { TransfersView } from '../src/views/TransfersView'
 import { TransferPane, type PaneState } from '../src/components/TransferPane'
 import { TransferActivity, progressText } from '../src/components/TransferActivity'
@@ -569,35 +577,26 @@ describe('history at scale', () => {
   it('stays quick with all 2,000 loaded', async () => {
     atAfternoon()
     serve({ transfers: [], finished: 2000 })
-    // React's profiler reports, for each update, the time spent rendering
-    // (actual) and what rendering the whole tree without memo would cost
-    // (base). Both are measured in the same update on the same machine, so
-    // the ratio holds on a slow runner where a time limit in milliseconds
-    // failed while the list was fine.
-    const commits: { actual: number; base: number }[] = []
-    render(
-      <Profiler id="activity" onRender={(_id, _phase, actual, base) => { commits.push({ actual, base }) }}>
-        <TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />
-      </Profiler>,
-    )
+    render(<TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />)
     await waitFor(() => expect(lines()).toBe(50))
     // Every page loaded: 39 more reads.
     let from = 0
     while (screen.queryByRole('button', { name: 'Show more' })) {
       const before = lines()
-      from = commits.length
+      from = titled.fn.mock.calls.length
       fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
       await waitFor(() => expect(lines()).toBeGreaterThan(before))
     }
     expect(lines()).toBe(2000)
     // The last page, added to a 1,950-row list, renders only its own 50
-    // rows: the rows already shown are memoized and skipped. Were they all
-    // rendered again, actual would be about base.
-    const last = commits.slice(from)
-    const actual = last.reduce((n, c) => n + c.actual, 0)
-    const base = Math.max(...last.map(c => c.base))
-    expect(base).toBeGreaterThan(0)
-    expect(actual / base).toBeLessThan(0.5)
+    // rows; the rows already shown are memoized and skipped. Each row that
+    // renders names its transfer three times, so the count is the rows
+    // rendered: about 150 calls for the new rows, against 6,000 were every
+    // row rendered again. A count holds on any machine, where time limits
+    // failed on slow CI runners while the list was fine.
+    const calls = titled.fn.mock.calls.length - from
+    expect(calls).toBeGreaterThan(0)
+    expect(calls).toBeLessThan(1000)
   }, 180_000)
 
   it('asks only for transfers finished since the newest seen, and reports one that landed', async () => {
