@@ -11,7 +11,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -34,25 +33,8 @@ import (
 // SuggestedSpace is the folder offered first.
 const SuggestedSpace = "~/studio"
 
-var homeClusterRe = regexp.MustCompile(`^(?:pw://[A-Za-z0-9_.@-]{1,120}/)?[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$`)
-
-// HomeCluster is the cluster spaces are made on: STUDIO_HOME_CLUSTER, else
-// the one a workflow deployment runs on (pw://PW_USER/PW_POOL_NAME); "" for
-// none.
-func HomeCluster() string {
-	v := strings.TrimSpace(os.Getenv("STUDIO_HOME_CLUSTER"))
-	if v == "" {
-		u, p := os.Getenv("PW_USER"), os.Getenv("PW_POOL_NAME")
-		if u == "" || p == "" {
-			return ""
-		}
-		v = "pw://" + u + "/" + p
-	}
-	if !homeClusterRe.MatchString(v) {
-		return ""
-	}
-	return v
-}
+// HomeCluster is the cluster spaces are made on (libraries.HomeCluster).
+func HomeCluster() string { return libraries.HomeCluster() }
 
 // spaceCheckSh reads, as the person, what a space at $1 needs: the account,
 // the folder (made, open to them alone, when $3 is 1), whether another

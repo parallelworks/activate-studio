@@ -2107,6 +2107,14 @@ a.identity-btn { text-decoration: none; }
 /* Add a library: where and how, then the form for that pair. */
 .lib-add-form { margin-top: 12px; }
 .lib-add-flow { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+/* The Add a library dialog keeps one height; its body scrolls. */
+.lib-add-modal { height: min(720px, 100%); }
+/* A form's own buttons stay in view at the foot of the scrolling body. */
+.lib-add-modal .lib-add-flow .query-actions {
+  position: sticky; bottom: -16px; z-index: 1;
+  margin: 4px 0 -16px; padding: 12px 0 16px;
+  background: var(--theme-panel-bg); border-top: 1px solid var(--theme-border);
+}
 .lib-add-choices { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 .lib-add-choices > * { min-width: 0; max-width: 100%; }
 .lib-add-about { margin: 0; max-width: var(--settings-measure); }
@@ -2857,6 +2865,7 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-tool summary { cursor: pointer; color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-tool-name { font-weight: 600; color: var(--pw-text); }
 .code-tool-args { font-family: ui-monospace, monospace; font-size: 11.5px; }
+.code-tool-run-body { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px; }
 .code-tool pre {
   margin: 6px 0 2px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
   font-size: 11.5px; background: var(--theme-muted-panel-bg); border-radius: 6px; padding: 8px 10px;

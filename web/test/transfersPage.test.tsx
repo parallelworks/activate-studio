@@ -2,6 +2,14 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// transferTitle passes through; the scale test counts its calls to count
+// the history rows that render.
+const titled = vi.hoisted(() => ({ fn: null as unknown as ReturnType<typeof vi.fn> }))
+vi.mock('../src/transferApi', async (orig) => {
+  const real = await orig<typeof import('../src/transferApi')>()
+  titled.fn = vi.fn(real.transferTitle)
+  return { ...real, transferTitle: titled.fn }
+})
 import { TransfersView } from '../src/views/TransfersView'
 import { TransferPane, type PaneState } from '../src/components/TransferPane'
 import { TransferActivity, progressText } from '../src/components/TransferActivity'
@@ -565,33 +573,30 @@ describe('history at scale', () => {
 
   // Its own test, with its own time limit: loading every page takes about
   // 18 s in jsdom on a fast machine, and a CI runner running test files in
-  // parallel took it past a shared 60 s limit. The bound that matters is
-  // the per-page one below.
+  // parallel took it past a shared 60 s limit.
   it('stays quick with all 2,000 loaded', async () => {
     atAfternoon()
     serve({ transfers: [], finished: 2000 })
     render(<TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />)
     await waitFor(() => expect(lines()).toBe(50))
-    // Every page loaded: 39 more reads, each timed.
-    const took: number[] = []
+    // Every page loaded: 39 more reads.
+    let from = 0
     while (screen.queryByRole('button', { name: 'Show more' })) {
       const before = lines()
-      const t0 = performance.now()
+      from = titled.fn.mock.calls.length
       fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
       await waitFor(() => expect(lines()).toBeGreaterThan(before))
-      took.push(performance.now() - t0)
     }
     expect(lines()).toBe(2000)
-    // A page added to the end of a 1,950-row list re-renders only the new
-    // rows, so it costs about what a page added to a short list does. The
-    // bound compares the two on the same machine, as the medians of the
-    // first and last five pages: a fixed time in milliseconds failed on
-    // busy CI runners (jsdom is far slower than a browser) while the list
-    // itself was fine. A list that re-rendered every row would grow about
-    // 40 times slower from the first page to the last.
-    const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
-    const first = median(took.slice(0, 5)), last = median(took.slice(-5))
-    expect(last).toBeLessThan(first * 6 + 250)
+    // The last page, added to a 1,950-row list, renders only its own 50
+    // rows; the rows already shown are memoized and skipped. Each row that
+    // renders names its transfer three times, so the count is the rows
+    // rendered: about 150 calls for the new rows, against 6,000 were every
+    // row rendered again. A count holds on any machine, where time limits
+    // failed on slow CI runners while the list was fine.
+    const calls = titled.fn.mock.calls.length - from
+    expect(calls).toBeGreaterThan(0)
+    expect(calls).toBeLessThan(1000)
   }, 180_000)
 
   it('asks only for transfers finished since the newest seen, and reports one that landed', async () => {

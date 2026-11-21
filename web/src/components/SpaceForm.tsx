@@ -71,12 +71,12 @@ export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) 
 
   return (
     <div className="ssh-library-form">
-      <p className="muted">
+      <p className="muted view-sub">
         {status.credential === 'key'
           ? `Reached on ${status.cluster} as you with the API key you added under Settings, Model access. Signing in with ACTIVATE there instead renews itself.`
           : `Reached on ${status.cluster} as you with your ACTIVATE sign-in.`}
       </p>
-      <div className="ssh-library-fields">
+      <div className="settings-grid">
         <Input label="Folder" mono placeholder={status.suggested} spellCheck={false} value={folder}
           description={`A folder of yours on ${status.cluster}, such as your home folder's ${status.suggested.replace(/^~\//, '')}. Only your account can open it until you share a folder in it. Made, closed to others, if it does not exist.`}
           onChange={e => { setFolder(e.target.value); setCheck(null) }} />
