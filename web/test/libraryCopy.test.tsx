@@ -49,7 +49,8 @@ function serve(o: { transfers?: boolean; all?: boolean } = {}) {
       if (o.all) return json({ path: at, entries: ALL_TREE[at] ?? [] })
       return json({ path: at, entries: at === '' ? [dir('reports'), file('notes.md')] : [] })
     }
-    if (url.startsWith('/api/kb/') && init?.method === 'POST') { kbPosts.push({ url, body }); return json({ id: 'job-1', state: 'done', done: 1, total: 1 }) }
+    if (url.startsWith('/api/kb/') && init?.method === 'POST') { kbPosts.push({ url, body }); return json({ id: 1, state: 'running', done: 0, total: 1 }) }
+    if (url.startsWith('/api/jobs/')) return json({ id: 1, state: 'done', done: 1, total: 1, result: null })
     return json({})
   }))
 }
@@ -72,6 +73,7 @@ function transfer() {
     setDragImage() {},
   }
 }
+const TREE_EVENT = 'ade-kb-changed'
 const row = (path: string) => document.querySelector<HTMLElement>(`.tree-row[data-path="${path}"]`)!
 
 describe('dragging between libraries (All libraries)', () => {
@@ -115,10 +117,16 @@ describe('dragging between libraries (All libraries)', () => {
     fireEvent.dragStart(row('kb/reports'), { dataTransfer: dt })
     fireEvent.dragOver(row('kb/notes'), { dataTransfer: dt })
     expect(dt.dropEffect).toBe('move')
+    // The job ends before the test does, so its poll never outlives the page.
+    let ended = 0
+    const onTree = () => { ended++ }
+    window.addEventListener(TREE_EVENT, onTree)
     fireEvent.drop(row('kb/notes'), { dataTransfer: dt })
     await waitFor(() => expect(kbPosts.some(p => p.url.startsWith('/api/kb/move'))).toBe(true))
     expect(kbPosts.find(p => p.url.startsWith('/api/kb/move'))!.body).toMatchObject({ paths: ['reports'], dest: 'notes' })
     expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(ended).toBeGreaterThan(0), { timeout: 3000 })
+    window.removeEventListener(TREE_EVENT, onTree)
   })
 
   it('drags a read-only library\'s folder as a copy only, and never a library\'s own folder', async () => {
