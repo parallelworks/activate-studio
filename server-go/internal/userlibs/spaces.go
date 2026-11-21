@@ -410,32 +410,81 @@ func writeTarGz(w io.Writer, dir string, names []string) error {
 	return gz.Close()
 }
 
-// spaceSession is the cluster and the person's key for their space, or why
-// there is none.
-func (m *Module) spaceSession(w who) (owner, site, key string, err error) {
-	site = HomeCluster()
-	if site == "" {
-		return "", "", "", apierr.New(409, "This Studio does not know the cluster it runs beside, so it cannot offer My library. The operator can set STUDIO_HOME_CLUSTER.")
-	}
-	owner = w.owner()
+// spaceTarget is the system a space is made on and how it is reached.
+type spaceTarget struct {
+	owner, site, key string
+	// transport is pw (the person's own key) or ssh (the keys of the
+	// account the Studio runs as, on a Studio one person uses).
+	transport string
+	name      string
+	host      probeHost
+	conn      buildConn
+}
+
+// spaceSession is the system a space request names, with the person's own
+// credential for it, or why there is none: one of their clusters over pw
+// ssh (the Studio's own cluster when none is named), or, on a Studio one
+// person uses with sign-in off, a host over plain ssh with their keys.
+func (m *Module) spaceSession(w who, b *jsonv.Object) (*spaceTarget, error) {
+	owner := w.owner()
 	if owner == "" {
-		return "", "", "", apierr.New(401, "Sign in to the Studio to make your library.")
+		return nil, apierr.New(401, "Sign in to the Studio to make your library.")
 	}
-	key = m.keyOf(w, owner)
+	if b != nil && str(field(b, "destination")) != "" {
+		if !w.sshAllowed() {
+			return nil, errSSHSingle()
+		}
+		d, err := sshDest(field(b, "destination"), field(b, "port"), field(b, "sshOptions"))
+		if err != nil {
+			return nil, err
+		}
+		site, err := remote.SSHSite(d.Destination, d.Port, d.SSHOptions)
+		if err != nil {
+			return nil, err
+		}
+		via := ""
+		if j := remote.JumpOf(d.SSHOptions); j != "" {
+			via = " through " + j
+		}
+		return &spaceTarget{owner: owner, site: site, transport: "ssh", name: d.Destination,
+			host: probeHost{Site: site, Name: d.Destination, Reached: d.Destination + portText(d.Port) + via,
+				Advice: func(msg string) string { return sshAdvice(msg, d.Destination, d.Port) }},
+			conn: buildConn{Destination: ptr(d.Destination), Port: d.Port, SSHOptions: d.SSHOptions, Site: d.Destination}}, nil
+	}
+	site := ""
+	if b != nil {
+		site = str(field(b, "cluster"))
+	}
+	if site != "" {
+		if !clusterRe.MatchString(site) {
+			return nil, apierr.New(400, "system: the name of one of your clusters")
+		}
+	} else if site = HomeCluster(); site == "" {
+		return nil, apierr.New(409, "Choose one of your systems for your library. This Studio does not know the cluster it runs beside; the operator can set STUDIO_HOME_CLUSTER to offer it first.")
+	}
+	return m.pwSpaceTarget(w, owner, site)
+}
+
+// pwSpaceTarget is site over pw ssh with the person's own key.
+func (m *Module) pwSpaceTarget(w who, owner, site string) (*spaceTarget, error) {
+	key := m.keyOf(w, owner)
 	if key == "" {
 		if owner == single {
-			return "", "", "", apierr.New(409, "The pw CLI on this computer is not signed in. Run pw auth, then try again.")
+			return nil, apierr.New(409, "The pw CLI on this computer is not signed in. Run pw auth, then try again.")
 		}
-		return "", "", "", apierr.New(409, "My library reaches the cluster with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then come back here.")
+		return nil, apierr.New(409, "My library reaches the system with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then come back here.")
 	}
-	return owner, site, key, nil
+	name := remote.ShortName(site)
+	return &spaceTarget{owner: owner, site: site, key: key, transport: "pw", name: name,
+		host: probeHost{Site: site, Key: key, Name: name, Reached: name, Advice: func(msg string) string { return pwAdvice(msg, site) }},
+		conn: buildConn{SSHOptions: []string{}, Site: site}}, nil
 }
 
 // spaceStatus is what the Add library dialog shows for a space.
 func (m *Module) spaceStatus(w who) *jsonv.Object {
 	why := ""
 	site := HomeCluster()
-	if _, _, _, err := m.spaceSession(w); err != nil {
+	if _, err := m.spaceSession(w, nil); err != nil {
 		why = err.Error()
 	}
 	spaces := []any{}
@@ -460,8 +509,14 @@ func (m *Module) spaceStatus(w who) *jsonv.Object {
 			credential = "key"
 		}
 	}
+	// Without a cluster of its own, a Studio still offers a space on any
+	// system the person reaches: with pw ssh, or plain ssh where allowed.
+	if why != "" && site == "" && w.owner() != "" && (m.keyOf(w, w.owner()) != "" || w.sshAllowed()) {
+		why = ""
+	}
 	return jsonv.NewObject("available", why == "", "why", why, "cluster", cluster, "suggested", SuggestedSpace, "spaces", spaces,
-		"credential", credential, "signInOffered", w.Auth && os.Getenv("DISABLE_PERSONAL_KEYS") != "1")
+		"credential", credential, "signInOffered", w.Auth && os.Getenv("DISABLE_PERSONAL_KEYS") != "1",
+		"pw", m.keyOf(w, w.owner()) != "", "ssh", w.sshAllowed())
 }
 
 func spaceFolder(b *jsonv.Object) (string, error) {
@@ -478,7 +533,7 @@ func spaceFolder(b *jsonv.Object) (string, error) {
 
 // testSpace is the check alone.
 func (m *Module) testSpace(ctx context.Context, w who, b *jsonv.Object) (*jsonv.Object, error) {
-	_, site, key, err := m.spaceSession(w)
+	t, err := m.spaceSession(w, b)
 	if err != nil {
 		return nil, err
 	}
@@ -486,20 +541,21 @@ func (m *Module) testSpace(ctx context.Context, w who, b *jsonv.Object) (*jsonv.
 	if err != nil {
 		return nil, err
 	}
-	f, err := m.checkSpace(ctx, site, key, folder, false)
+	f, err := m.checkSpace(ctx, t.site, t.key, folder, false)
 	if err != nil {
 		return nil, err
 	}
-	return f.json(), nil
+	return f.json().Set("system", t.name), nil
 }
 
 // addSpace makes a person's space: the check, the folder when confirmed,
 // their own GUFI, and the build of its index, as them.
 func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*libraries.UserDef, int, error) {
-	owner, site, key, err := m.spaceSession(w)
+	t, err := m.spaceSession(w, b)
 	if err != nil {
 		return nil, 0, err
 	}
+	owner, site, key := t.owner, t.site, t.key
 	folder, err := spaceFolder(b)
 	if err != nil {
 		return nil, 0, err
@@ -526,7 +582,7 @@ func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*librari
 		}
 	}
 	if r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", spacePrepareSh}, 60*time.Second); err != nil || !strings.Contains(r.Stdout, "ready") {
-		return nil, 0, apierr.New(502, "Your ~/.activate-studio could not be kept to you alone on %s.", remote.ShortName(site))
+		return nil, 0, apierr.New(502, "Your ~/.activate-studio could not be kept to you alone on %s.", t.name)
 	}
 	if f.SendGufi {
 		if err := m.sendGufi(ctx, site, key); err != nil {
@@ -534,18 +590,14 @@ func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*librari
 		}
 	}
 	for _, d := range m.load(owner) {
-		if d.Space != nil && d.Build != nil && d.Site == site && d.Build.SourceRoot == f.Real {
+		if d.Space != nil && d.Build != nil && d.Transport == t.transport && d.Site == t.conn.Site && intOf(d.Port) == t.conn.Port && d.Build.SourceRoot == f.Real {
 			return nil, 0, apierr.New(409, "%s is already your library %s.", f.Real, d.Label)
 		}
 	}
 	bin := f.GufiBin
-	r := &buildReq{owner: owner,
-		host: probeHost{Site: site, Key: key, Name: remote.ShortName(site), Reached: remote.ShortName(site),
-			Advice: func(msg string) string { return pwAdvice(msg, site) }},
-		conn: buildConn{SSHOptions: []string{}, Site: site},
-		spec: buildSpec{SourceRoot: f.Real, GufiBin: &bin}}
+	r := &buildReq{owner: owner, host: t.host, conn: t.conn, spec: buildSpec{SourceRoot: f.Real, GufiBin: &bin}}
 	info := f.Info
-	return m.addBuildFor(ctx, w, "pw", r, b, &addOpts{Space: &info})
+	return m.addBuildFor(ctx, w, t.transport, r, b, &addOpts{Space: &info})
 }
 
 func spaceNotPassed(f *spaceFound) error {

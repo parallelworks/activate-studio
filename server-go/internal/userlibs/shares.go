@@ -290,6 +290,11 @@ func (m *Module) ownSpace(ctx context.Context, w who, id string) (string, string
 	if d == nil || d.Space == nil {
 		return "", "", nil, apierr.New(404, "no such space")
 	}
+	// A space over plain ssh is on a Studio one person uses, with nobody
+	// here to share it with.
+	if d.IsSSH() {
+		return "", "", nil, apierr.New(409, "%s is reached over ssh on a Studio only you use, so there is nobody here to share it with.", d.Label)
+	}
 	key := m.keyOf(w, owner)
 	if key == "" {
 		return "", "", nil, apierr.New(409, "Sign the pw CLI in under Settings, Model access, so the Studio can share as you.")
@@ -601,20 +606,42 @@ func (s Share) reaches(id clusterIdent) bool {
 	return false
 }
 
-// sharedWithMe is what others shared with the viewer's account.
+// sharedWithMe is what others shared with the viewer's account, on each
+// system a share is on, as their own session there names them.
 func (m *Module) sharedWithMe(ctx context.Context, w who) (*jsonv.Object, error) {
-	owner, site, key, err := m.spaceSession(w)
-	if err != nil {
+	owner := w.owner()
+	if _, err := m.spaceSession(w, nil); err != nil && (owner == "" || m.keyOf(w, owner) == "") {
 		return jsonv.NewObject("shares", []any{}, "why", err.Error()), nil
 	}
-	id, err := m.identity(ctx, site, key)
-	if err != nil {
-		return nil, err
+	type reached struct {
+		id clusterIdent
+		ok bool
 	}
+	ids := map[string]reached{}
 	list := []any{}
+	account := ""
 	for _, s := range m.loadShares() {
-		if s.Owner == owner || s.Site != site || !s.reaches(id) {
+		if s.Owner == owner {
 			continue
+		}
+		at, seen := ids[s.Site]
+		if !seen {
+			t, err := m.pwSpaceTarget(w, owner, s.Site)
+			if err != nil {
+				return jsonv.NewObject("shares", []any{}, "why", err.Error()), nil
+			}
+			// A system the person does not reach is one where nothing
+			// is shared with them.
+			id, err := m.identity(ctx, t.site, t.key)
+			at = reached{id, err == nil}
+			ids[s.Site] = at
+		}
+		id := at.id
+		if !at.ok || !s.reaches(id) {
+			continue
+		}
+		if account == "" || s.Site == HomeCluster() {
+			account = id.account
 		}
 		adopted := ""
 		for _, a := range s.Adopters {
@@ -624,28 +651,36 @@ func (m *Module) sharedWithMe(ctx context.Context, w who) (*jsonv.Object, error)
 		}
 		list = append(list, s.json(adopted))
 	}
-	return jsonv.NewObject("shares", list, "account", id.account), nil
+	return jsonv.NewObject("shares", list, "account", account), nil
 }
 
 // addShared makes a library of a folder shared with the viewer, indexed
-// and read as them.
+// and read as them, on the system the folder is on.
 func (m *Module) addShared(ctx context.Context, w who, shareID string, b *jsonv.Object) (*libraries.UserDef, int, error) {
-	owner, site, key, err := m.spaceSession(w)
-	if err != nil {
-		return nil, 0, err
-	}
-	id, err := m.identity(ctx, site, key)
-	if err != nil {
-		return nil, 0, err
+	owner := w.owner()
+	if owner == "" {
+		return nil, 0, apierr.New(401, "Sign in to the Studio to make your library.")
 	}
 	var s *Share
 	for _, x := range m.loadShares() {
-		if x.ID == shareID && x.Owner != owner && x.Site == site && x.reaches(id) {
+		if x.ID == shareID && x.Owner != owner {
 			x := x
 			s = &x
 		}
 	}
 	if s == nil {
+		return nil, 0, apierr.New(404, "no such share")
+	}
+	t, err := m.pwSpaceTarget(w, owner, s.Site)
+	if err != nil {
+		return nil, 0, err
+	}
+	site, key := t.site, t.key
+	id, err := m.identity(ctx, site, key)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !s.reaches(id) {
 		return nil, 0, apierr.New(404, "no such share")
 	}
 	for _, a := range s.Adopters {

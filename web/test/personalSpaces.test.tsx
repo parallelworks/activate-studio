@@ -109,6 +109,38 @@ describe('a space of one\'s own', () => {
     expect(button('Make my library')).toBeDisabled()
   })
 
+  it('is made on the system chosen: the Studio\'s cluster first, another cluster, or a host over ssh where allowed', async () => {
+    const SYSTEMS = { usable: true, why: null, error: null, systems: [
+      { name: 'cluster-b', label: 'cluster-b', status: 'active', running: true, type: null },
+      { name: 'cluster-a', label: 'cluster-a', status: 'active', running: true, type: null },
+    ] }
+    const calls = stub((m, u) => {
+      if (u === '/api/user-libraries/space' && m === 'GET') return json({ ...STATUS, pw: true, ssh: true })
+      if (u === '/api/user-libraries/pw/systems') return json(SYSTEMS)
+      if (u === '/api/user-libraries/space/test') return json(PASSED)
+    })
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true }} onAdded={() => {}} />)
+    fireEvent.click(button('My library'))
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('cluster-a'))
+    const pick = async (name: string) => {
+      fireEvent.click(screen.getByRole('combobox'))
+      const o = await screen.findByRole('option', { name })
+      fireEvent.pointerDown(o)
+      fireEvent.click(o)
+    }
+    fireEvent.click(button('Check the folder'))
+    await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ cluster: 'cluster-a', sourceRoot: '~/studio' }))
+    await pick('cluster-b running')
+    expect(button('Make my library')).toBeDisabled()
+    fireEvent.click(button('Check the folder'))
+    await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ cluster: 'cluster-b', sourceRoot: '~/studio' }))
+    expect(screen.getByText('Reached on cluster-b as you with your ACTIVATE sign-in.')).toBeInTheDocument()
+    await pick('A host over ssh…')
+    fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'ada@box' } })
+    fireEvent.click(button('Check the folder'))
+    await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ destination: 'ada@box', sourceRoot: '~/studio' }))
+  })
+
   it('lists what others shared, and adds one as the viewer\'s own library', async () => {
     let added = false
     const calls = stub((m, u) => {

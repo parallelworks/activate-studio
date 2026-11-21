@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
-import { Button, Callout, Field, Input, Select } from '@parallelworks/ui'
+import { useState } from 'react'
+import { Button, Callout, Input } from '@parallelworks/ui'
 import { api, type IndexDepth, type PwSystems } from '../api'
 import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } from './IndexDepth'
 import { sshOptionsProblem } from '../sshOptions'
 import { accessLabel, knownAppConfig } from '../config'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
+import { PwSystemField } from './PwSystemField'
 
 /**
  * A library on a remote system: one reached with the user's own ssh (keys,
@@ -36,9 +37,6 @@ interface TestResult { ok: boolean; steps: CheckStep[]; gufiBin?: string; gufiVe
 
 const EMPTY = { label: '', destination: '', sshOptions: '', cluster: '', indexRoot: '', sourceRoot: '', gufiBin: '' }
 
-/** The list's choice for a system typed by name. */
-const ANOTHER = '\u0000another'
-
 export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mode = 'connect', onOpenAccess }: {
   onAdded?: (lib: SshLibraryAdded) => void
   compact?: boolean
@@ -57,21 +55,9 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [depth, setDepth] = useState<IndexDepth>(DEFAULT_REMOTE_LIBRARY_DEPTH)
-  // Over pw ssh: the person's systems on the platform, running first, the
-  // first running one chosen; or why pw ssh cannot be used here.
+  // Over pw ssh: the person's systems on the platform (PwSystemField), or
+  // why pw ssh cannot be used here.
   const [systems, setSystems] = useState<PwSystems | null>(null)
-  const [typing, setTyping] = useState(false)
-  useEffect(() => {
-    if (!pw) return
-    api.pwSystems().then(r => {
-      setSystems(r)
-      const first = r.systems.find(x => x.running)
-      setForm(f => (f.cluster || !first ? f : { ...f, cluster: first.name }))
-    }).catch(e => setSystems({ usable: true, why: null, systems: [], error: String((e as Error).message ?? e) }))
-  }, [pw])
-  // Without a list, the system is typed by name.
-  const listed = !!systems?.systems.length
-  const typed = pw && systems !== null && (typing || !listed)
 
   const paths = build
     ? { sourceRoot: form.sourceRoot.trim(), indexRoot: form.indexRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
@@ -139,24 +125,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
       <div className="settings-grid">
         {pw ? (
           <>
-            {(systems === null || listed) && (
-              <Field label="System" description={help('Your systems on the platform, running ones first. One that is off has to be started on ACTIVATE before it can be reached.')}>
-                <Select value={typing ? ANOTHER : form.cluster || null} placeholder={systems === null ? 'Loading…' : 'Choose a system'} disabled={systems === null}
-                  items={[
-                    ...(systems?.systems ?? []).map(x => ({ value: x.name, label: x.label, description: x.label !== x.name ? x.name : undefined, hint: x.running ? 'running' : x.status })),
-                    { value: ANOTHER, label: 'Another system…', description: 'Type its name' },
-                  ]}
-                  onValueChange={v => {
-                    if (!v) return
-                    setTyping(v === ANOTHER)
-                    set({ cluster: v === ANOTHER ? '' : v })
-                  }} />
-              </Field>
-            )}
-            {typed && (
-              <Input label={listed ? 'System name' : 'System'} placeholder="my-cluster" mono autoComplete="off" spellCheck={false} value={form.cluster}
-                description={help('The name of a running system, as pw ssh takes it.')} onChange={e => set({ cluster: e.target.value.trim() })} />
-            )}
+            <PwSystemField value={form.cluster} onChange={cluster => set({ cluster })} help={help} onSystems={setSystems} />
           </>
         ) : (
           <>

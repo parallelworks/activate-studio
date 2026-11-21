@@ -95,7 +95,7 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 // Studio runs as, which are theirs.
 func (m *Module) writeSession(w who, owner string, d *libraries.UserDef) (string, string, error) {
 	if d.IsSSH() {
-		if !w.sshAllowed() || !d.Mine() {
+		if !w.sshAllowed() || d.Shared != nil {
 			return "", "", errSSHSingle()
 		}
 		site := sshSiteOf(d)
