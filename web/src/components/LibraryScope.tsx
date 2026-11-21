@@ -6,7 +6,12 @@ import type { Scope } from '../scope'
 
 /** A library's name as the pickers show it, with where it is or that it is
  *  read only. */
-export const libraryName = (l: PublicLibrary) => `${l.label}${l.site ? ` (on ${l.site})` : l.writable ? '' : ' (read only)'}`
+/** A library as the switcher names it: where it is, a remote system's or the
+ *  cluster the Studio runs beside, else whether it is read only. */
+export const libraryName = (l: Pick<PublicLibrary, 'label' | 'site' | 'host' | 'writable'>) => {
+  const on = l.site || l.host
+  return `${l.label}${on ? ` (on ${on})` : l.writable ? '' : ' (read only)'}`
+}
 
 /** What the picker's button says: all, the one, or how many. */
 export function scopeLabel(libraries: PublicLibrary[], s: Scope): string {
