@@ -93,8 +93,12 @@ func CacheFile(cacheRoot, rel string) string {
 // leaves half an entry that a later pass would take as current. The
 // temporary name ends in .tmp, which the server's cache prune sweeps when
 // a killed pass leaves one behind.
+//
+// An entry is the text of a file that may be private, so it is the
+// builder's alone (0600, in folders of 0700) whoever else can reach the
+// index: only the account that builds the index reads it back.
 func writeEntry(file, text string) error {
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(file), filepath.Base(file)+".*.tmp")
@@ -108,11 +112,7 @@ func writeEntry(file, text string) error {
 		werr = cerr
 	}
 	if werr == nil {
-		// CreateTemp makes the file 0600; entries are 0644 as Node and
-		// Python write them under the usual umask.
-		werr = os.Chmod(name, 0o644)
-	}
-	if werr == nil {
+		// CreateTemp makes the file 0600, which it keeps.
 		werr = os.Rename(name, file)
 	}
 	if werr != nil {
@@ -127,6 +127,11 @@ func fresh(file string, src time.Time) (ok bool, size int64, exists bool) {
 	st, err := os.Stat(file)
 	if err != nil {
 		return false, 0, false
+	}
+	// An entry an earlier version left open to others is closed as it is
+	// met (its folders were made 0755 then; the file is what holds text).
+	if st.Mode().Perm()&0o077 != 0 {
+		os.Chmod(file, st.Mode().Perm()&0o700)
 	}
 	return !st.ModTime().Before(src), st.Size(), true
 }
