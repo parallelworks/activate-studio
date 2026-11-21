@@ -10,6 +10,7 @@ import { applyRememberedFavicon, applyRememberedNavWidth } from './config'
 import { keepShellInPlace, settleAfterKeyboard } from './shellScroll'
 import { installClipboardFallback } from './clipboard'
 import { installDownloadNotices } from './downloadNotice'
+import { registerShellWorker } from './shellWorker'
 // Geist Sans and Geist Mono, the platform's typefaces, from the shared package.
 import '@parallelworks/ui/fonts.css'
 // The UI package's prebuilt stylesheet (chat rules included) loads before
@@ -25,6 +26,9 @@ settleAfterKeyboard()
 installClipboardFallback()
 // A notice for each file the page saves (an exported conversation, a CSV).
 installDownloadNotices()
+// The app shell on the device, so the next open starts without waiting on
+// the network (web/shell/sw.js).
+registerShellWorker()
 
 // Before the first render: components read the hash while initializing.
 restoreLastHash()

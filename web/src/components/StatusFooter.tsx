@@ -15,6 +15,7 @@ import { changeCount, UpdateDetails } from './UpdateDetails'
 import { UpdateProgress } from './UpdatesSection'
 import { share, syncIndex, type AiHealth } from '../statusShare'
 import { aiOn, useAppConfig } from '../config'
+import { reloadOntoNewest, useShellUpdate } from '../shellWorker'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -414,6 +415,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // the old build, so it says so and offers a reload; open conversations
   // are saved server-side and survive it.
   const [updated, setUpdated] = useState<Build | null>(null)
+  // A newer build of the page waits on this device: the page opened from
+  // the copy kept there (web/shell/sw.js) after the server moved on.
+  const shellNewer = useShellUpdate()
   useEffect(() => {
     let first: string | null = null
     const check = () => fetch('/api/version').then(r => r.json()).then((b: Build) => {
@@ -531,11 +535,11 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           />
         </div>
       )}
-      {updated && (
-        <div className="status-line" title="A new version was deployed while this page was open">
+      {(updated || (shellNewer && build)) && (
+        <div className="status-line" data-testid="footer-reload" title="A new version was deployed while this page was open, or since this device last loaded the page">
           <StatusDot variant="warning" size={7} />
-          Updated to {updated.version}
-          <Button variant="secondary" size="xs" onClick={() => location.reload()}>Reload</Button>
+          Updated to {(updated ?? build)?.version}
+          <Button variant="secondary" size="xs" onClick={() => { void reloadOntoNewest() }}>Reload</Button>
         </div>
       )}
       {after.reopen && (
