@@ -2102,6 +2102,14 @@ a.identity-btn { text-decoration: none; }
 /* Add a library: where and how, then the form for that pair. */
 .lib-add-form { margin-top: 12px; }
 .lib-add-flow { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+/* The Add a library dialog keeps one height; its body scrolls. */
+.lib-add-modal { height: min(720px, 100%); }
+/* A form's own buttons stay in view at the foot of the scrolling body. */
+.lib-add-modal .lib-add-flow .query-actions {
+  position: sticky; bottom: -16px; z-index: 1;
+  margin: 4px 0 -16px; padding: 12px 0 16px;
+  background: var(--theme-panel-bg); border-top: 1px solid var(--theme-border);
+}
 .lib-add-choices { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 .lib-add-choices > * { min-width: 0; max-width: 100%; }
 .lib-add-about { margin: 0; max-width: var(--settings-measure); }
