@@ -46,7 +46,20 @@ An SQLite file with GUFI's common schema (`index-extract schema` prints it): `ex
 
 There are no paths in it. A file renamed keeps its text; a file changed gets read again. Beside the schema's tables, `studio_extract_files` has one row per file looked at: its key, size, state (`text`, `empty`, `skipped`, `changed`, `missing` or `failed`), reader, chunk and character counts, and the error.
 
-Placed beside a directory's `db.db` under any name matching `STUDIO_EXTERNAL_DB_PATTERN` (default `\.db$`), such as the permission shard name `studio_UR_<uid>_<gid>.db`, an artifact is searched by the Studio and by GUFI's example queries: rows join to that directory's entries by inode and mtime. Loading artifacts into a spread tree and from there into each directory's permission shards is the next part of this work.
+## Loading it into an index
+
+Two more commands follow GUFI's plan for system-level external databases.
+
+```sh
+index-extract spread --spread /data/spread --fsid store1 text-*.db
+index-extract shards --spread /data/spread --fsid store1 --index /index/top
+```
+
+`spread` puts the records of one or more artifacts into a spread tree, the pristine copy that outlives any index: `<spread>/studio/<fsid>/89/67/45.db` holds the records of inode 123456789, two digits a level. Each file's records replace those of the same inode, mtime and extra_info under that db's write lock, and other versions of the file are kept. The top folder gets GUFI's two configuration databases, `fsid.db` and `extdbprefix.db`, and the prefix's SQL as `studio.sql`. `--fsid` names the file system or store, one folder of the tree, so several can share a spread tree.
+
+`shards` writes each folder's permission shards in the index from the spread tree. Every file in a folder's `db.db` whose inode and mtime have records gets them in `studio_XX_<uid>_<gid>.db` beside `db.db`, with the file's own uid and gid. XX is `OR` when others may read the file, `GR` when the folder's group may, `UR` when the folder's owner may, and `NA` otherwise. A shard is readable by exactly those its class names (0644, 0640, 0600, or for `NA` the narrowest mode of its files), so attaching it is the permission check. Run as root, it is given to the files' owner. A folder's shards are written whole each time, so the records of a file that changed or went are dropped, and a shard no file needs any more is removed. After the index is rebuilt, for example by a new listing of a bucket, `shards` alone puts the text back: nothing is read again.
+
+The Studio's search and GUFI's example queries attach any file beside `db.db` matching `STUDIO_EXTERNAL_DB_PATTERN` (default `\.db$`), so the shards are searched by text with nothing more to set up.
 
 ## What it needs at run time
 

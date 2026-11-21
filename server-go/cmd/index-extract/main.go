@@ -5,6 +5,8 @@
 // to the storage, run as a job of a scheduler array, or used on its own.
 //
 //	index-extract files --list FILE|- --out ARTIFACT.db [--root DIR] [--shard K/N] ...
+//	index-extract spread --spread DIR --fsid NAME ARTIFACT.db...
+//	index-extract shards --spread DIR --fsid NAME --index DIR
 //	index-extract schema
 //
 // See internal/extractfiles and docs/EXTRACTION.md.

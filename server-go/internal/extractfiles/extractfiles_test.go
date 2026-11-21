@@ -342,8 +342,8 @@ func TestMain_(t *testing.T) {
 }
 
 // TestGUFIRoundTrip lists a folder's index with gufi_query, extracts the
-// list, and places the artifact beside the index's db.db under a
-// permission shard's name, where an --external-copy walk finds the file
+// list, loads the artifact into a spread tree and from there into the
+// index's permission shards, where an --external-copy walk finds the file
 // by its text.
 func TestGUFIRoundTrip(t *testing.T) {
 	bin := os.Getenv("STUDIO_GUFI_BIN")
@@ -373,9 +373,20 @@ func TestGUFIRoundTrip(t *testing.T) {
 	if err != nil || s.States["text"] != 2 {
 		t.Fatalf("%+v %v", s, err)
 	}
-	b, _ := os.ReadFile(art)
-	shard := filepath.Join(top, fmt.Sprintf("%s_UR_%d_%d.db", extdb.Prefix, os.Getuid(), os.Getgid()))
-	os.WriteFile(shard, b, 0o600)
+	// Into a spread tree, and from it into the index's permission shards.
+	spread := filepath.Join(base, "spread")
+	var out, errb bytes.Buffer
+	if rc := Main([]string{"spread", "--spread", spread, "--fsid", "local", art}, nil, &out, &errb); rc != 0 || !strings.Contains(out.String(), `"files":2`) {
+		t.Fatalf("spread %d: %s %s", rc, out.String(), errb.String())
+	}
+	out.Reset()
+	if rc := Main([]string{"shards", "--spread", spread, "--fsid", "local", "--index", top}, nil, &out, &errb); rc != 0 || !strings.Contains(out.String(), `"files":2`) {
+		t.Fatalf("shards %d: %s %s", rc, out.String(), errb.String())
+	}
+	shard := filepath.Join(top, extdb.ShardName(extdb.Prefix, extdb.ReadOther, int64(os.Getuid()), int64(os.Getgid())))
+	if _, err := os.Stat(shard); err != nil {
+		t.Fatalf("no shard %s: %v", shard, err)
+	}
 	got, err := exec.Command(filepath.Join(bin, "gufi_query"), "-I", "CREATE TABLE c (n TEXT);",
 		"--external-copy", `\.db$`, "INSERT INTO c SELECT e.name FROM extdb.ext_bm25 b JOIN vrpentries e ON CAST(b.inode AS INT64) = e.inode AND CAST(b.mtime AS INT64) = e.mtime WHERE ext_bm25 MATCH 'zanzibar';",
 		"-E", "SELECT n FROM c;", top).Output()
