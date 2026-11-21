@@ -535,6 +535,15 @@ megabyte (0 before one). Readable
 objects are text files and documents (PDF, Office, OpenDocument, mail);
 images are not read, since reading one is OCR of the whole image.
 
+In Settings, Indexing, Libraries, the bucket row's **Read text** (Off, or
+After each listing) asks first, with the estimate: what it reads, what is
+left out, the price on AWS (data out at $0.09 a GB and GET requests at
+$0.0004 per 1,000, S3 Standard), that a store on premises charges
+nothing, and the time at the last measured rate (25 MB a second before
+one). While a pass runs the row says **Reading text**, with its progress
+and **Stop reading**; after, how many objects have text and what the last
+pass read.
+
 `PUT /api/libraries/<id>/bucket` with `{ text: true }` lists the bucket
 and then reads its text; with `{ text: false }` a pass that is running
 stops, nothing more is read, and the text read so far stays searchable.
@@ -1302,8 +1311,7 @@ and a reload land in the right library.
 
 ## Not yet
 
-For buckets: choosing to read their text, with what that read costs shown
-first, in Settings; reading it through the platform next to the data,
+For buckets: reading their text through the platform next to the data,
 bringing back only the index; images (OCR) and search by meaning; a
 bucket read through an rclone mount; and
 owners, groups and modes per entry for a Studio that people sign in to.

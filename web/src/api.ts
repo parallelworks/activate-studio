@@ -83,6 +83,37 @@ export interface LibraryBucket {
   error: string | null
   /** A listing is running now. */
   listing: boolean
+  /** The objects' text is read after each listing (off until asked), and
+   *  is being read now. */
+  text: boolean; reading: boolean
+  /** The bucket's name in a spread tree, set at the first text pass. */
+  fsid?: string
+  /** What the last text pass did; absent before the first. */
+  textPass?: BucketTextPass | null
+}
+/** What a bucket library's last text pass did. */
+export interface BucketTextPass {
+  at: string
+  /** Objects read, by outcome: text, empty, skipped, changed, missing, failed. */
+  read: Record<string, number>
+  bytes: number; requests: number; seconds: number
+  /** Objects of the library with text now. */
+  files: number
+  /** Bytes a second of the last pass that read a megabyte or more; 0 before one. */
+  rate: number
+  missing: string[]
+  stopped?: boolean
+  error: string | null
+}
+/** What a text pass of a bucket library would read now
+ *  (GET /api/libraries/<id>/bucket/text). */
+export interface BucketTextEstimate {
+  objects: number; bytes: number
+  done: number; doneBytes: number
+  over: number; overBytes: number
+  other: number; maxBytes: number
+  provider: string
+  rate: number
 }
 /** How often a bucket library is listed again, as offered. */
 export const BUCKET_EVERY: { value: number; label: string }[] = [
@@ -93,6 +124,28 @@ export const BUCKET_EVERY: { value: number; label: string }[] = [
  *  month). Other providers set their own. */
 export const S3_LIST_PER_1000 = 0.005
 export const S3_EGRESS_PER_GB = 0.09
+/** AWS S3 Standard GET requests per 1,000, in US dollars. */
+export const S3_GET_PER_1000 = 0.0004
+/** The rate a text pass is assumed to read at before one has measured it,
+ *  in bytes a second. */
+export const ASSUMED_TEXT_RATE = 25e6
+/** What a bucket library's text pass costs, in sentences: the money where
+ *  the provider is AWS, and the time at the measured or assumed rate. */
+export function textCost(e: BucketTextEstimate): { money: string; time: string } {
+  const gb = e.bytes / 1e9
+  const dollars = (n: number) => (n < 0.01 ? 'under $0.01' : `about $${n.toFixed(2)}`)
+  const money = e.objects === 0 ? 'Nothing is read, so nothing is charged.'
+    : e.provider === 'AWS'
+      ? `Each object is one GET request, and its bytes leave the store: ${dollars(gb * S3_EGRESS_PER_GB)} in data out to the internet and ${dollars(e.objects / 1000 * S3_GET_PER_1000)} in requests, at S3 Standard prices. Data out to a machine in the same AWS region is free.`
+      : 'Each object is one request, and its bytes leave the store. A store on premises charges nothing for that; a cloud provider\'s own prices for requests and data out apply.'
+  const rate = e.rate > 0 ? e.rate : ASSUMED_TEXT_RATE
+  const secs = e.bytes / rate + e.objects * 0.05
+  const span = secs < 90 ? `${Math.max(1, Math.round(secs))} seconds` : secs < 5400 ? `${Math.round(secs / 60)} minutes` : `${(secs / 3600).toFixed(1)} hours`
+  const time = e.objects === 0 ? '' : e.rate > 0
+    ? `At the ${(e.rate / 1e6).toFixed(1)} MB a second the last pass read, it takes about ${span}.`
+    : `At ${ASSUMED_TEXT_RATE / 1e6} MB a second it takes about ${span}; the first pass measures the real rate, which depends on the link to the store.`
+  return { money, time }
+}
 /** What one listing of a bucket library costs, in words: the requests it
  *  takes, priced at AWS's rate where rclone names AWS as the provider. */
 export function listingCost(b: Pick<LibraryBucket, 'requests' | 'provider' | 'every'>): string {
@@ -779,6 +832,22 @@ export const api = {
   },
   addLibrary: (def: { id: string; label?: string; indexRoot: string; sourceRoot?: string }) =>
     postJson<{ library: SettingsLibrary }>('/api/libraries', def),
+  bucketTextEstimate: async (id: string): Promise<BucketTextEstimate> => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket/text`)
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
+    return data as BucketTextEstimate
+  },
+  setBucketText: async (id: string, text: boolean) => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
+    return data as { library: SettingsLibrary }
+  },
+  stopBucketText: async (id: string) => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket/text/stop`, { method: 'POST' })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${res.status}`)
+  },
   removeLibrary: async (id: string) => {
     const res = await fetch(`/api/libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `remove: ${res.status}`)

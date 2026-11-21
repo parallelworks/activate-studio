@@ -3,7 +3,7 @@ import {
   Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, Select, StatusLabel, Table, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
-import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, listingCost, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
+import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, listingCost, textCost, type BucketTextEstimate, type BucketTextPass, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { AddLibrary } from './AddLibrary'
@@ -116,6 +116,49 @@ interface Row {
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '')
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`
+
+/** Whether a bucket library's objects' text is read, as offered. */
+const TEXT_CHOICES: { value: 'off' | 'on'; label: string }[] = [
+  { value: 'off', label: 'Off' }, { value: 'on', label: 'After each listing' },
+]
+
+/** What reading a bucket library's text would read and cost, for the
+ *  question before it is turned on. */
+function TextEstimate({ e }: { e: BucketTextEstimate }) {
+  const { money, time } = textCost(e)
+  const left = [
+    e.over > 0 && `${plural(e.over, 'object')} over ${bytesText(e.maxBytes)} (${bytesText(e.overBytes)})`,
+    e.other > 0 && `${plural(e.other, 'object')} of kinds no reader reads, such as images and data files`,
+  ].filter(Boolean)
+  return (
+    <>
+      <p>
+        {e.objects > 0 ? <>Reads {plural(e.objects, 'object')}, {bytesText(e.bytes)}: text files and documents.</> : <>There is nothing new to read.</>}
+        {e.done > 0 && <> {plural(e.done, 'object')} read before ({bytesText(e.doneBytes)}) are not read again.</>}
+        {left.length > 0 && <> Left out: {left.join('; ')}.</>}
+      </p>
+      <p>{money}{time && <> {time}</>}</p>
+      <p>After this, each listing reads only the objects that are new or changed. Turning it off stops reading; the text read so far stays searchable.</p>
+    </>
+  )
+}
+
+/** What a bucket library's last text pass did, in the row's notes. */
+function textNotes(on: boolean, p: BucketTextPass | null | undefined): string[] {
+  if (!p) return []
+  const read = Object.values(p.read ?? {}).reduce((a, b) => a + b, 0)
+  const out = [on
+    ? `${plural(p.files, 'object')} with text; the last pass ${read ? `read ${plural(read, 'object')}, ${bytesText(p.bytes)} in ${plural(p.requests, 'request')}` : 'had nothing new to read'}, ${when(p.at)}`
+    : `${plural(p.files, 'object')} keep the text read before; reading text is off`]
+  const unread = (p.read?.failed ?? 0) + (p.read?.missing ?? 0) + (p.read?.changed ?? 0)
+  if (unread > 0) out.push(`${plural(unread, 'object')} could not be read (gone, changed since the listing, or unreadable); see the index log`)
+  if (p.stopped) out.push('the last pass was stopped; the next goes on from there')
+  for (const m of p.missing ?? []) out.push(m)
+  if (p.error) out.push(`the last pass failed: ${p.error}`)
+  return out
+}
 /** A transfer's details on the Transfers page (TransfersView's transferHash). */
 const transferHash = (id: string) => `#view=transfers?transfer=${encodeURIComponent(id)}`
 /** Why a library the deployment set has no Remove, and where it is removed. */
@@ -254,7 +297,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   // Follow running builds: every few seconds for those the Studio runs
   // itself (here, or on a remote system over the session), every 15 s for
   // the platform's workflow runs.
-  const followHere = (libs ?? []).some(l => isBuilding(l.build?.state) || l.copyOf?.looking)
+  const followHere = (libs ?? []).some(l => isBuilding(l.build?.state) || l.copyOf?.looking || l.bucket?.reading)
   const followRemote = user.libraries.some(l => l.built && isBuilding(l.state))
   const followRuns = user.libraries.some(l => !l.built && isBuilding(l.state))
   useEffect(() => {
@@ -279,6 +322,15 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
     setBusy(key)
     try { await fn(); if (done) toast.success(done) } catch (e) { toast.error(errText(e)) } finally { setBusy(null) }
   }
+  // Reading a bucket's text asks first, with what it would read and cost.
+  const askText = (id: string, label: string) => void act(id, async () => {
+    const e = await api.bucketTextEstimate(id)
+    confirm({
+      title: `Read the text of ${label}?`, description: <TextEstimate e={e} />,
+      confirmLabel: e.objects > 0 ? `Read ${plural(e.objects, 'object')}` : 'Turn on',
+      onConfirm: () => act(id, async () => { await api.setBucketText(id, true); await loadLibs() }, `Listing ${label}, then reading its text.`),
+    })
+  })
   const added = (message: string) => {
     toast.success(message)
     setAdding(false)
@@ -379,6 +431,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
         k.skipped > 0 && `${k.skipped.toLocaleString()} ${k.skipped === 1 ? 'entry' : 'entries'} could not be indexed (a path longer than GUFI holds, or a name "." or "..")`,
         k.error && `the last listing failed: ${k.error}`,
         b.error && b.error !== k.error && b.error,
+        ...textNotes(k.text, k.textPass),
       ].filter(Boolean)
       rows.push({
         key: l.id, name: l.label, kind: `Index of ${from}, from its listing, read only`,
@@ -391,10 +444,18 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                 disabled={busy !== null}
                 onValueChange={v => void act(l.id, async () => { await api.setBucketEvery(l.id, v); await loadLibs() })} />
             </DescriptionListItem>
+            <DescriptionListItem label="Read text">
+              <Select<'off' | 'on'> aria-label={`Whether the text of ${l.label}'s objects is read`} size="sm" items={TEXT_CHOICES} value={k.text ? 'on' : 'off'}
+                disabled={busy !== null}
+                onValueChange={v => v === 'on'
+                  ? askText(l.id, l.label)
+                  : void act(l.id, async () => { await api.setBucketText(l.id, false); await loadLibs() }, `No more text is read from ${from}; what was read stays searchable.`)} />
+            </DescriptionListItem>
           </DescriptionList>
         ),
         state: b.state === 'building' ? { tone: 'info', text: 'Listing and indexing', pulse: true, notes }
           : b.state === 'updating' ? { tone: 'info', text: 'Listing again', pulse: true, notes }
+          : k.reading ? { tone: 'info', text: 'Reading text', pulse: true, notes }
           : b.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
           : !l.caps.index ? { tone: 'error', text: 'Index not found', notes: [...notes, 'List again makes it.'] }
           : k.error ? { tone: 'warning', text: 'Ready; the last listing failed', notes }
@@ -402,7 +463,11 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
         fullText: l.caps.fullText, meaning: l.caps.vectors,
         actions: (
           <>
-            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
+            {k.reading && (
+              <Button variant="secondary" size="sm" disabled={busy !== null}
+                onClick={() => void act(l.id, async () => { await api.stopBucketText(l.id); await loadLibs() }, 'Stopped; the next pass goes on from there.')}>Stop reading</Button>
+            )}
+            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state) || k.reading}
               onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Listing ${from} again.`)}>List again</Button>
             <Button variant="danger-outline" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state)}
               onClick={() => askRemove(l.label,
@@ -411,7 +476,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                 () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }, `Removed ${l.label} and its index.`))}>Remove</Button>
           </>
         ),
-        detail: isBuilding(b.state) ? <BuildLine progress={b.progress} /> : undefined,
+        detail: isBuilding(b.state) || k.reading ? <BuildLine progress={b.progress} /> : undefined,
       })
       continue
     }
