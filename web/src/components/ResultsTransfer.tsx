@@ -56,11 +56,13 @@ export function groupsText(groups: { label: string; paths: string[] }[], noun: s
 /** Where a transfer of these items goes first: a place that takes files
  *  other than the items' own libraries, so the plan is no copy onto itself
  *  or into its own root. A place of another kind than a library first, as
- *  the Transfers page picks its second side; null when there is none, and
- *  the person chooses. */
-export function defaultDestination(locations: TransferLocation[], items: ResultItem[]): TransferLocation | null {
+ *  the Transfers page picks its second side, or a library first with
+ *  prefer 'library' (the Library page's copy to another library); null
+ *  when there is none, and the person chooses. */
+export function defaultDestination(locations: TransferLocation[], items: ResultItem[], prefer?: 'library'): TransferLocation | null {
   const own = new Set(items.map(it => libraryLocation(it.library)))
   const open = locations.filter(l => !own.has(l.id) && !destinationWhy(l))
+  if (prefer === 'library') return open.find(l => l.kind === 'library') ?? open[0] ?? null
   return open.find(l => l.kind !== 'library') ?? open[0] ?? null
 }
 
@@ -104,13 +106,22 @@ type Step = { plan: Plan; request: PlanRequest; label: string }
  * it is.
  */
 export function ResultsTransferDialog({
-  items, noun = 'file', labels = {}, onClose, onDone,
+  items, noun = 'file', labels = {}, onClose, onDone, copyOnly = false, prefer, destination,
 }: {
   items: ResultItem[]
   /** What an item is, for the header: "file" or "folder". */
   noun?: string
   /** Library labels the page knows, for a library Transfers does not list. */
   labels?: Record<string, string>
+  /** Copy is the only action: the Library page copies between libraries
+   *  and never moves out of one, where a move would delete the originals
+   *  for everyone who reads that library. */
+  copyOnly?: boolean
+  /** Which kind of place the destination starts at (defaultDestination). */
+  prefer?: 'library'
+  /** The destination to start at, as a folder dropped on: used when that
+   *  location takes files, else the default. */
+  destination?: { location: string; path: string }
   onClose: () => void
   /** After the last plan, or a Cancel part way, with what started. */
   onDone: (started: Transfer[]) => void
@@ -136,7 +147,9 @@ export function ResultsTransferDialog({
       setLocations(locs)
       setDest(d => {
         if (d.locationId) return d
-        return { locationId: defaultDestination(locs, items)?.id ?? null, path: '', selected: [] }
+        const asked = destination && locs.find(l => l.id === destination.location)
+        if (asked && !destinationWhy(asked)) return { locationId: asked.id, path: destination.path, selected: [] }
+        return { locationId: defaultDestination(locs, items, prefer)?.id ?? null, path: '', selected: [] }
       })
     }, e => { setLocError((e as Error).message); setLocations([]) })
     // A transfer starts from the defaults in Settings, Transfers, as on the Transfers page.
@@ -226,7 +239,7 @@ export function ResultsTransferDialog({
   const why = locations === null ? '' : !usable.length ? 'Nothing selected can be sent.' : destWhy ?? ''
   return (
     <Modal open onClose={onClose} size="lg" className="xfer-results-dialog"
-      title={`Transfer ${plural(total, 'item')}`}
+      title={copyOnly ? `Copy ${plural(total, 'item')} to another library` : `Transfer ${plural(total, 'item')}`}
       description={groupsText(groups, noun)}
       footer={
         <>
@@ -240,10 +253,14 @@ export function ResultsTransferDialog({
     >
       <div className="xfer-results">
         <div className="xfer-results-row">
-          <SegmentedControl<Action> label="Action" size="sm" value={action} onValueChange={v => { setAction(v); changed() }}
-            options={[{ value: 'copy', label: 'Copy' }, { value: 'move', label: 'Move' }]} />
+          {!copyOnly && (
+            <SegmentedControl<Action> label="Action" size="sm" value={action} onValueChange={v => { setAction(v); changed() }}
+              options={[{ value: 'copy', label: 'Copy' }, { value: 'move', label: 'Move' }]} />
+          )}
           <span className="muted xfer-action-note">
-            {action === 'copy' ? 'Copies the selected items into the folder chosen below.' : 'Copies, checks, then removes the originals.'}
+            {copyOnly
+              ? 'Copies the selected items into the folder chosen below. The originals stay where they are; the copy is yours, with the permissions of the place it lands in.'
+              : action === 'copy' ? 'Copies the selected items into the folder chosen below.' : 'Copies, checks, then removes the originals.'}
           </span>
         </div>
         {checked.filter(g => g.why).map(g => (

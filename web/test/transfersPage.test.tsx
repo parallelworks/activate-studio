@@ -314,6 +314,28 @@ describe('the plan dialog', () => {
   })
 })
 
+describe('starting from the plan dialog', () => {
+  it('says it is checking while the start runs, and hands the queued transfer on without waiting for it to end', async () => {
+    let release: (v: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(res => { release = res })))
+    const started = vi.fn()
+    const plan: Plan = {
+      id: 'p', action: 'move', label: '', mover: 'rsync', moverWhy: 'rsync on this computer sends to cluster-a', movers: [{ name: 'rsync', ok: true }],
+      source: { location: 'a', label: 'A', paths: ['x'] }, destination: { location: 'b', label: 'B', path: 'y' },
+      files: 3, dirs: 0, bytes: 10, replaces: [], deletes: [], replacesCount: 0, deletesCount: 0,
+      skipped: { hidden: 0, links: 0 }, freeBytes: null, warnings: [], expiresAt: new Date(Date.now() + 600000).toISOString(),
+    }
+    render(<TransferPlanDialog plan={plan} request={{ action: 'move', source: { location: 'a', paths: ['x'] }, destination: { location: 'b', path: 'y' } }}
+      onClose={() => {}} onStarted={started} onReplanned={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: confirmText(plan) }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Checking both ends again')
+    const queued = { id: 't1', state: 'queued', action: 'move', label: '', mover: 'rsync', source: plan.source, destination: plan.destination }
+    await act(async () => { release(new Response(JSON.stringify({ transfer: queued }), { status: 201, headers: { 'Content-Type': 'application/json' } })) })
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1))
+    expect(started.mock.calls[0][0]).toMatchObject({ id: 't1', state: 'queued' })
+  })
+})
+
 /** The list groups finished transfers by day, and the mock dates them
  *  hours before now: near midnight, "2 hours ago" is yesterday. Tests that
  *  name the day run at a fixed afternoon, with only the date faked. */
@@ -550,19 +572,26 @@ describe('history at scale', () => {
     serve({ transfers: [], finished: 2000 })
     render(<TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />)
     await waitFor(() => expect(lines()).toBe(50))
-    // Every page loaded: 39 more reads, and the list still renders in time.
-    let slowest = 0
+    // Every page loaded: 39 more reads, each timed.
+    const took: number[] = []
     while (screen.queryByRole('button', { name: 'Show more' })) {
       const before = lines()
       const t0 = performance.now()
       fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
       await waitFor(() => expect(lines()).toBeGreaterThan(before))
-      slowest = Math.max(slowest, performance.now() - t0)
+      took.push(performance.now() - t0)
     }
     expect(lines()).toBe(2000)
-    // jsdom is far slower than a browser; this bounds a page added to the
-    // end of a 1,950-row list, which re-renders only the new rows.
-    expect(slowest).toBeLessThan(1500)
+    // A page added to the end of a 1,950-row list re-renders only the new
+    // rows, so it costs about what a page added to a short list does. The
+    // bound compares the two on the same machine, as the medians of the
+    // first and last five pages: a fixed time in milliseconds failed on
+    // busy CI runners (jsdom is far slower than a browser) while the list
+    // itself was fine. A list that re-rendered every row would grow about
+    // 40 times slower from the first page to the last.
+    const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
+    const first = median(took.slice(0, 5)), last = median(took.slice(-5))
+    expect(last).toBeLessThan(first * 6 + 250)
   }, 180_000)
 
   it('asks only for transfers finished since the newest seen, and reports one that landed', async () => {

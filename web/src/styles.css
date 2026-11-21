@@ -826,6 +826,11 @@ textarea.field { line-height: 1.5; }
 .stat-label { font-size: 11px; color: var(--pw-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
 .tree-row.drop-target { outline: 2px dashed var(--pw-link); outline-offset: -2px; background: var(--theme-hover, #f0f7ff); }
+/* While a row is dragged: folders that take the drop are marked, and
+   folders of a read-only library, or the dragged folder itself, are dimmed
+   with a not-allowed cursor. */
+.explorer.dragging .tree-row.dir.drop-ok { box-shadow: inset 2px 0 0 var(--pw-link); }
+.explorer.dragging .tree-row.dir.drop-refused { opacity: 0.45; cursor: not-allowed; }
 .upload-panels { max-height: 40%; overflow-y: auto; flex-shrink: 0; }
 .upload-panel { border-top: 1px solid var(--pw-border); padding: 8px 12px; font-size: 12px; }
 .upload-panel-head { display: flex; justify-content: space-between; gap: 8px; color: var(--pw-muted); }
