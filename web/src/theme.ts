@@ -57,3 +57,49 @@ export function onThemeChoice(fn: (choice: ThemeChoice) => void): () => void {
   window.addEventListener(CHOICE_EVENT, on)
   return () => window.removeEventListener(CHOICE_EVENT, on)
 }
+
+/** The cookie the manifest reads for an installed app's splash
+ *  (GROUND_COOKIE in server/src/routes.ts, GroundCookie in server-go). */
+export const GROUND_COOKIE = 'ade_ground'
+
+/** A CSS color as "#rrggbb", or null for one this cannot read or one that
+ *  is not opaque. */
+export function hexColor(color: string): string | null {
+  const c = color.trim().toLowerCase()
+  if (!c) return null
+  if (/^#[0-9a-f]{6}$/.test(c)) return c
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(c)
+  if (short) return '#' + short[1] + short[1] + short[2] + short[2] + short[3] + short[3]
+  const rgb = /^rgba?\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)\s*(?:[,/]\s*([\d.]+%?)\s*)?\)$/.exec(c)
+  if (rgb) {
+    if (rgb[4] !== undefined && parseFloat(rgb[4]) < (rgb[4].endsWith('%') ? 100 : 1)) return null
+    return '#' + [rgb[1], rgb[2], rgb[3]].map(v => Math.max(0, Math.min(255, Math.round(Number(v)))).toString(16).padStart(2, '0')).join('')
+  }
+  // Any other form (hsl, oklch, a name), through the canvas, which gives
+  // an opaque color back as #rrggbb.
+  try {
+    const ctx = document.createElement('canvas').getContext('2d')
+    if (!ctx) return null
+    ctx.fillStyle = '#010203'
+    ctx.fillStyle = c
+    const out = String(ctx.fillStyle)
+    return /^#[0-9a-f]{6}$/.test(out) && (out !== '#010203' || c === '#010203') ? out : null
+  } catch { return null }
+}
+
+/**
+ * Keeps the page's ground in a cookie for a year, so the splash an
+ * installed app shows before its page paints is the color the person last
+ * saw (the manifest's background_color) instead of the deployment's default
+ * theme's. The manifest is fetched with credentials, so the cookie reaches
+ * it behind the platform's session proxy too.
+ */
+export function rememberGround(color: string): void {
+  const hex = hexColor(color)
+  if (!hex) return
+  const value = hex.slice(1)
+  try {
+    if (document.cookie.split(';').some(p => p.trim() === `${GROUND_COOKIE}=${value}`)) return
+    document.cookie = `${GROUND_COOKIE}=${value}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`
+  } catch { /* cookies off: the splash keeps the default */ }
+}

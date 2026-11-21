@@ -19,7 +19,7 @@ process.env.APP_ICON = ICON
 process.env.APP_NAME = 'Example Research Studio'
 
 const { default: Fastify } = await import('fastify')
-const { kbRoutes, webManifest, imageSizes } = await import('../dist/routes.js')
+const { kbRoutes, webManifest, imageSizes, groundOf } = await import('../dist/routes.js')
 const app = Fastify()
 await app.register(kbRoutes)
 await app.ready()
@@ -72,4 +72,15 @@ test('with a classification banner the title bar takes its color; the splash kee
 test('only a Studio with a banner offers the window controls overlay', () => {
   assert.equal(webManifest({ name: 'Studio', dark: false, brand: null }).display_override, undefined)
   assert.deepEqual(webManifest({ name: 'Studio', dark: false, brand: null, banner: '#24612e' }).display_override, ['window-controls-overlay'])
+})
+
+test('the splash takes the ground the person last saw, from its cookie; the title bar keeps the banner', async () => {
+  const res = await app.inject({ method: 'GET', url: '/manifest.webmanifest', headers: { cookie: 'a=1; ade_ground=0C1320' } })
+  assert.equal(res.json().background_color, '#0c1320')
+  for (const bad of ['ade_ground=red', 'ade_ground=%230c1320', 'ade_ground=0c1320aa', 'other=0c1320', '']) assert.equal(groundOf(bad), null, bad)
+  const marked = webManifest({ name: 'Studio', dark: true, brand: null, banner: '#24612e', ground: '#ffffff' })
+  assert.equal(marked.background_color, '#ffffff')
+  assert.equal(marked.theme_color, '#24612e')
+  const plain = webManifest({ name: 'Studio', dark: true, brand: null, ground: '#ffffff' })
+  assert.equal(plain.theme_color, '#ffffff')
 })

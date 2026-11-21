@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -345,6 +345,23 @@ func TestConfigAndManifest(t *testing.T) {
 	m = e.do("GET", "/manifest.webmanifest", nil)
 	if m.body["short_name"] != "Studio" || m.body["theme_color"] != "#24612e" || m.body["background_color"] != "#0c1320" || m.body["display_override"] == nil {
 		t.Fatalf("%s", m.raw)
+	}
+	// The splash takes the ground the person last saw, from the cookie the
+	// page sets; the title bar keeps the banner's color.
+	m = e.do("GET", "/manifest.webmanifest", nil, "Cookie", "ade_ground=F3F4F6")
+	if m.body["background_color"] != "#f3f4f6" || m.body["theme_color"] != "#24612e" {
+		t.Fatalf("ground cookie: %s", m.raw)
+	}
+	for _, bad := range []string{"ade_ground=red", "ade_ground=%23f3f4f6", "ade_ground=f3f4f6aa", "other=f3f4f6"} {
+		if m = e.do("GET", "/manifest.webmanifest", nil, "Cookie", bad); m.body["background_color"] != "#0c1320" {
+			t.Fatalf("cookie %q: %s", bad, m.raw)
+		}
+	}
+	// Without a banner the title bar is the ground too.
+	e.do("PUT", "/api/settings", map[string]any{"bannerText": ""})
+	m = e.do("GET", "/manifest.webmanifest", nil, "Cookie", "ade_ground=ffffff")
+	if m.body["background_color"] != "#ffffff" || m.body["theme_color"] != "#ffffff" || m.body["display_override"] != nil {
+		t.Fatalf("no banner: %s", m.raw)
 	}
 	h := e.do("GET", "/api/help", nil)
 	if h.header.Get("Content-Type") != "text/markdown; charset=utf-8" || string(h.raw) != "No help content configured." {
