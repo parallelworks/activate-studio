@@ -427,7 +427,7 @@ func (s *Routes) call(ctx context.Context, key, method, path string, body any) (
 		}
 		st := res.StatusCode
 		if st == 401 || st == 403 {
-			return nil, platform.KbError(st, "The platform refused this credential ("+itoa(st)+")"+tail+". A platform token or platform API key is needed; an AI gateway key is not enough.")
+			return nil, platform.KbError(st, "The platform refused this credential ("+itoa(st)+")"+tail+". It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Model access.")
 		}
 		code := 502
 		if st == 404 {

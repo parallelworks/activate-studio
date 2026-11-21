@@ -511,8 +511,8 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
         )}
         {health?.status === 'ok' && health.platformAccess === false && access.models.source === 'key' && (
           <p className="identity-note">
-            This key reaches models only. Workflows, run monitoring, and the DAG viewer use the platform API, which needs a
-            platform token or a platform API key; an AI gateway key does not grant that access.
+            Models accept this key, but the platform API refuses it. Workflows, run monitoring, and the DAG viewer use the
+            platform API. Sign in with ACTIVATE, or add a key from your ACTIVATE account (Account, API keys).
           </p>
         )}
         {stored && me.credExpired && me.credExpiresAt && (
@@ -572,8 +572,7 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
       {shownTab === 'key' && (
         <div className="access-panel">
           <p className="muted view-sub">
-            A platform token or platform API key (Account, API keys) covers models and the platform; an AI gateway key covers
-            models only. The host is the platform's own, such as platform.example.com. A site AI portal or another API goes
+            A token or API key from your ACTIVATE account (Account, API keys) covers models and the platform. The host is the platform's own, such as platform.example.com. A site AI portal or another API goes
             under OpenAI-compatible endpoint.{stored && access.models.source === 'endpoint' ? ' Saving one replaces your endpoint.' : ''}
           </p>
           {signedIn && (
@@ -682,7 +681,8 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
 
       {/* Offline, the banner already says the platform cannot be reached. */}
       {aiEnabled && !offline && (single ? access.platform.source !== 'none' : access.platform.source === 'key' || signedIn) && (
-        <SubscriptionsPanel platformOrigin={access.platformOrigin} host={access.platform.host} onChanged={() => { announceChange(); void load(true) }} />
+        <SubscriptionsPanel platformOrigin={access.platformOrigin} host={access.platform.host}
+          credential={platformCredential(access.platform)} onChanged={() => { announceChange(); void load(true) }} />
       )}
 
       <p className="muted key-trust">
@@ -963,21 +963,36 @@ function SharePanel({ me, busy, run }: { me: KeyStatus; busy: boolean; run: (wha
   )
 }
 
+/** Which platform credential the Studio uses for the viewer: signing in,
+ *  signing out, or changing the key changes it, the host alone may not. */
+export const platformCredential = (s: SourceInfo) => [s.source, s.host ?? '', s.last4 ?? '', s.kind ?? ''].join(':')
+
 /** Subscriptions connected through ACTIVATE: the platform holds them and
  *  serves their models through its gateway, so the Studio lists them with
- *  the rest once connected. */
-function SubscriptionsPanel({ platformOrigin, host, onChanged }: { platformOrigin: string | null; host: string | null; onChanged: () => void }) {
+ *  the rest once connected. They are asked for again whenever the platform
+ *  credential changes, so an answer to the previous one does not stay. */
+export function SubscriptionsPanel({ platformOrigin, host, credential, onChanged }: {
+  platformOrigin: string | null; host: string | null; credential: string; onChanged: () => void
+}) {
   const [subs, setSubs] = useState<Subscriptions | null>(null)
   const [error, setError] = useState('')
   const [device, setDevice] = useState<(Device & { id: string; intervalSec: number; expiresAt: string | null }) | null>(null)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState('')
   const timer = useRef<number | null>(null)
+  const asked = useRef(0)
 
-  const load = () => api<Subscriptions>('/api/access/subscriptions')
-    .then(s => { setSubs(s); setError('') })
-    .catch(e => setError(errText(e)))
-  useEffect(() => { void load() }, [host])
+  // Only the latest request's answer is shown.
+  const load = () => {
+    const n = ++asked.current
+    return api<Subscriptions>('/api/access/subscriptions')
+      .then(s => { if (n === asked.current) { setSubs(s); setError('') } })
+      .catch(e => { if (n === asked.current) setError(errText(e)) })
+  }
+  useEffect(() => {
+    setSubs(null); setError(''); setDone('')
+    void load()
+  }, [credential])
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
 
   const poll = (d: { id: string; intervalSec: number; expiresAt: string | null }) => {

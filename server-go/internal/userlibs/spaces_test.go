@@ -2,6 +2,7 @@ package userlibs
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -236,11 +237,43 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 		t.Fatalf("not indexed again: %v", got)
 	}
 
-	// A session that reaches another account than the space's is refused.
+	// A transfer that changed the space builds it again the same way; one
+	// for a viewer whose space it is not changes nothing.
+	os.WriteFile(filepath.Join(dir, "notes", "c.txt"), []byte("from a transfer"), 0o600)
+	h.m.SpaceTransferred("someone-else", true, "k", lib.IndexRoot)
+	h.m.mu.Lock()
+	queued := h.m.rebuilds["single\x00"+id]
+	h.m.mu.Unlock()
+	if queued != nil {
+		t.Fatal("another viewer's transfer queued a build")
+	}
+	h.m.SpaceTransferred("", false, "k", lib.IndexRoot)
+	deadline = time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := h.waitFor(id); fmt.Sprint(got["files"]) == "2" && got["state"] == "ready" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if got := h.waitFor(id); fmt.Sprint(got["files"]) != "2" {
+		t.Fatalf("not indexed after a transfer: %v", got)
+	}
+	if err := h.m.SpaceAccount(context.Background(), "", false, "k", lib.IndexRoot); err != nil {
+		t.Fatalf("the space's own account: %v", err)
+	}
+
+	// A session that reaches another account than the space's is refused,
+	// for the Library's writes and for a transfer's.
 	h.m.Users.Update("single", id, func(d *libraries.UserDef) { d.Space.UID++ })
 	h.m.accounts = nil
 	if err := s.Mkdir(req, lib, "x"); err == nil || !strings.Contains(err.Error(), "another account") {
 		t.Fatalf("another account: %v", err)
+	}
+	if err := h.m.SpaceAccount(context.Background(), "", false, "k", lib.IndexRoot); err == nil || !strings.Contains(err.Error(), "another account") {
+		t.Fatalf("a transfer as another account: %v", err)
+	}
+	if err := h.m.SpaceAccount(context.Background(), "someone-else", true, "k", lib.IndexRoot); err != nil {
+		t.Fatalf("not that viewer's space: %v", err)
 	}
 }
 

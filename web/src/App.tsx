@@ -20,7 +20,7 @@ import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
 import { TransfersView } from './views/TransfersView'
-import { transferApi, transfersPresent, type TransferSummary } from './transferApi'
+import { TRANSFERS_SEEN, transferApi, transfersPresent, type TransferSummary } from './transferApi'
 import { SetupWizard } from './views/SetupWizard'
 import { StatusFooter } from './components/StatusFooter'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
@@ -200,15 +200,28 @@ export default function App() {
   const [hasTransfers, setHasTransfers] = useState<boolean | null>(null)
   useEffect(() => { void transfersPresent().then(setHasTransfers) }, [])
   // The menu entry's mark: how many transfers are under way, or a warning
-  // when one failed in the last day. Read every 15 seconds while shown.
+  // when one failed in the last day and has not been seen. Read every 15
+  // seconds while shown. While the Transfers page is open its failures are
+  // seen, so the read marks them seen first; a transfer's details mark
+  // theirs and send the summary.
   const [xferSummary, setXferSummary] = useState<TransferSummary | null>(null)
+  const onTransfers = view === 'transfers'
   useEffect(() => {
     if (!hasTransfers) return
-    const read = () => { if (document.visibilityState !== 'hidden') transferApi.summary().then(setXferSummary, () => {}) }
+    const read = () => {
+      if (document.visibilityState === 'hidden') return
+      const ask = onTransfers ? transferApi.seen() : transferApi.summary()
+      ask.then(setXferSummary, () => {})
+    }
     read()
     const t = setInterval(read, 15_000)
-    return () => clearInterval(t)
-  }, [hasTransfers])
+    const seen = (e: Event) => {
+      const sum = (e as CustomEvent<TransferSummary | undefined>).detail
+      if (sum) setXferSummary(sum)
+    }
+    window.addEventListener(TRANSFERS_SEEN, seen)
+    return () => { clearInterval(t); window.removeEventListener(TRANSFERS_SEEN, seen) }
+  }, [hasTransfers, onTransfers])
   // It shows when the server has it and the pages setting allows it.
   const allowed = (id: ViewId) => (id === 'transfers' ? hasTransfers === true && sectionAllowed(id, cfg) : sectionAllowed(id, cfg))
   useEffect(() => {
@@ -677,7 +690,8 @@ export default function App() {
 }
 
 /** The Transfers entry's mark: the count under way, or a warning dot when
- *  one failed in the last day, with the same said for a screen reader. */
+ *  one failed in the last day and has not been seen, with the same said
+ *  for a screen reader. */
 function TransferMark({ summary }: { summary: TransferSummary | null }) {
   if (!summary) return null
   const said = [

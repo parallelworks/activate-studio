@@ -162,6 +162,9 @@ func (s *Service) verifyBare(r *rec, p *planRec, got map[string]FileInfo) error 
 // land gives each staged file its name, then deletes what a sync with
 // deleteExtra listed, or the originals of a move, and tells the indexes.
 func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
+	// A space whose files changed builds its index again, whatever part of
+	// the landing went through.
+	defer s.spacesChanged(p)
 	dst := p.dst.fs
 	pairs := make([]LandPair, 0, len(p.files))
 	for _, f := range p.files {
@@ -256,6 +259,20 @@ func (s *Service) land(ctx context.Context, r *rec, p *planRec) error {
 		})
 	}
 	return nil
+}
+
+// spacesChanged queues the index build of each space a landing may have
+// changed: the destination, and the source of a move.
+func (s *Service) spacesChanged(p *planRec) {
+	if s.d.SpaceChanged == nil {
+		return
+	}
+	if p.dst.space != "" {
+		s.d.SpaceChanged(p.v, p.dst.space)
+	}
+	if p.Action == ActionMove && p.src.space != "" && p.src.space != p.dst.space {
+		s.d.SpaceChanged(p.v, p.src.space)
+	}
 }
 
 func (s *Service) indexLanded(ctx context.Context, p *planRec, landed []string) {
