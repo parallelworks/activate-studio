@@ -381,6 +381,13 @@ type PWCodeLink struct {
 	LabelScope []string  `json:"labelScope,omitempty"`
 	Tools      *[]string `json:"tools,omitempty"`
 	ScopeNote  string    `json:"scopeNote,omitempty"`
+	// Continued: the session began outside this Studio (in a terminal, or
+	// in PW Code on the web) and the person continued it here from the
+	// Code page. The Studio never archives or replaces such a session.
+	// Machine and MachineName are its machine as the platform lists it.
+	Continued   bool   `json:"continued,omitempty"`
+	Machine     string `json:"machine,omitempty"`
+	MachineName string `json:"machineName,omitempty"`
 }
 
 type conversationFields Conversation
