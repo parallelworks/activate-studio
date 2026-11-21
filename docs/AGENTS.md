@@ -1,6 +1,22 @@
 # Delegated agents
 
-When delegation is on (Settings, External access, Delegation), the assistant can split a request into subtasks and give each to an agent. The task tree, the board, and results under `tasks/<task id>/` in the knowledge base are the same however the agents run. The same section's "Agent execution" (environment variable `AGENT_EXECUTION`) chooses how they run:
+## Delegation to pw code
+
+When delegation is on (Settings, External access, Delegation), the chat's `delegate` tool hands a piece of work to pw code: one session, started by the same path as `start_agent`, in a library folder with the chosen agent instructions in that folder's `AGENTS.md` and the goal set. pw code does its own splitting, so there is no subtask tree, no board, and no result contract; what the agent writes in its folder is the result.
+
+*Folder.* The one the model names (relative to the main library's top), or a new one, `agents/<instructions>/<date>-<time>-<first words of the objective>` (`agents/delegated/...` with no instructions). The instructions are written before the session is made, so its first turn reads them, through the same writer and rights as Apply to a folder: the main library only when it can be written here. Where it cannot, or the site does not see the library, the session works in a folder of its own on the site (`~/studio-agents/...`), the instructions open its brief instead, and its files are not indexed; a folder the model named is refused instead.
+
+*Goal.* The model's completion condition, or by default that the work in the brief is done with its outputs in the folder, bounded by `max_turns` (default 20). Strands the model passes as `subtasks` are listed in the brief as a suggestion.
+
+*Record and finish.* The Studio records each delegated session per person (`INDEX_BASE/delegation/sessions.json`, mode 600, the last 500): site, session, folder, instructions, objective, goal and state (working, waiting for approval, finished, stopped on an error, or gone). It watches the session every 20 seconds for up to 12 hours; when the session settles it indexes the folder and records its 50 newest files. `agent_status` on the session does the same when it finds it settled. After a restart the process that holds the index lock watches local sessions still working again; a session on a cluster needs the person's key, which is not kept, so it is brought up to date when the person or the assistant next looks at it. `GET /api/delegated` answers `{sessions}`, the person's records, newest first.
+
+*Where it shows.* On the Code page: delegated sessions are marked (with their instructions), a **Delegated** filter shows only them, and a delegated session's detail says which folder and instructions it has and links the files it wrote once it finishes. The delegate tool's answer links `#view=code?session=<id>`. The Tasks page is not a second view of these: the Code page already lists the sessions with their transcripts, so the Tasks page keeps only the tasks delegated before this change, with a note pointing to the Code page, and goes when the old engine does.
+
+*Code page without the platform.* When the platform is not available to the viewer (the same test as the Workflows tab: no credential for it) and the Studio offers its own host as an agent site (sign-in off, or `AGENT_LOCAL_SITE=1`), `/api/code-sessions` reads this host's pw code daemon over its socket (`/v1/status`, `/v1/sessions`, `/v1/sessions/<id>`), in the shapes the platform passes on, as one machine named "This computer". `/api/config` then has `localCode: true`, and the Code tab shows.
+
+## The task engine (earlier delegation)
+
+Before delegation moved to pw code sessions, the assistant split a request into subtasks and gave each to an agent; `task_status` still reads those tasks. The task tree, the board, and results under `tasks/<task id>/` in the knowledge base are the same however the agents run. The same section's "Agent execution" (environment variable `AGENT_EXECUTION`) chooses how they run:
 
 | Setting | Agents run as |
 |---|---|

@@ -3173,3 +3173,11 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .lib-import .lib-id { font-size: 12px; color: var(--pw-muted); }
 .lib-import-drop { font-size: 12px; }
 .lib-import.drop-over { outline: 2px dashed var(--pw-link); outline-offset: 4px; border-radius: 6px; }
+
+/* Delegated work on the Code page: the filter, and the note on a session. */
+.code-list-filters { display: flex; gap: 6px; padding: 0 12px 8px; }
+.code-delegated { margin: 0 16px 12px; padding: 10px 12px; border: 1px solid var(--pw-border); border-radius: 8px; font-size: 13px; }
+.code-delegated p { margin: 0; }
+.code-delegated-files { margin: 6px 0 0; padding-left: 18px; }
+.code-delegated-files li { margin: 2px 0; overflow-wrap: anywhere; }
+.task-moved { margin-bottom: 12px; }

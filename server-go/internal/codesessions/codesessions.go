@@ -148,6 +148,8 @@ type routes struct {
 // Register serves GET /api/code-sessions and /api/code-sessions/item.
 func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 	s := &routes{a: a, p: p}
+	registered.Store(s)
+	a.Providers.LocalCode = func(r *http.Request) bool { return localCode(r, a, p) }
 	h := func(f func(w http.ResponseWriter, r *http.Request) (any, error)) http.HandlerFunc {
 		return platform.Handler(a.Log, f)
 	}
@@ -209,6 +211,11 @@ func Find(r *http.Request, p *platform.Platform, machineID, id string) (*Machine
 	if !idRe.MatchString(machineID) || !idRe.MatchString(id) {
 		return nil, nil, platform.KbError(400, "machine and session are required")
 	}
+	if s := registered.Load(); s != nil {
+		if c := s.localDaemon(r); c != nil {
+			return s.localFind(r, c, machineID, id)
+		}
+	}
 	var body listing
 	if err := fetch(r, p, "/api/code/sessions", &body); err != nil {
 		return nil, nil, err
@@ -231,6 +238,9 @@ func Find(r *http.Request, p *platform.Platform, machineID, id string) (*Machine
 }
 
 func (s *routes) list(w http.ResponseWriter, r *http.Request) (any, error) {
+	if c := s.localDaemon(r); c != nil {
+		return s.localList(r, c)
+	}
 	var body listing
 	if err := s.fetch(r, "/api/code/sessions", &body); err != nil {
 		return nil, err
@@ -265,14 +275,28 @@ func (s *routes) item(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, platform.KbError(400, "machine and id are required")
 	}
 	var d detail
-	if err := s.fetch(r, "/api/code/machines/"+platform.EncodeURIComponent(mid)+"/sessions/"+platform.EncodeURIComponent(id), &d); err != nil {
+	origin := s.p.Origin()
+	c := s.localDaemon(r)
+	if c != nil {
+		ld, err := s.localItem(r, c, mid, id)
+		if err != nil {
+			return nil, err
+		}
+		d = *ld
+	} else if err := s.fetch(r, "/api/code/machines/"+platform.EncodeURIComponent(mid)+"/sessions/"+platform.EncodeURIComponent(id), &d); err != nil {
 		return nil, err
 	}
 	if d.MachineID == "" {
 		d.MachineID = mid
 	}
 	name := platform.Q(r, "machineName")
-	v := view(d.session, map[string]string{mid: name}, s.p.Origin())
+	if c != nil {
+		name, origin = LocalName, ""
+	}
+	v := view(d.session, map[string]string{mid: name}, origin)
+	if c != nil {
+		v.URL = ""
+	}
 	items := d.History
 	dropped := 0
 	if len(items) > maxItems {

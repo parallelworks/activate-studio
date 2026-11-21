@@ -434,6 +434,9 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	}
 	set("aiEnabled", eff.AiEnabled)
 	set("platform", c.a.Providers.PlatformAvailable(r, viewer(r)))
+	if f := c.a.Providers.LocalCode; f != nil && f(r) {
+		set("localCode", true)
+	}
 	n := 0
 	for _, w := range eff.WorkflowCollection {
 		if w != "" {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
+	"github.com/parallelworks/activate-studio/server-go/internal/delegation"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
@@ -911,6 +912,10 @@ func (m *Module) toolAgentStatus(r *http.Request, args map[string]any, ctx ToolC
 	if files := m.agentLibraryFiles(r, st); files != "" {
 		keep = append([]string{keep[0], files}, keep[1:]...)
 	}
+	if delegation.Default != nil && delegation.Settled(st) {
+		// A delegated session's record is brought up to date too.
+		delegation.Default.Look(r.Context(), tmpl(prop(st, "session")), m.agentKey(s, ctx))
+	}
 	return &Outcome{Result: capText(strings.Join(keep, "\n")), Summary: sum}, nil
 }
 
@@ -989,59 +994,71 @@ func (m *Module) toolAgentStop(r *http.Request, args map[string]any, ctx ToolCtx
 /* ---- delegation ---- */
 
 func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
-	agents, _ := arg(args, "subtasks").([]any)
-	if !truthy(arg(args, "objective")) || len(agents) == 0 {
-		return &Outcome{Result: "objective and subtasks are required", Summary: "error"}, nil
+	objective := strings.TrimSpace(tmplOr(arg(args, "objective"), ""))
+	if objective == "" {
+		return &Outcome{Result: "objective is required", Summary: "error"}, nil
 	}
-	model := deref(ctx.Model)
-	if model == "" {
-		return &Outcome{Result: "No model in context to run agents with.", Summary: "error"}, nil
-	}
-	eff := m.eff()
-	if !eff.DelegationEnabled {
+	if !m.eff().DelegationEnabled {
 		return &Outcome{Result: "Delegation is disabled for this deployment; do the work yourself in this conversation.", Summary: "disabled"}, nil
 	}
-	maxAgents := float64(eff.DelegationMaxAgents)
-	if float64(len(agents)) > maxAgents {
-		return &Outcome{Result: "Too many subtasks: this deployment allows " + jsonv.FormatNumber(maxAgents) + ". Combine them into fewer, larger strands.", Summary: "over ceiling"}, nil
-	}
-	e := tasks.CurrentEngine()
-	if e == nil {
+	if delegation.Default == nil {
 		return nil, errNotHere
 	}
-	execution := "local"
-	if arg(args, "execution") == "campaign" {
-		execution = "campaign"
-	}
-	var resource any
-	if execution == "campaign" && truthy(arg(args, "resource")) {
-		resource = m.resolveResource(r, ctx, tmpl(arg(args, "resource")))
-	}
-	var runtime any
-	switch arg(args, "runtime") {
-	case "runner":
-		runtime = "runner"
-	case "session":
-		runtime = "session"
-	}
-	specs := make([]tasks.AgentSpec, len(agents))
-	for i, a := range agents {
-		specs[i] = tasks.AgentSpec{Persona: tmplOr(prop(a, "persona"), ""), Objective: tmplOr(prop(a, "objective"), "")}
-	}
-	t, err := e.Create(tasks.CreateOptions{Objective: tmpl(arg(args, "objective")), Model: model, Agents: specs,
-		MaxAgents: maxAgents, MaxDepth: float64(eff.DelegationMaxDepth), Execution: execution, Resource: resource, Runtime: runtime})
+	s, err := m.sites()
 	if err != nil {
-		return &Outcome{Result: "Could not delegate: " + err.Error(), Summary: "error"}, nil
+		return nil, err
 	}
-	sum := e.Summary(t.ID)
-	id := tmpl(prop(sum, "id"))
-	campaign := ""
-	if prop(sum, "execution") == "campaign" {
-		campaign = "; campaign on " + tmpl(prop(sum, "resource")) + ", agents run as platform workflow runs and survive restarts"
+	instructions := tmplOr(arg(args, "instructions"), "")
+	// Strands the model saw are a suggestion in the brief; pw code splits.
+	var strands []string
+	subs, _ := arg(args, "subtasks").([]any)
+	for _, x := range subs {
+		if o := strings.TrimSpace(tmplOr(prop(x, "objective"), "")); o != "" {
+			strands = append(strands, "- "+o)
+		}
+		if instructions == "" {
+			instructions = tmplOr(prop(x, "persona"), "")
+		}
 	}
-	return &Outcome{Result: "Task " + id + " started with " + strconv.Itoa(len(jsonv.Arr(prop(sum, "agents")))) + " subtasks (ceiling " + tmpl(prop(sum, "maxAgents")) + ", depth " + tmpl(prop(sum, "maxDepth")) + campaign +
-		"). Results land under tasks/" + id + "/ in the knowledge base. In your reply, give the user this link to watch the agents live: [View agents working](#view=agents:" + id + "). Poll with task_status; do not wait idly, tell the user it is running.",
-		Summary: "task " + id}, nil
+	if len(strands) > 0 {
+		objective += "\n\nStrands this may split into (a suggestion; split it as suits the work):\n" + strings.Join(strands, "\n")
+	}
+	goal := strings.TrimSpace(tmplOr(arg(args, "goal"), ""))
+	if goal == "" {
+		goal = "The work in this brief is done and its outputs are written in the working folder: " + jsval.Slice(strings.TrimSpace(tmplOr(arg(args, "objective"), "")), 600)
+	}
+	site := tmplOr(arg(args, "site"), "")
+	if site == "" {
+		if !m.localAgents() {
+			return &Outcome{Result: "Name the site to run it on: one of the user's clusters, from agent_sites.", Summary: "site needed"}, nil
+		}
+		site = agentsites.Local
+	}
+	model := optStr(arg(args, "model"))
+	if model == "" && agentModel.MatchString(deref(ctx.Model)) {
+		model = deref(ctx.Model)
+	}
+	rec, err := delegation.Default.Start(r, delegation.Start{Site: site, Key: m.agentKey(s, ctx), Objective: objective, Goal: goal,
+		MaxTurns: numOr(arg(args, "max_turns"), 0), Model: model, Instructions: instructions, Folder: optStr(arg(args, "folder"))})
+	if err != nil {
+		return nil, err
+	}
+	where := "workspace " + rec.Workspace + " (outside the library: its files are on " + rec.Site + ", not indexed)"
+	if rec.Folder != "" {
+		where = "the library folder " + rec.Folder + " (indexed and linked when it finishes)"
+	}
+	with := ""
+	if rec.Instructions != "" {
+		with = ", with the instructions " + rec.Instructions
+		if rec.Folder != "" {
+			with += " in its AGENTS.md"
+		} else {
+			with += " at the top of its brief"
+		}
+	}
+	return &Outcome{Result: "Started pw code session " + rec.Session + " on " + rec.Site + ", working in " + where + with + ", with a goal it works toward until met or bounded. " +
+		"In your reply, give the user this link to follow it: [Open on the Code page](#view=code?session=" + rec.Session + "). Follow it with agent_status (site " + rec.Site + ", session " + rec.Session + "); do not wait idly, tell the user it is running.",
+		Summary: "delegated to " + rec.Session}, nil
 }
 
 func (m *Module) toolTaskStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
