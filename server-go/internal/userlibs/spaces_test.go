@@ -191,6 +191,29 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 		t.Fatal(err)
 	}
 	eq(t, []any{len(list), list[0].Name, list[0].Type, list[1].Name}, []any{2, "docs", "dir", "notes"}, "listed")
+	// Listed a moment ago, the folder is answered as it was kept, and so is
+	// a folder in it, read with it; a write through the Studio drops both.
+	os.WriteFile(filepath.Join(dir, "outside.txt"), []byte("made on the cluster"), 0o600)
+	os.WriteFile(filepath.Join(dir, "notes", "outside.txt"), []byte("made on the cluster"), 0o600)
+	if list, _ := s.List(req, lib, ""); len(list) != 2 {
+		t.Fatalf("a listing a moment old was read again: %v", list)
+	}
+	if notes, _ := s.List(req, lib, "notes"); len(notes) != 1 || notes[0].Name != "a.txt" {
+		t.Fatalf("the folder inside was not kept with its parent: %v", notes)
+	}
+	if err := s.Put(req, lib, "notes/c.txt", strings.NewReader("c"), 100); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := s.List(req, lib, ""); len(list) != 3 {
+		t.Fatalf("after a write: %v", list)
+	}
+	if notes, _ := s.List(req, lib, "notes"); len(notes) != 3 {
+		t.Fatalf("after a write in it: %v", notes)
+	}
+	os.Remove(filepath.Join(dir, "outside.txt"))
+	os.Remove(filepath.Join(dir, "notes", "outside.txt"))
+	os.Remove(filepath.Join(dir, "notes", "c.txt"))
+	h.m.lists.forgetOwner("single")
 	to, err := s.Rename(req, lib, "notes/a.txt", "b.txt")
 	if err != nil || to != "notes/b.txt" {
 		t.Fatalf("renamed: %q %v", to, err)

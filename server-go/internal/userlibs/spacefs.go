@@ -30,6 +30,8 @@ type spaceWrites struct {
 	accounts map[string]reachedAccount
 	// rebuilds is the pending re-index of a space, by owner and id.
 	rebuilds map[string]*time.Timer
+	// lists is the Library's listings kept for each viewer (listcache.go).
+	lists listCache
 }
 
 type reachedAccount struct {
@@ -157,14 +159,27 @@ func (s spaceFiles) List(r *http.Request, lib kb.Library, rel string) ([]kb.Entr
 	if err != nil {
 		return nil, err
 	}
-	fs, _, _, _, err := s.target(r, lib)
+	fs, _, owner, d, err := s.target(r, lib)
 	if err != nil {
 		return nil, err
 	}
-	list, _, err := fs.List(r.Context(), rel, 10000)
-	if err != nil {
-		return nil, err
+	k := listKey{owner: owner, key: keyHash(fs.KeyText), site: d.Site, root: fs.Dir, rel: rel}
+	if kept, again, ok := s.m.lists.get(k); ok {
+		if again {
+			s.readBehind(k, fs, rel)
+		}
+		return kept, nil
 	}
+	return s.read(r.Context(), k, fs, rel)
+}
+
+type listTwo interface {
+	ListTwo(ctx context.Context, rel string, max int) (transfers.TwoLevels, error)
+}
+
+// entriesOf is a folder's entries as the Library lists them: folders
+// first, each as its path in the space.
+func entriesOf(rel string, list []transfers.Entry) []kb.Entry {
 	out := make([]kb.Entry, 0, len(list))
 	dirs := 0
 	for _, e := range list {
@@ -188,7 +203,16 @@ func (s spaceFiles) List(r *http.Request, lib kb.Library, rel string) ([]kb.Entr
 			out = append(out, en)
 		}
 	}
-	return out, nil
+	return out
+}
+
+// wrote drops the kept listings of the folders a write in a space
+// touched: rels' own folders and, for a folder itself, what is in it.
+func (s spaceFiles) wrote(fs *transfers.RemoteFS, site string, rels ...string) {
+	for _, rel := range rels {
+		s.m.lists.changed(site, path.Join(fs.Dir, rel))
+		s.m.lists.changed(site, path.Dir(path.Join(fs.Dir, rel)))
+	}
 }
 
 func (s spaceFiles) Mkdir(r *http.Request, lib kb.Library, rel string) error {
@@ -200,6 +224,7 @@ func (s spaceFiles) Mkdir(r *http.Request, lib kb.Library, rel string) error {
 	if err != nil {
 		return err
 	}
+	defer s.wrote(fs, fs.SiteID, rel)
 	return fs.Mkdir(r.Context(), rel)
 }
 
@@ -248,6 +273,7 @@ func (s spaceFiles) Put(r *http.Request, lib kb.Library, rel string, src io.Read
 	if err != nil {
 		return err
 	}
+	defer s.wrote(fs, fs.SiteID, rel)
 	ctx := r.Context()
 	dir := path.Dir(rel)
 	if dir == "." {
@@ -281,6 +307,7 @@ func (s spaceFiles) Rename(r *http.Request, lib kb.Library, rel, name string) (s
 	if err != nil {
 		return "", err
 	}
+	defer s.wrote(fs, fs.SiteID, rel, path.Join(path.Dir(rel), name))
 	to := path.Join(path.Dir(rel), name)
 	if to == rel {
 		return rel, nil
@@ -303,6 +330,7 @@ func (s spaceFiles) Move(r *http.Request, lib kb.Library, rels []string, dest st
 	if err != nil {
 		return nil, nil, err
 	}
+	defer s.wrote(fs, fs.SiteID, append(append([]string{}, rels...), dest)...)
 	ctx := r.Context()
 	var skipped []kb.Skipped
 	var pairs []transfers.LandPair
@@ -360,6 +388,7 @@ func (s spaceFiles) Delete(r *http.Request, lib kb.Library, rels []string) ([]st
 	if err != nil {
 		return nil, nil, err
 	}
+	defer s.wrote(fs, fs.SiteID, rels...)
 	done, err := fs.RemoveTrees(r.Context(), rels)
 	if err != nil {
 		return done, nil, err
@@ -418,6 +447,9 @@ func (m *Module) SpaceTransferred(viewer string, authOn bool, key, root string) 
 	w, owner, d := m.spaceOfRoot(viewer, authOn, key, root)
 	if d == nil {
 		return
+	}
+	if folder := spaceRoot(d); folder != "" {
+		m.lists.changed(d.Site, folder)
 	}
 	m.queueSpaceBuild(w, owner, d.ID, SpaceEvery, 0)
 	m.sharesChanged(owner, d)

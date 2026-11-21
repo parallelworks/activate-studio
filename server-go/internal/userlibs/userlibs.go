@@ -156,6 +156,13 @@ func Of(a *app.App) *Module {
 	// What keeps something per library on another system (its semantic
 	// map, internal/maps) is told, as userLibraries.ts tells semanticMap.ts.
 	m.Notify = func(event, root string) { maps.Of(a).UserLibrary(event, root) }
+	prev := a.Providers.CredentialChanged
+	a.Providers.CredentialChanged = func(owner string) {
+		m.lists.forgetOwner(owner)
+		if prev != nil {
+			prev(owner)
+		}
+	}
 	a.OnStop("user libraries: ssh sessions", func() int { pool.Close(); return 0 })
 	inst[a] = m
 	return m
@@ -1085,6 +1092,11 @@ func (m *Module) remove(w who, id string) error {
 	if d := find(m.load(owner), id); d != nil {
 		x := *d
 		gone = &x
+	}
+	if gone != nil {
+		if folder := spaceRoot(gone); folder != "" && gone.Site != "" {
+			m.lists.changed(gone.Site, folder)
+		}
 	}
 	// A space's shares end with it; a library made from a share leaves it.
 	if gone != nil && gone.Space != nil {

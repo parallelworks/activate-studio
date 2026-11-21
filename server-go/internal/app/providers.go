@@ -127,6 +127,18 @@ type Providers struct {
 	// "tagMaps" (tags.ts's invalidateTagMaps). Owners: the libraries
 	// (gufi), chat and files tracks. Node: the bridge. Node-free: nothing.
 	Changed func(ctx context.Context, what ...string)
+	// CredentialChanged says a person signed out of the platform, or set
+	// or cleared their own key, so what was kept from reading as them goes
+	// (the Library's listings of their own libraries). Owner: the libraries
+	// track; nil for none.
+	CredentialChanged func(owner string)
+}
+
+// ForgetCredential calls CredentialChanged when it is set.
+func (p *Providers) ForgetCredential(owner string) {
+	if p.CredentialChanged != nil && owner != "" {
+		p.CredentialChanged(owner)
+	}
 }
 
 // SetupIndex is the index state /api/setup/status shows.

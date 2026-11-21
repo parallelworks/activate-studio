@@ -110,6 +110,8 @@ func (m *Module) Routes(mux *http.ServeMux) {
 		return m.SignIns.Cancel(u.ID), nil
 	}))
 	mux.HandleFunc("POST "+base+"/sign-out", h(func(r *http.Request, u *auth.User) (any, error) {
-		return m.SignIns.SignOut(u.ID), nil
+		st := m.SignIns.SignOut(u.ID)
+		m.A.Providers.ForgetCredential(u.ID)
+		return st, nil
 	}))
 }
