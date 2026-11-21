@@ -29,6 +29,9 @@ type SpaceFS interface {
 	Delete(r *http.Request, lib Library, rels []string) (deleted []string, skipped []Skipped, err error)
 	// Changed tells the space's index that files under rels changed.
 	Changed(r *http.Request, lib Library, rels []string)
+	// Get reads a plain file whole, as the person: a missing file is a
+	// 404, a link or a folder a 409, more than max bytes a 413.
+	Get(r *http.Request, lib Library, rel string, max int64) ([]byte, error)
 }
 
 // SpaceFiles is set by the libraries track; nil, and a space is read only.
