@@ -12,6 +12,26 @@ A campaign on another system always uses the runner. Sessions on remote systems 
 
 The task view names the machine its agents run on: the task's system for a campaign, the daemon's host for session agents, and the Studio's host for runners. It appears once in the task's header, and on each agent's row only when a task's agents are on different machines.
 
+## Agent instructions in AGENTS.md
+
+pw code reads `AGENTS.md` from the folder a session works in, and outside a git repository from that folder only. The Studio writes agent instructions there: applying an instructions template (a persona file) to a library folder puts its text into that folder's `AGENTS.md`, inside a section between two markers that name the template:
+
+```
+<!-- ACTIVATE Studio instructions reviewer: begin. ACTIVATE Studio replaces this section ... -->
+
+(the template's text)
+
+<!-- ACTIVATE Studio instructions reviewer: end -->
+```
+
+The file is made when there is none. Applying the same template again replaces its section where it is, and taking it off removes the section, and the file when nothing else is left in it. A second template gets a section of its own. Text outside the markers is the person's and is never changed; a section whose end marker was removed by hand is reported and left for the person to mend. The Studio never writes through a link: an `AGENTS.md` that is a symbolic link (to a shared `CLAUDE.md`, say) is refused.
+
+The folder is in the main library, written as the Library writes there and indexed like any file, or in the person's own library (My library), read and written as them over their own session and indexed as that library is. A folder shared with the person, and any other library, is refused.
+
+*Skills.* pw code finds a workspace's skills under `.agents/skills/<name>/SKILL.md` there, and the person's own under `~/.agents/skills`. Applying a skill to a folder writes its `SKILL.md` there, with the front matter pw code reads (`name`, `description`) and a line saying the Studio wrote it; the Studio replaces or deletes only a file that carries that line. pw code loads a workspace's skills only once the person has approved that workspace, which pw code asks at the first interactive launch there (`pw code` in the folder, or `pw code -r <session id>`); a session the Studio starts through the daemon reports the workspace as not yet approved and does not see them, while `AGENTS.md` applies at once. Until a skill is trusted with `/skills trust <name>`, its instructions load but its `allowed-tools` and shell lines stay off. The Studio's own chat assistant keeps loading skills mid-conversation as before.
+
+*Routes.* `GET /api/agents-md?library=&folder=` answers the folder (`library`, `label`, `folder`, `path`, `space`) and what the Studio has put there: `exists`, `instructions` (the sections, in order), `skills`, and `problem` when a section cannot be read. `POST /api/agents-md/apply` and `POST /api/agents-md/remove` take `{library, folder, instructions, skills}` (a template name, and a list of skill names) and answer the same. `library` is empty for the main library and `folder` empty for its top; a folder is relative to the library's top, with no `..` and no hidden or machinery folders.
+
 ## Session agents
 
 The Studio talks to the pw code daemon over its Unix socket (`$XDG_STATE_HOME/pw/code-<hostname>.sock`, or `PW_CODE_SOCKET`), which only the account that runs the Studio can open. When no daemon is running, the first session agent starts one with the Studio's own platform context (`PW_CONTEXT`), since a daemon started without a context binds to whichever context is current for that account. The daemon must speak protocol 2.

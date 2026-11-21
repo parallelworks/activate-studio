@@ -67,6 +67,13 @@ func (s *spaceStub) Delete(_ *http.Request, _ Library, rels []string) ([]string,
 	s.note("delete " + strings.Join(rels, ","))
 	return rels, nil, nil
 }
+func (s *spaceStub) Get(_ *http.Request, _ Library, rel string, _ int64) ([]byte, error) {
+	s.note("get " + rel)
+	if b, ok := s.files[rel]; ok {
+		return []byte(b), nil
+	}
+	return nil, Error(404, "%s is not there", rel)
+}
 func (s *spaceStub) Changed(_ *http.Request, _ Library, rels []string) {
 	s.note("changed " + strings.Join(rels, ","))
 }

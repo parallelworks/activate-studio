@@ -377,6 +377,51 @@ func (s spaceFiles) Delete(r *http.Request, lib kb.Library, rels []string) ([]st
 	return done, skipped, nil
 }
 
+// Get reads a plain file of the space whole, as the person. A last link
+// is never followed: the file a link names may be outside the space.
+func (s spaceFiles) Get(r *http.Request, lib kb.Library, rel string, max int64) ([]byte, error) {
+	rel, err := inSpace(rel)
+	if err != nil {
+		return nil, err
+	}
+	if rel == "" {
+		return nil, apierr.New(400, "a file needs a name")
+	}
+	fs, _, _, _, err := s.target(r, lib)
+	if err != nil {
+		return nil, err
+	}
+	ctx := r.Context()
+	there, err := fs.Stat(ctx, []string{rel})
+	if err != nil {
+		return nil, err
+	}
+	st, ok := there[rel]
+	switch {
+	case !ok:
+		return nil, apierr.New(404, "%s is not there", rel)
+	case st.Type == 'l':
+		return nil, apierr.New(409, "%s is a link", rel)
+	case st.Type != 'f':
+		return nil, apierr.New(409, "%s is not a file", rel)
+	case st.Size > max:
+		return nil, apierr.New(413, "%s is too large", path.Base(rel))
+	}
+	rc, err := fs.Read(ctx, rel)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	b, err := io.ReadAll(io.LimitReader(rc, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > max {
+		return nil, apierr.New(413, "%s is too large", path.Base(rel))
+	}
+	return b, nil
+}
+
 // Changed builds the space's index again once its changes have settled.
 func (s spaceFiles) Changed(r *http.Request, lib kb.Library, _ []string) {
 	m := s.m
