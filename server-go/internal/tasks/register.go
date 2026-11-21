@@ -23,12 +23,11 @@ func envMs(p *platform.Platform, k string, d time.Duration) time.Duration {
 	return d
 }
 
-// Register serves agent sites, tasks, the token board and the fleet, all
-// over one pw code daemon access, and starts their background work: the
-// bridge sweeper always; reattaching earlier tasks and the fleet's
-// scheduler only where this process owns the platform's jobs. It returns
-// the fleet, whose NotifyRunEnded a run watcher calls (ConnectRunEnded).
-func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Fleet {
+// Register serves agent sites, tasks and the token board over one pw code
+// daemon access, and starts their background work: the bridge sweeper
+// always; reattaching earlier tasks only where this process owns the
+// platform's jobs. It returns the daemon access, which the fleet uses.
+func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *pwcode.Service {
 	daemon := pwcode.New(p)
 	daemon.Start(a)
 	currentSites.Store(agentsites.Register(mux, a, p, daemon))
@@ -81,17 +80,13 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Fleet {
 		return true, b
 	}
 
-	fleet := NewFleet(e, func(m string) { a.Log.Info(m) })
-	fleet.Routes(mux, a, p, func() bool { return a.Settings.Effective().DelegationEnabled })
-
+	// The fleet is internal/fleet's now: standing agents are pw code
+	// sessions, not ticks of this engine.
 	if p.OwnsJobs() {
-		a.OnStart("tasks: reattach and fleet", func(context.Context) {
-			e.Rehydrate()
-			fleet.Start(a, envMs(p, "STUDIO_FLEET_TICK_MS", 30*time.Second))
-		})
+		a.OnStart("tasks: reattach", func(context.Context) { e.Rehydrate() })
 	}
 	a.OnStop("tasks: runners", e.StopRunners)
-	return fleet
+	return daemon
 }
 
 // ConnectRunEnded has the fleet hear about runs that end on src.

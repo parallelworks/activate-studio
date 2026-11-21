@@ -109,7 +109,7 @@ The full description, including where tiles come from, approvals for GitHub work
 
 ## Agents
 
-Fleet agents each have a goal, a persona, a budget, and triggers: a schedule, a workflow run ending, or files changing under a folder. An agent wakes, does one bounded round of work with the assistant's tools, writes the outcome to its journal, and waits under **Needs you** when it needs a person; a message in its box is answered on its next round. Delegated tasks, the ways agents run, approvals, and steering are in [`AGENTS.md`](AGENTS.md), with how the Studio writes agent instructions and skills into a folder's `AGENTS.md` and `.agents/skills` for pw code (`/api/agents-md`).
+Fleet agents each have a goal, agent instructions, a budget, and triggers: a schedule, a workflow run ending, or files changing under a folder. Each is a long-lived pw code session on the Studio's host in its own folder, `agents/fleet/<id>/`, whose `AGENTS.md` holds its instructions and goal. An agent wakes with a message to that session and a goal bounded by turns, does one round of work with pw code's tools and the Studio's, journals the outcome, and waits under **Needs you** when it asks for a decision or an approval; a message reaches it at once while it works and otherwise wakes it. Delegated tasks, the ways agents run, approvals, and steering are in [`AGENTS.md`](AGENTS.md), with how the Studio writes agent instructions and skills into a folder's `AGENTS.md` and `.agents/skills` for pw code (`/api/agents-md`).
 
 ## Code
 
