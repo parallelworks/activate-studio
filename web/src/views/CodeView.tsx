@@ -267,6 +267,9 @@ function ContinueButton({ s, can, chat, onContinued }: { s: CodeSession; can: { 
   const [busy, setBusy] = useState(false)
   const [ask, setAsk] = useState('')
   const [error, setError] = useState('')
+  // What the Studio said when the person confirmed and it could not go on:
+  // shown in the dialog, which stays open so they can read it.
+  const [refused, setRefused] = useState('')
   if (chat) return <Button variant="primary" size="sm" onClick={() => openChat(chat)}>Open the Studio chat</Button>
   const body = { machine: s.machineId, session: s.id }
   const start = async () => {
@@ -278,19 +281,28 @@ function ContinueButton({ s, can, chat, onContinued }: { s: CodeSession; can: { 
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   const confirm = async () => {
-    const a = await postJSON<ContinueAnswer>('/api/chat/pwcode/continue', { ...body, confirmed: true })
-    if (!a.conversationId) throw new Error('The Studio made no chat.')
-    keepEngineFor(a.conversationId, 'pwcode')
+    setRefused('')
+    let id = ''
+    try {
+      const a = await postJSON<ContinueAnswer>('/api/chat/pwcode/continue', { ...body, confirmed: true })
+      id = a.conversationId ?? ''
+      if (!id) throw new Error('The Studio made no chat for this session.')
+    } catch (e) {
+      setRefused((e as Error).message || 'The Studio could not continue this session.')
+      return
+    }
+    setAsk('')
+    keepEngineFor(id, 'pwcode')
     onContinued()
     window.dispatchEvent(new CustomEvent('ade:chats-changed'))
-    openChat(a.conversationId)
+    openChat(id)
   }
   return (
     <>
       <Button variant="primary" size="sm" disabled={!can.ok} loading={busy} onClick={() => void start()} title={can.why || undefined}>Continue in Studio</Button>
       {error && <span className="code-continue-error" role="alert">{error}</span>}
-      <ConfirmModal open={!!ask} onClose={() => setAsk('')} title="Continue this session in a Studio chat?" description={ask}
-        confirmLabel="Continue in Studio" onConfirm={confirm} closeOnConfirm={false} />
+      <ConfirmModal open={!!ask} onClose={() => { setAsk(''); setRefused('') }} title="Continue this session in a Studio chat?" description={ask}
+        confirmLabel="Continue in Studio" onConfirm={confirm} closeOnConfirm={false} error={refused || undefined} />
     </>
   )
 }
