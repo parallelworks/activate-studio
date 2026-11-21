@@ -51,6 +51,10 @@ mark=$1; cmd=$2; root=$3; shift 3
 # nearest folder that exists decides, so a path made in several levels
 # takes one answer. A default ACL, where there is one, wins over either.
 like() { [ "${PRIV:-}" = 1 ] || return 0; local a=$1; while [ ! -d "$a" ]; do a=$(dirof "$a"); done; if [ -n "$(find -- "$a" -maxdepth 0 -perm -004 2>/dev/null)" ]; then umask 022; else umask 077; fi; }
+# closed: in a private location, a folder closed to other accounts with no
+# ACL of its own; a file a mover wrote (rsync keeps the source's mode) and
+# landed there is closed the same way, as like makes what the helper writes.
+closed() { [ "${PRIV:-}" = 1 ] || return 1; [ -z "$(find -- "$1" -maxdepth 0 -perm -004 2>/dev/null)" ] || return 1; case "$(ls -ld -- "$1" 2>/dev/null | cut -d' ' -f1)" in *+) return 1;; esac; return 0; }
 [ "$cmd" = read ] || printf '%s\n' "$mark"
 fail() { printf '%s\n' "$2" >&2; exit "$1"; }
 [ "$cmd" = home ] && { cd -P ~ 2>/dev/null && pwd -P; exit; }
@@ -147,6 +151,7 @@ land)
       [ -e "$b" ] && fail 10 "$b is already there and the plan did not list it"
       mv -n -- "$a" "$b" 2>/dev/null; [ -e "$a" ] && fail 9 "$b could not take its name"
     fi
+    closed "$d" && chmod go-rwx -- "$b" 2>/dev/null
     printf '%s\0' "$b"
   done ;;
 remove)

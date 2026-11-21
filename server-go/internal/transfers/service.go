@@ -55,6 +55,13 @@ type LibraryLoc struct {
 	// FS is where its files are, nil when Studio cannot reach them (Why).
 	FS  FS
 	Why string
+	// Space is the index root of a person's space, a library written as
+	// the viewer (their My library, or a folder shared with them for
+	// writing); "" for any other library. A transfer that changes a space
+	// queues its index build (Deps.SpaceChanged), and one that writes in
+	// it first checks the key reaches the account the space was made for
+	// (Deps.SpaceAccount).
+	Space string
 	// Site and Folder are where its files are, as far as Studio knows,
 	// whether or not it reaches them: the ssh site of their host ("" when
 	// not known or not an ssh host) and the folder there ("" when not
@@ -87,6 +94,12 @@ type Deps struct {
 	Index    Index
 	// Conduit is the CONDUIT service caller; nil: none.
 	Conduit ConduitCaller
+	// SpaceChanged queues the index build of a space (LibraryLoc.Space)
+	// after a transfer changed its files; nil: nothing is queued.
+	SpaceChanged func(v Viewer, indexRoot string)
+	// SpaceAccount refuses a viewer whose key reaches another account
+	// than the one the space was made for; nil: no check.
+	SpaceAccount func(ctx context.Context, v Viewer, indexRoot string) error
 	// Home is this computer's home folder, for Downloads, Desktop and
 	// Documents; "" leaves them out.
 	Home string

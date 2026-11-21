@@ -367,7 +367,12 @@ func (u *Users) Target(root string, keys Keys, sshSite SiteFn) (*Target, error) 
 		return nil, apierr.New(409, "this library is not built yet")
 	}
 	t := &Target{Owner: owner, Def: *d, GufiBin: *d.GufiBin, IndexRoot: *d.IndexRoot, Site: d.Site}
-	if d.SourceRoot != nil {
+	// The folder the files are in: as recorded at the last build, else
+	// the one the build was asked for (as a space's writes take it).
+	if d.Build != nil {
+		t.SourceRoot = d.Build.SourceRoot
+	}
+	if d.SourceRoot != nil && *d.SourceRoot != "" {
 		t.SourceRoot = *d.SourceRoot
 	}
 	if d.BuiltAt != nil {

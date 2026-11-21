@@ -23,7 +23,9 @@ type loc struct {
 	// reindexed: Studio updates this library's index after a transfer
 	// (LibraryLoc.Reindexed).
 	reindexed bool
-	conduit   *ConduitServer
+	// space is the index root of a person's space (LibraryLoc.Space).
+	space   string
+	conduit *ConduitServer
 	// home is the folder browsing starts in, relative to the root (a
 	// cluster's home folder); "" for the root.
 	home    string
@@ -69,7 +71,7 @@ func (s *Service) all(ctx context.Context, v Viewer, kind string) []*loc {
 		for _, l := range s.d.Libraries(ctx, v) {
 			x := &loc{Location: Location{ID: KindLibrary + ":" + l.ID, Kind: KindLibrary, Label: l.Label,
 				Writable: l.Writable && l.FS != nil, Indexed: l.Indexed || l.Reindexed, Browsable: l.FS != nil, Available: l.FS != nil, Why: l.Why},
-				fs: l.FS, libID: l.ID, refresh: l.Refresh, reindexed: l.Reindexed}
+				fs: l.FS, libID: l.ID, refresh: l.Refresh, reindexed: l.Reindexed, space: l.Space}
 			if l.FS != nil {
 				x.Detail = l.FS.Where() + ", " + l.FS.Root()
 				if !x.Writable {

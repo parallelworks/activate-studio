@@ -441,6 +441,8 @@ func Register(mux *http.ServeMux, a *app.App) {
 	m.Routes(mux, a.Log)
 	kb.SpaceFiles = m.SpaceFiles()
 	a.Providers.SpaceFolder = m.SpaceFolder
+	a.Providers.SpaceChanged = m.SpaceTransferred
+	a.Providers.SpaceAccount = m.SpaceAccount
 	if !a.Cfg.FrontAuth {
 		registerWhoami(mux, a)
 	}
