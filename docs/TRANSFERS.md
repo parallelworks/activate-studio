@@ -139,6 +139,8 @@ macOS's openrsync has `--files-from`, `-0`, `--chmod`, `--max-size` and `--timeo
 
 Active transfers are held in memory and in `INDEX_BASE/transfers/active.json`. A finished transfer is written once, as a line of `INDEX_BASE/transfers/<YYYY-MM>.jsonl` with its last 200 events; a deletion is a line of its own. Finished transfers are kept 180 days, at most 10,000 (`KeepFinishedFor`, `KeepFinishedMax`). At start the month files are read into an in-memory index; a transfer's events are read from its line when its detail is opened. On start, a transfer that was queued, running or verifying is marked `interrupted` and its staging folder is removed; one awaiting approval is cancelled.
 
+`failedLast24h` in the summary, which the navigation's red dot shows, counts the viewer's failures of the last 24 hours that the viewer has not seen and that no later run of the same transfer succeeded. A failure is seen once it ended before the viewer last had the Transfers page open, or once its details were opened. The same transfer is the same source location and paths and the same destination location and path; a success that ended later clears the failure. What each viewer saw (a time, and the ids of failures opened since) is kept in `INDEX_BASE/transfers/seen.json` (mode 600), by owner, and survives a restart. With sign-in off there is one viewer.
+
 ## HTTP
 
 | Route | Returns |
@@ -149,6 +151,7 @@ Active transfers are held in memory and in `INDEX_BASE/transfers/active.json`. A
 | `POST /api/transfers` with `{ planId }` | `{ transfer }`, once queued |
 | `GET /api/transfers?state=active\|done\|all&limit=&before=&q=&outcome=&startedBy=&since=` | `{ transfers, next }`: active ones first, never paged, then finished ones newest first by end time; `next` is an opaque cursor or null; `limit` 1 to 200, default 50 |
 | `GET /api/transfers/summary` | `{ active, awaitingApproval, failedLast24h }` |
+| `POST /api/transfers/seen` with `{ id? }` | The summary, after recording that the viewer saw their failures: all that have ended (the Transfers page calls it while open), or the one with `id` (its details call it); another's transfer is a 404 |
 | `GET /api/transfers/movers?source=&destination=` | `{ movers }`: which movers can reach between two locations |
 | `GET /api/transfers/{id}` | `{ transfer }` with `events` |
 | `POST /api/transfers/{id}/cancel` | `{ cancelled, why? }` |

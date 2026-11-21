@@ -282,6 +282,8 @@ export function createTransfersMock(opts: MockOptions = {}) {
     return { status: 200, body: { plan: p } }
   }
 
+  const seen = { upTo: 0, ids: new Set<string>() }
+
   function handle(method: string, url: string, body?: unknown): MockReply {
     const u = new URL(url, 'http://studio.test')
     calls.push({ method, path: u.pathname + u.search, body })
@@ -354,16 +356,26 @@ export function createTransfersMock(opts: MockOptions = {}) {
         { name: 'conduit', ok: conduitOn, ...(conduitOn ? {} : { why: 'turned off in Settings, Transfers' }) },
       ] } }
     }
-    if (path === '/api/transfers/summary') {
+    // Failures count until seen, as the server has it (a later success of
+    // the same transfer is left out here).
+    const summary = () => {
       const day = Date.now() - 86_400_000
       return {
-        status: 200,
-        body: {
-          active: transfers.filter(t => ACTIVE.includes(String(t.state))).length,
-          awaitingApproval: transfers.filter(t => t.state === 'awaiting-approval').length,
-          failedLast24h: transfers.filter(t => t.state === 'failed' && Date.parse(String(t.endedAt ?? '')) >= day).length,
-        },
+        active: transfers.filter(t => ACTIVE.includes(String(t.state))).length,
+        awaitingApproval: transfers.filter(t => t.state === 'awaiting-approval').length,
+        failedLast24h: transfers.filter(t => {
+          const end = Date.parse(String(t.endedAt ?? ''))
+          return t.state === 'failed' && end >= day && end > seen.upTo && !seen.ids.has(String(t.id))
+        }).length,
       }
+    }
+    if (path === '/api/transfers/summary') return { status: 200, body: summary() }
+    if (path === '/api/transfers/seen' && method === 'POST') {
+      const id = (body as { id?: string } | undefined)?.id
+      if (id && !transfers.some(t => t.id === id)) return { status: 404, body: { error: 'No such transfer.' } }
+      if (id) seen.ids.add(id)
+      else seen.upTo = Date.now()
+      return { status: 200, body: summary() }
     }
     if (path === '/api/transfers' && method === 'GET') {
       const sp = u.searchParams

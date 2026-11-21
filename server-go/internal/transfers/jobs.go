@@ -176,9 +176,26 @@ func (s *Service) List(v Viewer, q ListQuery) (Page, error) {
 }
 
 // Summary is the viewer's counts: active (waiting for approval included),
-// waiting for approval, and failed in the last 24 hours.
+// waiting for approval, and failed in the last 24 hours and not yet seen.
 func (s *Service) Summary(v Viewer) Summary {
 	return s.store.summary(v.owner(), s.now())
+}
+
+// Seen records that the viewer saw their failures: with id "", every one
+// that has ended (the Transfers page is open); otherwise that transfer
+// (its details are open), a 404 when it is not the viewer's. It returns
+// the summary as it now is.
+func (s *Service) Seen(v Viewer, id string) (Summary, error) {
+	if id != "" {
+		if _, err := s.Get(v, id); err != nil {
+			return Summary{}, err
+		}
+	}
+	now := s.now()
+	s.store.mu.Lock()
+	s.store.markSeenLocked(v.owner(), id, now)
+	s.store.mu.Unlock()
+	return s.store.summary(v.owner(), now), nil
 }
 
 // Cancel stops a transfer of the viewer's: one waiting or queued at once,

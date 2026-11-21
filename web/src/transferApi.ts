@@ -128,7 +128,13 @@ export interface ListQuery {
   /** RFC 3339: only transfers that finished at or after this time. */
   since?: string | null
 }
+/** The navigation mark's counts. `failedLast24h` counts the failures of
+ *  the last day the viewer has not seen and that no later run of the same
+ *  transfer succeeded. */
 export interface TransferSummary { active: number; awaitingApproval: number; failedLast24h: number }
+/** Sent on window with the summary (`detail`) after a transfer's details
+ *  marked it seen, so the navigation mark updates at once. */
+export const TRANSFERS_SEEN = 'ade-transfers-seen'
 
 /** Settings, Transfers. `managed` and `mcpServers` are read only. */
 export interface SavedLocation {
@@ -262,6 +268,10 @@ export const transferApi = {
       .then(r => ({ transfers: (r.transfers ?? []).map(ends), next: r.next ?? null }))
   },
   summary: () => call<TransferSummary>(`${BASE}/summary`),
+  /** Records that the viewer saw their failures: all that have ended (the
+   *  page is open), or the one with this id (its details are open). The
+   *  answer is the summary as it now is. */
+  seen: (id?: string) => call<TransferSummary>(`${BASE}/seen`, post(id ? { id } : {})),
   /** Which movers can reach between two locations, in that direction. */
   movers: (source: string, destination: string) =>
     call<{ movers?: MoverChoice[] }>(`${BASE}/movers?${new URLSearchParams({ source, destination })}`).then(r => r.movers ?? []),
