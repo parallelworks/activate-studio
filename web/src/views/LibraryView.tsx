@@ -8,7 +8,7 @@ import {
 } from '@parallelworks/ui'
 import type { Display } from '../App'
 import { api } from '../api'
-import { Explorer, visibleRowPaths } from '../components/Explorer'
+import { Explorer, visibleRowPaths, type DragKind, type DropKind } from '../components/Explorer'
 import { Viewer } from '../components/Viewer'
 import { DagViewer } from '../components/DagViewer'
 import { LibraryAddMenu } from '../components/UploadMenu'
@@ -24,6 +24,7 @@ import { TransferPanel } from '../components/TransferPanel'
 import { selectLibraryEntry } from '../components/LibraryDetails'
 import { ShareDialog } from '../components/ShareDialog'
 import { ResultsTransferDialog, useTransfersShown, type ResultItem } from '../components/ResultsTransfer'
+import { destinationWhy, libraryLocation, transferApi } from '../transferApi'
 
 const RAIL_MIN = 220
 const RAIL_MAX = 520
@@ -188,6 +189,52 @@ export function LibraryView({ display, onDisplay }: {
   // Copy to another library: with Transfers shown and another library to
   // copy to; never a library's own top folder in All libraries.
   const canCopyOut = transfersShown && (cfg.libraries?.length ?? 0) > 1
+  // Which libraries a transfer can write in, as Transfers lists them: this
+  // follows who reaches the files, which can differ from the Library's own
+  // writes (a library on this computer with sign-in off takes a transfer,
+  // and only the main library and spaces take the Library's edits).
+  const [xferInto, setXferInto] = useState<Set<string> | null>(null)
+  useEffect(() => {
+    if (!canCopyOut) return
+    let live = true
+    transferApi.locations().then(locs => {
+      if (live) setXferInto(new Set(locs.filter(l => l.kind === 'library' && !destinationWhy(l)).map(l => l.id)))
+    }, () => {})
+    return () => { live = false }
+  }, [canCopyOut, libSet])
+  const libOf = (p: string) => itemAt(p).library
+  const libraryTopAt = (p: string) => inAll && !p.replace(/^\/+/, '').includes('/')
+  /** Copy rows into a folder of another library, or of a space (whose
+   *  own copy is not there yet), through Transfers: the dialog opens on
+   *  that folder. */
+  const copyInto = (dir: string, paths: string[]) => {
+    const to = itemAt(dir)
+    const rows = paths.filter(p => p && !libraryTopAt(p))
+    if (!rows.length) return
+    setCopyTo({ items: rows.map(itemAt), noun: 'item', destination: { location: `library:${to.library}`, path: to.path } })
+  }
+  // A row drags as a move within its library and as a copy to another
+  // library, a read-only library's rows only as a copy; a library's own
+  // folder in All libraries does not drag.
+  const dragKind = (p: string): DragKind => {
+    if (!p || libraryTopAt(p)) return null
+    const w = writableAt(p)
+    if (inAll && canCopyOut) return w ? 'copyMove' : 'copy'
+    return w ? 'move' : null
+  }
+  // A folder takes a drop when its library is writable: a move from the
+  // same library, a copy from another (with Transfers on). Never a folder
+  // into itself or one inside it, or the top of All libraries.
+  const dropKind = (dir: string, paths: string[]): DropKind => {
+    if (!paths.length || (inAll && !dir)) return 'none'
+    const target = libOf(dir)
+    if (paths.some(p => libOf(p) !== target)) {
+      const takes = xferInto ? xferInto.has(libraryLocation(target)) : writableAt(dir)
+      return canCopyOut && takes ? 'copy' : 'none'
+    }
+    if (!writableAt(dir) || paths.some(p => p === dir || dir.startsWith(`${p}/`))) return 'none'
+    return paths.every(p => writableAt(p)) ? 'move' : 'none'
+  }
   // A selection in a read-only library can be labeled but not moved or deleted.
   const selLocked = selPaths.map(p => readOnlyAt(p)).find(Boolean) ?? null
   const uploadsDir = inAll ? `${primaryId}/uploads` : 'uploads'
@@ -259,9 +306,18 @@ export function LibraryView({ display, onDisplay }: {
     anchor.current ??= p
   }
 
-  /** Paste whatever was cut or copied into a directory. */
+  /** Paste whatever was cut or copied into a directory. Into another
+   *  library it is a copy through Transfers, cut or not, so nothing leaves
+   *  the library it was in; a copy inside a space goes the same way. */
   const pasteInto = async (dir: string) => {
     if (!clipboard?.paths.length) return
+    const target = libOf(dir)
+    const across = clipboard.paths.some(p => libOf(p) !== target)
+    const inSpace = clipboard.mode === 'copy' && !!cfg.libraries?.find(l => l.id === target)?.space
+    if ((across || inSpace) && canCopyOut) {
+      copyInto(dir, clipboard.paths)
+      return
+    }
     if (clipboard.mode === 'cut') {
       await moveInto(dir, clipboard.paths)
       setClipboard(null)
@@ -583,6 +639,9 @@ export function LibraryView({ display, onDisplay }: {
                 onDropInto={(dir, items) => { if (writableAt(dir) || libOffer.allowed) void uploadTo(dir, items) }}
                 onSelectRange={selectRange}
                 onMoveInto={(dir, paths) => void moveInto(dir, paths)}
+                onCopyInto={copyInto}
+                dragKind={dragKind}
+                dropKind={dropKind}
                 onLabel={p => { setMultiSel(new Set([p])); setTagMenuOpen(true); setSelectMode(true) }}
                 onContext={openContextMenu}
                 selectMode={selectMode}
