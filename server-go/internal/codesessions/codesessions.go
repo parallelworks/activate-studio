@@ -1,9 +1,10 @@
 // Package codesessions shows the viewer's pw code sessions on the
 // platform: the machines and sessions the platform's Code page lists, and
 // one session's transcript, read through the platform API as the viewer,
-// with a link to each session's page on the platform. Read only: starting,
-// answering and steering a session stay on the platform's own page until
-// its client is open for others to build on.
+// with a link to each session's page on the platform. The page itself is
+// read only. A session on the machine whose pw code daemon this Studio's
+// chat reaches for the viewer can be continued in a Studio chat
+// (chat/pwcodecontinue.go), which looks the session up here first.
 package codesessions
 
 import (
@@ -19,7 +20,10 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
 )
 
-type machine struct {
+// Machine is a machine as the platform lists it for the viewer. DaemonID
+// is the machine id its pw code daemon reports (GET /v1/status machineId),
+// by which the Studio knows the machine its own pw code runs on.
+type Machine struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Kind     string `json:"kind"`
@@ -27,6 +31,7 @@ type machine struct {
 	Hostname string `json:"hostname,omitempty"`
 	Status   string `json:"status"`
 	Error    string `json:"error,omitempty"`
+	DaemonID string `json:"daemonId,omitempty"`
 }
 
 type approval struct {
@@ -75,6 +80,7 @@ type View struct {
 	Pinned         bool     `json:"pinned,omitempty"`
 	Waiting        int      `json:"waiting,omitempty"`
 	LastError      string   `json:"lastError,omitempty"`
+	LiveHost       string   `json:"liveHost,omitempty"`
 	URL            string   `json:"url"`
 }
 
@@ -124,7 +130,7 @@ func view(s session, names map[string]string, origin string) View {
 		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt, Messages: s.Messages, Status: s.Status,
 		PermissionMode: s.PermissionMode, Branch: s.Branch, PullRequests: s.PullRequests,
 		Archived: s.ArchivedAt != nil, Pinned: s.PinnedAt != nil, Waiting: len(s.Approvals),
-		LastError: s.LastError, URL: URL(origin, s.MachineID, s.ID),
+		LastError: s.LastError, LiveHost: s.LiveHost, URL: URL(origin, s.MachineID, s.ID),
 	}
 	if v.Machine == "" {
 		v.Machine = s.MachineID
@@ -149,28 +155,30 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 	mux.HandleFunc("GET /api/code-sessions/item", h(s.item))
 }
 
-func (s *routes) key(r *http.Request) (string, error) {
-	v, err := s.p.ViewerOf(r)
+func viewerKey(r *http.Request, p *platform.Platform) (string, error) {
+	v, err := p.ViewerOf(r)
 	if err != nil {
 		return "", err
 	}
-	if k := sessions.KeyFor(s.p, v); k != "" {
+	if k := sessions.KeyFor(p, v); k != "" {
 		return k, nil
 	}
 	return "", platform.KbError(409, "No platform credential: add your ACTIVATE API key under Settings, Model access.")
 }
 
+func (s *routes) fetch(r *http.Request, path string, out any) error { return fetch(r, s.p, path, out) }
+
 // fetch reads a platform API path as the viewer, explaining the answers
 // that mean the feature is not there for them.
-func (s *routes) fetch(r *http.Request, path string, out any) error {
-	if s.p.Origin() == "" {
+func fetch(r *http.Request, p *platform.Platform, path string, out any) error {
+	if p.Origin() == "" {
 		return platform.KbError(409, "This Studio is not connected to an ACTIVATE platform, where pw code sessions are listed.")
 	}
-	key, err := s.key(r)
+	key, err := viewerKey(r, p)
 	if err != nil {
 		return err
 	}
-	res := s.p.APIFetch(r.Context(), path, key, 30*time.Second)
+	res := p.APIFetch(r.Context(), path, key, 30*time.Second)
 	switch {
 	case res == nil:
 		return platform.KbError(502, "The platform did not answer.")
@@ -189,11 +197,41 @@ func (s *routes) fetch(r *http.Request, path string, out any) error {
 	return nil
 }
 
-func (s *routes) list(w http.ResponseWriter, r *http.Request) (any, error) {
-	var body struct {
-		Machines []machine `json:"machines"`
-		Sessions []session `json:"sessions"`
+type listing struct {
+	Machines []Machine `json:"machines"`
+	Sessions []session `json:"sessions"`
+}
+
+// Find is one of the viewer's sessions as the platform lists it, read as
+// the viewer, with its machine; a 404 when the platform does not list it
+// for them.
+func Find(r *http.Request, p *platform.Platform, machineID, id string) (*Machine, *View, error) {
+	if !idRe.MatchString(machineID) || !idRe.MatchString(id) {
+		return nil, nil, platform.KbError(400, "machine and session are required")
 	}
+	var body listing
+	if err := fetch(r, p, "/api/code/sessions", &body); err != nil {
+		return nil, nil, err
+	}
+	var mach *Machine
+	names := map[string]string{}
+	for i, m := range body.Machines {
+		names[m.ID] = m.Name
+		if m.ID == machineID {
+			mach = &body.Machines[i]
+		}
+	}
+	for _, x := range body.Sessions {
+		if x.MachineID == machineID && x.ID == id && mach != nil {
+			v := view(x, names, p.Origin())
+			return mach, &v, nil
+		}
+	}
+	return nil, nil, platform.KbError(404, "The platform does not list that pw code session as yours.")
+}
+
+func (s *routes) list(w http.ResponseWriter, r *http.Request) (any, error) {
+	var body listing
 	if err := s.fetch(r, "/api/code/sessions", &body); err != nil {
 		return nil, err
 	}
@@ -208,7 +246,7 @@ func (s *routes) list(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	machines := body.Machines
 	if machines == nil {
-		machines = []machine{}
+		machines = []Machine{}
 	}
 	return map[string]any{"machines": machines, "sessions": out, "codeUrl": strings.TrimRight(origin, "/") + "/code"}, nil
 }

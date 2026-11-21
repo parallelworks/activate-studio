@@ -66,6 +66,9 @@ type pwState struct {
 	down map[string]pwAvail
 	// turns is the turn the Studio follows in each conversation.
 	turns map[string]*pwTurn
+	// here is, by viewer, the daemon their pw code chat reached a moment
+	// ago, for the Code page's reads.
+	here map[string]pwHereAt
 }
 
 // following: the Studio still follows a turn in the conversation.
@@ -231,15 +234,22 @@ func (m *Module) viewerPlatformKey(r *http.Request) string {
 }
 
 // engineFor is the engine that answers this message: the composer's choice
-// when it names one, else the deployment's setting, where "auto" is pw code
+// when it names one, then pw code for a chat that continues a session, else
+// the deployment's setting, where "auto" is pw code
 // when it is offered to this person. A choice of pw code that cannot run
 // is an error; auto falls back to the Studio assistant.
-func (m *Module) engineFor(r *http.Request, asked string) (string, error) {
+func (m *Module) engineFor(r *http.Request, asked, convID string) (string, error) {
 	setting := m.eff().ChatEngine
+	// A chat that continues a pw code session is answered there unless the
+	// person chose the Studio assistant for it.
+	continued := false
+	if c := m.Conv.Get(convID); asked == "" && c != nil && c.PWCode != nil && c.PWCode.Continued {
+		continued = true
+	}
 	switch {
 	case asked == engineStudio:
 		return engineStudio, nil
-	case asked == enginePWCode || (asked == "" && setting == enginePWCode):
+	case asked == enginePWCode || continued || (asked == "" && setting == enginePWCode):
 		if why := m.pwcodeUnavailable(r.Context(), r); why != "" {
 			return "", pwErr(409, why)
 		}
@@ -347,6 +357,14 @@ func (m *Module) pwcodePrompt(tools []ToolSpec) string {
 // the tools; and whether it is new. A session that cannot reach the tools
 // at any of this Studio's addresses is a *studioToolsError.
 func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget, c *conversations.Conversation) (*conversations.PWCodeLink, bool, error) {
+	// A session continued from the Code page is the person's own: it is
+	// checked, never archived or replaced.
+	if l := c.PWCode; l != nil && l.Continued && l.Session != "" {
+		if err := m.continuedSession(ctx, r, t, l); err != nil {
+			return nil, false, err
+		}
+		return l, false, nil
+	}
 	tools := m.chatTools(r)
 	want := specNames(tools)
 	// A session is kept while its MCP token has a day left.
@@ -560,7 +578,6 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	m.follow(turn)
 	go func() {
 		defer cancel()
-		defer m.unfollow(turn)
 		turn.run(events, followErr)
 	}()
 	select {
@@ -594,7 +611,10 @@ func (t *pwTurn) mine(ev *jsonv.Object) bool {
 }
 
 func (t *pwTurn) run(events <-chan *jsonv.Object, followErr <-chan error) {
+	// The turn stops being followed before done is closed, so a status read
+	// as soon as the reply ends does not still say answering.
 	defer close(t.done)
+	defer t.m.unfollow(t)
 	for ev := range events {
 		if t.handle(ev) {
 			t.finish()
@@ -832,8 +852,12 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 			_, n := serverTools(s)
 			tools = reqbody.O("connected", jsonv.Truthy(v) && jsonv.String(jsonv.Path(s, "err")) == "", "count", n, "error", jsonv.String(jsonv.Path(s, "err")))
 		}
+		var codePage any
+		if c.PWCode.Continued && c.PWCode.Machine != "" {
+			codePage = CodePageLink(c.PWCode.Machine, c.PWCode.Session)
+		}
 		return reqbody.OK(w, reqbody.O("session", c.PWCode.Session, "url", c.PWCode.URL, "status", jsonv.String(jsonv.Path(d, "status")),
-			"answering", m.following(c.ID), "approvals", approvals, "tools", tools))
+			"answering", m.following(c.ID), "approvals", approvals, "tools", tools, "continued", c.PWCode.Continued, "codePage", codePage))
 	})
 	h("POST /api/chat/pwcode/{id}/interrupt", func(w http.ResponseWriter, r *http.Request) error {
 		c, t, err := m.ownPWCode(r)

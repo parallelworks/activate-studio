@@ -40,6 +40,12 @@ type fakePW struct {
 	calls      int
 	reconnects int
 	archived   int
+	// status and detail add to what /v1/status and GET /v1/sessions/s1
+	// answer (a daemon's machine id, a session's history); attached
+	// counts POST /v1/sessions/s1/attach.
+	status   map[string]any
+	detail   map[string]any
+	attached int
 }
 
 func (f *fakePW) add(ev map[string]any) {
@@ -60,7 +66,18 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 	switch {
 	case p == "/v1/status":
-		send(map[string]any{"protocolVersion": pwcode.ProtocolVersion})
+		st := map[string]any{"protocolVersion": pwcode.ProtocolVersion}
+		f.mu.Lock()
+		for k, v := range f.status {
+			st[k] = v
+		}
+		f.mu.Unlock()
+		send(st)
+	case p == "/v1/sessions/s1/attach":
+		f.mu.Lock()
+		f.attached++
+		f.mu.Unlock()
+		send(map[string]any{"id": "s1", "status": "idle"})
 	case p == "/v1/sessions" && r.Method == http.MethodPost:
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req)
@@ -128,7 +145,11 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
 	case p == "/v1/sessions/s1":
 		f.mu.Lock()
-		send(map[string]any{"id": "s1", "lastSeq": f.seq, "status": "idle"})
+		d := map[string]any{"id": "s1", "lastSeq": f.seq, "status": "idle"}
+		for k, v := range f.detail {
+			d[k] = v
+		}
+		send(d)
 		f.mu.Unlock()
 	default:
 		w.WriteHeader(404)
