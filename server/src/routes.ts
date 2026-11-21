@@ -135,8 +135,27 @@ export function imageSizes(body: Buffer, type: string): string {
  * The deployment's own icon comes first; the default mark's PNGs stay as
  * the sizes browsers require to offer installation.
  */
-export function webManifest(o: { name: string; dark: boolean; brand: WebManifestIcon | null; banner?: string | null }): Record<string, unknown> {
-  const bg = o.dark ? '#0c1320' : '#f3f4f6'
+/** The cookie holding the page ground the person last saw, as six hex
+ *  digits; the page sets it (web/src/theme.ts) and the manifest reads it. */
+export const GROUND_COOKIE = 'ade_ground'
+
+/** The request's ground cookie as "#rrggbb", or null. */
+export function groundOf(cookieHeader: string | undefined): string | null {
+  for (const part of String(cookieHeader ?? '').split(';')) {
+    const eq = part.indexOf('=')
+    if (eq < 0 || part.slice(0, eq).trim() !== GROUND_COOKIE) continue
+    const v = part.slice(eq + 1).trim()
+    return /^[0-9a-f]{6}$/i.test(v) ? '#' + v.toLowerCase() : null
+  }
+  return null
+}
+
+export function webManifest(o: { name: string; dark: boolean; brand: WebManifestIcon | null; banner?: string | null; ground?: string | null }): Record<string, unknown> {
+  // The splash an installed app shows before the page paints takes the
+  // ground the person last saw, so a person on the light theme of a dark
+  // deployment does not open on a dark screen; without it, the
+  // deployment's default theme's.
+  const bg = o.ground && /^#[0-9a-f]{6}$/i.test(o.ground) ? o.ground.toLowerCase() : o.dark ? '#0c1320' : '#f3f4f6'
   // With a classification banner, the title bar takes the banner's color so
   // the two read as one strip from the first frame of an installed launch.
   const bar = o.banner && /^#[0-9a-f]{6}$/i.test(o.banner) ? o.banner : bg
@@ -326,7 +345,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
   // The installable-app manifest, built per deployment so each installs
   // under its own name and icon. Never cached: a rename or a new icon has
   // to reach the next install.
-  app.get('/manifest.webmanifest', async (_req, reply) => {
+  app.get('/manifest.webmanifest', async (req, reply) => {
     const eff = effectiveSettings()
     let brand: WebManifestIcon | null = null
     const configured = configuredIcon(false)
@@ -338,7 +357,7 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
     }
     reply.header('Cache-Control', 'no-store, must-revalidate')
     const banner = eff.bannerText?.trim() ? (eff.bannerColor || '#24612e') : null
-    return reply.type('application/manifest+json').send(webManifest({ name: eff.appName, dark: eff.theme === 'dark', brand, banner }))
+    return reply.type('application/manifest+json').send(webManifest({ name: eff.appName, dark: eff.theme === 'dark', brand, banner, ground: groundOf(req.headers.cookie) }))
   })
 
   // The combined tree, library=all: one top-level folder per library the

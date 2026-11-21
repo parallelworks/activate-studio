@@ -27,7 +27,7 @@ import { ClassificationBanner, bannerInk, bannerShownColor } from './components/
 import { aiPagesMounted, applyNavWidth, sectionAllowed, shownView, useAppConfig } from './config'
 import { NavResize } from './components/NavResize'
 import { applyAccent, applySurface } from './accents'
-import { onThemeChoice } from './theme'
+import { onThemeChoice, rememberGround } from './theme'
 import { FullViewHost, RunPane } from './components/RunPane'
 import { PanelToggle, StatusPanel } from './components/StatusPanel'
 import { setPanelView } from './panelState'
@@ -341,6 +341,9 @@ export default function App() {
       const color = bannerShownColor(cfg) ?? getComputedStyle(document.documentElement).getPropertyValue('--pw-bg').trim()
       if (meta && color) meta.setAttribute('content', color)
       if (cfg.loaded && color) { try { localStorage.setItem('ade-theme-color', color) } catch { /* ignore */ } }
+      // The splash of the next launch takes this ground (the manifest's
+      // background_color). Not from a document whose theme its host chose.
+      if (cfg.loaded && told !== 'dark' && told !== 'light') rememberGround(getComputedStyle(document.documentElement).getPropertyValue('--pw-bg'))
       // The banner too, so the next launch's loading screen draws it: in an
       // installed app it is the title bar, which otherwise shows the page's
       // ground between the window controls until the app arrives.

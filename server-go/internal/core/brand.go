@@ -257,11 +257,34 @@ func ImageSizes(body []byte, typ string) string {
 var hexColor = regexp.MustCompile(`(?i)^#[0-9a-f]{6}$`)
 var spaces = regexp.MustCompile(`\s+`)
 
-// WebManifest is routes.ts's webManifest, keys in its order.
-func WebManifest(name string, dark bool, brand *jsonobj.Object, banner string) *jsonobj.Object {
+// GroundCookie holds the page ground the person last saw, as six hex
+// digits; the page sets it (web/src/theme.ts) and the manifest reads it.
+const GroundCookie = "ade_ground"
+
+var groundForm = regexp.MustCompile(`^[0-9a-fA-F]{6}$`)
+
+// GroundOf is the request's ground cookie as "#rrggbb", or "" when it has
+// none or one of another form.
+func GroundOf(r *http.Request) string {
+	c, err := r.Cookie(GroundCookie)
+	if err != nil || !groundForm.MatchString(c.Value) {
+		return ""
+	}
+	return "#" + strings.ToLower(c.Value)
+}
+
+// WebManifest is routes.ts's webManifest, keys in its order. ground is the
+// page ground the person last saw ("#rrggbb", or "" for none): the splash an
+// installed app shows before the page paints takes it, so a person on the
+// light theme of a dark deployment does not open on a dark screen. Without
+// it the splash is the deployment's default theme's ground.
+func WebManifest(name string, dark bool, brand *jsonobj.Object, banner, ground string) *jsonobj.Object {
 	bg := "#f3f4f6"
 	if dark {
 		bg = "#0c1320"
+	}
+	if hexColor.MatchString(ground) {
+		bg = strings.ToLower(ground)
 	}
 	bar := bg
 	if banner != "" && hexColor.MatchString(banner) {
@@ -334,7 +357,7 @@ func (c *Core) manifest(w http.ResponseWriter, r *http.Request) error {
 			banner = "#24612e"
 		}
 	}
-	b, err := WebManifest(eff.AppName, eff.Theme == "dark", brand, banner).MarshalJSON()
+	b, err := WebManifest(eff.AppName, eff.Theme == "dark", brand, banner, GroundOf(r)).MarshalJSON()
 	if err != nil {
 		return err
 	}
