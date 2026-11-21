@@ -304,25 +304,56 @@ function SessionDetail({ s, detail, error, can, chat, onContinued }: {
   )
 }
 
-/** The conversation: the user's messages and the agent's replies in full,
- *  each tool call as a line with its result folded under it. */
+/** One tool call with its result folded under it. */
+function ToolCall({ call, result }: { call: Item; result: Item | null }) {
+  return (
+    <details className="code-tool">
+      <summary><span className="code-tool-name">{call.toolName}</span> <span className="code-tool-args">{argSummary(call.toolArgs, call.toolName)}</span></summary>
+      {result?.text && <pre>{result.text}</pre>}
+    </details>
+  )
+}
+
+/** A run of tool calls in one line, "6 tool calls: ReadFile 3, EditFile 2,
+ *  Bash 1", that opens to each call. */
+function ToolRun({ calls }: { calls: { call: Item; result: Item | null }[] }) {
+  const counts = new Map<string, number>()
+  for (const { call } of calls) counts.set(call.toolName ?? 'tool', (counts.get(call.toolName ?? 'tool') ?? 0) + 1)
+  const names = [...counts].sort((a, b) => b[1] - a[1]).map(([n, c]) => (c > 1 ? `${n} ${c}` : n)).join(', ')
+  return (
+    <details className="code-tool code-tool-run">
+      <summary><span className="code-tool-name">{calls.length} tool calls</span> <span className="code-tool-args">{names}</span></summary>
+      <div className="code-tool-run-body">
+        {calls.map((c, j) => <ToolCall key={j} call={c.call} result={c.result} />)}
+      </div>
+    </details>
+  )
+}
+
+/** The conversation: the user's messages and the agent's replies in full;
+ *  a tool call as a line with its result folded under it, and several in a
+ *  row as one line that opens to them. */
 export function Transcript({ items, earlier }: { items: Item[]; earlier: number }) {
   const out: ReactElement[] = []
+  let run: { call: Item; result: Item | null }[] = []
+  let runKey = 0
+  const flush = () => {
+    if (run.length === 1) out.push(<ToolCall key={`t${runKey}`} call={run[0].call} result={run[0].result} />)
+    else if (run.length > 1) out.push(<ToolRun key={`t${runKey}`} calls={run} />)
+    run = []
+  }
   for (let i = 0; i < items.length; i++) {
     const it = items[i]
     if (it.kind === 'tool_call') {
+      if (!run.length) runKey = i
       const next = items[i + 1]
       const result = next?.kind === 'tool_result' ? next : null
       if (result) i++
-      out.push(
-        <details key={i} className="code-tool">
-          <summary><span className="code-tool-name">{it.toolName}</span> <span className="code-tool-args">{argSummary(it.toolArgs)}</span></summary>
-          {result?.text && <pre>{result.text}</pre>}
-        </details>,
-      )
+      run.push({ call: it, result })
       continue
     }
     if (it.kind === 'tool_result') continue
+    flush()
     if (it.kind === 'user') { out.push(<div key={i} className="code-msg user"><div className="code-msg-body">{it.text}</div></div>); continue }
     if (it.kind === 'assistant' || it.kind === 'recap' || it.kind === 'plan_view' || it.kind === 'goal_view') {
       out.push(<div key={i} className="code-msg assistant md-body"><Streamdown>{it.text ?? ''}</Streamdown></div>)
@@ -330,6 +361,7 @@ export function Transcript({ items, earlier }: { items: Item[]; earlier: number 
     }
     if (it.text) out.push(<div key={i} className={`code-note ${it.kind}`}>{it.text}</div>)
   }
+  flush()
   return (
     <div className="code-transcript">
       {earlier > 0 && <p className="muted">{earlier} earlier items are not shown; open the session in ACTIVATE for all of it.</p>}
@@ -338,15 +370,53 @@ export function Transcript({ items, earlier }: { items: Item[]; earlier: number 
   )
 }
 
-/** A tool call's arguments as a short line: its path, pattern or command
- *  when it has one, else the JSON. */
-export function argSummary(args?: string): string {
+const ARG_KEYS = ['path', 'file_path', 'pattern', 'command', 'query', 'url', 'description', 'prompt']
+const LINE = 160
+
+/** A string field's value from arguments that may be cut short (the server
+ *  keeps the first 600 characters, so long ones are no longer JSON). */
+function fieldOf(raw: string, key: string): string | undefined {
+  const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`).exec(raw)
+  if (!m) return undefined
+  try { return JSON.parse(`"${m[1]}"`) as string } catch { return m[1].replace(/\\n/g, '\n').replace(/\\(.)/g, '$1') }
+}
+
+/** The first line of a value, cut to a line's length. */
+function firstLine(v: string): string {
+  const lines = v.split('\n').map(l => l.trim()).filter(Boolean)
+  const head = lines[0] ?? ''
+  const more = lines.length > 1 || head.length > LINE
+  return head.slice(0, LINE) + (more ? ' …' : '')
+}
+
+/** A tool call's arguments as a short line: the to-do item under way for a
+ *  to-do list, the pattern and where for a search, else its path, command
+ *  or query, else its first text value. Never the raw arguments. */
+export function argSummary(args?: string, tool?: string): string {
   if (!args) return ''
-  try {
-    const o = JSON.parse(args) as Record<string, unknown>
-    for (const k of ['path', 'file_path', 'pattern', 'command', 'query', 'url']) {
-      if (typeof o[k] === 'string') return (o[k] as string).slice(0, 160)
-    }
-  } catch { /* not JSON */ }
-  return args.slice(0, 160)
+  let o: Record<string, unknown> | null = null
+  try { const v = JSON.parse(args); if (v && typeof v === 'object' && !Array.isArray(v)) o = v as Record<string, unknown> } catch { /* cut short */ }
+  const get = (k: string) => (o ? (typeof o[k] === 'string' ? o[k] as string : undefined) : fieldOf(args, k))
+  if (/todo/i.test(tool ?? '') || /"todos"\s*:/.test(args)) {
+    const todos = o && Array.isArray(o.todos) ? o.todos as { status?: string; activeForm?: string; content?: string }[] : null
+    const doing = todos?.find(t => t.status === 'in_progress') ?? todos?.[0]
+    // Cut short: each item is a {...} of its own; the one under way first.
+    const parts = todos ? [] : (args.match(/\{[^{}]*/g) ?? []).filter(p => /"(activeForm|content)"/.test(p))
+    const part = parts.find(p => /"status"\s*:\s*"in_progress"/.test(p)) ?? parts[0]
+    const what = doing?.activeForm ?? doing?.content ?? (part ? fieldOf(part, 'activeForm') ?? fieldOf(part, 'content') : undefined)
+    return what ? firstLine(what) : 'the to-do list'
+  }
+  const pattern = get('pattern')
+  if (pattern) {
+    const where = get('path') ?? get('file_path')
+    return firstLine(where ? `${pattern} in ${where}` : pattern)
+  }
+  for (const k of ARG_KEYS) {
+    const v = get(k)
+    if (v) return firstLine(v)
+  }
+  const first = o
+    ? Object.values(o).find(v => typeof v === 'string' && v.trim()) as string | undefined
+    : fieldOf(args, '[A-Za-z_]+')
+  return first ? firstLine(first) : ''
 }

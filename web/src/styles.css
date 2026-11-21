@@ -2865,6 +2865,7 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-tool summary { cursor: pointer; color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-tool-name { font-weight: 600; color: var(--pw-text); }
 .code-tool-args { font-family: ui-monospace, monospace; font-size: 11.5px; }
+.code-tool-run-body { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px; }
 .code-tool pre {
   margin: 6px 0 2px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
   font-size: 11.5px; background: var(--theme-muted-panel-bg); border-radius: 6px; padding: 8px 10px;
