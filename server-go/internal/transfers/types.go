@@ -116,6 +116,10 @@ type Request struct {
 	// into is the destination in place of Destination.Location's: a copy
 	// library's folder, which Pull writes and no request can name.
 	into *loc
+	// confirming: the plan is listed again to start it (confirm), with
+	// the mover already chosen; only that mover is asked, so a start does
+	// not wait on every mover's checks of both ends again.
+	confirming bool
 }
 
 // Options are a request's choices.

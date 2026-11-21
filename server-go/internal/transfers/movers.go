@@ -49,7 +49,15 @@ type MoverStatus struct {
 	Files   int64
 	Bytes   int64
 	Message string
+	// Retry: it failed before any data moved, so another mover that
+	// reaches both ends may carry the transfer instead.
+	Retry bool
 }
+
+// nothingMoved is a mover's failure before any data moved (MoverStatus.Retry).
+type nothingMoved struct{ error }
+
+func (e nothingMoved) Unwrap() error { return e.error }
 
 // Mover moves bytes. The registry asks movers in order (conduit, rsync,
 // rclone, studio-copy) and takes the first that can reach both ends.
@@ -79,6 +87,7 @@ type procJob struct {
 	files, bytes atomic.Int64
 	mu           sync.Mutex
 	state, msg   string
+	retry        bool
 	cancel       context.CancelFunc
 }
 
@@ -100,6 +109,8 @@ func (p *inProcess) start(fn func(ctx context.Context, j *procJob) error) string
 			j.state = "cancelled"
 		case err != nil:
 			j.state, j.msg = "failed", messageOf(err)
+			var nm nothingMoved
+			j.retry = errors.As(err, &nm)
 		default:
 			j.state = "done"
 		}
@@ -119,7 +130,7 @@ func (p *inProcess) status(ref string) MoverStatus {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return MoverStatus{State: j.state, Message: j.msg, Files: j.files.Load(), Bytes: j.bytes.Load()}
+	return MoverStatus{State: j.state, Message: j.msg, Files: j.files.Load(), Bytes: j.bytes.Load(), Retry: j.retry}
 }
 
 func (p *inProcess) cancel(ref string) bool {

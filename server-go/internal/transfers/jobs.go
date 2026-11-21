@@ -377,20 +377,37 @@ func (s *Service) execute(ctx context.Context, r *rec, h *run) {
 	}
 	job := &MoveJob{ID: r.ID, Src: p.src.fs, Dst: dst, SrcLoc: p.src, DstLoc: p.dst, Files: p.files, Items: p.items,
 		Stage: stage, Preserve: p.req.Options.preserve(), Set: p.set, Direct: p.direct, Replace: p.replaceSet}
-	if len(p.files) > 0 || p.bare {
+	tried := map[string]bool{}
+	for len(p.files) > 0 || p.bare {
+		tried[mover.Name()] = true
 		ref, err := mover.Start(ctx, job)
 		if err != nil {
-			fail(p.Mover + " did not start: " + messageOf(err))
+			fail(mover.Name() + " did not start: " + messageOf(err))
 			return
 		}
 		h.mu.Lock()
 		h.mover, h.ref = mover, ref
 		h.mu.Unlock()
-		if state, why := s.follow(ctx, r, mover, ref); state != "" {
-			cleanup()
-			s.finish(r, state, why)
-			return
+		state, why, retry := s.follow(ctx, r, mover, ref)
+		if state == "" {
+			break
 		}
+		// A mover that failed before any data moved hands the transfer to
+		// the next one that reaches both ends, in a clean staging folder.
+		if next := s.nextMover(p, tried); retry && next != nil && ctx.Err() == nil && !p.direct {
+			if err := s.restage(ctx, r, dst); err == nil {
+				failed := mover.Name()
+				s.set(r, func() {
+					r.Mover = next.Name()
+					r.event(s.now(), "%s failed before any data moved (%s); continuing with %s", failed, why, next.Name())
+				})
+				mover = next
+				continue
+			}
+		}
+		cleanup()
+		s.finish(r, state, why)
+		return
 	}
 	s.set(r, func() {
 		r.State = StateVerifying
@@ -410,9 +427,37 @@ func (s *Service) execute(ctx context.Context, r *rec, h *run) {
 	s.finish(r, StateSucceeded, "")
 }
 
+// nextMover is the first mover the plan found able to do the transfer
+// that has not been tried and is not turned off; nil for none. CONDUIT is
+// left out: it is never a stand-in, since its paths are its own.
+func (s *Service) nextMover(p *planRec, tried map[string]bool) Mover {
+	for _, c := range p.Movers {
+		if !c.OK || tried[c.Name] || c.Name == MoverConduit {
+			continue
+		}
+		for _, m := range s.movers {
+			if m.Name() == c.Name {
+				return m
+			}
+		}
+	}
+	return nil
+}
+
+// restage empties the staging folder for another mover.
+func (s *Service) restage(ctx context.Context, r *rec, dst FS) error {
+	c, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := dst.RemoveStaging(c, r.Stage); err != nil {
+		return err
+	}
+	return dst.Mkdir(ctx, r.Stage)
+}
+
 // follow polls the mover until it ends: "" when it reports done, else
-// the state the job ends in and why.
-func (s *Service) follow(ctx context.Context, r *rec, m Mover, ref string) (string, string) {
+// the state the job ends in and why, and whether the mover failed before
+// any data moved (MoverStatus.Retry).
+func (s *Service) follow(ctx context.Context, r *rec, m Mover, ref string) (string, string, bool) {
 	misses := 0
 	tick := time.NewTicker(m.PollEvery())
 	defer tick.Stop()
@@ -427,7 +472,7 @@ func (s *Service) follow(ctx context.Context, r *rec, m Mover, ref string) (stri
 				}
 				time.Sleep(50 * time.Millisecond)
 			}
-			return StateCancelled, ""
+			return StateCancelled, "", false
 		case <-tick.C:
 		}
 		st, err := m.Status(ctx, ref)
@@ -437,7 +482,7 @@ func (s *Service) follow(ctx context.Context, r *rec, m Mover, ref string) (stri
 			}
 			misses++
 			if misses >= 40 {
-				return StateFailed, m.Name() + " stopped answering about the transfer: " + messageOf(err)
+				return StateFailed, m.Name() + " stopped answering about the transfer: " + messageOf(err), false
 			}
 			continue
 		}
@@ -451,17 +496,17 @@ func (s *Service) follow(ctx context.Context, r *rec, m Mover, ref string) (stri
 			continue
 		case "done":
 			s.set(r, func() { r.event(s.now(), "%s reports the transfer done", m.Name()) })
-			return "", ""
+			return "", "", false
 		case "cancelled":
-			return StateCancelled, ""
+			return StateCancelled, "", false
 		case "lost":
-			return StateInterrupted, m.Name() + " no longer knows the transfer"
+			return StateInterrupted, m.Name() + " no longer knows the transfer", false
 		default:
 			msg := st.Message
 			if msg == "" {
 				msg = m.Name() + " reported a failure"
 			}
-			return StateFailed, msg
+			return StateFailed, msg, st.Retry
 		}
 	}
 }

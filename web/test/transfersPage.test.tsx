@@ -314,6 +314,28 @@ describe('the plan dialog', () => {
   })
 })
 
+describe('starting from the plan dialog', () => {
+  it('says it is checking while the start runs, and hands the queued transfer on without waiting for it to end', async () => {
+    let release: (v: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(res => { release = res })))
+    const started = vi.fn()
+    const plan: Plan = {
+      id: 'p', action: 'move', label: '', mover: 'rsync', moverWhy: 'rsync on this computer sends to cluster-a', movers: [{ name: 'rsync', ok: true }],
+      source: { location: 'a', label: 'A', paths: ['x'] }, destination: { location: 'b', label: 'B', path: 'y' },
+      files: 3, dirs: 0, bytes: 10, replaces: [], deletes: [], replacesCount: 0, deletesCount: 0,
+      skipped: { hidden: 0, links: 0 }, freeBytes: null, warnings: [], expiresAt: new Date(Date.now() + 600000).toISOString(),
+    }
+    render(<TransferPlanDialog plan={plan} request={{ action: 'move', source: { location: 'a', paths: ['x'] }, destination: { location: 'b', path: 'y' } }}
+      onClose={() => {}} onStarted={started} onReplanned={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: confirmText(plan) }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Checking both ends again')
+    const queued = { id: 't1', state: 'queued', action: 'move', label: '', mover: 'rsync', source: plan.source, destination: plan.destination }
+    await act(async () => { release(new Response(JSON.stringify({ transfer: queued }), { status: 201, headers: { 'Content-Type': 'application/json' } })) })
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1))
+    expect(started.mock.calls[0][0]).toMatchObject({ id: 't1', state: 'queued' })
+  })
+})
+
 /** The list groups finished transfers by day, and the mock dates them
  *  hours before now: near midnight, "2 hours ago" is yesterday. Tests that
  *  name the day run at a fixed afternoon, with only the date faked. */

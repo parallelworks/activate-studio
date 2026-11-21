@@ -680,6 +680,7 @@ func (m *rsyncMover) runGroup(ctx context.Context, j *MoveJob, r rsyncRoute, g r
 		return err
 	}
 	env := os.Environ()
+	rshErr := ""
 	switch r.kind {
 	case "pull", "push":
 		site := r.srcSite
@@ -691,14 +692,20 @@ func (m *rsyncMover) runGroup(ctx context.Context, j *MoveJob, r rsyncRoute, g r
 		if err != nil {
 			return err
 		}
-		c.rsh = filepath.Join(dir, "rsh")
+		rsh := filepath.Join(dir, "rsh")
+		rshErr = filepath.Join(dir, "rsh.err")
 		// rsync runs the remote shell as `rsh <host> <command words>`; the
 		// script drops the host and hands the words to ssh or pw ssh as one
-		// command, as each takes it.
-		script := "#!/bin/sh\nshift\nexec " + remote.DirectCommand(argv) + " \"$*\"\n"
-		if err := os.WriteFile(c.rsh, []byte(script), 0o700); err != nil {
+		// command, as each takes it. What the remote shell says goes to a
+		// file of its own, so a failure says what ssh or pw ssh said, not
+		// only rsync's "connection unexpectedly closed".
+		script := "#!/bin/sh\nshift\nexec 2>>" + remote.DirectCommand([]string{rshErr}) + "\nexec " + remote.DirectCommand(argv) + " \"$*\"\n"
+		if err := os.WriteFile(rsh, []byte(script), 0o700); err != nil {
 			return err
 		}
+		// Run by sh, so a temporary folder on a noexec mount still works;
+		// rsync splits the command on spaces and keeps quoted words whole.
+		c.rsh = "sh " + rshQuote(rsh)
 		env = append(env, extra...)
 		c.farRsync = remoteRsync(far.(Remote))
 	}
@@ -730,11 +737,54 @@ func (m *rsyncMover) runGroup(ctx context.Context, j *MoveJob, r rsyncRoute, g r
 		if ee, ok := err.(*exec.ExitError); ok {
 			code = ee.ExitCode()
 		}
-		return rsyncFailed(stderr.String(), code)
+		var said []byte
+		if rshErr != "" {
+			said, _ = os.ReadFile(rshErr)
+		}
+		err := rsyncFailedWith(stderr.String(), string(said), code)
+		// Nothing moved yet, in this group or before it: another mover
+		// may still carry the transfer (execute tries the next one).
+		if base.files == 0 && base.bytes == 0 && pj.files.Load() == 0 && pj.bytes.Load() == 0 {
+			return nothingMoved{err}
+		}
+		return err
 	}
 	pj.files.Store(base.files + int64(len(g.files)))
 	pj.bytes.Store(base.bytes + total)
 	return nil
+}
+
+// rshQuote is a path as one word of rsync's --rsh: bare when it has no
+// space (every rsync splits only on spaces), else in single quotes, which
+// rsync 3 keeps whole; a path holding a single quote is left bare, since
+// that parser has no escape for one.
+func rshQuote(p string) string {
+	if !strings.ContainsRune(p, ' ') || strings.ContainsRune(p, '\'') {
+		return p
+	}
+	return "'" + p + "'"
+}
+
+// rsyncFailedWith is rsyncFailed, with what the remote shell said (ssh
+// or pw ssh) when rsync lost the connection: its last lines, without the
+// CLI's update notice.
+func rsyncFailedWith(stderr, rsh string, code int) error {
+	err := rsyncFailed(stderr, code)
+	var keep []string
+	for _, l := range strings.Split(remote.QuietStderr(rsh), "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.Contains(l, "new version of the PW CLI") || strings.HasPrefix(l, "Run 'pw upgrade'") {
+			continue
+		}
+		keep = append(keep, l)
+	}
+	if len(keep) == 0 {
+		return err
+	}
+	if len(keep) > 3 {
+		keep = keep[len(keep)-3:]
+	}
+	return errors.New(err.Error() + "; the remote shell said: " + short(strings.Join(keep, " ")))
 }
 
 func rsyncFailed(stderr string, code int) error {
@@ -745,7 +795,12 @@ func rsyncFailed(stderr string, code int) error {
 		}
 	}
 	if len(keep) > 0 {
-		return errors.New("rsync: " + short(keep[len(keep)-1]))
+		// rsync's own lines start with its name already.
+		l := keep[len(keep)-1]
+		if !strings.HasPrefix(l, "rsync:") {
+			l = "rsync: " + l
+		}
+		return errors.New(short(l))
 	}
 	return fmt.Errorf("rsync ended with status %d", code)
 }
