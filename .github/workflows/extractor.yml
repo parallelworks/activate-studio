@@ -1,0 +1,122 @@
+# Attach index-extract (server-go/cmd/index-extract), the extractor that
+# reads a list of files and writes their text in GUFI's common external
+# database schema, to each published release as static Linux programs for
+# x86_64 and aarch64, so a job on a cluster node can fetch the one for its
+# machine:
+#
+#   index-extract-linux-x86_64.tar.gz   and .sha256
+#   index-extract-linux-aarch64.tar.gz  and .sha256
+#
+# Each archive holds index-extract, LICENSE and NOTICE. The apps carry
+# their own copy beside studio-server. Started by a release being
+# published (a v* tag; gufi-* releases are passed by), or by hand for a
+# release that has none yet.
+name: extractor
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: A published release (such as v1.204) to build index-extract for and attach it to
+        required: true
+
+permissions: {}
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            go.dev:443
+            dl.google.com:443
+            storage.googleapis.com:443
+            proxy.golang.org:443
+            sum.golang.org:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name || inputs.release }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server-go/go.mod
+          # A release's programs are built without a cache another run wrote.
+          cache: false
+      - name: build and check
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.release }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "release must look like v1.204, not '$TAG'"; exit 1; }
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          for p in x86_64:amd64 aarch64:arm64; do
+            name="index-extract-linux-${p%%:*}"
+            mkdir -p "$RUNNER_TEMP/$name"
+            (cd server-go && CGO_ENABLED=0 GOOS=linux GOARCH="${p##*:}" go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/$name/index-extract" ./cmd/index-extract)
+            cp LICENSE NOTICE "$RUNNER_TEMP/$name/"
+            tar -C "$RUNNER_TEMP" -czf "$out/$name.tar.gz" "$name"
+            (cd "$out" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
+          done
+          # The x86_64 one runs here: it reads a file listed and writes its text.
+          d="$RUNNER_TEMP/check"
+          mkdir -p "$d/files"
+          printf 'quartzite deposits near zanzibar\n' >"$d/files/a.txt"
+          ino=$(stat -c %i "$d/files/a.txt"); mt=$(stat -c %Y "$d/files/a.txt"); sz=$(stat -c %s "$d/files/a.txt")
+          printf '%s\t%s\t%s\ta.txt\n' "$ino" "$mt" "$sz" >"$d/list"
+          "$RUNNER_TEMP/index-extract-linux-x86_64/index-extract" files --list "$d/list" --delim '\t' --root "$d/files" --out "$d/a.db" --no-ocr | tee "$d/summary"
+          grep -q '"text":1' "$d/summary"
+          ls -l "$out"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: index-extract-linux
+          path: ${{ runner.temp }}/out
+          retention-days: 7
+
+  # The only job that can write; it runs no build code.
+  release:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            uploads.github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: index-extract-linux
+          path: ${{ runner.temp }}/out
+      - name: attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.release }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/out"
+          sha256sum -c ./*.sha256
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber ./index-extract-linux-*

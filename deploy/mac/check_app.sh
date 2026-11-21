@@ -88,7 +88,7 @@ if [ "$SERVER" != go-only ]; then
 fi
 [ "$LEMBED" = 1 ] && LAYOUT+=(Resources/gufi/lib/lembed0.dylib)
 if [ "$SERVER" != node ]; then
-  LAYOUT+=(Resources/manifest.json Resources/app/bin/studio-server Resources/app/bin/semantic-map
+  LAYOUT+=(Resources/manifest.json Resources/app/bin/studio-server Resources/app/bin/semantic-map Resources/app/bin/index-extract
     Resources/app/lib/libonnxruntime.dylib Resources/licenses/onnxruntime-LICENSE.txt
     Resources/app/occt/occt-import-js.wasm Resources/app/occt/occt-import-js.noeh.wasm
     Resources/licenses/occt-import-js-LICENSE.txt Resources/licenses/occt-LICENSE.txt)
@@ -287,6 +287,11 @@ if [ "$RUN" = 1 ]; then
     # Through /bin/sh, which drops DYLD_* variables, as gufi_vt and scripts start the tools.
     check "gufi_dir2index indexes a folder" clean /bin/sh -c "'$G/bin/gufi_dir2index' -x '$T/corpus' '$T/idx'"
     check "gufi_query reads the index" clean /bin/sh -c "'$G/bin/gufi_query' -d ' ' -E 'SELECT name FROM vrpentries;' '$T/idx/corpus' | grep -q cake.txt"
+    if [ "$SERVER" != node ]; then
+      # The list gufi_query prints, piped to the extractor as a cluster job would.
+      LIST_SQL="SELECT inode, mtime, size, rpath(sname, sroll)||'/'||name FROM vrpentries WHERE type = 'f';"
+      check "index-extract reads the files gufi_query lists" clean /bin/sh -c '"$1/bin/gufi_query" -E "$4" "$2/idx/corpus" | "$3" files --out "$2/extract.db" --root "$2/corpus" --strip "$2/idx/corpus" --no-ocr | grep -q "\"text\":[1-9]"' sh "$G" "$T" "$R/app/bin/index-extract" "$LIST_SQL"
+    fi
     [ "$LEMBED" = 0 ] || [ "$SERVER" = go-only ] || check "gufi_sqlite3 embeds with the bundled model" clean /bin/sh -c "printf '%s\n' \"INSERT INTO temp.lembed_models(name, model) SELECT 'm', lembed_model_from_file('$R/models/minilm384.gguf');\" \"SELECT length(lembed('m', 'hello'));\" | '$G/bin/gufi_sqlite3' | grep -q 1536"
     # dyld's lines are "dyld[pid]: /path", or on macOS 15 "dyld[pid]: <uuid>
     # /path" with "delayed: <name>" lines for libraries it defers.

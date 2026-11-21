@@ -206,6 +206,12 @@ func New(opt Options) (*Extractor, error) {
 // OCR reports whether this extractor reads scanned pages and images.
 func (x *Extractor) OCR() bool { return x.ocr }
 
+// Tools are the helper programs this extractor found.
+func (x *Extractor) Tools() Tools { return x.tools }
+
+// Soffice is the LibreOffice this extractor uses, or "" for none.
+func (x *Extractor) Soffice() string { return x.opt.Soffice }
+
 // Version is the downmark version this extractor names in its entries.
 func (x *Extractor) Version() string { return x.version }
 
@@ -313,6 +319,10 @@ func (x *Extractor) imagesUseful() bool {
 
 // errNoText is a document a reader read and found no text in.
 var errNoText = errors.New("no text")
+
+// IsNoText reports whether err says a reader read a file and found no
+// text in it, as against failing to read it.
+func IsNoText(err error) bool { return errors.Is(err, errNoText) }
 
 // guard runs f, turning a panic into an error: a converter that panics
 // on a hostile document must not take the pass down.

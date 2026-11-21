@@ -83,6 +83,7 @@ The same documents, grouped by what you want to do, are listed in [`docs/README.
 | [`docs/GUFI-MACOS.md`](docs/GUFI-MACOS.md) | GUFI built for macOS 14 and later: the published archive, building and checking it |
 | [`docs/WINDOWS.md`](docs/WINDOWS.md) | the Linux app on Windows through WSL2: install, window or browser, Windows folders under `/mnt/c`, labels and sync there |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the index, retrieval, and server work |
+| [`docs/EXTRACTION.md`](docs/EXTRACTION.md) | `index-extract`: reading the text of a list of files for an index, on this computer, next to the storage, or as a scheduler job array |
 
 ## Built on
 
