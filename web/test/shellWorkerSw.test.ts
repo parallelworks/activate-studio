@@ -42,7 +42,7 @@ function worker(net: (url: string) => Promise<Res>) {
   const navigated: string[] = []
   const client = { id: 'c1', url: ORIGIN + '/#/chat', navigate: vi.fn(async (u: string) => { navigated.push(u); return client }) }
   const self = {
-    registration: { scope: ORIGIN + '/', navigationPreload: { disable: vi.fn(async () => {}) } },
+    registration: { scope: ORIGIN + '/', navigationPreload: { disable: vi.fn(async () => {}) }, update: vi.fn(async () => {}), unregister: vi.fn(async () => true) },
     clients: { get: async (id: string) => (id === 'c1' ? client : undefined), claim: vi.fn(async () => {}) },
     skipWaiting: vi.fn(),
     addEventListener: (t: string, fn: (e: unknown) => void) => { (handlers[t] ??= []).push(fn) },
@@ -181,6 +181,25 @@ describe('the app shell worker', () => {
     await w.install()
     for (const p of ['/?sessionToken=x', '/?theme=dark', '/api/auth/login?returnTo=%2F', '/other']) expect(w.navigate(p).responded(), p).toBeUndefined()
     expect(w.navigate('/index.html').responded()).toBeDefined()
+  })
+
+  it('removes itself when the server runs another build and has no worker for it (a roll back)', async () => {
+    const w = worker(server())
+    await w.install()
+    const same = w.navigate('/', later(10, res(HTML)))
+    await same.responded(); await same.settled()
+    expect(w.self.registration.update).not.toHaveBeenCalled()
+
+    const newer = w.navigate('/', later(10, res('<html>another build</html>')))
+    await newer.responded(); await newer.settled()
+    expect(w.self.registration.update).toHaveBeenCalledTimes(1)
+    expect(w.self.registration.unregister).not.toHaveBeenCalled()
+
+    w.self.registration.update.mockRejectedValueOnce(new TypeError('404'))
+    const older = w.navigate('/', later(900, res('<html>an older build</html>')))
+    await older.responded(); await older.settled()
+    expect(w.self.registration.unregister).toHaveBeenCalled()
+    expect([...w.stores.keys()].filter(k => k.startsWith('studio-shell-'))).toEqual([])
   })
 
   it('answers the page with the build it carries, and takes over when asked', async () => {

@@ -138,9 +138,28 @@ async function openShell(event) {
   const cached = await caches.open(CACHE).then(c => c.match(shellKey(), { ignoreVary: true })).catch(() => undefined)
   if (!cached) return network.catch(() => Response.error())
   const first = await Promise.race([network.then(r => ({ r }), () => ({ offline: true })), wait(NETWORK_WAIT_MS).then(() => null)])
-  if (first && first.r) return first.r
+  if (first && first.r) {
+    event.waitUntil(checkBuild(first.r))
+    return first.r
+  }
   if (!first) event.waitUntil(followUp(event, network))
   return cached
+}
+
+const isPage = res => res.status === 200 && (res.headers.get('Content-Type') || '').startsWith('text/html')
+
+/** The server's page is another build's. Its worker replaces this one when
+ *  the browser looks for it; a server with none (a roll back to a release
+ *  from before the worker) gets this one removed, so it does not show a
+ *  newer page against an older server. */
+async function checkBuild(res) {
+  if (!isPage(res) || await isThisBuild(res).catch(() => true)) return
+  try {
+    await self.registration.update()
+  } catch {
+    await self.registration.unregister()
+    for (const k of await caches.keys()) if (k.startsWith(PREFIX)) await caches.delete(k)
+  }
 }
 
 /** The cached shell is up; the network answered later. Anything but the
@@ -149,7 +168,7 @@ async function openShell(event) {
 async function followUp(event, network) {
   let res
   try { res = await network } catch { return }
-  if (res.status === 200 && (res.headers.get('Content-Type') || '').startsWith('text/html')) return
+  if (isPage(res)) return checkBuild(res)
   const id = event.resultingClientId || event.clientId
   for (let i = 0; i < 50; i++) {
     const client = id ? await self.clients.get(id) : null
