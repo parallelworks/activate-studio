@@ -14,9 +14,9 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/delegation"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
+	"github.com/parallelworks/activate-studio/server-go/internal/pasttasks"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
-	"github.com/parallelworks/activate-studio/server-go/internal/tasks"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows/runs"
 	"github.com/parallelworks/activate-studio/server-go/internal/workspace"
@@ -715,7 +715,7 @@ func plural(n int) string {
 /* ---- agent sites ---- */
 
 func (m *Module) sites() (*agentsites.Sites, error) {
-	s := tasks.CurrentSites()
+	s := agentsites.Current()
 	if s == nil {
 		return nil, errNotHere
 	}
@@ -1062,7 +1062,7 @@ func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx)
 }
 
 func (m *Module) toolTaskStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
-	e := tasks.CurrentEngine()
+	e := pasttasks.Default
 	if e == nil {
 		return nil, errNotHere
 	}
@@ -1075,9 +1075,8 @@ func (m *Module) toolTaskStatus(r *http.Request, args map[string]any, ctx ToolCt
 		}
 		return &Outcome{Result: res, Summary: strconv.Itoa(len(all)) + " tasks"}, nil
 	}
-	sum := e.Summary(mid)
-	snap := e.Get(mid)
-	if sum == nil || snap == nil {
+	sum := e.Task(mid)
+	if sum == nil {
 		return &Outcome{Result: "No such task: " + mid, Summary: "error"}, nil
 	}
 	out := sum.Clone()
@@ -1089,13 +1088,13 @@ func (m *Module) toolTaskStatus(r *http.Request, args map[string]any, ctx ToolCt
 		agents = []any{}
 	}
 	out.Set("agents", agents)
-	board := snap.Board
+	board := e.Board(mid, 0)
 	if len(board) > 15 {
 		board = board[len(board)-15:]
 	}
 	tail := make([]string, len(board))
 	for i, b := range board {
-		tail[i] = "[" + b.Topic + "] " + b.From + ": " + jsval.Slice(b.Body, 200)
+		tail[i] = "[" + tmpl(prop(b, "topic")) + "] " + tmpl(prop(b, "from")) + ": " + jsval.Slice(tmpl(prop(b, "body")), 200)
 	}
 	return &Outcome{Result: stringify1(out) + "\n\nRecent board:\n" + strings.Join(tail, "\n"), Summary: "task " + mid + ": " + tmpl(prop(sum, "state"))}, nil
 }

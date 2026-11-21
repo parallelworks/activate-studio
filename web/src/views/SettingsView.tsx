@@ -134,12 +134,6 @@ export function searchTimeLimits(current: number | undefined): SelectItem<number
   return [{ value: current, label: `${current} seconds` }, ...SEARCH_TIME_LIMITS]
 }
 
-const AGENT_EXECUTION: SelectItem<Effective['agentExecution']>[] = [
-  { value: 'runner', label: 'Studio runner: one-shot pw code runs' },
-  { value: 'sessions', label: 'pw code sessions' },
-  { value: 'both', label: 'Both, chosen per task' },
-]
-
 const CHAT_ENGINES: SelectItem<Effective['chatEngine']>[] = [
   { value: 'auto', label: 'Automatic: pw code under ACTIVATE, else the Studio assistant' },
   { value: 'pwcode', label: 'pw code' },
@@ -292,9 +286,6 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const [ext, setExt] = useState<Extensions | null>(null)
   // Settings rail groups the visitor opened or closed this visit.
   const [railOpen, setRailOpen] = useState<Record<string, boolean>>({})
-  type Runtime = { local: { available: boolean; reason: string | null; version: string | null; remoteStart: boolean | null; remoteMaxPermissionMode: string | null } }
-  const [runtime, setRuntime] = useState<Runtime | null>(null)
-  const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [specOpen, setSpecOpen] = useState<string | null>(null)
   const [me, setMe] = useState<{ authEnabled?: boolean; single?: boolean; verified: boolean; mode: 'stored' | 'session' | 'none'; last4?: string; addedAt?: string; sessionExpiresAt?: string; kind?: string; credExpiresAt?: string | null; credExpired?: boolean; baseUrl?: string | null; gatewayHost?: string
     shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
@@ -439,9 +430,6 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
       .then(d => setCatalog(d.tools ?? []))
       .catch(() => {})
     fetch('/api/extensions').then(r => r.json()).then(setExt).catch(() => {})
-    fetch('/api/tasks/runtime').then(r => okJSON<Runtime>(r))
-      .then(d => { setRuntime(d?.local ? d : null); setRuntimeError(d?.local ? null : 'The server did not describe the agent runtime.') })
-      .catch((e: Error) => { setRuntime(null); setRuntimeError(e.message) })
     refreshRagEp()
     refreshRagCalls()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -976,50 +964,21 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               {saveRow(false)}
               </>}
 
-              <div className="tool-group">Delegation (the assistant working in parallel)</div>
+              <div className="tool-group">Delegation (agents working for the assistant)</div>
               <p className="muted view-sub">
-                With this on, the assistant may split a request into subtasks and run them concurrently as headless
-                agents, rather than doing everything in one conversation. It decides when, which is how these systems
-                are built; you decide whether, and how far it may go. Progress appears on the Agents tab and results
-                land in the knowledge base under <code>tasks/</code>.
+                With this on, the assistant may hand a piece of work to pw code: a session in a library folder with the
+                agent instructions it chooses written into that folder's <code>AGENTS.md</code>, and a goal it works
+                toward. It shows on the Code page, and what it writes is indexed when it finishes. Standing agents on
+                the Agents tab's Fleet page need it on too.
               </p>
               <p className="muted view-sub">
-                Worth knowing before enabling: parallel agents are the right tool for work that splits into
-                independent strands, and the wrong one for tightly interdependent work. Published systems of this
-                kind use roughly fifteen times the tokens of a single conversation, so the ceilings below are a cost
-                control as much as a safety one.
+                Worth knowing before enabling: an agent's session runs until its goal is met or its turn limit is
+                reached, and uses tokens the whole time, so delegation suits work that stands on its own rather than
+                work you would steer at every step.
               </p>
               <div className="access-switch">
-                <Switch checked={form.delegationEnabled} onCheckedChange={v => setForm({ ...form, delegationEnabled: v })} onLabel="On" offLabel="Off" aria-label="Delegate to concurrent agents" />
-                <span>Let the assistant delegate subtasks to concurrent agents</span>
-              </div>
-              <div className="settings-grid">
-                <Field label="Most agents per task" description="Counting subtasks the agents themselves start.">
-                  <NumberInput min={1} max={24} value={form.delegationMaxAgents}
-                    onValueChange={v => setForm({ ...form, delegationMaxAgents: v ?? 0 })} />
-                </Field>
-                <Field label="How deep agents may delegate" description="0 stops agents starting their own subtasks; 1 lets them go one level.">
-                  <NumberInput min={0} max={3} value={form.delegationMaxDepth}
-                    onValueChange={v => setForm({ ...form, delegationMaxDepth: v ?? 0 })} />
-                </Field>
-                <div>
-                  <Field label="Agent execution"
-                    description={<>
-                      Sessions run in this host's pw code daemon: their progress is live on the Agents tab, a person
-                      approves what an agent asks to do, and a working agent can be steered. With remote control on,
-                      they can also be watched from ACTIVATE's agents page. Campaigns on other systems use the runner.
-                    </>}>
-                    <Select items={AGENT_EXECUTION} value={form.agentExecution} onValueChange={v => v && setForm({ ...form, agentExecution: v })} />
-                  </Field>
-                  {runtimeError && <p className="muted key-note" role="alert">{runtimeError}</p>}
-                  {runtime && (
-                    <p className="muted key-note">
-                      {runtime.local.version
-                        ? `pw code daemon ${runtime.local.version}${runtime.local.available ? '' : `: ${runtime.local.reason}`}; remote session start ${runtime.local.remoteStart ? `on, at most ${runtime.local.remoteMaxPermissionMode}` : 'off'}.`
-                        : runtime.local.reason}
-                    </p>
-                  )}
-                </div>
+                <Switch checked={form.delegationEnabled} onCheckedChange={v => setForm({ ...form, delegationEnabled: v })} onLabel="On" offLabel="Off" aria-label="Delegate to pw code agents" />
+                <span>Let the assistant delegate work to pw code agents</span>
               </div>
               {saveRow(false)}
 

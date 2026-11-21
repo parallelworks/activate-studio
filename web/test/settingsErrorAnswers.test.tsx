@@ -16,9 +16,8 @@ const EFFECTIVE = {
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
-// A server whose platform routes fail: /api/rag/endpoint and
-// /api/tasks/runtime answer with an error body, as an unported route or a
-// failing platform would.
+// A server whose platform routes fail: /api/rag/endpoint answers with an
+// error body, as an unported route or a failing platform would.
 function stub(failing: Record<string, Response | (() => Response)>) {
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
     const url = String(input)
@@ -46,29 +45,14 @@ describe('Settings pages with error answers', () => {
   it('the RAG page shows a failed registration status and keeps working', async () => {
     stub({
       '/api/rag/endpoint': () => reply({ error: 'not implemented' }, 501),
-      '/api/tasks/runtime': () => reply({ error: 'not implemented' }, 501),
     })
     at('#view=settings:rag')
     render(<SettingsView />)
     expect(await screen.findByText('Registration status unavailable')).toBeInTheDocument()
-    // Both the registration and the agent runtime (also on this page) say why.
+    // The registration says why.
     const alerts = screen.getAllByRole('alert').map(a => a.textContent)
-    expect(alerts).toEqual(['not implemented', 'not implemented'])
+    expect(alerts).toEqual(['not implemented'])
     // The page still offers its actions.
     expect(screen.getByRole('button', { name: 'Register now' })).toBeInTheDocument()
-  })
-
-  it('the page says when the agent runtime cannot be read, in place of crashing', async () => {
-    stub({ '/api/tasks/runtime': () => reply({ error: 'runtime unavailable' }, 500) })
-    at('#view=settings:rag')
-    render(<SettingsView />)
-    expect(await screen.findByText('runtime unavailable')).toBeInTheDocument()
-  })
-
-  it('an OK runtime answer without its fields is not read as one', async () => {
-    stub({})
-    at('#view=settings:rag')
-    render(<SettingsView />)
-    expect(await screen.findByText('The server did not describe the agent runtime.')).toBeInTheDocument()
   })
 })

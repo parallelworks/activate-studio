@@ -10,10 +10,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/pasttasks"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
-	"github.com/parallelworks/activate-studio/server-go/internal/tasks"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows"
 )
 
@@ -126,7 +128,9 @@ func startPlatformGolden(t *testing.T) (*goldenEnv, string) {
 				return err == nil && p.PlatformAvailable(v)
 			}
 			workflows.Register(mux, a, p)
-			tasks.Register(mux, a, p)
+			d := pwcode.New(p)
+			agentsites.Register(mux, a, p, d)
+			pasttasks.Register(mux, a)
 		})
 	g.gw.mu.Lock()
 	g.gw.api = platformAPI()

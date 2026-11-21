@@ -108,8 +108,6 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
         const d = await fetch(`/api/tasks/${encodeURIComponent(openTask)}/agents/${encodeURIComponent(openAgent)}/output`).then(r => r.json())
         if (!stop) setAgentTail(String(d.tail ?? ''))
       } catch { /* next tick */ }
-      const working = detail?.agents.find(a => a.name === openAgent)?.state === 'working'
-      if (!stop && working) t = window.setTimeout(tick, 3000)
     }
     t = window.setTimeout(tick, 0)
     return () => { stop = true; clearTimeout(t) }
@@ -117,37 +115,17 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   }, [openTask, openAgent])
   useEffect(() => { setOpenAgent(null); setAgentTail('') }, [openTask])
 
-  // Answers to an agent's approval request and direction to a working
-  // session go straight to its pw code session; the next poll shows the
-  // result, so nothing here keeps its own copy of the agent's state.
-  const [steer, setSteer] = useState('')
-  const [actNote, setActNote] = useState('')
-  const act = async (url: string, body: unknown, done: string) => {
-    setActNote('')
-    try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(d.error ?? `${res.status}`)
-      setActNote(done)
-    } catch (e) { setActNote(String((e as Error).message)) }
-  }
-  const answer = (agent: string, approvalId: string, allowed: boolean) => detail &&
-    act(`/api/tasks/${encodeURIComponent(detail.id)}/agents/${encodeURIComponent(agent)}/approvals/${encodeURIComponent(approvalId)}`, { allowed }, allowed ? 'Approved.' : 'Denied.')
-  const sendSteer = async (agent: string) => {
-    if (!detail || !steer.trim()) return
-    await act(`/api/tasks/${encodeURIComponent(detail.id)}/agents/${encodeURIComponent(agent)}/direction`, { text: steer }, 'Sent to the agent.')
-    setSteer('')
-  }
-  useEffect(() => { setSteer(''); setActNote('') }, [openAgent])
 
   const [pPage, setPPage] = useState(0)
   const [sPage, setSPage] = useState(0)
   useEffect(() => { setPPage(0); setSPage(0) }, [filter])
   const [busy, setBusy] = useState(false)
 
+  // The earlier tasks are history: read when the page or a task opens.
   useEffect(() => {
+    if (page !== 'tasks') return
     let stop = false
-    const tick = async () => {
+    void (async () => {
       try {
         const d = await fetch('/api/tasks').then(r => r.json())
         if (!stop) setTaskRuns(d.tasks ?? [])
@@ -155,14 +133,10 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           const md = await fetch(`/api/tasks/${encodeURIComponent(openTask)}`).then(r => r.json())
           if (!stop && !md.error) setDetail(md)
         }
-      } catch { /* next tick */ }
-      const anyRunning = taskRuns.some(x => x.state === 'working') || detail?.state === 'working'
-      if (!stop) t = window.setTimeout(tick, anyRunning ? 3000 : 15000)
-    }
-    let t = window.setTimeout(tick, 0)
-    return () => { stop = true; clearTimeout(t) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openTask])
+      } catch { /* nothing to show */ }
+    })()
+    return () => { stop = true }
+  }, [openTask, page])
 
   const load = useCallback(() => fetch('/api/extensions').then(r => r.json())
     .then(d => { setPersonas(d.personas ?? []); setSkills(d.skills ?? []); setDir(d.corpusAgentDir ?? '') })
@@ -272,19 +246,20 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       <div className="card ov-head">
         <Tabs label="Agents" className="agents-tabs" value={page} onValueChange={setPage} items={[
           { value: 'fleet', label: 'Fleet' },
-          { value: 'tasks', label: 'Tasks', badge: taskRuns.some(t => t.state === 'working') ? <StatusDot variant="info" pulse /> : null },
+          { value: 'tasks', label: 'Earlier tasks' },
           { value: 'library', label: 'Instructions and skills' },
         ]} />
       </div>
 
-      {page === 'fleet' && <FleetPage personas={personas} onOpenTask={id => { setOpenTask(id); setPageState('tasks') }} />}
+      {page === 'fleet' && <FleetPage personas={personas} onOpenTask={id => { setOpenTask(id); setPage('tasks') }} />}
 
       {page === 'tasks' && (
         <section className="card task-board-card">
           <Callout tone="info" size="sm" className="task-moved">
             Work you delegate now goes to pw code: one session in a library folder, with the agent instructions you choose
-            in its <code>AGENTS.md</code>. Find it on the <a href="#view=code">Code page</a> under <b>Delegated</b>. This page keeps
-            the tasks delegated before, with their results under <code>tasks/</code>.
+            in its <code>AGENTS.md</code>. Find it on the <a href="#view=code">Code page</a> under <b>Delegated</b>. This page
+            keeps the tasks of the earlier task engine to read: their agents, board and output, with their results in the
+            library under <code>tasks/</code>.
           </Callout>
           {taskRuns.length === 0 && (
             <EmptyState variant="bare" className="task-empty" title="No earlier tasks" description="Tasks delegated before delegation moved to pw code sessions are listed here." />
@@ -292,16 +267,15 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           {taskRuns.length > 0 && (
             <div className="task-cards">
               {taskRuns.map(mi => (
-                <div key={mi.id} className={`task-card${openTask === mi.id ? ' selected' : ''}${mi.state === 'working' ? ' live' : ''}`}
+                <div key={mi.id} className={`task-card${openTask === mi.id ? ' selected' : ''}`}
                   onClick={() => setOpenTask(openTask === mi.id ? null : mi.id)}>
                   <div className="task-card-top">
                     <StatusDot {...statusLook(mi.state)} />
-                    <span className="task-card-state">{mi.state === 'working' ? `${mi.running} agent${mi.running === 1 ? '' : 's'} working` : mi.state}</span>
+                    <span className="task-card-state">{mi.state}</span>
                     {(mi as { execution?: string }).execution === 'campaign' && (
                       <StatusBadge>campaign · {((mi as { resource?: string }).resource ?? '').split('/').pop() || '?'}</StatusBadge>
                     )}
                     {mi.runtime === 'session' && <StatusBadge>pw code sessions</StatusBadge>}
-                    {!!mi.waiting && <StatusLabel variant="warning">{mi.waiting} waiting for approval</StatusLabel>}
                   </div>
                   <div className="task-card-objective">{mi.objective}</div>
                   <ProgressBar value={doneCount(mi)} max={Math.max(1, mi.agents)} tone="success" size="sm" aria-label="Agents done" />
@@ -334,25 +308,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                   <span className="task-detail-objective">{detail.objective}</span>
                   {sharedHost && <span className="tree-host" title={`Every agent in this task runs on ${sharedHost}`}>on {hostLabel(sharedHost)}</span>}
                 </span>
-                {detail.state === 'working' && (
-                  <Button variant="secondary" onClick={async () => { await fetch(`/api/tasks/${encodeURIComponent(detail.id)}/stop`, { method: 'POST' }) }}>Cancel</Button>
-                )}
+                <a className="task-results-link" href={`#open=file:tasks/${detail.id}`} onClick={e => { e.preventDefault(); onOpen(`tasks/${detail.id}`) }}>results in the library</a>
               </div>
-              {detail.agents.some(a => a.approvals?.length) && (
-                <div className="task-approvals">
-                  <div className="task-feed-title">Waiting for your approval</div>
-                  {detail.agents.flatMap(a => (a.approvals ?? []).map(ap => (
-                    <div key={`${a.name}:${ap.id}`} className="task-approval">
-                      <span><b>{a.name}</b> asks: {ap.text}</span>
-                      <span className="task-approval-actions">
-                        <Button variant="primary" onClick={() => void answer(a.name, ap.id, true)}>Approve</Button>
-                        <Button variant="secondary" onClick={() => void answer(a.name, ap.id, false)}>Deny</Button>
-                      </span>
-                    </div>
-                  )))}
-                  {actNote && <p className="muted">{actNote}</p>}
-                </div>
-              )}
               <div className="task-columns">
                 <div className="task-tree">
                   {detail.agents.map(a => (
@@ -360,12 +317,12 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                       <div className={`tree-row${openAgent === a.name ? ' open' : ''}`}
                         style={{ paddingLeft: `${10 + a.depth * 20}px` }}
                         onClick={() => setOpenAgent(openAgent === a.name ? null : a.name)}
-                        title="Show this agent's live output">
+                        title="Show this agent's output">
                         {a.depth > 0 && <span className="tree-elbow" style={{ left: `${a.depth * 20 - 8}px` }} />}
                         <StatusDot {...statusLook(a.state)} />
                         <span className="tree-name">{a.name}</span>
                         {a.host && !sharedHost && <span className="tree-host" title={`Runs on ${a.host}`}>{hostLabel(a.host)}</span>}
-                        <span className="tree-note muted">{a.state === 'working' ? a.note : a.state}{a.usage?.total ? ` · ${fmtTokens(a.usage.total)} tok${a.usage.cost != null ? ` · $${a.usage.cost.toFixed(2)}` : ''}` : ''}</span>
+                        <span className="tree-note muted">{a.note && a.state === 'canceled' ? a.note : a.state}{a.usage?.total ? ` · ${fmtTokens(a.usage.total)} tok${a.usage.cost != null ? ` · $${a.usage.cost.toFixed(2)}` : ''}` : ''}</span>
                         {a.resultPath && (
                           <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); onOpen(a.resultPath!) }}>result</Button>
                         )}
@@ -378,24 +335,16 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                           )}
                           {a.sessionId && (
                             <p className="muted">
-                              pw code session <code>{a.sessionId}</code>; open it in a terminal on {a.host ? <code>{hostLabel(a.host)}</code> : 'that host'}
-                              with <code>pw code -r {a.sessionId}</code>, or from ACTIVATE's agents page.
+                              pw code session <code>{a.sessionId}</code>{a.host ? <> on <code>{hostLabel(a.host)}</code></> : null}; it may
+                              still be on the <a href={`#view=code?session=${encodeURIComponent(a.sessionId)}`}>Code page</a>.
                             </p>
-                          )}
-                          {a.sessionId && (a.state === 'working' || a.state === 'input-required') && (
-                            <div className="agent-steer">
-                              <Input size="sm" value={steer} placeholder="Direction for this agent, delivered without ending its turn"
-                                onChange={e => setSteer(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void sendSteer(a.name) }} />
-                              <Button variant="secondary" size="sm" disabled={!steer.trim()} onClick={() => void sendSteer(a.name)}>Steer</Button>
-                              {actNote && <span className="muted">{actNote}</span>}
-                            </div>
                           )}
                           {a.usage?.total ? <p className="muted">tokens: {fmtTokens(a.usage.input)} in, {fmtTokens(a.usage.output)} out, {fmtTokens(a.usage.total)} total{a.usage.cost != null ? `, $${a.usage.cost.toFixed(3)}` : ''}</p> : null}
                           {/* The server sends the last 16 KB, so the viewer follows the end
                               as each poll replaces it; there is nothing older to page in. */}
                           {agentTail
                             ? <div className="agent-live"><LogViewer log={agentTail} height={300} downloadName={`${a.name}.log`} /></div>
-                            : <p className="muted">{a.state === 'working' ? 'No output yet; the log fills as the agent works.' : 'No output was captured for this agent.'}</p>}
+                            : <p className="muted">No output was captured for this agent.</p>}
                         </div>
                       )}
                     </React.Fragment>

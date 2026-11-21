@@ -10,7 +10,7 @@ When delegation is on (Settings, External access, Delegation), the chat's `deleg
 
 *Record and finish.* The Studio records each delegated session per person (`INDEX_BASE/delegation/sessions.json`, mode 600, the last 500): site, session, folder, instructions, objective, goal and state (working, waiting for approval, finished, stopped on an error, or gone). It watches the session every 20 seconds for up to 12 hours; when the session settles it indexes the folder and records its 50 newest files. `agent_status` on the session does the same when it finds it settled. After a restart the process that holds the index lock watches local sessions still working again; a session on a cluster needs the person's key, which is not kept, so it is brought up to date when the person or the assistant next looks at it. `GET /api/delegated` answers `{sessions}`, the person's records, newest first.
 
-*Where it shows.* On the Code page: delegated sessions are marked (with their instructions), a **Delegated** filter shows only them, and a delegated session's detail says which folder and instructions it has and links the files it wrote once it finishes. The delegate tool's answer links `#view=code?session=<id>`. The Tasks page is not a second view of these: the Code page already lists the sessions with their transcripts, so the Tasks page keeps only the tasks delegated before this change, with a note pointing to the Code page, and goes when the old engine does.
+*Where it shows.* On the Code page: delegated sessions are marked (with their instructions), a **Delegated** filter shows only them, and a delegated session's detail says which folder and instructions it has and links the files it wrote once it finishes. The delegate tool's answer links `#view=code?session=<id>`. The Agents tab's Earlier tasks page is not a second view of these: the Code page already lists the sessions with their transcripts, so that page keeps only the tasks of the retired engine, to read.
 
 *Code page without the platform.* When the platform is not available to the viewer (the same test as the Workflows tab: no credential for it) and the Studio offers its own host as an agent site (sign-in off, or `AGENT_LOCAL_SITE=1`), `/api/code-sessions` reads this host's pw code daemon over its socket (`/v1/status`, `/v1/sessions`, `/v1/sessions/<id>`), in the shapes the platform passes on, as one machine named "This computer". `/api/config` then has `localCode: true`, and the Code tab shows.
 
@@ -34,19 +34,11 @@ A standing agent on the Fleet page is a long-lived pw code session on this Studi
 
 `/api/fleet` keeps its routes and record shape: `GET /api/fleet/{id}` adds `session` (`id`, `earlier` sessions, and `recent`, the last 40 lines of its history), and a record has `engine: "pwcode"`, `folder`, `session`, `sessions` and `migrated`.
 
-## The task engine (earlier delegation)
+## Earlier tasks (the retired task engine)
 
-Before delegation moved to pw code sessions, the assistant split a request into subtasks and gave each to an agent; `task_status` still reads those tasks. The task tree, the board, and results under `tasks/<task id>/` in the knowledge base are the same however the agents run. The same section's "Agent execution" (environment variable `AGENT_EXECUTION`) chooses how they run:
+Before delegation moved to pw code sessions, the assistant split a request into subtasks and gave each to an agent of the Studio's own task engine: one-shot `pw code -p` runs, sessions of this host's daemon, or, for a campaign, platform workflow runs, which shared a task board and answered through a JSON result contract. That engine is gone, with its board, runner, campaign runs, routes and the "Agent execution" setting (`AGENT_EXECUTION` is no longer read).
 
-| Setting | Agents run as |
-|---|---|
-| `runner` (default) | one-shot `pw code -p` runs beside the server, or, for a campaign, platform workflow runs on a named system |
-| `sessions` | sessions in the pw code daemon on the Studio's host |
-| `both` | either; the assistant chooses per task, defaulting to sessions |
-
-A campaign on another system always uses the runner. Sessions on remote systems need the platform's agents routes and are a later step.
-
-The task view names the machine its agents run on: the task's system for a campaign, the daemon's host for session agents, and the Studio's host for runners. It appears once in the task's header, and on each agent's row only when a task's agents are on different machines.
+What it left stays readable. Each task's last snapshot is `INDEX_BASE/tasks/<id>/state.json`, its board `board.jsonl` and each agent's output `work/<agent>/live.log`; its results are files in the library under `tasks/<id>/`. The **Earlier tasks** page on the Agents tab lists those tasks, newest first, and shows a task's agents, board and each agent's output, with a link to its results in the library; nothing there runs, approves, steers or cancels. A task or agent that was still working when the engine was retired shows as canceled, with "stopped when the task engine was retired". An agent that worked as a pw code session names it and links the Code page, where it may still be listed. `task_status` in a chat reads the same records. The routes are read-only: `GET /api/tasks`, `GET /api/tasks/<id>` (with its board; `since` for messages after a sequence number) and `GET /api/tasks/<id>/agents/<name>/output` (the last 16 KB).
 
 ## Agent instructions in AGENTS.md
 
@@ -72,27 +64,9 @@ The folder is in the main library, written as the Library writes there and index
 
 *Routes.* `GET /api/agents-md?library=&folder=` answers the folder (`library`, `label`, `folder`, `path`, `space`) and what the Studio has put there: `exists`, `instructions` (the sections, in order), `skills`, and `problem` when a section cannot be read. `POST /api/agents-md/apply` and `POST /api/agents-md/remove` take `{library, folder, instructions, skills}` (a template name, and a list of skill names) and answer the same. `GET /api/agents-md/folders` answers `{folders}`, each a folder as above. `library` is empty for the main library and `folder` empty for its top; a folder is relative to the library's top, with no `..` and no hidden or machinery folders.
 
-## Session agents
+## The pw code daemon
 
-The Studio talks to the pw code daemon over its Unix socket (`$XDG_STATE_HOME/pw/code-<hostname>.sock`, or `PW_CODE_SOCKET`), which only the account that runs the Studio can open. When no daemon is running, the first session agent starts one with the Studio's own platform context (`PW_CONTEXT`), since a daemon started without a context binds to whichever context is current for that account. The daemon must speak protocol 2.
-
-Each agent is a session created read-only, with the task's board registered inline in the request and its tools pre-approved: the board tools and the knowledge base tools the Studio exposes over MCP, reached on the loopback address with the task's token. Nothing else is pre-approved. The token travels only in the request body, never in a process's arguments or a file. Sessions are created with remote control on, so they can also be watched or driven from ACTIVATE's agents page.
-
-The Studio follows each session about every two seconds (`STUDIO_SESSION_POLL_MS`):
-
-- its history becomes the agent's live output;
-- an approval request makes the agent `input-required`, posts the request to the board, and shows it under "Waiting for your approval", where Approve or Deny answers the session;
-- a direction typed under a working agent's output reaches the session mid-turn (`POST /api/tasks/<id>/agents/<name>/direction`);
-- the end of the turn completes the agent from its last reply, through the same result contract as the runner (a JSON object with `result` and optional `subtasks`);
-- a turn that ends with no reply, such as one refused for an expired platform login, fails the agent with that reason.
-
-Stopping a task interrupts its sessions. Sessions belong to the daemon, so a Studio restart reattaches to agents that were still working. A session can be opened in a terminal on the host with `pw code -r <session id>`.
-
-`GET /api/tasks/runtime` reports the setting and what the local daemon reports: its version, whether it is usable, and its remote session policy.
-
-## The runner
-
-A one-shot run has no board: pw code loads a workspace settings file only after someone approves it interactively, and the alternatives would put the task token in the command line or the run's inputs. Its output arrives when it finishes. Campaign runs are not sent the board token, since the Studio's public address sits behind the platform's session proxy, which refuses it.
+The Studio talks to this host's pw code daemon over its Unix socket (`$XDG_STATE_HOME/pw/code-<hostname>.sock`, or `PW_CODE_SOCKET`), which only the account that runs the Studio can open. When no daemon is running, the first session the Studio starts there starts one with the Studio's own platform context (`PW_CONTEXT`), since a daemon started without a context binds to whichever context is current for that account. The daemon must speak protocol 2. Delegated work at the local site, standing agents and pw code chats all use it.
 
 ## pw code agents at sites
 
