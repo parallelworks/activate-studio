@@ -61,6 +61,31 @@ type UserDef struct {
 	// Shared marks a folder another person shared with this library's
 	// owner, indexed and read as the owner; nil for every other library.
 	Shared *SharedInfo `json:"shared,omitempty"`
+	// Writer is the account a library its owner built on one of their
+	// systems is written as, read from their session the first time they
+	// write in it; nil until then and for every other library.
+	Writer *WriterInfo `json:"writer,omitempty"`
+}
+
+// WriterInfo is the account and uid on the system a library is written as.
+type WriterInfo struct {
+	Account string `json:"account"`
+	UID     int    `json:"uid"`
+}
+
+// Mine: a library its owner added on one of their systems and the Studio
+// built there, from a folder it knows, which the Library writes in as the
+// owner, as it does a space: not a space, nor a folder shared with them,
+// nor an index connected as it is.
+func (d *UserDef) Mine() bool {
+	if d.Space != nil || d.Shared != nil || d.Build == nil || d.ReadThrough != nil {
+		return false
+	}
+	root := d.Build.SourceRoot
+	if d.SourceRoot != nil && *d.SourceRoot != "" {
+		root = *d.SourceRoot
+	}
+	return strings.HasPrefix(root, "/")
 }
 
 // SharedInfo is a library made from someone else's share.
@@ -75,10 +100,10 @@ type SharedInfo struct {
 	UID     int    `json:"uid"`
 }
 
-// WrittenAsOwner: the Library writes in it as its owner (a space, or a
-// folder shared with them for writing).
+// WrittenAsOwner: the Library writes in it as its owner (a space, a
+// folder shared with them for writing, or a library of theirs, Mine).
 func (d *UserDef) WrittenAsOwner() bool {
-	return d.Space != nil || (d.Shared != nil && d.Shared.Access == "write")
+	return d.Space != nil || (d.Shared != nil && d.Shared.Access == "write") || d.Mine()
 }
 
 // Account is the cluster account and uid a space or a shared library was
@@ -89,6 +114,8 @@ func (d *UserDef) Account() (account string, uid int, ok bool) {
 		return d.Space.Account, d.Space.UID, true
 	case d.Shared != nil:
 		return d.Shared.Account, d.Shared.UID, true
+	case d.Writer != nil && d.Mine():
+		return d.Writer.Account, d.Writer.UID, true
 	}
 	return "", 0, false
 }

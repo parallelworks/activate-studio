@@ -316,12 +316,14 @@ export function LibraryView({ display, onDisplay }: {
 
   /** Paste whatever was cut or copied into a directory. Into another
    *  library it is a copy through Transfers, cut or not, so nothing leaves
-   *  the library it was in; a copy inside a space goes the same way. */
+   *  the library it was in; a copy inside a space, or inside a library of
+   *  the viewer's own on another system, goes the same way. */
   const pasteInto = async (dir: string) => {
     if (!clipboard?.paths.length) return
     const target = libOf(dir)
     const across = clipboard.paths.some(p => libOf(p) !== target)
-    const inSpace = clipboard.mode === 'copy' && !!cfg.libraries?.find(l => l.id === target)?.space
+    const to = cfg.libraries?.find(l => l.id === target)
+    const inSpace = clipboard.mode === 'copy' && !!(to?.space || to?.mine)
     if ((across || inSpace) && canCopyOut) {
       copyInto(dir, clipboard.paths)
       return

@@ -262,6 +262,9 @@ type Library struct {
 	// Space: written as the viewer (their own space, or a folder shared
 	// with them for writing).
 	Space bool
+	// Mine: a library the viewer built on one of their systems, written
+	// as them through the same path as a space (UserDef.Mine).
+	Mine bool
 	// SharedFrom is the account that shared the folder, for a library made
 	// from someone else's share.
 	SharedFrom string
@@ -294,6 +297,7 @@ type PublicLibrary struct {
 	Depth      *string `json:"depth"`
 	FormatNote *string `json:"formatNote"`
 	Space      bool    `json:"space,omitempty"`
+	Mine       bool    `json:"mine,omitempty"`
 	SharedFrom string  `json:"sharedFrom,omitempty"`
 	// FromBucket: its files are objects read from a bucket one at a time.
 	FromBucket bool `json:"fromBucket,omitempty"`
@@ -316,7 +320,7 @@ func strOrNil(s string) *string {
 func Public(l Library) PublicLibrary {
 	return PublicLibrary{ID: l.ID, Label: l.Label, Primary: l.Primary, Writable: l.Writable, Pinned: l.Pinned,
 		Source: l.SourceRoot != "" || l.Site != "", Caps: l.Caps, Site: strOrNil(l.Site), Meaning: strOrNil(l.Meaning),
-		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil,
+		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, Mine: l.Mine, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil,
 		Host: localHost(l)}
 }
 

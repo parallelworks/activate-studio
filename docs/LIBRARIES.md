@@ -3,10 +3,12 @@
 A library is an index the Studio has mounted. The knowledge base the server
 builds and owns is the first library; it is the only one the Studio writes
 to, and every request that does not name a library means it, so nothing
-that existed before libraries has changed. Any other library is read only:
-a site's index built by root on a schedule, an index someone handed over
+that existed before libraries has changed. Any other library is read only
+(a site's index built by root on a schedule, an index someone handed over
 on a drive, or an index the Studio builds itself of a folder on this
-computer or on a remote system.
+computer), except those written as the person: My library, a folder
+shared with them for writing, and an index they built on one of their
+own systems ([Indexes built on a remote system](#indexes-built-on-a-remote-system)).
 
 ## What a library carries
 
@@ -737,7 +739,23 @@ and writes the text tables again; what it reuses is the text in `.extract`
 (by modification time, so PDF, Office and OCR work is not repeated) and
 the passages in `.embed-cache.db`, so a rebuild embeds only what is new.
 There is no pass that adds meaning alone. **Remove**
-forgets the library and leaves the index there. Search on these
+forgets the library and leaves the index there.
+
+The person who built such a library also writes in it from the Library,
+as they do in My library: upload, new folder, rename, move and delete run
+on that system as their own account, over `pw ssh` with their own key, or
+over plain ssh with the keys of the account the Studio runs as on a
+Studio with sign-in off. The system's permissions decide what they may
+change. The account is read from their session the first time they write
+and kept with the library (`writer`); a session that later reaches another
+account is refused. Unlike My library, what the Studio writes takes the
+person's umask and the folder's default ACL, so a folder shared by group
+stays shared. As in My library, a path outside the library's folder, or
+one through a link, is refused before anything is written, the Library
+lists the folders as they are on disk, and the index is built again about
+20 seconds after the last change. An index connected as it is stays read
+only, since the Studio does not build it, and so do libraries the
+deployment provides. Search on these
 libraries covers names, metadata, and, with extraction, full text, and
 meaning where the build embedded with the ONNX model. A source folder
 whose owner may not write it is indexed whole there too: when the log of

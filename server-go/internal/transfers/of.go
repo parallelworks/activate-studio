@@ -165,8 +165,10 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 				// A space is written as in the Library: what lands is closed
 				// to other accounts unless its folder is open to them, and
 				// no write goes through a link.
-				x.FS = &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site), Private: l.Space}
-				if l.Space {
+				// A library the viewer built on one of their systems is
+				// written as them the same way, without the space's closing.
+				x.FS = &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site), Private: l.Space, NoLinks: l.Mine}
+				if l.Space || l.Mine {
 					x.Space = l.IndexRoot
 				}
 				// A library over ssh is reached with the server account's
@@ -270,7 +272,7 @@ func libraryRefresh(l libraries.Library) string {
 	switch {
 	case l.Primary:
 		return ""
-	case l.Space:
+	case l.Space || l.Mine:
 		return "when Studio builds it again, shortly after the transfer ends"
 	case l.Build != nil || l.Site != "":
 		return "after its next rebuild in Settings, Indexing, Libraries"

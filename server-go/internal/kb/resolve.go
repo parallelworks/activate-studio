@@ -252,7 +252,7 @@ func (m *Module) remoteTree(r *http.Request, lib Library, rel string, showHidden
 	var list []Entry
 	var err error
 	switch {
-	case lib.Space && SpaceFiles != nil:
+	case lib.AsViewer() && SpaceFiles != nil:
 		// A space lists as its folder is now, so a file just written shows
 		// before the index catches up.
 		list, err = SpaceFiles.List(r, lib, rel)

@@ -94,7 +94,7 @@ func sftpOnlySite(ctx context.Context, run Runner, site, key string) bool {
 func (r *RemoteFS) SFTPOnly(ctx context.Context) bool {
 	// A private location's writes need the helper's checks, which SFTP
 	// cannot make; it fails there rather than write without them.
-	if r.Private {
+	if r.Private || r.NoLinks {
 		return false
 	}
 	return sftpOnlySite(ctx, r.R, r.SiteID, r.KeyText)

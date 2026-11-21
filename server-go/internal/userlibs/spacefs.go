@@ -65,30 +65,94 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 		return nil, w, "", nil, err
 	}
 	// Only the person whose library it is writes in it, and only in a
-	// space or a folder shared with them for writing.
+	// space, a folder shared with them for writing, or a library they
+	// built on one of their systems.
 	if d == nil || !d.WrittenAsOwner() || o != owner {
 		return nil, w, "", nil, apierr.New(404, "no such space")
 	}
-	_, uid, _ := d.Account()
-	key := m.keyOf(w, owner)
-	if key == "" {
-		return nil, w, "", nil, apierr.New(409, "Sign in with ACTIVATE under Settings, Model access, so the Studio can reach your library as you.")
+	site, key, err := m.writeSession(w, owner, d)
+	if err != nil {
+		return nil, w, "", nil, err
 	}
-	root := ""
-	if d.Build != nil {
-		root = d.Build.SourceRoot
-	}
-	if d.SourceRoot != nil && *d.SourceRoot != "" {
-		root = *d.SourceRoot
-	}
+	root := spaceRoot(d)
 	if !strings.HasPrefix(root, "/") {
 		return nil, w, "", nil, apierr.New(409, "%s has no folder yet.", d.Label)
 	}
-	if err := m.sameAccount(r.Context(), d.Site, key, uid); err != nil {
+	if err := m.writerCheck(r.Context(), owner, d, site, key); err != nil {
 		return nil, w, "", nil, err
 	}
-	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: d.Site, KeyText: key, Dir: root, Name: d.Label, Timeout: 10 * time.Minute, Private: true, Kept: true}
+	// A space keeps what is written in it to the person; a library of
+	// theirs elsewhere takes their umask and the folder's own ACL. Neither
+	// writes through a link.
+	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: site, KeyText: key, Dir: root, Name: d.Label,
+		Timeout: 10 * time.Minute, Private: !d.Mine(), NoLinks: d.Mine(), Kept: true}
 	return fs, w, owner, d, nil
+}
+
+// writeSession is the site and key a library is written with: the
+// person's own key over pw ssh, or, for a library over plain ssh on a
+// Studio one person uses with sign-in off, the ssh keys of the account the
+// Studio runs as, which are theirs.
+func (m *Module) writeSession(w who, owner string, d *libraries.UserDef) (string, string, error) {
+	if d.IsSSH() {
+		if !w.sshAllowed() || !d.Mine() {
+			return "", "", errSSHSingle()
+		}
+		site := sshSiteOf(d)
+		if site == "" {
+			return "", "", apierr.New(409, "%s has no host to reach.", d.Label)
+		}
+		return site, "", nil
+	}
+	key := m.keyOf(w, owner)
+	if key == "" {
+		return "", "", apierr.New(409, "Sign in with ACTIVATE under Settings, Model access, so the Studio can reach your library as you.")
+	}
+	return d.Site, key, nil
+}
+
+// writerCheck refuses a session that reaches another account than the one
+// the library is written as. A library of the person's own on another
+// system learns that account the first time they write in it.
+func (m *Module) writerCheck(ctx context.Context, owner string, d *libraries.UserDef, site, key string) error {
+	if _, uid, ok := d.Account(); ok {
+		return m.sameAccount(ctx, site, key, uid)
+	}
+	if !d.Mine() {
+		return apierr.New(409, "%s does not say which account it is written as.", d.Label)
+	}
+	r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", "id -u && id -un"}, 60*time.Second)
+	if err != nil {
+		return m.sessionErr(remote.SiteName(site), key, err)
+	}
+	lines := strings.Split(strings.TrimSpace(r.Stdout), "\n")
+	if r.Code != 0 || len(lines) < 2 {
+		return apierr.New(502, "%s did not say which account your session reaches.", remote.SiteName(site))
+	}
+	uid, err := strconv.Atoi(strings.TrimSpace(lines[len(lines)-2]))
+	name := strings.TrimSpace(lines[len(lines)-1])
+	if err != nil || name == "" {
+		return apierr.New(502, "%s did not say which account your session reaches.", remote.SiteName(site))
+	}
+	got := m.update(owner, d.ID, func(x *libraries.UserDef) {
+		if x.Writer == nil {
+			x.Writer = &libraries.WriterInfo{Account: name, UID: uid}
+		}
+	})
+	if got == nil || got.Writer == nil {
+		return apierr.New(404, "no such library")
+	}
+	d.Writer = got.Writer
+	m.mu.Lock()
+	if m.accounts == nil {
+		m.accounts = map[string]reachedAccount{}
+	}
+	m.accounts[slice16(key)+"|"+site] = reachedAccount{uid: uid, at: time.Now()}
+	m.mu.Unlock()
+	if got.Writer.UID != uid {
+		return apierr.New(409, "Your session reaches %s as another account (uid %d) than the one this library is written as (uid %d).", remote.SiteName(site), uid, got.Writer.UID)
+	}
+	return nil
 }
 
 // sameAccount refuses a session that now reaches another account than the
@@ -504,15 +568,21 @@ func (m *Module) SpaceTransferred(viewer string, authOn bool, key, root string) 
 // with a key that reaches another account than the one the space was made
 // for is refused, as the Library's own writes are (sameAccount).
 func (m *Module) SpaceAccount(ctx context.Context, viewer string, authOn bool, key, root string) error {
-	_, _, d := m.spaceOfRoot(viewer, authOn, key, root)
+	w, owner, d := m.spaceOfRoot(viewer, authOn, key, root)
 	if d == nil {
 		return nil
 	}
-	_, uid, ok := d.Account()
-	if !ok || key == "" {
+	if d.IsSSH() {
+		site, _, err := m.writeSession(w, owner, d)
+		if err != nil {
+			return err
+		}
+		return m.writerCheck(ctx, owner, d, site, "")
+	}
+	if key == "" {
 		return nil
 	}
-	return m.sameAccount(ctx, d.Site, key, uid)
+	return m.writerCheck(ctx, owner, d, d.Site, key)
 }
 
 func (m *Module) queueSpaceBuild(w who, owner, id string, after time.Duration, tries int) {
@@ -543,7 +613,7 @@ func (m *Module) spaceBuild(w who, owner, id string, tries int) {
 			break
 		}
 	}
-	if d == nil || (d.Space == nil && d.Shared == nil) {
+	if d == nil || !d.WrittenAsOwner() {
 		return
 	}
 	if d.State == "building" || d.State == "updating" {
