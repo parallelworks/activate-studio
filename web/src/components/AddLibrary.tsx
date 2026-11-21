@@ -52,7 +52,9 @@ export interface AddOptions {
 
 /** What can be chosen, given what this Studio offers. */
 export function addChoices(o: AddOptions) {
-  const where: Where[] = ['here', ...(o.ssh || o.pw || o.workflow || o.copy ? ['remote' as const] : []), ...(o.bucket ? ['bucket' as const] : []), ...(o.space ? ['space' as const, 'shared' as const] : [])]
+  // With sign-in on, the libraries on this computer are the deployment's
+  // (buildHere is off there), so a person adds only their own elsewhere.
+  const where: Where[] = [...(o.buildHere ? ['here' as const] : []), ...(o.ssh || o.pw || o.workflow || o.copy ? ['remote' as const] : []), ...(o.bucket ? ['bucket' as const] : []), ...(o.space ? ['space' as const, 'shared' as const] : [])]
   const how = (w: Where): How[] => (w === 'space' || w === 'shared' || w === 'bucket' ? [] : w === 'here'
     ? [...(o.buildHere ? ['build' as const] : []), 'connect']
     : [...(o.ssh || o.pw || o.workflow ? ['build' as const] : []), ...(o.ssh || o.pw ? ['connect' as const] : []), ...(o.copy ? ['copy' as const] : [])])
@@ -99,7 +101,8 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
 }) {
   const [importing, setImporting] = useState(false)
   const choices = addChoices(options)
-  const [where, setWhere] = useState<Where>('here')
+  const [wherePicked, setWhere] = useState<Where | null>(null)
+  const where: Where = wherePicked && choices.where.includes(wherePicked) ? wherePicked : (choices.where[0] ?? 'here')
   const hows = choices.how(where)
   // Until a How is picked it follows the first offered: building here is
   // offered once the libraries answer, after the form first shows.

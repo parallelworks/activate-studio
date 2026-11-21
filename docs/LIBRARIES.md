@@ -55,6 +55,13 @@ STUDIO_LIBRARIES='[{"id":"scratch","label":"Scratch","indexRoot":"/gufi/scratch"
 STUDIO_SECTIONS='library,search,overview'
 ```
 
+With sign-in on, the libraries on this computer are the deployment's:
+they are read with the Studio's own account for everyone who signs in, so
+nobody signed in adds or removes one from the Studio (`POST
+/api/libraries` and `DELETE /api/libraries/{id}` answer 403, and Add a
+library does not offer this computer). A person adds libraries of their
+own on their systems instead, read as them.
+
 Libraries set this way are pinned: they appear for every user and cannot
 be removed from Settings.
 
@@ -111,7 +118,7 @@ the index has, as built: names, text, or text and meaning:
 | Main folder, read and write | `KB_ROOT` | **Change folder**, **Build index** or **Update index** (**Stop indexing** while it runs), and under the row **Delete index** and **View log**, on a single-user install; **View log** anywhere |
 | Index of a folder on this machine, kept in step with it | `POST /api/libraries/build` | **Rebuild**, **Remove** |
 | Copy of a folder in a Transfers location, kept in step with it | `POST /api/libraries/copy` | **Update now**, how often it looks for changes, **Rebuild**, **Remove** |
-| GUFI index on this machine | `POST /api/libraries`, or `STUDIO_LIBRARIES` (set by the deployment) | **Remove**, except for one the deployment set |
+| GUFI index on this machine | `POST /api/libraries` (sign-in off), or `STUDIO_LIBRARIES` (set by the deployment) | **Remove** (sign-in off), except for one the deployment set |
 | Index built on a remote system over ssh or pw ssh | `POST /api/user-libraries/ssh/build`, `POST /api/user-libraries/pw/build` | **Rebuild**, **Remove** |
 | GUFI index over ssh | `POST /api/user-libraries/ssh` | **Check**, **Remove** |
 | GUFI index on a remote system over pw ssh | `POST /api/user-libraries/pw` | **Check**, **Remove** |

@@ -280,10 +280,11 @@ const detailOf = (name: string) => rowOf(name).nextElementSibling as HTMLElement
 const posted = (s: Server, url: string) => s.calls.filter(c => c.method === 'POST' && c.url.split('?')[0] === url)
 
 describe('what Add a library offers', () => {
-  it('this computer always; building here, a remote system, and the workflow only where offered', () => {
+  it('this computer only with sign-in off; building here, a remote system, and the workflow only where offered', () => {
+    // With sign-in on (no building here), the libraries on this computer
+    // are the deployment's, so it is not offered.
     const none = addChoices({ buildHere: false, ssh: false, pw: false, workflow: false })
-    expect(none.where).toEqual(['here'])
-    expect(none.how('here')).toEqual(['connect'])
+    expect(none.where).toEqual([])
     // A computer of its own: build here, and a remote system over ssh or pw ssh, never the workflow.
     const mine = addChoices({ buildHere: true, ssh: true, pw: true, workflow: false })
     expect(mine.where).toEqual(['here', 'remote'])
@@ -292,7 +293,7 @@ describe('what Add a library offers', () => {
     expect(mine.via('remote', 'build')).toEqual(['ssh', 'pw'])
     // A hosted Studio: no ssh, and the workflow builds on a cluster.
     const hosted = addChoices({ buildHere: false, ssh: false, pw: true, workflow: true })
-    expect(hosted.how('here')).toEqual(['connect'])
+    expect(hosted.where).toEqual(['remote'])
     expect(hosted.via('remote', 'build')).toEqual(['pw', 'workflow'])
     expect(hosted.via('remote', 'connect')).toEqual(['pw'])
     const workflowOnly = addChoices({ buildHere: false, ssh: false, pw: false, workflow: true })
@@ -917,8 +918,11 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'A remote system' }))
-    // Only the workflow reaches a remote system here, and it only builds.
+    // A remote system is the one place offered with sign-in on, so there is
+    // no Where to choose; only the workflow reaches it here, and it only
+    // builds.
+    await screen.findByLabelText('Directory')
+    expect(screen.queryByRole('button', { name: 'This computer' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Connect an existing index' })).toBeNull()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Build the index' })).toBeEnabled())
     expect(screen.getByLabelText('Directory')).toHaveValue('$WORKDIR')

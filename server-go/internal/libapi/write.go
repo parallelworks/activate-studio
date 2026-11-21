@@ -15,7 +15,17 @@ import (
 // The write routes of routes.ts's libraries section: adding an index the
 // Studio reads, removing a library, and the depth of one it builds.
 
+// deploymentLibraries is the refusal of a change to the libraries on this
+// computer on a Studio with sign-in on: they are the deployment's, read
+// with the Studio's own account for everyone who signs in, so only the
+// deployment sets them (STUDIO_LIBRARIES). A person adds libraries of
+// their own on their systems, read as them.
+const deploymentLibraries = "On a Studio with sign-in, the libraries on this computer are the deployment's and are set by it. Add a library of your own on one of your systems instead."
+
 func (s *Service) addLibrary(w http.ResponseWriter, r *http.Request) error {
+	if s.authEnabled(r) {
+		return apierr.New(403, "%s", deploymentLibraries)
+	}
 	body, err := reqbody.Read(r)
 	if err != nil {
 		return err
@@ -39,6 +49,9 @@ func (s *Service) addLibrary(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) removeLibrary(w http.ResponseWriter, r *http.Request) error {
+	if s.authEnabled(r) {
+		return apierr.New(403, "%s", deploymentLibraries)
+	}
 	id := r.PathValue("id")
 	if err := s.Reg.Remove(id); err != nil {
 		return err

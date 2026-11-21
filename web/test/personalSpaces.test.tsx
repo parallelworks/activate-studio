@@ -36,10 +36,10 @@ describe('a space of one\'s own', () => {
 
   it('is offered beside the cluster the Studio runs on, and lets a signed-in person add libraries', () => {
     const user = { available: true, ssh: false, pwOffered: false, workflow: false }
-    expect(addChoices(addOptions(false, user, false)).where).toEqual(['here'])
+    expect(addChoices(addOptions(false, user, false)).where).toEqual([])
     expect(mayAddLibraries(false, user, false)).toBe(false)
     const withSpace = { ...user, space: true }
-    expect(addChoices(addOptions(false, withSpace, false)).where).toEqual(['here', 'space', 'shared'])
+    expect(addChoices(addOptions(false, withSpace, false)).where).toEqual(['space', 'shared'])
     expect(addChoices(addOptions(false, withSpace, false)).how('space')).toEqual([])
     expect(mayAddLibraries(false, withSpace, false)).toBe(true)
   })
