@@ -113,7 +113,7 @@ var goExecutors = map[string]func(m *Module, r *http.Request, args map[string]an
 // studioDocs are the documents studio_docs reads, by the name the model passes.
 var studioDocs = map[string]string{
 	"help": "HELP.md", "reference": "REFERENCE.md", "deploy": "DEPLOY.md", "architecture": "ARCHITECTURE.md", "customization": "CUSTOMIZATION.md", "libraries": "LIBRARIES.md",
-	"workflows": "WORKFLOWS.md", "agents": "AGENTS.md", "multi-user": "MULTI-USER.md", "macos": "MACOS.md", "updates": "UPDATES.md",
+	"workflows": "WORKFLOWS.md", "agents": "AGENTS.md", "multi-user": "MULTI-USER.md", "macos": "MACOS.md", "updates": "UPDATES.md", "extraction": "EXTRACTION.md",
 }
 
 // toolError is a failure the tool reports as its result.

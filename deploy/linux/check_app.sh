@@ -78,7 +78,7 @@ if [ "$STATIC" = 1 ]; then
   [ "$SERVER" = go-only ] || LAYOUT="$LAYOUT node/lib/libatomic.so.1 node/LICENSE python/bin/python3 models/minilm384.gguf
     app/server/node_modules/fastify/package.json app/indexer/enrich.py app/indexer/embed.py app/indexer/embed_onnx.py
     app/indexer/embed_query.py app/indexer/semantic_map.py app/indexer/reindex.sh gufi/lib/lembed0.so"
-  [ "$SERVER" = node ] || LAYOUT="$LAYOUT app/bin/studio-server app/bin/semantic-map
+  [ "$SERVER" = node ] || LAYOUT="$LAYOUT app/bin/studio-server app/bin/semantic-map app/bin/index-extract
     app/lib/libonnxruntime.so.1 licenses/onnxruntime-LICENSE.txt app/occt/occt-import-js.wasm app/occt/occt-import-js.noeh.wasm
     licenses/occt-import-js-LICENSE.txt licenses/occt-LICENSE.txt"
   [ "$SERVER" != go-only ] || LAYOUT="$LAYOUT node/PLACEHOLDER"
@@ -232,6 +232,11 @@ if [ "$RUN" = 1 ]; then
   # Through /bin/sh, as gufi_vt and scripts start the tools.
   check "gufi_dir2index indexes a folder" clean /bin/sh -c "'$G/bin/gufi_dir2index' -x '$T/corpus' '$T/idx'"
   check "gufi_query reads the index" clean /bin/sh -c "'$G/bin/gufi_query' -d ' ' -E 'SELECT name FROM vrpentries;' '$T/idx/corpus' | grep -q cake.txt"
+  if [ "$SERVER" != node ]; then
+    # The list gufi_query prints, piped to the extractor as a cluster job would.
+    LIST_SQL="SELECT inode, mtime, size, rpath(sname, sroll)||'/'||name FROM vrpentries WHERE type = 'f';"
+    check "index-extract reads the files gufi_query lists" clean /bin/sh -c '"$1/bin/gufi_query" -E "$4" "$2/idx/corpus" | "$3" files --out "$2/extract.db" --root "$2/corpus" --strip "$2/idx/corpus" --no-ocr | grep -q "\"text\":[1-9]"' sh "$G" "$T" "$APP/app/bin/index-extract" "$LIST_SQL"
+  fi
   if [ "$SERVER" = go-only ]; then
     # No sqlite-lembed in the Go version: the vectors come from the Go
     # server's ONNX embedder, and GUFI stores and searches them (sqlite-vec).

@@ -118,10 +118,10 @@ done
 mkdir -p "$APP/app/server" "$APP/app/web" "$APP/app/deploy" "$APP/node/bin" "$APP/models" "$APP/share"
 
 if [ "$SERVER" != node ]; then
-  echo "The Go server (studio-server, semantic-map)..."
+  echo "The Go server (studio-server, semantic-map, index-extract)..."
   mkdir -p "$APP/app/bin"
   (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
-    -o "$APP/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
+    -o "$APP/app/bin/" ./cmd/studio-server ./cmd/semantic-map ./cmd/index-extract)
   # The helper a library's build on another system runs, for each system
   # it is sent to: Linux x86_64 and aarch64, macOS arm64 (internal/userlibs);
   # about 25 MB each.

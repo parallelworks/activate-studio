@@ -138,9 +138,10 @@ jobs:
         working-directory: server-go
         run: |
           set -euo pipefail
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/linux/" ./cmd/studio-server ./cmd/semantic-map
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/darwin/" ./cmd/studio-server ./cmd/semantic-map
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/linux/" ./cmd/studio-server ./cmd/semantic-map ./cmd/index-extract
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/darwin/" ./cmd/studio-server ./cmd/semantic-map ./cmd/index-extract
           "$RUNNER_TEMP/linux/studio-server" routes >/dev/null
+          "$RUNNER_TEMP/linux/index-extract" schema | grep -q "CREATE VIRTUAL TABLE IF NOT EXISTS ext_bm25"
           ls -l "$RUNNER_TEMP/linux" "$RUNNER_TEMP/darwin"
 
   macos:

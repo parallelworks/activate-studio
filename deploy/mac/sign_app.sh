@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sign "ACTIVATE Studio.app" with a certificate, for notarization. Each
 # Mach-O file in the bundle is signed first: in the Go version (the
-# default build) the Go server and semantic-map in Resources/app/bin, the
+# default build) the Go server, semantic-map and index-extract in Resources/app/bin, the
 # ONNX runtime library in Resources/app/lib, GUFI's tools and libraries,
 # tesseract and leptonica; in a Node build, Node, Python and its libraries
 # and the document converter too; and any other file that is one. They are
@@ -24,7 +24,7 @@
 #               input records from the microphone, which Info.plist's
 #               NSMicrophoneUsageDescription explains: device.audio-input.
 #
-# semantic-map, Python, GUFI, tesseract and the converter need none. Library validation,
+# semantic-map, index-extract, Python, GUFI, tesseract and the converter need none. Library validation,
 # which the hardened runtime turns on, lets a program load only the
 # system's libraries and those signed by its own team, and every file here
 # is signed by the same one.

@@ -36,6 +36,7 @@ These are the same pages the app shows under Help, and the guides for running an
 | Document | Covers |
 |---|---|
 | [Architecture](ARCHITECTURE.md) | how the index, retrieval, and server work |
+| [Extraction](EXTRACTION.md) | `index-extract`: reading the text of a list of files for an index, on this computer, next to the storage, or as a scheduler job array |
 | [Go server](GO-PORT.md) | the port of the server to Go: its layout, the plan and state of the port, and where it differs from the Node server |
 | [GUFI for macOS](GUFI-MACOS.md) | GUFI built for macOS 14 and later: the published archive, building and checking it |
 

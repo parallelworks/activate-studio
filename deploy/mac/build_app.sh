@@ -118,10 +118,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$RES/app/server" "$RES/app/web" "$RES/app/deploy" "$RES/node/bin" "$RES/models"
 
 if [ "$SERVER" != node ]; then
-  echo "The Go server (studio-server, semantic-map) for macOS arm64..."
+  echo "The Go server (studio-server, semantic-map, index-extract) for macOS arm64..."
   mkdir -p "$RES/app/bin"
   (cd "$PROJECT_ROOT/server-go" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" \
-    -o "$RES/app/bin/" ./cmd/studio-server ./cmd/semantic-map)
+    -o "$RES/app/bin/" ./cmd/studio-server ./cmd/semantic-map ./cmd/index-extract)
   # The helper a library's build on another system runs, for each system
   # it is sent to: Linux x86_64 and aarch64, macOS arm64 (internal/userlibs);
   # about 25 MB each.
