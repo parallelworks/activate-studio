@@ -159,6 +159,11 @@ func (t goTools) Begin(r *http.Request, in map[string]any) (*Begin, error) {
 	}
 	if !out.Platform {
 		for _, g := range PlatformGroups {
+			// The agent tools work without a platform where this host is
+			// offered as a site, as more_tools allows (toolroutes.go).
+			if g == "agents" && m.localAgents() {
+				continue
+			}
 			delete(groups, g)
 		}
 	}

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { statusLook } from '../statusLook'
 import {
-  Button, buttonClasses, EmptyState, Field, Input, Pagination, ProgressBar, SearchInput, SegmentedControl,
+  Button, Callout, buttonClasses, EmptyState, Field, Input, Pagination, ProgressBar, SearchInput, SegmentedControl,
   StatusBadge, StatusDot, StatusLabel, Tabs, Textarea, toast,
 } from '@parallelworks/ui'
 import { LogViewer } from '@parallelworks/ui/logviewer'
@@ -281,19 +281,13 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
 
       {page === 'tasks' && (
         <section className="card task-board-card">
+          <Callout tone="info" size="sm" className="task-moved">
+            Work you delegate now goes to pw code: one session in a library folder, with the agent instructions you choose
+            in its <code>AGENTS.md</code>. Find it on the <a href="#view=code">Code page</a> under <b>Delegated</b>. This page keeps
+            the tasks delegated before, with their results under <code>tasks/</code>.
+          </Callout>
           {taskRuns.length === 0 && (
-            <EmptyState variant="bare" className="task-empty" title="No delegated work yet" description={<>
-              <span>
-                Ask the assistant in Chat to fan work out, for example <i>"delegate a campaign across these
-                five input decks"</i>, and the task appears here as a live board.
-              </span>
-              <span>
-                Each subtask is a pw code agent: a one-shot run or a pw code session you can watch, steer, and
-                approve requests for (Settings, External access, Agent execution), or a campaign of platform workflow
-                runs on a connected HPC system for long work. Results land under <code>tasks/</code> in
-                the knowledge base, and the agent ceiling and depth are set under Settings, External access, Delegation.
-              </span>
-            </>} />
+            <EmptyState variant="bare" className="task-empty" title="No earlier tasks" description="Tasks delegated before delegation moved to pw code sessions are listed here." />
           )}
           {taskRuns.length > 0 && (
             <div className="task-cards">

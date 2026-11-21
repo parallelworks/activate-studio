@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
@@ -16,8 +17,19 @@ import (
 func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, d *pwcode.Service) *Sites {
 	s := &Sites{P: p, Daemon: d}
 	s.Routes(mux, a)
+	current.Store(s)
 	return s
 }
+
+// current is the sites Register made, for the chat's agent tools,
+// delegation and the Code page.
+var current atomic.Pointer[Sites]
+
+// Current is the registered agent sites, or nil.
+func Current() *Sites { return current.Load() }
+
+// SetCurrent sets the registered sites, for tests.
+func SetCurrent(s *Sites) { current.Store(s) }
 
 // viewerKey is keyOf: the viewer's own platform key (a stored credential
 // with no base URL) when signed in, passed through agentKey; and whether

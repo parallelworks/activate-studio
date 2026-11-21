@@ -17,4 +17,9 @@ var (
 func CurrentEngine() *Engine { return currentEngine.Load() }
 
 // CurrentSites is the registered agent sites, or nil.
-func CurrentSites() *agentsites.Sites { return currentSites.Load() }
+func CurrentSites() *agentsites.Sites {
+	if s := currentSites.Load(); s != nil {
+		return s
+	}
+	return agentsites.Current()
+}

@@ -29,6 +29,11 @@ type Providers struct {
 	// PlatformAvailable is workflowsTab.ts's platformAvailable(viewer).
 	// Owner: platform track. Node: /api/config's platform. Node-free: false.
 	PlatformAvailable func(r *http.Request, viewer string) bool
+	// LocalCode is whether the Code page lists this host's own pw code
+	// sessions: the platform not available to the viewer, and the host
+	// offered as an agent site.
+	// Owner: codesessions. Unset: false.
+	LocalCode func(r *http.Request) bool
 	// GatewayConfigured is chat/gateway.ts's gatewayConfigured(): a
 	// deployment credential exists. Owner: chat track. Node: /api/settings's
 	// deploymentCredential. Node-free: PW_API_KEY or OPENAI_API_KEY is set.

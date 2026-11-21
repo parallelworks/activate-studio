@@ -1190,47 +1190,51 @@
   },
   {
    "name": "delegate",
-   "description": "Break the current request into subtasks and have agents work them concurrently. Each agent gets its own context and writes a result file into the corpus; you get back a task id, not their output. Delegate when the work genuinely splits into independent strands that are each substantial, for example one per document, per system, or per question. Do not delegate work that is small enough to do directly, that is tightly interdependent, or where one strand needs another's answer first. Fewer, larger subtasks beat many small ones.",
+   "description": "Hand a substantial piece of work to pw code: one session working in a library folder, with agent instructions from the library written into that folder's AGENTS.md and the goal set, so it keeps working until the goal is met or max_turns is reached. pw code splits the work itself where that helps, so give it the whole of it rather than splitting it yourself. Use it when the user asks for work to be delegated or handed to an agent, or for work too long for this reply: many documents, a report built with code, analysis run on a system. The session shows on the Code page; follow it with agent_status, whose wait holds until it finishes and which then lists and indexes the files it wrote. When it finishes the Studio indexes its folder even if you do not ask.",
    "parameters": {
     "type": "object",
     "properties": {
-     "execution": {
-      "type": "string",
-      "enum": [
-       "local",
-       "campaign"
-      ],
-      "description": "local runs agents beside the server, bounded at 15 minutes each: right for quick parallel lookups. campaign submits each agent as a platform workflow run on a named system, hours-long and surviving restarts: right for long or many-agent work. Default local."
-     },
-     "resource": {
-      "type": "string",
-      "description": "Campaign only: the connected system to run agents on, from list_clusters. When the user does not name one, consult hpc_status placement before choosing."
-     },
-     "runtime": {
-      "type": "string",
-      "enum": [
-       "session",
-       "runner"
-      ],
-      "description": "Local only, and only when the deployment allows both: session runs each agent as a pw code session the user can watch, steer, and approve requests for on the Agents tab; runner runs a one-shot agent with no live view. Default session."
-     },
      "objective": {
       "type": "string",
-      "description": "What the whole task is trying to achieve"
+      "description": "The work, as you would brief a colleague with no other context: inputs, what to produce, and that outputs go in its folder"
+     },
+     "goal": {
+      "type": "string",
+      "description": "The completion condition it works toward, checked after every turn, written so it can be checked from the transcript. Default: the objective is done"
+     },
+     "instructions": {
+      "type": "string",
+      "description": "Agent instructions from the library (the Agents tab) to write into the folder's AGENTS.md, by name; omit for none"
+     },
+     "folder": {
+      "type": "string",
+      "description": "A library folder to work in, relative to the library's top. Default: a new folder under agents/<instructions>/"
+     },
+     "site": {
+      "type": "string",
+      "description": "Where it runs: one of the user's clusters by name (from agent_sites), or local for this Studio's host. Default: local when offered"
+     },
+     "max_turns": {
+      "type": "number",
+      "description": "Bound on the goal loop, default 20"
+     },
+     "model": {
+      "type": "string",
+      "description": "Model id for the session; default: the chat's current model when it is a platform model, else the site's pw code default"
      },
      "subtasks": {
       "type": "array",
-      "description": "The independent strands. Give each a clear objective, a boundary, and what it should produce.",
+      "description": "Optional strands you already see; they are listed in the brief as a suggestion, and pw code decides how to split",
       "items": {
        "type": "object",
        "properties": {
-        "persona": {
-         "type": "string",
-         "description": "Optional persona name from the library"
-        },
         "objective": {
          "type": "string",
-         "description": "This subtask, stated so an agent with no other context can do it"
+         "description": "One strand"
+        },
+        "persona": {
+         "type": "string",
+         "description": "Agent instructions for the whole session, when instructions is not given"
         }
        },
        "required": [
@@ -1240,14 +1244,13 @@
      }
     },
     "required": [
-     "objective",
-     "subtasks"
+     "objective"
     ]
    }
   },
   {
    "name": "task_status",
-   "description": "The state of a delegated task: each subtask, its state and lineage, and recent board messages. With no id, lists tasks.",
+   "description": "A task delegated before delegation moved to pw code sessions: its subtasks, their state, and recent board messages. With no id, lists those tasks. For work delegated now, use agent_status on its session.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1460,8 +1463,8 @@
   "show_in_viewer": "no external call; returns viewer deep-link or inline-embed markdown",
   "studio_docs": "reads one of the documents under docs/ in the app installation",
   "use_skill": "loads extensions/skills/<name>.md into the conversation",
-  "delegate": "spawns concurrent pw code one-shot agents with a server-enforced ceiling and depth limit; results are written under tasks/ in the corpus",
-  "task_status": "reads the in-memory task board and its subtask tree",
+  "delegate": "starts one pw code session in a library folder with the chosen agent instructions in its AGENTS.md and the goal set; the Studio records it, watches it, and indexes the folder when it finishes",
+  "task_status": "reads past tasks from the retired task engine",
   "list_storage": "GET /api/storage on the platform with the user's key; each item reduced to its name, display name, category, type, owner, cloud, region, size, status, attachment, URI, and group",
   "start_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/provision on the platform with the user's key, after the user approves the call in the chat",
   "resume_cluster": "POST /api/organizations/<organization>/users/<user>/clusters/<name>/resume on the platform with the user's key, after the user approves the call in the chat",
@@ -1516,7 +1519,7 @@
    "cue": "\\b(start|resume|restart|stop|shut ?down|destroy|tear ?down|cancel|abort|turn (on|off)|spin (up|down)|power (on|off|up|down))\\b[^.?!\\n]{0,60}\\b(clusters?|controllers?|runs?|jobs?)\\b|\\b(clusters?|runs?)\\b[^.?!\\n]{0,40}\\b(start|resume|stop|destroy|cancel)"
   },
   "agents": {
-   "summary": "pw code agents on connected systems and delegated subtasks",
+   "summary": "pw code agents on connected systems, and work delegated to pw code",
    "names": [
     "agent_sites",
     "agent_sessions",

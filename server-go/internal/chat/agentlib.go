@@ -20,7 +20,7 @@ import (
 // platform: they are offered without it where this Studio offers its own
 // host as a site (sign-in off, or AGENT_LOCAL_SITE=1).
 var localAgentTools = map[string]bool{"agent_sites": true, "agent_sessions": true, "start_agent": true, "agent_status": true,
-	"agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true}
+	"agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true, "delegate": true}
 
 func (m *Module) localAgents() bool {
 	s := tasks.CurrentSites()

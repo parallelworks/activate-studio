@@ -94,14 +94,30 @@ async function getJSON<T>(url: string): Promise<T> {
 }
 
 /** The session the address names, as a chat's link back gives it:
- *  #view=code?machine=<id>&session=<id>. */
+ *  #view=code?machine=<id>&session=<id>, or #view=code?session=<id> from
+ *  delegated work, whose machine the list knows. */
 export function sessionInHash(hash: string): { machine: string; session: string } | null {
   const m = hash.match(/^#view=code\?(.*)$/)
   if (!m) return null
   const q = new URLSearchParams(m[1])
   const machine = q.get('machine') ?? '', session = q.get('session') ?? ''
-  return machine && session ? { machine, session } : null
+  return session ? { machine, session } : null
 }
+
+/** Work a chat delegated to pw code: the session, the library folder it
+ *  works in and what it wrote there (GET /api/delegated). */
+export interface Delegated {
+  site: string; session: string; workspace: string; folder?: string; instructions?: string
+  objective: string; goal?: string; started: string; state: 'working' | 'finished' | 'stopped' | 'waiting' | 'gone'
+  finished?: string; error?: string; files?: string[]; more?: number
+}
+
+const DELEGATED_STATE: Record<Delegated['state'], string> = {
+  working: 'working', finished: 'finished', stopped: 'stopped on an error', waiting: 'waiting for you', gone: 'no longer on its machine',
+}
+
+/** A library file's link in the Studio. */
+const fileHref = (rel: string) => `#open=file:${encodeURIComponent(rel).replace(/%2F/gi, '/')}`
 
 export function CodeView() {
   const [machines, setMachines] = useState<Machine[]>([])
@@ -118,6 +134,8 @@ export function CodeView() {
   const detailRef = useRef<HTMLDivElement>(null)
   const scrolledFor = useRef('')
   const [here, setHere] = useState<Here | null>(null)
+  const [delegated, setDelegated] = useState<Map<string, Delegated>>(new Map())
+  const [onlyDelegated, setOnlyDelegated] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -126,6 +144,10 @@ export function CodeView() {
     } catch (e) {
       setError((e as Error).message); setRows(r => r ?? [])
     }
+    try {
+      const d = await getJSON<{ sessions: Delegated[] }>('/api/delegated')
+      setDelegated(new Map((d.sessions ?? []).map(x => [x.session, x])))
+    } catch { /* a Studio without delegation */ }
   }, [])
   const loadHere = useCallback(async () => {
     try { setHere(await getJSON<Here>('/api/chat/pwcode/here')) } catch (e) { setHere({ available: false, reason: (e as Error).message, chats: [] }) }
@@ -145,7 +167,7 @@ export function CodeView() {
   }, [])
   useEffect(() => {
     if (!asked || !rows) return
-    const s = rows.find(r => r.machineId === asked.machine && r.id === asked.session)
+    const s = rows.find(r => (!asked.machine || r.machineId === asked.machine) && r.id === asked.session)
     if (s) { setOpen(s); if (s.archived) setShowArchived(true) }
     setAsked(null)
   }, [asked, rows])
@@ -181,9 +203,10 @@ export function CodeView() {
 
   const groups = useMemo(() => {
     const q = filter.trim().toLowerCase()
-    const shown = (rows ?? []).filter(s => !q || [s.title, s.machine, s.workspace, s.model, s.branch].some(v => v?.toLowerCase().includes(q)))
+    const shown = (rows ?? []).filter(s => (!onlyDelegated || delegated.has(s.id)) && (!q || [s.title, s.machine, s.workspace, s.model, s.branch, delegated.get(s.id)?.instructions].some(v => v?.toLowerCase().includes(q))))
     return groupSessions(shown)
-  }, [rows, filter])
+  }, [rows, filter, onlyDelegated, delegated])
+  const delegatedHere = (rows ?? []).filter(s => delegated.has(s.id)).length
   const connected = machines.filter(m => m.status === 'connected')
   const archivedCount = groups.find(g => g.key === 'archived')?.rows.length ?? 0
 
@@ -196,6 +219,12 @@ export function CodeView() {
           <SearchInput value={filter} onValueChange={setFilter} label="Filter sessions" />
           {codeUrl && <Button variant="secondary" size="sm" href={codeUrl} target="_blank" rel="noopener noreferrer">New session in ACTIVATE</Button>}
         </div>
+        {(delegatedHere > 0 || onlyDelegated) && (
+          <div className="code-list-filters">
+            <Button variant={onlyDelegated ? 'primary' : 'secondary'} size="sm" aria-pressed={onlyDelegated} onClick={() => setOnlyDelegated(v => !v)}
+              title="Work a chat handed to pw code, in a library folder">Delegated ({delegatedHere})</Button>
+          </div>
+        )}
         {error && <Callout tone="warning" size="sm" className="code-callout">{error}</Callout>}
         {!error && (
           <p className="muted code-machines" title={machines.map(m => `${m.name}: ${m.status.replace(/_/g, ' ')}`).join('\n')}>
@@ -220,7 +249,7 @@ export function CodeView() {
                       <StatusDot variant={dot.variant} off={dot.off} pulse={dot.pulse} />
                       <span className="code-row-main">
                         <span className="code-row-title">{s.title}</span>
-                        <span className="code-row-meta">{s.machine}{s.workspace ? ` · ${shortPath(s.workspace)}` : ''}{chatFor.has(s.id) ? ' · in a Studio chat' : ''}</span>
+                        <span className="code-row-meta">{s.machine}{s.workspace ? ` · ${shortPath(s.workspace)}` : ''}{chatFor.has(s.id) ? ' · in a Studio chat' : ''}{delegated.has(s.id) ? ` · delegated${delegated.get(s.id)?.instructions ? `, ${delegated.get(s.id)?.instructions}` : ''}` : ''}</span>
                       </span>
                       <span className="code-row-when">{ago(s.updatedAt)}</span>
                     </button>
@@ -239,7 +268,7 @@ export function CodeView() {
       <div className="code-detail" ref={detailRef}>
         {!open && <EmptyState variant="bare" title="Choose a session" description="Its conversation shows here. Continue it in a Studio chat, or open it in ACTIVATE to answer, approve or steer it." />}
         {open && <SessionDetail s={detail?.session ?? open} detail={detail} error={detailError}
-          can={continuable(detail?.session ?? open, machines, here)} chat={chatFor.get(open.id)} onContinued={() => void loadHere()} />}
+          can={continuable(detail?.session ?? open, machines, here)} chat={chatFor.get(open.id)} onContinued={() => void loadHere()} delegated={delegated.get(open.id)} />}
       </div>
     </div>
   )
@@ -307,8 +336,8 @@ function ContinueButton({ s, can, chat, onContinued }: { s: CodeSession; can: { 
   )
 }
 
-function SessionDetail({ s, detail, error, can, chat, onContinued }: {
-  s: CodeSession; detail: Detail | null; error: string; can: { ok: boolean; why: string }; chat?: string; onContinued: () => void
+function SessionDetail({ s, detail, error, can, chat, onContinued, delegated }: {
+  s: CodeSession; detail: Detail | null; error: string; can: { ok: boolean; why: string }; chat?: string; onContinued: () => void; delegated?: Delegated
 }) {
   const dot = dotFor(s)
   return (
@@ -327,15 +356,37 @@ function SessionDetail({ s, detail, error, can, chat, onContinued }: {
         </div>
         <div className="code-detail-actions">
           <ContinueButton s={s} can={can} chat={chat} onContinued={onContinued} />
-          <Button variant="secondary" size="sm" href={s.url} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>
+          {s.url && <Button variant="secondary" size="sm" href={s.url} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>}
         </div>
       </div>
       {!chat && !can.ok && <p className="muted code-continue-why">{can.why}</p>}
+      {delegated && <DelegatedNote d={delegated} />}
       {s.lastError && <Callout tone="error" size="sm" className="code-callout">{s.lastError}</Callout>}
       {error && <Callout tone="warning" size="sm" className="code-callout">{error}</Callout>}
       {!detail && !error && <div className="muted pad"><Loader inline size={16} label="Reading the conversation…" /></div>}
       {detail && <Transcript items={detail.history} earlier={detail.earlier} />}
     </>
+  )
+}
+
+/** What a delegated session is for and what it wrote in the library. */
+function DelegatedNote({ d }: { d: Delegated }) {
+  return (
+    <section className="code-delegated" aria-label="Delegated work">
+      <p>
+        Delegated from a chat, {DELEGATED_STATE[d.state] ?? d.state}
+        {d.instructions ? <>, with the instructions <strong>{d.instructions}</strong>{d.folder ? ' in its AGENTS.md' : ''}</> : null}
+        {d.folder ? <>, in the library folder <span className="code-mono">{d.folder}</span></> : null}.
+        {d.folder && d.state === 'working' ? ' Its files are indexed and listed here when it finishes.' : ''}
+      </p>
+      {d.files && d.files.length > 0 && (
+        <ul className="code-delegated-files">
+          {d.files.map(f => <li key={f}><a href={fileHref(f)}>{d.folder && f.startsWith(d.folder + '/') ? f.slice(d.folder.length + 1) : f}</a></li>)}
+          {(d.more ?? 0) > 0 && <li className="muted">and {d.more} more</li>}
+        </ul>
+      )}
+      {d.folder && d.state !== 'working' && !d.files?.length && <p className="muted">It wrote no files in its folder.</p>}
+    </section>
   )
 }
 

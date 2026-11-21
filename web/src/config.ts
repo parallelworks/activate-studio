@@ -26,6 +26,8 @@ export interface AppConfig {
   sections?: string[]
   /** Running on the ACTIVATE platform, with a credential to reach it. */
   platform?: boolean
+  /** The Code page lists this computer's own pw code sessions (no platform). */
+  localCode?: boolean
   /** False when AI features are off: no Chat, no Agents, no model line. */
   aiEnabled?: boolean
   /** How many workflows this Studio offers on its Workflows tab. */
@@ -137,6 +139,7 @@ export function useAppConfig(): AppConfig {
           libraries: Array.isArray(d.libraries) ? d.libraries : undefined,
           sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
           platform: !!d.platform,
+          localCode: !!d.localCode,
           aiEnabled: d.aiEnabled !== false,
           workflowCount: typeof d.workflowCount === 'number' ? d.workflowCount : 0,
           loaded: true,
@@ -240,15 +243,18 @@ export function aiPagesMounted(cfg: { aiEnabled?: boolean; loaded: boolean }): b
 /** Whether a page shows: in the saved sections (none saved means all), or
  *  always shown. Workflows and Code list what is on the platform, so they need one,
  *  and Chat and Agents need AI features on. */
-export function sectionAllowed(id: string, cfg: { sections?: string[]; platform?: boolean; aiEnabled?: boolean }): boolean {
-  if ((id === 'workflows' || id === 'code') && !cfg.platform) return false
+export function sectionAllowed(id: string, cfg: { sections?: string[]; platform?: boolean; localCode?: boolean; aiEnabled?: boolean }): boolean {
+  if (id === 'workflows' && !cfg.platform) return false
+  // Code lists the platform's sessions, or this computer's own where the
+  // Studio offers it to pw code with no platform.
+  if (id === 'code' && !cfg.platform && !cfg.localCode) return false
   if (AI_SECTIONS.includes(id) && cfg.aiEnabled === false) return false
   return !cfg.sections?.length || cfg.sections.includes(id) || ALWAYS_SHOWN.includes(id)
 }
 
 /** The page to show for a requested one: itself when allowed, otherwise the
  *  first allowed page in sidebar order. */
-export function shownView<T extends string>(view: T, order: readonly T[], cfg: { sections?: string[]; platform?: boolean; aiEnabled?: boolean }): T {
+export function shownView<T extends string>(view: T, order: readonly T[], cfg: { sections?: string[]; platform?: boolean; localCode?: boolean; aiEnabled?: boolean }): T {
   if (sectionAllowed(view, cfg)) return view
   return order.find(id => sectionAllowed(id, cfg)) ?? view
 }
