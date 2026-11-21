@@ -572,19 +572,26 @@ describe('history at scale', () => {
     serve({ transfers: [], finished: 2000 })
     render(<TransferActivity highlightId={null} added={null} onLanded={() => {}} onNew={() => {}} />)
     await waitFor(() => expect(lines()).toBe(50))
-    // Every page loaded: 39 more reads, and the list still renders in time.
-    let slowest = 0
+    // Every page loaded: 39 more reads, each timed.
+    const took: number[] = []
     while (screen.queryByRole('button', { name: 'Show more' })) {
       const before = lines()
       const t0 = performance.now()
       fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
       await waitFor(() => expect(lines()).toBeGreaterThan(before))
-      slowest = Math.max(slowest, performance.now() - t0)
+      took.push(performance.now() - t0)
     }
     expect(lines()).toBe(2000)
-    // jsdom is far slower than a browser; this bounds a page added to the
-    // end of a 1,950-row list, which re-renders only the new rows.
-    expect(slowest).toBeLessThan(1500)
+    // A page added to the end of a 1,950-row list re-renders only the new
+    // rows, so it costs about what a page added to a short list does. The
+    // bound compares the two on the same machine, as the medians of the
+    // first and last five pages: a fixed time in milliseconds failed on
+    // busy CI runners (jsdom is far slower than a browser) while the list
+    // itself was fine. A list that re-rendered every row would grow about
+    // 40 times slower from the first page to the last.
+    const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
+    const first = median(took.slice(0, 5)), last = median(took.slice(-5))
+    expect(last).toBeLessThan(first * 6 + 250)
   }, 180_000)
 
   it('asks only for transfers finished since the newest seen, and reports one that landed', async () => {
