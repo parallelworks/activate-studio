@@ -24,6 +24,9 @@ export interface PublicLibrary {
   caps: { index: boolean; fullText: boolean; vectors: boolean }
   /** The cluster a user's own library lives on. */
   site?: string | null
+  /** The cluster a library in a folder on the Studio's own server is on,
+   *  where the Studio knows the cluster it runs beside. */
+  host?: string | null
   /** Its level of search by meaning, for a library the Studio builds; null
    *  for an index it only reads, which uses the vectors it has (caps.vectors). */
   meaning?: MeaningLevel | null

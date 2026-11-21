@@ -11,7 +11,11 @@
 // both run.
 package libraries
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
+)
 
 // Caps is what a tree supports (LibraryCaps).
 type Caps struct {
@@ -254,6 +258,10 @@ type PublicLibrary struct {
 	SharedFrom string  `json:"sharedFrom,omitempty"`
 	// FromBucket: its files are objects read from a bucket one at a time.
 	FromBucket bool `json:"fromBucket,omitempty"`
+	// Host is the cluster a library in a folder on this server is on, by
+	// name, where the Studio knows the cluster it runs beside, so it is
+	// named as a library on a remote system is.
+	Host *string `json:"host,omitempty"`
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -269,7 +277,17 @@ func strOrNil(s string) *string {
 func Public(l Library) PublicLibrary {
 	return PublicLibrary{ID: l.ID, Label: l.Label, Primary: l.Primary, Writable: l.Writable, Pinned: l.Pinned,
 		Source: l.SourceRoot != "" || l.Site != "", Caps: l.Caps, Site: strOrNil(l.Site), Meaning: strOrNil(l.Meaning),
-		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil}
+		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil,
+		Host: localHost(l)}
+}
+
+// localHost is the home cluster's name for a library in a folder here: no
+// remote site and no bucket.
+func localHost(l Library) *string {
+	if l.Site != "" || l.Bucket != nil {
+		return nil
+	}
+	return strOrNil(remote.ShortName(HomeCluster()))
 }
 
 // PublicReadThroughView is what Settings shows of a read-through host.
