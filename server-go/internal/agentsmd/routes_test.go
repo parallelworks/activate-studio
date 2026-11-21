@@ -179,3 +179,29 @@ func TestRoutesSpaces(t *testing.T) {
 		}
 	}
 }
+
+// The folders list finds main-library folders by their markers (a file
+// without any is left out) and folders of My library from the record,
+// read again each time, so one whose section was removed drops out.
+func TestRoutesFolders(t *testing.T) {
+	srv, root, stand := server(t)
+	os.MkdirAll(filepath.Join(root, "mine-only"), 0o755)
+	os.WriteFile(filepath.Join(root, "mine-only", "AGENTS.md"), []byte("# my own\n"), 0o644)
+	call(t, srv, "POST", "/api/agents-md/apply", map[string]any{"folder": "agents/review", "instructions": "reviewer"})
+	call(t, srv, "POST", "/api/agents-md/apply", map[string]any{"library": "mine", "folder": "notes", "skills": []string{"pump"}})
+	code, out := call(t, srv, "GET", "/api/agents-md/folders", nil)
+	list, _ := out["folders"].([]any)
+	if code != 200 || len(list) != 2 {
+		t.Fatalf("%d %v", code, out)
+	}
+	first, second := list[0].(map[string]any), list[1].(map[string]any)
+	if first["folder"] != "agents/review" || names(first["instructions"]) != "reviewer" || second["library"] != "mine" || names(second["skills"]) != "pump" {
+		t.Fatalf("folders %v", list)
+	}
+	delete(stand.files, ".agents/skills/pump/SKILL.md")
+	delete(stand.files, "notes/.agents/skills/pump/SKILL.md")
+	_, out = call(t, srv, "GET", "/api/agents-md/folders", nil)
+	if l, _ := out["folders"].([]any); len(l) != 1 {
+		t.Fatalf("a folder with nothing left stayed: %v", l)
+	}
+}

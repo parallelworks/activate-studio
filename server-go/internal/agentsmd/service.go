@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
@@ -18,8 +19,10 @@ import (
 // Service resolves the folders instructions go into and the templates
 // they are made from.
 type Service struct {
-	A    *app.App
-	Exts *extensions.Set
+	A     *app.App
+	Exts  *extensions.Set
+	scan  scanCache
+	recMu sync.Mutex
 }
 
 // New is the service for a Studio.
@@ -183,7 +186,14 @@ func Register(mux *http.ServeMux, a *app.App) {
 		if err != nil {
 			return err
 		}
-		return s.answer(w, f, t)
+		return s.answer(w, r, f, t)
+	})
+	h("GET /api/agents-md/folders", func(w http.ResponseWriter, r *http.Request) error {
+		list, err := s.Carriers(r)
+		if err != nil {
+			return err
+		}
+		return reqbody.OK(w, map[string]any{"folders": list})
 	})
 	h("POST /api/agents-md/apply", func(w http.ResponseWriter, r *http.Request) error {
 		b, err := readChange(r)
@@ -197,7 +207,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		if err := s.ApplyNamed(f, b.Instructions, b.Skills); err != nil {
 			return err
 		}
-		return s.answer(w, f, t)
+		return s.answer(w, r, f, t)
 	})
 	h("POST /api/agents-md/remove", func(w http.ResponseWriter, r *http.Request) error {
 		b, err := readChange(r)
@@ -218,7 +228,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 				return wrap(err)
 			}
 		}
-		return s.answer(w, f, t)
+		return s.answer(w, r, f, t)
 	})
 }
 
@@ -253,10 +263,13 @@ func readChange(r *http.Request) (change, error) {
 	return b, nil
 }
 
-func (s *Service) answer(w http.ResponseWriter, f Folder, t Target) error {
+func (s *Service) answer(w http.ResponseWriter, r *http.Request, f Folder, t Target) error {
 	st, err := Read(f)
 	if err != nil {
 		return err
+	}
+	if r.Method == http.MethodPost {
+		s.note(r, t, st)
 	}
 	return reqbody.OK(w, struct {
 		Target

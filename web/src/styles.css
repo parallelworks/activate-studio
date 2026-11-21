@@ -1916,6 +1916,8 @@ a.identity-btn { text-decoration: none; }
 .agents-file[aria-disabled='true'] input { cursor: not-allowed; }
 .agents-body { width: 100%; min-height: 45vh; font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.6; resize: vertical; }
 .agents-del { margin-left: 4px; }
+.agents-carriers { margin-left: 6px; font-size: 12px; color: var(--pw-muted); white-space: nowrap; }
+.agents-folders .ov-row-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .persona-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
   padding: 7px 10px; border: 0; background: none; border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; }
 .persona-row:hover { background: var(--theme-hover); }
@@ -2399,6 +2401,8 @@ a.identity-btn { text-decoration: none; }
 .agents-view { padding: 0 0 20px; gap: 16px; }
 .agents-view > .ov-head { border: 0; border-radius: 0; box-shadow: none; border-bottom: 1px solid var(--pw-border); }
 .agents-view > :not(.ov-head) { margin-inline: 20px; }
+/* A card that scrolls sideways (overflow-x) would otherwise shrink to a sliver in the column. */
+.agents-view > * { flex-shrink: 0; }
 @media (max-width: 760px) {
   .search-hero, .query-controls { padding: 10px 14px; }
   .result-row, .search-results .results-head, .query-view .results-head { padding-inline: 14px; }

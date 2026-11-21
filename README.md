@@ -43,6 +43,7 @@ Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoin
 - **pw code from the chat**: ask the assistant to have pw code do a piece of work, such as a report built with code. The agent works in a library folder when it runs where the library is, and the assistant waits for it, then indexes and links what it wrote. It also finds your existing sessions by name or topic, follows them, and gives them direction.
 - **Code**, on ACTIVATE, lists your pw code sessions across the platform's machines, shows each one's conversation, opens it in ACTIVATE, and continues a session on the machine where the Studio's pw code runs in a Studio chat.
 - **Agents** take the parts of a larger request in parallel; you can watch them, approve what they ask to do, and steer them.
+- **Agent instructions** are written once and applied to folders: the Studio writes them into the folder's `AGENTS.md` (and skills into `.agents/skills`), which pw code reads in every session working there, and a pw code chat with a persona works in that persona's folder.
 - **Sign-in**, on a Studio several people share: through the ACTIVATE session proxy, or through ACTIVATE or any other OpenID Connect provider ([`docs/DEPLOY.md`](docs/DEPLOY.md)). Each person can also sign in with ACTIVATE under Settings, Model access, which the Studio renews and uses as their own credential for models, the platform, and My library, a folder of theirs on the Studio's cluster ([`docs/MULTI-USER.md`](docs/MULTI-USER.md)).
 - **Other tools**, such as pw code, can search and read the same knowledge base over MCP (search, the text the index holds, and the original files) or an OpenAI-compatible endpoint.
 
@@ -74,7 +75,7 @@ The same documents, grouped by what you want to do, are listed in [`docs/README.
 | [`docs/CUSTOMIZATION.md`](docs/CUSTOMIZATION.md) | settings, branding, identity, and the assistant's tools |
 | [`docs/LIBRARIES.md`](docs/LIBRARIES.md) | several indexes at once, building an index of a folder here or on a remote system over ssh or pw ssh, library lists to export and import, the Library's Details card, and which parts of the app appear |
 | [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | the Workflows tab |
-| [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents |
+| [`docs/AGENTS.md`](docs/AGENTS.md) | delegated agents, and agent instructions in AGENTS.md |
 | [`docs/ACCESS-CONTROL.md`](docs/ACCESS-CONTROL.md) | who can find what: GUFI and the file system's permissions, deploying for user and group access, and an administrator's index |
 | [`docs/MULTI-USER.md`](docs/MULTI-USER.md) | several people on one deployment |
 | [`docs/MACOS.md`](docs/MACOS.md) | the macOS app, and running from a clone on macOS |
