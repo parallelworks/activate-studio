@@ -862,7 +862,11 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 				l.Mine, l.Writable = true, true
 			}
 		case d.WrittenAsOwner():
-			l.Space, l.Writable = true, true
+			// A space over plain ssh is made only on a Studio one person
+			// uses with sign-in off, and written only there.
+			if !d.IsSSH() || (owner == "single" && !u.AuthEnabled) {
+				l.Space, l.Writable = true, true
+			}
 		}
 		if d.Shared != nil {
 			l.SharedFrom = d.Shared.From

@@ -258,6 +258,10 @@ export interface SpaceStatus {
   credential?: 'sign-in' | 'key' | ''
   /** Each person can sign in with ACTIVATE on this Studio. */
   signInOffered?: boolean
+  /** The viewer reaches their clusters over pw ssh with a credential of their own. */
+  pw?: boolean
+  /** A host over plain ssh can hold it: a Studio one person uses, sign-in off. */
+  ssh?: boolean
 }
 /** The space check: its steps, the folder, and what it would create. */
 export interface SpaceCheck {
@@ -793,8 +797,8 @@ export const api = {
    *  or why the list could not be had. */
   pwSystems: () => getJson<PwSystems>('/api/user-libraries/pw/systems'),
   spaceStatus: () => getJson<SpaceStatus>('/api/user-libraries/space'),
-  testSpace: (body: { sourceRoot: string }) => sendJson<SpaceCheck>('POST', '/api/user-libraries/space/test', body),
-  addSpace: (body: { sourceRoot: string; label?: string; depth?: IndexDepth; create?: boolean }) =>
+  testSpace: (body: { sourceRoot: string; cluster?: string; destination?: string }) => sendJson<SpaceCheck>('POST', '/api/user-libraries/space/test', body),
+  addSpace: (body: { sourceRoot: string; cluster?: string; destination?: string; label?: string; depth?: IndexDepth; create?: boolean }) =>
     sendJson<UserLibrary>('POST', '/api/user-libraries/space', body),
   spaceShares: (id: string) =>
     sendJson<{ shares: FolderShare[]; acl: boolean; fs: string; account: string }>('GET', `/api/user-libraries/${encodeURIComponent(id)}/shares`),

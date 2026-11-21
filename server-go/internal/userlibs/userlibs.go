@@ -377,12 +377,19 @@ func (m *Module) SpaceFolder(owner string) (string, string) {
 	if owner == "" {
 		return "", ""
 	}
+	// The space on the Studio's own cluster first, where pw code runs.
+	site, folder := "", ""
 	for _, d := range m.load(owner) {
-		if d.Space != nil && d.Shared == nil && d.SourceDir != "" {
-			return d.Site, d.SourceDir
+		if d.Space != nil && d.Shared == nil && d.SourceDir != "" && !d.IsSSH() {
+			if remote.ShortName(d.Site) == remote.ShortName(HomeCluster()) {
+				return d.Site, d.SourceDir
+			}
+			if folder == "" {
+				site, folder = d.Site, d.SourceDir
+			}
 		}
 	}
-	return "", ""
+	return site, folder
 }
 
 func find(defs []libraries.UserDef, id string) *libraries.UserDef {

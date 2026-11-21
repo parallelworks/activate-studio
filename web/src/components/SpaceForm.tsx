@@ -4,16 +4,19 @@ import { api, type IndexDepth, type SpaceCheck, type SpaceStatus, type UserLibra
 import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } from './IndexDepth'
 import { CreateConfirm, StepList } from './LibraryFormParts'
 import { PlatformSignInPanel } from './PlatformSignInPanel'
+import { PwSystemField } from './PwSystemField'
 
 /**
- * My library: the viewer's own folder on the cluster the Studio runs
- * beside, owned by their own account, indexed and written as them (POST
- * /api/user-libraries/space). It reaches the cluster with their ACTIVATE
- * sign-in, so a person without one is offered the sign-in here first. The
- * check runs first, as them: the folder is theirs and closed to other
- * accounts, and so are the folders above it. A folder that does not exist
- * yet is made, closed to others, once confirmed. Where it cannot be made
- * (no cluster), the form says why; where the platform refuses their
+ * My library: a folder of the viewer's own on one of their systems, owned
+ * by their own account, indexed and written as them (POST
+ * /api/user-libraries/space). The system is one of their clusters, reached
+ * over pw ssh with their ACTIVATE sign-in, the Studio's own cluster chosen
+ * first; on a Studio one person uses with sign-in off, also a host over
+ * plain ssh with their own keys. A person without a sign-in is offered it
+ * here first. The check runs first, as them: the folder is theirs and
+ * closed to other accounts, and so are the folders above it. A folder that
+ * does not exist yet is made, closed to others, once confirmed. Where it
+ * cannot be made, the form says why; where the platform refuses their
  * credential, the sign-in is offered again.
  */
 export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) {
@@ -27,9 +30,15 @@ export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) 
   const [busy, setBusy] = useState<'test' | 'add' | null>(null)
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
+  // The system: one of the person's clusters, or a host over plain ssh.
+  const [cluster, setCluster] = useState('')
+  const [overSSH, setOverSSH] = useState(false)
+  const [host, setHost] = useState('')
 
   const readStatus = useCallback(() => {
-    api.spaceStatus().then(s => { setStatus(s); setFolder(f => f || s.suggested); setStatusError('') }, e => setStatusError(String((e as Error).message ?? e)))
+    // The Studio's own cluster is the system to begin with, before the
+    // list of the person's systems answers.
+    api.spaceStatus().then(s => { setStatus(s); setFolder(f => f || s.suggested); setCluster(c => c || s.cluster); setStatusError('') }, e => setStatusError(String((e as Error).message ?? e)))
   }, [])
   useEffect(() => { readStatus() }, [readStatus])
   // Signing in here, or again after the platform refused a credential,
@@ -51,34 +60,55 @@ export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) 
   }
   if (!status.available) return <Callout tone="info" title="My library is not available">{status.why}</Callout>
 
+  const pwOK = status.pw !== false
+  const ssh = (overSSH || !pwOK) && !!status.ssh
+  const system = ssh ? host.trim() : cluster
+  const where = system || 'that system'
   const typed = folder.trim() || status.suggested
-  const passed = !!check?.ok && tested === typed
+  const at = ssh ? { destination: system } : { cluster: system }
+  const asked = JSON.stringify({ ...at, sourceRoot: typed })
+  const passed = !!check?.ok && tested === asked
+  const reset = () => { setCheck(null); setError('') }
 
   const test = async () => {
     setBusy('test'); setError('')
     try {
-      const c = await api.testSpace({ sourceRoot: typed })
-      setCheck(c); setTested(typed)
+      const c = await api.testSpace({ ...at, sourceRoot: typed })
+      setCheck(c); setTested(asked)
     } catch (e) { setError(String((e as Error).message ?? e)); setCheck(null) } finally { setBusy(null) }
   }
   const add = async (create: boolean) => {
     setBusy('add'); setError('')
     try {
-      const lib = await api.addSpace({ sourceRoot: typed, label: label.trim() || undefined, depth, ...(create ? { create: true } : {}) })
+      const lib = await api.addSpace({ ...at, sourceRoot: typed, label: label.trim() || undefined, depth, ...(create ? { create: true } : {}) })
       onAdded(lib)
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy(null) }
   }
+  const SSH = '\u0000ssh'
 
   return (
     <div className="ssh-library-form">
       <p className="muted view-sub">
-        {status.credential === 'key'
-          ? `Reached on ${status.cluster} as you with the API key you added under Settings, Model access. Signing in with ACTIVATE there instead renews itself.`
-          : `Reached on ${status.cluster} as you with your ACTIVATE sign-in.`}
+        {ssh
+          ? `Reached on ${where} as you over ssh with your own keys, agent and ~/.ssh/config.`
+          : status.credential === 'key'
+            ? `Reached on ${where} as you with the API key you added under Settings, Model access. Signing in with ACTIVATE there instead renews itself.`
+            : `Reached on ${where} as you with your ACTIVATE sign-in.`}
       </p>
       <div className="settings-grid">
+        {pwOK && (
+          <PwSystemField value={cluster} preferred={status.cluster || undefined}
+            onChange={c => { setCluster(c); setOverSSH(false); reset() }}
+            extra={status.ssh ? [{ value: SSH, label: 'A host over ssh…', description: 'user@host, with your own keys' }] : []}
+            extraValue={overSSH ? SSH : null} onExtra={() => { setOverSSH(true); reset() }} />
+        )}
+        {ssh && (
+          <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={host}
+            description="As you would type it after ssh. A Host from your ~/.ssh/config works, including ProxyJump."
+            onChange={e => { setHost(e.target.value); reset() }} />
+        )}
         <Input label="Folder" mono placeholder={status.suggested} spellCheck={false} value={folder}
-          description={`A folder of yours on ${status.cluster}, such as your home folder's ${status.suggested.replace(/^~\//, '')}. Only your account can open it until you share a folder in it. Made, closed to others, if it does not exist.`}
+          description={`A folder of yours on ${where}, such as your home folder's ${status.suggested.replace(/^~\//, '')}. Only your account can open it${ssh ? '' : ' until you share a folder in it'}. Made, closed to others, if it does not exist.`}
           onChange={e => { setFolder(e.target.value); setCheck(null) }} />
         <Input label="Label" hint="optional" placeholder="My library" value={label} onChange={e => setLabel(e.target.value)} />
       </div>
@@ -90,11 +120,11 @@ export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) 
       {error && <Callout tone="error" live>{error}</Callout>}
       {error.startsWith('The platform refused') && status.signInOffered && <PlatformSignInPanel onChanged={signedIn} />}
       <div className="query-actions">
-        <Button variant="secondary" loading={busy === 'test'} disabled={busy !== null} onClick={() => void test()}>Check the folder</Button>
+        <Button variant="secondary" loading={busy === 'test'} disabled={busy !== null || !system} onClick={() => void test()}>Check the folder</Button>
         <Button variant="primary" loading={busy === 'add'} disabled={!passed || busy !== null}
           onClick={() => (check?.create?.length ? setConfirming(true) : void add(false))}>Make my library</Button>
       </div>
-      <CreateConfirm open={confirming} paths={check?.create ?? []} where={`on ${status.cluster}, as ${check?.account ?? 'you'}`}
+      <CreateConfirm open={confirming} paths={check?.create ?? []} where={`on ${where}, as ${check?.account ?? 'you'}`}
         onClose={() => setConfirming(false)} onConfirm={() => { setConfirming(false); return add(true) }} />
     </div>
   )
