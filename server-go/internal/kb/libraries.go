@@ -36,6 +36,9 @@ type Library struct {
 	// Space: the viewer's own space, whose files are read and written as
 	// them through SpaceFiles.
 	Space bool
+	// Mine: a library the viewer built on one of their systems, read and
+	// written as them through SpaceFiles as a space is.
+	Mine bool
 	// SharedFrom is who shared a space's folder with the viewer; "" for
 	// the viewer's own space and for every other library.
 	SharedFrom string
@@ -218,7 +221,7 @@ func RequireWritable(lib Library) error {
 	// This module's own file operations work in this host's folders only;
 	// a library on another system is written through SpaceFiles or not at
 	// all.
-	if !lib.Writable || lib.Site != "" || lib.Space {
+	if !lib.Writable || lib.Site != "" || lib.Space || lib.Mine {
 		return Error(403, "%s is read only", lib.Label)
 	}
 	return nil
@@ -233,3 +236,8 @@ func readFileOr(f string) []byte {
 }
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// AsViewer: the Library reads and writes the library's files as the viewer
+// through SpaceFiles (a space, a folder shared with them, or one of their
+// own libraries on another system).
+func (l Library) AsViewer() bool { return l.Space || l.Mine }

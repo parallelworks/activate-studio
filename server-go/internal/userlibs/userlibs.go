@@ -728,6 +728,11 @@ func (m *Module) public(owner string, d *libraries.UserDef, job int) *jsonv.Obje
 		"fullText", d.FullText != nil && *d.FullText, "vectors", d.Vectors != nil && *d.Vectors, "formatNote", formatNote, "readThrough", readThrough,
 		"built", built, "indexDir", indexDir, "progress", progress, "builtDepth", optional(d.BuiltDepth), "gaps", gaps,
 		"buildingDepth", buildingDepth)
+	// A library the person built on one of their systems is written as
+	// them; over plain ssh, only on a Studio one person uses.
+	if d.Mine() && (!d.IsSSH() || (owner == single && !m.Users.AuthEnabled)) {
+		o.Set("mine", true)
+	}
 	if d.Space != nil {
 		o.Set("space", jsonv.NewObject("account", d.Space.Account, "acl", d.Space.ACL, "fs", d.Space.FS))
 	}

@@ -853,7 +853,15 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 		}
 		// A person's space is theirs to write in, and so is a folder shared
 		// with them for writing; every write runs as them.
-		if d.WrittenAsOwner() {
+		switch {
+		case d.Mine():
+			// A library the viewer built on one of their systems is
+			// written as them too; on a Studio with sign-in on, only over
+			// pw ssh, which reaches the system with their own key.
+			if !d.IsSSH() || (owner == "single" && !u.AuthEnabled) {
+				l.Mine, l.Writable = true, true
+			}
+		case d.WrittenAsOwner():
 			l.Space, l.Writable = true, true
 		}
 		if d.Shared != nil {

@@ -67,13 +67,13 @@ cd -- "$R" || fail 3 "cannot open $root"
 Rp=${R%/}/
 inside() { local d; d=$(cd -P -- "$1" 2>/dev/null && pwd -P) || return 1; case "$d/" in "$Rp"*) return 0;; esac; return 1; }
 dirof() { case "$1" in */*) printf '%s' "${1%/*}";; *) printf .;; esac; }
-# plain: in a private location, the way to a folder a write changes goes
-# through no link. A person a folder is shared with for writing can make
+# plain: in a private location, or one written as its owner (LINKS=1), the
+# way to a folder a write changes goes through no link. A person a folder is shared with for writing can make
 # links in it, and the owner's writes must not follow one to another of
 # their folders (one open to more people, say). The nearest part that
 # exists is looked at, before anything is made.
 plain() {
-  [ "${PRIV:-}" = 1 ] || return 0
+  [ "${PRIV:-}" = 1 ] || [ "${LINKS:-}" = 1 ] || return 0
   local a=$1
   while [ ! -e "$a" ] && [ ! -L "$a" ]; do a=$(dirof "$a"); done
   [ -L "$a" ] && return 1
@@ -210,6 +210,10 @@ type RemoteFS struct {
 	// Private: a person's own space, where what the helper writes is closed
 	// to other accounts unless the folder it lands in is open to them.
 	Private bool
+	// NoLinks: a location written as its owner where, as in a private
+	// one, no write goes through a link, but what is written takes the
+	// owner's umask and the folder's default ACL.
+	NoLinks bool
 	// Kept: commands other than reading and writing a file go over the
 	// session kept open to the host (Kept), as the Library's searches do,
 	// rather than a session started for each. A session to a cluster
@@ -229,15 +233,34 @@ func toolArgv(mark, cmd, root string, args ...string) []string {
 	return toolArgvFor(false, mark, cmd, root, args...)
 }
 
-// privateTool is the helper for a private location (RemoteFS.Private).
-const privateTool = "PRIV=1\n" + tool
+// privateTool is the helper for a private location (RemoteFS.Private),
+// and linksTool for one whose writes only refuse links (RemoteFS.NoLinks).
+const (
+	privateTool = "PRIV=1\n" + tool
+	linksTool   = "LINKS=1\n" + tool
+)
 
 func toolArgvFor(private bool, mark, cmd, root string, args ...string) []string {
 	script := tool
 	if private {
 		script = privateTool
 	}
+	return toolArgvOf(script, mark, cmd, root, args...)
+}
+
+func toolArgvOf(script, mark, cmd, root string, args ...string) []string {
 	return append([]string{"bash", "-c", script, "studio", mark, cmd, root}, args...)
+}
+
+// script is the helper the location's commands run.
+func (r *RemoteFS) script() string {
+	switch {
+	case r.Private:
+		return privateTool
+	case r.NoLinks:
+		return linksTool
+	}
+	return tool
 }
 
 // afterMark is a helper's output after its marker line; ok false when the
@@ -256,20 +279,19 @@ func runTool(ctx context.Context, run Runner, site, key string, timeout time.Dur
 }
 
 func runToolFor(ctx context.Context, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
-	return runToolOver(ctx, false, private, run, site, key, timeout, input, cmd, root, args...)
+	script := tool
+	if private {
+		script = privateTool
+	}
+	return runToolWith(ctx, marker(), false, script, run, site, key, timeout, input, cmd, root, args...)
 }
 
-// runToolOver is runToolFor, over the session kept open to the host when
-// kept is set and the runner keeps one, and the input is a list short
-// enough to go as arguments.
-func runToolOver(ctx context.Context, kept, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
-	return runToolWith(ctx, marker(), kept, private, run, site, key, timeout, input, cmd, root, args...)
-}
-
-// runToolWith is runToolOver with the marker given, for a command that
-// also marks the parts of its answer with it.
-func runToolWith(ctx context.Context, mark string, kept, private bool, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
-	argv := toolArgvFor(private, mark, cmd, root, args...)
+// runToolWith is runToolFor with the helper's script and marker given,
+// over the session kept open to the host when kept is set and the runner
+// keeps one, and the input is a list short enough to go as arguments. A
+// command may also mark the parts of its answer with the marker.
+func runToolWith(ctx context.Context, mark string, kept bool, script string, run Runner, site, key string, timeout time.Duration, input io.Reader, cmd, root string, args ...string) (remote.Result, bool, error) {
+	argv := toolArgvOf(script, mark, cmd, root, args...)
 	var res remote.Result
 	var err error
 	k, canKeep := run.(Kept)
@@ -390,7 +412,7 @@ func (r *RemoteFS) runWith(ctx context.Context, mark string, input io.Reader, cm
 	if t <= 0 {
 		t = 10 * time.Minute
 	}
-	res, _, err := runToolWith(ctx, mark, r.Kept, r.Private, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
+	res, _, err := runToolWith(ctx, mark, r.Kept, r.script(), r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
 	if err != nil {
 		return res, r.named(502, messageOf(err))
 	}
@@ -770,7 +792,7 @@ func (r *RemoteFS) Write(ctx context.Context, rel string, src io.Reader, mtime i
 		}
 		src = io.MultiReader(bytes.NewReader(head), src)
 	}
-	cmd, err := r.command(toolArgvFor(r.Private, marker(), "write", r.Dir, rel, touchTime(mtime), x))
+	cmd, err := r.command(toolArgvOf(r.script(), marker(), "write", r.Dir, rel, touchTime(mtime), x))
 	if err != nil {
 		return 0, err
 	}

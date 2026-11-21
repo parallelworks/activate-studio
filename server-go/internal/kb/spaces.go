@@ -70,7 +70,7 @@ func (m *Module) spaceAware(op string, next func(w http.ResponseWriter, r *http.
 func (m *Module) spaceOf(r *http.Request, b body, op string) (Library, string, bool) {
 	if op == "file" && inAll(r) {
 		lib, sub, err := m.splitAll(r, qs(r, "path"))
-		if err != nil || !lib.Space {
+		if err != nil || !lib.AsViewer() {
 			return Library{}, "", false
 		}
 		return lib, sub, true
@@ -80,7 +80,7 @@ func (m *Module) spaceOf(r *http.Request, b body, op string) (Library, string, b
 		return Library{}, "", false
 	}
 	lib, err := m.libByID(r, id)
-	if err != nil || !lib.Space {
+	if err != nil || !lib.AsViewer() {
 		return Library{}, "", false
 	}
 	return lib, qs(r, "path"), true

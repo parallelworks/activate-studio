@@ -38,6 +38,8 @@ export interface PublicLibrary {
   formatNote?: string | null
   /** The viewer's own space on the Studio's cluster, written as them. */
   space?: boolean
+  /** A library the viewer built on one of their systems, written as them. */
+  mine?: boolean
   /** A folder another account shared with the viewer: that account. */
   sharedFrom?: string
   /** A bucket library: its files are objects read one at a time. */
@@ -241,6 +243,9 @@ export interface UserLibrary {
   /** The viewer's own space: the cluster account, and whether its file
    *  system takes POSIX ACLs. */
   space?: { account: string; acl: boolean; fs: string } | null
+  /** Built by the Studio on one of the viewer's systems, so read and
+   *  written as them in the Library. */
+  mine?: boolean
   /** A folder another account shared with the viewer. */
   shared?: { from: string; access: 'read' | 'write'; share: string } | null
 }
