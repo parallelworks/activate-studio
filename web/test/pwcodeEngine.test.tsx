@@ -40,6 +40,21 @@ describe('What answers a conversation', () => {
     expect(await screen.findByRole('button', { name: /Studio/ })).toBeInTheDocument()
   })
 
+  it('links a chat that continues a session back to it on the Code page', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const body = url === '/api/chat/engine' ? { setting: 'auto', default: 'studio', pwcode: true, reason: null }
+        : url.startsWith('/api/chat/conversations/') ? { pwcode: { url: 'https://platform.example/code/m1/s1', session: 's1', continued: true, machine: 'm1' } }
+        : url.startsWith('/api/chat/pwcode/') ? { session: 's1', status: 'idle', tools: null, continued: true }
+        : {}
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    localStorage.setItem('ade-chat-engine-by-chat', JSON.stringify({ c1: 'pwcode' }))
+    render(<PWCodeEngine conversationId="c1" />)
+    fireEvent.click(await screen.findByRole('button', { name: /pw code/ }))
+    expect(await screen.findByRole('link', { name: 'See it on the Code page' })).toHaveAttribute('href', '#view=code?machine=m1&session=s1')
+    expect(await screen.findByText(/began outside the Studio, so it works with its own tools/)).toBeInTheDocument()
+  })
+
   it('says why pw code is not offered when the Studio is set to it', async () => {
     serve({ setting: 'pwcode', default: 'studio', pwcode: false, reason: 'pw code runs as you: sign in with ACTIVATE under Settings, Model access.' })
     render(<PWCodeEngine conversationId="c1" />)
