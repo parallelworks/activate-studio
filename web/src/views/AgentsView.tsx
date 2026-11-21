@@ -6,11 +6,15 @@ import {
 } from '@parallelworks/ui'
 import { LogViewer } from '@parallelworks/ui/logviewer'
 import { PersonaIcon } from '../components/PersonaIcon'
+import { ApplyToFolder, changeFolder, type AgentFolder } from '../components/ApplyToFolder'
 import { FleetPage, topicVariant } from './FleetPage'
 
 /**
- * Personas and skills: the two ways a markdown file changes how the
- * assistant behaves, in one place a user can find.
+ * Agent instructions and skills: the markdown files that shape how agents
+ * work, in one place a user can find. Instructions (persona files) are
+ * applied to folders, where the Studio writes them into AGENTS.md for pw
+ * code, and set a Studio chat's stance; skills are applied the same way
+ * and loaded by the Studio assistant mid-conversation.
  *
  * They are separated here because they do different jobs and the
  * difference decides which one somebody should write. A persona is a
@@ -165,6 +169,26 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     .catch(() => {}), [])
   useEffect(() => { load() }, [load])
 
+  // The folders that carry instructions or skills the Studio wrote there,
+  // found by their markers; read when the page opens and after a change.
+  const [folders, setFolders] = useState<AgentFolder[]>([])
+  const [applying, setApplying] = useState<{ kind: 'persona' | 'skill'; name: string } | null>(null)
+  const [folderNote, setFolderNote] = useState('')
+  const loadFolders = useCallback(() => fetch('/api/agents-md/folders').then(r => r.json())
+    .then(d => setFolders(d.folders ?? [])).catch(() => {}), [])
+  useEffect(() => { if (page === 'library') void loadFolders() }, [page, loadFolders])
+  const carrying = (kind: 'persona' | 'skill', n: string) =>
+    folders.filter(f => (kind === 'persona' ? f.instructions : f.skills).includes(n))
+  const takeOff = async (f: AgentFolder, kind: 'persona' | 'skill', n: string) => {
+    setFolderNote('')
+    try {
+      await changeFolder(true, f.space ? f.library : '', f.folder, kind === 'persona' ? { instructions: n } : { skills: [n] })
+      toast.success(`Took ${n} off ${f.folder || 'the top of ' + f.label}.`)
+    } catch (e) { setFolderNote((e as Error).message) }
+    await loadFolders()
+  }
+  const where = (f: AgentFolder) => `${f.folder || '(top)'}${f.space ? ` in ${f.label}` : ''}`
+
   // Pasting a whole file is the common case, so frontmatter already in the
   // text fills the fields rather than being left to collide with them.
   const onBody = (text: string) => {
@@ -185,7 +209,9 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error ?? `${res.status}`)
-      toast.success(`Saved ${d.name}. It is available in chat now.`)
+      toast.success(kind === 'persona'
+        ? `Saved ${d.name}. Apply it to a folder again to bring a folder's AGENTS.md up to date.`
+        : `Saved ${d.name}. It is available in chat now.`)
       setName(''); setDescription(''); setBody(''); setIcon(''); setEditing(null)
       await load()
     } catch (e) {
@@ -247,7 +273,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
         <Tabs label="Agents" className="agents-tabs" value={page} onValueChange={setPage} items={[
           { value: 'fleet', label: 'Fleet' },
           { value: 'tasks', label: 'Tasks', badge: taskRuns.some(t => t.state === 'working') ? <StatusDot variant="info" pulse /> : null },
-          { value: 'library', label: 'Personas and skills' },
+          { value: 'library', label: 'Instructions and skills' },
         ]} />
       </div>
 
@@ -409,13 +435,13 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
 
       <div className="ov-grid">
         <section className="card ov-list">
-          <h3>Personas ({shownPersonas.length}{filter ? ` of ${personas.length}` : ''})</h3>
+          <h3>Agent instructions ({shownPersonas.length}{filter ? ` of ${personas.length}` : ''})</h3>
           <p className="muted view-sub">
-            A standing stance for a whole conversation. Choose one from the <b>Persona</b> button above the message box in
-            Chat; it stays in force until you change it, and <b>Default</b> puts it back to how this workspace normally answers. Personas are stored
-            in the knowledge base{dir ? <> at <code>{dir}</code></> : null}, so everyone working over this corpus has
-            the same library. They are ordinary corpus files: browsable under <code>.agents</code> in the Library,
-            rendered as Markdown in the viewer, searchable, and labeled <code>agent-persona</code>.
+            How an agent should work, written once and applied to the folders agents work in. <b>Apply to a folder</b> writes them
+            into the folder's <code>AGENTS.md</code>, which pw code reads in every session there; your own text in that file stays as it is.
+            In Chat, the <b>Persona</b> button chooses one for a conversation: the Studio assistant takes it as its stance, and a pw code
+            chat works in <code>agents/&lt;name&gt;</code> with it in that folder's <code>AGENTS.md</code>. They are stored
+            in the knowledge base{dir ? <> at <code>{dir}</code></> : null}, browsable under <code>.agents</code> in the Library, and labeled <code>agent-persona</code>.
           </p>
           {pageOf(shownPersonas, pPage).map(p => (
             <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open this persona for editing">
@@ -426,6 +452,13 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                   <Button variant="ghost" size="sm" className="agents-del"
                     onClick={e => { e.stopPropagation(); onOpen(`.agents/${p.name}.md`) }}>in library</Button>
                 )}
+                <Button variant="ghost" size="sm" className="agents-del" title="Write these instructions into a folder's AGENTS.md for pw code"
+                  onClick={e => { e.stopPropagation(); setApplying({ kind: 'persona', name: p.name }) }}>apply to a folder</Button>
+                {carrying('persona', p.name).length > 0 && (
+                  <span className="agents-carriers" title={carrying('persona', p.name).map(where).join(', ')}>
+                    in {carrying('persona', p.name).length} folder{carrying('persona', p.name).length === 1 ? '' : 's'}
+                  </span>
+                )}
                 <Button variant="ghost" size="sm" className="agents-del" title="Open a copy in the editor, to change without touching the original"
                   onClick={e => { e.stopPropagation(); void duplicate(p.name) }}>duplicate</Button>
                 <Button variant="ghost" size="sm" className="agents-del"
@@ -433,21 +466,31 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
               </span>
             </div>
           ))}
-          {shownPersonas.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet. The first one you add appears in the chat Persona control.'}</p>}
+          {shownPersonas.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet. The first ones you add can be applied to a folder and appear in the chat Persona control.'}</p>}
           <Pagination className="agents-pager" page={pPage} pageSize={PAGE} total={shownPersonas.length} onPageChange={setPPage} />
         </section>
 
         <section className="card ov-list">
           <h3>Skills ({shownSkills.length}{filter ? ` of ${skills.length}` : ''})</h3>
           <p className="muted view-sub">
-            Task instructions the assistant loads itself, mid-conversation, when the work matches the description. There is
-            nothing to select in Chat: ask for the work, or name the skill, and the assistant calls it. Write the
+            Task instructions loaded when the work matches the description. The Studio assistant loads them mid-conversation:
+            ask for the work, or name the skill. <b>Apply to a folder</b> also writes one to <code>.agents/skills</code> there for pw code,
+            which uses a folder's skills once you have opened that folder in pw code and approved it. Write the
             description so it can tell when the skill applies.
           </p>
           {pageOf(shownSkills, sPage).map(s => (
             <div className="ov-row" key={s.name} onClick={() => void edit('skill', s.name)} title="Open this skill for editing">
               <span className="ov-row-path"><span className="agents-name" title={s.name}>{s.name}</span></span>
-              <span className="ov-row-meta">{s.description || 'no description'}</span>
+              <span className="ov-row-meta">
+                {s.description || 'no description'}
+                <Button variant="ghost" size="sm" className="agents-del" title="Write this skill into a folder for pw code"
+                  onClick={e => { e.stopPropagation(); setApplying({ kind: 'skill', name: s.name }) }}>apply to a folder</Button>
+                {carrying('skill', s.name).length > 0 && (
+                  <span className="agents-carriers" title={carrying('skill', s.name).map(where).join(', ')}>
+                    in {carrying('skill', s.name).length} folder{carrying('skill', s.name).length === 1 ? '' : 's'}
+                  </span>
+                )}
+              </span>
             </div>
           ))}
           {shownSkills.length === 0 && <p className="muted">{filter ? 'None match that filter.' : 'None yet.'}</p>}
@@ -455,11 +498,48 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
         </section>
       </div>
 
+      <section className="card ov-list agents-folders">
+        <h3>Folders with agent instructions ({folders.length})</h3>
+        <p className="muted view-sub">
+          The folders whose <code>AGENTS.md</code> or <code>.agents/skills</code> carry instructions or skills applied here, in the main
+          library and in My library. Take one off and its section goes; the rest of the file stays.
+        </p>
+        {folders.map(f => (
+          <div className="ov-row" key={`${f.library}:${f.folder}`}>
+            <span className="ov-row-path">
+              {!f.space ? <a href="#" onClick={e => { e.preventDefault(); onOpen(f.path) }}>{where(f)}</a> : <span>{where(f)}</span>}
+            </span>
+            <span className="ov-row-meta">
+              {f.problem && <StatusLabel variant="warning">{f.problem}</StatusLabel>}
+              {f.instructions.map(n => (
+                <Button key={`i:${n}`} variant="ghost" size="sm" className="agents-del" title={`Take the instructions ${n} off this folder`}
+                  onClick={() => void takeOff(f, 'persona', n)}>{n} · take off</Button>
+              ))}
+              {f.skills.map(n => (
+                <Button key={`s:${n}`} variant="ghost" size="sm" className="agents-del" title={`Take the skill ${n} off this folder`}
+                  onClick={() => void takeOff(f, 'skill', n)}>skill {n} · take off</Button>
+              ))}
+            </span>
+          </div>
+        ))}
+        {folders.length === 0 && <p className="muted">None yet. Use <b>apply to a folder</b> on instructions or a skill above.</p>}
+        {folderNote && <p className="muted">{folderNote}</p>}
+      </section>
+
+      {applying && (
+        <ApplyToFolder kind={applying.kind} name={applying.name} onClose={() => setApplying(null)}
+          onDone={f => {
+            setApplying(null)
+            toast.success(`Applied ${applying.name} to ${f.folder || 'the top of ' + f.label}.`)
+            void loadFolders()
+          }} />
+      )}
+
       <section className="card settings-card">
         <h3>{editing ? `Editing ${editing}` : 'Add one'}</h3>
         <div className="agents-kind">
           <SegmentedControl label="Kind" value={kind} onValueChange={setKind}
-            options={[{ value: 'persona', label: 'Persona' }, { value: 'skill', label: 'Skill' }]} />
+            options={[{ value: 'persona', label: 'Instructions' }, { value: 'skill', label: 'Skill' }]} />
           <label className={`${buttonClasses()} agents-file`}>
             Choose a .md file
             <input type="file" accept=".md,text/markdown" onChange={e => onFile(e.target.files?.[0])} />
@@ -469,7 +549,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           <div className="settings-grid">
             <Input label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="proposal-reviewer" />
             <Input label="Description" value={description} onChange={e => setDescription(e.target.value)}
-              placeholder={kind === 'skill' ? 'when the assistant should load this' : 'what this persona is for'} />
+              placeholder={kind === 'skill' ? 'when the assistant should load this' : 'what these instructions are for'} />
           </div>
           {kind === 'persona' && (
             <Field label="Icon" description={<>

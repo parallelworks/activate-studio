@@ -17,6 +17,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
+	"github.com/parallelworks/activate-studio/server-go/internal/extensions"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/keycookie"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
@@ -154,6 +155,10 @@ type pwTarget struct {
 	client    pwcode.Client
 	site      string
 	workspace string
+	// inSpace: workspace is the top of the person's own library.
+	inSpace bool
+	// persona is the agent instructions the session's folder carries.
+	persona string
 }
 
 func pwErr(status int, msg string) error { return &apierr.Error{Status: status, Message: msg} }
@@ -292,10 +297,10 @@ func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conver
 	if link != nil && link.Site == site && link.Workspace != "" {
 		return &pwTarget{client: s.Daemon.Remote(site, key), site: site, workspace: link.Workspace}, nil
 	}
-	ws := ""
+	ws, inSpace := "", false
 	if f := m.A.Providers.SpaceFolder; f != nil {
 		if ssite, folder := f(u.Username); folder != "" && sameCluster(ssite, site) {
-			ws = folder
+			ws, inSpace = folder, true
 		}
 	}
 	if ws == "" {
@@ -304,7 +309,7 @@ func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conver
 			return nil, err
 		}
 	}
-	return &pwTarget{client: s.Daemon.Remote(site, key), site: site, workspace: ws}, nil
+	return &pwTarget{client: s.Daemon.Remote(site, key), site: site, workspace: ws, inSpace: inSpace}, nil
 }
 
 // sameCluster: a and b name one cluster (pw://user/name or name).
@@ -368,7 +373,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 	tools := m.chatTools(r)
 	want := specNames(tools)
 	// A session is kept while its MCP token has a day left.
-	if l := c.PWCode; l != nil && l.Site == t.site && l.Session != "" && pwFresh(l.CreatedAt) {
+	if l := c.PWCode; l != nil && l.Site == t.site && l.Session != "" && l.Persona == t.persona && pwFresh(l.CreatedAt) {
 		if d, err := pwcode.GetSession(ctx, t.client, l.Session); err == nil && jsonv.String(jsonv.Path(d, "archivedAt")) == "" {
 			ck := ensureStudioMCP(ctx, t.client, l.Session, want)
 			if ck.OK {
@@ -426,7 +431,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 			_, _ = pwcode.ArchiveSession(ctx, t.client, id)
 			continue
 		}
-		link := &conversations.PWCodeLink{Site: t.site, Session: id, Workspace: t.workspace, CreatedAt: m.Conv.Now(), MCPURL: url}
+		link := &conversations.PWCodeLink{Site: t.site, Session: id, Workspace: t.workspace, CreatedAt: m.Conv.Now(), MCPURL: url, Persona: t.persona}
 		if st, err := pwcode.SessionState(ctx, t.client, id); err == nil {
 			link.URL = jsonv.String(jsonv.Path(st, "remoteUrl"))
 			link.Model = jsonv.String(jsonv.Path(st, "model"))
@@ -517,9 +522,27 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if c == nil {
 		return fail(errors.New("the conversation is gone"))
 	}
-	t, err := m.pwcodeTarget(ctx, r, c.PWCode)
+	// A session works in the folder of the conversation's agent
+	// instructions; choosing others starts a session in theirs.
+	persona := ""
+	if body.Agent != nil {
+		persona = extensions.NormalizeName(*body.Agent)
+	}
+	prior := c.PWCode
+	if prior != nil && !prior.Continued && prior.Persona != persona {
+		prior = nil
+	}
+	t, err := m.pwcodeTarget(ctx, r, prior)
 	if err != nil {
 		return fail(err)
+	}
+	if old := c.PWCode; old != nil && prior == nil && !old.Continued && old.Session != "" && old.Site == t.site {
+		_, _ = pwcode.ArchiveSession(ctx, t.client, old.Session)
+	}
+	if prior == nil && (c.PWCode == nil || !c.PWCode.Continued) {
+		m.personaFolder(r, t, persona)
+	} else if prior != nil {
+		t.persona = prior.Persona
 	}
 	link, fresh, err := m.pwcodeSession(ctx, r, t, c)
 	if err != nil {

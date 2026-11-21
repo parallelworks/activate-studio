@@ -388,6 +388,10 @@ type PWCodeLink struct {
 	Continued   bool   `json:"continued,omitempty"`
 	Machine     string `json:"machine,omitempty"`
 	MachineName string `json:"machineName,omitempty"`
+	// Persona is the agent instructions the conversation chose when its
+	// session was made, "" for none: a session with instructions works in
+	// agents/<persona>/, whose AGENTS.md carries them.
+	Persona string `json:"persona,omitempty"`
 }
 
 type conversationFields Conversation
