@@ -8,7 +8,7 @@ import { LibraryImport } from './LibraryImport'
 import { json, type SetupStatus } from './PrimaryFolder'
 
 /** What GET /api/user-libraries says this viewer may add of their own. */
-export interface UserOffer { available: boolean; ssh: boolean; pwOffered: boolean; workflow: boolean; space?: boolean }
+export interface UserOffer { available: boolean; ssh: boolean; pwOffered: boolean; workflow: boolean; space?: boolean; home?: string }
 
 /** The choices Add a library offers, from what the server says this viewer
  *  may add: building here (`canBuild`, sign-in off), ssh (sign-in off), pw
@@ -16,7 +16,7 @@ export interface UserOffer { available: boolean; ssh: boolean; pwOffered: boolea
  *  yet), the platform's workflow on a Studio the platform hosts, and a copy
  *  of a folder in a Transfers location (`canBuild` too). */
 export function addOptions(canBuild: boolean, user: UserOffer, platform: boolean): AddOptions {
-  return { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && platform && user.available, copy: canBuild, bucket: canBuild, space: !!user.space }
+  return { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && platform && user.available, copy: canBuild, bucket: canBuild, space: !!user.space, home: user.home || undefined }
 }
 
 /**
@@ -81,11 +81,12 @@ export function useLibraryAddOffer(): LibraryAddOffer {
         () => null,
       ),
       json<SetupStatus>('/api/setup/status').then(s => !!s?.standalone, () => false),
-      // A space is offered where the Studio knows the cluster it runs beside.
-      api.spaceStatus().then(s => !!s?.cluster, () => false),
-    ]).then(([b, u, s, space]) => {
+      // A folder of one's own is offered where one can be made, or where
+      // the form can say what is missing (the Studio knows its cluster).
+      api.spaceStatus().then(s => ({ space: !!(s?.available || s?.cluster), home: s?.cluster ?? '' }), () => ({ space: false, home: '' })),
+    ]).then(([b, u, s, sp]) => {
       if (!live) return
-      setCanBuild(b); setUser(u && { ...u, space }); setBrowse(s); setLoaded(true)
+      setCanBuild(b); setUser(u && { ...u, ...sp }); setBrowse(s); setLoaded(true)
     })
     return () => { live = false }
   }, [tick])
@@ -120,7 +121,7 @@ export function AddLibraryDialog({ open, onClose, offer, onAdded }: {
     // check's results appearing, never resizes the dialog: the form
     // scrolls inside it.
     <Modal open={open} onClose={onClose} size="xl" align="center" className="lib-add-modal" title="Add a library"
-      description="An index or a folder, on this computer or on a remote system. A library added here is read only in the Studio, except a space of your own and folders shared with you for writing."
+      description="An index or a folder, on this computer, on one of your systems, or in a bucket. On a system it is read as you, and written as you where your account may write."
       footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
       {open && (
         <AddLibrary options={offer.options} browse={offer.browse}

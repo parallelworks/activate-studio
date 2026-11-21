@@ -19,7 +19,14 @@ import { PwSystemField } from './PwSystemField'
  * cannot be made, the form says why; where the platform refuses their
  * credential, the sign-in is offered again.
  */
-export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) {
+export function SpaceForm({ onAdded, cluster: given, destination }: {
+  onAdded: (lib: UserLibrary) => void
+  /** The system, chosen by the form around this one (Add a library): a
+   *  cluster over pw ssh, or a host over plain ssh. The form then shows no
+   *  System field of its own. */
+  cluster?: string
+  destination?: string
+}) {
   const [status, setStatus] = useState<SpaceStatus | null>(null)
   const [statusError, setStatusError] = useState('')
   const [folder, setFolder] = useState('')
@@ -61,8 +68,10 @@ export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) 
   if (!status.available) return <Callout tone="info" title="My library is not available">{status.why}</Callout>
 
   const pwOK = status.pw !== false
-  const ssh = (overSSH || !pwOK) && !!status.ssh
-  const system = ssh ? host.trim() : cluster
+  const chosen = given !== undefined || destination !== undefined
+  const ssh = destination !== undefined || (!chosen && (overSSH || !pwOK) && !!status.ssh)
+  // A cluster the form around this one has not chosen yet is the Studio's.
+  const system = destination !== undefined ? destination.trim() : given ? given : ssh ? host.trim() : cluster
   const where = system || 'that system'
   const typed = folder.trim() || status.suggested
   const at = ssh ? { destination: system } : { cluster: system }
@@ -96,13 +105,13 @@ export function SpaceForm({ onAdded }: { onAdded: (lib: UserLibrary) => void }) 
             : `Reached on ${where} as you with your ACTIVATE sign-in.`}
       </p>
       <div className="settings-grid">
-        {pwOK && (
+        {pwOK && !chosen && (
           <PwSystemField value={cluster} preferred={status.cluster || undefined}
             onChange={c => { setCluster(c); setOverSSH(false); reset() }}
             extra={status.ssh ? [{ value: SSH, label: 'A host over ssh…', description: 'user@host, with your own keys' }] : []}
             extraValue={overSSH ? SSH : null} onExtra={() => { setOverSSH(true); reset() }} />
         )}
-        {ssh && (
+        {ssh && !chosen && (
           <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={host}
             description="As you would type it after ssh. A Host from your ~/.ssh/config works, including ProxyJump."
             onChange={e => { setHost(e.target.value); reset() }} />

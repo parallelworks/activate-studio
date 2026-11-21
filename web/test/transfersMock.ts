@@ -138,6 +138,8 @@ export function mockTransfers(): Record<string, unknown>[] {
 }
 
 export interface MockOptions {
+  /** Libraries are built on this computer (sign-in off). */
+  canBuild?: boolean
   locations?: MockLocation[]
   /** Status for the locations call, as an older server's 404. */
   locationsStatus?: number
@@ -288,6 +290,7 @@ export function createTransfersMock(opts: MockOptions = {}) {
     const u = new URL(url, 'http://studio.test')
     calls.push({ method, path: u.pathname + u.search, body })
     const path = u.pathname
+    if (path === '/api/libraries' && method === 'GET') return { status: 200, body: { canBuild: !!opts.canBuild, libraries: [] } }
     if (path === '/api/transfers/locations') {
       if (opts.locationsStatus && opts.locationsStatus !== 200) return { status: opts.locationsStatus, body: { error: 'not found' } }
       return { status: 200, body: { locations } }

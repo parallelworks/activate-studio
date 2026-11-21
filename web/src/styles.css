@@ -3159,6 +3159,7 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .xfer-settings-mounts { display: flex; flex-direction: column; gap: 6px; }
 .xfer-settings-mounts p { margin: 0; font-size: 12.5px; }
 .xfer-checks-note { margin: 6px 0 0; font-size: 12.5px; }
+.xfer-keep-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
 
 /* The Library's + Add as a split button: + Add opens Add files, the arrow
    beside it a menu that also adds a library or imports a library list. */

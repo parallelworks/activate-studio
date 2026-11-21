@@ -152,11 +152,21 @@ A row of a library whose files may be on another host also has **Originals via**
 the host its originals are read through when its own location cannot give a
 file (see "Reading originals through another host").
 
-**Add a library** (`web/src/components/AddLibrary.tsx`) asks two things.
-*Where:* this computer, or a remote system. *How:* build an index of a
-folder, or connect a GUFI index that already exists. A remote system is
-reached with **Connect with** SSH or ACTIVATE (pw ssh), and on a Studio
-the platform hosts the platform's index workflow is a third way to build.
+**Add a library** (`web/src/components/AddLibrary.tsx`) is one form, used
+in Settings and in the Library's Add menu, in the terms of `access` above.
+*Where:* this computer (sign-in off), a system, or a bucket. *System:* one
+of the viewer's clusters over pw ssh (`PwSystemField`, the Studio's own
+cluster first), or a host over plain ssh where sign-in is off; it is
+picked once and the forms below take it. The form then says the library
+is read as the viewer there. *What:* on a system, the viewer's own folder
+(My library), an index the Studio builds of a folder there, or an index
+that is there already, connected read only; here, a folder to build or an
+index to connect. A folder on a cluster can be built over the pw ssh
+session or, on a Studio the platform hosts, by the platform's index
+workflow (**Build with**). On a cluster, the folders others shared with
+the viewer there are listed under the form (`SharedWithMe`, by the
+share's `site`). A copy of a Transfers location is not here: it is made
+from Transfers (Copies of a location, below), and the form points there.
 Only what this install supports is offered: building here and anything
 over ssh where sign-in is off (`canBuild` in `GET /api/libraries`, `ssh`
 in `GET /api/user-libraries`); pw ssh where the pw CLI is on this machine
@@ -427,9 +437,13 @@ piece.
 
 ## Copies of a location
 
-On a Studio with sign-in off, **Add a library**, "A remote system", "Copy
-here and index it" keeps a copy of a folder in a Transfers location on
-this computer and indexes the copy (`server-go/internal/libapi/copy.go`).
+On a Studio with sign-in off, Transfers, **Keep a local copy and index
+it…** (`web/src/components/KeepCopyDialog.tsx`) keeps a copy of a folder
+in a Transfers location on this computer and indexes the copy. It lives in
+Transfers, where those locations are chosen and browsed, because a copy is
+the one library that is not read where it is: it is the way for a host
+that takes SFTP only, a cloud drive or another rclone remote, where
+nothing can be built or connected (`server-go/internal/libapi/copy.go`).
 The location is a saved ssh location, a library host, a cluster, or an
 rclone remote, chosen from the Transfers locations, with the folder
 picked by browsing it. This is the way to make a library of a host
@@ -613,7 +627,7 @@ text is read.
 
 ## Indexes built on a remote system
 
-**Add a library**, "A remote system", "Build an index of a folder" builds
+**Add a library**, "A system", "Index a folder" builds
 the index on the remote system itself, over the same session the Studio
 uses to read it: plain ssh (`user@host` or `user@host:port`, with your
 keys, agent, and `~/.ssh/config`, on a Studio with sign-in off) or
@@ -852,8 +866,7 @@ run rebuilds instead. An index takes about 50 KB per directory.
 
 On a Studio the platform hosts, a user can also build through the
 platform's index workflow: Settings, Indexing, Libraries, **Add a library**, "A
-remote system", "Build an index of a folder", **Connect with** "Platform
-workflow": a cluster from their active clusters, a directory
+system", "Index a folder", **Build with** "Workflow job": a cluster from their active clusters, a directory
 (`$WORKDIR` by default), a label, and optionally a Slurm partition and
 account. A Studio on someone's own computer does not offer this; it
 builds on the remote system over ssh or pw ssh instead (above). The
@@ -904,8 +917,8 @@ live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 
 A library can also be an existing GUFI index on another machine that the
 Studio's host reaches with plain ssh: Settings, Indexing, Libraries, **Add a
-library**, "A remote system", "Connect an existing index", **Connect
-with** ssh, or the setup wizard. The host is written `user@host`, an
+library**, "A system", "A host over ssh…", "Connect an index", or the
+setup wizard. The host is written `user@host`, an
 alias from `~/.ssh/config`, or either with `:port`. A Host entry in
 `~/.ssh/config` applies as it does in a terminal, ProxyJump, ProxyCommand,
 Port, User and IdentityFile included, so a host behind a jump host or a
@@ -1187,9 +1200,8 @@ offered to MCP clients (`/api/mcp`), where it opens files the same way.
 
 An existing GUFI index on one of the user's running clusters is connected
 the same way, with `pw ssh <cluster>` in place of ssh: Settings,
-Libraries, **Add a library**, "A remote system", "Connect an existing
-index", **Connect with** pw ssh, or the setup wizard's Other libraries
-step. The system is picked from the user's systems on the platform
+Libraries, **Add a library**, "A system", "Connect an index", or the
+setup wizard's Other libraries step. The system is picked from the user's systems on the platform
 (`GET /api/user-libraries/pw/systems`, which runs `pw clusters ls` with
 the same key): running ones first, one that is off marked so (it has to
 be started on ACTIVATE before it can be reached), the display name over

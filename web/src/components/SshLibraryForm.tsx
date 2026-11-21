@@ -37,8 +37,12 @@ interface TestResult { ok: boolean; steps: CheckStep[]; gufiBin?: string; gufiVe
 
 const EMPTY = { label: '', destination: '', sshOptions: '', cluster: '', indexRoot: '', sourceRoot: '', gufiBin: '' }
 
-export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mode = 'connect', onOpenAccess }: {
+export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mode = 'connect', onOpenAccess, cluster, destination }: {
   onAdded?: (lib: SshLibraryAdded) => void
+  /** The system, chosen by the form around this one (Add a library); the
+   *  form then shows no System or Host field of its own. */
+  cluster?: string
+  destination?: string
   compact?: boolean
   transport?: 'ssh' | 'pw'
   mode?: 'connect' | 'build'
@@ -59,15 +63,17 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   // why pw ssh cannot be used here.
   const [systems, setSystems] = useState<PwSystems | null>(null)
 
+  const clusterOf = cluster ?? form.cluster
+  const destinationOf = (destination ?? form.destination).trim()
   const paths = build
     ? { sourceRoot: form.sourceRoot.trim(), indexRoot: form.indexRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
     : { indexRoot: form.indexRoot.trim(), sourceRoot: form.sourceRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
   const options = form.sshOptions.trim()
   const optionsProblem = pw ? null : sshOptionsProblem(options)
-  const conn = pw ? { cluster: form.cluster, ...paths } : { destination: form.destination.trim(), ...(options ? { sshOptions: options } : {}), ...paths }
+  const conn = pw ? { cluster: clusterOf, ...paths } : { destination: destinationOf, ...(options ? { sshOptions: options } : {}), ...paths }
   const passed = !!result?.ok && tested === JSON.stringify(conn)
   const set = (patch: Partial<typeof EMPTY>) => { setForm(f => ({ ...f, ...patch })); setError(null) }
-  const host = pw ? form.cluster : form.destination.trim().replace(/^.*@/, '').replace(/:\d+$/, '')
+  const host = pw ? clusterOf : destinationOf.replace(/^.*@/, '').replace(/:\d+$/, '')
   const name = String((build ? paths.sourceRoot : paths.indexRoot) ?? '').replace(/\/+$/, '').split('/').pop() || (build ? 'folder' : 'index')
   const route = `/api/user-libraries/${pw ? 'pw' : 'ssh'}${build ? '/build' : ''}`
   const required = build ? paths.sourceRoot : paths.indexRoot
@@ -125,12 +131,14 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
       <div className="settings-grid">
         {pw ? (
           <>
-            <PwSystemField value={form.cluster} onChange={cluster => set({ cluster })} help={help} onSystems={setSystems} />
+            {cluster === undefined && <PwSystemField value={form.cluster} onChange={c => set({ cluster: c })} help={help} onSystems={setSystems} />}
           </>
         ) : (
           <>
-            <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={form.destination}
-              description={help('As you would type it after ssh, with :port for a port other than 22. A Host from your ~/.ssh/config works, including ProxyJump.')} onChange={e => set({ destination: e.target.value })} />
+            {destination === undefined && (
+              <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={form.destination}
+                description={help('As you would type it after ssh, with :port for a port other than 22. A Host from your ~/.ssh/config works, including ProxyJump.')} onChange={e => set({ destination: e.target.value })} />
+            )}
             <Input label="SSH options" hint="optional" mono placeholder="-J user@jumphost -o ConnectTimeout=20" autoComplete="off" spellCheck={false} value={form.sshOptions}
               error={optionsProblem ?? undefined}
               description={help('For a jump host or other settings: -J, -p, -i, -l, -F, and -o Keyword=value. Used on every ssh to this host.')} onChange={e => set({ sshOptions: e.target.value })} />
@@ -160,7 +168,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
       {result && <StepList steps={result.steps} label="Connection test" />}
       {error && <Callout tone="error" live>{error}</Callout>}
       <div className="query-actions">
-        <Button variant="secondary" loading={busy === 'test'} disabled={!(pw ? form.cluster : form.destination.trim()) || !required || !!optionsProblem || busy !== null} onClick={() => void test()}>
+        <Button variant="secondary" loading={busy === 'test'} disabled={!(pw ? clusterOf : destinationOf) || !required || !!optionsProblem || busy !== null} onClick={() => void test()}>
           Test connection
         </Button>
         <Button variant="primary" loading={busy === 'add'} disabled={!passed || busy !== null}

@@ -6,6 +6,8 @@ import { TransferPane, type PaneHandle, type PaneState } from '../components/Tra
 import { LocationDialog, type LocationPrefill } from '../components/SavedLocationDialog'
 import { TransferPlanDialog } from '../components/TransferPlanDialog'
 import { TransferActivity } from '../components/TransferActivity'
+import { KeepCopyDialog } from '../components/KeepCopyDialog'
+import { api } from '../api'
 import {
   ACTION_TEXT, MOVER_TEXT, TRANSFER_SETTINGS_CHANGED, destinationWhy, sourcePaths, testText, transferApi,
   type MoverName, type Plan, type PlanOptions, type PlanRequest, type SavedLocation, type SettingTest, type Transfer, type TransferAction, type TransferLocation,
@@ -56,6 +58,15 @@ const DEFAULT_MOVERS: MoverName[] = ['rsync', 'rclone', 'studio-copy', 'conduit'
  */
 export function TransfersView() {
   const [mode, setMode] = useState<'activity' | 'new'>(() => (isNewHash() ? 'new' : 'activity'))
+  // Keeping a local copy of a folder here and indexing it: offered where
+  // libraries are built on this computer (sign-in off).
+  const [copyOffered, setCopyOffered] = useState(false)
+  const [keeping, setKeeping] = useState(false)
+  useEffect(() => {
+    let live = true
+    api.libraries().then(r => { if (live) setCopyOffered(!!r?.canBuild) }, () => {})
+    return () => { live = false }
+  }, [])
   useEffect(() => {
     const on = () => setMode(isNewHash() ? 'new' : 'activity')
     window.addEventListener('hashchange', on)
@@ -228,7 +239,14 @@ export function TransfersView() {
   // progress and a transfer that lands still lists its destination again.
   const activity = (
     <div className="xfer-view" hidden={mode !== 'activity'}>
+      {copyOffered && (
+        <div className="xfer-keep-bar">
+          <Button variant="ghost" size="sm" onClick={() => setKeeping(true)}>Keep a local copy and index it…</Button>
+          <span className="muted">For a host that takes SFTP only, or a cloud drive: a folder there, copied here and searchable.</span>
+        </div>
+      )}
       <TransferActivity highlightId={highlight} added={added} onLanded={onLanded} onNew={openNew} />
+      <KeepCopyDialog open={keeping} onClose={() => setKeeping(false)} />
     </div>
   )
   if (mode === 'activity') return <>{activity}</>

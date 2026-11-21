@@ -20,7 +20,7 @@ import { bytesText } from '../transferApi'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
-interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw: boolean; pwOffered: boolean; workflow: boolean; space?: boolean }
+interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw: boolean; pwOffered: boolean; workflow: boolean; space?: boolean; home?: string }
 
 /** The kinds of library, in the words the setup wizard's Other libraries
  *  step uses for the forms it shares with this page. */
@@ -239,10 +239,10 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   }).catch(e => setLoadError(errText(e)))
   // The list reloads while a build runs; one toast stands for a failure
   // that repeats rather than stacking another each time.
-  const loadUser = () => Promise.all([api.userLibraries(), api.spaceStatus().then(s => !!s?.cluster, () => false)]).then(([r, space]) => {
+  const loadUser = () => Promise.all([api.userLibraries(), api.spaceStatus().then(s => ({ space: !!(s?.available || s?.cluster), home: s?.cluster ?? '' }), () => ({ space: false, home: '' }))]).then(([r, { space, home }]) => {
     const list = r as Partial<UserList>
     const libraries = list.libraries ?? []
-    setUser({ libraries, available: !!list.available, ssh: !!list.ssh, pw: !!list.pw, pwOffered: !!(list.pwOffered ?? list.pw), workflow: !!list.workflow, space })
+    setUser({ libraries, available: !!list.available, ssh: !!list.ssh, pw: !!list.pw, pwOffered: !!(list.pwOffered ?? list.pw), workflow: !!list.workflow, space, home })
     // A library that just finished building joins the switcher.
     const now = new Set(libraries.filter(l => l.state === 'ready').map(l => l.id))
     if ([...now].some(id => !ready.current.has(id)) && ready.current.size + now.size > 0) reloadAppConfig()

@@ -288,6 +288,8 @@ export interface SpaceCheck {
 export interface FolderShare {
   id: string; from: string; space: string; path: string; label: string; folder: string
   kind: 'user' | 'group' | 'everyone'; name: string; access: 'read' | 'write'; createdAt: string
+  /** The system the folder is on, by name. */
+  site?: string
   recipients: number
   /** Shared with the viewer: their library of it, once added. */
   library?: string
