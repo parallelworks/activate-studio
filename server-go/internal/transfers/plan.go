@@ -26,7 +26,10 @@ type item struct {
 // first 50 replacements and deletions; the record keeps them all.
 type planRec struct {
 	Plan
-	owner      string
+	owner string
+	// v is the viewer who planned it, for the index build of a space the
+	// transfer changes (Deps.SpaceChanged).
+	v          Viewer
 	req        Request
 	src, dst   *loc
 	items      []string
@@ -134,7 +137,15 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 	if err != nil {
 		return nil, err
 	}
-	p := &planRec{owner: v.owner(), req: req, src: src, dst: dst, dstPath: dstPath, set: set,
+	if err := s.spaceAccount(ctx, v, dst); err != nil {
+		return nil, err
+	}
+	if req.Action == ActionMove {
+		if err := s.spaceAccount(ctx, v, src); err != nil {
+			return nil, err
+		}
+	}
+	p := &planRec{owner: v.owner(), v: v, req: req, src: src, dst: dst, dstPath: dstPath, set: set,
 		replaceSet: map[string]bool{}, sourceOuts: map[string]bool{}}
 	p.Action = req.Action
 	if _, _, err := dst.fs.List(ctx, dstPath, 1); err != nil {
@@ -186,6 +197,16 @@ func (s *Service) plan(ctx context.Context, v Viewer, req Request) (*planRec, er
 	}
 	p.warn()
 	return p, nil
+}
+
+// spaceAccount refuses a write in a person's space with a key that
+// reaches another account than the one the space was made for, as the
+// Library's own writes there are refused.
+func (s *Service) spaceAccount(ctx context.Context, v Viewer, l *loc) error {
+	if l.space == "" || s.d.SpaceAccount == nil {
+		return nil
+	}
+	return s.d.SpaceAccount(ctx, v, l.space)
 }
 
 // readOnlyWhy is ": why" for a location that says why it is read only.

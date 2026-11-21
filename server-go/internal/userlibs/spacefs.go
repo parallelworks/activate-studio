@@ -394,6 +394,50 @@ func (s spaceFiles) Changed(r *http.Request, lib kb.Library, _ []string) {
 	m.sharesChanged(owner, d)
 }
 
+// spaceOfRoot is the space a transfer's viewer writes in as themselves,
+// by its index root, with its owner and how the viewer is known; nil when
+// the root names no such library of theirs.
+func (m *Module) spaceOfRoot(viewer string, authOn bool, key, root string) (who, string, *libraries.UserDef) {
+	w := who{ID: viewer, Auth: authOn, Own: key}
+	owner := w.owner()
+	if owner == "" {
+		return w, "", nil
+	}
+	o, d, err := m.Users.FindRoot(root)
+	if err != nil || d == nil || !d.WrittenAsOwner() || o != owner {
+		return w, "", nil
+	}
+	return w, owner, d
+}
+
+// SpaceTransferred is app.Providers.SpaceChanged: a transfer changed the
+// files of a space, so its index is built again once changes settle, as
+// after a write from the Library, and so is every index of the same
+// folder.
+func (m *Module) SpaceTransferred(viewer string, authOn bool, key, root string) {
+	w, owner, d := m.spaceOfRoot(viewer, authOn, key, root)
+	if d == nil {
+		return
+	}
+	m.queueSpaceBuild(w, owner, d.ID, SpaceEvery, 0)
+	m.sharesChanged(owner, d)
+}
+
+// SpaceAccount is app.Providers.SpaceAccount: a transfer into a space
+// with a key that reaches another account than the one the space was made
+// for is refused, as the Library's own writes are (sameAccount).
+func (m *Module) SpaceAccount(ctx context.Context, viewer string, authOn bool, key, root string) error {
+	_, _, d := m.spaceOfRoot(viewer, authOn, key, root)
+	if d == nil {
+		return nil
+	}
+	_, uid, ok := d.Account()
+	if !ok || key == "" {
+		return nil
+	}
+	return m.sameAccount(ctx, d.Site, key, uid)
+}
+
 func (m *Module) queueSpaceBuild(w who, owner, id string, after time.Duration, tries int) {
 	k := owner + "\x00" + id
 	m.mu.Lock()

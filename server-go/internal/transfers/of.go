@@ -61,8 +61,20 @@ func Of(a *app.App) *Service {
 		},
 		Settings: FileSettings{a.Settings},
 		Index:    kbIndex{a},
-		Conduit:  MCPConduit{mcp},
-		Home:     homeDir(),
+		// Read at call time: the libraries track sets them after this.
+		SpaceChanged: func(v Viewer, root string) {
+			if f := a.Providers.SpaceChanged; f != nil {
+				f(v.ID, v.AuthOn, v.Key, root)
+			}
+		},
+		SpaceAccount: func(ctx context.Context, v Viewer, root string) error {
+			if f := a.Providers.SpaceAccount; f != nil {
+				return f(ctx, v.ID, v.AuthOn, v.Key, root)
+			}
+			return nil
+		},
+		Conduit: MCPConduit{mcp},
+		Home:    homeDir(),
 	})
 	s.viewerFor = func(owner string) Viewer {
 		auth := a.Cfg.AuthEnabled()
@@ -150,7 +162,13 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			case t.Def.Shell != nil && !*t.Def.Shell:
 				x.Why = remote.NoShell(t.Site)
 			default:
-				x.FS = &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site)}
+				// A space is written as in the Library: what lands is closed
+				// to other accounts unless its folder is open to them, and
+				// no write goes through a link.
+				x.FS = &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site), Private: l.Space}
+				if l.Space {
+					x.Space = l.IndexRoot
+				}
 				// A library over ssh is reached with the server account's
 				// keys (sign-in off only); any other with the viewer's key.
 				by = AccessServer
@@ -243,14 +261,17 @@ func sshOnly(site string) string {
 }
 
 // libraryRefresh is when the index of a library other than the main one
-// shows a transfer's change (LibraryLoc.Refresh): Studio re-indexes only
-// the main library after a transfer. A library Studio builds, here or on
-// another system, catches up when it is rebuilt; an index connected as it
-// is, when it is rebuilt where it is built.
+// shows a transfer's change (LibraryLoc.Refresh): Studio re-indexes the
+// main library's changed folders after a transfer, and queues the build of
+// a person's space (Deps.SpaceChanged). Another library Studio builds,
+// here or on another system, catches up when it is rebuilt; an index
+// connected as it is, when it is rebuilt where it is built.
 func libraryRefresh(l libraries.Library) string {
 	switch {
 	case l.Primary:
 		return ""
+	case l.Space:
+		return "when Studio builds it again, shortly after the transfer ends"
 	case l.Build != nil || l.Site != "":
 		return "after its next rebuild in Settings, Indexing, Libraries"
 	}
