@@ -47,4 +47,10 @@ describe('names on the Agents page', () => {
     expect(screen.getByText('Upload image (name them first)')).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/Save persona|Name the persona/)
   })
+
+  it('starts every description of instructions and skills at the same place, from a left edge', () => {
+    const css = readFileSync('src/styles.css', 'utf8')
+    expect(css).toMatch(/\.agents-desc \{[^}]*text-align: left/)
+    expect(css).toMatch(/\.agents-view \.agents-def-row \.ov-row-path \{ flex: 0 0 28%; max-width: 28%; \}/)
+  })
 })

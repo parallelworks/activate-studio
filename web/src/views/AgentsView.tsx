@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { statusLook } from '../statusLook'
+import { type StatusLook, statusLook } from '../statusLook'
 import {
   Button, Callout, buttonClasses, EmptyState, Field, Input, Pagination, ProgressBar, SearchInput, SegmentedControl,
   StatusBadge, StatusDot, StatusLabel, Tabs, Textarea, toast,
@@ -45,6 +45,28 @@ export function agentsSummary(mi: TaskRow): string {
   if (mi.failed) parts.push(`${mi.failed} failed`)
   if (mi.stopped) parts.push(`${mi.stopped} stopped`)
   return parts.join(', ')
+}
+
+/** A task's state as its agents ended: a completed task whose agents all
+ *  failed reads failed, and one where some failed reads "completed, N
+ *  failed" in amber. Any other state reads as it is. */
+export function taskOutcome(mi: TaskRow): { label: string; look: StatusLook } {
+  const failed = mi.failed ?? 0
+  if (mi.state === 'completed' && failed > 0) {
+    return doneCount(mi) === 0 ? { label: 'failed', look: statusLook('failed') } : { label: `completed, ${failed} failed`, look: { variant: 'warning' } }
+  }
+  return { label: mi.state, look: statusLook(mi.state) }
+}
+
+/** "take off", or "taken off" once done, always as wide as the wider, so
+ *  the actions after it stay where they are. */
+function TakeOffLabel({ off }: { off: boolean }) {
+  return (
+    <span className="agents-swap">
+      <span aria-hidden={off} className={off ? 'agents-swap-hidden' : undefined}>take off</span>
+      <span aria-hidden={!off} className={off ? undefined : 'agents-swap-hidden'}>taken off</span>
+    </span>
+  )
 }
 
 export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
@@ -163,15 +185,22 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const loadFolders = useCallback(() => fetch('/api/agents-md/folders').then(r => r.json())
     .then(d => setFolders(d.folders ?? [])).catch(() => {}), [])
   useEffect(() => { if (page === 'library') void loadFolders() }, [page, loadFolders])
+  // What was taken off stays in its place, marked, until the list is read
+  // again, so the next action does not move under the pointer.
+  const [takenOff, setTakenOff] = useState<Set<string>>(new Set())
+  const offKey = (f: AgentFolder, kind: 'persona' | 'skill', n: string) => `${f.library}:${f.folder}:${kind}:${n}`
+  const isOff = (f: AgentFolder, kind: 'persona' | 'skill', n: string) => takenOff.has(offKey(f, kind, n))
+  useEffect(() => { setTakenOff(new Set()) }, [folders])
   const carrying = (kind: 'persona' | 'skill', n: string) =>
-    folders.filter(f => (kind === 'persona' ? f.instructions : f.skills).includes(n))
+    folders.filter(f => (kind === 'persona' ? f.instructions : f.skills).includes(n) && !isOff(f, kind, n))
+  const stillCarrying = folders.filter(f => f.instructions.some(n => !isOff(f, 'persona', n)) || f.skills.some(n => !isOff(f, 'skill', n)))
   const takeOff = async (f: AgentFolder, kind: 'persona' | 'skill', n: string) => {
     setFolderNote('')
     try {
       await changeFolder(true, f.space ? f.library : '', f.folder, kind === 'persona' ? { instructions: n } : { skills: [n] })
       toast.success(`Took ${n} off ${f.folder || 'the top of ' + f.label}.`)
+      setTakenOff(prev => new Set(prev).add(offKey(f, kind, n)))
     } catch (e) { setFolderNote((e as Error).message) }
-    await loadFolders()
   }
   const where = (f: AgentFolder) => `${f.folder || '(top)'}${f.space ? ` in ${f.label}` : ''}`
 
@@ -281,8 +310,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                 <div key={mi.id} className={`task-card${openTask === mi.id ? ' selected' : ''}`}
                   onClick={() => setOpenTask(openTask === mi.id ? null : mi.id)}>
                   <div className="task-card-top">
-                    <StatusDot {...statusLook(mi.state)} />
-                    <span className="task-card-state">{mi.state}</span>
+                    <StatusDot {...taskOutcome(mi).look} />
+                    <span className="task-card-state">{taskOutcome(mi).label}</span>
                     {(mi as { execution?: string }).execution === 'campaign' && (
                       <StatusBadge>campaign · {((mi as { resource?: string }).resource ?? '').split('/').pop() || '?'}</StatusBadge>
                     )}
@@ -314,7 +343,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           {openTask && detail && (
             <div className="task-detail">
               <div className="task-detail-head">
-                <StatusDot {...statusLook(detail.state)} />
+                <StatusDot {...(() => { const row = taskRuns.find(t => t.id === detail.id); return row ? taskOutcome(row).look : statusLook(detail.state) })()} />
                 <span className="task-detail-title">
                   <span className="task-detail-objective">{detail.objective}</span>
                   {sharedHost && <span className="tree-host" title={`Every agent in this task runs on ${sharedHost}`}>on {hostLabel(sharedHost)}</span>}
@@ -398,7 +427,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             in the knowledge base{dir ? <> at <code>{dir}</code></> : null}, browsable under <code>.agents</code> in the Library, and labeled <code>agent-persona</code>.
           </p>
           {pageOf(shownPersonas, pPage).map(p => (
-            <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open these instructions for editing">
+            <div className="ov-row agents-def-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open these instructions for editing">
               <span className="ov-row-path"><PersonaIcon icon={p.icon} name={p.name} size={20} /><span className="agents-name" title={p.name}>{p.name}</span>{p.shared && <span className="persona-shared">shared</span>}</span>
               <span className="ov-row-meta agents-meta">
                 <span className="agents-desc">{p.description || 'no description'}
@@ -436,7 +465,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             description so it can tell when the skill applies.
           </p>
           {pageOf(shownSkills, sPage).map(s => (
-            <div className="ov-row" key={s.name} onClick={() => void edit('skill', s.name)} title="Open this skill for editing">
+            <div className="ov-row agents-def-row" key={s.name} onClick={() => void edit('skill', s.name)} title="Open this skill for editing">
               <span className="ov-row-path"><span className="agents-name" title={s.name}>{s.name}</span></span>
               <span className="ov-row-meta agents-meta">
                 <span className="agents-desc">{s.description || 'no description'}
@@ -459,7 +488,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       </div>
 
       <section className="card ov-list agents-folders">
-        <h3>Folders with agent instructions ({folders.length})</h3>
+        <h3>Folders with agent instructions ({stillCarrying.length})</h3>
         <p className="muted view-sub">
           The folders whose <code>AGENTS.md</code> or <code>.agents/skills</code> carry instructions or skills applied here, in the main
           library and in My library. Take one off and its section goes; the rest of the file stays.
@@ -472,12 +501,14 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             <span className="ov-row-meta">
               {f.problem && <StatusLabel variant="warning">{f.problem}</StatusLabel>}
               {f.instructions.map(n => (
-                <Button key={`i:${n}`} variant="ghost" size="sm" className="agents-del" title={`Take the instructions ${n} off this folder`}
-                  onClick={() => void takeOff(f, 'persona', n)}>{n} · take off</Button>
+                <Button key={`i:${n}`} variant="ghost" size="sm" className={`agents-del${isOff(f, 'persona', n) ? ' agents-off' : ''}`}
+                  disabled={isOff(f, 'persona', n)} title={isOff(f, 'persona', n) ? undefined : `Take the instructions ${n} off this folder`}
+                  onClick={() => void takeOff(f, 'persona', n)}><span>{n} · <TakeOffLabel off={isOff(f, 'persona', n)} /></span></Button>
               ))}
               {f.skills.map(n => (
-                <Button key={`s:${n}`} variant="ghost" size="sm" className="agents-del" title={`Take the skill ${n} off this folder`}
-                  onClick={() => void takeOff(f, 'skill', n)}>skill {n} · take off</Button>
+                <Button key={`s:${n}`} variant="ghost" size="sm" className={`agents-del${isOff(f, 'skill', n) ? ' agents-off' : ''}`}
+                  disabled={isOff(f, 'skill', n)} title={isOff(f, 'skill', n) ? undefined : `Take the skill ${n} off this folder`}
+                  onClick={() => void takeOff(f, 'skill', n)}><span>skill {n} · <TakeOffLabel off={isOff(f, 'skill', n)} /></span></Button>
               ))}
             </span>
           </div>
