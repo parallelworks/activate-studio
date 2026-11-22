@@ -831,7 +831,7 @@ export const api = {
     sendJson<FolderShare>('POST', `/api/user-libraries/${encodeURIComponent(id)}/shares`, body),
   removeShare: (id: string, share: string) =>
     sendJson<{ ok: boolean }>('DELETE', `/api/user-libraries/${encodeURIComponent(id)}/shares/${encodeURIComponent(share)}`),
-  sharedWithMe: () => sendJson<{ shares: FolderShare[]; account?: string; why?: string }>('GET', '/api/user-libraries/shared-with-me'),
+  sharedWithMe: () => sendJson<{ shares: FolderShare[]; account?: string; why?: string; unreached?: { site: string; name: string; why: string }[] }>('GET', '/api/user-libraries/shared-with-me'),
   addShared: (share: string, body: { depth?: IndexDepth }) =>
     sendJson<UserLibrary>('POST', `/api/user-libraries/shared-with-me/${encodeURIComponent(share)}/add`, body),
   platformSignIn: () => sendJson<PlatformSignIn>('GET', '/api/me/platform-sign-in'),
