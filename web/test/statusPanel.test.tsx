@@ -154,6 +154,14 @@ describe('the cards', () => {
     const lines = libraryLines([lib], [{ id: 'u-a', label: 'Mine', site: 'cluster-a', sourceDir: '~', sourceRoot: null, indexRoot: null, state: 'failed', run: null, error: 'boom', builtAt: null, directories: null, files: null, scheduler: null }], null)
     expect(lines.map(l => [l.label, l.kind, l.state])).toEqual([['Knowledge base', 'knowledge base', 'indexed'], ['Mine', 'on cluster-a', 'failed']])
     expect(librariesSummary(lines, null).text).toBe('1 failed')
+    // The main library's state is the index status's now, not the config's
+    // from when the page loaded: a build that finished since shows at once.
+    const stale = { ...lib, caps: { ...lib.caps, index: false } }
+    expect(libraryLines([stale], null, null)[0].state).toBe('not indexed')
+    expect(libraryLines([stale], null, null, true)[0]).toMatchObject({ state: 'indexed', tone: 'success' })
+    expect(libraryLines([lib], null, null, false)[0].state).toBe('not indexed')
+    // Another library keeps its own state.
+    expect(libraryLines([{ ...stale, id: 'other', primary: false }], null, null, true)[0].state).toBe('not indexed')
     const conns = connectionLines({ platform: false, authEnabled: true, ai: null, mcp: [{ name: 'crm', tools: 4, error: null, checkedAt: ago(1) }], libs: [lib], userLibs: null })
     expect(conns.map(c => `${c.kind} ${c.name}: ${c.meta}`)).toEqual(['platform Platform: needs your key', 'mcp crm: connected, 4 tools'])
     expect(connectionsSummary(conns).text).toBe('1 needs attention')
