@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PWCodeApprovals, PWCodeEngine, PWCodeNotice, PWCodeWatcher } from '../src/components/PWCodeEngine'
+import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher, shortModel } from '../src/components/PWCodeEngine'
 import { getEngine } from '../src/labelScope'
 
 const chat = vi.hoisted(() => ({ loadConversation: vi.fn(async () => {}) }))
@@ -126,5 +126,33 @@ describe('When pw code cannot reach the Studio tools', () => {
     expect(screen.queryByText('not this one')).not.toBeInTheDocument()
     act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: 'c1', session: 's2' } })) })
     await waitFor(() => expect(screen.queryByText(/could not reach/)).not.toBeInTheDocument())
+  })
+})
+
+describe("The model pw code answers with", () => {
+  it('is named on the button and in the menu, and the composer is told pw code answers', async () => {
+    expect(shortModel('acct:codex/gpt-6.2-sol')).toBe('gpt-6.2-sol')
+    expect(shortModel('claude-code/haiku')).toBe('haiku')
+    const note = "pw code's own model, acct:anthropic/claude-x, is not enabled for your AI connection, so this chat runs on acct:codex/gpt-b, the model chosen for the Studio assistant."
+    serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null }, { pwcode: { session: 's1', model: 'acct:codex/gpt-b', modelNote: note } })
+    const canvas = document.createElement('div'); canvas.className = 'chat-canvas'; document.body.appendChild(canvas)
+    render(<PWCodeEngine conversationId="c1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'pw code · gpt-b' }))
+    expect(await screen.findByText(new RegExp(note.replace(/[.()]/g, '\\$&')))).toBeInTheDocument()
+    expect(canvas.getAttribute('data-engine')).toBe('pwcode')
+    canvas.remove()
+  })
+  it('says once in the chat when the Studio moved the session to another model', async () => {
+    render(<PWCodeModelNotice conversationId="c1" />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: 'c1', modelMoved: false, modelNote: 'old note' } }))
+    })
+    expect(screen.queryByText('old note')).toBeNull()
+    act(() => {
+      window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: 'c1', modelMoved: true, modelNote: 'This chat runs on acct:codex/gpt-b.' } }))
+    })
+    expect(screen.getByText('pw code runs this chat on another model')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByText('This chat runs on acct:codex/gpt-b.')).toBeNull()
   })
 })

@@ -385,7 +385,11 @@ type PWCodeLink struct {
 	// in PW Code on the web) and the person continued it here from the
 	// Code page. The Studio never archives or replaces such a session.
 	// Machine and MachineName are its machine as the platform lists it.
-	Continued   bool   `json:"continued,omitempty"`
+	Continued bool `json:"continued,omitempty"`
+	// ModelNote says why the session runs on Model when the Studio moved
+	// it there from pw code's own model, which the AI connection does not
+	// offer.
+	ModelNote   string `json:"modelNote,omitempty"`
 	Machine     string `json:"machine,omitempty"`
 	MachineName string `json:"machineName,omitempty"`
 	// Persona is the agent instructions the conversation chose when its
