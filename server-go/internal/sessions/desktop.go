@@ -159,6 +159,9 @@ func (s *Routes) desktopOf(r *http.Request) (string, *SessionRow, error) {
 // the Studio's cookies and sign-in headers stay here.
 var wsSendHeaders = []string{"Sec-Websocket-Key", "Sec-Websocket-Version", "Sec-Websocket-Protocol", "Sec-Websocket-Extensions", "Upgrade", "Connection"}
 
+// wsAnswerHeaders are the platform's handshake headers the browser gets.
+var wsAnswerHeaders = []string{"Upgrade", "Connection", "Sec-Websocket-Accept", "Sec-Websocket-Protocol", "Sec-Websocket-Extensions"}
+
 type upstreamError struct {
 	status int
 	msg    string
@@ -205,6 +208,16 @@ func (s *Routes) desktopSocket(w http.ResponseWriter, r *http.Request) {
 		Transport: s.desktopTransport(),
 		ModifyResponse: func(res *http.Response) error {
 			if res.StatusCode == http.StatusSwitchingProtocols {
+				// Only the handshake's own headers reach the browser: a
+				// cookie or other header the platform sets is for its
+				// origin, and would otherwise be kept under the Studio's.
+				keep := http.Header{}
+				for _, h := range wsAnswerHeaders {
+					if vs := res.Header.Values(h); len(vs) > 0 {
+						keep[h] = vs
+					}
+				}
+				res.Header = keep
 				return nil
 			}
 			return upstreamFailure(res.StatusCode)
