@@ -343,6 +343,13 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 	}))
 
 	mux.HandleFunc("POST /api/index/job", writable(func(w http.ResponseWriter, r *http.Request, body map[string]any) error {
+		// The job indexes the main library. Another library keeps its own
+		// index, updated after each change through the Studio; running
+		// this one for its path would index the main library's folder of
+		// that name instead.
+		if lib := primaryOf(r, body); lib != "" && lib != "kb" {
+			return apierr.New(409, "%s keeps its own index, which the Studio updates after each change: there is no index job to start for it.", lib)
+		}
 		rel := ""
 		if v, ok := body["path"]; ok && v != nil {
 			rel = jsString(v)

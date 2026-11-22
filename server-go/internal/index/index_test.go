@@ -234,6 +234,15 @@ func TestBuildSyncAndDelete(t *testing.T) {
 	if n, _ := status["changes"].(float64); f.ix.Changes() <= before || int64(n) != f.ix.Changes() {
 		t.Fatalf("changes %v, before %d, now %d", status["changes"], before, f.ix.Changes())
 	}
+	// Another library keeps its own index: its path is not indexed in the
+	// main library's folder (an upload to My library did that before).
+	writable := f.ix.Hooks.RequireWritable
+	f.ix.Hooks.RequireWritable = func(*http.Request, string) error { return nil } // ada's own library, which she writes
+	code, body, _ = f.do("POST", "/api/index/job", map[string]any{"path": "uploads", "library": "u-space-ada"})
+	f.ix.Hooks.RequireWritable = writable
+	if code != 409 || !strings.Contains(fmt.Sprint(body["error"]), "keeps its own index") {
+		t.Fatalf("job for another library: %d %v", code, body)
+	}
 	code, body, _ = f.do("GET", "/api/index/job/12345", nil)
 	if code != 404 || body["error"] != "no such job" {
 		t.Fatalf("%d %v", code, body)
