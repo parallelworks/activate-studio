@@ -475,7 +475,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
               {fleet.map(a => (
                 <Row key={a.id} tone={a.state === 'working' ? 'info' : a.state === 'input-required' ? 'warning' : 'muted'}
                   pulse={a.state === 'working'} name={a.name} meta={a.state === 'input-required' ? 'needs you' : a.state}
-                  onClick={() => go('#view=agents:fleet')} />
+                  onClick={() => go(`#view=agents:fleet?agent=${encodeURIComponent(a.id)}`)} />
               ))}
             </Group>
           )}

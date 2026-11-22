@@ -59,6 +59,16 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [agents, setAgents] = useState<Agent[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [open, setOpen] = useState<string | null>(null)
+  // #view=agents:fleet?agent=<id> (Status Activity's link) opens that agent.
+  useEffect(() => {
+    const pick = () => {
+      const m = location.hash.match(/^#view=agents:fleet\?(?:.*&)?agent=([^&]+)/)
+      if (m) setOpen(decodeURIComponent(m[1]))
+    }
+    pick()
+    window.addEventListener('hashchange', pick)
+    return () => window.removeEventListener('hashchange', pick)
+  }, [])
   // The approval whose whole command is on screen: Approve runs it whole,
   // so it is offered only then, as on the Code page.
   const [whole, setWhole] = useState('')

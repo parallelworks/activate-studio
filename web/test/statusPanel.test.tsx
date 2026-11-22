@@ -253,6 +253,6 @@ describe('opening from the panel', () => {
     fireEvent.click(await screen.findByText('Review the results'))
     expect(location.hash).toBe('#view=code?session=20261021-120000-ab12cd34')
     fireEvent.click(screen.getByText('Queue watcher'))
-    expect(location.hash).toBe('#view=agents:fleet')
+    expect(location.hash).toBe('#view=agents:fleet?agent=watcher-1')
   })
 })

@@ -130,7 +130,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       if (d?.view === 'agents' && d.section) openSection(d.section)
     }
     window.addEventListener('ade-view-section', on)
-    const m = location.hash.match(/^#view=agents:([a-z0-9-]+)$/)
+    const m = location.hash.match(/^#view=agents:([a-z0-9-]+)(?:\?.*)?$/)
     if (m) openSection(m[1])
     return () => window.removeEventListener('ade-view-section', on)
   }, [])

@@ -96,6 +96,15 @@ describe('the Fleet page over pw code sessions', () => {
     expect(body).not.toHaveProperty('execution')
   })
 
+  it('opens the agent a link names, as Status Activity links it', async () => {
+    location.hash = '#view=agents:fleet?agent=watch-abcd'
+    try {
+      render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+      await waitFor(() => expect(document.querySelector('.fleet-card.selected')).not.toBeNull())
+      await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(c => String(c[0]) === '/api/fleet/watch-abcd')).toBe(true))
+    } finally { location.hash = '' }
+  })
+
   it('answers a call its session waits to have approved, from the detail', async () => {
     const waiting = { ...agent, note: 'waiting for your approval: Bash: rm -rf build' }
     let approval: Record<string, unknown> = { id: 'ap1', kind: 'confirm', tool: 'Bash', command: 'rm -rf build', commandLength: 12, approvable: true }
