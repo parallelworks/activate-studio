@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Callout, EmptyState, Field, Input, Modal, Select } from '@parallelworks/ui'
+import { libraryNames } from '../libraryNames'
+import { useAppConfig } from '../config'
 
 /**
  * Agent instructions and skills, applied to a folder: the Studio writes
@@ -26,6 +28,13 @@ interface LibraryChoice { id: string; label: string; primary: boolean; writable:
  *  writable here, and the person's own library. */
 export function instructionLibraries(libs: LibraryChoice[]): LibraryChoice[] {
   return libs.filter(l => (l.primary && l.writable && !l.site) || (l.space && !l.sharedFrom))
+}
+
+/** A library as the dialog names it. Where people sign in, the person's
+ *  own library is called My library; where nobody does, it is named by
+ *  its folder, so "(yours)" says whose it is. */
+export function choiceLabel(l: { label: string; space?: boolean }, signIn: boolean): string {
+  return l.space && !signIn ? `${l.label} (yours)` : l.label
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -91,21 +100,21 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
   onClose: () => void
   onDone: (f: AgentFolder) => void
 }) {
-  const [libs, setLibs] = useState<LibraryChoice[] | null>(null)
+  // The libraries the Library switcher shows (/api/config): the main
+  // library and the person's own, which /api/libraries does not list.
+  const cfg = useAppConfig()
+  const libs = useMemo(() => cfg.loaded ? instructionLibraries(cfg.libraries ?? []) : null, [cfg.loaded, cfg.libraries])
+  const shown = useCallback((l: LibraryChoice) => choiceLabel(l, !!cfg.signIn), [cfg.signIn])
   const [library, setLibrary] = useState('')
   const [folder, setFolder] = useState(`agents/${name}`)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
-    fetch('/api/libraries').then(r => r.json()).then(d => {
-      const choices = instructionLibraries(d.libraries ?? [])
-      setLibs(choices)
-      const main = choices.find(l => l.primary)
-      setLibrary((main ?? choices[0])?.id ?? '')
-    }).catch(() => setLibs([]))
-  }, [])
+    if (!libs || libs.some(l => l.id === library)) return
+    setLibrary((libs.find(l => l.primary) ?? libs[0])?.id ?? '')
+  }, [libs, library])
   const chosen = libs?.find(l => l.id === library)
-  const items = useMemo(() => (libs ?? []).map(l => ({ value: l.id, label: l.space ? `${l.label} (yours)` : l.label })), [libs])
+  const items = useMemo(() => (libs ?? []).map(l => ({ value: l.id, label: shown(l) })), [libs, shown])
   const apply = async () => {
     setBusy(true); setError('')
     try {
@@ -126,7 +135,7 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
         <Button variant="primary" type="submit" loading={busy} disabled={!libs?.length}>Apply</Button>
       </>}>
       {libs && libs.length === 0 && (
-        <Callout tone="warning" size="sm">No library here takes agent instructions: they go into the main library when it can be written, or into My library.</Callout>
+        <Callout tone="warning" size="sm">No library here takes agent instructions: they go into {libraryNames(cfg).writable}, where you may write.</Callout>
       )}
       {libs && libs.length > 1 && (
         <Field label="Library">
@@ -135,7 +144,7 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
       )}
       <Input label="Folder" value={folder} onChange={e => setFolder(e.target.value)}
         description="A folder in the library, from its top: open one below, or type it. It is made when it is not there; leave it empty for the top." />
-      {chosen && <LibraryFolders library={chosen.id} libraryLabel={chosen.space ? `${chosen.label} (yours)` : chosen.label} onPick={setFolder} />}
+      {chosen && <LibraryFolders library={chosen.id} libraryLabel={shown(chosen)} onPick={setFolder} />}
       {error && <Callout tone="error" size="sm">{error}</Callout>}
     </Modal>
   )

@@ -41,6 +41,21 @@ describe('delegated work on the Code page', () => {
     expect(screen.queryByText('Open in ACTIVATE')).toBeNull()
   })
 
+  it('says a delegated session that stopped on an error failed, and why', async () => {
+    report.state = 'stopped'
+    report.error = 'This model is not enabled for the AI connection'
+    try {
+      render(<CodeView />)
+      fireEvent.click(await screen.findByText('Q3 pump summary'))
+      const note = await screen.findByRole('region', { name: 'Delegated work' })
+      expect(note).toHaveTextContent('Delegated from a chat, failed, with the instructions reviewer')
+      expect(note).toHaveTextContent('It stopped on an error: This model is not enabled for the AI connection')
+    } finally {
+      report.state = 'finished'
+      delete report.error
+    }
+  })
+
   it('opens a session a delegate link names without its machine', async () => {
     expect(sessionInHash('#view=code?session=s1')).toEqual({ machine: '', session: 's1' })
     location.hash = '#view=code?session=s1'

@@ -49,6 +49,9 @@ func bySession(fn agentTool) agentTool {
 		if err != nil {
 			return fn(m, r, args, ctx)
 		}
+		// Only the person's own on this host with sign-in on: another's is
+		// neither listed back nor matched.
+		rows = s.MineOnly(r, tmplOr(arg(args, "site"), ""), rows, m.A.Cfg.AuthEnabled())
 		for _, x := range rows {
 			if tmpl(prop(x, "id")) == given {
 				return fn(m, r, args, ctx)

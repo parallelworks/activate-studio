@@ -28,7 +28,7 @@ func (m *Module) gufiInstalled() bool {
 }
 
 // primaryLabel is listLibraries' default: the main folder's name.
-func (m *Module) primaryLabel() string { return filepath.Base(m.A.Cfg.KBRoot) }
+func (m *Module) primaryLabel() string { return m.A.Settings.Effective().KbLabel }
 
 // viewerOfCtx is the tool call's viewer for the registry (toolContext's
 // userId).

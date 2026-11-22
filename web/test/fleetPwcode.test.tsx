@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FleetPage } from '../src/views/FleetPage'
+import { FleetPage, nextWake } from '../src/views/FleetPage'
 
 const agent = {
   id: 'watch-abcd', name: 'Queue watcher', goal: 'Watch the queues.', persona: 'watcher', model: '', resource: null,
@@ -94,5 +94,71 @@ describe('the Fleet page over pw code sessions', () => {
     const body = posts.find(p => p.url === '/api/fleet')!.body
     expect(body).toMatchObject({ name: 'Digest', goal: 'Write the digest.', model: 'claude-code/haiku', maxTurns: 4 })
     expect(body).not.toHaveProperty('execution')
+  })
+
+  it('opens the agent a link names, as Status Activity links it', async () => {
+    location.hash = '#view=agents:fleet?agent=watch-abcd'
+    try {
+      render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+      await waitFor(() => expect(document.querySelector('.fleet-card.selected')).not.toBeNull())
+      await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(c => String(c[0]) === '/api/fleet/watch-abcd')).toBe(true))
+    } finally { location.hash = '' }
+  })
+
+  it('answers a call its session waits to have approved, from the detail', async () => {
+    const waiting = { ...agent, note: 'waiting for your approval: Bash: rm -rf build' }
+    let approval: Record<string, unknown> = { id: 'ap1', kind: 'confirm', tool: 'Bash', command: 'rm -rf build', commandLength: 12, approvable: true }
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') posts.push({ url, body: JSON.parse(String(init.body ?? '{}')) })
+      const body = url === '/api/fleet' ? { agents: [waiting] }
+        : url === '/api/fleet/templates' ? { templates: [] }
+        : url === '/api/fleet/watch-abcd' ? { agent: waiting, journal: [], session: { id: agent.session, recent: [] }, approval }
+        : { ok: true }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    expect(await screen.findByText('rm -rf build', { selector: '.fleet-approval-text' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'the Code page' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }))
+    await waitFor(() => expect(posts).toContainEqual({ url: '/api/fleet/watch-abcd/approve', body: { approval: 'ap1', allowed: false } }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(posts).toContainEqual({ url: '/api/fleet/watch-abcd/approve', body: { approval: 'ap1', allowed: true } }))
+    cleanup()
+    // A command too long to show whole is offered Deny alone.
+    approval = { id: 'ap1', kind: 'confirm', tool: 'Bash', command: 'y'.repeat(100), commandCut: true, commandLength: 70000, approvable: false }
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    expect(await screen.findByText(/70,000 characters, too long to show whole/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument()
+    cleanup()
+    // Review 2, R3: a long command shows its first lines, and Approve is
+    // offered only once the whole command is on screen.
+    const long = Array.from({ length: 60 }, (_, i) => `echo line ${i + 1}`).join('\n')
+    approval = { id: 'ap2', kind: 'confirm', tool: 'Bash', command: long, commandLength: long.length, approvable: true }
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    const pre = await screen.findByText(/echo line 1\b/, { selector: '.fleet-approval-text' })
+    expect(pre.textContent).not.toContain('echo line 60')
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Show the whole command \(60 lines/ }))
+    await waitFor(() => expect(screen.getByText(/echo line 60/, { selector: '.fleet-approval-text' })).toBeInTheDocument())
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
+    cleanup()
+    // A plan is answered on the Code page, not here.
+    approval = { id: 'ap1', kind: 'plan', reason: 'Rewrite the build', approvable: false }
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    expect(await screen.findByText(/It waits for you on a plan/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull()
+  })
+
+  it('keeps a card\'s footer to one line', () => {
+    const now = new Date(2026, 10, 22, 17, 30)
+    expect(nextWake(new Date(2026, 10, 22, 18, 26).toISOString(), now)).not.toMatch(/Nov/)
+    expect(nextWake(new Date(2026, 10, 23, 18, 26).toISOString(), now)).toMatch(/Nov/)
+    expect(readFileSync('src/styles.css', 'utf8')).toMatch(/\.fleet-card \.task-card-meta \{[^}]*white-space: nowrap/)
   })
 })

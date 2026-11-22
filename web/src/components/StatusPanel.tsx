@@ -28,10 +28,14 @@ import { keepMissing } from '../steady'
 /** Work delegated to a pw code session, as the Code page lists it. */
 export interface TaskRow { id: string; objective: string; state: string }
 export interface FleetAgent { id: string; name: string; state: string }
-interface DelegatedRow { session: string; objective: string; state: string }
+interface DelegatedRow { session: string; objective: string; state: string; finished?: string }
 // A delegated session waiting for an approval needs a person, as an agent
-// does under input-required.
-const delegatedState = (s: string) => s === 'waiting' ? 'input-required' : s
+// does under input-required; one stopped on an error in the last hour is
+// shown failed.
+export const delegatedState = (s: DelegatedRow, now = Date.now()) =>
+  s.state === 'waiting' ? 'input-required'
+    : s.state === 'stopped' && s.finished && now - Date.parse(s.finished) < 3600_000 ? 'failed'
+      : s.state
 export interface RunRow { slug: string; workflow: string; owner?: string | null; launchedAt: string; state: string; endedAt: string | null }
 export interface McpRow { name: string; tools: number; error: string | null; checkedAt?: string | null }
 
@@ -67,7 +71,7 @@ let fleetRefused = false
 const sessionsMissed = new Set<string>()
 export function resetStatusPanelForTests(): void { lastData = EMPTY; lastSlowAt = 0; mcpChecked = false; fleetRefused = false; sessionsMissed.clear() }
 
-const LIVE_TASK = new Set(['submitted', 'working', 'input-required'])
+const LIVE_TASK = new Set(['submitted', 'working', 'input-required', 'failed'])
 const TERMINAL_RUN = new Set(['completed', 'error', 'failed', 'canceled', 'cancelled', 'skipped'])
 const runEnded = (r: RunRow) => !!r.endedAt || TERMINAL_RUN.has(String(r.state).toLowerCase())
 
@@ -115,7 +119,7 @@ export function activitySummary(d: Pick<StatusData, 'tasks' | 'fleet' | 'runs' |
   const tasks = (d.tasks ?? []).filter(t => LIVE_TASK.has(t.state))
   const fleet = d.fleet ?? []
   const waiting = tasks.filter(t => t.state === 'input-required').length + fleet.filter(a => a.state === 'input-required').length
-  const running = tasks.filter(t => t.state !== 'input-required').length + fleet.filter(a => a.state === 'working').length
+  const running = tasks.filter(t => t.state === 'working' || t.state === 'submitted').length + fleet.filter(a => a.state === 'working').length
     + (d.runs ?? []).filter(r => !runEnded(r)).length
   const sessions = (d.sessions ?? []).length
   // Two parts at most, so the line stays one line: what needs the viewer,
@@ -143,7 +147,9 @@ export function freshLibraries(cfg: PublicLibrary[], live: PublicLibrary[] | nul
   return cfg.map(l => { const n = byId.get(l.id); return n ? { ...l, caps: n.caps } : l })
 }
 
-export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | null, stats: KbStats | null, mainIndexed?: boolean): LibLine[] {
+/** `signIn`: the main library is the one people share; without it, the
+ *  main library is the person's own, on this computer. */
+export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | null, stats: KbStats | null, mainIndexed?: boolean, signIn = false): LibLine[] {
   const counted = (id: string): number | undefined => {
     const one = stats?.libraries?.find(l => l.id === id)
     if (one) return one.available ? one.files : undefined
@@ -157,7 +163,7 @@ export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | nu
     const indexed = l.primary && mainIndexed !== undefined ? mainIndexed : l.caps.index
     lines.push({
       id: l.id, label: l.label,
-      kind: l.primary ? 'knowledge base' : l.site ? `on ${l.site}` : l.writable ? 'writable' : 'read only',
+      kind: l.primary ? (signIn ? 'shared' : 'on this computer') : l.site ? `on ${l.site}` : l.writable ? 'writable' : 'read only',
       state: st && !st.available ? 'unavailable' : indexed ? 'indexed' : 'not indexed',
       tone: st && !st.available ? 'warning' : indexed ? 'success' : 'muted', pulse: false,
       count: n != null ? plural(n, 'file') : null,
@@ -268,7 +274,7 @@ function useStatusData(agents: boolean, runs: boolean, mcp = true): [StatusData,
     const fast = () => {
       if (agents) {
         getJson<{ sessions: DelegatedRow[] }>('/api/delegated')
-          .then(d => put({ tasks: (d.sessions ?? []).map(s => ({ id: s.session, objective: s.objective, state: delegatedState(s.state) })) }))
+          .then(d => put({ tasks: (d.sessions ?? []).map(s => ({ id: s.session, objective: s.objective, state: delegatedState(s) })) }))
           .catch(() => {})
         if (!fleetRefused) {
           getJson<{ agents: FleetAgent[] }>('/api/fleet').then(d => put({ fleet: d.agents ?? [] }))
@@ -440,7 +446,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
 
   // The index status the footer and the pages show, read once for all.
   const idx = useIndexStatus()
-  const libs = libraryLines(freshLibraries(cfg.libraries ?? [], data.libs), data.userLibs, shared.stats, idx?.indexed)
+  const libs = libraryLines(freshLibraries(cfg.libraries ?? [], data.libs), data.userLibs, shared.stats, idx?.indexed, !!cfg.signIn)
   // A library indexed since the page loaded joins the switcher, Search and
   // Query as well: they read the app config.
   const newlyIndexed = (cfg.libraries ?? []).filter(l => !l.caps.index && data.libs?.some(n => n.id === l.id && n.caps.index)).map(l => l.id).join(',')
@@ -461,14 +467,15 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
           {(tasks.length > 0 || fleet.length > 0) && (
             <Group label="Agents">
               {tasks.map(t => (
-                <Row key={t.id} tone={t.state === 'input-required' ? 'warning' : 'info'} pulse={t.state !== 'input-required'}
-                  name={t.objective} meta={t.state === 'input-required' ? 'needs you' : t.state === 'submitted' ? 'starting' : 'working'}
+                <Row key={t.id} tone={t.state === 'input-required' ? 'warning' : t.state === 'failed' ? 'error' : 'info'}
+                  pulse={t.state === 'working' || t.state === 'submitted'}
+                  name={t.objective} meta={t.state === 'input-required' ? 'needs you' : t.state === 'failed' ? 'failed' : t.state === 'submitted' ? 'starting' : 'working'}
                   title={t.objective} onClick={() => go(`#view=code?session=${encodeURIComponent(t.id)}`)} />
               ))}
               {fleet.map(a => (
                 <Row key={a.id} tone={a.state === 'working' ? 'info' : a.state === 'input-required' ? 'warning' : 'muted'}
                   pulse={a.state === 'working'} name={a.name} meta={a.state === 'input-required' ? 'needs you' : a.state}
-                  onClick={() => go('#view=agents:fleet')} />
+                  onClick={() => go(`#view=agents:fleet?agent=${encodeURIComponent(a.id)}`)} />
               ))}
             </Group>
           )}

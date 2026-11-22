@@ -53,6 +53,10 @@ type Sites struct {
 	AuthEnabled func(r *http.Request) bool
 	// Now is time.Now (tests).
 	Now func() time.Time
+	// Owned is the sessions on this host the Studio started for the
+	// viewer of r (app.Providers.SessionsOf); with sign-in on, the only
+	// ones of this host they reach.
+	Owned func(r *http.Request) map[string]bool
 }
 
 func (s *Sites) authOn(r *http.Request) bool {
@@ -337,6 +341,10 @@ type StartAgent struct {
 	// Folder is a library folder to work in, relative to its top; the
 	// site must see the library.
 	Folder string
+	// ModelFor, when set, is asked about the model the new session was
+	// made on, before its first message: a pick moves it there, and why
+	// is answered as modelNote.
+	ModelFor func(current string) (pick, why string)
 }
 
 // Start is startAgent: a pw code session at the site on the objective,
@@ -423,6 +431,22 @@ func (s *Sites) Start(ctx context.Context, o StartAgent, authEnabled bool) (*jso
 	}
 	id := jsonv.Path(session, "id")
 	sidStr := jsonv.String(id)
+	modelNote := jsonv.Undefined
+	if o.ModelFor != nil {
+		cur := jsonv.String(jsonv.Path(session, "model"))
+		if cur == "" {
+			if d, err := pwcode.GetSession(ctx, c, sidStr); err == nil {
+				cur = jsonv.String(jsonv.Path(d, "model"))
+			}
+		}
+		if pick, why := o.ModelFor(cur); pick != "" {
+			if _, err := pwcode.SetSessionModel(ctx, c, sidStr, pick); err != nil {
+				modelNote = "pw code's model " + cur + " is not one the AI connection offers, and the session could not be moved to " + pick + ": " + err.Error()
+			} else {
+				modelNote = why
+			}
+		}
+	}
 	if _, err := pwcode.SendMessage(ctx, c, sidStr, first); err != nil {
 		return nil, err
 	}
@@ -442,7 +466,7 @@ func (s *Sites) Start(ctx context.Context, o StartAgent, authEnabled bool) (*jso
 	if !has {
 		host = jsonv.Undefined
 	}
-	return jsonv.NewObject("site", c.Site(), "session", undef(session, "id"), "workspace", workspace, "host", host, "mode", mode, "goal", goal, "library", library), nil
+	return jsonv.NewObject("site", c.Site(), "session", undef(session, "id"), "workspace", workspace, "host", host, "mode", mode, "goal", goal, "library", library, "modelNote", modelNote), nil
 }
 
 // undef is o[k], undefined when absent.

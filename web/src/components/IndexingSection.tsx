@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
 import {
-  Button, Callout, CopyButton, ExternalLink, Field, Loader, Modal, NumberInput, SegmentedControl, Select, type SelectItem, Switch, Table,
+  ActionMenu, Button, Callout, CopyButton, ExternalLink, Field, Loader, Modal, NumberInput, SegmentedControl, Select, type SelectItem, Switch, Table,
 } from '@parallelworks/ui'
+import { MoreIcon } from '@parallelworks/ui/icons'
 import { api, type IndexSettings, type IndexSettingsInfo, type InstallItem, type ReadersReport } from '../api'
 import { useIndexStatus } from '../indexActivity'
 import { aiOn, useAppConfig } from '../config'
-import { IndexControls, IndexJobView, LastBuild, useIndexControls } from './IndexActivity'
+import { DeleteIndexDialog, IndexControls, IndexJobView, IndexLogButton, LastBuild, useIndexControls } from './IndexActivity'
 import { FolderBrowser, errText, waitForRestart } from './PrimaryFolder'
 import { IndexDepthControl } from './IndexDepth'
+import { IndexGroup } from './IndexGroup'
+import { libraryNames } from '../libraryNames'
 
 const MEANING_SPEED_OPTIONS = [{ value: 'standard', label: 'Standard' }, { value: 'faster', label: 'Faster' }]
 const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
@@ -92,101 +95,116 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
   const running = !!status?.running
   // On a shared Studio the main folder is read only for everyone but its
   // administrators, and so is how it is indexed: the settings show, unchanged.
+  // The main library by its name, as the switcher and every other page call it.
+  const main = libraryNames(cfg).main
   const locked = cfg.libraries?.find(l => l.primary)?.readOnlyWhy
-    ? 'On a Studio with sign-in, the main folder is indexed as its administrators set it.'
+    ? `On a Studio with sign-in, ${main} is indexed as its administrators set it.`
     : null
 
   return (
     <>
-      <h2 className="ix-h2">How the index is built</h2>
       <p className="muted view-sub">
-        The main folder&apos;s index. Each setting here saves as you change it. The readers apply to files read from
+        Index of {main}. Each setting here saves as you change it. The readers apply to files read from
         then on; Update index reads everything again.
       </p>
       {error && <Callout tone="error">{error}</Callout>}
       {locked && <Callout tone="info">{locked}</Callout>}
 
-      <section className="settings-field ix-section" aria-label="Now">
-        {status?.job
-          ? <IndexJobView job={status.job} onStop={() => void controls.stop()} stopping={controls.busy === 'stop'} />
-          : <LastBuild status={status} />}
-        <IndexControls canDelete={info.single} canBuild={info.single} folder={info.location.folder} />
-      </section>
+      <div className="ix-cards">
+        <IndexGroup title="How the index is built" help="The run going on now, or how the last one went, and the workers each phase uses."
+          actions={(
+            <>
+              <IndexControls part="primary" canDelete={info.single} canBuild={info.single} folder={info.location.folder} />
+              {/* Delete index, as on the main folder's card: behind More, and it asks first. */}
+              {info.single && (
+                <ActionMenu label={`More actions for the index of ${main}`} align="end"
+                  items={[{ label: 'Delete index', description: 'The files in the folder are not touched', destructive: true,
+                    disabled: !status?.indexed || running, disabledReason: !status?.indexed ? 'There is no index to delete.' : 'Wait for indexing to finish, or stop it.',
+                    onClick: () => controls.setConfirming(true) }]}>
+                  <MoreIcon />
+                </ActionMenu>
+              )}
+            </>
+          )}>
+          <section className="ix-section" aria-label="Now">
+            {status?.job
+              ? <IndexJobView job={status.job} onStop={() => void controls.stop()} stopping={controls.busy === 'stop'} />
+              : <><LastBuild status={status} /><div className="ix-actions"><IndexLogButton /></div></>}
+            <DeleteIndexDialog controls={controls} folder={info.location.folder} />
+          </section>
+          <Field label="Threads"
+            description={`Each phase runs this many workers at once. Empty uses one per processor core: ${info.cpus} here.`}>
+            <div className="ix-inline">
+              <NumberInput min={1} max={256} value={threads ?? undefined} placeholder={String(info.cpus)} aria-label="Threads" disabled={!!locked}
+                onValueChange={v => setThreads(v ?? null)} />
+              <Button variant="secondary" loading={saving === 'threads'} disabled={!!locked || threads === s.threads}
+                onClick={() => void save({ threads }, 'threads')}>Save</Button>
+            </div>
+          </Field>
+        </IndexGroup>
 
-      <div className="settings-grid">
-        <Field label="Threads"
-          description={`Each phase runs this many workers at once. Empty uses one per processor core: ${info.cpus} here.`}>
-          <div className="ix-inline">
-            <NumberInput min={1} max={256} value={threads ?? undefined} placeholder={String(info.cpus)} aria-label="Threads" disabled={!!locked}
-              onValueChange={v => setThreads(v ?? null)} />
-            <Button variant="secondary" loading={saving === 'threads'} disabled={!!locked || threads === s.threads}
-              onClick={() => void save({ threads }, 'threads')}>Save</Button>
-          </div>
-        </Field>
-      </div>
-
-      <h2 className="ix-h2">What is read from files</h2>
-      <div className="ix-switches">
-        <div>
-          <IndexDepthControl label="Index depth of the main folder" value={s.depth} ocr={tesseract?.available ?? null}
-            disabled={!!locked || (saving !== null && saving !== 'depth')} onChange={v => void save({ depth: v }, 'depth')} />
-          <p className="ix-note">
-            A new depth is applied in the background at once, to the files already indexed (with the background sync paused,
-            at Sync now). Search by name works as soon as the names are in; text and meaning follow. Each other library has
-            its own depth, under <a href="#view=settings:libraries">Libraries</a>.
-          </p>
-        </div>
-        <Field label="PDFs downmark cannot read"
-          description={['pdftotext', 'pypdf'].map(n => `${n}: ${reader(n)?.note.replace(/^./, c => c.toLowerCase()) ?? 'unknown'}`).join(' ')}>
-          <Select items={PDF_READERS} value={s.pdfReader} disabled={!!locked || !s.documents || saving !== null}
-            onValueChange={v => v && void save({ pdfReader: v }, 'pdfReader')} />
-        </Field>
-        <label className="ix-switch">
-          <Switch checked={s.legacyOffice} disabled={!!locked || !s.documents || saving !== null} onCheckedChange={v => void save({ legacyOffice: v }, 'legacyOffice')} />
-          <span>
-            <span className="ix-switch-label">LibreOffice, for previews and for Office files the built-in readers cannot read</span>
-            <span className="muted">{soffice?.note}</span>
-          </span>
-        </label>
-        {(cfg.loaded ? aiOn(cfg) : !!info.ai?.enabled) && (
-          <>
-            <label className="ix-switch">
-              <Switch checked={s.imageDescriptions} disabled={!!locked || !s.ocr || saving !== null} onCheckedChange={v => void save({ imageDescriptions: v }, 'imageDescriptions')} />
-              <span>
-                <span className="ix-switch-label">Describe images with a vision model</span>
-                <span className="muted">At Text + OCR and deeper, each image is sent to the model below, once; the description is searchable.</span>
-              </span>
-            </label>
-            <p className="ix-note ix-indent">
-              {vision ? <>Images are described by <code>{vision}</code>, chosen under <a href="#view=settings:ai">AI features</a>.</>
-                : <>No vision model is chosen; choose one under <a href="#view=settings:ai">AI features</a>.</>}
-              {vision && deploymentCred === false && ' Descriptions are made during background indexing, with no user present, so they need the deployment credential or the pw CLI login on this computer; there is neither, so images are read by OCR and name only.'}
+        <IndexGroup title="What is read from files" help={`How deep ${main} is indexed, and how documents, images and meaning are read.`}>
+          <div>
+            <IndexDepthControl label={`Index depth of ${main}`} value={s.depth} ocr={tesseract?.available ?? null}
+              disabled={!!locked || (saving !== null && saving !== 'depth')} onChange={v => void save({ depth: v }, 'depth')} />
+            <p className="ix-note">
+              A new depth is applied in the background at once, to the files already indexed (with the background sync paused,
+              at Sync now). Search by name works as soon as the names are in; text and meaning follow. Each other library has
+              its own depth, under <a href="#view=settings:libraries">Libraries</a>.
             </p>
-          </>
-        )}
-        <Field group label="Speed of search by meaning" className="meaning-level"
-          description={MEANING_SPEED_HELP[s.meaningSpeed]}>
-          <SegmentedControl options={MEANING_SPEED_OPTIONS} value={s.meaningSpeed} disabled={!!locked || saving !== null || s.meaning === 'off'}
-            onValueChange={v => { if (v) void save({ meaningSpeed: v as IndexSettings['meaningSpeed'] }, 'meaningSpeed') }} />
-        </Field>
+          </div>
+          <Field label="PDFs downmark cannot read"
+            description={['pdftotext', 'pypdf'].map(n => `${n}: ${reader(n)?.note.replace(/^./, c => c.toLowerCase()) ?? 'unknown'}`).join(' ')}>
+            <Select items={PDF_READERS} value={s.pdfReader} disabled={!!locked || !s.documents || saving !== null}
+              onValueChange={v => v && void save({ pdfReader: v }, 'pdfReader')} />
+          </Field>
+          <label className="ix-switch">
+            <Switch checked={s.legacyOffice} disabled={!!locked || !s.documents || saving !== null} onCheckedChange={v => void save({ legacyOffice: v }, 'legacyOffice')} />
+            <span>
+              <span className="ix-switch-label">LibreOffice, for previews and for Office files the built-in readers cannot read</span>
+              <span className="muted">{soffice?.note}</span>
+            </span>
+          </label>
+          {(cfg.loaded ? aiOn(cfg) : !!info.ai?.enabled) && (
+            <div>
+              <label className="ix-switch">
+                <Switch checked={s.imageDescriptions} disabled={!!locked || !s.ocr || saving !== null} onCheckedChange={v => void save({ imageDescriptions: v }, 'imageDescriptions')} />
+                <span>
+                  <span className="ix-switch-label">Describe images with a vision model</span>
+                  <span className="muted">At Text + OCR and deeper, each image is sent to the model below, once; the description is searchable.</span>
+                </span>
+              </label>
+              <p className="ix-note ix-indent">
+                {vision ? <>Images are described by <code>{vision}</code>, chosen under <a href="#view=settings:ai">AI features</a>.</>
+                  : <>No vision model is chosen; choose one under <a href="#view=settings:ai">AI features</a>.</>}
+                {vision && deploymentCred === false && ' Descriptions are made during background indexing, with no user present, so they need the deployment credential or the pw CLI login on this computer; there is neither, so images are read by OCR and name only.'}
+              </p>
+            </div>
+          )}
+          <Field group label="Speed of search by meaning" className="meaning-level"
+            description={MEANING_SPEED_HELP[s.meaningSpeed]}>
+            <SegmentedControl options={MEANING_SPEED_OPTIONS} value={s.meaningSpeed} disabled={!!locked || saving !== null || s.meaning === 'off'}
+              onValueChange={v => { if (v) void save({ meaningSpeed: v as IndexSettings['meaningSpeed'] }, 'meaningSpeed') }} />
+          </Field>
+        </IndexGroup>
+
+        <IndexGroup title="What this computer can read" help="The reader for each kind of file, and the command that installs one this computer lacks.">
+          <Table density="compact" wrapperClassName="ix-formats">
+            <Table.Header>Files</Table.Header>
+            <Table.Header>Read by</Table.Header>
+            <Table.Header>Note</Table.Header>
+            {info.readers.formats.map(f => (
+              <tr key={f.formats}>
+                <Table.Item>{f.formats}</Table.Item>
+                <Table.Item>{f.readers.length ? f.readers.join(', ') : <span className="lib-no">name only</span>}</Table.Item>
+                <Table.Item wrap className="muted">{f.note}</Table.Item>
+              </tr>
+            ))}
+          </Table>
+          <ReaderInstalls readers={info.readers} single={info.single} running={running}
+            onReaders={r => setInfo(i => (i ? { ...i, readers: r } : i))} onBuild={() => void controls.build()} />
+        </IndexGroup>
       </div>
-
-      <h2 className="ix-h2">What this computer can read</h2>
-      <Table density="compact" wrapperClassName="ix-formats">
-        <Table.Header>Files</Table.Header>
-        <Table.Header>Read by</Table.Header>
-        <Table.Header>Note</Table.Header>
-        {info.readers.formats.map(f => (
-          <tr key={f.formats}>
-            <Table.Item>{f.formats}</Table.Item>
-            <Table.Item>{f.readers.length ? f.readers.join(', ') : <span className="lib-no">name only</span>}</Table.Item>
-            <Table.Item wrap className="muted">{f.note}</Table.Item>
-          </tr>
-        ))}
-      </Table>
-      <ReaderInstalls readers={info.readers} single={info.single} running={running}
-        onReaders={r => setInfo(i => (i ? { ...i, readers: r } : i))} onBuild={() => void controls.build()} />
-
     </>
   )
 }
@@ -197,6 +215,7 @@ export function IndexStorageSettings() {
   const [moveNote, setMoveNote] = useState('')
   const [restarting, setRestarting] = useState(false)
   const status = useIndexStatus()
+  const main = libraryNames(useAppConfig()).main
 
   const move = async (path: string) => {
     setMoveNote('')
@@ -229,13 +248,14 @@ export function IndexStorageSettings() {
 
   return (
     <>
-      <h2 className="ix-h2">Where the index is kept</h2>
-      <div className="settings-field">
-        <p className="ix-path"><code>{info.location.current}</code></p>
-        <p className="muted view-sub">
-          Separate from the folder being indexed ({info.location.folder}), whose files are never written to by indexing.
-          {info.location.current !== info.location.default && ` The default is ${info.location.default}.`}
-        </p>
+      <IndexGroup title="Where the index is kept" help={`The index of ${main} and its caches, on this computer.`}>
+        <div className="ix-where">
+          <p className="ix-path"><code>{info.location.current}</code><CopyButton text={info.location.current} label="the index folder" size="xs" /></p>
+          <p className="ix-note">
+            Separate from the folder being indexed ({info.location.folder}), whose files are never written to by indexing.
+            {info.location.current !== info.location.default && ` The default is ${info.location.default}.`}
+          </p>
+        </div>
         {info.location.canChange ? (
           <div className="ix-actions">
             <Button variant="secondary" disabled={running} onClick={() => { setMoveNote(''); setMoving(true) }}>Choose another place…</Button>
@@ -244,9 +264,9 @@ export function IndexStorageSettings() {
             )}
             {running && <span className="muted">Wait for indexing to finish, or stop it, to move the index.</span>}
           </div>
-        ) : <p className="muted">Set STUDIO_INDEX_DIR in the Studio&apos;s environment to keep it elsewhere.</p>}
+        ) : <p className="ix-note">Set STUDIO_INDEX_DIR in the Studio&apos;s environment to keep it elsewhere.</p>}
         {moveNote && !moving && <Callout tone="info">{moveNote}</Callout>}
-      </div>
+      </IndexGroup>
 
       <Modal open={moving} onClose={() => { if (!restarting) setMoving(false) }} dismissible={!restarting} size="lg"
         title="Keep the index somewhere else"

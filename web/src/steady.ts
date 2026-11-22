@@ -22,11 +22,17 @@ export function keepMissing<T>(shown: readonly T[] | null, read: readonly T[], k
   return [...read, ...kept]
 }
 
-/** The count to show: a higher one at once, a lower one only when the read
- *  before was lower too. `low` remembers the last lower read. */
-export function steadyCount(shown: number | null, read: number, low: { last: number | null }): number {
-  if (shown == null || read >= shown) { low.last = null; return read }
-  if (low.last != null) { low.last = null; return read }
-  low.last = read
+/** Two lower reads closer together than this are one look: the footer
+ *  also reads on events (a library change, a setting saved), and two such
+ *  reads a moment apart can meet the same passing gap. */
+export const CONFIRM_MS = 20_000
+
+/** The count to show: a higher one at once, a lower one only when an
+ *  earlier read, at least CONFIRM_MS before, was lower too. `low` remembers
+ *  the first lower read and when it came. */
+export function steadyCount(shown: number | null, read: number, low: { last: number | null; at?: number }, now = Date.now()): number {
+  if (shown == null || read >= shown) { low.last = null; low.at = undefined; return read }
+  if (low.last != null && now - (low.at ?? now) >= CONFIRM_MS) { low.last = null; low.at = undefined; return read }
+  if (low.last == null) { low.last = read; low.at = now }
   return shown
 }

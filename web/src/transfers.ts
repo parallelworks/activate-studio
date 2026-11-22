@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { api, type Job } from './api'
+import { api, libraryOf, type Job } from './api'
 import { uploadBatched, type UploadItem, type UploadProgress } from './upload'
 import { libraryWritten } from './libraryCatchUp'
 
@@ -54,8 +54,11 @@ export function useTransfers(): readonly Transfer[] {
   )
 }
 
-/** The files have moved: the tree shows it now, not after indexing. */
-const treeChanged = () => libraryWritten()
+/** The files have moved in lib, the library written to (in All mode the
+ *  one the folder's path names): the tree shows it now, not after
+ *  indexing, and lib's index is watched even if another library is
+ *  selected by the time it lands. */
+const changedIn = (lib: string) => () => libraryWritten(lib)
 
 let lastTurn: Promise<unknown> = Promise.resolve()
 
@@ -71,6 +74,7 @@ function takeTurn(signal: AbortSignal): Promise<() => void> {
 
 export async function startUpload(items: UploadItem[], dir: string): Promise<UploadProgress> {
   const id = ++lastId
+  const treeChanged = changedIn(libraryOf(dir))
   const abort = new AbortController()
   publish([...transfers, {
     id, kind: 'upload', phase: 'queued', total: items.length, done: 0, bytes: 0,
@@ -94,6 +98,7 @@ export async function startPathJob(
   start: (paths: string[]) => Promise<Job>,
 ): Promise<UploadProgress> {
   const id = ++lastId
+  const treeChanged = changedIn(libraryOf(dir || paths[0] || ''))
   const p: UploadProgress = {
     kind, phase: 'uploading', total: paths.length, done: 0, bytes: 0, totalBytes: 0,
     current: paths[0] ?? '', failed: [], indexMs: 0, finished: false, dir,

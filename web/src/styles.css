@@ -1306,6 +1306,10 @@ a.identity-btn { text-decoration: none; }
 .fleet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 14px; }
 .fleet-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .fleet-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+/* One line, so the detail below does not move when a wake-up adds its count. */
+.fleet-card .task-card-meta { gap: 8px; white-space: nowrap; }
+.fleet-card .task-card-meta > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fleet-card .task-card-meta > span:last-child { flex-shrink: 0; }
 .fleet-note { font-size: 12px; margin: -4px 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fleet-goal-text { font-size: 13px; white-space: pre-wrap; margin: 0 0 10px; }
 .fleet-journal { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; border-top: 1px solid var(--pw-border); padding-top: 10px; }
@@ -1981,7 +1985,9 @@ a.identity-btn { text-decoration: none; }
 .agents-swap > * { grid-area: 1 / 1; }
 .agents-swap-hidden { visibility: hidden; }
 .agents-actions { display: inline-flex; flex: none; align-items: baseline; white-space: nowrap; }
-.agents-carriers { margin-left: 6px; font-size: 12px; color: var(--pw-muted); white-space: nowrap; }
+/* On its own line under the description: inline, it was held to the
+   description's last word and took that word with it when it wrapped. */
+.agents-carriers { display: block; font-size: 12px; color: var(--pw-muted); white-space: nowrap; }
 .agents-folders .ov-row-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .persona-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
   padding: 7px 10px; border: 0; background: none; border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; }
@@ -2151,31 +2157,78 @@ a.identity-btn { text-decoration: none; }
 /* With the picker on its own row, the buttons spread across the row under it. */
 .rail-head.rail-head-switch .rail-actions { flex: 1 0 100%; justify-content: space-between; }
 
-/* ---- Settings > Indexing > Libraries ---- */
-.libraries-table .lib-name { font-weight: 600; color: var(--pw-text); }
-.libraries-table .lib-access { font-weight: 400; color: var(--pw-muted); }
-.libraries-table .lib-id { font-size: 12px; color: var(--pw-muted); margin-top: 2px; }
-.libraries-table .depth-select { min-width: 11rem; }
+/* ---- Settings > Indexing > Libraries ----
+   One card per library, the same anatomy for every kind: a head (name and
+   access, what it is, its state with counts and time, its actions at the
+   right), notes, a grid of details with each path on one line, what is
+   running, and a quiet foot (the last run and the log). */
+.lib-cards { display: flex; flex-direction: column; gap: 12px; margin: 4px 0 14px; container: libraries / inline-size; }
+.lib-card.lib-focus { background: var(--theme-hover); transition: background 0.4s; }
+.lib-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 16px; padding: 14px 16px 10px; }
+.lib-card-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.lib-name { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.35; color: var(--pw-text); overflow-wrap: anywhere; }
+.lib-access { font-weight: 400; color: var(--pw-muted); }
+.lib-kind { font-size: 12px; color: var(--pw-muted); }
+.lib-state { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 3px; font-size: 12px; color: var(--pw-muted); font-variant-numeric: tabular-nums; }
+.lib-facts { min-width: 0; }
+.lib-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; flex-shrink: 0; }
+.lib-card-actions .ix-actions { display: inline-flex; flex-wrap: nowrap; }
+.lib-notes { list-style: none; margin: 0; padding: 0 16px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--pw-muted); max-width: var(--settings-measure); }
+.lib-fields { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) 7.5rem minmax(0, 1fr); align-items: center; gap: 6px 14px;
+  margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--pw-border); font-size: 13px; }
+.lib-field { display: contents; }
+.lib-field dt { color: var(--pw-muted); font-size: 12px; }
+.lib-field dd { margin: 0; min-width: 0; }
+/* A path takes the whole line, so it is cut only where the card is narrow. */
+.lib-field-path dt { grid-column: 1; }
+.lib-field-path dd { grid-column: 2 / -1; }
+.lib-path { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.lib-path-text { display: flex; min-width: 0; overflow: hidden; font-size: 12px; white-space: nowrap; }
+.lib-path-head { flex: 0 1 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; }
+.lib-path-tail { flex: 0 0 auto; }
+.lib-fields .depth-select { min-width: 11rem; }
+.lib-readthrough { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.lib-readthrough code { word-break: break-all; }
+.lib-card-detail { display: flex; flex-direction: column; gap: 8px; padding: 0 16px 12px; }
+.lib-build { display: flex; flex-direction: column; gap: 8px; max-width: 40rem; }
+.lib-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; padding: 6px 10px 6px 16px; border-top: 1px solid var(--pw-border); font-size: 12px; color: var(--pw-muted); }
+.lib-card-foot .ix-note { margin: 0; flex: 1 1 20rem; }
+.lib-card-foot > :last-child { margin-left: auto; }
 .lib-depth-note { font-size: 12px; margin: 8px 0 0; max-width: var(--settings-measure); }
-/* Where a library points: its GUFI index and, when the files are here, the
-   source tree. Long paths wrap anywhere rather than widen the table. */
-.libraries-table td:first-child { width: 45%; padding-right: 1.5rem; }
-/* The narrow columns give way to the paths: headers may take two lines,
-   and the actions column needs only its Remove button. */
-.libraries-table th { white-space: normal; vertical-align: bottom; }
-.libraries-table .lib-paths { margin-top: 6px; }
-.libraries-table .lib-seg { white-space: nowrap; }
-.libraries-table .lib-yes { color: var(--pw-text); }
-.libraries-table .lib-no { color: var(--pw-muted); }
-.libraries-table .lib-actions { text-align: right; width: 1%; white-space: nowrap; }
-.libraries-table .lib-actions > * + * { margin-left: 6px; }
-.libraries-wrap { margin-bottom: 18px; container: libraries / inline-size; }
-/* A row's progress, such as the main folder's index build, runs across the
-   table under it, so the row above keeps no rule between them. */
-.libraries-table tr.lib-has-detail > td { border-bottom: 0; }
-.libraries-table tr.lib-focus > td { background: var(--theme-hover); transition: background 0.4s; }
-.libraries-table tr.lib-detail > td { padding-top: 0; width: auto; }
-.libraries-table .lib-build { display: flex; flex-direction: column; gap: 8px; max-width: 40rem; }
+.lib-no { color: var(--pw-muted); }
+.lib-depth-locked .muted { font-size: 12px; margin-top: 2px; }
+.lib-field:has(.lib-depth-locked) > dt { align-self: start; }
+/* Too narrow for two details a line (a phone, or a laptop window with the
+   settings menu and the status panel open): one a line, and the actions
+   under the name. Decided by the list's own width, not the window's. */
+@container libraries (max-width: 720px) {
+  .lib-fields { grid-template-columns: 6.5rem minmax(0, 1fr); }
+  .lib-field-path dd { grid-column: 2; }
+  .lib-card-head { flex-direction: column; }
+  .lib-card-actions { justify-content: flex-start; }
+}
+/* The other tabs of Settings, Indexing: settings grouped in cards like the
+   libraries', each with a heading, one line of help, and its settings ruled
+   off from one another, each kept to the settings measure. */
+.ix-cards { display: flex; flex-direction: column; gap: 12px; margin: 4px 0 14px; container: indexing / inline-size; }
+.ix-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 16px; padding: 14px 16px 10px; }
+.ix-card-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ix-card-name { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.35; color: var(--pw-text); }
+.ix-card-help { margin: 0; font-size: 12px; color: var(--pw-muted); }
+.ix-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; flex-shrink: 0; }
+.ix-card-actions .ix-actions { display: inline-flex; flex-wrap: nowrap; }
+/* The rule between settings spans the card; each setting's own content
+   keeps to a reading width of 46rem (the right padding grows on a wide card). */
+.ix-card-body > * { margin: 0; max-width: none; border-top: 1px solid var(--pw-border);
+  padding: 12px max(16px, calc(100% - 46rem - 16px)) 12px 16px; }
+.ix-card-body > .ix-formats { padding-right: 16px; }
+.ix-card-body .key-persist { margin: 0; }
+.ix-card-body > .ix-section { margin: 0; gap: 8px; }
+.ix-card-body .ix-inline { max-width: 20rem; }
+.ix-card-body .ix-installs { margin: 0; }
+.ix-where { display: flex; flex-direction: column; gap: 4px; }
+.ix-path { display: flex; align-items: center; gap: 4px; margin: 0; }
+@container indexing (max-width: 560px) { .ix-card-head { flex-direction: column; } .ix-card-actions { justify-content: flex-start; } }
 /* Add a library: where and how, then the form for that pair. */
 .lib-add-form { margin-top: 12px; }
 .lib-add-flow { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
@@ -2257,7 +2310,6 @@ a.identity-btn { text-decoration: none; }
 .depth-stop:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 1px; }
 .depth-stop:disabled { cursor: not-allowed; opacity: 0.6; }
 .ix-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.libraries-table .lib-actions .ix-actions { display: inline-flex; vertical-align: middle; flex-wrap: nowrap; }
 .ix-confirm { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .ix-confirm p { margin: 0; }
 .ix-log-path { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
@@ -2274,27 +2326,9 @@ a.identity-btn { text-decoration: none; }
 .ix-switch { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
 .ix-switch > span:last-child { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .ix-switch-label { color: var(--pw-text); font-weight: 500; }
-.ix-path code { font-size: 12px; word-break: break-all; }
+.ix-path code { font-size: 12px; overflow-wrap: anywhere; }
 .ix-indent { margin-left: 54px; }
 .ix-formats, .ix-runs { margin-top: 4px; }
-/* Where the table has too little room for its columns (a phone, or a laptop
-   window with the settings menu and the status panel open), each library
-   is a block: name and paths, then its state, what it searches (named,
-   since the headers are gone), and its actions. Decided by the table's own
-   width, not the window's. */
-@container libraries (max-width: 720px) {
-  .libraries-table thead { display: none; }
-  .libraries-table, .libraries-table tbody, .libraries-table tr, .libraries-table td { display: block; width: auto; }
-  .libraries-table td:first-child { width: auto; padding-right: 0.75rem; }
-  .libraries-table td { border-bottom: 0; height: auto; }
-  .libraries-table tr { border-bottom: 1px solid var(--pw-border); padding-bottom: 6px; }
-  .libraries-table tr.lib-has-detail { border-bottom: 0; }
-  .libraries-table td.lib-cap { display: inline-block; }
-  .libraries-table td.lib-cap::before { content: attr(data-label) ": "; color: var(--pw-muted); }
-  .libraries-table td.lib-actions { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; width: auto; }
-  .libraries-table .lib-actions > * + * { margin-left: 0; }
-}
-
 /* Workflows tab */
 .wf-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.75rem; margin: 1rem 0 1.5rem; }
 .wf-tile { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1rem 0.75rem; border: 1px solid var(--pw-border); border-radius: 10px; background: var(--pw-panel); color: inherit; font: inherit; cursor: pointer; text-align: center; transition: border-color .15s, box-shadow .15s; }
@@ -2771,8 +2805,6 @@ button.status-row:hover { background: var(--pw-hover-row); }
 .about-head img { flex-shrink: 0; }
 .about-name { font-size: 16px; font-weight: 600; color: var(--pw-text); }
 .about-maker { margin-top: 2px; font-size: 13px; color: var(--theme-muted-text-color, var(--pw-muted)); }
-.libraries-table .lib-readthrough { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-.libraries-table .lib-readthrough code { word-break: break-all; }
 
 /* Selected text in the chat. The package's accent tint is too faint to see
    and its removal comes after 0.114.1; drop this rule once a release has it. */
@@ -3340,3 +3372,30 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .copy-library-form .settings-grid { margin-bottom: 0; }
 /* A locked button's wrapper (LockedButton) takes no room of its own. */
 .locked-button { display: inline-flex; }
+
+/* A call a standing agent waits to have approved, whole, with its answer. */
+.fleet-approval-text { margin: 6px 0; padding: 6px 8px; overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; }
+.fleet-approval-actions { display: flex; gap: 8px; }
+.fleet-approval-cut, .fleet-approval-reason { display: block; margin: 4px 0; }
+
+/* A person's first visit on a Studio with sign-in (FirstVisitCard): over
+   the page's lower right corner, so no page moves for it. */
+.first-visit { position: fixed; right: 16px; bottom: 16px; z-index: 30; width: min(380px, calc(100vw - 32px)); box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); border-radius: 8px; background: var(--pw-panel); }
+.first-visit p { margin: 0 0 6px; }
+/* A continued chat's opening note is not a reply: no Regenerate on it
+   (markNotes, adapter.ts, marks its Code page link). */
+.group:has(a[href*="note=continued"]):not(:has(.group)) button[aria-label="Regenerate response"] { display: none; }
+
+/* Settings, Model access, the pw CLI contexts: a context's name wraps, and
+   where the section is narrow (1280 with Status open) each context stacks
+   as a row of its own, Use beside it, rather than the table scrolling
+   sideways with Use off screen. */
+.cli-contexts-wrap:has(.cli-contexts) { container-type: inline-size; }
+.cli-contexts code { overflow-wrap: anywhere; }
+@container (max-width: 560px) {
+  .cli-contexts thead, .cli-contexts tr:has(> th) { display: none; }
+  .cli-contexts, .cli-contexts tbody { display: block; width: 100%; }
+  .cli-contexts tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding: 8px 12px; }
+  .cli-contexts td { display: block; height: auto; padding: 0; white-space: normal; }
+  .cli-contexts td:last-child { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+}

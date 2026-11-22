@@ -118,15 +118,15 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
         <p className="muted view-sub">
           {build
             ? (pw
-              ? 'A folder on one of your systems, indexed there with GUFI over pw ssh with this computer\'s pw sign-in. The build runs there and leaves the folder as it is.'
-              : 'A folder on another machine, indexed there with GUFI over ssh with your own keys. The build runs there and leaves the folder as it is. The Studio cannot answer a password prompt, so key access is needed.')
+              ? 'A folder on one of your remote computers, indexed there with GUFI over pw ssh with this computer\'s pw sign-in. The build runs there and leaves the folder as it is.'
+              : 'A folder on a remote computer, indexed there with GUFI over ssh with your own keys. The build runs there and leaves the folder as it is. The Studio cannot answer a password prompt, so key access is needed.')
             : (pw
-              ? 'An existing GUFI index on one of your systems, read over pw ssh with this computer\'s pw sign-in. Read only: nothing is written there.'
-              : 'An existing GUFI index on another machine, read over ssh with your own keys. The Studio cannot answer a password prompt, so key access is needed. Read only: nothing is written there.')}
+              ? 'An existing GUFI index on one of your remote computers, read over pw ssh with this computer\'s pw sign-in. Read only: nothing is written there.'
+              : 'An existing GUFI index on a remote computer, read over ssh with your own keys. The Studio cannot answer a password prompt, so key access is needed. Read only: nothing is written there.')}
         </p>
       )}
       {pw && systems?.error && (
-        <Callout tone="warning">Your systems could not be listed: {systems.error} Type the name of a running system instead.</Callout>
+        <Callout tone="warning">Your clusters could not be listed: {systems.error} Type the name of a running cluster instead.</Callout>
       )}
       <div className="settings-grid">
         {pw ? (

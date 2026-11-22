@@ -7,7 +7,7 @@ const api = vi.hoisted(() => ({
   indexJob: vi.fn(async () => ({ state: 'done', ms: 5 })),
   job: vi.fn(),
 }))
-vi.mock('../src/api', () => ({ api, currentLibrary: () => 'kb' }))
+vi.mock('../src/api', () => ({ api, currentLibrary: () => 'kb', libraryOf: () => 'kb' }))
 
 import { act, renderHook } from '@testing-library/react'
 import { collectChosen, collectListed } from '../src/upload'

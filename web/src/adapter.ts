@@ -237,13 +237,31 @@ export async function deleteConversations(ids: string[]): Promise<{ deleted: str
   }).then(r => json<{ deleted: string[]; skipped: string[] }>(r))
 }
 
+interface NoteMessage { id: string; content?: string | null }
+
+/** The note that opens a chat continued from a pw code session says where
+ *  it came from; it is not a reply, so it has nothing to regenerate. The
+ *  chat shows Regenerate on every assistant message, so its link to the
+ *  Code page is marked here (CodeView reads only machine and session) and
+ *  styles.css hides Regenerate in the message holding that link. Notes
+ *  saved before this are marked too. */
+export const CONTINUED_NOTE_MARK = 'note=continued'
+export function markNotes<T extends { messages?: NoteMessage[] }>(c: T): T {
+  for (const m of c.messages ?? []) {
+    if (m.id.startsWith('note-continued-') && m.content && !m.content.includes(CONTINUED_NOTE_MARK)) {
+      m.content = m.content.replace('](#view=code?', `](#view=code?${CONTINUED_NOTE_MARK}&`)
+    }
+  }
+  return c
+}
+
 export function createStudioAdapter(): ChatAdapter {
   return {
     // Conversations live server-side beside the index; browser storage is
     // partitioned inside the platform iframe and loses history.
     conversations: {
       list: () => fetch('/api/chat/conversations').then(r => json<OwnedSummary[]>(r)).then(decorateConversations) as ReturnType<ChatAdapter['conversations']['list']>,
-      get: id => fetch(`/api/chat/conversations/${id}`).then(r => json(r)),
+      get: id => fetch(`/api/chat/conversations/${id}`).then(r => json<{ messages?: NoteMessage[] }>(r)).then(markNotes) as ReturnType<ChatAdapter['conversations']['get']>,
       create: title => fetch('/api/chat/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

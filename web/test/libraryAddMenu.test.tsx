@@ -143,7 +143,7 @@ describe('the Library\'s + Add menu', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Add a library' })
     // The form Settings shows: where, how, and the form for the pair.
     expect(await within(dialog).findByRole('button', { name: 'This computer' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'A system' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Remote computer' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Index a folder' })).toBeInTheDocument()
     expect(within(dialog).getByLabelText('Folder to index')).toBeInTheDocument()
   })
@@ -199,6 +199,9 @@ describe('adding files', () => {
     const input = document.querySelector<HTMLInputElement>('.upload-pop input[type=file][multiple]')!
     fireEvent.change(input, { target: { files: [new File(['hello'], 'notes.md')] } })
     await waitFor(() => expect(uploads).toEqual([{ dir: 'uploads', rels: ['notes.md'] }]))
+    // The panel closes, leaving the viewer where the file opens uncovered
+    // (phase 4, F).
+    await waitFor(() => expect(screen.queryByLabelText('Destination folder')).not.toBeInTheDocument())
   })
 
   it('the menu\'s Add files opens the same panel', async () => {

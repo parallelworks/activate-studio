@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentsView } from '../src/views/AgentsView'
-import { LibraryFolders, instructionLibraries } from '../src/components/ApplyToFolder'
+import { LibraryFolders, choiceLabel, instructionLibraries } from '../src/components/ApplyToFolder'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -24,7 +26,10 @@ beforeEach(() => {
       return json({ library: 'main', label: 'Engineering Library', folder: body.folder, path: `${body.folder}/AGENTS.md`, space: false, exists: true, instructions: [body.instructions], skills: [] })
     }
     if (url === '/api/agents-md/folders') return json({ folders })
-    if (url === '/api/libraries') return json({ libraries: [
+    // The person's own library is in the config, as the switcher has it;
+    // /api/libraries lists only the Studio's own.
+    if (url === '/api/libraries') return json({ libraries: [{ id: 'main', label: 'Engineering Library', primary: true, writable: true }] })
+    if (url === '/api/config') return json({ libraries: [
       { id: 'main', label: 'Engineering Library', primary: true, writable: true },
       { id: 'mine', label: 'My library', primary: false, writable: true, space: true, site: 'cluster' },
       { id: 'team', label: 'Team folder', primary: false, writable: true, space: true, sharedFrom: 'pat', site: 'cluster' },
@@ -50,7 +55,10 @@ describe('agent instructions', () => {
     render(<AgentsView onOpen={() => {}} />)
     expect(await screen.findByText('Instructions and skills')).toBeInTheDocument()
     expect(await screen.findByText(/Agent instructions \(1\)/)).toBeInTheDocument()
-    expect(await screen.findByText('· in 1 folder')).toBeInTheDocument()
+    const carriers = await screen.findByText('in 1 folder')
+    expect(carriers).toHaveClass('agents-carriers')
+    // Retest G: on its own line, not held to the description's last word.
+    expect(readFileSync('src/styles.css', 'utf8')).toMatch(/\.agents-carriers \{[^}]*display: block/)
     expect(screen.getByText('Folders with agent instructions (1)')).toBeInTheDocument()
     expect(screen.getByText('agents/reviewer')).toBeInTheDocument()
   })
@@ -129,5 +137,58 @@ describe('agent instructions', () => {
     expect(taken.querySelectorAll('.agents-swap > span')).toHaveLength(2)
     // It still carries the skill, so it is still counted.
     expect(screen.getByText('Folders with agent instructions (1)')).toBeInTheDocument()
+  })
+
+  it('keeps a taken-off item marked when a list read before the take-off lands', async () => {
+    const stale = { library: 'main', label: 'Engineering Library', folder: 'agentstest', path: 'agentstest/AGENTS.md', space: false, exists: true, instructions: ['reviewer'], skills: ['pump'] }
+    folders = [stale]
+    render(<AgentsView onOpen={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'reviewer · take off' }))
+    await waitFor(() => expect(posts).toHaveLength(1))
+    await screen.findByRole('button', { name: 'reviewer · taken off' })
+    // The server's list still has it (read before the take-off landed),
+    // and the list is read again after another apply.
+    folders = [stale]
+    const row = (await screen.findByTitle('reviewer')).closest('.ov-row') as HTMLElement
+    fireEvent.click(within(row).getByText('apply to a folder'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(posts).toHaveLength(2))
+    const reads = () => vi.mocked(fetch).mock.calls.filter(c => String(c[0]) === '/api/agents-md/folders').length
+    await waitFor(() => expect(reads()).toBeGreaterThanOrEqual(2))
+    await new Promise(r => setTimeout(r, 50))
+    expect(screen.getByRole('button', { name: 'reviewer · taken off' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'reviewer · take off' })).toBeNull()
+  })
+
+  it('offers My library, from the libraries the switcher shows, and lists its folders', async () => {
+    // The listbox measures itself; give the elements a size.
+    const rect = Element.prototype.getBoundingClientRect
+    const sizes = ['offsetHeight', 'clientHeight', 'offsetWidth', 'clientWidth'] as const
+    for (const k of sizes) Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => 400 })
+    Element.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, width: 400, height: 400, right: 400, bottom: 400, toJSON() {} }) as DOMRect
+    try {
+      const u = userEvent.setup()
+      render(<AgentsView onOpen={() => {}} />)
+      const row = (await screen.findByTitle('reviewer')).closest('.ov-row') as HTMLElement
+      await u.click(within(row).getByText('apply to a folder'))
+      await u.click(await screen.findByRole('combobox', { name: 'Library' }))
+      expect(screen.queryByRole('option', { name: /Team folder/ })).toBeNull()
+      await u.click(await screen.findByRole('option', { name: 'My library (yours)' }))
+      expect(await screen.findByRole('group', { name: 'Folders in My library (yours)' })).toBeInTheDocument()
+      await u.click(await screen.findByRole('button', { name: 'reports' }))
+      await u.click(screen.getByRole('button', { name: 'Apply' }))
+      await waitFor(() => expect(posts).toHaveLength(1))
+      expect(posts[0].body).toEqual({ library: 'mine', folder: 'reports', instructions: 'reviewer' })
+      expect(trees).toContain('mine:')
+    } finally {
+      Element.prototype.getBoundingClientRect = rect
+      for (const k of sizes) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k]
+    }
+  })
+
+  it('says whose a library is only where its name does not', () => {
+    expect(choiceLabel({ label: 'My library', space: true }, true)).toBe('My library')
+    expect(choiceLabel({ label: 'reports', space: true }, false)).toBe('reports (yours)')
+    expect(choiceLabel({ label: 'Engineering Library' }, false)).toBe('Engineering Library')
   })
 })

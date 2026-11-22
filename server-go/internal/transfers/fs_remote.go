@@ -104,6 +104,10 @@ list2)
   [ -e "$p" ] || [ -L "$p" ] || fail 4 "$p: no such folder"
   [ -d "$p" ] && [ ! -L "$p" ] || fail 5 "$p is not a folder"
   inside "$p" || fail 6 "$p leads outside the location"
+  # Without its trailing slashes, so every find below names entries the same
+  # way ("a/" and "a//" as "a/x"), and the pattern for what is below a hidden
+  # folder is built from it ("/" gives "/.*").
+  t=$p; while [ "${t%/}" != "$t" ]; do t=${t%/}; done; p=${t:-/}
   if [ $G = 1 ]; then find -- "$p" -mindepth 1 -maxdepth 1 ! -name '.*' -printf "$F"
   else bsd "$p"; find -- "$p" -mindepth 1 -maxdepth 1 ! -name '.*' -exec stat -f "$SF" {} + | tr '\n' '\0'; exit 0; fi
   printf '%s\0' "$mark"
@@ -112,7 +116,7 @@ list2)
   # Hidden names are left out at both levels: by name, and below a hidden
   # folder by a path pattern from $p with its pattern characters escaped
   # (matching '*/.*' would also leave out everything when $p is hidden).
-  q=$(printf '%s' "$p" | sed 's/[][*?\\]/\\&/g')
+  q=$(printf '%s' "$t" | sed 's/[][*?\\]/\\&/g')
   { find -- "$p" -mindepth 2 -maxdepth 2 ! -name '.*' ! -path "$q/.*" -printf "$F" 2>/dev/null | head -z -n "${2:-2000}" && printf '%s\0' "$mark"; } 2>/dev/null
   exit 0 ;;
 walk)

@@ -8,7 +8,28 @@ that existed before libraries has changed. Any other library is read only
 on a drive, or an index the Studio builds itself of a folder on this
 computer), except those written as the person: My library, a folder
 shared with them for writing, and an index they built on one of their
-own systems ([Indexes built on a remote system](#indexes-built-on-a-remote-system)).
+own systems ([Indexes built on a remote computer](#indexes-built-on-a-remote-computer)).
+
+## What the libraries are called
+
+The names follow whether people sign in, so each mode has one My library.
+
+- Sign-in off (the Mac and Linux apps, a Studio one person uses): the main
+  library is the person's own folder, read and written as them, and its
+  default name is **My library** (`settings.MainLabelPersonal`). A folder of
+  their own on a remote computer (Add a library, Remote computer, **A new folder**) is
+  another library, named by its folder and shown with "(on <system>)". A
+  folder made that way before this rule, stored under the name My library,
+  keeps its record and files and is shown by its folder's name
+  (`libraries.UserDef.ShownLabel`); nothing stored changes.
+- Sign-in on: the main library is the one people share, read only for all
+  but its administrators, and its default name is **Shared library**
+  (`settings.MainLabelShared`). **My library** is each person's own folder
+  on a remote computer (Add a library, Remote computer, **My own folder**).
+
+A name set in Settings, General (`kbLabel`) or by `KB_LABEL` is used in
+either mode. `/api/config` answers `signIn`, and the web app's
+`libraryNames()` (`web/src/libraryNames.ts`) gives the names the pages use.
 
 ## What a library carries
 
@@ -84,7 +105,7 @@ they are read with the Studio's own account for everyone who signs in, so
 nobody signed in adds or removes one from the Studio (`POST
 /api/libraries` and `DELETE /api/libraries/{id}` answer 403, and Add a
 library does not offer this computer). A person adds libraries of their
-own on their systems instead, read as them.
+own on their remote computers instead, read as them.
 
 Libraries set this way are pinned: they appear for every user and cannot
 be removed from Settings.
@@ -114,20 +135,29 @@ on each entry's result.
 ## The Libraries page
 
 Settings, Indexing, Libraries is one list of every library the Studio searches, and
-one **Add a library** control. Each row gives the library's name, its kind
-in plain words with what the Studio may do with it (read and write, or
-read only), where it is (the index directory, and the files when the
-Studio can open them), its state, its depth, and its actions. For a library
+one **Add a library** control. Each library is a card, laid out the same
+for every kind. Its head gives the library's name with its access as the
+Library switcher names it (Read/write, Read only or Shared, and the
+computer it is on), its kind in plain words, its state with its counts and
+when it was last indexed, and at the right the action that keeps its
+index current (**Update index**, **Rebuild**, **List again**, **Check** or
+**Refresh**, in the same place for every kind) with the kind's other
+everyday actions. What removes it, **Delete index** for the main folder
+and **Remove** for the others, is under **More**, and each asks first.
+Under the head are its notes (errors, gaps, what a listing costs), then
+its details: the folder and the index directory, each on one line,
+shortened in the middle where the card is narrow, whole on hover and in
+**Copy**, and the kind's settings. For a library
 the Studio builds (the main folder, and one built here or on a remote
-system) the Depth column is its index depth, Names, Text, Text + OCR,
+computer) its **Depth** is its index depth, Names, Text, Text + OCR,
 Meaning on documents or Meaning on all files, changed in place (`PUT
-/api/libraries/:id/depth`). A library built here or on a remote system
+/api/libraries/:id/depth`). A library built here or on a remote computer
 starts at Meaning on documents (both below). A new depth on a library
-built on a remote system is stored and applies at its next build, so the
-row offers **Rebuild now** or **Later**, or, with a build running, says the
+built on a remote computer is stored and applies at its next build, so the
+card offers **Rebuild now** or **Later**, or, with a build running, says the
 change waits for the next one. The library records the depth of its last
 build that finished with what that depth makes (`builtDepth`), and until
-that matches its depth the state column says **Depth changed, Rebuild to
+that matches its depth its notes say **Depth changed, Rebuild to
 apply**. A failed rebuild changes nothing there, nor does one that made no
 vectors at a Meaning depth; a library last built by an earlier version has
 no record and shows no note.
@@ -139,13 +169,13 @@ the index has, as built: names, text, or text and meaning:
 
 | Kind | Where it comes from | Actions |
 |---|---|---|
-| Main folder, read and write | `KB_ROOT` | **Change folder**, **Build index** or **Update index** (**Stop indexing** while it runs), and under the row **Delete index** and **View log**, on a single-user install; **View log** anywhere |
+| Main folder, read and write | `KB_ROOT` | **Change folder**, **Build index** or **Update index** (**Stop indexing** while it runs), and **Delete index** under **More**, on a single-user install; **View log** at the card's foot anywhere |
 | Index of a folder on this machine, kept in step with it | `POST /api/libraries/build` | **Rebuild**, **Remove** |
 | Copy of a folder in a Transfers location, kept in step with it | `POST /api/libraries/copy` | **Update now**, how often it looks for changes, **Rebuild**, **Remove** |
 | GUFI index on this machine | `POST /api/libraries` (sign-in off), or `STUDIO_LIBRARIES` (set by the deployment) | **Remove** (sign-in off), except for one the deployment set |
-| Index built on a remote system over ssh or pw ssh | `POST /api/user-libraries/ssh/build`, `POST /api/user-libraries/pw/build` | **Rebuild**, **Remove** |
+| Index built on a remote computer over ssh or pw ssh | `POST /api/user-libraries/ssh/build`, `POST /api/user-libraries/pw/build` | **Rebuild**, **Remove** |
 | GUFI index over ssh | `POST /api/user-libraries/ssh` | **Check**, **Remove** |
-| GUFI index on a remote system over pw ssh | `POST /api/user-libraries/pw` | **Check**, **Remove** |
+| GUFI index on a remote computer over pw ssh | `POST /api/user-libraries/pw` | **Check**, **Remove** |
 | Index built on a cluster by the platform's workflow | `POST /api/user-libraries` | **Refresh**, **Remove** |
 
 A row of a library whose files may be on another host also has **Originals via**,
@@ -158,7 +188,7 @@ in Settings and in the Library's Add menu, in the terms of `access` above.
 of the viewer's clusters over pw ssh (`PwSystemField`, the Studio's own
 cluster first), or a host over plain ssh where sign-in is off; it is
 picked once and the forms below take it. The form then says the library
-is read as the viewer there. *What:* on a system, the viewer's own folder
+is read as the viewer there. *What:* on a remote computer, the viewer's own folder
 (My library), an index the Studio builds of a folder there, or an index
 that is there already, connected read only; here, a folder to build or an
 index to connect. A folder on a cluster can be built over the pw ssh
@@ -177,8 +207,8 @@ way to Settings, Model access; the workflow where the platform hosts the
 Studio, which is sign-in on or `PW_PLATFORM_HOST` set (`workflow`), and
 the client config's `platform`. A choice with one option is not shown. A
 Studio on someone's own computer therefore never shows workflow or
-scheduler fields: it builds on a remote system over the session instead.
-A build shows its phase and the folders indexed so far under its row
+scheduler fields: it builds on a remote computer over the session instead.
+A build shows its phase and the folders indexed so far in its card
 while it runs, and the library joins the Library switcher when it is
 ready. A rebuild of a library on this machine that already has an index,
 including a build a restart interrupted (it runs again when the server
@@ -202,7 +232,7 @@ client config every viewer loads lists libraries without them. The Studio
 probes the tree and refuses a path that is not a GUFI index, with the
 reason.
 
-On a single-user install the main folder's row also shows whether its
+On a single-user install the main folder's card also shows whether its
 index is built, its file count (`GET /api/setup/status?files=1`, asked
 after the page has loaded since it walks the index), and two actions.
 **Change folder** opens the setup wizard's folder picker in a dialog and
@@ -211,12 +241,12 @@ launcher runs the Studio it restarts on the new folder and the page waits
 for it, and elsewhere the page says to set `KB_ROOT` and restart.
 **Build index** (**Update index** once there is one) runs
 `POST /api/index/build`, and the job's phases, each with its count and
-time, show under the row as it runs, read from `GET /api/index/status`
-like the footer and Stats; **Stop indexing** stops it, and the row then
-says the index is incomplete until it is updated. Under the row,
-**Delete index** asks first, in the row itself, and deletes the index and
-its caches, never the files (`DELETE /api/index?confirm=1`); **View log**
-shows the index log. Where users sign in, only **View log** is offered and
+time, show in the card as it runs, read from `GET /api/index/status`
+like the footer and Stats; **Stop indexing** stops it, and the card then
+says the index is incomplete until it is updated. **More**, **Delete
+index** asks first, in a dialog, and deletes the index and its caches,
+never the files (`DELETE /api/index?confirm=1`). The card's foot says how
+the last run went, with **View log** for the index log. Where users sign in, only **View log** is offered and
 the state comes from the probe. See [REFERENCE.md](REFERENCE.md#indexing)
 for the jobs and their phases.
 
@@ -277,7 +307,7 @@ user hashes, keys, tokens, passwords or settings. It also leaves out
 what only works for the person exporting: the ssh options that name their
 key files or ssh configuration (`-i`, `-F`, `IdentityFile`,
 `CertificateFile`, `IdentityAgent`), and the folders
-the Studio makes in their home on a remote system (`~/.activate-studio`:
+the Studio makes in their home on a remote computer (`~/.activate-studio`:
 the default index folder of a build there, and GUFI it installed there),
 which the importing Studio makes again. **Leave out the user name**, on by
 default, writes `host` for `user@host`, here and in `readThrough`, and
@@ -346,7 +376,7 @@ takes a source folder, an index folder (optional), a label, an
 identifier, and the depth.
 
 The phases run in order: the folders, then the text, then search by
-meaning, shown on the row as **Computing search by meaning**. A first
+meaning, shown on the card as **Computing search by meaning**. A first
 build swaps its tree in as soon as the folders are indexed, so search
 finds the library's names while the rest runs. Once the text is read the
 library is probed again, so search reads its words while meaning is
@@ -384,7 +414,7 @@ folder the index goes in the Studio's own, `INDEX_BASE/libraries/<id>/index`.
 folder that does not exist, and the server makes one only when the
 request carries `create: true`; without it the answer is 409 naming the
 folders. The build runs as an index job (`GET /api/index/job/<id>`); its
-phase and folder count also show on the library's row
+phase and folder count also show on the library's card
 (`GET /api/libraries`, `build.progress`). The tree is written beside the
 old one (`<index folder>/.build`) and swapped in when complete, so search
 keeps answering during a rebuild. The index folder holds the tree,
@@ -408,7 +438,7 @@ where it is, and the source folder is never touched.
 
 A source folder its owner may not write, such as a read-only share, a
 snapshot, or a tree unpacked with folders of mode 0555 and files of 0444,
-is indexed whole, here, for the main folder, and on a remote system.
+is indexed whole, here, for the main folder, and on a remote computer.
 `gufi_dir2index` gives each index folder the mode of its source folder as
 it finishes that folder, before the folders inside it make theirs, so for
 a user other than root the index folder of a 0555 folder could not be
@@ -479,11 +509,11 @@ the plan refuses one that does not fit.
 Studio looks for changes on the library's interval (`every`), one look
 at a time per library, and **Update now** looks at once (`POST
 /api/libraries/<id>/update`, answered at once). From that answer until
-the look ends, `copyOf.looking` is true and the row says it is looking;
+the look ends, `copyOf.looking` is true and the card says it is looking;
 `copyOf.running` is the look's transfer once it has one. `PUT /api/libraries/<id>/copy` with `{ every }`
 changes the interval. **Rebuild** looks and then builds the whole index
 again. What the last look found is kept in
-`INDEX_BASE/libraries/<id>/copy.json` and shown on the row: when it
+`INDEX_BASE/libraries/<id>/copy.json` and shown on the card: when it
 looked, what it last brought or removed with a link to that transfer, and
 why it failed. A location that is gone or cannot be reached leaves the
 copy and its index as they were and says why. The library shows as
@@ -500,7 +530,7 @@ offered only with sign-in off.
 
 ## Buckets
 
-Preview. On a Studio with sign-in off, **Add a library**, "A bucket"
+Preview. On a Studio with sign-in off, **Add a library**, "Bucket"
 indexes a bucket, or a folder in one, of an rclone remote from its
 listing alone (`server-go/internal/libapi/bucket.go`). Any S3 compatible
 store works, AWS or on premises (MinIO, Ceph and the like), since rclone
@@ -545,7 +575,7 @@ and counted. What the last listing found is kept in
 folders, entries left out, the requests it took, the provider rclone's
 configuration names, its seconds, and why it failed.
 
-The Settings row shows how many objects and how much data the bucket
+The Settings card shows how many objects and how much data the bucket
 holds and when it was listed, and what a listing costs: the requests it
 takes and, where the provider is AWS, their price at the S3 Standard
 LIST rate ($0.005 per 1,000 requests), for one listing and for a month at
@@ -580,12 +610,12 @@ megabyte (0 before one). Readable
 objects are text files and documents (PDF, Office, OpenDocument, mail);
 images are not read, since reading one is OCR of the whole image.
 
-In Settings, Indexing, Libraries, the bucket row's **Read text** (Off, or
+In Settings, Indexing, Libraries, the bucket card's **Read text** (Off, or
 After each listing) asks first, with the estimate: what it reads, what is
 left out, the price on AWS (data out at $0.09 a GB and GET requests at
 $0.0004 per 1,000, S3 Standard), that a store on premises charges
 nothing, and the time at the last measured rate (25 MB a second before
-one). While a pass runs the row says **Reading text**, with its progress
+one). While a pass runs the card says **Reading text**, with its progress
 and **Stop reading**; after, how many objects have text and what the last
 pass read.
 
@@ -625,9 +655,9 @@ with a hash of the whole when cut. It never uses the remote's name, which
 each computer chooses, so the same bucket gets the same name wherever its
 text is read.
 
-## Indexes built on a remote system
+## Indexes built on a remote computer
 
-**Add a library**, "A system", "Index a folder" builds
+**Add a library**, "Remote computer", "Index a folder" builds
 the index on the remote system itself, over the same session the Studio
 uses to read it: plain ssh (`user@host` or `user@host:port`, with your
 keys, agent, and `~/.ssh/config`, on a Studio with sign-in off) or
@@ -707,7 +737,7 @@ not have it downloads into `INDEX_BASE/embed-wheels` with
 `fetch_embed.py --download --platform <platform>`, where this computer
 reaches the package index. With neither, `fetch_embed.py` on the remote
 system downloads what was not sent, where that system reaches the
-network. For a Studio and a remote system that are both without network,
+network. For a Studio and a remote computer that are both without network,
 fill `INDEX_BASE/embed-wheels` on another computer with
 `python3 indexer/fetch_embed.py --download --platform <platform> --cache <folder>`
 and copy the folder there.
@@ -727,7 +757,7 @@ The build records in `.studio-index.json` what it could not read:
 with `gufi_query`; `text` and `embed`, the reports of `enrich.py` and
 `embed.py` (files and files with no text per document type, the PDF
 reader used, passages, errors); `textWhy` and `vectorsWhy`, why a pass did
-not run or stopped; and `depth`. The library's row shows these as a count
+not run or stopped; and `depth`. The library's card shows these as a count
 and a reason. A library whose vector tables hold nothing, though passages
 were cut, counts as having no vectors. A Rebuild reads what the system can
 run again, so a Python installed since the library was added is used. It
@@ -744,7 +774,7 @@ ls ~/.activate-studio/builds/ ~/.activate-studio/readers/
 
 Where the packages cannot be had or do not import there, the build uses
 the GGUF model through sqlite-lembed (`minilm384`) where
-`~/.activate-studio/models/minilm384.gguf` is on that system, whose
+`~/.activate-studio/models/minilm384.gguf` is on that remote computer, whose
 vectors the walk does not match, and otherwise makes none. Each build
 makes the index anew, so vectors made with the GGUF model by an earlier
 build are made again with the ONNX model at the next build that has it.
@@ -779,7 +809,7 @@ forgets the library and leaves the index there.
 
 The person who built such a library also writes in it from the Library,
 as they do in My library: upload, new folder, rename, move and delete run
-on that system as their own account, over `pw ssh` with their own key, or
+on that remote computer as their own account, over `pw ssh` with their own key, or
 over plain ssh with the keys of the account the Studio runs as on a
 Studio with sign-in off. The system's permissions decide what they may
 change. The account is read from their session the first time they write
@@ -898,7 +928,7 @@ the cluster without a shell, so SQL and paths never meet shell quoting.
 The first request pays for the ssh setup, about 5 seconds; later ones
 take about 0.3 seconds. A session closes after 10 idle minutes.
 
-A `gufi_query` on a remote system, and a build there, runs with that
+A `gufi_query` on a remote computer, and a build there, runs with that
 system's processor count, up to 16 threads: `nproc`, which counts only
 the processors the login may use, else `getconf _NPROCESSORS_ONLN`, else
 `sysctl -n hw.ncpu`, asked once per session host and 4 when none answers.
@@ -917,7 +947,7 @@ live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 
 A library can also be an existing GUFI index on another machine that the
 Studio's host reaches with plain ssh: Settings, Indexing, Libraries, **Add a
-library**, "A system", "A host over ssh…", "Connect an index", or the
+library**, "Remote computer", "A host over ssh…", "Connect an index", or the
 setup wizard. The host is written `user@host`, an
 alias from `~/.ssh/config`, or either with `:port`. A Host entry in
 `~/.ssh/config` applies as it does in a terminal, ProxyJump, ProxyCommand,
@@ -1147,7 +1177,7 @@ the original file is when its own host does not have it.
 The case this is for is a site whose index lives where GUFI runs, on a host
 whose login runs only `gufi_query` (see "Hosts whose login runs only
 gufi_query"), while another host, such as a file transfer host, mounts the
-same file systems and gives a normal shell. On the library's row in
+same file systems and gives a normal shell. On the library's card in
 Settings, Indexing, Libraries, **Originals via**, **Set** names that host:
 
 - *Host*: `user@host`, or a Host alias from `~/.ssh/config`, with `:port`
@@ -1200,12 +1230,12 @@ offered to MCP clients (`/api/mcp`), where it opens files the same way.
 
 An existing GUFI index on one of the user's running clusters is connected
 the same way, with `pw ssh <cluster>` in place of ssh: Settings,
-Libraries, **Add a library**, "A system", "Connect an index", or the
+Libraries, **Add a library**, "Remote computer", "Connect an index", or the
 setup wizard's Other libraries step. The system is picked from the user's systems on the platform
 (`GET /api/user-libraries/pw/systems`, which runs `pw clusters ls` with
 the same key): running ones first, one that is off marked so (it has to
 be started on ACTIVATE before it can be reached), the display name over
-the name `pw ssh` takes, and "Another system…" to type a name. The route
+the name `pw ssh` takes, and "Another remote computer…" to type a name. The route
 answers `{ usable, why, systems, error }`: `why` when pw ssh cannot be
 used yet, and `error` when the list could not be had, in which case the
 form shows it and takes a typed name. `pw ssh` acts with the owner's platform key; with
@@ -1232,7 +1262,7 @@ carries `pw`: whether the pw CLI is found (as `PUT /api/access/cli/path` in REFE
 and there is a key, and `workflow`: whether the index workflow is
 offered. List entries carry `transport: "pw"` and `existing: true`,
 which a connected library over ssh carries too; a library built on a
-cluster or on a remote system has `existing: false`, and one the Studio
+cluster or on a remote computer has `existing: false`, and one the Studio
 built over the session also `built: true`, `indexDir`, `progress` while
 it runs, and `fullText` and `vectors`.
 
@@ -1377,7 +1407,7 @@ owners, groups and modes per entry for a Studio that people sign in to.
 Writing to a library built from a folder on this computer (uploads, new
 folders, renames, deletes, labels), which needs the indexing code to take
 a library's own folder, index, and caches. Results by meaning from an
-index on a remote system. Enrichment for connected read-only libraries,
+index on a remote computer. Enrichment for connected read-only libraries,
 in sidecar databases beside the index on GUFI's external attach
 mechanism, so full-text and semantic search work there too. Search across libraries as one gufi_vt statement; it runs
 library by library. Refreshing a

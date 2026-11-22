@@ -1,5 +1,5 @@
 import { ALL_LIBRARIES, LibrarySwitch, libraryReadOnlyWhy, libraryWritable } from '../components/LibrarySwitch'
-import { currentLibrary, onLibraryChange, warmRemoteHosts } from '../api'
+import { currentLibrary, libraryOf, onLibraryChange, warmRemoteHosts } from '../api'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
@@ -16,6 +16,7 @@ import { AddLibraryDialog, ImportLibrariesDialog, useLibraryAddOffer, type Dropp
 import { checkList, LIST_FORMAT } from '../libraryLists'
 import { TagMenu } from '../components/TagMenu'
 import { sectionAllowed, useAppConfig } from '../config'
+import { shownPath } from '../libraryPath'
 import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
 import { chooseUpload, onShellDrop, shellListsFolders } from '../nativeShell'
 import { downloadPath } from '../libraryDownload'
@@ -99,13 +100,14 @@ export function LibraryView({ display, onDisplay }: {
       return
     }
     setDeleteTarget({ ...t, error: '' })
+    const lib = libraryOf(t.path)
     try {
       await api.deleteFile(t.path)
       if (display?.kind === 'file' && typeof display.target === 'string' && (display.target === t.path || display.target.startsWith(t.path + '/'))) onDisplay(null)
       // The Details card describes the library again, not the file deleted.
       forgetSelectionUnder(t.path)
       setRefreshKey(k => k + 1)
-      libraryWritten()
+      libraryWritten(lib)
       setDeleteTarget(null)
     } catch (e) {
       setDeleteTarget({ ...t, error: String((e as Error).message ?? e) })
@@ -117,6 +119,9 @@ export function LibraryView({ display, onDisplay }: {
     const d = nameDialog
     if (!d || d.busy || !d.value.trim()) return
     setNameDialog({ ...d, busy: true, error: '' })
+    // The library written to (in All mode the one the path names), even if
+    // another is selected by the time the write returns.
+    const lib = libraryOf(d.path)
     try {
       if (d.mode === 'rename') {
         const r = await api.rename(d.path, d.value.trim())
@@ -124,13 +129,13 @@ export function LibraryView({ display, onDisplay }: {
         if (r.renamed && !d.isDir && selectedFile === d.path) onDisplay({ kind: 'file', target: r.renamed.to })
         // The Details card follows the new name.
         if (r.renamed) renameSelection(r.renamed.from, r.renamed.to)
-        libraryWritten()
+        libraryWritten(lib)
       } else {
         const name = d.value.trim().replace(/^\/+|\/+$/g, '')
         const r = await api.mkdir(d.path ? `${d.path}/${name}` : name)
         setTargetDir(r.created)
         setRefreshKey(k => k + 1)
-        libraryWritten()
+        libraryWritten(lib)
       }
       setNameDialog(null)
     } catch (e) {
@@ -803,7 +808,7 @@ export function LibraryView({ display, onDisplay }: {
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         title={deleteTarget?.isDir ? 'Delete folder and all contents?' : 'Delete this file?'}
-        description={deleteTarget?.path}
+        description={deleteTarget ? shownPath(deleteTarget.path, cfg.libraries) : undefined}
         confirmLabel={deleteTarget?.isDir ? 'Delete folder' : 'Delete'}
         destructive
         closeOnConfirm={false}

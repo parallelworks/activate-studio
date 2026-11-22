@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"math"
+	"net/http"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsmd"
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
@@ -39,7 +41,7 @@ func instructions(a *Agent) string {
 // under the index, which is no library.
 func (f *Fleet) folder(a *Agent) (agentsmd.Folder, string, bool) {
 	root := f.A.Cfg.KBRoot
-	mayWrite, _ := mainlib.MayWrite(mainlib.User(f.A.Cfg.AuthEnabled(), a.OwnerUser))
+	mayWrite, _ := mainlib.MayWrite(mainlib.User(f.A.Cfg.AuthEnabled(), actsAs(a)))
 	if kb.Default != nil && mayWrite {
 		if main, ok, err := kb.Default.Libs.Get(""); err == nil && ok && kb.RequireWritable(main) == nil {
 			ctx := context.Background()
@@ -140,6 +142,15 @@ func (f *Fleet) tick(id, reason string, force bool) bool {
 		f.setState(a, "paused", used)
 		return false
 	}
+	// On a Studio with sign-in, an agent acts for its owner; one with no
+	// record of them would run without the Studio's tools (its token has
+	// no person) while its note says it works in the library.
+	if f.A.Cfg.AuthEnabled() && a.OwnerUser == nil {
+		if a.State != "paused" || a.Note != NoOwner {
+			f.setState(a, "paused", NoOwner)
+		}
+		return false
+	}
 	events := append([]string(nil), a.Inbox...)
 	if reason != "" {
 		events = append(events, reason)
@@ -149,6 +160,7 @@ func (f *Fleet) tick(id, reason string, force bool) bool {
 	t := now()
 	a.LastTickAt = &t
 	a.State, a.Note = "working", "wake-up "+strconv.FormatFloat(a.Ticks, 'f', 0, 64)+" starting"
+	a.Starting = true
 	f.busy[id] = true
 	f.persist(a)
 	snap := *a
@@ -164,6 +176,7 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 		defer f.mu.Unlock()
 		delete(f.busy, a.ID)
 		if cur := f.agents[a.ID]; cur != nil {
+			cur.Starting = false
 			f.journal(a.ID, "error", cut(why, 400), cur.Session)
 			f.scheduleNext(cur)
 			f.setState(cur, "idle", "the wake-up could not start: "+cut(why, 160))
@@ -186,7 +199,9 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 		switch {
 		case err != nil || jsonv.String(jsonv.Path(d, "archivedAt")) != "":
 			session = ""
-		case ws != a.Workspace || time.Since(at) > f.Renew:
+		case ws != a.Workspace || time.Since(at) > f.Renew || rightsKey(actsAs(&a)) != a.SessionRights:
+			// A new session also when the person's rights changed: its
+			// Studio token is made with the rights of its start.
 			pwcode.ArchiveSession(ctx, c, session)
 			session = ""
 		}
@@ -199,7 +214,7 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 			top = f.A.Cfg.KBRoot
 		}
 		rules := agentsmd.ReadRules(top)
-		var owner = a.OwnerUser
+		var owner = actsAs(&a)
 		if f.Start != nil {
 			session, err = f.Start(ctx, c, owner, "fleet:"+a.ID, ws, a.Model, f.Mode, rules)
 		}
@@ -223,30 +238,41 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 			}
 		}
 		fresh = true
+		f.moveModel(ctx, c, &a, owner, session)
+	}
+	// A new session is recorded before the message goes, and the wake-up
+	// is recorded as working as soon as the message is in: a restart in
+	// between leaves the record saying what the session is doing.
+	if fresh {
+		f.mu.Lock()
+		if cur := f.agents[a.ID]; cur != nil {
+			if cur.Session != "" && cur.Session != session {
+				cur.Sessions = append(cur.Sessions, cur.Session)
+			}
+			cur.Session, cur.SessionAt, cur.SessionTokens, cur.Workspace = session, time.Now().UTC().Format(time.RFC3339Nano), 0, ws
+			cur.SessionRights = rightsKey(actsAs(&a))
+			f.persist(cur)
+		}
+		f.mu.Unlock()
 	}
 	if _, err := pwcode.SendMessage(ctx, c, session, f.wakeText(&a, events, fresh)); err != nil {
 		fail("could not wake its session: " + err.Error())
 		return
 	}
+	f.mu.Lock()
+	if cur := f.agents[a.ID]; cur != nil {
+		cur.Starting = false
+		cur.Note = "wake-up " + strconv.FormatFloat(cur.Ticks, 'f', 0, 64) + " working"
+		f.journal(a.ID, "tick", cut(strings.Join(events, " | "), 400), session)
+		f.persist(cur)
+	}
+	f.mu.Unlock()
 	if _, err := pwcode.SetGoal(ctx, c, session, roundGoal(&a)); err != nil {
 		f.journal(a.ID, "error", "its round's goal was not set: "+cut(err.Error(), 300), session)
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	delete(f.busy, a.ID)
-	cur := f.agents[a.ID]
-	if cur == nil {
-		return
-	}
-	if fresh {
-		if cur.Session != "" && cur.Session != session {
-			cur.Sessions = append(cur.Sessions, cur.Session)
-		}
-		cur.Session, cur.SessionAt, cur.SessionTokens, cur.Workspace = session, time.Now().UTC().Format(time.RFC3339Nano), 0, ws
-	}
-	cur.Note = "wake-up " + strconv.FormatFloat(cur.Ticks, 'f', 0, 64) + " working"
-	f.journal(a.ID, "tick", cut(strings.Join(events, " | "), 400), session)
-	f.persist(cur)
+	f.mu.Unlock()
 }
 
 /* ---- following a working session ---- */
@@ -277,7 +303,7 @@ func lookAt(ctx context.Context, c pwcode.Client, id string) (look, error) {
 	if status == "awaiting_approval" || len(approvals) > 0 {
 		l.settled, l.waiting = true, true
 		if len(approvals) > 0 {
-			l.ask = text(jsonv.Path(approvals[0], "text"))
+			l.ask = approvalOf(approvals[0]).summary()
 		}
 	}
 	hist := jsonv.Arr(jsonv.Path(d, "history"))
@@ -614,4 +640,35 @@ func (f *Fleet) Recent(ctx context.Context, a *Agent, n int) []string {
 		out = out[len(out)-n:]
 	}
 	return out
+}
+
+// moveModel moves a standing agent's new session off a model its owner's
+// AI connection does not offer (app.Providers.AgentModel), before its
+// first message, and journals the move.
+func (f *Fleet) moveModel(ctx context.Context, c pwcode.Client, a *Agent, owner *auth.User, session string) {
+	pick := f.A.Providers.AgentModel
+	if pick == nil {
+		return
+	}
+	d, err := pwcode.GetSession(ctx, c, session)
+	if err != nil {
+		return
+	}
+	cur := text(jsonv.Path(d, "model"))
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/fleet", nil)
+	if err != nil {
+		return
+	}
+	if owner != nil {
+		r = auth.WithUser(r, owner)
+	}
+	to, why := pick(r, cur, a.Model)
+	if to == "" {
+		return
+	}
+	if _, err := pwcode.SetSessionModel(ctx, c, session, to); err != nil {
+		f.journal(a.ID, "error", "its model "+cur+" is not one the AI connection offers, and its session could not be moved to "+to+": "+cut(err.Error(), 300), session)
+		return
+	}
+	f.journal(a.ID, "note", why, session)
 }

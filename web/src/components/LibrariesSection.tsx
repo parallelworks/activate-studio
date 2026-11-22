@@ -1,8 +1,8 @@
-import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import {
-  Button, Callout, DescriptionList, DescriptionListItem, IconButton, Loader, Modal, ProgressBar, Select, StatusLabel, Table, toast, useConfirm,
+  ActionMenu, Button, Callout, Card, CopyButton, IconButton, Loader, type MenuEntry, Modal, ProgressBar, Select, StatusBadge, toast, useConfirm,
 } from '@parallelworks/ui'
-import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
+import { AddIcon, CloseIcon, MoreIcon } from '@parallelworks/ui/icons'
 import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, listingCost, textCost, type BucketTextEstimate, type BucketTextPass, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
@@ -13,7 +13,7 @@ import { LibraryExport } from './LibraryExport'
 import { LibraryImport } from './LibraryImport'
 import { CLUSTER_STARTED, IMPORT_ABOUT, addOptions, addedMessage } from './LibraryAddDialogs'
 import { FolderPicker, errText, json, type SetupStatus } from './PrimaryFolder'
-import { IndexControls, IndexJobView, LastBuild } from './IndexActivity'
+import { DeleteIndexDialog, IndexControls, IndexJobView, IndexLogButton, LastBuild, useIndexControls } from './IndexActivity'
 import { useIndexStatus } from '../indexActivity'
 import { FOCUS_LIBRARY_EVENT, FOCUS_LIBRARY_KEY } from './OmittedLine'
 import { ReadThroughControl } from './ReadThroughControl'
@@ -29,8 +29,8 @@ interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw:
 export type LibraryKind = 'local' | 'ssh' | 'pw' | 'cluster'
 export const KINDS: Record<LibraryKind, { label: string; description: string }> = {
   local: { label: 'A GUFI index on this machine', description: 'An index already built here. Read only.' },
-  ssh: { label: 'A GUFI index on another machine over ssh', description: 'Read with your own ssh keys. Nothing is written there.' },
-  pw: { label: 'A GUFI index on a remote system, over pw ssh', description: 'An index already on one of the systems the pw CLI reaches, read over pw ssh. Nothing is written there.' },
+  ssh: { label: 'A GUFI index on a remote computer over ssh', description: 'Read with your own ssh keys. Nothing is written there.' },
+  pw: { label: 'A GUFI index on a remote computer, over pw ssh', description: 'An index already on one of the remote computers the pw CLI reaches, read over pw ssh. Nothing is written there.' },
   cluster: { label: 'An index built on a cluster', description: 'Built on one of your clusters with your own key. Only you see it.' },
 }
 
@@ -99,13 +99,23 @@ function BuildLine({ progress }: { progress: BuildProgress | null | undefined })
 }
 
 type Tone = 'success' | 'warning' | 'error' | 'info'
+/** One of a library's details: a label and its value. A path shows on one
+ *  line, cut in the middle where it is too long, whole on hover, with Copy. */
+interface Detail { label: string; value?: ReactNode; path?: string; host?: string; mono?: boolean
+  /** What its Copy copies, where "the <label> path of <library>" reads badly. */
+  what?: string }
 interface Row {
   key: string
   name: string
-  /** What it is and what the Studio may do with it, in plain words. */
+  /** What it is, in a few words. Its access and where it is stand beside its name. */
   kind: string
-  where: ReactNode
-  state: { tone: Tone; text: string; pulse?: boolean; notes: ReactNode[] }
+  /** Its access as the Library switcher names it, for a library the app's
+   *  list does not carry yet. */
+  access: string
+  /** Its state, with its counts and when it was last indexed (`facts`, on
+   *  the state's line) and anything else to know (`notes`, under it). */
+  state: { tone: Tone; text: string; pulse?: boolean; facts: ReactNode[]; notes: ReactNode[] }
+  details: (Detail | null | false | undefined)[]
   /** What the index has: its full-text tables, and vectors for search by meaning. */
   fullText: boolean
   meaning: boolean
@@ -116,9 +126,16 @@ interface Row {
     /** Why this viewer may not set it: one of the deployment's libraries on
      *  a shared Studio, set by its administrators. */
     locked?: string }
+  /** The everyday actions, at the card's right: the one that keeps its
+   *  index current first in every kind (Update index, Rebuild, List again,
+   *  Check, Refresh). */
   actions: ReactNode
-  /** A line under the row across the whole table, such as a build's progress. */
+  /** What takes it away (Delete index, Remove), behind More; each asks first. */
+  more: MenuEntry[]
+  /** Under the details: a build's progress, a question about its depth. */
   detail?: ReactNode
+  /** The card's quiet last line: how the last run went, and the index log. */
+  footer?: ReactNode
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '')
@@ -296,7 +313,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       try { sessionStorage.removeItem(FOCUS_LIBRARY_KEY) } catch { /* none */ }
       if (!id) return
       setFocused(id)
-      window.setTimeout(() => document.querySelector(`tr[data-library="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center' }), 50)
+      window.setTimeout(() => document.querySelector(`[data-library="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center' }), 50)
       window.clearTimeout(timer)
       timer = window.setTimeout(() => setFocused(null), 4000)
     }
@@ -328,6 +345,8 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   // the dialog an alert, only where it deletes something: the index the
   // Studio built in a folder of its own.
   const { confirm, dialog } = useConfirm()
+  // The main folder's Delete index, from its More menu.
+  const mainControls = useIndexControls()
   const askRemove = (label: string, what: ReactNode, deletes: boolean, run: () => Promise<unknown>) => void confirm({
     title: `Remove ${label}?`, description: what, confirmLabel: 'Remove', destructive: deletes, onConfirm: run,
   })
@@ -365,14 +384,16 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   // read (the assistant's read_original, and the viewer). Shown where it is
   // set, and where it can be set: the ssh keys it uses are this account's,
   // which only a Studio with sign-in off lends.
-  const throughRow = (id: string, label: string, current: ReadThrough | null | undefined, canEdit: boolean, reload: () => Promise<unknown>) =>
+  const throughRow = (id: string, label: string, current: ReadThrough | null | undefined, canEdit: boolean, reload: () => Promise<unknown>): Detail | null =>
     current || canEdit
-      ? (
-        <DescriptionListItem label="Originals via">
-          <ReadThroughControl id={id} label={label} current={current} canEdit={canEdit} onChanged={async () => { await reload() }} />
-        </DescriptionListItem>
-      )
+      ? { label: 'Originals via', value: <ReadThroughControl id={id} label={label} current={current} canEdit={canEdit} onChanged={async () => { await reload() }} /> }
       : null
+  // Remove, behind More: it asks first, and says what goes and what stays.
+  const removeEntry = (label: string, disabled: boolean, deletes: boolean, onClick: () => void): MenuEntry => ({
+    label: 'Remove', description: deletes ? 'Deletes its index; the files are not touched' : 'Stops searching it; its index stays',
+    destructive: deletes, disabled, disabledReason: disabled ? 'Wait for the build or the action running now to finish.' : undefined, onClick,
+    keywords: label,
+  })
 
   if (loadError && !libs) {
     return (
@@ -395,17 +416,19 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   for (const l of libs ?? []) {
     if (l.primary) {
       const p = standalone?.primary
+      const facts: ReactNode[] = []
       const notes: ReactNode[] = []
       const job = ix?.job ?? null
       const indexed = ix?.indexed ?? (p ? p.indexed : l.caps.index)
       let state: Row['state']
-      if (job) state = { tone: 'info', text: job.kind === 'delete' ? 'Deleting' : job.kind === 'move' ? 'Moving' : job.kind === 'build' ? 'Indexing' : 'Syncing', pulse: true, notes }
-      else if (p && !p.exists) state = { tone: 'error', text: 'Folder not found', notes }
+      if (job) state = { tone: 'info', text: job.kind === 'delete' ? 'Deleting' : job.kind === 'move' ? 'Moving' : job.kind === 'build' ? 'Indexing' : 'Syncing', pulse: true, facts, notes }
+      else if (p && !p.exists) state = { tone: 'error', text: 'Folder not found', facts, notes }
       else if (indexed) {
-        state = ix?.incomplete ? { tone: 'warning', text: 'Incomplete', notes } : { tone: 'success', text: 'Indexed', notes }
-        if (p?.files !== undefined) notes.push(plural(p.files, 'file'))
+        // Ready, as every other library that can be searched says.
+        state = ix?.incomplete ? { tone: 'warning', text: 'Incomplete', facts, notes } : { tone: 'success', text: 'Ready', facts, notes }
+        if (p?.files !== undefined) facts.push(plural(p.files, 'file'))
       } else {
-        state = { tone: 'warning', text: 'Not indexed yet', notes }
+        state = { tone: 'warning', text: 'Not indexed yet', facts, notes }
         if (p?.earlierIndex) notes.push(`An index of this folder from ${p.earlierIndex.builtAt ? new Date(p.earlierIndex.builtAt).toLocaleDateString() : 'before'} is kept; building updates it.`)
       }
       const gufi = standalone?.gufi
@@ -414,14 +437,13 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       // index, and removing it here would take search away from everyone.
       if (!standalone) notes.push('On a Studio that signs people in, the deployment builds and deletes this index.')
       if (l.readOnlyWhy) notes.push(l.readOnlyWhy)
+      const canDelete = !!standalone && !!indexed && !ix?.running
       rows.push({
-        key: l.id, name: l.label, kind: l.readOnlyWhy ? 'Main folder, read only for you' : 'Main folder, read and write',
-        where: (
-          <DescriptionList className="lib-paths" stacked>
-            <DescriptionListItem label="Folder" mono={!!l.sourceRoot} copy={!!l.sourceRoot}>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
-            <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
-          </DescriptionList>
-        ),
+        key: l.id, name: l.label, kind: l.readOnlyWhy ? 'Main folder, read only for you' : 'Main folder', access: libraryAccess(l),
+        details: [
+          { label: 'Folder', path: l.sourceRoot ?? undefined },
+          { label: 'Index', path: l.indexRoot },
+        ],
         state, fullText: l.caps.fullText, meaning: l.caps.vectors,
         depth: { value: l.depth ?? 'meaning-documents', reload: loadLibs, applies: 'sync', locked: deploymentLocked },
         actions: (
@@ -431,14 +453,14 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
             <IndexControls part="primary" canDelete={!!standalone} canBuild={!!standalone && !!gufi?.found && !!p?.exists} folder={l.sourceRoot} />
           </>
         ),
-        // Under the row: the build as it runs, or how the last one went, and
-        // the index's other controls, the delete's confirmation among them.
-        detail: (
-          <div className="lib-build">
-            {job ? <IndexJobView job={job} /> : <LastBuild status={ix} />}
-            <IndexControls part="secondary" canDelete={!!standalone} folder={l.sourceRoot} />
-          </div>
-        ),
+        // Delete index, on a computer of its own: never the folder's files.
+        more: standalone
+          ? [{ label: 'Delete index', description: 'The files in the folder are not touched', destructive: true, disabled: !canDelete,
+            disabledReason: !indexed ? 'There is no index to delete.' : 'Wait for indexing to finish, or stop it.', onClick: () => mainControls.setConfirming(true) }]
+          : [],
+        // The build as it runs; how the last one went, with the log, at the foot.
+        detail: job ? <IndexJobView job={job} /> : undefined,
+        footer: <><LastBuild status={ix} /><IndexLogButton /></>,
       })
       continue
     }
@@ -446,41 +468,40 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       const b = l.build
       const k = l.bucket
       const from = bucketWhere(k)
+      const facts: ReactNode[] = [k.listedAt && `${k.objects.toLocaleString()} ${k.objects === 1 ? 'object' : 'objects'}, ${bytesText(k.bytes)}, listed ${when(k.listedAt)}`].filter(Boolean)
       const notes: ReactNode[] = [
-        k.listedAt && `${k.objects.toLocaleString()} ${k.objects === 1 ? 'object' : 'objects'}, ${bytesText(k.bytes)}, listed ${when(k.listedAt)}`,
         k.listedAt && listingCost(k),
         k.skipped > 0 && `${k.skipped.toLocaleString()} ${k.skipped === 1 ? 'entry' : 'entries'} could not be indexed (a path longer than GUFI holds, or a name "." or "..")`,
         k.error && `the last listing failed: ${k.error}`,
         b.error && b.error !== k.error && b.error,
         ...textNotes(k.text, k.textPass),
       ].filter(Boolean)
+      const busyHere = busy !== null || isBuilding(b.state)
       rows.push({
-        key: l.id, name: l.label, kind: `Index of ${from}, from its listing, read only`,
-        where: (
-          <DescriptionList className="lib-paths" stacked>
-            <DescriptionListItem label="Listed from" mono>{from}</DescriptionListItem>
-            <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
-            <DescriptionListItem label="List again">
-              <Select<number> aria-label={`How often ${l.label} is listed again`} size="sm" items={BUCKET_EVERY} value={k.every}
-                disabled={busy !== null}
-                onValueChange={v => void act(l.id, async () => { await api.setBucketEvery(l.id, v); await loadLibs() })} />
-            </DescriptionListItem>
-            <DescriptionListItem label="Read text">
-              <Select<'off' | 'on'> aria-label={`Whether the text of ${l.label}'s objects is read`} size="sm" items={TEXT_CHOICES} value={k.text ? 'on' : 'off'}
-                disabled={busy !== null}
-                onValueChange={v => v === 'on'
-                  ? askText(l.id, l.label)
-                  : void act(l.id, async () => { await api.setBucketText(l.id, false); await loadLibs() }, `No more text is read from ${from}; what was read stays searchable.`)} />
-            </DescriptionListItem>
-          </DescriptionList>
-        ),
-        state: b.state === 'building' ? { tone: 'info', text: 'Listing and indexing', pulse: true, notes }
-          : b.state === 'updating' ? { tone: 'info', text: 'Listing again', pulse: true, notes }
-          : k.reading ? { tone: 'info', text: 'Reading text', pulse: true, notes }
-          : b.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
-          : !l.caps.index ? { tone: 'error', text: 'Index not found', notes: [...notes, 'List again makes it.'] }
-          : k.error ? { tone: 'warning', text: 'Ready; the last listing failed', notes }
-          : { tone: 'success', text: 'Ready', notes },
+        key: l.id, name: l.label, kind: `Index of ${from}, from its listing`, access: libraryAccess(l),
+        details: [
+          { label: 'Listed from', value: from, mono: true },
+          { label: 'Index', path: l.indexRoot },
+          { label: 'List again', value: (
+            <Select<number> aria-label={`How often ${l.label} is listed again`} size="sm" items={BUCKET_EVERY} value={k.every}
+              disabled={busy !== null}
+              onValueChange={v => void act(l.id, async () => { await api.setBucketEvery(l.id, v); await loadLibs() })} />
+          ) },
+          { label: 'Read text', value: (
+            <Select<'off' | 'on'> aria-label={`Whether the text of ${l.label}'s objects is read`} size="sm" items={TEXT_CHOICES} value={k.text ? 'on' : 'off'}
+              disabled={busy !== null}
+              onValueChange={v => v === 'on'
+                ? askText(l.id, l.label)
+                : void act(l.id, async () => { await api.setBucketText(l.id, false); await loadLibs() }, `No more text is read from ${from}; what was read stays searchable.`)} />
+          ) },
+        ],
+        state: b.state === 'building' ? { tone: 'info', text: 'Listing and indexing', pulse: true, facts, notes }
+          : b.state === 'updating' ? { tone: 'info', text: 'Listing again', pulse: true, facts, notes }
+          : k.reading ? { tone: 'info', text: 'Reading text', pulse: true, facts, notes }
+          : b.state === 'failed' ? { tone: 'error', text: 'Failed', facts, notes }
+          : !l.caps.index ? { tone: 'error', text: 'Index not found', facts, notes: [...notes, 'List again makes it.'] }
+          : k.error ? { tone: 'warning', text: 'Ready; the last listing failed', facts, notes }
+          : { tone: 'success', text: 'Ready', facts, notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
         actions: (
           <>
@@ -490,13 +511,12 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
             )}
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state) || k.reading}
               onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Listing ${from} again.`)}>List again</Button>
-            <Button variant="danger-outline" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state)}
-              onClick={() => askRemove(l.label,
-                <>Its index, which {cfg.appName} keeps in a folder of its own, is deleted. The objects in {from} are not touched.</>,
-                true,
-                () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }, `Removed ${l.label} and its index.`))}>Remove</Button>
           </>
         ),
+        more: [removeEntry(l.label, busyHere, true, () => askRemove(l.label,
+          <>Its index, which {cfg.appName} keeps in a folder of its own, is deleted. The objects in {from} are not touched.</>,
+          true,
+          () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }, `Removed ${l.label} and its index.`)))],
         detail: isBuilding(b.state) || k.reading ? <BuildLine progress={b.progress} /> : undefined,
       })
       continue
@@ -505,49 +525,47 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       const b = l.build
       const c = l.copyOf
       const from = copyWhere(c)
+      const facts: ReactNode[] = [counts(b.dirs, b.files), c.checkedAt && `looked for changes ${when(c.checkedAt)}`].filter(Boolean)
       const notes: ReactNode[] = [
-        counts(b.dirs, b.files),
-        c.checkedAt && `looked for changes ${when(c.checkedAt)}`,
         c.changedAt && c.transfer && <>last brought {c.files} {c.files === 1 ? 'file' : 'files'}{c.deleted ? ` and removed ${c.deleted}` : ''} <a href={transferHash(c.transfer)}>{when(c.changedAt)}</a></>,
         c.error && `the last look failed: ${c.error}`,
         b.error,
       ].filter(Boolean)
       const looking = c.looking || !!c.running
+      const busyHere = busy !== null || isBuilding(b.state) || looking
       rows.push({
-        key: l.id, name: l.label, kind: `Copy of ${from}, kept in step with it, read only`,
-        where: (
-          <DescriptionList className="lib-paths" stacked>
-            <DescriptionListItem label="Copied from" mono>{from}</DescriptionListItem>
-            <DescriptionListItem label="Copy" mono copy>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
-            <DescriptionListItem label="Look for changes">
-              <Select<number> aria-label={`How often ${l.label} looks for changes`} size="sm" items={COPY_EVERY} value={c.every}
-                disabled={busy !== null}
-                onValueChange={v => void act(l.id, async () => { await api.setCopyEvery(l.id, v); await loadLibs() })} />
-            </DescriptionListItem>
-          </DescriptionList>
-        ),
-        state: b.state === 'building' ? { tone: 'info', text: 'Copying and indexing', pulse: true, notes }
-          : b.state === 'updating' || c.running ? { tone: 'info', text: 'Updating', pulse: true, notes }
-          : looking ? { tone: 'info', text: 'Looking for changes', pulse: true, notes }
-          : b.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
-          : !l.caps.index ? { tone: 'error', text: 'Index not found', notes: [...notes, 'Rebuild makes it again.'] }
-          : c.error || b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
-          : { tone: 'success', text: 'Ready', notes },
+        key: l.id, name: l.label, kind: `Copy of ${from}, kept in step with it`, access: libraryAccess(l),
+        details: [
+          // The folder at the location, as a path like Folder and Index: from the location's top.
+          { label: 'Copied from', host: c.label || c.location, path: `/${c.path.replace(/^\/+/, '')}`, what: `folder ${l.label} is copied from` },
+          { label: 'Copy', path: l.sourceRoot ?? undefined },
+          { label: 'Look for changes', value: (
+            <Select<number> aria-label={`How often ${l.label} looks for changes`} size="sm" items={COPY_EVERY} value={c.every}
+              disabled={busy !== null}
+              onValueChange={v => void act(l.id, async () => { await api.setCopyEvery(l.id, v); await loadLibs() })} />
+          ) },
+        ],
+        state: b.state === 'building' ? { tone: 'info', text: 'Copying and indexing', pulse: true, facts, notes }
+          : b.state === 'updating' || c.running ? { tone: 'info', text: 'Updating', pulse: true, facts, notes }
+          : looking ? { tone: 'info', text: 'Looking for changes', pulse: true, facts, notes }
+          : b.state === 'failed' ? { tone: 'error', text: 'Failed', facts, notes }
+          : !l.caps.index ? { tone: 'error', text: 'Index not found', facts, notes: [...notes, 'Rebuild makes it again.'] }
+          : c.error || b.error ? { tone: 'warning', text: 'Ready; the last pass failed', facts, notes }
+          : { tone: 'success', text: 'Ready', facts, notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
         depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync', locked: deploymentLocked },
         actions: (
           <>
-            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state) || looking}
-              onClick={() => void act(l.id, async () => { await api.updateCopy(l.id); await loadLibs() }, `Looking for changes at ${from}.`)}>Update now</Button>
-            <Button variant="secondary" size="sm" disabled={busy !== null || isBuilding(b.state) || looking}
+            <Button variant="secondary" size="sm" disabled={busyHere}
               onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Rebuilding ${l.label}.`)}>Rebuild</Button>
-            <Button variant="danger-outline" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state) || looking}
-              onClick={() => askRemove(l.label,
-                <>Its copy and its index, which {cfg.appName} keeps in a folder of its own, are deleted. The files at {from} are not touched.</>,
-                true,
-                () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }, `Removed ${l.label}, its copy and its index.`))}>Remove</Button>
+            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busyHere}
+              onClick={() => void act(l.id, async () => { await api.updateCopy(l.id); await loadLibs() }, `Looking for changes at ${from}.`)}>Update now</Button>
           </>
         ),
+        more: [removeEntry(l.label, busyHere, true, () => askRemove(l.label,
+          <>Its copy and its index, which {cfg.appName} keeps in a folder of its own, are deleted. The files at {from} are not touched.</>,
+          true,
+          () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }, `Removed ${l.label}, its copy and its index.`)))],
         detail: isBuilding(b.state) ? <BuildLine progress={b.progress} />
           : c.running ? <p className="muted">Bringing changes from {from}. <a href={transferHash(c.running)}>Open the transfer</a></p>
           : looking ? <p className="muted">Looking for changes at {from}.</p>
@@ -557,107 +575,98 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
     }
     if (l.build) {
       const b = l.build
-      const notes: ReactNode[] = [counts(b.dirs, b.files), b.builtAt && `indexed ${when(b.builtAt)}`, b.error].filter(Boolean)
+      const facts: ReactNode[] = [counts(b.dirs, b.files), b.builtAt && `indexed ${when(b.builtAt)}`].filter(Boolean)
+      const notes: ReactNode[] = [b.error].filter(Boolean)
+      const busyHere = busy !== null || isBuilding(b.state)
       rows.push({
-        key: l.id, name: l.label, kind: 'Index of a folder on this machine, kept in step with it, read only',
-        where: (
-          <DescriptionList className="lib-paths" stacked>
-            <DescriptionListItem label="Folder" mono copy>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
-            <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
-          </DescriptionList>
-        ),
-        state: b.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
-          : b.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, notes }
-          : b.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
+        key: l.id, name: l.label, kind: 'Index of a folder on this machine, kept in step with it', access: libraryAccess(l),
+        details: [
+          { label: 'Folder', path: l.sourceRoot ?? undefined },
+          { label: 'Index', path: l.indexRoot },
+        ],
+        state: b.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, facts, notes }
+          : b.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, facts, notes }
+          : b.state === 'failed' ? { tone: 'error', text: 'Failed', facts, notes }
           // Its index was removed outside the Studio: search names it as left out.
-          : !l.caps.index ? { tone: 'error', text: 'Index not found', notes: [...notes, 'Rebuild makes it again.'] }
-          : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
-          : { tone: 'success', text: 'Ready', notes },
+          : !l.caps.index ? { tone: 'error', text: 'Index not found', facts, notes: [...notes, 'Rebuild makes it again.'] }
+          : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', facts, notes }
+          : { tone: 'success', text: 'Ready', facts, notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
         depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync', locked: deploymentLocked },
         actions: (
-          <>
-            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
-              onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Rebuilding ${l.label}.`)}>Rebuild</Button>
-            <Button variant={b.managed ? 'danger-outline' : 'secondary'} size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null || isBuilding(b.state)}
-              onClick={() => askRemove(l.label, b.managed
-                ? <>Its index, which {cfg.appName} keeps in a folder of its own, is deleted. The files in {l.sourceRoot ? <code>{l.sourceRoot}</code> : 'the folder'} are not touched.</>
-                : <>{cfg.appName} stops searching it. Its index stays in <code>{b.indexDir}</code>, and the files in {l.sourceRoot ? <code>{l.sourceRoot}</code> : 'the folder'} are not touched.</>,
-                b.managed,
-                () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() },
-                  b.managed ? `Removed ${l.label} and its index.` : `Removed ${l.label}. Its index stays in ${b.indexDir}.`))}>Remove</Button>
-          </>
+          <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busyHere}
+            onClick={() => void act(l.id, async () => { await api.rebuildLibrary(l.id); await loadLibs() }, `Rebuilding ${l.label}.`)}>Rebuild</Button>
         ),
+        more: [removeEntry(l.label, busyHere, b.managed, () => askRemove(l.label, b.managed
+          ? <>Its index, which {cfg.appName} keeps in a folder of its own, is deleted. The files in {l.sourceRoot ? <code>{l.sourceRoot}</code> : 'the folder'} are not touched.</>
+          : <>{cfg.appName} stops searching it. Its index stays in <code>{b.indexDir}</code>, and the files in {l.sourceRoot ? <code>{l.sourceRoot}</code> : 'the folder'} are not touched.</>,
+          b.managed,
+          () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() },
+            b.managed ? `Removed ${l.label} and its index.` : `Removed ${l.label}. Its index stays in ${b.indexDir}.`)))],
         detail: isBuilding(b.state) ? <BuildLine progress={b.progress} /> : undefined,
       })
       continue
     }
     rows.push({
-      key: l.id, name: l.label, kind: `GUFI index on this machine, read only${l.pinned ? ', set by the deployment' : ''}`,
-      where: (
-        <DescriptionList className="lib-paths" stacked>
-          <DescriptionListItem label="Index" mono copy><PathText path={l.indexRoot} /></DescriptionListItem>
-          {l.sourceRoot
-            ? <DescriptionListItem label="Files" mono copy><PathText path={l.sourceRoot} /></DescriptionListItem>
-            : <DescriptionListItem label="Holds">{holds(l.caps.fullText, l.caps.vectors)}</DescriptionListItem>}
-          {throughRow(l.id, l.label, l.readThrough, user.ssh && !l.pinned, loadLibs)}
-        </DescriptionList>
-      ),
+      key: l.id, name: l.label, kind: `GUFI index on this machine, connected as it is${l.pinned ? ', set by the deployment' : ''}`, access: libraryAccess(l),
+      details: [
+        { label: 'Index', path: l.indexRoot },
+        l.sourceRoot ? { label: 'Files', path: l.sourceRoot } : { label: 'Holds', value: holds(l.caps.fullText, l.caps.vectors) },
+        throughRow(l.id, l.label, l.readThrough, user.ssh && !l.pinned, loadLibs),
+      ],
       state: l.caps.index
-        ? { tone: 'success', text: 'Ready', notes: l.pinned ? [PINNED_NOTE] : [] }
-        : { tone: 'error', text: 'Index not found', notes: ['There is no db.db at the index directory.', ...(l.pinned ? [PINNED_NOTE] : [])] },
+        ? { tone: 'success', text: 'Ready', facts: [], notes: l.pinned ? [PINNED_NOTE] : [] }
+        : { tone: 'error', text: 'Index not found', facts: [], notes: ['There is no db.db at the index directory.', ...(l.pinned ? [PINNED_NOTE] : [])] },
       fullText: l.caps.fullText, meaning: l.caps.vectors,
-      actions: !l.pinned && (
-        <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null}
-          onClick={() => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, in <code>{l.indexRoot}</code>.</>, false,
-            () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() }))}>Remove</Button>
-      ),
+      actions: null,
+      more: l.pinned ? [] : [removeEntry(l.label, busy !== null, false, () => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, in <code>{l.indexRoot}</code>.</>, false,
+        () => act(l.id, async () => { await api.removeLibrary(l.id); await loadLibs(); reloadAppConfig() })))],
     })
   }
   for (const l of user.libraries) {
     const caps = capsOf(l.id)
-    const remove = (
-      <Button variant="secondary" size="sm" aria-label={`Remove ${l.label}`} disabled={busy !== null}
-        onClick={() => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, on {l.transport === 'ssh' ? (l.reached ?? l.destination ?? l.site) : l.site}.</>, false,
-          () => act(l.id, async () => { await api.removeUserLibrary(l.id); await loadUser(); reloadAppConfig() }))}>Remove</Button>
-    )
+    const where = l.transport === 'ssh' ? (l.reached ?? l.destination ?? l.site) : l.site
+    const remove = [removeEntry(l.label, busy !== null, false, () => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, on {where}.</>, false,
+      () => act(l.id, async () => { await api.removeUserLibrary(l.id); await loadUser(); reloadAppConfig() })))]
+    const access = libraryAccess({ label: l.label, site: where, writable: !!(l.mine || l.space || l.shared?.access === 'write'), sharedFrom: l.shared?.from, access: l.access })
     const contents = counts(l.directories, l.files)
+    const sshDetails: Detail[] = [
+      ...(l.port ? [{ label: 'Port', value: String(l.port), mono: true }] : []),
+      ...(l.sshOptions ? [{ label: 'SSH options', value: l.sshOptions, mono: true }] : []),
+    ]
     if (l.built) {
-      const host = l.transport === 'ssh' ? (l.reached ?? l.destination ?? l.site) : l.site
-      const notes: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`, l.error, depthNote(l), ...(l.gaps ?? [])].filter(Boolean)
+      const host = where
+      const facts: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`].filter(Boolean)
+      const notes: ReactNode[] = [l.error, depthNote(l), ...(l.gaps ?? [])].filter(Boolean)
       const choice = asked?.id === l.id && (
         <DepthRebuild l={l} host={host} from={asked.from} busy={busy === l.id} onClose={() => setAsked(null)}
           onRebuild={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)} />
       )
       rows.push({
-        key: l.id, name: l.label,
-        kind: l.space ? `Your library on ${host}, as ${l.space.account}, read and written as you`
-          : l.shared ? `Shared by ${l.shared.from} on ${host}, ${l.shared.access === 'write' ? 'read and written' : 'read'} as you`
-          : `Index built on ${host} over ${l.transport === 'ssh' ? 'ssh' : 'pw ssh'}, ${l.mine ? 'read and written as you' : 'read only'}`,
-        where: (
-          <DescriptionList className="lib-paths" stacked>
-            <DescriptionListItem label="Folder" mono copy><HostPath host={host} path={l.sourceRoot ?? l.sourceDir} /></DescriptionListItem>
-            <DescriptionListItem label="Index" mono copy><HostPath host={host} path={l.indexRoot ?? l.indexDir ?? ''} /></DescriptionListItem>
-            {l.port ? <DescriptionListItem label="Port" mono>{String(l.port)}</DescriptionListItem> : null}
-            {l.sshOptions ? <DescriptionListItem label="SSH options" mono>{l.sshOptions}</DescriptionListItem> : null}
-            {throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser)}
-          </DescriptionList>
-        ),
-        state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
-          : l.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, notes }
-          : l.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
-          : l.error ? { tone: 'warning', text: 'Ready; the last build failed', notes }
-          : l.gaps?.length ? { tone: 'warning', text: 'Ready; some files were not read', notes }
-          : { tone: 'success', text: 'Ready', notes },
+        key: l.id, name: l.label, access,
+        // Its access and its system are beside its name; this says what it is and whose account reads it.
+        kind: l.space ? `${cfg.signIn ? 'My library' : 'Your folder'}, as ${l.space.account}, read and written as you`
+          : l.shared ? `Shared by ${l.shared.from}, ${l.shared.access === 'write' ? 'read and written' : 'read'} as you`
+          : `Index built there over ${l.transport === 'ssh' ? 'ssh' : 'pw ssh'}${l.mine ? ', read and written as you' : ''}`,
+        details: [
+          { label: 'Folder', host, path: l.sourceRoot ?? l.sourceDir },
+          { label: 'Index', host, path: l.indexRoot ?? l.indexDir ?? '' },
+          ...sshDetails,
+          throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser),
+        ],
+        state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, facts, notes }
+          : l.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, facts, notes }
+          : l.state === 'failed' ? { tone: 'error', text: 'Failed', facts, notes }
+          : l.error ? { tone: 'warning', text: 'Ready; the last build failed', facts, notes }
+          : l.gaps?.length ? { tone: 'warning', text: 'Ready; some files were not read', facts, notes }
+          : { tone: 'success', text: 'Ready', facts, notes },
         fullText: !!l.fullText, meaning: !!l.vectors,
         depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadUser, applies: 'rebuild', built: l.builtDepth, building: isBuilding(l.state) },
         actions: (
-          <>
-            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
-              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)}>Rebuild</Button>
-            {remove}
-          </>
+          <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(l.state)}
+            onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)}>Rebuild</Button>
         ),
+        more: remove,
         detail: isBuilding(l.state) || choice
           ? <>{isBuilding(l.state) && <BuildLine progress={l.progress} />}{choice && <div className="lib-build">{choice}</div>}</>
           : undefined,
@@ -665,86 +674,68 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       continue
     }
     if (l.transport === 'ssh') {
-      const dest = l.reached ?? l.destination ?? l.site
-      const notes: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`, l.error].filter(Boolean)
+      const dest = where
+      const facts: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`].filter(Boolean)
+      const notes: ReactNode[] = [l.error].filter(Boolean)
       rows.push({
-        key: l.id, name: l.label, kind: 'GUFI index over ssh, read only',
-        where: (
-          <DescriptionList className="lib-paths" stacked>
-            <DescriptionListItem label="Index" mono copy><HostPath host={dest} path={l.indexRoot ?? ''} /></DescriptionListItem>
-            {l.port ? <DescriptionListItem label="Port" mono>{String(l.port)}</DescriptionListItem> : null}
-            {l.sshOptions ? <DescriptionListItem label="SSH options" mono>{l.sshOptions}</DescriptionListItem> : null}
-            {l.sourceRoot
-              ? <DescriptionListItem label="Files" mono copy><HostPath host={dest} path={l.sourceRoot} /></DescriptionListItem>
-              : <DescriptionListItem label="Holds">{holds(!!caps?.fullText, !!caps?.vectors)}</DescriptionListItem>}
-            {throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser)}
-          </DescriptionList>
-        ),
-        state: l.error ? { tone: 'warning', text: 'Check failed', notes } : { tone: 'success', text: 'Ready', notes },
+        key: l.id, name: l.label, kind: 'GUFI index over ssh, connected as it is', access,
+        details: [
+          { label: 'Index', host: dest, path: l.indexRoot ?? '' },
+          l.sourceRoot ? { label: 'Files', host: dest, path: l.sourceRoot } : { label: 'Holds', value: holds(!!caps?.fullText, !!caps?.vectors) },
+          ...sshDetails,
+          throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser),
+        ],
+        state: l.error ? { tone: 'warning', text: 'Check failed', facts, notes } : { tone: 'success', text: 'Ready', facts, notes },
         fullText: !!caps?.fullText, meaning: !!caps?.vectors,
         actions: (
-          <>
-            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null}
-              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, `Checked the index on ${dest}.`)}>Check</Button>
-            {remove}
-          </>
+          <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null}
+            onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, `Checked the index on ${dest}.`)}>Check</Button>
         ),
+        more: remove,
       })
       continue
     }
     if (l.existing) {
-      const notes: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`, l.error].filter(Boolean)
+      const facts: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`].filter(Boolean)
+      const notes: ReactNode[] = [l.error].filter(Boolean)
       rows.push({
-        key: l.id, name: l.label, kind: 'GUFI index on a cluster over pw ssh, read only',
-        where: (
-          <DescriptionList className="lib-paths" stacked>
-            <DescriptionListItem label="Index" mono copy><HostPath host={l.site} path={l.indexRoot ?? ''} /></DescriptionListItem>
-            {l.sourceRoot
-              ? <DescriptionListItem label="Files" mono copy><HostPath host={l.site} path={l.sourceRoot} /></DescriptionListItem>
-              : <DescriptionListItem label="Holds">{holds(!!caps?.fullText, !!caps?.vectors)}</DescriptionListItem>}
-            {throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser)}
-          </DescriptionList>
-        ),
-        state: l.error ? { tone: 'warning', text: 'Check failed', notes } : { tone: 'success', text: 'Ready', notes },
+        key: l.id, name: l.label, kind: 'GUFI index over pw ssh, connected as it is', access,
+        details: [
+          { label: 'Index', host: l.site, path: l.indexRoot ?? '' },
+          l.sourceRoot ? { label: 'Files', host: l.site, path: l.sourceRoot } : { label: 'Holds', value: holds(!!caps?.fullText, !!caps?.vectors) },
+          throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser),
+        ],
+        state: l.error ? { tone: 'warning', text: 'Check failed', facts, notes } : { tone: 'success', text: 'Ready', facts, notes },
         fullText: !!caps?.fullText, meaning: !!caps?.vectors,
         actions: (
-          <>
-            <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null}
-              onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, `Checked the index on ${l.site}.`)}>Check</Button>
-            {remove}
-          </>
+          <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null}
+            onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, `Checked the index on ${l.site}.`)}>Check</Button>
         ),
+        more: remove,
       })
       continue
     }
     const building = l.state === 'building' || l.state === 'updating'
-    const notes: ReactNode[] = [
-      building && l.run ? `run ${l.run.slug}` : null, l.error, contents, l.builtAt && `indexed ${when(l.builtAt)}`,
-    ].filter(Boolean)
+    const facts: ReactNode[] = [building && l.run ? `run ${l.run.slug}` : null, contents, l.builtAt && `indexed ${when(l.builtAt)}`].filter(Boolean)
+    const notes: ReactNode[] = [l.error].filter(Boolean)
     rows.push({
-      key: l.id, name: l.label, kind: 'Index built on a cluster, read only, yours alone',
-      where: (
-        <DescriptionList className="lib-paths" stacked>
-          <DescriptionListItem label="Index" mono={!!l.indexRoot} copy={!!l.indexRoot}>
-            {l.indexRoot ? <HostPath host={l.site} path={l.indexRoot} /> : <span className="muted">being built</span>}
-          </DescriptionListItem>
-          <DescriptionListItem label="Files" mono copy><HostPath host={l.site} path={l.sourceRoot ?? l.sourceDir} /></DescriptionListItem>
-          {throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser)}
-        </DescriptionList>
-      ),
-      state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, notes }
-        : l.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, notes }
-        : l.state === 'failed' ? { tone: 'error', text: 'Failed', notes }
-        : l.error ? { tone: 'warning', text: 'Ready; the last update failed', notes }
-        : { tone: 'success', text: 'Ready', notes },
+      key: l.id, name: l.label, kind: 'Index built on a cluster by a workflow job, yours alone', access,
+      details: [
+        l.indexRoot ? { label: 'Index', host: l.site, path: l.indexRoot } : { label: 'Index', value: <span className="muted">being built</span> },
+        { label: 'Files', host: l.site, path: l.sourceRoot ?? l.sourceDir },
+        throughRow(l.id, l.label, l.readThrough, user.ssh, loadUser),
+      ],
+      state: l.state === 'building' ? { tone: 'info', text: 'Building', pulse: true, facts, notes }
+        : l.state === 'updating' ? { tone: 'info', text: 'Updating', pulse: true, facts, notes }
+        : l.state === 'failed' ? { tone: 'error', text: 'Failed', facts, notes }
+        : l.error ? { tone: 'warning', text: 'Ready; the last update failed', facts, notes }
+        : { tone: 'success', text: 'Ready', facts, notes },
       fullText: !!caps?.fullText, meaning: !!caps?.vectors,
       actions: (
-        <>
-          <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || building}
-            onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, 'Updating the index on the cluster.')}>Refresh</Button>
-          {remove}
-        </>
+        <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || building}
+          onClick={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser() }, 'Updating the index on the cluster.')}>Refresh</Button>
       ),
+      more: remove,
     })
   }
 
@@ -766,66 +757,94 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       {dialog}
       {heading && <h1>Libraries</h1>}
       <p className="muted view-sub">
-        Every library searched here. The main folder is the only one written to; the others are indexes read where
-        they are, built here or connected as they are.
+        Every library searched here. {cfg.signIn
+          ? <>{cfg.kbLabel} is written here, unless its card says it is read only for you. My library and the
+            libraries you index on your remote computers are written as your account there, where it may write.</>
+          : <>{cfg.kbLabel}, your folder on this computer, is written here. The libraries you index on your remote
+            computers are written as your account there, where it may write.</>}
+        {' '}The others are read only: folders indexed on this computer, indexes connected as they
+        are, and kept copies.
       </p>
       {!libs ? <Loader inline size={16} label="Loading…" /> : (
-        <Table density="compact" className="libraries-table" wrapperClassName="rag-calls-wrap libraries-wrap">
-          <Table.Header>Library</Table.Header>
-          <Table.Header>State</Table.Header>
-          <Table.Header>Depth</Table.Header>
-          <Table.Header />
-          {rows.map(r => (
-            <Fragment key={r.key}>
-              <tr className={[r.detail ? 'lib-has-detail' : '', focused === r.key ? 'lib-focus' : ''].filter(Boolean).join(' ') || undefined} data-library={r.key}>
-                <Table.Item wrap>
-                  <div className="lib-name">
-                    {r.name}
-                    {(() => {
-                      // Its access, as the Library switcher names it.
-                      const l = cfg.libraries?.find(x => x.id === r.key)
-                      return l ? <span className="lib-access"> · {libraryAccess(l)}</span> : null
-                    })()}
+        <div className="lib-cards">
+          {rows.map(r => {
+            // Its access, as the Library switcher names it.
+            const listed = cfg.libraries?.find(x => x.id === r.key)
+            const access = listed ? libraryAccess(listed) : r.access
+            const details = r.details.filter((d): d is Detail => !!d)
+            return (
+              <Card key={r.key} size="fill" padding="none" interactive={false}
+                className={['lib-card', focused === r.key ? 'lib-focus' : ''].filter(Boolean).join(' ')}
+                render={<section aria-label={r.name} data-library={r.key} />}>
+                <div className="lib-card-head">
+                  <div className="lib-card-title">
+                    <h2 className="lib-name">{r.name}<span className="lib-access"> · {access}</span></h2>
+                    <div className="lib-kind">{r.kind}</div>
+                    <div className="lib-state">
+                      <StatusBadge variant={r.state.tone} dot={!r.state.pulse} pulse={r.state.pulse} size="sm">{r.state.text}</StatusBadge>
+                      {r.state.facts.length > 0 && (
+                        <span className="lib-facts">{r.state.facts.map((f, i) => <span key={i}>{i > 0 && ' · '}{f}</span>)}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="lib-id">{r.kind}</div>
-                  {r.where}
-                </Table.Item>
-                <Table.Item wrap>
-                  <StatusLabel variant={r.state.tone} pulse={r.state.pulse}>{r.state.text}</StatusLabel>
-                  {r.state.notes.map((n, i) => <div key={i} className="lib-id">{n}</div>)}
-                </Table.Item>
-                <Table.Item className="lib-cap" data-label="Depth">
-                  {r.depth
-                    ? r.depth.locked
-                      ? <span title={r.depth.locked}>{depthLabel(r.depth.value)}<div className="lib-id">{r.depth.locked}</div></span>
-                      : <IndexDepthSelect library={r.name} value={r.depth.value} disabled={busy !== null}
-                        onChange={v => {
-                          const d = r.depth!
-                          // Back at the depth its index has, there is nothing to rebuild.
-                          const from = d.built ?? (asked?.id === r.key ? asked.from : d.value)
-                          const same = from === v && !d.building
-                          void act(r.key, async () => {
-                            await api.setLibraryDepth(r.key, v); await d.reload(); reloadAppConfig()
-                            if (d.applies === 'rebuild') setAsked(same ? null : { id: r.key, from })
-                          }, d.applies === 'sync' ? `${r.name}: ${depthLabel(v)}. It is applied in the background now.`
-                            : same ? `${r.name}: ${depthLabel(v)}, the depth its index has.` : undefined)
-                        }} />
-                    : <AsBuilt fullText={r.fullText} meaning={r.meaning} />}
-                </Table.Item>
-                <Table.Item className="lib-actions">{r.actions}</Table.Item>
-              </tr>
-              {r.detail && <tr className="lib-detail"><Table.Item colSpan={4} wrap>{r.detail}</Table.Item></tr>}
-            </Fragment>
-          ))}
-        </Table>
+                  <div className="lib-card-actions">
+                    {r.actions}
+                    {r.more.length > 0 && (
+                      <ActionMenu label={`More actions for ${r.name}`} align="end" items={r.more}>
+                        <MoreIcon />
+                      </ActionMenu>
+                    )}
+                  </div>
+                </div>
+                {r.state.notes.length > 0 && (
+                  <ul className="lib-notes">{r.state.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+                )}
+                <dl className="lib-fields">
+                  {details.map(d => (
+                    <div key={d.label} className={d.path !== undefined ? 'lib-field lib-field-path' : 'lib-field'}>
+                      <dt>{d.label}</dt>
+                      <dd>{d.path !== undefined
+                        ? (d.path ? <PathLine host={d.host} path={d.path} what={d.what ?? `${d.label.toLowerCase()} path of ${r.name}`} /> : <span className="muted">none</span>)
+                        : d.mono ? <code>{d.value}</code> : d.value}</dd>
+                    </div>
+                  ))}
+                  <div className="lib-field">
+                    <dt>Depth</dt>
+                    <dd>
+                      {r.depth
+                        ? r.depth.locked
+                          ? <div className="lib-depth-locked" title={r.depth.locked}><span>{depthLabel(r.depth.value)}</span><div className="muted">{r.depth.locked}</div></div>
+                          : <IndexDepthSelect library={r.name} value={r.depth.value} disabled={busy !== null}
+                            onChange={v => {
+                              const d = r.depth!
+                              // Back at the depth its index has, there is nothing to rebuild.
+                              const from = d.built ?? (asked?.id === r.key ? asked.from : d.value)
+                              const same = from === v && !d.building
+                              void act(r.key, async () => {
+                                await api.setLibraryDepth(r.key, v); await d.reload(); reloadAppConfig()
+                                if (d.applies === 'rebuild') setAsked(same ? null : { id: r.key, from })
+                              }, d.applies === 'sync' ? `${r.name}: ${depthLabel(v)}. It is applied in the background now.`
+                                : same ? `${r.name}: ${depthLabel(v)}, the depth its index has.` : undefined)
+                            }} />
+                        : <AsBuilt fullText={r.fullText} meaning={r.meaning} />}
+                    </dd>
+                  </div>
+                </dl>
+                {r.detail && <div className="lib-card-detail">{r.detail}</div>}
+                {r.footer && <div className="lib-card-foot">{r.footer}</div>}
+              </Card>
+            )
+          })}
+        </div>
       )}
+      {standalone && <DeleteIndexDialog controls={mainControls} folder={primary?.sourceRoot} />}
       {libs && (
         <p className="muted lib-depth-note">
           Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR,
           text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on
           all files, about three times the indexing time of Meaning on documents. For a library {cfg.appName} builds it is a
-          choice: one built here applies a new depth in the background at once. One built on a remote system applies it when
-          it is rebuilt, which is offered as the depth changes, and its row says so until then. An index connected as it is
+          choice: one built here applies a new depth in the background at once. One built on a remote computer applies it when
+          it is rebuilt, which is offered as the depth changes, and its card says so until then. An index connected as it is
           stays as it was built.
         </p>
       )}
@@ -882,39 +901,30 @@ function holds(fullText: boolean, vectors: boolean): string {
   return vectors ? 'Names, metadata, text and meaning' : fullText ? 'Names, metadata and text' : 'Names and metadata'
 }
 
-/** host:path for an index on another system: the host wraps after its dots
- *  and the path after its slashes, never inside a name, so a long host or
- *  path does not squeeze to a few characters a line. */
-function HostPath({ host, path }: { host: string; path: string }) {
-  const parts = host.split('.')
+/**
+ * A path on one line: cut in the middle where it is too long, so its start
+ * and its last folders both show, whole on hover and to a screen reader,
+ * with Copy beside it. `host` prefixes host: for a path on another system.
+ */
+function PathLine({ host, path, what }: { host?: string; path: string; what: string }) {
+  const full = host ? `${host}:${path}` : path
+  // The tail kept whole: the last two names where they are short, or the last one.
+  const parts = full.split('/')
+  const keep = parts.length > 2 && parts.slice(-2).join('/').length <= 28 ? 2 : 1
+  const tail = parts.length > 1 ? `/${parts.slice(-keep).join('/')}` : ''
+  const head = parts.length > 1 ? parts.slice(0, -keep).join('/') : full
   return (
-    <code title={`${host}:${path}`}>
-      {parts.map((p, i) => <Fragment key={i}>{i > 0 && <>.<wbr /></>}<span className="lib-seg">{p}</span></Fragment>)}
-      :<wbr />
-      {path.split('/').map((seg, i) => <Fragment key={`p${i}`}>{i > 0 && <>/<wbr /></>}<span className="lib-seg">{seg}</span></Fragment>)}
-    </code>
-  )
-}
-
-/** A path that wraps only after a slash, never inside a directory name
- *  (a hyphenated name would otherwise break at its hyphen). The break
- *  points add no characters, so a selected path copies as written. */
-function PathText({ path }: { path: string }) {
-  return (
-    <code title={path}>
-      {path.split('/').map((seg, i) => (
-        <Fragment key={i}>{i > 0 && <>/<wbr /></>}<span className="lib-seg">{seg}</span></Fragment>
-      ))}
-    </code>
+    <span className="lib-path">
+      <code className="lib-path-text" title={full} aria-label={full}>
+        <span className="lib-path-head" aria-hidden="true">{head}</span>
+        <span className="lib-path-tail" aria-hidden="true">{tail}</span>
+      </code>
+      <CopyButton text={full} label={`the ${what}`} size="xs" quiet={false} />
+    </span>
   )
 }
 
 /** What an index connected as it is has, in the depth's words. */
 function AsBuilt({ fullText, meaning }: { fullText: boolean; meaning: boolean }) {
-  return (
-    <>
-      <span className="lib-yes">{meaning ? 'Text and meaning' : fullText ? 'Text' : 'Names'}</span>
-      <div className="lib-id">as built</div>
-    </>
-  )
+  return <span>{meaning ? 'Text and meaning' : fullText ? 'Text' : 'Names'} <span className="muted">as built</span></span>
 }

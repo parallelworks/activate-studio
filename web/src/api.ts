@@ -399,6 +399,11 @@ export function splitLibraryPath(p: string): { id: string; rel: string } | null 
   const parts = String(p ?? '').replace(/^\/+/, '').split('/')
   return parts[0] && parts[0] !== ALL ? { id: parts[0], rel: parts.slice(1).join('/') } : null
 }
+/** The library a write on `path` goes to: in All mode the one its prefix
+ *  names (All itself for the top level), else the library selected. */
+export function libraryOf(p: string): string {
+  return current === ALL ? splitLibraryPath(p)?.id ?? ALL : current
+}
 // Routes that take All mode's prefixed paths themselves, when read (GET).
 // Every other request addresses one library, so in All mode a request on a
 // path goes to that path's library, which is what keeps files viewable and
@@ -593,11 +598,11 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   return res.json() as Promise<T>
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
+async function postJson<T>(url: string, body: unknown, routed = false): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body && typeof body === 'object' ? withLib(body as object) : body),
+    body: JSON.stringify(body && typeof body === 'object' && !routed ? withLib(body as object) : body),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((data as any).error ?? `${url}: ${res.status}`)
@@ -790,7 +795,15 @@ export const api = {
   },
   moveIndex: (path: string) => postJson<{ moved: boolean; restarting: boolean; note?: string; job?: IndexJob }>('/api/index/location', { path }),
 
-  startIndexJob: (dir: string) => postJson<IndexJob>('/api/index/job', { path: dir }),
+  // In All mode the folder's prefix names its library, and a library's top
+  // folder (an upload into the library itself) is one to index too, which
+  // withLib leaves to All and the server refuses: routed here instead.
+  startIndexJob: (dir: string) => {
+    const t = current === ALL ? splitLibraryPath(dir) : null
+    return t
+      ? postJson<IndexJob>('/api/index/job', { path: t.rel, ...(t.id === PRIMARY ? {} : { library: t.id }) }, true)
+      : postJson<IndexJob>('/api/index/job', { path: dir })
+  },
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
   /** `canBuild`: libraries can be built from folders on this computer. */
   libraries: () => getJson<{ libraries: SettingsLibrary[]; canBuild?: boolean }>('/api/libraries'),

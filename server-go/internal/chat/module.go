@@ -315,6 +315,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	// told.
 	a.Providers.InvalidateMCP = m.mcp.Invalidate
 	// The sessions the viewer's own chats run in are theirs on the Code page.
+	a.Providers.AgentModel = m.agentModel
 	a.Providers.OwnSessions = append(a.Providers.OwnSessions, func(r *http.Request) []string {
 		out := []string{}
 		for id := range m.ownChats(r) {

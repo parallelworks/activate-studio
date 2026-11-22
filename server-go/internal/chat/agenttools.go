@@ -791,6 +791,7 @@ func (m *Module) toolAgentSessions(r *http.Request, args map[string]any, ctx Too
 	if err != nil {
 		return nil, err
 	}
+	rows = s.MineOnly(r, tmplOr(arg(args, "site"), ""), rows, m.A.Cfg.AuthEnabled())
 	find := tmplOr(arg(args, "find"), "")
 	head := ""
 	if strings.TrimSpace(find) != "" {
@@ -839,6 +840,9 @@ func (m *Module) toolStartAgent(r *http.Request, args map[string]any, ctx ToolCt
 		}
 		library = ""
 	}
+	if err := s.MayStart(tmplOr(arg(args, "site"), ""), m.A.Cfg.AuthEnabled()); err != nil {
+		return nil, err
+	}
 	st, err := s.Start(r.Context(), agentsites.StartAgent{Site: tmplOr(arg(args, "site"), ""), Key: m.agentKey(s, ctx), Objective: tmplOr(arg(args, "objective"), ""),
 		Goal: optStr(arg(args, "goal")), MaxTurns: turns, Workspace: optStr(arg(args, "workspace")), Model: model, PermissionMode: optStr(arg(args, "permission_mode")),
 		Library: library, Folder: optStr(arg(args, "folder"))}, m.A.Cfg.AuthEnabled())
@@ -861,6 +865,9 @@ func (m *Module) toolStartAgent(r *http.Request, args map[string]any, ctx ToolCt
 func (m *Module) toolAgentStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	s, err := m.sites()
 	if err != nil {
+		return nil, err
+	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
 		return nil, err
 	}
 	m.awaitAgent(r, s, args, ctx)
@@ -934,6 +941,9 @@ func (m *Module) toolAgentSteer(r *http.Request, args map[string]any, ctx ToolCt
 	if err != nil {
 		return nil, err
 	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
+		return nil, err
+	}
 	mode := "direction"
 	if arg(args, "mode") == "message" {
 		mode = "message"
@@ -954,6 +964,9 @@ func (m *Module) toolAgentSteer(r *http.Request, args map[string]any, ctx ToolCt
 func (m *Module) toolAgentGoal(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	s, err := m.sites()
 	if err != nil {
+		return nil, err
+	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
 		return nil, err
 	}
 	action := tmplOr(arg(args, "action"), "")
@@ -980,6 +993,9 @@ func (m *Module) toolAgentApprove(r *http.Request, args map[string]any, ctx Tool
 	if err != nil {
 		return nil, err
 	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
+		return nil, err
+	}
 	allow := arg(args, "allow") == true
 	if _, err := s.Approve(r.Context(), tmplOr(arg(args, "site"), ""), m.agentKey(s, ctx), tmplOr(arg(args, "session"), ""), tmplOr(arg(args, "approval"), ""), allow, optStr(arg(args, "message")), m.A.Cfg.AuthEnabled()); err != nil {
 		return nil, err
@@ -993,6 +1009,9 @@ func (m *Module) toolAgentApprove(r *http.Request, args map[string]any, ctx Tool
 func (m *Module) toolAgentStop(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	s, err := m.sites()
 	if err != nil {
+		return nil, err
+	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
 		return nil, err
 	}
 	if _, err := s.Stop(r.Context(), tmplOr(arg(args, "site"), ""), m.agentKey(s, ctx), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
@@ -1049,7 +1068,8 @@ func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx)
 		model = deref(ctx.Model)
 	}
 	rec, err := delegation.Default.Start(r, delegation.Start{Site: site, Key: m.agentKey(s, ctx), Objective: objective, Goal: goal,
-		MaxTurns: numOr(arg(args, "max_turns"), 0), Model: model, Instructions: instructions, Folder: optStr(arg(args, "folder"))})
+		MaxTurns: numOr(arg(args, "max_turns"), 0), Model: model, Instructions: instructions, Folder: optStr(arg(args, "folder")),
+		ModelFor: func(current string) (string, string) { return m.agentModel(r, current, model) }})
 	if err != nil {
 		return nil, err
 	}
@@ -1066,15 +1086,36 @@ func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx)
 			with += " at the top of its brief"
 		}
 	}
-	return &Outcome{Result: "Started pw code session " + rec.Session + " on " + rec.Site + ", working in " + where + with + ", with a goal it works toward until met or bounded. " +
-		"In your reply, give the user this link to follow it: [Open on the Code page](#view=code?session=" + rec.Session + "). Follow it with agent_status (site " + rec.Site + ", session " + rec.Session + "); do not wait idly, tell the user it is running.",
+	return &Outcome{Result: "Started pw code session " + rec.Session + " on " + rec.Site + ", working in " + where + with + ", with a goal it works toward until met or bounded. " + modelNote(rec) +
+		"In your reply, give the user this link to follow it: [Open on the Code page](#view=code?session=" + rec.Session + "). Follow it with agent_status (site " + rec.Site + ", session " + rec.Session + "); do not wait idly, tell the user it is running." + unrecorded(rec),
 		Summary: "delegated to " + rec.Session}, nil
+}
+
+// modelNote is what the delegate tool says of a session moved to another
+// model.
+func modelNote(rec *delegation.Record) string {
+	if rec.ModelNote == "" {
+		return ""
+	}
+	return "Tell the user: " + rec.ModelNote + ". "
+}
+
+// unrecorded is what the delegate tool adds when the start's record
+// could not be kept.
+func unrecorded(rec *delegation.Record) string {
+	if rec.Unrecorded == "" {
+		return ""
+	}
+	return " Tell the user: " + rec.Unrecorded + "."
 }
 
 func (m *Module) toolTaskStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	e := pasttasks.Default
 	if e == nil {
 		return nil, errNotHere
+	}
+	if !pasttasks.MayRead(m.A, r) {
+		return &Outcome{Result: pasttasks.AdminsOnly, Summary: "0 tasks"}, nil
 	}
 	mid := tmplOr(arg(args, "id"), "")
 	if mid == "" {

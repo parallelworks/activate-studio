@@ -36,7 +36,7 @@ import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCom
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 import { SaveChatButton } from '../components/SaveChatButton'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
-import { fitControls, noticePad } from '../chatTop'
+import { fitControls, watchNotices } from '../chatTop'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -442,27 +442,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || typeof ResizeObserver === 'undefined' || typeof MutationObserver === 'undefined') return
-    const ro = new ResizeObserver(() => place())
-    const place = () => {
-      const box = canvas.getBoundingClientRect()
-      const mainEl = canvas.querySelector('main')
-      const main = mainEl?.getBoundingClientRect()
-      const notes = Array.from(canvas.querySelectorAll<HTMLElement>(':scope > .cred-banner:not(.pwcode-approval)'))
-      ro.disconnect()
-      ro.observe(canvas)
-      if (mainEl) ro.observe(mainEl)
-      notes.forEach(n => ro.observe(n))
-      if (main) {
-        canvas.style.setProperty('--chat-main-x', `${Math.round(main.left - box.left + main.width / 2)}px`)
-        canvas.style.setProperty('--chat-main-w', `${Math.round(main.width)}px`)
-      }
-      const pad = main ? noticePad(main.top, notes.map(n => n.getBoundingClientRect().bottom)) : 0
-      canvas.style.setProperty('--chat-notice-pad', `${pad}px`)
-    }
-    place()
-    const mo = new MutationObserver(place)
-    mo.observe(canvas, { childList: true })
-    return () => { mo.disconnect(); ro.disconnect() }
+    return watchNotices(canvas)
   }, [cfg.loaded, chatEpoch])
 
   // The empty state freezes its greeting and starter prompts at mount, so

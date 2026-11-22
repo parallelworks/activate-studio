@@ -39,6 +39,10 @@ type daemon struct {
 	// failCreate makes starting a session fail; gone answers the session
 	// as not there.
 	failCreate, gone bool
+	// goalStays keeps the goal active whatever the status, as a turn that
+	// ended on an error leaves it; models is each PATCH settings model.
+	goalStays bool
+	models    []string
 }
 
 func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +71,12 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.goals = append(d.goals, g.Args)
 		send(map[string]any{"output": "goal set"})
 	case strings.HasSuffix(p, "/state"):
-		send(map[string]any{"goal": map[string]any{"active": d.status == "running"}})
+		send(map[string]any{"goal": map[string]any{"active": d.status == "running" || d.goalStays}})
+	case strings.HasSuffix(p, "/settings") && r.Method == http.MethodPatch:
+		var m struct{ Model string }
+		json.NewDecoder(r.Body).Decode(&m)
+		d.models = append(d.models, m.Model)
+		send(map[string]any{"ok": true})
 	case p == "/v1/sessions/20261121-120000-abcdef" && d.gone:
 		w.WriteHeader(404)
 		send(map[string]any{"error": "no such session"})
@@ -298,5 +307,70 @@ func TestAWaitingSessionIsFinishedOnce(t *testing.T) {
 	d.mu.Unlock()
 	if !s.Look(ctx, rec.Session, "") || s.get(rec.Session).State != "finished" || len(s.get(rec.Session).Files) != 1 {
 		t.Fatalf("after the approval: %+v", s.get(rec.Session))
+	}
+}
+
+// Records are capped for each person: one person's delegations never
+// push out another's.
+func TestRecordsAreCappedPerPerson(t *testing.T) {
+	var rs []Record
+	rs = append(rs, Record{Owner: "ada", Session: "ada-only"})
+	for i := 0; i < maxRecords+20; i++ {
+		rs = append(rs, Record{Owner: "bob", Session: fmt.Sprintf("bob-%d", i)})
+	}
+	out := trim(rs, maxRecords)
+	if len(out) != maxRecords+1 || out[0].Session != "ada-only" || out[1].Session != "bob-20" || out[len(out)-1].Session != fmt.Sprintf("bob-%d", maxRecords+19) {
+		t.Fatalf("kept %d: first %+v, second %+v", len(out), out[0], out[1])
+	}
+}
+
+// A record that cannot be written is logged, and the start says the
+// session is not recorded, rather than dropping it without a word.
+func TestARecordThatCannotBeWritten(t *testing.T) {
+	s, _, _, _ := stand(t)
+	var logged strings.Builder
+	old := s.A.Log
+	s.A.Log = slog.New(slog.NewTextHandler(&logged, nil))
+	defer func() { s.A.Log = old }()
+	// The record's folder is a file: nothing can be written in it.
+	os.MkdirAll(filepath.Dir(filepath.Dir(s.file())), 0o700)
+	os.RemoveAll(filepath.Dir(s.file()))
+	os.WriteFile(filepath.Dir(s.file()), []byte("x"), 0o600)
+	rec, err := s.Start(httptest.NewRequest("POST", "/", nil), Start{Site: agentsites.Local, Objective: "Size the pumps", Folder: "reports/pumps"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Unrecorded != Unrecorded || !strings.Contains(logged.String(), "the record could not be written") {
+		t.Fatalf("record %+v, log %q", rec, logged.String())
+	}
+}
+
+// A delegated session whose turn stopped on an error (a model the AI
+// connection does not offer) leaves its goal active and works no more:
+// its record reads stopped with the error, not working. A session made on
+// such a model is moved to one the connection offers, and the record
+// says so.
+func TestASessionThatStopsOnAnErrorIsFailed(t *testing.T) {
+	s, d, _, _ := stand(t)
+	r := httptest.NewRequest("POST", "/", nil)
+	rec, err := s.Start(r, Start{Site: agentsites.Local, Objective: "List the notes", Folder: "notes",
+		ModelFor: func(cur string) (string, string) {
+			return "acct:codex/gpt-b", "pw code's model acct:anthropic/claude-x is not enabled for the AI connection, so the session runs on acct:codex/gpt-b"
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.models) != 1 || d.models[0] != "acct:codex/gpt-b" || !strings.Contains(rec.ModelNote, "runs on acct:codex/gpt-b") {
+		t.Fatalf("models %v, note %q", d.models, rec.ModelNote)
+	}
+	d.mu.Lock()
+	d.goalStays = true
+	d.mu.Unlock()
+	d.set("idle", "This model is not enabled for the AI connection")
+	if !s.Look(context.Background(), rec.Session, "") {
+		t.Fatal("a session stopped on an error is still taken as working")
+	}
+	if g := s.get(rec.Session); g.State != "stopped" || !strings.Contains(g.Error, "not enabled") {
+		t.Fatalf("record %+v", g)
 	}
 }

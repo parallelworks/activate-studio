@@ -5,7 +5,7 @@ import { reloadPanelState, setPanelView, setSideShown } from '../src/panelState'
 import { share } from '../src/statusShare'
 import { PageSideViewHost } from '../src/components/RunPane'
 import {
-  PanelToggle, StatusPanel, activitySummary, connectionsSummary, connectionLines, freshLibraries, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests,
+  PanelToggle, StatusPanel, activitySummary, delegatedState, connectionsSummary, connectionLines, freshLibraries, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests,
 } from '../src/components/StatusPanel'
 
 const lib = { id: 'kb', label: 'Knowledge base', primary: true, writable: true, pinned: true, source: true, caps: { index: true, fullText: true, vectors: false } }
@@ -148,12 +148,23 @@ describe('the cards', () => {
     expect(location.hash).toBe('#view=settings:rag')
   })
 
+  it('shows a delegated session that stopped on an error in the last hour as failed, not working', () => {
+    const now = Date.parse('2026-11-22T18:00:00Z')
+    expect(delegatedState({ session: 's', objective: 'o', state: 'stopped', finished: '2026-11-22T17:40:00Z' }, now)).toBe('failed')
+    expect(delegatedState({ session: 's', objective: 'o', state: 'stopped', finished: '2026-11-22T16:00:00Z' }, now)).toBe('stopped')
+    expect(delegatedState({ session: 's', objective: 'o', state: 'waiting' }, now)).toBe('input-required')
+    const failed = { id: 's', objective: 'o', state: 'failed' }
+    expect(activitySummary({ tasks: [failed], fleet: [], runs: [], sessions: [] }).text).not.toMatch(/running/)
+  })
+
   it('summarize from the data alone', () => {
     expect(activitySummary({ tasks: [], fleet: [], runs: [], sessions: [] }).text).toBe('idle')
     expect(activitySummary({ tasks: null, fleet: null, runs: null, sessions: [{} as never, {} as never] }).text).toBe('2 sessions')
     const lines = libraryLines([lib], [{ id: 'u-a', label: 'Mine', site: 'cluster-a', sourceDir: '~', sourceRoot: null, indexRoot: null, state: 'failed', run: null, error: 'boom', builtAt: null, directories: null, files: null, scheduler: null }], null)
-    expect(lines.map(l => [l.label, l.kind, l.state])).toEqual([['Knowledge base', 'knowledge base', 'indexed'], ['Mine', 'on cluster-a', 'failed']])
+    expect(lines.map(l => [l.label, l.kind, l.state])).toEqual([['Knowledge base', 'on this computer', 'indexed'], ['Mine', 'on cluster-a', 'failed']])
     expect(librariesSummary(lines, null).text).toBe('1 failed')
+    // Where people sign in, the main library is the shared one.
+    expect(libraryLines([lib], null, null, true, true)[0].kind).toBe('shared')
     // The main library's state is the index status's now, not the config's
     // from when the page loaded: a build that finished since shows at once.
     const stale = { ...lib, caps: { ...lib.caps, index: false } }
@@ -242,6 +253,6 @@ describe('opening from the panel', () => {
     fireEvent.click(await screen.findByText('Review the results'))
     expect(location.hash).toBe('#view=code?session=20261021-120000-ab12cd34')
     fireEvent.click(screen.getByText('Queue watcher'))
-    expect(location.hash).toBe('#view=agents:fleet')
+    expect(location.hash).toBe('#view=agents:fleet?agent=watcher-1')
   })
 })

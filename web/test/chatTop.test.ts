@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { fitControls, noticePad } from '../src/chatTop'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fitControls, noticePad, watchNotices } from '../src/chatTop'
 
 // A row whose width shrinks as its labels drop: 560 with every label,
 // 380 with the engine's alone, 300 with none.
@@ -34,5 +34,62 @@ describe('a notice over the thread', () => {
   it('leaves the thread alone when there is none, or it ends above the thread', () => {
     expect(noticePad(100, [])).toBe(0)
     expect(noticePad(100, [90])).toBe(0)
+  })
+})
+
+// A ResizeObserver as browsers have it: an element is reported once when
+// it is observed, and again when observed after being let go.
+class BrowserRO {
+  static calls = 0
+  private seen = new Set<Element>()
+  constructor(private cb: () => void) {}
+  observe(el: Element) {
+    if (this.seen.has(el)) return
+    this.seen.add(el)
+    setTimeout(() => { if (this.seen.has(el)) { BrowserRO.calls++; this.cb() } }, 0)
+  }
+  unobserve(el: Element) { this.seen.delete(el) }
+  disconnect() { this.seen.clear() }
+}
+
+describe('watching the notices over the thread', () => {
+  afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+  const canvas = () => {
+    const c = document.createElement('div')
+    c.innerHTML = '<main></main>'
+    document.body.appendChild(c)
+    return c
+  }
+  const settle = () => new Promise(r => setTimeout(r, 30))
+
+  it('settles: the observer is not set off by its own callback', async () => {
+    vi.stubGlobal('ResizeObserver', BrowserRO)
+    BrowserRO.calls = 0
+    const stop = watchNotices(canvas())
+    await settle()
+    const first = BrowserRO.calls
+    await settle()
+    expect(first).toBeLessThanOrEqual(2)
+    expect(BrowserRO.calls).toBe(first)
+    stop()
+  })
+
+  it('watches a notice that comes and lets go of one that leaves, and settles again', async () => {
+    vi.stubGlobal('ResizeObserver', BrowserRO)
+    BrowserRO.calls = 0
+    const c = canvas()
+    const stop = watchNotices(c)
+    await settle()
+    const note = document.createElement('div'); note.className = 'cred-banner'
+    c.appendChild(note)
+    await settle()
+    const after = BrowserRO.calls
+    expect(after).toBeGreaterThan(0)
+    await settle()
+    expect(BrowserRO.calls).toBe(after)
+    note.remove()
+    await settle(); await settle()
+    expect(c.style.getPropertyValue('--chat-notice-pad')).toBe('0px')
+    stop()
   })
 })
