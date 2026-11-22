@@ -199,3 +199,45 @@ func TestCleanFolder(t *testing.T) {
 		}
 	}
 }
+
+// A linked folder on the way to AGENTS.md or a skill is refused, so
+// nothing lands outside the library: the folder itself, a folder above
+// it, or its .agents. The library's top may be a link.
+func TestNoWriteThroughALinkedFolder(t *testing.T) {
+	outside := t.TempDir()
+	for _, c := range []struct{ link, rel string }{
+		{"linked", "linked"},
+		{"proj/linked", "proj/linked/deeper"},
+		{"p/.agents", "p"},
+	} {
+		root := t.TempDir()
+		at := filepath.Join(root, c.link)
+		os.MkdirAll(filepath.Dir(at), 0o755)
+		if err := os.Symlink(outside, at); err != nil {
+			t.Fatal(err)
+		}
+		f := Local{Root: root, Rel: c.rel, Label: "Main"}
+		ierr := ApplyInstructions(f, "reviewer", "Check.")
+		serr := ApplySkill(f, "pump", "Pumps", "Steps.")
+		if c.link != "p/.agents" && (ierr == nil || !strings.Contains(ierr.Error(), "linked folder")) {
+			t.Errorf("%s: AGENTS.md went through the link: %v", c.link, ierr)
+		}
+		if serr == nil || !strings.Contains(serr.Error(), "linked folder") {
+			t.Errorf("%s: SKILL.md went through the link: %v", c.link, serr)
+		}
+		ents, _ := os.ReadDir(outside)
+		if len(ents) != 0 {
+			t.Fatalf("%s: written outside the library: %v", c.link, ents)
+		}
+	}
+	// A library whose top is a link is written as before.
+	real := t.TempDir()
+	top := filepath.Join(t.TempDir(), "lib")
+	os.Symlink(real, top)
+	if err := ApplyInstructions(Local{Root: top, Rel: "a", Label: "Main"}, "reviewer", "Check."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(real, "a", "AGENTS.md")); err != nil {
+		t.Fatal(err)
+	}
+}
