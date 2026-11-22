@@ -1,8 +1,9 @@
 // Package codesessions shows the viewer's pw code sessions on the
 // platform: the machines and sessions the platform's Code page lists, and
 // one session's transcript, read through the platform API as the viewer,
-// with a link to each session's page on the platform. The page itself is
-// read only. A session on the machine whose pw code daemon this Studio's
+// with a link to each session's page on the platform. A call a session
+// waits to have approved can be approved or denied there (approve.go);
+// otherwise the page reads. A session on the machine whose pw code daemon this Studio's
 // chat reaches for the viewer can be continued in a Studio chat
 // (chat/pwcodecontinue.go), which looks the session up here first.
 package codesessions
@@ -34,8 +35,17 @@ type Machine struct {
 	DaemonID string `json:"daemonId,omitempty"`
 }
 
+// approval is a decision a session is waiting on, as its daemon reports
+// it: kind confirm is a call to approve or deny (Tool and Command say
+// which), ask is a question and plan a finished plan, both answered where
+// the session runs.
 type approval struct {
-	ID string `json:"id"`
+	ID      string `json:"id"`
+	Kind    string `json:"kind,omitempty"`
+	Tool    string `json:"tool,omitempty"`
+	Command string `json:"command,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+	Agent   string `json:"agent,omitempty"`
 }
 
 type session struct {
@@ -145,7 +155,8 @@ type routes struct {
 	p *platform.Platform
 }
 
-// Register serves GET /api/code-sessions and /api/code-sessions/item.
+// Register serves GET /api/code-sessions and /api/code-sessions/item, and
+// POST /api/code-sessions/approve.
 func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 	s := &routes{a: a, p: p}
 	registered.Store(s)
@@ -155,6 +166,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 	}
 	mux.HandleFunc("GET /api/code-sessions", h(s.list))
 	mux.HandleFunc("GET /api/code-sessions/item", h(s.item))
+	mux.HandleFunc("POST /api/code-sessions/approve", h(s.approve))
 }
 
 func viewerKey(r *http.Request, p *platform.Platform) (string, error) {
@@ -316,5 +328,11 @@ func (s *routes) item(w http.ResponseWriter, r *http.Request) (any, error) {
 		it.ToolArgs = clip(it.ToolArgs, maxToolArgs)
 		hist = append(hist, it)
 	}
-	return map[string]any{"session": v, "history": hist, "earlier": dropped}, nil
+	waiting := make([]approval, 0, len(d.Approvals))
+	for _, a := range d.Approvals {
+		a.Command = clip(a.Command, maxToolArgs)
+		a.Reason = clip(oneLine(a.Reason), 300)
+		waiting = append(waiting, a)
+	}
+	return map[string]any{"session": v, "history": hist, "earlier": dropped, "approvals": waiting}, nil
 }

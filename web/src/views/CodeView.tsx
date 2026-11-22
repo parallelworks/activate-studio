@@ -6,10 +6,11 @@ import { keepEngineFor } from '../labelScope'
 /**
  * The viewer's pw code sessions on the platform (PW Code on the web): every
  * machine's sessions, as the platform's Code page lists them, and the one
- * chosen with its transcript. The page reads; a session on the machine
- * whose pw code this Studio's chat reaches for the viewer can be continued
- * in a Studio chat, and every session opens on the platform, where it is
- * answered, approved and steered.
+ * chosen with its transcript. A call a session waits to have approved is
+ * approved or denied here; a session on the machine whose pw code this
+ * Studio's chat reaches for the viewer can be continued in a Studio chat,
+ * and every session opens on the platform, where it is also answered and
+ * steered.
  */
 
 interface Machine { id: string; name: string; kind: string; hostname?: string; status: string; error?: string; daemonId?: string }
@@ -42,7 +43,11 @@ export interface CodeSession {
   lastError?: string; url: string
 }
 interface Item { kind: string; text?: string; toolName?: string; toolArgs?: string }
-interface Detail { session: CodeSession; history: Item[]; earlier: number }
+/** A decision the session waits on: confirm is one call to approve or
+ *  deny; ask (a question) and plan (a finished plan) are answered where
+ *  the session runs. */
+export interface Approval { id: string; kind?: string; tool?: string; command?: string; reason?: string; agent?: string }
+interface Detail { session: CodeSession; history: Item[]; earlier: number; approvals?: Approval[] }
 
 const STATUS_TEXT: Record<string, string> = {
   awaiting_approval: 'Needs you', running: 'Working', idle: 'Ready', live_elsewhere: 'Open elsewhere',
@@ -317,9 +322,10 @@ export function CodeView() {
         )}
       </div>
       <div className="code-detail" ref={detailRef}>
-        {!open && <EmptyState variant="bare" title="Choose a session" description="Its conversation shows here. Continue it in a Studio chat, or open it in ACTIVATE to answer, approve or steer it." />}
+        {!open && <EmptyState variant="bare" title="Choose a session" description="Its conversation shows here. Approve what it waits on, continue it in a Studio chat, or open it in ACTIVATE to answer or steer it." />}
         {open && <SessionDetail s={shownDetail?.session ?? open} detail={shownDetail} error={detailError}
-          can={continuable(shownDetail?.session ?? open, machines, here)} chat={chatFor.get(open.id)} onContinued={() => void loadHere()} delegated={delegated.get(open.id)} />}
+          can={continuable(shownDetail?.session ?? open, machines, here)} chat={chatFor.get(open.id)} onContinued={() => void loadHere()} delegated={delegated.get(open.id)}
+          onAnswered={() => { void loadDetail(open); void load() }} />}
       </div>
     </div>
   )
@@ -387,8 +393,9 @@ function ContinueButton({ s, can, chat, onContinued }: { s: CodeSession; can: { 
   )
 }
 
-function SessionDetail({ s, detail, error, can, chat, onContinued, delegated }: {
+function SessionDetail({ s, detail, error, can, chat, onContinued, delegated, onAnswered }: {
   s: CodeSession; detail: Detail | null; error: string; can: { ok: boolean; why: string }; chat?: string; onContinued: () => void; delegated?: Delegated
+  onAnswered: () => void
 }) {
   const dot = dotFor(s)
   return (
@@ -416,7 +423,65 @@ function SessionDetail({ s, detail, error, can, chat, onContinued, delegated }: 
       {error && <Callout tone="warning" size="sm" className="code-callout">{error}</Callout>}
       {!detail && !error && <div className="muted pad"><Loader inline size={16} label="Reading the conversation…" /></div>}
       {detail && <Transcript items={detail.history} earlier={detail.earlier} />}
+      {/* Under the conversation, where the detail opens, beside the call it waits on. */}
+      {detail?.approvals && detail.approvals.length > 0 && <Approvals s={s} waiting={detail.approvals} onAnswered={onAnswered} />}
     </>
+  )
+}
+
+/** What a confirm shows: the command, or the tool and its reason. */
+export function approvalText(a: Approval): string {
+  return (a.command ?? '').trim() || a.tool || 'a tool call'
+}
+
+/**
+ * The calls the session waits to have approved, each with Approve and
+ * Deny (POST /api/code-sessions/approve). An answer covers that one call;
+ * nothing standing is granted. Questions and plans are answered where the
+ * session runs.
+ */
+function Approvals({ s, waiting, onAnswered }: { s: CodeSession; waiting: Approval[]; onAnswered: () => void }) {
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [answered, setAnswered] = useState<Set<string>>(new Set())
+  const answer = async (a: Approval, allowed: boolean) => {
+    setBusy(`${a.id}:${allowed}`); setError('')
+    try {
+      await postJSON('/api/code-sessions/approve', { machine: s.machineId, id: s.id, approval: a.id, allowed })
+      setAnswered(x => new Set(x).add(a.id))
+      onAnswered()
+    } catch (e) { setError((e as Error).message) } finally { setBusy('') }
+  }
+  const left = waiting.filter(a => !answered.has(a.id))
+  if (!left.length && !error) return null
+  return (
+    <section className="code-approvals" aria-label="Waiting for you">
+      <h3>{left.length === 1 ? 'Waiting for you' : `${left.length} waiting for you`}</h3>
+      <ul>
+        {left.map(a => (
+          <li key={a.id} className="code-approval">
+            {(a.kind ?? 'confirm') === 'confirm' ? (
+              <>
+                <div className="code-approval-what">
+                  <span className="muted">{a.agent ? `${a.agent} asks to run` : a.tool === 'Bash' ? 'Run' : `Use ${a.tool ?? 'a tool'}`}{a.reason && a.tool !== 'Bash' ? `, ${a.reason}` : ''}</span>
+                  <pre className="code-approval-command">{approvalText(a)}</pre>
+                </div>
+                <div className="code-approval-actions">
+                  <Button variant="primary" size="sm" loading={busy === `${a.id}:true`} disabled={!!busy} onClick={() => void answer(a, true)}>Approve</Button>
+                  <Button variant="secondary" size="sm" loading={busy === `${a.id}:false`} disabled={!!busy} onClick={() => void answer(a, false)}>Deny</Button>
+                </div>
+              </>
+            ) : (
+              <p className="muted">
+                {a.kind === 'plan' ? 'It has a plan for you to approve' : 'It asks you a question'}; answer it where the session runs{s.url ? <>, or <a href={s.url} target="_blank" rel="noopener noreferrer">in ACTIVATE</a></> : ''}.
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="muted code-approval-note">Approve runs that one call. Nothing is approved for later calls.</p>
+      {error && <Callout tone="error" size="sm" live>{error}</Callout>}
+    </section>
   )
 }
 
