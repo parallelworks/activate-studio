@@ -1,5 +1,6 @@
 import { Button, Callout, ProgressBar } from '@parallelworks/ui'
 import { dismissTransfer, type Transfer, useTransfers } from '../transfers'
+import { useShownPath } from '../libraryPath'
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -15,9 +16,11 @@ const VERB = {
   delete: { doing: 'Deleting', did: 'deleted', label: 'Delete progress' },
 }
 
-function title(t: Transfer): string {
+/** `shown` reads a folder's path as a person does: in All libraries, its
+ *  library's name in place of the id ("My library/uploads", not "kb/uploads"). */
+function title(t: Transfer, shown: (p: string) => string = p => p): string {
   const kind = t.kind ?? 'upload'
-  const where = kind === 'delete' ? '' : ` ${t.dir || 'root'}`
+  const where = kind === 'delete' ? '' : ` ${t.dir ? shown(t.dir) : 'root'}`
   const count = `${t.done} / ${t.total}`
   if (t.phase === 'queued') return `Waiting to upload ${t.total} ${t.total === 1 ? 'item' : 'items'} to${where}`
   if (t.phase === 'done') {
@@ -42,6 +45,7 @@ function amount(t: Transfer): number | null {
 
 export function TransferPanel() {
   const transfers = useTransfers()
+  const shown = useShownPath()
   if (!transfers.length) return null
   return (
     <div className="upload-panels">
@@ -50,7 +54,7 @@ export function TransferPanel() {
         return (
           <div className="upload-panel" key={t.id}>
             <div className="upload-panel-head">
-              <span>{title(t)}</span>
+              <span>{title(t, shown)}</span>
               {sending && t.cancel && <Button variant="ghost" size="sm" onClick={t.cancel}>cancel</Button>}
               {t.phase === 'done' && <Button variant="ghost" size="sm" onClick={() => dismissTransfer(t.id)}>dismiss</Button>}
             </div>
