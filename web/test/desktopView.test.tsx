@@ -19,7 +19,7 @@ class FakeRFB extends EventTarget {
 }
 vi.mock('@novnc/novnc', () => ({ default: FakeRFB }))
 
-import { DesktopView, desktopSocketUrl, isDesktop, retryDelay } from '../src/components/DesktopView'
+import { DesktopView, MISSING_TRIES, desktopSocketUrl, isDesktop, retryDelay } from '../src/components/DesktopView'
 import { showsInStudio } from '../src/components/SessionView'
 import { sessionItem } from '../src/components/RunPane'
 
@@ -91,6 +91,32 @@ describe('DesktopView', () => {
     logs = { status: 200, body: { xstartup: '', xvnc: '' } }
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
     await client(2)
+  })
+
+  it('a desktop the relay cannot find is tried again after pauses, then it says so and stops', async () => {
+    render(<DesktopView user="alex" name="desk" />)
+    const c = await client()
+    // The platform still lists the desktop as running, but its socket is gone.
+    logs = { status: 404, body: { error: 'The platform has no desktop at that address; it may have stopped.' } }
+    act(() => c.emit('disconnect', { clean: false }))
+    // No new connection at once: the next one waits.
+    await new Promise(r => setTimeout(r, 100))
+    expect(clients.length).toBe(1)
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    for (let n = 0; n < MISSING_TRIES; n++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(retryDelay(n) + 50) })
+      const next = await client(n + 2)
+      act(() => next.emit('disconnect', { clean: false }))
+    }
+    expect(await screen.findByText('Could not connect')).toBeTruthy()
+    expect(screen.getByText('The platform has no desktop at that address; it may have stopped.')).toBeTruthy()
+    const made = clients.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000) })
+    expect(clients.length).toBe(made)
+    // Reconnect is the person's to press.
+    logs = { status: 200, body: { xstartup: '', xvnc: '' } }
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
+    await client(made + 1)
   })
 
   it('tries a dropped connection again after a pause', async () => {
@@ -208,13 +234,17 @@ describe('desktop sessions elsewhere', () => {
       .toBe('wss://studio.example.com/api/session-desktop/a%20b/d%2Fe/websockify')
   })
   it('a desktop shows in the Studio, as a relayed session does', () => {
-    expect(isDesktop({ type: 'desktop' })).toBe(true)
-    expect(showsInStudio({ type: 'desktop', ownHost: false, url: 'https://platform.example.com/sessions/alex/desk/vnc' })).toBe(true)
-    expect(showsInStudio({ type: 'tunnel', ownHost: false, url: 'https://platform.example.com/me/session/alex/t' })).toBe(false)
-    expect(showsInStudio({ type: 'endpoint', ownHost: true, url: 'https://e.sessions.example.com/' })).toBe(true)
+    expect(isDesktop({ desktop: true })).toBe(true)
+    expect(showsInStudio({ desktop: true, ownHost: false, url: 'https://platform.example.com/sessions/alex/desk/vnc' })).toBe(true)
+    // A desktop the relay would not open (software other than VNC) is
+    // marked so by the server, and is not drawn.
+    expect(isDesktop({ type: 'desktop', desktop: false } as { desktop: boolean })).toBe(false)
+    expect(showsInStudio({ desktop: false, ownHost: false, url: 'https://platform.example.com/sessions/alex/other/x' })).toBe(false)
+    expect(showsInStudio({ desktop: false, ownHost: false, url: 'https://platform.example.com/me/session/alex/t' })).toBe(false)
+    expect(showsInStudio({ desktop: false, ownHost: true, url: 'https://e.sessions.example.com/' })).toBe(true)
   })
   it('a side view tab for a desktop names it for the viewer', () => {
-    expect(sessionItem({ name: 'desk', user: 'alex', type: 'desktop', url: 'https://platform.example.com/sessions/alex/desk/vnc', ownHost: false }))
+    expect(sessionItem({ name: 'desk', user: 'alex', type: 'desktop', desktop: true, url: 'https://platform.example.com/sessions/alex/desk/vnc', ownHost: false }))
       .toMatchObject({ kind: 'session', host: null, desktop: { user: 'alex', name: 'desk' } })
     expect(sessionItem({ name: 'web', type: 'endpoint', url: 'https://web.sessions.example.com/', ownHost: true }))
       .toMatchObject({ host: 'web.sessions.example.com', desktop: null })

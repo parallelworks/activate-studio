@@ -29,6 +29,9 @@ export interface SessionRow {
   url: string | null
   /** Served from its own host under the sessions domain, which is what a frame needs. */
   ownHost: boolean
+  /** A platform desktop the Studio draws (type desktop, software vnc). The
+   *  desktop relay is the Go server's, which serves this route. */
+  desktop: boolean
   /** The session's page on the platform, which shows it embedded. */
   platformUrl: string | null
   /** The workflow run that opened it, when one did. */
@@ -74,6 +77,7 @@ export function sessionRow(raw: any, platform: string): SessionRow | null {
     healthy: typeof raw.healthy === 'boolean' ? raw.healthy : null,
     url,
     ownHost,
+    desktop: raw.type === 'desktop' && raw.software?.type === 'vnc',
     platformUrl: typeof raw.internalHref === 'string' && /^\/sessions\/[^?#]+$/.test(raw.internalHref) ? platform + raw.internalHref : null,
     run: wr?.slug ? {
       slug: String(wr.slug),

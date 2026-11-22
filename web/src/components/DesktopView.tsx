@@ -37,6 +37,9 @@ const LEVELS: Record<DesktopQuality, { quality: number; compression: number }> =
 }
 
 const MAX_TRIES = 30
+/** Tries for a desktop the relay cannot find (404) while the platform
+ *  still lists it as running: about 23 seconds of pauses, then it stops. */
+export const MISSING_TRIES = 5
 export const retryDelay = (n: number) => Math.min(1000 * 2 ** n, 8000)
 
 /** The relay's address for a desktop, on the page's own origin. */
@@ -45,9 +48,11 @@ export function desktopSocketUrl(user: string, name: string, loc: Pick<Location,
 }
 const logsUrl = (user: string, name: string) => `/api/session-desktop/${encodeURIComponent(user)}/${encodeURIComponent(name)}/logs`
 
-/** Whether a session is a platform desktop, which the Studio draws itself. */
-export function isDesktop(s: { type?: string | null } | null | undefined): boolean {
-  return s?.type === 'desktop'
+/** Whether a session is a platform desktop the Studio draws itself: the
+ *  server says so (type desktop with VNC software), by the rule its relay
+ *  opens desktops by, so a desktop the relay would refuse is not drawn. */
+export function isDesktop(s: { desktop?: boolean | null } | null | undefined): boolean {
+  return s?.desktop === true
 }
 
 /** noVNC loads once, in a chunk of its own, when a desktop first shows. */
@@ -188,11 +193,11 @@ export function DesktopView({ user, name, className = '', onClosed }: { user: st
 
   // Why a connection dropped: the relay's own answer decides between
   // trying again, waiting for the session, and saying it was refused.
-  const diagnose = useCallback(async (): Promise<'retry' | 'stop'> => {
+  const diagnose = useCallback(async (): Promise<'retry' | 'missing' | 'stop'> => {
     try {
       const r = await readLogs(user, name)
       if (r.status === 401 || r.status === 403 || r.status === 409) { setPhase('refused'); setReason(r.error ?? ''); return 'stop' }
-      if (r.status === 404) { setStatus(null); setRecheck(n => n + 1); setReason(r.error ?? ''); return 'stop' }
+      if (r.status === 404) { setReason(r.error ?? ''); return 'missing' }
       if (r.error) setReason(r.error)
     } catch { /* the Studio did not answer; try again */ }
     return 'retry'
@@ -227,6 +232,16 @@ export function DesktopView({ user, name, className = '', onClosed }: { user: st
         if ((e as CustomEvent<{ clean: boolean }>).detail?.clean) { setPhase('closed'); setReason('The desktop closed the connection.'); return }
         void diagnose().then(next => {
           if (gone || next === 'stop') return
+          // No desktop at the relay: the session may have stopped. Its
+          // state is read again after a pause, and a desktop the platform
+          // still lists as running is tried again, a few times only.
+          if (next === 'missing') {
+            if (tries.current >= MISSING_TRIES) { setPhase('failed'); return }
+            tries.current++
+            setPhase('connecting')
+            timer = window.setTimeout(() => { setStatus(null); setRecheck(n => n + 1) }, retryDelay(tries.current - 1))
+            return
+          }
           if (tries.current >= MAX_TRIES) { setPhase('failed'); return }
           tries.current++
           setPhase('connecting')

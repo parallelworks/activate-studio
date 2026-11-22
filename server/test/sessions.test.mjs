@@ -88,6 +88,9 @@ test('a session record becomes an absolute address, its host kind, and the run t
   assert.equal(ex.platformUrl, null)
   assert.equal(sessions.sessionRow(RAW[3], P), null, 'a record without a name is dropped')
   assert.equal(sessions.sessionRow({ name: 'x', externalHref: 'http://plain.example/' }, P).url, null, 'only https is offered')
+  assert.equal(ex.desktop, false)
+  assert.equal(sessions.sessionRow({ name: 'd', type: 'desktop', software: { type: 'vnc' } }, P).desktop, true, 'a VNC desktop is drawn by the Studio')
+  assert.equal(sessions.sessionRow({ name: 'd', type: 'desktop', software: { type: 'other' } }, P).desktop, false, 'other desktop software is not')
 })
 
 test('the list is read with the key, newest first, and filters by run; one session by name', async () => {
@@ -126,7 +129,7 @@ test('a run launched from chat shows its session in that conversation, once', as
 
 test('a session with no recorded run belongs to the run its name ends with', async () => {
   const { sessionOfRun } = await import('../dist/sessions.js')
-  const row = (name, run) => ({ name, user: 'u', type: 'endpoint', status: 'running', healthy: null, url: null, ownHost: true, platformUrl: null, run, resource: null, createdAt: null })
+  const row = (name, run) => ({ name, user: 'u', type: 'endpoint', status: 'running', healthy: null, url: null, ownHost: true, desktop: false, platformUrl: null, run, resource: null, createdAt: null })
   assert.ok(sessionOfRun(row('viewer-study-doe-00006', null), 'study-doe-00006'))
   assert.ok(sessionOfRun(row('study-doe-00006', null), 'study-doe-00006'))
   assert.ok(!sessionOfRun(row('viewer-study-doe-00016', null), 'study-doe-00006'))

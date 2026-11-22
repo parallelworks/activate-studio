@@ -115,13 +115,13 @@ func TestRowShape(t *testing.T) {
 	b, _ := json.Marshal(raw)
 	v, _ := decode(b)
 	got := string(must(json.Marshal(Row(v, plat))))
-	want := `{"name":"s1","user":"alex","type":"tunnel","status":"running","healthy":true,"url":"https://s1.sessions.example.com/","ownHost":true,"platformUrl":"https://platform.example.com/sessions/alex/s1","run":{"slug":"r7","workflow":"Study","number":3,"status":"running"},"resource":"gpu","createdAt":"2026-01-02T00:00:00Z"}`
+	want := `{"name":"s1","user":"alex","type":"tunnel","status":"running","healthy":true,"url":"https://s1.sessions.example.com/","ownHost":true,"desktop":false,"platformUrl":"https://platform.example.com/sessions/alex/s1","run":{"slug":"r7","workflow":"Study","number":3,"status":"running"},"resource":"gpu","createdAt":"2026-01-02T00:00:00Z"}`
 	if got != want {
 		t.Fatalf("\n%s\n%s", got, want)
 	}
 	v, _ = decode([]byte(`{"name":"x","externalHref":"/me/session/x/","internalHref":"/sessions/x?y"}`))
 	got = string(must(json.Marshal(Row(v, plat))))
-	if got != `{"name":"x","user":"","type":"","status":"","healthy":null,"url":"https://platform.example.com/me/session/x/","ownHost":false,"platformUrl":null,"run":null,"resource":null,"createdAt":null}` {
+	if got != `{"name":"x","user":"","type":"","status":"","healthy":null,"url":"https://platform.example.com/me/session/x/","ownHost":false,"desktop":false,"platformUrl":null,"run":null,"resource":null,"createdAt":null}` {
 		t.Fatal(got)
 	}
 	if v, _ := decode([]byte(`{"user":"a"}`)); Row(v, plat) != nil {
@@ -495,5 +495,26 @@ func TestRelayUpgradeIsAPlainGet(t *testing.T) {
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 100))
 	if res.StatusCode != 426 || string(b) != "upgrade required" || upgrade != "" {
 		t.Fatal(res.Status, string(b), upgrade)
+	}
+}
+
+// The page draws a session as a desktop only when the row says so, which
+// is when the relay would open it: type desktop with software vnc.
+func TestRowSaysWhichDesktopsTheStudioDraws(t *testing.T) {
+	plat := "https://platform.example.com"
+	for _, c := range []struct {
+		raw  string
+		want bool
+	}{
+		{`{"name":"d","type":"desktop","software":{"type":"vnc"}}`, true},
+		{`{"name":"d","type":"desktop","software":{"type":"other"}}`, false},
+		{`{"name":"d","type":"desktop"}`, false},
+		{`{"name":"d","type":"endpoint","software":{"type":"vnc"}}`, false},
+	} {
+		v, _ := decode([]byte(c.raw))
+		got := string(must(json.Marshal(Row(v, plat))))
+		if !strings.Contains(got, fmt.Sprintf(`"desktop":%v`, c.want)) {
+			t.Errorf("%s: %s", c.raw, got)
+		}
 	}
 }

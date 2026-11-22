@@ -71,6 +71,8 @@ func newDesktopFixture(t *testing.T) *desktopFixture {
 			w.WriteHeader(http.StatusTemporaryRedirect)
 		case how == "offline":
 			w.WriteHeader(http.StatusBadGateway)
+		case how == "gone":
+			w.WriteHeader(http.StatusNotFound)
 		default:
 			conn, buf, err := http.NewResponseController(w).Hijack()
 			if err != nil {
@@ -248,6 +250,7 @@ func TestDesktopUpstreamAnswers(t *testing.T) {
 	}{
 		"signin":  {502, "The platform did not accept your credential for this desktop; it may have expired or been revoked."},
 		"offline": {503, "The desktop's cluster is not answering; it may be starting, or offline."},
+		"gone":    {404, "The platform has no desktop at that address; it may have stopped."},
 	} {
 		f.upstream = how
 		res, _, _ := f.dial("/api/session-desktop/alex/desk/websockify", "")
