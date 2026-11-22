@@ -21,6 +21,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/netx"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 // Routes serves accessRoutes.ts's routes.
@@ -442,11 +443,12 @@ func itoa(n int) string { return jsonv.FormatNumber(float64(n)) }
 
 var userPrefix = regexp.MustCompile(`^user:`)
 
+// accountKey stands for a key in the accounts cache: a hash of the whole
+// key, so a key chosen to end like another's never finds its entry.
+func accountKey(key string) string { return remote.KeyID(key) }
+
 func (s *Routes) accountOf(ctx context.Context, key string) (org, user string, err error) {
-	k := key
-	if len(k) > 12 {
-		k = k[len(k)-12:]
-	}
+	k := accountKey(key)
 	s.mu.Lock()
 	hit, ok := s.accounts[k]
 	s.mu.Unlock()

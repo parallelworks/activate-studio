@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/netx"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows/runs"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows/wfparser"
 	"github.com/parallelworks/activate-studio/server-go/internal/workspace"
@@ -235,12 +236,9 @@ func jsStr(v any) string {
 
 func truthy(v any) bool { return !undef(v) && jsonv.Truthy(v) }
 
-func keyTail(k string) string {
-	if len(k) > 12 {
-		return k[len(k)-12:]
-	}
-	return k
-}
+// keyTail stands for a key in the caches here: a hash of the whole key
+// (remote.KeyID), so keys that end alike never share an entry.
+func keyTail(k string) string { return remote.KeyID(k) }
 
 var collator = collate.New(language.Und)
 

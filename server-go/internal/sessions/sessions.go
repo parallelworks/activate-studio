@@ -18,6 +18,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 // SessionRun is the run that opened a session.
@@ -193,16 +194,17 @@ var (
 
 const ttl = 10 * time.Second
 
+// cacheKey stands for a key in the session list cache: a hash of the whole
+// key, so a key chosen to end like another's never finds its entry.
+func cacheKey(key string) string { return remote.KeyID(key) }
+
 // ResetCache forgets the session lists (resetSessionsForTests).
 func ResetCache() { cacheMu.Lock(); cache = map[string]cached{}; cacheMu.Unlock() }
 
 // List is listSessions: every session the key's account can see, kept ten
 // seconds per key.
 func List(ctx context.Context, p *platform.Platform, key string) ([]*SessionRow, error) {
-	k := key
-	if len(k) > 12 {
-		k = k[len(k)-12:]
-	}
+	k := cacheKey(key)
 	cacheMu.Lock()
 	hit, ok := cache[k]
 	cacheMu.Unlock()
