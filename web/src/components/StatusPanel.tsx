@@ -10,6 +10,7 @@ import { AI_LABEL, modelsReady } from './StatusFooter'
 import { openInSideView } from './RunPane'
 import { openSessionWindow, showsInStudio, type SessionInfo } from './SessionView'
 import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
+import { plural } from '../plural'
 
 /**
  * The status panel at the right of every page: what is running, the
@@ -75,7 +76,6 @@ function ago(iso: string | null | undefined): string {
   if (s < 172800) return `${Math.round(s / 3600)}h ago`
   return `${Math.round(s / 86400)}d ago`
 }
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const go = (hash: string) => { location.hash = hash }
 
 function runTone(state: string): { tone: BadgeVariant; pulse: boolean } {
@@ -157,7 +157,7 @@ export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | nu
       kind: l.primary ? 'knowledge base' : l.site ? `on ${l.site}` : l.writable ? 'writable' : 'read only',
       state: st && !st.available ? 'unavailable' : indexed ? 'indexed' : 'not indexed',
       tone: st && !st.available ? 'warning' : indexed ? 'success' : 'muted', pulse: false,
-      count: n != null ? `${n.toLocaleString()} files` : null,
+      count: n != null ? plural(n, 'file') : null,
       note: st && !st.available ? st.error ?? null : null,
     })
   }
@@ -167,7 +167,7 @@ export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | nu
       id: u.id, label: u.label, kind: `on ${u.site}`, state: u.state,
       tone: u.state === 'failed' ? 'error' : u.state === 'ready' ? 'success' : 'info',
       pulse: u.state === 'building' || u.state === 'updating',
-      count: n != null ? `${n.toLocaleString()} files` : null,
+      count: n != null ? plural(n, 'file') : null,
       note: u.error,
     })
   }

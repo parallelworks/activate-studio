@@ -10,6 +10,7 @@ import { currentLibrary, onLibraryChange } from '../api'
 import type { LibraryStats } from '../api'
 import { LibrarySwitch } from '../components/LibrarySwitch'
 import { aiOn, useAppConfig } from '../config'
+import { plural } from '../plural'
 
 interface ExtRow { ext: string; count: number; bytes: number }
 interface QueryResult { columns: string[]; rows: string[][]; rowLibraries?: string[] }
@@ -224,13 +225,13 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
           <div className="ov-bars">
             {byExt.map(e => (
               <div className="ov-bar-row ov-click" key={e.ext}
-                title={`${e.ext}: ${fmtBytes(e.bytes)} across ${e.count.toLocaleString()} files. Click to list them in Query.`}
+                title={`${e.ext}: ${fmtBytes(e.bytes)} across ${plural(e.count, 'file')}. Click to list them in Query.`}
                 onClick={() => jumpToQuery([{ field: 'extension', op: 'eq', value: e.ext }])}>
                 <span className="ov-bar-label">.{e.ext}</span>
                 <div className="ov-bar-track">
                   <div className="ov-bar-fill" style={{ width: `${Math.max((e.bytes / maxBytes) * 100, 1)}%` }} />
                 </div>
-                <span className="ov-bar-value">{fmtBytes(e.bytes)} · {e.count.toLocaleString()} files</span>
+                <span className="ov-bar-value">{fmtBytes(e.bytes)} · {plural(e.count, 'file')}</span>
               </div>
             ))}
           </div>

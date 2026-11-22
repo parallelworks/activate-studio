@@ -18,6 +18,7 @@ import {
   AI_SECTIONS, SECTION_SWITCHES, accessLabel, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
 } from '../config'
 import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
+import { plural } from '../plural'
 
 /**
  * First-run setup for a single-user install: the Studio's name and icon,
@@ -426,7 +427,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
 
   const indexState = !primary ? '' : !primary.exists ? 'This folder does not exist yet.'
     : building ? 'The index is building in the background.'
-    : primary.indexed ? (primary.files !== undefined ? `Indexed: ${primary.files.toLocaleString()} files.` : 'Indexed.')
+    : primary.indexed ? (primary.files !== undefined ? `Indexed: ${plural(primary.files, 'file')}.` : 'Indexed.')
     : 'Not indexed yet.'
   const endpoint = aiSaved ?? (me && me.mode !== 'none' && me.baseUrl ? { host: hostOf(me.baseUrl), model: '' } : null)
   const aiSummary = !aiOn ? 'off'

@@ -4,6 +4,7 @@ import type { IndexJob as ApiIndexJob, PublicLibrary } from '../api'
 import { chooseFolderNatively, hasNativeFolderChooser } from '../nativeShell'
 import { kickIndexStatus } from '../indexActivity'
 import { IndexJobView, jobOutcome } from './IndexActivity'
+import { plural } from '../plural'
 
 /**
  * The primary folder on a single-user install, shared by the setup wizard
@@ -322,7 +323,7 @@ export function IndexBuildProgress({ job, error }: { job: IndexJob | null; error
       {job?.state === 'done' && (failed.length > 0 || (job.warningCount ?? 0) > 0) && (
         <Callout tone="warning" title={failed.length ? 'Some folders could not be indexed' : 'Some files could not be read'}>
           {failed.map(f => <div key={f}>{f}</div>)}
-          {(job.warningCount ?? 0) > 0 && <div>{job.warningCount!.toLocaleString()} files could not be read; the index log names them.</div>}
+          {(job.warningCount ?? 0) > 0 && <div>{plural(job.warningCount!, 'file')} could not be read; the index log names them.</div>}
         </Callout>
       )}
       {job?.state === 'cancelled' && <Callout tone="info">{jobOutcome(job)}</Callout>}
