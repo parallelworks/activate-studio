@@ -349,6 +349,18 @@ describe('Settings, Indexing, Libraries', () => {
     expect(rowOf('Notes')).not.toHaveClass('lib-focus')
   })
 
+  it('brings the Add a library form into view when its button opens it, below the list', async () => {
+    const scrolled = vi.fn()
+    Element.prototype.scrollIntoView = scrolled
+    await renderPage(server())
+    await waitFor(() => rowOf('Notes'))
+    expect(scrolled).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
+    const form = await screen.findByRole('region', { name: 'Add a library' })
+    await waitFor(() => expect(scrolled).toHaveBeenCalled())
+    expect(scrolled.mock.contexts.at(-1)).toBe(form)
+  })
+
   it('and when the page is open already, as after visiting Settings before the search', async () => {
     Element.prototype.scrollIntoView = vi.fn()
     await renderPage(server())
