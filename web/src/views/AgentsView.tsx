@@ -88,6 +88,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // Delegated tasks: the tree of subtasks and the agents working them,
   // polled while anything is running, since the point is watching.
   const [taskRuns, setTaskRuns] = useState<TaskRow[]>([])
+  // Set when the earlier tasks are kept for the Studio's administrators.
+  const [tasksAdminsOnly, setTasksAdminsOnly] = useState('')
   const [openTask, setOpenTask] = useState<string | null>(null)
   const [detail, setDetail] = useState<(Omit<TaskDetail, 'agents'> & { agents: SubTask[] }) | null>(null)
   // Paged rather than one long scroll: a library of sixty is browsed in
@@ -162,7 +164,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     void (async () => {
       try {
         const d = await fetch('/api/tasks').then(r => r.json())
-        if (!stop) setTaskRuns(d.tasks ?? [])
+        if (!stop) { setTaskRuns(d.tasks ?? []); setTasksAdminsOnly(typeof d.adminsOnly === 'string' ? d.adminsOnly : '') }
         if (openTask && !stop) {
           const md = await fetch(`/api/tasks/${encodeURIComponent(openTask)}`).then(r => r.json())
           if (!stop && !md.error) setDetail(md)
@@ -301,7 +303,10 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             keeps the tasks of the earlier task engine to read: their agents, board and output, with their results in the
             library under <code>tasks/</code>.
           </Callout>
-          {taskRuns.length === 0 && (
+          {taskRuns.length === 0 && tasksAdminsOnly && (
+            <EmptyState variant="bare" className="task-empty" title="Earlier tasks are kept for administrators" description={tasksAdminsOnly} />
+          )}
+          {taskRuns.length === 0 && !tasksAdminsOnly && (
             <EmptyState variant="bare" className="task-empty" title="No earlier tasks" description="Tasks delegated before delegation moved to pw code sessions are listed here." />
           )}
           {taskRuns.length > 0 && (
