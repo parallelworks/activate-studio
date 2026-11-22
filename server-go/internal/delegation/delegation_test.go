@@ -3,6 +3,7 @@ package delegation
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -134,7 +135,11 @@ func TestDelegateToAFolder(t *testing.T) {
 	if !strings.Contains(d.agentsMD, "Check every claim.") {
 		t.Fatalf("AGENTS.md when the session was made: %q", d.agentsMD)
 	}
-	if d.created["workspace"] != filepath.Join(root, rec.Folder) || len(d.messages) != 1 || d.messages[0] != "Summarize the Q3 pump tests" || len(d.goals) != 1 || !strings.Contains(d.goals[0], "summary.md exists") {
+	// It reads the library and lists its folder without asking.
+	if rules := fmt.Sprint(d.created["allowedTools"]); !strings.Contains(rules, "Bash(ls -la)") || !strings.Contains(rules, "ReadFile("+filepath.ToSlash(root)+"/**)") || strings.Contains(rules, "Bash(ls *)") {
+		t.Fatalf("allowed tools: %s", rules)
+	}
+	if d.created["workspace"] != filepath.Join(root, rec.Folder) || len(d.messages) != 1 || d.messages[0] != "Summarize the Q3 pump tests\n\n"+agentsmd.WorkingNote || len(d.goals) != 1 || !strings.Contains(d.goals[0], "summary.md exists") {
 		t.Fatalf("created %v messages %v goals %v", d.created, d.messages, d.goals)
 	}
 	os.WriteFile(filepath.Join(root, rec.Folder, "summary.md"), []byte("# Q3\n"), 0o644)

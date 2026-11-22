@@ -18,7 +18,9 @@ import (
 // library, runs and systems. The token is a chat token and lasts as long
 // (TokenTTL); a session that keeps working past that is replaced. Model
 // and mode are pw code's; "" leaves the deployment's pw code settings.
-func (m *Module) StudioSession(ctx context.Context, c pwcode.Client, owner *auth.User, grant, workspace, model, mode string) (string, error) {
+// allow adds pw code rules the session uses without asking, after the
+// Studio's own reading tools.
+func (m *Module) StudioSession(ctx context.Context, c pwcode.Client, owner *auth.User, grant, workspace, model, mode string, allow []string) (string, error) {
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 	if err != nil {
 		return "", err
@@ -37,6 +39,9 @@ func (m *Module) StudioSession(ctx context.Context, c pwcode.Client, owner *auth
 		if chatReadTools[s.Name] {
 			allowed = append(allowed, studioToolPrefix+s.Name)
 		}
+	}
+	for _, x := range allow {
+		allowed = append(allowed, x)
 	}
 	e := m.eff()
 	if model == "" {

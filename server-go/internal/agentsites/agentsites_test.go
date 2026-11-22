@@ -3,6 +3,7 @@ package agentsites
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -278,6 +279,7 @@ func TestBoundedGoal(t *testing.T) {
 // The routes, through a mux: keys, errors as Node's error handler writes
 // them, and the local site's workspace under INDEX_BASE/agents.
 func TestRoutes(t *testing.T) {
+	var made map[string]any
 	sock := pwcodetest.Socket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		switch r.URL.Path {
@@ -285,6 +287,7 @@ func TestRoutes(t *testing.T) {
 			io.WriteString(w, `{"protocolVersion":2,"hostname":"here"}`)
 		case "/v1/sessions":
 			if r.Method == "POST" {
+				json.NewDecoder(r.Body).Decode(&made)
 				io.WriteString(w, `{"id":"s1"}`)
 				return
 			}
@@ -327,6 +330,11 @@ func TestRoutes(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.ix, "agents", "w1")); err != nil {
 		t.Fatal(err)
+	}
+	// On this host the session may list its folder without asking; out
+	// of the library there is no library to read.
+	if rules, _ := made["allowedTools"].([]any); len(rules) == 0 || rules[0] != "Bash(pwd)" || strings.Contains(fmt.Sprint(rules), "ReadFile") {
+		t.Fatalf("allowed tools: %v", made["allowedTools"])
 	}
 	if c, b := do("POST", "/api/agent-sites/bad%20site/sessions/x/interrupt", ""); c != 400 || b != `{"error":"not a site name: bad site"}` {
 		t.Fatal(c, b)

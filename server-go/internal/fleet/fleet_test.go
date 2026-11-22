@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -172,6 +173,14 @@ func TestWakeFollowDecide(t *testing.T) {
 	}
 	if md := d.agentsMD[0]; !strings.Contains(md, "Classify every failure.") || !strings.Contains(md, "Watch the queues.") || !strings.Contains(md, "NEEDS DECISION:") {
 		t.Fatalf("AGENTS.md when the session was made:\n%s", md)
+	}
+	// It reads the library and lists its folder without asking, and its
+	// AGENTS.md says how.
+	if rules := fmt.Sprint(d.created[0]["allowedTools"]); !strings.Contains(rules, "GrepSearch("+filepath.ToSlash(root)+"/**)") || !strings.Contains(rules, "Bash(pwd)") {
+		t.Fatalf("allowed tools: %s", rules)
+	}
+	if !strings.Contains(d.agentsMD[0], "append to a file by editing it") {
+		t.Fatalf("no working note in AGENTS.md:\n%s", d.agentsMD[0])
 	}
 	if !strings.Contains(d.messages[0], "the schedule") || !strings.Contains(d.goals[0], "within 3 turns") {
 		t.Fatalf("message %q goal %q", d.messages[0], d.goals[0])

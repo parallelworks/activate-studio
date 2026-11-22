@@ -27,7 +27,7 @@ func instructions(a *Agent) string {
 	if r := str(a.Resource); r != "" {
 		b.WriteString("The system you work on: " + r + ". Submit and follow runs there with the Studio's workflow tools.\n\n")
 	}
-	b.WriteString("Each message from the Studio is a wake-up and says what woke you. Do one bounded round of work toward the goal, write what you make in this folder or where the goal says, and end with a status a person can read in a minute: what you did, what changed, what is next. When you need a decision from a person, end with one line that starts with NEEDS DECISION: followed by the question, and stop.")
+	b.WriteString("Each message from the Studio is a wake-up and says what woke you. Do one bounded round of work toward the goal, write what you make in this folder or where the goal says, and end with a status a person can read in a minute: what you did, what changed, what is next. When you need a decision from a person, end with one line that starts with NEEDS DECISION: followed by the question, and stop.\n\n" + agentsmd.WorkingNote)
 	return b.String()
 }
 
@@ -93,6 +93,14 @@ func (f *Fleet) wakeText(a *Agent, events []string, fresh bool) string {
 	}
 	b.WriteString("\nDo one bounded round of work toward your goal now, then end with your status.")
 	return b.String()
+}
+
+func anyStrings(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, x := range ss {
+		out[i] = x
+	}
+	return out
 }
 
 func cut(s string, n int) string {
@@ -164,7 +172,7 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 		fail("pw code is not set up on this Studio")
 		return
 	}
-	ws, _, err := f.writeInstructions(&a)
+	ws, inLibrary, err := f.writeInstructions(&a)
 	if err != nil {
 		fail("could not write its AGENTS.md: " + err.Error())
 		return
@@ -182,16 +190,23 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 		}
 	}
 	if session == "" {
+		// It reads the library and lists its folder without asking
+		// (agentsmd.ReadRules); out of the library, only its folder.
+		top := ""
+		if inLibrary {
+			top = f.A.Cfg.KBRoot
+		}
+		rules := agentsmd.ReadRules(top)
 		var owner = a.OwnerUser
 		if f.Start != nil {
-			session, err = f.Start(ctx, c, owner, "fleet:"+a.ID, ws, a.Model, f.Mode)
+			session, err = f.Start(ctx, c, owner, "fleet:"+a.ID, ws, a.Model, f.Mode, rules)
 		}
 		if f.Start == nil || err != nil {
 			why := ""
 			if err != nil {
 				why = err.Error()
 			}
-			req := jsonv.NewObject("workspace", ws, "remoteControl", true, "permissionMode", f.Mode)
+			req := jsonv.NewObject("workspace", ws, "remoteControl", true, "permissionMode", f.Mode, "allowedTools", anyStrings(rules))
 			if a.Model != "" {
 				req.Set("model", a.Model)
 			}
