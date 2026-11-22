@@ -235,30 +235,38 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 		}
 		fresh = true
 	}
+	// A new session is recorded before the message goes, and the wake-up
+	// is recorded as working as soon as the message is in: a restart in
+	// between leaves the record saying what the session is doing.
+	if fresh {
+		f.mu.Lock()
+		if cur := f.agents[a.ID]; cur != nil {
+			if cur.Session != "" && cur.Session != session {
+				cur.Sessions = append(cur.Sessions, cur.Session)
+			}
+			cur.Session, cur.SessionAt, cur.SessionTokens, cur.Workspace = session, time.Now().UTC().Format(time.RFC3339Nano), 0, ws
+			f.persist(cur)
+		}
+		f.mu.Unlock()
+	}
 	if _, err := pwcode.SendMessage(ctx, c, session, f.wakeText(&a, events, fresh)); err != nil {
 		fail("could not wake its session: " + err.Error())
 		return
 	}
+	f.mu.Lock()
+	if cur := f.agents[a.ID]; cur != nil {
+		cur.Starting = false
+		cur.Note = "wake-up " + strconv.FormatFloat(cur.Ticks, 'f', 0, 64) + " working"
+		f.journal(a.ID, "tick", cut(strings.Join(events, " | "), 400), session)
+		f.persist(cur)
+	}
+	f.mu.Unlock()
 	if _, err := pwcode.SetGoal(ctx, c, session, roundGoal(&a)); err != nil {
 		f.journal(a.ID, "error", "its round's goal was not set: "+cut(err.Error(), 300), session)
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	delete(f.busy, a.ID)
-	cur := f.agents[a.ID]
-	if cur == nil {
-		return
-	}
-	if fresh {
-		if cur.Session != "" && cur.Session != session {
-			cur.Sessions = append(cur.Sessions, cur.Session)
-		}
-		cur.Session, cur.SessionAt, cur.SessionTokens, cur.Workspace = session, time.Now().UTC().Format(time.RFC3339Nano), 0, ws
-	}
-	cur.Starting = false
-	cur.Note = "wake-up " + strconv.FormatFloat(cur.Ticks, 'f', 0, 64) + " working"
-	f.journal(a.ID, "tick", cut(strings.Join(events, " | "), 400), session)
-	f.persist(cur)
+	f.mu.Unlock()
 }
 
 /* ---- following a working session ---- */

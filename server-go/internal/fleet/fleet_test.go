@@ -40,6 +40,8 @@ type daemon struct {
 	tokens    map[string]float64
 	goalAlive map[string]bool
 	answers   []map[string]any
+	// goalHold, when set, holds each goal call until it is closed.
+	goalHold chan struct{}
 	// approvalKind is the kind of a session's approval: confirm when unset.
 	approvalKind map[string]string
 }
@@ -50,6 +52,9 @@ func newDaemon() *daemon {
 
 func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	send := func(v any) { w.Header().Set("Content-Type", "application/json"); json.NewEncoder(w).Encode(v) }
+	if hold := d.goalHold; hold != nil && strings.HasSuffix(r.URL.Path, "/goal") {
+		<-hold
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	p := r.URL.Path

@@ -96,3 +96,28 @@ func TestAnAgentActsForItsOwnerAsTheyAreNow(t *testing.T) {
 		t.Fatal("a name taken out of the administrators still writes the main library")
 	}
 }
+
+// A restart after the wake-up's message reached the session finds the
+// agent working in that session, not idle: the round goes on and is
+// followed, and the next trigger does not message a busy session.
+func TestARestartAfterTheMessageKeepsItWorking(t *testing.T) {
+	f, d, _ := stand(t)
+	d.goalHold = make(chan struct{})
+	a, err := f.Create(Input{Name: "Mid-wake", Goal: "Count.", Every: "1h"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Tick(a.ID, "now", true) {
+		t.Fatal("no wake-up")
+	}
+	waitFor(t, "the message", func() bool { d.mu.Lock(); defer d.mu.Unlock(); return len(d.messages) == 1 })
+	waitFor(t, "the record", func() bool { return !f.Get(a.ID).Starting })
+	// The Studio stops here, before the goal is set.
+	g := New(f.A, f.Daemon)
+	got := g.Get(a.ID)
+	close(d.goalHold)
+	if got.State != "working" || got.Session == "" || got.Starting {
+		t.Fatalf("after a restart mid-wake: %+v", got)
+	}
+	waitFor(t, "the wake-up", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
+}
