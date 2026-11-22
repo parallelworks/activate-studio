@@ -51,4 +51,20 @@ describe('after a library is added', () => {
     state.user = [{ id: 'u-space-ada', state: 'failed' }]
     await vi.waitFor(() => expect(reloadAppConfig).toHaveBeenCalled())
   })
+
+  it('keeps watching when one list fails to answer, rather than reading it as empty', async () => {
+    state.user = [{ id: 'u-space-ada', state: 'building' }]
+    let fail = 0
+    api.userLibraries.mockImplementation(async () => { if (fail-- > 0) throw new Error('502'); return { libraries: state.user } })
+    reloadWhenLibrariesBuilt({ everyMs: 10 })
+    await new Promise(r => setTimeout(r, 25))
+    fail = 3
+    await new Promise(r => setTimeout(r, 60))
+    // The failures were not taken as nothing building: no reload yet, and
+    // the watch is still asking.
+    expect(reloadAppConfig).not.toHaveBeenCalled()
+    state.user = [{ id: 'u-space-ada', state: 'ready' }]
+    await vi.waitFor(() => expect(reloadAppConfig).toHaveBeenCalled())
+    api.userLibraries.mockImplementation(async () => ({ libraries: state.user }))
+  })
 })
