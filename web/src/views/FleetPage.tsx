@@ -77,7 +77,8 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
     return () => window.removeEventListener('hashchange', pick)
   }, [])
   // The approval whose whole command is on screen: Approve runs it whole,
-  // so it is offered only then, as on the Code page.
+  // so it is offered only then, as on the Code page. A call with a tool and
+  // no command has nothing to open and is approvable as it is.
   const [whole, setWhole] = useState('')
   const [detail, setDetail] = useState<{ agent: Agent; journal: Journal[]; session: SessionView | null; approval?: Approval | null } | null>(null)
   const [message, setMessage] = useState('')
@@ -251,7 +252,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
                     )}
                     {!detail.approval.command && detail.approval.reason && <span className="fleet-approval-reason">{detail.approval.reason}</span>}
                     <span className="fleet-approval-actions">
-                      {detail.approval.approvable && whole === detail.approval.id && <Button variant="primary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: true })}>Approve</Button>}
+                      {detail.approval.approvable && (!detail.approval.command || whole === detail.approval.id) && <Button variant="primary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: true })}>Approve</Button>}
                       <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: false })}>Deny</Button>
                     </span>
                   </>
