@@ -318,3 +318,42 @@ func TestCreateChecks(t *testing.T) {
 		t.Fatalf("%+v %v", a, err)
 	}
 }
+
+// An agent's record and journal are the Studio account's alone, and
+// records written open before are closed when the fleet is read.
+func TestRecordsArePrivate(t *testing.T) {
+	f, _, _ := stand(t)
+	a, err := f.Create(Input{Name: "Private", Goal: "Keep it to yourself.", Every: "manual"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.journal(a.ID, "note", "a line", "")
+	mode := func(p string) os.FileMode {
+		st, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Mode().Perm()
+	}
+	for p, want := range map[string]os.FileMode{f.dir: 0o700, f.dirOf(a.ID): 0o700,
+		filepath.Join(f.dirOf(a.ID), "agent.json"): 0o600, filepath.Join(f.dirOf(a.ID), "journal.jsonl"): 0o600} {
+		if got := mode(p); got != want {
+			t.Errorf("%s: %o, want %o", p, got, want)
+		}
+	}
+	// A record written open by an earlier version is closed on read.
+	old := filepath.Join(f.dir, "old-one")
+	os.MkdirAll(old, 0o755)
+	os.Chmod(f.dir, 0o755)
+	os.WriteFile(filepath.Join(old, "agent.json"), []byte(`{"id":"old-one","engine":"pwcode","name":"Old","state":"idle"}`), 0o644)
+	os.WriteFile(filepath.Join(old, "journal.jsonl"), []byte("{}\n"), 0o644)
+	g := New(f.A, f.Daemon)
+	if g.Get("old-one") == nil {
+		t.Fatal("the old record was not read")
+	}
+	for p, want := range map[string]os.FileMode{f.dir: 0o700, old: 0o700, filepath.Join(old, "agent.json"): 0o600, filepath.Join(old, "journal.jsonl"): 0o600} {
+		if got := mode(p); got != want {
+			t.Errorf("after reading, %s: %o, want %o", p, got, want)
+		}
+	}
+}
