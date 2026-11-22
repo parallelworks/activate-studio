@@ -565,7 +565,7 @@ func (m *Module) dropAdopted(a Adopter) {
 // identity is the account a session reaches and its groups, read at most
 // every ten minutes.
 func (m *Module) identity(ctx context.Context, site, key string) (clusterIdent, error) {
-	k := slice16(key) + "|" + site
+	k := keyID(key) + "|" + site
 	m.sharesMu.Lock()
 	id, ok := m.idents[k]
 	m.sharesMu.Unlock()

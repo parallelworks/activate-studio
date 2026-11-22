@@ -147,7 +147,7 @@ func (m *Module) writerCheck(ctx context.Context, owner string, d *libraries.Use
 	if m.accounts == nil {
 		m.accounts = map[string]reachedAccount{}
 	}
-	m.accounts[slice16(key)+"|"+site] = reachedAccount{uid: uid, at: time.Now()}
+	m.accounts[keyID(key)+"|"+site] = reachedAccount{uid: uid, at: time.Now()}
 	m.mu.Unlock()
 	if got.Writer.UID != uid {
 		return apierr.New(409, "Your session reaches %s as another account (uid %d) than the one this library is written as (uid %d).", remote.SiteName(site), uid, got.Writer.UID)
@@ -158,7 +158,7 @@ func (m *Module) writerCheck(ctx context.Context, owner string, d *libraries.Use
 // sameAccount refuses a session that now reaches another account than the
 // one the space was made for, read at most every ten minutes.
 func (m *Module) sameAccount(ctx context.Context, site, key string, uid int) error {
-	k := slice16(key) + "|" + site
+	k := keyID(key) + "|" + site
 	m.mu.Lock()
 	a, ok := m.accounts[k]
 	m.mu.Unlock()

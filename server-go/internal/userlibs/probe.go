@@ -301,7 +301,7 @@ type indexSpec struct {
 }
 
 func (m *Module) probeIndex(ctx context.Context, h probeHost, spec indexSpec, reuse bool) *probe {
-	idb, _ := json.Marshal([]any{h.Site, slice16(h.Key), spec.IndexRoot, spec.GufiBin, spec.SourceRoot})
+	idb, _ := json.Marshal([]any{h.Site, keyID(h.Key), spec.IndexRoot, spec.GufiBin, spec.SourceRoot})
 	id := string(idb)
 	m.mu.Lock()
 	hit, ok := m.passed[id]

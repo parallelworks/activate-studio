@@ -384,7 +384,7 @@ func sums(files []sendFile) string {
 // for: BUILD_START marked the version as being sent, and the build waits
 // for that mark to go. One sending per system and version at a time.
 func (m *Module) sendTools(site, key, platform, version string) {
-	m.queued(slice16(key)+"|"+site+"|go/"+version, func() {
+	m.queued(keyID(key)+"|"+site+"|go/"+version, func() {
 		m.send(site, key, "go/"+version, func(context.Context) ([]sendFile, error) { return m.toolsKit(platform) }, "the Studio's helper for "+platform)
 	})
 }
@@ -392,19 +392,14 @@ func (m *Module) sendTools(site, key, platform, version string) {
 // sendEmbed is the same for the embedding kit, which its meaning phase
 // waits for.
 func (m *Module) sendEmbed(site, key, platform, version string) {
-	m.queued(slice16(key)+"|"+site+"|embed/"+version, func() {
+	m.queued(keyID(key)+"|"+site+"|embed/"+version, func() {
 		m.send(site, key, "embed/"+version, func(ctx context.Context) ([]sendFile, error) { return m.embedKit(ctx, platform) },
 			"ONNX Runtime and the embedding model for "+platform)
 	})
 }
 
-// slice16 is key.slice(-16).
-func slice16(key string) string {
-	if len(key) <= 16 {
-		return key
-	}
-	return key[len(key)-16:]
-}
+// keyID stands for a key in the module's maps (remote.KeyID).
+func keyID(key string) string { return remote.KeyID(key) }
 
 func (m *Module) queued(k string, job func()) {
 	m.mu.Lock()

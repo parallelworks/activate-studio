@@ -326,7 +326,7 @@ func (m *Module) sendGufi(ctx context.Context, site, key string) error {
 		return apierr.New(409, "The Studio has no copy of GUFI to send.")
 	}
 	var err error
-	m.queued(slice16(key)+"|"+site+"|gufi/"+version, func() {
+	m.queued(keyID(key)+"|"+site+"|gufi/"+version, func() {
 		pr, pw := io.Pipe()
 		go func() {
 			pw.CloseWithError(writeTarGz(pw, dir, []string{"bin", "lib", "licenses", "manifest.json", "README.txt"}))

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 // A pw code daemon on another machine is reached the way `pw code attach`
@@ -92,11 +93,7 @@ func (s *Service) SetBridgeSpawn(fn func(resource, key string) *exec.Cmd) {
 // Remote is remoteDaemon: a client for the user's daemon on resource,
 // authenticated with key.
 func (s *Service) Remote(resource, key string) Client {
-	k := key
-	if len(k) > 16 {
-		k = k[len(k)-16:]
-	}
-	return &remoteClient{s: s, id: k + "|" + resource, resource: resource, key: key}
+	return &remoteClient{s: s, id: remote.KeyID(key) + "|" + resource, resource: resource, key: key}
 }
 
 type remoteClient struct {
