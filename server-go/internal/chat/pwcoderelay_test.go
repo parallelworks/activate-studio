@@ -85,6 +85,10 @@ func TestContinueASessionOnAnotherMachineThroughTheRelay(t *testing.T) {
 	if code, _, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap3", `{"kind":"plan","allowed":false,"message":"split step 2"}`); code != 200 {
 		t.Errorf("plan: %d", code)
 	}
+	// The machine refuses a remote answer's mode above its ceiling,
+	// accept-edits by default.
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap5", `{"kind":"plan","allowed":true}`)
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap6", `{"kind":"plan","allowed":true,"mode":"auto"}`)
 	if code, _, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap4", `{"kind":"ask","answers":[{"question":"Which mesh?"}]}`); code != 400 {
 		t.Errorf("an unanswered question: %d", code)
 	}
@@ -92,6 +96,8 @@ func TestContinueASessionOnAnotherMachineThroughTheRelay(t *testing.T) {
 		`ap1 {"allowed":true}`,
 		`ap2 {"answers":[{"question":"Which mesh?","picked":["Fine"]},{"question":"Why?","picked":[],"text":"accuracy"}]}`,
 		`ap3 {"allowed":false,"feedback":"split step 2"}`,
+		`ap5 {"allowed":true,"mode":"accept-edits"}`,
+		`ap6 {"allowed":true,"mode":"accept-edits"}`,
 	}
 	if strings.Join(remote.answers, "\n") != strings.Join(want, "\n") || len(local.answers) != 0 {
 		t.Errorf("answers:\n%s\nwant\n%s", strings.Join(remote.answers, "\n"), strings.Join(want, "\n"))

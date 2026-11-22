@@ -961,6 +961,8 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 			Answers []askAnswer `json:"answers"`
 			Chat    bool        `json:"chat"`
 			Kind    string      `json:"kind"`
+			// Mode is what an approved plan leaves plan mode into.
+			Mode string `json:"mode"`
 		}
 		if rb.Present {
 			_ = json.Unmarshal(rb.Raw, &in)
@@ -976,7 +978,9 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 			return reqbody.OK(w, reqbody.O("ok", true))
 		}
 		answer := jsonv.NewObject("allowed", in.Allowed)
-		if in.Kind == "plan" && !in.Allowed {
+		if in.Kind == "plan" && in.Allowed {
+			answer.Set("mode", planMode(in.Mode, t.relay))
+		} else if in.Kind == "plan" && !in.Allowed {
 			if msg := sliceRunes(strings.TrimSpace(in.Message), 2000); msg != "" {
 				answer.Set("feedback", msg)
 			}
@@ -992,6 +996,25 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		}
 		return reqbody.OK(w, reqbody.O("ok", true))
 	})
+}
+
+// planMode is the mode an approved plan's session leaves plan mode into.
+// pw code changes the mode only when the answer names one, so without it
+// the session stays in plan mode and refuses every edit. The direct path
+// takes auto, as the terminal's Approve does; through the relay the
+// machine refuses a mode above its remote ceiling, accept-edits unless its
+// owner widened it, so that is the default there.
+func planMode(asked string, relay bool) string {
+	switch asked {
+	case "auto", "accept-edits":
+		if !(relay && asked == "auto") {
+			return asked
+		}
+	}
+	if relay {
+		return "accept-edits"
+	}
+	return "auto"
 }
 
 func approvalRe(s string) bool {

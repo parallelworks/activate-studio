@@ -347,6 +347,15 @@ func TestPWCodeApprovalReachesTheChatAndIsAnswered(t *testing.T) {
 	if code != 200 || out["ok"] != true || len(f.answers) != 1 || !strings.Contains(f.answers[0], `"allowed":false`) || !strings.Contains(f.answers[0], "Denied from the Studio.") {
 		t.Errorf("%d %v %v", code, out, f.answers)
 	}
+	// An approved plan names the mode it leaves plan mode into, or the
+	// session stays in plan mode.
+	f.answers = nil
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+c.ID+"/approvals/ap-3", `{"kind":"plan","allowed":true}`)
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+c.ID+"/approvals/ap-4", `{"kind":"plan","allowed":true,"mode":"accept-edits"}`)
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+c.ID+"/approvals/ap-5", `{"kind":"plan","allowed":true,"mode":"bypass-permissions"}`)
+	if got := strings.Join(f.answers, "\n"); got != `ap-3 {"allowed":true,"mode":"auto"}`+"\n"+`ap-4 {"allowed":true,"mode":"accept-edits"}`+"\n"+`ap-5 {"allowed":true,"mode":"auto"}` {
+		t.Errorf("plan approvals:\n%s", got)
+	}
 	plain := m.Conv.Create(nil, "")
 	if st := get(t, base+"/api/chat/pwcode/"+plain.ID); st["session"] != nil || st["status"] != "idle" {
 		t.Errorf("a chat without pw code: %v", st)
