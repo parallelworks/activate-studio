@@ -86,6 +86,13 @@ function dotFor(s: CodeSession): { variant?: 'info' | 'warning' | 'error' | 'suc
   return { off: true }
 }
 
+/** A session's key across machines. */
+const sessionKey = (s: { machineId: string; id: string }) => `${s.machineId}/${s.id}`
+/** Whether a session is at work, so its conversation is still growing. */
+const busy = (s?: CodeSession) => !!s && (s.status === 'running' || s.status === 'awaiting_approval')
+/** Whether a scroller shows its end, give or take a line. */
+export const isAtEnd = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 40
+
 async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url)
   const body = await res.json().catch(() => ({}))
@@ -129,10 +136,11 @@ export function CodeView() {
   const [open, setOpen] = useState<CodeSession | null>(null)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [detailError, setDetailError] = useState('')
-  // A session opens at its latest messages, as a chat does; later reads
-  // of the same session leave the scroll where the reader put it.
   const detailRef = useRef<HTMLDivElement>(null)
-  const scrolledFor = useRef('')
+  // Whether the reader is at the end of the conversation: a session opens
+  // there, as a chat does, and stays there as new output arrives or the
+  // pane changes size; once they scroll up it stays where they put it.
+  const atEnd = useRef(true)
   const [here, setHere] = useState<Here | null>(null)
   const [delegated, setDelegated] = useState<Map<string, Delegated>>(new Map())
   const [onlyDelegated, setOnlyDelegated] = useState(false)
@@ -173,33 +181,76 @@ export function CodeView() {
   }, [asked, rows])
   const chatFor = useMemo(() => new Map((here?.chats ?? []).map(c => [c.session, c.conversationId])), [here])
 
+  // The session the pane shows: a read that comes back after another
+  // session was chosen is dropped, so a slow read never replaces a later one.
+  const openKey = open ? sessionKey(open) : ''
+  const wanted = useRef('')
+  wanted.current = openKey
   const loadDetail = useCallback(async (s: CodeSession) => {
+    const key = sessionKey(s)
     try {
       const q = new URLSearchParams({ machine: s.machineId, id: s.id, machineName: s.machine })
-      setDetail(await getJSON<Detail>(`/api/code-sessions/item?${q}`)); setDetailError('')
+      const d = await getJSON<Detail>(`/api/code-sessions/item?${q}`)
+      if (wanted.current !== key) return
+      setDetail(d); setDetailError('')
     } catch (e) {
-      setDetailError((e as Error).message)
+      if (wanted.current === key) setDetailError((e as Error).message)
     }
   }, [])
-  // A session at work is read again every 5 seconds.
+  // The list as last read, for the timer below, which outlives a render.
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+  const detailNow = useRef(detail)
+  detailNow.current = detail
+  // A session at work is read again every 5 seconds: at work as the list
+  // last saw it or as its own last read said.
   useEffect(() => {
     if (!open) return
-    setDetail(null); setDetailError('')
+    setDetail(null); setDetailError(''); atEnd.current = true
     void loadDetail(open)
     const t = setInterval(() => {
-      const live = rows?.find(r => r.id === open.id && r.machineId === open.machineId)
-      if (document.visibilityState === 'visible' && live && (live.status === 'running' || live.status === 'awaiting_approval')) void loadDetail(open)
+      const live = rowsRef.current?.find(r => sessionKey(r) === sessionKey(open))
+      const shown = detailNow.current?.session
+      if (document.visibilityState === 'visible' && (busy(live) || busy(shown))) void loadDetail(open)
     }, 5_000)
     return () => clearInterval(t)
-  }, [open?.id, open?.machineId]) // eslint-disable-line react-hooks/exhaustive-deps
-
+  }, [openKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  // When the list says the open session moved on (a new turn, or a turn
+  // that started or finished since its last read), it is read again now.
+  const liveRow = rows?.find(r => sessionKey(r) === openKey)
+  const liveMark = liveRow ? `${liveRow.status}|${liveRow.updatedAt ?? ''}|${liveRow.messages}|${liveRow.waiting ?? 0}` : ''
+  const readMark = useRef('')
   useEffect(() => {
-    const key = detail ? `${detail.session.machineId}/${detail.session.id}` : ''
+    if (!open || !liveMark) return
+    const was = readMark.current
+    readMark.current = `${openKey}#${liveMark}`
+    if (was && was.startsWith(`${openKey}#`) && was !== readMark.current) void loadDetail(open)
+  }, [openKey, liveMark]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the end in view while the reader is at it: when the transcript
+  // grows and when the pane changes size. A scroll the reader makes says
+  // whether they are at the end; one the browser makes when the size
+  // changes does not.
+  useEffect(() => {
     const el = detailRef.current
-    if (!key || !el || scrolledFor.current === key) return
-    scrolledFor.current = key
-    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
-  }, [detail])
+    if (!el) return
+    let size = ''
+    const measure = () => `${el.clientWidth}x${el.clientHeight}x${el.scrollHeight}`
+    const toEnd = () => { if (atEnd.current) el.scrollTop = el.scrollHeight; size = measure() }
+    const onScroll = () => {
+      const now = measure()
+      if (now === size) atEnd.current = isAtEnd(el)
+      size = now
+    }
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(toEnd)
+    ro?.observe(el)
+    for (const c of Array.from(el.children)) ro?.observe(c)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    toEnd()
+    return () => { ro?.disconnect(); el.removeEventListener('scroll', onScroll) }
+  }, [detail, open])
+
+  const shownDetail = detail && sessionKey(detail.session) === openKey ? detail : null
 
   const groups = useMemo(() => {
     const q = filter.trim().toLowerCase()
@@ -267,8 +318,8 @@ export function CodeView() {
       </div>
       <div className="code-detail" ref={detailRef}>
         {!open && <EmptyState variant="bare" title="Choose a session" description="Its conversation shows here. Continue it in a Studio chat, or open it in ACTIVATE to answer, approve or steer it." />}
-        {open && <SessionDetail s={detail?.session ?? open} detail={detail} error={detailError}
-          can={continuable(detail?.session ?? open, machines, here)} chat={chatFor.get(open.id)} onContinued={() => void loadHere()} delegated={delegated.get(open.id)} />}
+        {open && <SessionDetail s={shownDetail?.session ?? open} detail={shownDetail} error={detailError}
+          can={continuable(shownDetail?.session ?? open, machines, here)} chat={chatFor.get(open.id)} onContinued={() => void loadHere()} delegated={delegated.get(open.id)} />}
       </div>
     </div>
   )

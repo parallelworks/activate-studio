@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ago, argSummary, CodeView, continuable, groupSessions, sessionInHash, shortPath, Transcript, type CodeSession, type Here } from '../src/views/CodeView'
+import { ago, argSummary, CodeView, continuable, groupSessions, isAtEnd, sessionInHash, shortPath, Transcript, type CodeSession, type Here } from '../src/views/CodeView'
 import { getEngine } from '../src/labelScope'
 
 const row = (o: Partial<CodeSession>): CodeSession => ({ machineId: 'm', machine: 'm1', id: 'x', title: 't', messages: 1, status: 'idle', url: '', ...o })
@@ -161,5 +161,57 @@ describe('Continue in Studio', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open the Studio chat' }))
     expect(location.hash).toBe('#chat=c-old')
     expect(calls.some(c => c.startsWith('POST'))).toBe(false)
+  })
+})
+
+describe('The open session', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+  const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  const said = (text: string) => [{ kind: 'assistant', text }]
+
+  it('shows the session last chosen when an earlier, slower read comes back after it', async () => {
+    let slow: (r: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/code-sessions') return json({ machines: [], codeUrl: '', sessions: [row({ id: 'big', title: 'Big one' }), row({ id: 'small', title: 'Small one' })] })
+      if (url.includes('id=big')) return new Promise<Response>(res => { slow = res })
+      if (url.includes('id=small')) return json({ session: row({ id: 'small', title: 'Small one' }), history: said('From the small one'), earlier: 0 })
+      return json({ available: false, chats: [] })
+    }))
+    render(<CodeView />)
+    fireEvent.click(await screen.findByText('Big one'))
+    fireEvent.click(screen.getByText('Small one'))
+    expect(await screen.findByText('From the small one')).toBeInTheDocument()
+    slow(json({ session: row({ id: 'big', title: 'Big one' }), history: said('From the big one'), earlier: 0 }))
+    await new Promise(r => setTimeout(r, 20))
+    expect(screen.queryByText('From the big one')).toBeNull()
+    expect(screen.getByText('From the small one')).toBeInTheDocument()
+  })
+
+  it('reads a session opened while ready again once the list says it moved on', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let status = 'idle', reply = 'First reply'
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/code-sessions') return json({ machines: [], codeUrl: '', sessions: [row({ id: 's', title: 'Session', status, updatedAt: status === 'idle' ? '2026-11-21T10:00:00Z' : '2026-11-21T10:05:00Z' })] })
+      if (url.startsWith('/api/code-sessions/item')) return json({ session: row({ id: 's', title: 'Session', status }), history: said(reply), earlier: 0 })
+      return json({ available: false, chats: [] })
+    }))
+    const { container } = render(<CodeView />)
+    fireEvent.click(await screen.findByText('Session'))
+    expect(await screen.findByText('First reply')).toBeInTheDocument()
+    // A message from somewhere else: the list sees it working.
+    status = 'running'; reply = 'Working on it'
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(await screen.findByText('Working on it')).toBeInTheDocument()
+    expect(container.querySelector('.code-status')?.textContent).toBe('Working')
+    // It keeps being read while it works, and its last turn shows once done.
+    status = 'idle'; reply = 'All done'
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(await screen.findByText('All done')).toBeInTheDocument()
+  })
+
+  it('knows when the reader is at the end', () => {
+    const el = { scrollHeight: 1000, clientHeight: 400, scrollTop: 600 } as HTMLElement
+    expect(isAtEnd(el)).toBe(true)
+    expect(isAtEnd({ ...el, scrollTop: 300 } as HTMLElement)).toBe(false)
   })
 })
