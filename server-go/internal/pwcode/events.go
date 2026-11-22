@@ -57,7 +57,7 @@ func Follow(ctx context.Context, c Client, id string, after int64, fn func(ev *j
 		stop := context.AfterFunc(ctx, func() { ws.Close() })
 		defer stop()
 		defer ws.Close()
-		return receive(ctx, ws, fn)
+		return receive(ctx, ws, fn, relayIdle)
 	}
 	d, ok := c.(Dialer)
 	if !ok {
@@ -85,7 +85,7 @@ func Follow(ctx context.Context, c Client, id string, after int64, fn func(ev *j
 		}
 		return err
 	}
-	return receive(ctx, ws, fn)
+	return receive(ctx, ws, fn, 0)
 }
 
 // Seq is an event's seq, or 0.

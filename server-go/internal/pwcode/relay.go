@@ -57,8 +57,13 @@ var relayed = map[string]bool{
 	"POST /approvals/": true,
 }
 
-// relayHeartbeat is the heartbeat the platform Code page asks of the feed.
+// relayHeartbeat is the heartbeat the platform Code page asks of the feed:
+// a {"type":"heartbeat"} frame every 10 seconds.
 const relayHeartbeat = 10
+
+// relayIdle is how long the feed may send nothing, three heartbeats, before
+// the link to the platform is taken as lost.
+var relayIdle = 3 * relayHeartbeat * time.Second
 
 // RelayClient drives the sessions on one machine through the platform at
 // origin, with key: the person's own ACTIVATE credential, never the
@@ -234,9 +239,14 @@ type Streamer interface {
 var _ Streamer = (*RelayClient)(nil)
 
 // receive reads frames from ws until fn returns false or the feed ends.
-func receive(ctx context.Context, ws *websocket.Conn, fn func(ev *jsonv.Object) bool) error {
+// With idle, a feed that sends nothing, not even its heartbeat, for that
+// long is a lost link; heartbeats are not passed to fn.
+func receive(ctx context.Context, ws *websocket.Conn, fn func(ev *jsonv.Object) bool, idle time.Duration) error {
 	ws.MaxPayloadBytes = 32 << 20
 	for {
+		if idle > 0 {
+			_ = ws.SetReadDeadline(time.Now().Add(idle))
+		}
 		var msg string
 		if err := websocket.Message.Receive(ws, &msg); err != nil {
 			if ctx.Err() != nil {
@@ -245,13 +255,21 @@ func receive(ctx context.Context, ws *websocket.Conn, fn func(ev *jsonv.Object) 
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
+			var ne net.Error
+			if idle > 0 && errors.As(err, &ne) && ne.Timeout() {
+				return &DaemonError{Message: "ACTIVATE sent nothing on the session's events for " + idle.String() + ", so the link to it was lost; the session may still be working, and the Code page shows it"}
+			}
 			return err
 		}
 		v, err := jsonv.Decode([]byte(msg))
 		if err != nil {
 			continue
 		}
-		if o := jsonv.Obj(v); o != nil && !fn(o) {
+		o := jsonv.Obj(v)
+		if o == nil || idle > 0 && jsonv.String(jsonv.Path(o, "type")) == "heartbeat" {
+			continue
+		}
+		if !fn(o) {
 			return nil
 		}
 	}

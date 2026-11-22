@@ -122,3 +122,41 @@ func TestTheRelaysEventsOpenOnAPlatformThatOffersHTTP2(t *testing.T) {
 		t.Errorf("handshake: %+v", seen)
 	}
 }
+
+func TestASilentRelayEndsTheTurnAndHeartbeatsKeepItOpen(t *testing.T) {
+	was := relayIdle
+	relayIdle = 300 * time.Millisecond
+	defer func() { relayIdle = was }()
+	quit := make(chan struct{})
+	defer close(quit)
+	srv := httptest.NewServer(websocket.Server{Handler: func(ws *websocket.Conn) {
+		if ws.Request().URL.Path == "/ws/code/machines/m2/sessions/beats/events" {
+			// Heartbeats only, for longer than the idle limit, then done.
+			for range 6 {
+				websocket.Message.Send(ws, `{"type":"heartbeat","seq":0}`)
+				time.Sleep(100 * time.Millisecond)
+			}
+			websocket.Message.Send(ws, `{"seq":7,"type":"done"}`)
+			return
+		}
+		websocket.Message.Send(ws, `{"seq":5,"type":"chunk","content":"hi"}`)
+		<-quit
+	}})
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var got []string
+	seen := func(ev *jsonv.Object) bool {
+		got = append(got, jsonv.String(jsonv.Path(ev, "type")))
+		return jsonv.String(jsonv.Path(ev, "type")) != "done"
+	}
+	started := time.Now()
+	err := Follow(ctx, Relay(srv.URL, "k", "m2"), "silent", 0, seen)
+	if err == nil || !strings.Contains(err.Error(), "sent nothing on the session's events") || time.Since(started) > 2*time.Second || strings.Join(got, ",") != "chunk" {
+		t.Errorf("a silent link: %v after %s, saw %v", err, time.Since(started), got)
+	}
+	got = nil
+	if err := Follow(ctx, Relay(srv.URL, "k", "m2"), "beats", 0, seen); err != nil || strings.Join(got, ",") != "done" {
+		t.Errorf("heartbeats: %v, saw %v", err, got)
+	}
+}
