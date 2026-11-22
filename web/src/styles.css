@@ -3396,6 +3396,6 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
   .cli-contexts thead, .cli-contexts tr:has(> th) { display: none; }
   .cli-contexts, .cli-contexts tbody { display: block; width: 100%; }
   .cli-contexts tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding: 8px 12px; }
-  .cli-contexts td { display: block; padding: 0; white-space: normal; }
+  .cli-contexts td { display: block; height: auto; padding: 0; white-space: normal; }
   .cli-contexts td:last-child { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
 }

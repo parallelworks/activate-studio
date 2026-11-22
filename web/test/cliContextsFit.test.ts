@@ -11,4 +11,9 @@ describe('the pw CLI contexts fit a narrow section', () => {
     expect(css).toMatch(/\.cli-contexts code \{[^}]*overflow-wrap: anywhere/)
     expect(css).toMatch(/@container \(max-width: 560px\) \{[^@]*\.cli-contexts tr \{[^}]*display: grid/)
   })
+  // T2: a stacked cell kept the table's fixed h-8 height, so a long name
+  // that wrapped ran over the platform line under it.
+  it('lets a stacked cell grow with a wrapped name', () => {
+    expect(css).toMatch(/@container \(max-width: 560px\) \{[^@]*\.cli-contexts td \{[^}]*height: auto/)
+  })
 })
