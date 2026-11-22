@@ -657,6 +657,12 @@ var trailingSemi = regexp.MustCompile(`;[` + jsSpace + `]*$`)
 // RawPlan is rawPlan: one read-only SELECT, run in every directory.
 func RawPlan(sql, subtree string) (Plan, error) {
 	cleaned := trailingSemi.ReplaceAllString(JSTrim(sql), "")
+	if strings.IndexByte(cleaned, 0) >= 0 {
+		return Plan{}, apierr.New(400, "the statement contains a NUL character")
+	}
+	if n := RefusedName(cleaned); n != "" {
+		return Plan{}, apierr.New(400, "%s is not allowed in a query: it runs a program or opens a file", n)
+	}
 	if !selectRe.MatchString(cleaned) {
 		return Plan{}, apierr.New(400, "only SELECT statements are allowed")
 	}
