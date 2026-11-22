@@ -538,6 +538,8 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
    scoped to .explorer; the agents' task tree and the JSON viewer use the
    same row class and keep their own. */
 .explorer { overflow: auto; flex: 1; padding: 4px; }
+/* An empty library, or one that could not be listed, says so at the top. */
+.explorer .tree-empty { margin: 8px 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .explorer .tree-row {
   display: flex; align-items: center; gap: 5px;
   min-height: 24px; padding: 2px 8px; line-height: 20px; cursor: pointer; border-radius: 4px;

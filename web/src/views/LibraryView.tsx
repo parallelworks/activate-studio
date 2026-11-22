@@ -655,6 +655,9 @@ export function LibraryView({ display, onDisplay }: {
                 onDirFocus={dir => { anchor.current = dir; setTargetDir(dir || uploadsDir); selectLibraryEntry({ path: dir, isDir: true }) }}
                 selected={selectedFile}
                 rootLabel={cfg.kbLabel}
+                emptyHint={writable
+                  ? 'Nothing here yet. Add files with + Add, by dropping them here, or with Transfers.'
+                  : 'Nothing here yet.'}
                 multiSelected={multiSel}
                 onToggleMulti={toggleMulti}
                 onDropInto={(dir, items) => { if (writableAt(dir) || libOffer.allowed) void uploadTo(dir, items) }}
