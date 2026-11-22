@@ -21,7 +21,8 @@ import { chooseUpload, onShellDrop, shellListsFolders } from '../nativeShell'
 import { downloadPath } from '../libraryDownload'
 import { startPathJob, startUpload } from '../transfers'
 import { TransferPanel } from '../components/TransferPanel'
-import { selectLibraryEntry } from '../components/LibraryDetails'
+import { forgetSelectionUnder, renameSelection, selectLibraryEntry } from '../components/LibraryDetails'
+import { libraryWritten } from '../libraryCatchUp'
 import { ShareDialog } from '../components/ShareDialog'
 import { ResultsTransferDialog, useTransfersShown, type ResultItem } from '../components/ResultsTransfer'
 import { destinationWhy, libraryLocation, transferApi } from '../transferApi'
@@ -92,16 +93,18 @@ export function LibraryView({ display, onDisplay }: {
     if (t.isDir) {
       setDeleteTarget(null)
       if (display?.kind === 'file' && display.target.startsWith(t.path + '/')) onDisplay(null)
+      forgetSelectionUnder(t.path)
       void startPathJob('delete', [t.path], '', () => api.deleteDirJob(t.path))
       return
     }
     setDeleteTarget({ ...t, error: '' })
     try {
       await api.deleteFile(t.path)
-      window.dispatchEvent(new Event('ade-kb-changed'))
       if (display?.kind === 'file' && typeof display.target === 'string' && (display.target === t.path || display.target.startsWith(t.path + '/'))) onDisplay(null)
+      // The Details card describes the library again, not the file deleted.
+      forgetSelectionUnder(t.path)
       setRefreshKey(k => k + 1)
-      window.dispatchEvent(new Event('ade-kb-changed'))
+      libraryWritten()
       setDeleteTarget(null)
     } catch (e) {
       setDeleteTarget({ ...t, error: String((e as Error).message ?? e) })
@@ -118,13 +121,15 @@ export function LibraryView({ display, onDisplay }: {
         const r = await api.rename(d.path, d.value.trim())
         // A renamed file that is open in the viewer should follow its name.
         if (r.renamed && !d.isDir && selectedFile === d.path) onDisplay({ kind: 'file', target: r.renamed.to })
-        window.dispatchEvent(new CustomEvent('ade-kb-changed'))
+        // The Details card follows the new name.
+        if (r.renamed) renameSelection(r.renamed.from, r.renamed.to)
+        libraryWritten()
       } else {
         const name = d.value.trim().replace(/^\/+|\/+$/g, '')
         const r = await api.mkdir(d.path ? `${d.path}/${name}` : name)
         setTargetDir(r.created)
         setRefreshKey(k => k + 1)
-        window.dispatchEvent(new Event('ade-kb-changed'))
+        libraryWritten()
       }
       setNameDialog(null)
     } catch (e) {
@@ -138,6 +143,7 @@ export function LibraryView({ display, onDisplay }: {
     const files = [...multiSel]
     setMultiSel(new Set())
     if (display?.kind === 'file' && files.includes(display.target)) onDisplay(null)
+    for (const f of files) forgetSelectionUnder(f)
     void startPathJob('delete', files, '', paths => api.deleteJob(paths))
   }
   const drag = useRef<{ startX: number; startWidth: number } | null>(null)
