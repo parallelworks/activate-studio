@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -99,6 +100,10 @@ type Agent struct {
 	SessionTokens float64 `json:"sessionTokens,omitempty"`
 	// Sessions are its earlier sessions, oldest first.
 	Sessions []string `json:"sessions,omitempty"`
+	// Starting is set while a wake-up starts its session, and cleared when
+	// it is working or failed; one still set when the Studio reads the
+	// record was cut off by a restart.
+	Starting bool `json:"starting,omitempty"`
 	// Migrated says what did not carry over from the earlier engine.
 	Migrated string `json:"migrated,omitempty"`
 
@@ -209,6 +214,13 @@ func (f *Fleet) load() {
 		}
 		if a.Engine != "pwcode" {
 			f.takeOver(&a)
+		}
+		if a.Starting {
+			// The Studio stopped while this wake-up started: nothing is
+			// working, and nothing would follow it.
+			a.Starting = false
+			f.scheduleNext(&a)
+			f.setState(&a, "idle", "its wake-up was cut off when the Studio stopped; it wakes on its next trigger")
 		}
 		f.set(&a)
 	}
@@ -470,6 +482,51 @@ func (f *Fleet) newestMtime(rel string, skip ...string) float64 {
 	}
 	walk(filepath.Join(f.A.Cfg.KBRoot, filepath.FromSlash(rel)), 0)
 	return newest
+}
+
+// NoOwner is the note on an agent that would wake on a Studio with
+// sign-in without the record of the person it acts for: one taken over
+// from the earlier engine, which kept only their id.
+const NoOwner = "waiting for its owner: it was made before agents acted for the person who made them; it wakes again once its owner opens the Fleet page"
+
+// Seen brings the record of the person u acts for up to date in each of
+// their agents (their groups and sign-in, which decide what the agent may
+// change), and wakes again the agents that waited for it.
+func (f *Fleet) Seen(u *auth.User) {
+	if u == nil || u.ID == "" || !f.A.Cfg.AuthEnabled() {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.load()
+	for _, id := range f.order {
+		a := f.agents[id]
+		if a.Owner == nil || *a.Owner != u.ID || a.State == "retired" {
+			continue
+		}
+		if sameRights(a.OwnerUser, u) && a.Note != NoOwner {
+			continue
+		}
+		c := *u
+		a.OwnerUser = &c
+		if a.State == "paused" && a.Note == NoOwner {
+			f.scheduleNext(a)
+			f.setState(a, "idle", "its owner is known again; waiting for the next trigger")
+			continue
+		}
+		f.persist(a)
+	}
+}
+
+// sameRights says whether two records of a person decide the same
+// rights: the same id, name, e-mail and groups. A new sign-in's other
+// claims (its times) do not count, so a list does not rewrite records.
+func sameRights(a, b *auth.User) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	email := func(u *auth.User) string { e, _ := u.Claims["email"].(string); return e }
+	return a.ID == b.ID && a.Username == b.Username && email(a) == email(b) && slices.Equal(a.Groups, b.Groups)
 }
 
 func (f *Fleet) setState(a *Agent, state, note string) {

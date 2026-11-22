@@ -60,6 +60,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		if err := gate(); err != nil {
 			return nil, err
 		}
+		f.Seen(auth.UserOf(r))
 		f.Follow(r.Context())
 		return map[string]any{"agents": f.For(r)}, nil
 	}))
