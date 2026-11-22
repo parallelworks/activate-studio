@@ -78,3 +78,25 @@ func TestTheChatsAgentToolsKeepToTheirOwnersSessions(t *testing.T) {
 		t.Fatalf("bob's calls reached the daemon: %v", got)
 	}
 }
+
+// Review 2, R1: a session given by name is looked up among the person's
+// own on this host: another's is neither listed back nor matched, so its
+// name and state stay theirs.
+func TestASessionByNameIsLookedUpAmongTheirOwn(t *testing.T) {
+	m, bob, touched := localOwners(t)
+	out, err := goExecutors["agent_status"](m, bob, map[string]any{"site": "local", "session": "report"}, ToolCtx{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.Result, "adaada") || strings.Contains(out.Result, "weekly report") || strings.Contains(out.Result, "cycycy") || !strings.Contains(out.Result, "No session on that site matches") {
+		t.Fatalf("bob by name: %s", out.Result)
+	}
+	if got := touched(); len(got) != 0 {
+		t.Fatalf("bob's call reached the daemon: %v", got)
+	}
+	ada := auth.WithUser(httptest.NewRequest("POST", "/api/chat", nil), &auth.User{ID: "ada"})
+	out, err = goExecutors["agent_status"](m, ada, map[string]any{"site": "local", "session": "report"}, ToolCtx{})
+	if err != nil || strings.Contains(out.Result, "More than one") {
+		t.Fatalf("ada by name: %v %+v", err, out)
+	}
+}
