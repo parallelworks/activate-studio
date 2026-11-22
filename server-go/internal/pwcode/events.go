@@ -49,6 +49,16 @@ var ErrNoStream = errors.New("this pw code daemon offers no event stream here")
 // Follow reads session id's events after seq after (0 for all), calling
 // fn with each until fn returns false, the stream ends or ctx ends.
 func Follow(ctx context.Context, c Client, id string, after int64, fn func(ev *jsonv.Object) bool) error {
+	if st, ok := c.(Streamer); ok {
+		ws, err := st.Stream(ctx, id, after)
+		if err != nil {
+			return err
+		}
+		stop := context.AfterFunc(ctx, func() { ws.Close() })
+		defer stop()
+		defer ws.Close()
+		return receive(ctx, ws, fn)
+	}
 	d, ok := c.(Dialer)
 	if !ok {
 		return ErrNoStream
@@ -75,30 +85,7 @@ func Follow(ctx context.Context, c Client, id string, after int64, fn func(ev *j
 		}
 		return err
 	}
-	ws.MaxPayloadBytes = 32 << 20
-	for {
-		var msg string
-		if err := websocket.Message.Receive(ws, &msg); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		}
-		v, err := jsonv.Decode([]byte(msg))
-		if err != nil {
-			continue
-		}
-		o := jsonv.Obj(v)
-		if o == nil {
-			continue
-		}
-		if !fn(o) {
-			return nil
-		}
-	}
+	return receive(ctx, ws, fn)
 }
 
 // Seq is an event's seq, or 0.
