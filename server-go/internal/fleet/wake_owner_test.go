@@ -249,3 +249,49 @@ func TestAStandingAgentStartsOnAModelOffered(t *testing.T) {
 		t.Fatal("the journal does not say the model moved")
 	}
 }
+
+// Review 2, R2: an agent recorded before owners' visits and sessions'
+// rights were kept keeps its group rights and its session at the upgrade:
+// its owner counts as seen then, and its session as made with the rights
+// it acts with.
+func TestAnAgentFromBeforeTheUpgradeIsUnchanged(t *testing.T) {
+	f, d, _ := stand(t)
+	f.A.Cfg.Auth.JWKSURL = "https://id.platform.example/jwks"
+	defer func(g func(string) string) { mainlib.Getenv = g }(mainlib.Getenv)
+	mainlib.Getenv = func(k string) string {
+		if k == "STUDIO_ADMINS" {
+			return "group:leads"
+		}
+		return ""
+	}
+	ada := &auth.User{ID: "ada", Username: "ada", Groups: []string{"leads"}}
+	a, err := f.Create(Input{Name: "Digest", Goal: "Count.", Every: "manual"}, ada)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Tick(a.ID, "now", true) {
+		t.Fatal("no wake-up")
+	}
+	waitFor(t, "the wake-up", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
+	first := f.Get(a.ID).Session
+	d.finish(first, "done", 1)
+	f.follow(context.Background())
+	// The record as the release before wrote it.
+	f.mu.Lock()
+	cur := f.agents[a.ID]
+	cur.OwnerSeenAt, cur.SessionRights = "", ""
+	f.persist(cur)
+	f.mu.Unlock()
+
+	g := New(f.A, f.Daemon)
+	if _, _, in := g.folder(g.Get(a.ID)); !in {
+		t.Fatal("a group administrator's agent works outside the library after the upgrade")
+	}
+	if !g.Tick(a.ID, "now", true) {
+		t.Fatal("no wake-up after the upgrade")
+	}
+	waitFor(t, "the wake-up", func() bool { g.mu.Lock(); defer g.mu.Unlock(); return !g.busy[a.ID] })
+	if s := g.Get(a.ID).Session; s != first {
+		t.Fatalf("the session was started again at the upgrade: %s then %s", first, s)
+	}
+}

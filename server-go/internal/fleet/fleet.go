@@ -221,6 +221,17 @@ func (f *Fleet) load() {
 		if a.Engine != "pwcode" {
 			f.takeOver(&a)
 		}
+		// A record from before owners' visits and sessions' rights were
+		// kept: its owner counts as seen now, and its session as made with
+		// the rights it acts with now, so nothing changes at the upgrade
+		// until the first real check (a visit, or 7 days).
+		if a.OwnerUser != nil && a.OwnerSeenAt == "" {
+			a.OwnerSeenAt = now()
+			if a.Session != "" && a.SessionRights == "" {
+				a.SessionRights = rightsKey(actsAs(&a))
+			}
+			f.persist(&a)
+		}
 		if a.Starting {
 			// The Studio stopped while this wake-up started: nothing is
 			// working, and nothing would follow it.
