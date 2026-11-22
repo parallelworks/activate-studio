@@ -52,7 +52,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [agents, setAgents] = useState<Agent[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [open, setOpen] = useState<string | null>(null)
-  const [detail, setDetail] = useState<{ agent: Agent; journal: Journal[]; session: SessionView | null } | null>(null)
+  const [detail, setDetail] = useState<{ agent: Agent; journal: Journal[]; session: SessionView | null; approval?: { id: string; text: string } | null } | null>(null)
   const [message, setMessage] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,7 +71,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   useEffect(() => {
     if (!open) { setDetail(null); return }
     let stop = false
-    const load = () => fetch(`/api/fleet/${encodeURIComponent(open)}`).then(r => r.json()).then(d => { if (!stop && d.agent) setDetail({ agent: d.agent, journal: d.journal ?? [], session: d.session ?? null }) }).catch(() => {})
+    const load = () => fetch(`/api/fleet/${encodeURIComponent(open)}`).then(r => r.json()).then(d => { if (!stop && d.agent) setDetail({ agent: d.agent, journal: d.journal ?? [], session: d.session ?? null, approval: d.approval ?? null }) }).catch(() => {})
     load()
     const t = setInterval(load, 5_000)
     return () => { stop = true; clearInterval(t) }
@@ -215,7 +215,16 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
           </div>
           {detail.agent.state === 'input-required' && (
             <Callout tone="warning" size="sm" className="fleet-needs">
-              {detail.agent.note.startsWith('waiting for your approval')
+              {detail.approval
+                ? <>
+                    It waits for you to approve this call in its session:
+                    <pre className="fleet-approval-text">{detail.approval.text}</pre>
+                    <span className="fleet-approval-actions">
+                      <Button variant="primary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: true })}>Approve</Button>
+                      <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: false })}>Deny</Button>
+                    </span>
+                  </>
+                : detail.agent.note.startsWith('waiting for your approval')
                 ? <>It waits for you to approve a call in its session: approve or deny it on <a href={`#view=code?session=${encodeURIComponent(detail.agent.session ?? '')}`}>the Code page</a>.</>
                 : <>It asks: {detail.agent.note}{/[.?!]$/.test(detail.agent.note) ? '' : '.'} Answer below.</>}
             </Callout>
