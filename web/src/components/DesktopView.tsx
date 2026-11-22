@@ -79,6 +79,10 @@ async function readLogs(user: string, name: string): Promise<{ status: number; l
  *  the Studio's other pages and frames, and view ids are unique across
  *  them. */
 let resizer = ''
+/** This page's views, the one used last at the end: when the view that
+ *  resizes goes away (Full screen closed), the one used before it takes
+ *  over. */
+const views: string[] = []
 const realm = Math.random().toString(36).slice(2, 10)
 let nextView = 1
 const resizerChanged = new Set<() => void>()
@@ -92,6 +96,8 @@ function takeClaim(id: string): void {
 }
 claims?.addEventListener('message', (e: MessageEvent) => { if (typeof e.data === 'string') takeClaim(e.data) })
 function claimResize(id: string): void {
+  const at = views.indexOf(id)
+  if (at >= 0) { views.splice(at, 1); views.push(id) }
   if (resizer === id) return
   takeClaim(id)
   try { claims?.postMessage(id) } catch { /* this page's views still agree */ }
@@ -134,6 +140,7 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
     c.compressionLevel = LEVELS[q].compression
   }, [id])
   useEffect(() => {
+    views.push(id)
     claimResize(id)
     const on = () => apply(rfb.current)
     resizerChanged.add(on)
@@ -141,7 +148,13 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
     return () => {
       resizerChanged.delete(on)
       document.removeEventListener('visibilitychange', on)
-      if (resizer === id) resizer = ''
+      const at = views.indexOf(id)
+      if (at >= 0) views.splice(at, 1)
+      if (resizer === id) {
+        resizer = ''
+        const before = views[views.length - 1]
+        if (before) claimResize(before)
+      }
     }
   }, [id, apply])
 

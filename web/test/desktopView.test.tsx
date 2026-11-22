@@ -139,6 +139,17 @@ describe('DesktopView', () => {
     other.close()
   })
 
+  it('when the view that resizes goes away, the one used before it takes over', async () => {
+    const two = (both: boolean) => <><DesktopView key="a" user="alex" name="desk" />{both && <DesktopView key="b" user="alex" name="desk" />}</>
+    const { rerender } = render(two(true))
+    const b = await client(2), a = clients[0]
+    expect([a.resizeSession, b.resizeSession]).toEqual([false, true])
+    // Full screen closes.
+    rerender(two(false))
+    expect(b.disconnected).toBe(true)
+    await waitFor(() => expect(a.resizeSession).toBe(true))
+  })
+
   it('Actual size shows the desktop unscaled, with scroll bars for the rest', async () => {
     localStorage.setItem('studio.desktop.fit', 'actual')
     const { container } = render(<DesktopView user="alex" name="desk" />)
