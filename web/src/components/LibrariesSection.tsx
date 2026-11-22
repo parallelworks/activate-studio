@@ -900,9 +900,9 @@ function holds(fullText: boolean, vectors: boolean): string {
  */
 function PathLine({ host, path, what }: { host?: string; path: string; what: string }) {
   const full = host ? `${host}:${path}` : path
-  // The tail kept whole: the last two names, or the last one when that alone is long.
+  // The tail kept whole: the last two names where they are short, or the last one.
   const parts = full.split('/')
-  const keep = parts.length > 2 && parts.slice(-2).join('/').length <= 48 ? 2 : 1
+  const keep = parts.length > 2 && parts.slice(-2).join('/').length <= 28 ? 2 : 1
   const tail = parts.length > 1 ? `/${parts.slice(-keep).join('/')}` : ''
   const head = parts.length > 1 ? parts.slice(0, -keep).join('/') : full
   return (
