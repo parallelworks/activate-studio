@@ -24,6 +24,21 @@ export function selectLibraryEntry(next: Selection | null): void {
   emit()
 }
 
+const under = (p: string, root: string) => p === root || (root === '' ? true : p.startsWith(root + '/'))
+
+/** What was selected is gone (deleted, with whatever was under it). */
+export function forgetSelectionUnder(path: string): void {
+  if (selection && under(selection.path, path)) selectLibraryEntry(null)
+}
+
+/** What was selected was renamed or moved: it is selected under its new name. */
+export function renameSelection(from: string, to: string): void {
+  if (selection && under(selection.path, from)) selectLibraryEntry({ ...selection, path: to + selection.path.slice(from.length) })
+}
+
+/** What is selected now. */
+export function librarySelection(): Selection | null { return selection }
+
 function useSelection(): Selection | null {
   return useSyncExternalStore(fn => { subs.add(fn); return () => { subs.delete(fn) } }, () => selection)
 }

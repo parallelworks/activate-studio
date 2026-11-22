@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { api, type Job } from './api'
 import { uploadBatched, type UploadItem, type UploadProgress } from './upload'
+import { libraryWritten } from './libraryCatchUp'
 
 /**
  * Every upload, move, copy and delete under way in the library, each with
@@ -54,7 +55,7 @@ export function useTransfers(): readonly Transfer[] {
 }
 
 /** The files have moved: the tree shows it now, not after indexing. */
-const treeChanged = () => window.dispatchEvent(new CustomEvent('ade-kb-changed'))
+const treeChanged = () => libraryWritten()
 
 let lastTurn: Promise<unknown> = Promise.resolve()
 
