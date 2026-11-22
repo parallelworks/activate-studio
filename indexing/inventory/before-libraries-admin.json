@@ -1,0 +1,273 @@
+{
+ "text": [
+  "Every library searched here. The main folder is the only one written to; the others are indexes read where they are, built here or connected as they are.",
+  "notes · Read/write",
+  "Main folder, read and write",
+  "Folder",
+  "/Users/user/notes",
+  "Index",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index/gufi/notes",
+  "Indexed",
+  "On a Studio that signs people in, the deployment builds and deletes this index.",
+  "Meaning on all files",
+  "Updated the index in 56 s (names 4.5 s, documents 875 ms, text 25 s, meaning 18 s), on 16 threads. 10/23/2026, 1:53:42 PM.",
+  "View log",
+  "Scratch · Read only",
+  "GUFI index on this machine, read only, set by the deployment",
+  "Index",
+  "/data/scratch-index",
+  "Files",
+  "/data/scratch",
+  "Index not found",
+  "There is no db.db at the index directory.",
+  "Named in the server's STUDIO_LIBRARIES setting; remove it there and restart the Studio.",
+  "Names",
+  "as built",
+  "Site index · Read only",
+  "GUFI index on this machine, read only",
+  "Index",
+  "/data/site-index",
+  "Holds",
+  "Names, metadata and text",
+  "Ready",
+  "Text",
+  "as built",
+  "Remove",
+  "My library · Read/write (on cluster-a)",
+  "Your library on cluster-a, as user, read and written as you",
+  "Folder",
+  "cluster-a:/home/user/studio",
+  "Index",
+  "cluster-a:/home/user/.activate-studio/indexes/space/studio",
+  "Ready",
+  "20 folders, 310 files",
+  "indexed 11/4/2026, 4:46:06 PM",
+  "Text",
+  "Rebuild",
+  "Remove",
+  "results from alex · Shared (on cluster-a)",
+  "Shared by alex on cluster-a, read as you",
+  "Folder",
+  "cluster-a:/home/alex/results",
+  "Index",
+  "cluster-a:/home/alex/.activate-studio/indexes/results/results",
+  "Ready",
+  "8 folders, 77 files",
+  "indexed 11/4/2026, 4:46:06 PM",
+  "Text",
+  "Rebuild",
+  "Remove",
+  "KNOWLEDGE_BASE · Read/write (on cluster-a)",
+  "Index built on cluster-a over pw ssh, read and written as you",
+  "Folder",
+  "cluster-a:/shared/KNOWLEDGE_BASE",
+  "Index",
+  "cluster-a:/home/user/.activate-studio/indexes/KNOWLEDGE_BASE-22300623/KNOWLEDGE_BASE",
+  "Ready",
+  "4,653 folders, 36,337 files",
+  "indexed 11/4/2026, 4:46:06 PM",
+  "Meaning on all files",
+  "Rebuild",
+  "Remove",
+  "Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR, text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on all files, about three times the indexing time of Meaning on documents. For a library ACTIVATE Studio builds it is a choice: one built here applies a new depth in the background at once. One built on a remote system applies it when it is rebuilt, which is offered as the depth changes, and its row says so until then. An index connected as it is stays as it was built.",
+  "Add a library",
+  "Import…",
+  "Export…"
+ ],
+ "controls": [
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of notes",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-full"
+  },
+  {
+   "role": "button",
+   "name": "View log",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Files",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove Site index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of My library",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "text"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove My library",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of results from alex",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "text"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove results from alex",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of KNOWLEDGE_BASE",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-full"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove KNOWLEDGE_BASE",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Add a library",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Import…",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Export…",
+   "disabled": false,
+   "value": ""
+  }
+ ],
+ "titles": [
+  "/Users/user/notes",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index/gufi/notes",
+  "/data/scratch-index",
+  "/data/scratch",
+  "/data/site-index",
+  "cluster-a:/home/user/studio",
+  "cluster-a:/home/user/.activate-studio/indexes/space/studio",
+  "cluster-a:/home/alex/results",
+  "cluster-a:/home/alex/.activate-studio/indexes/results/results",
+  "cluster-a:/shared/KNOWLEDGE_BASE",
+  "cluster-a:/home/user/.activate-studio/indexes/KNOWLEDGE_BASE-22300623/KNOWLEDGE_BASE"
+ ],
+ "menus": []
+}

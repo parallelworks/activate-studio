@@ -1,0 +1,41 @@
+## admin: 73 lines, 30 controls before; 78 lines, 30 controls, 4 menu items after; 7 not found
+  - text: Main folder, read and write
+  - text: Indexed
+  - text: GUFI index on this machine, read only, set by the deployment
+  - text: GUFI index on this machine, read only
+  - text: Your library on cluster-a, as user, read and written as you
+  - text: Shared by alex on cluster-a, read as you
+  - text: Index built on cluster-a over pw ssh, read and written as you
+## notindexed: 18 lines, 10 controls before; 21 lines, 11 controls, 1 menu items after; 1 not found
+  - text: Main folder, read and write
+## pair: 34 lines, 18 controls before; 37 lines, 18 controls, 2 menu items after; 3 not found
+  - text: Main folder, read and write
+  - text: Indexed
+  - text: Index built on cluster-a over pw ssh, read and written as you
+## single: 164 lines, 63 controls before; 166 lines, 63 controls, 10 menu items after; 11 not found
+  - text: Main folder, read and write
+  - text: Indexed
+  - text: Index of a folder on this machine, kept in step with it, read only
+  - text: GUFI index on this machine, read only
+  - text: Copy of Drop, upload, kept in step with it, read only
+  - text: Index of store, research, from its listing, read only
+  - text: Index built on cluster-a over pw ssh, read and written as you
+  - text: Index built on cluster-a over pw ssh, read and written as you
+  - text: GUFI index over ssh, read only
+  - text: GUFI index on a cluster over pw ssh, read only
+  - text: Index built on a cluster, read only, yours alone
+## states: 126 lines, 47 controls before; 135 lines, 48 controls, 7 menu items after; 8 not found
+  - text: Main folder, read and write
+  - text: 722 h 35 min so far, on 16 threads
+  - text: Index of a folder on this machine, kept in step with it, read only
+  - text: Index of a folder on this machine, kept in step with it, read only
+  - text: Index of a folder on this machine, kept in step with it, read only
+  - text: Index of store, archive, from its listing, read only
+  - text: Index built on user@box.example.org over ssh, read only
+  - text: Index built on a cluster, read only, yours alone
+## user: 53 lines, 20 controls before; 57 lines, 20 controls, 2 menu items after; 4 not found
+  - text: Indexed
+  - text: GUFI index on this machine, read only, set by the deployment
+  - text: Your library on cluster-a, as user, read and written as you
+  - text: Shared by alex on cluster-a, read as you
+total not found: 34

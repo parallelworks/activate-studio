@@ -1,0 +1,41 @@
+{
+ "text": [
+  "Where the index is kept",
+  "The main folder's index and its caches, on this computer.",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index",
+  "Separate from the folder being indexed (/Users/user/Library/Application Support/ACTIVATE Studio/kb/engineering-library), whose files are never written to by indexing.",
+  "Choose another place…",
+  "GUFI command log",
+  "A record of the commands run to read an index, for finding a slow or failing search.",
+  "Log GUFI commands: every command run to read an index, with when it ran, what asked for it, how long it took, how it ended, and the end of its error output",
+  "Save settings"
+ ],
+ "controls": [
+  {
+   "role": "button",
+   "name": "Copy the index folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Choose another place…",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "on"
+  },
+  {
+   "role": "button",
+   "name": "Save settings",
+   "disabled": false,
+   "value": ""
+  }
+ ],
+ "titles": [],
+ "menus": []
+}

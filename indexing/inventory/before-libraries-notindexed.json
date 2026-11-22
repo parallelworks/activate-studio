@@ -1,0 +1,89 @@
+{
+ "text": [
+  "Every library searched here. The main folder is the only one written to; the others are indexes read where they are, built here or connected as they are.",
+  "notes · Read/write",
+  "Main folder, read and write",
+  "Folder",
+  "/Users/user/notes",
+  "Index",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index/gufi/notes",
+  "Not indexed yet",
+  "An index of this folder from 9/1/2026 is kept; building updates it.",
+  "Meaning on all files",
+  "Change folder",
+  "Build index",
+  "Updating the index failed after 56 s: gufi_dir2index exited with status 2 10/23/2026, 1:53:42 PM.",
+  "View log",
+  "Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR, text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on all files, about three times the indexing time of Meaning on documents. For a library ACTIVATE Studio builds it is a choice: one built here applies a new depth in the background at once. One built on a remote system applies it when it is rebuilt, which is offered as the depth changes, and its row says so until then. An index connected as it is stays as it was built.",
+  "Add a library",
+  "Import…",
+  "Export…"
+ ],
+ "controls": [
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of notes",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-full"
+  },
+  {
+   "role": "button",
+   "name": "Change folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Build index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "View log",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Add a library",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Import…",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Export…",
+   "disabled": false,
+   "value": ""
+  }
+ ],
+ "titles": [
+  "/Users/user/notes",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index/gufi/notes"
+ ],
+ "menus": []
+}

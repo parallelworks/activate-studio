@@ -1,0 +1,9 @@
+## admin: 38 lines, 23 controls before; 41 lines, 23 controls, 0 menu items after; 0 not found
+## notindexed: 39 lines, 24 controls before; 42 lines, 25 controls, 1 menu items after; 0 not found
+## pair: 40 lines, 25 controls before; 42 lines, 25 controls, 1 menu items after; 0 not found
+## single: 40 lines, 25 controls before; 42 lines, 25 controls, 1 menu items after; 0 not found
+## states: 55 lines, 26 controls before; 57 lines, 26 controls, 1 menu items after; 2 not found
+  - text: 722 h 39 min so far, on 16 threads
+  - control: button "View log" enabled
+## user: 39 lines, 23 controls before; 42 lines, 23 controls, 0 menu items after; 0 not found
+total not found: 2

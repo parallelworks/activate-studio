@@ -1,0 +1,27 @@
+{
+ "text": [
+  "Where the index is kept",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index",
+  "Separate from the folder being indexed (/Users/user/Library/Application Support/ACTIVATE Studio/kb/engineering-library), whose files are never written to by indexing.",
+  "Set STUDIO_INDEX_DIR in the Studio's environment to keep it elsewhere.",
+  "GUFI command log",
+  "Log GUFI commands: every command run to read an index, with when it ran, what asked for it, how long it took, how it ended, and the end of its error output",
+  "Save settings"
+ ],
+ "controls": [
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "on"
+  },
+  {
+   "role": "button",
+   "name": "Save settings",
+   "disabled": false,
+   "value": ""
+  }
+ ],
+ "titles": [],
+ "menus": []
+}

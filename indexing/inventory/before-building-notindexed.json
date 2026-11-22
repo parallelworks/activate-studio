@@ -1,0 +1,187 @@
+{
+ "text": [
+  "How the index is built",
+  "The main folder's index. Each setting here saves as you change it. The readers apply to files read from then on; Update index reads everything again.",
+  "Updating the index failed after 56 s: gufi_dir2index exited with status 2 10/23/2026, 1:53:42 PM.",
+  "Build index",
+  "View log",
+  "Threads",
+  "Save",
+  "Each phase runs this many workers at once. Empty uses one per processor core: 20 here.",
+  "What is read from files",
+  "Index depth of the main folder",
+  "Names",
+  "Text",
+  "Text + OCR",
+  "Meaning on documents",
+  "Meaning on all files",
+  "Search by meaning covers up to twelve passages of every file with text, code and data included. Indexing takes about three times as long as Meaning on documents.",
+  "A new depth is applied in the background at once, to the files already indexed (with the background sync paused, at Sync now). Search by name works as soon as the names are in; text and meaning follow. Each other library has its own depth, under Libraries.",
+  "PDFs downmark cannot read",
+  "pdftotext where installed, then pypdf",
+  "pdftotext: found at /usr/bin/pdftotext. pypdf: not installed for python3.12.",
+  "LibreOffice, for previews and for Office files the built-in readers cannot read",
+  "Found at /usr/bin/soffice.",
+  "Describe images with a vision model",
+  "At Text + OCR and deeper, each image is sent to the model below, once; the description is searchable.",
+  "No vision model is chosen; choose one under AI features.",
+  "Speed of search by meaning",
+  "Standard",
+  "Faster",
+  "Embeds the first 256 tokens of each passage, about 800 characters. The best ranking.",
+  "What this computer can read",
+  "FILES\tREAD BY\tNOTE",
+  ".docx, .pptx, .xlsx\tdownmark\tRead by downmark, with a standard-library reader for any it cannot.",
+  ".doc\tdownmark, LibreOffice\tRead by downmark, then LibreOffice.",
+  ".pdf\tdownmark, pdftotext\tRead by downmark, then pdftotext. Scanned pages are read by tesseract.",
+  ".odt, .ods, .odp\tOpenDocument reader, LibreOffice\tRead by OpenDocument reader, then LibreOffice: text, tables, slides and speaker notes.",
+  ".xls\txlrd, LibreOffice\tRead by xlrd, then LibreOffice.",
+  ".ppt\tolefile, LibreOffice\tRead by olefile, then LibreOffice.",
+  "images\ttesseract\tText in images is read by tesseract.",
+  "Check again"
+ ],
+ "controls": [
+  {
+   "role": "button",
+   "name": "Build index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "View log",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "Threads",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Increase",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Decrease",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Save",
+   "disabled": true,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "Index depth of the main folder: Meaning on all files",
+   "disabled": false,
+   "value": "4"
+  },
+  {
+   "role": "button",
+   "name": "Names",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Text",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Text + OCR",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Meaning on documents",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Meaning on all files",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "a",
+   "name": "Libraries",
+   "disabled": false
+  },
+  {
+   "role": "combobox",
+   "name": "pdftotext where installed, then pypdf",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "auto"
+  },
+  {
+   "role": "switch",
+   "name": "",
+   "disabled": false
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "on"
+  },
+  {
+   "role": "switch",
+   "name": "",
+   "disabled": false
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "on"
+  },
+  {
+   "role": "a",
+   "name": "AI features",
+   "disabled": false
+  },
+  {
+   "role": "button",
+   "name": "Standard",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Faster",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Check again",
+   "disabled": false,
+   "value": ""
+  }
+ ],
+ "titles": [],
+ "menus": []
+}

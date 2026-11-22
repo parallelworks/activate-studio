@@ -1,0 +1,566 @@
+{
+ "text": [
+  "Every library searched here. The main folder is the only one written to; the others are indexes read where they are, built here or connected as they are.",
+  "notes · Read/write",
+  "Main folder, read and write",
+  "Folder",
+  "/Users/user/notes",
+  "Index",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index/gufi/notes",
+  "Indexed",
+  "126,618 files",
+  "Meaning on all files",
+  "Change folder",
+  "Update index",
+  "Updated the index in 56 s (names 4.5 s, documents 875 ms, text 25 s, meaning 18 s), on 16 threads. 10/23/2026, 1:53:42 PM.",
+  "Delete index",
+  "View log",
+  "Papers · Read only",
+  "Index of a folder on this machine, kept in step with it, read only",
+  "Folder",
+  "/Users/user/Documents/papers",
+  "Index",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/libraries/papers/index/papers",
+  "Ready",
+  "210 folders, 3,120 files",
+  "indexed 11/4/2026, 4:46:06 PM",
+  "Meaning on documents",
+  "Rebuild",
+  "Remove",
+  "Site index · Read only",
+  "GUFI index on this machine, read only",
+  "Index",
+  "/data/site-index",
+  "Holds",
+  "Names, metadata and text",
+  "Originals via",
+  "none",
+  "Set",
+  "Ready",
+  "Text",
+  "as built",
+  "Remove",
+  "upload · Read only",
+  "Copy of Drop, upload, kept in step with it, read only",
+  "Copied from",
+  "Drop, upload",
+  "Copy",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/libraries/upload/files",
+  "Look for changes",
+  "Every 15 minutes",
+  "Ready",
+  "1 folder, 3 files",
+  "looked for changes 11/16/2026, 12:30:00 PM",
+  "last brought 3 files 11/16/2026, 12:00:00 PM",
+  "Text",
+  "Update now",
+  "Rebuild",
+  "Remove",
+  "research · Read only",
+  "Index of store, research, from its listing, read only",
+  "Listed from",
+  "store, research",
+  "Index",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/libraries/research/index/files",
+  "List again",
+  "Once a day",
+  "Read text",
+  "After each listing",
+  "Ready",
+  "2,500,000 objects, 3 TB, listed 11/19/2026, 12:00:00 PM",
+  "2,500 list requests a listing, about $0.01 at S3 Standard prices, about $0.38 a month at this interval",
+  "2 entries could not be indexed (a path longer than GUFI holds, or a name \".\" or \"..\")",
+  "1,200 objects with text; the last pass read 1,203 objects, 900 MB in 1,203 requests, 11/19/2026, 1:00:00 PM",
+  "3 objects could not be read (gone, changed since the listing, or unreadable); see the index log",
+  "Text",
+  "as built",
+  "List again",
+  "Remove",
+  "KNOWLEDGE_BASE · Read/write (on cluster-a)",
+  "Index built on cluster-a over pw ssh, read and written as you",
+  "Folder",
+  "cluster-a:/shared/KNOWLEDGE_BASE",
+  "Index",
+  "cluster-a:/home/user/.activate-studio/indexes/KNOWLEDGE_BASE-22300623/KNOWLEDGE_BASE",
+  "Originals via",
+  "none",
+  "Set",
+  "Ready",
+  "4,653 folders, 36,337 files",
+  "indexed 11/4/2026, 4:46:06 PM",
+  "Meaning on all files",
+  "Rebuild",
+  "Remove",
+  "projects · Read/write (on cluster-a)",
+  "Index built on cluster-a over pw ssh, read and written as you",
+  "Folder",
+  "cluster-a:/work/projects",
+  "Index",
+  "cluster-a:/home/user/.activate-studio/indexes/projects-9f/projects",
+  "Originals via",
+  "user@xfer.example.org:/work/projects",
+  "Change",
+  "Ready; some files were not read",
+  "4,653 folders, 36,337 files",
+  "indexed 11/4/2026, 4:46:06 PM",
+  "Depth changed, Rebuild to apply",
+  "12 files could not be read: the reader there timed out",
+  "Meaning on documents",
+  "Rebuild",
+  "Remove",
+  "index on box · Read only (on user@box.example.org)",
+  "GUFI index over ssh, read only",
+  "Index",
+  "user@box.example.org:/data/index",
+  "Port",
+  "2222",
+  "SSH options",
+  "-o ProxyJump=user@jump.example.org",
+  "Holds",
+  "Names and metadata",
+  "Originals via",
+  "none",
+  "Set",
+  "Check failed",
+  "12 folders, 40 files",
+  "index written 10/1/2026, 12:00:00 AM",
+  "ssh: connect to host box.example.org port 2222: Connection timed out",
+  "Names",
+  "as built",
+  "Check",
+  "Remove",
+  "proj index · Read only (on cluster-b)",
+  "GUFI index on a cluster over pw ssh, read only",
+  "Index",
+  "cluster-b:/proj/gufi-index",
+  "Files",
+  "cluster-b:/proj/files",
+  "Originals via",
+  "none",
+  "Set",
+  "Ready",
+  "900 folders, 12,000 files",
+  "index written 10/2/2026, 12:00:00 AM",
+  "Names",
+  "as built",
+  "Check",
+  "Remove",
+  "cluster-a $WORKDIR · Read only (on cluster-a)",
+  "Index built on a cluster, read only, yours alone",
+  "Index",
+  "being built",
+  "Files",
+  "cluster-a:$WORKDIR",
+  "Originals via",
+  "none",
+  "Set",
+  "Building",
+  "run run-17",
+  "Names",
+  "as built",
+  "Refresh",
+  "Remove",
+  "Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR, text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on all files, about three times the indexing time of Meaning on documents. For a library ACTIVATE Studio builds it is a choice: one built here applies a new depth in the background at once. One built on a remote system applies it when it is rebuilt, which is offered as the depth changes, and its row says so until then. An index connected as it is stays as it was built.",
+  "Add a library",
+  "Import…",
+  "Export…"
+ ],
+ "controls": [
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of notes",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-full"
+  },
+  {
+   "role": "button",
+   "name": "Change folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Update index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Delete index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "View log",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of Papers",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-documents"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove Papers",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Set the host originals are read through for Site index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove Site index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Copy",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "How often upload looks for changes",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "15"
+  },
+  {
+   "role": "a",
+   "name": "11/16/2026, 12:00:00 PM",
+   "disabled": false
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of upload",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "text"
+  },
+  {
+   "role": "button",
+   "name": "Update now",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove upload",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "How often research is listed again",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "1440"
+  },
+  {
+   "role": "combobox",
+   "name": "Whether the text of research's objects is read",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "on"
+  },
+  {
+   "role": "button",
+   "name": "List again",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove research",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Set the host originals are read through for KNOWLEDGE_BASE",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of KNOWLEDGE_BASE",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-full"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove KNOWLEDGE_BASE",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Folder",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Change the host originals are read through for projects",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of projects",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-documents"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove projects",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Set the host originals are read through for index on box",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Check",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove index on box",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Files",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Set the host originals are read through for proj index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Check",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove proj index",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy Files",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Set the host originals are read through for cluster-a $WORKDIR",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Refresh",
+   "disabled": true,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Remove cluster-a $WORKDIR",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Add a library",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Import…",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Export…",
+   "disabled": false,
+   "value": ""
+  }
+ ],
+ "titles": [
+  "/Users/user/notes",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index/gufi/notes",
+  "/Users/user/Documents/papers",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/libraries/papers/index/papers",
+  "/data/site-index",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/libraries/upload/files",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/libraries/research/index/files",
+  "cluster-a:/shared/KNOWLEDGE_BASE",
+  "cluster-a:/home/user/.activate-studio/indexes/KNOWLEDGE_BASE-22300623/KNOWLEDGE_BASE",
+  "cluster-a:/work/projects",
+  "cluster-a:/home/user/.activate-studio/indexes/projects-9f/projects",
+  "user@xfer.example.org:/work/projects",
+  "user@box.example.org:/data/index",
+  "cluster-b:/proj/gufi-index",
+  "cluster-b:/proj/files",
+  "cluster-a:$WORKDIR"
+ ],
+ "menus": []
+}

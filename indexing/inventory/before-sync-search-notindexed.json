@@ -1,0 +1,96 @@
+{
+ "text": [
+  "Search across libraries",
+  "Each library in parallel, merged (faster)",
+  "Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.",
+  "Search time limit",
+  "20 seconds",
+  "How long each library's search runs before it is stopped and left out of the results. Very large indexes may need longer. Chat and the Search page both use it, and each can also be stopped by hand.",
+  "Background sync interval (seconds, 0 pauses)",
+  "Corpus history snapshot (seconds between points)",
+  "86400 is one point a day, summarizing everything that changed since the previous point. 0 captures every index pass, which is a churn log on a busy corpus. Days with no change are recorded as a check either way.",
+  "Save settings"
+ ],
+ "controls": [
+  {
+   "role": "combobox",
+   "name": "Each library in parallel, merged (faster)",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "parallel"
+  },
+  {
+   "role": "combobox",
+   "name": "20 seconds",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "20"
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "86400"
+  },
+  {
+   "role": "button",
+   "name": "Increase",
+   "disabled": true,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Decrease",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "86400"
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "86400"
+  },
+  {
+   "role": "button",
+   "name": "Increase",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Decrease",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "86400"
+  },
+  {
+   "role": "button",
+   "name": "Save settings",
+   "disabled": false,
+   "value": ""
+  }
+ ],
+ "titles": [],
+ "menus": []
+}

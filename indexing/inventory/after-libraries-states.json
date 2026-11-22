@@ -1,0 +1,487 @@
+{
+ "text": [
+  "Every library searched here. The main folder is the only one written to; the others are indexes read where they are, built here or connected as they are.",
+  "notes · Read/write",
+  "Main folder",
+  "Indexing",
+  "Change folder",
+  "Stop indexing",
+  "Folder",
+  "/Users",
+  "/user/notes",
+  "Index",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index",
+  "/gufi/notes",
+  "Depth",
+  "Meaning on all files",
+  "Updating the index",
+  "phase 3 of 4",
+  "722 h 57 min so far, on 16 threads",
+  "x",
+  "Names and folders",
+  "4.5 s",
+  "3 of 3 folders",
+  "Documents (PDF, Word, PowerPoint, Excel)",
+  "875 ms",
+  "2 of 2 documents · 2 converted",
+  "Text, images and full-text search",
+  "4 of 9 items",
+  "x",
+  "Search by meaning",
+  "waiting",
+  "View log",
+  "Mail · Read only",
+  "Index of a folder on this machine, kept in step with it",
+  "Building",
+  "Rebuild",
+  "Folder",
+  "/Users/user",
+  "/Library/Mail",
+  "Index",
+  "/Users/user/indexes",
+  "/mail/Mail",
+  "Depth",
+  "Meaning on documents",
+  "Indexing folders",
+  "120 folders",
+  "x",
+  "Scans · Read only",
+  "Index of a folder on this machine, kept in step with it",
+  "Failed",
+  "Rebuild",
+  "gufi_dir2index exited with status 1",
+  "Folder",
+  "/Users",
+  "/user/scans",
+  "Index",
+  "/Users/user/indexes",
+  "/scans/scans",
+  "Depth",
+  "Meaning on documents",
+  "Old drafts · Read only",
+  "Index of a folder on this machine, kept in step with it",
+  "Index not found",
+  "3 folders, 40 files · indexed 11/4/2026, 4:46:06 PM",
+  "Rebuild",
+  "Rebuild makes it again.",
+  "Folder",
+  "/Users",
+  "/user/drafts",
+  "Index",
+  "/Users/user/indexes",
+  "/drafts/drafts",
+  "Depth",
+  "Meaning on documents",
+  "archive · Read only",
+  "Index of store, archive, from its listing",
+  "Reading text",
+  "2,500,000 objects, 3 TB, listed 11/19/2026, 12:00:00 PM",
+  "Stop reading",
+  "List again",
+  "2,500 list requests a listing, about $0.01 at S3 Standard prices, about $0.38 a month at this interval",
+  "2 entries could not be indexed (a path longer than GUFI holds, or a name \".\" or \"..\")",
+  "the last listing failed: listing timed out",
+  "1,200 objects with text; the last pass read 1,203 objects, 900 MB in 1,203 requests, 11/19/2026, 1:00:00 PM",
+  "3 objects could not be read (gone, changed since the listing, or unreadable); see the index log",
+  "Listed from",
+  "store, archive",
+  "Index",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/libraries/research",
+  "/index/files",
+  "List again",
+  "Once a day",
+  "Read text",
+  "After each listing",
+  "Depth",
+  "Text as built",
+  "Reading text",
+  "40 of 1,200 objects",
+  "x",
+  "data on box · Read only (on user@box.example.org)",
+  "Index built there over ssh",
+  "Building",
+  "Rebuild",
+  "Depth changed, applies at the next Rebuild",
+  "Folder",
+  "user@box.example.org:/home",
+  "/user/data",
+  "Index",
+  "user@box.example.org:/home/user/.activate-studio",
+  "/indexes/data-1a2b3c4d",
+  "Port",
+  "2222",
+  "Originals via",
+  "none",
+  "Set",
+  "Depth",
+  "Meaning on documents",
+  "Extracting text",
+  "x",
+  "cluster-a $WORKDIR · Read only (on cluster-a)",
+  "Index built on a cluster by a workflow job, yours alone",
+  "Building",
+  "run run-17",
+  "Refresh",
+  "Index",
+  "being built",
+  "Files",
+  "cluster-a:$WORKDIR",
+  "Originals via",
+  "none",
+  "Set",
+  "Depth",
+  "Names as built",
+  "Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR, text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on all files, about three times the indexing time of Meaning on documents. For a library ACTIVATE Studio builds it is a choice: one built here applies a new depth in the background at once. One built on a remote system applies it when it is rebuilt, which is offered as the depth changes, and its row says so until then. An index connected as it is stays as it was built.",
+  "Add a library",
+  "Import…",
+  "Export…"
+ ],
+ "controls": [
+  {
+   "role": "button",
+   "name": "Change folder",
+   "disabled": true,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Stop indexing",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "More actions for notes",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the folder path of notes",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the index path of notes",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of notes",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-full"
+  },
+  {
+   "role": "button",
+   "name": "View log",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": true,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "More actions for Mail",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the folder path of Mail",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the index path of Mail",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of Mail",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-documents"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "More actions for Scans",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the folder path of Scans",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the index path of Scans",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of Scans",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-documents"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "More actions for Old drafts",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the folder path of Old drafts",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the index path of Old drafts",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of Old drafts",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-documents"
+  },
+  {
+   "role": "button",
+   "name": "Stop reading",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "List again",
+   "disabled": true,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "More actions for archive",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the index path of archive",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "How often archive is listed again",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "1440"
+  },
+  {
+   "role": "combobox",
+   "name": "Whether the text of archive's objects is read",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "on"
+  },
+  {
+   "role": "button",
+   "name": "Rebuild",
+   "disabled": true,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "More actions for data on box",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the folder path of data on box",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the index path of data on box",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Set the host originals are read through for data on box",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "combobox",
+   "name": "Index depth of data on box",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "input",
+   "name": "",
+   "disabled": false,
+   "value": "meaning-documents"
+  },
+  {
+   "role": "button",
+   "name": "Refresh",
+   "disabled": true,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "More actions for cluster-a $WORKDIR",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Copy the files path of cluster-a $WORKDIR",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Set the host originals are read through for cluster-a $WORKDIR",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Add a library",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Import…",
+   "disabled": false,
+   "value": ""
+  },
+  {
+   "role": "button",
+   "name": "Export…",
+   "disabled": false,
+   "value": ""
+  }
+ ],
+ "titles": [
+  "/Users/user/notes",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/index/gufi/notes",
+  "/Users/user/Library/Mail",
+  "/Users/user/indexes/mail/Mail",
+  "/Users/user/scans",
+  "/Users/user/indexes/scans/scans",
+  "/Users/user/drafts",
+  "/Users/user/indexes/drafts/drafts",
+  "/Users/user/Library/Application Support/ACTIVATE Studio/libraries/research/index/files",
+  "user@box.example.org:/home/user/data",
+  "user@box.example.org:/home/user/.activate-studio/indexes/data-1a2b3c4d",
+  "cluster-a:$WORKDIR"
+ ],
+ "menus": [
+  {
+   "trigger": "More actions for notes",
+   "items": [
+    "Delete index\n. Wait for indexing to finish, or stop it.\nThe files in the folder are not touched (disabled)"
+   ]
+  },
+  {
+   "trigger": "More actions for Mail",
+   "items": [
+    "Remove\n. Wait for the build or the action running now to finish.\nStops searching it; its index stays (disabled)"
+   ]
+  },
+  {
+   "trigger": "More actions for Scans",
+   "items": [
+    "Remove\nDeletes its index; the files are not touched"
+   ]
+  },
+  {
+   "trigger": "More actions for Old drafts",
+   "items": [
+    "Remove\nDeletes its index; the files are not touched"
+   ]
+  },
+  {
+   "trigger": "More actions for archive",
+   "items": [
+    "Remove\nDeletes its index; the files are not touched"
+   ]
+  },
+  {
+   "trigger": "More actions for data on box",
+   "items": [
+    "Remove\nStops searching it; its index stays"
+   ]
+  },
+  {
+   "trigger": "More actions for cluster-a $WORKDIR",
+   "items": [
+    "Remove\nStops searching it; its index stays"
+   ]
+  }
+ ]
+}
