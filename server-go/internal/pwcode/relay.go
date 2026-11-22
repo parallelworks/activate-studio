@@ -42,14 +42,19 @@ import (
 //   - packages/code/src/sessionEvents.ts: the platform Code page's own
 //     events client (heartbeat 10).
 //
-// The routes it does not relay (attach, mcp, goal, state) answer as not
-// offered here, so the Studio cannot give such a session its library tools.
+// The platform does not relay attach, mcp, goal or state, so the Studio
+// cannot give such a session its library tools. Of what it does relay, the
+// client sends only what a relayed chat uses, by method and route, and
+// refuses everything else without asking: the platform also relays, for
+// one, DELETE on a session's own route.
 
-// relayed are the session routes the relay passes on, by the suffix after
-// /v1/sessions/{id}: "" is the session's detail.
+// relayed are the requests the client sends, by method and the route's
+// suffix after /v1/sessions/{id}: "" is the session's detail.
 var relayed = map[string]bool{
-	"": true, "/transcript": true, "/messages": true, "/direction": true,
-	"/interrupt": true, "/stop": true, "/approvals": true,
+	"GET ":             true,
+	"POST /messages":   true,
+	"POST /interrupt":  true,
+	"POST /approvals/": true,
 }
 
 // relayHeartbeat is the heartbeat the platform Code page asks of the feed.
@@ -77,9 +82,9 @@ func RelaySite(machine string) string { return "relay:" + machine }
 // Machine is the platform id of the client's machine.
 func (c *RelayClient) Machine() string { return c.machine }
 
-// relayPath is the platform path for a daemon route, or "" for a route the
-// relay does not offer.
-func (c *RelayClient) relayPath(route string) string {
+// relayPath is the platform path for a daemon request, or "" for one the
+// client does not send.
+func (c *RelayClient) relayPath(method, route string) string {
 	rest, ok := strings.CutPrefix(route, "/v1/sessions/")
 	if !ok {
 		return ""
@@ -93,10 +98,14 @@ func (c *RelayClient) relayPath(route string) string {
 		id, suffix = rest[:i], rest[i:]
 	}
 	base := suffix
-	if strings.HasPrefix(suffix, "/approvals/") {
-		base = "/approvals"
+	if a, ok := strings.CutPrefix(suffix, "/approvals/"); ok {
+		// One approval, by its id.
+		if a == "" || strings.Contains(a, "/") {
+			return ""
+		}
+		base = "/approvals/"
 	}
-	if id == "" || !relayed[base] {
+	if id == "" || !relayed[method+" "+base] {
 		return ""
 	}
 	return "/api/code/machines/" + platform.EncodeURIComponent(c.machine) + "/sessions/" + id + suffix + query
@@ -106,7 +115,10 @@ func (c *RelayClient) relayPath(route string) string {
 type relayDoer struct{ c *RelayClient }
 
 func (d relayDoer) Do(req *http.Request) (*http.Response, error) {
-	path := d.c.relayPath(req.URL.RequestURI())
+	path := d.c.relayPath(req.Method, req.URL.RequestURI())
+	if path == "" {
+		return nil, errors.New("not a request the relay client sends")
+	}
 	u, err := url.Parse(d.c.origin + path)
 	if err != nil {
 		return nil, err
@@ -121,7 +133,7 @@ func (c *RelayClient) Call(ctx context.Context, method, route string, body any, 
 	if c.origin == "" {
 		return nil, &DaemonError{Message: "This Studio is not connected to an ACTIVATE platform, which carries messages to sessions on other machines.", Status: http.StatusConflict}
 	}
-	if c.relayPath(route) == "" {
+	if c.relayPath(method, route) == "" {
 		return nil, &DaemonError{Message: "ACTIVATE does not offer this for a session on another machine yet.", Status: http.StatusNotImplemented}
 	}
 	v, err := Request(ctx, relayDoer{c}, method, route, body, timeout)

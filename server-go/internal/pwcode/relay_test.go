@@ -20,18 +20,31 @@ import (
 func TestTheRelayMapsOnlyTheRoutesThePlatformRelays(t *testing.T) {
 	c := Relay("https://platform.example/", "k", "m 2")
 	for route, want := range map[string]string{
-		"/v1/sessions/s1":                   "/api/code/machines/m%202/sessions/s1",
-		"/v1/sessions/s1/messages":          "/api/code/machines/m%202/sessions/s1/messages",
-		"/v1/sessions/s1/approvals/ap1":     "/api/code/machines/m%202/sessions/s1/approvals/ap1",
-		"/v1/sessions/s1/interrupt":         "/api/code/machines/m%202/sessions/s1/interrupt",
-		"/v1/sessions/s1/transcript?tail=5": "/api/code/machines/m%202/sessions/s1/transcript?tail=5",
-		"/v1/sessions/s1/attach":            "",
-		"/v1/sessions/s1/mcp":               "",
-		"/v1/sessions/s1/goal":              "",
-		"/v1/sessions":                      "",
-		"/v1/status":                        "",
+		"GET /v1/sessions/s1":                "/api/code/machines/m%202/sessions/s1",
+		"GET /v1/sessions/s1?history=40":     "/api/code/machines/m%202/sessions/s1?history=40",
+		"POST /v1/sessions/s1/messages":      "/api/code/machines/m%202/sessions/s1/messages",
+		"POST /v1/sessions/s1/approvals/ap1": "/api/code/machines/m%202/sessions/s1/approvals/ap1",
+		"POST /v1/sessions/s1/interrupt":     "/api/code/machines/m%202/sessions/s1/interrupt",
+		// The platform relays these; the Studio does not send them.
+		"DELETE /v1/sessions/s1":             "",
+		"PATCH /v1/sessions/s1":              "",
+		"POST /v1/sessions/s1":               "",
+		"GET /v1/sessions/s1/messages":       "",
+		"POST /v1/sessions/s1/stop":          "",
+		"POST /v1/sessions/s1/direction":     "",
+		"POST /v1/sessions/s1/archive":       "",
+		"PATCH /v1/sessions/s1/settings":     "",
+		"GET /v1/sessions/s1/transcript":     "",
+		"POST /v1/sessions/s1/approvals/":    "",
+		"POST /v1/sessions/s1/approvals/a/b": "",
+		"POST /v1/sessions/s1/attach":        "",
+		"GET /v1/sessions/s1/mcp":            "",
+		"GET /v1/sessions/s1/goal":           "",
+		"GET /v1/sessions":                   "",
+		"GET /v1/status":                     "",
 	} {
-		if got := c.relayPath(route); got != want {
+		method, route, _ := strings.Cut(route, " ")
+		if got := c.relayPath(method, route); got != want {
 			t.Errorf("%s: %q, want %q", route, got, want)
 		}
 	}
@@ -56,6 +69,12 @@ func TestTheRelayRefusesWhatItDoesNotOfferWithoutAsking(t *testing.T) {
 	var de *DaemonError
 	if _, err := SessionMCP(context.Background(), c, "s1"); !errors.As(err, &de) || de.Status != http.StatusNotImplemented {
 		t.Errorf("mcp: %v", err)
+	}
+	if _, err := c.Call(context.Background(), http.MethodDelete, "/v1/sessions/s1", nil, 0); !errors.As(err, &de) || de.Status != http.StatusNotImplemented {
+		t.Errorf("delete: %v", err)
+	}
+	if _, err := ArchiveSession(context.Background(), c, "s1"); err == nil {
+		t.Error("archive was sent")
 	}
 	if d, err := GetSession(context.Background(), c, "s1"); err != nil || d == nil || atomic.LoadInt32(&asked) != 1 {
 		t.Errorf("read: %v %v", d, err)
