@@ -182,6 +182,36 @@ func TestARelayedChatIsOnlyItsOwners(t *testing.T) {
 	if len(plat.relayed) != 0 || remote.calls != 0 {
 		t.Errorf("the session was reached for them: %v, %d calls", plat.relayed, remote.calls)
 	}
+
+	// Nor can they send it a message, a new one or one while ada's turn
+	// runs (which the session takes as direction): it is not stored in her
+	// chat and does not reach her session.
+	m.A.Cfg.FrontAuth = true
+	shared := true
+	m.Convs.SharedHistory = func() bool { return shared }
+	m.Convs.AuthEnabled = func() bool { return true }
+	message := func(want int) {
+		t.Helper()
+		body := `{"conversationId":"` + id + `","userMessageId":"u-bob","engine":"pwcode","messages":[{"role":"user","content":"rm -rf results"}]}`
+		r := auth.WithUser(httptest.NewRequest(http.MethodPost, "/api/chat/stream", strings.NewReader(body)), &auth.User{ID: "bob", Username: "bob"})
+		r.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		err := m.stream(rec, r)
+		var ae *apierr.Error
+		if !errors.As(err, &ae) || ae.Status != want {
+			t.Errorf("bob's message: want %d, got %v (%d %s)", want, err, rec.Code, rec.Body.String())
+		}
+	}
+	message(http.StatusForbidden)
+	turn := &pwTurn{m: m, res: &sseWriter{w: httptest.NewRecorder()}, convID: id, done: make(chan struct{})}
+	m.follow(turn)
+	message(http.StatusForbidden)
+	m.unfollow(turn)
+	shared = false
+	message(http.StatusNotFound)
+	if n := len(m.Conv.Get(id).Messages); n != 0 || len(plat.relayed) != 0 || remote.calls != 0 || len(remote.messages) != 0 {
+		t.Errorf("bob's message reached ada's chat or session: %d messages, %v, %d calls", n, plat.relayed, remote.calls)
+	}
 }
 
 func TestAStoppedTurnSaysStoppedNotFailed(t *testing.T) {

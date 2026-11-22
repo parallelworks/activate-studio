@@ -534,6 +534,14 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if u := user(r); u != nil {
 		owner = u.Username
 	}
+	// pw code works as the chat's owner: another person's message to an
+	// existing chat does not start or reach a session there.
+	if old := m.Conv.Get(convID); old != nil {
+		if _, err := m.ownPWChat(r, convID); err != nil {
+			res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
+			return nil
+		}
+	}
 	m.Conv.RecordUserTurn(convID, msgID, content, body.ParentMessageID, owner)
 	fail := func(err error) error {
 		res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
@@ -1017,6 +1025,22 @@ func planMode(asked string, relay bool) string {
 	return "auto"
 }
 
+// ownPWChat is the viewer's own chat id: 404 where they cannot see it, 403
+// where it is someone else's shared with them.
+func (m *Module) ownPWChat(r *http.Request, id string) (*conversations.Conversation, error) {
+	c, err := m.visibleChat(r, id)
+	if err != nil {
+		return nil, err
+	}
+	if m.A.Cfg.AuthEnabled() {
+		u := user(r)
+		if u == nil || c.Owner == nil || *c.Owner != u.Username {
+			return nil, pwErr(403, "Only the person whose chat this is can direct its pw code session.")
+		}
+	}
+	return c, nil
+}
+
 func approvalRe(s string) bool {
 	if s == "" || len(s) > 80 {
 		return false
@@ -1032,15 +1056,9 @@ func approvalRe(s string) bool {
 // ownPWCode is the viewer's own conversation with a pw code session, and
 // that session's daemon reached as them.
 func (m *Module) ownPWCode(r *http.Request) (*conversations.Conversation, *pwTarget, error) {
-	c, err := m.visibleChat(r, r.PathValue("id"))
+	c, err := m.ownPWChat(r, r.PathValue("id"))
 	if err != nil {
 		return nil, nil, err
-	}
-	if m.A.Cfg.AuthEnabled() {
-		u := user(r)
-		if u == nil || c.Owner == nil || *c.Owner != u.Username {
-			return nil, nil, pwErr(403, "Only the person whose chat this is can direct its pw code session.")
-		}
 	}
 	if c.PWCode == nil || c.PWCode.Session == "" {
 		return nil, nil, pwErr(409, "This chat has no pw code session.")
