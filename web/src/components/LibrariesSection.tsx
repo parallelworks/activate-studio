@@ -770,7 +770,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                 render={<section aria-label={r.name} data-library={r.key} />}>
                 <div className="lib-card-head">
                   <div className="lib-card-title">
-                    <h3 className="lib-name">{r.name}<span className="lib-access"> · {access}</span></h3>
+                    <h2 className="lib-name">{r.name}<span className="lib-access"> · {access}</span></h2>
                     <div className="lib-kind">{r.kind}</div>
                     <div className="lib-state">
                       <StatusBadge variant={r.state.tone} dot={!r.state.pulse} pulse={r.state.pulse} size="sm">{r.state.text}</StatusBadge>
