@@ -106,8 +106,10 @@ func (s *routes) answerOnPlatform(r *http.Request, b approveBody, answer *jsonv.
 		return nil
 	case res.StatusCode == http.StatusUnauthorized:
 		return platform.KbError(401, "The platform refused your credential; sign in again, or renew your API key under Settings, Model access.")
-	case res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusConflict:
+	case res.StatusCode == http.StatusConflict:
 		return platform.KbError(409, "That approval is no longer waiting: the session went on, or someone answered it.")
+	case res.StatusCode == http.StatusNotFound:
+		return s.notFound(r, b, said)
 	case res.StatusCode == http.StatusForbidden:
 		msg := "The session's machine does not take answers from the platform for it"
 		if said != "" {
@@ -138,4 +140,26 @@ func platformMessage(body io.Reader) string {
 		}
 	}
 	return ""
+}
+
+// notFound says why the platform answered 404 to an answer: a 404 comes
+// for an approval that is gone, and also for a session or machine it
+// cannot reach and for a platform without the route. The session is read
+// again to tell which.
+func (s *routes) notFound(r *http.Request, b approveBody, said string) error {
+	var d detail
+	err := s.fetch(r, "/api/code/machines/"+platform.EncodeURIComponent(b.Machine)+"/sessions/"+platform.EncodeURIComponent(b.ID), &d)
+	if err != nil {
+		return platform.KbError(404, "The platform could not reach that session to answer it: it is no longer on its machine, or the machine is not reachable.")
+	}
+	for _, a := range d.Approvals {
+		if a.ID == b.Approval {
+			msg := "The platform did not take the answer although the session still waits on it"
+			if said != "" {
+				msg += " (" + said + ")"
+			}
+			return platform.KbError(502, msg+". Answer it where the session runs.")
+		}
+	}
+	return platform.KbError(409, "That approval is no longer waiting: the session went on, or someone answered it.")
 }

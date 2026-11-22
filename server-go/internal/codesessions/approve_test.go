@@ -154,6 +154,12 @@ func TestApproveThroughThePlatform(t *testing.T) {
 			w.WriteHeader(401)
 			return
 		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/code/machines/m1/sessions/"+sid {
+			// The session as read again after a 404: it waits on nothing.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"id": sid, "status": "idle", "approvals": []any{}})
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/api/code/machines/m1/sessions/"+sid+"/approvals/ap2" {
 			w.WriteHeader(404)
 			return
