@@ -12,6 +12,7 @@ import { PdfJsPages } from './PdfJsPages'
 import { pageWidth, stepZoom, useSettled, ZOOM_MAX, ZOOM_MIN, ZoomView, type ZoomControl, type Zooming } from './ZoomView'
 import { CsvTable, DELIMITED_SUFFIXES } from './CsvTable'
 import { LockedButton } from './LockedButton'
+import { useShownPath } from '../libraryPath'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 /** Office files the server reads without LibreOffice (officePreview.ts). */
@@ -397,6 +398,8 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
    *  Studio), or null. */
   labelsLocked?: string | null
 }) {
+  // In All libraries a path starts with its library's id: shown by name.
+  const shown = useShownPath()
   const [file, setFile] = useState<FileContent | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The file is not there (404), as against one that cannot be read.
@@ -580,7 +583,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
     return (
       <div className="viewer">
         <Callout tone="error" title="Cannot open this file" className="viewer-callout">
-          <p className="viewer-callout-path">{path}</p>
+          <p className="viewer-callout-path">{shown(path)}</p>
           <p>{error}</p>
           {missing && <p>It may have been moved, renamed, or deleted since this link was made.</p>}
         </Callout>
@@ -591,13 +594,13 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
     return (
       <div className="viewer">
         <Callout tone="warning" title="This file was moved or deleted" className="viewer-callout">
-          <p className="viewer-callout-path">{path}</p>
+          <p className="viewer-callout-path">{shown(path)}</p>
           <p>It is no longer in the library under this name.</p>
         </Callout>
       </div>
     )
   }
-  if (!file) return <div className="viewer"><div className="muted pad"><Loader inline size={16} label={`Loading ${path}…`} /></div></div>
+  if (!file) return <div className="viewer"><div className="muted pad"><Loader inline size={16} label={`Loading ${shown(path)}…`} /></div></div>
 
   const suffix = suffixOf(path)
   const isMarkdown = suffix === '.md'
@@ -719,7 +722,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
     <div className="viewer">
       <div className="viewer-head" ref={headRef}>
         <span className="viewer-path">
-          {file.path}
+          {shown(file.path)}
           {(tags.own.length > 0 || tags.inherited.length > 0) && (
             <span className="viewer-tags">
               {tags.own.map(t => <span key={t} className="tag-pill on small">{t}</span>)}

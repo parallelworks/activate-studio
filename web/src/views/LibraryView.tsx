@@ -16,6 +16,7 @@ import { AddLibraryDialog, ImportLibrariesDialog, useLibraryAddOffer, type Dropp
 import { checkList, LIST_FORMAT } from '../libraryLists'
 import { TagMenu } from '../components/TagMenu'
 import { sectionAllowed, useAppConfig } from '../config'
+import { shownPath } from '../libraryPath'
 import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
 import { chooseUpload, onShellDrop, shellListsFolders } from '../nativeShell'
 import { downloadPath } from '../libraryDownload'
@@ -807,7 +808,7 @@ export function LibraryView({ display, onDisplay }: {
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         title={deleteTarget?.isDir ? 'Delete folder and all contents?' : 'Delete this file?'}
-        description={deleteTarget?.path}
+        description={deleteTarget ? shownPath(deleteTarget.path, cfg.libraries) : undefined}
         confirmLabel={deleteTarget?.isDir ? 'Delete folder' : 'Delete'}
         destructive
         closeOnConfirm={false}

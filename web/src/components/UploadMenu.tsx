@@ -6,6 +6,8 @@ import { collectChosen, collectDropped, collectListed, type UploadItem } from '.
 import { chooseUpload, shellListsFolders } from '../nativeShell'
 import { startUpload } from '../transfers'
 import { LockedButton } from './LockedButton'
+import { useAppConfig } from '../config'
+import { libraryPathParts } from '../libraryPath'
 
 /** Settings > Indexing > Libraries with its Add a library form open. */
 export const ADD_LIBRARY_HASH = '#view=settings:libraries?add=1'
@@ -34,6 +36,9 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onO
   const folderInput = useRef<HTMLInputElement>(null)
   const newDirId = useId()
   const urlId = useId()
+  // In All libraries the folder's path starts with its library's id: the
+  // field names the library and takes the folder inside it.
+  const inLib = libraryPathParts(targetDir, useAppConfig().libraries)
 
   /** Queued, not awaited here: the next upload can be added at once, and
    *  each shows in the panel below the tree, so this panel closes and
@@ -106,8 +111,12 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onO
       <Input
         label="Destination folder"
         size="sm"
-        value={targetDir}
-        onChange={e => onTargetDir(e.target.value.replace(/^\/+/, ''))}
+        description={inLib ? `In ${inLib.label}` : undefined}
+        value={inLib ? inLib.rel : targetDir}
+        onChange={e => {
+          const v = e.target.value.replace(/^\/+/, '')
+          onTargetDir(inLib ? (v ? `${inLib.id}/${v}` : inLib.id) : v)
+        }}
         placeholder="uploads"
       />
       <div
