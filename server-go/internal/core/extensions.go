@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -54,12 +56,28 @@ func strOr(b map[string]json.RawMessage, k, d string) string {
 	return jsval.String(b[k])
 }
 
+// mayChangeMain refuses a change in the main library's .agents folder (a
+// shared persona, its icon, a removal) to a person who may not change
+// the main library: on a Studio with sign-in, everyone but its
+// administrators. A persona kept to oneself is written outside it.
+func (c *Core) mayChangeMain(r *http.Request) error {
+	if ok, why := mainlib.Request(c.a, r); !ok {
+		return apierr.New(403, "%s", why)
+	}
+	return nil
+}
+
 func (c *Core) extPersonaWrite(w http.ResponseWriter, r *http.Request) error {
 	b, err := body(r)
 	if err != nil {
 		return err
 	}
 	shared := string(b["shared"]) != "false"
+	if shared {
+		if err := c.mayChangeMain(r); err != nil {
+			return err
+		}
+	}
 	dir := c.exts.Corpus
 	if !shared {
 		dir = filepath.Join(c.exts.Ext, "agents")
@@ -134,6 +152,9 @@ func (c *Core) extSkillRead(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Core) extPersonaIcon(w http.ResponseWriter, r *http.Request) error {
+	if err := c.mayChangeMain(r); err != nil {
+		return err
+	}
 	name := extensions.NormalizeName(r.URL.Query().Get("name"))
 	if name == "" {
 		return writeJSON(w, 400, map[string]string{"error": "a persona name is required"})
@@ -195,6 +216,9 @@ func (fileTooLarge) Error() string { return "request file too large" }
 var errFileTooLarge error = fileTooLarge{}
 
 func (c *Core) extPersonaDelete(w http.ResponseWriter, r *http.Request) error {
+	if err := c.mayChangeMain(r); err != nil {
+		return err
+	}
 	name := extensions.NormalizeName(r.URL.Query().Get("name"))
 	if name == "" {
 		return ok(w, map[string]bool{"ok": false})

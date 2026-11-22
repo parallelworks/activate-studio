@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"math"
 	"net/http"
 	"os"
@@ -65,6 +66,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	libraries.CheckDest = remote.SSHDest
 	kb.LibraryResolver = kbResolver{s}
+	kb.MainWriter = func(r *http.Request) (bool, string) { return mainlib.Request(a, r) }
 	// remote-stats.json keeps counts only for libraries that still exist:
 	// a removed library's entry goes with it, and entries left by earlier
 	// removals are dropped when the file is read.
@@ -79,7 +81,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		v := libraries.ViewerOf(viewer)
 		var out []json.RawMessage
 		for _, l := range s.Reg.List(kbLabel, v) {
-			b, err := json.Marshal(libraries.Public(l))
+			b, err := json.Marshal(libraries.Public(s.forRequest(r, l)))
 			if err != nil {
 				return nil, err
 			}
@@ -303,7 +305,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	libs := s.Reg.ProbeAll(r.Context(), s.kbLabel())
 	out := make([]libraries.SettingsLibrary, 0, len(libs))
 	for _, l := range libs {
-		out = append(out, s.Reg.SettingsView(l))
+		out = append(out, s.Reg.SettingsView(s.forRequest(r, l)))
 	}
 	// canBuild: localBuildOffered(), libraries built of folders here
 	// where nobody signs in.
@@ -312,6 +314,18 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 		CanBuild  bool                        `json:"canBuild"`
 	}{out, !s.authEnabled(r)})
 	return nil
+}
+
+// forRequest is l as the person in r may use it: the main library is read
+// only for a signed-in person who does not administer the Studio.
+func (s *Service) forRequest(r *http.Request, l libraries.Library) libraries.Library {
+	if !l.Primary || !l.Writable || r == nil {
+		return l
+	}
+	if ok, why := mainlib.Request(s.a, r); !ok {
+		return libraries.ReadOnlyFor(l, why)
+	}
+	return l
 }
 
 func (s *Service) authEnabled(r *http.Request) bool {

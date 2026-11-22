@@ -302,6 +302,13 @@ func (t goTools) Prepare(r *http.Request, name, args, changeKey string) (*Prepar
 		username = account.Username
 	}
 	obj, canonical, problem := prepareArgs(name, args, username)
+	if problem == "" && isKBAsksFirst(name) {
+		// A change in the main library is not offered for approval to a
+		// person who may not make it.
+		if err := mainLibraryWritable(r); err != nil {
+			problem = err.Error()
+		}
+	}
 	if problem != "" {
 		if needsAccount && account == nil {
 			return &Prepared{Problem: fmt.Sprintf("Your platform account could not be read with your key, so %s could not be prepared. Nothing ran.", name)}, nil

@@ -71,6 +71,7 @@ A request that carries a valid proxy JWT is that JWT's user; otherwise the sign-
 | `AUTH_ACCOUNT_CLAIM`, `AUTH_UID_CLAIM`, `AUTH_GID_CLAIM` | claims carrying a host account name and a numeric uid and gid, where the provider releases them (for example `uidNumber` and `gidNumber` from a directory). Recorded on the signed-in user for later use; nothing acts on them yet |
 | `OIDC_END_SESSION` | `1`: sign-out also ends the provider's session (its `end_session_endpoint`). By default sign-out ends the Studio's session only |
 | `OIDC_SESSION_MAX_AGE_SEC` | how long a sign-in lasts, default 43200 (12 hours) |
+| `STUDIO_ADMINS` | who changes the main library on a Studio with sign-in, besides the deployment's owner (`PW_USER`): user names, ids, e-mail addresses or `group:NAME`, separated by commas or spaces. Everyone else reads it only |
 | `OIDC_REQUIRED` or `AUTH_REQUIRED` | `1`: API requests need a signed-in user, and a page load without one goes to sign-in. `/healthz`, the app's script and style files, and a mission worker's token on `/api/mcp` stay open |
 
 The username from the provider is not assumed to be an account on any host. ACTIVATE releases `sub`, `name`, `preferred_username`, `email` and `groups`, and no uid or gid; its username can differ from a person's login on a cluster. Name `AUTH_ACCOUNT_CLAIM` only for a provider whose claim is the host account.

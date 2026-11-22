@@ -41,6 +41,22 @@ type Target struct {
 	Space bool `json:"space"`
 }
 
+// FolderToWrite is Folder for a change: in the main library only for a
+// person who may change it (kb.ForRequest); on a Studio with sign-in that
+// is its administrators.
+func (s *Service) FolderToWrite(r *http.Request, id, rel string) (Folder, Target, error) {
+	f, t, err := s.Folder(r, id, rel)
+	if err != nil || t.Space || kb.Default == nil {
+		return f, t, err
+	}
+	if main, ok, _ := kb.Default.Libs.Get(""); ok && t.Library == main.ID {
+		if err := kb.RequireWritable(kb.ForRequest(r, main)); err != nil {
+			return nil, t, err
+		}
+	}
+	return f, t, nil
+}
+
 // Folder is the folder rel of the library id ("" for the main library)
 // for the person r is from, with the rights the Library has there: the
 // main library when it is writable on this host, written as the Library
@@ -200,7 +216,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		if err != nil {
 			return err
 		}
-		f, t, err := s.Folder(r, b.Library, b.Folder)
+		f, t, err := s.FolderToWrite(r, b.Library, b.Folder)
 		if err != nil {
 			return err
 		}
@@ -214,7 +230,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		if err != nil {
 			return err
 		}
-		f, t, err := s.Folder(r, b.Library, b.Folder)
+		f, t, err := s.FolderToWrite(r, b.Library, b.Folder)
 		if err != nil {
 			return err
 		}

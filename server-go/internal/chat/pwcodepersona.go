@@ -41,7 +41,7 @@ func (m *Module) personaFolder(r *http.Request, t *pwTarget, persona string) {
 	default:
 		return
 	}
-	f, _, err := svc.Folder(r, lib, rel)
+	f, _, err := svc.FolderToWrite(r, lib, rel)
 	if err == nil {
 		err = svc.ApplyNamed(f, persona, nil)
 	}

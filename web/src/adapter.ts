@@ -288,7 +288,14 @@ export function createStudioAdapter(): ChatAdapter {
         const fd = new FormData()
         fd.append('file', file, file.name)
         const res = await fetch('/api/chat/attachments', { method: 'POST', body: fd })
-        if (!res.ok) throw new Error(`upload: ${res.status} ${await res.text()}`)
+        if (!res.ok) {
+          // The Studio's reason when it gives one: on a shared Studio,
+          // attachments go into the main library, read only for most people.
+          const text = await res.text()
+          let why = ''
+          try { why = (JSON.parse(text) as { error?: unknown }).error as string } catch { /* not JSON */ }
+          throw new Error(typeof why === 'string' && why ? why : `upload: ${res.status} ${text}`)
+        }
         return res.json()
       },
       remove: async id => {

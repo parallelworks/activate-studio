@@ -43,6 +43,12 @@ export function LibrarySwitch({ libraries }: { libraries: PublicLibrary[] }) {
  *  per library, and search, queries, and statistics over all of them. */
 export const ALL_LIBRARIES = 'all'
 
+/** Why the viewer may not change library id, labels included, when that is
+ *  them and not the library (the main library on a shared Studio). */
+export function libraryReadOnlyWhy(libraries: PublicLibrary[] | undefined, id: string): string | null {
+  return libraries?.find(l => l.id === id)?.readOnlyWhy || null
+}
+
 /** Whether the library currently selected may be written to. */
 export function libraryWritable(libraries: PublicLibrary[] | undefined, id: string): boolean {
   if (id === ALL_LIBRARIES) return false

@@ -829,9 +829,19 @@ func (m *Module) toolStartAgent(r *http.Request, args map[string]any, ctx ToolCt
 		model = deref(ctx.Model)
 	}
 	turns := numOr(arg(args, "max_turns"), 0)
+	// The agent's folder is in the main library only for a person who may
+	// change it. Anyone else's agent works in a workspace of theirs on the
+	// site, under their own key, as it does when no library is given.
+	library := m.A.Cfg.KBRoot
+	if err := mainLibraryWritable(r); err != nil {
+		if optStr(arg(args, "folder")) != "" {
+			return nil, err
+		}
+		library = ""
+	}
 	st, err := s.Start(r.Context(), agentsites.StartAgent{Site: tmplOr(arg(args, "site"), ""), Key: m.agentKey(s, ctx), Objective: tmplOr(arg(args, "objective"), ""),
 		Goal: optStr(arg(args, "goal")), MaxTurns: turns, Workspace: optStr(arg(args, "workspace")), Model: model, PermissionMode: optStr(arg(args, "permission_mode")),
-		Library: m.A.Cfg.KBRoot, Folder: optStr(arg(args, "folder"))}, m.A.Cfg.AuthEnabled())
+		Library: library, Folder: optStr(arg(args, "folder"))}, m.A.Cfg.AuthEnabled())
 	if err != nil {
 		return nil, err
 	}

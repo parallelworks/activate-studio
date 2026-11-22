@@ -19,6 +19,10 @@ export interface PublicLibrary {
   label: string
   primary: boolean
   writable: boolean
+  /** Why this viewer may not change a library others may: the main library
+   *  for a signed-in person on a shared Studio, where only its
+   *  administrators change it (labels included). */
+  readOnlyWhy?: string
   pinned: boolean
   source: boolean
   caps: { index: boolean; fullText: boolean; vectors: boolean }

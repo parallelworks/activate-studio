@@ -63,6 +63,12 @@ func (m *Module) toolApplyLabels(r *http.Request, args map[string]any, ctx ToolC
 	for i, p := range paths {
 		rels[i] = edgeSlashes.ReplaceAllString(p, "")
 	}
+	if id := strings.ToLower(jsTrim(want)); id == "" || id == kb.PrimaryID {
+		// Labels in the main library are a change to it (mainLibraryWritable).
+		if err := mainLibraryWritable(r); err != nil {
+			return nil, err
+		}
+	}
 	keys, updated, stored, label, known, err := kb.Default.ApplyLabelsIn(r.Context(), want, rels, add, remove)
 	if !known && err == nil {
 		// A library Libs does not hold: the viewer's own, on another system.

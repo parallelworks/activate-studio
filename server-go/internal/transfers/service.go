@@ -19,6 +19,9 @@ type Viewer struct {
 	// Key is the platform key clusters are reached with: the viewer's own,
 	// or with sign-in off the deployment's; "" for none. Never stored.
 	Key string
+	// MainReadOnly is why the viewer may not change the main library
+	// (mainlib): on a Studio with sign-in, everyone but its administrators.
+	MainReadOnly string
 }
 
 // owner is the id a transfer is kept under.

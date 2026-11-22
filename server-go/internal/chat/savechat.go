@@ -62,6 +62,11 @@ func (m *Module) chatDest(r *http.Request, c *conversations.Conversation) (chatD
 	if !ok {
 		return chatDest{}, apierr.New(409, "the main library is not set up here")
 	}
+	// With sign-in, a person with no space of their own saves nothing
+	// here: the main library is read only for them (kb.ForRequest).
+	if lib = kb.ForRequest(r, lib); lib.ReadOnlyWhy != "" {
+		return chatDest{}, apierr.New(403, "%s", lib.ReadOnlyWhy)
+	}
 	if err := kb.RequireWritable(lib); err != nil {
 		return chatDest{}, apierr.New(409, "%s", err.Error())
 	}

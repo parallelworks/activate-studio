@@ -1,4 +1,4 @@
-import { ALL_LIBRARIES, LibrarySwitch, libraryWritable } from '../components/LibrarySwitch'
+import { ALL_LIBRARIES, LibrarySwitch, libraryReadOnlyWhy, libraryWritable } from '../components/LibrarySwitch'
 import { currentLibrary, onLibraryChange, warmRemoteHosts } from '../api'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
@@ -171,13 +171,18 @@ export function LibraryView({ display, onDisplay }: {
   const primaryId = cfg.libraries?.find(l => l.primary)?.id ?? 'kb'
   const writableAt = (p: string) => (inAll ? libraryWritable(cfg.libraries, p.replace(/^\/+/, '').split('/')[0]) : writable)
   const changeableAt = (p: string) => !!p && writableAt(p) && (!inAll || p.includes('/'))
+  const libraryAt = (p: string) => (inAll ? p.replace(/^\/+/, '').split('/')[0] : libId)
   // Why a path cannot be changed (its library is read only), shown on the
-  // actions that would change it; null when it can. Labels still apply.
+  // actions that would change it; null when it can. Labels still apply,
+  // except where the viewer may not change the library at all (labelsLockedAt).
   const readOnlyAt = (p: string): string | null => {
     if (writableAt(p)) return null
-    const id = inAll ? p.replace(/^\/+/, '').split('/')[0] : libId
-    return `${cfg.libraries?.find(l => l.id === id)?.label ?? 'This library'} is read only`
+    const id = libraryAt(p)
+    return libraryReadOnlyWhy(cfg.libraries, id) ?? `${cfg.libraries?.find(l => l.id === id)?.label ?? 'This library'} is read only`
   }
+  // Why labels cannot be set at a path: the main library on a shared
+  // Studio, read only for everyone but its administrators.
+  const labelsLockedAt = (p: string): string | null => libraryReadOnlyWhy(cfg.libraries, libraryAt(p))
   // A folder of the viewer's own space, which they can share: the space and
   // the folder within it ('' for all of it).
   const spaceAt = (p: string): { library: string; path: string } | null => {
@@ -245,6 +250,7 @@ export function LibraryView({ display, onDisplay }: {
   }
   // A selection in a read-only library can be labeled but not moved or deleted.
   const selLocked = selPaths.map(p => readOnlyAt(p)).find(Boolean) ?? null
+  const selLabelsLocked = selPaths.map(p => labelsLockedAt(p)).find(Boolean) ?? null
   const uploadsDir = inAll ? `${primaryId}/uploads` : 'uploads'
 
   useEffect(() => { localStorage.setItem('ade-rail-width', String(railWidth)) }, [railWidth])
@@ -439,7 +445,8 @@ export function LibraryView({ display, onDisplay }: {
     const space = isDir ? spaceAt(path) : null
     if (space) items.push({ label: 'Share…', onClick: later(() => setShareTarget(space)) })
     // Both call a model, so they are offered only with AI features on.
-    if (isDir && cfg.aiEnabled !== false) items.push({ label: 'Suggest labels…', onClick: () => void runSuggest(path) })
+    const labelsLocked = labelsLockedAt(path)
+    if (isDir && cfg.aiEnabled !== false) items.push({ label: 'Suggest labels…', disabled: !!labelsLocked, disabledReason: labelsLocked ?? undefined, onClick: () => void runSuggest(path) })
     if (path && sectionAllowed('chat', cfg)) items.push({ label: 'Add to chat', onClick: () => addToChat(path) })
     if (path && !libraryTop && canCopyOut) {
       const rows = targets().filter(p => !inAll || p.includes('/'))
@@ -460,7 +467,7 @@ export function LibraryView({ display, onDisplay }: {
       items.push({ label: `Paste ${n} ${n === 1 ? 'item' : 'items'}`, disabled: !!locked, disabledReason: locked ?? undefined, onClick: () => void pasteInto(path) })
     }
     if (path) {
-      items.push({ label: 'Labels…', onClick: later(() => { setMultiSel(new Set([path])); setTagMenuOpen(true); setSelectMode(true) }) })
+      items.push({ label: 'Labels…', disabled: !!labelsLocked, disabledReason: labelsLocked ?? undefined, onClick: later(() => { setMultiSel(new Set([path])); setTagMenuOpen(true); setSelectMode(true) }) })
     }
     if (path && !libraryTop) {
       items.push({ label: isDir ? 'Delete folder…' : 'Delete…', destructive: true, disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setDeleteTarget({ path, isDir, error: '' })) })
@@ -607,13 +614,17 @@ export function LibraryView({ display, onDisplay }: {
               {selectMode && (
                 <div className="multi-bar">
                   <span>{multiSel.size} selected</span>
-                  <TagMenu
-                    paths={selPaths}
-                    open={tagMenuOpen}
-                    onOpenChange={setTagMenuOpen}
-                    align="start"
-                    trigger={<Button variant="secondary" size="sm" disabled={!multiSel.size}>Labels…</Button>}
-                  />
+                  {selLabelsLocked
+                    ? <Tooltip content={selLabelsLocked}><Button variant="secondary" size="sm" disabled focusableWhenDisabled>Labels…</Button></Tooltip>
+                    : (
+                      <TagMenu
+                        paths={selPaths}
+                        open={tagMenuOpen}
+                        onOpenChange={setTagMenuOpen}
+                        align="start"
+                        trigger={<Button variant="secondary" size="sm" disabled={!multiSel.size}>Labels…</Button>}
+                      />
+                    )}
                   {selLocked
                     ? (
                       <>
@@ -723,6 +734,7 @@ export function LibraryView({ display, onDisplay }: {
               find={display?.kind === 'file' ? display.q : undefined}
               onDeleted={() => { onDisplay(null); setRefreshKey(k => k + 1) }}
               readOnly={selectedFile ? readOnlyAt(selectedFile) : null}
+              labelsLocked={selectedFile ? labelsLockedAt(selectedFile) : null}
             />
           )}
         </section>

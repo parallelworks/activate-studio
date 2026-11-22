@@ -164,7 +164,7 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 	var applied agentsmd.Folder
 	inLibrary := true
 	if name != "" {
-		f, _, err := agentsmd.Default.Folder(r, "", rel)
+		f, _, err := agentsmd.Default.FolderToWrite(r, "", rel)
 		if err == nil {
 			err = agentsmd.Default.ApplyNamed(f, name, nil)
 		}
@@ -178,7 +178,7 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 		}
 	} else if agentsmd.Default == nil {
 		inLibrary = false
-	} else if _, _, err := agentsmd.Default.Folder(r, "", rel); err != nil {
+	} else if _, _, err := agentsmd.Default.FolderToWrite(r, "", rel); err != nil {
 		if named {
 			return nil, err
 		}

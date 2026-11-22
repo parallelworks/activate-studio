@@ -384,7 +384,7 @@ function ZoomImage({ src, alt, fit, zoom, onError }: { src: string; alt: string;
   )
 }
 
-export function Viewer({ path, find, onDeleted, readOnly }: {
+export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
   path: string | null
   /** Text to land on and highlight, typically the search query that led here. */
   find?: string
@@ -392,6 +392,9 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
   /** Why the file cannot be deleted here, for a file in a read-only
    *  library; Delete is then disabled and says so. */
   readOnly?: string | null
+  /** Why labels cannot be set on this file (the main library on a shared
+   *  Studio), or null. */
+  labelsLocked?: string | null
 }) {
   const [file, setFile] = useState<FileContent | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -733,11 +736,15 @@ export function Viewer({ path, find, onDeleted, readOnly }: {
             </span>
           )}
           <Button variant="secondary" size="sm" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</Button>
-          <TagMenu
-            paths={[file.path]}
-            trigger={<Button variant="secondary" size="sm">Labels</Button>}
-            align="end"
-          />
+          {labelsLocked
+            ? <Tooltip content={labelsLocked}><Button variant="secondary" size="sm" disabled focusableWhenDisabled aria-description={labelsLocked}>Labels</Button></Tooltip>
+            : (
+              <TagMenu
+                paths={[file.path]}
+                trigger={<Button variant="secondary" size="sm">Labels</Button>}
+                align="end"
+              />
+            )}
           {isHtml && (
             // Opens the page in a tab of its own, which opens the print
             // dialog (Save as PDF among its destinations).
