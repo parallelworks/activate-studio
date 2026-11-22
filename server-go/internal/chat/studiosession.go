@@ -28,7 +28,7 @@ func (m *Module) StudioSession(ctx context.Context, c pwcode.Client, owner *auth
 	if owner != nil {
 		r = auth.WithUser(r, owner)
 	}
-	tools := m.chatTools(r)
+	tools := m.chatTools(r, false)
 	want := specNames(tools)
 	token, err := m.issueChatToken(owner, grant)
 	if err != nil {

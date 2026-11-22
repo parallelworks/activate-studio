@@ -350,6 +350,9 @@ func (m *Module) pwcodePrompt(tools []ToolSpec) string {
 			b.WriteString(" This library's conventions, " + conventionsFile + " at its top, set its own writing and document style; read it with " + t("read_kb_file") + " before you write a document, and follow it where it differs.")
 		}
 	}
+	if has["delegate"] {
+		b.WriteString("\n- When the person asks to delegate work, hand it to an agent or have it done in the background, call " + t("delegate") + " with the objective (and the agent instructions they name): it starts a pw code session of its own in a library folder, and the person follows it on the Code page. Do not do delegated work yourself in this chat. Give the person the link its result names, and check on it with " + t("agent_status") + " when they ask.")
+	}
 	if has["run_workflow"] {
 		b.WriteString("\n- Platform workflows, clusters and runs: " + t("list_workflows") + ", " + t("run_workflow") + ", " + t("workflow_runs") + " and " + t("hpc_status") + ".")
 	}
@@ -374,7 +377,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 		}
 		return l, false, nil
 	}
-	tools := m.chatTools(r)
+	tools := m.chatTools(r, true)
 	want := specNames(tools)
 	// A session is kept while its MCP token has a day left.
 	if l := c.PWCode; l != nil && l.Site == t.site && l.Session != "" && l.Persona == t.persona && pwFresh(l.CreatedAt) {
@@ -397,7 +400,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 	// The tools that only read run without asking, in read-only mode too.
 	allowed := []any{}
 	for _, s := range tools {
-		if chatReadTools[s.Name] {
+		if chatReadTools[s.Name] || chatNoAsk[s.Name] {
 			allowed = append(allowed, studioToolPrefix+s.Name)
 		}
 	}
