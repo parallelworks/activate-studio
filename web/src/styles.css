@@ -1023,6 +1023,19 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    direct children, which made this row full-height and centred the
    buttons halfway down the canvas. */
 .chat-controls { position: absolute; top: 11px; right: 16px; z-index: 8; display: flex; align-items: center; gap: 6px; height: auto; }
+/* The thread scrolls under those controls: a band in the thread's own
+   colour, as tall as their row and fading out under it, sticks to the top
+   of the thread so the text passes under it instead of between and behind
+   the buttons. It also starts the first message below them. On a phone
+   the controls sit in the package's own header row instead. */
+@media (min-width: 761px) {
+  .chat-canvas main .chat-thread::before {
+    content: ''; display: block; flex: none; position: sticky; top: 0; z-index: 5; height: 54px; margin-bottom: -6px; pointer-events: none;
+    background: linear-gradient(to bottom, var(--theme-panel-bg) 0, var(--theme-panel-bg) 46px, transparent 54px);
+  }
+  /* With the find bar open the thread starts below it and the controls. */
+  .chat-canvas main:has(search) .chat-thread::before { display: none; }
+}
 /* The package's find bar (Ctrl+F in a conversation) spans the top of the
    thread, under these controls. It stops short of them, or sits below them
    where the thread is too narrow, so its count and buttons stay in view;
