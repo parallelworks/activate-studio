@@ -41,7 +41,7 @@ describe('approving a waiting call on the Code page', () => {
     const card = await screen.findByRole('region', { name: 'Waiting for you' })
     expect(within(card).getByText('2 waiting for you')).toBeInTheDocument()
     expect(within(card).getByText('ls -la notes')).toBeInTheDocument()
-    expect(card).toHaveTextContent('It asks you a question; answer it where the session runs.')
+    expect(card).toHaveTextContent('It asks you a question; answer it in a Studio chat that continues the session, where the session runs.')
     expect(card).toHaveTextContent('Nothing is approved for later calls.')
     fireEvent.click(within(card).getByRole('button', { name: 'Approve' }))
     await waitFor(() => expect(posted).toHaveLength(1))

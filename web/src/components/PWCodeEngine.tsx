@@ -169,7 +169,12 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
   )
 }
 
-interface Approval { id: string; kind?: string; tool?: string; command?: string; reason?: string; plan?: string }
+/** A question pw code asks (an ask): its options are picked by label. */
+interface Question { question: string; header?: string; multiSelect?: boolean; options?: { label: string; description?: string }[] }
+interface Approval { id: string; kind?: string; tool?: string; command?: string; reason?: string; plan?: string; questions?: Question[] }
+/** One question's answer as the person gives it: the options picked, and
+ *  what they typed. */
+interface Answer { picked: string[]; text: string }
 interface Asked { conversationId: string; url?: string; approval: Approval }
 
 /* pw code's open requests for approval, by conversation. They live outside
@@ -248,6 +253,8 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
   const asked = usePending()
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  // An ask's answers so far, by approval and question.
+  const [answers, setAnswers] = useState<Record<string, Answer[]>>({})
   const ref = useRef<HTMLDivElement>(null)
   const [place, setPlace] = useState<CSSProperties>({})
   const mine = asked.filter(a => a.conversationId === conversationId)
@@ -267,11 +274,12 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
     return () => window.removeEventListener('resize', measure)
   }, [mine.length])
   if (!mine.length) return null
-  const answer = async (a: Asked, allowed: boolean) => {
-    setBusy(a.approval.id + allowed); setError('')
+  const answer = async (a: Asked, allowed: boolean, extra?: Record<string, unknown>) => {
+    setBusy(a.approval.id + (extra?.chat ? 'chat' : allowed)); setError('')
+    const kind = a.approval.kind === 'ask' || a.approval.kind === 'plan' ? { kind: a.approval.kind } : {}
     try {
       const res = await fetch(`/api/chat/pwcode/${encodeURIComponent(a.conversationId)}/approvals/${encodeURIComponent(a.approval.id)}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed, ...kind, ...extra }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${res.status}`)
       settle(a.approval.id)
@@ -280,15 +288,41 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
     } finally { setBusy('') }
   }
   const a = mine[0]
+  const questions = a.approval.kind === 'ask' ? a.approval.questions ?? [] : []
+  const given = answers[a.approval.id] ?? questions.map(() => ({ picked: [], text: '' }))
+  const setGiven = (i: number, next: Answer) => setAnswers(m => ({ ...m, [a.approval.id]: given.map((g, j) => (j === i ? next : g)) }))
+  const complete = questions.length > 0 && given.every(g => g.picked.length > 0 || g.text.trim() !== '')
   const what = a.approval.kind === 'plan' ? 'pw code has a plan for you to approve'
+    : a.approval.kind === 'ask' ? (questions.length === 1 ? 'pw code asks you a question' : 'pw code asks you some questions')
     : `pw code asks to run ${a.approval.tool ?? 'a tool'}`
+  const action = a.approval.kind === 'ask' ? <>
+    <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy || !complete}
+      onClick={() => void answer(a, true, { answers: questions.map((q, i) => ({ question: q.question, picked: given[i].picked, text: given[i].text.trim() })) })}>Send</Button>
+    <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'chat'} disabled={!!busy} onClick={() => void answer(a, false, { chat: true })}>Talk it through</Button>
+  </> : <>
+    <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy} onClick={() => void answer(a, true)}>{a.approval.kind === 'plan' ? 'Approve' : 'Allow'}</Button>
+    <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'false'} disabled={!!busy} onClick={() => void answer(a, false)}>{a.approval.kind === 'plan' ? 'Reject' : 'Deny'}</Button>
+  </>
   return (
     <div ref={ref} className="cred-banner pwcode-approval" style={place}>
-      <Callout variant="bar" tone="warning" live title={what}
-        action={<>
-          <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy} onClick={() => void answer(a, true)}>Allow</Button>
-          <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'false'} disabled={!!busy} onClick={() => void answer(a, false)}>Deny</Button>
-        </>}>
+      <Callout variant="bar" tone="warning" live title={what} action={action}>
+        {questions.map((q, i) => (
+          <fieldset key={i} className="pwcode-question">
+            <legend>{q.header ? <strong>{q.header}: </strong> : null}{q.question}</legend>
+            {(q.options ?? []).map(o => {
+              const on = given[i].picked.includes(o.label)
+              return (
+                <label key={o.label} className="pwcode-option">
+                  <input type={q.multiSelect ? 'checkbox' : 'radio'} name={`${a.approval.id}-${i}`} checked={on}
+                    onChange={() => setGiven(i, { ...given[i], picked: q.multiSelect ? (on ? given[i].picked.filter(x => x !== o.label) : [...given[i].picked, o.label]) : [o.label] })} />
+                  <span>{o.label}{o.description ? <span className="muted"> · {o.description}</span> : null}</span>
+                </label>
+              )
+            })}
+            <input className="pwcode-answer" type="text" aria-label={`Your own answer to: ${q.question}`} placeholder={q.options?.length ? 'Or your own answer' : 'Your answer'}
+              value={given[i].text} onChange={e => setGiven(i, { ...given[i], text: e.target.value })} />
+          </fieldset>
+        ))}
         {a.approval.command && <code className="pwcode-command">{a.approval.command}</code>}
         {a.approval.kind === 'plan' && a.approval.plan && <p className="pwcode-plan">{a.approval.plan.slice(0, 600)}</p>}
         {a.url && <p className="muted key-note"><ExternalLink href={a.url}>See it in PW Code on the web</ExternalLink></p>}

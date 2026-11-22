@@ -20,21 +20,32 @@ interface Machine { id: string; name: string; kind: string; hostname?: string; s
 export interface Here {
   available: boolean; reason?: string; daemonId?: string; hostname?: string
   chats: { session: string; conversationId: string; title?: string; continued?: boolean }[]
+  /** Sessions on the viewer's other machines can be continued through
+   *  ACTIVATE (the platform's relay), and why not when they cannot. */
+  relay?: boolean; relayReason?: string | null
 }
 
+/** What still works here for a session the Studio cannot carry on in a
+ *  chat, and where to answer it. */
+const STILL_HERE = 'Here you can read it and Approve or Deny what it waits on; to send it messages, open it in ACTIVATE or where it runs.'
+
 /** Whether the Studio can continue s in a chat for this viewer, and why
- *  not: it must be on the machine whose daemon the chat reaches. */
-export function continuable(s: CodeSession, machines: Machine[], here: Here | null): { ok: boolean; why: string } {
+ *  not. On the machine whose daemon the chat reaches it is driven there;
+ *  on another of the viewer's machines it is driven through ACTIVATE and
+ *  keeps running where it is (relay). */
+export function continuable(s: CodeSession, machines: Machine[], here: Here | null): { ok: boolean; why: string; relay?: boolean } {
   if (!here) return { ok: false, why: 'Checking where this Studio runs pw code…' }
-  if (!here.available) return { ok: false, why: here.reason || 'pw code chat is not offered to you on this Studio.' }
+  if (s.archived) return { ok: false, why: 'This session is archived, so it cannot be continued in a chat; you can still read it here. Restore it in ACTIVATE to continue it.' }
   const m = machines.find(x => x.id === s.machineId)
   // By the daemon id the platform keeps for the machine, else its host name.
-  const same = !!m && (m.daemonId || !here.daemonId
+  const same = here.available && !!m && (m.daemonId || !here.daemonId
     ? !!m.daemonId && m.daemonId === here.daemonId
     : !!m.hostname && m.hostname.toLowerCase() === (here.hostname ?? '').toLowerCase())
-  if (!same) return { ok: false, why: `This session is on ${s.machine}, and this Studio's pw code runs on ${here.hostname || 'another machine'}, so it is read only here.` }
-  if (s.archived) return { ok: false, why: 'This session is archived. Restore it in ACTIVATE to continue it here.' }
-  return { ok: true, why: '' }
+  if (same) return { ok: true, why: '' }
+  if (here.relay) return { ok: true, why: '', relay: true }
+  if (!here.available && !here.relayReason) return { ok: false, why: `${here.reason || 'pw code chat is not offered to you on this Studio.'} ${STILL_HERE}` }
+  const why = here.relayReason || here.reason
+  return { ok: false, why: `This session runs on ${s.machine}, and this Studio cannot carry a chat's messages to it for you${why ? ` (${why.replace(/\.$/, '')})` : ''}. ${STILL_HERE}` }
 }
 export interface CodeSession {
   machineId: string; machine: string; id: string; title: string; model?: string; workspace?: string
@@ -520,7 +531,7 @@ export function Approvals({ s, waiting, onAnswered }: { s: CodeSession; waiting:
               <ApprovalItem a={a} busy={busy} answer={(x, allowed) => void answer(x, allowed)} />
             ) : (
               <p className="muted">
-                {a.kind === 'plan' ? 'It has a plan for you to approve' : 'It asks you a question'}; answer it where the session runs{s.url ? <>, or <a href={s.url} target="_blank" rel="noopener noreferrer">in ACTIVATE</a></> : ''}.
+                {a.kind === 'plan' ? 'It has a plan for you to approve' : 'It asks you a question'}; answer it in a Studio chat that continues the session, where the session runs{s.url ? <>, or <a href={s.url} target="_blank" rel="noopener noreferrer">in ACTIVATE</a></> : ''}.
               </p>
             )}
           </li>
