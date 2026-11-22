@@ -534,9 +534,9 @@ function reachOf(reach: Map<string, number>, dir: string): { root: string; level
 }
 const depthOf = (p: string) => p.split('/').filter(Boolean).length
 
-export function TopologyMap({ libraries = [] }: { libraries?: PublicLibrary[] }) {
+export function TopologyMap({ libraries = [], follow }: { libraries?: PublicLibrary[]; follow?: string | null }) {
   const PALETTE = accentPalette()
-  const [libId, setLib] = useMapLibrary('topology', libraries, 'kb')
+  const [libId, setLib] = useMapLibrary('topology', libraries, 'kb', follow)
   const lib = libraries.length > 1 ? libId ?? 'kb' : 'kb'
   const label = libraries.find(l => l.id === lib)?.label ?? 'the main folder'
   const [dirs, setDirs] = useState<DirRow[] | null>(null)
@@ -1058,7 +1058,7 @@ export function defaultMapLibrary(maps: { id: string; available: boolean; files:
   return best?.id ?? libraries.find(l => l.caps?.vectors)?.id ?? 'kb'
 }
 
-export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string) => void; libraries?: PublicLibrary[] }) {
+export function SemanticMap({ onOpen, libraries = [], follow }: { onOpen: (path: string) => void; libraries?: PublicLibrary[]; follow?: string | null }) {
   const PALETTE = accentPalette()
   const several = libraries.length > 1
   // Without a choice kept, the largest map: asked for once.
@@ -1071,7 +1071,7 @@ export function SemanticMap({ onOpen, libraries = [] }: { onOpen: (path: string)
       .catch(() => { if (alive) setFallback('kb') })
     return () => { alive = false }
   }, [several]) // eslint-disable-line react-hooks/exhaustive-deps
-  const [chosen, setLib] = useMapLibrary('semantic', libraries, fallback)
+  const [chosen, setLib] = useMapLibrary('semantic', libraries, fallback, follow)
   const lib = several ? chosen : 'kb'
   const base = lib ? mainOrLibrary(lib, 'semantic-map') : null
   const [data, setData] = useState<MapOverview | null>(null)

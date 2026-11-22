@@ -77,9 +77,12 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   // Loaded again when the library changes or the index does (a sync, a
   // delete, an upload), so the page never shows a stale count.
   const [epoch, setEpoch] = useState(0)
+  // The library the page shows, which the maps follow and which decides
+  // whether the main library's index runs belong here.
+  const [pageLib, setPageLib] = useState(currentLibrary)
   useEffect(() => {
     const bump = () => setEpoch(e => e + 1)
-    const off = onLibraryChange(bump)
+    const off = onLibraryChange(() => { setPageLib(currentLibrary()); bump() })
     window.addEventListener('ade-kb-changed', bump)
     return () => { off(); window.removeEventListener('ade-kb-changed', bump) }
   }, [])
@@ -285,20 +288,34 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
         </section>}
       </div>
 
-      <section className="card ov-list ov-runs">
-        <div className="ov-runs-head">
-          <h3>Index runs</h3>
-          {/* Building is for a single-user install; a deployment that signs
-              users in builds its own index. The log is for everyone. */}
-          <IndexControls canDelete={false} canBuild={authEnabled === false} />
-        </div>
-        <LastBuild status={idx} />
-        <IndexRuns runs={idx?.runs ?? []} />
-      </section>
+      {pageLib === 'kb' || pageLib === 'all'
+        ? (
+          <section className="card ov-list ov-runs">
+            <div className="ov-runs-head">
+              <h3>Index runs</h3>
+              {/* Building is for a single-user install; a deployment that signs
+                  users in builds its own index. The log is for everyone. */}
+              <IndexControls canDelete={false} canBuild={authEnabled === false} />
+            </div>
+            <LastBuild status={idx} />
+            <IndexRuns runs={idx?.runs ?? []} />
+          </section>
+        )
+        : (
+          // The runs listed here are the main library's jobs; another
+          // library's index is built and kept apart from them.
+          <section className="card ov-list ov-runs">
+            <div className="ov-runs-head"><h3>Index runs</h3></div>
+            <p className="muted">
+              The index runs listed here are the main library&apos;s. {cfg.libraries?.find(l => l.id === pageLib)?.label ?? 'This library'} has its own index,
+              whose state and last build are under <a href="#view=settings:libraries">Settings, Indexing, Libraries</a>.
+            </p>
+          </section>
+        )}
 
       <div className="ov-grid ov-maps">
-        <TopologyMap libraries={cfg.libraries ?? []} />
-        <SemanticMap onOpen={onOpen} libraries={cfg.libraries ?? []} />
+        <TopologyMap libraries={cfg.libraries ?? []} follow={pageLib} />
+        <SemanticMap onOpen={onOpen} libraries={cfg.libraries ?? []} follow={pageLib} />
       </div>
     </div>
   )
