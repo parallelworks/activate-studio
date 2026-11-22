@@ -49,6 +49,10 @@ export function CopyLibraryForm({ onAdded }: { onAdded?: (lib: SettingsLibrary) 
   const [listing, setListing] = useState<BrowseResult | null>(null)
   const [listError, setListError] = useState('')
   const [listing0, setListing0] = useState(false)
+  // Whether the person chose the folder shown. Browsing starts in the
+  // location's own start folder, often a whole home folder, so that is
+  // never copied without being chosen.
+  const [picked, setPicked] = useState(false)
   const [label, setLabel] = useState('')
   const [every, setEvery] = useState(15)
   const [depth, setDepth] = useState<IndexDepth>(DEFAULT_LIBRARY_DEPTH)
@@ -69,18 +73,18 @@ export function CopyLibraryForm({ onAdded }: { onAdded?: (lib: SettingsLibrary) 
 
   // The folder list of the chosen location: where browsing starts, then
   // each folder opened.
-  const open = useCallback(async (loc: string, p: string | null) => {
+  const open = useCallback(async (loc: string, p: string | null, chosen = true) => {
     setListing0(true); setListError('')
     try {
       const r = await transferApi.browse(loc, p)
-      setListing(r); setPath(r.path)
+      setListing(r); setPath(r.path); setPicked(chosen)
     } catch (e) { setListing(null); setListError(String((e as Error).message ?? e)) } finally { setListing0(false) }
   }, [])
 
   const choose = (v: string | null) => {
     if (v === NEW_LOCATION) { setSaving(true); return }
-    setLocationId(v); setPath(''); setListing(null); setError('')
-    if (v) void open(v, null)
+    setLocationId(v); setPath(''); setListing(null); setError(''); setPicked(false)
+    if (v) void open(v, null, false)
   }
 
   const saveLocation = async (l: SavedLocation, result: SettingTest | null) => {
@@ -132,7 +136,11 @@ export function CopyLibraryForm({ onAdded }: { onAdded?: (lib: SettingsLibrary) 
             {listing?.parent !== null && listing && (
               <Button size="sm" variant="ghost" disabled={listing0} onClick={() => void open(chosen.id, listing.parent ?? '')}>Up</Button>
             )}
+            {listing && !picked && (
+              <Button size="sm" variant="ghost" disabled={listing0} onClick={() => setPicked(true)}>Copy this whole folder</Button>
+            )}
           </div>
+          {listing && !picked && !listing0 && <p className="muted">Open the folder to copy below, or choose this whole folder.</p>}
           {listing0 && <Loader inline size={16} label="Listing…" />}
           {listError && <Callout tone="error" size="sm">{listError}</Callout>}
           {listing && !listing0 && (
@@ -163,7 +171,7 @@ export function CopyLibraryForm({ onAdded }: { onAdded?: (lib: SettingsLibrary) 
       </p>
       {error && <Callout tone="error" live>{error}</Callout>}
       <div className="query-actions">
-        <Button variant="primary" loading={busy} disabled={!chosen || !listing || busy} onClick={() => void add()}>Copy and index</Button>
+        <Button variant="primary" loading={busy} disabled={!chosen || !listing || !picked || busy} onClick={() => void add()}>Copy and index</Button>
       </div>
       {saving && <LocationDialog first={null} onClose={() => setSaving(false)} onSave={saveLocation} />}
     </div>

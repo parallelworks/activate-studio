@@ -3289,3 +3289,14 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .apply-folders-list { max-height: 220px; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; }
 .apply-folders-list .muted { padding: 4px 8px; font-size: 12px; }
 .apply-folders-item { width: 100%; justify-content: flex-start; }
+
+/* Keep a local copy (CopyLibraryForm): fields spaced apart, and the folder
+   list scrolls rather than pushing the form down. */
+.copy-library-form { display: flex; flex-direction: column; gap: 14px; }
+.copy-library-form > p { margin: 0; }
+.copy-library-folder { display: flex; flex-direction: column; gap: 6px; }
+.copy-library-folder > p { margin: 0; }
+.copy-library-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.copy-library-path code { overflow-wrap: anywhere; }
+.copy-library-dirs { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px; }
+.copy-library-form .settings-grid { margin-bottom: 0; }
