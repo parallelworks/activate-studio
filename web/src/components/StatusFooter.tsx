@@ -117,12 +117,12 @@ function DetailRows({ rows }: { rows: [string, string][] }) {
 // (steady.ts): a model served from a session drops out of one read when
 // that session is slow to answer.
 let shownModels: number | null = null
-const modelsLow = { last: null as number | null }
+const modelsLow: { last: number | null; at?: number } = { last: null }
 /** The health to show: a lower models count once two reads in a row say
  *  so, or at once when asked (`fresh`, the Re-check button). */
-export function steadyModels(h: AiHealth, fresh = false): AiHealth {
-  if (h.status !== 'ok' || fresh) { shownModels = h.status === 'ok' ? h.models : null; modelsLow.last = null; return h }
-  const models = steadyCount(shownModels, h.models, modelsLow)
+export function steadyModels(h: AiHealth, fresh = false, now = Date.now()): AiHealth {
+  if (h.status !== 'ok' || fresh) { shownModels = h.status === 'ok' ? h.models : null; modelsLow.last = null; modelsLow.at = undefined; return h }
+  const models = steadyCount(shownModels, h.models, modelsLow, now)
   shownModels = models
   return models === h.models ? h : { ...h, models }
 }

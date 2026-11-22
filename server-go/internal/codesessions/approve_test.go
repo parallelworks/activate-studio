@@ -140,6 +140,16 @@ func TestApproveOnThisComputer(t *testing.T) {
 		}
 	}
 
+	// Review 2, item 12: the route, not only the page, refuses to approve
+	// a command too long to show; Deny still goes through.
+	if code, out := postAnswer(t, base, `{"machine":"mach1","id":"`+sid+`","approval":"ap9","allowed":true}`); code != 409 || !strings.Contains(out["error"].(string), "cannot be approved here") || len(got.got) != 2 {
+		t.Fatalf("approving a command too long to show: %d %v %v", code, out, got.got)
+	}
+	if code, _ := postAnswer(t, base, `{"machine":"mach1","id":"`+sid+`","approval":"ap9","allowed":false}`); code != 200 || len(got.got) != 3 {
+		t.Fatalf("denying it: %d %v", code, got.got)
+	}
+	got.got = got.got[:2]
+
 	gone = true
 	if code, out := postAnswer(t, base, `{"machine":"mach1","id":"`+sid+`","approval":"ap1","allowed":true}`); code != 409 || !strings.Contains(out["error"].(string), "no longer waiting") {
 		t.Fatalf("answered already: %d %v", code, out)
