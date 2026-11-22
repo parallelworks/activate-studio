@@ -607,42 +607,84 @@ func (s Share) reaches(id clusterIdent) bool {
 	return false
 }
 
+// sharedReachWait is how long Shared with me waits for each system's
+// answer; the systems are asked side by side, at most sharedReachAtOnce at
+// a time, so one that is stopped delays the list by this much at most.
+var (
+	sharedReachWait   = 20 * time.Second
+	sharedReachAtOnce = 6
+)
+
 // sharedWithMe is what others shared with the viewer's account, on each
-// system a share is on, as their own session there names them.
+// system a share is on, as their own session there names them. A system
+// whose session did not answer is named in "unreached" with the reason,
+// rather than taken as one where nothing is shared.
 func (m *Module) sharedWithMe(ctx context.Context, w who) (*jsonv.Object, error) {
 	owner := w.owner()
 	if _, err := m.spaceSession(w, nil); err != nil && (owner == "" || m.keyOf(w, owner) == "") {
 		return jsonv.NewObject("shares", []any{}, "why", err.Error()), nil
 	}
+	shares := m.loadShares()
 	type reached struct {
-		id clusterIdent
-		ok bool
+		id  clusterIdent
+		err error
 	}
-	ids := map[string]reached{}
-	list := []any{}
-	account := ""
-	for _, s := range m.loadShares() {
+	var sites []string
+	targets := map[string]*spaceTarget{}
+	for _, s := range shares {
 		if s.Owner == owner {
 			continue
 		}
-		at, seen := ids[s.Site]
-		if !seen {
-			t, err := m.pwSpaceTarget(w, owner, s.Site)
-			if err != nil {
-				return jsonv.NewObject("shares", []any{}, "why", err.Error()), nil
-			}
-			// A system the person does not reach is one where nothing
-			// is shared with them.
-			id, err := m.identity(ctx, t.site, t.key)
-			at = reached{id, err == nil}
-			ids[s.Site] = at
+		if _, seen := targets[s.Site]; seen {
+			continue
 		}
-		id := at.id
-		if !at.ok || !s.reaches(id) {
+		t, err := m.pwSpaceTarget(w, owner, s.Site)
+		if err != nil {
+			return jsonv.NewObject("shares", []any{}, "why", err.Error()), nil
+		}
+		targets[s.Site] = t
+		sites = append(sites, s.Site)
+	}
+	ids := make(map[string]reached, len(sites))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, sharedReachAtOnce)
+	for _, site := range sites {
+		wg.Add(1)
+		go func(site string, t *spaceTarget) {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			c, cancel := context.WithTimeout(ctx, sharedReachWait)
+			defer cancel()
+			id, err := m.identity(c, t.site, t.key)
+			if err != nil && c.Err() == context.DeadlineExceeded {
+				err = apierr.New(504, "%s did not answer within %d seconds.", remote.ShortName(t.site), int(sharedReachWait/time.Second))
+			}
+			mu.Lock()
+			ids[site] = reached{id, err}
+			mu.Unlock()
+		}(site, targets[site])
+	}
+	wg.Wait()
+	list := []any{}
+	unreached := []any{}
+	account := ""
+	for _, site := range sites {
+		if r := ids[site]; r.err != nil {
+			unreached = append(unreached, jsonv.NewObject("site", site, "name", remote.ShortName(site), "why", r.err.Error()))
+		}
+	}
+	for _, s := range shares {
+		if s.Owner == owner {
+			continue
+		}
+		at := ids[s.Site]
+		if at.err != nil || !s.reaches(at.id) {
 			continue
 		}
 		if account == "" || s.Site == HomeCluster() {
-			account = id.account
+			account = at.id.account
 		}
 		adopted := ""
 		for _, a := range s.Adopters {
@@ -652,7 +694,7 @@ func (m *Module) sharedWithMe(ctx context.Context, w who) (*jsonv.Object, error)
 		}
 		list = append(list, s.json(adopted))
 	}
-	return jsonv.NewObject("shares", list, "account", account), nil
+	return jsonv.NewObject("shares", list, "account", account, "unreached", unreached), nil
 }
 
 // addShared makes a library of a folder shared with the viewer, indexed

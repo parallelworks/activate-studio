@@ -138,6 +138,17 @@ describe('a space of one\'s own', () => {
     await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ destination: 'ada@box', sourceRoot: '~/studio' }))
   })
 
+  it('names a system whose shares could not be checked, rather than saying nothing is shared there', async () => {
+    stub((m, u) => {
+      if (u === '/api/user-libraries/shared-with-me' && m === 'GET') {
+        return json({ account: 'bob', shares: [], unreached: [{ site: 'cluster-a', name: 'cluster-a', why: 'cluster-a did not answer within 20 seconds.' }] })
+      }
+    })
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={vi.fn()} />)
+    expect(await screen.findByText(/Folders shared with you on cluster-a could not be checked: cluster-a did not answer within 20 seconds\./)).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing is shared with your account yet/)).not.toBeInTheDocument()
+  })
+
   it('lists what others shared, and adds one as the viewer\'s own library', async () => {
     let added = false
     const calls = stub((m, u) => {

@@ -19,10 +19,11 @@ export function SharedWithMe({ onAdded, system, compact = false, title }: {
 }) {
   const [shares, setShares] = useState<FolderShare[] | null>(null)
   const [why, setWhy] = useState('')
+  const [unreached, setUnreached] = useState<{ site: string; name: string; why: string }[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
 
-  const load = () => api.sharedWithMe().then(r => { setShares(r.shares); setWhy(r.why ?? '') }, e => setError(String((e as Error).message ?? e)))
+  const load = () => api.sharedWithMe().then(r => { setShares(r.shares); setWhy(r.why ?? ''); setUnreached(r.unreached ?? []) }, e => setError(String((e as Error).message ?? e)))
   useEffect(() => { void load() }, [])
 
   const add = async (s: FolderShare) => {
@@ -36,11 +37,15 @@ export function SharedWithMe({ onAdded, system, compact = false, title }: {
 
   if (!shares && !error) return compact ? null : <p className="muted"><Loader inline size={16} label="Loading…" /></p>
   const here = (shares ?? []).filter(s => system === undefined || s.site === undefined || s.site === system)
-  if (compact && !error && (why || !here.length)) return null
+  // A system whose session did not answer was not checked: say so, rather
+  // than that nothing is shared there.
+  const missed = unreached.filter(u => system === undefined || u.site === system || u.name === system)
+  if (compact && !error && !missed.length && (why || !here.length)) return null
   return (
     <div className="shared-with-me">
       {why && <Callout tone="info">{why}</Callout>}
-      {shares && !why && !here.length && <p className="muted">Nothing is shared with your account yet. When someone shares a folder of their space with you, or with a group you are in, it shows here.</p>}
+      {missed.map(u => <Callout key={u.site} tone="warning">Folders shared with you on {u.name} could not be checked: {u.why}</Callout>)}
+      {shares && !why && !here.length && !missed.length && <p className="muted">Nothing is shared with your account yet. When someone shares a folder of their space with you, or with a group you are in, it shows here.</p>}
       {title && here.length > 0 && <h4 className="lib-add-shared-title">{title}</h4>}
       {here.length > 0 && (
         <Table density="compact" tableProps={{ 'aria-label': 'Shared with me' }}>
