@@ -33,7 +33,7 @@ import { plural } from '../plural'
 
 export type { IndexJob, SetupStatus } from '../components/PrimaryFolder'
 
-const STEPS = ['Welcome', 'Your Studio', 'Appearance', 'AI features', 'Sidebar', 'Your folder', 'Other libraries', 'Done']
+const STEPS = ['Welcome', 'Your Studio', 'Appearance', 'AI features', 'Sidebar', 'My library', 'Other libraries', 'Done']
 const STEP = { welcome: 0, studio: 1, appearance: 2, ai: 3, sidebar: 4, folder: 5, libraries: 6, done: 7 }
 
 /** Switches for the sidebar's pages, saved as the sections setting. With
@@ -457,12 +457,13 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
         {step === STEP.welcome && (
           <>
             <p style={{ margin: 0 }}>
-              {cfg.appName} indexes a folder on this computer so you can browse, search and query its files, and it can search
-              GUFI indexes on other machines and clusters.
+              {cfg.appName} indexes a folder of yours on this computer, My library, so you can browse, search and query its
+              files and add, rename, move and delete them, and it can search other folders and GUFI indexes here, on other
+              machines and on clusters.
             </p>
             <p className="muted" style={{ margin: 0 }}>
-              The next steps set its name and icon, its theme and color, AI features, the sidebar, the folder, and other
-              libraries. Each step shows what is set now and changes nothing until you change it; any step can be skipped,
+              The next steps set its name and icon, its theme and color, AI features, the sidebar, the folder that is My
+              library, and other libraries. Each step shows what is set now and changes nothing until you change it; any step can be skipped,
               and Finish later closes setup. Everything here is also in Settings, and Run setup again, in Settings, General,
               comes back here.
             </p>
@@ -517,7 +518,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             {!status && !statusError && <Loader inline size={16} label="Loading…" />}
             {primary && (
               <div>
-                <p style={{ margin: 0 }}>Folder in use: <b style={{ wordBreak: 'break-all' }}>{primary.path}</b></p>
+                <p style={{ margin: 0 }}>My library is the folder <b style={{ wordBreak: 'break-all' }}>{primary.path}</b>, read and written as you.</p>
                 <p className="muted" style={{ margin: '2px 0 0' }}>{indexState}</p>
               </div>
             )}
@@ -557,7 +558,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
         {step === STEP.libraries && (
           <>
             <p style={{ margin: 0 }}>
-              Optional: another folder on this computer to search beside your main one, such as one of the suggested folders.
+              Optional: another folder on this computer to search beside My library, such as one of the suggested folders.
               It is indexed here, in the background, and the Studio only reads it. Libraries can be added or removed at any
               time in Settings, Indexing, Libraries.
             </p>

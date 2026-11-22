@@ -102,7 +102,7 @@ func (s *Service) Folder(r *http.Request, id, rel string) (Folder, Target, error
 	case lib.Space:
 		return nil, t, apierr.New(403, "%s is shared with you by %s; agent instructions go into your own library or the main library", lib.Label, lib.SharedFrom)
 	}
-	return nil, t, apierr.New(409, "agent instructions go into the main library or My library, and %s is neither", lib.Label)
+	return nil, t, apierr.New(409, "agent instructions go into the main library or a folder of your own on one of your remote computers, and %s is neither", lib.Label)
 }
 
 // index indexes the library files that changed; hidden ones (a skill

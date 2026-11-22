@@ -15,7 +15,7 @@ import (
 
 // Register serves the nine /api/agent-sites routes.
 func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, d *pwcode.Service) *Sites {
-	s := &Sites{P: p, Daemon: d}
+	s := &Sites{P: p, Daemon: d, Owned: a.Providers.SessionsOf}
 	s.Routes(mux, a)
 	current.Store(s)
 	return s
@@ -72,9 +72,12 @@ func (s *Sites) Routes(mux *http.ServeMux, a *app.App) {
 		if err != nil {
 			return nil, err
 		}
-		return jsonv.NewObject("sessions", rows), nil
+		return jsonv.NewObject("sessions", s.MineOnly(r, r.PathValue("site"), rows, auth)), nil
 	}))
 	mux.HandleFunc("POST /api/agent-sites/{site}/sessions", h(func(w http.ResponseWriter, r *http.Request, key string, auth bool) (any, error) {
+		if err := s.MayStart(r.PathValue("site"), auth); err != nil {
+			return nil, err
+		}
 		x, err := platform.BodyObject(r)
 		if err != nil {
 			return nil, err
@@ -87,6 +90,9 @@ func (s *Sites) Routes(mux *http.ServeMux, a *app.App) {
 		}, auth)
 	}))
 	mux.HandleFunc("GET /api/agent-sites/{site}/sessions/{id}", h(func(w http.ResponseWriter, r *http.Request, key string, auth bool) (any, error) {
+		if err := s.Mine(r, r.PathValue("site"), r.PathValue("id"), auth); err != nil {
+			return nil, err
+		}
 		lines := 30.0
 		if q, ok := platform.Query(r, "lines"); ok {
 			if n := JSNumber(q); n != 0 && !math.IsNaN(n) {
@@ -96,6 +102,9 @@ func (s *Sites) Routes(mux *http.ServeMux, a *app.App) {
 		return s.Status(r.Context(), r.PathValue("site"), key, r.PathValue("id"), lines, auth)
 	}))
 	mux.HandleFunc("POST /api/agent-sites/{site}/sessions/{id}/goal", h(func(w http.ResponseWriter, r *http.Request, key string, auth bool) (any, error) {
+		if err := s.Mine(r, r.PathValue("site"), r.PathValue("id"), auth); err != nil {
+			return nil, err
+		}
 		x, err := platform.BodyObject(r)
 		if err != nil {
 			return nil, err
@@ -103,6 +112,9 @@ func (s *Sites) Routes(mux *http.ServeMux, a *app.App) {
 		return s.Goal(r.Context(), r.PathValue("site"), key, r.PathValue("id"), field(x, "action"), truthyString(x, "condition"), orZero(JSNumber(get(x, "maxTurns"))), auth)
 	}))
 	mux.HandleFunc("POST /api/agent-sites/{site}/sessions/{id}/steer", h(func(w http.ResponseWriter, r *http.Request, key string, auth bool) (any, error) {
+		if err := s.Mine(r, r.PathValue("site"), r.PathValue("id"), auth); err != nil {
+			return nil, err
+		}
 		x, err := platform.BodyObject(r)
 		if err != nil {
 			return nil, err
@@ -114,6 +126,9 @@ func (s *Sites) Routes(mux *http.ServeMux, a *app.App) {
 		return s.Steer(r.Context(), r.PathValue("site"), key, r.PathValue("id"), field(x, "text"), mode, auth)
 	}))
 	mux.HandleFunc("POST /api/agent-sites/{site}/sessions/{id}/approvals/{approval}", h(func(w http.ResponseWriter, r *http.Request, key string, auth bool) (any, error) {
+		if err := s.Mine(r, r.PathValue("site"), r.PathValue("id"), auth); err != nil {
+			return nil, err
+		}
 		x, err := platform.BodyObject(r)
 		if err != nil {
 			return nil, err
@@ -122,6 +137,9 @@ func (s *Sites) Routes(mux *http.ServeMux, a *app.App) {
 		return s.Approve(r.Context(), r.PathValue("site"), key, r.PathValue("id"), r.PathValue("approval"), allowed == true, truthyString(x, "denyMessage"), auth)
 	}))
 	mux.HandleFunc("POST /api/agent-sites/{site}/sessions/{id}/interrupt", h(func(w http.ResponseWriter, r *http.Request, key string, auth bool) (any, error) {
+		if err := s.Mine(r, r.PathValue("site"), r.PathValue("id"), auth); err != nil {
+			return nil, err
+		}
 		return s.Stop(r.Context(), r.PathValue("site"), key, r.PathValue("id"), auth)
 	}))
 }

@@ -8,6 +8,8 @@ import { LogViewer } from '@parallelworks/ui/logviewer'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ApplyToFolder, changeFolder, type AgentFolder } from '../components/ApplyToFolder'
 import { FleetPage, topicVariant } from './FleetPage'
+import { libraryNames } from '../libraryNames'
+import { useAppConfig } from '../config'
 
 /**
  * Agent instructions and skills: the markdown files that shape how agents
@@ -70,6 +72,7 @@ function TakeOffLabel({ off }: { off: boolean }) {
 }
 
 export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
+  const cfg = useAppConfig()
   const [personas, setPersonas] = useState<Persona[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
   const [dir, setDir] = useState('')
@@ -88,6 +91,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // Delegated tasks: the tree of subtasks and the agents working them,
   // polled while anything is running, since the point is watching.
   const [taskRuns, setTaskRuns] = useState<TaskRow[]>([])
+  // Set when the earlier tasks are kept for the Studio's administrators.
+  const [tasksAdminsOnly, setTasksAdminsOnly] = useState('')
   const [openTask, setOpenTask] = useState<string | null>(null)
   const [detail, setDetail] = useState<(Omit<TaskDetail, 'agents'> & { agents: SubTask[] }) | null>(null)
   // Paged rather than one long scroll: a library of sixty is browsed in
@@ -162,7 +167,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
     void (async () => {
       try {
         const d = await fetch('/api/tasks').then(r => r.json())
-        if (!stop) setTaskRuns(d.tasks ?? [])
+        if (!stop) { setTaskRuns(d.tasks ?? []); setTasksAdminsOnly(typeof d.adminsOnly === 'string' ? d.adminsOnly : '') }
         if (openTask && !stop) {
           const md = await fetch(`/api/tasks/${encodeURIComponent(openTask)}`).then(r => r.json())
           if (!stop && !md.error) setDetail(md)
@@ -185,12 +190,14 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const loadFolders = useCallback(() => fetch('/api/agents-md/folders').then(r => r.json())
     .then(d => setFolders(d.folders ?? [])).catch(() => {}), [])
   useEffect(() => { if (page === 'library') void loadFolders() }, [page, loadFolders])
-  // What was taken off stays in its place, marked, until the list is read
-  // again, so the next action does not move under the pointer.
+  // What was taken off stays in its place, marked, while the page is open,
+  // so the next action does not move under the pointer, and a list read
+  // before the take-off landed cannot show it applied again. Applying it
+  // to that folder again clears its mark.
   const [takenOff, setTakenOff] = useState<Set<string>>(new Set())
   const offKey = (f: AgentFolder, kind: 'persona' | 'skill', n: string) => `${f.library}:${f.folder}:${kind}:${n}`
   const isOff = (f: AgentFolder, kind: 'persona' | 'skill', n: string) => takenOff.has(offKey(f, kind, n))
-  useEffect(() => { setTakenOff(new Set()) }, [folders])
+  useEffect(() => { setTakenOff(new Set()) }, [page])
   const carrying = (kind: 'persona' | 'skill', n: string) =>
     folders.filter(f => (kind === 'persona' ? f.instructions : f.skills).includes(n) && !isOff(f, kind, n))
   const stillCarrying = folders.filter(f => f.instructions.some(n => !isOff(f, 'persona', n)) || f.skills.some(n => !isOff(f, 'skill', n)))
@@ -301,7 +308,10 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             keeps the tasks of the earlier task engine to read: their agents, board and output, with their results in the
             library under <code>tasks/</code>.
           </Callout>
-          {taskRuns.length === 0 && (
+          {taskRuns.length === 0 && tasksAdminsOnly && (
+            <EmptyState variant="bare" className="task-empty" title="Earlier tasks are kept for administrators" description={tasksAdminsOnly} />
+          )}
+          {taskRuns.length === 0 && !tasksAdminsOnly && (
             <EmptyState variant="bare" className="task-empty" title="No earlier tasks" description="Tasks delegated before delegation moved to pw code sessions are listed here." />
           )}
           {taskRuns.length > 0 && (
@@ -490,8 +500,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       <section className="card ov-list agents-folders">
         <h3>Folders with agent instructions ({stillCarrying.length})</h3>
         <p className="muted view-sub">
-          The folders whose <code>AGENTS.md</code> or <code>.agents/skills</code> carry instructions or skills applied here, in the main
-          library and in My library. Take one off and its section goes; the rest of the file stays.
+          The folders whose <code>AGENTS.md</code> or <code>.agents/skills</code> carry instructions or skills applied here, in {libraryNames(cfg).writable.replace(' or ', ' and in ')}. Take one off and its section goes; the rest of the file stays.
         </p>
         {folders.map(f => (
           <div className="ov-row" key={`${f.library}:${f.folder}`}>
@@ -522,6 +531,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           onDone={f => {
             setApplying(null)
             toast.success(`Applied ${applying.name} to ${f.folder || 'the top of ' + f.label}.`)
+            setTakenOff(prev => { const next = new Set(prev); next.delete(offKey(f, applying.kind, applying.name)); return next })
             void loadFolders()
           }} />
       )}

@@ -130,4 +130,25 @@ describe('agent instructions', () => {
     // It still carries the skill, so it is still counted.
     expect(screen.getByText('Folders with agent instructions (1)')).toBeInTheDocument()
   })
+
+  it('keeps a taken-off item marked when a list read before the take-off lands', async () => {
+    const stale = { library: 'main', label: 'Engineering Library', folder: 'agentstest', path: 'agentstest/AGENTS.md', space: false, exists: true, instructions: ['reviewer'], skills: ['pump'] }
+    folders = [stale]
+    render(<AgentsView onOpen={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'reviewer · take off' }))
+    await waitFor(() => expect(posts).toHaveLength(1))
+    await screen.findByRole('button', { name: 'reviewer · taken off' })
+    // The server's list still has it (read before the take-off landed),
+    // and the list is read again after another apply.
+    folders = [stale]
+    const row = (await screen.findByTitle('reviewer')).closest('.ov-row') as HTMLElement
+    fireEvent.click(within(row).getByText('apply to a folder'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(posts).toHaveLength(2))
+    const reads = () => vi.mocked(fetch).mock.calls.filter(c => String(c[0]) === '/api/agents-md/folders').length
+    await waitFor(() => expect(reads()).toBeGreaterThanOrEqual(2))
+    await new Promise(r => setTimeout(r, 50))
+    expect(screen.getByRole('button', { name: 'reviewer · taken off' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'reviewer · take off' })).toBeNull()
+  })
 })

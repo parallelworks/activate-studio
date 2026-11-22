@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -37,6 +38,8 @@ var Templates = []Template{
 		Goal: `Once a day, write the digest of what the agents did: read the folders under agents/ (delegated work and the standing agents' folders under agents/fleet/), the workflow runs, and their results and status files. Lead with outcomes, then what is still running and when it should finish, then failures and what was done about them, with numbers in one short table and a link for every claim. Write it to reports/digest-YYYY-MM-DD.md in the library and end your status with the first paragraph.`},
 }
 
+var approvalRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+
 // Default is the fleet Register made.
 var Default *Fleet
 
@@ -60,6 +63,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		if err := gate(); err != nil {
 			return nil, err
 		}
+		f.Seen(auth.UserOf(r))
 		f.Follow(r.Context())
 		return map[string]any{"agents": f.For(r)}, nil
 	}))
@@ -101,7 +105,11 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 		session := map[string]any{"id": ag.Session, "earlier": ag.Sessions, "recent": f.Recent(ctx, ag, 40)}
-		return map[string]any{"agent": ag, "journal": f.Journal(ag.ID, 60), "session": session}, nil
+		out := map[string]any{"agent": ag, "journal": f.Journal(ag.ID, 60), "session": session}
+		if ap := f.Waiting(ctx, ag); ap != nil {
+			out["approval"] = ap
+		}
+		return out, nil
 	}))
 	act := func(name string, fn func(id string, text string) bool) {
 		mux.HandleFunc("POST /api/fleet/{id}/"+name, h(func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -119,6 +127,30 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 			return map[string]any{"ok": true}, nil
 		}))
 	}
+	// A call its session waits to have approved is answered here: the
+	// session runs on this host's daemon, which the Code page lists only
+	// where it shows this computer's sessions. One call, no standing grant.
+	mux.HandleFunc("POST /api/fleet/{id}/approve", h(func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if err := gate(); err != nil {
+			return nil, err
+		}
+		ag := f.GetFor(r, r.PathValue("id"))
+		if ag == nil {
+			return nil, apierr.New(404, "no such agent")
+		}
+		var b struct {
+			Approval string `json:"approval"`
+			Allowed  bool   `json:"allowed"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&b); err != nil || !approvalRe.MatchString(b.Approval) {
+			return nil, apierr.New(400, "approval is required")
+		}
+		if err := f.Answer(r.Context(), ag, b.Approval, b.Allowed); err != nil {
+			return nil, err
+		}
+		f.Follow(r.Context(), ag.ID)
+		return map[string]any{"ok": true}, nil
+	}))
 	act("tick", func(id, _ string) bool { return f.Tick(id, "the person who runs you asked for a wake-up now", true) })
 	act("pause", func(id, _ string) bool { return f.Pause(id) })
 	act("resume", func(id, _ string) bool { return f.Resume(id) })

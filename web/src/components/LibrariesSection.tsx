@@ -30,7 +30,7 @@ export type LibraryKind = 'local' | 'ssh' | 'pw' | 'cluster'
 export const KINDS: Record<LibraryKind, { label: string; description: string }> = {
   local: { label: 'A GUFI index on this machine', description: 'An index already built here. Read only.' },
   ssh: { label: 'A GUFI index on another machine over ssh', description: 'Read with your own ssh keys. Nothing is written there.' },
-  pw: { label: 'A GUFI index on a remote system, over pw ssh', description: 'An index already on one of the systems the pw CLI reaches, read over pw ssh. Nothing is written there.' },
+  pw: { label: 'A GUFI index on a remote computer, over pw ssh', description: 'An index already on one of the remote computers the pw CLI reaches, read over pw ssh. Nothing is written there.' },
   cluster: { label: 'An index built on a cluster', description: 'Built on one of your clusters with your own key. Only you see it.' },
 }
 
@@ -631,7 +631,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       )
       rows.push({
         key: l.id, name: l.label,
-        kind: l.space ? `Your library on ${host}, as ${l.space.account}, read and written as you`
+        kind: l.space ? `${cfg.signIn ? 'My library' : 'Your folder'} on ${host}, as ${l.space.account}, read and written as you`
           : l.shared ? `Shared by ${l.shared.from} on ${host}, ${l.shared.access === 'write' ? 'read and written' : 'read'} as you`
           : `Index built on ${host} over ${l.transport === 'ssh' ? 'ssh' : 'pw ssh'}, ${l.mine ? 'read and written as you' : 'read only'}`,
         where: (
@@ -766,8 +766,13 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       {dialog}
       {heading && <h1>Libraries</h1>}
       <p className="muted view-sub">
-        Every library searched here. The main folder is the only one written to; the others are indexes read where
-        they are, built here or connected as they are.
+        Every library searched here. {cfg.signIn
+          ? <>{cfg.kbLabel} is written here, unless its row says it is read only for you. My library and the
+            libraries you index on your remote computers are written as your account there, where it may write.</>
+          : <>{cfg.kbLabel}, your folder on this computer, is written here. The libraries you index on your remote
+            computers are written as your account there, where it may write.</>}
+        {' '}The others are read only: folders indexed on this computer, indexes connected as they
+        are, and kept copies.
       </p>
       {!libs ? <Loader inline size={16} label="Loading…" /> : (
         <Table density="compact" className="libraries-table" wrapperClassName="rag-calls-wrap libraries-wrap">
@@ -824,7 +829,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
           Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR,
           text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on
           all files, about three times the indexing time of Meaning on documents. For a library {cfg.appName} builds it is a
-          choice: one built here applies a new depth in the background at once. One built on a remote system applies it when
+          choice: one built here applies a new depth in the background at once. One built on a remote computer applies it when
           it is rebuilt, which is offered as the depth changes, and its row says so until then. An index connected as it is
           stays as it was built.
         </p>

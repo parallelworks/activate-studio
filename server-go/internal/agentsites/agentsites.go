@@ -53,6 +53,10 @@ type Sites struct {
 	AuthEnabled func(r *http.Request) bool
 	// Now is time.Now (tests).
 	Now func() time.Time
+	// Owned is the sessions on this host the Studio started for the
+	// viewer of r (app.Providers.SessionsOf); with sign-in on, the only
+	// ones of this host they reach.
+	Owned func(r *http.Request) map[string]bool
 }
 
 func (s *Sites) authOn(r *http.Request) bool {

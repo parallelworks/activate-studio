@@ -103,7 +103,9 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 		t.Fatalf("%v", b.Body)
 	}
 	id := b.Body["id"].(string)
-	eq(t, []any{b.Body["label"], b.Body["site"], b.Body["state"]}, []any{"My library", "cluster-a", "building"}, "started")
+	// On a Studio only one person uses, the main library is theirs: their
+	// folder on a system is named by the folder, not My library.
+	eq(t, []any{b.Body["label"], b.Body["site"], b.Body["state"]}, []any{"studio", "cluster-a", "building"}, "started")
 	if sp, _ := b.Body["space"].(map[string]any); sp == nil || sp["account"] == "" {
 		t.Fatalf("space: %v", b.Body["space"])
 	}
@@ -139,7 +141,16 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 		t.Fatalf("stored: %+v", defs[0])
 	}
 	again := h.post("/api/user-libraries/space", map[string]any{"sourceRoot": "~/studio"})
-	match(t, again.Body["error"], `is already your library My library`, "once")
+	match(t, again.Body["error"], `is already your library studio`, "once")
+	// One made before, under the name My library, keeps its record and is
+	// shown by its folder's name.
+	h.m.Users.Update("single", id, func(d *libraries.UserDef) { d.Label = libraries.SpaceLabel })
+	if got := h.library(id)["label"]; got != "studio" {
+		t.Fatalf("an earlier My library is shown as %v", got)
+	}
+	if h.m.Users.Load("single")[0].Label != libraries.SpaceLabel {
+		t.Fatal("the stored name changed")
+	}
 
 	// The Library's writes, as the person, in the space's folder.
 	SpaceEvery = 50 * time.Millisecond

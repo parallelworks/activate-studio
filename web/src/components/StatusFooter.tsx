@@ -52,14 +52,14 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
   trigger: ReactElement
   idx: IndexStatus | null
   gufi: boolean | null
-  stats: { files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] } | null
+  stats: { files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[]; lib?: string } | null
   onSync: () => void
   syncing: boolean
 }) {
   const gb = stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(2)} GB` : ''
   const job = idx?.job ?? null
   const libs = useAppConfig().libraries ?? []
-  const summary = indexSummary(idx, stats?.files, countedIn(libs))
+  const summary = indexSummary(idx, stats?.files, countedIn(libs, stats?.lib))
   const [stopping, setStopping] = useState(false)
   const stop = async () => {
     setStopping(true)
@@ -386,7 +386,9 @@ export function countedIn(libs: { id: string; label: string; primary: boolean }[
 export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // With AI features off there is no model line.
   const cfg = useAppConfig()
-  const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[] } | null>(null)
+  // The counts and the library they are of: a count is never shown beside
+  // another library's name.
+  const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[]; lib?: string } | null>(null)
   // The same index status the rest of the app shows (indexActivity.ts).
   const idx = useIndexStatus()
   const [syncing, setSyncing] = useState(false)
@@ -403,7 +405,11 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // What it reads is shared with the status panel, which shows the same
   // health and counts without asking the server again.
   const refresh = () => Promise.allSettled([
-    api.stats().then(s => { setStats(s as typeof stats); share({ stats: s }) }),
+    (lib => api.stats().then(s => {
+      // An answer for a library no longer selected is dropped.
+      if (lib !== currentLibrary()) return
+      setStats({ ...(s as object), lib } as typeof stats); share({ stats: s })
+    }))(currentLibrary()),
     fetch('/api/whoami').then(r => r.json()).then((w: WhoAmI) => {
       setWho(w); share({ authEnabled: !!w.authEnabled })
       // A sign-in that ended while the page was open, on a Studio that
@@ -418,7 +424,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
     const t = setInterval(() => { void refresh() }, 60_000)
     // The count follows the library selected and any change to the index.
     const now = () => { void refresh() }
-    const off = onLibraryChange(now)
+    // Another library selected: its count is not known until its stats come
+    // back, so the last library's is not shown under the new name meanwhile.
+    const off = onLibraryChange(() => { setStats(null); void refresh() })
     window.addEventListener('ade-kb-changed', now)
     // A change in Settings, Model access changes the model line.
     window.addEventListener('ade:model-access-changed', now)
@@ -498,7 +506,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   }
 
   const busy = syncing || !!idx?.running
-  const summary = indexSummary(idx, stats?.files, countedIn(cfg.libraries ?? []))
+  const summary = indexSummary(idx, stats?.files, countedIn(cfg.libraries ?? [], stats?.lib))
   const railUpdate = failed ? 'The update failed' : installing ? 'Updating' : `Version ${update} is available`
   if (collapsed) {
     return (

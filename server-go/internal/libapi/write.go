@@ -21,7 +21,7 @@ import (
 // with the Studio's own account for everyone who signs in, so only the
 // deployment sets them (STUDIO_LIBRARIES). A person adds libraries of
 // their own on their systems, read as them.
-const deploymentLibraries = "On a Studio with sign-in, the libraries on this computer are the deployment's and are set by it. Add a library of your own on one of your systems instead."
+const deploymentLibraries = "On a Studio with sign-in, the libraries on this computer are the deployment's and are set by it. Add a library of your own on one of your remote computers instead."
 
 func (s *Service) addLibrary(w http.ResponseWriter, r *http.Request) error {
 	if s.authEnabled(r) {

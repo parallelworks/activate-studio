@@ -61,4 +61,13 @@ describe('the Earlier tasks page', () => {
     // An older server, with no counts: those not running are done.
     expect(agentsSummary({ id: 'x', objective: '', state: 'completed', agents: 3, running: 1 })).toBe('2 of 3 done')
   })
+
+  it('says the earlier tasks are kept for administrators when the server keeps them', async () => {
+    const why = 'On a Studio with sign-in, earlier tasks are kept for its administrators: the task engine did not record who started each task.'
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ tasks: [], adminsOnly: why }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    render(<AgentsView onOpen={() => {}} />)
+    expect(await screen.findByText('Earlier tasks are kept for administrators')).toBeInTheDocument()
+    expect(screen.getByText(why)).toBeInTheDocument()
+    expect(screen.queryByText('No earlier tasks')).toBeNull()
+  })
 })

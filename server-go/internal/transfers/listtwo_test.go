@@ -44,6 +44,7 @@ func TestListTwoReadsTheFoldersInside(t *testing.T) {
 	write(t, filepath.Join(root, ".agents", "skills", "two", "SKILL.md"), "s")
 	write(t, filepath.Join(root, "we[i]*rd", ".hid", "x"), "h")
 	write(t, filepath.Join(root, "we[i]*rd", "sub", "f"), "f")
+	write(t, filepath.Join(root, "a", ".hid2", "kept.txt"), "k")
 	write(t, filepath.Join(root, "closed", "c.txt"), "c")
 	os.Chmod(filepath.Join(root, "closed"), 0)
 	t.Cleanup(func() { os.Chmod(filepath.Join(root, "closed"), 0o755) })
@@ -102,6 +103,18 @@ func TestListTwoReadsTheFoldersInside(t *testing.T) {
 			}
 			if _, ok := h.Children["we[i]*rd/.hid"]; ok {
 				t.Fatalf("kept %v: a hidden folder was listed", kept)
+			}
+		}
+		// A folder given with a trailing slash: the helper itself leaves out
+		// what is in its hidden folders (the Go side would drop it too, as
+		// their parent is not listed, but the entries count toward the cap).
+		for _, rel := range []string{"a/", "a//"} {
+			res, err := fs.runMarked(ctx, marker(), "list2", rel, "100")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(res.Raw), "kept.txt") {
+				t.Fatalf("kept %v: list2 %q lists what is in a hidden folder", kept, rel)
 			}
 		}
 		cut, err := fs.ListTwo(ctx, "", 1)

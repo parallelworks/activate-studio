@@ -18,6 +18,7 @@ import (
 type daemon struct {
 	has         map[string]bool
 	down        bool
+	refuse      int
 	interrupted []string
 }
 
@@ -26,6 +27,9 @@ func (d *daemon) Site() string { return "local" }
 func (d *daemon) Call(_ context.Context, method, route string, _ any, _ time.Duration) (any, error) {
 	if d.down {
 		return nil, errors.New("dial unix: connection refused")
+	}
+	if d.refuse != 0 {
+		return nil, &pwcode.DaemonError{Message: "refused", Status: d.refuse}
 	}
 	id, ok := strings.CutSuffix(strings.TrimPrefix(route, "/v1/sessions/"), "/interrupt")
 	if method != http.MethodPost || !ok {
@@ -57,6 +61,18 @@ func TestTheSessionsLeftRunningAreStopped(t *testing.T) {
 		t.Fatalf("with the daemon down: %d", n)
 	}
 	d.down = false
+	// A daemon that refuses the Studio is tried again, not taken as
+	// nothing to stop.
+	for _, code := range []int{401, 403} {
+		d.refuse = code
+		if n := a.StopLeftRunning(context.Background(), d); n != 0 {
+			t.Fatalf("refused %d: %d", code, n)
+		}
+		if _, err := os.Stat(filepath.Join(a.Dir, stoppedMark)); err == nil {
+			t.Fatalf("a %d refusal marked the sessions stopped", code)
+		}
+	}
+	d.refuse = 0
 	if n := a.StopLeftRunning(context.Background(), d); n != 2 || strings.Join(d.interrupted, ",") != "20261102-120000-abcdef12,20261102-120001-abcdef13" {
 		t.Fatalf("stopped %d: %v", n, d.interrupted)
 	}
