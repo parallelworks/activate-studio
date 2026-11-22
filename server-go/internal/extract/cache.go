@@ -101,6 +101,7 @@ func writeEntry(file, text string) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
 	}
+	closeDir(filepath.Dir(file))
 	tmp, err := os.CreateTemp(filepath.Dir(file), filepath.Base(file)+".*.tmp")
 	if err != nil {
 		return err
@@ -129,9 +130,19 @@ func fresh(file string, src time.Time) (ok bool, size int64, exists bool) {
 		return false, 0, false
 	}
 	// An entry an earlier version left open to others is closed as it is
-	// met (its folders were made 0755 then; the file is what holds text).
+	// met, and so is its folder (made 0755 then), whose listing names the
+	// files read.
 	if st.Mode().Perm()&0o077 != 0 {
 		os.Chmod(file, st.Mode().Perm()&0o700)
 	}
+	closeDir(filepath.Dir(file))
 	return !st.ModTime().Before(src), st.Size(), true
+}
+
+// closeDir closes a cache folder an earlier version made 0755: its listing
+// names the files whose text the cache holds.
+func closeDir(dir string) {
+	if d, err := os.Stat(dir); err == nil && d.Mode().Perm()&0o077 != 0 {
+		os.Chmod(dir, d.Mode().Perm()&0o700)
+	}
 }

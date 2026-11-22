@@ -682,6 +682,25 @@ def ensure_words_table(db: sqlite3.Connection) -> None:
     db.execute("CREATE VIRTUAL TABLE words USING fts5(tinode UNINDEXED, fname UNINDEXED, wordf)")
 
 
+def private_dir(d: Path) -> None:
+    """Make d and every folder missing above it 0700, and close d if an
+    earlier version left it open. mkdir(mode=..., parents=True) gives the
+    parents the default mode, which leaves the names below listable."""
+    missing = []
+    p = d
+    while not p.exists() and p != p.parent:
+        missing.append(p)
+        p = p.parent
+    for m in reversed(missing):
+        try:
+            m.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        os.chmod(m, 0o700)  # the mode given to mkdir is narrowed by umask only
+    if d.stat().st_mode & 0o077:
+        os.chmod(d, 0o700)
+
+
 def write_cache(cache_file: Path, text: str) -> bool:
     """Write a cache entry whole or not at all (a temporary file renamed into
     place), so a pass stopped part way never leaves half an entry that a
@@ -691,7 +710,7 @@ def write_cache(cache_file: Path, text: str) -> bool:
     file that may be private, so it is the builder's alone (0600, in folders
     of 0700)."""
     try:
-        cache_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        private_dir(cache_file.parent)
         tmp = cache_file.with_name(f'{cache_file.name}.{os.getpid()}.tmp')
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, 'w') as f:
@@ -819,6 +838,12 @@ def main() -> int:
     kb_root = Path(args.kb_root)
     index_root = Path(args.index)
     cache_root = Path(args.extract_cache)
+    # The cache mirrors the source's names and holds the text of what it
+    # read: its top is the builder's alone, whatever an earlier version made.
+    try:
+        private_dir(cache_root)
+    except OSError as exc:
+        print(f'  cache folder not closed {cache_root}: {exc}', file=sys.stderr)
     walk_root = index_root / args.subdir if args.subdir else index_root
     progress = Progress(args.progress, 'text')
 
