@@ -125,7 +125,7 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
       align="end"
       className="scope-menu persona-menu engine-menu"
       trigger={
-        <button className={`scope-btn ${current === 'pwcode' ? 'active' : ''}`} title="What answers this conversation: pw code or the Studio assistant">
+        <button className={`scope-btn engine-btn ${current === 'pwcode' ? 'active' : ''}`} title="What answers this conversation: pw code or the Studio assistant">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M5 4.5 1.5 8 5 11.5M11 4.5 14.5 8 11 11.5M9.2 3 6.8 13"/></svg>
           <span className="persona-label">{current === 'pwcode' ? (session.model ? `pw code · ${shortModel(session.model)}` : 'pw code') : 'Studio'}</span>
         </button>

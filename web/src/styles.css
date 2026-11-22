@@ -1031,10 +1031,19 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    the buttons. It also starts the first message below them. On a phone
    the controls sit in the package's own header row instead. */
 @media (min-width: 761px) {
+  /* A notice over the thread makes the band reach its foot
+     (--chat-notice-pad, set by ChatView), so the conversation starts below
+     the notice and scrolls under it. */
   .chat-canvas main .chat-thread::before {
-    content: ''; display: block; flex: none; position: sticky; top: 0; z-index: 5; height: 54px; margin-bottom: -6px; pointer-events: none;
-    background: linear-gradient(to bottom, var(--theme-panel-bg) 0, var(--theme-panel-bg) 46px, transparent 54px);
+    --band: max(54px, var(--chat-notice-pad, 0px));
+    content: ''; display: block; flex: none; position: sticky; top: 0; z-index: 5; height: var(--band); margin-bottom: -6px; pointer-events: none;
+    background: linear-gradient(to bottom, var(--theme-panel-bg) 0, var(--theme-panel-bg) calc(var(--band) - 8px), transparent var(--band));
   }
+  /* Too narrow for every label: Persona, Scope, Save and Voice drop to
+     icons, then the engine button too (ChatView measures). */
+  .chat-controls.tight .scope-btn:not(.engine-btn) > .persona-label,
+  .chat-controls.tighter .scope-btn > .persona-label { display: none; }
+  .chat-controls.tight .scope-btn:not(.engine-btn), .chat-controls.tighter .scope-btn { padding: 5px 8px; }
   /* With the find bar open the thread starts below it and the controls. */
   .chat-canvas main:has(search) .chat-thread::before { display: none; }
 }
@@ -1060,6 +1069,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
      which is why it is written defensively: if the class ever changes the
      rule simply stops applying and the labels stay hidden. */
   .chat-controls { gap: 4px; top: 10px; right: 10px; }
+  /* A notice over the thread: the conversation starts below it. */
+  .chat-canvas main .chat-thread { padding-top: var(--chat-notice-pad, 0px); }
   .chat-controls .scope-btn { padding: 4px 7px; }
   .chat-controls .scope-btn span { display: none; }
   .chat-canvas main [class*="border-b"] button[class*="min-w-"] {
@@ -1937,6 +1948,9 @@ a.identity-btn { text-decoration: none; }
 /* An approval comes while a reply runs, so it sits above the composer,
    clear of the newest message. */
 .cred-banner.pwcode-approval { top: auto; bottom: 124px; width: min(680px, calc(100% - 32px)); }
+/* A notice at the top is centred on the thread, not on the thread and the
+   conversations list together (ChatView measures the thread). */
+.chat-canvas > .cred-banner:not(.pwcode-approval) { left: var(--chat-main-x, 50%); width: max-content; max-width: min(680px, calc(var(--chat-main-w, 100%) - 32px)); }
 .engine-tools { margin: 8px 4px 0; font-size: 12px; color: var(--pw-muted); }
 .engine-tools-off { color: var(--pw-text); }
 .pwcode-approval .pwcode-command { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }

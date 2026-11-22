@@ -36,6 +36,7 @@ import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCom
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 import { SaveChatButton } from '../components/SaveChatButton'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
+import { fitControls, noticePad } from '../chatTop'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -410,8 +411,12 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
     const controls = canvas?.querySelector<HTMLElement>(':scope > .chat-controls')
     if (!canvas || !controls || typeof ResizeObserver === 'undefined') return
     const phone = matchMedia(PHONE_QUERY)
+    // Where the thread is too narrow for the buttons' labels (a narrow
+    // window, or the Status panel open), the labels drop to icons, the
+    // engine's last, so the row never runs over the conversations list.
     const measure = () => {
       const main = canvas.querySelector('main')?.getBoundingClientRect()
+      fitControls(controls, main && !phone.matches ? main.width - 24 : null)
       const c = controls.getBoundingClientRect()
       const beside = main && c.width > 0 && !phone.matches && main.width - c.width - 40 >= 280
       const below = main && c.width > 0 && !phone.matches && !beside
@@ -422,7 +427,42 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
     const ro = new ResizeObserver(measure)
     ro.observe(controls)
     ro.observe(canvas)
-    return () => ro.disconnect()
+    // A label that changes while hidden (a persona chosen, the engine's
+    // model) does not resize the row, so the fit is checked again then.
+    const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(measure)
+    mo?.observe(controls, { subtree: true, childList: true, characterData: true })
+    return () => { ro.disconnect(); mo?.disconnect() }
+  }, [cfg.loaded, chatEpoch])
+
+  // A notice over the top of the thread (pw code's model, the Studio
+  // assistant answering, a missing key) sits over the thread, not the
+  // conversations list, and pushes the start of the conversation below it
+  // rather than covering it: the band at the top of the thread
+  // (styles.css) grows to the notice's foot.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || typeof ResizeObserver === 'undefined' || typeof MutationObserver === 'undefined') return
+    const ro = new ResizeObserver(() => place())
+    const place = () => {
+      const box = canvas.getBoundingClientRect()
+      const mainEl = canvas.querySelector('main')
+      const main = mainEl?.getBoundingClientRect()
+      const notes = Array.from(canvas.querySelectorAll<HTMLElement>(':scope > .cred-banner:not(.pwcode-approval)'))
+      ro.disconnect()
+      ro.observe(canvas)
+      if (mainEl) ro.observe(mainEl)
+      notes.forEach(n => ro.observe(n))
+      if (main) {
+        canvas.style.setProperty('--chat-main-x', `${Math.round(main.left - box.left + main.width / 2)}px`)
+        canvas.style.setProperty('--chat-main-w', `${Math.round(main.width)}px`)
+      }
+      const pad = main ? noticePad(main.top, notes.map(n => n.getBoundingClientRect().bottom)) : 0
+      canvas.style.setProperty('--chat-notice-pad', `${pad}px`)
+    }
+    place()
+    const mo = new MutationObserver(place)
+    mo.observe(canvas, { childList: true })
+    return () => { mo.disconnect(); ro.disconnect() }
   }, [cfg.loaded, chatEpoch])
 
   // The empty state freezes its greeting and starter prompts at mount, so
