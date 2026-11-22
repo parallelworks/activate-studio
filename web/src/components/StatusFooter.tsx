@@ -17,6 +17,7 @@ import { share, syncIndex, type AiHealth } from '../statusShare'
 import { aiOn, useAppConfig } from '../config'
 import { reloadOntoNewest, useShellUpdate } from '../shellWorker'
 import { plural } from '../plural'
+import { steadyCount } from '../steady'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -110,6 +111,20 @@ function DetailRows({ rows }: { rows: [string, string][] }) {
       {rows.map(([k, v]) => <DescriptionListItem key={k} label={k}>{v}</DescriptionListItem>)}
     </DescriptionList>
   )
+}
+
+// The models count as shown, and a lower read not yet confirmed
+// (steady.ts): a model served from a session drops out of one read when
+// that session is slow to answer.
+let shownModels: number | null = null
+const modelsLow = { last: null as number | null }
+/** The health to show: a lower models count once two reads in a row say
+ *  so, or at once when asked (`fresh`, the Re-check button). */
+export function steadyModels(h: AiHealth, fresh = false): AiHealth {
+  if (h.status !== 'ok' || fresh) { shownModels = h.status === 'ok' ? h.models : null; modelsLow.last = null; return h }
+  const models = steadyCount(shownModels, h.models, modelsLow)
+  shownModels = models
+  return models === h.models ? h : { ...h, models }
 }
 
 /** "1 model ready", "3 models ready". */
@@ -396,7 +411,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
       if (w.signIn?.required && w.signIn.loginUrl && !w.verified && !embedded()) location.assign(signInHref(w.signIn.loginUrl))
     }),
     api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null)),
-    fetch('/api/ai/health').then(r => r.json()).then((h: AiHealth) => { setAi(h); share({ ai: h }) }).catch(() => { setAi(null); share({ ai: null }) }),
+    fetch('/api/ai/health').then(r => r.json()).then((h: AiHealth) => { h = steadyModels(h); setAi(h); share({ ai: h }) }).catch(() => { setAi(null); share({ ai: null }) }),
   ])
   useEffect(() => {
     void refresh().then(() => setReady(true))
@@ -535,7 +550,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
         <div className="status-line" title="Click for model availability details">
           <AiPanel
             ai={ai}
-            onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then((h: AiHealth) => { setAi(h); share({ ai: h }) }).catch(() => {}) }}
+            onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then((h: AiHealth) => { h = steadyModels(h, true); setAi(h); share({ ai: h }) }).catch(() => {}) }}
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={ai.status === 'ok' ? 'success' : ai.status === 'unconfigured' ? 'muted' : 'warning'} size={7} />

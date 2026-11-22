@@ -11,6 +11,7 @@ import { openInSideView } from './RunPane'
 import { openSessionWindow, showsInStudio, type SessionInfo } from './SessionView'
 import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
 import { plural } from '../plural'
+import { keepMissing } from '../steady'
 
 /**
  * The status panel at the right of every page: what is running, the
@@ -62,7 +63,9 @@ let mcpChecked = false
 let fleetRefused = false
 
 /** Tests start from nothing. */
-export function resetStatusPanelForTests(): void { lastData = EMPTY; lastSlowAt = 0; mcpChecked = false; fleetRefused = false }
+// Sessions one read alone left out (steady.ts).
+const sessionsMissed = new Set<string>()
+export function resetStatusPanelForTests(): void { lastData = EMPTY; lastSlowAt = 0; mcpChecked = false; fleetRefused = false; sessionsMissed.clear() }
 
 const LIVE_TASK = new Set(['submitted', 'working', 'input-required'])
 const TERMINAL_RUN = new Set(['completed', 'error', 'failed', 'canceled', 'cancelled', 'skipped'])
@@ -284,7 +287,10 @@ function useStatusData(agents: boolean, runs: boolean, mcp = true): [StatusData,
     const slow = () => {
       lastSlowAt = Date.now()
       // A refusal leaves the list as it was, and waits its minute too.
-      if (runs) getJson<{ sessions: SessionInfo[] }>('/api/sessions').then(d => put({ sessions: (d.sessions ?? []).filter(s => s.status === 'running') }))
+      // A session one read alone leaves out stays a read longer: the
+      // platform flaps (steady.ts).
+      if (runs) getJson<{ sessions: SessionInfo[] }>('/api/sessions')
+        .then(d => put({ sessions: keepMissing(lastData.sessions, (d.sessions ?? []).filter(s => s.status === 'running'), s => s.name, sessionsMissed) }))
         .catch(() => put({ sessions: lastData.sessions ?? [] }))
       api.userLibraries().then(d => put({ userLibs: d.libraries ?? [] })).catch(() => {})
       api.libraries().then(d => put({ libs: d.libraries ?? [] })).catch(() => {})
