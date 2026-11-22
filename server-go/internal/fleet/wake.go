@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"errors"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -31,10 +32,13 @@ func instructions(a *Agent) string {
 }
 
 // folder is where the agent works: its library folder when the main
-// library can be written here, else a folder of its own under the index.
+// library can be written here and the person it acts for may change it
+// (on a Studio with sign-in, an administrator), else a folder of its own
+// under the index, which is no library.
 func (f *Fleet) folder(a *Agent) (agentsmd.Folder, string, bool) {
 	root := f.A.Cfg.KBRoot
-	if kb.Default != nil {
+	mayWrite, _ := mainlib.MayWrite(mainlib.User(f.A.Cfg.AuthEnabled(), a.OwnerUser))
+	if kb.Default != nil && mayWrite {
 		if main, ok, err := kb.Default.Libs.Get(""); err == nil && ok && kb.RequireWritable(main) == nil {
 			ctx := context.Background()
 			return agentsmd.Local{Root: root, Rel: a.Folder, Label: main.Label, Index: func(rels []string) {

@@ -1300,6 +1300,13 @@ func (m *Module) postTags(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return m.handled(w, r, err)
 		}
+		// Labels in the main library change it for everyone: only those who
+		// may change it set them (ForRequest).
+		if lib.ID == PrimaryID {
+			if l := ForRequest(r, lib); l.ReadOnlyWhy != "" {
+				return Error(403, "%s", l.ReadOnlyWhy)
+			}
+		}
 		g := groups[lib.ID]
 		if g == nil {
 			g = &group{lib: lib}
@@ -1342,6 +1349,11 @@ func (m *Module) postTags(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (m *Module) recoverTags(w http.ResponseWriter, r *http.Request) error {
+	if MainWriter != nil {
+		if ok, why := MainWriter(r); !ok {
+			return Error(403, "%s", why)
+		}
+	}
 	writeJSON(w, 200, O("adopted", m.Tags.Recover(r.Context())))
 	return nil
 }

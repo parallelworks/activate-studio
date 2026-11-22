@@ -300,7 +300,7 @@ func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx)
 		return fail("A " + ext + " file is not edited in place. Write it again with write_kb_file; or write the report as a Markdown file with also, so that later changes are edits to the Markdown.")
 	}
 	if kb.Default != nil {
-		if err := mainLibraryWritable(); err != nil {
+		if err := mainLibraryWritable(r); err != nil {
 			return fail(err.Error())
 		}
 	}

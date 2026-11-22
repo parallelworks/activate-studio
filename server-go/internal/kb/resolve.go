@@ -53,10 +53,11 @@ func (m *Module) libByID(r *http.Request, id string) (Library, error) {
 		return Library{}, err
 	}
 	if ok {
-		return lib, nil
+		return ForRequest(r, lib), nil
 	}
 	if LibraryResolver != nil {
-		return LibraryResolver.Library(r, id)
+		lib, err := LibraryResolver.Library(r, id)
+		return ForRequest(r, lib), err
 	}
 	return Library{}, Error(404, "no library named %s", trimmedOr(id, PrimaryID))
 }
@@ -70,10 +71,34 @@ func trimmedOr(id, def string) string {
 
 // allLibs is scopeLibraries('all') for the viewer.
 func (m *Module) allLibs(r *http.Request) ([]Library, error) {
+	var libs []Library
+	var err error
 	if LibraryResolver != nil {
-		return LibraryResolver.All(r)
+		libs, err = LibraryResolver.All(r)
+	} else {
+		libs = m.Libs.ScopeAll()
 	}
-	return m.Libs.ScopeAll(), nil
+	for i := range libs {
+		libs[i] = ForRequest(r, libs[i])
+	}
+	return libs, err
+}
+
+// MainWriter says whether the person in a request may change the main
+// library, and why not (mainlib.Request); nil lets everyone, as on a
+// Studio without sign-in.
+var MainWriter func(r *http.Request) (bool, string)
+
+// ForRequest is lib as the person in r may use it: the main library is
+// read only for one who may not change it.
+func ForRequest(r *http.Request, lib Library) Library {
+	if lib.Primary && lib.Writable && MainWriter != nil && r != nil {
+		if ok, why := MainWriter(r); !ok {
+			lib.Writable = false
+			lib.ReadOnlyWhy = why
+		}
+	}
+	return lib
 }
 
 // remotePrefix starts the index root of a library on another system.

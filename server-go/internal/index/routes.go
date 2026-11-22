@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"github.com/parallelworks/activate-studio/server-go/internal/wslpath"
 )
 
@@ -195,12 +196,16 @@ func (ix *Indexer) defaultRequireWritable(r *http.Request, library string) error
 	}
 	for _, raw := range libs {
 		var l struct {
-			ID       string `json:"id"`
-			Label    string `json:"label"`
-			Writable bool   `json:"writable"`
+			ID          string `json:"id"`
+			Label       string `json:"label"`
+			Writable    bool   `json:"writable"`
+			ReadOnlyWhy string `json:"readOnlyWhy"`
 		}
 		if json.Unmarshal(raw, &l) != nil || l.ID != want {
 			continue
+		}
+		if l.ReadOnlyWhy != "" {
+			return apierr.New(403, "%s", l.ReadOnlyWhy)
 		}
 		if !l.Writable {
 			return apierr.New(403, "%s is read only", l.Label)
@@ -494,6 +499,12 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 	}))
 
 	mux.HandleFunc("PUT /api/index/settings", wrap(func(w http.ResponseWriter, r *http.Request) error {
+		// How the main library is indexed is its administrators' to set.
+		if kb.MainWriter != nil {
+			if ok, _ := kb.MainWriter(r); !ok {
+				return apierr.New(403, "%s", mainlib.Settings)
+			}
+		}
 		body := readBody(r)
 		s, err := ix.Settings.Save("kb", body)
 		if err != nil {
@@ -594,7 +605,9 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 		return writeOK(w, ordered{{"moved", true}, {"restarting", false}, {"job", job}, {"note", "Restart the Studio to use the index there."}}.Map())
 	}))
 
-	ix.History.register(mux, wrap)
+	// Snapshots are the main library's history: only a person who may
+	// change it takes, prunes or deletes one.
+	ix.History.register(mux, wrap, func(r *http.Request) error { return ix.Hooks.RequireWritable(r, "kb") })
 }
 
 func writableDir(p string) bool {

@@ -640,7 +640,7 @@ func storedBytes(s []SnapshotMeta) int64 {
 
 var digits = regexp.MustCompile(`^\d+$`)
 
-func (h *History) register(mux *http.ServeMux, wrap func(func(http.ResponseWriter, *http.Request) error) http.HandlerFunc) {
+func (h *History) register(mux *http.ServeMux, wrap func(func(http.ResponseWriter, *http.Request) error) http.HandlerFunc, change func(*http.Request) error) {
 	mux.HandleFunc("GET /api/kb/history", wrap(func(w http.ResponseWriter, r *http.Request) error {
 		h.CaptureIfStale(r.Context())
 		snaps := h.List()
@@ -657,6 +657,9 @@ func (h *History) register(mux *http.ServeMux, wrap func(func(http.ResponseWrite
 		}{h.available(), snaps, h.keep, storedBytes(snaps), checks})
 	}))
 	mux.HandleFunc("DELETE /api/kb/history/snapshot", wrap(func(w http.ResponseWriter, r *http.Request) error {
+		if err := change(r); err != nil {
+			return err
+		}
 		id := r.URL.Query().Get("id")
 		if !digits.MatchString(id) {
 			return apierr.New(400, "snapshot id required")
@@ -669,6 +672,9 @@ func (h *History) register(mux *http.ServeMux, wrap func(func(http.ResponseWrite
 		}{snaps, storedBytes(snaps)})
 	}))
 	mux.HandleFunc("POST /api/kb/history/prune", wrap(func(w http.ResponseWriter, r *http.Request) error {
+		if err := change(r); err != nil {
+			return err
+		}
 		body := readBody(r)
 		n := 10
 		if k, ok := body["keep"]; ok {
@@ -689,6 +695,9 @@ func (h *History) register(mux *http.ServeMux, wrap func(func(http.ResponseWrite
 		}{snaps, len(all) - len(snaps), storedBytes(snaps)})
 	}))
 	mux.HandleFunc("POST /api/kb/history/capture", wrap(func(w http.ResponseWriter, r *http.Request) error {
+		if err := change(r); err != nil {
+			return err
+		}
 		snap, err := h.Capture(r.Context())
 		if err != nil {
 			return err

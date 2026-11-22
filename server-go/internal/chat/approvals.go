@@ -344,7 +344,7 @@ func (m *Module) answerHeld(r *http.Request, a answer, viewer *Viewer, key *stri
 	var out string
 	var failed bool
 	if isKBAsksFirst(tool) {
-		out, failed = m.runKBTool(ctx, tool, args)
+		out, failed = m.runKBTool(r, tool, args)
 	} else {
 		out, failed = m.runPlatformTool(ctx, tool, args, deref(key))
 	}

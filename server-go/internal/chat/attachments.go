@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/base64"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -103,8 +104,21 @@ func (m *Module) reindexAttachments(r *http.Request) {
 	}
 }
 
+// mayAttach refuses an attachment a person may not put in the main
+// library: on a Studio with sign-in, only its administrators write there,
+// and an attachment there would be readable by everyone who signs in.
+func (m *Module) mayAttach(r *http.Request) error {
+	if ok, _ := mainlib.Request(m.A, r); !ok {
+		return apierr.New(403, "%s", mainlib.Attach)
+	}
+	return nil
+}
+
 func (m *Module) attachmentRoutes(h func(string, func(http.ResponseWriter, *http.Request) error)) {
 	h("POST /api/chat/attachments", func(w http.ResponseWriter, r *http.Request) error {
+		if err := m.mayAttach(r); err != nil {
+			return err
+		}
 		mt, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || !strings.HasPrefix(mt, "multipart/") || params["boundary"] == "" {
 			return apierr.New(406, "the request is not multipart")
@@ -215,6 +229,9 @@ func (m *Module) attachmentRoutes(h func(string, func(http.ResponseWriter, *http
 		return err
 	})
 	h("DELETE /api/chat/attachments/{id}", func(w http.ResponseWriter, r *http.Request) error {
+		if err := m.mayAttach(r); err != nil {
+			return err
+		}
 		rel, err := decodeAttachID(r.PathValue("id"))
 		if err != nil {
 			return err

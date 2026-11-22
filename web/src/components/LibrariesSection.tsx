@@ -110,7 +110,10 @@ interface Row {
   /** For a library the Studio builds: its depth, which can be changed here,
    *  and when a change applies: at the sync, in the background, for one
    *  built here; at the next Rebuild for one built on a remote system. */
-  depth?: { value: IndexDepth; reload: () => Promise<unknown>; applies: 'sync' | 'rebuild'; built?: IndexDepth | null; building?: boolean }
+  depth?: { value: IndexDepth; reload: () => Promise<unknown>; applies: 'sync' | 'rebuild'; built?: IndexDepth | null; building?: boolean
+    /** Why this viewer may not set it: one of the deployment's libraries on
+     *  a shared Studio, set by its administrators. */
+    locked?: string }
   actions: ReactNode
   /** A line under the row across the whole table, such as a build's progress. */
   detail?: ReactNode
@@ -373,6 +376,11 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
 
   const standalone = status?.standalone ? status : null
   const rows: Row[] = []
+  // On a shared Studio the main library is read only for everyone but its
+  // administrators, and so is how the deployment's libraries are indexed.
+  const deploymentLocked = libs?.find(l => l.primary)?.readOnlyWhy
+    ? 'On a Studio with sign-in, the deployment\'s libraries are indexed as its administrators set them.'
+    : undefined
   for (const l of libs ?? []) {
     if (l.primary) {
       const p = standalone?.primary
@@ -394,8 +402,9 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       // A Studio that signs people in is shared: its deployment builds this
       // index, and removing it here would take search away from everyone.
       if (!standalone) notes.push('On a Studio that signs people in, the deployment builds and deletes this index.')
+      if (l.readOnlyWhy) notes.push(l.readOnlyWhy)
       rows.push({
-        key: l.id, name: l.label, kind: 'Main folder, read and write',
+        key: l.id, name: l.label, kind: l.readOnlyWhy ? 'Main folder, read only for you' : 'Main folder, read and write',
         where: (
           <DescriptionList className="lib-paths" stacked>
             <DescriptionListItem label="Folder" mono={!!l.sourceRoot} copy={!!l.sourceRoot}>{l.sourceRoot ? <PathText path={l.sourceRoot} /> : null}</DescriptionListItem>
@@ -403,7 +412,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
           </DescriptionList>
         ),
         state, fullText: l.caps.fullText, meaning: l.caps.vectors,
-        depth: { value: l.depth ?? 'meaning-documents', reload: loadLibs, applies: 'sync' },
+        depth: { value: l.depth ?? 'meaning-documents', reload: loadLibs, applies: 'sync', locked: deploymentLocked },
         actions: (
           <>
             {standalone && <Button variant="secondary" size="sm" disabled={indexing} onClick={() => setChanging(true)}>Change folder</Button>}
@@ -514,7 +523,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
           : c.error || b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
-        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync' },
+        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync', locked: deploymentLocked },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state) || looking}
@@ -554,7 +563,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
           : b.error ? { tone: 'warning', text: 'Ready; the last pass failed', notes }
           : { tone: 'success', text: 'Ready', notes },
         fullText: l.caps.fullText, meaning: l.caps.vectors,
-        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync' },
+        depth: { value: l.depth ?? UNSTORED_LIBRARY_DEPTH, reload: loadLibs, applies: 'sync', locked: deploymentLocked },
         actions: (
           <>
             <Button variant="secondary" size="sm" loading={busy === l.id} disabled={busy !== null || isBuilding(b.state)}
@@ -776,7 +785,9 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                 </Table.Item>
                 <Table.Item className="lib-cap" data-label="Depth">
                   {r.depth
-                    ? <IndexDepthSelect library={r.name} value={r.depth.value} disabled={busy !== null}
+                    ? r.depth.locked
+                      ? <span title={r.depth.locked}>{depthLabel(r.depth.value)}<div className="lib-id">{r.depth.locked}</div></span>
+                      : <IndexDepthSelect library={r.name} value={r.depth.value} disabled={busy !== null}
                         onChange={v => {
                           const d = r.depth!
                           // Back at the depth its index has, there is nothing to rebuild.

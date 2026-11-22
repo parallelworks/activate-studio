@@ -90,6 +90,11 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
   const soffice = reader('LibreOffice')
   const tesseract = reader('tesseract')
   const running = !!status?.running
+  // On a shared Studio the main folder is read only for everyone but its
+  // administrators, and so is how it is indexed: the settings show, unchanged.
+  const locked = cfg.libraries?.find(l => l.primary)?.readOnlyWhy
+    ? 'On a Studio with sign-in, the main folder is indexed as its administrators set it.'
+    : null
 
   return (
     <>
@@ -99,6 +104,7 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
         then on; Update index reads everything again.
       </p>
       {error && <Callout tone="error">{error}</Callout>}
+      {locked && <Callout tone="info">{locked}</Callout>}
 
       <section className="settings-field ix-section" aria-label="Now">
         {status?.job
@@ -111,9 +117,9 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
         <Field label="Threads"
           description={`Each phase runs this many workers at once. Empty uses one per processor core: ${info.cpus} here.`}>
           <div className="ix-inline">
-            <NumberInput min={1} max={256} value={threads ?? undefined} placeholder={String(info.cpus)} aria-label="Threads"
+            <NumberInput min={1} max={256} value={threads ?? undefined} placeholder={String(info.cpus)} aria-label="Threads" disabled={!!locked}
               onValueChange={v => setThreads(v ?? null)} />
-            <Button variant="secondary" loading={saving === 'threads'} disabled={threads === s.threads}
+            <Button variant="secondary" loading={saving === 'threads'} disabled={!!locked || threads === s.threads}
               onClick={() => void save({ threads }, 'threads')}>Save</Button>
           </div>
         </Field>
@@ -123,7 +129,7 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
       <div className="ix-switches">
         <div>
           <IndexDepthControl label="Index depth of the main folder" value={s.depth} ocr={tesseract?.available ?? null}
-            disabled={saving !== null && saving !== 'depth'} onChange={v => void save({ depth: v }, 'depth')} />
+            disabled={!!locked || (saving !== null && saving !== 'depth')} onChange={v => void save({ depth: v }, 'depth')} />
           <p className="ix-note">
             A new depth is applied in the background at once, to the files already indexed (with the background sync paused,
             at Sync now). Search by name works as soon as the names are in; text and meaning follow. Each other library has
@@ -132,11 +138,11 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
         </div>
         <Field label="PDFs downmark cannot read"
           description={['pdftotext', 'pypdf'].map(n => `${n}: ${reader(n)?.note.replace(/^./, c => c.toLowerCase()) ?? 'unknown'}`).join(' ')}>
-          <Select items={PDF_READERS} value={s.pdfReader} disabled={!s.documents || saving !== null}
+          <Select items={PDF_READERS} value={s.pdfReader} disabled={!!locked || !s.documents || saving !== null}
             onValueChange={v => v && void save({ pdfReader: v }, 'pdfReader')} />
         </Field>
         <label className="ix-switch">
-          <Switch checked={s.legacyOffice} disabled={!s.documents || saving !== null} onCheckedChange={v => void save({ legacyOffice: v }, 'legacyOffice')} />
+          <Switch checked={s.legacyOffice} disabled={!!locked || !s.documents || saving !== null} onCheckedChange={v => void save({ legacyOffice: v }, 'legacyOffice')} />
           <span>
             <span className="ix-switch-label">LibreOffice, for previews and for Office files the built-in readers cannot read</span>
             <span className="muted">{soffice?.note}</span>
@@ -145,7 +151,7 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
         {(cfg.loaded ? aiOn(cfg) : !!info.ai?.enabled) && (
           <>
             <label className="ix-switch">
-              <Switch checked={s.imageDescriptions} disabled={!s.ocr || saving !== null} onCheckedChange={v => void save({ imageDescriptions: v }, 'imageDescriptions')} />
+              <Switch checked={s.imageDescriptions} disabled={!!locked || !s.ocr || saving !== null} onCheckedChange={v => void save({ imageDescriptions: v }, 'imageDescriptions')} />
               <span>
                 <span className="ix-switch-label">Describe images with a vision model</span>
                 <span className="muted">At Text + OCR and deeper, each image is sent to the model below, once; the description is searchable.</span>
@@ -160,7 +166,7 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
         )}
         <Field group label="Speed of search by meaning" className="meaning-level"
           description={MEANING_SPEED_HELP[s.meaningSpeed]}>
-          <SegmentedControl options={MEANING_SPEED_OPTIONS} value={s.meaningSpeed} disabled={saving !== null || s.meaning === 'off'}
+          <SegmentedControl options={MEANING_SPEED_OPTIONS} value={s.meaningSpeed} disabled={!!locked || saving !== null || s.meaning === 'off'}
             onValueChange={v => { if (v) void save({ meaningSpeed: v as IndexSettings['meaningSpeed'] }, 'meaningSpeed') }} />
         </Field>
       </div>

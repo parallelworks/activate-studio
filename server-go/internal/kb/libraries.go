@@ -45,6 +45,10 @@ type Library struct {
 	// Bucket: its index is here and its files are objects in a bucket,
 	// listed from the index and read one at a time.
 	Bucket bool
+	// ReadOnlyWhy is why the library is read only for this request when
+	// that is the viewer and not the library: the main library for a
+	// signed-in person who does not administer the Studio.
+	ReadOnlyWhy string
 }
 
 // Elsewhere: the library's files are not on this host, so they are
@@ -221,6 +225,9 @@ func RequireWritable(lib Library) error {
 	// This module's own file operations work in this host's folders only;
 	// a library on another system is written through SpaceFiles or not at
 	// all.
+	if lib.ReadOnlyWhy != "" {
+		return Error(403, "%s", lib.ReadOnlyWhy)
+	}
 	if !lib.Writable || lib.Site != "" || lib.Space || lib.Mine {
 		return Error(403, "%s is read only", lib.Label)
 	}

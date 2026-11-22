@@ -65,6 +65,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	fail := func(result, summary string) (*Outcome, error) {
 		return &Outcome{Result: result, Summary: summary}, nil
 	}
+	if err := mainLibraryWritable(r); err != nil {
+		return fail(err.Error(), "error")
+	}
 	if rel == "" || (content == "" && source == "") {
 		return fail("path and content are required (or source in place of content: a Markdown file in the library to make a .pdf or .docx from)", "error")
 	}

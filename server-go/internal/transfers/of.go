@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -117,7 +118,11 @@ func ViewerOf(a *app.App, r *http.Request) (Viewer, error) {
 	if v.UserID() != "" || !v.AuthEnabled {
 		own = v.PlatformKey()
 	}
-	return Viewer{ID: v.UserID(), AuthOn: v.AuthEnabled, Key: (&agentsites.Sites{P: p}).AgentKey(own, v.AuthEnabled)}, nil
+	out := Viewer{ID: v.UserID(), AuthOn: v.AuthEnabled, Key: (&agentsites.Sites{P: p}).AgentKey(own, v.AuthEnabled)}
+	if ok, why := mainlib.Request(a, r); !ok {
+		out.MainReadOnly = why
+	}
+	return out, nil
 }
 
 // libViewer is the viewer as the library registry takes it.
@@ -208,6 +213,9 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			}
 		}
 		x.Writable, x.ReadOnly = LibraryWritable(l.Writable, by, v.AuthOn)
+		if l.Primary && v.MainReadOnly != "" {
+			x.Writable, x.ReadOnly = false, v.MainReadOnly
+		}
 		if l.CopyOf != nil {
 			// Studio's next look at its location would remove what lands here.
 			x.Writable, x.ReadOnly = false, copyReadOnly(l.CopyOf)

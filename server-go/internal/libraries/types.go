@@ -232,9 +232,11 @@ type Def struct {
 
 // Library is a mounted library, as every module sees it.
 type Library struct {
-	ID        string
-	Label     string
-	IndexRoot string
+	// ReadOnlyWhy: see PublicLibrary.
+	ReadOnlyWhy string `json:"-"`
+	ID          string
+	Label       string
+	IndexRoot   string
 	// SourceRoot is where the files are, when reachable from this host.
 	SourceRoot string
 	CacheRoot  string
@@ -311,6 +313,9 @@ type PublicLibrary struct {
 	// Access: where it is, whose account reads it, whether the viewer may
 	// write in it, and whether its index was built or connected.
 	Access Access `json:"access"`
+	// ReadOnlyWhy is why the viewer may not change a library others may:
+	// the main library for a signed-in person on a shared Studio.
+	ReadOnlyWhy string `json:"readOnlyWhy,omitempty"`
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -327,7 +332,17 @@ func Public(l Library) PublicLibrary {
 	return PublicLibrary{ID: l.ID, Label: l.Label, Primary: l.Primary, Writable: l.Writable, Pinned: l.Pinned,
 		Source: l.SourceRoot != "" || l.Site != "", Caps: l.Caps, Site: strOrNil(l.Site), Meaning: strOrNil(l.Meaning),
 		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, Mine: l.Mine, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil,
-		Host: localHost(l), Access: accessOf(l)}
+		Host: localHost(l), Access: accessOf(l), ReadOnlyWhy: l.ReadOnlyWhy}
+}
+
+// ReadOnlyFor is l as a viewer who may not change it sees it, and why.
+func ReadOnlyFor(l Library, why string) Library {
+	l.Writable = false
+	l.ReadOnlyWhy = why
+	if l.Access.Where != "" {
+		l.Access.Write = false
+	}
+	return l
 }
 
 // accessOf is l.Access, worked out for a library listed without it.

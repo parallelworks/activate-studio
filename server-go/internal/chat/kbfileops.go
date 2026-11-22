@@ -71,9 +71,10 @@ func pathArgs(v any) []string {
 	return out
 }
 
-// mainLibraryWritable is nil when the main library can be changed, or
-// what to tell the model.
-func mainLibraryWritable() error {
+// mainLibraryWritable is nil when the person in r may change the main
+// library, or what to tell the model: on a Studio with sign-in only its
+// administrators change it (kb.ForRequest).
+func mainLibraryWritable(r *http.Request) error {
 	if kb.Default == nil {
 		return errNotHere
 	}
@@ -84,7 +85,7 @@ func mainLibraryWritable() error {
 	if !ok {
 		return &toolError{"the main library is not set up here"}
 	}
-	if err := kb.RequireWritable(lib); err != nil {
+	if err := kb.RequireWritable(kb.ForRequest(r, lib)); err != nil {
 		return &toolError{err.Error()}
 	}
 	return nil
@@ -160,7 +161,7 @@ func reindexed(ctx context.Context, o *kb.Outcome) string {
 }
 
 func (m *Module) toolMoveKBFiles(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
-	if err := mainLibraryWritable(); err != nil {
+	if err := mainLibraryWritable(r); err != nil {
 		return nil, err
 	}
 	paths := pathArgs(args["paths"])
@@ -246,7 +247,7 @@ func (m *Module) toolRenameKBFile(r *http.Request, args map[string]any, tc ToolC
 }
 
 func (m *Module) toolCopyKBFiles(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
-	if err := mainLibraryWritable(); err != nil {
+	if err := mainLibraryWritable(r); err != nil {
 		return nil, err
 	}
 	paths := pathArgs(args["paths"])
@@ -284,7 +285,7 @@ func (m *Module) toolCopyKBFiles(r *http.Request, args map[string]any, _ ToolCtx
 
 // toolDeleteKBFiles runs only once the user has approved the call.
 func (m *Module) toolDeleteKBFiles(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
-	if err := mainLibraryWritable(); err != nil {
+	if err := mainLibraryWritable(r); err != nil {
 		return nil, err
 	}
 	paths := pathArgs(args["paths"])
@@ -345,7 +346,10 @@ func prepareKBArgs(name string, raw any) (*jsonobj.Object, string, string) {
 	if len(paths) > maxFileOps {
 		return nil, "", "At most " + itoaInt(maxFileOps) + " files per call."
 	}
-	if err := mainLibraryWritable(); err != nil {
+	// The person is checked when the call is prepared for approval
+	// (goTools.Prepare) and again when the approved call runs (runKBTool);
+	// here only whether the main library takes writes at all.
+	if err := mainLibraryWritable(nil); err != nil {
 		return nil, "", err.Error()
 	}
 	var missing, folders []string
@@ -416,13 +420,14 @@ func (m *Module) kbChangesAvailable(viewer *Viewer, owner, username *string) Cha
 	return Changes{OK: true}
 }
 
-// runKBTool runs an approved library call.
-func (m *Module) runKBTool(ctx context.Context, name string, args *jsonobj.Object) (string, bool) {
+// runKBTool runs an approved library call as the person who approved it
+// (r), so the main library's rule for them applies (mainLibraryWritable).
+func (m *Module) runKBTool(r *http.Request, name string, args *jsonobj.Object) (string, bool) {
 	exec, ok := goExecutors[name]
 	if !ok {
 		return "The " + name + " tool is not available here.", true
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "/", nil)
+	req := r
 	in := map[string]any{"paths": func() []any {
 		out := []any{}
 		for _, p := range kbPaths(args) {

@@ -20,6 +20,9 @@ async function call(id: string, method: 'GET' | 'POST'): Promise<ChatDest> {
   return body as ChatDest
 }
 
+/** A message as one sentence, ending with one period. */
+const sentence = (m: string) => m.replace(/[.\s]*$/, '.')
+
 /** Who can read the saved copy, in a sentence. */
 export function readersNote(d: ChatDest): string {
   if (d.space) return 'Only you can read it there.'
@@ -47,7 +50,7 @@ export function SaveChatButton({ conversationId }: { conversationId: string }) {
     setDest(null); setSaved(null); setError('')
     call(conversationId, 'GET')
       .then(d => { if (live) setDest(d) })
-      .catch(e => { if (live) setError(`Cannot save this chat: ${(e as Error).message}.`) })
+      .catch(e => { if (live) setError(`Cannot save this chat: ${sentence((e as Error).message)}`) })
     return () => { live = false }
   }, [open, conversationId])
 
@@ -56,7 +59,7 @@ export function SaveChatButton({ conversationId }: { conversationId: string }) {
     try {
       setSaved(await call(conversationId, 'POST'))
     } catch (e) {
-      setError(`Not saved: ${(e as Error).message}.`)
+      setError(`Not saved: ${sentence((e as Error).message)}`)
     } finally {
       setBusy(false)
     }

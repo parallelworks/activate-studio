@@ -1,6 +1,7 @@
 package libapi
 
 import (
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"net/http"
 	"strings"
 	"time"
@@ -76,6 +77,13 @@ func (s *Service) builtLibrary(r *http.Request) (string, string, error) {
 		}
 		if l.Depth == "" {
 			return "", "", apierr.New(409, "%s is an index the Studio reads but does not build, so it stays as it was built.", l.Label)
+		}
+		// The deployment's libraries (the main one, pinned and added) are
+		// indexed as its administrators set them; a person sets their own.
+		if l.Primary || l.Pinned || s.Reg.AddedDef(id) != nil {
+			if ok, _ := mainlib.Request(s.a, r); !ok {
+				return "", "", apierr.New(403, "%s", mainlib.Settings)
+			}
 		}
 		return id, kb.StateKey(l.ID, l.IndexRoot), nil
 	}
