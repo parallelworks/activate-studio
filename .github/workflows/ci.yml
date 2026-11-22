@@ -93,8 +93,9 @@ jobs:
 
   # The Go server (server-go), the server releases ship: vet and tests on
   # Linux, vet for every platform the desktop app targets (the go-crossvet
-  # job), and the release binaries built as the build scripts build them. Tests that need GUFI,
-  # Node or the ONNX runtime skip themselves when those are absent, as here.
+  # job), and the release binaries built as the build scripts build them.
+  # Tests that need GUFI, Node or the ONNX runtime skip themselves when
+  # those are absent, as here.
   go:
     runs-on: ubuntu-latest
     timeout-minutes: 30
