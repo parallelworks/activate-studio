@@ -22,7 +22,7 @@ import (
 
 // ReadOnly is the reason a signed-in person who is not an administrator
 // is given for a refused write in the main library.
-const ReadOnly = "On a Studio with sign-in, the main library is read only: only its administrators change it. Use My library, or a library of your own on one of your systems, for your files."
+const ReadOnly = "On a Studio with sign-in, the main library is read only: only its administrators change it. Use My library, or a library of your own on one of your remote computers, for your files."
 
 // Settings is the refusal of a change to how one of the deployment's
 // libraries is indexed (its depth or meaning) by a signed-in person who

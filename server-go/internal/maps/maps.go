@@ -98,7 +98,10 @@ type Module struct {
 	// Keys is the platform key a remote library's owner acts with.
 	Keys                                         libraries.Keys
 	KBRoot, GufiIndex, SemanticMapDir, IndexBase string
-	Log                                          *slog.Logger
+	// MainLabel is the main library's name, as the settings give it; nil:
+	// its folder's name.
+	MainLabel func() string
+	Log       *slog.Logger
 	// Build makes a map (the builder Node's tests replace); nil: in process.
 	Build func(t Target) error
 	// DelayScale scales every delay asked for (Node's delayScale), and
@@ -142,6 +145,7 @@ func Of(a *app.App) *Module {
 	index.Of(a).Hooks.ScheduleMapRebuild = func(d time.Duration) { m.Schedule(libraries.PrimaryID, d) }
 	// A library removed here takes its map with it.
 	e.Reg.OnRemoved(m.LibraryRemoved)
+	m.MainLabel = func() string { return a.Settings.Effective().KbLabel }
 	a.OnStop("semantic maps: timers", func() int { m.stopTimers(); return 0 })
 	ofs[a] = m
 	return m
@@ -426,7 +430,9 @@ func (m *Module) libraryOf(id string, viewer libraries.Viewer) (*jsonv.Object, T
 	if id == libraries.PrimaryID {
 		meaningOff := m.Settings.Meaning(libraries.PrimaryID) == "off"
 		label := filepath.Base(m.KBRoot)
-		if m.KBRoot == "" || label == "/" || label == "." {
+		if m.MainLabel != nil {
+			label = m.MainLabel()
+		} else if m.KBRoot == "" || label == "/" || label == "." {
 			label = "main folder"
 		}
 		lib := jsonv.NewObject("id", id, "label", label, "kind", "main", "depth", m.Settings.Depth(libraries.PrimaryID), "vectors", !meaningOff)

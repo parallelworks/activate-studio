@@ -3,7 +3,7 @@
   "name": "personal defaults",
   "effective": {
    "appName": "Studio",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [
     "chat",
     "library",
@@ -88,7 +88,7 @@
   "name": "deployment defaults",
   "effective": {
    "appName": "Studio",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [],
    "workflowCollection": [],
    "theme": "light",
@@ -155,7 +155,7 @@
   "name": "signed-in deployment",
   "effective": {
    "appName": "Studio",
-   "kbLabel": "kb",
+   "kbLabel": "Shared library",
    "sections": [],
    "workflowCollection": [],
    "theme": "light",
@@ -295,7 +295,7 @@
   "name": "env odd numbers",
   "effective": {
    "appName": "Studio",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [
     "chat",
     "library",
@@ -380,7 +380,7 @@
   "name": "saved over env",
   "effective": {
    "appName": "Saved",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [],
    "workflowCollection": [],
    "theme": "light",
@@ -458,7 +458,7 @@
   "name": "personal with deployment prompts saved",
   "effective": {
    "appName": "Studio",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [],
    "workflowCollection": [],
    "theme": "light",
@@ -532,7 +532,7 @@
   "name": "saved nulls",
   "effective": {
    "appName": "Env",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [
     "chat",
     "library",
@@ -617,7 +617,7 @@
   "name": "search time limit from the environment",
   "effective": {
    "appName": "Studio",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [
     "chat",
     "library",
@@ -702,7 +702,7 @@
   "name": "search time limit saved",
   "effective": {
    "appName": "Studio",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [
     "chat",
     "library",
@@ -787,7 +787,7 @@
   "name": "search time limit env not a number",
   "effective": {
    "appName": "Studio",
-   "kbLabel": "kb",
+   "kbLabel": "My library",
    "sections": [
     "chat",
     "library",

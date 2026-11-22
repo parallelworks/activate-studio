@@ -26,6 +26,10 @@ export interface AppConfig {
   sections?: string[]
   /** Running on the ACTIVATE platform, with a credential to reach it. */
   platform?: boolean
+  /** People sign in to this Studio. Without sign-in the main library is the
+   *  person's own (My library); with it, the main library is the one they
+   *  share, and My library is each person's folder on a system. */
+  signIn?: boolean
   /** The Code page lists this computer's own pw code sessions (no platform). */
   localCode?: boolean
   /** False when AI features are off: no Chat, no Agents, no model line. */
@@ -139,6 +143,7 @@ export function useAppConfig(): AppConfig {
           libraries: Array.isArray(d.libraries) ? d.libraries : undefined,
           sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
           platform: !!d.platform,
+          signIn: !!d.signIn,
           localCode: !!d.localCode,
           aiEnabled: d.aiEnabled !== false,
           workflowCount: typeof d.workflowCount === 'number' ? d.workflowCount : 0,

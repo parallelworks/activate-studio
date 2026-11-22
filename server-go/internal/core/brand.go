@@ -407,6 +407,9 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	set("faviconUrl", nullable(c.BrandURL("favicon", false)))
 	set("faviconUrlDark", nullable(c.BrandURL("favicon", true)))
 	set("kbLabel", eff.KbLabel)
+	// Whether people sign in: it decides what the main library is called
+	// (theirs, or the one they share) and what My library means.
+	set("signIn", c.a.Cfg.AuthEnabled())
 	set("theme", eff.Theme)
 	set("accent", eff.Accent)
 	set("surface", eff.Surface)

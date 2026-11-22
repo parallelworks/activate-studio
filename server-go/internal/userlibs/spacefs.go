@@ -76,7 +76,7 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	}
 	root := spaceRoot(d)
 	if !strings.HasPrefix(root, "/") {
-		return nil, w, "", nil, apierr.New(409, "%s has no folder yet.", d.Label)
+		return nil, w, "", nil, apierr.New(409, "%s has no folder yet.", d.ShownLabel(m.Users.AuthEnabled))
 	}
 	if err := m.writerCheck(r.Context(), owner, d, site, key); err != nil {
 		return nil, w, "", nil, err
@@ -84,7 +84,7 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	// A space keeps what is written in it to the person; a library of
 	// theirs elsewhere takes their umask and the folder's own ACL. Neither
 	// writes through a link.
-	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: site, KeyText: key, Dir: root, Name: d.Label,
+	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: site, KeyText: key, Dir: root, Name: d.ShownLabel(m.Users.AuthEnabled),
 		Timeout: 10 * time.Minute, Private: !d.Mine(), NoLinks: d.Mine(), Kept: true}
 	return fs, w, owner, d, nil
 }
@@ -100,7 +100,7 @@ func (m *Module) writeSession(w who, owner string, d *libraries.UserDef) (string
 		}
 		site := sshSiteOf(d)
 		if site == "" {
-			return "", "", apierr.New(409, "%s has no host to reach.", d.Label)
+			return "", "", apierr.New(409, "%s has no host to reach.", d.ShownLabel(m.Users.AuthEnabled))
 		}
 		return site, "", nil
 	}
@@ -119,7 +119,7 @@ func (m *Module) writerCheck(ctx context.Context, owner string, d *libraries.Use
 		return m.sameAccount(ctx, site, key, uid)
 	}
 	if !d.Mine() {
-		return apierr.New(409, "%s does not say which account it is written as.", d.Label)
+		return apierr.New(409, "%s does not say which account it is written as.", d.ShownLabel(m.Users.AuthEnabled))
 	}
 	r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", "id -u && id -un"}, 60*time.Second)
 	if err != nil {

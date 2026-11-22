@@ -26,7 +26,7 @@ func TestSpaceOnAnySystem(t *testing.T) {
 	st := h.do(http.MethodGet, "/api/user-libraries/space", nil)
 	eq(t, []any{st.Body["available"], st.Body["cluster"], st.Body["pw"], st.Body["ssh"]}, []any{true, "", true, true}, "offered without a cluster of its own")
 	none := h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/studio"})
-	match(t, none.Body["error"], `Choose one of your systems`, "no system named")
+	match(t, none.Body["error"], `Choose one of your remote computers`, "no system named")
 	bad := h.post("/api/user-libraries/space/test", map[string]any{"cluster": "-oProxyCommand=x", "sourceRoot": "~/studio"})
 	eq(t, bad.Status, 400, "a name pw ssh would take as an option")
 

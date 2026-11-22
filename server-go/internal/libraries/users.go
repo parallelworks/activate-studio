@@ -438,3 +438,28 @@ func (u *Users) Target(root string, keys Keys, sshSite SiteFn) (*Target, error) 
 	}
 	return t, nil
 }
+
+// SpaceLabel is the name a person's own folder on a system was given when
+// they did not name it, on a Studio where people sign in.
+const SpaceLabel = "My library"
+
+// ShownLabel is the name a library is shown by. On a Studio nobody signs in
+// to, the main library is the person's library, so a folder of their own on
+// a system is not called My library as well: one made before this rule,
+// under that name, is shown by its folder's name instead. Nothing stored
+// changes.
+func (d *UserDef) ShownLabel(signIn bool) string {
+	if signIn || d.Space == nil || d.Shared != nil || d.Label != SpaceLabel {
+		return d.Label
+	}
+	return FolderLabel(d.SourceDir)
+}
+
+// FolderLabel is a library's name from its folder: the folder's own name.
+func FolderLabel(dir string) string {
+	name := path.Base(strings.TrimRight(dir, "/"))
+	if name == "" || name == "." || name == "/" || name == "~" {
+		return "Home folder"
+	}
+	return name
+}

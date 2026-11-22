@@ -143,7 +143,7 @@ describe('the Library\'s + Add menu', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Add a library' })
     // The form Settings shows: where, how, and the form for the pair.
     expect(await within(dialog).findByRole('button', { name: 'This computer' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'A system' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Remote computer' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Index a folder' })).toBeInTheDocument()
     expect(within(dialog).getByLabelText('Folder to index')).toBeInTheDocument()
   })

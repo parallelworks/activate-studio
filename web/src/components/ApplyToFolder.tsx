@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Callout, EmptyState, Field, Input, Modal, Select } from '@parallelworks/ui'
+import { libraryNames } from '../libraryNames'
+import { useAppConfig } from '../config'
 
 /**
  * Agent instructions and skills, applied to a folder: the Studio writes
@@ -91,6 +93,7 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
   onClose: () => void
   onDone: (f: AgentFolder) => void
 }) {
+  const cfg = useAppConfig()
   const [libs, setLibs] = useState<LibraryChoice[] | null>(null)
   const [library, setLibrary] = useState('')
   const [folder, setFolder] = useState(`agents/${name}`)
@@ -126,7 +129,7 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
         <Button variant="primary" type="submit" loading={busy} disabled={!libs?.length}>Apply</Button>
       </>}>
       {libs && libs.length === 0 && (
-        <Callout tone="warning" size="sm">No library here takes agent instructions: they go into the main library when it can be written, or into My library.</Callout>
+        <Callout tone="warning" size="sm">No library here takes agent instructions: they go into {libraryNames(cfg).writable}, where you may write.</Callout>
       )}
       {libs && libs.length > 1 && (
         <Field label="Library">

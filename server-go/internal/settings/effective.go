@@ -2,7 +2,6 @@ package settings
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -162,6 +161,26 @@ var PersonalMission = strings.Join([]string{
 	"Most questions are about finding a file, summarizing or comparing documents, or what changed recently.",
 }, " ")
 
+// The main library's name when none is set (kbLabel, KB_LABEL). On a
+// Studio nobody signs in to, the main library is the person's own folder,
+// read and written as them: My library. Where people sign in, it is the
+// library they share, and each person's own is a folder on their system.
+const (
+	MainLabelPersonal = "My library"
+	MainLabelShared   = "Shared library"
+)
+
+// MainLabel is the main library's default name for this Studio's mode.
+func (s *Store) MainLabel() string {
+	if s.authEnabled {
+		return MainLabelShared
+	}
+	return MainLabelPersonal
+}
+
+// SignIn is whether people sign in to this Studio.
+func (s *Store) SignIn() bool { return s.authEnabled }
+
 // PersonalInstall is settings.ts's personalInstall: nobody signs in and
 // the platform did not deploy it.
 func (s *Store) PersonalInstall() bool {
@@ -249,7 +268,7 @@ func (s *Store) Effective() Effective {
 
 	e := Effective{}
 	e.AppName = or(str("appName"), s.envOr("APP_NAME", "Studio"))
-	e.KbLabel = or(str("kbLabel"), s.envOr("KB_LABEL", filepath.Base(s.kbRoot)))
+	e.KbLabel = or(str("kbLabel"), s.envOr("KB_LABEL", s.MainLabel()))
 	switch {
 	case list("sections") != nil:
 		e.Sections = WithNewPages(*list("sections"), int(or(num("sectionsGen"), 0)))
