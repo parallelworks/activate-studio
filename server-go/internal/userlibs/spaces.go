@@ -76,7 +76,10 @@ echo "real=$r"
 echo "owner=$(st %u "$r")"
 echo "mode=$(st %a "$r")"
 echo "fgroup=$(st %G "$r")"
-echo "fs=$(stat -f -c %T -- "$r" 2>/dev/null)"
+# The mount's own type: stat -f reports ext4 as ext2/ext3.
+fs=$(findmnt -n -o FSTYPE -T "$r" 2>/dev/null | head -n 1)
+[ -n "$fs" ] || fs=$(stat -f -c %T -- "$r" 2>/dev/null)
+echo "fs=$fs"
 d=$r
 while [ "$d" != / ]; do
   d=${d%/*}; [ -n "$d" ] || d=/
@@ -224,7 +227,7 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 		return nil, apierr.New(502, "%s did not say which account your session reaches: %s", remote.ShortName(site), lastOrExit(res.Stderr, res.Code))
 	}
 	user, home := kv["user"], kv["home"]
-	f := &spaceFound{Home: home, Info: libraries.SpaceInfo{Account: user, UID: uid, FS: kv["fs"], ACL: kv["acl"] == "1"}}
+	f := &spaceFound{Home: home, Info: libraries.SpaceInfo{Account: user, UID: uid, FS: fsName(kv["fs"]), ACL: kv["acl"] == "1"}}
 	add := func(s step) { f.Steps = append(f.Steps, s) }
 	done := func() *spaceFound { f.OK = allOK(f.Steps); return f }
 	add(step{Name: "account", OK: true, Detail: fmt.Sprintf("Your session reaches %s as %s (uid %d). The library is read and written as that account.", remote.ShortName(site), user, uid)})
@@ -294,9 +297,9 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 	}
 	switch kv["acl"] {
 	case "1":
-		add(step{Name: "sharing", OK: true, Detail: fmt.Sprintf("Its file system (%s) takes POSIX ACLs, so you can share single folders with named people.", kv["fs"])})
+		add(step{Name: "sharing", OK: true, Detail: fmt.Sprintf("Its file system (%s) takes POSIX ACLs, so you can share single folders with named people.", f.Info.FS)})
 	case "0":
-		add(step{Name: "sharing", OK: true, Warn: true, Detail: fmt.Sprintf("Its file system (%s) does not take POSIX ACLs here. You can share with everyone on the cluster, or with a group you belong to, by mode bits.", kv["fs"])})
+		add(step{Name: "sharing", OK: true, Warn: true, Detail: fmt.Sprintf("Its file system (%s) does not take POSIX ACLs here. You can share with everyone on the cluster, or with a group you belong to, by mode bits.", f.Info.FS)})
 	}
 	own := studio + "/gufi/" + version + "/bin"
 	switch {
@@ -614,4 +617,14 @@ type spaceState struct {
 	bundleOnce sync.Once
 	bundleDir  string
 	bundleVer  string
+}
+
+// fsName is a file system's name as the folder check shows it. Where
+// findmnt is missing, stat -f names one magic number for ext2, ext3 and
+// ext4 alike, which read as wrong on ext4, the usual one.
+func fsName(fs string) string {
+	if fs == "ext2/ext3" {
+		return "ext2, ext3 or ext4"
+	}
+	return fs
 }
