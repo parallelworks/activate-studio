@@ -30,6 +30,8 @@ describe('the first visit with sign-in', () => {
     expect(await screen.findByRole('region', { name: 'Welcome to Studio' })).toBeInTheDocument()
     expect(screen.getByText(/is the library everyone here searches\. It is read only for you/)).toBeInTheDocument()
     expect(screen.getByText(/is your own folder on one of your remote computers/)).toBeInTheDocument()
+    // Add a library is in the arrow beside + Add, not + Add itself (phase 4, S).
+    expect(screen.getByRole('region', { name: 'Welcome to Studio' })).toHaveTextContent('from the arrow beside + Add: Add a library…')
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
     expect(screen.queryByRole('region', { name: 'Welcome to Studio' })).toBeNull()
     unmount()

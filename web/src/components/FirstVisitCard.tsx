@@ -33,7 +33,7 @@ export function FirstVisitCard() {
         <p><strong>{cfg.kbLabel}</strong> is the library everyone here searches.{' '}
           {readOnly ? 'It is read only for you; its administrators change it.' : 'You may change it.'}</p>
         <p><strong>My library</strong> is your own folder on one of your remote computers, read and written as you. Where it is
-          offered, add it from the Library&apos;s <strong>+ Add</strong> menu, <strong>Add a library…</strong>.</p>
+          offered, add it in the Library from the arrow beside <strong>+ Add</strong>: <strong>Add a library…</strong>.</p>
       </Callout>
     </div>
   )
