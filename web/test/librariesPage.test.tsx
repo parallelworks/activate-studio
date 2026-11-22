@@ -675,8 +675,15 @@ describe('Settings, Indexing, Libraries', () => {
     // Hosts, clusters and remotes are offered; a library is not.
     await waitFor(() => expect(s.calls.some(c => c.url === '/api/transfers/locations')).toBe(true))
     await pickOption('Location', 'Drop', ['Notes'])
-    // Browsing starts where the location does; a folder opens into it.
-    fireEvent.click(await screen.findByRole('button', { name: 'upload/' }))
+    // Browsing starts where the location does, often a whole home folder,
+    // which is not copied until it is chosen.
+    await screen.findByRole('button', { name: 'upload/' })
+    expect(screen.getByRole('button', { name: 'Copy and index' })).toBeDisabled()
+    expect(screen.getByText('Open the folder to copy below, or choose this whole folder.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Copy this whole folder' }))
+    expect(screen.getByRole('button', { name: 'Copy and index' })).toBeEnabled()
+    // A folder opened is chosen.
+    fireEvent.click(screen.getByRole('button', { name: 'upload/' }))
     expect(await screen.findByText('Drop/upload')).toBeInTheDocument()
     expect(screen.getByText('No folders in it; 1 file.')).toBeInTheDocument()
     expect(screen.getByText(/takes as much space as the folder holds/)).toBeInTheDocument()
