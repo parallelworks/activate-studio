@@ -6,6 +6,7 @@ import { api, type PublicLibrary } from '../api'
 import { useMapLibrary } from '../mapLibrary'
 import { openInLibrary } from '../scope'
 import { LibraryScope } from './LibraryScope'
+import { plural } from '../plural'
 
 /**
  * Two views of the corpus from the index, on canvases that zoom, pan and
@@ -656,7 +657,7 @@ export function TopologyMap({ libraries = [], follow }: { libraries?: PublicLibr
   )
   const legend = (
     <Legend onHover={setHighlight} items={topDirs.map(d => ({
-      key: d.path, name: d.name, color: topColor(d.path), note: fmtB(d.bytes), title: `${d.path} · ${d.files.toLocaleString()} files`,
+      key: d.path, name: d.name, color: topColor(d.path), note: fmtB(d.bytes), title: `${d.path} · ${plural(d.files, 'file')}`,
       on: focus === d.path || focus.startsWith(`${d.path}/`), onClick: () => setFocus(d.path),
     }))} />
   )
@@ -752,7 +753,7 @@ function TopologyCanvas({ node, height, colorOf, onDrill, api, highlight = null 
       g.fillText(cl.node.name, vx + 5, vy + 3)
       if (!hasKids && vw > 90 && vh > 34) {
         g.font = '11px system-ui, sans-serif'
-        g.fillText(`${cl.node.files.toLocaleString()} files · ${fmtB(cl.node.bytes)}`, vx + 5, vy + 17)
+        g.fillText(`${plural(cl.node.files, 'file')} · ${fmtB(cl.node.bytes)}`, vx + 5, vy + 17)
       }
       g.restore()
     }
@@ -795,7 +796,7 @@ function TopologyCanvas({ node, height, colorOf, onDrill, api, highlight = null 
     <div className={`map-canvas${height === 'fill' ? ' fill' : ''}`}>
       <canvas ref={cv} className="treemap-canvas" tabIndex={0} aria-label="Corpus topology: zoom with + and -, move with the arrow keys, 0 resets"
         style={{ width: '100%', height: height === 'fill' ? '100%' : height, display: 'block', cursor: hover?.node.children.size ? 'pointer' : 'default' }} />
-      {hover && <div className="map-tip">{hover.node.path} · {hover.node.files.toLocaleString()} files · {fmtB(hover.node.bytes)}</div>}
+      {hover && <div className="map-tip">{hover.node.path} · {plural(hover.node.files, 'file')} · {fmtB(hover.node.bytes)}</div>}
     </div>
   )
 }
@@ -1039,10 +1040,10 @@ export function remoteProgress(p: MapProgress | null | undefined, host: string):
   if (p?.phase === 'counting') return `Counting the files with meaning vectors on ${where}.`
   if (p?.phase === 'fetching') {
     const n = p.files ?? 0, of = p.of ?? n
-    return n < of ? `Fetching the vectors of a sample of ${n.toLocaleString()} of ${of.toLocaleString()} files from ${where}.`
-      : `Fetching the vectors of ${of.toLocaleString()} files from ${where}.`
+    return n < of ? `Fetching the vectors of a sample of ${n.toLocaleString()} of ${plural(of, 'file')} from ${where}.`
+      : `Fetching the vectors of ${plural(of, 'file')} from ${where}.`
   }
-  if (p?.phase === 'drawing') return `Drawing the map from ${(p.files ?? 0).toLocaleString()} files.`
+  if (p?.phase === 'drawing') return `Drawing the map from ${plural(p.files ?? 0, 'file')}.`
   return `Making the map from the vectors on ${where}.`
 }
 
@@ -1244,7 +1245,7 @@ export function SemanticMap({ onOpen, libraries = [], follow }: { onOpen: (path:
       `${data.model ? `, made with ${data.model}` : ''}${data.remote?.fetchedAt ? `, ${ago(data.remote.fetchedAt)}` : ''})`
     : ''
   const status = open
-    ? `${(pages.get(open.c)?.length ?? 0).toLocaleString()} of ${open.count.toLocaleString()} files in ${open.label}${(pages.get(open.c)?.length ?? 0) < open.count ? '; zoom in for more' : ''}.`
+    ? `${(pages.get(open.c)?.length ?? 0).toLocaleString()} of ${plural(open.count, 'file')} in ${open.label}${(pages.get(open.c)?.length ?? 0) < open.count ? '; zoom in for more' : ''}.`
     : `${points.length.toLocaleString()} of ${((sampled ? data.of : data.files) ?? 0).toLocaleString()} files shown${fetched}; click a cluster for all of its files.`
   const remoteNotes = remote
     ? `${otherModels ? ` ${otherModels.toLocaleString()} file${otherModels === 1 ? '' : 's'} made with another model ${otherModels === 1 ? 'is' : 'are'} left out.` : ''}` +
@@ -1287,7 +1288,7 @@ export function SemanticMap({ onOpen, libraries = [], follow }: { onOpen: (path:
     <Legend chipClass="map-cluster-chip" onHover={k => setHighlight(k === null ? null : Number(k))} items={clusters.map(cl => ({
       key: String(cl.c), name: labels.get(cl.c) ?? cl.label, color: PALETTE[cl.c % PALETTE.length], note: cl.count.toLocaleString(),
       title: cl.folder && cl.folder !== cl.label ? `${cl.label} · ${cl.folder}` : cl.label,
-      ariaLabel: `${cl.label}, ${cl.count.toLocaleString()} files`, on: focus === cl.c,
+      ariaLabel: `${cl.label}, ${plural(cl.count, 'file')}`, on: focus === cl.c,
       onClick: () => setFocus(focus === cl.c ? null : cl.c),
     }))} />
   )
@@ -1761,7 +1762,7 @@ function SemanticCanvas({ clusters, links, points, mode, focus, height, palette,
   })
   const hoverCluster = hover?.kind === 'cluster' ? clusters.find(x => x.c === hover.c) : null
   const tip = hover?.kind === 'point' ? points[hover.i]?.p
-    : hoverCluster ? `${hoverCluster.label}${hoverCluster.folder && hoverCluster.folder !== hoverCluster.label ? ` (${hoverCluster.folder})` : ''} · ${hoverCluster.count.toLocaleString()} files · click for all of them`
+    : hoverCluster ? `${hoverCluster.label}${hoverCluster.folder && hoverCluster.folder !== hoverCluster.label ? ` (${hoverCluster.folder})` : ''} · ${plural(hoverCluster.count, 'file')} · click for all of them`
       : null
   const nearNote = showLinks && hover?.kind === 'point' && near?.p === points[hover.i]?.p && near.list.length
     ? `lines to its ${near.list.length} nearest files by meaning` : null

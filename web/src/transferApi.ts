@@ -517,7 +517,8 @@ export function placesReady(locations: TransferLocation[], settings: TransferSet
 }
 
 /** A count and its noun: "1 file", "3 files", "2 libraries". */
-export const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`
+export { plural } from './plural'
+import { plural } from './plural'
 
 /** The ready summary's parts, as short phrases. */
 export function readyParts(p: PlacesReady): string[] {

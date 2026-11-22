@@ -18,6 +18,7 @@ import { useIndexStatus } from '../indexActivity'
 import { FOCUS_LIBRARY_EVENT, FOCUS_LIBRARY_KEY } from './OmittedLine'
 import { ReadThroughControl } from './ReadThroughControl'
 import { bytesText } from '../transferApi'
+import { plural } from '../plural'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
@@ -122,7 +123,6 @@ interface Row {
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '')
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 
 /** Whether a bucket library's objects' text is read, as offered. */
 const TEXT_CHOICES: { value: 'off' | 'on'; label: string }[] = [
@@ -403,7 +403,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       else if (p && !p.exists) state = { tone: 'error', text: 'Folder not found', notes }
       else if (indexed) {
         state = ix?.incomplete ? { tone: 'warning', text: 'Incomplete', notes } : { tone: 'success', text: 'Indexed', notes }
-        if (p?.files !== undefined) notes.push(`${p.files.toLocaleString()} files`)
+        if (p?.files !== undefined) notes.push(plural(p.files, 'file'))
       } else {
         state = { tone: 'warning', text: 'Not indexed yet', notes }
         if (p?.earlierIndex) notes.push(`An index of this folder from ${p.earlierIndex.builtAt ? new Date(p.earlierIndex.builtAt).toLocaleDateString() : 'before'} is kept; building updates it.`)

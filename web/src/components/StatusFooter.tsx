@@ -3,7 +3,7 @@ import {
   Button, CopyCodeBlock, DescriptionList, DescriptionListItem, Popover, PopoverClose, Skeleton, StatusDot, type BadgeVariant,
 } from '@parallelworks/ui'
 import { api, IndexStatus } from '../api'
-import { onLibraryChange } from '../api'
+import { currentLibrary, onLibraryChange } from '../api'
 import { elapsed, fmtDuration, indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
 import { IndexJobView, IndexLogButton, IndexLogHost, jobOutcome } from './IndexActivity'
 import type { LibraryStats } from '../api'
@@ -16,6 +16,7 @@ import { UpdateProgress } from './UpdatesSection'
 import { share, syncIndex, type AiHealth } from '../statusShare'
 import { aiOn, useAppConfig } from '../config'
 import { reloadOntoNewest, useShellUpdate } from '../shellWorker'
+import { plural } from '../plural'
 
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
@@ -56,7 +57,8 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
 }) {
   const gb = stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(2)} GB` : ''
   const job = idx?.job ?? null
-  const summary = indexSummary(idx, stats?.files)
+  const libs = useAppConfig().libraries ?? []
+  const summary = indexSummary(idx, stats?.files, countedIn(libs))
   const [stopping, setStopping] = useState(false)
   const stop = async () => {
     setStopping(true)
@@ -66,8 +68,8 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
   // A row marked in its last field is a library's, indented under the total.
   const rows: [string, string, Dot | null, boolean?][] = [
     ['GUFI engine', gufi === null ? 'checking…' : gufi ? 'available' : 'unavailable (search falls back to grep)', gufi === null ? 'off' : gufi ? 'ok' : 'warn'],
-    ['Indexed', stats?.files ? `${stats.files.toLocaleString()} files in ${stats.dirs?.toLocaleString()} directories, ${gb}${stats.libraries ? `, across ${stats.libraries.length} libraries` : ''}` : idx?.indexed === false ? 'not indexed yet' : 'loading…', null],
-    ...(stats?.libraries ?? []).map(l => [`${l.label}${l.site ? ` (on ${l.site})` : ''}`, l.available ? `${(l.files ?? 0).toLocaleString()} files in ${(l.dirs ?? 0).toLocaleString()} directories` : (l.error ?? 'not available'), l.available ? 'ok' : 'warn', true] as [string, string, Dot | null, boolean]),
+    ['Indexed', stats?.files ? `${plural(stats.files, 'file')} in ${plural(stats.dirs ?? 0, 'directory', 'directories')}, ${gb}${stats.libraries ? `, across ${stats.libraries.length} libraries` : ''}` : idx?.indexed === false ? 'not indexed yet' : 'loading…', null],
+    ...(stats?.libraries ?? []).map(l => [`${l.label}${l.site ? ` (on ${l.site})` : ''}`, l.available ? `${plural(l.files ?? 0, 'file')} in ${plural(l.dirs ?? 0, 'directory', 'directories')}` : (l.error ?? 'not available'), l.available ? 'ok' : 'warn', true] as [string, string, Dot | null, boolean]),
     ...(last ? [['Last build', `${jobOutcome(last)}${last.finishedAt ? ` ${ago(last.finishedAt)}` : ''}`, last.state === 'done' ? 'ok' : 'warn'] as [string, string, Dot | null]] : []),
     ['Sync loop', idx ? (idx.sweepIntervalSec > 0 ? `every ${idx.sweepIntervalSec}s, last ${ago(idx.lastSweepAt ?? null)}${idx.lastSweepMs != null ? ` (${fmtDuration(idx.lastSweepMs)})` : ''}` : 'paused') : 'loading…', null],
     ['Last result', summary.tone === 'warning' && summary.detail ? summary.detail : idx?.lastSweepAt || last ? 'clean' : 'no sync yet this server start', summary.tone === 'warning' ? 'warn' : idx?.lastSweepAt || last ? 'ok' : 'off'],
@@ -358,6 +360,14 @@ function IdentityPanel({ trigger, who }: { trigger: ReactElement; who: WhoAmI })
   )
 }
 
+/** Which library the footer's file count is of, when it is not the main
+ *  library's: the count follows the library selected. */
+export function countedIn(libs: { id: string; label: string; primary: boolean }[], lib: string = currentLibrary()): string | undefined {
+  if (lib === 'all') return 'all libraries'
+  const l = libs.find(x => x.id === lib)
+  return l && !l.primary ? l.label : undefined
+}
+
 export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // With AI features off there is no model line.
   const cfg = useAppConfig()
@@ -473,7 +483,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   }
 
   const busy = syncing || !!idx?.running
-  const summary = indexSummary(idx, stats?.files)
+  const summary = indexSummary(idx, stats?.files, countedIn(cfg.libraries ?? []))
   const railUpdate = failed ? 'The update failed' : installing ? 'Updating' : `Version ${update} is available`
   if (collapsed) {
     return (

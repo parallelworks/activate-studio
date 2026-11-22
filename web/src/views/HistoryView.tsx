@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, EmptyState, IconButton, Loader, StatTile, StatTileGroup } from '@parallelworks/ui'
 import { CloseIcon } from '@parallelworks/ui/icons'
+import { plural } from '../plural'
 
 /**
  * The corpus over time: pick a moment on the scrubber and the panel shows
@@ -182,7 +183,7 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
           {level?.dirs?.map(d => (
             <div key={d.path} className="ov-row" onClick={() => setDir(d.path)}>
               <span className="ov-row-path">{d.name}/</span>
-              <span className="ov-row-meta">{d.files.toLocaleString()} files · {bytes(d.bytes)}</span>
+              <span className="ov-row-meta">{plural(d.files, 'file')} · {bytes(d.bytes)}</span>
             </div>
           ))}
           {level?.files?.map(f => (
@@ -249,7 +250,7 @@ export function HistoryView({ onOpen }: { onOpen: (path: string) => void }) {
             <button
               className={`hist-tick${i === idx ? ' active' : ''}`}
               onClick={() => setIdx(i)}
-              title={`${when(s.takenAt, true)} · ${s.files.toLocaleString()} files`}
+              title={`${when(s.takenAt, true)} · ${plural(s.files, 'file')}`}
             >
               <span className="hist-tick-label">{when(s.takenAt)}</span>
               {i === snaps.length - 1 && <span className="hist-now"> now</span>}

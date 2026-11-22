@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { api, type IndexJob, type IndexPhase, type IndexStatus } from './api'
+import { plural } from './plural'
 
 /**
  * The index's status, read once for every view that shows it: the footer's
@@ -121,7 +122,10 @@ export function phaseLine(job: IndexJob | null | undefined): string | null {
   return `${SHORT[ph.id]}${ph.total > 0 ? ` ${Math.min(100, Math.round((ph.done / ph.total) * 100))}%` : ''}`
 }
 
-export function indexSummary(s: IndexStatus | null, files?: number): IndexSummary {
+/** `files` is the count of the library selected; `of` names it when it is
+ *  not the main library, so the line does not pass one library's count off
+ *  as another's. */
+export function indexSummary(s: IndexStatus | null, files?: number, of?: string): IndexSummary {
   const base = { pulse: false, detail: null, percent: null, running: false }
   if (!s) return { ...base, tone: 'muted', text: 'index loading' }
   const job = s.job ?? null
@@ -139,7 +143,7 @@ export function indexSummary(s: IndexStatus | null, files?: number): IndexSummar
       detail: s.lastBuild?.state === 'cancelled' ? 'The last build was stopped before it finished. Update the index to finish it.' : 'The last build did not finish. Update the index to finish it.' }
   }
   if (s.indexed === false) return { ...base, tone: 'muted', text: 'not indexed', detail: 'Build the index under Settings, Indexing, Libraries.' }
-  return { ...base, tone: 'success', text: files != null ? `${files.toLocaleString()} files indexed` : 'indexed' }
+  return { ...base, tone: 'success', text: files != null ? `${plural(files, 'file')} indexed${of ? ` in ${of}` : ''}` : 'indexed' }
 }
 
 /** A duration as people read it: 850 ms, 12 s, 4 min 12 s, 1 h 3 min. */
