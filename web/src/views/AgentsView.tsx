@@ -187,12 +187,14 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const loadFolders = useCallback(() => fetch('/api/agents-md/folders').then(r => r.json())
     .then(d => setFolders(d.folders ?? [])).catch(() => {}), [])
   useEffect(() => { if (page === 'library') void loadFolders() }, [page, loadFolders])
-  // What was taken off stays in its place, marked, until the list is read
-  // again, so the next action does not move under the pointer.
+  // What was taken off stays in its place, marked, while the page is open,
+  // so the next action does not move under the pointer, and a list read
+  // before the take-off landed cannot show it applied again. Applying it
+  // to that folder again clears its mark.
   const [takenOff, setTakenOff] = useState<Set<string>>(new Set())
   const offKey = (f: AgentFolder, kind: 'persona' | 'skill', n: string) => `${f.library}:${f.folder}:${kind}:${n}`
   const isOff = (f: AgentFolder, kind: 'persona' | 'skill', n: string) => takenOff.has(offKey(f, kind, n))
-  useEffect(() => { setTakenOff(new Set()) }, [folders])
+  useEffect(() => { setTakenOff(new Set()) }, [page])
   const carrying = (kind: 'persona' | 'skill', n: string) =>
     folders.filter(f => (kind === 'persona' ? f.instructions : f.skills).includes(n) && !isOff(f, kind, n))
   const stillCarrying = folders.filter(f => f.instructions.some(n => !isOff(f, 'persona', n)) || f.skills.some(n => !isOff(f, 'skill', n)))
@@ -527,6 +529,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           onDone={f => {
             setApplying(null)
             toast.success(`Applied ${applying.name} to ${f.folder || 'the top of ' + f.label}.`)
+            setTakenOff(prev => { const next = new Set(prev); next.delete(offKey(f, applying.kind, applying.name)); return next })
             void loadFolders()
           }} />
       )}
