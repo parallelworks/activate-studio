@@ -6,6 +6,7 @@ import { AddIcon, CloseIcon } from '@parallelworks/ui/icons'
 import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, listingCost, textCost, type BucketTextEstimate, type BucketTextPass, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
+import { reloadWhenLibrariesBuilt } from '../libraryWatch'
 import { libraryAccess } from './LibraryScope'
 import { AddLibrary } from './AddLibrary'
 import { LibraryExport } from './LibraryExport'
@@ -349,6 +350,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
     void loadLibs()
     void loadUser()
     reloadAppConfig()
+    reloadWhenLibrariesBuilt()
   }
   // After an import the dialog stays open with each entry's result.
   const imported = (count: number) => {
@@ -356,6 +358,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
     void loadLibs()
     void loadUser()
     reloadAppConfig()
+    reloadWhenLibrariesBuilt()
   }
   const capsOf = (id: string) => cfg.libraries?.find(l => l.id === id)?.caps
   // Another host that has a library's files, where its originals are also
