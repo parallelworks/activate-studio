@@ -124,8 +124,11 @@ export function activitySummary(d: Pick<StatusData, 'tasks' | 'fleet' | 'runs' |
 export interface LibLine { id: string; label: string; kind: string; state: string; tone: BadgeVariant; pulse: boolean; count: string | null; note: string | null }
 
 /** Every library the viewer has: the configured ones, and their own on
- *  their clusters, including any still building or failed. */
-export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | null, stats: KbStats | null): LibLine[] {
+ *  their clusters, including any still building or failed. `mainIndexed` is
+ *  the main library's index as the index status says now (the footer's
+ *  source); the app's config, read when the page loaded, may predate a
+ *  build that finished since. */
+export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | null, stats: KbStats | null, mainIndexed?: boolean): LibLine[] {
   const counted = (id: string): number | undefined => {
     const one = stats?.libraries?.find(l => l.id === id)
     if (one) return one.available ? one.files : undefined
@@ -136,11 +139,12 @@ export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | nu
     if (userLibs?.some(u => u.id === l.id)) continue
     const st = stats?.libraries?.find(x => x.id === l.id)
     const n = counted(l.id)
+    const indexed = l.primary && mainIndexed !== undefined ? mainIndexed : l.caps.index
     lines.push({
       id: l.id, label: l.label,
       kind: l.primary ? 'knowledge base' : l.site ? `on ${l.site}` : l.writable ? 'writable' : 'read only',
-      state: st && !st.available ? 'unavailable' : l.caps.index ? 'indexed' : 'not indexed',
-      tone: st && !st.available ? 'warning' : l.caps.index ? 'success' : 'muted', pulse: false,
+      state: st && !st.available ? 'unavailable' : indexed ? 'indexed' : 'not indexed',
+      tone: st && !st.available ? 'warning' : indexed ? 'success' : 'muted', pulse: false,
       count: n != null ? `${n.toLocaleString()} files` : null,
       note: st && !st.available ? st.error ?? null : null,
     })
@@ -411,11 +415,11 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const sessions = runsOn ? data.sessions ?? [] : []
   const hasActivity = tasks.length + fleet.length + runs.length + sessions.length > 0
 
-  const libs = libraryLines(cfg.libraries ?? [], data.userLibs, shared.stats)
-  const model = shared.model ?? rememberedModel()
-  const conns = connectionLines({ platform: !!cfg.platform, authEnabled: shared.authEnabled, ai: shared.ai, mcp: ai ? data.mcp : null, libs: cfg.libraries ?? [], userLibs: data.userLibs })
   // The index status the footer and the pages show, read once for all.
   const idx = useIndexStatus()
+  const libs = libraryLines(cfg.libraries ?? [], data.userLibs, shared.stats, idx?.indexed)
+  const model = shared.model ?? rememberedModel()
+  const conns = connectionLines({ platform: !!cfg.platform, authEnabled: shared.authEnabled, ai: shared.ai, mcp: ai ? data.mcp : null, libs: cfg.libraries ?? [], userLibs: data.userLibs })
   const ix = indexSummary(idx)
 
   return (
