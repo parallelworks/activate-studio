@@ -1306,6 +1306,10 @@ a.identity-btn { text-decoration: none; }
 .fleet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 14px; }
 .fleet-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .fleet-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+/* One line, so the detail below does not move when a wake-up adds its count. */
+.fleet-card .task-card-meta { gap: 8px; white-space: nowrap; }
+.fleet-card .task-card-meta > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fleet-card .task-card-meta > span:last-child { flex-shrink: 0; }
 .fleet-note { font-size: 12px; margin: -4px 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fleet-goal-text { font-size: 13px; white-space: pre-wrap; margin: 0 0 10px; }
 .fleet-journal { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; border-top: 1px solid var(--pw-border); padding-top: 10px; }
@@ -1981,7 +1985,9 @@ a.identity-btn { text-decoration: none; }
 .agents-swap > * { grid-area: 1 / 1; }
 .agents-swap-hidden { visibility: hidden; }
 .agents-actions { display: inline-flex; flex: none; align-items: baseline; white-space: nowrap; }
-.agents-carriers { margin-left: 6px; font-size: 12px; color: var(--pw-muted); white-space: nowrap; }
+/* On its own line under the description: inline, it was held to the
+   description's last word and took that word with it when it wrapped. */
+.agents-carriers { display: block; font-size: 12px; color: var(--pw-muted); white-space: nowrap; }
 .agents-folders .ov-row-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .persona-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
   padding: 7px 10px; border: 0; background: none; border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; }
@@ -2190,6 +2196,8 @@ a.identity-btn { text-decoration: none; }
 .lib-card-foot > :last-child { margin-left: auto; }
 .lib-depth-note { font-size: 12px; margin: 8px 0 0; max-width: var(--settings-measure); }
 .lib-no { color: var(--pw-muted); }
+.lib-depth-locked .muted { font-size: 12px; margin-top: 2px; }
+.lib-field:has(.lib-depth-locked) > dt { align-self: start; }
 /* Too narrow for two details a line (a phone, or a laptop window with the
    settings menu and the status panel open): one a line, and the actions
    under the name. Decided by the list's own width, not the window's. */
@@ -3366,7 +3374,7 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .locked-button { display: inline-flex; }
 
 /* A call a standing agent waits to have approved, whole, with its answer. */
-.fleet-approval-text { margin: 6px 0; padding: 6px 8px; max-height: 12em; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; }
+.fleet-approval-text { margin: 6px 0; padding: 6px 8px; overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; }
 .fleet-approval-actions { display: flex; gap: 8px; }
 .fleet-approval-cut, .fleet-approval-reason { display: block; margin: 4px 0; }
 
@@ -3374,3 +3382,6 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
    the page's lower right corner, so no page moves for it. */
 .first-visit { position: fixed; right: 16px; bottom: 16px; z-index: 30; width: min(380px, calc(100vw - 32px)); box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); border-radius: 8px; background: var(--pw-panel); }
 .first-visit p { margin: 0 0 6px; }
+/* A continued chat's opening note is not a reply: no Regenerate on it
+   (markNotes, adapter.ts, marks its Code page link). */
+.group:has(a[href*="note=continued"]):not(:has(.group)) button[aria-label="Regenerate response"] { display: none; }

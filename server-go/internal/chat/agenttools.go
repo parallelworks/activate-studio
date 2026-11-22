@@ -1068,7 +1068,8 @@ func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx)
 		model = deref(ctx.Model)
 	}
 	rec, err := delegation.Default.Start(r, delegation.Start{Site: site, Key: m.agentKey(s, ctx), Objective: objective, Goal: goal,
-		MaxTurns: numOr(arg(args, "max_turns"), 0), Model: model, Instructions: instructions, Folder: optStr(arg(args, "folder"))})
+		MaxTurns: numOr(arg(args, "max_turns"), 0), Model: model, Instructions: instructions, Folder: optStr(arg(args, "folder")),
+		ModelFor: func(current string) (string, string) { return m.agentModel(r, current, model) }})
 	if err != nil {
 		return nil, err
 	}
@@ -1085,9 +1086,18 @@ func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx)
 			with += " at the top of its brief"
 		}
 	}
-	return &Outcome{Result: "Started pw code session " + rec.Session + " on " + rec.Site + ", working in " + where + with + ", with a goal it works toward until met or bounded. " +
+	return &Outcome{Result: "Started pw code session " + rec.Session + " on " + rec.Site + ", working in " + where + with + ", with a goal it works toward until met or bounded. " + modelNote(rec) +
 		"In your reply, give the user this link to follow it: [Open on the Code page](#view=code?session=" + rec.Session + "). Follow it with agent_status (site " + rec.Site + ", session " + rec.Session + "); do not wait idly, tell the user it is running." + unrecorded(rec),
 		Summary: "delegated to " + rec.Session}, nil
+}
+
+// modelNote is what the delegate tool says of a session moved to another
+// model.
+func modelNote(rec *delegation.Record) string {
+	if rec.ModelNote == "" {
+		return ""
+	}
+	return "Tell the user: " + rec.ModelNote + ". "
 }
 
 // unrecorded is what the delegate tool adds when the start's record

@@ -1,9 +1,11 @@
 package chat
 
 import (
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 )
 
@@ -120,5 +122,37 @@ func TestPWCodeChatKeepsTheModelSettingsName(t *testing.T) {
 		"messages": []any{map[string]any{"role": "user", "content": "Hi"}}})
 	if len(f.settings) != 0 || m.Conv.Get(c.ID).PWCode.ModelNote != "" {
 		t.Errorf("settings sent: %q", f.settings)
+	}
+}
+
+// Retest A: a session the Studio starts for an agent (delegated from a pw
+// code chat, or a standing agent's) moves off pw code's model when the
+// connection does not offer it, as the chat's own session does, and a
+// pw code chat's tools carry the model the chat runs on, so a delegated
+// session starts on it.
+func TestAnAgentSessionStartsOnAModelTheConnectionOffers(t *testing.T) {
+	f := &fakePW{script: helloTurn, model: "acct:anthropic/claude-x"}
+	m, _, gw := pwModuleGW(t, f, nil)
+	gw.models = `{"data":[{"id":"acct:codex/gpt-a","object":"model"},{"id":"acct:codex/gpt-b","object":"model"}]}`
+	r := httptest.NewRequest("POST", "/api/chat", nil)
+	if m.A.Providers.AgentModel == nil {
+		t.Fatal("the chat does not offer the rule to agents")
+	}
+	pick, why := m.A.Providers.AgentModel(r, "acct:anthropic/claude-x", "acct:codex/gpt-b")
+	if pick != "acct:codex/gpt-b" || !strings.Contains(why, "acct:anthropic/claude-x is not enabled for the AI connection") {
+		t.Fatalf("pick %q, %q", pick, why)
+	}
+	if pick, _ := m.agentModel(r, "acct:anthropic/claude-x", ""); pick != "acct:codex/gpt-a" {
+		t.Fatalf("with nothing chosen: %q", pick)
+	}
+	if pick, _ := m.agentModel(r, "acct:codex/gpt-a", "acct:codex/gpt-b"); pick != "" {
+		t.Fatalf("an offered model was moved: %q", pick)
+	}
+
+	c := m.Conv.Create(nil, "")
+	m.Conv.SetPWCode(c.ID, &conversations.PWCodeLink{Session: "20261122-100000-chatch", Model: "acct:codex/gpt-b"})
+	tc, _ := m.chatToolCtx(r, c.ID)
+	if deref(tc.Model) != "acct:codex/gpt-b" {
+		t.Fatalf("the chat's tools run without its model: %q", deref(tc.Model))
 	}
 }

@@ -2,6 +2,8 @@ package fleet
 
 import (
 	"context"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,5 +202,96 @@ func TestGroupRightsAreCurrent(t *testing.T) {
 	f.Seen(&auth.User{ID: "cy", Username: "cy"})
 	if s2 := round(); s2 == s1 || !inLib() {
 		t.Fatalf("groups changed: session %s then %s, in the library %v", s1, s2, inLib())
+	}
+}
+
+// Retest A: a standing agent's new session made on a model its owner's AI
+// connection does not offer is moved to one it does before its first
+// message, and the journal says so.
+func TestAStandingAgentStartsOnAModelOffered(t *testing.T) {
+	f, d, _ := stand(t)
+	var asked []string
+	f.A.Providers.AgentModel = func(r *http.Request, cur, chosen string) (string, string) {
+		who := ""
+		if u := auth.UserOf(r); u != nil {
+			who = u.ID
+		}
+		asked = append(asked, who+" "+cur)
+		if cur == "acct:anthropic/claude-x" {
+			return "acct:codex/gpt-b", "pw code's model " + cur + " is not enabled for the AI connection, so the session runs on acct:codex/gpt-b"
+		}
+		return "", ""
+	}
+	a, err := f.Create(Input{Name: "Model", Goal: "Count.", Every: "manual"}, &auth.User{ID: "ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Tick(a.ID, "now", true) {
+		t.Fatal("no wake-up")
+	}
+	waitFor(t, "the wake-up", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
+	d.mu.Lock()
+	models := append([]string(nil), d.models...)
+	d.mu.Unlock()
+	if len(asked) != 1 || asked[0] != "ada acct:anthropic/claude-x" {
+		t.Fatalf("asked %v", asked)
+	}
+	if len(models) != 1 || models[0] != "acct:codex/gpt-b before 0 messages" {
+		t.Fatalf("models %v", models)
+	}
+	found := false
+	for _, j := range f.Journal(a.ID, 50) {
+		if strings.Contains(j.Text, "runs on acct:codex/gpt-b") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the journal does not say the model moved")
+	}
+}
+
+// Review 2, R2: an agent recorded before owners' visits and sessions'
+// rights were kept keeps its group rights and its session at the upgrade:
+// its owner counts as seen then, and its session as made with the rights
+// it acts with.
+func TestAnAgentFromBeforeTheUpgradeIsUnchanged(t *testing.T) {
+	f, d, _ := stand(t)
+	f.A.Cfg.Auth.JWKSURL = "https://id.platform.example/jwks"
+	defer func(g func(string) string) { mainlib.Getenv = g }(mainlib.Getenv)
+	mainlib.Getenv = func(k string) string {
+		if k == "STUDIO_ADMINS" {
+			return "group:leads"
+		}
+		return ""
+	}
+	ada := &auth.User{ID: "ada", Username: "ada", Groups: []string{"leads"}}
+	a, err := f.Create(Input{Name: "Digest", Goal: "Count.", Every: "manual"}, ada)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Tick(a.ID, "now", true) {
+		t.Fatal("no wake-up")
+	}
+	waitFor(t, "the wake-up", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
+	first := f.Get(a.ID).Session
+	d.finish(first, "done", 1)
+	f.follow(context.Background())
+	// The record as the release before wrote it.
+	f.mu.Lock()
+	cur := f.agents[a.ID]
+	cur.OwnerSeenAt, cur.SessionRights = "", ""
+	f.persist(cur)
+	f.mu.Unlock()
+
+	g := New(f.A, f.Daemon)
+	if _, _, in := g.folder(g.Get(a.ID)); !in {
+		t.Fatal("a group administrator's agent works outside the library after the upgrade")
+	}
+	if !g.Tick(a.ID, "now", true) {
+		t.Fatal("no wake-up after the upgrade")
+	}
+	waitFor(t, "the wake-up", func() bool { g.mu.Lock(); defer g.mu.Unlock(); return !g.busy[a.ID] })
+	if s := g.Get(a.ID).Session; s != first {
+		t.Fatalf("the session was started again at the upgrade: %s then %s", first, s)
 	}
 }

@@ -132,6 +132,8 @@ interface Server {
   settings: Record<string, unknown>
   /** The server has the transfers API. */
   transfers?: boolean
+  /** Models the Studio reaches with no key saved here (the pw CLI login). */
+  health?: { status: string; models: number; gatewayHost: string }
   calls: { method: string; url: string; body: unknown }[]
 }
 
@@ -190,6 +192,7 @@ function stubServer(s: Server) {
       const p = new URL(url, 'http://x').searchParams.get('path') ?? ''
       return LISTINGS[p] ? reply(LISTINGS[p]) : reply({ error: `no such folder: ${p}` }, 404)
     }
+    if (url === '/api/ai/health' && s.health) return reply({ ok: s.health.status === 'ok', message: null, lastCallFailure: null, checkedAt: 'now', ...s.health })
     if (url === '/api/me/model-key' && method === 'GET') return reply({ authEnabled: false, verified: true, single: true, ...s.key })
     if (url === '/api/me/model-key/test') {
       const { key } = body as { key: string }
@@ -528,6 +531,32 @@ describe('the setup wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(false))
     expect(writes().map(c => `${c.method} ${c.url}`)).toEqual(['POST /api/setup/complete'])
+  })
+
+  it('counts a model reached through the pw CLI login as set up (report I)', async () => {
+    const s = server({ health: { status: 'ok', models: 24, gatewayHost: 'cloud.example' } })
+    open(s)
+    next(); next(); next()
+    heading('AI features')
+    expect(await screen.findByText('Connected: 24 models ready through cloud.example. Chat can use them now; set up an endpoint below only to use it instead.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Skip this step' })).toBeNull()
+    next(); next(); next(); next()
+    heading('Done')
+    expect(screen.getByText('AI features: on, 24 models ready through cloud.example')).toBeInTheDocument()
+    expect(screen.queryByText(/Chat needs a model/)).toBeNull()
+  })
+
+  it('with no model reached, still says chat needs one', async () => {
+    const s = server({ health: { status: 'unconfigured', models: 0, gatewayHost: '' } })
+    open(s)
+    next(); next(); next()
+    heading('AI features')
+    await waitFor(() => expect(s.calls.some(c => c.url === '/api/ai/health')).toBe(true))
+    expect(screen.getByRole('button', { name: 'Skip this step' })).toBeInTheDocument()
+    next(); next(); next(); next()
+    heading('Done')
+    expect(screen.getByText('AI features: on, no model set up yet')).toBeInTheDocument()
+    expect(screen.getByText(/Chat needs a model/)).toBeInTheDocument()
   })
 
   it('left partway, keeps what was saved before leaving', async () => {

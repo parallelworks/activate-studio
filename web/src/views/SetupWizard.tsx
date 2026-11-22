@@ -19,6 +19,7 @@ import {
 } from '../config'
 import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
 import { plural } from '../plural'
+import type { AiHealth } from '../statusShare'
 
 /**
  * First-run setup for a single-user install: the Studio's name and icon,
@@ -81,6 +82,12 @@ interface KeyTest {
 
 const hostOf = (url: string | null | undefined) => { try { return new URL(String(url)).host } catch { return '' } }
 
+/** Models the Studio reaches with no endpoint saved in setup, as the model
+ *  health reports them (the footer's count): the pw CLI login, or a key
+ *  set in the Studio's environment. */
+interface Connected { models: number; host: string }
+const connectedText = (c: Connected) => `${plural(c.models, 'model')} ready${c.host ? ` through ${c.host}` : ''}`
+
 /** Stored for an endpoint that takes no key (a local vLLM or Ollama), which
  *  ignores the bearer token the Studio sends. */
 export const NO_KEY = 'none'
@@ -106,10 +113,13 @@ export function keyTestProblem(t: KeyTest, baseUrl: string): string | null {
 
 /** AI features on or off, and the OpenAI-compatible endpoint the Studio's
  *  model calls go to (the personal model key routes, with its base URL). */
-function AiStep({ enabled, sections, me, onSaved, onOpenAccess }: {
+function AiStep({ enabled, sections, me, connected, onSaved, onOpenAccess }: {
   enabled: boolean
   sections: string[] | undefined
   me: KeyStatus | null
+  /** Models the Studio already reaches without a key saved here, such as
+   *  through the pw CLI login (the footer's count). */
+  connected: Connected | null
   onSaved: (saved: { host: string; model: string; status: KeyStatus }) => void
   /** Closes setup and opens Settings, Model access. */
   onOpenAccess: () => void
@@ -190,6 +200,11 @@ function AiStep({ enabled, sections, me, onSaved, onOpenAccess }: {
             An ACTIVATE account works too: set it up in {access}, under ACTIVATE (pw CLI) or ACTIVATE API key, or enter it
             here with the base URL <code>https://&lt;platform host&gt;/api/openai/v1</code> and an API key from the account.
           </p>
+          {connected && !saved && (
+            <Callout tone="success">
+              {`Connected: ${connectedText(connected)}. Chat can use them now; set up an endpoint below only to use it instead.`}
+            </Callout>
+          )}
           {me && me.mode !== 'none' && me.baseUrl && !saved && (
             <Callout tone="success">
               {me.last4 === NO_KEY
@@ -291,6 +306,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
   const [theme, setTheme] = useState<ThemeChoice | null>(null)
   const [me, setMe] = useState<KeyStatus | null>(null)
   const [aiSaved, setAiSaved] = useState<{ host: string; model: string } | null>(null)
+  const [health, setHealth] = useState<AiHealth | null>(null)
   const [kind, setKind] = useState<OtherKind>('local')
   // The libraries step leads with the common case, another folder here; the
   // other kinds (an existing index, ssh, ACTIVATE) are a click away.
@@ -329,6 +345,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
       if (s?.job) void index.follow(s.job)
     })
     json<KeyStatus>('/api/me/model-key').then(k => { if (alive.current) setMe(k) }).catch(() => {})
+    json<AiHealth>('/api/ai/health').then(h => { if (alive.current) setHealth(h) }).catch(() => {})
     // Whether an index on a cluster is offered; the form says why when pw ssh cannot be used yet.
     api.userLibraries().then(r => { if (alive.current) setPwOffered(!!(r.pwOffered ?? r.pw)) }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -430,8 +447,12 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
     : primary.indexed ? (primary.files !== undefined ? `Indexed: ${plural(primary.files, 'file')}.` : 'Indexed.')
     : 'Not indexed yet.'
   const endpoint = aiSaved ?? (me && me.mode !== 'none' && me.baseUrl ? { host: hostOf(me.baseUrl), model: '' } : null)
+  // A model reached without a key saved here (the pw CLI login) counts too.
+  const connected: Connected | null = !endpoint && health?.status === 'ok' && health.models > 0
+    ? { models: health.models, host: health.gatewayHost } : null
   const aiSummary = !aiOn ? 'off'
     : endpoint ? `on, through ${endpoint.host}${endpoint.model ? `, default model ${endpoint.model}` : ''}`
+    : connected ? `on, ${connectedText(connected)}`
     : 'on, no model set up yet'
   const accentName = (a: string) => (a.startsWith('custom:') ? `custom (${a.slice(7)})` : ACCENTS[a]?.label ?? a)
   // The default accent is no color at all, so it is not named as one.
@@ -440,7 +461,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
   // A folder just chosen and not indexed: offer the build at once.
   const offerBuild = folderChanged && !!primary?.exists && !primary.indexed && !index.job && !restarting
   // Steps with something to set up that has not been, where moving on skips it.
-  const skippable = (step === STEP.ai && aiOn && !endpoint)
+  const skippable = (step === STEP.ai && aiOn && !endpoint && !connected)
     || (step === STEP.folder && !primary?.indexed && !index.job)
     || (step === STEP.libraries && !others.length)
 
@@ -498,7 +519,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
         )}
 
         {step === STEP.ai && (
-          <AiStep enabled={aiOn} sections={cfg.sections} me={me} onOpenAccess={() => void openAccess()}
+          <AiStep enabled={aiOn} sections={cfg.sections} me={me} connected={connected} onOpenAccess={() => void openAccess()}
             onSaved={s => { setAiSaved({ host: s.host, model: s.model }); setMe(s.status) }} />
         )}
 
@@ -621,7 +642,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
                 </li>
               )}
             </ul>
-            {aiOn && !endpoint && (
+            {aiOn && !endpoint && !connected && (
               <p className="muted" style={{ margin: 0 }}>
                 Chat needs a model: set one up in <a href="#view=settings:access" onClick={e => { e.preventDefault(); void openAccess() }}>Settings, Model access</a>.
               </p>

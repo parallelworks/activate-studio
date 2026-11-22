@@ -39,6 +39,10 @@ type daemon struct {
 	// failCreate makes starting a session fail; gone answers the session
 	// as not there.
 	failCreate, gone bool
+	// goalStays keeps the goal active whatever the status, as a turn that
+	// ended on an error leaves it; models is each PATCH settings model.
+	goalStays bool
+	models    []string
 }
 
 func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +71,12 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.goals = append(d.goals, g.Args)
 		send(map[string]any{"output": "goal set"})
 	case strings.HasSuffix(p, "/state"):
-		send(map[string]any{"goal": map[string]any{"active": d.status == "running"}})
+		send(map[string]any{"goal": map[string]any{"active": d.status == "running" || d.goalStays}})
+	case strings.HasSuffix(p, "/settings") && r.Method == http.MethodPatch:
+		var m struct{ Model string }
+		json.NewDecoder(r.Body).Decode(&m)
+		d.models = append(d.models, m.Model)
+		send(map[string]any{"ok": true})
 	case p == "/v1/sessions/20261121-120000-abcdef" && d.gone:
 		w.WriteHeader(404)
 		send(map[string]any{"error": "no such session"})
@@ -333,5 +342,35 @@ func TestARecordThatCannotBeWritten(t *testing.T) {
 	}
 	if rec.Unrecorded != Unrecorded || !strings.Contains(logged.String(), "the record could not be written") {
 		t.Fatalf("record %+v, log %q", rec, logged.String())
+	}
+}
+
+// A delegated session whose turn stopped on an error (a model the AI
+// connection does not offer) leaves its goal active and works no more:
+// its record reads stopped with the error, not working. A session made on
+// such a model is moved to one the connection offers, and the record
+// says so.
+func TestASessionThatStopsOnAnErrorIsFailed(t *testing.T) {
+	s, d, _, _ := stand(t)
+	r := httptest.NewRequest("POST", "/", nil)
+	rec, err := s.Start(r, Start{Site: agentsites.Local, Objective: "List the notes", Folder: "notes",
+		ModelFor: func(cur string) (string, string) {
+			return "acct:codex/gpt-b", "pw code's model acct:anthropic/claude-x is not enabled for the AI connection, so the session runs on acct:codex/gpt-b"
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.models) != 1 || d.models[0] != "acct:codex/gpt-b" || !strings.Contains(rec.ModelNote, "runs on acct:codex/gpt-b") {
+		t.Fatalf("models %v, note %q", d.models, rec.ModelNote)
+	}
+	d.mu.Lock()
+	d.goalStays = true
+	d.mu.Unlock()
+	d.set("idle", "This model is not enabled for the AI connection")
+	if !s.Look(context.Background(), rec.Session, "") {
+		t.Fatal("a session stopped on an error is still taken as working")
+	}
+	if g := s.get(rec.Session); g.State != "stopped" || !strings.Contains(g.Error, "not enabled") {
+		t.Fatalf("record %+v", g)
 	}
 }

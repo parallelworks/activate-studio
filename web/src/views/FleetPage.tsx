@@ -6,6 +6,7 @@ import {
 } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
 import { PersonaIcon } from '../components/PersonaIcon'
+import { commandHead } from '../commandHead'
 
 /**
  * The operator base: standing agents with goals, their state, their
@@ -36,6 +37,13 @@ interface Persona { name: string; description: string; icon: string }
 
 const CADENCES = ['15m', '30m', '1h', '2h', '6h', '12h', '1d', 'manual']
 const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+/** A card's next wake-up: the time alone today, so the footer keeps to one
+ *  line on a card 240 px wide. */
+export function nextWake(iso: string, now = new Date()): string {
+  const d = new Date(iso)
+  const today = d.toDateString() === now.toDateString()
+  return d.toLocaleString([], today ? { hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'never'
 // Journal kinds here and board topics on the Tasks page share one set of tones.
 const TOPIC_TONE: Record<string, BadgeVariant> = {
@@ -58,6 +66,19 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [agents, setAgents] = useState<Agent[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [open, setOpen] = useState<string | null>(null)
+  // #view=agents:fleet?agent=<id> (Status Activity's link) opens that agent.
+  useEffect(() => {
+    const pick = () => {
+      const m = location.hash.match(/^#view=agents:fleet\?(?:.*&)?agent=([^&]+)/)
+      if (m) setOpen(decodeURIComponent(m[1]))
+    }
+    pick()
+    window.addEventListener('hashchange', pick)
+    return () => window.removeEventListener('hashchange', pick)
+  }, [])
+  // The approval whose whole command is on screen: Approve runs it whole,
+  // so it is offered only then, as on the Code page.
+  const [whole, setWhole] = useState('')
   const [detail, setDetail] = useState<{ agent: Agent; journal: Journal[]; session: SessionView | null; approval?: Approval | null } | null>(null)
   const [message, setMessage] = useState('')
   const [creating, setCreating] = useState(false)
@@ -192,8 +213,8 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
               <div className="task-card-objective">{a.name}</div>
               <div className="muted fleet-note">{a.note}</div>
               <div className="task-card-meta">
-                <span>{a.ticks} wake-up{a.ticks === 1 ? '' : 's'}{a.tokens ? ` · ${fmtTokens(a.tokens)} tok` : ''}</span>
-                <span>{a.state === 'working' ? 'running' : a.nextTickAt ? `next ${when(a.nextTickAt)}` : a.triggers.every === 'manual' ? 'on events' : ''}</span>
+                <span title={a.nextTickAt ? `next wake-up ${when(a.nextTickAt)}` : undefined}>{a.ticks} wake-up{a.ticks === 1 ? '' : 's'}{a.tokens ? ` · ${fmtTokens(a.tokens)} tok` : ''}</span>
+                <span>{a.state === 'working' ? 'running' : a.nextTickAt ? `next ${nextWake(a.nextTickAt)}` : a.triggers.every === 'manual' ? 'on events' : ''}</span>
               </div>
             </div>
           ))}
@@ -224,13 +245,13 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
               {detail.approval?.kind === 'confirm'
                 ? <>
                     It waits for you to approve this call in its session{detail.approval.tool ? <> ({detail.approval.tool})</> : null}:
-                    {detail.approval.command && <pre className="fleet-approval-text">{detail.approval.command}</pre>}
+                    {detail.approval.command && <WholeCommand key={detail.approval.id} text={detail.approval.command} length={detail.approval.commandLength} onWhole={shown => setWhole(shown ? detail.approval!.id : '')} />}
                     {detail.approval.commandCut && (
                       <span className="fleet-approval-cut">The command is {detail.approval.commandLength?.toLocaleString()} characters, too long to show whole here, so it can only be denied.</span>
                     )}
                     {!detail.approval.command && detail.approval.reason && <span className="fleet-approval-reason">{detail.approval.reason}</span>}
                     <span className="fleet-approval-actions">
-                      {detail.approval.approvable && <Button variant="primary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: true })}>Approve</Button>}
+                      {detail.approval.approvable && whole === detail.approval.id && <Button variant="primary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: true })}>Approve</Button>}
                       <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: false })}>Deny</Button>
                     </span>
                   </>
@@ -276,5 +297,27 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
         confirmLabel="Retire"
         onConfirm={() => { if (retiring) { void act(retiring.id, 'retire'); setOpen(null) } setRetiring(null) }} />
     </section>
+  )
+}
+
+/** A command waiting for approval: whole when short, else its first lines
+ *  until opened. onWhole names the approval once the whole command shows. */
+function WholeCommand({ text, length, onWhole }: { text: string; length?: number; onWhole: (shown: boolean) => void }) {
+  const { head, long, lines } = commandHead(text)
+  const [open, setOpen] = useState(false)
+  const shown = open || !long
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onWhole(shown) }, [shown])
+  return (
+    <>
+      <pre className="fleet-approval-text">{shown ? text : `${head}…`}</pre>
+      {!shown && (
+        <span className="fleet-approval-cut">
+          <button type="button" className="code-approval-more" onClick={() => setOpen(true)}>
+            Show the whole command ({lines.toLocaleString()} lines, {(length ?? text.length).toLocaleString()} characters)
+          </button> to approve it.
+        </span>
+      )}
+    </>
   )
 }
