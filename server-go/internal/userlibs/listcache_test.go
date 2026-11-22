@@ -99,9 +99,9 @@ func TestListCacheAges(t *testing.T) {
 	if got, _, _ := c.get(k); got[0].Name != "new" {
 		t.Fatal("an older read replaced a newer one")
 	}
-	c.put(k, one("new"), time.Now().Add(-listStale-time.Second))
+	c.put(k, one("older still"), time.Now().Add(-listStale-time.Second))
 	if got, _, _ := c.get(k); got[0].Name != "new" {
-		t.Fatal("kept")
+		t.Fatal("a read older than the one kept replaced it")
 	}
 	c.failed(k)
 	c.put(k, one("stale"), time.Now().Add(-listStale-time.Second))
@@ -115,5 +115,38 @@ func TestListCacheAges(t *testing.T) {
 	}
 	if len(c.m) > listMax {
 		t.Fatalf("%d listings kept, more than %d", len(c.m), listMax)
+	}
+}
+
+// TestListCacheReadAcrossAWrite: a read that began before a write in its
+// folder (or one inside or above it) is answered but not kept, since it may
+// be from before the write; a write elsewhere, or one before the read
+// began, does not stop it being kept.
+func TestListCacheReadAcrossAWrite(t *testing.T) {
+	var c listCache
+	k := listKey{owner: "ada", key: keyHash("k"), site: "s", root: "/home/ada/studio", rel: "papers"}
+	c.get(k)
+	since := c.mark()
+	c.changed("s", "/home/ada/studio/papers")
+	c.putRead(k, one("before the upload"), time.Now(), since)
+	if got, _, ok := c.get(k); ok {
+		t.Fatalf("a read across a write was kept: %v", got)
+	}
+	since = c.mark()
+	c.changed("s", "/home/ada/studio/other")
+	c.changed("t", "/home/ada/studio/papers")
+	c.putRead(k, one("a.pdf"), time.Now(), since)
+	if _, _, ok := c.get(k); !ok {
+		t.Fatal("a write elsewhere stopped a read being kept")
+	}
+	// A read that began before writes no longer remembered is not kept.
+	c.failed(k)
+	since = c.mark()
+	for i := 0; i < listRecent+1; i++ {
+		c.changed("s", "/elsewhere")
+	}
+	c.putRead(k, one("a.pdf"), time.Now(), since)
+	if _, _, ok := c.get(k); ok {
+		t.Fatal("a read older than every remembered write was kept")
 	}
 }
