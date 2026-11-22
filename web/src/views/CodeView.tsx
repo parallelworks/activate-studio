@@ -131,10 +131,12 @@ const DELEGATED_STATE: Record<Delegated['state'], string> = {
 /** A row's second line: the machine, then what the Studio does with the
  *  session, then its workspace last, where the row's ellipsis cuts it. */
 export function rowMeta(s: CodeSession, inChat: boolean, d?: Delegated): string {
+  // What the Studio did with the session leads, so a narrow list cuts the
+  // machine and folder rather than it; the whole line is the tooltip.
   return [
-    s.machine,
     inChat ? 'in a Studio chat' : '',
     d ? `delegated${d.instructions ? `, ${d.instructions}` : ''}` : '',
+    s.machine,
     s.workspace ? shortPath(s.workspace) : '',
   ].filter(Boolean).join(' · ')
 }
@@ -310,13 +312,14 @@ export function CodeView() {
               {g.rows.map(s => {
                 const dot = dotFor(s)
                 const on = open?.id === s.id && open.machineId === s.machineId
+                const meta = rowMeta(s, chatFor.has(s.id), delegated.get(s.id))
                 return (
                   <li key={`${s.machineId}/${s.id}`}>
                     <button type="button" className={`code-row${on ? ' on' : ''}`} onClick={() => setOpen(s)} aria-current={on || undefined}>
                       <StatusDot variant={dot.variant} off={dot.off} pulse={dot.pulse} />
                       <span className="code-row-main">
                         <span className="code-row-title">{s.title}</span>
-                        <span className="code-row-meta">{rowMeta(s, chatFor.has(s.id), delegated.get(s.id))}</span>
+                        <span className="code-row-meta" title={meta}>{meta}</span>
                       </span>
                       <span className="code-row-when">{ago(s.updatedAt)}</span>
                     </button>
