@@ -5,7 +5,7 @@ import { reloadPanelState, setPanelView, setSideShown } from '../src/panelState'
 import { share } from '../src/statusShare'
 import { PageSideViewHost } from '../src/components/RunPane'
 import {
-  PanelToggle, StatusPanel, activitySummary, connectionsSummary, connectionLines, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests,
+  PanelToggle, StatusPanel, activitySummary, connectionsSummary, connectionLines, freshLibraries, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests,
 } from '../src/components/StatusPanel'
 
 const lib = { id: 'kb', label: 'Knowledge base', primary: true, writable: true, pinned: true, source: true, caps: { index: true, fullText: true, vectors: false } }
@@ -162,6 +162,13 @@ describe('the cards', () => {
     expect(libraryLines([lib], null, null, false)[0].state).toBe('not indexed')
     // Another library keeps its own state.
     expect(libraryLines([{ ...stale, id: 'other', primary: false }], null, null, true)[0].state).toBe('not indexed')
+    // A keep-copy library indexed since the page loaded reads as the live
+    // list has it, not as the config did; the config's list stays the list.
+    const copy = { ...stale, id: 'kc', label: 'Copy', primary: false }
+    const live = [{ ...copy, caps: { ...copy.caps, index: true } }, { ...lib, id: 'not-mine', primary: false }]
+    expect(freshLibraries([copy], live).map(l => [l.id, l.caps.index])).toEqual([['kc', true]])
+    expect(libraryLines(freshLibraries([copy], live), null, null)[0]).toMatchObject({ label: 'Copy', state: 'indexed', tone: 'success' })
+    expect(freshLibraries([copy], null)).toEqual([copy])
     const conns = connectionLines({ platform: false, authEnabled: true, ai: null, mcp: [{ name: 'crm', tools: 4, error: null, checkedAt: ago(1) }], libs: [lib], userLibs: null })
     expect(conns.map(c => `${c.kind} ${c.name}: ${c.meta}`)).toEqual(['platform Platform: needs your key', 'mcp crm: connected, 4 tools'])
     expect(connectionsSummary(conns).text).toBe('1 needs attention')

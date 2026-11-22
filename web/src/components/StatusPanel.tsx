@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Button, DisclosurePanel, IconButton, StatusDot, type BadgeVariant } from '@parallelworks/ui'
 import { ChevronRightIcon } from '@parallelworks/ui/icons'
 import { api, currentLibrary, type IndexStatus, type PublicLibrary, type UserLibrary } from '../api'
-import type { AppConfig } from '../config'
+import { reloadAppConfig, type AppConfig } from '../config'
 import { setPanelOpen, usePanel } from '../panelState'
 import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '../statusShare'
 import { indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
@@ -40,10 +40,14 @@ export interface StatusData {
   sessions: SessionInfo[] | null
   idx: IndexStatus | null
   userLibs: UserLibrary[] | null
+  /** The library list as it is now (/api/libraries): the app config is
+   *  read once, so a library whose index was built since showed as not
+   *  indexed there. */
+  libs: PublicLibrary[] | null
   mcp: McpRow[] | null
 }
 
-const EMPTY: StatusData = { tasks: null, fleet: null, runs: null, sessions: null, idx: null, userLibs: null, mcp: null }
+const EMPTY: StatusData = { tasks: null, fleet: null, runs: null, sessions: null, idx: null, userLibs: null, libs: null, mcp: null }
 const FAST_MS = 10_000
 const SLOW_MS = 60_000
 
@@ -128,6 +132,14 @@ export interface LibLine { id: string; label: string; kind: string; state: strin
  *  the main library's index as the index status says now (the footer's
  *  source); the app's config, read when the page loaded, may predate a
  *  build that finished since. */
+/** The config's libraries, each with its capabilities as the live list
+ *  has them. Which libraries are listed stays the config's. */
+export function freshLibraries(cfg: PublicLibrary[], live: PublicLibrary[] | null): PublicLibrary[] {
+  if (!live) return cfg
+  const byId = new Map(live.map(l => [l.id, l]))
+  return cfg.map(l => { const n = byId.get(l.id); return n ? { ...l, caps: n.caps } : l })
+}
+
 export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | null, stats: KbStats | null, mainIndexed?: boolean): LibLine[] {
   const counted = (id: string): number | undefined => {
     const one = stats?.libraries?.find(l => l.id === id)
@@ -275,6 +287,7 @@ function useStatusData(agents: boolean, runs: boolean, mcp = true): [StatusData,
       if (runs) getJson<{ sessions: SessionInfo[] }>('/api/sessions').then(d => put({ sessions: (d.sessions ?? []).filter(s => s.status === 'running') }))
         .catch(() => put({ sessions: lastData.sessions ?? [] }))
       api.userLibraries().then(d => put({ userLibs: d.libraries ?? [] })).catch(() => {})
+      api.libraries().then(d => put({ libs: d.libraries ?? [] })).catch(() => {})
     }
     const tick = () => {
       if (document.visibilityState === 'hidden') return
@@ -421,7 +434,11 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
 
   // The index status the footer and the pages show, read once for all.
   const idx = useIndexStatus()
-  const libs = libraryLines(cfg.libraries ?? [], data.userLibs, shared.stats, idx?.indexed)
+  const libs = libraryLines(freshLibraries(cfg.libraries ?? [], data.libs), data.userLibs, shared.stats, idx?.indexed)
+  // A library indexed since the page loaded joins the switcher, Search and
+  // Query as well: they read the app config.
+  const newlyIndexed = (cfg.libraries ?? []).filter(l => !l.caps.index && data.libs?.some(n => n.id === l.id && n.caps.index)).map(l => l.id).join(',')
+  useEffect(() => { if (newlyIndexed) reloadAppConfig() }, [newlyIndexed])
   const model = shared.model ?? rememberedModel()
   const conns = connectionLines({ platform: !!cfg.platform, authEnabled: shared.authEnabled, ai: shared.ai, mcp: ai ? data.mcp : null, libs: cfg.libraries ?? [], userLibs: data.userLibs })
   const ix = indexSummary(idx)
