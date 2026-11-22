@@ -53,6 +53,9 @@ const TagIcon = () => (
 )
 
 interface NodeProps {
+  /** What the top of an empty library says (how to add to it, or that it
+   *  has nothing yet). */
+  emptyHint?: string
   path: string
   name: string
   depth: number
@@ -158,12 +161,19 @@ function DirNode(props: NodeProps) {
   const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, tags, dragKind, dropKind, dragging, onDragging } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
+  // Why the folder could not be listed, said at the top of the tree: an
+  // empty tree there would look like an empty library.
+  const [failed, setFailed] = useState('')
   const [dropOver, setDropOver] = useState(false)
 
   // Re-fetch on every open and on tagsTick so a just-applied label shows
   // without collapsing the expanded tree.
   useEffect(() => {
-    if (open) api.tree(path, showHidden).then(r => setEntries(r.entries)).catch(() => setEntries([]))
+    if (open) {
+      api.tree(path, showHidden)
+        .then(r => { setEntries(r.entries); setFailed('') })
+        .catch(e => { setEntries([]); setFailed(String((e as Error)?.message ?? e)) })
+    }
   }, [open, path, tagsTick, refreshTick, showHidden])
 
   // Reveal the selected file: expand every ancestor directory on the way.
@@ -222,6 +232,11 @@ function DirNode(props: NodeProps) {
             onClick={e => { e.stopPropagation(); onLabel(path) }} />
         </div>
       )}
+      {depth === 0 && open && entries?.length === 0 && (
+        failed
+          ? <p className="tree-empty" role="alert">This library could not be listed: {failed}</p>
+          : <p className="tree-empty">{props.emptyHint ?? 'This library is empty.'}</p>
+      )}
       {open && entries?.map(e =>
         e.type === 'dir' ? (
           <DirNode key={e.path} {...props} path={e.path} name={e.name} depth={depth + 1} tags={e.tags} />
@@ -264,11 +279,13 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, dragKind, dropKind }: {
+export function Explorer({ emptyHint, onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, dragKind, dropKind }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
   rootLabel: string
+  /** What an empty library says at the top of the tree. */
+  emptyHint?: string
   multiSelected: Set<string>
   onToggleMulti: (path: string) => void
   onDropInto: (dir: string, items: DataTransferItemList) => void
@@ -298,7 +315,7 @@ export function Explorer({ onOpen, onDirFocus, selected, rootLabel, multiSelecte
       }}
     >
       <DirNode
-        path="" name={rootLabel} depth={0}
+        path="" name={rootLabel} depth={0} emptyHint={emptyHint}
         onOpen={onOpen} onDirFocus={onDirFocus} selected={selected}
         multiSelected={multiSelected} onToggleMulti={onToggleMulti}
         onDropInto={onDropInto} onSelectRange={onSelectRange} onMoveInto={onMoveInto} onCopyInto={onCopyInto}

@@ -56,7 +56,7 @@ Ask in plain language. The assistant searches the knowledge base, reads the file
 
 ## Library
 
-The folder tree beside a viewer. Markdown, code, CSV and TSV tables, images, PDFs, office documents, and STL and STEP models open in place.
+The folder tree beside a viewer. Markdown, code, CSV and TSV tables, images, PDFs, office documents, and STL and STEP models open in place. An empty library says so at the top of the tree, with how to add files where you may, and one that cannot be listed says why.
 
 - With more than one library, the switcher above the tree names each with what you may do in it: **Read/write**, **Read only** or **Shared** (a folder someone shared with you), and **(on** a system**)** for one on a cluster or host, such as "Runs · Read only (on cluster-a)". Search, Query and Settings, Indexing, Libraries name them the same way.
 
