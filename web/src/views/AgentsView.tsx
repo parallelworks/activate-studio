@@ -31,9 +31,21 @@ interface Persona { name: string; description: string; shared: boolean; icon: st
 interface Skill { name: string; description: string; file: string }
 interface Approval { id: string; kind: string; text: string }
 interface SubTask { name: string; persona: string; objective: string; parent: string | null; depth: number; state: string; note: string; resultPath: string | null; updatedAt: string; usage?: { input: number; output: number; total: number; cost?: number | null } | null; sessionId?: string | null; approvals?: Approval[] | null; host?: string | null }
-interface TaskRow { id: string; objective: string; state: string; agents: number; running: number; waiting?: number; runtime?: 'runner' | 'session'; usage?: { input: number; output: number; total: number; cost?: number | null } | null }
+export interface TaskRow { id: string; objective: string; state: string; agents: number; running: number; waiting?: number; done?: number; failed?: number; stopped?: number; runtime?: 'runner' | 'session'; usage?: { input: number; output: number; total: number; cost?: number | null } | null }
 interface PlatformRun { slug: string; workflow: string; resource: string | null; conversationId: string | null; launchedAt: string; state: string; endedAt: string | null }
 interface TaskDetail extends TaskRow { maxAgents: number; maxDepth: number; board: { seq: number; at: string; from: string; topic: string; body: string }[] }
+
+/** How many of a task's agents are done: those that completed, where the
+ *  server counts them, else those not running. */
+export const doneCount = (mi: TaskRow) => mi.done ?? mi.agents - mi.running
+
+/** A task card's count: done of all, with any that failed or stopped. */
+export function agentsSummary(mi: TaskRow): string {
+  const parts = [`${doneCount(mi)} of ${mi.agents} done`]
+  if (mi.failed) parts.push(`${mi.failed} failed`)
+  if (mi.stopped) parts.push(`${mi.stopped} stopped`)
+  return parts.join(', ')
+}
 
 export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   const [personas, setPersonas] = useState<Persona[]>([])
@@ -234,7 +246,6 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   }
 
   const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-  const doneCount = (mi: TaskRow) => mi.agents - mi.running
   // Where the agents run. Shown once in the task header when they share a
   // machine, and on each row only when they are spread across machines.
   const hostLabel = (h: string) => h.split('/').pop() || h
@@ -278,9 +289,9 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                     {mi.runtime === 'session' && <StatusBadge>pw code sessions</StatusBadge>}
                   </div>
                   <div className="task-card-objective">{mi.objective}</div>
-                  <ProgressBar value={doneCount(mi)} max={Math.max(1, mi.agents)} tone="success" size="sm" aria-label="Agents done" />
+                  <ProgressBar value={doneCount(mi)} max={Math.max(1, mi.agents)} tone={mi.failed ? 'warning' : 'success'} size="sm" aria-label="Agents done" />
                   <div className="task-card-meta">
-                    <span>{doneCount(mi)} of {mi.agents} done{mi.usage?.total ? ` · ${fmtTokens(mi.usage.total)} tok` : ''}</span>
+                    <span>{agentsSummary(mi)}{mi.usage?.total ? ` · ${fmtTokens(mi.usage.total)} tok` : ''}</span>
                     <span>{mi.id.slice(0, 10)}</span>
                   </div>
                 </div>
