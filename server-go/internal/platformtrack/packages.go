@@ -32,8 +32,16 @@ func registerPackages(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 	daemon := pwcode.New(p)
 	daemon.Start(a)
 	agentsites.Register(mux, a, p, daemon)
-	// The retired task engine's tasks, read-only.
+	// The retired task engine's tasks, read-only; the sessions it left
+	// running are stopped once, where this process owns the jobs.
 	pasttasks.Register(mux, a)
+	if p.OwnsJobs() {
+		a.OnStart("earlier tasks: stop the sessions left running", func(ctx context.Context) {
+			if n := pasttasks.Default.StopLeftRunning(ctx, daemon.Local()); n > 0 {
+				a.Log.Info("earlier tasks: stopped the sessions the retired task engine left running", "count", n)
+			}
+		})
+	}
 	// Standing agents are pw code sessions on this host, with the Studio's
 	// tools through the chat module (registered later, so looked up when a
 	// session starts).
