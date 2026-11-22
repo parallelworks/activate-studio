@@ -1302,11 +1302,14 @@ a.identity-btn { text-decoration: none; }
 .fleet-journal-text.md-body { white-space: normal; line-height: 1.5; }
 .fleet-journal-text.md-body > :first-child { margin-top: 0; }
 .fleet-journal-text.md-body > :last-child { margin-bottom: 0; }
-.fleet-detail-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; margin-bottom: 10px; }
-.fleet-detail-title { display: flex; flex-direction: column; gap: 2px; flex: 1 1 240px; min-width: 0; }
+/* Name, then settings, then the actions on a row of their own, so the
+   actions sit in the same place at every width and whatever the state. */
+.fleet-detail-head { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 10px; }
+.fleet-detail-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .fleet-detail-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
 .fleet-detail-meta { font-size: 12px; overflow-wrap: anywhere; }
 .fleet-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fleet-no-session { font-size: 12px; padding: 0 8px; }
 .fleet-needs { margin: 0 0 10px; }
 .fleet-message { display: flex; gap: 8px; margin-top: 10px; }
 
