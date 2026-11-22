@@ -29,7 +29,7 @@ interface UserList { libraries: UserLib[]; available: boolean; ssh: boolean; pw:
 export type LibraryKind = 'local' | 'ssh' | 'pw' | 'cluster'
 export const KINDS: Record<LibraryKind, { label: string; description: string }> = {
   local: { label: 'A GUFI index on this machine', description: 'An index already built here. Read only.' },
-  ssh: { label: 'A GUFI index on another machine over ssh', description: 'Read with your own ssh keys. Nothing is written there.' },
+  ssh: { label: 'A GUFI index on a remote computer over ssh', description: 'Read with your own ssh keys. Nothing is written there.' },
   pw: { label: 'A GUFI index on a remote computer, over pw ssh', description: 'An index already on one of the remote computers the pw CLI reaches, read over pw ssh. Nothing is written there.' },
   cluster: { label: 'An index built on a cluster', description: 'Built on one of your clusters with your own key. Only you see it.' },
 }

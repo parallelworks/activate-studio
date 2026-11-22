@@ -253,6 +253,9 @@ describe('the setup wizard', () => {
 
     heading('Welcome')
     expect(screen.getByText('Step 1 of 8')).toBeInTheDocument()
+    // The places it searches are named as Add a library names them (phase 4, M).
+    expect(screen.getByText(/on this computer and on your remote computers\./)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/other machines|another machine/)
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Finish later' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Skip setup' })).toBeNull()
@@ -370,8 +373,8 @@ describe('the setup wizard', () => {
     expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText(/^Search by meaning is the slowest part of indexing, so it runs last/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Identifier')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Over SSH' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Other kinds: an existing GUFI index, or one on another machine' }))
+    expect(screen.queryByRole('button', { name: 'Remote computer over ssh' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Other kinds: an existing GUFI index, or one on a remote computer' }))
     fireEvent.click(screen.getByRole('button', { name: 'Browse for the index…' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Research' }, { timeout: 4000 }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('/home/u/Research'))
@@ -383,7 +386,7 @@ describe('the setup wizard', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'On ACTIVATE (pw ssh)' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add test index over pw' }))
     expect(screen.getByText('Cluster index')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Over SSH' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remote computer over ssh' }))
     expect(screen.getByRole('button', { name: 'Add test index over ssh' })).toBeInTheDocument()
     next()
 
@@ -430,8 +433,8 @@ describe('the setup wizard', () => {
 
     // Without a signed-in pw CLI there is no cluster choice.
     heading('Other libraries')
-    fireEvent.click(screen.getByRole('button', { name: 'Other kinds: an existing GUFI index, or one on another machine' }))
-    expect(screen.getByRole('button', { name: 'Over SSH' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Other kinds: an existing GUFI index, or one on a remote computer' }))
+    expect(screen.getByRole('button', { name: 'Remote computer over ssh' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'On ACTIVATE (pw ssh)' })).toBeNull()
     next()
     heading('Done')
@@ -590,5 +593,18 @@ describe('the setup wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Choose another folder…' }))
     expect(await screen.findByRole('button', { name: 'Use this folder' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Choose another folder…' })).toBeNull()
+  })
+
+  it('Done names no accent color for the default, not an accent called None', async () => {
+    const s = server({ accent: 'none', theme: 'light' })
+    open(s)
+    next()
+    next()
+    heading('Appearance')
+    fireEvent.click(screen.getByRole('button', { name: 'None' }))
+    for (let i = 0; i < 5; i++) next()
+    heading('Done')
+    expect([...document.querySelectorAll('li')].map(l => l.textContent).join(' | ')).toContain('Theme: System, no accent color')
+    expect(screen.queryByText(/accent None/)).toBeNull()
   })
 })

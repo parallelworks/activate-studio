@@ -238,7 +238,7 @@ const row: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'cen
 const label: CSSProperties = { margin: '0 0 6px', fontSize: 13, fontWeight: 500 }
 
 type OtherKind = 'local' | 'ssh' | 'pw'
-const KIND_TAB: Record<OtherKind, string> = { local: 'On this machine', ssh: 'Over SSH', pw: 'On ACTIVATE (pw ssh)' }
+const KIND_TAB: Record<OtherKind, string> = { local: 'This computer', ssh: 'Remote computer over ssh', pw: 'On ACTIVATE (pw ssh)' }
 
 export const THEME_OPTIONS: { value: ThemeChoice; label: string }[] = [
   { value: 'light', label: 'Light' },
@@ -434,6 +434,8 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
     : endpoint ? `on, through ${endpoint.host}${endpoint.model ? `, default model ${endpoint.model}` : ''}`
     : 'on, no model set up yet'
   const accentName = (a: string) => (a.startsWith('custom:') ? `custom (${a.slice(7)})` : ACCENTS[a]?.label ?? a)
+  // The default accent is no color at all, so it is not named as one.
+  const accentPhrase = (a: string) => (!a || a === 'none' ? 'no accent color' : `accent ${accentName(a)}`)
   const build = buildSummary(index.job, index.error)
   // A folder just chosen and not indexed: offer the build at once.
   const offerBuild = folderChanged && !!primary?.exists && !primary.indexed && !index.job && !restarting
@@ -458,8 +460,8 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
           <>
             <p style={{ margin: 0 }}>
               {cfg.appName} indexes a folder of yours on this computer, My library, so you can browse, search and query its
-              files and add, rename, move and delete them, and it can search other folders and GUFI indexes here, on other
-              machines and on clusters.
+              files and add, rename, move and delete them, and it can search other folders and GUFI indexes on this computer
+              and on your remote computers.
             </p>
             <p className="muted" style={{ margin: 0 }}>
               The next steps set its name and icon, its theme and color, AI features, the sidebar, the folder that is My
@@ -587,7 +589,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {!fromList && (
                 <Button variant="ghost" size="sm" aria-expanded={otherKinds} onClick={() => setOtherKinds(o => !o)}>
-                  {otherKinds ? 'Back to a folder on this computer' : 'Other kinds: an existing GUFI index, or one on another machine'}
+                  {otherKinds ? 'Back to a folder on this computer' : 'Other kinds: an existing GUFI index, or one on a remote computer'}
                 </Button>
               )}
               <Button variant="ghost" size="sm" aria-expanded={fromList} onClick={() => setFromList(o => !o)}>
@@ -607,7 +609,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
           <>
             <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <li>Name: {cfg.appName}</li>
-              <li>Theme: {THEME_OPTIONS.find(o => o.value === (theme ?? currentThemeChoice(cfg.theme)))?.label}, accent {accentName(accent ?? cfg.accent)}</li>
+              <li>Theme: {THEME_OPTIONS.find(o => o.value === (theme ?? currentThemeChoice(cfg.theme)))?.label}, {accentPhrase(accent ?? cfg.accent)}</li>
               <li>AI features: {aiSummary}</li>
               <li>Sidebar: {shownLabels.length ? shownLabels.join(', ') : 'Settings and Help only'}</li>
               <li>Folder: {primary ? `${primary.path}. ${indexState}` : 'unknown'}</li>
