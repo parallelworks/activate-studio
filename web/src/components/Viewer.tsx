@@ -764,7 +764,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
             open={confirming}
             onClose={() => setConfirming(false)}
             title="Delete this file?"
-            description={file.path}
+            description={shown(file.path)}
             confirmLabel="Delete"
             destructive
             onConfirm={doDelete}
