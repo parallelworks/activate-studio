@@ -217,6 +217,14 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+  // Add a library opens its form under the list, below the fold on a
+  // smaller window, so the form is brought into view as a link brings it.
+  const openAdd = () => {
+    openedByLink.current = true
+    openedAt.current = Date.now()
+    setAdding(true)
+    setLinked(n => n + 1)
+  }
   useEffect(() => {
     if (!openedByLink.current || libs === null || !addForm.current) return
     if (Date.now() - openedAt.current > 3000) { openedByLink.current = false; return }
@@ -821,7 +829,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
 
       {!adding && (
         <div className="query-actions lib-add">
-          <Button variant="primary" icon={<AddIcon />} onClick={() => setAdding(true)}>Add a library</Button>
+          <Button variant="primary" icon={<AddIcon />} onClick={openAdd}>Add a library</Button>
           <Button variant="secondary" onClick={() => setImporting(true)}>Import…</Button>
           {libs && <Button variant="secondary" onClick={() => setExporting(true)}>Export…</Button>}
         </div>
