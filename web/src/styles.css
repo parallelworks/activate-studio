@@ -1306,6 +1306,10 @@ a.identity-btn { text-decoration: none; }
 .fleet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 14px; }
 .fleet-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .fleet-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+/* One line, so the detail below does not move when a wake-up adds its count. */
+.fleet-card .task-card-meta { gap: 8px; white-space: nowrap; }
+.fleet-card .task-card-meta > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fleet-card .task-card-meta > span:last-child { flex-shrink: 0; }
 .fleet-note { font-size: 12px; margin: -4px 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fleet-goal-text { font-size: 13px; white-space: pre-wrap; margin: 0 0 10px; }
 .fleet-journal { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; border-top: 1px solid var(--pw-border); padding-top: 10px; }

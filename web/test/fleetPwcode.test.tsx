@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FleetPage } from '../src/views/FleetPage'
+import { FleetPage, nextWake } from '../src/views/FleetPage'
 
 const agent = {
   id: 'watch-abcd', name: 'Queue watcher', goal: 'Watch the queues.', persona: 'watcher', model: '', resource: null,
@@ -153,5 +153,12 @@ describe('the Fleet page over pw code sessions', () => {
     expect(await screen.findByText(/It waits for you on a plan/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull()
+  })
+
+  it('keeps a card\'s footer to one line', () => {
+    const now = new Date(2026, 10, 22, 17, 30)
+    expect(nextWake(new Date(2026, 10, 22, 18, 26).toISOString(), now)).not.toMatch(/Nov/)
+    expect(nextWake(new Date(2026, 10, 23, 18, 26).toISOString(), now)).toMatch(/Nov/)
+    expect(readFileSync('src/styles.css', 'utf8')).toMatch(/\.fleet-card \.task-card-meta \{[^}]*white-space: nowrap/)
   })
 })

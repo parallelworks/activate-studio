@@ -37,6 +37,13 @@ interface Persona { name: string; description: string; icon: string }
 
 const CADENCES = ['15m', '30m', '1h', '2h', '6h', '12h', '1d', 'manual']
 const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+/** A card's next wake-up: the time alone today, so the footer keeps to one
+ *  line on a card 240 px wide. */
+export function nextWake(iso: string, now = new Date()): string {
+  const d = new Date(iso)
+  const today = d.toDateString() === now.toDateString()
+  return d.toLocaleString([], today ? { hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'never'
 // Journal kinds here and board topics on the Tasks page share one set of tones.
 const TOPIC_TONE: Record<string, BadgeVariant> = {
@@ -206,8 +213,8 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
               <div className="task-card-objective">{a.name}</div>
               <div className="muted fleet-note">{a.note}</div>
               <div className="task-card-meta">
-                <span>{a.ticks} wake-up{a.ticks === 1 ? '' : 's'}{a.tokens ? ` · ${fmtTokens(a.tokens)} tok` : ''}</span>
-                <span>{a.state === 'working' ? 'running' : a.nextTickAt ? `next ${when(a.nextTickAt)}` : a.triggers.every === 'manual' ? 'on events' : ''}</span>
+                <span title={a.nextTickAt ? `next wake-up ${when(a.nextTickAt)}` : undefined}>{a.ticks} wake-up{a.ticks === 1 ? '' : 's'}{a.tokens ? ` · ${fmtTokens(a.tokens)} tok` : ''}</span>
+                <span>{a.state === 'working' ? 'running' : a.nextTickAt ? `next ${nextWake(a.nextTickAt)}` : a.triggers.every === 'manual' ? 'on events' : ''}</span>
               </div>
             </div>
           ))}
