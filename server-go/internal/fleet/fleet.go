@@ -84,8 +84,14 @@ type Agent struct {
 	Owner         *string  `json:"owner"`
 	// OwnerUser is the person the agent acts for, for the Studio's tools
 	// in its session; nil on a Studio without sign-in.
-	OwnerUser      *auth.User `json:"ownerUser,omitempty"`
-	ConversationID *string    `json:"conversationId"`
+	OwnerUser *auth.User `json:"ownerUser,omitempty"`
+	// OwnerSeenAt is when that record was last brought up to date from
+	// the person's own sign-in (made, or their visit to the Fleet page).
+	OwnerSeenAt string `json:"ownerSeenAt,omitempty"`
+	// SessionRights is the rights the current session's Studio token was
+	// made with (rightsKey); a change starts a new session.
+	SessionRights  string  `json:"sessionRights,omitempty"`
+	ConversationID *string `json:"conversationId"`
 
 	// Engine is "pwcode" for a record this package keeps.
 	Engine string `json:"engine"`
@@ -422,7 +428,7 @@ func (f *Fleet) Create(in Input, owner *auth.User) (*Agent, error) {
 		Triggers: Triggers{Every: every, OnRunEnd: in.OnRunEnd, WatchPath: watch},
 		Budget:   Budget{MaxTicks: in.MaxTicks, MaxTokens: in.MaxTokens, MaxTurns: in.MaxTurns},
 		State:    "idle", Note: "created; first wake-up is due now", CreatedAt: t, NextTickAt: sp(t), Inbox: []string{},
-		LastSeenMtime: f.newestMtime(str(watch), "agents/fleet/"+id), OwnerUser: owner, Engine: "pwcode", Folder: "agents/fleet/" + id}
+		LastSeenMtime: f.newestMtime(str(watch), "agents/fleet/"+id), OwnerUser: owner, OwnerSeenAt: now(), Engine: "pwcode", Folder: "agents/fleet/" + id}
 	if p := strings.TrimSpace(in.Persona); p != "" {
 		a.Persona = &p
 	}
@@ -504,11 +510,12 @@ func (f *Fleet) Seen(u *auth.User) {
 		if a.Owner == nil || *a.Owner != u.ID || a.State == "retired" {
 			continue
 		}
-		if sameRights(a.OwnerUser, u) && a.Note != NoOwner {
+		seen, _ := time.Parse(time.RFC3339Nano, a.OwnerSeenAt)
+		if sameRights(a.OwnerUser, u) && a.Note != NoOwner && time.Since(seen) < time.Hour {
 			continue
 		}
 		c := *u
-		a.OwnerUser = &c
+		a.OwnerUser, a.OwnerSeenAt = &c, now()
 		if a.State == "paused" && a.Note == NoOwner {
 			f.scheduleNext(a)
 			f.setState(a, "idle", "its owner is known again; waiting for the next trigger")
@@ -516,6 +523,36 @@ func (f *Fleet) Seen(u *auth.User) {
 		}
 		f.persist(a)
 	}
+}
+
+// groupsFor is how long after the owner was last seen the groups in their
+// record count: a group the person has since left would otherwise keep
+// its rights in an agent they no longer look at. Names (STUDIO_ADMINS,
+// PW_USER) are read at each wake-up and do not age.
+const groupsFor = 7 * 24 * time.Hour
+
+// actsAs is the person a acts for now: the owner's record, without its
+// groups when the owner has not been seen for groupsFor.
+func actsAs(a *Agent) *auth.User {
+	if a.OwnerUser == nil {
+		return nil
+	}
+	u := *a.OwnerUser
+	if seen, err := time.Parse(time.RFC3339Nano, a.OwnerSeenAt); err != nil || time.Since(seen) > groupsFor {
+		u.Groups = nil
+	}
+	return &u
+}
+
+// rightsKey is what decides a person's rights in u, as one string.
+func rightsKey(u *auth.User) string {
+	if u == nil {
+		return ""
+	}
+	g := slices.Clone(u.Groups)
+	slices.Sort(g)
+	e, _ := u.Claims["email"].(string)
+	return u.ID + "\x00" + u.Username + "\x00" + e + "\x00" + strings.Join(g, ",")
 }
 
 // sameRights says whether two records of a person decide the same

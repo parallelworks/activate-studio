@@ -39,7 +39,7 @@ func instructions(a *Agent) string {
 // under the index, which is no library.
 func (f *Fleet) folder(a *Agent) (agentsmd.Folder, string, bool) {
 	root := f.A.Cfg.KBRoot
-	mayWrite, _ := mainlib.MayWrite(mainlib.User(f.A.Cfg.AuthEnabled(), a.OwnerUser))
+	mayWrite, _ := mainlib.MayWrite(mainlib.User(f.A.Cfg.AuthEnabled(), actsAs(a)))
 	if kb.Default != nil && mayWrite {
 		if main, ok, err := kb.Default.Libs.Get(""); err == nil && ok && kb.RequireWritable(main) == nil {
 			ctx := context.Background()
@@ -197,7 +197,9 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 		switch {
 		case err != nil || jsonv.String(jsonv.Path(d, "archivedAt")) != "":
 			session = ""
-		case ws != a.Workspace || time.Since(at) > f.Renew:
+		case ws != a.Workspace || time.Since(at) > f.Renew || rightsKey(actsAs(&a)) != a.SessionRights:
+			// A new session also when the person's rights changed: its
+			// Studio token is made with the rights of its start.
 			pwcode.ArchiveSession(ctx, c, session)
 			session = ""
 		}
@@ -210,7 +212,7 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 			top = f.A.Cfg.KBRoot
 		}
 		rules := agentsmd.ReadRules(top)
-		var owner = a.OwnerUser
+		var owner = actsAs(&a)
 		if f.Start != nil {
 			session, err = f.Start(ctx, c, owner, "fleet:"+a.ID, ws, a.Model, f.Mode, rules)
 		}
@@ -245,6 +247,7 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 				cur.Sessions = append(cur.Sessions, cur.Session)
 			}
 			cur.Session, cur.SessionAt, cur.SessionTokens, cur.Workspace = session, time.Now().UTC().Format(time.RFC3339Nano), 0, ws
+			cur.SessionRights = rightsKey(actsAs(&a))
 			f.persist(cur)
 		}
 		f.mu.Unlock()
