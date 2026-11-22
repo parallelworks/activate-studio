@@ -74,6 +74,20 @@ func lastN(s string, n int) string {
 	return string(u[len(u)-n:])
 }
 
+// callKey is the key a turn on model calls with for a person with cred,
+// as streamChat chooses it: the sidecar's for a sidecar model, else their
+// own, else "" (the gateway's). A model's last failure is remembered per
+// key (llm.ModelFailure), so it is looked up with this.
+func (m *Module) callKey(cred *modelkeys.Cred, model string) string {
+	if m.LLM.IsSidecarModel(model) {
+		return m.LLM.SidecarKey
+	}
+	if cred != nil {
+		return cred.Key
+	}
+	return ""
+}
+
 func (m *Module) listingKey(cred *modelkeys.Cred, viewer string) string {
 	if cred == nil {
 		return viewer + "|" + lastN(m.GatewayKey(), 8) + "|" + m.gatewayBase()
@@ -397,7 +411,7 @@ func (m *Module) models(w http.ResponseWriter, r *http.Request) error {
 	}
 	models := make([]*jsonobj.Object, len(l.models))
 	for i, mo := range l.models {
-		if f, has := m.LLM.ModelFailure(objStr(mo, "id")); has {
+		if f, has := m.LLM.ModelFailure(m.callKey(cred, objStr(mo, "id")), objStr(mo, "id")); has {
 			c := mo.Clone()
 			_ = c.SetValue("callable", false)
 			_ = c.SetValue("last_error", reqbody.O("at", f.At, "auth", f.Auth, "status", f.Status))
@@ -425,7 +439,8 @@ func (m *Module) retryChoices(r *http.Request, failed string) []choice {
 	if u := user(r); u != nil {
 		viewer = strings.ToLower(u.Username)
 	}
-	key := m.listingKey(m.Keys.ResolveOrSignIn(userID(r)), viewer)
+	cred := m.Keys.ResolveOrSignIn(userID(r))
+	key := m.listingKey(cred, viewer)
 	m.listings.mu.Lock()
 	hit, ok := m.listings.hits[key]
 	m.listings.mu.Unlock()
@@ -438,7 +453,7 @@ func (m *Module) retryChoices(r *http.Request, failed string) []choice {
 		if id == "" || id == failed {
 			continue
 		}
-		if f, has := m.LLM.ModelFailure(id); has {
+		if f, has := m.LLM.ModelFailure(m.callKey(cred, id), id); has {
 			if t, ok := parseDate(f.At); ok && time.Since(t) < 10*time.Minute {
 				continue
 			}

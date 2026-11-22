@@ -181,10 +181,10 @@ func (c *Client) StreamTurn(ctx context.Context, body *jsonobj.Object, allocatio
 		text := string(b)
 		gerr := c.gatewayError(res.StatusCode, text, "chat")
 		var ae *AuthError
-		c.RecordOutcome(model, &ModelFailure{Message: Slice(text, 200), Auth: errors.As(gerr, &ae), Status: res.StatusCode})
+		c.RecordOutcome(k, model, &ModelFailure{Message: Slice(text, 200), Auth: errors.As(gerr, &ae), Status: res.StatusCode})
 		return nil, gerr
 	}
-	c.RecordOutcome(model, nil)
+	c.RecordOutcome(k, model, nil)
 
 	if !streaming {
 		b, err := io.ReadAll(res.Body)

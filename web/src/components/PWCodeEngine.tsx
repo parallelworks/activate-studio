@@ -44,7 +44,9 @@ function useSession(conversationId: string | null): SessionInfo {
       .catch(() => {})
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail as SessionInfo & { conversationId?: string }
-      if (d.conversationId === conversationId) setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model, modelNote: d.modelNote || prev.modelNote }))
+      // The note is the session's as the server has it now: a new session
+      // has none, so an old session's note does not stay.
+      if (d.conversationId === conversationId) setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model, modelNote: d.modelNote }))
     }
     window.addEventListener('ade-pwcode-session', on)
     return () => { gone = true; window.removeEventListener('ade-pwcode-session', on) }
@@ -338,11 +340,11 @@ export function PWCodeNotice({ conversationId }: { conversationId: string | null
  * does not offer. Shown in that conversation until it is dismissed.
  */
 export function PWCodeModelNotice({ conversationId }: { conversationId: string | null }) {
-  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [notes, setNotes] = useState<Record<string, { text: string; stuck: boolean }>>({})
   useEffect(() => {
     const on = (e: Event) => {
-      const d = (e as CustomEvent).detail as { conversationId?: string; modelMoved?: boolean; modelNote?: string }
-      if (d?.conversationId && d.modelMoved && d.modelNote) setNotes(n => ({ ...n, [d.conversationId as string]: d.modelNote as string }))
+      const d = (e as CustomEvent).detail as { conversationId?: string; modelMoved?: boolean; modelStuck?: boolean; modelNote?: string }
+      if (d?.conversationId && (d.modelMoved || d.modelStuck) && d.modelNote) setNotes(n => ({ ...n, [d.conversationId as string]: { text: d.modelNote as string, stuck: !!d.modelStuck } }))
     }
     window.addEventListener('ade-pwcode-session', on)
     return () => window.removeEventListener('ade-pwcode-session', on)
@@ -352,9 +354,9 @@ export function PWCodeModelNotice({ conversationId }: { conversationId: string |
   const close = () => setNotes(n => { const { [conversationId]: _, ...rest } = n; return rest })
   return (
     <div className="cred-banner pwcode-notice">
-      <Callout variant="bar" tone="info" title="pw code runs this chat on another model"
+      <Callout variant="bar" tone={note.stuck ? 'warning' : 'info'} title={note.stuck ? 'pw code could not move this chat to another model' : 'pw code runs this chat on another model'}
         action={<Button variant="ghost" size="sm" onClick={close}>Dismiss</Button>}>
-        <p>{note}</p>
+        <p>{note.text}</p>
       </Callout>
     </div>
   )

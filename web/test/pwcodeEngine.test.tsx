@@ -140,6 +140,9 @@ describe("The model pw code answers with", () => {
     fireEvent.click(await screen.findByRole('button', { name: 'pw code · gpt-b' }))
     expect(await screen.findByText(new RegExp(note.replace(/[.()]/g, '\\$&')))).toBeInTheDocument()
     expect(canvas.getAttribute('data-engine')).toBe('pwcode')
+    // A new session has no note of its own: the old one's does not stay.
+    act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: 'c1', session: 's2', model: 'acct:codex/gpt-b', modelNote: '' } })) })
+    await waitFor(() => expect(screen.queryByText(new RegExp(note.replace(/[.()]/g, '\\$&')))).toBeNull())
     canvas.remove()
   })
   it('says once in the chat when the Studio moved the session to another model', async () => {
@@ -154,5 +157,13 @@ describe("The model pw code answers with", () => {
     expect(screen.getByText('pw code runs this chat on another model')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByText('This chat runs on acct:codex/gpt-b.')).toBeNull()
+  })
+  it('says so when the Studio could not move the session', () => {
+    render(<PWCodeModelNotice conversationId="c1" />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: 'c1', modelMoved: false, modelStuck: true, modelNote: 'could not move: the session is busy.' } }))
+    })
+    expect(screen.getByText('pw code could not move this chat to another model')).toBeInTheDocument()
+    expect(screen.getByText('could not move: the session is busy.')).toBeInTheDocument()
   })
 })
