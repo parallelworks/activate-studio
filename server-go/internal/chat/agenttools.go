@@ -1076,6 +1076,9 @@ func (m *Module) toolTaskStatus(r *http.Request, args map[string]any, ctx ToolCt
 	if e == nil {
 		return nil, errNotHere
 	}
+	if !pasttasks.MayRead(m.A, r) {
+		return &Outcome{Result: pasttasks.AdminsOnly, Summary: "0 tasks"}, nil
+	}
 	mid := tmplOr(arg(args, "id"), "")
 	if mid == "" {
 		all := e.List()
