@@ -244,6 +244,9 @@ export function PWCodeWatcher() {
   return null
 }
 
+// PLAN_FOLD is how much of a plan shows before Show all.
+const PLAN_FOLD = 600
+
 /**
  * pw code's requests for approval in this conversation (a command, a plan),
  * answered here or in PW Code on the web. Each leaves when pw code says
@@ -255,6 +258,10 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
   const [error, setError] = useState('')
   // An ask's answers so far, by approval and question.
   const [answers, setAnswers] = useState<Record<string, Answer[]>>({})
+  // What to change in a plan, sent with Reject; and the long plans shown
+  // whole, which Approve waits for.
+  const [feedback, setFeedback] = useState<Record<string, string>>({})
+  const [whole, setWhole] = useState<Record<string, boolean>>({})
   const ref = useRef<HTMLDivElement>(null)
   const [place, setPlace] = useState<CSSProperties>({})
   const mine = asked.filter(a => a.conversationId === conversationId)
@@ -292,6 +299,9 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
   const given = answers[a.approval.id] ?? questions.map(() => ({ picked: [], text: '' }))
   const setGiven = (i: number, next: Answer) => setAnswers(m => ({ ...m, [a.approval.id]: given.map((g, j) => (j === i ? next : g)) }))
   const complete = questions.length > 0 && given.every(g => g.picked.length > 0 || g.text.trim() !== '')
+  const plan = a.approval.kind === 'plan' ? a.approval.plan ?? '' : ''
+  const folded = plan.length > PLAN_FOLD && !whole[a.approval.id]
+  const change = (feedback[a.approval.id] ?? '').trim()
   const what = a.approval.kind === 'plan' ? 'pw code has a plan for you to approve'
     : a.approval.kind === 'ask' ? (questions.length === 1 ? 'pw code asks you a question' : 'pw code asks you some questions')
     : `pw code asks to run ${a.approval.tool ?? 'a tool'}`
@@ -299,9 +309,14 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
     <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy || !complete}
       onClick={() => void answer(a, true, { answers: questions.map((q, i) => ({ question: q.question, picked: given[i].picked, text: given[i].text.trim() })) })}>Send</Button>
     <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'chat'} disabled={!!busy} onClick={() => void answer(a, false, { chat: true })}>Talk it through</Button>
+  </> : a.approval.kind === 'plan' ? <>
+    <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy || folded}
+      title={folded ? 'Show the whole plan to approve it' : undefined} onClick={() => void answer(a, true)}>Approve</Button>
+    <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'false'} disabled={!!busy}
+      onClick={() => void answer(a, false, change ? { message: change } : undefined)}>Reject</Button>
   </> : <>
-    <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy} onClick={() => void answer(a, true)}>{a.approval.kind === 'plan' ? 'Approve' : 'Allow'}</Button>
-    <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'false'} disabled={!!busy} onClick={() => void answer(a, false)}>{a.approval.kind === 'plan' ? 'Reject' : 'Deny'}</Button>
+    <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy} onClick={() => void answer(a, true)}>Allow</Button>
+    <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'false'} disabled={!!busy} onClick={() => void answer(a, false)}>Deny</Button>
   </>
   return (
     <div ref={ref} className="cred-banner pwcode-approval" style={place}>
@@ -324,7 +339,17 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
           </fieldset>
         ))}
         {a.approval.command && <code className="pwcode-command">{a.approval.command}</code>}
-        {a.approval.kind === 'plan' && a.approval.plan && <p className="pwcode-plan">{a.approval.plan.slice(0, 600)}</p>}
+        {plan && <>
+          <p className={folded ? 'pwcode-plan' : 'pwcode-plan pwcode-plan-whole'}>{folded ? plan.slice(0, PLAN_FOLD) + '…' : plan}</p>
+          {folded && <>
+            <button type="button" className="code-approval-more" onClick={() => setWhole(w => ({ ...w, [a.approval.id]: true }))}>Show all ({plan.length} characters)</button>
+            <p className="muted code-approval-why">Show the whole plan to approve it.</p>
+          </>}
+        </>}
+        {a.approval.kind === 'plan' && (
+          <input className="pwcode-answer pwcode-plan-change" type="text" aria-label="What to change in the plan" placeholder="What to change, sent with Reject"
+            value={feedback[a.approval.id] ?? ''} onChange={e => setFeedback(f => ({ ...f, [a.approval.id]: e.target.value }))} />
+        )}
         {a.url && <p className="muted key-note"><ExternalLink href={a.url}>See it in PW Code on the web</ExternalLink></p>}
         {error && <p role="alert">{error}</p>}
       </Callout>
