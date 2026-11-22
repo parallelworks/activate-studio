@@ -272,6 +272,8 @@ func entriesOf(rel string, list []transfers.Entry) []kb.Entry {
 
 // wrote drops the kept listings of the folders a write in a space
 // touched: rels' own folders and, for a folder itself, what is in it.
+// site is the library's (d.Site), which its listings are kept under; over
+// plain ssh the session's (fs.SiteID, ssh://me@host:port) is another.
 func (s spaceFiles) wrote(fs *transfers.RemoteFS, site string, rels ...string) {
 	for _, rel := range rels {
 		s.m.lists.changed(site, path.Join(fs.Dir, rel))
@@ -284,11 +286,11 @@ func (s spaceFiles) Mkdir(r *http.Request, lib kb.Library, rel string) error {
 	if err != nil {
 		return err
 	}
-	fs, _, _, _, err := s.target(r, lib)
+	fs, _, _, d, err := s.target(r, lib)
 	if err != nil {
 		return err
 	}
-	defer s.wrote(fs, fs.SiteID, rel)
+	defer s.wrote(fs, d.Site, rel)
 	return fs.Mkdir(r.Context(), rel)
 }
 
@@ -333,11 +335,11 @@ func (s spaceFiles) Put(r *http.Request, lib kb.Library, rel string, src io.Read
 	if rel == "" {
 		return apierr.New(400, "a file needs a name")
 	}
-	fs, _, _, _, err := s.target(r, lib)
+	fs, _, _, d, err := s.target(r, lib)
 	if err != nil {
 		return err
 	}
-	defer s.wrote(fs, fs.SiteID, rel)
+	defer s.wrote(fs, d.Site, rel)
 	ctx := r.Context()
 	dir := path.Dir(rel)
 	if dir == "." {
@@ -367,11 +369,11 @@ func (s spaceFiles) Rename(r *http.Request, lib kb.Library, rel, name string) (s
 	if rel == "" || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\x00") {
 		return "", apierr.New(400, "unusable name")
 	}
-	fs, _, _, _, err := s.target(r, lib)
+	fs, _, _, d, err := s.target(r, lib)
 	if err != nil {
 		return "", err
 	}
-	defer s.wrote(fs, fs.SiteID, rel, path.Join(path.Dir(rel), name))
+	defer s.wrote(fs, d.Site, rel, path.Join(path.Dir(rel), name))
 	to := path.Join(path.Dir(rel), name)
 	if to == rel {
 		return rel, nil
@@ -390,11 +392,11 @@ func (s spaceFiles) Move(r *http.Request, lib kb.Library, rels []string, dest st
 	if err != nil {
 		return nil, nil, err
 	}
-	fs, _, _, _, err := s.target(r, lib)
+	fs, _, _, d, err := s.target(r, lib)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer s.wrote(fs, fs.SiteID, append(append([]string{}, rels...), dest)...)
+	defer s.wrote(fs, d.Site, append(append([]string{}, rels...), dest)...)
 	ctx := r.Context()
 	var skipped []kb.Skipped
 	var pairs []transfers.LandPair
@@ -448,11 +450,11 @@ func (s spaceFiles) Delete(r *http.Request, lib kb.Library, rels []string) ([]st
 			return nil, nil, apierr.New(400, "refusing to remove the space's own folder")
 		}
 	}
-	fs, _, _, _, err := s.target(r, lib)
+	fs, _, _, d, err := s.target(r, lib)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer s.wrote(fs, fs.SiteID, rels...)
+	defer s.wrote(fs, d.Site, rels...)
 	done, err := fs.RemoveTrees(r.Context(), rels)
 	if err != nil {
 		return done, nil, err

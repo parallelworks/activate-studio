@@ -165,6 +165,12 @@ func (v *Viewer) PlatformKey() string {
 
 type viewerKey struct{}
 
+// WithViewer is r carrying v as the viewer ViewerOf resolves, for a
+// caller (a test, a front) that already knows who asks.
+func WithViewer(r *http.Request, v *Viewer) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), viewerKey{}, v))
+}
+
 // ViewerOf resolves the viewer of r once per request: from Node through
 // the bridge while Node holds personal keys, else from the Go front and
 // the vault and key cookies here.

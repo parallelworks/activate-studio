@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
+	"math"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -376,6 +377,13 @@ func (f *Fleet) settle(a *Agent, l look) {
 	}
 	f.journal(a.ID, "result", cut(l.answer, 4000), a.Session)
 	f.scheduleNext(a)
+	// What changed under its watched folder while it worked was its own
+	// round's doing (a summary beside the results it read), and it reads
+	// the folder again next time: it does not wake it again. Its own
+	// folder never does.
+	if wp := str(a.Triggers.WatchPath); wp != "" {
+		a.LastSeenMtime = math.Max(a.LastSeenMtime, f.newestMtime(wp, a.Folder))
+	}
 	if a.State == "paused" {
 		f.persist(a)
 		return
@@ -529,7 +537,7 @@ func (f *Fleet) Pass(ctx context.Context) {
 			continue
 		}
 		if wp := str(a.Triggers.WatchPath); wp != "" {
-			if newest := f.newestMtime(wp); newest > a.LastSeenMtime {
+			if newest := f.newestMtime(wp, a.Folder); newest > a.LastSeenMtime {
 				a.LastSeenMtime = newest
 				f.persist(a)
 				why := "New or changed files under " + wp

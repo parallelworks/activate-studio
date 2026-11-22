@@ -61,7 +61,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 			return nil, err
 		}
 		f.Follow(r.Context())
-		return map[string]any{"agents": f.List()}, nil
+		return map[string]any{"agents": f.For(r)}, nil
 	}))
 	mux.HandleFunc("POST /api/fleet", h(func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err := gate(); err != nil {
@@ -83,14 +83,18 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		if err != nil {
 			return nil, apierr.New(400, "%s", err.Error())
 		}
-		return map[string]any{"agent": ag}, nil
+		return map[string]any{"agent": Shown(*ag)}, nil
 	}))
 	mux.HandleFunc("GET /api/fleet/{id}", h(func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err := gate(); err != nil {
 			return nil, err
 		}
+		// Another person's agent is answered as no agent at all.
+		if f.GetFor(r, r.PathValue("id")) == nil {
+			return nil, apierr.New(404, "no such agent")
+		}
 		f.Follow(r.Context(), r.PathValue("id"))
-		ag := f.Get(r.PathValue("id"))
+		ag := f.GetFor(r, r.PathValue("id"))
 		if ag == nil {
 			return nil, apierr.New(404, "no such agent")
 		}
@@ -103,6 +107,9 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		mux.HandleFunc("POST /api/fleet/{id}/"+name, h(func(w http.ResponseWriter, r *http.Request) (any, error) {
 			if err := gate(); err != nil {
 				return nil, err
+			}
+			if f.GetFor(r, r.PathValue("id")) == nil {
+				return nil, apierr.New(404, "no such agent")
 			}
 			var b struct{ Text string }
 			json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&b)

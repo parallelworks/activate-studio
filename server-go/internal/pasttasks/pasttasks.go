@@ -10,6 +10,8 @@ package pasttasks
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +24,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 )
 
 // Stopped is the note on an agent that was still working.
@@ -178,6 +181,73 @@ func (a *Archive) Output(id, agent string) (string, bool) {
 	buf := make([]byte, want)
 	n, _ := f.ReadAt(buf, st.Size()-want)
 	return strings.ToValidUTF8(string(buf[:n]), "�"), true
+}
+
+// stoppedMark is the file that says the sessions left running were stopped.
+const stoppedMark = ".left-running-stopped"
+
+// LeftRunning is the pw code sessions of the agents that were still
+// working when the engine was retired, which the page shows as stopped.
+// The engine ran each on this host's daemon.
+func (a *Archive) LeftRunning() []string {
+	var out []string
+	if a == nil {
+		return out
+	}
+	ents, err := os.ReadDir(a.Dir)
+	if err != nil {
+		return out
+	}
+	for _, d := range ents {
+		if !nameRe.MatchString(d.Name()) {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(a.Dir, d.Name(), "state.json"))
+		if err != nil {
+			continue
+		}
+		v, err := jsonv.Decode(b)
+		if err != nil {
+			continue
+		}
+		for _, x := range jsonv.Arr(prop(jsonv.Obj(v), "agents")) {
+			ag := jsonv.Obj(x)
+			if id := jsonv.String(prop(ag, "sessionId")); id != "" && alive(jsonv.String(prop(ag, "state"))) {
+				out = append(out, id)
+			}
+		}
+	}
+	return out
+}
+
+// StopLeftRunning interrupts, once, the sessions LeftRunning names on
+// this host's daemon, so the agents the page shows as stopped are. It is
+// tried again at the next start while the daemon cannot be reached.
+func (a *Archive) StopLeftRunning(ctx context.Context, c pwcode.Client) (stopped int) {
+	if a == nil || c == nil {
+		return 0
+	}
+	if _, err := os.Stat(filepath.Join(a.Dir, stoppedMark)); err == nil {
+		return 0
+	}
+	ids := a.LeftRunning()
+	if len(ids) == 0 {
+		return 0
+	}
+	for _, id := range ids {
+		_, err := pwcode.InterruptSession(ctx, c, id)
+		var de *pwcode.DaemonError
+		switch {
+		case err == nil:
+			stopped++
+		case errors.As(err, &de) && de.Status >= 400 && de.Status < 500:
+			// Not there any more, or not running: nothing to stop.
+		default:
+			return stopped
+		}
+	}
+	os.WriteFile(filepath.Join(a.Dir, stoppedMark), []byte("the sessions left running by the retired task engine were stopped\n"), 0o600)
+	return stopped
 }
 
 // Register serves the past tasks read-only: GET /api/tasks,

@@ -47,7 +47,21 @@ type listCache struct {
 	m  map[listKey]*keptList
 	// keys is the key each owner's listings were read with.
 	keys map[string]string
+	// gen counts the writes changed was told of, and recent holds the
+	// latest of them, so a read that began before a write it overlaps is
+	// not kept as fresh after the write dropped the listing.
+	gen    uint64
+	recent []listChange
 }
+
+type listChange struct {
+	gen          uint64
+	site, folder string
+}
+
+// listRecent is how many writes are remembered for reads in flight; a read
+// that began before the oldest one remembered is not kept.
+const listRecent = 256
 
 func keyHash(key string) string {
 	s := sha256.Sum256([]byte(key))
@@ -87,10 +101,24 @@ func (c *listCache) get(k listKey) ([]kb.Entry, bool, bool) {
 	return copyEntries(e.entries), again, true
 }
 
-func (c *listCache) put(k listKey, entries []kb.Entry, at time.Time) {
+// mark is the point a read begins at, for putRead.
+func (c *listCache) mark() uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.keys[k.owner] != k.key {
+	return c.gen
+}
+
+func (c *listCache) put(k listKey, entries []kb.Entry, at time.Time) {
+	c.putRead(k, entries, at, c.mark())
+}
+
+// putRead keeps a listing read since mark, unless a write in its folder,
+// in one inside it or in one above it was told of meanwhile: the listing
+// may be from before the write.
+func (c *listCache) putRead(k listKey, entries []kb.Entry, at time.Time, since uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.keys[k.owner] != k.key || c.changedSinceLocked(k, since) {
 		return
 	}
 	if c.m == nil {
@@ -143,6 +171,11 @@ func (c *listCache) changed(site, folder string) {
 	folder = path.Clean(folder)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.gen++
+	c.recent = append(c.recent, listChange{gen: c.gen, site: site, folder: folder})
+	if len(c.recent) > listRecent {
+		c.recent = append(c.recent[:0:0], c.recent[len(c.recent)-listRecent:]...)
+	}
 	for k := range c.m {
 		if k.site != site {
 			continue
@@ -154,6 +187,23 @@ func (c *listCache) changed(site, folder string) {
 	}
 }
 
+func (c *listCache) changedSinceLocked(k listKey, since uint64) bool {
+	if c.gen == since {
+		return false
+	}
+	if len(c.recent) == 0 || c.recent[0].gen > since+1 {
+		// Writes since then are no longer all remembered.
+		return true
+	}
+	at := path.Join(k.root, k.rel)
+	for _, ch := range c.recent {
+		if ch.gen > since && ch.site == k.site && (within(at, ch.folder) || within(ch.folder, at)) {
+			return true
+		}
+	}
+	return false
+}
+
 func within(p, dir string) bool {
 	return p == dir || dir == "/" || strings.HasPrefix(p, dir+"/")
 }
@@ -161,18 +211,18 @@ func within(p, dir string) bool {
 // spaceList is a folder of a space as the viewer's session reads it now,
 // with the folders in it kept for the next click.
 func (s spaceFiles) read(ctx context.Context, k listKey, fs listTwo, rel string) ([]kb.Entry, error) {
-	at := time.Now()
+	at, since := time.Now(), s.m.lists.mark()
 	two, err := fs.ListTwo(ctx, rel, 2000)
 	if err != nil {
 		s.m.lists.failed(k)
 		return nil, err
 	}
 	out := entriesOf(rel, two.Entries)
-	s.m.lists.put(k, out, at)
+	s.m.lists.putRead(k, out, at, since)
 	for d, es := range two.Children {
 		ck := k
 		ck.rel = d
-		s.m.lists.put(ck, entriesOf(d, es), at)
+		s.m.lists.putRead(ck, entriesOf(d, es), at, since)
 	}
 	return out, nil
 }

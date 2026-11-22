@@ -157,11 +157,43 @@ func str(p *string) string {
 
 func (f *Fleet) dirOf(id string) string { return filepath.Join(f.dir, id) }
 
+// An agent's record and journal hold its owner's sign-in record, its goal,
+// the messages it was sent and what its rounds found, which can quote a
+// private library: they are the Studio account's alone, files 0600 in
+// folders 0700, as the delegation and agent instruction records are.
+const (
+	privateDir  = 0o700
+	privateFile = 0o600
+)
+
+// closeUp makes records written before that private: the fleet folder,
+// each agent's folder, and the files in it.
+func (f *Fleet) closeUp() {
+	os.Chmod(f.dir, privateDir)
+	ents, err := os.ReadDir(f.dir)
+	if err != nil {
+		return
+	}
+	for _, d := range ents {
+		if !d.IsDir() {
+			continue
+		}
+		dir := filepath.Join(f.dir, d.Name())
+		os.Chmod(dir, privateDir)
+		for _, n := range []string{"agent.json", "agent.json.part", "journal.jsonl"} {
+			if st, err := os.Lstat(filepath.Join(dir, n)); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o077 != 0 {
+				os.Chmod(filepath.Join(dir, n), privateFile)
+			}
+		}
+	}
+}
+
 func (f *Fleet) load() {
 	if f.loaded {
 		return
 	}
 	f.loaded = true
+	f.closeUp()
 	ents, err := os.ReadDir(f.dir)
 	if err != nil {
 		return
@@ -191,7 +223,7 @@ func (f *Fleet) set(a *Agent) {
 
 func (f *Fleet) persist(a *Agent) {
 	a.UpdatedAt = now()
-	if os.MkdirAll(f.dirOf(a.ID), 0o755) != nil {
+	if os.MkdirAll(f.dirOf(a.ID), privateDir) != nil {
 		return
 	}
 	if a.Inbox == nil {
@@ -206,7 +238,7 @@ func (f *Fleet) persist(a *Agent) {
 		return
 	}
 	tmp := filepath.Join(f.dirOf(a.ID), "agent.json.part")
-	if os.WriteFile(tmp, out.Bytes(), 0o644) == nil {
+	if os.WriteFile(tmp, out.Bytes(), privateFile) == nil {
 		os.Rename(tmp, filepath.Join(f.dirOf(a.ID), "agent.json"))
 	}
 }
@@ -221,11 +253,11 @@ type Entry struct {
 }
 
 func (f *Fleet) journal(id, kind, text, session string) {
-	if os.MkdirAll(f.dirOf(id), 0o755) != nil {
+	if os.MkdirAll(f.dirOf(id), privateDir) != nil {
 		return
 	}
 	b, _ := json.Marshal(Entry{At: now(), Kind: kind, Text: text, Session: session})
-	if fh, err := os.OpenFile(filepath.Join(f.dirOf(id), "journal.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+	if fh, err := os.OpenFile(filepath.Join(f.dirOf(id), "journal.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, privateFile); err == nil {
 		fh.Write(append(b, '\n'))
 		fh.Close()
 	}
@@ -378,7 +410,7 @@ func (f *Fleet) Create(in Input, owner *auth.User) (*Agent, error) {
 		Triggers: Triggers{Every: every, OnRunEnd: in.OnRunEnd, WatchPath: watch},
 		Budget:   Budget{MaxTicks: in.MaxTicks, MaxTokens: in.MaxTokens, MaxTurns: in.MaxTurns},
 		State:    "idle", Note: "created; first wake-up is due now", CreatedAt: t, NextTickAt: sp(t), Inbox: []string{},
-		LastSeenMtime: f.newestMtime(str(watch)), OwnerUser: owner, Engine: "pwcode", Folder: "agents/fleet/" + id}
+		LastSeenMtime: f.newestMtime(str(watch), "agents/fleet/"+id), OwnerUser: owner, Engine: "pwcode", Folder: "agents/fleet/" + id}
 	if p := strings.TrimSpace(in.Persona); p != "" {
 		a.Persona = &p
 	}
@@ -402,9 +434,15 @@ func (f *Fleet) Create(in Input, owner *auth.User) (*Agent, error) {
 	return a, nil
 }
 
-func (f *Fleet) newestMtime(rel string) float64 {
+func (f *Fleet) newestMtime(rel string, skip ...string) float64 {
 	if rel == "" {
 		return 0
+	}
+	skipped := map[string]bool{}
+	for _, s := range skip {
+		if s != "" {
+			skipped[filepath.Join(f.A.Cfg.KBRoot, filepath.FromSlash(s))] = true
+		}
 	}
 	newest := 0.0
 	var walk func(d string, depth int)
@@ -422,7 +460,9 @@ func (f *Fleet) newestMtime(rel string) float64 {
 			}
 			p := filepath.Join(d, e.Name())
 			if e.IsDir() {
-				walk(p, depth+1)
+				if !skipped[p] {
+					walk(p, depth+1)
+				}
 			} else if st, err := e.Info(); err == nil {
 				newest = math.Max(newest, float64(st.ModTime().UnixNano())/1e6)
 			}

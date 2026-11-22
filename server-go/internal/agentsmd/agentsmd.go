@@ -217,7 +217,8 @@ func yamlString(s string) string {
 // Library has there for the person asking. Paths are relative to it.
 type Folder interface {
 	// Read is a plain file whole; found is false when it is not there. A
-	// link is an error: the Studio never writes through one.
+	// link, or a linked folder on the way to it, is an error: the Studio
+	// never writes through one.
 	Read(rel string) (data []byte, found bool, err error)
 	// Write puts data at rel whole, making the folders above it.
 	Write(rel string, data []byte) error

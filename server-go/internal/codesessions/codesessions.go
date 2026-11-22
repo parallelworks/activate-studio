@@ -169,10 +169,28 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 	mux.HandleFunc("POST /api/code-sessions/approve", h(s.approve))
 }
 
+// signedIn is whether the Studio has sign-in on for this viewer: then the
+// Code page works as the person alone.
+func signedIn(v *platform.Viewer) bool { return v != nil && (v.AuthEnabled || v.User != nil) }
+
+// viewerKey is the key the Code page reads and answers with. With sign-in
+// on it is the person's own ACTIVATE credential and never the
+// deployment's: that account runs other people's delegated and standing
+// agents, so its list would show their transcripts and let anyone answer
+// their waiting calls (as sessions.DesktopKey does for desktops).
 func viewerKey(r *http.Request, p *platform.Platform) (string, error) {
 	v, err := p.ViewerOf(r)
 	if err != nil {
 		return "", err
+	}
+	if signedIn(v) {
+		if v.UserID() == "" {
+			return "", platform.KbError(401, "Sign in to the Studio to see your pw code sessions.")
+		}
+		if k := v.PlatformKey(); k != "" {
+			return k, nil
+		}
+		return "", platform.KbError(409, "The Code page lists your pw code sessions with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then try again.")
 	}
 	if k := sessions.KeyFor(p, v); k != "" {
 		return k, nil

@@ -324,10 +324,12 @@ type Summary struct {
 func (x *Extractor) Run(ctx context.Context, p PassOptions) (Summary, error) {
 	t0 := time.Now()
 	s := Summary{OCR: x.ocr, Kinds: map[string]*KindCount{}}
-	if posixaccess.FileLevel() && p.CacheRoot != "" {
+	if p.CacheRoot != "" {
 		// The cache mirrors the source's names and holds the text of every
-		// file read: under a root build, root's alone.
-		if err := posixaccess.PrivateDir(p.CacheRoot); err != nil {
+		// file read: the builder's alone, whatever an earlier version made.
+		// Under a root build that is required; otherwise a cache on storage
+		// that cannot be changed is used as it is, as its writes are.
+		if err := posixaccess.PrivateDir(p.CacheRoot); err != nil && posixaccess.FileLevel() {
 			return s, fmt.Errorf("extract: %w", err)
 		}
 	}

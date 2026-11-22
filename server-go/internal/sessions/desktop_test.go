@@ -77,7 +77,9 @@ func newDesktopFixture(t *testing.T) *desktopFixture {
 				return
 			}
 			defer conn.Close()
-			fmt.Fprintf(buf, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: x\r\nSec-WebSocket-Protocol: %s\r\n\r\n", r.Header.Get("Sec-WebSocket-Protocol"))
+			// Headers a platform could add to the handshake, which must not
+			// reach the browser under the Studio's origin.
+			fmt.Fprintf(buf, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: x\r\nSec-WebSocket-Protocol: %s\r\nSet-Cookie: platform_session=p; Path=/; HttpOnly\r\nStrict-Transport-Security: max-age=63072000\r\nAccess-Control-Allow-Origin: *\r\nX-Platform-Node: n1\r\n\r\n", r.Header.Get("Sec-WebSocket-Protocol"))
 			buf.Flush()
 			b := make([]byte, 64)
 			for {
@@ -169,6 +171,23 @@ func TestDesktopRelaysAsTheViewer(t *testing.T) {
 	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	if _, err := br.Read(b); err != io.EOF {
 		t.Fatal("the browser's side stays open after the platform's closed:", err)
+	}
+}
+
+func TestDesktopHandshakeCarriesOnlyWebSocketHeaders(t *testing.T) {
+	f := newDesktopFixture(t)
+	res, _, _ := f.dial("/api/session-desktop/alex/desk/websockify", "")
+	if res.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatal(res.Status)
+	}
+	for _, h := range []string{"Set-Cookie", "Strict-Transport-Security", "Access-Control-Allow-Origin", "X-Platform-Node"} {
+		if v := res.Header.Values(h); len(v) > 0 {
+			t.Errorf("the platform's %s reached the browser: %q", h, v)
+		}
+	}
+	if res.Header.Get("Upgrade") != "websocket" || res.Header.Get("Sec-Websocket-Accept") != "x" || res.Header.Get("Sec-Websocket-Protocol") != "binary" ||
+		!strings.Contains(strings.ToLower(res.Header.Get("Connection")), "upgrade") {
+		t.Fatal(res.Header)
 	}
 }
 
