@@ -367,10 +367,55 @@ func TestASessionThatStopsOnAnErrorIsFailed(t *testing.T) {
 	d.goalStays = true
 	d.mu.Unlock()
 	d.set("idle", "This model is not enabled for the AI connection")
+	s.Hold = 0
+	defer func() { s.Hold = 2 * time.Second }()
+	if s.Look(context.Background(), rec.Session, "") {
+		t.Fatal("the first look at an error with the goal active finished the record")
+	}
 	if !s.Look(context.Background(), rec.Session, "") {
 		t.Fatal("a session stopped on an error is still taken as working")
 	}
 	if g := s.get(rec.Session); g.State != "stopped" || !strings.Contains(g.Error, "not enabled") {
+		t.Fatalf("record %+v", g)
+	}
+}
+
+// After review 2, R5: the daemon reads a goal session idle with the last
+// turn's error for a moment before the goal's check is armed, and the next
+// turn clears the error. A look in that moment does not finish the record
+// as failed: the session goes on to finish its goal, and its record reads
+// finished.
+func TestAPassingErrorBetweenAGoalsTurnsIsNotAFailure(t *testing.T) {
+	s, d, _, _ := stand(t)
+	r := httptest.NewRequest("POST", "/", nil)
+	rec, err := s.Start(r, Start{Site: agentsites.Local, Objective: "List the notes", Folder: "notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.mu.Lock()
+	d.goalStays = true
+	d.mu.Unlock()
+	d.set("idle", "upstream gateway timed out")
+	ctx := context.Background()
+	if s.Look(ctx, rec.Session, "") || s.Look(ctx, rec.Session, "") {
+		t.Fatal("a look between a goal's turns finished the record")
+	}
+	if g := s.get(rec.Session); g.State != "working" {
+		t.Fatalf("record %+v", g)
+	}
+	// The goal's check starts the next turn, which clears the error.
+	d.set("running", "")
+	if s.Look(ctx, rec.Session, "") {
+		t.Fatal("a working session was finished")
+	}
+	d.mu.Lock()
+	d.goalStays = false
+	d.mu.Unlock()
+	d.set("idle", "")
+	if !s.Look(ctx, rec.Session, "") {
+		t.Fatal("the goal is met and the record is still working")
+	}
+	if g := s.get(rec.Session); g.State != "finished" || g.Error != "" {
 		t.Fatalf("record %+v", g)
 	}
 }
