@@ -110,8 +110,9 @@ type Agent struct {
 
 // Starter makes the session a standing agent works in: on this host's
 // daemon, in workspace, acting for owner under grant (the chat module's
-// StudioSession, which carries the Studio's tools).
-type Starter func(ctx context.Context, c pwcode.Client, owner *auth.User, grant, workspace, model, mode string) (string, error)
+// StudioSession, which carries the Studio's tools), with allow, the
+// pw code rules it may use without asking.
+type Starter func(ctx context.Context, c pwcode.Client, owner *auth.User, grant, workspace, model, mode string, allow []string) (string, error)
 
 // Fleet is this process's standing agents.
 type Fleet struct {

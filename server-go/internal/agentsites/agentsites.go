@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/agentsmd"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
@@ -317,6 +318,14 @@ func BoundedGoal(goal string, turns float64) string {
 	return sliceRunes(trimJS(goal), 3600) + "\n\nIf this is not met within " + jsonv.FormatNumber(n) + " turns, stop and say what remains."
 }
 
+func stringsAny(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, x := range ss {
+		out[i] = x
+	}
+	return out
+}
+
 // StartAgent is startAgent's options.
 type StartAgent struct {
 	Site, Key, Objective, Goal, Workspace, Model, PermissionMode string
@@ -396,13 +405,25 @@ func (s *Sites) Start(ctx context.Context, o StartAgent, authEnabled bool) (*jso
 	if o.Model != "" {
 		req.Set("model", o.Model)
 	}
+	// On this host the session reads the library and lists its folder
+	// without asking (agentsmd.ReadRules), and its first message says so;
+	// a remote daemon takes no rules.
+	first := objective
+	if c.Site() == Local {
+		first += "\n\n" + agentsmd.WorkingNote
+		top := ""
+		if rel, ok := library.(string); ok {
+			top = strings.TrimSuffix(strings.TrimSuffix(workspace, "/"), "/"+rel)
+		}
+		req.Set("allowedTools", stringsAny(agentsmd.ReadRules(top)))
+	}
 	session, err := pwcode.CreateSession(ctx, c, req)
 	if err != nil {
 		return nil, err
 	}
 	id := jsonv.Path(session, "id")
 	sidStr := jsonv.String(id)
-	if _, err := pwcode.SendMessage(ctx, c, sidStr, objective); err != nil {
+	if _, err := pwcode.SendMessage(ctx, c, sidStr, first); err != nil {
 		return nil, err
 	}
 	var goal any
