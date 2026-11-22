@@ -131,6 +131,10 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
   }, [user, name, host, run])
 
   const running = s?.status === 'running' && !gone
+  // A check that failed after the card had the session (the platform down,
+  // a key it refused): the card keeps what it last knew, which may still
+  // work, and says the state is unknown until a check works again.
+  const unsure = !!error && !!s && !gone
 
   // Inside a chat embed, tell the chat the card's height so the reply does
   // not hold an empty box.
@@ -142,15 +146,15 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
     const ro = new ResizeObserver(post)
     ro.observe(rootRef.current)
     return () => ro.disconnect()
-  }, [s, error, blocked, inline, gone])
+  }, [s, error, blocked, inline, gone, unsure])
 
   return (
     <div className="session-view" ref={rootRef}>
       <div className="session-bar">
-        <StatusDot variant={running ? 'success' : gone ? 'muted' : 'warning'} size={7} />
+        <StatusDot variant={unsure ? 'warning' : running ? 'success' : gone ? 'muted' : 'warning'} size={7} />
         <span className="session-name">{s?.name ?? (name || (run ? `Session of ${run}` : host))}</span>
         <span className="muted session-meta">
-          {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', gone ? 'no longer listed' : s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
+          {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', gone ? 'no longer listed' : unsure ? 'state unknown' : s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
         </span>
         {running && s?.url && (
           <span className="session-bar-actions">
@@ -170,8 +174,9 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
         )}
       </div>
       {error && !s && <Callout variant="bar" tone="error">{error}</Callout>}
+      {unsure && <p className="session-note muted">Could not check the session: {error.replace(/\.?$/, '.')} Trying again every 15 seconds.</p>}
       {gone && <p className="session-note muted">Session {s?.name ?? name} is no longer listed on ACTIVATE. This card updates if it runs again.</p>}
-      {s && !running && !gone && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
+      {s && !running && !gone && !unsure && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
       {blocked && <p className="session-note muted">This session has no address yet.</p>}
       {inChat && inline && running && s && isDesktop(s) && (
         <div className="session-desktop-inline"><DesktopView user={s.user} name={s.name} onClosed={() => recheck.current()} /></div>
