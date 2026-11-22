@@ -158,6 +158,29 @@ describe('DesktopView', () => {
     expect(container.querySelector('.desktop-view')?.getAttribute('data-fit')).toBe('actual')
     // Unclipped, so the page scrolls it, and never resized.
     expect([c.scaleViewport, c.clipViewport, c.resizeSession]).toEqual([false, false, false])
+    // Pan: a drag moves the view, and the desktop takes no input meanwhile.
+    expect(c.viewOnly).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Pan' }))
+    await waitFor(() => expect(c.viewOnly).toBe(true))
+    // jsdom has no PointerEvent; a MouseEvent carries the same position.
+    if (typeof window.PointerEvent !== 'function') vi.stubGlobal('PointerEvent', class extends MouseEvent {})
+    const scroller = document.createElement('div')
+    const view = container.querySelector('.desktop-screen') as HTMLElement
+    view.appendChild(scroller)
+    scroller.scrollLeft = 300; scroller.scrollTop = 200
+    fireEvent.pointerDown(view, { button: 0, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 70 })
+    fireEvent.pointerUp(window)
+    expect([scroller.scrollLeft, scroller.scrollTop]).toEqual([340, 230])
+    fireEvent.click(screen.getByRole('button', { name: 'Pan' }))
+    await waitFor(() => expect(c.viewOnly).toBe(false))
+  })
+
+  it('Pan is offered only in Actual size', async () => {
+    render(<DesktopView user="alex" name="desk" />)
+    const c = await client()
+    act(() => c.emit('connect'))
+    expect(screen.queryByRole('button', { name: 'Pan' })).toBeNull()
   })
 
   it('shows the start-up logs while it connects', async () => {
