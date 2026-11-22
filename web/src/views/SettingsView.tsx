@@ -1,6 +1,7 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { ModelAccessSection } from '../components/ModelAccessSection'
 import { IndexBuildSettings, IndexStorageSettings } from '../components/IndexingSection'
+import { IndexGroup } from '../components/IndexGroup'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { TransfersSettingsSection } from '../components/TransfersSettingsSection'
 import { transfersPresent } from '../transferApi'
@@ -768,7 +769,8 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </TabPanel>
 
                 <TabPanel value="sync-search">
-                  <div className="settings-grid">
+                  <div className="ix-cards">
+                  <IndexGroup title="Search" help="How a search covers several libraries, and how long each library may take.">
                     <Field label="Search across libraries"
                       description="Both return the same matches. gufi_vt answers its libraries one after another; Query uses it either way.">
                       <Select items={SEARCH_ENGINES} value={form.searchEngine ?? 'parallel'} onValueChange={v => v && setForm({ ...form, searchEngine: v })} />
@@ -778,6 +780,8 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       <Select items={searchTimeLimits(form.searchTimeLimitSec)} value={form.searchTimeLimitSec ?? 20}
                         onValueChange={v => typeof v === 'number' && setForm({ ...form, searchTimeLimitSec: v })} />
                     </Field>
+                  </IndexGroup>
+                  <IndexGroup title="Sync and history" help="How often the background sync looks for changes, and how often the corpus history records a point.">
                     <Field label="Background sync interval (seconds, 0 pauses)">
                       <NumberInput min={0} max={86400} value={form.sweepIntervalSec}
                         onValueChange={v => setForm({ ...form, sweepIntervalSec: v ?? 0 })} />
@@ -791,6 +795,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       <NumberInput min={0} max={2592000} step={3600} value={form.historyIntervalSec}
                         onValueChange={v => setForm({ ...form, historyIntervalSec: v ?? 0 })} />
                     </Field>
+                  </IndexGroup>
                   </div>
                   {saveRow(false)}
                 </TabPanel>
@@ -802,18 +807,23 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </TabPanel>
 
                 <TabPanel value="storage">
+                  <div className="ix-cards">
                   <IndexStorageSettings />
-                  <h2 className="ix-h2">GUFI command log</h2>
-                  <label className="key-persist">
-                    <Checkbox checked={!!form.gufiLog} onCheckedChange={v => setForm({ ...form, gufiLog: v })} />
-                    Log GUFI commands: every command run to read an index, with when it ran, what asked for it, how long it took, how it ended, and the end of its error output
-                  </label>
-                  {form.gufiLog && gufiLogFile && (
-                    <p className="muted view-sub gufi-log-path">
-                      One JSON object per line in <code className="ix-log-path">{gufiLogFile.path}</code>
-                      {gufiLogFile.bytes > 0 ? ` (${formatBytes(gufiLogFile.bytes)})` : ''}, one previous file kept past 10 MB.
-                    </p>
-                  )}
+                  <IndexGroup title="GUFI command log" help="A record of the commands run to read an index, for finding a slow or failing search.">
+                    <div>
+                      <label className="key-persist">
+                        <Checkbox checked={!!form.gufiLog} onCheckedChange={v => setForm({ ...form, gufiLog: v })} />
+                        Log GUFI commands: every command run to read an index, with when it ran, what asked for it, how long it took, how it ended, and the end of its error output
+                      </label>
+                      {form.gufiLog && gufiLogFile && (
+                        <p className="muted view-sub gufi-log-path">
+                          One JSON object per line in <code className="ix-log-path">{gufiLogFile.path}</code>
+                          {gufiLogFile.bytes > 0 ? ` (${formatBytes(gufiLogFile.bytes)})` : ''}, one previous file kept past 10 MB.
+                        </p>
+                      )}
+                    </div>
+                  </IndexGroup>
+                  </div>
                   {saveRow(false)}
                 </TabPanel>
               </Tabs>

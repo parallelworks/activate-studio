@@ -2199,6 +2199,28 @@ a.identity-btn { text-decoration: none; }
   .lib-card-head { flex-direction: column; }
   .lib-card-actions { justify-content: flex-start; }
 }
+/* The other tabs of Settings, Indexing: settings grouped in cards like the
+   libraries', each with a heading, one line of help, and its settings ruled
+   off from one another, each kept to the settings measure. */
+.ix-cards { display: flex; flex-direction: column; gap: 12px; margin: 4px 0 14px; container: indexing / inline-size; }
+.ix-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 16px; padding: 14px 16px 10px; }
+.ix-card-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ix-card-name { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.35; color: var(--pw-text); }
+.ix-card-help { margin: 0; font-size: 12px; color: var(--pw-muted); }
+.ix-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; flex-shrink: 0; }
+.ix-card-actions .ix-actions { display: inline-flex; flex-wrap: nowrap; }
+/* The rule between settings spans the card; each setting's own content
+   keeps to a reading width of 46rem (the right padding grows on a wide card). */
+.ix-card-body > * { margin: 0; max-width: none; border-top: 1px solid var(--pw-border);
+  padding: 12px max(16px, calc(100% - 46rem - 16px)) 12px 16px; }
+.ix-card-body > .ix-formats { padding-right: 16px; }
+.ix-card-body .key-persist { margin: 0; }
+.ix-card-body > .ix-section { margin: 0; gap: 8px; }
+.ix-card-body .ix-inline { max-width: 20rem; }
+.ix-card-body .ix-installs { margin: 0; }
+.ix-where { display: flex; flex-direction: column; gap: 4px; }
+.ix-path { display: flex; align-items: center; gap: 4px; margin: 0; }
+@container indexing (max-width: 560px) { .ix-card-head { flex-direction: column; } .ix-card-actions { justify-content: flex-start; } }
 /* Add a library: where and how, then the form for that pair. */
 .lib-add-form { margin-top: 12px; }
 .lib-add-flow { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
@@ -2296,7 +2318,7 @@ a.identity-btn { text-decoration: none; }
 .ix-switch { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
 .ix-switch > span:last-child { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .ix-switch-label { color: var(--pw-text); font-weight: 500; }
-.ix-path code { font-size: 12px; word-break: break-all; }
+.ix-path code { font-size: 12px; overflow-wrap: anywhere; }
 .ix-indent { margin-left: 54px; }
 .ix-formats, .ix-runs { margin-top: 4px; }
 /* Workflows tab */
