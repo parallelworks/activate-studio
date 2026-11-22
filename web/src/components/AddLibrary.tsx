@@ -9,7 +9,7 @@ import { PwSystemField } from './PwSystemField'
 import { SshLibraryForm } from './SshLibraryForm'
 import { SharedWithMe } from './SharedWithMe'
 import { SpaceForm } from './SpaceForm'
-import { accessLabel, knownAppConfig } from '../config'
+import { accessLabel, knownAppConfig, useAppConfig } from '../config'
 
 /**
  * Add a library, in one model: where it is, whose account reads it, and
@@ -22,7 +22,7 @@ import { accessLabel, knownAppConfig } from '../config'
  * - Read as: on a system, always the viewer, with their own sign-in or ssh
  *   keys, so it holds what their account can read there; here and in a
  *   bucket, the account the Studio runs as. The form says which.
- * - What: on a system, a folder of the viewer's own (My library, read and
+ * - What: on a system, a folder of the viewer's own (read and
  *   written as them, closed to others), an index the Studio builds of a
  *   folder there (written as them where their account may write), or an
  *   index that is there already, connected as it is and read only. Here,
@@ -54,7 +54,8 @@ export interface AddOptions {
   copy?: boolean
   /** A bucket of an rclone remote, indexed here from its listing (sign-in off). */
   bucket?: boolean
-  /** A folder of the viewer's own on one of their systems (My library), and
+  /** A folder of the viewer's own on one of their systems (My library where
+   *  people sign in), and
    *  the folders shared with them there. */
   space?: boolean
   /** The Studio's own cluster, offered first among the viewer's systems. */
@@ -80,19 +81,31 @@ export function addChoices(o: AddOptions) {
 
 const WHERE_LABEL: Record<Where, string> = { here: 'This computer', system: 'A system', bucket: 'A bucket' }
 const HOW_LABEL: Record<How, string> = { own: 'My own folder', build: 'Index a folder', connect: 'Connect an index' }
+
+/** What a folder of the viewer's own on a system is called. Where people
+ *  sign in it is My library, theirs beside the main library they share; on
+ *  a Studio only they use, the main library is already their library, so
+ *  this is a new folder there, a library named by its folder. */
+export function howLabel(h: How, signIn: boolean): string {
+  return h === 'own' && !signIn ? 'A new folder' : HOW_LABEL[h]
+}
 const BUILDER_LABEL: Record<'pw' | 'workflow', string> = { pw: 'pw ssh', workflow: 'Workflow job' }
 
 /** The choice in the System list for a host over plain ssh. */
 const SSH_HOST = '\u0000ssh'
 
-function describe(where: Where, how: How | undefined, overSSH: boolean, builder: Via | undefined): string {
+function describe(where: Where, how: How | undefined, overSSH: boolean, builder: Via | undefined, signIn = true): string {
   if (where === 'bucket') return 'A bucket, or a folder in one, of an rclone remote: any S3 compatible store, AWS or on premises (MinIO, Ceph and the like), or another store rclone lists. Read with the Studio\'s account, from its listing, for finding and searching by name, size and time; an object is read only when you open it. Read only.'
   if (where === 'here') {
     return how === 'build'
       ? 'A folder on this computer, read with the Studio\'s account, indexed with GUFI and kept in step with the folder as it changes. Read only.'
       : 'A GUFI index already built on this computer, read with the Studio\'s account. Read only: the Studio searches it and never writes to it.'
   }
-  if (how === 'own') return 'A new folder in your home on that system, made as your own account and closed to other accounts, indexed there as you. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
+  if (how === 'own') {
+    return signIn
+      ? 'My library: a new folder in your home on that system, made as your own account and closed to other accounts, indexed there as you. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
+      : 'A new folder in your home on that system, made as your own account and closed to other accounts, indexed there as you, and named by the folder. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
+  }
   if (how === 'connect') return 'A GUFI index already on that system, read as you. Read only: nothing is written there.'
   if (builder === 'workflow') return 'A folder on that cluster, indexed there by the platform\'s index workflow with your own key, on the login node or as a Slurm job. Read as you, read only.'
   return `A folder on that system, indexed there with GUFI ${overSSH ? 'over ssh' : 'over pw ssh'} as you. The build reads the text of its files where it can and leaves the folder as it is. Read and written as you where your account may write there.`
@@ -113,6 +126,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   onImported?: (added: number) => void
 }) {
   const [importing, setImporting] = useState(false)
+  const signIn = !!useAppConfig().signIn
   const choices = addChoices(options)
   const [wherePicked, setWhere] = useState<Where | null>(null)
   const where: Where = wherePicked && choices.where.includes(wherePicked) ? wherePicked : (choices.where[0] ?? 'here')
@@ -194,7 +208,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
           <div className="lib-add-choices">
             {hows.length > 1 && (
               <Field label="What">
-                <SegmentedControl label="What" value={how} onValueChange={v => setHow(v)} options={hows.map(h => ({ value: h, label: HOW_LABEL[h] }))} />
+                <SegmentedControl label="What" value={how} onValueChange={v => setHow(v)} options={hows.map(h => ({ value: h, label: howLabel(h, signIn) }))} />
               </Field>
             )}
             {builders.length > 1 && (
@@ -204,7 +218,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
               </Field>
             )}
           </div>
-          <p className="muted lib-add-about">{describe(where, how, overSSH, builder)}</p>
+          <p className="muted lib-add-about">{describe(where, how, overSSH, builder, signIn)}</p>
           {where === 'bucket' && <BucketLibraryForm onAdded={lib => onAdded(lib, true, true)} />}
           {where === 'here' && (how === 'build'
             ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />

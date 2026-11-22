@@ -726,7 +726,7 @@ func (m *Module) public(owner string, d *libraries.UserDef, job int) *jsonv.Obje
 	for _, g := range d.Gaps {
 		gaps = append(gaps, g)
 	}
-	o := jsonv.NewObject("id", d.ID, "label", d.Label, "transport", transport, "existing", !built && (d.IsSSH() || (d.Existing != nil && *d.Existing)),
+	o := jsonv.NewObject("id", d.ID, "label", d.ShownLabel(m.Users.AuthEnabled), "transport", transport, "existing", !built && (d.IsSSH() || (d.Existing != nil && *d.Existing)),
 		"meaning", meaning, "depth", depth, "site", d.Site, "destination", optional(d.Destination), "reached", reached,
 		"port", intPtr(d.Port), "sshOptions", sshOptions, "jump", jump, "gufiVersion", optional(d.GufiVersion),
 		"sourceDir", d.SourceDir, "sourceRoot", optional(d.SourceRoot), "indexRoot", optional(d.IndexRoot), "state", d.State,
@@ -957,7 +957,7 @@ func (m *Module) addFromPw(ctx context.Context, w who, b *jsonv.Object) (*librar
 	defs := m.load(owner)
 	for _, d := range defs {
 		if !d.IsSSH() && d.Site == spec.Cluster && deref(d.IndexRoot) == indexRoot && d.IndexRoot != nil {
-			return nil, apierr.New(409, "This index is already a library: %s.", d.Label)
+			return nil, apierr.New(409, "This index is already a library: %s.", d.ShownLabel(m.Users.AuthEnabled))
 		}
 	}
 	name := basename(indexRoot)
@@ -993,7 +993,7 @@ func (m *Module) addFromSSH(ctx context.Context, w who, b *jsonv.Object) (*libra
 	defs := m.load(owner)
 	for _, d := range defs {
 		if d.IsSSH() && deref(d.Destination) == spec.Destination && d.Destination != nil && intOf(d.Port) == spec.Port && deref(d.IndexRoot) == indexRoot && d.IndexRoot != nil {
-			return nil, apierr.New(409, "This index is already a library: %s.", d.Label)
+			return nil, apierr.New(409, "This index is already a library: %s.", d.ShownLabel(m.Users.AuthEnabled))
 		}
 	}
 	host := spec.Destination[strings.LastIndex(spec.Destination, "@")+1:]

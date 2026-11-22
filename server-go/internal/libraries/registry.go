@@ -842,7 +842,7 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 		if d.IndexRoot == nil || *d.IndexRoot == "" || d.GufiBin == nil {
 			continue
 		}
-		l := Library{ID: d.ID, Label: d.Label, IndexRoot: RemoteRootOf(owner, d.ID),
+		l := Library{ID: d.ID, Label: d.ShownLabel(u.AuthEnabled), IndexRoot: RemoteRootOf(owner, d.ID),
 			Caps: Caps{Index: true, FullText: d.FullText != nil && *d.FullText, Vectors: d.Vectors != nil && *d.Vectors},
 			Site: d.Site, Format: d.IndexFormat, ReadThrough: StoredReadThrough(d.ReadThrough, d.ID, r.o.Log)}
 		if lbl := r.ReachedLabelOf(d); lbl != "" {

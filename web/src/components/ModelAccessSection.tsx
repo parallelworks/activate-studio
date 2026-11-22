@@ -6,6 +6,7 @@ import {
 import { CloseIcon } from '@parallelworks/ui/icons'
 import './ModelAccessSection.css'
 import { PlatformSignInPanel } from './PlatformSignInPanel'
+import { useAppConfig } from '../config'
 
 /**
  * Settings, Model access: where the Studio's model calls and platform calls
@@ -188,6 +189,7 @@ const KIND_LABEL: Record<string, string> = { 'sign-in': 'Sign-in', 'api-key': 'A
  *  ACTIVATE credential, which the Workflows page and ACTIVATE libraries use:
  *  no model check, no OpenAI-compatible endpoint, no subscriptions. */
 export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = true }: { requirePersonalKey?: boolean; aiEnabled?: boolean }) {
+  const cfg = useAppConfig()
   const [access, setAccess] = useState<AccessStatus | null>(null)
   const [me, setMe] = useState<KeyStatus | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
@@ -441,7 +443,7 @@ export function ModelAccessSection({ requirePersonalKey = false, aiEnabled = tru
         ? 'The ACTIVATE platforms the pw CLI on this computer is signed in to, for their models and the platform.'
         : 'The ACTIVATE platforms the pw CLI on this computer is signed in to, for the Workflows page and libraries on ACTIVATE systems.' }]
       : signInTab
-        ? [{ value: 'signin' as Tab, label: 'Sign in with ACTIVATE', description: `Recommended. Your own ACTIVATE account, approved once on the platform and renewed by the Studio, for ${aiEnabled ? 'your models, the platform,' : 'the platform'} and My library.` }]
+        ? [{ value: 'signin' as Tab, label: 'Sign in with ACTIVATE', description: `Recommended. Your own ACTIVATE account, approved once on the platform and renewed by the Studio, for ${aiEnabled ? 'your models, the platform,' : 'the platform'} and ${cfg.signIn ? 'My library' : 'your folders on your systems'}.` }]
         : []),
     { value: 'key', label: 'ACTIVATE API key', description: `A token or API key from an ACTIVATE account, for ${covers}, until it expires.` },
     ...(aiEnabled ? [{ value: 'endpoint' as Tab, label: 'OpenAI-compatible endpoint', description: 'Any service that speaks the OpenAI API, such as a site AI portal, a provider, or a model server on this computer.' }] : []),

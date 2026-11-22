@@ -11,7 +11,7 @@ export interface SystemExtra { value: string; label: string; description?: strin
  * One of the person's systems on the platform, reached over pw ssh: picked
  * from their systems, running ones first, or typed by name when the list
  * cannot be had or the system is not in it. The system named `preferred`
- * (the Studio's own cluster, for My library) is chosen first where it is
+ * (the Studio's own cluster, for a folder of the person's own) is chosen first where it is
  * listed, otherwise the first running one. `extra` adds choices of the
  * caller's own after the systems, such as a host over plain ssh; choosing
  * one hands its value to `onExtra`.

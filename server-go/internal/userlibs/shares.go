@@ -294,7 +294,7 @@ func (m *Module) ownSpace(ctx context.Context, w who, id string) (string, string
 	// A space over plain ssh is on a Studio one person uses, with nobody
 	// here to share it with.
 	if d.IsSSH() {
-		return "", "", nil, apierr.New(409, "%s is reached over ssh on a Studio only you use, so there is nobody here to share it with.", d.Label)
+		return "", "", nil, apierr.New(409, "%s is reached over ssh on a Studio only you use, so there is nobody here to share it with.", d.ShownLabel(m.Users.AuthEnabled))
 	}
 	key := m.keyOf(w, owner)
 	if key == "" {
@@ -421,7 +421,7 @@ func (m *Module) addShare(ctx context.Context, w who, id string, b *jsonv.Object
 	if rel != "" {
 		folder = strings.TrimRight(root, "/") + "/" + rel
 	}
-	s := Share{ID: newShareID(), Owner: owner, OwnerAccount: d.Space.Account, Space: id, SpaceLabel: d.Label, Site: d.Site,
+	s := Share{ID: newShareID(), Owner: owner, OwnerAccount: d.Space.Account, Space: id, SpaceLabel: d.ShownLabel(m.Users.AuthEnabled), Site: d.Site,
 		Root: root, Folder: folder, Rel: rel, Kind: kind, Name: name, Access: access, CreatedAt: isoNow()}
 	var was *Share
 	for _, x := range m.loadShares() {

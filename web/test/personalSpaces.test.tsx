@@ -1,6 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AddLibrary, addChoices } from '../src/components/AddLibrary'
+import { AddLibrary, addChoices, howLabel } from '../src/components/AddLibrary'
+import { libraryNames } from '../src/libraryNames'
+import { reloadAppConfig } from '../src/config'
 import { addOptions, mayAddLibraries } from '../src/components/LibraryAddDialogs'
 import { ShareDialog } from '../src/components/ShareDialog'
 import { PlatformSignInPanel } from '../src/components/PlatformSignInPanel'
@@ -57,8 +59,8 @@ describe('a space of one\'s own', () => {
       if (u === '/api/me/platform-sign-in' && m === 'POST') { signedIn = true; return json({ state: 'signed-in', account: 'ada', host: 'platform.example.com' }) }
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText('My library needs your ACTIVATE sign-in')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Make my library' })).toBeNull()
+    expect(await screen.findByText('A folder on a system needs your ACTIVATE sign-in')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Make the folder' })).toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
     expect(await screen.findByLabelText('Folder')).toHaveValue('~/studio')
     expect(screen.getByText('Reached on cluster-a as you with your ACTIVATE sign-in.')).toBeInTheDocument()
@@ -67,7 +69,7 @@ describe('a space of one\'s own', () => {
   it('says why My library is not available for another reason', async () => {
     stub((m, u) => (u === '/api/user-libraries/space' ? json({ ...STATUS, cluster: '', available: false, why: 'This Studio does not know the cluster it runs beside.', signInOffered: true }) : undefined))
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText('My library is not available')).toBeInTheDocument()
+    expect(await screen.findByText('A folder on a system is not available')).toBeInTheDocument()
     expect(screen.getByText(/does not know the cluster/)).toBeInTheDocument()
   })
 
@@ -94,17 +96,17 @@ describe('a space of one\'s own', () => {
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={onAdded} />)
     const folder = await screen.findByLabelText('Folder')
     expect(folder).toHaveValue('~/studio')
-    expect(button('Make my library')).toBeDisabled()
+    expect(button('Make the folder')).toBeDisabled()
     fireEvent.click(button('Check the folder'))
     expect(await screen.findByText('Reached cluster-a as ada.')).toBeInTheDocument()
-    fireEvent.click(button('Make my library'))
+    fireEvent.click(button('Make the folder'))
     fireEvent.click(await screen.findByRole('button', { name: 'Create it and build' }))
     await waitFor(() => expect(onAdded).toHaveBeenCalled())
     const made = calls.find(c => c.method === 'POST' && c.url === '/api/user-libraries/space')
     expect(made?.body).toMatchObject({ sourceRoot: '~/studio', create: true })
     // A folder changed after the check is checked again before it is made.
     fireEvent.change(folder, { target: { value: '~/other' } })
-    expect(button('Make my library')).toBeDisabled()
+    expect(button('Make the folder')).toBeDisabled()
   })
 
   it('is made on the system chosen: the Studio\'s cluster first, another cluster, or a host over ssh where allowed', async () => {
@@ -128,7 +130,7 @@ describe('a space of one\'s own', () => {
     fireEvent.click(button('Check the folder'))
     await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ cluster: 'cluster-a', sourceRoot: '~/studio' }))
     await pick('cluster-b running')
-    expect(button('Make my library')).toBeDisabled()
+    expect(button('Make the folder')).toBeDisabled()
     fireEvent.click(button('Check the folder'))
     await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ cluster: 'cluster-b', sourceRoot: '~/studio' }))
     expect(screen.getByText('Reached on cluster-b as you with your ACTIVATE sign-in.')).toBeInTheDocument()
@@ -157,6 +159,38 @@ describe('a space of one\'s own', () => {
     await waitFor(() => expect(onAdded).toHaveBeenCalledWith(expect.objectContaining({ id: 'shared-proj' }), true))
     expect(await within(table).findByText('Added')).toBeInTheDocument()
     expect(calls.some(c => c.method === 'POST' && c.url.endsWith('/s-1/add'))).toBe(true)
+  })
+})
+
+describe('what a folder of one\'s own is called', () => {
+  afterEach(async () => { vi.unstubAllGlobals(); await act(async () => { reloadAppConfig() }) })
+
+  it('on a Studio only one person uses, a new folder named by its folder; the main library is My library', async () => {
+    stub(u => undefined)
+    expect(howLabel('own', false)).toBe('A new folder')
+    expect(libraryNames({ signIn: false, kbLabel: 'My library' })).toEqual({
+      main: 'My library', own: 'a folder of yours on one of your systems', writable: 'My library or a folder of yours on one of your systems' })
+    stub((m, u) => (u === '/api/user-libraries/space' ? json(STATUS) : undefined))
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
+    expect(await screen.findByRole('button', { name: 'Make the folder' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'studio')
+    expect(screen.getByText(/named by the folder/)).toBeInTheDocument()
+    expect(screen.queryByText(/My library/)).toBeNull()
+  })
+
+  it('where people sign in, My library beside the main library they share', async () => {
+    expect(howLabel('own', true)).toBe('My own folder')
+    expect(libraryNames({ signIn: true, kbLabel: 'Shared library' }).writable).toBe('the main library or My library')
+    stub((m, u) => {
+      if (u.startsWith('/api/config')) return json({ appName: 'Studio', kbLabel: 'Shared library', signIn: true, libraries: [] })
+      if (u === '/api/user-libraries/space') return json(STATUS)
+    })
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
+    // The page's config is read once and kept: read it again, as this Studio's.
+    await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 20)) })
+    expect(await screen.findByRole('button', { name: 'Make my library' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'My library')
+    expect(screen.getByText(/^My library: a new folder/)).toBeInTheDocument()
   })
 })
 

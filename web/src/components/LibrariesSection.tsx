@@ -631,7 +631,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       )
       rows.push({
         key: l.id, name: l.label,
-        kind: l.space ? `Your library on ${host}, as ${l.space.account}, read and written as you`
+        kind: l.space ? `${cfg.signIn ? 'My library' : 'Your folder'} on ${host}, as ${l.space.account}, read and written as you`
           : l.shared ? `Shared by ${l.shared.from} on ${host}, ${l.shared.access === 'write' ? 'read and written' : 'read'} as you`
           : `Index built on ${host} over ${l.transport === 'ssh' ? 'ssh' : 'pw ssh'}, ${l.mine ? 'read and written as you' : 'read only'}`,
         where: (

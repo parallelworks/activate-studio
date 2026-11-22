@@ -335,7 +335,7 @@ describe('the setup wizard', () => {
     await waitFor(() => expect(s.sections).toEqual(['chat', 'library', 'transfers', 'search', 'query', 'overview', 'workflows', 'agents', 'code', 'settings', 'help']))
     next()
 
-    heading('Your folder')
+    heading('My library')
     expect(await screen.findByText('/home/u/Notes')).toBeInTheDocument()
     expect(screen.getByText('Not indexed yet.')).toBeInTheDocument()
     // The folder in use cannot be chosen again; its parent lists the others.
@@ -460,7 +460,7 @@ describe('the setup wizard', () => {
     const s = server({ indexed: true, restartOnSave: false })
     const onClose = open(s)
     for (let i = 0; i < 5; i++) next()
-    heading('Your folder')
+    heading('My library')
     expect(await screen.findByText('Indexed: 12 files.')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Rebuild the index' })).toBeInTheDocument()
     // Up stays disabled until the folder's listing has come; a click before
@@ -503,7 +503,7 @@ describe('the setup wizard', () => {
     expect(screen.getByRole('switch', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('switch', { name: 'Query' })).toHaveAttribute('aria-checked', 'false')
     next()
-    heading('Your folder')
+    heading('My library')
     expect(await screen.findByText('Indexed: 12 files.')).toBeInTheDocument()
     expect(screen.getByText('/home/u/Notes')).toBeInTheDocument()
     next()
@@ -570,7 +570,7 @@ describe('the setup wizard', () => {
     const s = server()
     open(s)
     for (let i = 0; i < 5; i++) next()
-    heading('Your folder')
+    heading('My library')
     expect(await screen.findByText('/home/u/Notes')).toBeInTheDocument()
     // No folder list in the page: the system chooser, opened beside the folder in use.
     expect(screen.queryByRole('button', { name: 'Up' })).toBeNull()

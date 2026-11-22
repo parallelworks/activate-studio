@@ -10,6 +10,27 @@ computer), except those written as the person: My library, a folder
 shared with them for writing, and an index they built on one of their
 own systems ([Indexes built on a remote system](#indexes-built-on-a-remote-system)).
 
+## What the libraries are called
+
+The names follow whether people sign in, so each mode has one My library.
+
+- Sign-in off (the Mac and Linux apps, a Studio one person uses): the main
+  library is the person's own folder, read and written as them, and its
+  default name is **My library** (`settings.MainLabelPersonal`). A folder of
+  their own on a system (Add a library, A system, **A new folder**) is
+  another library, named by its folder and shown with "(on <system>)". A
+  folder made that way before this rule, stored under the name My library,
+  keeps its record and files and is shown by its folder's name
+  (`libraries.UserDef.ShownLabel`); nothing stored changes.
+- Sign-in on: the main library is the one people share, read only for all
+  but its administrators, and its default name is **Shared library**
+  (`settings.MainLabelShared`). **My library** is each person's own folder
+  on a system (Add a library, A system, **My own folder**).
+
+A name set in Settings, General (`kbLabel`) or by `KB_LABEL` is used in
+either mode. `/api/config` answers `signIn`, and the web app's
+`libraryNames()` (`web/src/libraryNames.ts`) gives the names the pages use.
+
 ## What a library carries
 
 | Field | Decides |

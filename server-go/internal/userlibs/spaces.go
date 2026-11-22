@@ -275,7 +275,7 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 	case f.Missing:
 		add(step{Name: "folder", OK: true, Detail: f.Target + " does not exist yet. It is made, open to you alone, when you confirm."})
 	case !mine:
-		add(step{Name: "folder", Detail: fmt.Sprintf("%s belongs to another account (uid %s). My library must be a folder you own.", f.Real, owner)})
+		add(step{Name: "folder", Detail: fmt.Sprintf("%s belongs to another account (uid %s). The folder must be one you own.", f.Real, owner)})
 	case mode&0o002 != 0:
 		add(step{Name: "folder", Detail: fmt.Sprintf("Every account there can write in %s (mode %s). Make it yours alone first (chmod o-w), or choose another folder.", f.Real, kv["mode"])})
 	case mode&0o020 != 0 && kv["fgroup"] != user:
@@ -475,7 +475,7 @@ func (m *Module) pwSpaceTarget(w who, owner, site string) (*spaceTarget, error) 
 		if owner == single {
 			return nil, apierr.New(409, "The pw CLI on this computer is not signed in. Run pw auth, then try again.")
 		}
-		return nil, apierr.New(409, "My library reaches the system with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then come back here.")
+		return nil, apierr.New(409, "A folder of your own on a system is reached with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then come back here.")
 	}
 	name := remote.ShortName(site)
 	return &spaceTarget{owner: owner, site: site, key: key, transport: "pw", name: name,
@@ -594,7 +594,7 @@ func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*librari
 	}
 	for _, d := range m.load(owner) {
 		if d.Space != nil && d.Build != nil && d.Transport == t.transport && d.Site == t.conn.Site && intOf(d.Port) == t.conn.Port && d.Build.SourceRoot == f.Real {
-			return nil, 0, apierr.New(409, "%s is already your library %s.", f.Real, d.Label)
+			return nil, 0, apierr.New(409, "%s is already your library %s.", f.Real, d.ShownLabel(m.Users.AuthEnabled))
 		}
 	}
 	bin := f.GufiBin
