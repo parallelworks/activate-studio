@@ -163,6 +163,10 @@ func TestWakeFollowDecide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Its AGENTS.md is there before the first wake-up.
+	if md, err := os.ReadFile(filepath.Join(root, "agents/fleet", a.ID, "AGENTS.md")); err != nil || !strings.Contains(string(md), "Watch the queues.") || !strings.Contains(string(md), "Classify every failure.") {
+		t.Fatalf("AGENTS.md at create: %v\n%s", err, md)
+	}
 	if !f.Tick(a.ID, "the schedule", false) {
 		t.Fatal("no wake-up")
 	}
@@ -210,9 +214,10 @@ func TestWakeFollowDecide(t *testing.T) {
 		t.Fatalf("steered %v", d.steered)
 	}
 	d.finish(got.Session, "Resubmitted.", 1500)
-	f.follow(context.Background())
+	// A page reading the agent brings it up to date at once.
+	f.Follow(context.Background(), a.ID)
 	got = f.Get(a.ID)
-	if got.State != "idle" || got.Tokens != 1500 {
+	if got.State != "idle" || got.Tokens != 1500 || got.Note != "waiting for its next wake-up" {
 		t.Fatalf("after the second round %+v", got)
 	}
 	kinds := []string{}

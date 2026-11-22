@@ -6,6 +6,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -312,14 +313,17 @@ func text(v any) string { s, _ := v.(string); return s }
 func num(v any) float64 { n, _ := v.(float64); return n }
 
 // follow looks at each working agent's session once and settles those
-// that finished their round.
-func (f *Fleet) follow(ctx context.Context) {
+// that finished their round; with only, just those agents.
+func (f *Fleet) follow(ctx context.Context, only ...string) {
 	f.mu.Lock()
 	f.load()
 	type job struct{ id, session string }
 	var jobs []job
 	for _, id := range f.order {
 		a := f.agents[id]
+		if len(only) > 0 && !slices.Contains(only, id) {
+			continue
+		}
 		if (a.State == "working" || a.State == "input-required") && a.Session != "" && !f.busy[id] {
 			jobs = append(jobs, job{id, a.Session})
 		}
@@ -387,7 +391,9 @@ func (f *Fleet) settle(a *Agent, l look) {
 	if used := budgetUsed(a); used != "" {
 		f.setState(a, "paused", used)
 	} else if a.NextTickAt != nil {
-		f.setState(a, "idle", "next wake-up "+cut(*a.NextTickAt, 16))
+		// The time is the record's NextTickAt, which the page shows in the
+		// reader's own time.
+		f.setState(a, "idle", "waiting for its next wake-up")
 	} else {
 		f.setState(a, "idle", "waiting for an event or a message")
 	}
@@ -499,6 +505,15 @@ func (f *Fleet) NotifyRunEnded(ev RunEnded) {
 		}
 		f.tick(id, msg, false)
 	}
+}
+
+// Follow brings the agents up to date with their sessions now, as a page
+// reads them, so a round that ended shows without waiting for the next
+// scheduler pass; with ids, just those agents.
+func (f *Fleet) Follow(ctx context.Context, ids ...string) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	f.follow(ctx, ids...)
 }
 
 // Pass is one scheduler pass: working sessions followed, watched folders

@@ -1,9 +1,10 @@
 import { statusLook } from '../statusLook'
 import { useEffect, useState } from 'react'
 import {
-  Button, Callout, Checkbox, EmptyState, Field, Input, Select, StatusBadge, StatusDot, Textarea,
+  Button, Callout, Checkbox, ConfirmModal, EmptyState, Field, Input, Select, StatusBadge, StatusDot, Textarea,
   type BadgeVariant,
 } from '@parallelworks/ui'
+import { Streamdown } from 'streamdown'
 import { PersonaIcon } from '../components/PersonaIcon'
 
 /**
@@ -38,6 +39,15 @@ const TOPIC_TONE: Record<string, BadgeVariant> = {
 }
 export const topicVariant = (topic: string): BadgeVariant => TOPIC_TONE[topic] ?? 'muted'
 
+/** Tells the Status panel the fleet changed, so it reads it again now. */
+export const FLEET_CHANGED = 'ade:fleet-changed'
+
+/** A journal time in the reader's own time. */
+export const journalTime = (iso: string) => {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso.slice(0, 16).replace('T', ' ') : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpenTask: (taskId: string) => void }) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
@@ -46,6 +56,9 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [message, setMessage] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [retiring, setRetiring] = useState<Agent | null>(null)
+  // Bumped after an action, so the open agent is read again at once.
+  const [acted, setActed] = useState(0)
   const [form, setForm] = useState({ name: '', goal: '', persona: '', model: '', resource: '', every: '1h', onRunEnd: true, watchPath: '', maxTicks: '', maxTokens: '', maxTurns: '' })
 
   const refresh = () => fetch('/api/fleet').then(r => r.json()).then(d => { setAgents(d.agents ?? []); setError(null) }).catch(() => {})
@@ -62,12 +75,14 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
     load()
     const t = setInterval(load, 5_000)
     return () => { stop = true; clearInterval(t) }
-  }, [open])
+  }, [open, acted])
 
   const act = async (id: string, name: string, body?: Record<string, unknown>) => {
     const r = await fetch(`/api/fleet/${encodeURIComponent(id)}/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) })
     if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error ?? `${name} failed`) }
     refresh()
+    setActed(n => n + 1)
+    window.dispatchEvent(new Event(FLEET_CHANGED))
   }
   const useTemplate = (t: Template) => {
     setForm(f => ({ ...f, name: t.name, goal: t.goal, persona: t.persona, every: t.every, onRunEnd: t.onRunEnd, watchPath: t.watchPath ?? '' }))
@@ -94,18 +109,20 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   return (
     <section className="card task-board-card">
       {error && <Callout tone="error" size="sm" live>{error}</Callout>}
-      {needsYou.length > 0 && (
-        <div className="needs-you">
-          <strong>Needs you</strong>
-          {needsYou.map(a => (
-            <button key={a.id} className="needs-you-item" onClick={() => setOpen(a.id)}>
-              <StatusDot variant="warning" /> {a.name}: {a.note}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Who needs you sits in the header row, so it comes and goes
+          without moving anything below it. */}
       <div className="fleet-head">
         <h3>Standing agents ({live.length})</h3>
+        {needsYou.length > 0 && (
+          <div className="needs-you" role="group" aria-label="Needs you">
+            <strong>Needs you</strong>
+            {needsYou.map(a => (
+              <button key={a.id} className="needs-you-item" onClick={() => setOpen(a.id)} title={a.note}>
+                <StatusDot variant="warning" /> {a.name}
+              </button>
+            ))}
+          </div>
+        )}
         <Button variant="primary" onClick={() => setCreating(c => !c)}>{creating ? 'Close' : 'New agent'}</Button>
       </div>
       {live.length === 0 && !creating && (
@@ -178,16 +195,26 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
       )}
       {open && detail && (
         <div className="task-detail">
-          <div className="task-detail-head">
-            <StatusDot {...statusLook(detail.agent.state)} />
-            <span className="task-detail-objective">{detail.agent.name}</span>
-            <span className="muted">{detail.agent.persona ?? 'no instructions'} · {detail.agent.model || "pw code's default model"} · every {detail.agent.triggers.every}{detail.agent.triggers.onRunEnd ? ' · on run end' : ''}{detail.agent.triggers.watchPath ? ` · watches ${detail.agent.triggers.watchPath}/` : ''}</span>
-            {detail.agent.state !== 'working' && detail.agent.state !== 'retired' && <Button variant="secondary" onClick={() => void act(detail.agent.id, 'tick')}>Wake now</Button>}
-            {detail.agent.state === 'paused' ? <Button variant="secondary" onClick={() => void act(detail.agent.id, 'resume')}>Resume</Button>
-              : detail.agent.state !== 'retired' && <Button variant="secondary" onClick={() => void act(detail.agent.id, 'pause')}>Pause</Button>}
-            {detail.agent.state !== 'retired' && <Button variant="danger" onClick={() => { void act(detail.agent.id, 'retire'); setOpen(null) }}>Retire</Button>}
-            {detail.agent.session && <Button variant="ghost" size="sm" href={`#view=code?session=${encodeURIComponent(detail.agent.session)}`}>its session on the Code page</Button>}
+          <div className="fleet-detail-head">
+            <div className="fleet-detail-title">
+              <span className="fleet-detail-name"><StatusDot {...statusLook(detail.agent.state)} />{detail.agent.name}</span>
+              <span className="muted fleet-detail-meta">{detail.agent.persona ?? 'no instructions'} · {detail.agent.model || "pw code's default model"} · every {detail.agent.triggers.every}{detail.agent.triggers.onRunEnd ? ' · on run end' : ''}{detail.agent.triggers.watchPath ? ` · watches ${detail.agent.triggers.watchPath}/` : ''}</span>
+            </div>
+            <div className="fleet-detail-actions">
+              {detail.agent.state !== 'working' && detail.agent.state !== 'retired' && <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'tick')}>Wake now</Button>}
+              {detail.agent.state === 'paused' ? <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'resume')}>Resume</Button>
+                : detail.agent.state !== 'retired' && <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'pause')}>Pause</Button>}
+              {detail.agent.state !== 'retired' && <Button variant="danger" size="sm" onClick={() => setRetiring(detail.agent)}>Retire</Button>}
+              {detail.agent.session && <Button variant="ghost" size="sm" href={`#view=code?session=${encodeURIComponent(detail.agent.session)}`}>Its session on the Code page</Button>}
+            </div>
           </div>
+          {detail.agent.state === 'input-required' && (
+            <Callout tone="warning" size="sm" className="fleet-needs">
+              {detail.agent.note.startsWith('waiting for your approval')
+                ? <>It waits for you to approve a call in its session: approve or deny it on <a href={`#view=code?session=${encodeURIComponent(detail.agent.session ?? '')}`}>the Code page</a>.</>
+                : <>It asks: {detail.agent.note}{/[.?!]$/.test(detail.agent.note) ? '' : '.'} Answer below.</>}
+            </Callout>
+          )}
           {detail.agent.migrated && <Callout tone="info" size="sm" className="fleet-migrated">{detail.agent.migrated}</Callout>}
           <p className="muted fleet-goal-text">{detail.agent.goal}</p>
           {detail.agent.folder && (
@@ -203,8 +230,10 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
             {detail.journal.length === 0 && <p className="muted">No journal yet.</p>}
             {detail.journal.slice().reverse().map((e, i) => (
               <div key={i} className="task-msg">
-                <span className="task-msg-meta"><StatusBadge variant={topicVariant(e.kind)} className="task-topic">{e.kind}</StatusBadge>{e.at.slice(0, 16).replace('T', ' ')}{e.taskId ? <> · <Button variant="ghost" size="sm" onClick={() => onOpenTask(e.taskId!)}>task</Button></> : null}</span>
-                <span className="fleet-journal-text">{e.text}</span>
+                <span className="task-msg-meta"><StatusBadge variant={topicVariant(e.kind)} className="task-topic">{e.kind}</StatusBadge>{journalTime(e.at)}{e.taskId ? <> · <Button variant="ghost" size="sm" onClick={() => onOpenTask(e.taskId!)}>task</Button></> : null}</span>
+                {e.kind === 'result'
+                  ? <div className="fleet-journal-text md-body"><Streamdown>{e.text}</Streamdown></div>
+                  : <span className="fleet-journal-text">{e.text}</span>}
               </div>
             ))}
           </div>
@@ -215,6 +244,11 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
           </div>
         </div>
       )}
+      <ConfirmModal open={!!retiring} destructive onClose={() => setRetiring(null)}
+        title={retiring ? `Retire ${retiring.name}?` : 'Retire this agent?'}
+        description="It stops for good: no more wake-ups, and its pw code session is archived, where the Code page still shows it. Its folder, AGENTS.md and journal stay."
+        confirmLabel="Retire"
+        onConfirm={() => { if (retiring) { void act(retiring.id, 'retire'); setOpen(null) } setRetiring(null) }} />
     </section>
   )
 }
