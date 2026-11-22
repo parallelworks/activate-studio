@@ -183,6 +183,24 @@ jobs:
           sudo apt-get install -y "$RUNNER_TEMP/$deb"
           singularity --version
 
+      # GUFI as an earlier build of this same app.def compiled it, which is
+      # most of the build's time (GUFI and llama.cpp from source). The key
+      # is app.def's hash: the file pins the base image, the GUFI commit and
+      # every step of that build. Entries come from earlier runs of this
+      # job: a push to main fills the one every PR reads, and a PR's own
+      # are seen by that PR alone. An image that is published never takes
+      # one, and compiles everything here.
+      - name: GUFI from an earlier build
+        id: gufi
+        if: ${{ !(github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.push)) }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gufi-prebuilt
+          key: container-gufi-${{ hashFiles('deploy/app.def') }}
+      - name: hand it to the build
+        if: steps.gufi.outputs.cache-hit == 'true'
+        run: cp -R "$RUNNER_TEMP/gufi-prebuilt" .gufi-prebuilt
+
       # Run from the repo root: app.def copies "." into the build stage.
       - name: build studio.sif
         run: sudo singularity build studio.sif deploy/app.def
@@ -233,6 +251,24 @@ jobs:
           esac
           echo "----- index directory -----"
           find "$data/index" -maxdepth 3 | head -50
+
+      # After a build that compiled GUFI, keep its /opt/gufi, as the image
+      # that passed the smoke test carries it, for the next build.
+      - name: keep GUFI for the next build
+        if: steps.gufi.outcome == 'success' && steps.gufi.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gufi-prebuilt"
+          singularity exec studio.sif tar -C /opt -czf - gufi > "$RUNNER_TEMP/gufi-prebuilt/gufi.tar.gz"
+          sed -nE 's/^ *GUFI_COMMIT=([0-9a-f]{40}).*/\1/p' deploy/app.def > "$RUNNER_TEMP/gufi-prebuilt/commit"
+          [ -s "$RUNNER_TEMP/gufi-prebuilt/commit" ] || { echo "::error::no GUFI_COMMIT in deploy/app.def"; exit 1; }
+          ls -l "$RUNNER_TEMP/gufi-prebuilt"
+      - name: save it
+        if: steps.gufi.outcome == 'success' && steps.gufi.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gufi-prebuilt
+          key: ${{ steps.gufi.outputs.cache-primary-key }}
 
       # Hand the tested image to the push job. Only runs that publish pay
       # for the upload. SIF is already squashfs, so upload the file as it
