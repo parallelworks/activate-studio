@@ -1688,7 +1688,9 @@ ${ctx}` : ctx
         // its own content and break to the forced-answer turn rather than
         // finishing on narration or silence. After tool use, a few words of
         // chatter ("Open one to see content.") is not an answer either.
-        if (!turn.content.trim() || (usedTools && turn.content.trim().length < 200)) {
+        // A reply that embeds something (a session card, a document page)
+        // shows what was asked for, and stands however short its words are.
+        if (!turn.content.trim() || (usedTools && !/!\[[^\]]*\]\(\/\?embed=/.test(turn.content) && turn.content.trim().length < 200)) {
           req.log.warn({ iter }, 'empty turn with no tool calls; forcing final answer')
           hitLimit = false
           break
