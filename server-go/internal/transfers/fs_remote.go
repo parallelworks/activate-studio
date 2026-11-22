@@ -109,7 +109,11 @@ list2)
   printf '%s\0' "$mark"
   find -- "$p" -mindepth 1 -maxdepth 1 -type d ! -name '.*' \( ! -readable -o ! -executable \) -printf '%p\0' 2>/dev/null
   printf '%s\0' "$mark"
-  { find -- "$p" -mindepth 2 -maxdepth 2 ! -path '*/.*' -printf "$F" 2>/dev/null | head -z -n "${2:-2000}" && printf '%s\0' "$mark"; } 2>/dev/null
+  # Hidden names are left out at both levels: by name, and below a hidden
+  # folder by a path pattern from $p with its pattern characters escaped
+  # (matching '*/.*' would also leave out everything when $p is hidden).
+  q=$(printf '%s' "$p" | sed 's/[][*?\\]/\\&/g')
+  { find -- "$p" -mindepth 2 -maxdepth 2 ! -name '.*' ! -path "$q/.*" -printf "$F" 2>/dev/null | head -z -n "${2:-2000}" && printf '%s\0' "$mark"; } 2>/dev/null
   exit 0 ;;
 walk)
   while IFS= read -r -d '' p; do
