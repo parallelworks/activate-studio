@@ -242,8 +242,9 @@ func (a *Archive) StopLeftRunning(ctx context.Context, c pwcode.Client) (stopped
 		switch {
 		case err == nil:
 			stopped++
-		case errors.As(err, &de) && de.Status >= 400 && de.Status < 500:
-			// Not there any more, or not running: nothing to stop.
+		case errors.As(err, &de) && (de.Status == http.StatusNotFound || de.Status == http.StatusConflict):
+			// Not there any more, or not running: nothing to stop. Any
+			// other answer (a refusal, an error) is tried again next start.
 		default:
 			return stopped
 		}
