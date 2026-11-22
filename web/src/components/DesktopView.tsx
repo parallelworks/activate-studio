@@ -98,7 +98,7 @@ function claimResize(id: string): void {
 
 const tail = (s: string, n = 40) => s.split('\n').slice(-n).join('\n').trim()
 
-export function DesktopView({ user, name, className = '' }: { user: string; name: string; className?: string }) {
+export function DesktopView({ user, name, className = '', onClosed }: { user: string; name: string; className?: string; onClosed?: () => void }) {
   const screen = useRef<HTMLDivElement>(null)
   const rfb = useRef<RFB | null>(null)
   const tries = useRef(0)
@@ -234,6 +234,12 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
   }, [running, attempt, user, name, diagnose, apply])
 
   useEffect(() => { apply(rfb.current) }, [fit, quality, phase, apply])
+
+  // A closed or failed connection may be a stopped desktop: whoever shows
+  // this view (a chat card) checks the session again at once.
+  const closedRef = useRef(onClosed)
+  closedRef.current = onClosed
+  useEffect(() => { if (phase === 'closed' || phase === 'failed') closedRef.current?.() }, [phase])
 
   // The start-up logs, while it connects or when asked for.
   const wantLogs = showLogs || phase === 'connecting' || phase === 'failed'

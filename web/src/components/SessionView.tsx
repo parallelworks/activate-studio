@@ -12,9 +12,11 @@ import { DesktopView, isDesktop } from './DesktopView'
  * in a frame. A window of its own loads every session the way the platform
  * does, and Beside chat sends it to the chat's side view, which shows it
  * through the Studio's relay. A platform desktop shows the same way, drawn
- * by the Studio's own viewer (DesktopView). A session that is not running
- * yet is polled until it is, so a chat note posted while a run is still
- * starting fills in.
+ * by the Studio's own viewer (DesktopView). The card keeps checking the
+ * session, every 10 seconds until it runs and every 30 seconds while it
+ * does, and at once when its desktop closes the connection, so a chat note
+ * posted while a run is still starting fills in, and a session stopped or
+ * deleted later no longer shows as running.
  */
 
 export interface SessionInfo {
@@ -96,29 +98,39 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
   // In a chat reply the session shows under its bar, through the Studio's
   // relay, unless the reader hides it.
   const [inline, setInline] = useState(true)
+  // A session the platform no longer lists, after the card had it.
+  const [gone, setGone] = useState(false)
+  const recheck = useRef<() => void>(() => {})
 
   useEffect(() => {
     let stop = false
     let timer = 0
+    let had = !!initial
     const load = () => {
+      window.clearTimeout(timer)
       fetch(`/api/sessions/item?user=${encodeURIComponent(user)}&name=${encodeURIComponent(name)}${host ? `&host=${encodeURIComponent(host)}` : ''}${run ? `&run=${encodeURIComponent(run)}` : ''}`)
         .then(async r => {
           const d = await r.json().catch(() => ({}))
+          if (r.status === 404 && had) return null
           if (!r.ok) throw new Error((d as { error?: string }).error ?? `${r.status}`)
           return d as SessionInfo
         })
         .then(d => {
           if (stop) return
-          setS(d); setError('')
-          if (d.status !== 'running') timer = window.setTimeout(load, 10_000)
+          setError('')
+          if (!d) { setGone(true); timer = window.setTimeout(load, 30_000); return }
+          had = true
+          setS(d); setGone(false)
+          timer = window.setTimeout(load, d.status === 'running' ? 30_000 : 10_000)
         })
         .catch(e => { if (!stop) { setError(String((e as Error).message)); timer = window.setTimeout(load, 15_000) } })
     }
+    recheck.current = load
     load()
-    return () => { stop = true; window.clearTimeout(timer) }
+    return () => { stop = true; window.clearTimeout(timer); recheck.current = () => {} }
   }, [user, name, host, run])
 
-  const running = s?.status === 'running'
+  const running = s?.status === 'running' && !gone
 
   // Inside a chat embed, tell the chat the card's height so the reply does
   // not hold an empty box.
@@ -130,15 +142,15 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
     const ro = new ResizeObserver(post)
     ro.observe(rootRef.current)
     return () => ro.disconnect()
-  }, [s, error, blocked, inline])
+  }, [s, error, blocked, inline, gone])
 
   return (
     <div className="session-view" ref={rootRef}>
       <div className="session-bar">
-        <StatusDot variant={running ? 'success' : 'warning'} size={7} />
+        <StatusDot variant={running ? 'success' : gone ? 'muted' : 'warning'} size={7} />
         <span className="session-name">{s?.name ?? (name || (run ? `Session of ${run}` : host))}</span>
         <span className="muted session-meta">
-          {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
+          {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', gone ? 'no longer listed' : s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
         </span>
         {running && s?.url && (
           <span className="session-bar-actions">
@@ -158,10 +170,11 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
         )}
       </div>
       {error && !s && <Callout variant="bar" tone="error">{error}</Callout>}
-      {s && !running && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
+      {gone && <p className="session-note muted">Session {s?.name ?? name} is no longer listed on ACTIVATE. This card updates if it runs again.</p>}
+      {s && !running && !gone && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
       {blocked && <p className="session-note muted">This session has no address yet.</p>}
       {inChat && inline && running && s && isDesktop(s) && (
-        <div className="session-desktop-inline"><DesktopView user={s.user} name={s.name} /></div>
+        <div className="session-desktop-inline"><DesktopView user={s.user} name={s.name} onClosed={() => recheck.current()} /></div>
       )}
       {inChat && inline && running && s?.ownHost && s.url && !isDesktop(s) && (
         <iframe className="session-inline" title={s.name} src={`/api/session-proxy/${new URL(s.url).host}/`} />
