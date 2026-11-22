@@ -300,3 +300,38 @@ func TestAWaitingSessionIsFinishedOnce(t *testing.T) {
 		t.Fatalf("after the approval: %+v", s.get(rec.Session))
 	}
 }
+
+// Records are capped for each person: one person's delegations never
+// push out another's.
+func TestRecordsAreCappedPerPerson(t *testing.T) {
+	var rs []Record
+	rs = append(rs, Record{Owner: "ada", Session: "ada-only"})
+	for i := 0; i < maxRecords+20; i++ {
+		rs = append(rs, Record{Owner: "bob", Session: fmt.Sprintf("bob-%d", i)})
+	}
+	out := trim(rs, maxRecords)
+	if len(out) != maxRecords+1 || out[0].Session != "ada-only" || out[1].Session != "bob-20" || out[len(out)-1].Session != fmt.Sprintf("bob-%d", maxRecords+19) {
+		t.Fatalf("kept %d: first %+v, second %+v", len(out), out[0], out[1])
+	}
+}
+
+// A record that cannot be written is logged, and the start says the
+// session is not recorded, rather than dropping it without a word.
+func TestARecordThatCannotBeWritten(t *testing.T) {
+	s, _, _, _ := stand(t)
+	var logged strings.Builder
+	old := s.A.Log
+	s.A.Log = slog.New(slog.NewTextHandler(&logged, nil))
+	defer func() { s.A.Log = old }()
+	// The record's folder is a file: nothing can be written in it.
+	os.MkdirAll(filepath.Dir(filepath.Dir(s.file())), 0o700)
+	os.RemoveAll(filepath.Dir(s.file()))
+	os.WriteFile(filepath.Dir(s.file()), []byte("x"), 0o600)
+	rec, err := s.Start(httptest.NewRequest("POST", "/", nil), Start{Site: agentsites.Local, Objective: "Size the pumps", Folder: "reports/pumps"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Unrecorded != Unrecorded || !strings.Contains(logged.String(), "the record could not be written") {
+		t.Fatalf("record %+v, log %q", rec, logged.String())
+	}
+}

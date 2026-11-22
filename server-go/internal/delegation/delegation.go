@@ -53,7 +53,13 @@ type Record struct {
 	Files    []string `json:"files,omitempty"`
 	// More is how many files there are beyond Files.
 	More int `json:"more,omitempty"`
+	// Unrecorded is set on the answer to a start whose record could not
+	// be kept: the session runs, but is not listed or finished here.
+	Unrecorded string `json:"unrecorded,omitempty"`
 }
+
+// Unrecorded is what a start whose record could not be kept says.
+const Unrecorded = "the Studio could not keep its record, so it is not listed under Delegated and its folder is not indexed when it finishes; find it on the Code page"
 
 // Start is what to start.
 type Start struct {
@@ -239,7 +245,11 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 	rec := &Record{Owner: owner(r), Site: text(jsonv.Path(st, "site")), Session: text(jsonv.Path(st, "session")),
 		Workspace: text(jsonv.Path(st, "workspace")), Folder: folder, Instructions: name, Objective: objective,
 		Goal: strings.TrimSpace(o.Goal), Started: time.Now().UTC().Format(time.RFC3339), State: "working"}
-	s.save(rec)
+	if s.save(rec) != nil {
+		out := *rec
+		out.Unrecorded = Unrecorded
+		return &out, nil
+	}
 	s.watch(rec.Session, o.Key)
 	return rec, nil
 }
@@ -275,7 +285,8 @@ func (s *Service) file() string {
 	return filepath.Join(s.A.Cfg.IndexBase, "delegation", "sessions.json")
 }
 
-// maxRecords is how many records are kept; the oldest go first.
+// maxRecords is how many records are kept for each person; their oldest
+// go first, so one person's delegations never push out another's.
 const maxRecords = 500
 
 func (s *Service) load() []Record {
@@ -286,34 +297,65 @@ func (s *Service) load() []Record {
 	return out
 }
 
-func (s *Service) store(rs []Record) {
-	if len(rs) > maxRecords {
-		rs = rs[len(rs)-maxRecords:]
-	}
+func (s *Service) store(rs []Record) error {
+	rs = trim(rs, maxRecords)
 	f := s.file()
-	if os.MkdirAll(filepath.Dir(f), 0o700) != nil {
-		return
+	if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+		return err
 	}
-	b, _ := json.MarshalIndent(rs, "", " ")
+	b, err := json.MarshalIndent(rs, "", " ")
+	if err != nil {
+		return err
+	}
 	tmp := f + ".part"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		os.Rename(tmp, f)
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		os.Remove(tmp)
+		return err
 	}
+	return os.Rename(tmp, f)
 }
 
-// save adds the record, or replaces the one for its session.
-func (s *Service) save(rec *Record) {
+// trim keeps each person's newest n records, in their order.
+func trim(rs []Record, n int) []Record {
+	count := map[string]int{}
+	keep := make([]bool, len(rs))
+	for i := len(rs) - 1; i >= 0; i-- {
+		if count[rs[i].Owner] < n {
+			count[rs[i].Owner]++
+			keep[i] = true
+		}
+	}
+	out := rs[:0:0]
+	for i, r := range rs {
+		if keep[i] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// save adds the record, or replaces the one for its session. A record
+// that cannot be written is logged: the session it is for goes on.
+func (s *Service) save(rec *Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rs := s.load()
+	var err error
+	found := false
 	for i := range rs {
 		if rs[i].Session == rec.Session && rs[i].Site == rec.Site {
 			rs[i] = *rec
-			s.store(rs)
-			return
+			found = true
+			break
 		}
 	}
-	s.store(append(rs, *rec))
+	if !found {
+		rs = append(rs, *rec)
+	}
+	if err = s.store(rs); err != nil {
+		s.A.Log.Warn("delegation: the record could not be written", "session", rec.Session, "state", rec.State, "err", err)
+	}
+	return err
 }
 
 func (s *Service) get(session string) *Record {

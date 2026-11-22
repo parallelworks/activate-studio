@@ -1067,8 +1067,17 @@ func (m *Module) toolDelegate(r *http.Request, args map[string]any, ctx ToolCtx)
 		}
 	}
 	return &Outcome{Result: "Started pw code session " + rec.Session + " on " + rec.Site + ", working in " + where + with + ", with a goal it works toward until met or bounded. " +
-		"In your reply, give the user this link to follow it: [Open on the Code page](#view=code?session=" + rec.Session + "). Follow it with agent_status (site " + rec.Site + ", session " + rec.Session + "); do not wait idly, tell the user it is running.",
+		"In your reply, give the user this link to follow it: [Open on the Code page](#view=code?session=" + rec.Session + "). Follow it with agent_status (site " + rec.Site + ", session " + rec.Session + "); do not wait idly, tell the user it is running." + unrecorded(rec),
 		Summary: "delegated to " + rec.Session}, nil
+}
+
+// unrecorded is what the delegate tool adds when the start's record
+// could not be kept.
+func unrecorded(rec *delegation.Record) string {
+	if rec.Unrecorded == "" {
+		return ""
+	}
+	return " Tell the user: " + rec.Unrecorded + "."
 }
 
 func (m *Module) toolTaskStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
