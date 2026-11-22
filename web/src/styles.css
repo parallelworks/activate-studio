@@ -3308,7 +3308,10 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .code-approval { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .code-approval p { margin: 0; }
 .code-approval-what { flex: 1 1 260px; min-width: 0; }
-.code-approval-command { margin: 4px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--pw-panel); border: 1px solid var(--pw-border); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow-y: auto; }
+.code-approval-command { margin: 4px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--pw-panel); border: 1px solid var(--pw-border); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A long command shows its start until opened; Approve waits for that. */
+.code-approval-more { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--pw-accent, var(--theme-link-color)); font-size: 12px; cursor: pointer; text-decoration: underline; }
+.code-approval-why { margin: 4px 0 0; font-size: 12px; }
 .code-approval-actions { display: flex; gap: 6px; flex: none; }
 .code-approval-note { margin: 8px 0 0; font-size: 12px; }
 .task-moved { margin-bottom: 12px; }

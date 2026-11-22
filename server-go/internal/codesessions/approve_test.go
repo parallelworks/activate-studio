@@ -86,8 +86,9 @@ func TestApproveOnThisComputer(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"protocolVersion": pwcode.ProtocolVersion, "machineId": "mach1", "hostname": "box.example"})
 		case r.URL.Path == "/v1/sessions/"+sid:
 			json.NewEncoder(w).Encode(map[string]any{"id": sid, "status": "awaiting_approval",
-				"approvals": []any{map[string]any{"id": "ap1", "kind": "confirm", "tool": "Bash", "command": "ls -la " + strings.Repeat("x", 900), "reason": "shell command"}},
-				"history":   []any{map[string]any{"kind": "user", "text": "hi"}}})
+				"approvals": []any{map[string]any{"id": "ap1", "kind": "confirm", "tool": "Bash", "command": "ls -la " + strings.Repeat("x", 900), "reason": "shell command"},
+					map[string]any{"id": "ap9", "kind": "confirm", "tool": "Bash", "command": strings.Repeat("y", maxApprovalCommand+10)}},
+				"history": []any{map[string]any{"kind": "user", "text": "hi"}}})
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/sessions/"+sid+"/approvals/"):
 			if gone {
 				w.WriteHeader(404)
@@ -107,8 +108,17 @@ func TestApproveOnThisComputer(t *testing.T) {
 		Approvals []approval
 	}
 	json.NewDecoder(res.Body).Decode(&item)
+	// A command is sent whole, so Approve runs what the person saw; one
+	// too long to send says so, and the page offers Deny alone for it.
+	if len(item.Approvals) != 2 {
+		t.Fatalf("approvals: %d %+v", res.StatusCode, item.Approvals)
+	}
+	if long := item.Approvals[1]; !long.CommandCut || long.CommandLength != maxApprovalCommand+10 || len(long.Command) != maxApprovalCommand {
+		t.Fatalf("a command too long to send: cut %v length %d sent %d", long.CommandCut, long.CommandLength, len(long.Command))
+	}
+	item.Approvals = item.Approvals[:1]
 	if res.StatusCode != 200 || len(item.Approvals) != 1 || item.Approvals[0].ID != "ap1" || item.Approvals[0].Kind != "confirm" ||
-		item.Approvals[0].Tool != "Bash" || len([]rune(item.Approvals[0].Command)) != maxToolArgs {
+		item.Approvals[0].Tool != "Bash" || item.Approvals[0].Command != "ls -la "+strings.Repeat("x", 900) || item.Approvals[0].CommandCut || item.Approvals[0].CommandLength != 907 {
 		t.Fatalf("item approvals: %d %+v", res.StatusCode, item.Approvals)
 	}
 

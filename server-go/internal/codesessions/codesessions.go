@@ -46,6 +46,12 @@ type approval struct {
 	Command string `json:"command,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 	Agent   string `json:"agent,omitempty"`
+	// CommandCut is set when Command is longer than the page is sent
+	// (maxApprovalCommand); the page then offers Deny alone, since
+	// Approve would run text the person did not see.
+	CommandCut bool `json:"commandCut,omitempty"`
+	// CommandLength is the whole command's length in characters.
+	CommandLength int `json:"commandLength,omitempty"`
 }
 
 type session struct {
@@ -297,6 +303,9 @@ const (
 	maxText       = 20000
 	maxToolResult = 1500
 	maxToolArgs   = 600
+	// An approval's command is sent whole up to this many characters:
+	// Approve runs exactly what the person was shown.
+	maxApprovalCommand = 64 << 10
 )
 
 func (s *routes) item(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -348,7 +357,11 @@ func (s *routes) item(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	waiting := make([]approval, 0, len(d.Approvals))
 	for _, a := range d.Approvals {
-		a.Command = clip(a.Command, maxToolArgs)
+		if n := len([]rune(a.Command)); n > maxApprovalCommand {
+			a.Command, a.CommandCut, a.CommandLength = string([]rune(a.Command)[:maxApprovalCommand]), true, n
+		} else if a.Command != "" {
+			a.CommandLength = n
+		}
 		a.Reason = clip(oneLine(a.Reason), 300)
 		waiting = append(waiting, a)
 	}
