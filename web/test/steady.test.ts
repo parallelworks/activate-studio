@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { keepMissing, steadyCount } from '../src/steady'
+import { CONFIRM_MS, keepMissing, steadyCount } from '../src/steady'
 import { steadyModels } from '../src/components/StatusFooter'
 
 const s = (...names: string[]) => names.map(name => ({ name }))
@@ -30,20 +30,29 @@ describe('a list the platform flaps', () => {
 })
 
 describe('a count the platform flaps', () => {
-  it('rises at once, and falls when two reads in a row are lower', () => {
-    const low = { last: null as number | null }
-    expect(steadyCount(null, 23, low)).toBe(23)
-    expect(steadyCount(23, 24, low)).toBe(24)
-    expect(steadyCount(24, 23, low)).toBe(24)
-    expect(steadyCount(24, 24, low)).toBe(24)
-    expect(steadyCount(24, 23, low)).toBe(24)
-    expect(steadyCount(24, 22, low)).toBe(22)
+  it('rises at once, and falls when two reads in a row, a poll apart, are lower', () => {
+    const low: { last: number | null; at?: number } = { last: null }
+    let t = 0
+    const read = (shown: number | null, n: number) => steadyCount(shown, n, low, (t += 60_000))
+    expect(read(null, 23)).toBe(23)
+    expect(read(23, 24)).toBe(24)
+    expect(read(24, 23)).toBe(24)
+    expect(read(24, 24)).toBe(24)
+    expect(read(24, 23)).toBe(24)
+    expect(read(24, 22)).toBe(22)
+  })
+  it('does not take two reads a moment apart as two looks', () => {
+    const low: { last: number | null; at?: number } = { last: null }
+    expect(steadyCount(24, 23, low, 1_000)).toBe(24)
+    expect(steadyCount(24, 23, low, 1_500)).toBe(24)
+    expect(steadyCount(24, 23, low, 1_000 + CONFIRM_MS)).toBe(23)
   })
   it('in the footer\'s models line, except a Re-check shows what it read', () => {
     const ok = (models: number) => ({ status: 'ok', models }) as never
-    expect(steadyModels(ok(24)).models).toBe(24)
-    expect(steadyModels(ok(23)).models).toBe(24)
-    expect(steadyModels(ok(24)).models).toBe(24)
+    expect(steadyModels(ok(24), false, 0).models).toBe(24)
+    expect(steadyModels(ok(23), false, 60_000).models).toBe(24)
+    expect(steadyModels(ok(23), false, 60_500).models).toBe(24)
+    expect(steadyModels(ok(24), false, 120_000).models).toBe(24)
     expect(steadyModels(ok(23), true).models).toBe(23)
     expect(steadyModels({ status: 'offline', models: 0 } as never).models).toBe(0)
   })
