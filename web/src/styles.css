@@ -3281,3 +3281,11 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .fleet-folder { margin: 4px 0 8px; font-size: 13px; }
 .fleet-session { margin: 8px 0; font-size: 13px; }
 .fleet-session-line { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Apply to a folder: the chosen library's folders, one level at a time. */
+.apply-folders { margin-top: 8px; border: 1px solid var(--pw-border); border-radius: 8px; }
+.apply-folders-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--pw-border); font-size: 12px; }
+.apply-folders-at { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apply-folders-list { max-height: 220px; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; }
+.apply-folders-list .muted { padding: 4px 8px; font-size: 12px; }
+.apply-folders-item { width: 100%; justify-content: flex-start; }

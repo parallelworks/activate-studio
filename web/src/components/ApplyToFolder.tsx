@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Callout, Field, Input, Modal, Select } from '@parallelworks/ui'
+import { Button, Callout, EmptyState, Field, Input, Modal, Select } from '@parallelworks/ui'
 
 /**
  * Agent instructions and skills, applied to a folder: the Studio writes
@@ -40,6 +40,51 @@ export function changeFolder(remove: boolean, library: string, folder: string, w
   return postJson<AgentFolder>(`/api/agents-md/${remove ? 'remove' : 'apply'}`, { library, folder, ...what })
 }
 
+const FOLDER_ICON = <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3l1.5 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9z"/></svg>
+
+/** The folders of one library, one folder at a time (GET /api/kb/tree
+ *  with the library), from its top. Opening a folder picks it. */
+export function LibraryFolders({ library, libraryLabel, onPick }: {
+  library: string
+  libraryLabel: string
+  onPick: (folder: string) => void
+}) {
+  const [at, setAt] = useState('')
+  const [dirs, setDirs] = useState<{ name: string; path: string }[] | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => { setAt('') }, [library])
+  useEffect(() => {
+    let gone = false
+    setDirs(null); setError('')
+    fetch(`/api/kb/tree?path=${encodeURIComponent(at)}&library=${encodeURIComponent(library)}`)
+      .then(async r => {
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.error ?? `${r.status}`)
+        return (d.entries ?? []) as { name: string; path: string; type: string }[]
+      })
+      .then(es => { if (!gone) setDirs(es.filter(e => e.type === 'dir').sort((a, b) => a.name.localeCompare(b.name))) })
+      .catch(e => { if (!gone) { setDirs([]); setError((e as Error).message) } })
+    return () => { gone = true }
+  }, [library, at])
+  const open = (folder: string) => { setAt(folder); onPick(folder) }
+  const parent = at.includes('/') ? at.slice(0, at.lastIndexOf('/')) : ''
+  return (
+    <div className="apply-folders" role="group" aria-label={`Folders in ${libraryLabel}`}>
+      <div className="apply-folders-head">
+        <span className="apply-folders-at" title={at || libraryLabel}>{at ? <code>{at}</code> : <>Top of {libraryLabel}</>}</span>
+        <Button variant="ghost" size="sm" disabled={!at} onClick={() => open(parent)}>Up</Button>
+      </div>
+      {error && <Callout tone="error" size="sm">{error}</Callout>}
+      <div className="apply-folders-list">
+        {dirs === null ? <span className="muted">Reading…</span>
+          : dirs.length ? dirs.map(d => (
+            <Button key={d.path} variant="ghost" size="sm" className="apply-folders-item" icon={FOLDER_ICON} onClick={() => open(d.path)}>{d.name}</Button>
+          )) : <EmptyState variant="bare" title="No folders inside" />}
+      </div>
+    </div>
+  )
+}
+
 export function ApplyToFolder({ kind, name, onClose, onDone }: {
   kind: 'persona' | 'skill'
   name: string
@@ -49,7 +94,6 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
   const [libs, setLibs] = useState<LibraryChoice[] | null>(null)
   const [library, setLibrary] = useState('')
   const [folder, setFolder] = useState(`agents/${name}`)
-  const [dirs, setDirs] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -61,11 +105,6 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
     }).catch(() => setLibs([]))
   }, [])
   const chosen = libs?.find(l => l.id === library)
-  useEffect(() => {
-    // The main library's folders are suggested as the person types.
-    if (!chosen?.primary) { setDirs([]); return }
-    fetch('/api/kb/dirs').then(r => r.json()).then(d => setDirs(d.dirs ?? [])).catch(() => setDirs([]))
-  }, [chosen?.primary])
   const items = useMemo(() => (libs ?? []).map(l => ({ value: l.id, label: l.space ? `${l.label} (yours)` : l.label })), [libs])
   const apply = async () => {
     setBusy(true); setError('')
@@ -94,9 +133,9 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
           {control => <Select<string> {...control} aria-label="Library" items={items} value={library} onValueChange={v => v && setLibrary(v)} />}
         </Field>
       )}
-      <Input label="Folder" value={folder} onChange={e => setFolder(e.target.value)} list="agents-md-dirs"
-        description="A folder in the library, from its top. It is made when it is not there; leave it empty for the top." />
-      <datalist id="agents-md-dirs">{dirs.slice(0, 500).map(d => <option key={d} value={d} />)}</datalist>
+      <Input label="Folder" value={folder} onChange={e => setFolder(e.target.value)}
+        description="A folder in the library, from its top: open one below, or type it. It is made when it is not there; leave it empty for the top." />
+      {chosen && <LibraryFolders library={chosen.id} libraryLabel={chosen.space ? `${chosen.label} (yours)` : chosen.label} onPick={setFolder} />}
       {error && <Callout tone="error" size="sm">{error}</Callout>}
     </Modal>
   )
