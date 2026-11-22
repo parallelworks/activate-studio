@@ -1,5 +1,5 @@
 import { ReactElement, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Callout, ConfirmModal, EmptyState, IconButton, Loader, TabPanel, Tabs, Tooltip } from '@parallelworks/ui'
+import { Button, Callout, ConfirmModal, EmptyState, IconButton, Loader, TabPanel, Tabs } from '@parallelworks/ui'
 import { ZoomInIcon, ZoomOutIcon } from '@parallelworks/ui/icons'
 import { Streamdown } from 'streamdown'
 import { api, withLibrary, FileContent, type OfficeBlock, type OfficeOutline } from '../api'
@@ -11,6 +11,7 @@ import { DagViewer } from './DagViewer'
 import { PdfJsPages } from './PdfJsPages'
 import { pageWidth, stepZoom, useSettled, ZOOM_MAX, ZOOM_MIN, ZoomView, type ZoomControl, type Zooming } from './ZoomView'
 import { CsvTable, DELIMITED_SUFFIXES } from './CsvTable'
+import { LockedButton } from './LockedButton'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
 /** Office files the server reads without LibreOffice (officePreview.ts). */
@@ -737,7 +738,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
           )}
           <Button variant="secondary" size="sm" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</Button>
           {labelsLocked
-            ? <Tooltip content={labelsLocked}><Button variant="secondary" size="sm" disabled focusableWhenDisabled aria-description={labelsLocked}>Labels</Button></Tooltip>
+            ? <LockedButton reason={labelsLocked}>Labels</LockedButton>
             : (
               <TagMenu
                 paths={[file.path]}
@@ -753,9 +754,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
           <Button variant="primary" size="sm" href={api.downloadUrl(file.path)} reloadDocument>Download</Button>
           {readOnly
             ? (
-              <Tooltip content={readOnly}>
-                <Button variant="outline" size="sm" disabled focusableWhenDisabled aria-description={readOnly}>Delete</Button>
-              </Tooltip>
+              <LockedButton reason={readOnly} variant="outline">Delete</LockedButton>
             )
             : <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>Delete</Button>}
           <ConfirmModal

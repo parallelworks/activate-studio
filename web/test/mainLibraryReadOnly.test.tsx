@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from '@parallelworks/ui'
 import { LibraryView } from '../src/views/LibraryView'
 import { setLibrary } from '../src/api'
 import { reloadAppConfig } from '../src/config'
@@ -60,6 +61,20 @@ describe('the main library for a signed-in person who does not administer the St
     expect(item('Download as zip')).not.toHaveAttribute('aria-disabled', 'true')
     expect(item('Copy path')).not.toHaveAttribute('aria-disabled', 'true')
     expect(document.body.textContent).toContain('only its administrators change it')
+  })
+
+  it('gives the reason on the disabled + Add, as its description and on a click or tap', async () => {
+    serve({ writable: false, readOnlyWhy: WHY, access: { where: 'here', readAs: 'studio', write: false, index: 'built' } })
+    const info = vi.spyOn(toast, 'info').mockImplementation(() => '')
+    render(<LibraryView display={null} onDisplay={() => {}} />)
+    await configLoaded()
+    await screen.findByText('reports')
+    const add = screen.getByRole('button', { name: '+ Add' })
+    expect(add).toHaveAttribute('aria-disabled', 'true')
+    expect(add).toHaveAttribute('aria-description', WHY)
+    expect(info).not.toHaveBeenCalled()
+    fireEvent.click(add)
+    expect(info).toHaveBeenCalledWith(WHY, expect.anything())
   })
 
   it('stays as it was for an administrator', async () => {
