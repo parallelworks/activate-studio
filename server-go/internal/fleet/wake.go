@@ -139,6 +139,15 @@ func (f *Fleet) tick(id, reason string, force bool) bool {
 		f.setState(a, "paused", used)
 		return false
 	}
+	// On a Studio with sign-in, an agent acts for its owner; one with no
+	// record of them would run without the Studio's tools (its token has
+	// no person) while its note says it works in the library.
+	if f.A.Cfg.AuthEnabled() && a.OwnerUser == nil {
+		if a.State != "paused" || a.Note != NoOwner {
+			f.setState(a, "paused", NoOwner)
+		}
+		return false
+	}
 	events := append([]string(nil), a.Inbox...)
 	if reason != "" {
 		events = append(events, reason)
@@ -148,6 +157,7 @@ func (f *Fleet) tick(id, reason string, force bool) bool {
 	t := now()
 	a.LastTickAt = &t
 	a.State, a.Note = "working", "wake-up "+strconv.FormatFloat(a.Ticks, 'f', 0, 64)+" starting"
+	a.Starting = true
 	f.busy[id] = true
 	f.persist(a)
 	snap := *a
@@ -163,6 +173,7 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 		defer f.mu.Unlock()
 		delete(f.busy, a.ID)
 		if cur := f.agents[a.ID]; cur != nil {
+			cur.Starting = false
 			f.journal(a.ID, "error", cut(why, 400), cur.Session)
 			f.scheduleNext(cur)
 			f.setState(cur, "idle", "the wake-up could not start: "+cut(why, 160))
@@ -243,6 +254,7 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 		}
 		cur.Session, cur.SessionAt, cur.SessionTokens, cur.Workspace = session, time.Now().UTC().Format(time.RFC3339Nano), 0, ws
 	}
+	cur.Starting = false
 	cur.Note = "wake-up " + strconv.FormatFloat(cur.Ticks, 'f', 0, 64) + " working"
 	f.journal(a.ID, "tick", cut(strings.Join(events, " | "), 400), session)
 	f.persist(cur)
