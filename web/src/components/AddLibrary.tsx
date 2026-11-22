@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Callout, Field, Input, SegmentedControl } from '@parallelworks/ui'
 import type { PwSystems, UserLibrary } from '../api'
 import { BucketLibraryForm } from './BucketLibraryForm'
@@ -127,6 +127,14 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
 }) {
   const [importing, setImporting] = useState(false)
   const signIn = !!useAppConfig().signIn
+  // A choice that shows a shorter form would shorten the page, and where
+  // the form ends the page the browser scrolls up to fit, moving the
+  // choices under the pointer: the form keeps the tallest height it had.
+  const flow = useRef<HTMLDivElement>(null)
+  const holdHeight = () => {
+    const el = flow.current
+    if (el) el.style.minHeight = `${Math.max(el.offsetHeight, parseFloat(el.style.minHeight) || 0)}px`
+  }
   const choices = addChoices(options)
   const [wherePicked, setWhere] = useState<Where | null>(null)
   const where: Where = wherePicked && choices.where.includes(wherePicked) ? wherePicked : (choices.where[0] ?? 'here')
@@ -183,12 +191,12 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   )
 
   return (
-    <div className="lib-add-flow">
+    <div className="lib-add-flow" ref={flow}>
       {onImported && <div><Button variant="ghost" size="sm" onClick={() => setImporting(true)}>Import a library list from a file…</Button></div>}
       <div className="lib-add-choices">
         {choices.where.length > 1 && (
           <Field label="Where">
-            <SegmentedControl label="Where" value={where} onValueChange={v => setWhere(v)} options={choices.where.map(w => ({ value: w, label: WHERE_LABEL[w] }))} />
+            <SegmentedControl label="Where" value={where} onValueChange={v => { holdHeight(); setWhere(v) }} options={choices.where.map(w => ({ value: w, label: WHERE_LABEL[w] }))} />
           </Field>
         )}
       </div>
@@ -208,12 +216,12 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
           <div className="lib-add-choices">
             {hows.length > 1 && (
               <Field label="What">
-                <SegmentedControl label="What" value={how} onValueChange={v => setHow(v)} options={hows.map(h => ({ value: h, label: howLabel(h, signIn) }))} />
+                <SegmentedControl label="What" value={how} onValueChange={v => { holdHeight(); setHow(v) }} options={hows.map(h => ({ value: h, label: howLabel(h, signIn) }))} />
               </Field>
             )}
             {builders.length > 1 && (
               <Field label="Build with">
-                <SegmentedControl label="Build with" value={builder} onValueChange={v => setBuilder(v)}
+                <SegmentedControl label="Build with" value={builder} onValueChange={v => { holdHeight(); setBuilder(v) }}
                   options={builders.map(b => ({ value: b, label: BUILDER_LABEL[b as 'pw' | 'workflow'] }))} />
               </Field>
             )}
