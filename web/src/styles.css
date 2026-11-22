@@ -3385,3 +3385,17 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 /* A continued chat's opening note is not a reply: no Regenerate on it
    (markNotes, adapter.ts, marks its Code page link). */
 .group:has(a[href*="note=continued"]):not(:has(.group)) button[aria-label="Regenerate response"] { display: none; }
+
+/* Settings, Model access, the pw CLI contexts: a context's name wraps, and
+   where the section is narrow (1280 with Status open) each context stacks
+   as a row of its own, Use beside it, rather than the table scrolling
+   sideways with Use off screen. */
+.cli-contexts-wrap:has(.cli-contexts) { container-type: inline-size; }
+.cli-contexts code { overflow-wrap: anywhere; }
+@container (max-width: 560px) {
+  .cli-contexts thead, .cli-contexts tr:has(> th) { display: none; }
+  .cli-contexts, .cli-contexts tbody { display: block; width: 100%; }
+  .cli-contexts tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding: 8px 12px; }
+  .cli-contexts td { display: block; padding: 0; white-space: normal; }
+  .cli-contexts td:last-child { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+}
