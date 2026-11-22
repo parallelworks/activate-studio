@@ -9,6 +9,7 @@
     "test": "vitest run && vitest run --config vitest.rhel9.config.ts"
   },
   "dependencies": {
+    "@novnc/novnc": "1.7.0",
     "@parallelworks/ui": "^0.120.0",
     "@parallelworks/workflow-parser": "^0.8.0",
     "monaco-editor": "^0.57.0",

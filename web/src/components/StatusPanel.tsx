@@ -8,7 +8,7 @@ import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '.
 import { indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
 import { AI_LABEL, modelsReady } from './StatusFooter'
 import { openInSideView } from './RunPane'
-import { openSessionWindow, type SessionInfo } from './SessionView'
+import { openSessionWindow, showsInStudio, type SessionInfo } from './SessionView'
 import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
 
 /**
@@ -90,11 +90,11 @@ export function openRun(slug: string, view: string): void {
   openInSideView({ run: slug })
 }
 
-/** A session the Studio can relay opens in a side view, as on the chat and
- *  Workflows pages; one served only under the platform's address opens in
- *  a window of its own. */
+/** A session the Studio can show (relayed, or a platform desktop) opens in
+ *  a side view, as on the chat and Workflows pages; one served only under
+ *  the platform's address opens in a window of its own. */
 export function openSession(s: SessionInfo, view: string): void {
-  if (!(s.ownHost && s.url)) { openSessionWindow(s); return }
+  if (!showsInStudio(s)) { openSessionWindow(s); return }
   if (view === 'chat') { window.postMessage({ type: 'ade-side-view', session: s }, window.location.origin); return }
   if (view !== 'workflows') go('#view=workflows')
   openInSideView({ session: s })
@@ -457,7 +457,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
             <Group label="Sessions">
               {sessions.slice(0, 6).map(s => (
                 <Row key={`${s.user}/${s.name}`} tone="success" name={s.name} meta={s.type}
-                  title={s.ownHost ? 'Open it in the side view' : 'Open it in a window of its own'} onClick={() => openSession(s, view)} />
+                  title={showsInStudio(s) ? 'Open it in the side view' : 'Open it in a window of its own'} onClick={() => openSession(s, view)} />
               ))}
               {sessions.length > 6 && (
                 <button type="button" className="status-more" onClick={() => go('#view=workflows')}>{sessions.length - 6} more on the Workflows page</button>

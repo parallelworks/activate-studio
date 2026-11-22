@@ -63,6 +63,9 @@ importers:
 
   web:
     dependencies:
+      '@novnc/novnc':
+        specifier: 1.7.0
+        version: 1.7.0
       '@parallelworks/ui':
         specifier: ^0.120.0
         version: 0.120.0(patch_hash=bd654fe0e838927430cc27bad42e80077bad4b96f76f4c49cd55fc9bb788fe59)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
@@ -828,6 +831,9 @@ packages:
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+
+  '@novnc/novnc@1.7.0':
+    resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
 
   '@parallelworks/ui@0.120.0':
     resolution: {integrity: sha512-zjF9Aodl1zwgK/OMwAokpMaS7fsb7xxzCRgZMKfdFy0HlK/AqKkhPjstJG1EqUxscEBQpvhTKuclhTLLK6Z1EQ==}
@@ -3310,6 +3316,8 @@ snapshots:
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
+
+  '@novnc/novnc@1.7.0': {}
 
   '@parallelworks/ui@0.120.0(patch_hash=bd654fe0e838927430cc27bad42e80077bad4b96f76f4c49cd55fc9bb788fe59)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
     dependencies:
