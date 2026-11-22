@@ -37,6 +37,13 @@ func TestListTwoReadsTheFoldersInside(t *testing.T) {
 	write(t, filepath.Join(root, "b", "line\nbreak.txt"), "3")
 	os.MkdirAll(filepath.Join(root, "empty"), 0o755)
 	write(t, filepath.Join(root, ".secret", "x.txt"), "s")
+	// A hidden folder asked for by its path, below the top and at it: what
+	// is in its folders is read, and hidden names in it are still left out.
+	write(t, filepath.Join(root, "proj", ".agents", "skills", "one", "SKILL.md"), "s")
+	write(t, filepath.Join(root, "proj", ".agents", "skills", ".cache", "x"), "c")
+	write(t, filepath.Join(root, ".agents", "skills", "two", "SKILL.md"), "s")
+	write(t, filepath.Join(root, "we[i]*rd", ".hid", "x"), "h")
+	write(t, filepath.Join(root, "we[i]*rd", "sub", "f"), "f")
 	write(t, filepath.Join(root, "closed", "c.txt"), "c")
 	os.Chmod(filepath.Join(root, "closed"), 0)
 	t.Cleanup(func() { os.Chmod(filepath.Join(root, "closed"), 0o755) })
@@ -55,7 +62,7 @@ func TestListTwoReadsTheFoldersInside(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := names(two.Entries); got != "a,b,closed,empty,link,top.txt" {
+		if got := names(two.Entries); got != "a,b,closed,empty,link,proj,top.txt,we[i]*rd" {
 			t.Fatalf("kept %v: entries %s", kept, got)
 		}
 		if got := names(two.Children["a"]); got != "deep,one.txt" {
@@ -80,6 +87,22 @@ func TestListTwoReadsTheFoldersInside(t *testing.T) {
 		sub, err := fs.ListTwo(ctx, "a", 100)
 		if err != nil || names(sub.Entries) != "deep,one.txt" || names(sub.Children["a/deep"]) != "two.txt" {
 			t.Fatalf("kept %v: a: %+v %v", kept, sub, err)
+		}
+		for rel, want := range map[string][2]string{
+			"proj/.agents": {"proj/.agents/skills", "one"},
+			".agents":      {".agents/skills", "two"},
+			"we[i]*rd":     {"we[i]*rd/sub", "f"},
+		} {
+			h, err := fs.ListTwo(ctx, rel, 100)
+			if err != nil {
+				t.Fatalf("kept %v: %s: %v", kept, rel, err)
+			}
+			if got := names(h.Children[want[0]]); got != want[1] {
+				t.Fatalf("kept %v: %s read as holding %q, not %q", kept, want[0], got, want[1])
+			}
+			if _, ok := h.Children["we[i]*rd/.hid"]; ok {
+				t.Fatalf("kept %v: a hidden folder was listed", kept)
+			}
 		}
 		cut, err := fs.ListTwo(ctx, "", 1)
 		if err != nil {
