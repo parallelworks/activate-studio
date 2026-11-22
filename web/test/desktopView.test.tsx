@@ -114,6 +114,16 @@ describe('DesktopView', () => {
     await client(2)
   })
 
+  it('tells its card when the desktop closes the connection', async () => {
+    const onClosed = vi.fn()
+    render(<DesktopView user="alex" name="desk" onClosed={onClosed} />)
+    const c = await client()
+    act(() => c.emit('connect'))
+    expect(onClosed).not.toHaveBeenCalled()
+    act(() => c.emit('disconnect', { clean: true }))
+    await waitFor(() => expect(onClosed).toHaveBeenCalledTimes(1))
+  })
+
   it('closes its connection when it goes away', async () => {
     const { unmount } = render(<DesktopView user="alex" name="desk" />)
     const c = await client()
