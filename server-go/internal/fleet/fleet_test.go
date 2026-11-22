@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -44,6 +45,9 @@ type daemon struct {
 	goalHold chan struct{}
 	// approvalKind is the kind of a session's approval: confirm when unset.
 	approvalKind map[string]string
+	// models is each model a session was moved to, and when (the count
+	// of messages then).
+	models []string
 }
 
 func newDaemon() *daemon {
@@ -112,11 +116,16 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.answers = append(d.answers, ans)
 		d.approval[id], d.status[id] = "", "running"
 		send(map[string]any{"ok": true})
+	case "settings":
+		var m struct{ Model string }
+		json.NewDecoder(r.Body).Decode(&m)
+		d.models = append(d.models, m.Model+" before "+strconv.Itoa(len(d.messages))+" messages")
+		send(map[string]any{"ok": true})
 	case "archive":
 		d.archived = append(d.archived, id)
 		w.WriteHeader(204)
 	case "":
-		out := map[string]any{"id": id, "status": d.status[id], "inputTokens": d.tokens[id], "outputTokens": 0.0,
+		out := map[string]any{"id": id, "model": "acct:anthropic/claude-x", "status": d.status[id], "inputTokens": d.tokens[id], "outputTokens": 0.0,
 			"history": []any{map[string]any{"kind": "user", "text": "wake"}, map[string]any{"kind": "assistant", "text": d.answer[id]}}}
 		if a := d.approval[id]; a != "" {
 			// The daemon's ApprovalRequest fields; there is no text.

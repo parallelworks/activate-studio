@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"math"
+	"net/http"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsmd"
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
@@ -236,6 +238,7 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 			}
 		}
 		fresh = true
+		f.moveModel(ctx, c, &a, owner, session)
 	}
 	// A new session is recorded before the message goes, and the wake-up
 	// is recorded as working as soon as the message is in: a restart in
@@ -637,4 +640,35 @@ func (f *Fleet) Recent(ctx context.Context, a *Agent, n int) []string {
 		out = out[len(out)-n:]
 	}
 	return out
+}
+
+// moveModel moves a standing agent's new session off a model its owner's
+// AI connection does not offer (app.Providers.AgentModel), before its
+// first message, and journals the move.
+func (f *Fleet) moveModel(ctx context.Context, c pwcode.Client, a *Agent, owner *auth.User, session string) {
+	pick := f.A.Providers.AgentModel
+	if pick == nil {
+		return
+	}
+	d, err := pwcode.GetSession(ctx, c, session)
+	if err != nil {
+		return
+	}
+	cur := text(jsonv.Path(d, "model"))
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/fleet", nil)
+	if err != nil {
+		return
+	}
+	if owner != nil {
+		r = auth.WithUser(r, owner)
+	}
+	to, why := pick(r, cur, a.Model)
+	if to == "" {
+		return
+	}
+	if _, err := pwcode.SetSessionModel(ctx, c, session, to); err != nil {
+		f.journal(a.ID, "error", "its model "+cur+" is not one the AI connection offers, and its session could not be moved to "+to+": "+cut(err.Error(), 300), session)
+		return
+	}
+	f.journal(a.ID, "note", why, session)
 }

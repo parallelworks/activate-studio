@@ -5,7 +5,7 @@ import { reloadPanelState, setPanelView, setSideShown } from '../src/panelState'
 import { share } from '../src/statusShare'
 import { PageSideViewHost } from '../src/components/RunPane'
 import {
-  PanelToggle, StatusPanel, activitySummary, connectionsSummary, connectionLines, freshLibraries, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests,
+  PanelToggle, StatusPanel, activitySummary, delegatedState, connectionsSummary, connectionLines, freshLibraries, librariesSummary, libraryLines, modelSummary, resetStatusPanelForTests,
 } from '../src/components/StatusPanel'
 
 const lib = { id: 'kb', label: 'Knowledge base', primary: true, writable: true, pinned: true, source: true, caps: { index: true, fullText: true, vectors: false } }
@@ -146,6 +146,15 @@ describe('the cards', () => {
     ])
     fireEvent.click(screen.getByRole('button', { name: 'MCP server settings' }))
     expect(location.hash).toBe('#view=settings:rag')
+  })
+
+  it('shows a delegated session that stopped on an error in the last hour as failed, not working', () => {
+    const now = Date.parse('2026-11-22T18:00:00Z')
+    expect(delegatedState({ session: 's', objective: 'o', state: 'stopped', finished: '2026-11-22T17:40:00Z' }, now)).toBe('failed')
+    expect(delegatedState({ session: 's', objective: 'o', state: 'stopped', finished: '2026-11-22T16:00:00Z' }, now)).toBe('stopped')
+    expect(delegatedState({ session: 's', objective: 'o', state: 'waiting' }, now)).toBe('input-required')
+    const failed = { id: 's', objective: 'o', state: 'failed' }
+    expect(activitySummary({ tasks: [failed], fleet: [], runs: [], sessions: [] }).text).not.toMatch(/running/)
   })
 
   it('summarize from the data alone', () => {

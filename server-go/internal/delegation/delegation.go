@@ -53,6 +53,8 @@ type Record struct {
 	Files    []string `json:"files,omitempty"`
 	// More is how many files there are beyond Files.
 	More int `json:"more,omitempty"`
+	// ModelNote says the session was moved to another model at its start.
+	ModelNote string `json:"modelNote,omitempty"`
 	// Unrecorded is set on the answer to a start whose record could not
 	// be kept: the session runs, but is not listed or finished here.
 	Unrecorded string `json:"unrecorded,omitempty"`
@@ -71,6 +73,9 @@ type Start struct {
 	// Folder is a library folder to work in; "" for a new one under
 	// agents/<instructions>/.
 	Folder string
+	// ModelFor moves the new session off a model the person's connection
+	// does not offer (agentsites.StartAgent.ModelFor).
+	ModelFor func(current string) (pick, why string)
 }
 
 // Service starts, records and watches delegated sessions.
@@ -164,7 +169,7 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 		rel = folderFor(who, objective, time.Now())
 	}
 	start := agentsites.StartAgent{Site: o.Site, Key: o.Key, Objective: objective, Goal: o.Goal, MaxTurns: o.MaxTurns,
-		Model: o.Model, PermissionMode: o.PermissionMode, Library: s.A.Cfg.KBRoot, Folder: rel}
+		Model: o.Model, PermissionMode: o.PermissionMode, Library: s.A.Cfg.KBRoot, Folder: rel, ModelFor: o.ModelFor}
 	// The instructions go into the folder before the session is made, so
 	// its first turn reads them. The folder is written as the person, like
 	// any Library write; where they cannot write it, the session works
@@ -244,7 +249,8 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 	}
 	rec := &Record{Owner: owner(r), Site: text(jsonv.Path(st, "site")), Session: text(jsonv.Path(st, "session")),
 		Workspace: text(jsonv.Path(st, "workspace")), Folder: folder, Instructions: name, Objective: objective,
-		Goal: strings.TrimSpace(o.Goal), Started: time.Now().UTC().Format(time.RFC3339), State: "working"}
+		Goal: strings.TrimSpace(o.Goal), Started: time.Now().UTC().Format(time.RFC3339), State: "working",
+		ModelNote: text(jsonv.Path(st, "modelNote"))}
 	if s.save(rec) != nil {
 		out := *rec
 		out.Unrecorded = Unrecorded
@@ -394,6 +400,11 @@ func Settled(st *jsonv.Object) bool {
 	case "running":
 		return false
 	case "awaiting_approval", "live_elsewhere":
+		return true
+	}
+	// A turn that ended on an error (a model the connection does not
+	// offer, say) leaves the goal active with nothing working on it.
+	if text(jsonv.Path(st, "lastError")) != "" {
 		return true
 	}
 	if len(jsonv.Arr(jsonv.Path(st, "approvals"))) > 0 {

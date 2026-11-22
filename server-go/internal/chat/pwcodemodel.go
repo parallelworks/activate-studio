@@ -153,3 +153,24 @@ func oneLineErr(err error) string {
 	}
 	return strings.TrimRight(s, ".")
 }
+
+// agentModel is app.Providers.AgentModel: pickPWCodeModel for an agent
+// session the Studio starts, leaving it on a model Settings names.
+func (m *Module) agentModel(r *http.Request, current, chosen string) (string, string) {
+	if m.eff().PWCodeModel != "" || !platformModel(current) {
+		return "", ""
+	}
+	enabled, failing, ok := m.enabledModels(r)
+	if !ok {
+		return "", ""
+	}
+	pick := pickPWCodeModel(current, chosen, enabled, failing)
+	if pick == "" {
+		return "", ""
+	}
+	why := "is not enabled for the AI connection"
+	if listed(current, enabled) {
+		why = "failed when last used, in the last ten minutes"
+	}
+	return pick, "pw code's model " + current + " " + why + ", so the session runs on " + pick
+}

@@ -129,7 +129,7 @@ export interface Delegated {
 }
 
 const DELEGATED_STATE: Record<Delegated['state'], string> = {
-  working: 'working', finished: 'finished', stopped: 'stopped on an error', waiting: 'waiting for you', gone: 'no longer on its machine',
+  working: 'working', finished: 'finished', stopped: 'failed', waiting: 'waiting for you', gone: 'no longer on its machine',
 }
 
 /** A row's second line: the machine, then what the Studio does with the
@@ -551,6 +551,7 @@ function DelegatedNote({ d }: { d: Delegated }) {
         {d.instructions ? <>, with the instructions <strong>{d.instructions}</strong>{d.folder ? ' in its AGENTS.md' : ''}</> : null}
         {d.folder ? <>, in the library folder <span className="code-mono">{d.folder}</span></> : null}.
         {d.folder && d.state === 'working' ? ' Its files are indexed and listed here when it finishes.' : ''}
+        {d.state === 'stopped' && d.error ? <> It stopped on an error: {d.error}</> : null}
       </p>
       {d.files && d.files.length > 0 && (
         <ul className="code-delegated-files">

@@ -2190,6 +2190,8 @@ a.identity-btn { text-decoration: none; }
 .lib-card-foot > :last-child { margin-left: auto; }
 .lib-depth-note { font-size: 12px; margin: 8px 0 0; max-width: var(--settings-measure); }
 .lib-no { color: var(--pw-muted); }
+.lib-depth-locked .muted { font-size: 12px; margin-top: 2px; }
+.lib-field:has(.lib-depth-locked) > dt { align-self: start; }
 /* Too narrow for two details a line (a phone, or a laptop window with the
    settings menu and the status panel open): one a line, and the actions
    under the name. Decided by the list's own width, not the window's. */
