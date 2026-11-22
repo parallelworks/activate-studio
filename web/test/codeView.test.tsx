@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ago, argSummary, CodeView, continuable, groupSessions, isAtEnd, rowMeta, sessionInHash, shortPath, Transcript, type CodeSession, type Here } from '../src/views/CodeView'
 import { getEngine } from '../src/labelScope'
@@ -213,6 +213,60 @@ describe('The open session', () => {
     status = 'idle'; reply = 'All done'
     await vi.advanceTimersByTimeAsync(5_000)
     expect(await screen.findByText('All done')).toBeInTheDocument()
+  })
+
+  it('keeps the newer read of the same session when an older one comes back after it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let first = true
+    let slow: (r: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/code-sessions') return json({ machines: [], codeUrl: '', sessions: [row({ id: 's', title: 'Session', status: 'running' })] })
+      if (url.startsWith('/api/code-sessions/item')) {
+        if (first) { first = false; return new Promise<Response>(res => { slow = res }) }
+        return json({ session: row({ id: 's', title: 'Session', status: 'running' }), history: [...said('The first turn'), ...said('The newer turn')], earlier: 0 })
+      }
+      return json({ available: false, chats: [] })
+    }))
+    render(<CodeView />)
+    fireEvent.click(await screen.findByText('Session'))
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(await screen.findByText('The newer turn')).toBeInTheDocument()
+    slow(json({ session: row({ id: 's', title: 'Session', status: 'running' }), history: said('The first turn'), earlier: 0 }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+    expect(screen.getByText('The newer turn')).toBeInTheDocument()
+  })
+
+  it('follows new output while the reader is at the end, and stays put once they scroll up', async () => {
+    // jsdom has no layout: the pane's sizes are set by hand, and the
+    // ResizeObserver the view uses is called when the transcript grows.
+    const observers: (() => void)[] = []
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { observers.push(cb) } observe() {} unobserve() {} disconnect() {} })
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/code-sessions') return json({ machines: [], codeUrl: '', sessions: [row({ id: 's', title: 'Session' })] })
+      if (url.startsWith('/api/code-sessions/item')) return json({ session: row({ id: 's', title: 'Session' }), history: said('A reply'), earlier: 0 })
+      return json({ available: false, chats: [] })
+    }))
+    const { container } = render(<CodeView />)
+    fireEvent.click(await screen.findByText('Session'))
+    await screen.findByText('A reply')
+    const el = container.querySelector('.code-detail') as HTMLElement
+    let height = 1000
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => height })
+    Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => 400 })
+    Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => 600 })
+    const grow = (to: number) => { height = to; act(() => { observers.forEach(f => f()) }) }
+    grow(1200)
+    expect(el.scrollTop).toBe(1200)
+    // The reader scrolls up: new output leaves them where they are.
+    el.scrollTop = 300
+    fireEvent.scroll(el)
+    grow(1500)
+    expect(el.scrollTop).toBe(300)
+    // Back at the end, it follows again.
+    el.scrollTop = 1100
+    fireEvent.scroll(el)
+    grow(1800)
+    expect(el.scrollTop).toBe(1800)
   })
 
   it('knows when the reader is at the end', () => {

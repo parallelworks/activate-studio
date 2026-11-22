@@ -200,19 +200,25 @@ export function CodeView() {
   const chatFor = useMemo(() => new Map((here?.chats ?? []).map(c => [c.session, c.conversationId])), [here])
 
   // The session the pane shows: a read that comes back after another
-  // session was chosen is dropped, so a slow read never replaces a later one.
+  // session was chosen is dropped, and so is one of the same session that
+  // was asked before a read already shown (the 5 second read and the one
+  // the list prompts can cross), so a slow read never replaces a later one.
   const openKey = open ? sessionKey(open) : ''
   const wanted = useRef('')
   wanted.current = openKey
+  const readsAsked = useRef(0)
+  const shownRead = useRef(0)
   const loadDetail = useCallback(async (s: CodeSession) => {
     const key = sessionKey(s)
+    const n = ++readsAsked.current
     try {
       const q = new URLSearchParams({ machine: s.machineId, id: s.id, machineName: s.machine })
       const d = await getJSON<Detail>(`/api/code-sessions/item?${q}`)
-      if (wanted.current !== key) return
+      if (wanted.current !== key || n < shownRead.current) return
+      shownRead.current = n
       setDetail(d); setDetailError('')
     } catch (e) {
-      if (wanted.current === key) setDetailError((e as Error).message)
+      if (wanted.current === key && n >= shownRead.current) setDetailError((e as Error).message)
     }
   }, [])
   // The list as last read, for the timer below, which outlives a render.
