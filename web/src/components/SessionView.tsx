@@ -21,7 +21,7 @@ import { DesktopView, isDesktop } from './DesktopView'
 
 export interface SessionInfo {
   name: string; user: string; type: string; status: string; healthy: boolean | null
-  url: string | null; ownHost: boolean; platformUrl?: string | null
+  url: string | null; ownHost: boolean; desktop?: boolean; platformUrl?: string | null
   run: { slug: string; workflow: string; number: number | null; status: string | null } | null
   resource: string | null; createdAt: string | null
 }
@@ -39,7 +39,7 @@ export function sessionOfRun(s: Pick<SessionInfo, 'name' | 'run'>, slug: string)
 
 /** Whether the Studio can show a session itself: one served on its own
  *  host, through the relay, or a platform desktop, through its viewer. */
-export function showsInStudio(s: Pick<SessionInfo, 'ownHost' | 'url' | 'type'> | null | undefined): boolean {
+export function showsInStudio(s: Pick<SessionInfo, 'ownHost' | 'url' | 'desktop'> | null | undefined): boolean {
   return !!s && ((s.ownHost && !!s.url) || isDesktop(s))
 }
 

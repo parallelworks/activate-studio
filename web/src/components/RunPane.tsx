@@ -56,7 +56,7 @@ interface PaneRun {
   slug: string; status?: string; statusReason?: string; createdAt?: string; completedAt?: string
   workflowName?: string; inputs?: Record<string, unknown>; executedJobs?: Record<string, unknown>; terminal?: boolean
 }
-interface PaneSession { name: string; user: string; type: string; status: string; url: string | null; ownHost: boolean; platformUrl?: string | null }
+interface PaneSession { name: string; user: string; type: string; status: string; url: string | null; ownHost: boolean; desktop?: boolean; platformUrl?: string | null }
 interface FormDoc { displayName?: string; form?: Record<string, unknown> | null }
 type Tab = 'form' | 'graph' | 'session'
 
@@ -244,7 +244,7 @@ export function popOut(item: SideItem): void {
 }
 
 /** A session sent to a side view, from a session card in a reply or a page. */
-interface SideSession { name?: string; user?: string; type?: string; url?: string | null; ownHost?: boolean; platformUrl?: string | null }
+interface SideSession { name?: string; user?: string; type?: string; desktop?: boolean; url?: string | null; ownHost?: boolean; platformUrl?: string | null }
 
 export function sessionItem(s: SideSession): SideItem | null {
   if (!s?.name || !s.url) return null
@@ -256,7 +256,7 @@ export function sessionItem(s: SideSession): SideItem | null {
 
 /** The session a side view tab came from, for Full screen. */
 const sessionOfItem = (i: Extract<SideItem, { kind: 'session' }>): SideSession =>
-  ({ name: i.name, url: i.url, ownHost: !!i.host, platformUrl: i.platformUrl, user: i.desktop?.user, type: i.desktop ? 'desktop' : undefined })
+  ({ name: i.name, url: i.url, ownHost: !!i.host, platformUrl: i.platformUrl, user: i.desktop?.user, type: i.desktop ? 'desktop' : undefined, desktop: !!i.desktop })
 
 /**
  * A session at full size inside the Studio: everything below the

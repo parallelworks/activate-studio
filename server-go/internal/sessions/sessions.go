@@ -39,8 +39,9 @@ type SessionRow struct {
 	Resource                 string // "" is null
 	CreatedAt                string // "" is null
 	// Desktop is a platform desktop (type "desktop", software "vnc"),
-	// which the Studio draws itself through the desktop relay. It is not
-	// a key of its own in the row: the page reads the type.
+	// which the Studio draws itself through the desktop relay. The page
+	// reads this key, so a desktop the relay would refuse (other software)
+	// is not drawn.
 	Desktop bool
 }
 
@@ -69,7 +70,7 @@ func (s *SessionRow) Object() *jsonv.Object {
 		run = jsonv.NewObject("slug", s.Run.Slug, "workflow", s.Run.Workflow, "number", num, "status", orNull(s.Run.Status))
 	}
 	return jsonv.NewObject("name", s.Name, "user", s.User, "type", s.Type, "status", s.Status, "healthy", healthy,
-		"url", orNull(s.URL), "ownHost", s.OwnHost, "platformUrl", orNull(s.PlatformURL), "run", run,
+		"url", orNull(s.URL), "ownHost", s.OwnHost, "desktop", s.Desktop, "platformUrl", orNull(s.PlatformURL), "run", run,
 		"resource", orNull(s.Resource), "createdAt", orNull(s.CreatedAt))
 }
 
