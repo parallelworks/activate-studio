@@ -124,7 +124,9 @@ export async function listSessions(key: string): Promise<SessionRow[]> {
 }
 
 /** The markdown that shows a session in a chat reply: a card with its
- *  state and buttons that open it in a window of its own or a new tab. */
+ *  state and buttons that open it beside the chat, full screen, in a window
+ *  of its own or a new tab; a relayed web session or a desktop also shows
+ *  under the card. */
 export function sessionEmbed(s: SessionRow): string {
   const q = new URLSearchParams({ embed: 'session', user: s.user, name: s.name })
   return `![${s.name}](/?${q})`

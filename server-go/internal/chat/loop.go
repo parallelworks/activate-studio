@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -590,7 +591,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			}
 			continue
 		}
-		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && jsval.Len(jsTrim(turn.Content)) < 200) {
+		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && !showsSomething.MatchString(turn.Content) && jsval.Len(jsTrim(turn.Content)) < 200) {
 			m.A.Log.Warn("empty turn with no tool calls; forcing final answer", "iter", iter)
 			hitLimit = false
 			break
@@ -664,6 +665,12 @@ func orEmptyCalls(c []llm.ToolCall) []llm.ToolCall {
 	}
 	return c
 }
+
+// showsSomething: a reply that embeds something (a session card, a
+// document page, a DAG) shows the user what was asked for, and stands
+// however short its words are. Forced into a second answer, the model put
+// the card in again and said it could not check that it shows.
+var showsSomething = regexp.MustCompile(`!\[[^\]]*\]\(/\?embed=`)
 
 // liveTools read something that changes while a reply is written: an
 // agent, a run, a queue. The same call made again is a second look, so it
