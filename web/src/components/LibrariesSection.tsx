@@ -766,9 +766,12 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       {dialog}
       {heading && <h1>Libraries</h1>}
       <p className="muted view-sub">
-        Every library searched here. The main folder is written here, unless its row says it is read only for you.
-        My library and the libraries you index on your own systems are written as your account there, where it may
-        write. The others are read only: folders indexed on this computer, indexes connected as they
+        Every library searched here. {cfg.signIn
+          ? <>{cfg.kbLabel} is written here, unless its row says it is read only for you. My library and the
+            libraries you index on your remote computers are written as your account there, where it may write.</>
+          : <>{cfg.kbLabel}, your folder on this computer, is written here. The libraries you index on your remote
+            computers are written as your account there, where it may write.</>}
+        {' '}The others are read only: folders indexed on this computer, indexes connected as they
         are, and kept copies.
       </p>
       {!libs ? <Loader inline size={16} label="Loading…" /> : (

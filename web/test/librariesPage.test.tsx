@@ -375,7 +375,9 @@ describe('Settings, Indexing, Libraries', () => {
     const s = server({ libs: [PRIMARY, SITE], user: [SSH] })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
-    expect(screen.getByText(/My library and the libraries you index on your own systems are written as your account/)).toBeInTheDocument()
+    // Without sign-in the main library is the person's own folder here.
+    expect(screen.getByText(/your folder on this computer, is written here\. The libraries you index on your remote computers are written as your account there/)).toBeInTheDocument()
+    expect(screen.getByText(/The others are read only/)).toBeInTheDocument()
     expect(screen.queryByText(/only one written to/)).toBeNull()
   })
 
