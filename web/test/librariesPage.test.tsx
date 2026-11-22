@@ -371,6 +371,14 @@ describe('Settings, Indexing, Libraries', () => {
     await waitFor(() => expect(rowOf('Notes')).toHaveClass('lib-focus'))
   })
 
+  it('says which libraries are written: the main folder, and My library as your account, not the main folder alone', async () => {
+    const s = server({ libs: [PRIMARY, SITE], user: [SSH] })
+    await renderPage(s)
+    await waitFor(() => rowOf('Notes'))
+    expect(screen.getByText(/My library and the libraries you index on your own systems are written as your account/)).toBeInTheDocument()
+    expect(screen.queryByText(/only one written to/)).toBeNull()
+  })
+
   it('names another host for reading a library\'s originals, saves it only after its test, and can remove it', async () => {
     const s = server({ libs: [PRIMARY, SITE], user: [SSH] })
     await renderPage(s)

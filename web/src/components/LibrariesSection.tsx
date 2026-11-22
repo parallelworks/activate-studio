@@ -766,8 +766,10 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       {dialog}
       {heading && <h1>Libraries</h1>}
       <p className="muted view-sub">
-        Every library searched here. The main folder is the only one written to; the others are indexes read where
-        they are, built here or connected as they are.
+        Every library searched here. The main folder is written here, unless its row says it is read only for you.
+        My library and the libraries you index on your own systems are written as your account there, where it may
+        write. The others are read only: folders indexed on this computer, indexes connected as they
+        are, and kept copies.
       </p>
       {!libs ? <Loader inline size={16} label="Loading…" /> : (
         <Table density="compact" className="libraries-table" wrapperClassName="rag-calls-wrap libraries-wrap">
