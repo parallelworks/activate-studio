@@ -43,6 +43,24 @@ describe('uploads', () => {
     expect([a.done, b.done]).toEqual([1, 1])
   }, 8000)
 
+  it('leave a library that keeps its own index to it: no main library index job', async () => {
+    // My library on a system: the upload reply says its index is being
+    // updated, and the main library's job would index its folder of that name.
+    api.uploadFiles.mockImplementation(async (batch: { rel: string }[]) => ({ saved: batch.map(b => b.rel), deferred: true, reindexing: true }))
+    const r = await startUpload([item('notes.md')], 'uploads')
+    expect(api.startIndexJob).not.toHaveBeenCalled()
+    expect(r.done).toBe(1)
+    expect(r.indexError).toBeUndefined()
+    expect(r.reindexing).toBe(true)
+  }, 8000)
+
+  it('ask for one index pass after an upload to the main library', async () => {
+    api.uploadFiles.mockImplementation(async (batch: { rel: string }[]) => ({ saved: batch.map(b => b.rel), deferred: true }))
+    const r = await startUpload([item('notes.md')], 'uploads')
+    expect(api.startIndexJob).toHaveBeenCalledWith('uploads')
+    expect(r.indexMs).toBe(5)
+  }, 8000)
+
   it('turn away a file over the limit by name and send the rest', async () => {
     api.uploadFiles.mockImplementation(async (batch: { rel: string }[]) => ({ saved: batch.map(b => b.rel) }))
     const large = { ...item('large.bin'), size: 300 * 1024 * 1024 }

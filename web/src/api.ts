@@ -1065,7 +1065,10 @@ export function onAbout(fn: () => void): () => void {
   return () => window.removeEventListener(ABOUT, fn)
 }
 
-export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean }
+/** `reindexing`: the library keeps its own index (a person's library on a
+ *  system), which the Studio updates after the change; the main library's
+ *  index job is not for it. */
+export interface UploadResult { saved: string[]; indexMs?: number; indexed?: boolean; indexError?: string; deferred?: boolean; reindexing?: boolean }
 export interface Job {
   id: number
   kind: 'move' | 'delete' | 'index'

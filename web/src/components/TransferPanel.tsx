@@ -22,7 +22,8 @@ function title(t: Transfer): string {
   if (t.phase === 'queued') return `Waiting to upload ${t.total} ${t.total === 1 ? 'item' : 'items'} to${where}`
   if (t.phase === 'done') {
     if (t.cancelled) return `Cancelled: ${t.done} of ${t.total} had already been added to${where}`
-    return `${t.done} of ${t.total} ${VERB[kind].did}${where}${t.indexMs ? `, indexed in ${(t.indexMs / 1000).toFixed(1)}s` : ''}`
+    const indexed = t.indexMs ? `, indexed in ${(t.indexMs / 1000).toFixed(1)}s` : t.reindexing ? '; search finds them once the library\'s index catches up' : ''
+    return `${t.done} of ${t.total} ${VERB[kind].did}${where}${indexed}`
   }
   if (t.phase === 'indexing') {
     return kind === 'delete' ? 'Updating the index…' : `Indexing ${t.done} ${t.done === 1 ? 'item' : 'items'} in${where}…`

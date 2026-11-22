@@ -29,6 +29,9 @@ export interface UploadProgress {
   dir: string
   /** Files landed, but the indexing pass after them did not. */
   indexError?: string
+  /** The library updates its own index after the upload (a person's library
+   *  on a system), so no pass was asked for here. */
+  reindexing?: boolean
   /** Stopped part way; the files already sent are still there. */
   cancelled?: boolean
 }
@@ -158,6 +161,7 @@ export async function uploadBatched(
             onBytes: sent => { inFlight.set(idx, sent); publish() },
           })
         p.done += r.saved.length
+        if (r.reindexing) p.reindexing = true
       } catch (e) {
         if ((e as Error).name === 'AbortError') { p.cancelled = true; return }
         for (const it of batch) p.failed.push({ name: it.rel, error: String((e as Error).message ?? e) })
@@ -173,8 +177,10 @@ export async function uploadBatched(
   if (signal?.aborted) p.cancelled = true
 
   // One indexing pass for everything that landed, watched rather than
-  // waited on inside a request.
-  if (p.done > 0) {
+  // waited on inside a request. A library that keeps its own index updates
+  // it after the upload, so the main library's pass is not asked for.
+  if (p.done > 0 && p.reindexing) onLanded?.()
+  else if (p.done > 0) {
     onLanded?.()
     p.phase = 'indexing'
     p.current = ''
