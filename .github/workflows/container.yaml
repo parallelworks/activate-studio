@@ -37,6 +37,8 @@ on:
         type: string
         default: ""
   pull_request:
+  # A merge queue's test of the batch it is about to merge, if main gets one.
+  merge_group:
   push:
     branches: [main]
 
@@ -81,6 +83,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           BEFORE: ${{ github.event.before }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
           image=true
           case "$GITHUB_EVENT_NAME" in
@@ -92,6 +95,8 @@ jobs:
               else
                 files=""
               fi ;;
+            merge_group)
+              files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$QUEUE_BASE...$GITHUB_SHA" --jq '.files[].filename') || files="" ;;
             *) files="" ;;   # release, manual run: always build
           esac
           if [ -n "$files" ]; then

@@ -7,6 +7,8 @@ name: zizmor
 
 on:
   pull_request:
+  # A merge queue's test of the batch it is about to merge, if main gets one.
+  merge_group:
   push:
     branches: [main]
 
