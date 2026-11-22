@@ -98,10 +98,23 @@ func (a *Archive) List() []any {
 			continue
 		}
 		agents := jsonv.Arr(prop(t, "agents"))
+		// How the agents ended: done is completed, so a task whose agent
+		// failed does not read as done.
+		done, failed, stopped := 0, 0, 0
+		for _, x := range agents {
+			switch jsonv.String(prop(jsonv.Obj(x), "state")) {
+			case "completed":
+				done++
+			case "failed":
+				failed++
+			case "canceled":
+				stopped++
+			}
+		}
 		rows = append(rows, row{jsonv.String(prop(t, "createdAt")), jsonv.NewObject(
 			"id", prop(t, "id"), "objective", prop(t, "objective"), "state", prop(t, "state"), "createdAt", prop(t, "createdAt"),
 			"usage", prop(t, "usage"), "execution", prop(t, "execution"), "resource", prop(t, "resource"), "runtime", prop(t, "runtime"),
-			"agents", len(agents), "running", 0, "waiting", 0)})
+			"agents", len(agents), "running", 0, "waiting", 0, "done", done, "failed", failed, "stopped", stopped)})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].at > rows[j].at })
 	for _, r := range rows {

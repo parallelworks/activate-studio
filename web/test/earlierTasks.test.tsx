@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AgentsView } from '../src/views/AgentsView'
+import { AgentsView, agentsSummary } from '../src/views/AgentsView'
 
 const task = {
   id: '2026-11-02-live-cd34', objective: 'Was running', state: 'canceled', maxAgents: 4, maxDepth: 1, agents: [
@@ -21,7 +21,7 @@ describe('the Earlier tasks page', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST') posts.push(url)
       asked.push(url)
-      const body = url === '/api/tasks' ? { tasks: [{ id: task.id, objective: task.objective, state: 'canceled', agents: 2, running: 0, waiting: 0 }] }
+      const body = url === '/api/tasks' ? { tasks: [{ id: task.id, objective: task.objective, state: 'canceled', agents: 2, running: 0, waiting: 0, done: 1, stopped: 1 }, { id: '2026-11-01-bad-ef56', objective: 'Failed work', state: 'completed', agents: 1, running: 0, waiting: 0, done: 0, failed: 1 }] }
         : url === `/api/tasks/${task.id}` ? task
         : url.endsWith('/output') ? { tail: 'the agent log' }
         : {}
@@ -46,5 +46,13 @@ describe('the Earlier tasks page', () => {
     expect(onOpen).toHaveBeenCalledWith('tasks/2026-11-02-live-cd34')
     expect(asked).toContain(`/api/tasks/${task.id}/agents/w1/output`)
     expect(posts).toEqual([])
+  })
+
+  it('counts an agent that failed or stopped as not done', async () => {
+    render(<AgentsView onOpen={() => {}} />)
+    expect(await screen.findByText('0 of 1 done, 1 failed')).toBeInTheDocument()
+    expect(screen.getByText('1 of 2 done, 1 stopped')).toBeInTheDocument()
+    // An older server, with no counts: those not running are done.
+    expect(agentsSummary({ id: 'x', objective: '', state: 'completed', agents: 3, running: 1 })).toBe('2 of 3 done')
   })
 })

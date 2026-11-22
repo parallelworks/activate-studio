@@ -189,7 +189,7 @@ Ask the assistant to delegate a piece of work, for example "delegate the Q3 pump
 
 The Agents tab has three pages:
 
-- **Earlier tasks**: tasks of the earlier task engine, kept to read: their agents, board and output, with a link to their results under `tasks/`. Work you delegate now is on the Code page.
+- **Earlier tasks**: tasks of the earlier task engine, kept to read: each card says how many of its agents were done, failed or stopped, and the task shows its agents, board and output, with a link to their results under `tasks/`. Work you delegate now is on the Code page.
 - **Fleet**: standing agents that wake on a schedule or when something changes, and ask you when they need a decision. Each is a pw code session on this computer working in its own folder, `agents/fleet/<name>`, whose `AGENTS.md` holds its instructions and goal; its detail shows the session's latest conversation and links it on the Code page. Agents made before this change are moved over the first time the Studio reads them, and each says what did not carry over.
 - **Instructions and skills**: how agents should work, written once and applied to the folders they work in. **Apply to a folder** writes instructions into that folder's `AGENTS.md`, which pw code reads in every session there, beside your own text in the file, and a skill into the folder's `.agents/skills`. The list of folders under them shows where each is applied, with **take off** to remove it. pw code uses a folder's skills once you have opened that folder in pw code and approved it; its `AGENTS.md` applies at once.
 
