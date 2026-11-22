@@ -245,17 +245,38 @@ func TestAStoppedTurnSaysStoppedNotFailed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	turn := &pwTurn{m: m, res: &sseWriter{w: rec, f: rec}, convID: id, link: c.PWCode, done: make(chan struct{})}
 	m.follow(turn)
+	// The daemon ends a stopped turn with an error of its own, which can
+	// reach the chat before the interrupt is answered.
+	remote.onInterrupt = func() {
+		if !turn.handle(jsonv.NewObject("type", "error", "content", "context canceled")) {
+			t.Error("the error did not end the turn")
+		}
+		turn.finish()
+	}
 	if code, _, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/interrupt", `{}`); code != 200 || remote.interrupts != 1 {
 		t.Fatalf("stop: %d %d", code, remote.interrupts)
 	}
-	// The daemon ends a stopped turn with an error of its own.
-	if !turn.handle(jsonv.NewObject("type", "error", "content", "context canceled")) {
-		t.Fatal("the error did not end the turn")
-	}
-	turn.finish()
 	m.unfollow(turn)
 	last := m.Conv.Get(id).Messages
 	if got := *last[len(last)-1].Content; got != "Stopped." || strings.Contains(rec.Body.String(), "did not finish") {
 		t.Errorf("reply %q\n%s", got, rec.Body.String())
+	}
+}
+
+func TestAFailedStopLeavesTheTurnAsItWas(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{refuseInterrupt: true}
+	m, base, _, _ := relayModule(t, local, remote)
+	_, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m2","session":"s1","confirmed":true}`)
+	id, _ := out["conversationId"].(string)
+	turn := &pwTurn{m: m, res: &sseWriter{w: httptest.NewRecorder()}, convID: id, done: make(chan struct{})}
+	m.follow(turn)
+	defer m.unfollow(turn)
+	if code, _, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/interrupt", `{}`); code == 200 {
+		t.Fatal("a refused stop answered ok")
+	}
+	m.pw.mu.Lock()
+	defer m.pw.mu.Unlock()
+	if turn.stopped {
+		t.Error("a stop that did not happen marked the turn stopped")
 	}
 }

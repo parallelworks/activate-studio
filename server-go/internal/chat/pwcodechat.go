@@ -938,14 +938,22 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		if err != nil {
 			return err
 		}
-		if _, err := pwcode.InterruptSession(r.Context(), t.client, c.PWCode.Session); err != nil {
-			return err
-		}
+		// The turn is marked before the session is stopped: its error for
+		// the stop can reach the chat before the interrupt is answered.
 		m.pw.mu.Lock()
-		if turn := m.pw.turns[c.ID]; turn != nil {
+		turn := m.pw.turns[c.ID]
+		if turn != nil {
 			turn.stopped = true
 		}
 		m.pw.mu.Unlock()
+		if _, err := pwcode.InterruptSession(r.Context(), t.client, c.PWCode.Session); err != nil {
+			if turn != nil {
+				m.pw.mu.Lock()
+				turn.stopped = false
+				m.pw.mu.Unlock()
+			}
+			return err
+		}
 		return reqbody.OK(w, reqbody.O("ok", true))
 	})
 	h("POST /api/chat/pwcode/{id}/approvals/{approval}", func(w http.ResponseWriter, r *http.Request) error {

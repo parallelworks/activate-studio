@@ -54,6 +54,10 @@ type fakePW struct {
 	// refuseSettings makes the settings PATCH fail.
 	refuseSettings bool
 	interrupts     int
+	// onInterrupt runs before the interrupt is answered; refuseInterrupt
+	// answers it with an error.
+	onInterrupt     func()
+	refuseInterrupt bool
 }
 
 func (f *fakePW) add(ev map[string]any) {
@@ -167,7 +171,15 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/v1/sessions/s1/interrupt":
 		f.mu.Lock()
 		f.interrupts++
+		hook, refuse := f.onInterrupt, f.refuseInterrupt
 		f.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		if refuse {
+			http.Error(w, `{"detail":"no turn to stop"}`, http.StatusConflict)
+			return
+		}
 		w.WriteHeader(204)
 	case p == "/v1/sessions/s1/archive":
 		f.mu.Lock()
