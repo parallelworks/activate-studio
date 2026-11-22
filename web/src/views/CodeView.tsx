@@ -46,7 +46,11 @@ interface Item { kind: string; text?: string; toolName?: string; toolArgs?: stri
 /** A decision the session waits on: confirm is one call to approve or
  *  deny; ask (a question) and plan (a finished plan) are answered where
  *  the session runs. */
-export interface Approval { id: string; kind?: string; tool?: string; command?: string; reason?: string; agent?: string }
+export interface Approval {
+  id: string; kind?: string; tool?: string; command?: string; reason?: string; agent?: string
+  /** The command is longer than the Studio sends (commandLength is all of it). */
+  commandCut?: boolean; commandLength?: number
+}
 interface Detail { session: CodeSession; history: Item[]; earlier: number; approvals?: Approval[] }
 
 const STATUS_TEXT: Record<string, string> = {
@@ -452,13 +456,57 @@ export function approvalText(a: Approval): string {
   return (a.command ?? '').trim() || a.tool || 'a tool call'
 }
 
+/** Commands longer than this show their start first. */
+const HEAD_LINES = 8
+const HEAD_CHARS = 600
+
+/** How a command shows before it is opened: whole when short, else its
+ *  first lines. Approve runs the whole command, so it is offered only once
+ *  the whole command is on screen. */
+export function commandHead(text: string): { head: string; long: boolean; lines: number } {
+  const lines = text.split('\n')
+  const long = text.length > HEAD_CHARS || lines.length > HEAD_LINES
+  return { head: long ? lines.slice(0, HEAD_LINES).join('\n').slice(0, HEAD_CHARS) : text, long, lines: lines.length }
+}
+
+const count = (n: number, one: string) => `${n.toLocaleString()} ${one}${n === 1 ? '' : 's'}`
+
+/** One call waiting for an answer, with its whole command. */
+function ApprovalItem({ a, busy, answer }: { a: Approval; busy: string; answer: (a: Approval, allowed: boolean) => void }) {
+  const [whole, setWhole] = useState(false)
+  const text = approvalText(a)
+  const { head, long, lines } = commandHead(text)
+  const shown = whole || !long
+  const canApprove = shown && !a.commandCut
+  return (
+    <>
+      <div className="code-approval-what">
+        <span className="muted">{a.agent ? `${a.agent} asks to run` : a.tool === 'Bash' ? 'Run' : `Use ${a.tool ?? 'a tool'}`}{a.reason && a.tool !== 'Bash' ? `, ${a.reason}` : ''}</span>
+        <pre className="code-approval-command">{shown ? text : `${head}…`}</pre>
+        {long && !whole && (
+          <button type="button" className="code-approval-more" onClick={() => setWhole(true)}>
+            Show the whole command ({count(lines, 'line')}, {count(a.commandLength ?? text.length, 'character')})
+          </button>
+        )}
+        {a.commandCut
+          ? <p className="muted code-approval-why">This command is too long to show here ({count(a.commandLength ?? 0, 'character')}), so it can only be denied here. To approve it, answer it where the session runs.</p>
+          : !shown && <p className="muted code-approval-why">Show the whole command to approve it.</p>}
+      </div>
+      <div className="code-approval-actions">
+        {canApprove && <Button variant="primary" size="sm" loading={busy === `${a.id}:true`} disabled={!!busy} onClick={() => answer(a, true)}>Approve</Button>}
+        <Button variant="secondary" size="sm" loading={busy === `${a.id}:false`} disabled={!!busy} onClick={() => answer(a, false)}>Deny</Button>
+      </div>
+    </>
+  )
+}
+
 /**
  * The calls the session waits to have approved, each with Approve and
  * Deny (POST /api/code-sessions/approve). An answer covers that one call;
  * nothing standing is granted. Questions and plans are answered where the
  * session runs.
  */
-function Approvals({ s, waiting, onAnswered }: { s: CodeSession; waiting: Approval[]; onAnswered: () => void }) {
+export function Approvals({ s, waiting, onAnswered }: { s: CodeSession; waiting: Approval[]; onAnswered: () => void }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [answered, setAnswered] = useState<Set<string>>(new Set())
@@ -479,16 +527,7 @@ function Approvals({ s, waiting, onAnswered }: { s: CodeSession; waiting: Approv
         {left.map(a => (
           <li key={a.id} className="code-approval">
             {(a.kind ?? 'confirm') === 'confirm' ? (
-              <>
-                <div className="code-approval-what">
-                  <span className="muted">{a.agent ? `${a.agent} asks to run` : a.tool === 'Bash' ? 'Run' : `Use ${a.tool ?? 'a tool'}`}{a.reason && a.tool !== 'Bash' ? `, ${a.reason}` : ''}</span>
-                  <pre className="code-approval-command">{approvalText(a)}</pre>
-                </div>
-                <div className="code-approval-actions">
-                  <Button variant="primary" size="sm" loading={busy === `${a.id}:true`} disabled={!!busy} onClick={() => void answer(a, true)}>Approve</Button>
-                  <Button variant="secondary" size="sm" loading={busy === `${a.id}:false`} disabled={!!busy} onClick={() => void answer(a, false)}>Deny</Button>
-                </div>
-              </>
+              <ApprovalItem a={a} busy={busy} answer={(x, allowed) => void answer(x, allowed)} />
             ) : (
               <p className="muted">
                 {a.kind === 'plan' ? 'It has a plan for you to approve' : 'It asks you a question'}; answer it where the session runs{s.url ? <>, or <a href={s.url} target="_blank" rel="noopener noreferrer">in ACTIVATE</a></> : ''}.
