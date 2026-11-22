@@ -92,7 +92,8 @@ describe('agent instructions', () => {
     const list = await screen.findByRole('group', { name: 'Folders in Engineering Library' })
     expect(within(list).getByText('Top of Engineering Library')).toBeInTheDocument()
     // Folders only, in order; a file is not offered.
-    expect((await within(list).findAllByRole('button')).map(b => b.textContent)).toEqual(['Up', 'agents', 'reports'])
+    await within(list).findByRole('button', { name: 'reports' })
+    expect(within(list).getAllByRole('button').map(b => b.textContent)).toEqual(['Up', 'agents', 'reports'])
     fireEvent.click(within(list).getByRole('button', { name: 'reports' }))
     expect(screen.getByLabelText('Folder')).toHaveValue('reports')
     fireEvent.click(await within(list).findByRole('button', { name: 'q3' }))
