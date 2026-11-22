@@ -41,6 +41,14 @@ type Providers struct {
 	// host's daemon, where every session runs as the Studio's account.
 	// Unset: none.
 	OwnSessions []func(r *http.Request) []string
+	// AgentModel is the model a new agent session (delegated, or a
+	// standing agent's) moves to from current, the model it was made on,
+	// for the person of r: "" to stay. chosen is the model asked for, if
+	// any. why says what the move was, for a note. The chat's rule for
+	// its own pw code session: a platform model the person's AI
+	// connection does not offer, or whose call just failed, moves to
+	// chosen when offered, else the first model offered.
+	AgentModel func(r *http.Request, current, chosen string) (pick, why string)
 	// GatewayConfigured is chat/gateway.ts's gatewayConfigured(): a
 	// deployment credential exists. Owner: chat track. Node: /api/settings's
 	// deploymentCredential. Node-free: PW_API_KEY or OPENAI_API_KEY is set.

@@ -362,6 +362,11 @@ func (m *Module) chatToolCtx(r *http.Request, conv string) (ToolCtx, *conversati
 	if c := m.Conv.Get(conv); c != nil && c.PWCode != nil {
 		link = c.PWCode
 		tc.Library, tc.LabelScope = link.Library, link.LabelScope
+		// The model the chat's session runs on (moved off one the
+		// connection does not offer): a delegated session starts on it.
+		if link.Model != "" {
+			tc.Model = sp(link.Model)
+		}
 	}
 	if cred := m.cred(r); cred != nil && cred.Base() == "" {
 		tc.UserKey = sp(cred.Key)
