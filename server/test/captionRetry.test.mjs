@@ -24,12 +24,19 @@ const cacheFile = path.join(cache, 'picture.png.txt')
 
 let mode = 'refuse'
 let calls = 0
+// It answers once the whole request is in, as a real gateway does. Answering
+// while the client was still sending the image (tens of KB) let the server
+// close the connection under the upload; on macOS, with its smaller socket
+// buffers, the indexer then got a reset, took the caption as failed and
+// cached nothing, and these tests failed now and then on the macOS runners.
 const gateway = http.createServer((req, res) => {
   calls++
   req.resume()
-  if (mode === 'refuse') { res.writeHead(403); res.end('forbidden'); return }
-  res.writeHead(200, { 'content-type': 'text/event-stream' })
-  res.end('data: {"type":"response.output_text.delta","delta":"A navy tile with a white letter S."}\n\ndata: [DONE]\n\n')
+  req.on('end', () => {
+    if (mode === 'refuse') { res.writeHead(403); res.end('forbidden'); return }
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.end('data: {"type":"response.output_text.delta","delta":"A navy tile with a white letter S."}\n\ndata: [DONE]\n\n')
+  })
 })
 await new Promise(r => gateway.listen(0, '127.0.0.1', r))
 const env = {
