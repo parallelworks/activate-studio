@@ -646,7 +646,7 @@ export const api = {
     if (opts.match && (opts.name || opts.text)) params.set('match', opts.match)
     if (tags?.length) params.set('tags', tags.join(','))
     if (opts.library) params.set('library', opts.library)
-    return getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[]; omitted?: Omission[] }>(`/api/search?${params}`, opts.signal)
+    return getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[]; omitted?: Omission[]; searched?: string[] }>(`/api/search?${params}`, opts.signal)
   },
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
   mkdir: async (path: string) => {

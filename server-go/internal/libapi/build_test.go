@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/parallelworks/activate-studio/server-go/internal/extractfiles"
 	"io"
 	"log/slog"
@@ -245,6 +246,16 @@ func TestLibraryBuild(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(pidx, manifestName))
 	if err != nil || !strings.Contains(string(raw), `"source": "`+real+`"`) {
 		t.Fatalf("manifest: %s %v", raw, err)
+	}
+	// No library asked for is the main library alone, and the reply says so;
+	// library=all takes in the library built here.
+	_, none := f.call("GET", "/api/search?q=turbine", nil)
+	if fmt.Sprint(none["searched"]) != "[kb]" {
+		t.Fatalf("searched with no library: %v", none["searched"])
+	}
+	_, every := f.call("GET", "/api/search?q=turbine&library=all", nil)
+	if !slices.Contains(every["searched"].([]any), any("papers")) {
+		t.Fatalf("searched with library=all: %v", every["searched"])
 	}
 	if got := f.hits("turbine", "papers"); !slices.Contains(got, "intro.md") {
 		t.Fatalf("turbine: %v", got)
