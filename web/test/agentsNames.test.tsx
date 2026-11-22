@@ -34,4 +34,17 @@ describe('names on the Agents page', () => {
     expect(css).toMatch(/\.agents-name \{[^}]*overflow-wrap: anywhere/)
     expect(css).toMatch(/@container \(max-width: 520px\) \{\s*\.agents-view \.ov-row \{ flex-direction: column/)
   })
+
+  it('keeps a row\'s actions together, and the Add form says instructions', async () => {
+    render(<AgentsView onOpen={() => {}} />)
+    const row = (await screen.findByTitle(LONG)).closest('.ov-row')!
+    const actions = row.querySelector('.agents-actions')!
+    expect(actions).not.toBeNull()
+    expect(Array.from(actions.querySelectorAll('button')).map(b => b.textContent)).toEqual(['in library', 'apply to a folder', 'duplicate', 'remove'])
+    expect(row.querySelector('.agents-desc')).toHaveTextContent('Reviews drafts.')
+    expect(readFileSync('src/styles.css', 'utf8')).toMatch(/\.agents-actions \{[^}]*white-space: nowrap/)
+    expect(screen.getByRole('button', { name: 'Save instructions' })).toBeInTheDocument()
+    expect(screen.getByText('Upload image (name them first)')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Save persona|Name the persona/)
+  })
 })

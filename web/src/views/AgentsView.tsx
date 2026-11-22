@@ -387,25 +387,28 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
             in the knowledge base{dir ? <> at <code>{dir}</code></> : null}, browsable under <code>.agents</code> in the Library, and labeled <code>agent-persona</code>.
           </p>
           {pageOf(shownPersonas, pPage).map(p => (
-            <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open this persona for editing">
+            <div className="ov-row" key={p.name} onClick={() => void edit('persona', p.name)} title="Open these instructions for editing">
               <span className="ov-row-path"><PersonaIcon icon={p.icon} name={p.name} size={20} /><span className="agents-name" title={p.name}>{p.name}</span>{p.shared && <span className="persona-shared">shared</span>}</span>
-              <span className="ov-row-meta">
-                {p.description || 'no description'}
+              <span className="ov-row-meta agents-meta">
+                <span className="agents-desc">{p.description || 'no description'}
+                  {carrying('persona', p.name).length > 0 && (
+                    <span className="agents-carriers" title={carrying('persona', p.name).map(where).join(', ')}>
+                      · in {carrying('persona', p.name).length} folder{carrying('persona', p.name).length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </span>
+                <span className="agents-actions">
                 {p.shared && (
                   <Button variant="ghost" size="sm" className="agents-del"
                     onClick={e => { e.stopPropagation(); onOpen(`.agents/${p.name}.md`) }}>in library</Button>
                 )}
                 <Button variant="ghost" size="sm" className="agents-del" title="Write these instructions into a folder's AGENTS.md for pw code"
                   onClick={e => { e.stopPropagation(); setApplying({ kind: 'persona', name: p.name }) }}>apply to a folder</Button>
-                {carrying('persona', p.name).length > 0 && (
-                  <span className="agents-carriers" title={carrying('persona', p.name).map(where).join(', ')}>
-                    in {carrying('persona', p.name).length} folder{carrying('persona', p.name).length === 1 ? '' : 's'}
-                  </span>
-                )}
                 <Button variant="ghost" size="sm" className="agents-del" title="Open a copy in the editor, to change without touching the original"
                   onClick={e => { e.stopPropagation(); void duplicate(p.name) }}>duplicate</Button>
                 <Button variant="ghost" size="sm" className="agents-del"
                   onClick={e => { e.stopPropagation(); remove(p.name) }}>remove</Button>
+                </span>
               </span>
             </div>
           ))}
@@ -424,15 +427,18 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           {pageOf(shownSkills, sPage).map(s => (
             <div className="ov-row" key={s.name} onClick={() => void edit('skill', s.name)} title="Open this skill for editing">
               <span className="ov-row-path"><span className="agents-name" title={s.name}>{s.name}</span></span>
-              <span className="ov-row-meta">
-                {s.description || 'no description'}
+              <span className="ov-row-meta agents-meta">
+                <span className="agents-desc">{s.description || 'no description'}
+                  {carrying('skill', s.name).length > 0 && (
+                    <span className="agents-carriers" title={carrying('skill', s.name).map(where).join(', ')}>
+                      · in {carrying('skill', s.name).length} folder{carrying('skill', s.name).length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </span>
+                <span className="agents-actions">
                 <Button variant="ghost" size="sm" className="agents-del" title="Write this skill into a folder for pw code"
                   onClick={e => { e.stopPropagation(); setApplying({ kind: 'skill', name: s.name }) }}>apply to a folder</Button>
-                {carrying('skill', s.name).length > 0 && (
-                  <span className="agents-carriers" title={carrying('skill', s.name).map(where).join(', ')}>
-                    in {carrying('skill', s.name).length} folder{carrying('skill', s.name).length === 1 ? '' : 's'}
-                  </span>
-                )}
+                </span>
               </span>
             </div>
           ))}
@@ -497,7 +503,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
           {kind === 'persona' && (
             <Field label="Icon" description={<>
               An image is stored in the knowledge base under <code>.agents/icons</code>, so it travels with the
-              persona. Name the persona first, since the file is named after it. With no icon, the initials stand in.
+              instructions. Name them first, since the file is named after them. With no icon, the initials stand in.
             </>}>
               {control => (
                 <div className="persona-icon-row">
@@ -506,8 +512,8 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                     placeholder="an emoji, or upload an image" />
                   {/* aria-disabled draws the button disabled; the input inside is what is disabled. */}
                   <label className={`${buttonClasses()} agents-file`} aria-disabled={!name}
-                    title={name ? 'Choose an image for this persona' : 'Name the persona first: the image file is named after it'}>
-                    {name ? 'Upload image' : 'Upload image (name it first)'}
+                    title={name ? 'Choose an image for these instructions' : 'Name the instructions first: the image file is named after them'}>
+                    {name ? 'Upload image' : 'Upload image (name them first)'}
                     <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
                       disabled={!name}
                       onChange={async e => {
@@ -519,7 +525,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                         const d = await res.json()
                         if (res.ok) {
                           setIcon(d.icon)
-                          setNote(d.attached ? 'Icon uploaded and attached.' : 'Icon uploaded. Save the persona to attach it.')
+                          setNote(d.attached ? 'Icon uploaded and attached.' : 'Icon uploaded. Save the instructions to attach it.')
                           if (d.attached) await load()
                         }
                         else setNote(d.error ?? `upload failed (${res.status})`)
@@ -536,7 +542,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
         </div>
         <div className="query-actions">
           <Button variant="primary" loading={busy} onClick={() => void save()} disabled={!name || !body}>
-            {busy ? 'Saving…' : editing ? `Save ${editing}` : `Save ${kind}`}
+            {busy ? 'Saving…' : editing ? `Save ${editing}` : kind === 'persona' ? 'Save instructions' : 'Save skill'}
           </Button>
           {editing && (
             <>
