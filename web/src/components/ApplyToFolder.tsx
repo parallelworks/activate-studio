@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Callout, EmptyState, Field, Input, Modal, Select } from '@parallelworks/ui'
+import { useAppConfig } from '../config'
 
 /**
  * Agent instructions and skills, applied to a folder: the Studio writes
@@ -91,19 +92,18 @@ export function ApplyToFolder({ kind, name, onClose, onDone }: {
   onClose: () => void
   onDone: (f: AgentFolder) => void
 }) {
-  const [libs, setLibs] = useState<LibraryChoice[] | null>(null)
+  // The libraries the Library switcher shows (/api/config): the main
+  // library and the person's own, which /api/libraries does not list.
+  const cfg = useAppConfig()
+  const libs = useMemo(() => cfg.loaded ? instructionLibraries(cfg.libraries ?? []) : null, [cfg.loaded, cfg.libraries])
   const [library, setLibrary] = useState('')
   const [folder, setFolder] = useState(`agents/${name}`)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
-    fetch('/api/libraries').then(r => r.json()).then(d => {
-      const choices = instructionLibraries(d.libraries ?? [])
-      setLibs(choices)
-      const main = choices.find(l => l.primary)
-      setLibrary((main ?? choices[0])?.id ?? '')
-    }).catch(() => setLibs([]))
-  }, [])
+    if (!libs || libs.some(l => l.id === library)) return
+    setLibrary((libs.find(l => l.primary) ?? libs[0])?.id ?? '')
+  }, [libs, library])
   const chosen = libs?.find(l => l.id === library)
   const items = useMemo(() => (libs ?? []).map(l => ({ value: l.id, label: l.space ? `${l.label} (yours)` : l.label })), [libs])
   const apply = async () => {
