@@ -63,7 +63,10 @@ describe('a space of one\'s own', () => {
     expect(screen.queryByRole('button', { name: 'Make the folder' })).toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
     expect(await screen.findByLabelText('Folder')).toHaveValue('~/studio')
-    expect(screen.getByText('Reached on cluster-a as you with your ACTIVATE sign-in.')).toBeInTheDocument()
+    // Said once, by the form around it, not again in the folder's form
+    // (phase 4, K).
+    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-a, with your ACTIVATE sign-in')
+    expect(screen.queryByText(/^Reached on/)).toBeNull()
   })
 
   it('says why My library is not available for another reason', async () => {
@@ -133,7 +136,7 @@ describe('a space of one\'s own', () => {
     expect(button('Make the folder')).toBeDisabled()
     fireEvent.click(button('Check the folder'))
     await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ cluster: 'cluster-b', sourceRoot: '~/studio' }))
-    expect(screen.getByText('Reached on cluster-b as you with your ACTIVATE sign-in.')).toBeInTheDocument()
+    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-b, with your ACTIVATE sign-in')
     await pick('A host over ssh…')
     fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'ada@box' } })
     fireEvent.click(button('Check the folder'))

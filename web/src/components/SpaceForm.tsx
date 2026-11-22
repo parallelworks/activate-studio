@@ -109,13 +109,21 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
 
   return (
     <div className="ssh-library-form">
-      <p className="muted view-sub">
-        {ssh
-          ? `Reached on ${where} as you over ssh with your own keys, agent and ~/.ssh/config.`
-          : status.credential === 'key'
-            ? `Reached on ${where} as you with the API key you added under Settings, Model access. Signing in with ACTIVATE there instead renews itself.`
-            : `Reached on ${where} as you with your ACTIVATE sign-in.`}
-      </p>
+      {/* Where the form around this one chose the system, it already says
+          whose account reads it; this adds only what it does not say. */}
+      {chosen
+        ? !ssh && status.credential === 'key' && (
+          <p className="muted view-sub">Reached with the API key you added under Settings, Model access, in place of your sign-in. Signing in with ACTIVATE there instead renews itself.</p>
+        )
+        : (
+          <p className="muted view-sub">
+            {ssh
+              ? `Reached on ${where} as you over ssh with your own keys, agent and ~/.ssh/config.`
+              : status.credential === 'key'
+                ? `Reached on ${where} as you with the API key you added under Settings, Model access. Signing in with ACTIVATE there instead renews itself.`
+                : `Reached on ${where} as you with your ACTIVATE sign-in.`}
+          </p>
+        )}
       <div className="settings-grid">
         {pwOK && !chosen && (
           <PwSystemField value={cluster} preferred={status.cluster || undefined}
