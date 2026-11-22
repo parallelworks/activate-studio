@@ -48,7 +48,7 @@ func (m *Module) relayTarget(r *http.Request, link *conversations.PWCodeLink) (*
 
 // relayConfirm is what the person is asked before a chat drives a session
 // on another machine: where it runs, and that it stays there.
-func relayConfirm(machine, workspace, status, liveHost string) string {
+func relayConfirm(machine, workspace, status, liveHost string, signIn bool) string {
 	where := machine
 	if workspace != "" {
 		where += ", in " + shortWorkspace(workspace)
@@ -66,7 +66,11 @@ func relayConfirm(machine, workspace, status, liveHost string) string {
 		}
 		s += " It is open on " + host + " now, which may answer for it: messages from here can be refused until it is closed there."
 	}
-	return s + " If it is also open in a terminal or in PW Code on the web, messages from there go to it too."
+	s += " If it is also open in a terminal or in PW Code on the web, messages from there go to it too."
+	if signIn {
+		s += " Only you can see the chat in this Studio, even where chats are shared, since it holds the session's turns from your machine."
+	}
+	return s
 }
 
 // relayNote is what a relayed chat's opening note adds.

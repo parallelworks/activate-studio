@@ -805,7 +805,7 @@ func (m *Module) suggestions(w http.ResponseWriter, r *http.Request) error {
 	}
 	// A conversation is owned by username, as the stream records it; the
 	// viewer's id is another form of it on a platform sign-in.
-	if u := user(r); c.OwnerName() != "" && u != nil && u.Username != "" && c.OwnerName() != u.Username && !m.eff().ChatSharedHistory {
+	if u := user(r); c.OwnerName() != "" && u != nil && u.Username != "" && c.OwnerName() != u.Username && (!m.eff().ChatSharedHistory || c.PWCode != nil && c.PWCode.Relay) {
 		return apierr.New(403, "not your conversation")
 	}
 	return reqbody.OK(w, SuggestNext(c))

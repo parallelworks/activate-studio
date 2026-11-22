@@ -171,46 +171,65 @@ func TestARelayedChatIsOnlyItsOwners(t *testing.T) {
 	plat.mu.Lock()
 	plat.relayed = nil
 	plat.mu.Unlock()
-	bob := auth.WithUser(httptest.NewRequest(http.MethodPost, "/", nil), &auth.User{ID: "bob", Username: "bob"})
-	bob.SetPathValue("id", id)
-	_, _, err := m.ownPWCode(bob)
-	var ae *apierr.Error
-	// 404 where they cannot see the chat, 403 where it is shared with them.
-	if !errors.As(err, &ae) || ae.Status != http.StatusNotFound && ae.Status != http.StatusForbidden {
-		t.Errorf("another person: %v", err)
-	}
-	if len(plat.relayed) != 0 || remote.calls != 0 {
-		t.Errorf("the session was reached for them: %v, %d calls", plat.relayed, remote.calls)
-	}
-
-	// Nor can they send it a message, a new one or one while ada's turn
-	// runs (which the session takes as direction): it is not stored in her
-	// chat and does not reach her session.
 	m.A.Cfg.FrontAuth = true
 	shared := true
 	m.Convs.SharedHistory = func() bool { return shared }
 	m.Convs.AuthEnabled = func() bool { return true }
-	message := func(want int) {
+	// A pw code chat on this machine, shared as chats are.
+	direct := m.Conv.CreateWith(&title, "ada", nil, &conversations.PWCodeLink{Site: "local", Session: "s9", CreatedAt: m.Conv.Now()}).ID
+
+	var ae *apierr.Error
+	direct2 := func(chat string, want int) {
 		t.Helper()
-		body := `{"conversationId":"` + id + `","userMessageId":"u-bob","engine":"pwcode","messages":[{"role":"user","content":"rm -rf results"}]}`
+		bob := auth.WithUser(httptest.NewRequest(http.MethodPost, "/", nil), &auth.User{ID: "bob", Username: "bob"})
+		bob.SetPathValue("id", chat)
+		if _, _, err := m.ownPWCode(bob); !errors.As(err, &ae) || ae.Status != want {
+			t.Errorf("bob directs %s: want %d, got %v", chat, want, err)
+		}
+	}
+	// Nor can they send it a message, a new one or one while ada's turn
+	// runs (which the session takes as direction): it is not stored in her
+	// chat and does not reach her session.
+	message := func(chat string, want int) {
+		t.Helper()
+		body := `{"conversationId":"` + chat + `","userMessageId":"u-bob","engine":"pwcode","messages":[{"role":"user","content":"rm -rf results"}]}`
 		r := auth.WithUser(httptest.NewRequest(http.MethodPost, "/api/chat/stream", strings.NewReader(body)), &auth.User{ID: "bob", Username: "bob"})
 		r.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
-		err := m.stream(rec, r)
-		var ae *apierr.Error
-		if !errors.As(err, &ae) || ae.Status != want {
-			t.Errorf("bob's message: want %d, got %v (%d %s)", want, err, rec.Code, rec.Body.String())
+		if err := m.stream(rec, r); !errors.As(err, &ae) || ae.Status != want {
+			t.Errorf("bob's message to %s: want %d, got %v (%d %s)", chat, want, err, rec.Code, rec.Body.String())
 		}
 	}
-	message(http.StatusForbidden)
+	// A relayed chat holds a session's turns from ada's own machine: it is
+	// hers alone, shared history or not (404). A shared chat on this
+	// machine is seen but not directed (403).
+	for _, on := range []bool{true, false} {
+		shared = on
+		direct2(id, http.StatusNotFound)
+		message(id, http.StatusNotFound)
+		if _, err := m.Convs.FindVisible(id, "bob"); err == nil {
+			t.Errorf("bob sees the relayed chat (shared %v)", on)
+		}
+		if _, err := m.Convs.FindVisible(id, "ada"); err != nil {
+			t.Errorf("ada does not see her relayed chat: %v", err)
+		}
+	}
+	shared = true
+	direct2(direct, http.StatusForbidden)
+	message(direct, http.StatusForbidden)
 	turn := &pwTurn{m: m, res: &sseWriter{w: httptest.NewRecorder()}, convID: id, done: make(chan struct{})}
 	m.follow(turn)
-	message(http.StatusForbidden)
+	message(id, http.StatusNotFound)
 	m.unfollow(turn)
-	shared = false
-	message(http.StatusNotFound)
-	if n := len(m.Conv.Get(id).Messages); n != 0 || len(plat.relayed) != 0 || remote.calls != 0 || len(remote.messages) != 0 {
-		t.Errorf("bob's message reached ada's chat or session: %d messages, %v, %d calls", n, plat.relayed, remote.calls)
+	if n := len(m.Conv.Get(id).Messages) + len(m.Conv.Get(direct).Messages); n != 0 || len(plat.relayed) != 0 || remote.calls != 0 || len(remote.messages) != 0 || len(local.messages) != 0 {
+		t.Errorf("bob reached ada's chats or session: %d messages, %v, %d calls", n, plat.relayed, remote.calls)
+	}
+	// The question before continuing says so, where people sign in.
+	if q := relayConfirm("other-box", "", "idle", "", true); !strings.Contains(q, "Only you can see the chat in this Studio, even where chats are shared") {
+		t.Errorf("confirm: %s", q)
+	}
+	if q := relayConfirm("other-box", "", "idle", "", false); strings.Contains(q, "Only you") {
+		t.Errorf("confirm without sign-in: %s", q)
 	}
 }
 
