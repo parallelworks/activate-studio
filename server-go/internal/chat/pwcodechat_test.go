@@ -51,6 +51,8 @@ type fakePW struct {
 	// PATCH /v1/sessions/s1/settings bodies.
 	model    string
 	settings []string
+	// refuseSettings makes the settings PATCH fail.
+	refuseSettings bool
 }
 
 func (f *fakePW) add(ev map[string]any) {
@@ -102,7 +104,13 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		f.settings = append(f.settings, strings.TrimSpace(string(b)))
+		refuse := f.refuseSettings
 		f.mu.Unlock()
+		if refuse {
+			w.WriteHeader(http.StatusConflict)
+			send(map[string]any{"detail": "the session is busy"})
+			return
+		}
 		send(map[string]any{"model": "patched"})
 	case p == "/v1/sessions/s1/events":
 		websocket.Server{Handler: f.stream}.ServeHTTP(w, r)

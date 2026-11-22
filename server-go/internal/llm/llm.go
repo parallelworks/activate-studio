@@ -235,27 +235,42 @@ func (c *Client) LastFailure() *CallFailure {
 	return c.lastFailure
 }
 
-// ModelFailure is modelFailure(id).
-func (c *Client) ModelFailure(id string) (ModelFailure, bool) {
+// failKey is where a model's last outcome is kept: the model, and the
+// credential that called it (a hash, never the key), "" meaning the
+// gateway's own. A call that failed with one person's key says nothing
+// of the model under another's, so each is remembered apart.
+func (c *Client) failKey(key, id string) string {
+	if key == "" && c.Key != nil {
+		key = c.Key()
+	}
+	h := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(h[:8]) + "|" + id
+}
+
+// ModelFailure is modelFailure(id) for calls made with key ("" for the
+// gateway's own).
+func (c *Client) ModelFailure(key, id string) (ModelFailure, bool) {
+	k := c.failKey(key, id)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	f, ok := c.failures[id]
+	f, ok := c.failures[k]
 	return f, ok
 }
 
-// RecordOutcome is recordModelOutcome.
-func (c *Client) RecordOutcome(id string, failure *ModelFailure) {
+// RecordOutcome is recordModelOutcome, for calls made with key.
+func (c *Client) RecordOutcome(key, id string, failure *ModelFailure) {
 	if id == "" {
 		return
 	}
+	k := c.failKey(key, id)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if failure != nil {
 		f := *failure
 		f.At = iso(c.now())
-		c.failures[id] = f
+		c.failures[k] = f
 	} else {
-		delete(c.failures, id)
+		delete(c.failures, k)
 	}
 }
 

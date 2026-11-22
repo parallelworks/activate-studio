@@ -163,6 +163,8 @@ type pwTarget struct {
 	// modelMoved says the session moved for this message.
 	chatModel  string
 	modelMoved bool
+	// modelStuck says the session should have moved and could not.
+	modelStuck bool
 }
 
 func pwErr(status int, msg string) error { return &apierr.Error{Status: status, Message: msg} }
@@ -574,7 +576,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		scopeNote = "Scope from the Studio's chat bar: " + firstNonEmpty(note, "the person's default libraries.") + "\n\n"
 	}
 	m.Conv.SetPWCode(convID, link)
-	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model, "modelNote", link.ModelNote, "modelMoved", t.modelMoved))
+	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model, "modelNote", link.ModelNote, "modelMoved", t.modelMoved, "modelStuck", t.modelStuck))
 	d, err := pwcode.GetSession(ctx, t.client, link.Session)
 	if err != nil {
 		return fail(err)
