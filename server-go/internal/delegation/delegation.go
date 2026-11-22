@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 )
 
 // Record is a session the Studio started for a delegated piece of work.
@@ -161,12 +163,25 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 	// its first turn reads them. The folder is written as the person, like
 	// any Library write; where they cannot write it, the session works
 	// outside the library.
+	//
+	// applied is the folder only when these instructions were not in it
+	// before, so a start that fails takes out only what it put in, never
+	// instructions the person had applied there; made says the folder
+	// itself was new.
 	var applied agentsmd.Folder
+	made := false
 	inLibrary := true
 	if name != "" {
 		f, _, err := agentsmd.Default.FolderToWrite(r, "", rel)
+		had := false
 		if err == nil {
+			had = hasInstructions(f, name)
+			_, serr := os.Stat(filepath.Join(s.A.Cfg.KBRoot, filepath.FromSlash(rel)))
+			made = os.IsNotExist(serr)
 			err = agentsmd.Default.ApplyNamed(f, name, nil)
+		}
+		if err == nil && had {
+			f = nil
 		}
 		switch {
 		case err == nil:
@@ -199,9 +214,11 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 			// of the folder they went into, and the folder when that left
 			// it empty.
 			agentsmd.RemoveInstructions(applied, name)
-			dir := filepath.Join(s.A.Cfg.KBRoot, filepath.FromSlash(rel))
-			if os.Remove(dir) == nil {
-				os.Remove(filepath.Dir(dir))
+			if made {
+				dir := filepath.Join(s.A.Cfg.KBRoot, filepath.FromSlash(rel))
+				if os.Remove(dir) == nil {
+					os.Remove(filepath.Dir(dir))
+				}
 			}
 		}
 		st, err = s.startOutside(r, sites, start, body)
@@ -209,6 +226,9 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 	if err != nil {
 		if applied != nil && inLibrary {
 			agentsmd.RemoveInstructions(applied, name)
+			if made {
+				os.Remove(filepath.Join(s.A.Cfg.KBRoot, filepath.FromSlash(rel)))
+			}
 		}
 		return nil, err
 	}
@@ -222,6 +242,21 @@ func (s *Service) Start(r *http.Request, o Start) (*Record, error) {
 	s.save(rec)
 	s.watch(rec.Session, o.Key)
 	return rec, nil
+}
+
+// hasInstructions says whether f's AGENTS.md already carries the named
+// instructions. When it cannot be read it says yes, so nothing the person
+// may have put there is taken out.
+func hasInstructions(f agentsmd.Folder, name string) bool {
+	b, found, err := f.Read(agentsmd.FileName)
+	if err != nil {
+		return true
+	}
+	if !found {
+		return false
+	}
+	names, err := agentsmd.Applied(string(b))
+	return err != nil || slices.Contains(names, name)
 }
 
 // startOutside starts the session where the site does not see the
@@ -372,8 +407,7 @@ func (s *Service) Look(ctx context.Context, session, key string) bool {
 	}
 	st, err := sites.Status(ctx, rec.Site, key, session, 1, s.A.Cfg.AuthEnabled())
 	if err != nil {
-		var ae *apierr.Error
-		if errors.As(err, &ae) && ae.Status == 404 {
+		if notFound(err) {
 			rec.State, rec.Finished = "gone", time.Now().UTC().Format(time.RFC3339)
 			s.save(rec)
 			return true
@@ -387,14 +421,37 @@ func (s *Service) Look(ctx context.Context, session, key string) bool {
 		}
 		return false
 	}
+	// A session still waiting for an approval was finished when it began
+	// to wait: look again on the next poll, without indexing the folder
+	// and rewriting the record each time.
+	if rec.State == "waiting" && waiting(st) {
+		return false
+	}
 	s.finish(ctx, rec, st)
 	return rec.State != "waiting"
+}
+
+// waiting says whether a settled session waits for a person to approve a
+// call.
+func waiting(st *jsonv.Object) bool {
+	return text(jsonv.Path(st, "status")) == "awaiting_approval" || len(jsonv.Arr(jsonv.Path(st, "approvals"))) > 0
+}
+
+// notFound says whether err is the session not being there: this host's
+// daemon answers *pwcode.DaemonError, the platform *apierr.Error.
+func notFound(err error) bool {
+	var de *pwcode.DaemonError
+	if errors.As(err, &de) && de.Status == http.StatusNotFound {
+		return true
+	}
+	var ae *apierr.Error
+	return errors.As(err, &ae) && ae.Status == http.StatusNotFound
 }
 
 func (s *Service) finish(ctx context.Context, rec *Record, st *jsonv.Object) {
 	rec.Error = text(jsonv.Path(st, "lastError"))
 	switch {
-	case text(jsonv.Path(st, "status")) == "awaiting_approval" || len(jsonv.Arr(jsonv.Path(st, "approvals"))) > 0:
+	case waiting(st):
 		rec.State = "waiting"
 	case rec.Error != "":
 		rec.State = "stopped"

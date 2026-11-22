@@ -35,6 +35,10 @@ type daemon struct {
 	goals     []string
 	status    string
 	lastError string
+	approval  bool
+	// failCreate makes starting a session fail; gone answers the session
+	// as not there.
+	failCreate, gone bool
 }
 
 func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +48,9 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch p := r.URL.Path; {
 	case p == "/v1/status":
 		send(map[string]any{"protocolVersion": pwcode.ProtocolVersion, "hostname": "box"})
+	case p == "/v1/sessions" && r.Method == http.MethodPost && d.failCreate:
+		w.WriteHeader(500)
+		send(map[string]any{"error": "the daemon could not start a session"})
 	case p == "/v1/sessions" && r.Method == http.MethodPost:
 		json.NewDecoder(r.Body).Decode(&d.created)
 		b, _ := os.ReadFile(filepath.Join(d.created["workspace"].(string), "AGENTS.md"))
@@ -61,10 +68,16 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"output": "goal set"})
 	case strings.HasSuffix(p, "/state"):
 		send(map[string]any{"goal": map[string]any{"active": d.status == "running"}})
+	case p == "/v1/sessions/20261121-120000-abcdef" && d.gone:
+		w.WriteHeader(404)
+		send(map[string]any{"error": "no such session"})
 	case p == "/v1/sessions/20261121-120000-abcdef":
 		out := map[string]any{"id": "20261121-120000-abcdef", "status": d.status, "history": []any{}}
 		if d.lastError != "" {
 			out["lastError"] = d.lastError
+		}
+		if d.approval {
+			out["approvals"] = []any{map[string]any{"id": "ap1", "text": "rm -rf out"}}
 		}
 		send(out)
 	default:
@@ -192,5 +205,98 @@ func TestFolderFor(t *testing.T) {
 	}
 	if got := folderFor("x", "!!!", at); got != "agents/x/20261121-0905" {
 		t.Fatal(got)
+	}
+}
+
+// A start that fails takes out only the instructions it put in: ones the
+// person had already applied in the folder stay, with the rest of their
+// AGENTS.md, and a folder it made for nothing goes.
+func TestAFailedStartKeepsThePersonsInstructions(t *testing.T) {
+	s, d, root, _ := stand(t)
+	r := httptest.NewRequest("POST", "/", nil)
+	d.failCreate = true
+	had, err := agentsmd.Apply("", "reviewer", "Check every claim.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(root, "proj"), 0o755)
+	os.WriteFile(filepath.Join(root, "proj", "AGENTS.md"), []byte(had), 0o644)
+	if _, err := s.Start(r, Start{Site: agentsites.Local, Objective: "Review it", Folder: "proj", Instructions: "reviewer"}); err == nil {
+		t.Fatal("the start did not fail")
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "proj", "AGENTS.md")); err != nil || string(b) != had {
+		t.Fatalf("the person's AGENTS.md: %q %v", b, err)
+	}
+	// A folder that had other files but not these instructions keeps its
+	// files and loses only what the start put in.
+	os.MkdirAll(filepath.Join(root, "notes"), 0o755)
+	os.WriteFile(filepath.Join(root, "notes", "a.md"), []byte("a"), 0o644)
+	s.Start(r, Start{Site: agentsites.Local, Objective: "Review it", Folder: "notes", Instructions: "reviewer"})
+	if _, err := os.Stat(filepath.Join(root, "notes", "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("the start's instructions stayed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "notes", "a.md")); err != nil {
+		t.Fatal(err)
+	}
+	// A folder it made is taken away again.
+	s.Start(r, Start{Site: agentsites.Local, Objective: "Review it", Folder: "fresh/one", Instructions: "reviewer"})
+	if _, err := os.Stat(filepath.Join(root, "fresh", "one")); !os.IsNotExist(err) {
+		t.Fatalf("the folder it made stayed: %v", err)
+	}
+}
+
+// A session the daemon no longer has is recorded as gone, and watching it
+// stops.
+func TestAGoneSessionIsGone(t *testing.T) {
+	s, d, _, _ := stand(t)
+	r := httptest.NewRequest("POST", "/", nil)
+	rec, err := s.Start(r, Start{Site: agentsites.Local, Objective: "Size the pumps", Folder: "reports/pumps"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.mu.Lock()
+	d.gone = true
+	d.mu.Unlock()
+	if !s.Look(context.Background(), rec.Session, "") {
+		t.Fatal("watching a gone session goes on")
+	}
+	if g := s.get(rec.Session); g.State != "gone" || g.Finished == "" {
+		t.Fatalf("record %+v", g)
+	}
+}
+
+// A session waiting for an approval is finished once when it begins to
+// wait, not again on every look, and finishes when it goes on.
+func TestAWaitingSessionIsFinishedOnce(t *testing.T) {
+	s, d, root, _ := stand(t)
+	s.Poll = time.Hour
+	r := httptest.NewRequest("POST", "/", nil)
+	rec, err := s.Start(r, Start{Site: agentsites.Local, Objective: "Size the pumps", Folder: "reports/pumps"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.mu.Lock()
+	d.status, d.approval = "awaiting_approval", true
+	d.mu.Unlock()
+	ctx := context.Background()
+	if s.Look(ctx, rec.Session, "") || s.get(rec.Session).State != "waiting" {
+		t.Fatalf("not waiting: %+v", s.get(rec.Session))
+	}
+	st, _ := os.Stat(s.file())
+	os.WriteFile(filepath.Join(root, "reports/pumps", "late.md"), []byte("x"), 0o644)
+	for i := 0; i < 3; i++ {
+		time.Sleep(5 * time.Millisecond)
+		if s.Look(ctx, rec.Session, "") {
+			t.Fatal("a waiting session's watch ended")
+		}
+	}
+	if again, _ := os.Stat(s.file()); !again.ModTime().Equal(st.ModTime()) || len(s.get(rec.Session).Files) != 0 {
+		t.Fatalf("the waiting record was finished again: %+v", s.get(rec.Session))
+	}
+	d.mu.Lock()
+	d.status, d.approval = "idle", false
+	d.mu.Unlock()
+	if !s.Look(ctx, rec.Session, "") || s.get(rec.Session).State != "finished" || len(s.get(rec.Session).Files) != 1 {
+		t.Fatalf("after the approval: %+v", s.get(rec.Session))
 	}
 }
