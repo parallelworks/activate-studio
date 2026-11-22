@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
+	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
 
 // PrimaryID names the main folder's library.
@@ -842,7 +843,7 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 		if d.IndexRoot == nil || *d.IndexRoot == "" || d.GufiBin == nil {
 			continue
 		}
-		l := Library{ID: d.ID, Label: d.Label, IndexRoot: RemoteRootOf(owner, d.ID),
+		l := Library{ID: d.ID, Label: d.ShownLabel(u.AuthEnabled), IndexRoot: RemoteRootOf(owner, d.ID),
 			Caps: Caps{Index: true, FullText: d.FullText != nil && *d.FullText, Vectors: d.Vectors != nil && *d.Vectors},
 			Site: d.Site, Format: d.IndexFormat, ReadThrough: StoredReadThrough(d.ReadThrough, d.ID, r.o.Log)}
 		if lbl := r.ReachedLabelOf(d); lbl != "" {
@@ -914,7 +915,9 @@ func (r *Registry) learnReached(defs []UserDef) {
 // List is listLibraries: primary first, pinned, added, then the viewer's own.
 func (r *Registry) List(primaryLabel string, viewer Viewer) []Library {
 	if primaryLabel == "" {
-		primaryLabel = filepath.Base(r.o.KBRoot)
+		// The default name by mode, as the settings give it with no name
+		// saved; callers pass the effective one.
+		primaryLabel = settings.MainLabelFor(r.o.AuthEnabled)
 	}
 	seen := map[string]bool{PrimaryID: true}
 	out := []Library{r.primaryLibrary(primaryLabel)}

@@ -413,7 +413,7 @@ func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *bu
 	defs := m.load(r.owner)
 	for _, d := range defs {
 		if d.Build != nil && d.Transport == transport && d.Site == r.conn.Site && intOf(d.Port) == r.conn.Port && d.Build.IndexDir == *p.IndexDir {
-			return nil, 0, apierr.New(409, "This index folder is already used by %s.", d.Label)
+			return nil, 0, apierr.New(409, "This index folder is already used by %s.", d.ShownLabel(m.Users.AuthEnabled))
 		}
 	}
 	name := basename(*p.SourceRoot)
@@ -425,7 +425,13 @@ func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *bu
 	fallback := name
 	switch {
 	case o.Space != nil:
-		id, fallback = uniqueID(defs, idBase("space-"+name)), "My library"
+		// Where people sign in, a person's own folder is My library beside
+		// the shared one; on a Studio only they use, the main library is
+		// theirs, and this is a library on that system named by its folder.
+		id, fallback = uniqueID(defs, idBase("space-"+name)), libraries.FolderLabel(*p.SourceRoot)
+		if m.Users.AuthEnabled {
+			fallback = libraries.SpaceLabel
+		}
 	case o.IDBase != "":
 		id, fallback = uniqueID(defs, idBase(o.IDBase)), o.Label
 	}

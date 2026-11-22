@@ -253,6 +253,10 @@ func TestLibraryBuild(t *testing.T) {
 	if fmt.Sprint(none["searched"]) != "[kb]" {
 		t.Fatalf("searched with no library: %v", none["searched"])
 	}
+	// An empty query searches nothing, and says so.
+	if _, empty := f.call("GET", "/api/search?q=", nil); fmt.Sprint(empty["searched"]) != "[]" {
+		t.Fatalf("searched with no query: %v", empty["searched"])
+	}
 	_, every := f.call("GET", "/api/search?q=turbine&library=all", nil)
 	if !slices.Contains(every["searched"].([]any), any("papers")) {
 		t.Fatalf("searched with library=all: %v", every["searched"])

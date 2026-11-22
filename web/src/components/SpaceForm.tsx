@@ -5,9 +5,16 @@ import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } fr
 import { CreateConfirm, StepList } from './LibraryFormParts'
 import { PlatformSignInPanel } from './PlatformSignInPanel'
 import { PwSystemField } from './PwSystemField'
+import { useAppConfig } from '../config'
+
+/** A library's name from its folder, as the server names one not named. */
+export const folderName = (dir: string): string => {
+  const name = dir.replace(/\/+$/, '').split('/').pop() ?? ''
+  return !name || name === '~' || name === '.' ? 'Home folder' : name
+}
 
 /**
- * My library: a folder of the viewer's own on one of their systems, owned
+ * A folder of the viewer's own on one of their systems, owned
  * by their own account, indexed and written as them (POST
  * /api/user-libraries/space). The system is one of their clusters, reached
  * over pw ssh with their ACTIVATE sign-in, the Studio's own cluster chosen
@@ -18,6 +25,10 @@ import { PwSystemField } from './PwSystemField'
  * does not exist yet is made, closed to others, once confirmed. Where it
  * cannot be made, the form says why; where the platform refuses their
  * credential, the sign-in is offered again.
+ *
+ * Where people sign in it is My library, theirs beside the main library
+ * they share. On a Studio only they use, the main library is already their
+ * library, so this is a library on that system named by its folder.
  */
 export function SpaceForm({ onAdded, cluster: given, destination }: {
   onAdded: (lib: UserLibrary) => void
@@ -27,6 +38,7 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
   cluster?: string
   destination?: string
 }) {
+  const signIn = !!useAppConfig().signIn
   const [status, setStatus] = useState<SpaceStatus | null>(null)
   const [statusError, setStatusError] = useState('')
   const [folder, setFolder] = useState('')
@@ -57,22 +69,22 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
   if (!status.available && status.cluster && status.signInOffered && !status.credential) {
     return (
       <div className="space-sign-in">
-        <Callout tone="info" title="My library needs your ACTIVATE sign-in">
-          My library is a folder of yours on {status.cluster}, which the Studio reaches as your own account. Sign in with
+        <Callout tone="info" title={signIn ? 'My library needs your ACTIVATE sign-in' : 'A folder on a remote computer needs your ACTIVATE sign-in'}>
+          {signIn ? 'My library is a folder of yours' : 'This is a folder of yours'} on {status.cluster}, which the Studio reaches as your own account. Sign in with
           ACTIVATE and approve the code on the platform, then choose the folder here.
         </Callout>
         <PlatformSignInPanel onChanged={signedIn} />
       </div>
     )
   }
-  if (!status.available) return <Callout tone="info" title="My library is not available">{status.why}</Callout>
+  if (!status.available) return <Callout tone="info" title={signIn ? 'My library is not available' : 'A folder on a remote computer is not available'}>{status.why}</Callout>
 
   const pwOK = status.pw !== false
   const chosen = given !== undefined || destination !== undefined
   const ssh = destination !== undefined || (!chosen && (overSSH || !pwOK) && !!status.ssh)
   // A cluster the form around this one has not chosen yet is the Studio's.
   const system = destination !== undefined ? destination.trim() : given ? given : ssh ? host.trim() : cluster
-  const where = system || 'that system'
+  const where = system || 'that remote computer'
   const typed = folder.trim() || status.suggested
   const at = ssh ? { destination: system } : { cluster: system }
   const asked = JSON.stringify({ ...at, sourceRoot: typed })
@@ -119,7 +131,7 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
         <Input label="Folder" mono placeholder={status.suggested} spellCheck={false} value={folder}
           description={`A folder of yours on ${where}, such as your home folder's ${status.suggested.replace(/^~\//, '')}. Only your account can open it${ssh ? '' : ' until you share a folder in it'}. Made, closed to others, if it does not exist.`}
           onChange={e => { setFolder(e.target.value); setCheck(null) }} />
-        <Input label="Label" hint="optional" placeholder="My library" value={label} onChange={e => setLabel(e.target.value)} />
+        <Input label="Label" hint="optional" placeholder={signIn ? 'My library' : folderName(typed)} value={label} onChange={e => setLabel(e.target.value)} />
       </div>
       <IndexDepthControl value={depth} onChange={setDepth} disabled={busy !== null} note={remoteMeaningNote} />
       {check && <StepList steps={check.steps} label="Folder check" />}
@@ -131,7 +143,7 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
       <div className="query-actions">
         <Button variant="secondary" loading={busy === 'test'} disabled={busy !== null || !system} onClick={() => void test()}>Check the folder</Button>
         <Button variant="primary" loading={busy === 'add'} disabled={!passed || busy !== null}
-          onClick={() => (check?.create?.length ? setConfirming(true) : void add(false))}>Make my library</Button>
+          onClick={() => (check?.create?.length ? setConfirming(true) : void add(false))}>{signIn ? 'Make my library' : 'Make the folder'}</Button>
       </div>
       <CreateConfirm open={confirming} paths={check?.create ?? []} where={`on ${where}, as ${check?.account ?? 'you'}`}
         onClose={() => setConfirming(false)} onConfirm={() => { setConfirming(false); return add(true) }} />

@@ -8,6 +8,8 @@ import { LogViewer } from '@parallelworks/ui/logviewer'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ApplyToFolder, changeFolder, type AgentFolder } from '../components/ApplyToFolder'
 import { FleetPage, topicVariant } from './FleetPage'
+import { libraryNames } from '../libraryNames'
+import { useAppConfig } from '../config'
 
 /**
  * Agent instructions and skills: the markdown files that shape how agents
@@ -70,6 +72,7 @@ function TakeOffLabel({ off }: { off: boolean }) {
 }
 
 export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
+  const cfg = useAppConfig()
   const [personas, setPersonas] = useState<Persona[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
   const [dir, setDir] = useState('')
@@ -497,8 +500,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
       <section className="card ov-list agents-folders">
         <h3>Folders with agent instructions ({stillCarrying.length})</h3>
         <p className="muted view-sub">
-          The folders whose <code>AGENTS.md</code> or <code>.agents/skills</code> carry instructions or skills applied here, in the main
-          library and in My library. Take one off and its section goes; the rest of the file stays.
+          The folders whose <code>AGENTS.md</code> or <code>.agents/skills</code> carry instructions or skills applied here, in {libraryNames(cfg).writable.replace(' or ', ' and in ')}. Take one off and its section goes; the rest of the file stays.
         </p>
         {folders.map(f => (
           <div className="ov-row" key={`${f.library}:${f.folder}`}>

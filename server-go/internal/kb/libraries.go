@@ -2,6 +2,7 @@ package kb
 
 import (
 	"encoding/json"
+	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -137,7 +138,7 @@ func (l *Libraries) primary() Library {
 		label = l.Label()
 	}
 	if label == "" {
-		label = filepath.Base(l.Roots.KBRoot)
+		label = settings.MainLabelFor(l.AuthEnabled)
 	}
 	return Library{ID: PrimaryID, Label: label, IndexRoot: l.Roots.GufiIndex, SourceRoot: l.Roots.KBRoot,
 		Writable: true, Primary: true, Pinned: true, Indexed: true}

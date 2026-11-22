@@ -9,7 +9,7 @@ const FAILED = 'The sign-in did not finish'
  * people use (GET, POST /api/me/platform-sign-in). The pw CLI on the server
  * shows a device code, which the person approves on the platform; the
  * Studio then keeps the sign-in in a folder of theirs and renews its access
- * tokens, which it uses for their models, the platform, My library and
+ * tokens, which it uses for their models, the platform, their folders on systems and
  * folders shared with them. Sign out ends it. Hidden where the route
  * answers that this Studio keeps no personal sign-ins. It shows the state
  * and the button only; the page around it says what the sign-in is for.

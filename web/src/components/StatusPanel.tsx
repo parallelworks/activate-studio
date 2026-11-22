@@ -143,7 +143,9 @@ export function freshLibraries(cfg: PublicLibrary[], live: PublicLibrary[] | nul
   return cfg.map(l => { const n = byId.get(l.id); return n ? { ...l, caps: n.caps } : l })
 }
 
-export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | null, stats: KbStats | null, mainIndexed?: boolean): LibLine[] {
+/** `signIn`: the main library is the one people share; without it, the
+ *  main library is the person's own, on this computer. */
+export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | null, stats: KbStats | null, mainIndexed?: boolean, signIn = false): LibLine[] {
   const counted = (id: string): number | undefined => {
     const one = stats?.libraries?.find(l => l.id === id)
     if (one) return one.available ? one.files : undefined
@@ -157,7 +159,7 @@ export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | nu
     const indexed = l.primary && mainIndexed !== undefined ? mainIndexed : l.caps.index
     lines.push({
       id: l.id, label: l.label,
-      kind: l.primary ? 'knowledge base' : l.site ? `on ${l.site}` : l.writable ? 'writable' : 'read only',
+      kind: l.primary ? (signIn ? 'shared' : 'on this computer') : l.site ? `on ${l.site}` : l.writable ? 'writable' : 'read only',
       state: st && !st.available ? 'unavailable' : indexed ? 'indexed' : 'not indexed',
       tone: st && !st.available ? 'warning' : indexed ? 'success' : 'muted', pulse: false,
       count: n != null ? plural(n, 'file') : null,
@@ -440,7 +442,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
 
   // The index status the footer and the pages show, read once for all.
   const idx = useIndexStatus()
-  const libs = libraryLines(freshLibraries(cfg.libraries ?? [], data.libs), data.userLibs, shared.stats, idx?.indexed)
+  const libs = libraryLines(freshLibraries(cfg.libraries ?? [], data.libs), data.userLibs, shared.stats, idx?.indexed, !!cfg.signIn)
   // A library indexed since the page loaded joins the switcher, Search and
   // Query as well: they read the app config.
   const newlyIndexed = (cfg.libraries ?? []).filter(l => !l.caps.index && data.libs?.some(n => n.id === l.id && n.caps.index)).map(l => l.id).join(',')

@@ -152,8 +152,10 @@ describe('the cards', () => {
     expect(activitySummary({ tasks: [], fleet: [], runs: [], sessions: [] }).text).toBe('idle')
     expect(activitySummary({ tasks: null, fleet: null, runs: null, sessions: [{} as never, {} as never] }).text).toBe('2 sessions')
     const lines = libraryLines([lib], [{ id: 'u-a', label: 'Mine', site: 'cluster-a', sourceDir: '~', sourceRoot: null, indexRoot: null, state: 'failed', run: null, error: 'boom', builtAt: null, directories: null, files: null, scheduler: null }], null)
-    expect(lines.map(l => [l.label, l.kind, l.state])).toEqual([['Knowledge base', 'knowledge base', 'indexed'], ['Mine', 'on cluster-a', 'failed']])
+    expect(lines.map(l => [l.label, l.kind, l.state])).toEqual([['Knowledge base', 'on this computer', 'indexed'], ['Mine', 'on cluster-a', 'failed']])
     expect(librariesSummary(lines, null).text).toBe('1 failed')
+    // Where people sign in, the main library is the shared one.
+    expect(libraryLines([lib], null, null, true, true)[0].kind).toBe('shared')
     // The main library's state is the index status's now, not the config's
     // from when the page loaded: a build that finished since shows at once.
     const stale = { ...lib, caps: { ...lib.caps, index: false } }

@@ -19,12 +19,20 @@ export function reloadWhenLibrariesBuilt(opts: { everyMs?: number; forMs?: numbe
   const every = opts.everyMs ?? 3000
   const until = Date.now() + (opts.forMs ?? 60 * 60 * 1000)
   let ready: Set<string> | null = null
+  // The last answer of each list: one that fails this time is taken as it
+  // last was, never as empty, which would read as nothing building and end
+  // the watch before the library is ready.
+  let lastUser: Awaited<ReturnType<typeof api.userLibraries>>['libraries'] | null = null
+  let lastHere: Awaited<ReturnType<typeof api.libraries>>['libraries'] | null = null
   const tick = async () => {
-    const [user, here] = await Promise.all([
+    const [gotUser, gotHere] = await Promise.all([
       api.userLibraries().then(r => r.libraries ?? [], () => null),
       api.libraries().then(r => r.libraries ?? [], () => null),
     ])
-    if (user || here) {
+    const user = (lastUser = gotUser ?? lastUser)
+    const here = (lastHere = gotHere ?? lastHere)
+    // Until both lists have answered once, nothing is concluded.
+    if (user && here) {
       const now = new Set([
         ...(user ?? []).filter(l => l.state === 'ready').map(l => l.id),
         ...(here ?? []).filter(l => l.build && !building(l.build.state) && l.caps.index).map(l => l.id),
