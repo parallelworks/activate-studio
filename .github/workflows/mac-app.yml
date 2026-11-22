@@ -24,8 +24,13 @@
 # gufi-macos.yml; see docs/GUFI-MACOS.md), else GUFI's own package, which
 # needs macOS 27; with that one the run checks are skipped on older runners.
 #
-# OCR (tesseract and leptonica, with the English model) is built from
-# source for macOS 14 on each run, by deploy/mac/build_ocr.sh.
+# OCR (tesseract and leptonica, with the English model) comes from, in
+# order: OCR_RUN below (an ocr-macos run whose archive to use, to try a new
+# OCR build), the OCR_RELEASE tag below with its OCR_SHA256 (the published
+# archive, built for macOS 14 by ocr-macos.yml), used only when the tag
+# carries the key of this checkout's build_ocr.sh and pins
+# (deploy/mac/ocr_key.sh), else a build from source by
+# deploy/mac/build_ocr.sh on this run, as before.
 name: mac-app
 
 on:
@@ -73,6 +78,13 @@ env:
   GUFI_RUN: ""
   # The gufi-* release whose gufi-macos-arm64.tar.gz the app uses.
   GUFI_RELEASE: gufi-f2292ea-macos14
+  # An ocr-macos run whose archive the app uses, to try a new OCR build.
+  OCR_RUN: ""
+  # The ocr-* release whose ocr-macos-arm64.tar.gz the app uses, and that
+  # archive's SHA-256; blank, or a tag for another build_ocr.sh, builds OCR
+  # on the run.
+  OCR_RELEASE: ""
+  OCR_SHA256: ""
 
 concurrency:
   group: mac-app-${{ inputs.release || github.ref }}
@@ -143,7 +155,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          OUT_DIR="$RUNNER_TEMP/ocr" deploy/mac/build_ocr.sh
+          mkdir -p "$RUNNER_TEMP/ocr"
+          want="ocr-$(deploy/mac/ocr_key.sh)-macos14"
+          if [ -n "$OCR_RUN" ]; then
+            gh run download "$OCR_RUN" -R "$GITHUB_REPOSITORY" -n ocr-macos-arm64 -D "$RUNNER_TEMP/ocr"
+            (cd "$RUNNER_TEMP/ocr" && shasum -a 256 -c ocr-macos-arm64.tar.gz.sha256)
+            echo "OCR from the ocr-macos run $OCR_RUN"
+          elif [ -n "$OCR_RELEASE" ] && [ "$OCR_RELEASE" = "$want" ]; then
+            gh release download "$OCR_RELEASE" -R "$GITHUB_REPOSITORY" -p 'ocr-macos-arm64.tar.gz*' -D "$RUNNER_TEMP/ocr"
+            echo "$OCR_SHA256  ocr-macos-arm64.tar.gz" >"$RUNNER_TEMP/ocr/pinned.sha256"
+            (cd "$RUNNER_TEMP/ocr" && shasum -a 256 -c pinned.sha256 && shasum -a 256 -c ocr-macos-arm64.tar.gz.sha256)
+            echo "OCR from the release $OCR_RELEASE"
+          else
+            if [ -n "$OCR_RELEASE" ]; then
+              echo "::notice title=OCR built on this run::OCR_RELEASE is $OCR_RELEASE; this build_ocr.sh and its pins need $want (ocr-macos.yml makes it from that tag)."
+            fi
+            OUT_DIR="$RUNNER_TEMP/ocr" deploy/mac/build_ocr.sh
+          fi
           echo "OCR_TARBALL=$RUNNER_TEMP/ocr/ocr-macos-arm64.tar.gz" >> "$GITHUB_ENV"
 
       - name: build the app
@@ -372,7 +400,6 @@ jobs:
             deploy/mac/sign_app.sh
             deploy/mac/make_dmg.sh
             deploy/mac/check_app.sh
-            deploy/mac/window_shots.sh
             deploy/mac/macho_check.py
             deploy/mac/install.sh
             deploy/mac/entitlements/
@@ -396,9 +423,41 @@ jobs:
           deploy/mac/make_dmg.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" "$RUNNER_TEMP/test.dmg"
       - name: run the signed app
         run: deploy/mac/check_app.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" --run --launch --dmg "$RUNNER_TEMP/test.dmg"
-      # The window as a person sees it: the window controls over the page's
-      # top row, in Chat, Library and Settings, light and dark, the
-      # navigation expanded and collapsed, with a banner and with setup open.
+      - name: remove the keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/test.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/test.keychain-db"
+
+  # The window as a person sees it: the window controls over the page's top
+  # row, in Chat, Library and Settings, light and dark, the navigation
+  # expanded and collapsed, with a banner and with setup open. The build's
+  # app, on a runner of its own beside the hardened and bridge jobs.
+  window-shots:
+    if: inputs.release == ''
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/mac/window_shots.sh
+            deploy/mac/testdata/
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: activate-studio-macos-arm64
+          path: ${{ runner.temp }}/in
+      - name: unpack the app
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/in" && shasum -a 256 -c activate-studio-macos-arm64.tar.gz.sha256)
+          mkdir -p "$RUNNER_TEMP/app"
+          tar -xzf "$RUNNER_TEMP/in/activate-studio-macos-arm64.tar.gz" -C "$RUNNER_TEMP/app"
       - name: screenshots of the window
         run: deploy/mac/window_shots.sh "$RUNNER_TEMP/app/ACTIVATE Studio.app" "$RUNNER_TEMP/window-shots"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -408,11 +467,6 @@ jobs:
           path: ${{ runner.temp }}/window-shots
           if-no-files-found: warn
           retention-days: 14
-      - name: remove the keychain
-        if: always()
-        run: |
-          security delete-keychain "$RUNNER_TEMP/test.keychain-db" 2>/dev/null || true
-          rm -f "$RUNNER_TEMP/test.keychain-db"
 
   # For a release: sign the app with the Developer ID certificate, notarize
   # and staple it. The only job that sees the signing and notary secrets; it

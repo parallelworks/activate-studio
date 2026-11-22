@@ -1,0 +1,103 @@
+# Build tesseract for the macOS app (deploy/mac/build_ocr.sh, which runs the
+# tree it makes on its test images before packing it) and, for an ocr-* tag,
+# attach the archive to that tag's release. mac-app.yml takes it from there
+# (OCR_RELEASE and OCR_SHA256) instead of building it on every run, as it
+# takes GUFI from a gufi-* release (gufi-macos.yml).
+#
+#   pull_request changing the build : build and check
+#   workflow_dispatch               : build and check
+#   push of an ocr-* tag            : build and check, then release
+#
+# The tag is ocr-KEY-macos14, with KEY from deploy/mac/ocr_key.sh at the
+# tagged commit; the release job refuses any other name.
+#
+# No job on a macOS runner uses harden-runner: there it can only audit
+# egress, not block it.
+name: ocr-macos
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - deploy/mac/build_ocr.sh
+      - deploy/mac/ocr_key.sh
+      - deploy/common/pins.sh
+      - .github/workflows/ocr-macos.yml
+  push:
+    tags: ["ocr-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the key
+        id: key
+        run: echo "key=$(deploy/mac/ocr_key.sh)" | tee -a "$GITHUB_OUTPUT"
+      - name: build tesseract
+        env:
+          # The sources' fallback through the release API (deploy/common/lib.sh),
+          # which refuses a runner without a token once its rate limit is spent.
+          GH_TOKEN: ${{ github.token }}
+        run: OUT_DIR="$RUNNER_TEMP/ocr" deploy/mac/build_ocr.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ocr-macos-arm64
+          path: |
+            ${{ runner.temp }}/ocr/ocr-macos-arm64.tar.gz
+            ${{ runner.temp }}/ocr/ocr-macos-arm64.tar.gz.sha256
+            ${{ runner.temp }}/ocr/ocr-macos-arm64.manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # Only this job can write to the repository, and it runs no build code.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/ocr-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write     # create the release and upload its assets
+    steps:
+      # GitHub's API and uploads, and the artifact storage.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            uploads.github.com:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ocr-macos-arm64
+
+      - name: attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          KEY: ${{ needs.build.outputs.key }}
+        run: |
+          set -euo pipefail
+          [ "$TAG" = "ocr-$KEY-macos14" ] || { echo "::error::the tag for this build_ocr.sh and its pins is ocr-$KEY-macos14, not $TAG"; exit 1; }
+          sha256sum -c ocr-macos-arm64.tar.gz.sha256
+          sum="$(cut -d' ' -f1 ocr-macos-arm64.tar.gz.sha256)"
+          # A prerelease that is never "latest": the app's installer and its
+          # update check read the latest release, which stays the app's.
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+              --title "OCR for macOS ($TAG)" \
+              --notes "tesseract and leptonica for the macOS app, built by deploy/mac/build_ocr.sh for macOS 14 and later on Apple silicon. In mac-app.yml: OCR_RELEASE: $TAG and OCR_SHA256: $sum."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            ocr-macos-arm64.tar.gz ocr-macos-arm64.tar.gz.sha256 ocr-macos-arm64.manifest.json
