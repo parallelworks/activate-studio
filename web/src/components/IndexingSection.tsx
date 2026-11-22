@@ -10,6 +10,7 @@ import { DeleteIndexDialog, IndexControls, IndexJobView, IndexLogButton, LastBui
 import { FolderBrowser, errText, waitForRestart } from './PrimaryFolder'
 import { IndexDepthControl } from './IndexDepth'
 import { IndexGroup } from './IndexGroup'
+import { libraryNames } from '../libraryNames'
 
 const MEANING_SPEED_OPTIONS = [{ value: 'standard', label: 'Standard' }, { value: 'faster', label: 'Faster' }]
 const MEANING_SPEED_HELP: Record<IndexSettings['meaningSpeed'], string> = {
@@ -94,14 +95,16 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
   const running = !!status?.running
   // On a shared Studio the main folder is read only for everyone but its
   // administrators, and so is how it is indexed: the settings show, unchanged.
+  // The main library by its name, as the switcher and every other page call it.
+  const main = libraryNames(cfg).main
   const locked = cfg.libraries?.find(l => l.primary)?.readOnlyWhy
-    ? 'On a Studio with sign-in, the main folder is indexed as its administrators set it.'
+    ? `On a Studio with sign-in, ${main} is indexed as its administrators set it.`
     : null
 
   return (
     <>
       <p className="muted view-sub">
-        The main folder&apos;s index. Each setting here saves as you change it. The readers apply to files read from
+        Index of {main}. Each setting here saves as you change it. The readers apply to files read from
         then on; Update index reads everything again.
       </p>
       {error && <Callout tone="error">{error}</Callout>}
@@ -114,7 +117,7 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
               <IndexControls part="primary" canDelete={info.single} canBuild={info.single} folder={info.location.folder} />
               {/* Delete index, as on the main folder's card: behind More, and it asks first. */}
               {info.single && (
-                <ActionMenu label="More actions for the main folder's index" align="end"
+                <ActionMenu label={`More actions for the index of ${main}`} align="end"
                   items={[{ label: 'Delete index', description: 'The files in the folder are not touched', destructive: true,
                     disabled: !status?.indexed || running, disabledReason: !status?.indexed ? 'There is no index to delete.' : 'Wait for indexing to finish, or stop it.',
                     onClick: () => controls.setConfirming(true) }]}>
@@ -140,9 +143,9 @@ export function IndexBuildSettings({ visionModel = '', deploymentCred = null }: 
           </Field>
         </IndexGroup>
 
-        <IndexGroup title="What is read from files" help="How deep the main folder is indexed, and how documents, images and meaning are read.">
+        <IndexGroup title="What is read from files" help={`How deep ${main} is indexed, and how documents, images and meaning are read.`}>
           <div>
-            <IndexDepthControl label="Index depth of the main folder" value={s.depth} ocr={tesseract?.available ?? null}
+            <IndexDepthControl label={`Index depth of ${main}`} value={s.depth} ocr={tesseract?.available ?? null}
               disabled={!!locked || (saving !== null && saving !== 'depth')} onChange={v => void save({ depth: v }, 'depth')} />
             <p className="ix-note">
               A new depth is applied in the background at once, to the files already indexed (with the background sync paused,
@@ -212,6 +215,7 @@ export function IndexStorageSettings() {
   const [moveNote, setMoveNote] = useState('')
   const [restarting, setRestarting] = useState(false)
   const status = useIndexStatus()
+  const main = libraryNames(useAppConfig()).main
 
   const move = async (path: string) => {
     setMoveNote('')
@@ -244,7 +248,7 @@ export function IndexStorageSettings() {
 
   return (
     <>
-      <IndexGroup title="Where the index is kept" help="The main folder's index and its caches, on this computer.">
+      <IndexGroup title="Where the index is kept" help={`The index of ${main} and its caches, on this computer.`}>
         <div className="ix-where">
           <p className="ix-path"><code>{info.location.current}</code><CopyButton text={info.location.current} label="the index folder" size="xs" /></p>
           <p className="ix-note">
