@@ -246,7 +246,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 	q := first(qs, "q")
 	refine := search.RefineOf(first(qs, "name"), first(qs, "text"), first(qs, "match"))
 	if strings.TrimSpace(q) == "" && refine == nil {
-		apierr.JSON(w, 200, map[string]any{"hits": []any{}})
+		apierr.JSON(w, 200, map[string]any{"hits": []any{}, "searched": []string{}})
 		return nil
 	}
 	if refine != nil {
@@ -269,7 +269,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 			remoteAny = remoteAny || l.Site != ""
 		}
 		if !remoteAny {
-			apierr.JSON(w, 200, map[string]any{"hits": []any{}, "error": "GUFI is not installed here"})
+			apierr.JSON(w, 200, map[string]any{"hits": []any{}, "error": "GUFI is not installed here", "searched": []string{}})
 			return nil
 		}
 	}
@@ -301,11 +301,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 	if cmds == nil {
 		cmds = []gufitrace.Command{}
 	}
-	searched := make([]string, 0, len(libs))
-	for _, l := range libs {
-		searched = append(searched, l.ID)
-	}
-	apierr.JSON(w, 200, searchAnswer{Hits: hits, Gufi: cmds, Slow: slow, Omitted: om.Items(), Searched: searched})
+	apierr.JSON(w, 200, searchAnswer{Hits: hits, Gufi: cmds, Slow: slow, Omitted: om.Items(), Searched: searchedOf(libs, om.Items())})
 	return nil
 }
 
@@ -341,4 +337,23 @@ func (s *Service) authEnabled(r *http.Request) bool {
 		return v.AuthEnabled
 	}
 	return s.a.Cfg.AuthEnabled()
+}
+
+// searchedOf is the libraries a search covered: those in scope, less one
+// stopped at the time limit, which is in slow and omitted instead. One that
+// answered with nothing, or in part, was searched and says why in omitted.
+func searchedOf(libs []libraries.Library, omitted []libraries.Omission) []string {
+	left := map[string]bool{}
+	for _, o := range omitted {
+		if o.TimeLimit {
+			left[o.ID] = true
+		}
+	}
+	searched := make([]string, 0, len(libs))
+	for _, l := range libs {
+		if !left[l.ID] {
+			searched = append(searched, l.ID)
+		}
+	}
+	return searched
 }

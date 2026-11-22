@@ -367,13 +367,10 @@ func (s *Service) clusterNames(ctx context.Context, v Viewer) ([]string, error) 
 	return names, err
 }
 
-// keyTag tells keys apart in a cache without keeping the key itself.
-func keyTag(key string) string {
-	if len(key) > 8 {
-		return key[len(key)-8:] + itoa(len(key))
-	}
-	return key
-}
+// keyTag tells keys apart in a cache without keeping the key itself: a
+// hash of the whole key (remote.KeyID), so keys that end alike never share
+// an entry.
+func keyTag(key string) string { return remote.KeyID(key) }
 
 // homeOf is a cluster location's home folder relative to /.
 func (s *Service) homeOf(ctx context.Context, l *loc) (string, error) {
