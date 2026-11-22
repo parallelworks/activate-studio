@@ -235,6 +235,10 @@ type searchAnswer struct {
 	Gufi    []gufitrace.Command  `json:"gufi"`
 	Slow    []string             `json:"slow,omitempty"`
 	Omitted []libraries.Omission `json:"omitted,omitempty"`
+	// Searched names the libraries the search covered, by id: with no
+	// library asked for, the main library alone, as on every route; a caller
+	// asks for library=all to search every library it can read.
+	Searched []string `json:"searched"`
 }
 
 func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
@@ -297,7 +301,11 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 	if cmds == nil {
 		cmds = []gufitrace.Command{}
 	}
-	apierr.JSON(w, 200, searchAnswer{Hits: hits, Gufi: cmds, Slow: slow, Omitted: om.Items()})
+	searched := make([]string, 0, len(libs))
+	for _, l := range libs {
+		searched = append(searched, l.ID)
+	}
+	apierr.JSON(w, 200, searchAnswer{Hits: hits, Gufi: cmds, Slow: slow, Omitted: om.Items(), Searched: searched})
 	return nil
 }
 
