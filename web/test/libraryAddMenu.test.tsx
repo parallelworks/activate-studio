@@ -199,6 +199,9 @@ describe('adding files', () => {
     const input = document.querySelector<HTMLInputElement>('.upload-pop input[type=file][multiple]')!
     fireEvent.change(input, { target: { files: [new File(['hello'], 'notes.md')] } })
     await waitFor(() => expect(uploads).toEqual([{ dir: 'uploads', rels: ['notes.md'] }]))
+    // The panel closes, leaving the viewer where the file opens uncovered
+    // (phase 4, F).
+    await waitFor(() => expect(screen.queryByLabelText('Destination folder')).not.toBeInTheDocument())
   })
 
   it('the menu\'s Add files opens the same panel', async () => {

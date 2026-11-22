@@ -36,10 +36,12 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onO
   const urlId = useId()
 
   /** Queued, not awaited here: the next upload can be added at once, and
-   *  each shows in the panel below the tree. */
+   *  each shows in the panel below the tree, so this panel closes and
+   *  leaves the viewer, where the file opens, uncovered. */
   const send = async (items: UploadItem[]) => {
     if (!items.length) return
     setNote('')
+    onOpenChange?.(false)
     const result = await startUpload(items, targetDir)
     if (result.done > 0) onDone([`${targetDir}/${items[0].rel}`])
   }
@@ -59,6 +61,8 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onO
       const r = await api.uploadUrl(url.trim(), targetDir)
       setUrl('')
       setNote(`Indexed in ${(r.indexMs / 1000).toFixed(1)}s`)
+      // The page opens in the viewer, which this panel would cover.
+      onOpenChange?.(false)
       onDone(r.saved)
     } catch (e) {
       setNote(String((e as Error).message ?? e))
