@@ -45,6 +45,13 @@ func registerPackages(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 		return chat.Default.StudioSession(ctx, c, owner, grant, workspace, model, mode, allow)
 	}
 	fleet.Register(mux, a, p, fl)
+	// A standing agent's session is its owner's on the Code page.
+	a.Providers.OwnSessions = append(a.Providers.OwnSessions, func(r *http.Request) []string {
+		if u := auth.UserOf(r); u != nil && u.ID != "" {
+			return fl.SessionsOf(u.ID)
+		}
+		return nil
+	})
 	// The fleet hears the run watcher's ended runs.
 	runs.OnRunEnded(func(r runs.RunEnded) {
 		res := ""

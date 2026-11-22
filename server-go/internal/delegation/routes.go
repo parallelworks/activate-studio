@@ -15,6 +15,14 @@ import (
 func Register(mux *http.ServeMux, a *app.App) {
 	s := New(a)
 	Default = s
+	// The sessions the viewer delegated to are theirs on the Code page.
+	a.Providers.OwnSessions = append(a.Providers.OwnSessions, func(r *http.Request) []string {
+		out := []string{}
+		for _, rec := range s.Mine(r) {
+			out = append(out, rec.Session)
+		}
+		return out
+	})
 	a.OnIndexWork("delegation: watch sessions still working", func(context.Context) { s.Resume() })
 	mux.HandleFunc("GET /api/delegated", platform.Handler(a.Log, func(w http.ResponseWriter, r *http.Request) (any, error) {
 		rs := s.Mine(r)

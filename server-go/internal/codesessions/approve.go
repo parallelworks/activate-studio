@@ -52,6 +52,9 @@ func (s *routes) approve(w http.ResponseWriter, r *http.Request) (any, error) {
 		if b.Machine != m.ID {
 			return nil, platform.KbError(404, "That session is not on this computer.")
 		}
+		if own, only := s.mine(r); only && !own[b.ID] {
+			return nil, notYours()
+		}
 		if _, err := pwcode.AnswerApproval(r.Context(), c, b.ID, b.Approval, answer); err != nil {
 			return nil, localAnswerError(err)
 		}

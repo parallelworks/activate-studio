@@ -314,6 +314,14 @@ func Register(mux *http.ServeMux, a *app.App) {
 	// (mcpClient.ts) and otherwise expires within a minute, so Node is not
 	// told.
 	a.Providers.InvalidateMCP = m.mcp.Invalidate
+	// The sessions the viewer's own chats run in are theirs on the Code page.
+	a.Providers.OwnSessions = append(a.Providers.OwnSessions, func(r *http.Request) []string {
+		out := []string{}
+		for id := range m.ownChats(r) {
+			out = append(out, id)
+		}
+		return out
+	})
 	a.Providers.ConversationNote = m.Conv.AppendNote
 	changed := a.Providers.Changed
 	a.Providers.Changed = func(ctx context.Context, what ...string) {

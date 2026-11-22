@@ -33,7 +33,36 @@ func localCode(r *http.Request, a *app.App, p *platform.Platform) bool {
 		return false
 	}
 	v, err := p.ViewerOf(r)
-	return err == nil && !p.PlatformAvailable(v)
+	if err != nil {
+		return false
+	}
+	if a.Cfg.AuthEnabled() || signedIn(v) {
+		// With sign-in on (AGENT_LOCAL_SITE=1) only a signed-in person
+		// reads this host, and only when the platform is not theirs to
+		// read with their own credential (viewerKey).
+		return v.UserID() != "" && (!p.PlatformGateway() || v.PlatformKey() == "")
+	}
+	return !p.PlatformAvailable(v)
+}
+
+// mine is, with sign-in on, the sessions on this host's daemon the
+// Studio started for the viewer (their chats, delegations and standing
+// agents), and whether the page is limited to them. Every session on the
+// daemon runs as the Studio's account, so without this a person would
+// read everyone's and could answer their waiting calls.
+func (s *routes) mine(r *http.Request) (map[string]bool, bool) {
+	if !s.a.Cfg.AuthEnabled() {
+		if v, err := s.p.ViewerOf(r); err != nil || !signedIn(v) {
+			return nil, false
+		}
+	}
+	return s.a.Providers.SessionsOf(r), true
+}
+
+// notYours is the answer for a session on this host that is not the
+// viewer's: the same as for one that is not there.
+func notYours() error {
+	return platform.KbError(404, "That session is not one of yours on this computer.")
 }
 
 // LocalName is the machine's name on the Code page for this host.
@@ -73,8 +102,12 @@ func (s *routes) localList(r *http.Request, c pwcode.Client) (any, error) {
 		return nil, err
 	}
 	names := map[string]string{m.ID: m.Name}
+	own, only := s.mine(r)
 	out := []View{}
 	for _, x := range rows {
+		if only && !own[x.ID] {
+			continue
+		}
 		x.MachineID = m.ID
 		v := view(x, names, "")
 		v.URL = ""
@@ -90,6 +123,9 @@ func (s *routes) localItem(r *http.Request, c pwcode.Client, mid, id string) (*d
 	}
 	if mid != m.ID {
 		return nil, platform.KbError(404, "That session is not on this computer.")
+	}
+	if own, only := s.mine(r); only && !own[id] {
+		return nil, notYours()
 	}
 	var d detail
 	if err := call(r.Context(), c, "/v1/sessions/"+platform.EncodeURIComponent(id), &d); err != nil {
