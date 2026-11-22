@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
@@ -39,6 +40,9 @@ func (s *routes) approve(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	if !idRe.MatchString(b.Machine) || !idRe.MatchString(b.ID) || !idRe.MatchString(b.Approval) {
 		return nil, platform.KbError(400, "machine, id and approval are required")
+	}
+	if b.Allowed && s.tooLong(r, b) {
+		return nil, platform.KbError(409, "That command is too long to show here in full, so it cannot be approved here. Deny it, or answer it where the session runs.")
 	}
 	answer := jsonv.NewObject("allowed", b.Allowed)
 	if !b.Allowed {
@@ -162,4 +166,30 @@ func (s *routes) notFound(r *http.Request, b approveBody, said string) error {
 		}
 	}
 	return platform.KbError(409, "That approval is no longer waiting: the session went on, or someone answered it.")
+}
+
+// tooLong is whether the approval answered is one whose command is longer
+// than the page is sent (maxApprovalCommand): the page offers Deny alone
+// for it, and the route refuses an Approve too, since Approve runs text
+// the person was not shown. A session that cannot be read is left to the
+// answer itself, which then says why.
+func (s *routes) tooLong(r *http.Request, b approveBody) bool {
+	var d *detail
+	if c := s.localDaemon(r); c != nil {
+		d, _ = s.localItem(r, c, b.Machine, b.ID)
+	} else {
+		var pd detail
+		if s.fetch(r, "/api/code/machines/"+platform.EncodeURIComponent(b.Machine)+"/sessions/"+platform.EncodeURIComponent(b.ID), &pd) == nil {
+			d = &pd
+		}
+	}
+	if d == nil {
+		return false
+	}
+	for _, a := range d.Approvals {
+		if a.ID == b.Approval {
+			return utf8.RuneCountInString(a.Command) > maxApprovalCommand
+		}
+	}
+	return false
 }
