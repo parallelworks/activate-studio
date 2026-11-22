@@ -49,12 +49,18 @@ type fakeGateway struct {
 	// api answers platform API paths (with the query) on the gateway's
 	// origin, as the platform serves them.
 	api map[string]string
+	// models is the /models listing, when not the one test model.
+	models string
 }
 
 func (g *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(r.URL.Path, "/models"):
 		w.Header().Set("Content-Type", "application/json")
+		if g.models != "" {
+			io.WriteString(w, g.models)
+			break
+		}
 		io.WriteString(w, `{"data":[{"id":"test-model","object":"model"}]}`)
 	case strings.HasSuffix(r.URL.Path, "/chat/completions"):
 		b, _ := io.ReadAll(r.Body)

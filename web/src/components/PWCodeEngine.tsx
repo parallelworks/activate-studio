@@ -12,7 +12,13 @@ interface ToolsState { connected: boolean; count: number; error?: string }
 
 /** continued: the chat continues a session from the Code page, on the
  *  platform's machine `machine`. */
-interface SessionInfo { url?: string; session?: string; model?: string; continued?: boolean; machine?: string }
+interface SessionInfo { url?: string; session?: string; model?: string; modelNote?: string; continued?: boolean; machine?: string }
+
+/** A model id's last part, as the chat bar names it: "haiku" for
+ *  claude-code/haiku, "gpt-6.2-sol" for owner:codex/gpt-6.2-sol. */
+export function shortModel(id?: string): string {
+  return id ? id.slice(id.lastIndexOf('/') + 1) : ''
+}
 
 /** The address of a pw code session on the Code page. */
 export function codePageLink(machine: string, session: string): string {
@@ -34,11 +40,11 @@ function useSession(conversationId: string | null): SessionInfo {
     let gone = false
     fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}`)
       .then(r => (r.ok ? r.json() : null))
-      .then(c => { if (!gone && c?.pwcode) setS({ url: c.pwcode.url, session: c.pwcode.session, model: c.pwcode.model, continued: !!c.pwcode.continued, machine: c.pwcode.machine }) })
+      .then(c => { if (!gone && c?.pwcode) setS({ url: c.pwcode.url, session: c.pwcode.session, model: c.pwcode.model, modelNote: c.pwcode.modelNote, continued: !!c.pwcode.continued, machine: c.pwcode.machine }) })
       .catch(() => {})
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail as SessionInfo & { conversationId?: string }
-      if (d.conversationId === conversationId) setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model }))
+      if (d.conversationId === conversationId) setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model, modelNote: d.modelNote || prev.modelNote }))
     }
     window.addEventListener('ade-pwcode-session', on)
     return () => { gone = true; window.removeEventListener('ade-pwcode-session', on) }
@@ -84,10 +90,26 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
     return () => { gone = true }
   }, [open, conversationId, session.session])
 
-  if (!info || (!info.pwcode && info.setting !== 'pwcode' && !session.url)) return null
-  const current: 'pwcode' | 'studio' = chosen || info.default
-  // pw code answers with its own model, which the composer's picker does not set.
-  const pwModel = session.model ? `This chat runs on ${session.model}.` : "It uses pw code's model, set in Settings, not the one chosen below."
+  const shown = !!info && (info.pwcode || info.setting === 'pwcode' || !!session.url)
+  const current: 'pwcode' | 'studio' = (info && (chosen || info.default)) || 'studio'
+  return shown && info ? <EngineMenu {...{ info, current, session, tools, open, setOpen, conversationId, setChosen }} /> : null
+}
+
+/** The chat bar's engine button and its menu. */
+function EngineMenu({ info, current, session, tools, open, setOpen, conversationId, setChosen }: {
+  info: EngineInfo; current: 'pwcode' | 'studio'; session: SessionInfo; tools: ToolsState | null; open: boolean
+  setOpen: (v: boolean) => void; conversationId: string | null; setChosen: (v: Engine) => void
+}) {
+  // The canvas says what answers, so the composer's model picker, which
+  // sets the Studio assistant's model only, is hidden while pw code does.
+  useEffect(() => {
+    const canvas = document.querySelector('.chat-canvas')
+    canvas?.setAttribute('data-engine', current)
+    return () => canvas?.removeAttribute('data-engine')
+  }, [current])
+  // pw code answers with its own model, which the composer's picker does
+  // not set; the picker is hidden while pw code answers (styles.css).
+  const pwModel = session.modelNote || (session.model ? `This chat runs on ${session.model}.` : "It runs on pw code's own model, or the one Settings names.")
   const pick = (v: 'pwcode' | 'studio') => {
     // The Studio's default is kept as '', so a change of setting reaches it.
     const value: Engine = v === info.default ? '' : v
@@ -105,7 +127,7 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
       trigger={
         <button className={`scope-btn ${current === 'pwcode' ? 'active' : ''}`} title="What answers this conversation: pw code or the Studio assistant">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M5 4.5 1.5 8 5 11.5M11 4.5 14.5 8 11 11.5M9.2 3 6.8 13"/></svg>
-          <span className="persona-label">{current === 'pwcode' ? 'pw code' : 'Studio'}</span>
+          <span className="persona-label">{current === 'pwcode' ? (session.model ? `pw code · ${shortModel(session.model)}` : 'pw code') : 'Studio'}</span>
         </button>
       }
     >
@@ -303,6 +325,34 @@ export function PWCodeNotice({ conversationId }: { conversationId: string | null
   return (
     <div className="cred-banner pwcode-notice">
       <Callout variant="bar" tone="info" title="The Studio assistant answered this message"
+        action={<Button variant="ghost" size="sm" onClick={close}>Dismiss</Button>}>
+        <p>{note}</p>
+      </Callout>
+    </div>
+  )
+}
+
+/**
+ * Says which model pw code runs a chat on when the Studio moved its
+ * session there: pw code's own model is one the person's AI connection
+ * does not offer. Shown in that conversation until it is dismissed.
+ */
+export function PWCodeModelNotice({ conversationId }: { conversationId: string | null }) {
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent).detail as { conversationId?: string; modelMoved?: boolean; modelNote?: string }
+      if (d?.conversationId && d.modelMoved && d.modelNote) setNotes(n => ({ ...n, [d.conversationId as string]: d.modelNote as string }))
+    }
+    window.addEventListener('ade-pwcode-session', on)
+    return () => window.removeEventListener('ade-pwcode-session', on)
+  }, [])
+  const note = conversationId ? notes[conversationId] : undefined
+  if (!note || !conversationId) return null
+  const close = () => setNotes(n => { const { [conversationId]: _, ...rest } = n; return rest })
+  return (
+    <div className="cred-banner pwcode-notice">
+      <Callout variant="bar" tone="info" title="pw code runs this chat on another model"
         action={<Button variant="ghost" size="sm" onClick={close}>Dismiss</Button>}>
         <p>{note}</p>
       </Callout>

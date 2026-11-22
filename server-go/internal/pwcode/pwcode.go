@@ -474,3 +474,9 @@ func obj(v any, err error) (*jsonv.Object, error) {
 	}
 	return jsonv.Obj(v), nil
 }
+
+// SetSessionModel is PATCH /v1/sessions/:id/settings {model}: the
+// session's later turns run on that model.
+func SetSessionModel(ctx context.Context, c Client, id, model string) (any, error) {
+	return c.Call(ctx, http.MethodPatch, sid(id)+"/settings", jsonv.NewObject("model", model), 0)
+}

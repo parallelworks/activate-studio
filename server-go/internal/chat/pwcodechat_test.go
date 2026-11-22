@@ -46,6 +46,10 @@ type fakePW struct {
 	status   map[string]any
 	detail   map[string]any
 	attached int
+	// model is the session's model (m1 when ""); settings records the
+	// PATCH /v1/sessions/s1/settings bodies.
+	model    string
+	settings []string
 }
 
 func (f *fakePW) add(ev map[string]any) {
@@ -86,7 +90,19 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mu.Unlock()
 		send(map[string]any{"id": "s1", "status": "idle"})
 	case p == "/v1/sessions/s1/state":
-		send(map[string]any{"remoteUrl": "https://platform.example/code?session=s1", "model": "m1"})
+		f.mu.Lock()
+		model := f.model
+		f.mu.Unlock()
+		if model == "" {
+			model = "m1"
+		}
+		send(map[string]any{"remoteUrl": "https://platform.example/code?session=s1", "model": model})
+	case p == "/v1/sessions/s1/settings" && r.Method == http.MethodPatch:
+		b, _ := io.ReadAll(r.Body)
+		f.mu.Lock()
+		f.settings = append(f.settings, strings.TrimSpace(string(b)))
+		f.mu.Unlock()
+		send(map[string]any{"model": "patched"})
 	case p == "/v1/sessions/s1/events":
 		websocket.Server{Handler: f.stream}.ServeHTTP(w, r)
 	case p == "/v1/sessions/s1/messages":
@@ -182,19 +198,25 @@ func (f *fakePW) stream(ws *websocket.Conn) {
 
 // pwModule is a test Studio whose pw code is f.
 func pwModule(t *testing.T, f *fakePW, env map[string]string) (*Module, string) {
+	m, base, _ := pwModuleGW(t, f, env)
+	return m, base
+}
+
+// pwModuleGW is pwModule with the Studio's gateway, to set what it lists.
+func pwModuleGW(t *testing.T, f *fakePW, env map[string]string) (*Module, string, *fakeGateway) {
 	sock := pwcodetest.Socket(t, f)
 	e := map[string]string{"PW_CODE_SOCKET": sock}
 	for k, v := range env {
 		e[k] = v
 	}
-	m, srv, _, _ := newTestModule(t, e)
+	m, srv, gw, _ := newTestModule(t, e)
 	// The Studio runs under ACTIVATE: the platform is connected.
 	m.A.Providers.PlatformAvailable = func(*http.Request, string) bool { return true }
 	daemon := pwcode.New(m.pf)
 	was := pwSites
 	pwSites = func() *agentsites.Sites { return &agentsites.Sites{P: m.pf, Daemon: daemon} }
 	t.Cleanup(func() { pwSites = was })
-	return m, srv.URL
+	return m, srv.URL, gw
 }
 
 var helloTurn = []map[string]any{

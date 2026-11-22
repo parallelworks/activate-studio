@@ -158,6 +158,11 @@ type pwTarget struct {
 	inSpace bool
 	// persona is the agent instructions the session's folder carries.
 	persona string
+	// chatModel is the model chosen under the message box, which a
+	// session moves to when its own is not offered (pwcodemodel.go);
+	// modelMoved says the session moved for this message.
+	chatModel  string
+	modelMoved bool
 }
 
 func pwErr(status int, msg string) error { return &apierr.Error{Status: status, Message: msg} }
@@ -377,6 +382,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 			ck := ensureStudioMCP(ctx, t.client, l.Session, want)
 			if ck.OK {
 				m.setToolsDown(t.site, "")
+				m.pwcodeModel(ctx, r, t, l)
 				return l, false, nil
 			}
 			m.A.Log.Warn("pw code chat: the session lost the Studio's tools, so another starts", "session", l.Session, "detail", ck.Detail)
@@ -435,6 +441,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 			link.URL = jsonv.String(jsonv.Path(st, "remoteUrl"))
 			link.Model = jsonv.String(jsonv.Path(st, "model"))
 		}
+		m.pwcodeModel(ctx, r, t, link)
 		m.Conv.SetPWCode(c.ID, link)
 		m.setToolsDown(t.site, "")
 		return link, true, nil
@@ -535,6 +542,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if err != nil {
 		return fail(err)
 	}
+	t.chatModel = StripAvailabilityMark(jsString(body.Model))
 	if old := c.PWCode; old != nil && prior == nil && !old.Continued && old.Session != "" && old.Site == t.site {
 		_, _ = pwcode.ArchiveSession(ctx, t.client, old.Session)
 	}
@@ -563,7 +571,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		scopeNote = "Scope from the Studio's chat bar: " + firstNonEmpty(note, "the person's default libraries.") + "\n\n"
 	}
 	m.Conv.SetPWCode(convID, link)
-	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model))
+	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model, "modelNote", link.ModelNote, "modelMoved", t.modelMoved))
 	d, err := pwcode.GetSession(ctx, t.client, link.Session)
 	if err != nil {
 		return fail(err)
@@ -663,7 +671,7 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 	case "state":
 		if u := jsonv.String(jsonv.Path(ev, "state", "remoteUrl")); u != "" && u != t.link.URL {
 			t.link.URL = u
-			t.res.event("pwcode", reqbody.O("session", t.link.Session, "url", u, "site", t.link.Site, "workspace", t.link.Workspace, "model", t.link.Model))
+			t.res.event("pwcode", reqbody.O("session", t.link.Session, "url", u, "site", t.link.Site, "workspace", t.link.Workspace, "model", t.link.Model, "modelNote", t.link.ModelNote))
 		}
 	case "chunk":
 		if t.mine(ev) {
@@ -879,7 +887,7 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 			codePage = CodePageLink(c.PWCode.Machine, c.PWCode.Session)
 		}
 		return reqbody.OK(w, reqbody.O("session", c.PWCode.Session, "url", c.PWCode.URL, "status", jsonv.String(jsonv.Path(d, "status")),
-			"answering", m.following(c.ID), "approvals", approvals, "tools", tools, "continued", c.PWCode.Continued, "codePage", codePage))
+			"answering", m.following(c.ID), "approvals", approvals, "tools", tools, "continued", c.PWCode.Continued, "codePage", codePage, "model", c.PWCode.Model, "modelNote", c.PWCode.ModelNote))
 	})
 	h("POST /api/chat/pwcode/{id}/interrupt", func(w http.ResponseWriter, r *http.Request) error {
 		c, t, err := m.ownPWCode(r)
