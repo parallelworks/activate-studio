@@ -791,6 +791,7 @@ func (m *Module) toolAgentSessions(r *http.Request, args map[string]any, ctx Too
 	if err != nil {
 		return nil, err
 	}
+	rows = s.MineOnly(r, tmplOr(arg(args, "site"), ""), rows, m.A.Cfg.AuthEnabled())
 	find := tmplOr(arg(args, "find"), "")
 	head := ""
 	if strings.TrimSpace(find) != "" {
@@ -839,6 +840,9 @@ func (m *Module) toolStartAgent(r *http.Request, args map[string]any, ctx ToolCt
 		}
 		library = ""
 	}
+	if err := s.MayStart(tmplOr(arg(args, "site"), ""), m.A.Cfg.AuthEnabled()); err != nil {
+		return nil, err
+	}
 	st, err := s.Start(r.Context(), agentsites.StartAgent{Site: tmplOr(arg(args, "site"), ""), Key: m.agentKey(s, ctx), Objective: tmplOr(arg(args, "objective"), ""),
 		Goal: optStr(arg(args, "goal")), MaxTurns: turns, Workspace: optStr(arg(args, "workspace")), Model: model, PermissionMode: optStr(arg(args, "permission_mode")),
 		Library: library, Folder: optStr(arg(args, "folder"))}, m.A.Cfg.AuthEnabled())
@@ -861,6 +865,9 @@ func (m *Module) toolStartAgent(r *http.Request, args map[string]any, ctx ToolCt
 func (m *Module) toolAgentStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	s, err := m.sites()
 	if err != nil {
+		return nil, err
+	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
 		return nil, err
 	}
 	m.awaitAgent(r, s, args, ctx)
@@ -934,6 +941,9 @@ func (m *Module) toolAgentSteer(r *http.Request, args map[string]any, ctx ToolCt
 	if err != nil {
 		return nil, err
 	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
+		return nil, err
+	}
 	mode := "direction"
 	if arg(args, "mode") == "message" {
 		mode = "message"
@@ -954,6 +964,9 @@ func (m *Module) toolAgentSteer(r *http.Request, args map[string]any, ctx ToolCt
 func (m *Module) toolAgentGoal(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	s, err := m.sites()
 	if err != nil {
+		return nil, err
+	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
 		return nil, err
 	}
 	action := tmplOr(arg(args, "action"), "")
@@ -980,6 +993,9 @@ func (m *Module) toolAgentApprove(r *http.Request, args map[string]any, ctx Tool
 	if err != nil {
 		return nil, err
 	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
+		return nil, err
+	}
 	allow := arg(args, "allow") == true
 	if _, err := s.Approve(r.Context(), tmplOr(arg(args, "site"), ""), m.agentKey(s, ctx), tmplOr(arg(args, "session"), ""), tmplOr(arg(args, "approval"), ""), allow, optStr(arg(args, "message")), m.A.Cfg.AuthEnabled()); err != nil {
 		return nil, err
@@ -993,6 +1009,9 @@ func (m *Module) toolAgentApprove(r *http.Request, args map[string]any, ctx Tool
 func (m *Module) toolAgentStop(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	s, err := m.sites()
 	if err != nil {
+		return nil, err
+	}
+	if err := s.Mine(r, tmplOr(arg(args, "site"), ""), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
 		return nil, err
 	}
 	if _, err := s.Stop(r.Context(), tmplOr(arg(args, "site"), ""), m.agentKey(s, ctx), tmplOr(arg(args, "session"), ""), m.A.Cfg.AuthEnabled()); err != nil {
