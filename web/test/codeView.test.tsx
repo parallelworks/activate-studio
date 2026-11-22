@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ago, argSummary, CodeView, continuable, groupSessions, isAtEnd, sessionInHash, shortPath, Transcript, type CodeSession, type Here } from '../src/views/CodeView'
+import { ago, argSummary, CodeView, continuable, groupSessions, isAtEnd, rowMeta, sessionInHash, shortPath, Transcript, type CodeSession, type Here } from '../src/views/CodeView'
 import { getEngine } from '../src/labelScope'
 
 const row = (o: Partial<CodeSession>): CodeSession => ({ machineId: 'm', machine: 'm1', id: 'x', title: 't', messages: 1, status: 'idle', url: '', ...o })
@@ -23,6 +23,12 @@ describe('Code sessions', () => {
     expect(shortPath('/home/u/work/project/src')).toBe('…/project/src')
     expect(argSummary('{"path":"a/b.go","limit":5}')).toBe('a/b.go')
     expect(argSummary('{"x":1}')).toBe('')
+  })
+  it('puts what the Studio does with a session before its path, which the row cuts', () => {
+    const s = row({ machine: 'box', workspace: '/home/u/work/project/src' })
+    expect(rowMeta(s, true)).toBe('box · in a Studio chat · …/project/src')
+    expect(rowMeta(s, false, { instructions: 'reviewer' } as never)).toBe('box · delegated, reviewer · …/project/src')
+    expect(rowMeta(row({ machine: 'box' }), false)).toBe('box')
   })
   it('reads tool arguments the server cut short, and never shows them raw', () => {
     // The server keeps the first 600 characters, so long arguments are not JSON.

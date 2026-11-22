@@ -123,6 +123,17 @@ const DELEGATED_STATE: Record<Delegated['state'], string> = {
   working: 'working', finished: 'finished', stopped: 'stopped on an error', waiting: 'waiting for you', gone: 'no longer on its machine',
 }
 
+/** A row's second line: the machine, then what the Studio does with the
+ *  session, then its workspace last, where the row's ellipsis cuts it. */
+export function rowMeta(s: CodeSession, inChat: boolean, d?: Delegated): string {
+  return [
+    s.machine,
+    inChat ? 'in a Studio chat' : '',
+    d ? `delegated${d.instructions ? `, ${d.instructions}` : ''}` : '',
+    s.workspace ? shortPath(s.workspace) : '',
+  ].filter(Boolean).join(' · ')
+}
+
 /** A library file's link in the Studio. */
 const fileHref = (rel: string) => `#open=file:${encodeURIComponent(rel).replace(/%2F/gi, '/')}`
 
@@ -300,7 +311,7 @@ export function CodeView() {
                       <StatusDot variant={dot.variant} off={dot.off} pulse={dot.pulse} />
                       <span className="code-row-main">
                         <span className="code-row-title">{s.title}</span>
-                        <span className="code-row-meta">{s.machine}{s.workspace ? ` · ${shortPath(s.workspace)}` : ''}{chatFor.has(s.id) ? ' · in a Studio chat' : ''}{delegated.has(s.id) ? ` · delegated${delegated.get(s.id)?.instructions ? `, ${delegated.get(s.id)?.instructions}` : ''}` : ''}</span>
+                        <span className="code-row-meta">{rowMeta(s, chatFor.has(s.id), delegated.get(s.id))}</span>
                       </span>
                       <span className="code-row-when">{ago(s.updatedAt)}</span>
                     </button>
@@ -394,20 +405,18 @@ function SessionDetail({ s, detail, error, can, chat, onContinued, delegated }: 
   return (
     <>
       <div className="code-detail-head">
-        <div className="code-detail-title">
-          <h2>{s.title}</h2>
-          <div className="code-detail-meta">
-            <span className="code-status"><StatusDot variant={dot.variant} off={dot.off} pulse={dot.pulse} />{STATUS_TEXT[s.status] ?? s.status}{(s.waiting ?? 0) > 0 ? `, ${s.waiting} to approve` : ''}</span>
-            <span>{s.machine}</span>
-            {s.workspace && <span className="code-mono" title={s.workspace}>{s.workspace}</span>}
-            {s.model && <span>{s.model}</span>}
-            {s.branch && <span className="code-mono">{s.branch}</span>}
-            {s.pullRequests?.map(u => <a key={u} href={u} target="_blank" rel="noopener noreferrer">{u.replace(/^https?:\/\/(www\.)?github\.com\//, '')}</a>)}
-          </div>
-        </div>
+        <h2 title={s.title}>{s.title}</h2>
         <div className="code-detail-actions">
           <ContinueButton s={s} can={can} chat={chat} onContinued={onContinued} />
           {s.url && <Button variant="secondary" size="sm" href={s.url} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>}
+        </div>
+        <div className="code-detail-meta">
+          <span className="code-status"><StatusDot variant={dot.variant} off={dot.off} pulse={dot.pulse} />{STATUS_TEXT[s.status] ?? s.status}{(s.waiting ?? 0) > 0 ? `, ${s.waiting} to approve` : ''}</span>
+          <span>{s.machine}</span>
+          {s.model && <span>{s.model}</span>}
+          {s.branch && <span className="code-mono">{s.branch}</span>}
+          {s.pullRequests?.map(u => <a key={u} href={u} target="_blank" rel="noopener noreferrer">{u.replace(/^https?:\/\/(www\.)?github\.com\//, '')}</a>)}
+          {s.workspace && <span className="code-mono code-path" title={s.workspace}>{s.workspace}</span>}
         </div>
       </div>
       {!chat && !can.ok && <p className="muted code-continue-why">{can.why}</p>}
