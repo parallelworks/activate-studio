@@ -26,8 +26,8 @@ describe('Code sessions', () => {
   })
   it('puts what the Studio does with a session before its path, which the row cuts', () => {
     const s = row({ machine: 'box', workspace: '/home/u/work/project/src' })
-    expect(rowMeta(s, true)).toBe('box · in a Studio chat · …/project/src')
-    expect(rowMeta(s, false, { instructions: 'reviewer' } as never)).toBe('box · delegated, reviewer · …/project/src')
+    expect(rowMeta(s, true)).toBe('in a Studio chat · box · …/project/src')
+    expect(rowMeta(s, false, { instructions: 'reviewer' } as never)).toBe('delegated, reviewer · box · …/project/src')
     expect(rowMeta(row({ machine: 'box' }), false)).toBe('box')
   })
   it('reads tool arguments the server cut short, and never shows them raw', () => {
@@ -158,7 +158,7 @@ describe('Continue in Studio', () => {
   it('keeps a session on another machine read only, and opens a chat that continues one', async () => {
     serve([{ session: 's1', conversationId: 'c-old', continued: true }])
     render(<CodeView />)
-    expect(await screen.findByText(/box · in a Studio chat/)).toBeInTheDocument()
+    expect(await screen.findByText(/in a Studio chat · box/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('On the laptop'))
     const go = await screen.findByRole('button', { name: 'Continue in Studio' })
     await waitFor(() => expect(screen.getByText(/so it is read only here/)).toBeInTheDocument())
