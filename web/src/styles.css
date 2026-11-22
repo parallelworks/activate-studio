@@ -3335,3 +3335,5 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .copy-library-path code { overflow-wrap: anywhere; }
 .copy-library-dirs { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px; }
 .copy-library-form .settings-grid { margin-bottom: 0; }
+/* A locked button's wrapper (LockedButton) takes no room of its own. */
+.locked-button { display: inline-flex; }

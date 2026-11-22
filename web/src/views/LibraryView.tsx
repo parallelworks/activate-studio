@@ -4,7 +4,7 @@ import { currentLibrary, onLibraryChange, warmRemoteHosts } from '../api'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   Button, Callout, Checkbox, ConfirmModal, EmptyState, IconButton, Input, Modal, ProgressBar, RefreshButton,
-  toast, Tooltip, useContextMenu, type MenuEntry,
+  toast, useContextMenu, type MenuEntry,
 } from '@parallelworks/ui'
 import type { Display } from '../App'
 import { api } from '../api'
@@ -26,6 +26,7 @@ import { libraryWritten } from '../libraryCatchUp'
 import { ShareDialog } from '../components/ShareDialog'
 import { ResultsTransferDialog, useTransfersShown, type ResultItem } from '../components/ResultsTransfer'
 import { destinationWhy, libraryLocation, transferApi } from '../transferApi'
+import { LockedButton } from '../components/LockedButton'
 
 const RAIL_MIN = 220
 const RAIL_MAX = 520
@@ -621,7 +622,7 @@ export function LibraryView({ display, onDisplay }: {
                 <div className="multi-bar">
                   <span>{multiSel.size} selected</span>
                   {selLabelsLocked
-                    ? <Tooltip content={selLabelsLocked}><Button variant="secondary" size="sm" disabled focusableWhenDisabled>Labels…</Button></Tooltip>
+                    ? <LockedButton reason={selLabelsLocked}>Labels…</LockedButton>
                     : (
                       <TagMenu
                         paths={selPaths}
@@ -634,8 +635,8 @@ export function LibraryView({ display, onDisplay }: {
                   {selLocked
                     ? (
                       <>
-                        <Tooltip content={selLocked}><Button variant="secondary" size="sm" disabled focusableWhenDisabled>Move to…</Button></Tooltip>
-                        <Tooltip content={selLocked}><Button variant="outline" size="sm" disabled focusableWhenDisabled>Delete…</Button></Tooltip>
+                        <LockedButton reason={selLocked}>Move to…</LockedButton>
+                        <LockedButton reason={selLocked} variant="outline">Delete…</LockedButton>
                       </>
                     )
                     : (

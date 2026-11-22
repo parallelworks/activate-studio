@@ -1,10 +1,11 @@
 import { useId, useRef, useState } from 'react'
-import { ActionMenu, Button, buttonClasses, Input, Popover, Tooltip, type MenuEntry } from '@parallelworks/ui'
+import { ActionMenu, Button, buttonClasses, Input, Popover, type MenuEntry } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { api } from '../api'
 import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
 import { chooseUpload, shellListsFolders } from '../nativeShell'
 import { startUpload } from '../transfers'
+import { LockedButton } from './LockedButton'
 
 /** Settings > Indexing > Libraries with its Add a library form open. */
 export const ADD_LIBRARY_HASH = '#view=settings:libraries?add=1'
@@ -85,7 +86,7 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onO
   }
 
   if (readOnly) {
-    return <Tooltip content={readOnly}><Button variant="primary" size="sm" disabled focusableWhenDisabled className={onAddLibrary ? 'add-split-main' : undefined}>+ Add</Button></Tooltip>
+    return <LockedButton reason={readOnly} variant="primary" className={onAddLibrary ? 'add-split-main' : undefined}>+ Add</LockedButton>
   }
 
   return (
