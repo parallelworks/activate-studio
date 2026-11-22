@@ -724,11 +724,7 @@ func (p *Pool) fail(id, site, key string, ch *channel, why string, code int) {
 }
 
 func channelID(site, key string) string {
-	k := key
-	if len(k) > 16 {
-		k = k[len(k)-16:]
-	}
-	return k + "|" + site
+	return KeyID(key) + "|" + site
 }
 
 // pick is a session for the next request: an idle one, else a new one
