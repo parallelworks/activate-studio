@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AgentsView, agentsSummary } from '../src/views/AgentsView'
+import { AgentsView, agentsSummary, taskOutcome } from '../src/views/AgentsView'
 
 const task = {
   id: '2026-11-02-live-cd34', objective: 'Was running', state: 'canceled', maxAgents: 4, maxDepth: 1, agents: [
@@ -51,6 +51,12 @@ describe('the Earlier tasks page', () => {
   it('counts an agent that failed or stopped as not done', async () => {
     render(<AgentsView onOpen={() => {}} />)
     expect(await screen.findByText('0 of 1 done, 1 failed')).toBeInTheDocument()
+    // Its state says how its agents ended: none did the work, so it failed.
+    const failedCard = screen.getByText('Failed work', { selector: '.task-card-objective' }).closest('.task-card')!
+    expect(failedCard.querySelector('.task-card-state')).toHaveTextContent(/^failed$/)
+    expect(agentsSummary({ id: 'y', objective: '', state: 'completed', agents: 2, running: 0, done: 1, failed: 1 })).toBe('1 of 2 done, 1 failed')
+    expect(taskOutcome({ id: 'y', objective: '', state: 'completed', agents: 2, running: 0, done: 1, failed: 1 })).toEqual({ label: 'completed, 1 failed', look: { variant: 'warning' } })
+    expect(taskOutcome({ id: 'z', objective: '', state: 'completed', agents: 1, running: 0, done: 1, failed: 0 }).label).toBe('completed')
     expect(screen.getByText('1 of 2 done, 1 stopped')).toBeInTheDocument()
     // An older server, with no counts: those not running are done.
     expect(agentsSummary({ id: 'x', objective: '', state: 'completed', agents: 3, running: 1 })).toBe('2 of 3 done')

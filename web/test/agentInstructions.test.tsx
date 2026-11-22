@@ -69,7 +69,7 @@ describe('agent instructions', () => {
 
   it('takes instructions off a folder', async () => {
     render(<AgentsView onOpen={() => {}} />)
-    fireEvent.click(await screen.findByText('reviewer · take off'))
+    fireEvent.click(await screen.findByRole('button', { name: 'reviewer · take off' }))
     await waitFor(() => expect(posts).toHaveLength(1))
     expect(posts[0]).toEqual({ url: '/api/agents-md/remove', body: { library: '', folder: 'agents/reviewer', instructions: 'reviewer' } })
     expect(await screen.findByText('Folders with agent instructions (0)')).toBeInTheDocument()
@@ -113,5 +113,21 @@ describe('agent instructions', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'agents' }))
     expect(picked).toEqual(['agents'])
     await waitFor(() => expect(trees).toEqual(['mine:', 'mine:agents']))
+  })
+
+  it('keeps what was taken off in its place, so the next action does not move', async () => {
+    folders = [{ library: 'main', label: 'Engineering Library', folder: 'agentstest', path: 'agentstest/AGENTS.md', space: false, exists: true, instructions: ['reviewer'], skills: ['pump'] }]
+    render(<AgentsView onOpen={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'reviewer · take off' }))
+    await waitFor(() => expect(posts).toHaveLength(1))
+    const taken = await screen.findByRole('button', { name: 'reviewer · taken off' })
+    expect(taken).toBeDisabled()
+    const row = taken.closest('.ov-row')!
+    expect(Array.from(row.querySelectorAll('button')).map(b => b.disabled)).toEqual([true, false])
+    expect(screen.getByRole('button', { name: 'skill pump · take off' })).toBeEnabled()
+    // Both words are laid out in the same place, so the label keeps its width.
+    expect(taken.querySelectorAll('.agents-swap > span')).toHaveLength(2)
+    // It still carries the skill, so it is still counted.
+    expect(screen.getByText('Folders with agent instructions (1)')).toBeInTheDocument()
   })
 })
