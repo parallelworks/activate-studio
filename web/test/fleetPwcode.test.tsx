@@ -105,6 +105,15 @@ describe('the Fleet page over pw code sessions', () => {
     } finally { location.hash = '' }
   })
 
+  it('opens nothing for a hand-made link whose id does not decode', async () => {
+    location.hash = '#view=agents:fleet?agent=%'
+    try {
+      render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+      expect(await screen.findByText('Queue watcher', { selector: '.task-card-objective' })).toBeInTheDocument()
+      expect(document.querySelector('.fleet-card.selected')).toBeNull()
+    } finally { location.hash = '' }
+  })
+
   it('answers a call its session waits to have approved, from the detail', async () => {
     const waiting = { ...agent, note: 'waiting for your approval: Bash: rm -rf build' }
     let approval: Record<string, unknown> = { id: 'ap1', kind: 'confirm', tool: 'Bash', command: 'rm -rf build', commandLength: 12, approvable: true }

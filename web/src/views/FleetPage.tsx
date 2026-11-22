@@ -67,10 +67,12 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [templates, setTemplates] = useState<Template[]>([])
   const [open, setOpen] = useState<string | null>(null)
   // #view=agents:fleet?agent=<id> (Status Activity's link) opens that agent.
+  // A hand-made link whose id does not decode opens none.
   useEffect(() => {
     const pick = () => {
       const m = location.hash.match(/^#view=agents:fleet\?(?:.*&)?agent=([^&]+)/)
-      if (m) setOpen(decodeURIComponent(m[1]))
+      if (!m) return
+      try { setOpen(decodeURIComponent(m[1])) } catch { /* not an id */ }
     }
     pick()
     window.addEventListener('hashchange', pick)
