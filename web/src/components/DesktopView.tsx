@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Button, Callout, Loader, Popover, Select, StatusDot, type BadgeVariant } from '@parallelworks/ui'
 import type RFB from '@novnc/novnc'
 
@@ -20,9 +20,9 @@ export type DesktopFit = 'fit' | 'scale' | 'actual'
 export type DesktopQuality = 'low' | 'medium' | 'high'
 
 const FITS: { value: DesktopFit; label: string; description: string }[] = [
-  { value: 'fit', label: 'Fit', description: 'The desktop takes the size of this view while it has the focus' },
+  { value: 'fit', label: 'Fit', description: 'The desktop takes the size of the view you used last' },
   { value: 'scale', label: 'Scale', description: 'The desktop keeps its size, scaled to this view' },
-  { value: 'actual', label: 'Actual size', description: 'Pixel for pixel, scrolled inside this view' },
+  { value: 'actual', label: 'Actual size', description: 'Pixel for pixel; Pan or the scroll bars reach the rest of a larger desktop' },
 ]
 const QUALITIES: { value: DesktopQuality; label: string }[] = [
   { value: 'high', label: 'High quality' },
@@ -72,12 +72,17 @@ async function readLogs(user: string, name: string): Promise<{ status: number; l
 }
 
 /** Fit resizes a desktop to one view at a time: the one used last (shown
- *  last, or clicked), so a desktop in the side view and over the whole
+ *  last, or clicked). The window's focus is no guide: the desktop app's
+ *  WebKitGTK window can report none while it takes keys. So a desktop in the side view and over the whole
  *  Studio, or in a chat card too, does not change size between them. A
  *  chat card is a page of its own in a frame, so the claim is also sent to
  *  the Studio's other pages and frames, and view ids are unique across
  *  them. */
 let resizer = ''
+/** This page's views, the one used last at the end: when the view that
+ *  resizes goes away (Full screen closed), the one used before it takes
+ *  over. */
+const views: string[] = []
 const realm = Math.random().toString(36).slice(2, 10)
 let nextView = 1
 const resizerChanged = new Set<() => void>()
@@ -91,6 +96,8 @@ function takeClaim(id: string): void {
 }
 claims?.addEventListener('message', (e: MessageEvent) => { if (typeof e.data === 'string') takeClaim(e.data) })
 function claimResize(id: string): void {
+  const at = views.indexOf(id)
+  if (at >= 0) { views.splice(at, 1); views.push(id) }
   if (resizer === id) return
   takeClaim(id)
   try { claims?.postMessage(id) } catch { /* this page's views still agree */ }
@@ -112,33 +119,46 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
   const [fromDesktop, setFromDesktop] = useState('')
   const [toDesktop, setToDesktop] = useState('')
   const [showLogs, setShowLogs] = useState(false)
+  // In Actual size, Pan makes a drag or the wheel move around the desktop
+  // in place of reaching it.
+  const [pan, setPan] = useState(false)
   const [logs, setLogs] = useState<Logs | null>(null)
   const [id] = useState(() => `${realm}-${nextView++}`)
-  const settings = useRef({ fit, quality })
-  settings.current = { fit, quality }
+  const settings = useRef({ fit, quality, pan })
+  settings.current = { fit, quality, pan }
 
   // The view and quality on a client: at once when it is made, so Fit's
   // first resize is asked for as soon as the desktop can take one, and
   // whenever they change. Fit resizes the desktop only from the view used
-  // last, and only while the window has the focus.
+  // last, while its page is shown. Actual size leaves the desktop unscaled
+  // and unclipped, so the page scrolls it with scroll bars; the wheel over
+  // the desktop goes to the desktop's own windows.
   const apply = useCallback((c: RFB | null) => {
     if (!c) return
-    const { fit: f, quality: q } = settings.current
+    const { fit: f, quality: q, pan: p } = settings.current
     c.scaleViewport = f !== 'actual'
-    c.clipViewport = f === 'actual'
-    c.resizeSession = f === 'fit' && resizer === id && document.hasFocus() && document.visibilityState === 'visible'
+    c.clipViewport = false
+    c.resizeSession = f === 'fit' && resizer === id && document.visibilityState === 'visible'
+    c.viewOnly = f === 'actual' && p
     c.qualityLevel = LEVELS[q].quality
     c.compressionLevel = LEVELS[q].compression
   }, [id])
   useEffect(() => {
+    views.push(id)
     claimResize(id)
     const on = () => apply(rfb.current)
     resizerChanged.add(on)
-    window.addEventListener('focus', on); window.addEventListener('blur', on); document.addEventListener('visibilitychange', on)
+    document.addEventListener('visibilitychange', on)
     return () => {
       resizerChanged.delete(on)
-      window.removeEventListener('focus', on); window.removeEventListener('blur', on); document.removeEventListener('visibilitychange', on)
-      if (resizer === id) resizer = ''
+      document.removeEventListener('visibilitychange', on)
+      const at = views.indexOf(id)
+      if (at >= 0) views.splice(at, 1)
+      if (resizer === id) {
+        resizer = ''
+        const before = views[views.length - 1]
+        if (before) claimResize(before)
+      }
     }
   }, [id, apply])
 
@@ -233,7 +253,20 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
     }
   }, [running, attempt, user, name, diagnose, apply])
 
-  useEffect(() => { apply(rfb.current) }, [fit, quality, phase, apply])
+  useEffect(() => { apply(rfb.current) }, [fit, quality, pan, phase, apply])
+
+  // Pan: a drag moves the view over the desktop. The view is noVNC's own
+  // scrolling box inside the screen.
+  const panning = fit === 'actual' && pan
+  const startPan = (e: ReactPointerEvent) => {
+    const box = screen.current?.firstElementChild as HTMLElement | null
+    if (!box || e.button !== 0) return
+    e.preventDefault()
+    const from = { x: e.clientX, y: e.clientY, left: box.scrollLeft, top: box.scrollTop }
+    const move = (m: PointerEvent) => { box.scrollLeft = from.left - (m.clientX - from.x); box.scrollTop = from.top - (m.clientY - from.y) }
+    const end = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end) }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end)
+  }
 
   // The start-up logs, while it connects or when asked for.
   const wantLogs = showLogs || phase === 'connecting' || phase === 'failed'
@@ -264,13 +297,16 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
   const connected = phase === 'connected'
 
   return (
-    <div className={`desktop-view ${className}`} data-phase={phase}>
+    <div className={`desktop-view ${className}`} data-phase={phase} data-fit={fit}>
       <div className="desktop-bar">
         <StatusDot variant={dot} pulse={phase === 'connecting'} size={7} />
         <span className="desktop-state" role="status">{state}</span>
         <span className="desktop-actions">
           <Select aria-label="View" size="sm" width="content" items={FITS} value={fit}
             onValueChange={v => { if (v) { setFit(v); store('studio.desktop.fit', v) } }} />
+          {fit === 'actual' && <Button variant="ghost" size="sm" aria-pressed={pan}
+            title={pan ? 'Pan is on: drag or scroll to move around the desktop. Press again to use the desktop.' : 'Drag or scroll to move around a desktop larger than this view'}
+            onClick={() => setPan(v => !v)}>Pan</Button>}
           <Select aria-label="Quality" size="sm" width="content" items={QUALITIES} value={quality}
             onValueChange={v => { if (v) { setQuality(v); store('studio.desktop.quality', v) } }} />
           <Popover title="Clipboard" align="end" className="desktop-clip"
@@ -293,7 +329,8 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
         </span>
       </div>
       <div className="desktop-stage">
-        <div className="desktop-screen" ref={screen} onPointerDownCapture={() => { claimResize(id); rfb.current?.focus() }} />
+        <div className={`desktop-screen${panning ? ' desktop-panning' : ''}`} ref={screen}
+          onPointerDownCapture={e => { claimResize(id); if (panning) startPan(e); else rfb.current?.focus() }} />
         {!connected && (
           <div className="desktop-overlay">
             {phase === 'waiting' && <p className="muted">{status === null ? <Loader inline size={14} label="Checking the desktop…" /> : `Desktop ${name} is ${status || 'not running'}. It shows here once it is running.`}</p>}
