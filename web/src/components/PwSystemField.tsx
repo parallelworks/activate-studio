@@ -53,12 +53,12 @@ export function PwSystemField({ value, onChange, preferred, help, extra = [], ex
   return (
     <>
       {(systems === null || listed || extra.length > 0) && (
-        <Field label="System" description={say('Your systems on the platform, running ones first. One that is off has to be started on ACTIVATE before it can be reached.')}>
-          <Select value={chosen} placeholder={systems === null ? 'Loading…' : 'Choose a system'} disabled={systems === null}
+        <Field label="Remote computer" description={say('Your clusters on the platform, running ones first. One that is off has to be started on ACTIVATE before it can be reached.')}>
+          <Select value={chosen} placeholder={systems === null ? 'Loading…' : 'Choose a remote computer'} disabled={systems === null}
             items={[
               ...(systems?.systems ?? []).map(x => ({ value: x.name, label: x.label, description: x.label !== x.name ? x.name : undefined, hint: x.name === preferred ? "the Studio's cluster" : x.running ? 'running' : x.status })),
               ...extra,
-              { value: ANOTHER, label: 'Another system…', description: 'Type its name' },
+              { value: ANOTHER, label: 'Another remote computer…', description: 'Type its name' },
             ]}
             onValueChange={v => {
               if (!v) return
@@ -69,8 +69,8 @@ export function PwSystemField({ value, onChange, preferred, help, extra = [], ex
         </Field>
       )}
       {typed && (
-        <Input label={listed ? 'System name' : 'System'} placeholder="my-cluster" mono autoComplete="off" spellCheck={false} value={value}
-          description={say('The name of a running system, as pw ssh takes it.')} onChange={e => onChange(e.target.value.trim())} />
+        <Input label={listed ? 'Its name' : 'Remote computer'} placeholder="my-cluster" mono autoComplete="off" spellCheck={false} value={value}
+          description={say('The name of a running cluster, as pw ssh takes it.')} onChange={e => onChange(e.target.value.trim())} />
       )}
     </>
   )

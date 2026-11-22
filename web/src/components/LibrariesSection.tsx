@@ -30,7 +30,7 @@ export type LibraryKind = 'local' | 'ssh' | 'pw' | 'cluster'
 export const KINDS: Record<LibraryKind, { label: string; description: string }> = {
   local: { label: 'A GUFI index on this machine', description: 'An index already built here. Read only.' },
   ssh: { label: 'A GUFI index on another machine over ssh', description: 'Read with your own ssh keys. Nothing is written there.' },
-  pw: { label: 'A GUFI index on a remote system, over pw ssh', description: 'An index already on one of the systems the pw CLI reaches, read over pw ssh. Nothing is written there.' },
+  pw: { label: 'A GUFI index on a remote computer, over pw ssh', description: 'An index already on one of the remote computers the pw CLI reaches, read over pw ssh. Nothing is written there.' },
   cluster: { label: 'An index built on a cluster', description: 'Built on one of your clusters with your own key. Only you see it.' },
 }
 
@@ -824,7 +824,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
           Depth is how far an index goes, each stop adding to the one before: Names; Text, the words inside files; Text + OCR,
           text in images and scanned pages; Meaning on documents, search by meaning over documents and images; and Meaning on
           all files, about three times the indexing time of Meaning on documents. For a library {cfg.appName} builds it is a
-          choice: one built here applies a new depth in the background at once. One built on a remote system applies it when
+          choice: one built here applies a new depth in the background at once. One built on a remote computer applies it when
           it is rebuilt, which is offered as the depth changes, and its row says so until then. An index connected as it is
           stays as it was built.
         </p>

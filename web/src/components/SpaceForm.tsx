@@ -69,7 +69,7 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
   if (!status.available && status.cluster && status.signInOffered && !status.credential) {
     return (
       <div className="space-sign-in">
-        <Callout tone="info" title={signIn ? 'My library needs your ACTIVATE sign-in' : 'A folder on a system needs your ACTIVATE sign-in'}>
+        <Callout tone="info" title={signIn ? 'My library needs your ACTIVATE sign-in' : 'A folder on a remote computer needs your ACTIVATE sign-in'}>
           {signIn ? 'My library is a folder of yours' : 'This is a folder of yours'} on {status.cluster}, which the Studio reaches as your own account. Sign in with
           ACTIVATE and approve the code on the platform, then choose the folder here.
         </Callout>
@@ -77,14 +77,14 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
       </div>
     )
   }
-  if (!status.available) return <Callout tone="info" title={signIn ? 'My library is not available' : 'A folder on a system is not available'}>{status.why}</Callout>
+  if (!status.available) return <Callout tone="info" title={signIn ? 'My library is not available' : 'A folder on a remote computer is not available'}>{status.why}</Callout>
 
   const pwOK = status.pw !== false
   const chosen = given !== undefined || destination !== undefined
   const ssh = destination !== undefined || (!chosen && (overSSH || !pwOK) && !!status.ssh)
   // A cluster the form around this one has not chosen yet is the Studio's.
   const system = destination !== undefined ? destination.trim() : given ? given : ssh ? host.trim() : cluster
-  const where = system || 'that system'
+  const where = system || 'that remote computer'
   const typed = folder.trim() || status.suggested
   const at = ssh ? { destination: system } : { cluster: system }
   const asked = JSON.stringify({ ...at, sourceRoot: typed })

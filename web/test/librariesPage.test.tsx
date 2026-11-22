@@ -556,7 +556,7 @@ describe('Settings, Indexing, Libraries', () => {
     expect(screen.getByText(/^A folder on this computer, read with the Studio's account, .* Read only\.$/)).toBeInTheDocument()
     // The optional fields wait under More options.
     expect(screen.queryByLabelText('Identifier')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'A system' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remote computer' }))
     // Read as the person, never the Studio's account.
     expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you, with your own ssh keys, agent and ~/.ssh/config')
     // No workflow or scheduler on a computer of its own, even with a platform.
@@ -582,13 +582,13 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'A system' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remote computer' }))
     // The systems over pw ssh come first, and say why they cannot be used yet.
     expect(await screen.findByText(why)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open Model access' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test connection' })).toBeNull()
     // A host over ssh is beside them.
-    fireEvent.click(screen.getByRole('combobox', { name: 'System' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Remote computer' }))
     const host = await screen.findByRole('option', { name: /^A host over ssh…/ })
     fireEvent.pointerDown(host)
     fireEvent.click(host)
@@ -606,7 +606,7 @@ describe('Settings, Indexing, Libraries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
     // Building here comes first. Without ssh or pw ssh there is no system,
     // and a copy of a Transfers location is made from Transfers.
-    expect(screen.queryByRole('button', { name: 'A system' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Remote computer' })).toBeNull()
     fireEvent.change(await screen.findByLabelText('Folder to index'), { target: { value: '~/papers' } })
     // The depth starts at Meaning on documents, with what it costs, the
     // order the phases run in, and the faster stop for a very large folder.
@@ -640,7 +640,7 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'A system' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remote computer' }))
     fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@box:2222' } })
     fireEvent.change(screen.getByLabelText('Source folder'), { target: { value: '~/data' } })
     // Built there, the depth starts at Meaning on documents, made with the
@@ -664,7 +664,7 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'A system' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remote computer' }))
     // Add a library points to Transfers, where the copy is made.
     expect(screen.getByRole('link', { name: 'Transfers' })).toHaveAttribute('href', '#view=transfers')
     expect(screen.queryByRole('button', { name: 'Copy here and index it' })).toBeNull()
@@ -735,7 +735,7 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'A bucket' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Bucket' }))
     expect(screen.getByText(/any S3 compatible store, AWS or on premises/)).toBeInTheDocument()
     // Only rclone remotes are offered: not an SFTP host, not a library.
     await waitFor(() => expect(s.calls.some(c => c.url === '/api/transfers/locations')).toBe(true))

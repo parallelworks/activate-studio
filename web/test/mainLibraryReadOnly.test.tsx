@@ -10,7 +10,7 @@ import { createTransfersMock, MOCK_LOCATIONS } from './transfersMock'
 // On a Studio with sign-in, the main library is read only for everyone but
 // its administrators: the server says why (readOnlyWhy), and the Library
 // offers no change there, labels included, with that reason.
-const WHY = 'On a Studio with sign-in, the main library is read only: only its administrators change it. Use My library, or a library of your own on one of your systems, for your files.'
+const WHY = 'On a Studio with sign-in, the main library is read only: only its administrators change it. Use My library, or a library of your own on one of your remote computers, for your files.'
 const lib = (id: string, label: string, extra: Record<string, unknown> = {}) => ({
   id, label, primary: id === 'kb', writable: true, pinned: false, source: true, caps: { index: true, fullText: true, vectors: false }, ...extra,
 })

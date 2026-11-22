@@ -59,7 +59,7 @@ describe('a space of one\'s own', () => {
       if (u === '/api/me/platform-sign-in' && m === 'POST') { signedIn = true; return json({ state: 'signed-in', account: 'ada', host: 'platform.example.com' }) }
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText('A folder on a system needs your ACTIVATE sign-in')).toBeInTheDocument()
+    expect(await screen.findByText('A folder on a remote computer needs your ACTIVATE sign-in')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Make the folder' })).toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
     expect(await screen.findByLabelText('Folder')).toHaveValue('~/studio')
@@ -69,7 +69,7 @@ describe('a space of one\'s own', () => {
   it('says why My library is not available for another reason', async () => {
     stub((m, u) => (u === '/api/user-libraries/space' ? json({ ...STATUS, cluster: '', available: false, why: 'This Studio does not know the cluster it runs beside.', signInOffered: true }) : undefined))
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText('A folder on a system is not available')).toBeInTheDocument()
+    expect(await screen.findByText('A folder on a remote computer is not available')).toBeInTheDocument()
     expect(screen.getByText(/does not know the cluster/)).toBeInTheDocument()
   })
 
@@ -169,7 +169,7 @@ describe('what a folder of one\'s own is called', () => {
     stub(u => undefined)
     expect(howLabel('own', false)).toBe('A new folder')
     expect(libraryNames({ signIn: false, kbLabel: 'My library' })).toEqual({
-      main: 'My library', own: 'a folder of yours on one of your systems', writable: 'My library or a folder of yours on one of your systems' })
+      main: 'My library', own: 'a folder of yours on one of your remote computers', writable: 'My library or a folder of yours on one of your remote computers' })
     stub((m, u) => (u === '/api/user-libraries/space' ? json(STATUS) : undefined))
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
     expect(await screen.findByRole('button', { name: 'Make the folder' })).toBeInTheDocument()

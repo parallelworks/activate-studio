@@ -463,7 +463,7 @@ func (m *Module) spaceSession(w who, b *jsonv.Object) (*spaceTarget, error) {
 			return nil, apierr.New(400, "system: the name of one of your clusters")
 		}
 	} else if site = HomeCluster(); site == "" {
-		return nil, apierr.New(409, "Choose one of your systems for your library. This Studio does not know the cluster it runs beside; the operator can set STUDIO_HOME_CLUSTER to offer it first.")
+		return nil, apierr.New(409, "Choose one of your remote computers for your library. This Studio does not know the cluster it runs beside; the operator can set STUDIO_HOME_CLUSTER to offer it first.")
 	}
 	return m.pwSpaceTarget(w, owner, site)
 }
@@ -475,7 +475,7 @@ func (m *Module) pwSpaceTarget(w who, owner, site string) (*spaceTarget, error) 
 		if owner == single {
 			return nil, apierr.New(409, "The pw CLI on this computer is not signed in. Run pw auth, then try again.")
 		}
-		return nil, apierr.New(409, "A folder of your own on a system is reached with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then come back here.")
+		return nil, apierr.New(409, "A folder of your own on a remote computer is reached with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then come back here.")
 	}
 	name := remote.ShortName(site)
 	return &spaceTarget{owner: owner, site: site, key: key, transport: "pw", name: name,

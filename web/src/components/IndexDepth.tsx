@@ -44,7 +44,7 @@ export const MEANING_LAST = 'Search by meaning is the slowest part of indexing, 
 export const meaningLastNote = (depth: IndexDepth) => (depth.startsWith('meaning') ? MEANING_LAST : null)
 /** Under a Meaning stop in the form that builds a library on another
  *  system: what the first build sends there, and the order the phases run in. */
-export const REMOTE_MEANING = 'Search by meaning there uses the Studio\'s embedding model. The first build on a system sends the model and its packages for the Python there (about 70 MB, kept in ~/.activate-studio/embed), and the connection test says whether it can. It runs last: names and words are searchable first.'
+export const REMOTE_MEANING = 'Search by meaning there uses the Studio\'s embedding model. The first build on a remote computer sends the model and its packages for the Python there (about 70 MB, kept in ~/.activate-studio/embed), and the connection test says whether it can. It runs last: names and words are searchable first.'
 export const remoteMeaningNote = (depth: IndexDepth) => (depth.startsWith('meaning') ? REMOTE_MEANING : null)
 
 const stopOf = (depth: IndexDepth) => Math.max(0, DEPTHS.findIndex(d => d.value === depth))

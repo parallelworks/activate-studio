@@ -79,7 +79,7 @@ export function addChoices(o: AddOptions) {
   return { where, how, builders }
 }
 
-const WHERE_LABEL: Record<Where, string> = { here: 'This computer', system: 'A system', bucket: 'A bucket' }
+const WHERE_LABEL: Record<Where, string> = { here: 'This computer', system: 'Remote computer', bucket: 'Bucket' }
 const HOW_LABEL: Record<How, string> = { own: 'My own folder', build: 'Index a folder', connect: 'Connect an index' }
 
 /** What a folder of the viewer's own on a system is called. Where people
@@ -91,7 +91,7 @@ export function howLabel(h: How, signIn: boolean): string {
 }
 const BUILDER_LABEL: Record<'pw' | 'workflow', string> = { pw: 'pw ssh', workflow: 'Workflow job' }
 
-/** The choice in the System list for a host over plain ssh. */
+/** The choice in the Remote computer list for a host over plain ssh. */
 const SSH_HOST = '\u0000ssh'
 
 function describe(where: Where, how: How | undefined, overSSH: boolean, builder: Via | undefined, signIn = true): string {
@@ -103,12 +103,12 @@ function describe(where: Where, how: How | undefined, overSSH: boolean, builder:
   }
   if (how === 'own') {
     return signIn
-      ? 'My library: a new folder in your home on that system, made as your own account and closed to other accounts, indexed there as you. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
-      : 'A new folder in your home on that system, made as your own account and closed to other accounts, indexed there as you, and named by the folder. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
+      ? 'My library: a new folder in your home on that remote computer, made as your own account and closed to other accounts, indexed there as you. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
+      : 'A new folder in your home on that remote computer, made as your own account and closed to other accounts, indexed there as you, and named by the folder. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
   }
-  if (how === 'connect') return 'A GUFI index already on that system, read as you. Read only: nothing is written there.'
+  if (how === 'connect') return 'A GUFI index already on that remote computer, read as you. Read only: nothing is written there.'
   if (builder === 'workflow') return 'A folder on that cluster, indexed there by the platform\'s index workflow with your own key, on the login node or as a Slurm job. Read as you, read only.'
-  return `A folder on that system, indexed there with GUFI ${overSSH ? 'over ssh' : 'over pw ssh'} as you. The build reads the text of its files where it can and leaves the folder as it is. Read and written as you where your account may write there.`
+  return `A folder on that remote computer, indexed there with GUFI ${overSSH ? 'over ssh' : 'over pw ssh'} as you. The build reads the text of its files where it can and leaves the folder as it is. Read and written as you where your account may write there.`
 }
 
 export function AddLibrary({ options, browse = false, onAdded, onStarted, onImported }: {
@@ -172,7 +172,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
           extraValue={overSSH ? SSH_HOST : null} onExtra={() => setOverSSH(true)} />
       )}
       {!overSSH && systems?.error && (
-        <Callout tone="warning">Your systems could not be listed: {systems.error.replace(/[.\s]*$/, '.')} Type the name of a running system instead.</Callout>
+        <Callout tone="warning">Your clusters could not be listed: {systems.error.replace(/[.\s]*$/, '.')} Type the name of a running cluster instead.</Callout>
       )}
       {overSSH && (
         <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={host}

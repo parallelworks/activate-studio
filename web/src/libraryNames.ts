@@ -29,5 +29,5 @@ export interface LibraryNames {
 
 export function libraryNames(cfg: NamingConfig): LibraryNames {
   if (cfg.signIn) return { main: cfg.kbLabel, own: 'My library', writable: 'the main library or My library' }
-  return { main: cfg.kbLabel, own: 'a folder of yours on one of your systems', writable: `${cfg.kbLabel} or a folder of yours on one of your systems` }
+  return { main: cfg.kbLabel, own: 'a folder of yours on one of your remote computers', writable: `${cfg.kbLabel} or a folder of yours on one of your remote computers` }
 }
