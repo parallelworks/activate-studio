@@ -101,7 +101,9 @@ function BuildLine({ progress }: { progress: BuildProgress | null | undefined })
 type Tone = 'success' | 'warning' | 'error' | 'info'
 /** One of a library's details: a label and its value. A path shows on one
  *  line, cut in the middle where it is too long, whole on hover, with Copy. */
-interface Detail { label: string; value?: ReactNode; path?: string; host?: string; mono?: boolean }
+interface Detail { label: string; value?: ReactNode; path?: string; host?: string; mono?: boolean
+  /** What its Copy copies, where "the <label> path of <library>" reads badly. */
+  what?: string }
 interface Row {
   key: string
   name: string
@@ -534,7 +536,8 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       rows.push({
         key: l.id, name: l.label, kind: `Copy of ${from}, kept in step with it`, access: libraryAccess(l),
         details: [
-          { label: 'Copied from', value: from, mono: true },
+          // The folder at the location, as a path like Folder and Index: from the location's top.
+          { label: 'Copied from', host: c.label || c.location, path: `/${c.path.replace(/^\/+/, '')}`, what: `folder ${l.label} is copied from` },
           { label: 'Copy', path: l.sourceRoot ?? undefined },
           { label: 'Look for changes', value: (
             <Select<number> aria-label={`How often ${l.label} looks for changes`} size="sm" items={COPY_EVERY} value={c.every}
@@ -801,7 +804,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                     <div key={d.label} className={d.path !== undefined ? 'lib-field lib-field-path' : 'lib-field'}>
                       <dt>{d.label}</dt>
                       <dd>{d.path !== undefined
-                        ? (d.path ? <PathLine host={d.host} path={d.path} what={`${d.label.toLowerCase()} path of ${r.name}`} /> : <span className="muted">none</span>)
+                        ? (d.path ? <PathLine host={d.host} path={d.path} what={d.what ?? `${d.label.toLowerCase()} path of ${r.name}`} /> : <span className="muted">none</span>)
                         : d.mono ? <code>{d.value}</code> : d.value}</dd>
                     </div>
                   ))}
