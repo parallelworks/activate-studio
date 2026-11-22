@@ -53,6 +53,7 @@ type fakePW struct {
 	settings []string
 	// refuseSettings makes the settings PATCH fail.
 	refuseSettings bool
+	interrupts     int
 }
 
 func (f *fakePW) add(ev map[string]any) {
@@ -161,6 +162,11 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.fix {
 			f.mcp = "ok"
 		}
+		f.mu.Unlock()
+		w.WriteHeader(204)
+	case p == "/v1/sessions/s1/interrupt":
+		f.mu.Lock()
+		f.interrupts++
 		f.mu.Unlock()
 		w.WriteHeader(204)
 	case p == "/v1/sessions/s1/archive":

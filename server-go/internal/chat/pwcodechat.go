@@ -165,6 +165,9 @@ type pwTarget struct {
 	modelMoved bool
 	// modelStuck says the session should have moved and could not.
 	modelStuck bool
+	// relay: the session is on another machine, reached through the
+	// platform (pwcoderelay.go).
+	relay bool
 }
 
 func pwErr(status int, msg string) error { return &apierr.Error{Status: status, Message: msg} }
@@ -253,13 +256,20 @@ func (m *Module) engineFor(r *http.Request, asked, convID string) (string, error
 	setting := m.eff().ChatEngine
 	// A chat that continues a pw code session is answered there unless the
 	// person chose the Studio assistant for it.
-	continued := false
+	continued, relayed := false, false
 	if c := m.Conv.Get(convID); asked == "" && c != nil && c.PWCode != nil && c.PWCode.Continued {
-		continued = true
+		continued, relayed = true, c.PWCode.Relay
 	}
 	switch {
 	case asked == engineStudio:
 		return engineStudio, nil
+	case relayed:
+		// The session runs on another machine: what it needs is the relay,
+		// not this Studio's own pw code.
+		if why := m.relayUnavailable(r); why != "" {
+			return "", pwErr(409, why)
+		}
+		return enginePWCode, nil
 	case asked == enginePWCode || continued || (asked == "" && setting == enginePWCode):
 		if why := m.pwcodeUnavailable(r.Context(), r); why != "" {
 			return "", pwErr(409, why)
@@ -278,6 +288,9 @@ func (m *Module) engineFor(r *http.Request, asked, convID string) (string, error
 // site and folder it already has, else the person's own (My library's
 // folder when it is on the Studio's cluster, else ~/studio-chat).
 func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conversations.PWCodeLink) (*pwTarget, error) {
+	if link != nil && link.Relay {
+		return m.relayTarget(r, link)
+	}
 	s := pwSites()
 	if s == nil {
 		return nil, pwErr(409, "pw code is not set up on this Studio.")
@@ -571,7 +584,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	// The session's tool calls run in the scope of this message; the
 	// session is told of a scope it has not seen.
 	scopeNote := ""
-	if note := m.pwScope(r, body, link); note != link.ScopeNote || (fresh && note != "") {
+	if note := m.pwScope(r, body, link); !t.relay && (note != link.ScopeNote || (fresh && note != "")) {
 		link.ScopeNote = note
 		scopeNote = "Scope from the Studio's chat bar: " + firstNonEmpty(note, "the person's default libraries.") + "\n\n"
 	}
@@ -638,6 +651,9 @@ type pwTurn struct {
 	model    string
 	failed   string
 	finished bool
+	// stopped: the person stopped the turn (Stop), so its ending in an
+	// error is what they asked for (under m.pw.mu).
+	stopped bool
 }
 
 func (t *pwTurn) mine(ev *jsonv.Object) bool {
@@ -759,6 +775,18 @@ func (t *pwTurn) finish() {
 	m := t.m
 	messageID := "pwc-" + strconv.FormatInt(time.Now().UnixMilli(), 10)
 	content := t.content.String()
+	m.pw.mu.Lock()
+	stopped := t.stopped
+	m.pw.mu.Unlock()
+	if stopped && t.failed != "" {
+		// A stopped turn ends with the daemon's error for it (its model
+		// call cancelled): it was stopped, not failed.
+		t.failed = ""
+		if strings.TrimSpace(content) == "" {
+			content = "Stopped."
+			t.res.event("content", reqbody.O("text", content))
+		}
+	}
 	if t.failed != "" && strings.TrimSpace(content) == "" {
 		content = "pw code did not finish this reply: " + t.failed
 		t.res.event("content", reqbody.O("text", content))
@@ -882,7 +910,9 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		}
 		// How the session's studio server stands, for the chat bar's menu.
 		var tools any
-		if s, err := studioMCPState(r.Context(), t.client, c.PWCode.Session); err == nil && s != nil {
+		if t.relay {
+			tools = reqbody.O("connected", false, "count", 0, "relay", true)
+		} else if s, err := studioMCPState(r.Context(), t.client, c.PWCode.Session); err == nil && s != nil {
 			v, _ := s.Get("connected")
 			_, n := serverTools(s)
 			tools = reqbody.O("connected", jsonv.Truthy(v) && jsonv.String(jsonv.Path(s, "err")) == "", "count", n, "error", jsonv.String(jsonv.Path(s, "err")))
@@ -892,7 +922,8 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 			codePage = CodePageLink(c.PWCode.Machine, c.PWCode.Session)
 		}
 		return reqbody.OK(w, reqbody.O("session", c.PWCode.Session, "url", c.PWCode.URL, "status", jsonv.String(jsonv.Path(d, "status")),
-			"answering", m.following(c.ID), "approvals", approvals, "tools", tools, "continued", c.PWCode.Continued, "codePage", codePage, "model", c.PWCode.Model, "modelNote", c.PWCode.ModelNote))
+			"answering", m.following(c.ID), "approvals", approvals, "tools", tools, "continued", c.PWCode.Continued, "codePage", codePage, "model", c.PWCode.Model, "modelNote", c.PWCode.ModelNote,
+			"relay", c.PWCode.Relay, "machine", relayMachine(c.PWCode)))
 	})
 	h("POST /api/chat/pwcode/{id}/interrupt", func(w http.ResponseWriter, r *http.Request) error {
 		c, t, err := m.ownPWCode(r)
@@ -902,6 +933,11 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		if _, err := pwcode.InterruptSession(r.Context(), t.client, c.PWCode.Session); err != nil {
 			return err
 		}
+		m.pw.mu.Lock()
+		if turn := m.pw.turns[c.ID]; turn != nil {
+			turn.stopped = true
+		}
+		m.pw.mu.Unlock()
 		return reqbody.OK(w, reqbody.O("ok", true))
 	})
 	h("POST /api/chat/pwcode/{id}/approvals/{approval}", func(w http.ResponseWriter, r *http.Request) error {
@@ -920,12 +956,31 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		var in struct {
 			Allowed bool   `json:"allowed"`
 			Message string `json:"message"`
+			// An ask's answers, one per question, or chat to talk them
+			// through instead; a plan's feedback with a rejection.
+			Answers []askAnswer `json:"answers"`
+			Chat    bool        `json:"chat"`
+			Kind    string      `json:"kind"`
 		}
 		if rb.Present {
 			_ = json.Unmarshal(rb.Raw, &in)
 		}
+		if in.Kind == "ask" {
+			answer, err := askAnswerBody(in.Answers, in.Chat)
+			if err != nil {
+				return err
+			}
+			if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
+				return err
+			}
+			return reqbody.OK(w, reqbody.O("ok", true))
+		}
 		answer := jsonv.NewObject("allowed", in.Allowed)
-		if !in.Allowed {
+		if in.Kind == "plan" && !in.Allowed {
+			if msg := sliceRunes(strings.TrimSpace(in.Message), 2000); msg != "" {
+				answer.Set("feedback", msg)
+			}
+		} else if !in.Allowed {
 			msg := sliceRunes(strings.TrimSpace(in.Message), 500)
 			if msg == "" {
 				msg = "Denied from the Studio."

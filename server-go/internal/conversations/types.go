@@ -389,7 +389,11 @@ type PWCodeLink struct {
 	// ModelNote says why the session runs on Model when the Studio moved
 	// it there from pw code's own model, which the AI connection does not
 	// offer.
-	ModelNote   string `json:"modelNote,omitempty"`
+	ModelNote string `json:"modelNote,omitempty"`
+	// Relay: the session runs on another of the person's machines and
+	// the chat drives it through the platform's relay as them, so it
+	// stays where it is (Site is then pwcode.RelaySite(Machine)).
+	Relay       bool   `json:"relay,omitempty"`
 	Machine     string `json:"machine,omitempty"`
 	MachineName string `json:"machineName,omitempty"`
 	// Persona is the agent instructions the conversation chose when its
