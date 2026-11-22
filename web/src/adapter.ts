@@ -173,6 +173,12 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
   // neither and said nothing was cut off (the Studio restarted, the network
   // dropped); an error here gives the message the chat's Retry button.
   if (!finishReason && !content && !signal?.aborted) throw new Error(CUT_OFF)
+  // The package labels a reply with the picker's model when that model
+  // takes the Responses API, and with the model the stream reports
+  // otherwise. A reply pw code wrote is labelled with pw code's model, as
+  // it is stored ("pw code · claude-code/haiku"), so the request is told
+  // it did not use the Responses API, which it never does here.
+  if (pwcodeSession && model) req.useResponses = false
 
   return {
     content,
