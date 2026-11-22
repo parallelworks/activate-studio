@@ -274,9 +274,17 @@ async function renderPage(s: Server) {
   return render(<LibrariesSection pollMs={5} />)
 }
 
-const rowOf = (name: string) => screen.getByText(name, { selector: '.lib-name' }).closest('tr') as HTMLElement
-/** The line under a library's row: a build's progress, the index's other controls. */
-const detailOf = (name: string) => rowOf(name).nextElementSibling as HTMLElement
+/** A library's card. */
+const rowOf = (name: string) => screen.getByText(name, { selector: '.lib-name' }).closest('[data-library]') as HTMLElement
+/** What runs under a library's details, and its foot: a build's progress, the last run and the log. */
+const detailOf = (name: string) => rowOf(name)
+/** Opens a library's More menu and picks one of its actions. */
+async function moreAction(name: string, action: string) {
+  fireEvent.click(within(rowOf(name)).getByRole('button', { name: `More actions for ${name}` }))
+  const item = await screen.findByRole('menuitem', { name: new RegExp(`^${action}`) })
+  fireEvent.click(item)
+  return item
+}
 const posted = (s: Server, url: string) => s.calls.filter(c => c.method === 'POST' && c.url.split('?')[0] === url)
 
 describe('what Add a library offers', () => {
@@ -469,18 +477,23 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
 
     const main = await waitFor(() => rowOf('Notes'))
-    expect(within(main).getByText('Main folder, read and write')).toBeInTheDocument()
+    expect(within(main).getByText('Main folder')).toBeInTheDocument()
+    expect(within(main).getByText(/· Read\/write$/)).toBeInTheDocument()
     expect(within(main).getByTitle('/home/u/Notes')).toBeInTheDocument()
     expect(await within(main).findByText('12 files')).toBeInTheDocument()
-    expect(within(main).getByText('Indexed')).toBeInTheDocument()
+    // Ready, as every other library that can be searched says.
+    expect(within(main).getByText('Ready')).toBeInTheDocument()
     expect(within(main).getByRole('button', { name: 'Change folder' })).toBeInTheDocument()
     expect(await within(main).findByRole('button', { name: 'Update index' })).toBeEnabled()
-    expect(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' })).toBeInTheDocument()
+    // Delete index is behind More, not beside the everyday actions.
+    expect(within(main).queryByRole('button', { name: 'Delete index' })).toBeNull()
+    expect(within(main).getByRole('button', { name: 'More actions for Notes' })).toBeInTheDocument()
     expect(within(detailOf('Notes')).getByRole('button', { name: 'View log' })).toBeInTheDocument()
     expect(within(main).getByRole('combobox', { name: 'Index depth of Notes' })).toHaveTextContent('Meaning on documents')
 
     const site = rowOf('Site index')
-    expect(within(site).getByText('GUFI index on this machine, read only')).toBeInTheDocument()
+    expect(within(site).getByText('GUFI index on this machine, connected as it is')).toBeInTheDocument()
+    expect(within(site).getByText(/· Read only$/)).toBeInTheDocument()
     // No files here: the row says what the index can be searched by, from what it holds.
     expect(within(site).getByText('Holds')).toBeInTheDocument()
     expect(within(site).getByText('Names, metadata and text')).toBeInTheDocument()
@@ -489,13 +502,14 @@ describe('Settings, Indexing, Libraries', () => {
     expect(within(site).getByText('as built')).toBeInTheDocument()
 
     const pinned = rowOf('Scratch')
-    expect(within(pinned).getByText('GUFI index on this machine, read only, set by the deployment')).toBeInTheDocument()
+    expect(within(pinned).getByText('GUFI index on this machine, connected as it is, set by the deployment')).toBeInTheDocument()
     expect(within(pinned).getByText('Index not found')).toBeInTheDocument()
-    expect(within(pinned).queryByRole('button', { name: /Remove/ })).toBeNull()
+    expect(within(pinned).queryByRole('button', { name: /Remove|More actions/ })).toBeNull()
     expect(within(pinned).getByText(/Named in the server's STUDIO_LIBRARIES setting; remove it there/)).toBeInTheDocument()
 
     const ssh = rowOf('index on box')
-    expect(within(ssh).getByText('GUFI index over ssh, read only')).toBeInTheDocument()
+    expect(within(ssh).getByText('GUFI index over ssh, connected as it is')).toBeInTheDocument()
+    expect(within(ssh).getByText(/· Read only \(on me@box\)$/)).toBeInTheDocument()
     expect(within(ssh).getByTitle('me@box:/data/index')).toHaveTextContent('me@box:/data/index')
     expect(within(ssh).getByText('2222')).toBeInTheDocument()
     expect(within(ssh).getByText('Names and metadata')).toBeInTheDocument()
@@ -503,7 +517,7 @@ describe('Settings, Indexing, Libraries', () => {
     expect(within(ssh).getByRole('button', { name: 'Check' })).toBeInTheDocument()
 
     const cluster = rowOf('c1 $WORKDIR')
-    expect(within(cluster).getByText('Index built on a cluster, read only, yours alone')).toBeInTheDocument()
+    expect(within(cluster).getByText('Index built on a cluster by a workflow job, yours alone')).toBeInTheDocument()
     expect(within(cluster).getByText('Building')).toBeInTheDocument()
     expect(within(cluster).getByText('run run-17')).toBeInTheDocument()
     expect(within(cluster).getByText('being built')).toBeInTheDocument()
@@ -513,7 +527,7 @@ describe('Settings, Indexing, Libraries', () => {
     fireEvent.click(within(ssh).getByRole('button', { name: 'Check' }))
     await waitFor(() => expect(posted(s, `/api/user-libraries/${SSH.id}/refresh`)).toHaveLength(1))
     // Remove asks first and says the index stays; then it takes the library out. A pinned one has no Remove.
-    fireEvent.click(within(site).getByRole('button', { name: 'Remove Site index' }))
+    await moreAction('Site index', 'Remove')
     const ask = await screen.findByRole('dialog', { name: 'Remove Site index?' })
     expect(ask.textContent).toMatch(/The index stays where it is, in \/data\/site-index/)
     expect(s.calls.some(c => c.method === 'DELETE')).toBe(false)
@@ -522,15 +536,16 @@ describe('Settings, Indexing, Libraries', () => {
     expect(s.calls.some(c => c.method === 'DELETE' && c.url === '/api/libraries/site')).toBe(true)
   })
 
-  it('an ssh library shows the account ssh reaches, and a long host and path wrap only at dots and slashes', async () => {
+  it('an ssh library shows the account ssh reaches, on one line cut in the middle, whole on hover and in Copy', async () => {
     const lib = { ...SSH, id: 'u-alias', label: 'alias index', site: 'box', destination: 'box', port: null, reached: 'me@a-long-host-name.example.org', indexRoot: '/data/groups/me/projects/archive' }
     await renderPage(server({ user: [lib] }))
     const row = await waitFor(() => rowOf('alias index'))
     const value = within(row).getByTitle('me@a-long-host-name.example.org:/data/groups/me/projects/archive')
     expect(value).toHaveTextContent('me@a-long-host-name.example.org:/data/groups/me/projects/archive')
-    // A break point after each dot of the host, after the colon, and after each slash of the path.
-    expect(value.querySelectorAll('wbr')).toHaveLength(2 + 1 + 5)
-    expect([...value.querySelectorAll('.lib-seg')].map(s => s.textContent)).toEqual(['me@a-long-host-name', 'example', 'org', '', 'data', 'groups', 'me', 'projects', 'archive'])
+    // Read whole by a screen reader; the start shortens first and the last folders stay.
+    expect(value).toHaveAttribute('aria-label', 'me@a-long-host-name.example.org:/data/groups/me/projects/archive')
+    expect(value.querySelector('.lib-path-tail')).toHaveTextContent(/^\/projects\/archive$/)
+    expect(within(row).getByRole('button', { name: 'Copy the index path of alias index' })).toBeInTheDocument()
   })
 
   it('opens with the add form showing when the + Add menu sent us', async () => {
@@ -638,7 +653,7 @@ describe('Settings, Indexing, Libraries', () => {
     expect(posted(s, '/api/libraries/build')[0].body).toEqual({ sourceRoot: '~/papers', depth: 'text', create: true })
     await waitFor(() => expect(success).toHaveBeenCalledWith(expect.stringMatching(/searchable by name once its folders are indexed; text and meaning, where its depth has them, follow in that order\.$/)))
     const row = await waitFor(() => rowOf('Papers'))
-    expect(within(row).getByText('Index of a folder on this machine, kept in step with it, read only')).toBeInTheDocument()
+    expect(within(row).getByText('Index of a folder on this machine, kept in step with it')).toBeInTheDocument()
     expect(within(row).getByText('Building')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Rebuild' })).toBeDisabled()
     expect(screen.getByRole('progressbar', { name: /Indexing folders/ })).toBeInTheDocument()
@@ -664,7 +679,8 @@ describe('Settings, Indexing, Libraries', () => {
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Create it and build' }))
     const row = await waitFor(() => rowOf('data on box'))
     expect(posted(s, '/api/user-libraries/ssh/build')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', gufiBin: '/opt/gufi/bin', depth: 'meaning-documents', create: true })
-    expect(within(row).getByText('Index built on me@box over ssh, read only')).toBeInTheDocument()
+    expect(within(row).getByText('Index built there over ssh')).toBeInTheDocument()
+    expect(within(row).getByText(/· Read only \(on me@box\)$/)).toBeInTheDocument()
     expect(within(row).getByTitle('me@box:/home/me/data')).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: /Extracting text/ })).toBeInTheDocument()
   })
@@ -726,7 +742,7 @@ describe('Settings, Indexing, Libraries', () => {
     await pickOption('How often upload looks for changes', 'Every hour')
     await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/upload/copy')?.body).toEqual({ every: 60 }))
     // Removing it says the copy goes and the location's files stay.
-    fireEvent.click(within(rowOf('upload')).getByRole('button', { name: 'Remove upload' }))
+    await moreAction('upload', 'Remove')
     const ask = await screen.findByRole('alertdialog', { name: 'Remove upload?' })
     expect(ask.textContent).toMatch(/Its copy and its index, which .* keeps in a folder of its own, are deleted\. The files at Drop, upload are not touched\./)
   })
@@ -760,7 +776,7 @@ describe('Settings, Indexing, Libraries', () => {
     await waitFor(() => expect(posted(s, '/api/libraries/bucket')).toHaveLength(1))
     expect(posted(s, '/api/libraries/bucket')[0].body).toEqual({ location: 'rclone:store', path: 'upload', every: 1440 })
     const row = await waitFor(() => rowOf('research'))
-    expect(within(row).getByText('Index of store, research, from its listing, read only')).toBeInTheDocument()
+    expect(within(row).getByText('Index of store, research, from its listing')).toBeInTheDocument()
     expect(within(row).getByText('Listing and indexing')).toBeInTheDocument()
   })
 
@@ -777,7 +793,7 @@ describe('Settings, Indexing, Libraries', () => {
     await waitFor(() => expect(posted(s, '/api/libraries/research/rebuild')).toHaveLength(1))
     await pickOption('How often research is listed again', 'Once a day')
     await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/research/bucket')?.body).toEqual({ every: 1440 }))
-    fireEvent.click(within(rowOf('research')).getByRole('button', { name: 'Remove research' }))
+    await moreAction('research', 'Remove')
     const ask = await screen.findByRole('alertdialog', { name: 'Remove research?' })
     expect(ask.textContent).toMatch(/Its index, which .* keeps in a folder of its own, is deleted\. The objects in store, research are not touched\./)
   })
@@ -795,9 +811,9 @@ describe('Settings, Indexing, Libraries', () => {
     const s = server({ libs: [PRIMARY, { ...BUILT_HERE, build: { ...BUILT_HERE.build, managed: true, state: 'ready', files: 40, dirs: 6, builtAt: '2026-10-20T00:00:00Z', progress: null } }] })
     await renderPage(s)
     const row = await waitFor(() => rowOf('Papers'))
-    const remove = within(row).getByRole('button', { name: 'Remove Papers' })
-    expect(remove.className).toMatch(/theme-error/)
-    fireEvent.click(remove)
+    expect(row).toBeInTheDocument()
+    const remove = await moreAction('Papers', 'Remove')
+    expect(remove.className).toMatch(/error/)
     const ask = await screen.findByRole('alertdialog', { name: 'Remove Papers?' })
     expect(ask.textContent).toMatch(/Its index, which .* keeps in a folder of its own, is deleted\. The files in \/home\/u\/papers are not touched/)
     fireEvent.click(within(ask).getByRole('button', { name: 'Cancel' }))
@@ -1020,7 +1036,7 @@ describe('Settings, Indexing, Libraries', () => {
     expect(posted(s, '/api/index/build')).toHaveLength(1)
     s.build = 'done'
     expect(await screen.findByText(/Updated the index in 2\.5 s \(names 40 ms, documents 900 ms, text 1\.2 s, meaning 400 ms\), on 8 threads\./)).toBeInTheDocument()
-    await waitFor(() => expect(within(rowOf('Notes')).getByText('Indexed')).toBeInTheDocument())
+    await waitFor(() => expect(within(rowOf('Notes')).getByText('Ready')).toBeInTheDocument())
   })
 
   it('stops a running build, and says the index is incomplete', async () => {
@@ -1039,16 +1055,16 @@ describe('Settings, Indexing, Libraries', () => {
     const s = server()
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
-    const del = await within(detailOf('Notes')).findByRole('button', { name: 'Delete index' })
-    expect(del.className).toMatch(/theme-error/)
-    fireEvent.click(del)
+    await within(rowOf('Notes')).findByText('12 files')
+    const del = await moreAction('Notes', 'Delete index')
+    expect(del.className).toMatch(/error/)
     let dialog = await screen.findByRole('alertdialog', { name: 'Delete the index?' })
     expect(dialog.textContent).toMatch(/The files in the folder are not touched/)
     // Keeping it sends nothing.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Keep it' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(s.calls.some(c => c.method === 'DELETE')).toBe(false)
-    fireEvent.click(within(detailOf('Notes')).getByRole('button', { name: 'Delete index' }))
+    await moreAction('Notes', 'Delete index')
     dialog = await screen.findByRole('alertdialog', { name: 'Delete the index?' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete index' }))
     await waitFor(() => expect(s.calls.filter(c => c.method === 'DELETE').map(c => c.url)).toEqual(['/api/index?confirm=1']))
@@ -1072,12 +1088,12 @@ describe('Settings, Indexing, Libraries', () => {
     const s = server({ standalone: false, ssh: false })
     await renderPage(s)
     const main = await waitFor(() => rowOf('Notes'))
-    expect(within(main).getByText('Indexed')).toBeInTheDocument()
+    expect(within(main).getByText('Ready')).toBeInTheDocument()
     expect(within(main).queryByRole('button', { name: 'Change folder' })).toBeNull()
-    expect(within(main).queryByRole('button', { name: /index/ })).toBeNull()
+    expect(within(main).queryByRole('button', { name: /^(Build|Update|Delete) index/ })).toBeNull()
     // The log is there to read on any Studio, under the row.
     expect(await within(detailOf('Notes')).findByRole('button', { name: 'View log' })).toBeInTheDocument()
-    expect(within(detailOf('Notes')).queryByRole('button', { name: 'Delete index' })).toBeNull()
+    expect(within(main).queryByRole('button', { name: /Delete index|More actions/ })).toBeNull()
     expect(s.calls.some(c => c.url.startsWith('/api/setup/browse'))).toBe(false)
   })
 })
