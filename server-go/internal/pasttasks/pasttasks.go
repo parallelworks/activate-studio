@@ -22,7 +22,9 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 )
@@ -240,14 +242,30 @@ func (a *Archive) StopLeftRunning(ctx context.Context, c pwcode.Client) (stopped
 		switch {
 		case err == nil:
 			stopped++
-		case errors.As(err, &de) && de.Status >= 400 && de.Status < 500:
-			// Not there any more, or not running: nothing to stop.
+		case errors.As(err, &de) && (de.Status == http.StatusNotFound || de.Status == http.StatusConflict):
+			// Not there any more, or not running: nothing to stop. Any
+			// other answer (a refusal, an error) is tried again next start.
 		default:
 			return stopped
 		}
 	}
 	os.WriteFile(filepath.Join(a.Dir, stoppedMark), []byte("the sessions left running by the retired task engine were stopped\n"), 0o600)
 	return stopped
+}
+
+// AdminsOnly is why a person who signs in, and does not administer the
+// Studio, is shown no earlier tasks.
+const AdminsOnly = "On a Studio with sign-in, earlier tasks are kept for its administrators: the task engine did not record who started each task."
+
+// MayRead says whether the person r is from may read the earlier tasks.
+// The retired engine never recorded who started a task, so on a Studio
+// with sign-in nobody can be shown only their own: they are kept for its
+// administrators. A Studio without sign-in has one person, who reads them.
+func MayRead(a *app.App, r *http.Request) bool {
+	if !a.Cfg.AuthEnabled() {
+		return true
+	}
+	return mainlib.Admin(mainlib.User(true, auth.UserOf(r)))
 }
 
 // Register serves the past tasks read-only: GET /api/tasks,
@@ -259,9 +277,15 @@ func Register(mux *http.ServeMux, a *app.App) {
 		return platform.Handler(a.Log, fn)
 	}
 	mux.HandleFunc("GET /api/tasks", h(func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if !MayRead(a, r) {
+			return jsonv.NewObject("tasks", []any{}, "adminsOnly", AdminsOnly), nil
+		}
 		return jsonv.NewObject("tasks", ar.List()), nil
 	}))
 	mux.HandleFunc("GET /api/tasks/{id}", h(func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if !MayRead(a, r) {
+			return nil, apierr.New(404, "no such task")
+		}
 		t := ar.Task(r.PathValue("id"))
 		if t == nil {
 			return nil, apierr.New(404, "no such task")
@@ -276,6 +300,9 @@ func Register(mux *http.ServeMux, a *app.App) {
 		return t, nil
 	}))
 	mux.HandleFunc("GET /api/tasks/{id}/agents/{name}/output", h(func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if !MayRead(a, r) {
+			return nil, apierr.New(404, "no such task or agent")
+		}
 		tail, ok := ar.Output(r.PathValue("id"), r.PathValue("name"))
 		if !ok {
 			return nil, apierr.New(404, "no such task or agent")

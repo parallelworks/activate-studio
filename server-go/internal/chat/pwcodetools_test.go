@@ -6,13 +6,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
+	"github.com/parallelworks/activate-studio/server-go/internal/pasttasks"
 )
 
 func TestPWCodeHasTheStudioToolsBeforeItAnswers(t *testing.T) {
@@ -201,5 +205,41 @@ func TestAStudioWithoutACTIVATEAnswersWithTheStudioAssistant(t *testing.T) {
 		"messages": []any{map[string]any{"role": "user", "content": "What is the budget?"}}})
 	if strings.Contains(sse, "event: pwcode") || f.calls != 0 || m.Conv.Get(c.ID).PWCode != nil {
 		t.Errorf("pw code was asked: %d daemon requests\n%s", f.calls, sse)
+	}
+}
+
+// On a Studio with sign-in, task_status reads the earlier tasks for the
+// administrators only, as /api/tasks does.
+func TestTaskStatusIsTheAdministrators(t *testing.T) {
+	m, _ := pwModule(t, &fakePW{}, nil)
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "t-1"), 0o700)
+	os.WriteFile(filepath.Join(dir, "t-1", "state.json"), []byte(`{"id":"t-1","objective":"Quote her notes","state":"completed","agents":[]}`), 0o600)
+	defer func(d *pasttasks.Archive) { pasttasks.Default = d }(pasttasks.Default)
+	pasttasks.Default = &pasttasks.Archive{Dir: dir}
+	m.A.Cfg.Auth.JWKSURL = "https://id.platform.example/jwks"
+	defer func(g func(string) string) { mainlib.Getenv = g }(mainlib.Getenv)
+	mainlib.Getenv = func(k string) string {
+		if k == "STUDIO_ADMINS" {
+			return "cy"
+		}
+		return ""
+	}
+	run := func(u *auth.User, args map[string]any) string {
+		r := auth.WithUser(httptest.NewRequest(http.MethodPost, "/api/mcp", nil), u)
+		out, err := m.toolTaskStatus(r, args, ToolCtx{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.Result
+	}
+	bob, cy := &auth.User{ID: "bob"}, &auth.User{ID: "cy", Username: "cy"}
+	for _, args := range []map[string]any{{}, {"id": "t-1"}} {
+		if got := run(bob, args); strings.Contains(got, "Quote her notes") || got != pasttasks.AdminsOnly {
+			t.Errorf("bob %v: %s", args, got)
+		}
+		if got := run(cy, args); !strings.Contains(got, "Quote her notes") {
+			t.Errorf("cy %v: %s", args, got)
+		}
 	}
 }

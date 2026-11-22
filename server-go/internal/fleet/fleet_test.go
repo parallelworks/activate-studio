@@ -39,14 +39,22 @@ type daemon struct {
 	approval  map[string]string
 	tokens    map[string]float64
 	goalAlive map[string]bool
+	answers   []map[string]any
+	// goalHold, when set, holds each goal call until it is closed.
+	goalHold chan struct{}
+	// approvalKind is the kind of a session's approval: confirm when unset.
+	approvalKind map[string]string
 }
 
 func newDaemon() *daemon {
-	return &daemon{status: map[string]string{}, answer: map[string]string{}, approval: map[string]string{}, tokens: map[string]float64{}, goalAlive: map[string]bool{}}
+	return &daemon{status: map[string]string{}, answer: map[string]string{}, approval: map[string]string{}, tokens: map[string]float64{}, goalAlive: map[string]bool{}, approvalKind: map[string]string{}}
 }
 
 func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	send := func(v any) { w.Header().Set("Content-Type", "application/json"); json.NewEncoder(w).Encode(v) }
+	if hold := d.goalHold; hold != nil && strings.HasSuffix(r.URL.Path, "/goal") {
+		<-hold
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	p := r.URL.Path
@@ -93,6 +101,17 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"output": "ok"})
 	case "state":
 		send(map[string]any{"goal": map[string]any{"active": d.goalAlive[id]}})
+	case "approvals/ap1":
+		if d.approval[id] == "" {
+			w.WriteHeader(409)
+			send(map[string]any{"error": "not waiting"})
+			return
+		}
+		var ans map[string]any
+		json.NewDecoder(r.Body).Decode(&ans)
+		d.answers = append(d.answers, ans)
+		d.approval[id], d.status[id] = "", "running"
+		send(map[string]any{"ok": true})
 	case "archive":
 		d.archived = append(d.archived, id)
 		w.WriteHeader(204)
@@ -100,7 +119,18 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out := map[string]any{"id": id, "status": d.status[id], "inputTokens": d.tokens[id], "outputTokens": 0.0,
 			"history": []any{map[string]any{"kind": "user", "text": "wake"}, map[string]any{"kind": "assistant", "text": d.answer[id]}}}
 		if a := d.approval[id]; a != "" {
-			out["approvals"] = []any{map[string]any{"id": "ap1", "text": a}}
+			// The daemon's ApprovalRequest fields; there is no text.
+			kind := d.approvalKind[id]
+			if kind == "" {
+				kind = "confirm"
+			}
+			rec := map[string]any{"id": "ap1", "kind": kind, "createdAt": "2026-11-22T12:00:00Z", "callId": "c1", "agent": "main"}
+			if kind == "confirm" {
+				rec["tool"], rec["command"], rec["reason"] = "Bash", a, "shell command"
+			} else {
+				rec["reason"] = a
+			}
+			out["approvals"] = []any{rec}
 		}
 		send(out)
 	default:
@@ -170,7 +200,7 @@ func TestWakeFollowDecide(t *testing.T) {
 	if !f.Tick(a.ID, "the schedule", false) {
 		t.Fatal("no wake-up")
 	}
-	waitFor(t, "the session", func() bool { return f.Get(a.ID).Session != "" })
+	waitFor(t, "the session", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.agents[a.ID].Session != "" && !f.busy[a.ID] })
 	got := f.Get(a.ID)
 	if got.State != "working" || got.Workspace != filepath.Join(root, "agents/fleet", a.ID) || got.Ticks != 1 {
 		t.Fatalf("agent %+v", got)
@@ -240,7 +270,7 @@ func TestApprovalGoneAndBudget(t *testing.T) {
 	one := 2.0
 	a, _ := f.Create(Input{Name: "Digest", Goal: "Write the digest.", Every: "manual", MaxTicks: &one}, nil)
 	f.Tick(a.ID, "the person asked", true)
-	waitFor(t, "the session", func() bool { return f.Get(a.ID).Session != "" })
+	waitFor(t, "the session", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.agents[a.ID].Session != "" && !f.busy[a.ID] })
 	s1 := f.Get(a.ID).Session
 	d.mu.Lock()
 	d.approval[s1], d.status[s1] = "Run: rm -rf build", "awaiting_approval"

@@ -23,6 +23,12 @@ interface Agent {
   ticks: number; tokens: number
   folder?: string; session?: string; sessions?: string[]; migrated?: string
 }
+/** What an agent's session waits on (GET /api/fleet/<id>): a call to
+ *  approve when kind is confirm, else a plan or a question. */
+export interface Approval {
+  id: string; kind: string; tool?: string; command?: string; commandCut?: boolean; commandLength?: number
+  reason?: string; approvable: boolean
+}
 interface Journal { at: string; kind: string; text: string; taskId?: string | null; session?: string }
 interface SessionView { id: string; earlier?: string[]; recent: string[] }
 interface Template { key: string; name: string; persona: string; every: string; onRunEnd: boolean; watchPath: string | null; goal: string }
@@ -52,7 +58,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [agents, setAgents] = useState<Agent[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [open, setOpen] = useState<string | null>(null)
-  const [detail, setDetail] = useState<{ agent: Agent; journal: Journal[]; session: SessionView | null } | null>(null)
+  const [detail, setDetail] = useState<{ agent: Agent; journal: Journal[]; session: SessionView | null; approval?: Approval | null } | null>(null)
   const [message, setMessage] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,7 +77,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   useEffect(() => {
     if (!open) { setDetail(null); return }
     let stop = false
-    const load = () => fetch(`/api/fleet/${encodeURIComponent(open)}`).then(r => r.json()).then(d => { if (!stop && d.agent) setDetail({ agent: d.agent, journal: d.journal ?? [], session: d.session ?? null }) }).catch(() => {})
+    const load = () => fetch(`/api/fleet/${encodeURIComponent(open)}`).then(r => r.json()).then(d => { if (!stop && d.agent) setDetail({ agent: d.agent, journal: d.journal ?? [], session: d.session ?? null, approval: d.approval ?? null }) }).catch(() => {})
     load()
     const t = setInterval(load, 5_000)
     return () => { stop = true; clearInterval(t) }
@@ -215,7 +221,22 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
           </div>
           {detail.agent.state === 'input-required' && (
             <Callout tone="warning" size="sm" className="fleet-needs">
-              {detail.agent.note.startsWith('waiting for your approval')
+              {detail.approval?.kind === 'confirm'
+                ? <>
+                    It waits for you to approve this call in its session{detail.approval.tool ? <> ({detail.approval.tool})</> : null}:
+                    {detail.approval.command && <pre className="fleet-approval-text">{detail.approval.command}</pre>}
+                    {detail.approval.commandCut && (
+                      <span className="fleet-approval-cut">The command is {detail.approval.commandLength?.toLocaleString()} characters, too long to show whole here, so it can only be denied.</span>
+                    )}
+                    {!detail.approval.command && detail.approval.reason && <span className="fleet-approval-reason">{detail.approval.reason}</span>}
+                    <span className="fleet-approval-actions">
+                      {detail.approval.approvable && <Button variant="primary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: true })}>Approve</Button>}
+                      <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: false })}>Deny</Button>
+                    </span>
+                  </>
+                : detail.approval
+                ? <>It waits for you on a {detail.approval.kind || 'request'} in its session{detail.approval.reason ? <>: {detail.approval.reason}</> : null}. Answer it in <a href={`#view=code?session=${encodeURIComponent(detail.agent.session ?? '')}`}>its session on the Code page</a>.</>
+                : detail.agent.note.startsWith('waiting for your approval')
                 ? <>It waits for you to approve a call in its session: approve or deny it on <a href={`#view=code?session=${encodeURIComponent(detail.agent.session ?? '')}`}>the Code page</a>.</>
                 : <>It asks: {detail.agent.note}{/[.?!]$/.test(detail.agent.note) ? '' : '.'} Answer below.</>}
             </Callout>
