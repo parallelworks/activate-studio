@@ -6,7 +6,7 @@ import {
 import { DynamicForm, initializeValues } from '@parallelworks/ui/form'
 import { Streamdown } from 'streamdown'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
-import { openSessionWindow, sessionOfRun, type SessionInfo } from '../components/SessionView'
+import { openSessionWindow, sessionOfRun, showsInStudio, type SessionInfo } from '../components/SessionView'
 import { openInSideView, PageSideViewHost } from '../components/RunPane'
 
 /**
@@ -88,7 +88,7 @@ export function WorkflowsView() {
 
   // A session the Studio can relay shows in the side view, as in chat;
   // one served only under the platform's address opens in a window.
-  const showSession = (x: SessionInfo) => { if (x.ownHost && x.url) openInSideView({ session: x }); else openSessionWindow(x) }
+  const showSession = (x: SessionInfo) => { if (showsInStudio(x)) openInSideView({ session: x }); else openSessionWindow(x) }
   const t = open ? tiles?.find(x => x.name === open) : undefined
   const list = (
     <div className="overview-view workflows-view">
@@ -115,11 +115,11 @@ export function WorkflowsView() {
             {sessions.map(x => (
               <div key={`${x.user}/${x.name}`} className="session-row">
                 <StatusDot variant="success" size={7} />
-                <Button variant="ghost" size="sm" className="session-row-name" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>
+                <Button variant="ghost" size="sm" className="session-row-name" onClick={() => showSession(x)} title={showsInStudio(x) ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>
                 <span className="muted session-meta">
                   {[x.run ? `${x.run.workflow} · ${x.run.slug}` : x.type, x.resource ? `on ${x.resource}` : '', x.user].filter(Boolean).join(' · ')}
                 </span>
-                {x.ownHost && x.url && <Button variant="ghost" size="sm" title="Open in a window beside the Studio" onClick={() => openSessionWindow(x)}>Window</Button>}
+                {showsInStudio(x) && x.url && <Button variant="ghost" size="sm" title="Open in a window beside the Studio" onClick={() => openSessionWindow(x)}>Window</Button>}
                 {x.url && <Button variant="ghost" size="sm" href={x.url} target="_blank" rel="noopener noreferrer">New tab</Button>}
               </div>
             ))}
@@ -146,7 +146,7 @@ export function WorkflowsView() {
                       <RunStatusLabel status={r.state === 'cancelled' ? 'canceled' : r.state} />
                     </Table.Item>
                     <Table.Item>{sessions.filter(x => sessionOfRun(x, r.slug)).map(x => (
-                      <Button key={x.name} variant="ghost" size="sm" onClick={() => showSession(x)} title={x.ownHost ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>
+                      <Button key={x.name} variant="ghost" size="sm" onClick={() => showSession(x)} title={showsInStudio(x) ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>
                     ))}</Table.Item>
                   </tr>
                 )

@@ -47,6 +47,14 @@ beside it:
     https://github.com/Open-Cascade-SAS/OCCT. server-go/scripts/occt/build.sh
     rebuilds them from the occt-import-js package with binaryen 132.
 
+The web app (web/dist, in every build) carries the core of noVNC 1.7.0
+(@novnc/novnc), Mozilla Public License 2.0, which draws a platform desktop
+session in the desktop viewer, and the parts of pako it includes (MIT
+License). They are unmodified, in the viewer's own script (web/dist/assets/
+rfb-*.js), and their source is the @novnc/novnc 1.7.0 package on npm and
+https://github.com/novnc/noVNC at tag v1.7.0. The license texts and noVNC's
+authors are in web/dist/novnc.
+
 The web app (web/dist, in every build) carries pdf.js 6.4.299 (pdfjs-dist),
 Apache License 2.0, which draws a PDF's pages where poppler is not
 installed. Beside it in web/dist/pdfjs are its character maps (Adobe,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Callout, StatusDot } from '@parallelworks/ui'
 import { openBeside, openFullView } from '../sideBySide'
+import { DesktopView, isDesktop } from './DesktopView'
 
 /**
  * One platform session as a card: its state, the run that opened it, and
@@ -10,8 +11,10 @@ import { openBeside, openFullView } from '../sideBySide'
  * session's host through the platform's login page, which refuses to load
  * in a frame. A window of its own loads every session the way the platform
  * does, and Beside chat sends it to the chat's side view, which shows it
- * through the Studio's relay. A session that is not running yet is polled until it
- * is, so a chat note posted while a run is still starting fills in.
+ * through the Studio's relay. A platform desktop shows the same way, drawn
+ * by the Studio's own viewer (DesktopView). A session that is not running
+ * yet is polled until it is, so a chat note posted while a run is still
+ * starting fills in.
  */
 
 export interface SessionInfo {
@@ -30,6 +33,12 @@ export function sessionOfRun(s: Pick<SessionInfo, 'name' | 'run'>, slug: string)
   if (!slug) return false
   if (s.run) return s.run.slug === slug
   return s.name === slug || s.name.endsWith(`-${slug}`)
+}
+
+/** Whether the Studio can show a session itself: one served on its own
+ *  host, through the relay, or a platform desktop, through its viewer. */
+export function showsInStudio(s: Pick<SessionInfo, 'ownHost' | 'url' | 'type'> | null | undefined): boolean {
+  return !!s && ((s.ownHost && !!s.url) || isDesktop(s))
 }
 
 /** The windows this page opened, by session, so a second Open focuses the
@@ -135,7 +144,7 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
           <span className="session-bar-actions">
             <Button variant="primary" onClick={() => setBlocked(!openSessionWindow(s))}
               title={insidePlatform() ? 'Open its page on ACTIVATE, which shows it embedded' : 'Open in a window of its own'}>{insidePlatform() && s.platformUrl ? 'Open in ACTIVATE' : 'Open'}</Button>
-            {inChat && s.ownHost && (
+            {inChat && showsInStudio(s) && (
               <>
                 <Button variant="secondary" onClick={() => setInline(v => !v)}>{inline ? 'Hide' : 'Show here'}</Button>
                 <Button variant="secondary" title="Show it in the side view beside the chat"
@@ -151,7 +160,10 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
       {error && !s && <Callout variant="bar" tone="error">{error}</Callout>}
       {s && !running && <p className="session-note muted">Session {name} is {s.status || 'not running'}. This card updates when it is running.</p>}
       {blocked && <p className="session-note muted">This session has no address yet.</p>}
-      {inChat && inline && running && s?.ownHost && s.url && (
+      {inChat && inline && running && s && isDesktop(s) && (
+        <div className="session-desktop-inline"><DesktopView user={s.user} name={s.name} /></div>
+      )}
+      {inChat && inline && running && s?.ownHost && s.url && !isDesktop(s) && (
         <iframe className="session-inline" title={s.name} src={`/api/session-proxy/${new URL(s.url).host}/`} />
       )}
     </div>

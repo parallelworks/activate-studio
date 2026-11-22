@@ -1307,9 +1307,12 @@ a.identity-btn { text-decoration: none; }
   border: 1px solid var(--pw-border); border-radius: 8px; overflow: hidden; background: var(--pw-panel);
 }
 .embed-root .session-view { border: 0; border-radius: 0; }
+/* The bar keeps its height when its buttons wrap in a narrow chat column:
+   shrunk, the buttons spill over what is under it, and the card reports a
+   height that leaves them out. */
 .session-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 40px; padding: 4px 10px;
-  border-bottom: 1px solid var(--pw-border); font-size: 13px;
+  border-bottom: 1px solid var(--pw-border); font-size: 13px; flex-shrink: 0;
 }
 .session-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .session-meta { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -2479,6 +2482,30 @@ a.identity-btn { text-decoration: none; }
 /* A session shown under its card in a chat reply. */
 .session-inline { display: block; flex: 0 0 auto; width: 100%; height: 520px; border: 0; border-top: 1px solid var(--pw-border); margin-top: 8px; background: #fff; }
 .embed-unknown p { margin: 0; padding: 10px 12px; font-size: 13px; }
+/* A platform desktop drawn in the Studio (DesktopView): a bar, then the
+   desktop filling what is left, with the state over it until it connects. */
+.desktop-view { display: flex; flex-direction: column; min-height: 0; height: 100%; width: 100%; }
+.desktop-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 8px; border-bottom: 1px solid var(--pw-border); font-size: 12px; min-width: 0; flex-shrink: 0; }
+.desktop-state { white-space: nowrap; }
+.desktop-actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.desktop-stage { position: relative; flex: 1; min-height: 0; background: #1e1e1e; }
+.desktop-screen { position: absolute; inset: 0; overflow: hidden; }
+.desktop-screen > div { width: 100%; height: 100%; }
+.desktop-screen canvas { outline: none; }
+.desktop-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; background: var(--pw-panel); overflow: auto; text-align: center; }
+.desktop-overlay p { margin: 0; font-size: 13px; }
+.desktop-overlay .desktop-reason { max-width: 60ch; }
+.desktop-logs { margin: 0; max-width: 100%; max-height: 40%; overflow: auto; padding: 8px 10px; font-size: 11px; line-height: 1.4; text-align: left; white-space: pre-wrap; word-break: break-word; background: var(--pw-bg, var(--pw-panel)); border: 1px solid var(--pw-border); border-radius: 6px; }
+.desktop-overlay .desktop-logs { width: min(100%, 760px); max-height: 50%; }
+.desktop-logs-docked { flex: 0 0 auto; max-height: 30%; border-radius: 0; border-width: 1px 0 0; }
+.desktop-clip { width: min(360px, 90vw); display: flex; flex-direction: column; gap: 6px; }
+.desktop-clip-label { font-size: 12px; font-weight: 600; margin-top: 4px; }
+.desktop-clip-text { width: 100%; resize: vertical; font: inherit; font-size: 12px; padding: 6px; border: 1px solid var(--pw-border); border-radius: 6px; background: var(--pw-panel); color: var(--pw-text); }
+.desktop-clip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Under its card in a chat reply, a desktop has the inline frame's height. */
+.session-desktop-inline { flex: 0 0 auto; height: 520px; border-top: 1px solid var(--pw-border); margin-top: 8px; }
+.run-pane-body > .desktop-view { position: absolute; inset: 0; height: auto; }
+.full-view > .desktop-view { flex: 1; height: auto; }
 /* The Scope menu holds the chat's libraries and its labels: the button
    names the libraries after "Scope", and the menu scrolls when both are
    long. */

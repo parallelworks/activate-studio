@@ -36,6 +36,25 @@ function pdfjsAssets(): Plugin {
   }
 }
 
+// noVNC's RFB client (the desktop viewer's chunk) is MPL 2.0, with pako
+// (MIT) inside it; the build puts their license texts in novnc/ beside it.
+// The package exports core/rfb.js only, so its folder is two up from it.
+const novncRoot = dirname(dirname(createRequire(import.meta.url).resolve('@novnc/novnc')))
+function novncLicenses(): Plugin {
+  let outDir = 'dist'
+  return {
+    name: 'novnc-licenses',
+    apply: 'build',
+    configResolved(c) { outDir = resolve(c.root, c.build.outDir) },
+    closeBundle() {
+      const files: [string, string][] = [
+        ['LICENSE.txt', 'LICENSE.txt'], ['AUTHORS', 'AUTHORS'], ['docs/LICENSE.MPL-2.0', 'LICENSE.MPL-2.0'], ['vendor/pako/LICENSE', 'pako-LICENSE'],
+      ]
+      for (const [from, to] of files) cpSync(join(novncRoot, from), join(outDir, 'novnc', to))
+    },
+  }
+}
+
 /** Writes web/shell/sw.js into the build as sw.js, with this build's shell
  *  (shellOf) in place of its SHELL placeholder. */
 function shellWorker(): Plugin {
@@ -54,12 +73,18 @@ function shellWorker(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), pdfjsAssets(), shellWorker()],
+  plugins: [react(), pdfjsAssets(), novncLicenses(), shellWorker()],
   // The parser loads parseWorkflow.wasm from beside its own module (since
   // 0.6.1). Pre-bundling moves the module into .vite/deps without the
   // file, so dev served the SPA's HTML in its place and the workflow form
   // never rendered. Production builds copy the file and are unaffected.
-  optimizeDeps: { exclude: ['@parallelworks/workflow-parser'] },
+  // noVNC (@novnc/novnc, the desktop viewer) awaits at the top of a module
+  // (its H.264 check). The engines the Studio runs in have top-level await
+  // (Safari 15 and the macOS 14 window, current WebKitGTK, Chromium 89);
+  // the module is in the viewer's own chunk, loaded when a desktop first
+  // shows, so the rest of the app does not depend on it.
+  esbuild: { supported: { 'top-level-await': true } },
+  optimizeDeps: { exclude: ['@parallelworks/workflow-parser'], esbuildOptions: { supported: { 'top-level-await': true } } },
   server: {
     port: 5173,
     proxy: {

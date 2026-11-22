@@ -4,7 +4,8 @@ import { CloseIcon } from '@parallelworks/ui/icons'
 import { useChat, useChatStream } from '@parallelworks/ui/ai'
 import { initializeValues } from '@parallelworks/ui/form'
 import { useWorkflowFields } from './WorkflowFields'
-import { insidePlatform } from './SessionView'
+import { insidePlatform, showsInStudio } from './SessionView'
+import { DesktopView, isDesktop } from './DesktopView'
 import { openBeside, openFullView } from '../sideBySide'
 import { setSideShown } from '../panelState'
 
@@ -12,7 +13,7 @@ import { setSideShown } from '../panelState'
  * The run the assistant launched, beside the conversation: the workflow's
  * form as it was submitted, the platform's live graph of the run, and the
  * web session the run opened, served through the Studio so it can sit in
- * the pane. It opens when a reply launches a run and follows that run to
+ * the pane (a platform desktop drawn by the Studio's viewer). It opens when a reply launches a run and follows that run to
  * the end; it moves from the form to the graph to the session as each
  * becomes worth watching, unless the viewer picks a tab.
  */
@@ -55,7 +56,7 @@ interface PaneRun {
   slug: string; status?: string; statusReason?: string; createdAt?: string; completedAt?: string
   workflowName?: string; inputs?: Record<string, unknown>; executedJobs?: Record<string, unknown>; terminal?: boolean
 }
-interface PaneSession { name: string; status: string; url: string | null; ownHost: boolean }
+interface PaneSession { name: string; user: string; type: string; status: string; url: string | null; ownHost: boolean; platformUrl?: string | null }
 interface FormDoc { displayName?: string; form?: Record<string, unknown> | null }
 type Tab = 'form' | 'graph' | 'session'
 
@@ -127,7 +128,7 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
   // is up: the order a launch happens in. A tab the viewer picks stays.
   useEffect(() => {
     if (picked.current) return
-    if (session?.ownHost) { setTab('session'); return }
+    if (showsInStudio(session)) { setTab('session'); return }
     const t = setTimeout(() => { if (!picked.current) setTab('graph') }, 4000)
     return () => clearTimeout(t)
   }, [session, slug])
@@ -185,7 +186,9 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
         {tab === 'session' && (
           host
             ? <iframe className="run-pane-frame" title={session!.name} src={`/api/session-proxy/${host}/`} />
-            : session
+            : session && isDesktop(session)
+              ? <DesktopView user={session.user} name={session.name} />
+              : session
               ? <EmptyState variant="bare" title={<>This session is served under the platform's own address. <a href={session.url ?? '#'} target="_blank" rel="noreferrer">Open it in a new tab</a>.</>} />
               : <EmptyState variant="bare" title="The run's session appears here once it is online." />
         )}
@@ -193,7 +196,7 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
       {session?.url && tab === 'session' && (
         <footer className="run-pane-foot">
           <span className="muted">{session.name}</span>
-          <Button variant="ghost" size="sm" onClick={() => popOut({ kind: 'session', id: `session:${session.name}`, name: session.name, url: session.url!, host, platformUrl: null })}>Open beside the Studio</Button>
+          <Button variant="ghost" size="sm" onClick={() => popOut({ kind: 'session', id: `session:${session.name}`, name: session.name, url: session.url!, host, platformUrl: session.platformUrl ?? null, desktop: isDesktop(session) ? { user: session.user, name: session.name } : null })}>Open beside the Studio</Button>
         </footer>
       )}
     </aside>
@@ -204,22 +207,28 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
  *  sent there from a session card in the chat. */
 export type SideItem =
   | { kind: 'run'; id: string; slug: string }
-  | { kind: 'session'; id: string; name: string; url: string; host: string | null; platformUrl?: string | null }
+  | { kind: 'session'; id: string; name: string; url: string; host: string | null; platformUrl?: string | null; desktop?: { user: string; name: string } | null }
 
 const label = (i: SideItem) => (i.kind === 'run' ? `Run ${i.slug}` : i.name)
 const upsert = (xs: SideItem[], item: SideItem) => (xs.some(x => x.id === item.id) ? xs : [...xs, item])
+
+/** What a session tab shows: the session's pages through the relay, a
+ *  platform desktop in the Studio's viewer, or why it cannot show here. */
+function SessionBody({ item, frameClass }: { item: Extract<SideItem, { kind: 'session' }>; frameClass: string }) {
+  if (item.host) return <iframe className={frameClass} title={item.name} src={`/api/session-proxy/${item.host}/`} />
+  if (item.desktop) return <DesktopView user={item.desktop.user} name={item.desktop.name} />
+  return <EmptyState variant="bare" title="This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio." />
+}
 
 /** A session in the side view, through the Studio's relay. */
 function SessionPane({ item }: { item: Extract<SideItem, { kind: 'session' }> }) {
   return (
     <aside className="run-pane card" aria-label={item.name}>
       <header className="run-pane-head">
-        <div className="run-pane-title"><RunDot status="running" /><strong>{item.name}</strong><span className="muted">session</span></div>
+        <div className="run-pane-title"><RunDot status="running" /><strong>{item.name}</strong><span className="muted">{item.desktop ? 'desktop' : 'session'}</span></div>
       </header>
       <div className="run-pane-body">
-        {item.host
-          ? <iframe className="run-pane-frame" title={item.name} src={`/api/session-proxy/${item.host}/`} />
-          : <EmptyState variant="bare" title="This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio." />}
+        <SessionBody item={item} frameClass="run-pane-frame" />
       </div>
     </aside>
   )
@@ -235,14 +244,19 @@ export function popOut(item: SideItem): void {
 }
 
 /** A session sent to a side view, from a session card in a reply or a page. */
-interface SideSession { name?: string; url?: string | null; ownHost?: boolean; platformUrl?: string | null }
+interface SideSession { name?: string; user?: string; type?: string; url?: string | null; ownHost?: boolean; platformUrl?: string | null }
 
-function sessionItem(s: SideSession): SideItem | null {
+export function sessionItem(s: SideSession): SideItem | null {
   if (!s?.name || !s.url) return null
   let host: string | null = null
   try { host = s.ownHost ? new URL(s.url).host : null } catch { /* no address */ }
-  return { kind: 'session', id: `session:${s.name}`, name: s.name, url: s.url, host, platformUrl: s.platformUrl ?? null }
+  const desktop = !host && isDesktop(s) && s.user ? { user: s.user, name: s.name } : null
+  return { kind: 'session', id: `session:${s.name}`, name: s.name, url: s.url, host, platformUrl: s.platformUrl ?? null, desktop }
 }
+
+/** The session a side view tab came from, for Full screen. */
+const sessionOfItem = (i: Extract<SideItem, { kind: 'session' }>): SideSession =>
+  ({ name: i.name, url: i.url, ownHost: !!i.host, platformUrl: i.platformUrl, user: i.desktop?.user, type: i.desktop ? 'desktop' : undefined })
 
 /**
  * A session at full size inside the Studio: everything below the
@@ -278,9 +292,7 @@ export function FullViewHost() {
           <Button variant="secondary" size="sm" title="Close (Escape)" onClick={() => setItem(null)}>Close</Button>
         </span>
       </div>
-      {item.host
-        ? <iframe className="full-view-frame" title={item.name} src={`/api/session-proxy/${item.host}/`} />
-        : <EmptyState variant="bare" title="This session is served under the platform's own address, so it cannot show here. Pop it out to open it beside the Studio." />}
+      <SessionBody item={item} frameClass="full-view-frame" />
     </div>
   )
 }
@@ -368,9 +380,9 @@ function SideView({ side, beside }: { side: ReturnType<typeof useSideItems>; bes
           </div>
         ))}
         <span className="side-tabs-actions">
-          {cur.kind === 'session' && cur.host && (
+          {cur.kind === 'session' && (cur.host || cur.desktop) && (
             <Button variant="ghost" size="sm" title="Show it over the whole Studio"
-              onClick={() => openFullView({ name: cur.name, url: cur.url, ownHost: true, platformUrl: cur.platformUrl }, false)}>Full screen</Button>
+              onClick={() => openFullView(sessionOfItem(cur), false)}>Full screen</Button>
           )}
           <Button variant="ghost" size="sm" title="Open in a window beside this one" onClick={() => popOut(cur)}>Pop out</Button>
           <Button variant="ghost" size="sm" title="Hide the side view" onClick={() => setHidden(true)}>Hide</Button>
