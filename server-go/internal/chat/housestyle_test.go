@@ -53,7 +53,7 @@ func TestWritingCheckComesBackWithAReport(t *testing.T) {
 
 func TestPWCodeReadsTheLibrarysConventions(t *testing.T) {
 	m, _ := pwModule(t, &fakePW{}, nil)
-	tools := m.chatTools(httptest.NewRequest(http.MethodGet, "/", nil))
+	tools := m.chatTools(httptest.NewRequest(http.MethodGet, "/", nil), true)
 	if p := m.pwcodePrompt(tools); strings.Contains(p, "This library's conventions") {
 		t.Errorf("no conventions file, but: %s", p)
 	}

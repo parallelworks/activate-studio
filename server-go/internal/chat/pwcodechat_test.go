@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -258,6 +259,14 @@ func TestPWCodeAnswersByDefaultWhereItRuns(t *testing.T) {
 	}
 	if tools, _ := req["allowedTools"].([]any); len(tools) == 0 || tools[0] != "mcp__studio__search_kb" {
 		t.Errorf("allowed tools: %v", req["allowedTools"])
+	}
+	// Delegating runs without asking, as the Studio assistant's call does,
+	// and the prompt says to delegate rather than do the work in the chat.
+	if tools, _ := req["allowedTools"].([]any); !slices.Contains(tools, any("mcp__studio__delegate")) || slices.Contains(tools, any("mcp__studio__write_kb_file")) {
+		t.Errorf("allowed tools: %v", req["allowedTools"])
+	}
+	if !strings.Contains(agents, "mcp__studio__delegate") || !strings.Contains(agents, "Do not do delegated work yourself") {
+		t.Errorf("prompt does not say to delegate: %s", agents)
 	}
 	if f.messages[0] != "What is the budget?" {
 		t.Errorf("sent: %q", f.messages[0])

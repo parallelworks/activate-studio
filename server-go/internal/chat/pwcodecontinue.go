@@ -377,7 +377,7 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 		// The Studio's tools, when the session has the studio server.
 		tools := reqbody.O("connected", false, "count", 0, "note", "This session began outside the Studio, so it has its own tools and not the Studio's library tools: pw code cannot add them to a session that already exists.")
 		if s, err := studioMCPState(ctx, here.client, in.Session); err == nil && s != nil {
-			if ck := ensureStudioMCP(ctx, here.client, in.Session, specNames(m.chatTools(r))); ck.OK {
+			if ck := ensureStudioMCP(ctx, here.client, in.Session, specNames(m.chatTools(r, true))); ck.OK {
 				link.MCPURL = jsonv.String(jsonv.Path(s, "url"))
 				tools = reqbody.O("connected", true, "count", ck.Tools)
 			} else {
@@ -434,7 +434,7 @@ func (m *Module) continuedSession(ctx context.Context, r *http.Request, t *pwTar
 		}
 	}
 	if s, err := studioMCPState(ctx, t.client, l.Session); err == nil && s != nil {
-		if ck := ensureStudioMCP(ctx, t.client, l.Session, specNames(m.chatTools(r))); !ck.OK {
+		if ck := ensureStudioMCP(ctx, t.client, l.Session, specNames(m.chatTools(r, true))); !ck.OK {
 			m.A.Log.Warn("pw code chat: a continued session's studio server did not connect", "session", l.Session, "detail", ck.Detail)
 		}
 	}

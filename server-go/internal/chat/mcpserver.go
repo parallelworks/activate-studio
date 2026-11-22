@@ -147,7 +147,7 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 	case "tools/list":
 		if chatGrant {
 			tools := []json.RawMessage{}
-			for _, s := range m.chatTools(r) {
+			for _, s := range m.chatTools(r, grantDelegates(chat.Conv)) {
 				tools = append(tools, chatToolJSON(s))
 			}
 			return reqbody.OK(w, rpcResult(id, reqbody.O("tools", tools)))
@@ -166,7 +166,7 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 		if chatGrant {
 			// A pw code chat's call runs as the Studio assistant's would: the
 			// conversation's scope, the person's key, the tools they left on.
-			if !slices.Contains(specNames(m.chatTools(r)), name) {
+			if !slices.Contains(specNames(m.chatTools(r, grantDelegates(chat.Conv))), name) {
 				return reqbody.OK(w, rpcError(id, -32602, "unknown tool: "+name))
 			}
 			var link *conversations.PWCodeLink

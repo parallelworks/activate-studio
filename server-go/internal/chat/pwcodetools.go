@@ -30,7 +30,9 @@ import (
 // token is for, with the conversation's scope and their own platform key,
 // as the Studio assistant's call would. The calls the Studio holds for an
 // answer in its own chat (deletes, cluster changes, transfers) are left
-// out, as are the agent tools, since pw code is the agent.
+// out, as are the agent tools, since pw code is the agent; a person's chat
+// keeps delegate and the tools that follow a delegated session, so work
+// they ask to delegate goes the way the Studio assistant's would.
 //
 // The Studio makes sure the session has the tools before a message goes to
 // it: it reads the session's MCP servers from the daemon, reconnects the
@@ -55,7 +57,23 @@ var chatReadTools = map[string]bool{
 	"list_workflows": true, "list_github_workflows": true, "get_workflow": true, "pw_help": true, "compose_workflow": true,
 	"validate_workflow": true, "workflow_configs": true, "hpc_environments": true, "watch_run": true, "workflow_runs": true,
 	"workflow_run_detail": true, "list_sessions": true, "list_clusters": true, "list_storage": true, "hpc_status": true,
+	"agent_sites": true, "agent_sessions": true, "agent_status": true, "task_status": true,
 }
+
+// chatDelegateTools are the agent tools a person's pw code chat gets: delegate,
+// which starts a delegated pw code session in a library folder through the
+// same path as the Studio assistant's call, and the tools that list and
+// follow it. A standing agent's session does not get them.
+var chatDelegateTools = map[string]bool{"delegate": true, "agent_sites": true, "agent_sessions": true, "agent_status": true, "task_status": true}
+
+// chatNoAsk are the tools that change something and still run without
+// asking in a person's pw code chat: delegate, which the person asked for
+// and which the Studio assistant also runs without asking.
+var chatNoAsk = map[string]bool{"delegate": true}
+
+// grantDelegates is whether a chat token's grant is a person's chat, which
+// may delegate, rather than a standing agent's session ("fleet:<id>").
+func grantDelegates(grant string) bool { return !strings.HasPrefix(grant, "fleet:") }
 
 // chatLeftOut: a Studio tool a pw code chat does not get. A held call
 // waits for an answer in the Studio's own chat, and pw code is itself the
@@ -67,17 +85,29 @@ func chatLeftOut(name string) bool {
 
 // chatTools is the Studio tools a pw code chat of r's viewer gets, in
 // catalog order: the built-in tools this deployment offers that viewer,
-// less those turned off and those left out above.
-func (m *Module) chatTools(r *http.Request) []ToolSpec {
+// less those turned off and those left out above. delegates is a person's
+// chat, which gets the delegation tools where the Studio assistant would:
+// delegation on, and a site to run on (the platform, or this host).
+func (m *Module) chatTools(r *http.Request, delegates bool) []ToolSpec {
 	disabled := map[string]bool{}
-	for _, n := range m.eff().DisabledTools {
+	e := m.eff()
+	for _, n := range e.DisabledTools {
 		disabled[n] = true
+	}
+	if !e.DelegationEnabled {
+		disabled["delegate"], disabled["task_status"] = true, true
 	}
 	platform := m.A.Providers.PlatformAvailable != nil && m.A.Providers.PlatformAvailable(r, userID(r))
 	signedIn := m.A.Cfg.AuthEnabled()
 	var out []ToolSpec
 	for _, s := range builtinSpecs {
 		n := s.Name
+		if delegates && chatDelegateTools[n] {
+			if !disabled[n] && (platform || m.localAgents()) {
+				out = append(out, s)
+			}
+			continue
+		}
 		if disabled[n] || chatLeftOut(n) || (signedIn && signedInOnlyOff[n]) || (!platform && needsPlatform(n)) {
 			continue
 		}

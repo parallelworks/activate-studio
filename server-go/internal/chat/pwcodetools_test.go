@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -104,12 +105,15 @@ func TestChatTokenGetsTheStudioTools(t *testing.T) {
 		o := x.(map[string]any)
 		read[o["name"].(string)] = o["annotations"].(map[string]any)["readOnlyHint"].(bool)
 	}
-	for name, ro := range map[string]bool{"search_kb": true, "list_libraries": true, "query_corpus": true, "show_in_viewer": true, "write_kb_file": false, "edit_kb_file": false} {
+	// A person's chat delegates as the Studio assistant does, and follows
+	// what it delegated.
+	for name, ro := range map[string]bool{"search_kb": true, "list_libraries": true, "query_corpus": true, "show_in_viewer": true, "write_kb_file": false, "edit_kb_file": false,
+		"delegate": false, "agent_status": true, "agent_sessions": true} {
 		if got, ok := read[name]; !ok || got != ro {
 			t.Errorf("%s: listed %v, read only %v", name, ok, got)
 		}
 	}
-	for _, name := range []string{"delete_kb_files", "transfer_files", "start_agent", "delegate", "more_tools", "start_cluster"} {
+	for _, name := range []string{"delete_kb_files", "transfer_files", "start_agent", "agent_steer", "agent_approve", "agent_stop", "more_tools", "start_cluster"} {
 		if _, ok := read[name]; ok {
 			t.Errorf("%s is listed", name)
 		}
@@ -130,6 +134,29 @@ func TestChatTokenGetsTheStudioTools(t *testing.T) {
 	}
 	if res := rpc(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"delete_kb_files","arguments":{}}}`); res["error"] == nil {
 		t.Errorf("delete ran: %v", res)
+	}
+}
+
+func TestDelegationInAPersonsChatOnly(t *testing.T) {
+	m, _ := pwModule(t, &fakePW{}, nil)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	has := func(specs []ToolSpec, n string) bool { return slices.Contains(specNames(specs), n) }
+	if !grantDelegates("conv-1") || grantDelegates("fleet:pump") {
+		t.Error("grantDelegates")
+	}
+	chat, agent := m.chatTools(r, true), m.chatTools(r, false)
+	for _, n := range []string{"delegate", "agent_status", "agent_sessions", "task_status"} {
+		if !has(chat, n) {
+			t.Errorf("a person's chat lacks %s", n)
+		}
+		if has(agent, n) {
+			t.Errorf("a standing agent's session has %s", n)
+		}
+	}
+	// Delegation switched off: the chat does not get delegate.
+	t.Setenv("DELEGATION_ENABLED", "0")
+	if has(m.chatTools(r, true), "delegate") || has(m.chatTools(r, true), "task_status") {
+		t.Error("delegate offered with delegation off")
 	}
 }
 
