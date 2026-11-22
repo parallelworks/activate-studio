@@ -56,7 +56,7 @@ pw code reads `AGENTS.md` from the folder a session works in, and outside a git 
 <!-- ACTIVATE Studio instructions reviewer: end -->
 ```
 
-The file is made when there is none. Applying the same template again replaces its section where it is, and taking it off removes the section, and the file when nothing else is left in it. A second template gets a section of its own. Text outside the markers is the person's and is never changed; a section whose end marker was removed by hand is reported and left for the person to mend. The Studio never writes through a link: an `AGENTS.md` that is a symbolic link (to a shared `CLAUDE.md`, say) is refused.
+The file is made when there is none. Applying the same template again replaces its section where it is, and taking it off removes the section, and the file when nothing else is left in it. A second template gets a section of its own. Text outside the markers is the person's and is never changed; a section whose end marker was removed by hand is reported and left for the person to mend. The Studio never writes through a link: an `AGENTS.md` that is a symbolic link (to a shared `CLAUDE.md`, say) is refused, and so is a folder on the way to it or to a skill that is a link (the folder itself, one above it, or its `.agents`), so nothing lands outside the library. The library's top may be a link.
 
 The folder is in the main library, written as the Library writes there and indexed like any file, or in the person's own library (My library), read and written as them over their own session and indexed as that library is. A folder shared with the person, and any other library, is refused.
 

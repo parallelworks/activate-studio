@@ -41,8 +41,35 @@ type Local struct {
 	Index func(rels []string)
 }
 
+// abs is rel on this host. A folder on the way to it that is a link is
+// refused, as the file itself is, so nothing is read or written out of
+// the library through a linked folder; the library's top may be a link.
 func (l Local) abs(rel string) (string, error) {
-	return kb.Resolve(path.Join(l.Rel, rel), l.Root)
+	abs, err := kb.Resolve(path.Join(l.Rel, rel), l.Root)
+	if err != nil {
+		return "", err
+	}
+	top := filepath.Clean(l.Root)
+	inner, ok := strings.CutPrefix(abs, top+string(filepath.Separator))
+	if !ok {
+		return abs, nil
+	}
+	parts := strings.Split(inner, string(filepath.Separator))
+	at := top
+	for i, part := range parts[:len(parts)-1] {
+		at = filepath.Join(at, part)
+		st, err := os.Lstat(at)
+		if errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		if st.Mode()&fs.ModeSymlink != 0 {
+			return "", apierr.New(409, "%s in %s is a linked folder; the Studio does not read or write through one. Apply the instructions to another folder.", strings.Join(parts[:i+1], "/"), l.Label)
+		}
+	}
+	return abs, nil
 }
 
 // libRel is rel as a path from the library's top.
