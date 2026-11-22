@@ -1307,9 +1307,12 @@ a.identity-btn { text-decoration: none; }
   border: 1px solid var(--pw-border); border-radius: 8px; overflow: hidden; background: var(--pw-panel);
 }
 .embed-root .session-view { border: 0; border-radius: 0; }
+/* The bar keeps its height when its buttons wrap in a narrow chat column:
+   shrunk, the buttons spill over what is under it, and the card reports a
+   height that leaves them out. */
 .session-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 40px; padding: 4px 10px;
-  border-bottom: 1px solid var(--pw-border); font-size: 13px;
+  border-bottom: 1px solid var(--pw-border); font-size: 13px; flex-shrink: 0;
 }
 .session-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .session-meta { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -2482,7 +2485,7 @@ a.identity-btn { text-decoration: none; }
 /* A platform desktop drawn in the Studio (DesktopView): a bar, then the
    desktop filling what is left, with the state over it until it connects. */
 .desktop-view { display: flex; flex-direction: column; min-height: 0; height: 100%; width: 100%; }
-.desktop-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 8px; border-bottom: 1px solid var(--pw-border); font-size: 12px; min-width: 0; }
+.desktop-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 8px; border-bottom: 1px solid var(--pw-border); font-size: 12px; min-width: 0; flex-shrink: 0; }
 .desktop-state { white-space: nowrap; }
 .desktop-actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .desktop-stage { position: relative; flex: 1; min-height: 0; background: #1e1e1e; }
