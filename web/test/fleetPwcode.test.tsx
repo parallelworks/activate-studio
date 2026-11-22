@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FleetPage } from '../src/views/FleetPage'
@@ -55,6 +56,30 @@ describe('the Fleet page over pw code sessions', () => {
     await waitFor(() => expect(posts.some(p => p.url === '/api/fleet/watch-abcd/retire')).toBe(true))
     await waitFor(() => expect(changed).toHaveBeenCalled())
     window.removeEventListener('ade:fleet-changed', changed)
+  })
+
+  it('keeps the actions in their places before the first wake-up and while it works', async () => {
+    let shown: Record<string, unknown> = { ...agent, state: 'idle', note: '', session: null }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const body = url === '/api/fleet' ? { agents: [shown] } : url === '/api/fleet/templates' ? { templates: [] }
+        : url === '/api/fleet/watch-abcd' ? { agent: shown, journal: [], session: null } : {}
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const actions = () => Array.from(document.querySelectorAll('.fleet-detail-actions > *')).map(e => e.textContent)
+    const { unmount } = render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    await screen.findByText('No session until its first wake-up')
+    expect(actions()).toEqual(['Wake now', 'Pause', 'Retire', 'No session until its first wake-up'])
+    expect(document.querySelector('.fleet-detail-meta')).toHaveTextContent('watcher · pw code\'s default model · every 30m · on run end')
+    unmount()
+    shown = { ...agent, state: 'working', note: '' }
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    await screen.findByText('Its session on the Code page')
+    expect(actions()).toEqual(['Wake now', 'Pause', 'Retire', 'Its session on the Code page'])
+    expect(screen.getByRole('button', { name: 'Wake now' })).toBeDisabled()
+    // The actions are a row of their own under the name and settings.
+    expect(readFileSync('src/styles.css', 'utf8')).toMatch(/\.fleet-detail-head \{ display: flex; flex-direction: column;/)
   })
 
   it('creates an agent with a pw code model and turns per wake-up', async () => {

@@ -198,14 +198,19 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
           <div className="fleet-detail-head">
             <div className="fleet-detail-title">
               <span className="fleet-detail-name"><StatusDot {...statusLook(detail.agent.state)} />{detail.agent.name}</span>
-              <span className="muted fleet-detail-meta">{detail.agent.persona ?? 'no instructions'} · {detail.agent.model || "pw code's default model"} · every {detail.agent.triggers.every}{detail.agent.triggers.onRunEnd ? ' · on run end' : ''}{detail.agent.triggers.watchPath ? ` · watches ${detail.agent.triggers.watchPath}/` : ''}</span>
+              <span className="muted fleet-detail-meta">{detail.agent.persona ?? 'no instructions'} · {detail.agent.model || "pw code's default model"} · {detail.agent.triggers.every === 'manual' ? 'no schedule' : `every ${detail.agent.triggers.every}`}{detail.agent.triggers.onRunEnd ? ' · on run end' : ''}{detail.agent.triggers.watchPath ? ` · watches ${detail.agent.triggers.watchPath}/` : ''}</span>
             </div>
             <div className="fleet-detail-actions">
-              {detail.agent.state !== 'working' && detail.agent.state !== 'retired' && <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'tick')}>Wake now</Button>}
+              {/* The actions keep their places: Wake now stays, disabled, while a
+                  round runs, and the session link's place is held before there is one. */}
+              {detail.agent.state !== 'retired' && <Button variant="secondary" size="sm" disabled={detail.agent.state === 'working'}
+                title={detail.agent.state === 'working' ? 'It is working now' : undefined} onClick={() => void act(detail.agent.id, 'tick')}>Wake now</Button>}
               {detail.agent.state === 'paused' ? <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'resume')}>Resume</Button>
                 : detail.agent.state !== 'retired' && <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'pause')}>Pause</Button>}
               {detail.agent.state !== 'retired' && <Button variant="danger" size="sm" onClick={() => setRetiring(detail.agent)}>Retire</Button>}
-              {detail.agent.session && <Button variant="ghost" size="sm" href={`#view=code?session=${encodeURIComponent(detail.agent.session)}`}>Its session on the Code page</Button>}
+              {detail.agent.session
+                ? <Button variant="ghost" size="sm" href={`#view=code?session=${encodeURIComponent(detail.agent.session)}`}>Its session on the Code page</Button>
+                : <span className="muted fleet-no-session">No session until its first wake-up</span>}
             </div>
           </div>
           {detail.agent.state === 'input-required' && (
