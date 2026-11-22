@@ -3371,3 +3371,7 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .fleet-approval-text { margin: 6px 0; padding: 6px 8px; overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; }
 .fleet-approval-actions { display: flex; gap: 8px; }
 .fleet-approval-cut, .fleet-approval-reason { display: block; margin: 4px 0; }
+
+/* A continued chat's opening note is not a reply: no Regenerate on it
+   (markNotes, adapter.ts, marks its Code page link). */
+.group:has(a[href*="note=continued"]):not(:has(.group)) button[aria-label="Regenerate response"] { display: none; }
