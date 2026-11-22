@@ -40,10 +40,12 @@ type daemon struct {
 	tokens    map[string]float64
 	goalAlive map[string]bool
 	answers   []map[string]any
+	// approvalKind is the kind of a session's approval: confirm when unset.
+	approvalKind map[string]string
 }
 
 func newDaemon() *daemon {
-	return &daemon{status: map[string]string{}, answer: map[string]string{}, approval: map[string]string{}, tokens: map[string]float64{}, goalAlive: map[string]bool{}}
+	return &daemon{status: map[string]string{}, answer: map[string]string{}, approval: map[string]string{}, tokens: map[string]float64{}, goalAlive: map[string]bool{}, approvalKind: map[string]string{}}
 }
 
 func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +114,18 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out := map[string]any{"id": id, "status": d.status[id], "inputTokens": d.tokens[id], "outputTokens": 0.0,
 			"history": []any{map[string]any{"kind": "user", "text": "wake"}, map[string]any{"kind": "assistant", "text": d.answer[id]}}}
 		if a := d.approval[id]; a != "" {
-			out["approvals"] = []any{map[string]any{"id": "ap1", "text": a}}
+			// The daemon's ApprovalRequest fields; there is no text.
+			kind := d.approvalKind[id]
+			if kind == "" {
+				kind = "confirm"
+			}
+			rec := map[string]any{"id": "ap1", "kind": kind, "createdAt": "2026-11-22T12:00:00Z", "callId": "c1", "agent": "main"}
+			if kind == "confirm" {
+				rec["tool"], rec["command"], rec["reason"] = "Bash", a, "shell command"
+			} else {
+				rec["reason"] = a
+			}
+			out["approvals"] = []any{rec}
 		}
 		send(out)
 	default:

@@ -289,7 +289,7 @@ func lookAt(ctx context.Context, c pwcode.Client, id string) (look, error) {
 	if status == "awaiting_approval" || len(approvals) > 0 {
 		l.settled, l.waiting = true, true
 		if len(approvals) > 0 {
-			l.ask = text(jsonv.Path(approvals[0], "text"))
+			l.ask = approvalOf(approvals[0]).summary()
 		}
 	}
 	hist := jsonv.Arr(jsonv.Path(d, "history"))

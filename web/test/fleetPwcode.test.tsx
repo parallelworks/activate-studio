@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FleetPage } from '../src/views/FleetPage'
 
@@ -97,12 +97,13 @@ describe('the Fleet page over pw code sessions', () => {
   })
 
   it('answers a call its session waits to have approved, from the detail', async () => {
-    const waiting = { ...agent, note: 'waiting for your approval: rm -rf build' }
+    const waiting = { ...agent, note: 'waiting for your approval: Bash: rm -rf build' }
+    let approval: Record<string, unknown> = { id: 'ap1', kind: 'confirm', tool: 'Bash', command: 'rm -rf build', commandLength: 12, approvable: true }
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST') posts.push({ url, body: JSON.parse(String(init.body ?? '{}')) })
       const body = url === '/api/fleet' ? { agents: [waiting] }
         : url === '/api/fleet/templates' ? { templates: [] }
-        : url === '/api/fleet/watch-abcd' ? { agent: waiting, journal: [], session: { id: agent.session, recent: [] }, approval: { id: 'ap1', text: 'rm -rf build' } }
+        : url === '/api/fleet/watch-abcd' ? { agent: waiting, journal: [], session: { id: agent.session, recent: [] }, approval }
         : { ok: true }
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
@@ -114,5 +115,21 @@ describe('the Fleet page over pw code sessions', () => {
     await waitFor(() => expect(posts).toContainEqual({ url: '/api/fleet/watch-abcd/approve', body: { approval: 'ap1', allowed: false } }))
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
     await waitFor(() => expect(posts).toContainEqual({ url: '/api/fleet/watch-abcd/approve', body: { approval: 'ap1', allowed: true } }))
+    cleanup()
+    // A command too long to show whole is offered Deny alone.
+    approval = { id: 'ap1', kind: 'confirm', tool: 'Bash', command: 'y'.repeat(100), commandCut: true, commandLength: 70000, approvable: false }
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    expect(await screen.findByText(/70,000 characters, too long to show whole/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument()
+    cleanup()
+    // A plan is answered on the Code page, not here.
+    approval = { id: 'ap1', kind: 'plan', reason: 'Rewrite the build', approvable: false }
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    expect(await screen.findByText(/It waits for you on a plan/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull()
   })
 })
