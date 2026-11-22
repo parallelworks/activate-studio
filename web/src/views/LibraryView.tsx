@@ -99,7 +99,7 @@ export function LibraryView({ display, onDisplay }: {
     try {
       await api.deleteFile(t.path)
       window.dispatchEvent(new Event('ade-kb-changed'))
-      if (display?.kind === 'file' && (display.target === t.path || display.target.startsWith(t.path + '/'))) onDisplay(null)
+      if (display?.kind === 'file' && typeof display.target === 'string' && (display.target === t.path || display.target.startsWith(t.path + '/'))) onDisplay(null)
       setRefreshKey(k => k + 1)
       window.dispatchEvent(new Event('ade-kb-changed'))
       setDeleteTarget(null)

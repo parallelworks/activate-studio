@@ -124,7 +124,8 @@ func (m *Module) spaceOp(op string, w http.ResponseWriter, r *http.Request, lib 
 			return err
 		}
 		fs.Changed(r, lib, []string{clean, to})
-		writeJSON(w, 200, O("renamed", to, "indexMs", 0, "reindexing", true))
+		// The same reply as the main library's: what was renamed, from and to.
+		writeJSON(w, 200, O("renamed", O("from", clean, "to", to), "indexMs", 0, "reindexing", true))
 	case "move":
 		if err := b.need(); err != nil {
 			return err

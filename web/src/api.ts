@@ -739,7 +739,10 @@ export const api = {
   rename: async (path: string, name: string) => {
     const r = await postJson<{ renamed: { from: string; to: string } | null; indexMs: number }>('/api/kb/rename', { path, name })
     const back = prefixFor(path)
-    return { ...r, renamed: r.renamed && { from: back(r.renamed.from), to: back(r.renamed.to) } }
+    // A reply without both names (an older server's for a library on a
+    // system gave the new path alone) says nothing was renamed to follow.
+    const ok = r.renamed && typeof r.renamed.from === 'string' && typeof r.renamed.to === 'string'
+    return { ...r, renamed: ok ? { from: back(r.renamed!.from), to: back(r.renamed!.to) } : null }
   },
 
   /** Bulk move as a watchable job: the interface polls /api/jobs/<id>. */
