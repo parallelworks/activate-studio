@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PublicLibrary } from './api'
 
 /**
@@ -23,9 +23,18 @@ export function saveMapLibrary(page: MapPage, id: string): void {
 }
 
 /** The library a map shows: the one chosen here before if it still exists,
- *  else `fallback`. Setting it keeps the choice. */
-export function useMapLibrary(page: MapPage, libraries: Pick<PublicLibrary, 'id'>[], fallback: string | null): [string | null, (id: string) => void] {
-  const [chosen, setChosen] = useState<string | null>(() => storedMapLibrary(page))
+ *  else `fallback`. Setting it keeps the choice. `follow` is the library
+ *  the Stats page is showing: a map opened on, or switched to, another
+ *  library than the main one (or all) shows that library too, so the page
+ *  never pairs one library's figures with another's map. */
+export function useMapLibrary(page: MapPage, libraries: Pick<PublicLibrary, 'id'>[], fallback: string | null, follow?: string | null): [string | null, (id: string) => void] {
+  const [chosen, setChosen] = useState<string | null>(() => (follow && follow !== 'all' && follow !== 'kb' ? follow : storedMapLibrary(page)))
+  const followed = useRef(follow)
+  useEffect(() => {
+    if (follow === followed.current) return
+    followed.current = follow
+    if (follow && follow !== 'all') setChosen(follow)
+  }, [follow])
   const valid = chosen && libraries.some(l => l.id === chosen) ? chosen : null
   return [valid ?? fallback, (id: string) => { saveMapLibrary(page, id); setChosen(id) }]
 }
