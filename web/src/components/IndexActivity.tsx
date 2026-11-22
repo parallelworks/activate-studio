@@ -273,18 +273,25 @@ export function IndexControls({ canDelete, canBuild = true, folder, part = 'all'
         {secondary && <IndexLogButton />}
       </div>
       {c.error && <Callout tone="error">{c.error}</Callout>}
-      {secondary && (
-        <ConfirmModal open={c.confirming} onClose={c.closeConfirm} destructive closeOnConfirm={false}
-          title="Delete the index?" confirmLabel="Delete index" cancelLabel="Keep it"
-          description={<>
-            Search, Query and Stats find nothing in {folder ? <code>{folder}</code> : 'the main folder'} until the index is built
-            again. The files in the folder are not touched.
-          </>}
-          pending={c.busy === 'delete'} error={c.deleteError || undefined}
-          onConfirm={() => c.remove()}
-        />
-      )}
+      {secondary && <DeleteIndexDialog controls={c} folder={folder} />}
     </>
+  )
+}
+
+/** The question before the main folder's index is deleted, opened by
+ *  `controls.setConfirming(true)`: what stops working, and that the files
+ *  stay. It stays open on a failure, with the reason, for another try. */
+export function DeleteIndexDialog({ controls: c, folder }: { controls: ReturnType<typeof useIndexControls>; folder?: string | null }) {
+  return (
+    <ConfirmModal open={c.confirming} onClose={c.closeConfirm} destructive closeOnConfirm={false}
+      title="Delete the index?" confirmLabel="Delete index" cancelLabel="Keep it"
+      description={<>
+        Search, Query and Stats find nothing in {folder ? <code>{folder}</code> : 'the main folder'} until the index is built
+        again. The files in the folder are not touched.
+      </>}
+      pending={c.busy === 'delete'} error={c.deleteError || undefined}
+      onConfirm={() => c.remove()}
+    />
   )
 }
 

@@ -114,20 +114,29 @@ on each entry's result.
 ## The Libraries page
 
 Settings, Indexing, Libraries is one list of every library the Studio searches, and
-one **Add a library** control. Each row gives the library's name, its kind
-in plain words with what the Studio may do with it (read and write, or
-read only), where it is (the index directory, and the files when the
-Studio can open them), its state, its depth, and its actions. For a library
+one **Add a library** control. Each library is a card, laid out the same
+for every kind. Its head gives the library's name with its access as the
+Library switcher names it (Read/write, Read only or Shared, and the
+system it is on), its kind in plain words, its state with its counts and
+when it was last indexed, and at the right the action that keeps its
+index current (**Update index**, **Rebuild**, **List again**, **Check** or
+**Refresh**, in the same place for every kind) with the kind's other
+everyday actions. What removes it, **Delete index** for the main folder
+and **Remove** for the others, is under **More**, and each asks first.
+Under the head are its notes (errors, gaps, what a listing costs), then
+its details: the folder and the index directory, each on one line,
+shortened in the middle where the card is narrow, whole on hover and in
+**Copy**, and the kind's settings. For a library
 the Studio builds (the main folder, and one built here or on a remote
-system) the Depth column is its index depth, Names, Text, Text + OCR,
+system) its **Depth** is its index depth, Names, Text, Text + OCR,
 Meaning on documents or Meaning on all files, changed in place (`PUT
 /api/libraries/:id/depth`). A library built here or on a remote system
 starts at Meaning on documents (both below). A new depth on a library
 built on a remote system is stored and applies at its next build, so the
-row offers **Rebuild now** or **Later**, or, with a build running, says the
+card offers **Rebuild now** or **Later**, or, with a build running, says the
 change waits for the next one. The library records the depth of its last
 build that finished with what that depth makes (`builtDepth`), and until
-that matches its depth the state column says **Depth changed, Rebuild to
+that matches its depth its notes say **Depth changed, Rebuild to
 apply**. A failed rebuild changes nothing there, nor does one that made no
 vectors at a Meaning depth; a library last built by an earlier version has
 no record and shows no note.
@@ -139,7 +148,7 @@ the index has, as built: names, text, or text and meaning:
 
 | Kind | Where it comes from | Actions |
 |---|---|---|
-| Main folder, read and write | `KB_ROOT` | **Change folder**, **Build index** or **Update index** (**Stop indexing** while it runs), and under the row **Delete index** and **View log**, on a single-user install; **View log** anywhere |
+| Main folder, read and write | `KB_ROOT` | **Change folder**, **Build index** or **Update index** (**Stop indexing** while it runs), and **Delete index** under **More**, on a single-user install; **View log** at the card's foot anywhere |
 | Index of a folder on this machine, kept in step with it | `POST /api/libraries/build` | **Rebuild**, **Remove** |
 | Copy of a folder in a Transfers location, kept in step with it | `POST /api/libraries/copy` | **Update now**, how often it looks for changes, **Rebuild**, **Remove** |
 | GUFI index on this machine | `POST /api/libraries` (sign-in off), or `STUDIO_LIBRARIES` (set by the deployment) | **Remove** (sign-in off), except for one the deployment set |
@@ -178,7 +187,7 @@ Studio, which is sign-in on or `PW_PLATFORM_HOST` set (`workflow`), and
 the client config's `platform`. A choice with one option is not shown. A
 Studio on someone's own computer therefore never shows workflow or
 scheduler fields: it builds on a remote system over the session instead.
-A build shows its phase and the folders indexed so far under its row
+A build shows its phase and the folders indexed so far in its card
 while it runs, and the library joins the Library switcher when it is
 ready. A rebuild of a library on this machine that already has an index,
 including a build a restart interrupted (it runs again when the server
@@ -202,7 +211,7 @@ client config every viewer loads lists libraries without them. The Studio
 probes the tree and refuses a path that is not a GUFI index, with the
 reason.
 
-On a single-user install the main folder's row also shows whether its
+On a single-user install the main folder's card also shows whether its
 index is built, its file count (`GET /api/setup/status?files=1`, asked
 after the page has loaded since it walks the index), and two actions.
 **Change folder** opens the setup wizard's folder picker in a dialog and
@@ -211,12 +220,12 @@ launcher runs the Studio it restarts on the new folder and the page waits
 for it, and elsewhere the page says to set `KB_ROOT` and restart.
 **Build index** (**Update index** once there is one) runs
 `POST /api/index/build`, and the job's phases, each with its count and
-time, show under the row as it runs, read from `GET /api/index/status`
-like the footer and Stats; **Stop indexing** stops it, and the row then
-says the index is incomplete until it is updated. Under the row,
-**Delete index** asks first, in the row itself, and deletes the index and
-its caches, never the files (`DELETE /api/index?confirm=1`); **View log**
-shows the index log. Where users sign in, only **View log** is offered and
+time, show in the card as it runs, read from `GET /api/index/status`
+like the footer and Stats; **Stop indexing** stops it, and the card then
+says the index is incomplete until it is updated. **More**, **Delete
+index** asks first, in a dialog, and deletes the index and its caches,
+never the files (`DELETE /api/index?confirm=1`). The card's foot says how
+the last run went, with **View log** for the index log. Where users sign in, only **View log** is offered and
 the state comes from the probe. See [REFERENCE.md](REFERENCE.md#indexing)
 for the jobs and their phases.
 
@@ -346,7 +355,7 @@ takes a source folder, an index folder (optional), a label, an
 identifier, and the depth.
 
 The phases run in order: the folders, then the text, then search by
-meaning, shown on the row as **Computing search by meaning**. A first
+meaning, shown on the card as **Computing search by meaning**. A first
 build swaps its tree in as soon as the folders are indexed, so search
 finds the library's names while the rest runs. Once the text is read the
 library is probed again, so search reads its words while meaning is
@@ -384,7 +393,7 @@ folder the index goes in the Studio's own, `INDEX_BASE/libraries/<id>/index`.
 folder that does not exist, and the server makes one only when the
 request carries `create: true`; without it the answer is 409 naming the
 folders. The build runs as an index job (`GET /api/index/job/<id>`); its
-phase and folder count also show on the library's row
+phase and folder count also show on the library's card
 (`GET /api/libraries`, `build.progress`). The tree is written beside the
 old one (`<index folder>/.build`) and swapped in when complete, so search
 keeps answering during a rebuild. The index folder holds the tree,
@@ -479,11 +488,11 @@ the plan refuses one that does not fit.
 Studio looks for changes on the library's interval (`every`), one look
 at a time per library, and **Update now** looks at once (`POST
 /api/libraries/<id>/update`, answered at once). From that answer until
-the look ends, `copyOf.looking` is true and the row says it is looking;
+the look ends, `copyOf.looking` is true and the card says it is looking;
 `copyOf.running` is the look's transfer once it has one. `PUT /api/libraries/<id>/copy` with `{ every }`
 changes the interval. **Rebuild** looks and then builds the whole index
 again. What the last look found is kept in
-`INDEX_BASE/libraries/<id>/copy.json` and shown on the row: when it
+`INDEX_BASE/libraries/<id>/copy.json` and shown on the card: when it
 looked, what it last brought or removed with a link to that transfer, and
 why it failed. A location that is gone or cannot be reached leaves the
 copy and its index as they were and says why. The library shows as
@@ -545,7 +554,7 @@ and counted. What the last listing found is kept in
 folders, entries left out, the requests it took, the provider rclone's
 configuration names, its seconds, and why it failed.
 
-The Settings row shows how many objects and how much data the bucket
+The Settings card shows how many objects and how much data the bucket
 holds and when it was listed, and what a listing costs: the requests it
 takes and, where the provider is AWS, their price at the S3 Standard
 LIST rate ($0.005 per 1,000 requests), for one listing and for a month at
@@ -580,12 +589,12 @@ megabyte (0 before one). Readable
 objects are text files and documents (PDF, Office, OpenDocument, mail);
 images are not read, since reading one is OCR of the whole image.
 
-In Settings, Indexing, Libraries, the bucket row's **Read text** (Off, or
+In Settings, Indexing, Libraries, the bucket card's **Read text** (Off, or
 After each listing) asks first, with the estimate: what it reads, what is
 left out, the price on AWS (data out at $0.09 a GB and GET requests at
 $0.0004 per 1,000, S3 Standard), that a store on premises charges
 nothing, and the time at the last measured rate (25 MB a second before
-one). While a pass runs the row says **Reading text**, with its progress
+one). While a pass runs the card says **Reading text**, with its progress
 and **Stop reading**; after, how many objects have text and what the last
 pass read.
 
@@ -727,7 +736,7 @@ The build records in `.studio-index.json` what it could not read:
 with `gufi_query`; `text` and `embed`, the reports of `enrich.py` and
 `embed.py` (files and files with no text per document type, the PDF
 reader used, passages, errors); `textWhy` and `vectorsWhy`, why a pass did
-not run or stopped; and `depth`. The library's row shows these as a count
+not run or stopped; and `depth`. The library's card shows these as a count
 and a reason. A library whose vector tables hold nothing, though passages
 were cut, counts as having no vectors. A Rebuild reads what the system can
 run again, so a Python installed since the library was added is used. It
@@ -1147,7 +1156,7 @@ the original file is when its own host does not have it.
 The case this is for is a site whose index lives where GUFI runs, on a host
 whose login runs only `gufi_query` (see "Hosts whose login runs only
 gufi_query"), while another host, such as a file transfer host, mounts the
-same file systems and gives a normal shell. On the library's row in
+same file systems and gives a normal shell. On the library's card in
 Settings, Indexing, Libraries, **Originals via**, **Set** names that host:
 
 - *Host*: `user@host`, or a Host alias from `~/.ssh/config`, with `:port`
