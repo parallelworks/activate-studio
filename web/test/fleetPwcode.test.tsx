@@ -124,6 +124,19 @@ describe('the Fleet page over pw code sessions', () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument()
     cleanup()
+    // Review 2, R3: a long command shows its first lines, and Approve is
+    // offered only once the whole command is on screen.
+    const long = Array.from({ length: 60 }, (_, i) => `echo line ${i + 1}`).join('\n')
+    approval = { id: 'ap2', kind: 'confirm', tool: 'Bash', command: long, commandLength: long.length, approvable: true }
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    const pre = await screen.findByText(/echo line 1\b/, { selector: '.fleet-approval-text' })
+    expect(pre.textContent).not.toContain('echo line 60')
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Show the whole command \(60 lines/ }))
+    await waitFor(() => expect(screen.getByText(/echo line 60/, { selector: '.fleet-approval-text' })).toBeInTheDocument())
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
+    cleanup()
     // A plan is answered on the Code page, not here.
     approval = { id: 'ap1', kind: 'plan', reason: 'Rewrite the build', approvable: false }
     render(<FleetPage personas={[]} onOpenTask={() => {}} />)

@@ -6,6 +6,7 @@ import {
 } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
 import { PersonaIcon } from '../components/PersonaIcon'
+import { commandHead } from '../commandHead'
 
 /**
  * The operator base: standing agents with goals, their state, their
@@ -58,6 +59,9 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [agents, setAgents] = useState<Agent[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [open, setOpen] = useState<string | null>(null)
+  // The approval whose whole command is on screen: Approve runs it whole,
+  // so it is offered only then, as on the Code page.
+  const [whole, setWhole] = useState('')
   const [detail, setDetail] = useState<{ agent: Agent; journal: Journal[]; session: SessionView | null; approval?: Approval | null } | null>(null)
   const [message, setMessage] = useState('')
   const [creating, setCreating] = useState(false)
@@ -224,13 +228,13 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
               {detail.approval?.kind === 'confirm'
                 ? <>
                     It waits for you to approve this call in its session{detail.approval.tool ? <> ({detail.approval.tool})</> : null}:
-                    {detail.approval.command && <pre className="fleet-approval-text">{detail.approval.command}</pre>}
+                    {detail.approval.command && <WholeCommand key={detail.approval.id} text={detail.approval.command} length={detail.approval.commandLength} onWhole={shown => setWhole(shown ? detail.approval!.id : '')} />}
                     {detail.approval.commandCut && (
                       <span className="fleet-approval-cut">The command is {detail.approval.commandLength?.toLocaleString()} characters, too long to show whole here, so it can only be denied.</span>
                     )}
                     {!detail.approval.command && detail.approval.reason && <span className="fleet-approval-reason">{detail.approval.reason}</span>}
                     <span className="fleet-approval-actions">
-                      {detail.approval.approvable && <Button variant="primary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: true })}>Approve</Button>}
+                      {detail.approval.approvable && whole === detail.approval.id && <Button variant="primary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: true })}>Approve</Button>}
                       <Button variant="secondary" size="sm" onClick={() => void act(detail.agent.id, 'approve', { approval: detail.approval!.id, allowed: false })}>Deny</Button>
                     </span>
                   </>
@@ -276,5 +280,27 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
         confirmLabel="Retire"
         onConfirm={() => { if (retiring) { void act(retiring.id, 'retire'); setOpen(null) } setRetiring(null) }} />
     </section>
+  )
+}
+
+/** A command waiting for approval: whole when short, else its first lines
+ *  until opened. onWhole names the approval once the whole command shows. */
+function WholeCommand({ text, length, onWhole }: { text: string; length?: number; onWhole: (shown: boolean) => void }) {
+  const { head, long, lines } = commandHead(text)
+  const [open, setOpen] = useState(false)
+  const shown = open || !long
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onWhole(shown) }, [shown])
+  return (
+    <>
+      <pre className="fleet-approval-text">{shown ? text : `${head}…`}</pre>
+      {!shown && (
+        <span className="fleet-approval-cut">
+          <button type="button" className="code-approval-more" onClick={() => setOpen(true)}>
+            Show the whole command ({lines.toLocaleString()} lines, {(length ?? text.length).toLocaleString()} characters)
+          </button> to approve it.
+        </span>
+      )}
+    </>
   )
 }
