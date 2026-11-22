@@ -34,6 +34,13 @@ type Providers struct {
 	// offered as an agent site.
 	// Owner: codesessions. Unset: false.
 	LocalCode func(r *http.Request) bool
+	// OwnSessions are the pw code sessions the Studio started for the
+	// viewer of r, one source for each part that starts them: chats
+	// (chat), delegations (delegation) and standing agents (fleet). With
+	// sign-in on, the Code page shows and answers only these on this
+	// host's daemon, where every session runs as the Studio's account.
+	// Unset: none.
+	OwnSessions []func(r *http.Request) []string
 	// GatewayConfigured is chat/gateway.ts's gatewayConfigured(): a
 	// deployment credential exists. Owner: chat track. Node: /api/settings's
 	// deploymentCredential. Node-free: PW_API_KEY or OPENAI_API_KEY is set.
@@ -366,4 +373,18 @@ func LogDir(indexBase string) string {
 		return filepath.Join(d, "logs")
 	}
 	return filepath.Join(indexBase, "logs")
+}
+
+// SessionsOf is the set of pw code sessions the Studio started for the
+// viewer of r (OwnSessions).
+func (p *Providers) SessionsOf(r *http.Request) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range p.OwnSessions {
+		for _, id := range f(r) {
+			if id != "" {
+				out[id] = true
+			}
+		}
+	}
+	return out
 }
