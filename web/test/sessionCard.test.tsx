@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionView } from '../src/components/SessionView'
 
@@ -36,6 +36,19 @@ describe('a session card', () => {
     answer = { status: 200, body: { name: 'desk', user: 'alex', type: 'endpoint', status: 'stopped', healthy: null, url: null, ownHost: false, run: null, resource: null, createdAt: null } }
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
     expect(await screen.findByText('Session desk is stopped. This card updates when it is running.')).toBeTruthy()
+  })
+
+  it('a check that fails after the card showed the session says so, and clears when it works again', async () => {
+    render(<SessionView user="alex" name="desk" />)
+    expect(await screen.findByRole('button', { name: 'Open' })).toBeTruthy()
+    answer = { status: 409, body: { error: 'Sign in to ACTIVATE in Settings to see your sessions.' } }
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(await screen.findByText('Could not check the session: Sign in to ACTIVATE in Settings to see your sessions. Trying again every 15 seconds.')).toBeTruthy()
+    expect(screen.getByText(/state unknown/)).toBeTruthy()
+    answer = { status: 200, body: { name: 'desk', user: 'alex', type: 'endpoint', status: 'running', healthy: true, url: 'https://platform.example.com/me/session/alex/desk', ownHost: false, run: null, resource: null, createdAt: null } }
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    await waitFor(() => expect(screen.queryByText(/Could not check the session/)).toBeNull())
+    expect(screen.queryByText(/state unknown/)).toBeNull()
   })
 
   it('a session not found at first is an error, not a gone session', async () => {
