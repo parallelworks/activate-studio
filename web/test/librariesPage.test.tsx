@@ -757,6 +757,17 @@ describe('Settings, Indexing, Libraries', () => {
     expect(from.closest('dd')?.textContent).not.toContain(',')
   })
 
+  it('a depth set by the deployment shows its note on a line of its own, under the depth (P)', async () => {
+    const why = 'On a Studio with sign-in, the deployment\'s libraries are indexed as its administrators set them.'
+    await renderPage(server({ libs: [{ ...PRIMARY, readOnlyWhy: why }] }))
+    const row = await waitFor(() => rowOf(PRIMARY.label))
+    const depth = within(row).getByText('Depth', { selector: 'dt' }).nextElementSibling as HTMLElement
+    const value = within(depth).getByText(/^(Names|Text|Text \+ OCR|Meaning on documents|Meaning on all files)$/)
+    const note = within(depth).getByText(why)
+    expect(value).not.toContain(note)
+    expect(note.tagName).toBe('DIV')
+  })
+
   it('a copy library whose last look failed says why and stays Ready', async () => {
     const s = server({ libs: [PRIMARY, { ...COPY, build: { ...COPY.build, dirs: 1, files: 1 }, copyOf: { ...COPY.copyOf, error: 'its location, Drop, upload, is no longer in Transfers' } }] })
     await renderPage(s)

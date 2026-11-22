@@ -813,7 +813,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                     <dd>
                       {r.depth
                         ? r.depth.locked
-                          ? <span title={r.depth.locked}>{depthLabel(r.depth.value)} <span className="muted">{r.depth.locked}</span></span>
+                          ? <div className="lib-depth-locked" title={r.depth.locked}><span>{depthLabel(r.depth.value)}</span><div className="muted">{r.depth.locked}</div></div>
                           : <IndexDepthSelect library={r.name} value={r.depth.value} disabled={busy !== null}
                             onChange={v => {
                               const d = r.depth!
