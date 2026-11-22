@@ -449,10 +449,19 @@ const SpaceLabel = "My library"
 // under that name, is shown by its folder's name instead. Nothing stored
 // changes.
 func (d *UserDef) ShownLabel(signIn bool) string {
-	if signIn || d.Space == nil || d.Shared != nil || d.Label != SpaceLabel {
+	if signIn || d.Shared != nil || d.Label != SpaceLabel {
 		return d.Label
 	}
-	return FolderLabel(d.SourceDir)
+	// Without sign-in, My library is the main library: a library of one's
+	// own given that name, a space or any other, is shown by its folder.
+	dir := d.SourceDir
+	if dir == "" && d.SourceRoot != nil {
+		dir = *d.SourceRoot
+	}
+	if dir == "" && d.IndexRoot != nil {
+		dir = *d.IndexRoot
+	}
+	return FolderLabel(dir)
 }
 
 // FolderLabel is a library's name from its folder: the folder's own name.

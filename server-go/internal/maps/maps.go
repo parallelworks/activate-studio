@@ -253,7 +253,11 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 	mux.HandleFunc("GET /api/kb/semantic-map/cluster/{c}", h(cluster(kb)))
 	mux.HandleFunc("GET /api/kb/semantic-map/neighbors", h(neighbors(kb)))
 	mux.HandleFunc("GET /api/semantic-maps", h(func(r *http.Request, v libraries.Viewer) (any, error) {
-		return jsonv.NewObject("maps", m.List(m.Reg.List("", v), v)), nil
+		label := ""
+		if m.MainLabel != nil {
+			label = m.MainLabel()
+		}
+		return jsonv.NewObject("maps", m.List(m.Reg.List(label, v), v)), nil
 	}))
 	mux.HandleFunc("GET /api/libraries/{id}/semantic-map", h(func(r *http.Request, v libraries.Viewer) (any, error) {
 		return m.Overview(r.PathValue("id"), v, true)

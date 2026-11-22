@@ -171,12 +171,16 @@ const (
 )
 
 // MainLabel is the main library's default name for this Studio's mode.
-func (s *Store) MainLabel() string {
-	if s.authEnabled {
+// MainLabelFor is the main library's default name: "Shared library" where
+// people sign in, "My library" on a Studio one person uses.
+func MainLabelFor(signIn bool) string {
+	if signIn {
 		return MainLabelShared
 	}
 	return MainLabelPersonal
 }
+
+func (s *Store) MainLabel() string { return MainLabelFor(s.authEnabled) }
 
 // SignIn is whether people sign in to this Studio.
 func (s *Store) SignIn() bool { return s.authEnabled }
