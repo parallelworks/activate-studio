@@ -38,7 +38,7 @@ beforeEach(() => {
     return new Response(JSON.stringify(a.body), { status: a.status, headers: { 'Content-Type': 'application/json' } })
   }))
 })
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 const client = async (n = 1) => { await waitFor(() => expect(clients.length).toBe(n)); return clients[n - 1] }
 
@@ -120,6 +120,21 @@ describe('DesktopView', () => {
     act(() => c.emit('connect'))
     unmount()
     expect(c.disconnected).toBe(true)
+  })
+
+  it('only the view used last resizes the desktop, across frames too', async () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const { container } = render(<><DesktopView user="alex" name="desk" /><DesktopView user="alex" name="desk" /></>)
+    const b = await client(2), a = clients[0]
+    expect([a.resizeSession, b.resizeSession]).toEqual([false, true])
+    // A chat card is another page in a frame: its claim arrives on the channel.
+    const other = new BroadcastChannel('studio.desktop.resize')
+    other.postMessage('another-frame-1')
+    await waitFor(() => expect([a.resizeSession, b.resizeSession]).toEqual([false, false]))
+    // A click in a view takes it back.
+    fireEvent.pointerDown(container.querySelectorAll('.desktop-screen')[0])
+    await waitFor(() => expect([a.resizeSession, b.resizeSession]).toEqual([true, false]))
+    other.close()
   })
 
   it('shows the start-up logs while it connects', async () => {

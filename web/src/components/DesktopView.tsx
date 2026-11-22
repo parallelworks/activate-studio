@@ -73,14 +73,27 @@ async function readLogs(user: string, name: string): Promise<{ status: number; l
 
 /** Fit resizes a desktop to one view at a time: the one used last (shown
  *  last, or clicked), so a desktop in the side view and over the whole
- *  Studio, or in a chat card too, does not change size between them. */
-let resizer = 0
+ *  Studio, or in a chat card too, does not change size between them. A
+ *  chat card is a page of its own in a frame, so the claim is also sent to
+ *  the Studio's other pages and frames, and view ids are unique across
+ *  them. */
+let resizer = ''
+const realm = Math.random().toString(36).slice(2, 10)
 let nextView = 1
 const resizerChanged = new Set<() => void>()
-function claimResize(id: number): void {
+const claims: BroadcastChannel | null = (() => {
+  try { return typeof BroadcastChannel === 'function' ? new BroadcastChannel('studio.desktop.resize') : null } catch { return null }
+})()
+function takeClaim(id: string): void {
   if (resizer === id) return
   resizer = id
   resizerChanged.forEach(f => f())
+}
+claims?.addEventListener('message', (e: MessageEvent) => { if (typeof e.data === 'string') takeClaim(e.data) })
+function claimResize(id: string): void {
+  if (resizer === id) return
+  takeClaim(id)
+  try { claims?.postMessage(id) } catch { /* this page's views still agree */ }
 }
 
 const tail = (s: string, n = 40) => s.split('\n').slice(-n).join('\n').trim()
@@ -100,7 +113,7 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
   const [toDesktop, setToDesktop] = useState('')
   const [showLogs, setShowLogs] = useState(false)
   const [logs, setLogs] = useState<Logs | null>(null)
-  const [id] = useState(() => nextView++)
+  const [id] = useState(() => `${realm}-${nextView++}`)
   const settings = useRef({ fit, quality })
   settings.current = { fit, quality }
 
@@ -125,7 +138,7 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
     return () => {
       resizerChanged.delete(on)
       window.removeEventListener('focus', on); window.removeEventListener('blur', on); document.removeEventListener('visibilitychange', on)
-      if (resizer === id) resizer = 0
+      if (resizer === id) resizer = ''
     }
   }, [id, apply])
 
