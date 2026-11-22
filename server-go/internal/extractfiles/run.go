@@ -86,6 +86,8 @@ type Options struct {
 type Summary struct {
 	Artifact string `json:"artifact"`
 	Shard    string `json:"shard,omitempty"`
+	// ExtraInfo is the extra_info written with every record.
+	ExtraInfo string `json:"extraInfo"`
 	// Lines counts the list's lines, BadLines those that could not be
 	// read, OtherShard those left to other shards, Already those the
 	// artifact held.
@@ -120,7 +122,7 @@ func Run(ctx context.Context, x *extract.Extractor, o Options) (Summary, error) 
 	if logf == nil {
 		logf = func(string) {}
 	}
-	s := Summary{Artifact: o.Out, States: map[string]int64{}}
+	s := Summary{Artifact: o.Out, ExtraInfo: o.ExtraInfo, States: map[string]int64{}}
 	if o.Shard.Of > 1 {
 		s.Shard = fmt.Sprintf("%d/%d", o.Shard.Index, o.Shard.Of)
 	}
@@ -315,6 +317,16 @@ func one(ctx context.Context, x *extract.Extractor, o Options, cache string, tmp
 		"bm25":           map[string]any{"engine": "sqlite_fts5", "tokenize": "unicode61", "chunk_chars": extdb.ChunkChars},
 	})
 	f.Provenance = string(prov)
+	// file_metadata: what the Studio knows of the file as read, with no
+	// name or path, so the record stays true when the file is renamed.
+	meta, _ := json.Marshal(map[string]any{
+		"bytes":     size,
+		"chars":     len([]rune(text)),
+		"chunks":    len(f.Chunks),
+		"reader":    kind.String(),
+		"extension": r.ext,
+	})
+	f.Metadata = string(meta)
 	return r
 }
 

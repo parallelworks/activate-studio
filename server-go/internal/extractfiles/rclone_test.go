@@ -66,7 +66,8 @@ func TestRcloneSource(t *testing.T) {
 	a.Close()
 	want := map[int64]string{1: extdb.StateText, 2: extdb.StateChanged, 3: extdb.StateSkipped, 4: extdb.StateMissing, 5: extdb.StateSkipped}
 	for ino, st := range want {
-		if got := states[extdb.Key{Inode: ino, Mtime: ino * 10}]; got != st {
+		// With no --extra-info, an rclone source's records carry its remote.
+		if got := states[extdb.Key{Inode: ino, Mtime: ino * 10, ExtraInfo: "rclone:store:bkt/pre"}]; got != st {
 			t.Errorf("inode %d: %s, want %s", ino, got, st)
 		}
 	}

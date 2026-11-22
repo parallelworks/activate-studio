@@ -144,7 +144,58 @@ func (b *builds) refillShards(id string, bc *libraries.BucketOf, tree string) (e
 	if bc.Fsid == "" || !exists(top) {
 		return extdb.ShardStats{}, nil
 	}
-	return extdb.FillShards(extdb.Spread{Top: top, Prefix: extdb.Prefix, Fsid: bc.Fsid}, tree, "")
+	spread := extdb.Spread{Top: top, Prefix: extdb.Prefix, Fsid: bc.Fsid}
+	b.migrateText(id, spread)
+	return extdb.FillShardsWith(spread, tree, bc.Fsid, b.shardOptions())
+}
+
+// shardOptions give shards ext_vectors where gufi_sqlite3 is here.
+func (b *builds) shardOptions() extdb.ShardOptions {
+	bin := filepath.Join(b.s.a.Cfg.GufiBin, "gufi_sqlite3")
+	if !exists(bin) {
+		return extdb.ShardOptions{Ctx: b.ctx}
+	}
+	return extdb.ShardOptions{GufiSqlite3: bin, Ctx: b.ctx}
+}
+
+// embedder makes the vectors of a bucket's text with the Studio's GGUF
+// model, where it and gufi_sqlite3 are here; nil otherwise.
+func (b *builds) embedder() *extdb.Embedder {
+	bin, model := filepath.Join(b.s.a.Cfg.GufiBin, "gufi_sqlite3"), b.s.embedModel()
+	if !exists(bin) || !exists(model) {
+		return nil
+	}
+	return &extdb.Embedder{GufiSqlite3: bin, Model: model, ModelName: extdb.DefaultModelName, Dims: 384, MaxChars: 800}
+}
+
+// migrateText moves a bucket library's text from the layout an earlier
+// Studio wrote: the spread tree under studio/ goes to ext/, and records
+// with an empty extra_info take the bucket's fsid, so nothing is read
+// again. The shards are rewritten whole at the next refill, and the
+// earlier studio_* shards are removed then.
+func (b *builds) migrateText(id string, spread extdb.Spread) {
+	moved, err := extdb.MigrateSpread(spread.Top)
+	if err != nil {
+		b.log(fmt.Sprintf("library %s: moving its text to the ext prefix: %s", id, err))
+	} else if moved {
+		b.log(fmt.Sprintf("library %s: its text moved to the ext prefix", id))
+	}
+	artifact, _ := b.s.bucketTextPaths(id)
+	n := 0
+	if exists(artifact) {
+		if n, err = extdb.Rekey(artifact, "", spread.Fsid); err != nil {
+			b.log(fmt.Sprintf("library %s: giving its text the fsid: %s", id, err))
+		} else if n > 0 {
+			b.log(fmt.Sprintf("library %s: %d objects' text given the fsid %s", id, n, spread.Fsid))
+		}
+	}
+	// The spread tree holds old keys only where the artifact did, or
+	// where it was just moved: every db is looked at only then.
+	if n > 0 || moved {
+		if _, err := extdb.RekeySpread(spread, "", spread.Fsid); err != nil {
+			b.log(fmt.Sprintf("library %s: giving its spread tree the fsid: %s", id, err))
+		}
+	}
 }
 
 // textObjects calls fn for each object of a bucket library's index tree a
@@ -228,6 +279,9 @@ func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk *transfers.Buc
 	}
 	artifact, _ := b.s.bucketTextPaths(id)
 	spread := b.bucketSpread(id, bc, bk)
+	// extra_info is the bucket's fsid, in every record.
+	extra := spread.Fsid
+	b.migrateText(id, spread)
 	progress("Choosing objects to read", 0, nil)
 	states, err := artifactStates(artifact)
 	if err != nil {
@@ -244,7 +298,7 @@ func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk *transfers.Buc
 	w := bufio.NewWriter(f)
 	total := 0
 	err = textObjects(tree, func(rel string, e extdb.IndexEntry) error {
-		if _, ok := states[extdb.Key{Inode: e.Inode, Mtime: e.Mtime}]; ok || e.Size <= 0 {
+		if _, ok := states[extdb.Key{Inode: e.Inode, Mtime: e.Mtime, ExtraInfo: extra}]; ok || e.Size <= 0 {
 			return nil
 		}
 		total++
@@ -262,7 +316,7 @@ func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk *transfers.Buc
 		return
 	}
 	if total > 0 {
-		sum, err := b.runIndexExtract(ctx, id, bc, bk, list, artifact, total, progress)
+		sum, err := b.runIndexExtract(ctx, id, bc, bk, list, artifact, extra, total, progress)
 		text.Read, text.Bytes, text.Missing, text.Stopped = sum.States, sum.Bytes, sum.Missing, sum.Stopped
 		for k, n := range sum.States {
 			if k != extdb.StateSkipped {
@@ -279,16 +333,27 @@ func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk *transfers.Buc
 			record(err)
 			return
 		}
+		// Each new chunk's vector, for search by meaning, where the
+		// model is here; text alone otherwise.
+		if e := b.embedder(); e != nil && ctx.Err() == nil {
+			progress("Computing the meaning of the text", 0, nil)
+			if _, err := e.EmbedArtifact(ctx, artifact); err != nil {
+				b.log(fmt.Sprintf("library %s: vectors of its text: %s", id, err))
+			}
+		}
 		progress("Adding the text to the index", 0, nil)
 		if _, err := extdb.LoadSpreadSince(spread, artifact, since); err != nil {
 			record(err)
 			return
 		}
 	}
-	sh, err := extdb.FillShards(spread, tree, "")
+	sh, err := extdb.FillShardsWith(spread, tree, extra, b.shardOptions())
 	if err != nil {
 		record(err)
 		return
+	}
+	if sh.VectorError != "" {
+		b.log(fmt.Sprintf("library %s: its shards keep text without vectors: %s", id, sh.VectorError))
 	}
 	text.Files = int64(sh.Files)
 	// Search sees the new shards, and the library's capabilities say so.
@@ -303,13 +368,13 @@ func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk *transfers.Buc
 
 // runIndexExtract reads the listed objects into the artifact with
 // index-extract, its @progress lines moving the job's progress.
-func (b *builds) runIndexExtract(ctx context.Context, id string, bc *libraries.BucketOf, bk *transfers.Bucket, list, artifact string, total int, progress func(phase string, done int, current *string)) (extractfiles.Summary, error) {
+func (b *builds) runIndexExtract(ctx context.Context, id string, bc *libraries.BucketOf, bk *transfers.Bucket, list, artifact, extra string, total int, progress func(phase string, done int, current *string)) (extractfiles.Summary, error) {
 	var sum extractfiles.Summary
 	bin, err := indexExtractBin()
 	if err != nil {
 		return sum, err
 	}
-	args := []string{"files", "--list", list, "--out", artifact, "--rclone", bk.Spec(bc.Path), "--rclone-bin", bk.Bin(),
+	args := []string{"files", "--list", list, "--out", artifact, "--extra-info", extra, "--rclone", bk.Spec(bc.Path), "--rclone-bin", bk.Bin(),
 		"--max-size", strconv.Itoa(libraries.BucketTextMax), "--jobs", strconv.Itoa(bucketTextJobs), "--no-ocr", "--progress"}
 	if s := b.ix().Settings.Built(id); s.LegacyOffice {
 		if so := b.ix().Hooks.SofficeFound(); so != "" {
@@ -446,6 +511,12 @@ func (s *Service) bucketTextEstimate(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
+	// Read before is by inode and mtime, whatever the extra_info: an
+	// artifact not yet given the bucket's fsid counts the same.
+	read := map[[2]int64]bool{}
+	for k := range states {
+		read[[2]int64{k.Inode, k.Mtime}] = true
+	}
 	e := textEstimate{MaxBytes: libraries.BucketTextMax}
 	if err := extdb.WalkIndex(d.IndexRoot, func(_ string, files []extdb.IndexEntry) error {
 		for _, f := range files {
@@ -457,7 +528,7 @@ func (s *Service) bucketTextEstimate(w http.ResponseWriter, r *http.Request) err
 				e.OverBytes += f.Size
 			case f.Size <= 0:
 			default:
-				if _, ok := states[extdb.Key{Inode: f.Inode, Mtime: f.Mtime}]; ok {
+				if read[[2]int64{f.Inode, f.Mtime}] {
 					e.Done++
 					e.DoneBytes += f.Size
 				} else {
