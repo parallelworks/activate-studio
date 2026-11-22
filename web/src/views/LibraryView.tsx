@@ -1,5 +1,5 @@
 import { ALL_LIBRARIES, LibrarySwitch, libraryReadOnlyWhy, libraryWritable } from '../components/LibrarySwitch'
-import { currentLibrary, onLibraryChange, warmRemoteHosts } from '../api'
+import { currentLibrary, libraryOf, onLibraryChange, warmRemoteHosts } from '../api'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
@@ -99,7 +99,7 @@ export function LibraryView({ display, onDisplay }: {
       return
     }
     setDeleteTarget({ ...t, error: '' })
-    const lib = currentLibrary()
+    const lib = libraryOf(t.path)
     try {
       await api.deleteFile(t.path)
       if (display?.kind === 'file' && typeof display.target === 'string' && (display.target === t.path || display.target.startsWith(t.path + '/'))) onDisplay(null)
@@ -118,9 +118,9 @@ export function LibraryView({ display, onDisplay }: {
     const d = nameDialog
     if (!d || d.busy || !d.value.trim()) return
     setNameDialog({ ...d, busy: true, error: '' })
-    // The library written to, even if another is selected by the time the
-    // write returns.
-    const lib = currentLibrary()
+    // The library written to (in All mode the one the path names), even if
+    // another is selected by the time the write returns.
+    const lib = libraryOf(d.path)
     try {
       if (d.mode === 'rename') {
         const r = await api.rename(d.path, d.value.trim())
