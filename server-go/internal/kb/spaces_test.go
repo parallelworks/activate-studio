@@ -3,6 +3,7 @@ package kb
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -114,7 +115,7 @@ func TestWritesInASpaceRunThroughSpaceFiles(t *testing.T) {
 	if c, b := js("/api/kb/mkdir", `{"library":"mine","path":"notes"}`); c != 200 || b["created"] != "notes" {
 		t.Fatalf("mkdir: %d %v", c, b)
 	}
-	if c, b := js("/api/kb/rename", `{"library":"mine","path":"notes/a.txt","name":"b.txt"}`); c != 200 || b["renamed"] != "notes/b.txt" {
+	if c, b := js("/api/kb/rename", `{"library":"mine","path":"notes/a.txt","name":"b.txt"}`); c != 200 || fmt.Sprint(b["renamed"]) != "map[from:notes/a.txt to:notes/b.txt]" {
 		t.Fatalf("rename: %d %v", c, b)
 	}
 	if c, b := js("/api/kb/move", `{"library":"mine","paths":["notes/b.txt"],"dest":"plans"}`); c != 200 || b["reindexing"] != true {
