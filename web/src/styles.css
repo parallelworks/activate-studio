@@ -3369,3 +3369,8 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .fleet-approval-text { margin: 6px 0; padding: 6px 8px; max-height: 12em; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; }
 .fleet-approval-actions { display: flex; gap: 8px; }
 .fleet-approval-cut, .fleet-approval-reason { display: block; margin: 4px 0; }
+
+/* A person's first visit on a Studio with sign-in (FirstVisitCard): over
+   the page's lower right corner, so no page moves for it. */
+.first-visit { position: fixed; right: 16px; bottom: 16px; z-index: 30; width: min(380px, calc(100vw - 32px)); box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); border-radius: 8px; background: var(--pw-panel); }
+.first-visit p { margin: 0 0 6px; }

@@ -22,6 +22,7 @@ import { SettingsView } from './views/SettingsView'
 import { TransfersView } from './views/TransfersView'
 import { TRANSFERS_SEEN, transferApi, transfersPresent, type TransferSummary } from './transferApi'
 import { SetupWizard } from './views/SetupWizard'
+import { FirstVisitCard } from './components/FirstVisitCard'
 import { StatusFooter } from './components/StatusFooter'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
 import { aiPagesMounted, applyNavWidth, sectionAllowed, shownView, useAppConfig } from './config'
@@ -690,6 +691,7 @@ export default function App() {
       <FullViewHost />
       </div>
       {setupOpen && <SetupWizard onClose={changed => { setSetupOpen(false); if (changed) location.reload() }} />}
+      <FirstVisitCard />
     </div>
   )
 }
