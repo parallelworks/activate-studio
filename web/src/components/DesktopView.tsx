@@ -20,9 +20,9 @@ export type DesktopFit = 'fit' | 'scale' | 'actual'
 export type DesktopQuality = 'low' | 'medium' | 'high'
 
 const FITS: { value: DesktopFit; label: string; description: string }[] = [
-  { value: 'fit', label: 'Fit', description: 'The desktop takes the size of this view while it has the focus' },
+  { value: 'fit', label: 'Fit', description: 'The desktop takes the size of the view you used last' },
   { value: 'scale', label: 'Scale', description: 'The desktop keeps its size, scaled to this view' },
-  { value: 'actual', label: 'Actual size', description: 'Pixel for pixel, scrolled inside this view' },
+  { value: 'actual', label: 'Actual size', description: 'Pixel for pixel; scroll bars reach the rest of a larger desktop' },
 ]
 const QUALITIES: { value: DesktopQuality; label: string }[] = [
   { value: 'high', label: 'High quality' },
@@ -72,7 +72,8 @@ async function readLogs(user: string, name: string): Promise<{ status: number; l
 }
 
 /** Fit resizes a desktop to one view at a time: the one used last (shown
- *  last, or clicked), so a desktop in the side view and over the whole
+ *  last, or clicked). The window's focus is no guide: the desktop app's
+ *  WebKitGTK window can report none while it takes keys. So a desktop in the side view and over the whole
  *  Studio, or in a chat card too, does not change size between them. A
  *  chat card is a page of its own in a frame, so the claim is also sent to
  *  the Studio's other pages and frames, and view ids are unique across
@@ -120,13 +121,15 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
   // The view and quality on a client: at once when it is made, so Fit's
   // first resize is asked for as soon as the desktop can take one, and
   // whenever they change. Fit resizes the desktop only from the view used
-  // last, and only while the window has the focus.
+  // last, while its page is shown. Actual size leaves the desktop unscaled
+  // and unclipped, so the page scrolls it with scroll bars; the wheel over
+  // the desktop goes to the desktop's own windows.
   const apply = useCallback((c: RFB | null) => {
     if (!c) return
     const { fit: f, quality: q } = settings.current
     c.scaleViewport = f !== 'actual'
-    c.clipViewport = f === 'actual'
-    c.resizeSession = f === 'fit' && resizer === id && document.hasFocus() && document.visibilityState === 'visible'
+    c.clipViewport = false
+    c.resizeSession = f === 'fit' && resizer === id && document.visibilityState === 'visible'
     c.qualityLevel = LEVELS[q].quality
     c.compressionLevel = LEVELS[q].compression
   }, [id])
@@ -134,10 +137,10 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
     claimResize(id)
     const on = () => apply(rfb.current)
     resizerChanged.add(on)
-    window.addEventListener('focus', on); window.addEventListener('blur', on); document.addEventListener('visibilitychange', on)
+    document.addEventListener('visibilitychange', on)
     return () => {
       resizerChanged.delete(on)
-      window.removeEventListener('focus', on); window.removeEventListener('blur', on); document.removeEventListener('visibilitychange', on)
+      document.removeEventListener('visibilitychange', on)
       if (resizer === id) resizer = ''
     }
   }, [id, apply])
@@ -264,7 +267,7 @@ export function DesktopView({ user, name, className = '' }: { user: string; name
   const connected = phase === 'connected'
 
   return (
-    <div className={`desktop-view ${className}`} data-phase={phase}>
+    <div className={`desktop-view ${className}`} data-phase={phase} data-fit={fit}>
       <div className="desktop-bar">
         <StatusDot variant={dot} pulse={phase === 'connecting'} size={7} />
         <span className="desktop-state" role="status">{state}</span>

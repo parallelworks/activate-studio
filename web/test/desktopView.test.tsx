@@ -38,7 +38,7 @@ beforeEach(() => {
     return new Response(JSON.stringify(a.body), { status: a.status, headers: { 'Content-Type': 'application/json' } })
   }))
 })
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks() })
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); localStorage.clear() })
 
 const client = async (n = 1) => { await waitFor(() => expect(clients.length).toBe(n)); return clients[n - 1] }
 
@@ -123,7 +123,9 @@ describe('DesktopView', () => {
   })
 
   it('only the view used last resizes the desktop, across frames too', async () => {
-    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    // The desktop app's window can say it has no focus while it takes keys,
+    // so the focus does not decide.
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
     const { container } = render(<><DesktopView user="alex" name="desk" /><DesktopView user="alex" name="desk" /></>)
     const b = await client(2), a = clients[0]
     expect([a.resizeSession, b.resizeSession]).toEqual([false, true])
@@ -135,6 +137,16 @@ describe('DesktopView', () => {
     fireEvent.pointerDown(container.querySelectorAll('.desktop-screen')[0])
     await waitFor(() => expect([a.resizeSession, b.resizeSession]).toEqual([true, false]))
     other.close()
+  })
+
+  it('Actual size shows the desktop unscaled, with scroll bars for the rest', async () => {
+    localStorage.setItem('studio.desktop.fit', 'actual')
+    const { container } = render(<DesktopView user="alex" name="desk" />)
+    const c = await client()
+    act(() => c.emit('connect'))
+    expect(container.querySelector('.desktop-view')?.getAttribute('data-fit')).toBe('actual')
+    // Unclipped, so the page scrolls it, and never resized.
+    expect([c.scaleViewport, c.clipViewport, c.resizeSession]).toEqual([false, false, false])
   })
 
   it('shows the start-up logs while it connects', async () => {
