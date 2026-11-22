@@ -1985,7 +1985,9 @@ a.identity-btn { text-decoration: none; }
 .agents-swap > * { grid-area: 1 / 1; }
 .agents-swap-hidden { visibility: hidden; }
 .agents-actions { display: inline-flex; flex: none; align-items: baseline; white-space: nowrap; }
-.agents-carriers { margin-left: 6px; font-size: 12px; color: var(--pw-muted); white-space: nowrap; }
+/* On its own line under the description: inline, it was held to the
+   description's last word and took that word with it when it wrapped. */
+.agents-carriers { display: block; font-size: 12px; color: var(--pw-muted); white-space: nowrap; }
 .agents-folders .ov-row-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .persona-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
   padding: 7px 10px; border: 0; background: none; border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; }

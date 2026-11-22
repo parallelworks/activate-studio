@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -54,7 +55,10 @@ describe('agent instructions', () => {
     render(<AgentsView onOpen={() => {}} />)
     expect(await screen.findByText('Instructions and skills')).toBeInTheDocument()
     expect(await screen.findByText(/Agent instructions \(1\)/)).toBeInTheDocument()
-    expect(await screen.findByText('· in 1 folder')).toBeInTheDocument()
+    const carriers = await screen.findByText('in 1 folder')
+    expect(carriers).toHaveClass('agents-carriers')
+    // Retest G: on its own line, not held to the description's last word.
+    expect(readFileSync('src/styles.css', 'utf8')).toMatch(/\.agents-carriers \{[^}]*display: block/)
     expect(screen.getByText('Folders with agent instructions (1)')).toBeInTheDocument()
     expect(screen.getByText('agents/reviewer')).toBeInTheDocument()
   })

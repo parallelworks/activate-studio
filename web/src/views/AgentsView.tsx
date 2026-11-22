@@ -443,7 +443,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                 <span className="agents-desc">{p.description || 'no description'}
                   {carrying('persona', p.name).length > 0 && (
                     <span className="agents-carriers" title={carrying('persona', p.name).map(where).join(', ')}>
-                      · in {carrying('persona', p.name).length} folder{carrying('persona', p.name).length === 1 ? '' : 's'}
+                      in {carrying('persona', p.name).length} folder{carrying('persona', p.name).length === 1 ? '' : 's'}
                     </span>
                   )}
                 </span>
@@ -481,7 +481,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
                 <span className="agents-desc">{s.description || 'no description'}
                   {carrying('skill', s.name).length > 0 && (
                     <span className="agents-carriers" title={carrying('skill', s.name).map(where).join(', ')}>
-                      · in {carrying('skill', s.name).length} folder{carrying('skill', s.name).length === 1 ? '' : 's'}
+                      in {carrying('skill', s.name).length} folder{carrying('skill', s.name).length === 1 ? '' : 's'}
                     </span>
                   )}
                 </span>
