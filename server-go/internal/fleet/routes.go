@@ -60,6 +60,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		if err := gate(); err != nil {
 			return nil, err
 		}
+		f.Follow(r.Context())
 		return map[string]any{"agents": f.List()}, nil
 	}))
 	mux.HandleFunc("POST /api/fleet", h(func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -88,6 +89,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		if err := gate(); err != nil {
 			return nil, err
 		}
+		f.Follow(r.Context(), r.PathValue("id"))
 		ag := f.Get(r.PathValue("id"))
 		if ag == nil {
 			return nil, apierr.New(404, "no such agent")

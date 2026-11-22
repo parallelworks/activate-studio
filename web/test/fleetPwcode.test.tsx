@@ -18,7 +18,7 @@ describe('the Fleet page over pw code sessions', () => {
       if (init?.method === 'POST') posts.push({ url, body: JSON.parse(String(init.body ?? '{}')) })
       const body = url === '/api/fleet' ? (init?.method === 'POST' ? { agent: { ...agent, id: 'new-1' } } : { agents: [agent] })
         : url === '/api/fleet/templates' ? { templates: [] }
-        : url === '/api/fleet/watch-abcd' ? { agent, journal: [{ at: '2026-11-21T12:00:00.000Z', kind: 'result', text: 'Checked two queues.' }], session: { id: agent.session, recent: ['> Wake-up 4', 'Checked two queues.'] } }
+        : url === '/api/fleet/watch-abcd' ? { agent, journal: [{ at: '2026-11-21T12:00:00.000Z', kind: 'result', text: '**Did:** checked two queues.' }], session: { id: agent.session, recent: ['> Wake-up 4', 'Checked two queues.'] } }
         : {}
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
@@ -31,9 +31,30 @@ describe('the Fleet page over pw code sessions', () => {
     fireEvent.click(screen.getByText('Queue watcher', { selector: '.task-card-objective' }))
     expect(await screen.findByText(/is a Studio model/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'agents/fleet/watch-abcd' })).toHaveAttribute('href', '#open=file:agents/fleet/watch-abcd/AGENTS.md')
-    expect(screen.getByText('its session on the Code page').closest('a')).toHaveAttribute('href', '#view=code?session=20261121-120001-abcdef')
+    expect(screen.getByText('Its session on the Code page').closest('a')).toHaveAttribute('href', '#view=code?session=20261121-120001-abcdef')
     expect(screen.getByText(/Its session, latest first/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Wake now' })).toBeInTheDocument()
+  })
+
+  it('renders a result, says what it needs in the detail, and asks before retiring', async () => {
+    const changed = vi.fn()
+    window.addEventListener('ade:fleet-changed', changed)
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    // Who needs you is a line in the header, by name.
+    const needs = await screen.findByRole('group', { name: 'Needs you' })
+    expect(needs).toHaveTextContent('Queue watcher')
+    fireEvent.click(screen.getByText('Queue watcher', { selector: '.task-card-objective' }))
+    const result = await screen.findByText(/checked two queues/)
+    expect(result.closest('.md-body')).not.toBeNull()
+    expect(result.closest('.md-body')?.textContent).not.toContain('**')
+    expect(screen.getByText(/It asks: resubmit run 42\? Answer below\./)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retire' }))
+    expect(await screen.findByText('Retire Queue watcher?')).toBeInTheDocument()
+    expect(posts.some(p => p.url.endsWith('/retire'))).toBe(false)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Retire' }).at(-1)!)
+    await waitFor(() => expect(posts.some(p => p.url === '/api/fleet/watch-abcd/retire')).toBe(true))
+    await waitFor(() => expect(changed).toHaveBeenCalled())
+    window.removeEventListener('ade:fleet-changed', changed)
   })
 
   it('creates an agent with a pw code model and turns per wake-up', async () => {

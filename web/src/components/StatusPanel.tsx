@@ -286,7 +286,11 @@ function useStatusData(agents: boolean, runs: boolean, mcp = true): [StatusData,
     const t = window.setInterval(tick, FAST_MS)
     const onVisible = () => { if (document.visibilityState === 'visible') tick() }
     document.addEventListener('visibilitychange', onVisible)
-    return () => { live = false; window.clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
+    // The Fleet page changed an agent (retired, paused, woken): read the
+    // fleet now rather than at the next poll (FleetPage's FLEET_CHANGED).
+    const onFleet = () => { if (agents && !fleetRefused) getJson<{ agents: FleetAgent[] }>('/api/fleet').then(d => put({ fleet: d.agents ?? [] })).catch(() => {}) }
+    window.addEventListener('ade:fleet-changed', onFleet)
+    return () => { live = false; window.clearInterval(t); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('ade:fleet-changed', onFleet) }
   }, [agents, runs, mcp])
   return [data, patch]
 }

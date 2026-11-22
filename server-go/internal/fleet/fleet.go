@@ -394,6 +394,11 @@ func (f *Fleet) Create(in Input, owner *auth.User) (*Agent, error) {
 	f.set(a)
 	f.persist(a)
 	f.journal(id, "created", "Goal: "+goal, "")
+	// Its folder and AGENTS.md are there from the start, as the page
+	// says; each wake-up writes them again with the goal as it is then.
+	if _, _, err := f.writeInstructions(a); err != nil {
+		f.journal(id, "error", "its AGENTS.md was not written yet: "+cut(err.Error(), 300), "")
+	}
 	return a, nil
 }
 

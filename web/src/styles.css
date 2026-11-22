@@ -1280,10 +1280,11 @@ a.identity-btn { text-decoration: none; }
 .task-topic { margin-right: 6px; }
 
 /* Fleet: standing agents. */
-.fleet-head { display: flex; align-items: center; justify-content: space-between; }
-.fleet-head h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--pw-text); }
-.needs-you { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--pw-amber); border-radius: 8px; background: color-mix(in srgb, var(--pw-amber) 8%, var(--pw-panel)); font-size: 13px; }
-.needs-you-item { border: 0; background: transparent; color: var(--pw-text); cursor: pointer; padding: 2px 6px; border-radius: 6px; font: inherit; text-align: left; }
+.fleet-head { display: flex; align-items: center; gap: 10px; }
+.fleet-head > :last-child { margin-left: auto; flex: none; }
+.fleet-head h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--pw-text); flex: none; }
+.needs-you { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; min-width: 0; overflow: hidden; padding: 2px 10px; border: 1px solid var(--pw-amber); border-radius: 8px; background: color-mix(in srgb, var(--pw-amber) 8%, var(--pw-panel)); font-size: 13px; }
+.needs-you-item { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--pw-text); cursor: pointer; padding: 2px 6px; border-radius: 6px; font: inherit; text-align: left; }
 .needs-you-item:hover { background: var(--pw-hover-row); }
 .fleet-templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
 .fleet-template { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border: 1px dashed var(--pw-border-strong); border-radius: 10px; background: var(--pw-panel); cursor: pointer; text-align: left; font: inherit; color: var(--pw-text); font-size: 13px; }
@@ -1298,6 +1299,15 @@ a.identity-btn { text-decoration: none; }
 .fleet-goal-text { font-size: 13px; white-space: pre-wrap; margin: 0 0 10px; }
 .fleet-journal { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; border-top: 1px solid var(--pw-border); padding-top: 10px; }
 .fleet-journal-text { white-space: pre-wrap; font-size: 13px; }
+.fleet-journal-text.md-body { white-space: normal; line-height: 1.5; }
+.fleet-journal-text.md-body > :first-child { margin-top: 0; }
+.fleet-journal-text.md-body > :last-child { margin-bottom: 0; }
+.fleet-detail-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; margin-bottom: 10px; }
+.fleet-detail-title { display: flex; flex-direction: column; gap: 2px; flex: 1 1 240px; min-width: 0; }
+.fleet-detail-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.fleet-detail-meta { font-size: 12px; overflow-wrap: anywhere; }
+.fleet-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fleet-needs { margin: 0 0 10px; }
 .fleet-message { display: flex; gap: 8px; margin-top: 10px; }
 
 /* Platform runs launched from chat, on the Tasks page. */
