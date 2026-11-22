@@ -39,6 +39,7 @@ type daemon struct {
 	approval  map[string]string
 	tokens    map[string]float64
 	goalAlive map[string]bool
+	answers   []map[string]any
 }
 
 func newDaemon() *daemon {
@@ -93,6 +94,17 @@ func (d *daemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"output": "ok"})
 	case "state":
 		send(map[string]any{"goal": map[string]any{"active": d.goalAlive[id]}})
+	case "approvals/ap1":
+		if d.approval[id] == "" {
+			w.WriteHeader(409)
+			send(map[string]any{"error": "not waiting"})
+			return
+		}
+		var ans map[string]any
+		json.NewDecoder(r.Body).Decode(&ans)
+		d.answers = append(d.answers, ans)
+		d.approval[id], d.status[id] = "", "running"
+		send(map[string]any{"ok": true})
 	case "archive":
 		d.archived = append(d.archived, id)
 		w.WriteHeader(204)

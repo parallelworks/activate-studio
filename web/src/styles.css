@@ -3337,3 +3337,7 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .copy-library-form .settings-grid { margin-bottom: 0; }
 /* A locked button's wrapper (LockedButton) takes no room of its own. */
 .locked-button { display: inline-flex; }
+
+/* A call a standing agent waits to have approved, whole, with its answer. */
+.fleet-approval-text { margin: 6px 0; padding: 6px 8px; max-height: 12em; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; }
+.fleet-approval-actions { display: flex; gap: 8px; }

@@ -95,4 +95,24 @@ describe('the Fleet page over pw code sessions', () => {
     expect(body).toMatchObject({ name: 'Digest', goal: 'Write the digest.', model: 'claude-code/haiku', maxTurns: 4 })
     expect(body).not.toHaveProperty('execution')
   })
+
+  it('answers a call its session waits to have approved, from the detail', async () => {
+    const waiting = { ...agent, note: 'waiting for your approval: rm -rf build' }
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') posts.push({ url, body: JSON.parse(String(init.body ?? '{}')) })
+      const body = url === '/api/fleet' ? { agents: [waiting] }
+        : url === '/api/fleet/templates' ? { templates: [] }
+        : url === '/api/fleet/watch-abcd' ? { agent: waiting, journal: [], session: { id: agent.session, recent: [] }, approval: { id: 'ap1', text: 'rm -rf build' } }
+        : { ok: true }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    expect(await screen.findByText('rm -rf build', { selector: '.fleet-approval-text' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'the Code page' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }))
+    await waitFor(() => expect(posts).toContainEqual({ url: '/api/fleet/watch-abcd/approve', body: { approval: 'ap1', allowed: false } }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(posts).toContainEqual({ url: '/api/fleet/watch-abcd/approve', body: { approval: 'ap1', allowed: true } }))
+  })
 })
