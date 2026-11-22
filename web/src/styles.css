@@ -2093,6 +2093,10 @@ a.identity-btn { text-decoration: none; }
 
 /* ---- library switcher: lives in the Library rail header ---- */
 .library-switch { width: auto; max-width: 60%; }
+/* The library's name over its access, each cut only on its own line. */
+.library-switch .library-switch-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.library-switch.library-switch-two { height: auto; padding-top: 3px; padding-bottom: 3px; }
+.library-switch .library-switch-access { font-size: 11px; color: var(--pw-muted); }
 /* In the tree's header the picker takes what the buttons leave and
    truncates; at its natural width a long library name pushed + Add and the
    collapse button past the pane's edge. */

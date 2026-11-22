@@ -37,6 +37,8 @@ describe('libraries on the client', () => {
     fireEvent.click(options[1])
     await waitFor(() => expect(currentLibrary()).toBe('scratch'))
     expect(trigger).toHaveTextContent('Scratch · Read only')
+    // The access is its own line under the name, so a narrow pane cuts neither.
+    expect(trigger.querySelector('.library-switch-access')).toHaveTextContent('Read only')
     expect(libraryWritable(libs, 'scratch')).toBe(false)
     expect(libraryWritable(libs, 'kb')).toBe(true)
     setLibrary('kb')
