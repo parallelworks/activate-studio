@@ -200,7 +200,7 @@ func TestWakeFollowDecide(t *testing.T) {
 	if !f.Tick(a.ID, "the schedule", false) {
 		t.Fatal("no wake-up")
 	}
-	waitFor(t, "the session", func() bool { return f.Get(a.ID).Session != "" })
+	waitFor(t, "the session", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.agents[a.ID].Session != "" && !f.busy[a.ID] })
 	got := f.Get(a.ID)
 	if got.State != "working" || got.Workspace != filepath.Join(root, "agents/fleet", a.ID) || got.Ticks != 1 {
 		t.Fatalf("agent %+v", got)
@@ -270,7 +270,7 @@ func TestApprovalGoneAndBudget(t *testing.T) {
 	one := 2.0
 	a, _ := f.Create(Input{Name: "Digest", Goal: "Write the digest.", Every: "manual", MaxTicks: &one}, nil)
 	f.Tick(a.ID, "the person asked", true)
-	waitFor(t, "the session", func() bool { return f.Get(a.ID).Session != "" })
+	waitFor(t, "the session", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.agents[a.ID].Session != "" && !f.busy[a.ID] })
 	s1 := f.Get(a.ID).Session
 	d.mu.Lock()
 	d.approval[s1], d.status[s1] = "Run: rm -rf build", "awaiting_approval"
