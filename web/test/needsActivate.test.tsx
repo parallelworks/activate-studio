@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkflowsView } from '../src/views/WorkflowsView'
 import { WorkflowsSection } from '../src/components/WorkflowsSection'
-import { CodeView } from '../src/views/CodeView'
+import { CodePage } from '../src/code/CodePage'
 import { needsActivate } from '../src/accounts'
 
 const reply = (body: unknown, code = 200) => new Response(JSON.stringify(body), { status: code, headers: { 'Content-Type': 'application/json' } })
@@ -10,8 +10,8 @@ const reply = (body: unknown, code = 200) => new Response(JSON.stringify(body), 
 /** A Studio with Accounts and no ACTIVATE credential for the viewer. */
 function noCredential(extra: (url: string) => Response | null = () => null) {
   const calls: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (input: string) => {
-    const url = String(input)
+  vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+    const url = input instanceof URL ? input.pathname : String(input)
     calls.push(url)
     if (url === '/api/config') return reply({ appName: 'Studio', platform: false, accounts: true, user: { id: 'user', username: 'user' } })
     return extra(url) ?? reply({}, 404)
@@ -45,13 +45,15 @@ describe('one prompt for every ACTIVATE feature without a credential', () => {
     expect(calls.some(u => u.startsWith('/api/workflows'))).toBe(false)
   })
 
-  it('the Code page shows the prompt with what the server said', async () => {
-    noCredential(url => url === '/api/code-sessions'
-      ? reply({ error: 'The Code page lists your pw code sessions with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Accounts, then try again.' }, 409)
+  it('the Code page shows the prompt, and lists nothing without a credential', async () => {
+    const calls = noCredential(url => url === '/api/code-page/where' ? reply({ local: false, codeUrl: 'https://platform.example/code', signIn: true })
+      : url === '/api/code-page/sessions' ? reply({ title: 'Conflict', status: 409, detail: 'The Code page lists your pw code sessions with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Accounts, then try again.' }, 409)
       : url === '/api/chat/pwcode/here' ? reply({ available: false, reason: 'x', chats: [] }) : null)
-    render(<CodeView />)
+    render(<CodePage />)
     expect(await screen.findByText('Sign in with ACTIVATE to use this')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText(/lists your pw code sessions with your own ACTIVATE sign-in/)).toBeInTheDocument())
+    expect(screen.getByText(/lists, starts and changes your pw code sessions as you/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open Accounts' })).toBeInTheDocument()
+    expect(screen.queryByTestId('agent-session-row')).toBeNull()
+    expect(calls.some(u => u.includes('/machines/'))).toBe(false)
   })
 })
