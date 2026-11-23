@@ -19,8 +19,10 @@ type emuTools struct {
 	ran []string
 	// answer is what answering a held call gives, when set.
 	answer *Answered
-	// result is what a call returns, when set.
-	result string
+	// result is what a call returns, when set; results, when set, are
+	// what write_kb_file calls return, in turn.
+	result  string
+	results []string
 }
 
 func (e *emuTools) Answer(r *http.Request, in map[string]any, k *string) (*Answered, error) {
@@ -44,6 +46,9 @@ func (e *emuTools) Execute(_ *http.Request, name, args string, _ ToolCtx) (*Outc
 	e.mu.Lock()
 	e.ran = append(e.ran, name+" "+args)
 	result := e.result
+	if name == "write_kb_file" && len(e.results) > 0 {
+		result, e.results = e.results[0], e.results[1:]
+	}
 	e.mu.Unlock()
 	if result == "" {
 		result = "Wrote it."
@@ -398,5 +403,90 @@ func TestEnvelopeMissingItsLastBracketsRuns(t *testing.T) {
 	ask(t, base)
 	if countWrites(e) != 0 || !strings.Contains(requestOf(gw, 1), "cut off at the output limit") {
 		t.Fatalf("a cut-off request was closed and run: %q", e.runs())
+	}
+}
+
+func askFor(t *testing.T, base, text string) string {
+	return post(t, base, map[string]any{"model": "genai-pro", "conversationId": "c-rows", "userMessageId": "u1",
+		"messages": []any{map[string]any{"role": "user", "content": text}}})
+}
+
+// A workbook written with its header only, against an ask for 60 rows,
+// is not the end even when the model answers at length: each write's
+// result says how it stands against the ask, and the model is asked for
+// the rest.
+func TestWorkbookShortOfTheRowsAskedIsFinished(t *testing.T) {
+	e, base, gw := emuModule(t)
+	e.results = []string{
+		"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 0 rows after the header: the header only), 900 bytes) and re-indexed in 1 ms.",
+		"Added to reports/items.xlsx (60 rows; the workbook now holds: Items, 60 rows after the header; 9000 bytes in all) and re-indexed in 1 ms.",
+	}
+	gw.load([]reply{
+		said(func(n string) string {
+			return writeEnvelope(n, `{"sheets":[{"name":"Items","rows":[["Name","Description"]]}]}`)
+		}, "stop"),
+		said(func(string) string {
+			return "The workbook was created, but it contains 0 data rows after the header, so it does not meet your request for 60 rows. " + strings.Repeat("Sorry. ", 30)
+		}, "stop"),
+		said(func(n string) string { return writeEnvelope(n, sheetRows(60)) }, "stop"),
+		said(func(string) string { return "The workbook holds all 60 rows. " + strings.Repeat("Done. ", 30) }, "stop"),
+	})
+	sse := askFor(t, base, "Make reports/items.xlsx with 60 rows of items. Do not search first.")
+	if countWrites(e) != 2 || !strings.Contains(answerOf(sse), "all 60 rows") {
+		t.Fatalf("ran %q; answer %.300s", e.runs(), answerOf(sse))
+	}
+	if r := requestOf(gw, 1); !strings.Contains(r, "The user asked for 60 rows; the workbook holds 0 after the header, so 60 are still to add") {
+		t.Errorf("the write's result does not say how it stands: %.300s", r)
+	}
+	if r := requestOf(gw, 2); !strings.Contains(r, "holds 0 of the 60 rows the user asked for") {
+		t.Errorf("no nudge for the rest: %.300s", r)
+	}
+	if r := requestOf(gw, 3); !strings.Contains(r, "the workbook holds 60 after the header, all of them") {
+		t.Errorf("the last write's result: %.300s", r)
+	}
+}
+
+// A reading call that asks what two before it asked, with only the count
+// of results or the argument's name changed, is answered with their
+// result and not run a third time.
+func TestSameAskIsNotRunAThirdTime(t *testing.T) {
+	e, base, gw := emuModule(t)
+	search := func(args string) reply {
+		return said(func(n string) string {
+			return `{"protocol":"studio-tools-1","nonce":"` + n + `","calls":[{"name":"search_kb","arguments":` + args + `}]}`
+		}, "stop")
+	}
+	gw.load([]reply{
+		search(`{"name":"emu.xlsx"}`), search(`{"query":"emu.xlsx","limit":5}`), search(`{"query":"emu.xlsx","limit":50}`),
+		said(func(string) string { return "Nothing was found. " + strings.Repeat("Done. ", 30) }, "stop"),
+	})
+	askFor(t, base, "Make emu.xlsx with 3 rows. Do not search first.")
+	n := 0
+	for _, r := range e.runs() {
+		if strings.HasPrefix(r, "search_kb ") {
+			n++
+		}
+	}
+	if n != 2 || !strings.Contains(requestOf(gw, 3), "Not run: this asks the same as two calls before it") {
+		t.Fatalf("searches run %d: %q", n, e.runs())
+	}
+}
+
+func TestRowsHeldAndAsked(t *testing.T) {
+	for in, want := range map[string]int{
+		"Wrote a.xlsx (an Excel workbook of 2 sheets (A, 0 rows after the header: the header only; B, 5 rows after the header), 9 bytes), replacing the previous version, which held A, 20 rows after the header": 5,
+		"Added to a.xlsx (4 rows; the workbook now holds: A, 3 rows after the header; B, 1 row after the header; 7 bytes in all)":                                                                                 4,
+	} {
+		if got, ok := rowsHeld(in); !ok || got != want {
+			t.Errorf("%s: %d %v", in, got, ok)
+		}
+	}
+	if _, ok := rowsHeld("Wrote notes/a.md (12 bytes)"); ok {
+		t.Error("a text file counted")
+	}
+	for in, want := range map[string]int{"a sheet of 250 rows": 250, "600 data rows, 2 columns": 600, "1,000 records": 1000, "write it in 3 parts": 0, "1 row": 0} {
+		if got := askedRows(in); got != want {
+			t.Errorf("%q: %d", in, got)
+		}
 	}
 }

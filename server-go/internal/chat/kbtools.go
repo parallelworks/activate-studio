@@ -242,9 +242,15 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if len(problems) > 0 {
 		show = "The document was made with these problems: " + strings.Join(problems, "; ") + ". A front matter option that was not understood kept its default. Correct the text or the options and make the document again (edit_kb_file on its Markdown, or this call again with overwrite=true), and tell the user of any that stand. " + show
 	}
+	summary := "wrote " + rel
+	if ext == ".xlsx" {
+		if h := docwrite.Held(data); len(h) > 0 {
+			summary += ": " + strings.Join(h, "; ")
+		}
+	}
 	return &Outcome{
 		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show + styleAdvice(style),
-		Summary: "wrote " + rel,
+		Summary: summary,
 	}, nil
 }
 
@@ -762,7 +768,7 @@ func (m *Module) appendKBFile(r *http.Request, rel, abs, ext, content string) (*
 	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
 	return &Outcome{
 		Result:  "Added to " + rel + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. " + nextPart + libraryLink(rel),
-		Summary: "added to " + rel,
+		Summary: "added to " + rel + heldSummary(ext, data),
 	}, nil
 }
 
@@ -789,4 +795,15 @@ func argTrue(args map[string]any, k string) bool {
 		return v.String() == "1"
 	}
 	return false
+}
+
+// heldSummary is what a workbook's sheets hold, for its row in the chat.
+func heldSummary(ext string, data []byte) string {
+	if ext != ".xlsx" {
+		return ""
+	}
+	if h := docwrite.Held(data); len(h) > 0 {
+		return ": " + strings.Join(h, "; ")
+	}
+	return ""
 }

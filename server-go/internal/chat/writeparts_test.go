@@ -111,7 +111,7 @@ func TestWriteKBFileTakesWhatModelsSend(t *testing.T) {
 		return out
 	}
 	run(`{"path":"r/sales.xlsx","content":"{\"sheets\":[{\"name\":\"Sales\",\"rows\":[[\"Date\",\"Region\"],[\"2026-01-21\",\"North\"]]}]}"}`)
-	if o := run(`{"path":"r/sales.xlsx","append":"true","content":"[\"2026-01-22\",\"South\"]"}`); !strings.Contains(o.Result, "Added to r/sales.xlsx") || !strings.Contains(o.Result, "Sales, 2 rows after the header") {
+	if o := run(`{"path":"r/sales.xlsx","append":"true","content":"[\"2026-01-22\",\"South\"]"}`); !strings.Contains(o.Result, "Added to r/sales.xlsx") || !strings.Contains(o.Result, "Sales, 2 rows after the header") || !strings.Contains(o.Summary, "added to r/sales.xlsx: Sales, 2 rows after the header") {
 		t.Fatalf("append as text with a bare row: %s", o.Result)
 	}
 	o := run(`{"path":"r/sales.xlsx","overwrite":true,"content":"{\"sheets\":[{\"name\":\"Sales\",\"rows\":[[\"Date\",\"Region\"]]}]}"}`)

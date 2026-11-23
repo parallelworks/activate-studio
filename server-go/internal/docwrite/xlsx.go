@@ -332,6 +332,9 @@ func held(name string, rows int) string {
 		return name + ", empty"
 	}
 	n := rows - 1
+	if n == 0 {
+		return name + ", 0 rows after the header: the header only"
+	}
 	return fmt.Sprintf("%s, %d row%s after the header", name, n, plural(n))
 }
 
