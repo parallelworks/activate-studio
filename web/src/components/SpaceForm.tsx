@@ -82,8 +82,9 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
   const pwOK = status.pw !== false
   const chosen = given !== undefined || destination !== undefined
   const ssh = destination !== undefined || (!chosen && (overSSH || !pwOK) && !!status.ssh)
-  // A cluster the form around this one has not chosen yet is the Studio's.
-  const system = destination !== undefined ? destination.trim() : given ? given : ssh ? host.trim() : cluster
+  // A cluster the form around this one has not chosen yet stays unchosen:
+  // nothing is made until the person picks one.
+  const system = destination !== undefined ? destination.trim() : given !== undefined ? given : ssh ? host.trim() : cluster
   const where = system || 'that remote computer'
   const typed = folder.trim() || status.suggested
   const at = ssh ? { destination: system } : { cluster: system }
@@ -126,7 +127,7 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
         )}
       <div className="settings-grid">
         {pwOK && !chosen && (
-          <PwSystemField value={cluster} preferred={status.cluster || undefined}
+          <PwSystemField value={cluster} home={status.cluster || undefined}
             onChange={c => { setCluster(c); setOverSSH(false); reset() }}
             extra={status.ssh ? [{ value: SSH, label: 'A host over ssh…', description: 'user@host, with your own keys' }] : []}
             extraValue={overSSH ? SSH : null} onExtra={() => { setOverSSH(true); reset() }} />
