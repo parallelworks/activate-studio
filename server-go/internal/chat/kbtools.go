@@ -62,8 +62,10 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	rel := edgeSlashes.ReplaceAllString(argString(args, "path"), "")
 	content := argString(args, "content")
 	source := edgeSlashes.ReplaceAllString(jsTrim(argString(args, "source")), "")
+	// A write that did not happen is failed, and its row in the chat says
+	// why, not only that it did not.
 	fail := func(result, summary string) (*Outcome, error) {
-		return &Outcome{Result: result, Summary: summary}, nil
+		return &Outcome{Result: result, Summary: summary + ": " + jsval.Slice(result, 160), Failed: true}, nil
 	}
 	if err := mainLibraryWritable(r); err != nil {
 		return fail(err.Error(), "error")
@@ -85,7 +87,7 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if len(also) > 0 && source != "" {
 		return fail("also goes with content. To make another format from "+source+", call write_kb_file for that path with the same source.", "error")
 	}
-	adding := args["append"] == true
+	adding := argTrue(args, "append")
 	if adding && (source != "" || len(also) > 0) {
 		return fail("append adds content to one file; it does not go with source or also.", "error")
 	}
@@ -114,9 +116,15 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if err != nil {
 		return fail(err.Error(), "refused")
 	}
-	overwrite := args["overwrite"] == true
+	overwrite := argTrue(args, "overwrite")
 	_, statErr := os.Stat(abs)
 	exists := statErr == nil
+	var prevHeld []string
+	if exists && ext == ".xlsx" && overwrite && !adding {
+		if old, err := os.ReadFile(abs); err == nil {
+			prevHeld = docwrite.Held(old)
+		}
+	}
 	if exists && !overwrite && !adding {
 		return fail(rel+" already exists. Pass overwrite=true to replace it, or choose another name, or append=true to add to it.", "exists")
 	}
@@ -219,6 +227,12 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	replaced := ""
 	if exists {
 		replaced = ", replacing the previous version"
+		// A workbook replaced in full may have held rows added in parts:
+		// the result says what was dropped, so a model that meant to add
+		// rows sees it replaced them.
+		if ext == ".xlsx" && prevHeld != nil {
+			replaced += ", which held " + strings.Join(prevHeld, "; ") + " (overwrite=true replaces a workbook; append=true adds rows to it)"
+		}
 	}
 	if len(missing) > 0 {
 		// Said first, so the model fixes the paths and writes it again
@@ -759,3 +773,20 @@ const moreRows = "If the user asked for more rows than a sheet now holds, the wo
 
 // nextPart is said after a part is added to a file.
 const nextPart = "If the file does not yet hold all that was asked for, send the next part now the same way (append=true), before you reply to the user; once the last part is in, give the user its link: "
+
+// argTrue reads a yes/no argument as a model may write it: true, or the
+// text "true" or "yes", or 1.
+func argTrue(args map[string]any, k string) bool {
+	switch v := args[k].(type) {
+	case bool:
+		return v
+	case string:
+		s := strings.ToLower(strings.TrimSpace(v))
+		return s == "true" || s == "yes" || s == "1"
+	case float64:
+		return v == 1
+	case json.Number:
+		return v.String() == "1"
+	}
+	return false
+}

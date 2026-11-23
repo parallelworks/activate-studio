@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
+	"github.com/parallelworks/activate-studio/server-go/internal/docwrite"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
@@ -212,10 +213,29 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 					}
 					prose, calls := splitEnvelope(text, nonces, offered, p.hasTools)
 					if calls == nil && p.hasTools {
+						// A reply that ended on its own (not at the output
+						// limit) but lacks its last closing brackets is
+						// read with them added.
+						if be, ok := brokenEnvelope(text, nonces); ok && deref(t.FinishReason) != "length" {
+							if closed, ok := closeEnvelope(text[be.at:]); ok {
+								if pr, cs := splitEnvelope(strings.TrimSpace(text[:be.at]+"\n"+closed), nonces, offered, p.hasTools); cs != nil {
+									m.A.Log.Info("model's tool request read once its closing brackets were added", "model", model, "tool", be.tool)
+									prose, calls = pr, cs
+								}
+							}
+						}
+					}
+					if calls == nil && p.hasTools {
 						if be, ok := brokenEnvelope(text, nonces); ok {
 							why := deref(t.FinishReason)
 							cut := be.cutOff || why == "length"
 							m.A.Log.Warn("model's tool request could not be read", "model", model, "tool", be.tool, "finish", why, "cutOff", cut, "chars", jsval.Len(text), "attempt", attempt)
+							// What it was, for extending the mender to the
+							// cases models produce; it can hold file content,
+							// so only at debug.
+							errAt, near := envelopeDecodeErr(text[be.at:])
+							m.A.Log.Debug("unreadable tool request", "model", model, "error", errAt, "near", near,
+								"head", jsval.Slice(text[be.at:], 200), "tail", tailChars(text, 200))
 							if !askedAgain && ctx.Err() == nil {
 								askedAgain = true
 								line := "\n↳ " + upperFirst(be.asked()) + " could not be read; asking it again\n"
@@ -935,4 +955,54 @@ func gatheredLead(changed bool) string {
 		return "I worked on the request with the tools; these are their results, including what was written:\n\n"
 	}
 	return "I looked through the knowledge base and gathered this material:\n\n"
+}
+
+// closeEnvelope is an envelope (from its opening brace, without a fence
+// after it) with the closing brackets it lacks at its end added, as
+// written or once mended (repairJSON); ok is false when none are lacking.
+func closeEnvelope(s string) (string, bool) {
+	o := strings.Index(s, "{")
+	if o < 0 {
+		return "", false
+	}
+	s = strings.TrimSpace(fenceCloseRe.ReplaceAllString(strings.TrimSpace(s[o:]), ""))
+	if c, ok := docwrite.CloseJSON(s); ok {
+		return c, true
+	}
+	if r, ok := repairJSON(s); ok {
+		return docwrite.CloseJSON(r)
+	}
+	return "", false
+}
+
+// envelopeDecodeErr is why an envelope does not decode, and the text
+// around where it stopped.
+func envelopeDecodeErr(s string) (string, string) {
+	o := strings.Index(s, "{")
+	if o < 0 {
+		return "no object", ""
+	}
+	s = s[o:]
+	var v any
+	dec := json.NewDecoder(strings.NewReader(s))
+	err := dec.Decode(&v)
+	if err == nil {
+		return "", ""
+	}
+	at := int(dec.InputOffset())
+	var se *json.SyntaxError
+	if errors.As(err, &se) {
+		at = int(se.Offset)
+	}
+	from, to := max(0, at-60), min(len(s), at+60)
+	return err.Error(), s[from:to]
+}
+
+// tailChars is the last n characters of s.
+func tailChars(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[len(r)-n:])
 }

@@ -86,3 +86,40 @@ func TestWriteKBFileInParts(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// What models send to write_kb_file: append as the text "true", a bare
+// row, a workbook replaced in full (the result says what it held), and a
+// write that fails (its row in the chat says why).
+func TestWriteKBFileTakesWhatModelsSend(t *testing.T) {
+	dir := t.TempDir()
+	kb := filepath.Join(dir, "kb")
+	os.MkdirAll(kb, 0o755)
+	t.Setenv("PW_CLI", filepath.Join(dir, "no-pw"))
+	cfg, _ := config.Load(func(k string) string {
+		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": kb, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
+	})
+	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
+	mux := http.NewServeMux()
+	kbpkg.Register(mux, a)
+	Register(mux, a)
+	r := httptest.NewRequest("POST", "/api/chat/stream", nil)
+	run := func(args string) *Outcome {
+		out, ok := Default.executeInGo(r, "write_kb_file", args, ToolCtx{})
+		if !ok {
+			t.Fatalf("%s: not run", args)
+		}
+		return out
+	}
+	run(`{"path":"r/sales.xlsx","content":"{\"sheets\":[{\"name\":\"Sales\",\"rows\":[[\"Date\",\"Region\"],[\"2026-01-21\",\"North\"]]}]}"}`)
+	if o := run(`{"path":"r/sales.xlsx","append":"true","content":"[\"2026-01-22\",\"South\"]"}`); !strings.Contains(o.Result, "Added to r/sales.xlsx") || !strings.Contains(o.Result, "Sales, 2 rows after the header") {
+		t.Fatalf("append as text with a bare row: %s", o.Result)
+	}
+	o := run(`{"path":"r/sales.xlsx","overwrite":true,"content":"{\"sheets\":[{\"name\":\"Sales\",\"rows\":[[\"Date\",\"Region\"]]}]}"}`)
+	if !strings.Contains(o.Result, "which held Sales, 2 rows after the header") {
+		t.Errorf("replace: %s", o.Result)
+	}
+	o = run(`{"path":"r/sales.xlsx","overwrite":true,"content":"{\"sheets\":[{\"name\":\"Sales\",\"rows\":[[\"a\"]]}]] x"}`)
+	if !o.Failed || !strings.Contains(o.Summary, "reading the JSON") {
+		t.Errorf("a failed write: %+v", o)
+	}
+}
