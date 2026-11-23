@@ -34,7 +34,10 @@ func twoLibraries(t *testing.T) *Module {
 	t.Setenv("STUDIO_LIBRARIES", string(b))
 	t.Setenv("PW_CLI", filepath.Join(dir, "no-pw"))
 	cfg, _ := config.Load(func(k string) string {
-		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": kb, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
+		// No GUFI: with one installed, the registry probes each library in
+		// the background, and the probe wrote library-caps.json into the
+		// folder after the test ended, failing its cleanup.
+		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": kb, "STUDIO_WEB_DIST": filepath.Join(dir, "web"), "GUFI_BIN": filepath.Join(dir, "no-gufi")}[k]
 	})
 	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
 	mux := http.NewServeMux()

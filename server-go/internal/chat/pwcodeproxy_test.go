@@ -840,3 +840,63 @@ func TestADirectSessionsTranscriptPasses(t *testing.T) {
 		t.Errorf("%d %q %v", res.StatusCode, b, res.Header)
 	}
 }
+
+// A saved session the daemon has not taken up yet (a chat just opened): a
+// command typed then reads the palette first, and that takes the session
+// up, as PW Code on the web's server does, so the command is not sent as
+// a message. Reading the session does not take it up. A relayed session,
+// which the platform does not attach, is answered in the Studio's words,
+// never the daemon's "attach it first".
+func TestACommandTakesASavedSessionUpFirst(t *testing.T) {
+	notLive := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"session is not live; attach it first"}`))
+	}
+	f := &fakePW{}
+	_, base, _ := continueModule(t, f, "d1")
+	if _, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`); out["conversationId"] == nil {
+		t.Fatalf("continue: %v", out)
+	}
+	var mu sync.Mutex
+	live, attaches := false, 0
+	isLive := func() bool { mu.Lock(); defer mu.Unlock(); return live }
+	f.mu.Lock()
+	f.routes = map[string]http.HandlerFunc{
+		"POST /v1/sessions/s1/attach": func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			live, attaches = true, attaches+1
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"id":"s1"}`))
+		},
+		"GET /v1/sessions/s1/palette": func(w http.ResponseWriter, r *http.Request) {
+			if !isLive() {
+				notLive(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"commands":[{"name":"plan"}]}`))
+		},
+		"GET /v1/sessions/s1/subagents": notLive,
+	}
+	f.mu.Unlock()
+	s := base + "/api/code/machines/studio/sessions/s1"
+	if code, _, _ := send(t, http.MethodGet, s+"/subagents", ""); code != http.StatusNotFound || attaches != 0 {
+		t.Fatalf("reading took the session up: %d, attached %d", code, attaches)
+	}
+	if code, out, _ := send(t, http.MethodGet, s+"/palette", ""); code != 200 || attaches != 1 || out["commands"] == nil {
+		t.Fatalf("palette: %d %v, attached %d", code, out, attaches)
+	}
+
+	local, remote := &fakePW{}, &fakePW{}
+	_, rbase, _, _ := relayModule(t, local, remote)
+	relayedChat(t, rbase)
+	remote.mu.Lock()
+	remote.routes = map[string]http.HandlerFunc{"GET /v1/sessions/s1/palette": notLive}
+	remote.mu.Unlock()
+	code, out, _ := send(t, http.MethodGet, rbase+"/api/code/machines/m2/sessions/s1/palette", "")
+	if detail, _ := out["detail"].(string); code != http.StatusConflict || detail != notLiveYet {
+		t.Fatalf("relayed palette: %d %v", code, out)
+	}
+}
