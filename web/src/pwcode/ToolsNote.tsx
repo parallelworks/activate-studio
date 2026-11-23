@@ -40,5 +40,5 @@ export function PWCodeToolsNote({ conversationId, link }: { conversationId: stri
   // A session on another machine reaches the Studio's tools once its
   // machine's pw code has the Studio as an MCP server: the setup card shows
   // the one-time command and checks that it worked (/api/mcp/bridge).
-  return <StudioToolsSetup machineName={link.machineName} onDismiss={() => { markSeen(conversationId); setHidden(true) }} />
+  return <StudioToolsSetup machineName={link.machineName} conversationId={conversationId} onDismiss={() => { markSeen(conversationId); setHidden(true) }} />
 }

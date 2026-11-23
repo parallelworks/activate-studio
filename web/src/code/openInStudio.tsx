@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { toast, useConfirm } from '@parallelworks/ui'
 import { keepEngineFor } from '../labelScope'
+import { type MachineTools, markAutoSetup, setMachineTools } from '../components/studioTools'
 
 /** A machine as the Code page's listing gives it. */
 export interface MachineRef { id: string; name: string; hostname?: string; daemonId?: string }
@@ -43,7 +44,11 @@ export function continuable(s: SessionRef, machines: readonly MachineRef[], here
 /** Opens a Studio chat by its id. */
 export function openChat(id: string) { location.hash = `#chat=${id}` }
 
-interface ContinueAnswer { confirm?: string; conversationId?: string; existing?: boolean; error?: string; detail?: string }
+interface ContinueAnswer {
+  confirm?: string; conversationId?: string; existing?: boolean; error?: string; detail?: string
+  /** For a session on another machine: the Studio's tools in pw code there. */
+  studioTools?: MachineTools
+}
 
 async function postContinue(body: object): Promise<ContinueAnswer> {
   const res = await fetch('/api/chat/pwcode/continue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -114,14 +119,30 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
       return true
     }
     if (first.conversationId) { opened(first.conversationId); return true }
+    // The Studio's tools in pw code on the session's machine: added as the
+    // chat opens, ticked unless the person said not to for that machine.
+    const tools = first.studioTools
+    const offered = tools?.state === 'offer' || tools?.state === 'declined'
+    const add = { on: tools?.state !== 'declined' }
     void confirm({
       title: 'Continue this session in a Studio chat?',
       description: first.confirm ?? 'Your messages from this chat go to the same session.',
+      children: offered && tools
+        ? (
+            <label className="studio-tools-tick">
+              <input type="checkbox" defaultChecked={add.on} data-testid="studio-tools-tick" onChange={e => { add.on = e.currentTarget.checked }} />
+              {' '}Add this Studio's tools to pw code on {tools.machine}
+              <span className="muted"> (the Studio sets it up there over pw ssh as you, with that machine's own ACTIVATE sign-in)</span>
+            </label>
+          )
+        : undefined,
       confirmLabel: 'Continue in Studio',
       errorMessage: e => (e as Error).message || 'The Studio could not continue this session.',
       onConfirm: async () => {
         const a = await postContinue({ ...body, confirmed: true })
         if (!a.conversationId) throw new Error('The Studio made no chat for this session.')
+        if (tools && offered && add.on !== (tools.state !== 'declined')) void setMachineTools(tools.machineId, add.on)
+        if (tools && (tools.state === 'set' || (offered && add.on))) markAutoSetup(a.conversationId)
         opened(a.conversationId)
       },
     })

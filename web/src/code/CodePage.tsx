@@ -13,6 +13,7 @@ import { CodeSidebar } from './CodeSidebar'
 import { CodeStart } from './CodeStart'
 import { LinkedSession, type Delegated } from './LinkedSession'
 import { sessionInHash, useOpenInStudio } from './openInStudio'
+import { MachineToolsOffer } from './MachineToolsOffer'
 import { HowSessionsAppear } from './parts'
 
 /**
@@ -164,6 +165,7 @@ function CodeScreen() {
             <HowSessionsAppear compact />
           </Popover>
         </div>
+        <MachineToolsOffer />
         <CodeStart key={startKey} onOpen={open} onStarted={onStarted} top={link ? answer => (
           <LinkedSession
             session={linked}

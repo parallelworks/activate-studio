@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { pagePath } from '../src/code/api'
 import { CodePage } from '../src/code/CodePage'
@@ -12,7 +12,7 @@ const session = (o: Record<string, unknown>) => ({ machineId: 'm1', id: 'x', nam
 interface Sent { method: string; path: string; body: Record<string, unknown> | null }
 
 /** The Studio's routes the page calls, answered as the Studio would. */
-function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown } = {}) {
+function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown } = {}) {
   const sent: Sent[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = input instanceof Request ? input : new Request(new URL(String(input), 'http://studio.example'), init)
@@ -30,6 +30,9 @@ function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: u
       case '/api/chat/pwcode/here': return json({ available: true, daemonId: 'd1', hostname: 'box.example', chats: [], ...over.here })
       case '/api/chat/pwcode/continue':
         return json(over.continueAnswer ? over.continueAnswer(body ?? {}) : body?.confirmed ? { conversationId: 'c1' } : { confirm: 'Your messages go to mesh refinement on box.' })
+      case '/api/mcp/bridge/machines': return json({ available: true, machines: over.toolsMachines ?? [] })
+      case '/api/mcp/bridge/setup': return json(over.setup ?? { done: true, worked: true, changed: true, tools: 40, live: 'next' })
+      case '/api/mcp/bridge/prefs': return json({ ok: true })
       case '/api/code-page/machines/m1/directories': return json({ path: '/home/alex', home: '/home/alex', entries: [] })
       case '/api/code-page/machines/m1/sessions':
         return json({ id: 'new1', machineId: 'm1', name: '', status: 'working', workspace: body?.workspace, createdAt: now, updatedAt: now })
@@ -94,6 +97,67 @@ describe('the Code page', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
     await waitFor(() => expect(location.hash).toBe('#chat=c1'))
     expect(sent.filter(s => s.path === '/api/chat/pwcode/continue').at(-1)?.body).toEqual({ machine: 'm1', session: 's1', confirmed: true })
+  })
+
+  it('offers to add the Studio\'s tools on the session\'s machine as it continues, ticked, and remembers an untick', async () => {
+    const tools = { state: 'offer', machine: 'gpu', machineId: 'm2', available: true }
+    let sent = studio({ continueAnswer: b => (b.confirmed ? { conversationId: 'c1' } : { confirm: 'This session runs on gpu.', studioTools: tools }) })
+    render(<CodePage />)
+    fireEvent.click(await listed('mesh refinement'))
+    let dialog = await screen.findByRole('dialog')
+    const tick = within(dialog).getByTestId('studio-tools-tick') as HTMLInputElement
+    expect(tick.checked).toBe(true)
+    expect(dialog).toHaveTextContent("Add this Studio's tools to pw code on gpu")
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
+    await waitFor(() => expect(location.hash).toBe('#chat=c1'))
+    // The chat's card runs the setup as it opens; nothing else is recorded.
+    expect(sessionStorage.getItem('ade-studio-tools-auto:c1')).toBe('1')
+    expect(sent.some(s => s.path === '/api/mcp/bridge/prefs')).toBe(false)
+    sessionStorage.clear()
+
+    // Unticked: not run, and the machine is not offered again.
+    cleanup()
+    location.hash = '#view=code'
+    sent = studio({ continueAnswer: b => (b.confirmed ? { conversationId: 'c2' } : { confirm: 'This session runs on gpu.', studioTools: tools }) })
+    render(<CodePage />)
+    fireEvent.click(await listed('mesh refinement'))
+    dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByTestId('studio-tools-tick'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
+    await waitFor(() => expect(location.hash).toBe('#chat=c2'))
+    await waitFor(() => expect(sent.find(s => s.path === '/api/mcp/bridge/prefs')?.body).toEqual({ machineId: 'm2', add: false }))
+    expect(sessionStorage.getItem('ade-studio-tools-auto:c2')).toBeNull()
+  })
+
+  it('does not ask again for a machine already set up, and still gives the session in front the tools', async () => {
+    studio({ continueAnswer: b => (b.confirmed ? { conversationId: 'c3' } : { confirm: 'This session runs on gpu.', studioTools: { state: 'set', machine: 'gpu', machineId: 'm2' } }) })
+    render(<CodePage />)
+    fireEvent.click(await listed('mesh refinement'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByTestId('studio-tools-tick')).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
+    await waitFor(() => expect(location.hash).toBe('#chat=c3'))
+    expect(sessionStorage.getItem('ade-studio-tools-auto:c3')).toBe('1')
+    sessionStorage.clear()
+  })
+
+  it('offers the Studio\'s tools once for a machine that lacks them', async () => {
+    let sent = studio({ toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'set', machine: 'box', machineId: 'm1' }] })
+    render(<CodePage />)
+    const offer = await screen.findByTestId('machine-tools-offer')
+    expect(offer).toHaveTextContent('pw code on gpu')
+    fireEvent.click(within(offer).getByRole('button', { name: 'Add' }))
+    expect(await screen.findByTestId('machine-tools-said')).toHaveTextContent("pw code on gpu now has this Studio's tools (40 of them)")
+    expect(sent.find(s => s.path === '/api/mcp/bridge/setup')?.body).toEqual({ machineId: 'm2' })
+    // Offered once: not again on the next visit.
+    cleanup()
+    sent = studio({ toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'offer', machine: 'cpu', machineId: 'm3' }] })
+    render(<CodePage />)
+    const next = await screen.findByTestId('machine-tools-offer')
+    expect(next).toHaveTextContent('pw code on cpu')
+    fireEvent.click(within(next).getByRole('button', { name: 'Not on cpu' }))
+    await waitFor(() => expect(sent.find(s => s.path === '/api/mcp/bridge/prefs')?.body).toEqual({ machineId: 'm3', add: false }))
+    expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
   })
 
   it('renames and archives from a row menu, as the session actions of the package do', async () => {
