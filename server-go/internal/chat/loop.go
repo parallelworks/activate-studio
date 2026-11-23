@@ -493,6 +493,9 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		fileAsked = askedFile(st.lastUser.Text())
 	}
 	shortNudges := 0
+	// overNudged: a workbook holding more rows than asked for was answered
+	// once with a note to write it again with the count asked.
+	overNudged := false
 	// closeRows ends a turn that wrote a workbook against a count of rows
 	// with what it holds, from the last write's result, unless the answer
 	// already gives that count: the model's last words can predate the
@@ -770,6 +773,18 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			push(llm.Message{Role: "system", Content: sp(fmt.Sprintf("%s holds %d of the %d rows the user asked for, so it is not finished. Add the next %d rows now: write_kb_file with the same path, append=true and the same sheet name, the rows as values%s, one request after another, until it holds all %d. Then answer.", orStr(heldPath, "The workbook"), heldRows, asked, asked-heldRows, perPart(orInt(partRows, 50)), asked))})
 			continue
 		}
+		// A workbook holding more rows than the user asked for is written
+		// again with the count asked, once (emulated path); the answer
+		// says the count either way (closeRows).
+		if foldSystem && asked > 0 && heldRows > asked && !overNudged && iter < maxRounds-1 && ctx.Err() == nil {
+			overNudged = true
+			m.A.Log.Warn("workbook over the rows asked; asking for it again", "iter", iter, "held", heldRows, "asked", asked)
+			if c := jsTrim(turn.Content); c != "" {
+				push(llm.Message{Role: "assistant", Content: sp(c)})
+			}
+			push(llm.Message{Role: "system", Content: sp(fmt.Sprintf("%s holds %d rows after the header; the user asked for %d. Write it again with exactly %d: write_kb_file with the same path and overwrite=true, the header and the first rows%s, then append=true with the next rows until it holds %d. Then answer.", orStr(heldPath, "The workbook"), heldRows, asked, asked, perPart(orInt(partRows, 50)), asked))})
+			continue
+		}
 		// A file the user asked to have made, of which nothing has been
 		// written, is not given up on in a reply without a request: the
 		// model is told it does not exist until written (emulated path).
@@ -999,9 +1014,11 @@ func (m *Module) runCall(r *http.Request, st *loopState, tc llm.ToolCall, i int,
 		st.addGroup(*g)
 	}
 	if hit, ok := repeatedCall(cache, cacheMu, name, tc.Function.Arguments); ok {
-		return &Outcome{Result: "[You already made this exact call in this reply; identical result repeated below. Do not repeat it again.]\n" + hit, Summary: "repeated call (cached)"}
+		m.A.Log.Info("tool call not run: the same call made earlier in this reply", "tool", name)
+		return &Outcome{Result: "[Not run: you already made this exact call in this reply, and its result is below. Asking again gives the same. Go on with the task instead: a file the user asked you to make does not exist until you write it with write_kb_file.]\n" + hit, Summary: "repeated call (cached)"}
 	}
 	if hit, ok := askedTwice(cache, cacheMu, name, tc.Function.Arguments); ok {
+		m.A.Log.Info("tool call not run: asks what two earlier calls asked", "tool", name)
 		return &Outcome{Result: "[Not run: this asks the same as two calls before it in this reply, with only how many results or the argument's name changed, and they gave the result below. Asking again gives the same. Go on with the task instead: a file the user asked you to make does not exist until you write it with write_kb_file.]\n" + hit, Summary: "same as before, not run"}
 	}
 	out, err := m.Tools.Execute(r, name, tc.Function.Arguments, toolCtx())
