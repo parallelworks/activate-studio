@@ -709,3 +709,50 @@ func TestCutOffNoticeIsNotLeftOnALaterReply(t *testing.T) {
 		t.Fatalf("answer %.400s", a)
 	}
 }
+
+// A workbook written with more rows than asked for is written again with
+// the count asked, once, rather than only reported.
+func TestWorkbookOverTheRowsAskedIsWrittenAgain(t *testing.T) {
+	e, base, gw := emuModule(t)
+	e.results = []string{
+		"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 73 rows after the header), 900 bytes) and re-indexed in 1 ms.",
+		"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 50 rows after the header), 900 bytes), replacing the previous version, which held Items, 73 rows after the header, and re-indexed in 1 ms.",
+	}
+	gw.load([]reply{
+		said(func(n string) string { return writeEnvelope(n, sheetRows(73)) }, "stop"),
+		said(func(string) string {
+			return "It has 73 data rows, not the 50 you requested, so it does not match your requested row count. " + strings.Repeat("Sorry. ", 30)
+		}, "stop"),
+		said(func(n string) string { return writeEnvelope(n, sheetRows(50)) }, "stop"),
+		said(func(string) string { return "The workbook holds 50 rows. " + strings.Repeat("Done. ", 30) }, "stop"),
+	})
+	a := answerOf(askFor(t, base, "Make reports/items.xlsx with 50 rows of items. Do not search first."))
+	if countWrites(e) != 2 || !strings.Contains(a, "holds 50 rows") || strings.Contains(a, "73 data rows") {
+		t.Fatalf("ran %d writes; answer %.400s", countWrites(e), a)
+	}
+	if r := requestOf(gw, 2); !strings.Contains(r, "holds 73 rows after the header; the user asked for 50. Write it again with exactly 50") {
+		t.Errorf("no note to write it again: %.300s", r)
+	}
+}
+
+// The same call made again in a reply is not run: it is answered with the
+// first one's result and a note to go on with the task.
+func TestTheSameCallIsAnsweredFromTheFirst(t *testing.T) {
+	e, base, gw := emuModule(t)
+	search := said(func(n string) string {
+		return `{"protocol":"studio-tools-1","nonce":"` + n + `","calls":[{"name":"search_kb","arguments":{"limit":10,"name":"emu.xlsx"}}]}`
+	}, "stop")
+	gw.load([]reply{search, search, search,
+		said(func(string) string { return "Nothing was found. " + strings.Repeat("Done. ", 30) }, "stop"),
+	})
+	askFor(t, base, "Make emu.xlsx with 3 rows. Do not search first.")
+	n := 0
+	for _, r := range e.runs() {
+		if strings.HasPrefix(r, "search_kb ") {
+			n++
+		}
+	}
+	if n != 1 || !strings.Contains(requestOf(gw, 2), "a file the user asked you to make does not exist until you write it") {
+		t.Fatalf("searches run %d: %q", n, e.runs())
+	}
+}
