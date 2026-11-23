@@ -127,7 +127,7 @@ export function phaseLine(job: IndexJob | null | undefined): string | null {
  *  as another's. */
 export function indexSummary(s: IndexStatus | null, files?: number, of?: string): IndexSummary {
   const base = { pulse: false, detail: null, percent: null, running: false }
-  if (!s) return { ...base, tone: 'muted', text: 'index loading' }
+  if (!s) return { ...base, tone: 'muted', text: 'Index loading' }
   const job = s.job ?? null
   if (job) {
     const ph = currentPhase(job)
@@ -137,13 +137,13 @@ export function indexSummary(s: IndexStatus | null, files?: number, of?: string)
     return { tone: 'info', pulse: true, text, detail: job.label ?? null, percent: pct, running: true }
   }
   if (s.running || (s.queued?.length ?? 0) > 0) return { ...base, tone: 'info', pulse: true, text: 'Indexing…', running: true }
-  if (s.lastError) return { ...base, tone: 'warning', text: 'index needs attention', detail: s.lastError }
+  if (s.lastError) return { ...base, tone: 'warning', text: 'Index needs attention', detail: s.lastError }
   if (s.incomplete) {
-    return { ...base, tone: 'warning', text: 'index incomplete',
+    return { ...base, tone: 'warning', text: 'Index incomplete',
       detail: s.lastBuild?.state === 'cancelled' ? 'The last build was stopped before it finished. Update the index to finish it.' : 'The last build did not finish. Update the index to finish it.' }
   }
-  if (s.indexed === false) return { ...base, tone: 'muted', text: 'not indexed', detail: 'Build the index under Settings, Indexing, Libraries.' }
-  return { ...base, tone: 'success', text: files != null ? `${plural(files, 'file')} indexed${of ? ` in ${of}` : ''}` : 'indexed' }
+  if (s.indexed === false) return { ...base, tone: 'muted', text: 'Not indexed', detail: 'Build the index under Settings, Indexing, Libraries.' }
+  return { ...base, tone: 'success', text: files != null ? `${plural(files, 'file')} indexed${of ? ` in ${of}` : ''}` : 'Indexed' }
 }
 
 /** A duration as people read it: 850 ms, 12 s, 4 min 12 s, 1 h 3 min. */
