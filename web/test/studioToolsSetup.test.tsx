@@ -65,6 +65,25 @@ describe('the setup card for the Studio\'s tools on another machine', () => {
     expect(screen.getByText(command, { selector: '.studio-tools-command' })).toBeInTheDocument()
   })
 
+  it('when pw ssh does not reach the machine, says the site it tried and gives the command to paste there, no key needed', async () => {
+    const paste = "pw code mcp add --scope user --force studio -- sh -c 'u=$1; p=$2' studio-mcp 'https://platform.example/me/session/ada/studio/api/mcp' \"$(command -v pw)\""
+    serve(() => ({ available: true, command, paste, keyHole: '<your ACTIVATE API key>', tools: 44, seen: null, setup: { ...offer, machine: 'labcluster' } }),
+      () => [502, { error: 'The Studio could not reach labcluster with pw ssh as you, at pw://bob/labcluster ([ERROR] Cluster not found). Do it yourself in a terminal there.' }])
+    const writeText = vi.fn(async () => {})
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    render(<StudioToolsSetup conversationId="c1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up for me' }))
+    expect(await screen.findByTestId('studio-tools-failed')).toHaveTextContent('at pw://bob/labcluster')
+    expect(screen.getByTestId('studio-tools-paste')).toHaveTextContent(paste)
+    expect(screen.getByText(/In a terminal on labcluster, paste this once/)).toBeInTheDocument()
+    // The key steps wait behind their own button.
+    expect(screen.queryByText(command)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Copy the command' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(paste))
+    fireEvent.click(screen.getByRole('button', { name: 'No curl there? Use an ACTIVATE API key' }))
+    expect(screen.getByText(command, { selector: '.studio-tools-command' })).toBeInTheDocument()
+  })
+
   it('offers only the steps where the Studio cannot reach the machine, saying why', async () => {
     serve(() => ({ available: true, command, tools: 44, seen: null, setup: { state: 'unavailable', machine: 'laptop', machineId: 'm9', why: 'laptop is a computer that connected itself to ACTIVATE, and the Studio cannot open a terminal on it: do it yourself in a terminal there.' } }))
     render(<StudioToolsSetup conversationId="c1" />)
