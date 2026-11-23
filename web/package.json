@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "build": "tsc -p tsconfig.json --noEmit && node --max-old-space-size=6144 node_modules/vite/bin/vite.js build",
     "test": "vitest run && vitest run --config vitest.rhel9.config.ts"
   },
   "dependencies": {
