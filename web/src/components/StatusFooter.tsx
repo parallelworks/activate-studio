@@ -524,7 +524,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
       <div className="sidenav-footer">
         {after.reopen && (
           <button className="status-line footer-rail-update" title="Reopen the app to finish updating. Opens Settings, Updates."
-            aria-label="Reopen to finish updating" onClick={openUpdates}>
+            aria-label="Reopen to update" onClick={openUpdates}>
             <StatusDot variant="warning" size={7} />
           </button>
         )}
@@ -580,16 +580,15 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
         </div>
       )}
       {(updated || (shellNewer && build)) && (
-        <div className="status-line" data-testid="footer-reload" title="A new version was deployed while this page was open, or since this device last loaded the page">
+        <div className="status-line" data-testid="footer-reload" title={`Version ${(updated ?? build)?.version} was deployed while this page was open, or since this device last loaded the page`}>
           <StatusDot variant="warning" size={7} />
-          <span className="identity-text">Updated to {(updated ?? build)?.version}</span>
-          <Button variant="secondary" size="xs" onClick={() => { void reloadOntoNewest() }}>Reload</Button>
+          <span className="identity-text">Updated<span className="footer-long"> to {(updated ?? build)?.version}</span></span>
+          <Button variant="ghost" size="xs" className="footer-sync" onClick={() => { void reloadOntoNewest() }}>Reload</Button>
         </div>
       )}
       {after.reopen && (
-        <div className="status-line" data-testid="footer-reopen" title="The update changed the app's window, which updates when the app reopens. Quit and reopen the app to finish.">
+        <div className="status-line" data-testid="footer-reopen" title="The update is installed and changed the app's window, which updates when the app reopens. Quit and reopen the app to finish.">
           <StatusDot variant="warning" size={7} />
-          <span className="identity-text">Reopen to finish updating</span>
           <ReopenApp compact />
         </div>
       )}

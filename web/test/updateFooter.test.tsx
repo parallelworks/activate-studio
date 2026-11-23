@@ -424,6 +424,23 @@ describe('Settings, Updates', () => {
   })
 })
 
+describe('a new version deployed while the page is open', () => {
+  it('says Updated with Reload as a quiet link; the version is kept for a wide sidebar and the tooltip', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.140')
+    const s = server({ updates: status({ available: false, latest: null, releases: [] }) })
+    stubServer(s)
+    render(<StatusFooter />)
+    await screen.findByText('v1.140')
+    s.version = 'v1.142'
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    const row = await screen.findByTestId('footer-reload')
+    expect(row.textContent).toBe('Updated to v1.142Reload')
+    expect(row.querySelector('.footer-long')?.textContent).toBe(' to v1.142')
+    expect(row.title).toContain('Version v1.142 was deployed')
+    expect(within(row).getByRole('button', { name: 'Reload' })).toHaveClass('footer-sync')
+  })
+})
+
 describe('after an update that changed the app\'s window', () => {
   const updated = () => status({ current: { version: 'v1.142', builtAt: null }, available: false, latest: null, releases: [], reopen: true })
   const line = () => screen.queryByTestId('footer-reopen')
@@ -451,14 +468,33 @@ describe('after an update that changed the app\'s window', () => {
     render(<StatusFooter />)
     const reopen = await screen.findByTestId('footer-reopen')
     expect(post).not.toHaveBeenCalled()
-    expect(reopen.textContent).toContain('Reopen to finish updating')
+    expect(reopen.textContent).toBe('Update readyReopen now')
     expect(screen.getByRole('button', { name: "What's new" })).toHaveAttribute('title', 'Updated since you last opened Studio. Shows what changed.')
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
     fireEvent.click(within(reopen).getByRole('button', { name: 'Reopen now' }))
     await waitFor(() => expect(within(reopen).queryByRole('button', { name: 'Reopen now' })).toBeNull())
     expect(post).toHaveBeenCalledWith({ action: 'relaunch' })
-    expect(reopen.textContent).toContain('Reopen to finish updating')
+    expect(reopen.textContent).toBe('Reopen to update')
     expect(reopen.title).toContain('Quit and reopen the app to finish.')
+  })
+
+  it('in a browser, the footer line says to reopen, short enough for the narrowest sidebar', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.142')
+    stubServer(server({ version: 'v1.142', updates: updated() }))
+    render(<StatusFooter />)
+    const reopen = await screen.findByTestId('footer-reopen')
+    expect(reopen.textContent).toBe('Reopen to update')
+    expect(within(reopen).queryByRole('button')).toBeNull()
+  })
+
+  it('in the app, the Reopen now link drops "now" on a narrow sidebar and keeps its name', async () => {
+    localStorage.setItem(SEEN_KEY, 'v1.142')
+    stubServer(server({ version: 'v1.142', updates: updated() }))
+    appWindow(async () => true)
+    render(<StatusFooter />)
+    const button = within(await screen.findByTestId('footer-reopen')).getByRole('button', { name: 'Reopen now' })
+    expect(button.querySelector('.footer-long')?.textContent).toBe(' now')
+    expect(button).toHaveClass('footer-sync')
   })
 
   it('clears Reopen now once the server says the window runs the new copy, without a reload', async () => {
@@ -495,7 +531,7 @@ describe('after an update that changed the app\'s window', () => {
     first.unmount()
 
     const rail = render(<StatusFooter collapsed />)
-    fireEvent.click(await action('Reopen to finish updating'))
+    fireEvent.click(await action('Reopen to update'))
     expect(location.hash).toBe('#view=settings:updates')
     rail.unmount()
 
