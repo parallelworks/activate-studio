@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button, Callout, Checkbox, EmptyState, Popover, PopoverClose, SearchInput, SegmentedControl,
 } from '@parallelworks/ui'
@@ -41,7 +41,9 @@ import { PWCodeSession } from '../pwcode/PWCodeSession'
 import { BackgroundCommandHint } from '../pwcode/session/BackgroundCommandHint'
 import { BACKGROUND_TOOL } from '@parallelworks/code'
 
-import { useChatLink } from '../pwcode/useChatLink'
+import { type ChatLink, useChatLink } from '../pwcode/useChatLink'
+import { VIEWER_CACHES_CLEARED } from '../viewerCache'
+import { prefetchChat } from '../chatRecord'
 import { PWCodeToolsNote } from '../pwcode/ToolsNote'
 
 const PWCODE_TOOL_FOOTERS = { [BACKGROUND_TOOL]: BackgroundCommandHint }
@@ -132,6 +134,42 @@ function migrateRememberedModel(): void {
 // The phone layout's breakpoint in styles.css; the conversations list turns
 // into the package's drawer at the same width the bottom bar appears.
 const PHONE_QUERY = '(max-width: 760px)'
+
+/** How many pw code chats stay drawn, hidden, once left. */
+const KEPT_SESSIONS = 3
+
+interface KeptSession { conversationId: string; machine: string; sessionId: string; link: ChatLink }
+
+/**
+ * The pw code chats to draw: the open one, when it shows its session, and
+ * the ones opened just before it, which stay drawn but hidden (Activity),
+ * so a return to one is immediate. A chat set to the Studio assistant
+ * leaves the list, and the list empties when the viewer's caches do
+ * (viewerCache.ts).
+ */
+function useKeptSessions(activeId: string | null, pw: ReturnType<typeof useChatLink>): KeptSession[] {
+  const [kept, setKept] = useState<KeptSession[]>([])
+  const current = activeId && pw.shown && pw.link?.session
+    ? { conversationId: activeId, machine: pw.machine, sessionId: pw.link.session, link: pw.link }
+    : null
+  useEffect(() => {
+    if (!activeId) return
+    setKept(k => {
+      const rest = k.filter(x => x.conversationId !== activeId)
+      // Only once its link is read is a chat known to be another kind.
+      if (!current) return rest.length === k.length ? k : rest
+      const same = k[0]?.conversationId === current.conversationId && k[0].machine === current.machine && k[0].sessionId === current.sessionId && k[0].link === current.link
+      return same ? k : [current, ...rest].slice(0, KEPT_SESSIONS)
+    })
+  }, [activeId, current?.machine, current?.sessionId, current?.link]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const clear = () => setKept([])
+    window.addEventListener(VIEWER_CACHES_CLEARED, clear)
+    return () => window.removeEventListener(VIEWER_CACHES_CLEARED, clear)
+  }, [])
+  if (!current) return kept.filter(k => k.conversationId !== activeId)
+  return [current, ...kept.filter(k => k.conversationId !== current.conversationId)].slice(0, KEPT_SESSIONS)
+}
 
 function usePhoneLayout(): boolean {
   const [phone, setPhone] = useState(() => matchMedia(PHONE_QUERY).matches)
@@ -386,6 +424,10 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         href="#"
         className={className}
         title={title}
+        // A chat the pointer rests on is read ahead, so it opens from what
+        // is known (chatRecord.ts).
+        onPointerEnter={target.kind === 'conversation' ? () => prefetchChat(target.id) : undefined}
+        onFocus={target.kind === 'conversation' ? () => prefetchChat(target.id) : undefined}
         onClick={e => {
           e.preventDefault()
           onClick?.(e)
@@ -401,6 +443,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   const cfg = useAppConfig()
   // A chat with a pw code session shows the session itself (pwcode/).
   const pw = useChatLink(activeId)
+  const keptSessions = useKeptSessions(activeId, pw)
   // The libraries the chat searches are part of its scope, ticked in the
   // same menu as the labels: every library until the user narrows it. The
   // button names the choice when there is more than one library.
@@ -600,10 +643,18 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
                 onActiveDeleted={() => setActiveId(null)}
                 onClose={() => setShowManage(false)}
               />
-            ) : showAttachments ? <AttachmentManager /> : activeId ? (pw.shown && pw.link?.session ? (
-              <PWCodeSession key={activeId} conversationId={activeId} machine={pw.machine} sessionId={pw.link.session} username={cfg.user?.username ?? ''}
-                notes={<PWCodeToolsNote conversationId={activeId} link={pw.link} />} />
-            ) : <ChatThread conversationId={activeId} find={active} />) : (
+            ) : showAttachments ? <AttachmentManager /> : activeId ? (<>
+              {/* The pw code chats opened last stay drawn, hidden, so going
+                  back to one shows it as it was, and its feed picks up
+                  after its last event; hidden, nothing of one runs. */}
+              {keptSessions.map(k => (
+                <Activity key={`${k.conversationId}/${k.machine}/${k.sessionId}`} mode={k.conversationId === activeId ? 'visible' : 'hidden'}>
+                  <PWCodeSession conversationId={k.conversationId} machine={k.machine} sessionId={k.sessionId} username={cfg.user?.username ?? ''}
+                    notes={<PWCodeToolsNote conversationId={k.conversationId} link={k.link} />} />
+                </Activity>
+              ))}
+              {!(pw.shown && pw.link?.session) && <ChatThread conversationId={activeId} find={active} />}
+            </>) : (
               // Read live, so a theme toggle swaps a light and a dark icon.
               <EmptyChatBrand cfg={cfg} dark={effectiveTheme === 'dark'}>
                 <ChatEmptyState />

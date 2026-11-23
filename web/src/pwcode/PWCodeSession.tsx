@@ -7,6 +7,7 @@ import {
   OutputCard,
   PermissionPicker,
   SessionView,
+  type ChatMessage,
 } from '@parallelworks/ui/ai'
 import {
   loadPwCodeMessages,
@@ -42,6 +43,7 @@ import { useAwayRecap } from './session/useAwayRecap'
 import { useComposerImages } from './session/useComposerImages'
 import { usePlatformModels } from './session/usePlatformModels'
 import { AgentModelControls } from '../code/AgentModelControls'
+import { cachedChat } from '../chatRecord'
 
 import { needsActivate } from '../accounts'
 import { NeedsActivate } from '../components/NeedsActivate'
@@ -62,18 +64,28 @@ export { describeError }
  * it: what answers the chat, and its notes.
  */
 export function PWCodeSession(props: PWCodeSessionProps) {
-  const [messages, setMessages] = useState<PwCodeMessages | null>(null)
+  const [messages, setMessages] = useState<PwCodeMessages | null>(loadedMessages)
   useEffect(() => {
+    if (messages) return
     let gone = false
-    void loadPwCodeMessages('en').then(m => { if (!gone) setMessages(m) }, () => {})
+    void loadMessages().then(m => { if (!gone) setMessages(m) }, () => {})
     return () => { gone = true }
-  }, [])
+  }, [messages])
   if (!messages) return <div className="pwcode-session pwcode-session-loading" aria-busy="true" />
   return (
     <IntlProvider locale="en" messages={messages} timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}>
       <SessionPane {...props} />
     </IntlProvider>
   )
+}
+
+// pw code's words, loaded once for the page: a chat switched to after the
+// first draws its session in the same frame, not one load later.
+let loadedMessages: PwCodeMessages | null = null
+let loadingMessages: Promise<PwCodeMessages> | null = null
+function loadMessages(): Promise<PwCodeMessages> {
+  loadingMessages ??= loadPwCodeMessages('en').then(m => (loadedMessages = m), e => { loadingMessages = null; throw e })
+  return loadingMessages
 }
 
 export interface PWCodeSessionProps {
@@ -100,6 +112,18 @@ const NO_MODELS = { models: [] }
  *  folded: open, it would cover the transcript the composer leaves. */
 function tasksStartOpen(): boolean {
   return !window.matchMedia?.('(max-height: 32rem)').matches
+}
+
+/** A chat record's messages to draw while the session is read: what was
+ *  said and the steps the record kept of it. */
+function storedMessages(list: unknown[] | undefined): ChatMessage[] | undefined {
+  const out = (list ?? []).flatMap(m => {
+    const x = m as Partial<ChatMessage>
+    return typeof x.id === 'string' && (x.role === 'user' || x.role === 'assistant') && (x.content || x.parts?.length)
+      ? [{ id: x.id, role: x.role, content: x.content ?? '', parts: x.parts, parentId: x.parentId, timestamp: x.timestamp }]
+      : []
+  })
+  return out.length ? out : undefined
 }
 
 function SessionPane({ conversationId, machine, sessionId, username, notes, settingsExtra }: PWCodeSessionProps) {
@@ -184,6 +208,12 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
     describeError,
   })
 
+  // Until the session's transcript first arrives, the chat's own record of
+  // it (read as this person, chatRecord.ts) is drawn, as before the session
+  // view: a first open over a slow relay shows the conversation at once.
+  const stored = useMemo(() => (detail ? undefined : storedMessages(cachedChat(conversationId)?.messages)), [detail, conversationId])
+  const shownMessages = stored ?? messages
+
   const noticeText = notice?.text ?? note
   // A refusal for want of an ACTIVATE sign-in gets the one prompt every
   // feature shows, with Open Accounts.
@@ -263,7 +293,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
             <SessionView
               sessionKey={draftKey}
               foldEveryRun
-              messages={messages}
+              messages={shownMessages}
               streamingMessage={transcript?.streaming ?? null}
               queuedMessages={queued}
               canRemoveQueued={conversation.canRemoveQueued}
@@ -274,7 +304,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
               onApprovalAnswer={conversation.answerApproval}
               showAuthor={screen.showAuthor}
               currentUsername={username}
-              loading={screen.loading}
+              loading={screen.loading && !stored}
               error={screen.failed ? (
                 <div className="pwcode-session-failed">
                   <p role="alert">{screen.failed.message}</p>

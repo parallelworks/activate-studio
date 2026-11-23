@@ -10,13 +10,13 @@ const chat = {
 }
 vi.mock('@parallelworks/ui/ai', () => ({ useChat: () => chat }))
 
-import { usePlatformModels } from '../src/pwcode/session/usePlatformModels'
+import { forgetModelSource, usePlatformModels } from '../src/pwcode/session/usePlatformModels'
 
 const answer = (source: string | null, ok = true) =>
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok, json: async () => (source ? { models: { source } } : {}) })))
 
 describe('the platform models a pw code session is offered', () => {
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllGlobals(); forgetModelSource() })
 
   it("are the chat's models while they come from ACTIVATE", async () => {
     answer('cli')
@@ -31,6 +31,18 @@ describe('the platform models a pw code session is offered', () => {
     const { result } = renderHook(() => usePlatformModels())
     await waitFor(() => expect(result.current.models).toEqual([]))
     expect(result.current.providerIssues).toEqual([])
+  })
+
+  it('read where the models come from once a minute, not at every chat switched to', async () => {
+    answer('endpoint')
+    const first = renderHook(() => usePlatformModels())
+    await waitFor(() => expect(first.result.current.models).toEqual([]))
+    first.unmount()
+    // The next session view starts from the answer already read.
+    const second = renderHook(() => usePlatformModels())
+    expect(second.result.current.models).toEqual([])
+    await new Promise(r => setTimeout(r, 10))
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it("keep the chat's models when the source cannot be read", async () => {

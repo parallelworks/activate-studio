@@ -156,6 +156,19 @@ func (c *RelayClient) GetBytes(ctx context.Context, route string, max int64) (*B
 	return v, err
 }
 
+// GetStream hands on a GET's answer through the relay as it arrives.
+func (c *RelayClient) GetStream(ctx context.Context, route string) (*Stream, error) {
+	if c.origin == "" || c.relayPath(http.MethodGet, route) == "" {
+		return nil, &DaemonError{Message: "ACTIVATE does not offer this for a session on another machine yet.", Status: http.StatusNotImplemented}
+	}
+	v, err := RequestStream(ctx, relayDoer{c}, route)
+	var de *DaemonError
+	if errors.As(err, &de) {
+		return nil, relayError(de)
+	}
+	return v, err
+}
+
 // relayError says a relay refusal in the person's terms.
 func relayError(de *DaemonError) error {
 	said := strings.TrimPrefix(de.Message, "pw code daemon: ")

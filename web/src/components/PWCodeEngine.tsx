@@ -4,6 +4,7 @@ import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
 import { useChat } from '@parallelworks/ui/ai'
 import { type Engine, getEngine, setEngine } from '../labelScope'
 import { liveModel, onModel } from '../pwcode/liveModel'
+import { cachedChat, readChat, type ChatRecord } from '../chatRecord'
 
 /** GET /api/chat/engine: what answers by default, and whether pw code is
  *  offered to this person (with why not). */
@@ -32,6 +33,13 @@ const ENGINES: { value: 'pwcode' | 'studio'; label: string; hint: string }[] = [
   { value: 'studio', label: 'Studio assistant', hint: "Answers from the libraries with this Studio's own tools and the model chosen below." },
 ]
 
+function sessionInfo(c: ChatRecord | undefined): SessionInfo {
+  const p = c?.pwcode as Record<string, unknown> | undefined
+  if (!p) return {}
+  const str = (k: string) => (typeof p[k] === 'string' ? p[k] as string : undefined)
+  return { url: str('url'), session: str('session'), model: str('model'), modelNote: str('modelNote'), continued: !!p.continued, machine: str('machine') }
+}
+
 /** The pw code session a conversation has, from the conversation itself
  *  (GET /api/chat/conversations/:id) or from a reply as it streams. */
 function useSession(conversationId: string | null): SessionInfo {
@@ -44,12 +52,13 @@ function useSession(conversationId: string | null): SessionInfo {
     return conversationId ? onModel(conversationId, setLive) : undefined
   }, [conversationId])
   useEffect(() => {
-    setS({})
-    if (!conversationId) return
+    if (!conversationId) { setS({}); return }
     let gone = false
-    fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(c => { if (!gone && c?.pwcode) setS({ url: c.pwcode.url, session: c.pwcode.session, model: c.pwcode.model, modelNote: c.pwcode.modelNote, continued: !!c.pwcode.continued, machine: c.pwcode.machine }) })
+    // The kept record first (chatRecord.ts), then the read the chat's other
+    // parts share.
+    setS(sessionInfo(cachedChat(conversationId)))
+    readChat(conversationId)
+      .then(c => { if (!gone && c.pwcode) setS(sessionInfo(c)) })
       .catch(() => {})
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail as SessionInfo & { conversationId?: string }

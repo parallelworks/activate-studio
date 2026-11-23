@@ -1,4 +1,6 @@
 import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
+import { forgetChat, readChat, takeReadAhead } from './chatRecord'
+import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getEngine, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
 import { fetchModels } from './api'
 import { rememberToolCommands } from './components/GufiCommands'
@@ -210,7 +212,10 @@ export function setChatListFilter(f: 'all' | 'mine'): void {
   localStorage.setItem('ade-chat-filter', f)
 }
 export function getChatListFilter(): 'all' | 'mine' { return chatFilter }
-export function setViewerUsername(u: string): void { viewerUsername = u }
+export function setViewerUsername(u: string): void {
+  viewerUsername = u
+  setCacheViewer(u)
+}
 
 interface OwnedSummary { id: string; title?: string; owner?: string | null }
 function decorateConversations<T extends OwnedSummary>(rows: T[]): T[] {
@@ -261,18 +266,21 @@ export function createStudioAdapter(): ChatAdapter {
     // partitioned inside the platform iframe and loses history.
     conversations: {
       list: () => fetch('/api/chat/conversations').then(r => json<OwnedSummary[]>(r)).then(decorateConversations) as ReturnType<ChatAdapter['conversations']['list']>,
-      get: id => fetch(`/api/chat/conversations/${id}`).then(r => json<{ messages?: NoteMessage[] }>(r)).then(markNotes) as ReturnType<ChatAdapter['conversations']['get']>,
+      // One read with the chat page's other parts (chatRecord.ts), or the
+      // one started when the pointer came to the chat in the list; the
+      // thread gets its own copy, since it changes what it is given.
+      get: id => (takeReadAhead(id) ?? readChat(id)).then(c => markNotes(structuredClone(c) as { messages?: NoteMessage[] })) as ReturnType<ChatAdapter['conversations']['get']>,
       create: title => fetch('/api/chat/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
       }).then(r => json(r)),
-      rename: async (id, title) => { await fetch(`/api/chat/conversations/${id}`, {
+      rename: async (id, title) => { forgetChat(id); await fetch(`/api/chat/conversations/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
       }).then(r => json(r)) },
-      remove: async id => { await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => json(r)) },
+      remove: async id => { forgetChat(id); await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => json(r)) },
     },
     models: { list: listModels },
     // The composer's Tools menu: one switch per kind of tool the server

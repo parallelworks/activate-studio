@@ -237,6 +237,77 @@ func RequestBytes(ctx context.Context, client Doer, route string, max int64) (*B
 	return &Bytes{Type: res.Header.Get("Content-Type"), Body: body}, nil
 }
 
+// Stream is an answer handed on as it arrives: its media type, and its
+// body, which the caller closes.
+type Stream struct {
+	Type string
+	Body io.ReadCloser
+}
+
+// StreamGetter is a Client that can hand a GET's answer on as it arrives,
+// for a large one whose start is of use before its end: a transcript the
+// daemon answers tail first.
+type StreamGetter interface {
+	GetStream(ctx context.Context, route string) (*Stream, error)
+}
+
+// streamLimit is how long a streamed answer may take in all, so a stalled
+// machine or relay never holds the request open.
+var streamLimit = 2 * time.Minute
+
+// RequestStream is a GET through client whose body is handed back unread.
+// A refusal (a status of 400 or more) is read and returned as the daemon's
+// error, as Request returns it.
+func RequestStream(ctx context.Context, client Doer, route string) (*Stream, error) {
+	cctx, cancel := context.WithTimeout(ctx, streamLimit)
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, "http://daemon"+route, nil)
+	if err != nil {
+		cancel()
+		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error()}
+	}
+	req.Host = "daemon"
+	req.Header.Set("Accept", "application/json")
+	res, err := client.Do(req)
+	if err != nil {
+		cancel()
+		return nil, transportError(cctx, err)
+	}
+	if res.StatusCode >= 400 {
+		defer cancel()
+		defer res.Body.Close()
+		text, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+		parsed, _ := jsonv.Decode(text)
+		return nil, statusError(res.StatusCode, parsed, text)
+	}
+	return &Stream{Type: res.Header.Get("Content-Type"), Body: cancelOnClose{res.Body, cancel}}, nil
+}
+
+// cancelOnClose ends a streamed request's deadline with its body.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
+}
+
+// GetStream hands on a GET's answer from this host's daemon as it arrives.
+func (l *localClient) GetStream(ctx context.Context, route string) (*Stream, error) {
+	sock := l.s.SocketPath()
+	client := &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", sock)
+		},
+		// The connection closes with the body.
+		DisableKeepAlives: true,
+	}}
+	return RequestStream(ctx, client, route)
+}
+
 func (l *localClient) GetBytes(ctx context.Context, route string, max int64) (*Bytes, error) {
 	sock := l.s.SocketPath()
 	client := &http.Client{Transport: &http.Transport{
