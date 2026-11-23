@@ -68,10 +68,12 @@ func (s *Sites) authOn(r *http.Request) bool {
 
 func kb(status int, msg string) error { return platform.KbError(status, msg) }
 
-// LocalSiteAllowed is localSiteAllowed.
+// LocalSiteAllowed says whether this host is a site: on a Studio of one
+// unless AGENT_LOCAL_SITE=0. Never with sign-in on, whatever
+// AGENT_LOCAL_SITE says: the host's daemon runs as the Studio's own
+// account, and no person borrows the deployment's credential.
 func (s *Sites) LocalSiteAllowed(authEnabled bool) bool {
-	v := s.P.Getenv("AGENT_LOCAL_SITE")
-	return v == "1" || (v != "0" && !authEnabled)
+	return !authEnabled && s.P.Getenv("AGENT_LOCAL_SITE") != "0"
 }
 
 // AgentKey is agentKey: the viewer's own key, or on a one-person Studio

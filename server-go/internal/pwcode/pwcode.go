@@ -367,6 +367,11 @@ func (s *Service) EnsureDaemon(ctx context.Context) (*jsonv.Object, error) {
 
 func (s *Service) ensure(ctx context.Context) (*jsonv.Object, error) {
 	st := s.Status(ctx, nil)
+	if st == nil && s.p.Stopped() {
+		// Started by the Studio, the daemon would run on the pw CLI's
+		// sign-in, which the Studio was told to stop using.
+		return nil, &DaemonError{Message: "The Studio is not using the pw CLI, so it does not start pw code. Choose Use it again under Settings, Accounts."}
+	}
 	if st == nil {
 		args := []string{"code", "daemon", "start"}
 		if c := s.p.PWContext(); c != "" {

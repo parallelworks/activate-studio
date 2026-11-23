@@ -18,20 +18,28 @@ type choiceStamp struct {
 
 var choiceStamps sync.Map // *Platform -> choiceStamp
 
-func (p *Platform) rereadChoice() {
+func (p *Platform) choiceStampNow() choiceStamp {
 	st, err := os.Stat(p.choiceFile())
-	now := choiceStamp{}
-	if err == nil {
-		now = choiceStamp{mod: st.ModTime(), size: st.Size(), ok: true}
+	if err != nil {
+		return choiceStamp{}
 	}
+	return choiceStamp{mod: st.ModTime(), size: st.Size(), ok: true}
+}
+
+// markChoiceRead records the file as read now (at start), so a change
+// after it is read again.
+func (p *Platform) markChoiceRead() { choiceStamps.Store(p, p.choiceStampNow()) }
+
+func (p *Platform) rereadChoice() {
+	now := p.choiceStampNow()
 	prev, seen := choiceStamps.Swap(p, now)
 	if !seen || prev.(choiceStamp) == now {
 		return
 	}
-	c := p.loadChoice()
+	c, stopped := p.loadChoice()
 	p.mu.Lock()
-	moved := p.chosen != c
-	p.chosen = c
+	moved := p.chosen != c || p.stopped != stopped
+	p.chosen, p.stopped = c, stopped
 	p.mu.Unlock()
 	if moved {
 		p.reach.reset()

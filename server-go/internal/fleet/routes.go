@@ -81,6 +81,9 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
 			return nil, apierr.New(400, "a JSON body is required")
 		}
+		if a.Cfg.AuthEnabled() {
+			return nil, apierr.New(409, SharedOff)
+		}
 		ag, err := f.Create(Input{Name: in.Name, Goal: in.Goal, Persona: str(in.Persona), Model: in.Model, Resource: str(in.Resource), Every: in.Every,
 			WatchPath: str(in.WatchPath), ConversationID: str(in.ConversationID), OnRunEnd: in.OnRunEnd,
 			MaxTicks: in.MaxTicks, MaxTokens: in.MaxTokens, MaxTurns: in.MaxTurns}, auth.UserOf(r))

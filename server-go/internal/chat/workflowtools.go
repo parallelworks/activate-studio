@@ -52,10 +52,15 @@ func (m *Module) cli(r *http.Request, ctx ToolCtx, args []string, timeout time.D
 	return m.pwToolCLI(r.Context(), args, timeout, deref(ctx.UserKey))
 }
 
-// platformKey is toolContext's userKey || gatewayKey().
+// platformKey is the key a platform tool runs with for the person: their
+// own; on a Studio of one, without it, the owner's (GatewayKey). Never the
+// deployment's on a Studio several people use.
 func (m *Module) platformKey(ctx ToolCtx) string {
 	if k := deref(ctx.UserKey); k != "" {
 		return k
+	}
+	if m.A.Cfg.AuthEnabled() {
+		return ""
 	}
 	return m.GatewayKey()
 }
@@ -771,7 +776,7 @@ func (m *Module) toolComposeWorkflow(r *http.Request, args map[string]any, ctx T
 		}
 		steps[i] = st
 	}
-	composed, err := workflows.Compose(r.Context(), m.pf, steps, !truthy(arg(args, "parallel")))
+	composed, err := workflows.Compose(r.Context(), m.pf, m.platformKey(ctx), steps, !truthy(arg(args, "parallel")))
 	if err != nil {
 		return nil, err
 	}
@@ -1071,8 +1076,8 @@ type monitorCache struct {
 
 const monitorTTL = 300 * time.Second
 
-func (m *Module) gatewayAuth() map[string]string {
-	if k := m.GatewayKey(); k != "" {
+func gatewayAuth(k string) map[string]string {
+	if k != "" {
 		return map[string]string{"Authorization": "Bearer " + k}
 	}
 	return map[string]string{}
@@ -1082,13 +1087,13 @@ var monitorName = regexp.MustCompile(`(?i)status|hpc.?mon`)
 var httpURL = regexp.MustCompile(`(?i)^https?:`)
 var trailingSlashes = regexp.MustCompile(`/+$`)
 
-func (m *Module) probeMonitor(ctx context.Context, base string) bool {
+func (m *Module) probeMonitor(ctx context.Context, base, key string) bool {
 	c := &http.Client{Timeout: 6 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/fleet/summary", nil)
 	if err != nil {
 		return false
 	}
-	for k, v := range m.gatewayAuth() {
+	for k, v := range gatewayAuth(key) {
 		req.Header.Set(k, v)
 	}
 	res, err := c.Do(req)
@@ -1127,7 +1132,7 @@ func (m *Module) discoverStatusMonitor(r *http.Request, ctx ToolCtx) string {
 			}
 			for _, x := range cands {
 				base := trailingSlashes.ReplaceAllString(tmpl(prop(x, "externalHref")), "")
-				if m.probeMonitor(r.Context(), base) {
+				if m.probeMonitor(r.Context(), base, m.platformKey(ctx)) {
 					found = base
 					break
 				}
@@ -1190,7 +1195,7 @@ func (m *Module) toolHpcStatus(r *http.Request, args map[string]any, ctx ToolCtx
 	if path == "" {
 		return &Outcome{Result: "Unknown view: " + view + ". Views: " + strings.Join(names, ", "), Summary: "bad view"}, nil
 	}
-	res, err := platform.Get(r.Context(), base+path, m.gatewayAuth(), 30*time.Second)
+	res, err := platform.Get(r.Context(), base+path, gatewayAuth(m.platformKey(ctx)), 30*time.Second)
 	if err != nil {
 		msg := "fetch failed"
 		if r.Context().Err() == nil && strings.Contains(err.Error(), "deadline") {

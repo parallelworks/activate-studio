@@ -67,7 +67,6 @@ type Effective struct {
 	CustomTools            []json.RawMessage `json:"customTools"`
 	RagDefaultModel        string            `json:"ragDefaultModel"`
 	RagTopK                Number            `json:"ragTopK"`
-	RagAllowDeploymentKey  bool              `json:"ragAllowDeploymentKey"`
 	RagAdvertiseRagModel   bool              `json:"ragAdvertiseRagModel"`
 	RagAdvertiseAgentModel bool              `json:"ragAdvertiseAgentModel"`
 	ChatSharedHistory      bool              `json:"chatSharedHistory"`
@@ -78,7 +77,6 @@ type Effective struct {
 	KbMission              string            `json:"kbMission"`
 	BannerColor            string            `json:"bannerColor"`
 	BannerWhenEmbedded     bool              `json:"bannerWhenEmbedded"`
-	AllowKeySharing        bool              `json:"allowKeySharing"`
 	HpcStatusURL           string            `json:"hpcStatusUrl"`
 	HpcStatusWorkflow      string            `json:"hpcStatusWorkflow"`
 	ChatTemplateKwargs     string            `json:"chatTemplateKwargs"`
@@ -352,7 +350,6 @@ func (s *Store) Effective() Effective {
 		topK = 6
 	}
 	e.RagTopK = or(num("ragTopK"), Number(min(max(topK, 1), 20)))
-	e.RagAllowDeploymentKey = or(b("ragAllowDeploymentKey"), env("RAG_PROXY_ALLOW_DEPLOYMENT_KEY") == "1")
 	e.RagAdvertiseRagModel = or(b("ragAdvertiseRagModel"), env("RAG_ADVERTISE_RAG_MODEL") == "1")
 	e.RagAdvertiseAgentModel = or(b("ragAdvertiseAgentModel"), env("RAG_ADVERTISE_AGENT_MODEL") != "0")
 	e.ChatSharedHistory = or(b("chatSharedHistory"), env("CHAT_SHARED_HISTORY") != "0")
@@ -369,7 +366,6 @@ func (s *Store) Effective() Effective {
 	}
 	e.BannerColor = or(str("bannerColor"), s.envOr("BANNER_COLOR", "#24612e"))
 	e.BannerWhenEmbedded = or(b("bannerWhenEmbedded"), env("BANNER_WHEN_EMBEDDED") == "1")
-	e.AllowKeySharing = or(b("allowKeySharing"), env("ALLOW_KEY_SHARING") != "0")
 	e.HpcStatusURL = or(str("hpcStatusUrl"), env("HPC_STATUS_URL"))
 	e.HpcStatusWorkflow = or(str("hpcStatusWorkflow"), s.envOr("HPC_STATUS_WORKFLOW", "hpc_status"))
 	e.ChatTemplateKwargs = or(str("chatTemplateKwargs"), s.envOr("CHAT_TEMPLATE_KWARGS", `{"qwen":{"enable_thinking":false},"gpt-oss":{"reasoning_effort":"low"}}`))

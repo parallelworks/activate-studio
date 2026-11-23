@@ -106,7 +106,7 @@ func (p *Platform) RenewContext(name string, timeout time.Duration) string {
 		t.mu.Unlock()
 		close(c.done)
 	}()
-	stdout, err := p.Exec(context.Background(), []string{"auth", "token", "--print", "-o", "json", "--context", name}, ExecOptions{Timeout: timeout, Env: tokenEnv})
+	stdout, err := p.Exec(context.Background(), []string{"auth", "token", "--print", "-o", "json", "--context", name}, ExecOptions{Timeout: timeout, Env: tokenEnv, AsDeployment: true})
 	token := ""
 	var expiresIn *float64
 	if err == nil {

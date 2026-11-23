@@ -175,11 +175,8 @@ func (m *Module) callerKey(r *http.Request) *callerAuth {
 		}
 		return &callerAuth{Key: c.Key, Source: "stored personal key (session identity)"}
 	}
-	if m.eff().RagAllowDeploymentKey {
-		if k := m.GatewayKey(); k != "" {
-			return &callerAuth{Key: k, Source: "deployment (keyless fallback)"}
-		}
-	}
+	// No fallback to the deployment's credential: a caller without one of
+	// its own is refused.
 	return nil
 }
 

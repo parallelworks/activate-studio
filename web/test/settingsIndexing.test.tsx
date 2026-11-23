@@ -25,11 +25,11 @@ vi.mock('../src/components/LibrariesSection', () => ({
 const EFFECTIVE = {
   appName: 'Studio', kbLabel: 'Notes', theme: 'light', accent: 'navy', surface: 'neutral', iconUrl: '', iconUrlDark: '',
   sweepIntervalSec: 300, searchEngine: 'parallel', gufiLog: false, historyIntervalSec: 86400, suggestedPrompts: [],
-  visionModel: '', disabledTools: [], customTools: [], ragDefaultModel: '', ragTopK: 6, ragAllowDeploymentKey: false,
+  visionModel: '', disabledTools: [], customTools: [], ragDefaultModel: '', ragTopK: 6, 
   ragAdvertiseRagModel: false, ragAdvertiseAgentModel: true, mcpEnabled: true, mcpServers: [], delegationEnabled: true,
   delegationMaxAgents: 6, maxToolRounds: 50, delegationMaxDepth: 1, agentExecution: 'runner', voiceEnabled: false, voiceUrl: '',
   ragProxyEnabled: true, ragEndpointAutoStart: false, ragEndpointName: '', requirePersonalKey: false, chatSharedHistory: true,
-  bannerText: '', bannerColor: '#24612e', bannerWhenEmbedded: false, allowKeySharing: true, kbMission: '',
+  bannerText: '', bannerColor: '#24612e', bannerWhenEmbedded: false, kbMission: '',
   sections: [], aiEnabled: true,
 }
 

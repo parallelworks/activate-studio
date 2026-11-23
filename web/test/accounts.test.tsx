@@ -233,8 +233,8 @@ describe('Settings, Accounts on a Studio several people use', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
   it('puts signing in with ACTIVATE first, and names the sign-in once it is in use', async () => {
-    const dep = { source: 'env' as const, host: 'platform-a.example.com', context: null }
-    const s = srv({ access: accessOf({ single: false, authEnabled: true, models: dep, platform: dep, deployment: dep, cli: null, signInOffered: true }) })
+    const none = { source: 'none' as const, host: null, context: null }
+    const s = srv({ access: accessOf({ single: false, authEnabled: true, models: none, platform: none, deployment: none, cli: null, signInOffered: true }) })
     stub(s)
     let state: Record<string, unknown> = { state: 'none', host: 'platform-a.example.com' }
     sharedViewer({ mode: 'stored', last4: 'abcd' }, () => state, () => {
@@ -244,7 +244,7 @@ describe('Settings, Accounts on a Studio several people use', () => {
     })
     render(<AccountsSection />)
     await screen.findByRole('radio', { name: 'Sign in with ACTIVATE' })
-    expect(choices()).toEqual(['Sign in with ACTIVATE', 'ACTIVATE API key', 'The deployment\'s credential'])
+    expect(choices()).toEqual(['Sign in with ACTIVATE', 'ACTIVATE API key'])
     expect(screen.getByRole('radio', { name: 'Sign in with ACTIVATE' })).toBeChecked()
     expect(screen.getByRole('radio', { name: 'Sign in with ACTIVATE' })).toHaveAccessibleDescription(/^Recommended\./)
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
@@ -255,41 +255,38 @@ describe('Settings, Accounts on a Studio several people use', () => {
     expect(parts()['pw code and the Code page']).toBe('On')
   })
 
-  it('never counts the deployment\'s credential as the person\'s own: pw code, desktops and libraries ask for their sign-in', async () => {
-    const dep = { source: 'cli' as const, host: 'platform-a.example.com', context: null }
-    stub(srv({ access: accessOf({ single: false, authEnabled: true, models: dep, platform: dep, deployment: dep, cli: null, signInOffered: true }) }))
+  it('never lends the deployment\'s credential: with no sign-in of their own, every part asks for one', async () => {
+    const none = { source: 'none' as const, host: null, context: null }
+    stub(srv({ access: accessOf({ single: false, authEnabled: true, models: none, platform: none, deployment: none, cli: null, signInOffered: true }) }))
     sharedViewer({ mode: 'none' })
     render(<AccountsSection />)
-    expect(await screen.findByText(/^You have no account of your own here; the parts that may use it use the pw CLI sign-in on the server/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Not signed in\. The Studio works without ACTIVATE/)).toBeInTheDocument()
     expect(parts()).toEqual({
-      'pw code and the Code page': 'Needs your own sign-in',
-      'Libraries on ACTIVATE systems (pw ssh)': 'Needs your own sign-in',
-      Workflows: 'On, with the deployment\'s credential',
-      Desktops: 'Needs your own sign-in',
-      'The assistant\'s platform tools': 'On, with the deployment\'s credential',
-      Models: 'On, with the deployment\'s credential',
+      'pw code and the Code page': 'Sign in to use',
+      'Libraries on ACTIVATE systems (pw ssh)': 'Sign in to use',
+      Workflows: 'Sign in to use',
+      Desktops: 'Sign in to use',
+      'The assistant\'s platform tools': 'Sign in to use',
+      Models: 'Sign in to use',
     })
-    // A person on a shared Studio has no pw CLI controls: that CLI is the deployment's.
+    // No way to choose the deployment's credential, and no pw CLI controls: that CLI is the deployment's.
+    expect(screen.queryByRole('radio', { name: /deployment/ })).toBeNull()
+    expect(screen.queryByText(/deployment's credential/)).toBeNull()
     expect(screen.queryByRole('radio', { name: 'pw CLI on this computer' })).toBeNull()
-    expect(screen.queryByLabelText('Platform host to sign in to')).toBeNull()
-    // Nothing to connect through without an account of their own.
+    expect(screen.queryByRole('button', { name: 'Stop using the pw CLI' })).toBeNull()
     expect(screen.queryByText('Subscriptions through ACTIVATE')).toBeNull()
+    expect(screen.queryByText(/shared with everyone/)).toBeNull()
   })
 
-  it('labels the deployment\'s credential as the administrator\'s, and offers no way to change it', async () => {
-    const dep = { source: 'env' as const, host: 'platform-a.example.com', context: null }
-    stub(srv({ access: accessOf({ single: false, authEnabled: true, models: dep, platform: dep, deployment: dep, cli: null, signInOffered: true }) }))
+  it('names an OpenAI-compatible endpoint the administrator set as where everyone\'s models come from', async () => {
+    const none = { source: 'none' as const, host: null, context: null }
+    const admin = { source: 'admin-endpoint' as const, host: 'models.example.org', context: null, baseUrl: 'https://models.example.org/v1' }
+    stub(srv({ access: accessOf({ single: false, authEnabled: true, models: admin, platform: none, deployment: admin, cli: null, signInOffered: true }) }))
     sharedViewer({ mode: 'none' })
-    render(<AccountsSection requirePersonalKey />)
-    await screen.findByRole('radio', { name: 'The deployment\'s credential' })
-    choose('The deployment\'s credential')
-    expect(screen.getByText('Administrator setting')).toBeInTheDocument()
-    expect(screen.getByText(/The administrator set this Studio's own ACTIVATE credential \(platform-a\.example\.com\)\./)).toBeInTheDocument()
-    expect(screen.getByText(/pw code, desktops and your own libraries always run as you, so they never use it\./)).toBeInTheDocument()
-    expect(screen.getByText(/requires each person to use their own account for models/)).toBeInTheDocument()
-    // No key of the person's own: nothing to remove, and no field for the deployment's.
-    expect(screen.queryByRole('button', { name: /use the deployment's/ })).toBeNull()
-    expect(screen.queryByLabelText('Platform key or token')).toBeNull()
+    render(<AccountsSection />)
+    await screen.findByRole('radio', { name: 'Sign in with ACTIVATE' })
+    expect(parts().Models).toBe('From the administrator\'s endpoint')
+    expect(parts().Workflows).toBe('Sign in to use')
   })
 
   it('asks a person whose connection carries no verified identity to open the app through the platform', async () => {
@@ -299,6 +296,28 @@ describe('Settings, Accounts on a Studio several people use', () => {
     render(<AccountsSection />)
     expect(await screen.findByText(/Your accounts attach to your platform-verified identity/)).toBeInTheDocument()
     expect(screen.queryByRole('radio')).toBeNull()
+  })
+})
+
+describe('Stop using the pw CLI', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('lets a Studio of one work as for someone without ACTIVATE, and use it again', async () => {
+    const s = srv()
+    stub(s)
+    render(<AccountsSection />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop using the pw CLI' }))
+    expect(await screen.findByText('The Studio is not using the pw CLI')).toBeInTheDocument()
+    expect(s.calls.find(c => c.url === '/api/access/cli/use')?.body).toEqual({ use: false })
+    expect(screen.getByText(/The pw CLI is still signed in, for the other tools on this computer\./)).toBeInTheDocument()
+    expect(screen.getByText(/^Not using the pw CLI\./)).toBeInTheDocument()
+    expect(Object.values(parts()).every(v => v === 'Sign in to use')).toBe(true)
+    // Nothing was signed out, and the contexts wait until it is used again.
+    expect(s.calls.some(c => /logout|sign-out|signout/.test(c.url))).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Use it again' }))
+    expect(await screen.findByText(signedInCli)).toBeInTheDocument()
+    expect(s.calls.filter(c => c.url === '/api/access/cli/use').map(c => c.body)).toEqual([{ use: false }, { use: true }])
+    expect(parts()['pw code and the Code page']).toBe('On')
   })
 })
 
