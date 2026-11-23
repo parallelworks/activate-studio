@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -463,6 +464,15 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	// not be verified. lastWrite is the latest write_kb_file result.
 	changed := false
 	lastWrite := ""
+	// asked is how many rows the user's message asks for ("a sheet of 250
+	// rows"), 0 when it names none; held is how many the workbook last
+	// written holds after its header (heldRows), -1 before one is written.
+	asked := 0
+	if st.lastUser != nil {
+		asked = askedRows(st.lastUser.Text())
+	}
+	heldRows, heldPath := -1, ""
+	shortNudges := 0
 	for iter := 0; iter < maxRounds; iter++ {
 		*st.turnBreak = true
 		for _, s := range m.Conv.TakeSteers(st.convID) {
@@ -619,6 +629,9 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 					changed = true
 					if tc.Function.Name == "write_kb_file" {
 						lastWrite = jsval.Slice(o.Result, 400)
+						if n, ok := rowsHeld(o.Result); ok {
+							heldRows, heldPath = n, writePath(tc.Function.Arguments)
+						}
 					}
 				}
 				parts[i].Result = sp(o.Summary)
@@ -642,7 +655,13 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 					ev.Set("gufi", o.Gufi)
 				}
 				res.event("tool", ev)
-				push(llm.Message{Role: "tool", ToolCallID: tc.ID, Content: sp(o.Result)})
+				result := o.Result
+				if tc.Function.Name == "write_kb_file" && !o.Failed && asked > 0 {
+					if n, ok := rowsHeld(o.Result); ok {
+						result += rowsAgainstAsked(n, asked)
+					}
+				}
+				push(llm.Message{Role: "tool", ToolCallID: tc.ID, Content: sp(result)})
 			}
 			if held != nil && st.viewer != nil && st.convID != "" {
 				id := parts[held.i].ID
@@ -664,6 +683,19 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 				st.finish(sp("tool_approval"), messageID)
 				return nil
 			}
+			continue
+		}
+		// A workbook short of the rows the user asked for, with no request
+		// to add them, is not the end: the model is asked to add the rest
+		// (emulated path), whatever its reply says.
+		if foldSystem && asked > 0 && heldRows >= 0 && heldRows < asked && !nudged && shortNudges < maxShortNudges && iter < maxRounds-1 && ctx.Err() == nil {
+			nudged = true
+			shortNudges++
+			m.A.Log.Warn("workbook short of the rows asked; asking for the rest", "iter", iter, "held", heldRows, "asked", asked)
+			if c := jsTrim(turn.Content); c != "" {
+				push(llm.Message{Role: "assistant", Content: sp(c)})
+			}
+			push(llm.Message{Role: "system", Content: sp(fmt.Sprintf("%s holds %d of the %d rows the user asked for, so it is not finished. Add the next %d rows now: write_kb_file with the same path, append=true and the same sheet name, the rows as values, in parts of under about 12,000 characters, until it holds all %d. Then answer.", orStr(heldPath, "The workbook"), heldRows, asked, asked-heldRows, asked))})
 			continue
 		}
 		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && !withheld && !showsSomething.MatchString(turn.Content) && jsval.Len(jsTrim(turn.Content)) < 200) {
@@ -868,13 +900,82 @@ func (m *Module) runCall(r *http.Request, st *loopState, tc llm.ToolCall, i int,
 	if hit, ok := repeatedCall(cache, cacheMu, name, tc.Function.Arguments); ok {
 		return &Outcome{Result: "[You already made this exact call in this reply; identical result repeated below. Do not repeat it again.]\n" + hit, Summary: "repeated call (cached)"}
 	}
+	if hit, ok := askedTwice(cache, cacheMu, name, tc.Function.Arguments); ok {
+		return &Outcome{Result: "[Not run: this asks the same as two calls before it in this reply, with only how many results or the argument's name changed, and they gave the result below. Asking again gives the same. Go on with the task instead: a file the user asked you to make does not exist until you write it with write_kb_file.]\n" + hit, Summary: "same as before, not run"}
+	}
 	out, err := m.Tools.Execute(r, name, tc.Function.Arguments, toolCtx())
 	if err != nil {
 		return &Outcome{Result: "tool failed: " + err.Error(), Summary: "failed", Failed: true}
 	}
 	rememberCall(cache, cacheMu, name, tc.Function.Arguments, out.Result)
+	rememberAsked(cache, cacheMu, name, tc.Function.Arguments, out.Result)
 	st.markThinking()
 	return out
+}
+
+// countArgs are the arguments that only say how many results to give;
+// calls that differ in them alone ask the same thing.
+var countArgs = map[string]bool{"limit": true, "max_results": true, "top_k": true, "k": true, "count": true, "n": true, "max": true}
+
+// askedKey is a call by what it asks: its tool and its argument values,
+// without those that only say how many, whatever the arguments are named
+// ({"name":"a.xlsx"} and {"query":"a.xlsx"} ask the same).
+func askedKey(name, args string) string {
+	var v map[string]any
+	if json.Unmarshal([]byte(args), &v) != nil {
+		return ""
+	}
+	var vals []string
+	for k, x := range v {
+		if countArgs[strings.ToLower(k)] {
+			continue
+		}
+		if s, ok := x.(string); ok {
+			vals = append(vals, strings.ToLower(strings.TrimSpace(s)))
+			continue
+		}
+		b, _ := json.Marshal(x)
+		vals = append(vals, string(b))
+	}
+	sort.Strings(vals)
+	return "\x00asked:" + name + ":" + strings.Join(vals, "\x00")
+}
+
+// askedTwice is the result of a call that asks what two calls before it
+// in this reply asked: a reading call, not run a third time.
+func askedTwice(cache map[string]string, mu *sync.Mutex, name, args string) (string, bool) {
+	if liveTools[name] || changingTools[name] {
+		return "", false
+	}
+	k := askedKey(name, args)
+	if k == "" {
+		return "", false
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if cache[k+"\x00n"] == "2" {
+		return cache[k], true
+	}
+	return "", false
+}
+
+// rememberAsked counts a reading call by what it asks.
+func rememberAsked(cache map[string]string, mu *sync.Mutex, name, args, result string) {
+	if liveTools[name] || changingTools[name] {
+		return
+	}
+	k := askedKey(name, args)
+	if k == "" {
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if cache[k+"\x00n"] == "" {
+		cache[k+"\x00n"] = "1"
+	} else {
+		cache[k+"\x00n"] = "2"
+	}
+	cache[k] = result
 }
 
 // emNonceRe reads the nonce from an emulated call's id, em-<nonce>-<ms>-<i>.
@@ -1005,4 +1106,71 @@ func tailChars(s string, n int) string {
 		return s
 	}
 	return string(r[len(r)-n:])
+}
+
+// maxShortNudges is how many times a turn asks for the rest of a workbook
+// short of the rows asked for.
+const maxShortNudges = 4
+
+// askedRowsRe reads a count of rows from a request: "250 rows", "600 data
+// rows", "1,000 records".
+var askedRowsRe = regexp.MustCompile(`(?i)\b(\d{1,3}(?:,\d{3})+|\d+)\s+(?:data\s+|more\s+)?(?:rows|records|lines|entries)\b`)
+
+// askedRows is the largest count of rows text asks for, 0 for none.
+func askedRows(text string) int {
+	best := 0
+	for _, m := range askedRowsRe.FindAllStringSubmatch(text, -1) {
+		if n, err := strconv.Atoi(strings.ReplaceAll(m[1], ",", "")); err == nil && n > best && n <= 1_000_000 {
+			best = n
+		}
+	}
+	if best < 2 {
+		return 0
+	}
+	return best
+}
+
+var (
+	heldPartRe = regexp.MustCompile(`(?:workbook of \d+ sheets? \(|now holds: )([^\n]*?)(?:\)[;,.] |\)$|; \d+ bytes in all)`)
+	heldRowsRe = regexp.MustCompile(`(\d+) rows? after the header`)
+)
+
+// rowsHeld is how many rows a workbook write's result says its sheets
+// hold after their headers, summed; ok is false for another file. What a
+// replaced workbook held before is not counted.
+func rowsHeld(result string) (int, bool) {
+	m := heldPartRe.FindStringSubmatch(result)
+	if m == nil {
+		return 0, false
+	}
+	n, found := 0, false
+	for _, x := range heldRowsRe.FindAllStringSubmatch(m[1], -1) {
+		if v, err := strconv.Atoi(x[1]); err == nil {
+			n += v
+			found = true
+		}
+	}
+	return n, found
+}
+
+// rowsAgainstAsked is said after a workbook write's result when the user
+// asked for a count of rows.
+func rowsAgainstAsked(held, asked int) string {
+	switch {
+	case held < asked:
+		return fmt.Sprintf("\n[The user asked for %d rows; the workbook holds %d after the header, so %d are still to add with append=true before you answer.]", asked, held, asked-held)
+	case held > asked:
+		return fmt.Sprintf("\n[The user asked for %d rows; the workbook holds %d after the header, more than asked. Say %d in your answer, or write it again with %d.]", asked, held, held, asked)
+	}
+	return fmt.Sprintf("\n[The user asked for %d rows; the workbook holds %d after the header, all of them.]", asked, held)
+}
+
+// writePath is the path a write_kb_file call names.
+func writePath(args string) string {
+	var v map[string]any
+	if json.Unmarshal([]byte(args), &v) != nil {
+		return ""
+	}
+	s, _ := v["path"].(string)
+	return s
 }
