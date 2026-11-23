@@ -1,10 +1,13 @@
 package chat
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
@@ -160,5 +163,125 @@ func TestTheSessionFeedOpensOnlyForTheStudiosOwnPages(t *testing.T) {
 		if res.StatusCode != 403 {
 			t.Errorf("%s from another origin: %d %v", u, res.StatusCode, out)
 		}
+	}
+}
+
+// logTo sends the module's log to a buffer the test reads.
+type lockedBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+func (l *lockedBuf) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+
+func logTo(m *Module) *lockedBuf {
+	buf := &lockedBuf{}
+	m.A.Log = slog.New(slog.NewTextHandler(buf, nil))
+	return buf
+}
+
+// A plan's answer that names a mode is a mode change: held to the
+// machine's ceiling for a relayed session, and logged on either path.
+func TestAPlanAnswersModeIsHeldToTheCeilingAndLogged(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	m, base, _, _ := relayModule(t, local, remote)
+	log := logTo(m)
+	relayedChat(t, base)
+	s := base + "/api/code/machines/m2/sessions/s1/approvals/"
+	if code, out, _ := send(t, http.MethodPost, s+"ap1", `{"allowed":true,"mode":"auto"}`); code != 403 || !strings.Contains(out["detail"].(string), "takes at most accept-edits") {
+		t.Errorf("auto: %d %v", code, out)
+	}
+	if code, _, _ := send(t, http.MethodPost, s+"ap2", `{"allowed":true,"mode":"yolo"}`); code != 400 {
+		t.Errorf("unknown mode: %d", code)
+	}
+	if len(remote.answers) != 0 {
+		t.Errorf("a refused answer reached the session: %v", remote.answers)
+	}
+	if code, out, _ := send(t, http.MethodPost, s+"ap3", `{"allowed":true,"mode":"accept-edits"}`); code != 200 && code != 204 {
+		t.Errorf("accept-edits: %d %v", code, out)
+	}
+	if l := log.String(); !strings.Contains(l, "permission mode changed") || !strings.Contains(l, "mode=accept-edits") || !strings.Contains(l, `via="plan answer"`) || !strings.Contains(l, "relay=true") {
+		t.Errorf("not logged: %s", l)
+	}
+	// An answer without a mode is not a mode change.
+	before := strings.Count(log.String(), "permission mode changed")
+	send(t, http.MethodPost, s+"ap4", `{"allowed":true}`)
+	if strings.Count(log.String(), "permission mode changed") != before {
+		t.Errorf("an answer without a mode was logged as a change")
+	}
+}
+
+// An approval's or queued turn's id is one plain segment: no dot segment,
+// encoded or not, no ';', space or '%', so nothing in front of the session
+// can turn it into another route.
+func TestARouteIDIsOnePlainSegment(t *testing.T) {
+	for _, id := range []string{"..", ".", "%2e%2e", "%252e%252e", ".hidden", "a;x=1", "a b", "a%20b", "", strings.Repeat("a", 129)} {
+		for _, prefix := range []string{"/approvals/", "/queued/"} {
+			method := http.MethodPost
+			if prefix == "/queued/" {
+				method = http.MethodDelete
+			}
+			if k := pwcode.ProxyRoute(method, prefix+id); k != "" {
+				t.Errorf("%s %s%s: %q", method, prefix, id, k)
+			}
+		}
+	}
+	for _, id := range []string{"ap1", "toolu_01ABC", "t-1.2", "a:b"} {
+		if pwcode.ProxyRoute(http.MethodPost, "/approvals/"+id) == "" || pwcode.ProxyRoute(http.MethodDelete, "/queued/"+id) == "" {
+			t.Errorf("%s refused", id)
+		}
+	}
+	local, remote := &fakePW{}, &fakePW{}
+	_, base, plat, _ := relayModule(t, local, remote)
+	relayedChat(t, base)
+	plat.mu.Lock()
+	plat.relayed = nil
+	plat.mu.Unlock()
+	for _, u := range []string{"/queued/%2e%2e", "/queued/%252e%252e", "/approvals/%2e%2e", "/queued/a%3Bx=1"} {
+		method := http.MethodDelete
+		if strings.HasPrefix(u, "/approvals/") {
+			method = http.MethodPost
+		}
+		if code, _, _ := send(t, method, base+"/api/code/machines/m2/sessions/s1"+u, `{}`); code != 404 {
+			t.Errorf("%s %s: %d", method, u, code)
+		}
+	}
+	plat.mu.Lock()
+	defer plat.mu.Unlock()
+	if len(plat.relayed) != 0 {
+		t.Errorf("sent on: %v", plat.relayed)
+	}
+}
+
+// The ceiling check fails closed: a ceiling the Studio does not know, or a
+// listing it cannot read, allows read-only, and the refusal says why.
+func TestTheCeilingCheckFailsClosed(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	_, base, plat, _ := relayModule(t, local, remote)
+	relayedChat(t, base)
+	s := base + "/api/code/machines/m2/sessions/s1/settings"
+	plat.mu.Lock()
+	plat.others[0]["remoteMaxPermissionMode"] = "plan"
+	plat.mu.Unlock()
+	if code, out, _ := send(t, http.MethodPatch, s, `{"permissionMode":"accept-edits"}`); code != 403 || !strings.Contains(out["detail"].(string), "does not know, plan") {
+		t.Errorf("unknown ceiling: %d %v", code, out)
+	}
+	if code, _, _ := send(t, http.MethodPatch, s, `{"permissionMode":"read-only"}`); code != 200 {
+		t.Errorf("read-only under an unknown ceiling: %d", code)
+	}
+	plat.mu.Lock()
+	delete(plat.others[0], "remoteMaxPermissionMode")
+	plat.listDown = true
+	plat.mu.Unlock()
+	if code, out, _ := send(t, http.MethodPatch, s, `{"permissionMode":"accept-edits"}`); code != 403 || !strings.Contains(out["detail"].(string), "could not read the machine's limit") {
+		t.Errorf("listing down: %d %v", code, out)
+	}
+	if got := strings.Join(remote.settings, "|"); got != `{"permissionMode":"read-only"}` {
+		t.Errorf("settings sent: %s", got)
 	}
 }

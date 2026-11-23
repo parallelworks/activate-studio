@@ -73,7 +73,9 @@ func (m *Module) personTools(r *http.Request, tc ToolCtx) []ToolSpec {
 		if n == "save_chat_to_library" {
 			continue
 		}
-		if !own && (isPlatformTool(n) || (needsPlatform(n) && !chatDelegateTools[n])) {
+		if !own && (isPlatformTool(n) || (needsPlatform(n) && !chatDelegateTools[n]) || n == "show_in_viewer") {
+			// show_in_viewer reads a workflow with the caller's key too
+			// (workflow_dag), which empty is the Studio's own.
 			continue
 		}
 		out = append(out, s)

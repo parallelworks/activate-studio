@@ -216,3 +216,23 @@ func TestTheSetupCardNamesTheCommandAndSaysWhenItWorked(t *testing.T) {
 		t.Errorf("MCP access off: %v", out)
 	}
 }
+
+// show_in_viewer reads a workflow with the caller's key: a person without
+// an ACTIVATE credential of their own here is not offered it and cannot
+// call it, so it never runs on the Studio's key.
+func TestTheViewerToolNeedsTheCallersOwnKey(t *testing.T) {
+	m := bridgeStudio(t)
+	if slices.Contains(listedTools(t, m, bobProxy, nil), "show_in_viewer") {
+		t.Errorf("listed without a key of his own")
+	}
+	_, out := mcpAs(t, m, bobProxy, nil, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"show_in_viewer","arguments":{"kind":"workflow_dag","target":"x"}}}`)
+	if out["error"] == nil {
+		t.Errorf("called without a key of his own: %v", out)
+	}
+	if err := m.Keys.Set("bob", "pwt_bobs.key", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(listedTools(t, m, bobProxy, nil), "show_in_viewer") {
+		t.Errorf("not listed with his own key")
+	}
+}

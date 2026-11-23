@@ -157,6 +157,14 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		if err := m.checkSettings(r, c, t, body); err != nil {
 			return writeErr(w, err)
 		}
+	case "POST /approvals/{approval}":
+		// A plan's answer names the mode the session leaves plan mode
+		// into: held to the same rules as a settings change.
+		if o := jsonv.Obj(body); o != nil && o.Has("mode") {
+			if err := m.checkMode(r, c, t, jsonv.String(jsonv.Path(o, "mode"))); err != nil {
+				return writeErr(w, err)
+			}
+		}
 	case "POST /messages":
 		m.studioToolsFor(ctx, r, c, t)
 		if d, err := pwcode.GetSession(ctx, t.client, id); err == nil {
@@ -180,8 +188,11 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		}
 	case "PATCH /settings":
 		if mode := jsonv.String(jsonv.Path(body, "permissionMode")); mode != "" {
-			m.A.Log.Info("pw code chat: permission mode changed", "user", userID(r), "conversation", c.ID, "session", id,
-				"site", c.PWCode.Site, "relay", t.relay, "mode", mode)
+			m.logModeChange(r, c, t, mode, "settings")
+		}
+	case "POST /approvals/{approval}":
+		if mode := jsonv.String(jsonv.Path(body, "mode")); mode != "" {
+			m.logModeChange(r, c, t, mode, "plan answer")
 		}
 	case "POST /messages":
 		m.recordSent(r, c, t, jsonv.String(jsonv.Path(body, "text")), lastSeq)
@@ -207,27 +218,47 @@ func (m *Module) checkSettings(r *http.Request, c *conversations.Conversation, t
 			return pwErr(400, "The Studio changes a session's mode, model and effort only; change "+k+" where the session runs.")
 		}
 	}
-	mode := jsonv.String(jsonv.Path(o, "permissionMode"))
 	if !o.Has("permissionMode") {
 		return nil
 	}
+	return m.checkMode(r, c, t, jsonv.String(jsonv.Path(o, "permissionMode")))
+}
+
+// checkMode refuses a permission mode the Studio does not know, or, for a
+// relayed session, one above what the machine takes from ACTIVATE. It
+// fails closed: when the platform's listing cannot be read, or names a
+// ceiling the Studio does not rank, the machine is taken to allow
+// read-only, and the refusal says why.
+func (m *Module) checkMode(r *http.Request, c *conversations.Conversation, t *pwTarget, mode string) error {
 	if _, ok := modeRank[mode]; !ok {
 		return pwErr(400, "Not a permission mode: "+mode+".")
 	}
 	if !t.relay {
 		return nil
 	}
-	ceiling, name := defaultRemoteCeiling, firstNonEmpty(c.PWCode.MachineName, c.PWCode.Machine)
-	if mach, err := codesessions.PlatformMachine(r, m.pf, c.PWCode.Machine); err == nil {
+	ceiling, name, why := defaultRemoteCeiling, firstNonEmpty(c.PWCode.MachineName, c.PWCode.Machine), ""
+	mach, err := codesessions.PlatformMachine(r, m.pf, c.PWCode.Machine)
+	if err != nil || mach == nil {
+		ceiling, why = "read-only", " (the Studio could not read the machine's limit from ACTIVATE, so it allows read-only)"
+	} else {
 		if s := jsonv.String(jsonv.Path(mach, "remoteMaxPermissionMode")); s != "" {
 			ceiling = s
 		}
 		name = firstNonEmpty(jsonv.String(jsonv.Path(mach, "name")), name)
 	}
-	if rank, ok := modeRank[ceiling]; ok && modeRank[mode] > rank {
-		return pwErr(403, name+" takes at most "+ceiling+" from ACTIVATE. A wider mode is set on the machine itself, in pw code there.")
+	if _, ok := modeRank[ceiling]; !ok {
+		ceiling, why = "read-only", " (ACTIVATE names a limit the Studio does not know, "+ceiling+", so it allows read-only)"
+	}
+	if modeRank[mode] > modeRank[ceiling] {
+		return pwErr(403, name+" takes at most "+ceiling+" from ACTIVATE"+why+". A wider mode is set on the machine itself, in pw code there.")
 	}
 	return nil
+}
+
+// logModeChange records a permission mode change the Studio sent, and how.
+func (m *Module) logModeChange(r *http.Request, c *conversations.Conversation, t *pwTarget, mode, via string) {
+	m.A.Log.Info("pw code chat: permission mode changed", "user", userID(r), "conversation", c.ID, "session", c.PWCode.Session,
+		"site", c.PWCode.Site, "relay", t.relay, "mode", mode, "via", via)
 }
 
 // studioToolsFor makes sure, before a message, that a session the Studio

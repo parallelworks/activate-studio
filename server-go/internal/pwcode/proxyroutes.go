@@ -1,6 +1,9 @@
 package pwcode
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // The requests a Studio page may send a pw code session it shows, by
 // method and the route's suffix after /v1/sessions/{id} (the platform's
@@ -27,15 +30,21 @@ var proxyRoutes = map[string]bool{
 	"PATCH /settings":            true,
 }
 
+// routeID is what an id in a route (an approval's, a queued turn's) may be,
+// as the Studio's own approvals route takes it: no dot segment, encoded or
+// not, no ';', space or '%', so the route sent on is the one checked here
+// whatever a hop in front of the session makes of it.
+var routeID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+
 // ProxyRoute is the allowlist key for a request with method and suffix (the
 // route after /v1/sessions/{id}, without its query), or "" for one the
-// Studio does not send. One id in a route (an approval's, a queued turn's)
-// must be a single path segment.
+// Studio does not send. One id in a route must be a single segment that
+// routeID takes.
 func ProxyRoute(method, suffix string) string {
 	base := suffix
 	for prefix, name := range map[string]string{"/approvals/": "{approval}", "/queued/": "{turn}"} {
 		if rest, ok := strings.CutPrefix(suffix, prefix); ok {
-			if rest == "" || strings.ContainsAny(rest, "/?#") {
+			if !routeID.MatchString(rest) {
 				return ""
 			}
 			base = prefix + name
