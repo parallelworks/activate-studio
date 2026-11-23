@@ -37,6 +37,9 @@ import { EmptyChatBrand } from '../components/EmptyChatBrand'
 import { SaveChatButton } from '../components/SaveChatButton'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
 import { fitControls, watchNotices } from '../chatTop'
+import { PWCodeSession } from '../pwcode/PWCodeSession'
+import { useChatLink } from '../pwcode/useChatLink'
+import { PWCodeToolsNote } from '../pwcode/ToolsNote'
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -391,6 +394,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
     )
   }, [startNewChat])
   const cfg = useAppConfig()
+  // A chat with a pw code session shows the session itself (pwcode/).
+  const pw = useChatLink(activeId)
   // The libraries the chat searches are part of its scope, ticked in the
   // same menu as the labels: every library until the user narrows it. The
   // button names the choice when there is more than one library.
@@ -543,12 +548,12 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
               </Callout>
             </div>
           )}
-          {!showAttachments && !showManage && <PWCodeApprovals conversationId={activeId} />}
+          {!showAttachments && !showManage && !pw.shown && <PWCodeApprovals conversationId={activeId} />}
           {!showAttachments && !showManage && <PWCodeNotice conversationId={activeId} />}
           {!showAttachments && !showManage && <PWCodeModelNotice conversationId={activeId} />}
           <FilterReloader />
           <TransferNoteWatcher />
-          <PWCodeWatcher />
+          {!pw.shown && <PWCodeWatcher />}
           <RetryWithModel />
           <ModelShare />
           <ChatLayout
@@ -583,7 +588,10 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
                 onActiveDeleted={() => setActiveId(null)}
                 onClose={() => setShowManage(false)}
               />
-            ) : showAttachments ? <AttachmentManager /> : activeId ? <ChatThread conversationId={activeId} find={active} /> : (
+            ) : showAttachments ? <AttachmentManager /> : activeId ? (pw.shown && pw.link?.session ? (
+              <PWCodeSession key={activeId} machine={pw.machine} sessionId={pw.link.session} username={cfg.user?.username ?? ''}
+                notes={<PWCodeToolsNote conversationId={activeId} link={pw.link} />} />
+            ) : <ChatThread conversationId={activeId} find={active} />) : (
               // Read live, so a theme toggle swaps a light and a dark icon.
               <EmptyChatBrand cfg={cfg} dark={effectiveTheme === 'dark'}>
                 <ChatEmptyState />

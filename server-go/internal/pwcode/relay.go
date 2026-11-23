@@ -44,18 +44,10 @@ import (
 //
 // The platform does not relay attach, mcp, goal or state, so the Studio
 // cannot give such a session its library tools. Of what it does relay, the
-// client sends only what a relayed chat uses, by method and route, and
-// refuses everything else without asking: the platform also relays, for
-// one, DELETE on a session's own route.
-
-// relayed are the requests the client sends, by method and the route's
-// suffix after /v1/sessions/{id}: "" is the session's detail.
-var relayed = map[string]bool{
-	"GET ":             true,
-	"POST /messages":   true,
-	"POST /interrupt":  true,
-	"POST /approvals/": true,
-}
+// client sends only what a Studio page showing the session uses, by method
+// and route (ProxyRoute, proxyroutes.go), and refuses everything else
+// without asking: the platform also relays, for one, DELETE on a session's
+// own route.
 
 // relayHeartbeat is the heartbeat the platform Code page asks of the feed:
 // a {"type":"heartbeat"} frame every 10 seconds.
@@ -102,15 +94,7 @@ func (c *RelayClient) relayPath(method, route string) string {
 	if i := strings.IndexByte(rest, '/'); i >= 0 {
 		id, suffix = rest[:i], rest[i:]
 	}
-	base := suffix
-	if a, ok := strings.CutPrefix(suffix, "/approvals/"); ok {
-		// One approval, by its id.
-		if a == "" || strings.Contains(a, "/") {
-			return ""
-		}
-		base = "/approvals/"
-	}
-	if id == "" || !relayed[method+" "+base] {
+	if id == "" || ProxyRoute(method, suffix) == "" {
 		return ""
 	}
 	return "/api/code/machines/" + platform.EncodeURIComponent(c.machine) + "/sessions/" + id + suffix + query

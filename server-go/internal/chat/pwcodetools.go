@@ -58,6 +58,7 @@ var chatReadTools = map[string]bool{
 	"validate_workflow": true, "workflow_configs": true, "hpc_environments": true, "watch_run": true, "workflow_runs": true,
 	"workflow_run_detail": true, "list_sessions": true, "list_clusters": true, "list_storage": true, "hpc_status": true,
 	"agent_sites": true, "agent_sessions": true, "agent_status": true, "task_status": true,
+	"use_skill": true,
 }
 
 // chatDelegateTools are the agent tools a person's pw code chat gets: delegate,
@@ -85,7 +86,9 @@ func chatLeftOut(name string) bool {
 
 // chatTools is the Studio tools a pw code chat of r's viewer gets, in
 // catalog order: the built-in tools this deployment offers that viewer,
-// less those turned off and those left out above. delegates is a person's
+// less those turned off and those left out above, then the deployment's
+// own tools, use_skill and the attached MCP servers' tools, as the Studio
+// assistant gets them. delegates is a person's
 // chat, which gets the delegation tools where the Studio assistant would:
 // delegation on, and a site to run on (the platform, or this host).
 func (m *Module) chatTools(r *http.Request, delegates bool) []ToolSpec {
@@ -112,6 +115,14 @@ func (m *Module) chatTools(r *http.Request, delegates bool) []ToolSpec {
 			continue
 		}
 		out = append(out, s)
+	}
+	// The rest of what the Studio assistant is offered: the deployment's
+	// own tools, use_skill, and the tools of the MCP servers attached in
+	// Settings, less those turned off.
+	for _, s := range m.activeToolSpecsWithRemote() {
+		if !isBuiltin(s.Name) && !slices.Contains(specNames(out), s.Name) {
+			out = append(out, s)
+		}
 	}
 	return out
 }

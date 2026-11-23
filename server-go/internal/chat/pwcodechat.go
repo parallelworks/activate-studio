@@ -700,23 +700,23 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 	case "state":
 		if u := jsonv.String(jsonv.Path(ev, "state", "remoteUrl")); u != "" && u != t.link.URL {
 			t.link.URL = u
-			t.res.event("pwcode", reqbody.O("session", t.link.Session, "url", u, "site", t.link.Site, "workspace", t.link.Workspace, "model", t.link.Model, "modelNote", t.link.ModelNote))
+			t.emit("pwcode", reqbody.O("session", t.link.Session, "url", u, "site", t.link.Site, "workspace", t.link.Workspace, "model", t.link.Model, "modelNote", t.link.ModelNote))
 		}
 	case "chunk":
 		if t.mine(ev) {
 			s := str("content")
 			t.content.WriteString(s)
-			t.res.event("content", reqbody.O("text", s))
+			t.emit("content", reqbody.O("text", s))
 		}
 	case "reasoning":
 		if s := str("content"); s != "" && t.mine(ev) {
-			t.res.event("reasoning", reqbody.O("text", s))
+			t.emit("reasoning", reqbody.O("text", s))
 		}
 	case "tool_start":
 		if t.mine(ev) {
 			id, name := str("callId"), strings.TrimPrefix(str("name"), studioToolPrefix)
 			t.parts = append(t.parts, conversations.Part{Kind: "tool_call", ID: id, Name: name, Args: str("args"), Status: "running"})
-			t.res.event("tool", reqbody.O("phase", "call", "id", id, "name", name, "args", str("args")))
+			t.emit("tool", reqbody.O("phase", "call", "id", id, "name", name, "args", str("args")))
 		}
 	case "tool_end":
 		if t.mine(ev) {
@@ -734,7 +734,7 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 					t.parts[i].Result = &r
 				}
 			}
-			t.res.event("tool", reqbody.O("phase", "result", "id", id, "name", name, "summary", firstLine(result, 160), "error", bad))
+			t.emit("tool", reqbody.O("phase", "result", "id", id, "name", name, "summary", firstLine(result, 160), "error", bad))
 		}
 	case "approval_request":
 		a := jsonv.Obj(jsonv.Path(ev, "approval"))
@@ -745,14 +745,14 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 					a.Set(k, strings.TrimPrefix(v, studioToolPrefix))
 				}
 			}
-			t.res.event("pwcode_approval", reqbody.O("conversationId", t.convID, "session", t.link.Session, "url", t.link.URL, "approval", a))
+			t.emit("pwcode_approval", reqbody.O("conversationId", t.convID, "session", t.link.Session, "url", t.link.URL, "approval", a))
 		}
 	case "approval_resolved":
-		t.res.event("pwcode_approval_resolved", reqbody.O("conversationId", t.convID, "approvalId", str("approvalId")))
+		t.emit("pwcode_approval_resolved", reqbody.O("conversationId", t.convID, "approvalId", str("approvalId")))
 	case "warning":
 		if s := str("content"); strings.HasPrefix(s, "mcp studio:") {
 			t.m.A.Log.Warn("pw code chat: the Studio's MCP server did not connect", "session", t.link.Session, "detail", s)
-			t.res.event("reasoning", reqbody.O("text", "\n↳ the Studio's library tools did not connect to pw code\n"))
+			t.emit("reasoning", reqbody.O("text", "\n↳ the Studio's library tools did not connect to pw code\n"))
 		}
 	case "error":
 		if t.mine(ev) {
@@ -763,7 +763,7 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 		if t.mine(ev) {
 			if s := str("content"); s != "" {
 				if t.content.Len() == 0 {
-					t.res.event("content", reqbody.O("text", s))
+					t.emit("content", reqbody.O("text", s))
 				}
 				t.content.Reset()
 				t.content.WriteString(s)
@@ -792,12 +792,12 @@ func (t *pwTurn) finish() {
 		t.failed = ""
 		if strings.TrimSpace(content) == "" {
 			content = "Stopped."
-			t.res.event("content", reqbody.O("text", content))
+			t.emit("content", reqbody.O("text", content))
 		}
 	}
 	if t.failed != "" && strings.TrimSpace(content) == "" {
 		content = "pw code did not finish this reply: " + t.failed
-		t.res.event("content", reqbody.O("text", content))
+		t.emit("content", reqbody.O("text", content))
 	}
 	model := t.model
 	if model == "" {
@@ -821,7 +821,7 @@ func (t *pwTurn) finish() {
 			s = ""
 		}
 		reasoning = fmt.Sprintf("pw code ran %d tool call%s in %ds.", calls, s, int(max(1, time.Since(t.started).Round(time.Second).Seconds())))
-		t.res.event("reasoning", reqbody.O("text", reasoning))
+		t.emit("reasoning", reqbody.O("text", reasoning))
 	}
 	m.Conv.RecordAssistantTurn(t.convID, conversations.Message{
 		ID: messageID, Role: "assistant", Content: sp(content), ParentID: t.parent, Timestamp: nowISO(),
@@ -832,8 +832,10 @@ func (t *pwTurn) finish() {
 	if t.failed != "" {
 		m.A.Log.Warn("pw code chat turn did not finish", "session", t.link.Session, "why", t.failed)
 	}
-	t.res.event("done", reqbody.O("content", content, "finishReason", "stop", "model", shown, "messageId", messageID))
-	t.res.end()
+	t.emit("done", reqbody.O("content", content, "finishReason", "stop", "model", shown, "messageId", messageID))
+	if t.res != nil {
+		t.res.end()
+	}
 }
 
 // sliceRunes is s cut to n runes.
@@ -1079,4 +1081,12 @@ func (m *Module) ownPWCode(r *http.Request) (*conversations.Conversation, *pwTar
 		return nil, nil, pwErr(409, "This chat's pw code session is on "+c.PWCode.Site+", which this Studio does not reach for you.")
 	}
 	return c, t, nil
+}
+
+// emit writes one event to the request following the turn, when one is:
+// a turn the Studio records in the background has none.
+func (t *pwTurn) emit(name string, payload any) {
+	if t.res != nil {
+		t.res.event(name, payload)
+	}
 }
