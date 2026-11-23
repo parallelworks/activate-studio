@@ -76,6 +76,9 @@ export interface AccountPanelBodyProps {
   /** The session screen's machine facts; read from the machine when not given. */
   machineFacts?: MachineAccountFacts | undefined
   describeError?: ((error: unknown) => string) | undefined
+  /** Inside a settings card that gives the title and frame: the panel
+   *  draws neither. */
+  bare?: boolean | undefined
 }
 
 const noop = () => {}
@@ -106,6 +109,7 @@ function PanelContent({
   machineFacts,
   describeError = defaultDescribeError,
   inModal,
+  bare = false,
 }: AccountPanelBodyProps & { inModal: boolean }) {
   const t = usePwCodeTranslations('agents')
   const marker = useRef<HTMLSpanElement>(null)
@@ -197,12 +201,12 @@ function PanelContent({
     />
   )
   const header = (
-    <AccountPanelHeader accounts={accounts} machineName={machineName} onClose={inModal ? onClose : undefined} inModal={inModal} />
+    <AccountPanelHeader accounts={accounts} machineName={machineName} onClose={inModal ? onClose : undefined} inModal={inModal} titled={!bare} />
   )
 
   if (!inModal) {
     return (
-      <div className="pwcode-accounts pwcode-accounts-card" ref={panel} data-testid="pwcode-accounts">
+      <div className={`pwcode-accounts ${bare ? 'pwcode-accounts-bare' : 'pwcode-accounts-card'}`} ref={panel} data-testid="pwcode-accounts">
         {header}
         {body}
       </div>
@@ -230,11 +234,12 @@ function PanelContent({
   )
 }
 
-function AccountPanelHeader({ accounts, machineName, onClose, inModal }: {
+function AccountPanelHeader({ accounts, machineName, onClose, inModal, titled }: {
   accounts: AccountPanelState
   machineName: string
   onClose: (() => void) | undefined
   inModal: boolean
+  titled: boolean
 }) {
   const t = usePwCodeTranslations('agents')
   // The modal's title and description name its dialog; a card's are plain text.
@@ -247,7 +252,7 @@ function AccountPanelHeader({ accounts, machineName, onClose, inModal }: {
   return (
     <div className="pwcode-accounts-header">
       <div className="pwcode-accounts-heading">
-        {title}
+        {titled && title}
         <div className="pwcode-accounts-subline">
           {description}
           {accounts.signInNote !== null && <InfoTip text={accounts.signInNote} />}

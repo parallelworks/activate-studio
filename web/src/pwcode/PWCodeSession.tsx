@@ -42,6 +42,9 @@ import { UsageLimitWait } from './session/UsageLimitWait'
 import { useAwayRecap } from './session/useAwayRecap'
 import { useComposerImages } from './session/useComposerImages'
 
+import { needsActivate } from '../accounts'
+import { NeedsActivate } from '../components/NeedsActivate'
+
 export { describeError }
 
 /**
@@ -175,11 +178,16 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
     describeError,
   })
 
-  const noticeCard = (notice || note) && (
-    <NoticeCard tone={notice?.warn ? 'warning' : 'neutral'} onDismiss={() => { dismissNotice(); setNote('') }}>
-      {notice?.text ?? note}
-    </NoticeCard>
-  )
+  const noticeText = notice?.text ?? note
+  // A refusal for want of an ACTIVATE sign-in gets the one prompt every
+  // feature shows, with Open Accounts.
+  const noticeCard = (notice || note) && (needsActivate(typeof noticeText === 'string' ? noticeText : '')
+    ? <NeedsActivate>{noticeText}</NeedsActivate>
+    : (
+      <NoticeCard tone={notice?.warn ? 'warning' : 'neutral'} onDismiss={() => { dismissNotice(); setNote('') }}>
+        {noticeText}
+      </NoticeCard>
+    ))
   // The model choices: those the session's machine offers it, the names
   // the session reports, and the model it is on.
   const current = settings.model.value ?? detail?.model ?? ''

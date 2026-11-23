@@ -2,6 +2,8 @@
 .pwcode-accounts { display: flex; flex-direction: column; min-width: 0; color: var(--theme-app); }
 .pwcode-accounts-modal { max-height: min(40rem, calc(100dvh - 4rem)); overflow: hidden; box-shadow: none; }
 .pwcode-accounts-card { border: 1px solid var(--theme-border); border-radius: 12px; background: var(--theme-panel-bg); overflow: hidden; }
+.pwcode-accounts-bare .pwcode-accounts-header { padding: 0 0 8px; }
+.pwcode-accounts-bare .pwcode-accounts-subline { margin-top: 0; }
 @media (max-width: 640px) {
   .pwcode-accounts-modal { max-height: min(80dvh, calc(100dvh - 16px)); }
 }
@@ -41,7 +43,7 @@
 
 /* Holds five rows' height from the first paint, so the panel doesn't grow when the list loads. */
 .pwcode-accounts-list { flex: 1; min-height: min(18rem, 40dvh); overflow-y: auto; overscroll-behavior: contain; padding: 4px; outline: none; }
-.pwcode-accounts-card .pwcode-accounts-list { min-height: 0; max-height: 24rem; }
+.pwcode-accounts-card .pwcode-accounts-list, .pwcode-accounts-bare .pwcode-accounts-list { min-height: 0; max-height: 24rem; }
 .pwcode-accounts-list > * + * { margin-top: 4px; }
 
 .pwcode-account-row { cursor: pointer; transition: background-color 150ms; }
