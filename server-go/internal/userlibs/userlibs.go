@@ -127,6 +127,14 @@ func Of(a *app.App) *Module {
 		return m.ownJobs()
 	}
 	m.Background = func() context.Context { return context.Background() }
+	// A job in a person's space is theirs to read (kb.JobOwner).
+	kb.JobOwner = func(r *http.Request) string {
+		w, err := m.whoOf(r)
+		if err != nil {
+			return ""
+		}
+		return w.ID
+	}
 	m.SignedIn = func(owner string) bool {
 		f := a.Providers.SignInKey
 		return f != nil && owner != single && f(owner) != ""

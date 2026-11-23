@@ -462,7 +462,7 @@ Behavior differences from Node:
 | job ids with Node beside | from 1 | from 2^21; lower ids for `/api/index/job/:id` and its cancel go to Node |
 | map rebuild after a job | `semantic_map.py` | `internal/semanticmap` in process, logged to the server log |
 
-`/api/jobs/:id` stays in `internal/kb` and answers 404 for an id it does not hold; library builds are index jobs.
+`/api/jobs/:id` stays in `internal/kb` and answers 404 for an id it does not hold; library builds are index jobs. A move or delete in a person's space asked for as a job (`async`, as the Library panel asks) runs as one too, in the same `kb.Jobs`, and is read only by that person (`kb.JobOwner`, set by `internal/userlibs`); the work goes on as them after the request ends.
 
 Parity, Node with Python against Go on a 386-file KB (26 databases): `entries`, the words, `gchunks` and `gvecmodel` are equal; all 835 vectors agree within 8.94e-08; the extract cache is 275 of 275 equal; `sweep-state.json`, `index-depth.json`, `indexed-root` and `skip-dirs` are equal; the map has the same 221 files and 11 clusters. A full index took 141.8 s with Node and Python (documents 7.9, text 77.0, meaning 56.5) and 28.0 to 29.5 s with Go (documents 24.0, text 0.19, meaning 5.3), on the shared host at load 2 to 12. The whole Node suite through the Go front with `STUDIO_TEST_FRONT_STRICT=1` and `STUDIO_GO_INDEX=1` passes (873 pass, 20 skipped, 0 fail); `depthSync.test.mjs` and `indexJobs.test.mjs` were converted to wrap the Go children when the Go index runs.
 

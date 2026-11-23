@@ -2,6 +2,7 @@ package kb
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime"
@@ -141,12 +142,14 @@ func (m *Module) spaceOp(op string, w http.ResponseWriter, r *http.Request, lib 
 				return err
 			}
 		}
-		moved, skipped, err := fs.Move(r, lib, paths, d)
-		if err != nil {
-			return err
-		}
-		fs.Changed(r, lib, append(append([]string{}, paths...), d))
-		writeJSON(w, 200, O("moved", nonNilMoved(moved), "skipped", nonNilSkipped(skipped), "indexMs", 0, "reindexing", true))
+		return m.spaceAnswer(w, r, b.truthy("async"), "move", len(paths), func(r *http.Request) (*Obj, error) {
+			moved, skipped, err := fs.Move(r, lib, paths, d)
+			if err != nil {
+				return nil, err
+			}
+			fs.Changed(r, lib, append(append([]string{}, paths...), d))
+			return O("moved", nonNilMoved(moved), "skipped", nonNilSkipped(skipped), "indexMs", 0, "reindexing", true), nil
+		})
 	case "delete":
 		if err := b.need(); err != nil {
 			return err
@@ -158,29 +161,33 @@ func (m *Module) spaceOp(op string, w http.ResponseWriter, r *http.Request, lib 
 		if len(paths) == 0 {
 			return Error(400, "paths required")
 		}
-		deleted, skipped, err := fs.Delete(r, lib, paths)
-		if err != nil {
-			return err
-		}
-		fs.Changed(r, lib, paths)
-		if deleted == nil {
-			deleted = []string{}
-		}
-		writeJSON(w, 200, O("deleted", deleted, "skipped", nonNilSkipped(skipped), "indexMs", 0, "reindexing", true))
+		return m.spaceAnswer(w, r, b.truthy("async"), "delete", len(paths), func(r *http.Request) (*Obj, error) {
+			deleted, skipped, err := fs.Delete(r, lib, paths)
+			if err != nil {
+				return nil, err
+			}
+			fs.Changed(r, lib, paths)
+			if deleted == nil {
+				deleted = []string{}
+			}
+			return O("deleted", deleted, "skipped", nonNilSkipped(skipped), "indexMs", 0, "reindexing", true), nil
+		})
 	case "dir", "file":
 		clean, err := spaceRel(rel)
 		if err != nil {
 			return err
 		}
-		deleted, skipped, err := fs.Delete(r, lib, []string{clean})
-		if err != nil {
-			return err
-		}
-		if len(deleted) == 0 && len(skipped) > 0 {
-			return Error(400, "%s", skipped[0].Reason)
-		}
-		fs.Changed(r, lib, []string{clean})
-		writeJSON(w, 200, O("deleted", clean, "indexMs", 0, "reindexing", true))
+		return m.spaceAnswer(w, r, op == "dir" && qs(r, "async") == "1", "delete", 1, func(r *http.Request) (*Obj, error) {
+			deleted, skipped, err := fs.Delete(r, lib, []string{clean})
+			if err != nil {
+				return nil, err
+			}
+			if len(deleted) == 0 && len(skipped) > 0 {
+				return nil, Error(400, "%s", skipped[0].Reason)
+			}
+			fs.Changed(r, lib, []string{clean})
+			return O("deleted", clean, "indexMs", 0, "reindexing", true), nil
+		})
 	case "upload":
 		saved, err := m.spaceUpload(r, lib)
 		if err != nil {
@@ -304,4 +311,42 @@ func parseList(raw []byte) []string {
 		out = append(out, jsString(x))
 	}
 	return out
+}
+
+// spaceAnswer does a move or delete in a person's space and answers what
+// it did; when the request asks for a job (async), as the Library panel's
+// do, it answers a job that does it, as the main library's routes do, so
+// the panel's polling of /api/jobs/<id> finds it. Such a job is read only
+// by the person it works for.
+func (m *Module) spaceAnswer(w http.ResponseWriter, r *http.Request, async bool, kind string, total int, do func(r *http.Request) (*Obj, error)) error {
+	if !async {
+		o, err := do(r)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, o)
+		return nil
+	}
+	owner := ""
+	if JobOwner != nil {
+		owner = JobOwner(r)
+	}
+	// The work goes on after the answer, as the same person: the request,
+	// without its end.
+	rr := r.WithContext(context.WithoutCancel(r.Context()))
+	phase := "moving"
+	if kind == "delete" {
+		phase = "deleting"
+	}
+	job := m.Jobs.StartFor(owner, rr.Context(), kind, total, nil, func(ctx context.Context, h *JobHandle) (any, error) {
+		h.Phase(phase, "")
+		o, err := do(rr)
+		if err != nil {
+			return nil, err
+		}
+		h.Progress("done", total, "")
+		return o, nil
+	})
+	writeJSON(w, 200, job)
+	return nil
 }
