@@ -173,6 +173,9 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	// again once per turn; after that it is withheld, and its notice is
 	// the answer (withheld keeps the notice from being taken for a stub).
 	askedAgain := false
+	// partRows is how many rows to ask for in each part, from the last
+	// request cut off at the output limit (0 before one is).
+	partRows := 0
 	withheld := false
 	// heldText: on the emulated path a round's text waits until the loop
 	// knows what the round was, and is shown only when it stands (beside
@@ -238,6 +241,9 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 						if be, ok := brokenEnvelope(text, nonces); ok {
 							why := deref(t.FinishReason)
 							cut := be.cutOff || why == "length"
+							if cut {
+								partRows = rowsPerPart(text[be.at:])
+							}
 							m.A.Log.Warn("model's tool request could not be read", "model", model, "tool", be.tool, "finish", why, "cutOff", cut, "chars", jsval.Len(text), "attempt", attempt)
 							// What it was, for extending the mender to the
 							// cases models produce; it can hold file content,
@@ -254,7 +260,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 								}
 								*st.finalReasoning += line
 								res.event("reasoning", reqbody.O("text", line))
-								p.messages = append(append([]llm.Message{}, p.messages...), llm.Message{Role: "system", Content: sp(askAgainNote(be, cut))})
+								p.messages = append(append([]llm.Message{}, p.messages...), llm.Message{Role: "system", Content: sp(askAgainNote(be, cut, partRows))})
 								continue
 							}
 							withheld = true
@@ -711,14 +717,16 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		// A workbook short of the rows the user asked for, with no request
 		// to add them, is not the end: the model is asked to add the rest
 		// (emulated path), whatever its reply says.
-		if foldSystem && asked > 0 && heldRows >= 0 && heldRows < asked && !nudged && shortNudges < maxShortNudges && iter < maxRounds-1 && ctx.Err() == nil {
+		// A request cut off is a try, not a stop: the nudge is sent again
+		// after one, up to maxShortNudges.
+		if foldSystem && asked > 0 && heldRows >= 0 && heldRows < asked && (!nudged || withheld) && shortNudges < maxShortNudges && iter < maxRounds-1 && ctx.Err() == nil {
 			nudged = true
 			shortNudges++
 			m.A.Log.Warn("workbook short of the rows asked; asking for the rest", "iter", iter, "held", heldRows, "asked", asked)
 			if c := jsTrim(turn.Content); c != "" {
 				push(llm.Message{Role: "assistant", Content: sp(c)})
 			}
-			push(llm.Message{Role: "system", Content: sp(fmt.Sprintf("%s holds %d of the %d rows the user asked for, so it is not finished. Add the next %d rows now: write_kb_file with the same path, append=true and the same sheet name, the rows as values, in parts of under about 12,000 characters, until it holds all %d. Then answer.", orStr(heldPath, "The workbook"), heldRows, asked, asked-heldRows, asked))})
+			push(llm.Message{Role: "system", Content: sp(fmt.Sprintf("%s holds %d of the %d rows the user asked for, so it is not finished. Add the next %d rows now: write_kb_file with the same path, append=true and the same sheet name, the rows as values%s, one request after another, until it holds all %d. Then answer.", orStr(heldPath, "The workbook"), heldRows, asked, asked-heldRows, perPart(orInt(partRows, 50)), asked))})
 			continue
 		}
 		// A file the user asked to have made, of which nothing has been
@@ -736,6 +744,9 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		}
 		// A withheld request's notice is the answer when the turn ends here.
 		if pendingNote != "" {
+			if asked > 0 && heldRows >= 0 && heldRows < asked {
+				pendingNote = fmt.Sprintf("%s holds %d of the %d rows asked for. The request to add the rest was cut off at the model's output limit, so nothing more was written; ask again to add the rest.", orStr(heldPath, "The workbook"), heldRows, asked)
+			}
 			if jsTrim(turn.Content) != "" {
 				turn.Content += "\n\n"
 				heldText += "\n\n"
@@ -1061,7 +1072,7 @@ func (m *Module) raisedCap(p payload, model string) int {
 
 // askAgainNote tells the model why its request did not run and how to
 // send it so that it does.
-func askAgainNote(e brokenEnv, cut bool) string {
+func askAgainNote(e brokenEnv, cut bool, rows int) string {
 	what := "Your last reply was a tool request"
 	if e.tool != "" {
 		what += " for " + e.tool
@@ -1071,7 +1082,7 @@ func askAgainNote(e brokenEnv, cut bool) string {
 	}
 	parts := "Write a large file in parts: call write_kb_file with the first part, then again with append=true for each next part, each part under about 12,000 characters. A spreadsheet's part is rows as JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[...]}]}; a part's rows are added to the sheet of the same name, as values (not a formula that makes the rows). The file is not done until every part is in: each write's result says how many rows each sheet holds, so after each part, if the sheet holds fewer rows than were asked for, send the next part at once (write_kb_file with append=true, the same path and sheet name, the next rows), before any reply to the user; tell the user it is done only when it holds them all, with the count the result gave."
 	if cut {
-		return what + " that was cut off at the output limit before it ended, so nothing ran. Send it again with less in each request. " + parts
+		return what + " that was cut off at the output limit before it ended, so nothing ran. Send it again with less in each request" + perPart(rows) + ". " + parts
 	}
 	return what + " that could not be read as JSON, so nothing ran. Send it again as one JSON object: inside a string value, such as a file's content, write every quote as \\\" and every line break as \\n. " + parts
 }
@@ -1237,4 +1248,38 @@ func askedFile(text string) string {
 		return m[1]
 	}
 	return ""
+}
+
+var rowSepRe = regexp.MustCompile(`\]\s*,\s*\[`)
+
+// rowsPerPart is how many rows to ask for in each part after a request
+// cut off at the output limit: a quarter of the rows it got to, from 10
+// to 50; 50 when it shows none.
+func rowsPerPart(cut string) int {
+	seen := len(rowSepRe.FindAllStringIndex(cut, -1))
+	n := seen / 4
+	switch {
+	case seen == 0:
+		return 50
+	case n < 10:
+		return 10
+	case n > 50:
+		return 50
+	}
+	return n
+}
+
+// perPart says how many rows to send in each request, "" for none.
+func perPart(rows int) string {
+	if rows <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(", at most %d rows in each request", rows)
+}
+
+func orInt(n, or int) int {
+	if n > 0 {
+		return n
+	}
+	return or
 }

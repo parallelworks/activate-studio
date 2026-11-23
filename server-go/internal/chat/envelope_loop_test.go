@@ -568,3 +568,39 @@ func TestFileAskedForIsWritten(t *testing.T) {
 		}
 	}
 }
+
+// A workbook short of the rows asked for, whose model keeps sending the
+// rest in one request cut off at the output limit: each re-ask and nudge
+// says how many rows to send in each request, a cut-off does not stop the
+// nudges, and a turn that ends on one says what the workbook holds, once.
+func TestCutOffRequestsForTheRestEndWithWhatTheWorkbookHolds(t *testing.T) {
+	e, base, gw := emuModule(t)
+	e.results = []string{"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 30 rows after the header), 900 bytes) and re-indexed in 1 ms."}
+	cut := said(func(n string) string { w := writeEnvelope(n, sheetRows(400)); return w[:len(w)/2] }, "length")
+	gw.load([]reply{
+		said(func(n string) string { return writeEnvelope(n, sheetRows(30)) }, "stop"),
+		cut, cut, cut, cut, cut, cut,
+	})
+	sse := askFor(t, base, "Make reports/items.xlsx with 600 rows of items. Do not search first.")
+	a := answerOf(sse)
+	if strings.Count(a, "holds 30 of the 600 rows asked for") != 1 || strings.Count(a, "output limit") != 1 {
+		t.Fatalf("answer %.600s", a)
+	}
+	if r := requestOf(gw, 2); !strings.Contains(r, "at most 50 rows in each request") {
+		t.Errorf("the re-ask gives no size: %.400s", r)
+	}
+	nudges := 0
+	for i := 3; i < 7; i++ {
+		if r := requestOf(gw, i); strings.Contains(r, "holds 30 of the 600 rows the user asked for") && strings.Contains(r, "at most 50 rows in each request") {
+			nudges++
+		}
+	}
+	if nudges < 3 {
+		t.Errorf("nudged %d times after cut-offs", nudges)
+	}
+	for in, want := range map[string]int{`[["a"],["b"]`: 10, "no rows": 50, strings.Repeat(`["a"],`, 120): 29, strings.Repeat(`["a"],`, 900): 50} {
+		if got := rowsPerPart(in); got != want {
+			t.Errorf("%.20q: %d", in, got)
+		}
+	}
+}
