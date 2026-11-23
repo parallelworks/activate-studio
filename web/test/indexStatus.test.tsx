@@ -34,10 +34,10 @@ describe('what is said about the index', () => {
 
   it('done, stopped, failed, never built', () => {
     expect(indexSummary(status(), 1234)).toMatchObject({ tone: 'success', text: '1,234 files indexed', running: false })
-    expect(indexSummary(status({ incomplete: true, lastBuild: job({ state: 'cancelled' }) })).text).toBe('index incomplete')
+    expect(indexSummary(status({ incomplete: true, lastBuild: job({ state: 'cancelled' }) })).text).toBe('Index incomplete')
     expect(indexSummary(status({ lastError: 'Building the index: enrich.py: disk full' }))).toMatchObject({ tone: 'warning', detail: 'Building the index: enrich.py: disk full' })
-    expect(indexSummary(status({ indexed: false })).text).toBe('not indexed')
-    expect(indexSummary(null).text).toBe('index loading')
+    expect(indexSummary(status({ indexed: false })).text).toBe('Not indexed')
+    expect(indexSummary(null).text).toBe('Index loading')
   })
 
   it('durations as people read them', () => {

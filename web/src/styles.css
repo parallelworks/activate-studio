@@ -431,25 +431,32 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 .sidenav-group-inner { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
 .sidenav.collapsed .sidenav-group, .sidenav.collapsed .sidenav-group-body, .sidenav.collapsed .sidenav-group-inner { display: contents; }
 .sidenav.collapsed .sidenav-group-head { display: none; }
-.sidenav-footer { padding: 10px 8px 0; border-top: 1px solid var(--pw-border); }
-.status-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--pw-muted); padding: 2px 0; }
+.sidenav-footer { padding: 10px 8px 0; border-top: 1px solid var(--pw-border); container: navfooter / inline-size; }
+/* One list: every row on one line, left aligned, at the same size, its dot
+   beside the text. A row's text is cut with an ellipsis before it wraps. */
+.status-line { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 18px; color: var(--pw-muted); padding: 2px 0; min-width: 0; white-space: nowrap; }
+/* The dots keep their size; only text gives way. */
+.status-line > span:first-child:not(.identity-text), .identity-btn > span:first-child { flex-shrink: 0; }
 /* Reserves the footer's height while its first read is in flight. */
 .footer-pending { min-height: 74px; }
 .footer-skeleton { margin: 4px 0 10px; }
 .status-line.muted2 { color: var(--pw-muted); }
-/* The action beside a footer line gives way first: at the Narrow width it
-   wraps onto two lines before the line's own text, such as the version, is
-   cut. The text keeps its full width up to what the action's minimum leaves
-   it; only a longer one, such as a clone's git describe, is cut. */
-.footer-sync { margin-left: auto; flex-shrink: 1; min-width: 6em; white-space: normal; text-align: right; line-height: 1.2; }
-.status-line:has(> .footer-sync) > .identity-btn { flex-shrink: 0; max-width: calc(100% - 6em - 6px); }
-/* A newer version: "update available" carries the footer's one tint, the info
+/* The action at the end of a row: plain text at the row's own size and
+   weight, the text color, underlined on hover. It takes the room it needs;
+   the row's own text is cut first. */
+.footer-sync.footer-sync { margin-left: auto; flex-shrink: 0; height: auto; min-height: 0; padding: 0 2px; font-size: 12px;
+  font-weight: 400; line-height: 18px; color: var(--pw-text); background: none; white-space: nowrap; }
+.footer-sync.footer-sync:hover:not(:disabled) { background: none; text-decoration: underline; text-underline-offset: 2px; }
+/* On the narrowest sidebar the longer actions drop their last words: Check,
+   Update. Their tooltips and accessible names keep the whole. */
+@container navfooter (max-width: 190px) { .footer-long { display: none; } }
+/* A newer version: "Update available" carries the footer's one tint, the info
    color the collapsed rail's dot uses, so it is seen without calling out. The
-   class is doubled to outrank the ghost button's own colors. */
-.footer-update-available.footer-update-available { color: var(--theme-info-text); background: var(--theme-info-muted); font-weight: 500; }
-.footer-update-available.footer-update-available:hover { color: var(--theme-info-text); background: color-mix(in srgb, var(--theme-info) 22%, transparent); }
-/* A long build name (a clone's git describe) stays on one line. */
-.status-line .identity-btn { min-width: 0; }
+   class is repeated to outrank the ghost button's own colors. */
+.footer-update-available.footer-update-available.footer-update-available { color: var(--theme-info-text); background: var(--theme-info-muted); padding: 0 6px; border-radius: 4px; }
+.footer-update-available.footer-update-available.footer-update-available:hover { color: var(--theme-info-text); background: color-mix(in srgb, var(--theme-info) 22%, transparent); text-decoration: none; }
+/* The row's text, as a button's label: left aligned, cut with an ellipsis. */
+.status-line .identity-btn { min-width: 0; text-align: left; }
 .identity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- content area ---- */

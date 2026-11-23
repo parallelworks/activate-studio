@@ -98,7 +98,7 @@ const server = (over: Partial<Server> = {}): Server => ({ updates: status(), cod
 const action = (name: string) => screen.findByRole('button', { name })
 /** Opens the Build panel from "update available", then its What's new dialog. */
 async function openDetails() {
-  fireEvent.click(await action('update available'))
+  fireEvent.click(await action('Update available'))
   fireEvent.click(await screen.findByRole('button', { name: /^What's new \(/ }))
   return screen.findByRole('dialog', { name: /^Version / })
 }
@@ -120,8 +120,8 @@ describe('a newer version, in the footer', () => {
     stubServer(server())
     render(<StatusFooter />)
     // The one tinted action in the footer.
-    expect(await action('update available')).toHaveClass('footer-update-available')
-    fireEvent.click(await action('update available'))
+    expect(await action('Update available')).toHaveClass('footer-update-available')
+    fireEvent.click(await action('Update available'))
     const panel = await screen.findByTestId('build-updates')
     expect(panel.textContent).toContain('Version v1.142 is available')
     expect(within(panel).getByRole('button', { name: 'Update now' })).toBeEnabled()
@@ -209,7 +209,7 @@ describe('a newer version, in the footer', () => {
     const s = server({ updates: status({ available: false, latest: null, releases: [] }) })
     stubServer(s)
     render(<StatusFooter />)
-    await action('check for updates')
+    await action('Check for updates')
     expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(1)
     // While the window was hidden, the server's check became due: the read on
     // focus starts it, and the page reads again until it ends.
@@ -217,7 +217,7 @@ describe('a newer version, in the footer', () => {
     act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(2))
     s.updates = status()
-    await action('update available')
+    await action('Update available')
     const reads = s.calls.filter(c => c.url === '/api/updates').length
     act(() => { document.dispatchEvent(new Event('visibilitychange')) })
     await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length).toBe(reads + 1))
@@ -227,7 +227,7 @@ describe('a newer version, in the footer', () => {
     const s = server()
     stubServer(s)
     render(<StatusFooter />)
-    await action('update available')
+    await action('Update available')
     act(() => { window.dispatchEvent(new Event(CHECK_EVENT)) })
     await waitFor(() => expect(s.calls.some(c => c.url === '/api/updates/check' && c.method === 'POST')).toBe(true))
   })
@@ -244,8 +244,8 @@ describe('a newer version, in the footer', () => {
     render(<StatusFooter />)
     const box = await openDetails()
     fireEvent.click(within(box).getByRole('button', { name: 'Update now' }))
-    await action('updating…')
-    expect(screen.queryByRole('button', { name: 'update available' })).toBeNull()
+    await action('Updating…')
+    expect(screen.queryByRole('button', { name: 'Update available' })).toBeNull()
     expect(screen.queryByRole('dialog', { name: 'Version v1.142' })).toBeNull()
     const panel = await screen.findByTestId('build-updates')
     expect(await within(panel).findByRole('progressbar')).toBeInTheDocument()
@@ -256,7 +256,7 @@ describe('a newer version, in the footer', () => {
     expect(await within(panel).findByText('Installing version v1.142')).toBeInTheDocument()
     s.code = 0
     expect(await within(panel).findByText('Restarting…')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'updating…' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Updating…' })).toBeInTheDocument()
     s.version = 'v1.142'
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
     expect(s.calls.filter(c => c.url === '/api/updates/install').length).toBe(1)
@@ -270,7 +270,7 @@ describe('a newer version, in the footer', () => {
     stubServer(s)
     const intervals = vi.spyOn(window, 'setInterval')
     render(<><StatusFooter /><UpdatesSection /></>)
-    fireEvent.click(await action('updating…'))
+    fireEvent.click(await action('Updating…'))
     expect(within(await screen.findByTestId('build-updates')).getByText("Checking the download's signature and checksum")).toBeInTheDocument()
     // One page, one follower: the two do not each poll. Counted by the
     // timers at the poll interval, which a slow runner cannot change.
@@ -287,11 +287,11 @@ describe('a newer version, in the footer', () => {
     const s = server({ updates: status({ state: 'downloading', progress: { bytes: 10, total: 2048 } }) })
     stubServer(s)
     const first = render(<StatusFooter />)
-    await action('updating…')
+    await action('Updating…')
     s.updates = status({ state: 'error', error: why })
-    fireEvent.click(await action('update failed'))
+    fireEvent.click(await action('Update failed'))
     expect(within(await screen.findByTestId('build-updates')).getByRole('alert').textContent).toBe(why)
-    expect(screen.queryByRole('button', { name: 'updating…' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Updating…' })).toBeNull()
     first.unmount()
     vi.unstubAllGlobals()
 
@@ -299,21 +299,21 @@ describe('a newer version, in the footer', () => {
     const refused = server()
     stubServer(refused)
     const second = render(<StatusFooter />)
-    fireEvent.click(await action('update available'))
+    fireEvent.click(await action('Update available'))
     vi.stubGlobal('fetch', vi.fn(async (input: string) => String(input) === '/api/updates/install'
       ? reply({ error: 'Another update is under way.' }, 409)
       : reply(refused.updates)))
     fireEvent.click(within(await screen.findByTestId('build-updates')).getByRole('button', { name: 'Update now' }))
-    await action('update failed')
+    await action('Update failed')
     expect(screen.getByRole('alert').textContent).toBe('Another update is under way.')
     second.unmount()
     vi.unstubAllGlobals()
 
     stubServer(server({ updates: status({ state: 'error', error: 'The check for updates failed: GitHub answered HTTP 500.' }) }))
     render(<StatusFooter />)
-    await action('update available')
+    await action('Update available')
     await settle()
-    expect(screen.queryByRole('button', { name: 'update failed' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Update failed' })).toBeNull()
   })
 
   it('on the collapsed rail: a dot for a newer version, an install, and a failed one', async () => {
@@ -373,14 +373,14 @@ describe("What's new", () => {
 })
 
 describe('after an update', () => {
-  const link = () => screen.queryByRole('button', { name: "what's new" })
+  const link = () => screen.queryByRole('button', { name: "What's new" })
 
   it('the first visit only records the version; a newer one shows "what\'s new" beside the version until it is opened, once', async () => {
     const s = server({ version: 'v1.140', updates: status({ current: { version: 'v1.140', builtAt: null }, available: false, latest: null, releases: [] }) })
     stubServer(s)
     const first = render(<StatusFooter />)
     await waitFor(() => expect(localStorage.getItem(SEEN_KEY)).toBe('v1.140'))
-    await action('check for updates')
+    await action('Check for updates')
     expect(link()).toBeNull()
     first.unmount()
 
@@ -388,17 +388,17 @@ describe('after an update', () => {
     s.version = 'v1.142'
     s.updates = status({ current: { version: 'v1.142', builtAt: null }, available: false, latest: null, releases: [] })
     const second = render(<StatusFooter />)
-    fireEvent.click(await action("what's new"))
+    fireEvent.click(await action("What's new"))
     expect(location.hash).toBe('#view=help:whats-new')
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
     expect(link()).toBeNull()
     // The line's own action is back.
-    expect(screen.getByRole('button', { name: 'check for updates' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check for updates' })).toBeInTheDocument()
     second.unmount()
 
     // Once only.
     render(<StatusFooter />)
-    await action('check for updates')
+    await action('Check for updates')
     await settle()
     expect(link()).toBeNull()
   })
@@ -407,7 +407,7 @@ describe('after an update', () => {
     localStorage.setItem(SEEN_KEY, 'v1.139')
     stubServer(server())
     render(<StatusFooter />)
-    await action('update available')
+    await action('Update available')
     await settle()
     expect(link()).toBeNull()
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.140')
@@ -438,7 +438,7 @@ describe('after an update that changed the app\'s window', () => {
     await screen.findByText('v1.142')
     await settle()
     expect(line()).toBeNull()
-    expect(screen.queryByRole('button', { name: "what's new" })).toBeNull()
+    expect(screen.queryByRole('button', { name: "What's new" })).toBeNull()
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.140')
     expect(sessionStorage.getItem(REOPEN_KEY)).toBeNull()
   })
@@ -452,7 +452,7 @@ describe('after an update that changed the app\'s window', () => {
     const reopen = await screen.findByTestId('footer-reopen')
     expect(post).not.toHaveBeenCalled()
     expect(reopen.textContent).toContain('Reopen to finish updating')
-    expect(screen.getByRole('button', { name: "what's new" })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: "What's new" })).toHaveAttribute('title', 'Updated since you last opened Studio. Shows what changed.')
     expect(localStorage.getItem(SEEN_KEY)).toBe('v1.142')
     fireEvent.click(within(reopen).getByRole('button', { name: 'Reopen now' }))
     await waitFor(() => expect(within(reopen).queryByRole('button', { name: 'Reopen now' })).toBeNull())
@@ -481,7 +481,7 @@ describe('after an update that changed the app\'s window', () => {
     stubServer(server({ version: 'v1.142', updates: { ...updated(), reopen: false } }))
     appWindow(async () => true)
     render(<StatusFooter />)
-    await action("what's new")
+    await action("What's new")
     expect(line()).toBeNull()
   })
 
@@ -509,7 +509,7 @@ describe('after an update that changed the app\'s window', () => {
     appWindow(async () => true)
     render(<StatusFooter />)
     expect(within(await screen.findByTestId('footer-reopen')).getByRole('button', { name: 'Reopen now' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'updating…' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Updating…' })).toBeNull()
   })
 
   it('the line goes once the server says the window runs the new copy', async () => {
