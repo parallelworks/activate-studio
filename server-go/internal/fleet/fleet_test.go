@@ -303,6 +303,9 @@ func TestApprovalGoneAndBudget(t *testing.T) {
 	// The new session gets its id before its first message is sent: wait for both.
 	waitFor(t, "a new session", func() bool { g := f.Get(a.ID); return g.Session != "" && g.Session != s1 })
 	waitFor(t, "its first message", func() bool { d.mu.Lock(); defer d.mu.Unlock(); return len(d.messages) > 1 })
+	// And for the wake-up to end (it sets the round's goal after the
+	// message): follow leaves an agent alone while it wakes.
+	waitFor(t, "the wake-up to end", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
 	d.mu.Lock()
 	second := d.messages[1]
 	d.mu.Unlock()
