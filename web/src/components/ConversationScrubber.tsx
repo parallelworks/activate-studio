@@ -126,6 +126,14 @@ function installDebug(ticks: number, min: number): void {
   }
 }
 
+/** A message's text as it reads on screen: innerText keeps the breaks
+ *  between its blocks, which textContent ran together ("Answered: green"
+ *  and the next line as "greenCOLOR=green"). */
+function shownText(n: Element): string {
+  const shown = (n as HTMLElement).innerText
+  return (typeof shown === 'string' ? shown : n.textContent ?? '').replace(/\s+/g, ' ').trim()
+}
+
 export function ConversationScrubber() {
   const { currentConversation, isStreaming } = useChat()
   const [ticks, setTicks] = useState<Tick[]>([])
@@ -137,6 +145,10 @@ export function ConversationScrubber() {
   const [cardTop, setCardTop] = useState(0)
   const cardRef = useRef<HTMLDivElement>(null)
   const [current, setCurrent] = useState(0)
+  // The tick in focus while the keyboard is on the rail: the rail's one Tab
+  // stop follows it, so Tab after Home leaves the rail instead of landing
+  // on the tick in view.
+  const [focused, setFocused] = useState<number | null>(null)
   // A click on a tick the thread cannot scroll to the top (one of the last
   // few) keeps that tick current once the scroll reaches the end, until the
   // reader scrolls away from the end.
@@ -168,7 +180,7 @@ export function ConversationScrubber() {
       const aligned = real.length === nodes.length
       const next = nodes.map((n, i) => aligned
         ? { role: (real[i].role === 'user' ? 'user' : 'assistant') as Tick['role'], text: (real[i].content ?? '').trim() }
-        : { role: null, text: (n.textContent ?? '').trim() })
+        : { role: null, text: shownText(n) })
       // Replace only on a real change, since this runs on every mutation
       // the thread makes, streaming included.
       setTicks(prev => (prev.length === next.length
@@ -309,7 +321,7 @@ export function ConversationScrubber() {
             aria-label={`Message ${i + 1} of ${ticks.length}`}
             // One Tab stop for the whole rail, the message in view; Up and
             // Down move along it, so Tab does not walk every message.
-            tabIndex={i === current ? 0 : -1}
+            tabIndex={i === (focused ?? current) ? 0 : -1}
             onKeyDown={e => {
               const to = e.key === 'ArrowUp' ? i - 1 : e.key === 'ArrowDown' ? i + 1 : e.key === 'Home' ? 0 : e.key === 'End' ? ticks.length - 1 : -1
               if (to < 0 || to >= ticks.length || to === i) return
@@ -318,8 +330,11 @@ export function ConversationScrubber() {
             }}
             onMouseEnter={e => show(i, e.currentTarget)}
             onMouseLeave={() => setHover(h => (h === i ? null : h))}
-            onFocus={e => show(i, e.currentTarget)}
-            onBlur={() => setHover(null)}
+            onFocus={e => { setFocused(i); show(i, e.currentTarget) }}
+            onBlur={e => {
+              setHover(null)
+              if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node | null)) setFocused(null)
+            }}
             onClick={() => jump(i)}
           />
         ))}
