@@ -242,7 +242,7 @@ interface NoteMessage { id: string; content?: string | null }
 /** The note that opens a chat continued from a pw code session says where
  *  it came from; it is not a reply, so it has nothing to regenerate. The
  *  chat shows Regenerate on every assistant message, so its link to the
- *  Code page is marked here (CodeView reads only machine and session) and
+ *  Code page is marked here (the Code page reads only machine and session) and
  *  styles.css hides Regenerate in the message holding that link. Notes
  *  saved before this are marked too. */
 export const CONTINUED_NOTE_MARK = 'note=continued'

@@ -174,6 +174,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 	mux.HandleFunc("GET /api/code-sessions", h(s.list))
 	mux.HandleFunc("GET /api/code-sessions/item", h(s.item))
 	mux.HandleFunc("POST /api/code-sessions/approve", h(s.approve))
+	registerPage(mux, s)
 }
 
 // signedIn is whether the Studio has sign-in on for this viewer: then the

@@ -15,7 +15,7 @@ import { OverviewView } from './views/OverviewView'
 import { HistoryView } from './views/HistoryView'
 import { useInstall } from './install'
 import { WorkflowsView } from './views/WorkflowsView'
-import { CodeView } from './views/CodeView'
+import { CodePage } from './code/CodePage'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
@@ -679,7 +679,7 @@ export default function App() {
         {aiPagesMounted(cfg) && <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>}
         {/* Without ACTIVATE, where Accounts can sign in to it, these ask to sign in. */}
         {allowed('workflows') && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
-        {allowed('code') && view === 'code' && <div className="view"><CodeView /></div>}
+        {allowed('code') && view === 'code' && <div className="view"><CodePage /></div>}
         <div className={view === 'settings' ? 'view with-toggle' : 'view hidden'}>
           <SettingsView active={view === 'settings'} />
           {view === 'settings' && <PanelToggle className="panel-toggle-float" />}
