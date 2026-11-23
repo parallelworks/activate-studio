@@ -24,22 +24,31 @@ import (
 // viewing is a server over a scratch library, with what it logged.
 func viewing(t *testing.T) (root string, get func(string) *httptest.ResponseRecorder, logged *bytes.Buffer) {
 	t.Helper()
-	dir := t.TempDir()
-	root = filepath.Join(dir, "kb")
-	os.MkdirAll(root, 0o755)
-	t.Setenv("PW_CLI", filepath.Join(dir, "no-pw"))
-	cfg, _ := config.Load(func(k string) string {
-		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": root, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
-	})
-	logged = &bytes.Buffer{}
-	mux := http.NewServeMux()
-	kb.Register(mux, app.New(cfg, slog.New(slog.NewTextHandler(logged, nil)), nil, nil))
+	root, logged, mux := viewingMux(t, "")
 	get = func(p string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest("GET", p, nil))
 		return w
 	}
 	return root, get, logged
+}
+
+// viewingMux is viewing's server itself, over root when one is given.
+func viewingMux(t *testing.T, root string) (string, *bytes.Buffer, *http.ServeMux) {
+	t.Helper()
+	dir := t.TempDir()
+	if root == "" {
+		root = filepath.Join(dir, "kb")
+		os.MkdirAll(root, 0o755)
+	}
+	t.Setenv("PW_CLI", filepath.Join(dir, "no-pw"))
+	cfg, _ := config.Load(func(k string) string {
+		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": root, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
+	})
+	logged := &bytes.Buffer{}
+	mux := http.NewServeMux()
+	kb.Register(mux, app.New(cfg, slog.New(slog.NewTextHandler(logged, nil)), nil, nil))
+	return root, logged, mux
 }
 
 // A file renamed or deleted while it is open is a 404 on every route
@@ -59,6 +68,7 @@ func TestViewingRoutesAnswer404ForAMissingFile(t *testing.T) {
 		"pdf-page":       "report.pdf",
 		"office-preview": "report.docx",
 		"office-media":   "report.docx",
+		"sheet":          "report.xlsx",
 	}
 	for route, name := range routes {
 		for _, rel := range []string{name, "gone/" + name, "plain.txt/" + name} {
@@ -75,7 +85,7 @@ func TestViewingRoutesAnswer404ForAMissingFile(t *testing.T) {
 		}
 	}
 	// A folder is not a file to draw either.
-	for _, route := range []string{"download", "raw", "pdf-info", "pdf-page", "office-preview"} {
+	for _, route := range []string{"download", "raw", "pdf-info", "pdf-page", "office-preview", "sheet"} {
 		if w := get("/api/kb/" + route + "?path=folder"); w.Code != 400 {
 			t.Errorf("%s of a folder: %d %s", route, w.Code, w.Body.String())
 		}

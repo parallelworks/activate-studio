@@ -1,5 +1,6 @@
 import type { GufiCommand } from './components/GufiCommands'
 import type { Omission } from './components/OmittedLine'
+import type { GridSheetData } from './components/SheetGrid'
 
 /** An answer's JSON when it is OK; otherwise an Error carrying the server's
  * own message, so a page shows the failure in place of reading fields that
@@ -587,6 +588,10 @@ export interface IndexSettingsInfo {
   location: { current: string; default: string; folder: string; canChange: boolean; saved: string }
 }
 
+/** One sheet of a workbook for the grid, with the workbook's sheets
+ *  (GET /api/kb/sheet). */
+export type WorkbookSheet = GridSheetData & { sheets: { name: string; hidden?: boolean }[]; index: number }
+
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(withLibrary(url), signal ? { signal } : undefined)
   if (!res.ok) {
@@ -667,6 +672,7 @@ export const api = {
   /** A Word, PowerPoint or Excel file's slides, paragraphs, tables and
    *  sheets, read without LibreOffice. */
   officePreview: (path: string) => getJson<OfficeOutline>(`/api/kb/office-preview?path=${encodeURIComponent(path)}`),
+  sheet: (path: string, sheet?: number) => getJson<WorkbookSheet>(`/api/kb/sheet?path=${encodeURIComponent(path)}${sheet !== undefined ? `&sheet=${sheet}` : ''}`),
   officeMediaUrl: (path: string, name: string) => withLibrary(`/api/kb/office-media?path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`),
   // version (the file's mtime) makes a rewritten file's pages new URLs: a
   // page keeps an image it already holds for a URL whatever the headers say.
