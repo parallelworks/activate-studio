@@ -870,14 +870,14 @@ func (m *Module) raisedCap(p payload, model string) int {
 // askAgainNote tells the model why its request did not run and how to
 // send it so that it does.
 func askAgainNote(e brokenEnv, cut bool) string {
-	what := "Your last reply was a lookup request"
+	what := "Your last reply was a tool request"
 	if e.tool != "" {
 		what += " for " + e.tool
 	}
 	if e.path != "" {
 		what += " (" + e.path + ")"
 	}
-	parts := "Write a large file in parts: call write_kb_file with the first part, then again with append=true for each next part, each part under about 12,000 characters. A spreadsheet's part is rows as JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[...]}]}; a part's rows are added to the sheet of the same name, as values (not a formula that makes the rows). The file is not done until every part is in: each write's result says how many rows each sheet holds, so keep adding parts until it holds all that was asked for, and only then tell the user it is done, with the count the result gave."
+	parts := "Write a large file in parts: call write_kb_file with the first part, then again with append=true for each next part, each part under about 12,000 characters. A spreadsheet's part is rows as JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[...]}]}; a part's rows are added to the sheet of the same name, as values (not a formula that makes the rows). The file is not done until every part is in: each write's result says how many rows each sheet holds, so after each part, if the sheet holds fewer rows than were asked for, send the next part at once (write_kb_file with append=true, the same path and sheet name, the next rows), before any reply to the user; tell the user it is done only when it holds them all, with the count the result gave."
 	if cut {
 		return what + " that was cut off at the output limit before it ended, so nothing ran. Send it again with less in each request. " + parts
 	}
@@ -898,4 +898,4 @@ const presearchNote = "The Studio searched the libraries for the user's message 
 var announcesRe = regexp.MustCompile(`(?i)\b(i'll|i’ll|i will|let me|i am going to|i'm going to|i’m going to|going to|next,? i|now (writing|creating|saving|making)|writing (it|the|that)|creating (it|the|that))\b`)
 
 // nudgeNote answers such a reply once on the emulated path.
-const nudgeNote = "Your last reply said what you would do but made no lookup request, so nothing ran. If the user's request needs a lookup (write_kb_file to save a file, say), reply now with the JSON request and nothing else; otherwise give your final answer."
+const nudgeNote = "Your last reply said what you would do but made no tool request, so nothing ran. If the user's request needs a tool (write_kb_file to save a file, say), reply now with the JSON request and nothing else; otherwise give your final answer."

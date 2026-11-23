@@ -54,11 +54,11 @@ func TestWriteKBFileInParts(t *testing.T) {
 
 	// The result says what each sheet holds, so the model can check it
 	// against what was asked.
-	if got := run(`{"path":"reports/items.xlsx","content":"{\"sheets\":[{\"name\":\"Items\",\"rows\":[[\"Name\",\"Count\"],[\"bolt\",4]]}]}"}`); !strings.Contains(got, "Items, 1 row after the header") {
+	if got := run(`{"path":"reports/items.xlsx","content":"{\"sheets\":[{\"name\":\"Items\",\"rows\":[[\"Name\",\"Count\"],[\"bolt\",4]]}]}"}`); !strings.Contains(got, "Items, 1 row after the header") || !strings.Contains(got, "send the next rows now with write_kb_file, the same path, append=true") {
 		t.Fatal(got)
 	}
 	got := run(`{"path":"reports/items.xlsx","append":true,"content":"{\"sheets\":[{\"name\":\"Items\",\"rows\":[[\"Name\",\"Count\"],[\"nut\",\"12\"],[\"washer\",\"=1+1\"]]},{\"name\":\"Notes\",\"rows\":[[\"Note\"],[\"checked\"]]}]}"}`)
-	if !strings.Contains(got, "4 rows") || !strings.Contains(got, "Items, 3 rows after the header; Notes, 1 row after the header") {
+	if !strings.Contains(got, "4 rows") || !strings.Contains(got, "Items, 3 rows after the header; Notes, 1 row after the header") || !strings.Contains(got, "send the next part now the same way (append=true)") {
 		t.Fatal(got)
 	}
 	f, err := excelize.OpenFile(filepath.Join(kb, "reports", "items.xlsx"))
