@@ -3381,6 +3381,8 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 
 /* A call a standing agent waits to have approved, whole, with its answer. */
 .fleet-approval-text { margin: 6px 0; padding: 6px 8px; overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; }
+.studio-tools-setup p { margin: 4px 0; }
+.studio-tools-command { margin: 6px 0; padding: 6px 8px; overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; user-select: all; }
 .fleet-approval-actions { display: flex; gap: 8px; }
 .fleet-approval-cut, .fleet-approval-reason { display: block; margin: 4px 0; }
 

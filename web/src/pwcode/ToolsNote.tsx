@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NoticeCard } from '@parallelworks/ui/ai'
 import type { ChatLink } from './useChatLink'
+import { StudioToolsSetup } from '../components/StudioToolsSetup'
 
 const SEEN = 'ade-pwcode-tools-note-seen'
 
@@ -20,8 +21,9 @@ function markSeen(conversationId: string): void {
  * Whether the chat's pw code session has the Studio's tools, said only
  * when it does not. A session the Studio drives directly gets them at every
  * message, and this shows only when that failed after a retry, with what
- * failed. A session on another machine cannot get them until ACTIVATE can
- * attach them, and the chat says so once.
+ * failed. A session on another machine gets them once the person adds the
+ * Studio to pw code there, which the setup card shows, until ACTIVATE can
+ * attach them itself.
  */
 export function PWCodeToolsNote({ conversationId, link }: { conversationId: string; link: ChatLink }) {
   const [hidden, setHidden] = useState(() => !!link.relay && seen(conversationId))
@@ -35,12 +37,8 @@ export function PWCodeToolsNote({ conversationId, link }: { conversationId: stri
       </NoticeCard>
     )
   }
-  const where = link.machineName || 'its machine'
-  return (
-    <NoticeCard onDismiss={() => { markSeen(conversationId); setHidden(true) }}>
-      This session runs on {where}, so it does not have this Studio's tools: library search, find by topic, reading library files,
-      and the Studio's platform and delegation tools. pw code's own tools work as usual. Giving a session on another machine the
-      Studio's tools is pending a platform change in ACTIVATE.
-    </NoticeCard>
-  )
+  // A session on another machine reaches the Studio's tools once its
+  // machine's pw code has the Studio as an MCP server: the setup card shows
+  // the one-time command and checks that it worked (/api/mcp/bridge).
+  return <StudioToolsSetup machineName={link.machineName} onDismiss={() => { markSeen(conversationId); setHidden(true) }} />
 }
