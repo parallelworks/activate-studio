@@ -6,16 +6,19 @@
 const FIELDS = 'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"]'
 
 /** Focus is the person's to keep when it sits anywhere they put it, outside
- *  the session or in a field of it; it is free when it fell to the page. */
-function focusIsFree(): boolean {
+ *  the session or in a field of it; it is free when it fell to the page, or,
+ *  as the chat opens, when it is on the conversations list's row that opened
+ *  it: what the chat waits on is the next step. */
+function focusIsFree(opening = false): boolean {
   const a = document.activeElement
-  return !a || a === document.body || a === document.documentElement
+  if (!a || a === document.body || a === document.documentElement) return true
+  return opening && !!a.closest('.chat-canvas aside li')
 }
 
 /** Moves focus to the first answer of what the session waits on: the plan
  *  card under the transcript, else the last open approval card. */
-export function focusWaiting(pane: HTMLElement | null): boolean {
-  if (!pane || !focusIsFree()) return false
+export function focusWaiting(pane: HTMLElement | null, opening = false): boolean {
+  if (!pane || !focusIsFree(opening)) return false
   const plan = pane.querySelector<HTMLElement>('[data-testid="pwcode-plan-answer"]')
   const cards = [...pane.querySelectorAll<HTMLElement>('[data-testid="approval-part"]')]
   for (const card of plan ? [plan] : cards.reverse()) {

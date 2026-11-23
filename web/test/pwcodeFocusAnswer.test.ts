@@ -33,6 +33,19 @@ describe('a keyboard user, when the session waits on them', () => {
     expect(focusWaiting(p)).toBe(false)
     expect(document.activeElement).toBe(other)
   })
+  it('is taken from the conversations list to a card waiting as the chat opens, and only then', () => {
+    const list = document.createElement('div')
+    list.className = 'chat-canvas'
+    list.innerHTML = '<aside><ul><li><a href="#c1">Plan for notes</a></li></ul></aside>'
+    document.body.appendChild(list)
+    const p = pane(thread)
+    const row = list.querySelector('a')!
+    row.focus()
+    expect(focusWaiting(p)).toBe(false)
+    expect(document.activeElement).toBe(row)
+    expect(focusWaiting(p, true)).toBe(true)
+    expect(document.activeElement?.textContent).toBe('Yes')
+  })
   it('goes back to the message box once answered', () => {
     const p = pane('<button>Copy</button><textarea aria-label="Send a message"></textarea>')
     expect(focusComposer(p)).toBe(true)
