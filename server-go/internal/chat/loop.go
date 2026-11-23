@@ -433,9 +433,16 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 
 	maxRounds := int(m.eff().MaxToolRounds)
 	hitLimit := true
-	// nudged: a short turn that said what it would do, with no request,
-	// was answered once with a note to make the request (emulated path).
+	// nudged: a short or empty turn with no request was answered with a
+	// note to make the request (emulated path); it is allowed again once a
+	// round has made calls since, up to maxNudges in a turn.
 	nudged := false
+	nudges := 0
+	// changed: a call this turn changed something (a file was written),
+	// so the final answer reports what was done rather than what could
+	// not be verified. lastWrite is the latest write_kb_file result.
+	changed := false
+	lastWrite := ""
 	for iter := 0; iter < maxRounds; iter++ {
 		*st.turnBreak = true
 		for _, s := range m.Conv.TakeSteers(st.convID) {
@@ -470,6 +477,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		}
 		if turn.FinishReason != nil && *turn.FinishReason == "tool_calls" && len(turn.ToolCalls) > 0 {
 			usedTools = true
+			nudged = false
 			calls := turn.ToolCalls
 			afterChange = false
 			for _, tc := range calls {
@@ -587,6 +595,11 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 				parts[i].Status = "ok"
 				if o.Failed {
 					parts[i].Status = "error"
+				} else if changingTools[tc.Function.Name] {
+					changed = true
+					if tc.Function.Name == "write_kb_file" {
+						lastWrite = jsval.Slice(o.Result, 400)
+					}
 				}
 				parts[i].Result = sp(o.Summary)
 				hasGufi := len(o.Gufi) > 0 && string(o.Gufi) != "[]" && string(o.Gufi) != "null"
@@ -637,13 +650,18 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			// A model on the text protocol that says "I'll write it now"
 			// and stops is asked once to make the request, with its tools,
 			// rather than forced to a final answer without them.
-			if foldSystem && !nudged && iter < maxRounds-1 && ctx.Err() == nil && (jsTrim(turn.Content) == "" || announcesRe.MatchString(turn.Content)) {
+			if foldSystem && !nudged && nudges < maxNudges && iter < maxRounds-1 && ctx.Err() == nil && (jsTrim(turn.Content) == "" || announcesRe.MatchString(turn.Content)) {
 				nudged = true
-				m.A.Log.Warn("short turn with no request; asking for the request", "iter", iter)
+				nudges++
+				m.A.Log.Warn("short turn with no request; asking for the request", "iter", iter, "nudge", nudges)
 				if c := jsTrim(turn.Content); c != "" {
 					push(llm.Message{Role: "assistant", Content: sp(c)})
 				}
-				push(llm.Message{Role: "system", Content: sp(nudgeNote)})
+				note := nudgeNote
+				if lastWrite != "" {
+					note += " The last write's result was: " + lastWrite + " If that file does not yet hold all the user asked for, send its next part now (write_kb_file, append=true, the same path and sheet name)."
+				}
+				push(llm.Message{Role: "system", Content: sp(note)})
 				continue
 			}
 			m.A.Log.Warn("empty turn with no tool calls; forcing final answer", "iter", iter)
@@ -657,7 +675,13 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		m.A.Log.Warn("tool round limit reached", "maxRounds", maxRounds)
 	}
 	m.A.Log.Warn("forcing final answer (budget exhausted or empty turn)")
-	push(llm.Message{Role: "user", Content: sp("No further tool calls are available for this reply. Give your final answer now, using only the information gathered above. State plainly anything you could not verify.")})
+	closing := "State plainly anything you could not verify."
+	if changed {
+		// After a write the Studio made, the answer says what was done,
+		// with the tool results' figures, not doubts about its own file.
+		closing = "Say what was done, with the figures the tool results gave (such as how many rows a file holds), and plainly what was asked for that was not done."
+	}
+	push(llm.Message{Role: "user", Content: sp("No further tool calls are available for this reply. Give your final answer now, using only the information gathered above. " + closing)})
 	var gathered []string
 	n := 0
 	for _, mm := range *messages {
@@ -675,8 +699,8 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		finalMessages = append(finalMessages, *st.lastUser)
 	}
 	finalMessages = append(finalMessages,
-		llm.Message{Role: "assistant", Content: sp("I looked through the knowledge base and gathered this material:\n\n" + g)},
-		llm.Message{Role: "user", Content: sp("Based on that material, give your final answer to my question now. State plainly anything you could not verify.")})
+		llm.Message{Role: "assistant", Content: sp(gatheredLead(changed) + g)},
+		llm.Message{Role: "user", Content: sp("Based on that material, give your final answer to my question now. " + closing)})
 	var finalTurn *llm.Turn
 	for attempt := 0; attempt < 2; attempt++ {
 		*st.turnBreak = true
@@ -897,5 +921,18 @@ const presearchNote = "The Studio searched the libraries for the user's message 
 // doing it ("I'll write the file now", "Let me create it").
 var announcesRe = regexp.MustCompile(`(?i)\b(i'll|i’ll|i will|let me|i am going to|i'm going to|i’m going to|going to|next,? i|now (writing|creating|saving|making)|writing (it|the|that)|creating (it|the|that))\b`)
 
-// nudgeNote answers such a reply once on the emulated path.
-const nudgeNote = "Your last reply said what you would do but made no tool request, so nothing ran. If the user's request needs a tool (write_kb_file to save a file, say), reply now with the JSON request and nothing else; otherwise give your final answer."
+// maxNudges is how many times a turn's short or empty replies are answered
+// with nudgeNote.
+const maxNudges = 3
+
+// nudgeNote answers such a reply on the emulated path.
+const nudgeNote = "Your last reply was empty or said what you would do, but made no tool request, so nothing ran. If the user's request needs a tool (write_kb_file to save a file, say), reply now with the JSON request and nothing else; otherwise give your final answer."
+
+// gatheredLead opens the forced final answer's material: what the tools
+// gave, which after a change includes what was written.
+func gatheredLead(changed bool) string {
+	if changed {
+		return "I worked on the request with the tools; these are their results, including what was written:\n\n"
+	}
+	return "I looked through the knowledge base and gathered this material:\n\n"
+}

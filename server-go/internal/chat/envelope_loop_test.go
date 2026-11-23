@@ -19,6 +19,8 @@ type emuTools struct {
 	ran []string
 	// answer is what answering a held call gives, when set.
 	answer *Answered
+	// result is what a call returns, when set.
+	result string
 }
 
 func (e *emuTools) Answer(r *http.Request, in map[string]any, k *string) (*Answered, error) {
@@ -41,8 +43,12 @@ func (e *emuTools) Specs(*http.Request, []string, bool, bool, bool, []string) (*
 func (e *emuTools) Execute(_ *http.Request, name, args string, _ ToolCtx) (*Outcome, error) {
 	e.mu.Lock()
 	e.ran = append(e.ran, name+" "+args)
+	result := e.result
 	e.mu.Unlock()
-	return &Outcome{Result: "Wrote it.", Summary: "wrote"}, nil
+	if result == "" {
+		result = "Wrote it."
+	}
+	return &Outcome{Result: result, Summary: "wrote"}, nil
 }
 
 func (e *emuTools) runs() []string {
@@ -344,5 +350,34 @@ func TestPresearchIsTheStudios(t *testing.T) {
 		"messages": []any{map[string]any{"role": "user", "content": "Make the items spreadsheet. Do not search first."}}})
 	if len(e.runs()) != 0 || strings.Contains(sse, "Studio searched") {
 		t.Errorf("searched anyway: %q", e.runs())
+	}
+}
+
+// A workbook written in parts, with an empty reply after each part (as a
+// model gave at 100 of 250 rows), is nudged again after each round that
+// made progress, with what the last write said the file holds; the final
+// answer after a write reports what was done, not what could not be
+// verified.
+func TestEmptyTurnsWhileWritingPartsAreNudged(t *testing.T) {
+	e, base, gw := emuModule(t)
+	e.result = "Added to reports/items.xlsx (25 rows; the workbook now holds: Items, 50 rows after the header)."
+	empty := said(func(string) string { return "" }, "stop")
+	part := func(rows int) reply {
+		return said(func(n string) string { return writeEnvelope(n, sheetRows(rows)) }, "stop")
+	}
+	gw.load([]reply{part(25), empty, part(26), empty, part(27), empty, empty, said(func(string) string { return "The workbook holds 75 rows." }, "stop")})
+	sse := ask(t, base)
+	if countWrites(e) != 3 {
+		t.Fatalf("ran %q; %d requests; answer %.300s", e.runs(), len(gw.requests), answerOf(sse))
+	}
+	nudge := requestOf(gw, 2)
+	if !strings.Contains(nudge, "The last write") || !strings.Contains(nudge, "Items, 50 rows after the header") {
+		t.Errorf("the nudge does not say what the file holds: %.400s", nudge)
+	}
+	// Three nudges in all, then the final answer, which reports what was
+	// done.
+	last := requestOf(gw, len(gw.requests)-1)
+	if !strings.Contains(last, "Say what was done") || strings.Contains(last, "could not verify") {
+		t.Errorf("final prompt %.600s", last)
 	}
 }
