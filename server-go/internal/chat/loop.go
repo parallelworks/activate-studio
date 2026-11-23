@@ -174,10 +174,18 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	// the answer (withheld keeps the notice from being taken for a stub).
 	askedAgain := false
 	withheld := false
+	// heldText: on the emulated path a round's text waits until the loop
+	// knows what the round was, and is shown only when it stands (beside
+	// the round's calls, or as the answer), not when the model is asked
+	// again. pendingNote is a withheld request's notice, shown only if the
+	// turn ends without getting further.
+	heldText := ""
+	pendingNote := ""
 
 	turnWithRetry := func(p payload) (*llm.Turn, error) {
 		nonces := append(turnNonces(p.messages, st.baseLen), nonce)
 		withheld = false
+		heldText = ""
 		for attempt := 0; ; attempt++ {
 			streamThis := !ns && (attempt == 0 || !retryUnstreamed)
 			drop := dropTokenCap || m.noCap.has(model)
@@ -252,13 +260,14 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 							withheld = true
 							prose = strings.TrimSpace(text[:be.at])
 							note := upperFirst(be.asked()) + " could not be read, so nothing ran."
+							line := "\n↳ " + upperFirst(be.asked()) + " could not be read again; nothing ran\n"
 							if cut {
 								note = upperFirst(be.asked()) + " was cut off at the model's output limit, so nothing ran. Ask for it in smaller parts, for example a few sheets or sections at a time."
+								line = "\n↳ " + upperFirst(be.asked()) + " was cut off again; nothing ran\n"
 							}
-							if prose != "" {
-								prose += "\n\n"
-							}
-							prose += note
+							*st.finalReasoning += line
+							res.event("reasoning", reqbody.O("text", line))
+							pendingNote = note
 						}
 					}
 					if calls == nil && attempt < 2 && ctx.Err() == nil && looksLikeRefusal(text) {
@@ -281,9 +290,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 					// a natively calling model's would be; the envelope
 					// itself never is, even one naming no offered lookup.
 					t.Content = prose
-					if prose != "" {
-						st.callbacks.OnContent(prose)
-					}
+					heldText = prose
 					return t, nil
 				}
 			}
@@ -472,6 +479,12 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		asked = askedRows(st.lastUser.Text())
 	}
 	heldRows, heldPath := -1, ""
+	// fileAsked is a file the user's message asks to have made ("write a
+	// spreadsheet reports/sales.xlsx"), "" when it names none.
+	fileAsked := ""
+	if st.lastUser != nil {
+		fileAsked = askedFile(st.lastUser.Text())
+	}
 	shortNudges := 0
 	for iter := 0; iter < maxRounds; iter++ {
 		*st.turnBreak = true
@@ -505,7 +518,17 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		if turn.Model != nil {
 			*st.finalModel = turn.Model
 		}
+		// The text written beside a round's calls is shown, as a natively
+		// calling model's would be.
+		showHeld := func() {
+			if heldText != "" {
+				st.callbacks.OnContent(heldText)
+				heldText = ""
+			}
+		}
 		if turn.FinishReason != nil && *turn.FinishReason == "tool_calls" && len(turn.ToolCalls) > 0 {
+			showHeld()
+			pendingNote = ""
 			usedTools = true
 			nudged = false
 			calls := turn.ToolCalls
@@ -698,6 +721,29 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			push(llm.Message{Role: "system", Content: sp(fmt.Sprintf("%s holds %d of the %d rows the user asked for, so it is not finished. Add the next %d rows now: write_kb_file with the same path, append=true and the same sheet name, the rows as values, in parts of under about 12,000 characters, until it holds all %d. Then answer.", orStr(heldPath, "The workbook"), heldRows, asked, asked-heldRows, asked))})
 			continue
 		}
+		// A file the user asked to have made, of which nothing has been
+		// written, is not given up on in a reply without a request: the
+		// model is told it does not exist until written (emulated path).
+		if foldSystem && fileAsked != "" && !changed && !nudged && nudges < maxNudges && iter < maxRounds-1 && ctx.Err() == nil {
+			nudged = true
+			nudges++
+			m.A.Log.Warn("file asked for and not written; asking for the write", "iter", iter, "nudge", nudges)
+			if c := jsTrim(turn.Content); c != "" {
+				push(llm.Message{Role: "assistant", Content: sp(c)})
+			}
+			push(llm.Message{Role: "system", Content: sp("The user asked you to make " + fileAsked + ", and nothing has been written yet. Searching will not find it: it does not exist until you write it. You have write_kb_file: write it now (a large file in parts, the first part, then append=true for each next part), then answer.")})
+			continue
+		}
+		// A withheld request's notice is the answer when the turn ends here.
+		if pendingNote != "" {
+			if jsTrim(turn.Content) != "" {
+				turn.Content += "\n\n"
+				heldText += "\n\n"
+			}
+			turn.Content += pendingNote
+			heldText += pendingNote
+			pendingNote = ""
+		}
 		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && !withheld && !showsSomething.MatchString(turn.Content) && jsval.Len(jsTrim(turn.Content)) < 200) {
 			// A model on the text protocol that says "I'll write it now"
 			// and stops is asked once to make the request, with its tools,
@@ -720,6 +766,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			hitLimit = false
 			break
 		}
+		showHeld()
 		st.finish(turn.FinishReason, "")
 		return nil
 	}
@@ -1173,4 +1220,21 @@ func writePath(args string) string {
 	}
 	s, _ := v["path"].(string)
 	return s
+}
+
+var (
+	makeVerbRe  = regexp.MustCompile(`(?i)\b(write|create|make|save|generate|build|produce|export)\b`)
+	fileNamedRe = regexp.MustCompile(`(?i)(?:^|[\s"'(\x60])([\w][\w./-]*\.(?:xlsx|csv|md|markdown|pdf|docx|txt|json|html|ya?ml|py|stl))\b`)
+)
+
+// askedFile is the file a request asks to have made: a file name in a
+// message that asks to write, create or make something; "" otherwise.
+func askedFile(text string) string {
+	if !makeVerbRe.MatchString(text) {
+		return ""
+	}
+	if m := fileNamedRe.FindStringSubmatch(text); m != nil {
+		return m[1]
+	}
+	return ""
 }
