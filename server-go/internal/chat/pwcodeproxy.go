@@ -2,8 +2,10 @@ package chat
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -219,6 +221,140 @@ func (m *Module) codeImage(w http.ResponseWriter, r *http.Request, t *pwTarget, 
 	return nil
 }
 
+// codeStream hands a session's transcript on as it arrives, so the end the
+// daemon sends first is drawn while the rest is on its way: read whole, a
+// long session's took seconds before anything showed. Only a JSON answer
+// is passed on, with none of the machine's or platform's other headers;
+// a refusal is the route's usual error. A daemon without the route (an
+// older pw code) is read once whole here and answered in the same form,
+// so the page does not ask twice, one after the other.
+func (m *Module) codeStream(w http.ResponseWriter, r *http.Request, t *pwTarget, g pwcode.StreamGetter, id, route string) error {
+	s, err := g.GetStream(r.Context(), route)
+	if err != nil {
+		var de *pwcode.DaemonError
+		if errors.As(err, &de) && (de.Status == http.StatusNotFound || de.Status == http.StatusMethodNotAllowed) {
+			return m.transcriptFromDetail(w, r, t, id)
+		}
+		return writeErr(w, err)
+	}
+	defer s.Body.Close()
+	typ, _, _ := strings.Cut(s.Type, ";")
+	if strings.ToLower(strings.TrimSpace(typ)) != "application/json" {
+		return writeProblem(w, http.StatusBadGateway, "The session's machine did not answer with a transcript.")
+	}
+	writeStreamed(w, r, func(out io.Writer, flush func()) {
+		buf := make([]byte, 32<<10)
+		for {
+			n, rerr := s.Body.Read(buf)
+			if n > 0 {
+				if _, werr := out.Write(buf[:n]); werr != nil {
+					return
+				}
+				flush()
+			}
+			if rerr != nil {
+				// The status is sent: a transcript cut short is not JSON,
+				// and the page reads it again.
+				return
+			}
+		}
+	})
+	return nil
+}
+
+// transcriptTail is how many history items the end of a transcript built
+// here holds when the page does not say: the daemon's own default.
+const transcriptTail = 200
+
+// transcriptFromDetail answers a transcript read from the session's whole
+// detail, as a daemon with the route does: its end first, the earlier
+// history after it.
+func (m *Module) transcriptFromDetail(w http.ResponseWriter, r *http.Request, t *pwTarget, id string) error {
+	route := "/v1/sessions/" + url.PathEscape(id)
+	if p := r.URL.Query().Get("previews"); p != "" {
+		route += "?" + url.Values{"previews": {p}}.Encode()
+	}
+	v, err := t.client.Call(r.Context(), http.MethodGet, route, nil, 0)
+	if err != nil {
+		return writeErr(w, err)
+	}
+	o := jsonv.Obj(v)
+	if o == nil {
+		return writeProblem(w, http.StatusBadGateway, "The session's machine did not answer with a transcript.")
+	}
+	if !t.relay {
+		o.Set("machineId", directMachine)
+	}
+	n := transcriptTail
+	if q, err := strconv.Atoi(r.URL.Query().Get("tail")); err == nil && q > 0 && q < 10000 {
+		n = q
+	}
+	history := jsonv.Arr(jsonv.Path(o, "history"))
+	at := max(0, len(history)-n)
+	tail := o.Clone()
+	tail.Set("history", append([]any{}, history[at:]...))
+	head, err := jsonv.Marshal(tail)
+	if err != nil {
+		return err
+	}
+	older, err := jsonv.Marshal(append([]any{}, history[:at]...))
+	if err != nil {
+		return err
+	}
+	writeStreamed(w, r, func(out io.Writer, flush func()) {
+		_, _ = out.Write([]byte(`{"tail":`))
+		_, _ = out.Write(head)
+		flush()
+		_, _ = out.Write([]byte(`,"older":`))
+		_, _ = out.Write(older)
+		_, _ = out.Write([]byte(`}`))
+	})
+	return nil
+}
+
+// writeStreamed answers 200 with JSON that write produces a part at a
+// time, each part sent as it is flushed: gzipped for a browser that takes
+// that, a part at a time, so the start still arrives first.
+func writeStreamed(w http.ResponseWriter, r *http.Request, write func(out io.Writer, flush func())) {
+	h := w.Header()
+	h.Set("Content-Type", "application/json")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "no-store")
+	h.Add("Vary", "Accept-Encoding")
+	var out io.Writer = w
+	var zw *gzip.Writer
+	if acceptsGzip(r.Header.Get("Accept-Encoding")) {
+		h.Set("Content-Encoding", "gzip")
+		zw, _ = gzip.NewWriterLevel(w, gzip.BestSpeed)
+		out = zw
+	}
+	w.WriteHeader(http.StatusOK)
+	write(out, func() {
+		if zw != nil {
+			_ = zw.Flush()
+		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	})
+	if zw != nil {
+		_ = zw.Close()
+	}
+}
+
+// acceptsGzip reports whether an Accept-Encoding takes gzip.
+func acceptsGzip(accept string) bool {
+	for _, part := range strings.Split(accept, ",") {
+		name, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(strings.TrimSpace(name), "gzip") {
+			continue
+		}
+		q := strings.ReplaceAll(strings.TrimSpace(params), " ", "")
+		return q != "q=0" && q != "q=0.0" && q != "q=0.00" && q != "q=0.000"
+	}
+	return false
+}
+
 // codeFollow moves the viewer's chat to the session its session was
 // cleared into (/clear makes a new one, here or wherever the session is
 // directed from), so the chat goes on with it as PW Code on the web does.
@@ -296,6 +432,15 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			route += "?" + q
 		}
 		return m.codeImage(w, r, t, route)
+	}
+	if key == "GET /transcript" {
+		if g, ok := t.client.(pwcode.StreamGetter); ok {
+			route := "/v1/sessions/" + url.PathEscape(id) + suffix
+			if q := r.URL.RawQuery; q != "" {
+				route += "?" + q
+			}
+			return m.codeStream(w, r, t, g, id, route)
+		}
 	}
 	var lastSeq int64
 	switch key {

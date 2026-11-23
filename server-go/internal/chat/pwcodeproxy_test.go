@@ -2,7 +2,9 @@ package chat
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -658,5 +660,183 @@ func TestTheDirectMachineCarriesWhatItsDaemonAllows(t *testing.T) {
 	}
 	if _, leaked := direct["secret"]; leaked {
 		t.Errorf("a status field the record does not name was passed on: %v", direct)
+	}
+}
+
+// getRaw reads a route as a browser would, asking for the encoding given
+// and decoding nothing itself.
+func getRaw(t *testing.T, url, encoding string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Accept-Encoding", encoding)
+	res, err := (&http.Client{Transport: &http.Transport{DisableCompression: true}}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// A transcript is handed on as it arrives, so the end the session sends
+// first shows while the rest is on its way, gzipped for a browser that
+// takes it. Only the viewer's own chat's session is read, only a JSON
+// answer passes, and none of the machine's or platform's other headers.
+func TestATranscriptPassesAsItArrives(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	_, base, _, _ := relayModule(t, local, remote)
+	relayedChat(t, base)
+	const tail = `{"tail":{"id":"s1","history":[{"kind":"assistant","text":"the end"}]},"older":[`
+	const rest = `{"kind":"user","text":"the start"}]}`
+	release := make(chan struct{})
+	remote.routes = map[string]http.HandlerFunc{
+		"GET /v1/sessions/s1/transcript": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Set-Cookie", "machine=1")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			_, _ = w.Write([]byte(tail))
+			w.(http.Flusher).Flush()
+			<-release
+			_, _ = w.Write([]byte(rest))
+		},
+		"GET /v1/sessions/s1/images/x": serveAs("image/png", "PNG"),
+	}
+	s := base + "/api/code/machines/m2/sessions/s1/transcript?tail=20&previews=refs"
+
+	res := getRaw(t, s, "identity")
+	if res.StatusCode != 200 || res.Header.Get("Content-Type") != "application/json" || res.Header.Get("X-Content-Type-Options") != "nosniff" ||
+		res.Header.Get("Set-Cookie") != "" || res.Header.Get("Access-Control-Allow-Origin") != "" || res.Header.Get("Content-Encoding") != "" {
+		t.Fatalf("headers: %d %v", res.StatusCode, res.Header)
+	}
+	// The tail arrives while the machine is still sending the rest.
+	got := make([]byte, 0, len(tail))
+	buf := make([]byte, 64)
+	for len(got) < len(tail) {
+		n, err := res.Body.Read(buf)
+		got = append(got, buf[:n]...)
+		if err != nil {
+			t.Fatalf("read %q: %v", got, err)
+		}
+	}
+	if string(got) != tail {
+		t.Fatalf("first: %q", got)
+	}
+	close(release)
+	more, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if string(got)+string(more) != tail+rest {
+		t.Errorf("whole: %q", string(got)+string(more))
+	}
+	remote.mu.Lock()
+	asked := append([]string(nil), remote.asked...)
+	remote.mu.Unlock()
+	if len(asked) != 1 || asked[0] != "GET /v1/sessions/s1/transcript?tail=20&previews=refs" {
+		t.Errorf("asked: %v", asked)
+	}
+
+	// Gzipped, for a browser that takes it.
+	res = getRaw(t, s, "gzip, deflate, br")
+	zr, err := gzip.NewReader(res.Body)
+	if err != nil || res.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("gzip: %v %v", err, res.Header)
+	}
+	whole, _ := io.ReadAll(zr)
+	res.Body.Close()
+	if string(whole) != tail+rest {
+		t.Errorf("gzipped: %q", whole)
+	}
+
+	// Another session, or this one under another machine: no chat of the
+	// viewer's holds it, and nothing is asked of a machine.
+	for _, u := range []string{base + "/api/code/machines/m2/sessions/s7/transcript", base + "/api/code/machines/m9/sessions/s1/transcript", base + "/api/code/machines/studio/sessions/s1/transcript"} {
+		res := getRaw(t, u, "identity")
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 404 || res.Header.Get("Content-Type") != "application/problem+json" || strings.Contains(string(b), "the end") {
+			t.Errorf("%s: %d %s", u, res.StatusCode, b)
+		}
+	}
+	remote.mu.Lock()
+	if len(remote.asked) != 2 {
+		t.Errorf("asked for another's: %v", remote.asked)
+	}
+	remote.mu.Unlock()
+
+	// What is not JSON is not passed on, whatever the machine says it is.
+	remote.mu.Lock()
+	remote.routes["GET /v1/sessions/s1/transcript"] = serveAs("text/html", "<script>x</script>")
+	remote.mu.Unlock()
+	res = getRaw(t, s, "identity")
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 502 || strings.Contains(string(b), "<script") || res.Header.Get("Content-Type") != "application/problem+json" {
+		t.Errorf("html: %d %s %v", res.StatusCode, b, res.Header)
+	}
+	// A refusal is the route's usual error.
+	remote.mu.Lock()
+	remote.routes["GET /v1/sessions/s1/transcript"] = func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(403)
+		_, _ = w.Write([]byte(`{"title":"Forbidden","status":403,"detail":"held by another host"}`))
+	}
+	remote.mu.Unlock()
+	if code, out, h := send(t, http.MethodGet, s, ""); code != 403 || h.Get("Content-Type") != "application/problem+json" || !strings.Contains(fmt.Sprint(out["detail"]), "held by another host") {
+		t.Errorf("refusal: %d %v", code, out)
+	}
+}
+
+// A pw code without the transcript route is read whole once, by the Studio,
+// and answered as one with it would: the end first. The page asks once.
+func TestATranscriptFromAnOlderPWCodeIsBuiltFromItsDetail(t *testing.T) {
+	f := &fakePW{}
+	_, base, _ := continueModule(t, f, "d1")
+	if _, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`); out["conversationId"] == nil {
+		t.Fatalf("continue: %v", out)
+	}
+	notFound := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte(`{"title":"Not Found","status":404}`))
+	}
+	f.mu.Lock()
+	f.routes = map[string]http.HandlerFunc{
+		"GET /v1/sessions/s1/transcript": notFound,
+		"GET /v1/sessions/s1":            serveAs("application/json", `{"id":"s1","status":"idle","messages":3,"history":[{"kind":"user","text":"one"},{"kind":"assistant","text":"two"},{"kind":"user","text":"three"}]}`),
+	}
+	f.mu.Unlock()
+	res := getRaw(t, base+"/api/code/machines/studio/sessions/s1/transcript?tail=2&previews=refs", "identity")
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	want := `{"tail":{"id":"s1","status":"idle","messages":3,"history":[{"kind":"assistant","text":"two"},{"kind":"user","text":"three"}],"machineId":"studio"},"older":[{"kind":"user","text":"one"}]}`
+	if res.StatusCode != 200 || string(b) != want || res.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("%d\n%s\n%s", res.StatusCode, b, want)
+	}
+	f.mu.Lock()
+	asked := append([]string(nil), f.asked...)
+	f.mu.Unlock()
+	if strings.Join(asked, " | ") != "GET /v1/sessions/s1/transcript?tail=2&previews=refs | GET /v1/sessions/s1?previews=refs" {
+		t.Errorf("asked: %v", asked)
+	}
+	// A session the daemon does not have stays not found.
+	f.mu.Lock()
+	f.routes["GET /v1/sessions/s1"] = notFound
+	f.mu.Unlock()
+	if code, _, h := send(t, http.MethodGet, base+"/api/code/machines/studio/sessions/s1/transcript", ""); code != 404 || h.Get("Content-Type") != "application/problem+json" {
+		t.Errorf("gone: %d", code)
+	}
+}
+
+// The session on the Studio's own machine is read from its daemon the same
+// way.
+func TestADirectSessionsTranscriptPasses(t *testing.T) {
+	f := &fakePW{}
+	_, base, _ := continueModule(t, f, "d1")
+	if _, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`); out["conversationId"] == nil {
+		t.Fatalf("continue: %v", out)
+	}
+	f.routes = map[string]http.HandlerFunc{"GET /v1/sessions/s1/transcript": serveAs("application/json", `{"tail":{"id":"s1"},"older":[]}`)}
+	res := getRaw(t, base+"/api/code/machines/studio/sessions/s1/transcript?tail=20", "identity")
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || string(b) != `{"tail":{"id":"s1"},"older":[]}` || res.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("%d %q %v", res.StatusCode, b, res.Header)
 	}
 }
