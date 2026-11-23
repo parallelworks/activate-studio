@@ -122,3 +122,31 @@ func TestStopUsingThePwCLI(t *testing.T) {
 		t.Fatalf("%q", b)
 	}
 }
+
+// HasActivate: PW_API_KEY or a pw CLI context holding a credential, and
+// nothing after Stop using the pw CLI or with no sign-in at all.
+func TestHasActivate(t *testing.T) {
+	p, _ := deploymentWithCredential(t, false)
+	if !p.HasActivate() {
+		t.Fatal("a pw CLI sign-in")
+	}
+	p.Stop(true)
+	if p.HasActivate() {
+		t.Fatal("after Stop using the pw CLI")
+	}
+	empty := New(Options{IndexBase: t.TempDir(), Home: t.TempDir(), LookupEnv: func(k string) (string, bool) {
+		if k == "PW_CREDENTIALS_DIR" {
+			return t.TempDir(), true
+		}
+		return "", false
+	}})
+	if empty.HasActivate() {
+		t.Fatal("no ACTIVATE at all")
+	}
+	key := New(Options{IndexBase: t.TempDir(), Home: t.TempDir(), LookupEnv: func(k string) (string, bool) {
+		return map[string]string{"PW_API_KEY": "k", "PW_CREDENTIALS_DIR": "/nonexistent"}[k], k == "PW_API_KEY" || k == "PW_CREDENTIALS_DIR"
+	}})
+	if !key.HasActivate() {
+		t.Fatal("PW_API_KEY")
+	}
+}

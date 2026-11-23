@@ -171,7 +171,7 @@ func (s *routes) pageTarget(r *http.Request, machine string) (*pageTarget, error
 		return &pageTarget{local: c, machine: m, own: own, only: only}, nil
 	}
 	if s.p.Origin() == "" {
-		return nil, platform.KbError(409, "This Studio is not connected to an ACTIVATE platform, where pw code sessions are listed.")
+		return nil, platform.KbError(409, "pw code sessions are listed on an ACTIVATE platform. Sign in with ACTIVATE under Settings, Accounts.")
 	}
 	key, err := viewerKey(r, s.p)
 	if err != nil {

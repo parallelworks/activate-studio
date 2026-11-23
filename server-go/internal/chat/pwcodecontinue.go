@@ -57,6 +57,9 @@ func (m *Module) pwcodeDaemon(r *http.Request) (pwcode.Client, string, error) {
 		return nil, "", pwErr(409, "pw code is not set up on this Studio.")
 	}
 	if !m.A.Cfg.AuthEnabled() {
+		if err := m.localPWCodeRefused(); err != nil {
+			return nil, "", err
+		}
 		return s.Daemon.Local(), m.pwSite(), nil
 	}
 	if user(r) == nil {

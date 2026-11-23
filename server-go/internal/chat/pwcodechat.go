@@ -284,6 +284,17 @@ func (m *Module) engineFor(r *http.Request, asked, convID string) (string, error
 	return engineStudio, nil
 }
 
+// localPWCodeRefused says why this computer's pw code is not used, on a
+// Studio of one: it signs in with the computer's ACTIVATE login, so with
+// none, or after Stop using the pw CLI, nothing reaches it (a daemon
+// already running included).
+func (m *Module) localPWCodeRefused() error {
+	if m.pf != nil && !m.pf.HasActivate() {
+		return pwErr(409, "pw code needs ACTIVATE. Sign in with ACTIVATE under Settings, Accounts.")
+	}
+	return nil
+}
+
 // pwcodeTarget is the daemon and folder for a conversation's session: the
 // site and folder it already has, else the person's own (My library's
 // folder when it is on the Studio's cluster, else ~/studio-chat).
@@ -296,6 +307,9 @@ func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conver
 		return nil, pwErr(409, "pw code is not set up on this Studio.")
 	}
 	if !m.A.Cfg.AuthEnabled() {
+		if err := m.localPWCodeRefused(); err != nil {
+			return nil, err
+		}
 		if link != nil && link.Site == agentsites.Local && link.Workspace != "" {
 			return &pwTarget{client: s.Daemon.Local(), site: agentsites.Local, workspace: link.Workspace}, nil
 		}

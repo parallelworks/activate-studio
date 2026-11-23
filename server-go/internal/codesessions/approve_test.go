@@ -101,7 +101,7 @@ func TestApproveOnThisComputer(t *testing.T) {
 			w.WriteHeader(404)
 		}
 	}))
-	base := codeServer(t, map[string]string{"PW_CODE_SOCKET": sock}, true).URL
+	base := codeServer(t, map[string]string{"PW_CODE_SOCKET": sock, "PW_API_KEY": "owner-key", "OPENAI_BASE_URL": "http://127.0.0.1:11434/v1"}, true).URL
 
 	res, _ := http.Get(base + "/api/code-sessions/item?machine=mach1&id=" + sid)
 	var item struct {
