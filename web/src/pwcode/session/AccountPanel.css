@@ -1,0 +1,102 @@
+/* The account panel, in the session's modal or a settings card. */
+.pwcode-accounts { display: flex; flex-direction: column; min-width: 0; color: var(--theme-app); }
+.pwcode-accounts-modal { max-height: min(40rem, calc(100dvh - 4rem)); overflow: hidden; box-shadow: none; }
+.pwcode-accounts-card { border: 1px solid var(--theme-border); border-radius: 12px; background: var(--theme-panel-bg); overflow: hidden; }
+.pwcode-accounts-bare .pwcode-accounts-header { padding: 0 0 8px; }
+.pwcode-accounts-bare .pwcode-accounts-subline { margin-top: 0; }
+@media (max-width: 640px) {
+  .pwcode-accounts-modal { max-height: min(80dvh, calc(100dvh - 16px)); }
+}
+
+.pwcode-accounts-header { display: flex; flex-shrink: 0; align-items: flex-start; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--theme-border); }
+.pwcode-accounts-heading { flex: 1; min-width: 0; }
+.pwcode-accounts-title { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
+.pwcode-accounts-subline { margin-top: 2px; display: flex; min-width: 0; align-items: center; gap: 4px; }
+.pwcode-accounts-description { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--theme-muted-text-color); }
+
+.pwcode-accounts-pad { padding: 16px; }
+.pwcode-accounts-stack { display: flex; flex-direction: column; gap: 16px; }
+.pwcode-accounts-text { margin: 0; font-size: 14px; }
+.pwcode-accounts-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.pwcode-accounts-error { flex-shrink: 0; padding: 12px 16px 0; }
+.pwcode-accounts-empty { padding: 16px; font-size: 14px; color: var(--theme-muted-text-color); }
+.pwcode-accounts-empty p { margin: 0 0 4px; }
+.pwcode-accounts-move { flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--theme-border); }
+
+/* The header and each row share this frame, so the columns line up with the
+   actions button sitting inside the row. */
+.pwcode-account-frame { display: flex; align-items: center; gap: 4px; border-radius: 6px; padding-right: 6px; }
+.pwcode-account-grid {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 76px 76px;
+  align-items: center; column-gap: 12px; padding-left: 12px; padding-right: 8px;
+}
+.pwcode-account-actions { width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+@media (max-width: 480px) {
+  .pwcode-account-grid { grid-template-columns: minmax(0, 1fr) 60px 60px; column-gap: 8px; }
+}
+
+.pwcode-accounts-columns {
+  flex-shrink: 0; padding: 8px 4px; border-bottom: 1px solid var(--theme-border);
+  text-align: right; font-size: 11px; color: var(--theme-muted-text-color);
+}
+.pwcode-accounts-name-head { text-align: left; padding-left: 26px; }
+
+/* Holds five rows' height from the first paint, so the panel doesn't grow when the list loads. */
+.pwcode-accounts-list { flex: 1; min-height: min(18rem, 40dvh); overflow-y: auto; overscroll-behavior: contain; padding: 4px; outline: none; }
+.pwcode-accounts-card .pwcode-accounts-list, .pwcode-accounts-bare .pwcode-accounts-list { min-height: 0; max-height: 24rem; }
+.pwcode-accounts-list > * + * { margin-top: 4px; }
+
+.pwcode-account-row { cursor: pointer; transition: background-color 150ms; }
+.pwcode-account-row[data-disabled] { cursor: not-allowed; }
+.pwcode-account-row:not([data-disabled]):not([data-selected]):hover,
+.pwcode-account-row:not([data-disabled]):not([data-selected]):has([data-highlighted]),
+.pwcode-account-row[data-menu-open] { background: var(--theme-hover); }
+.pwcode-account-row[data-selected] { background: var(--theme-accent-subtle); }
+.pwcode-accounts-list:focus-visible .pwcode-account-row:has([data-highlighted]) { outline: 2px solid var(--theme-link); outline-offset: -2px; }
+
+.pwcode-account-option { min-height: 56px; padding-top: 8px; padding-bottom: 8px; text-align: left; outline: none; }
+.pwcode-account-who { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.pwcode-account-mark {
+  display: flex; width: 16px; height: 16px; flex-shrink: 0; align-items: center; justify-content: center;
+  border-radius: 999px; border: 1px solid var(--theme-border-strong);
+}
+.pwcode-account-mark[data-hidden] { visibility: hidden; }
+.pwcode-account-mark svg { width: 10px; height: 10px; }
+.pwcode-account-option[aria-checked='true'] .pwcode-account-mark { border-color: var(--theme-accent); background: var(--theme-accent); color: var(--theme-accent-text); }
+.pwcode-account-names { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.pwcode-account-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.pwcode-account-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.pwcode-account-detail.is-hint { white-space: normal; }
+
+/* Muted words read as plain text on a highlighted or chosen row. */
+.pwcode-account-name[data-muted], .pwcode-account-detail, .pwcode-account-status, .pwcode-account-muted, .pwcode-account-reset { color: var(--theme-muted-text-color); }
+.pwcode-account-option:is([data-highlighted], [aria-checked='true']) :is(.pwcode-account-name, .pwcode-account-detail, .pwcode-account-status, .pwcode-account-muted, .pwcode-account-reset) { color: var(--theme-app); }
+
+.pwcode-account-status { grid-column: span 2; text-align: right; font-size: 11px; }
+.pwcode-account-limit { display: flex; min-width: 0; flex-direction: column; align-items: flex-end; gap: 4px; font-variant-numeric: tabular-nums; }
+.pwcode-account-meter { width: 100%; }
+.pwcode-account-track { margin-left: auto; height: 3px !important; width: 48px !important; }
+.pwcode-account-reset { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.25; }
+.pwcode-account-reset-short { display: none; }
+@media (max-width: 480px) {
+  .pwcode-account-reset-short { display: inline; }
+  .pwcode-account-reset-long { display: none; }
+}
+
+.pwcode-account-more { width: 24px !important; height: 24px !important; opacity: 0; transition: opacity 150ms; }
+.pwcode-account-row:hover .pwcode-account-more,
+.pwcode-account-row:has([data-highlighted]) .pwcode-account-more,
+.pwcode-account-more[data-popup-open] { opacity: 1; }
+@media (pointer: coarse) { .pwcode-account-more { opacity: 1; } }
+
+/* Matches the permission picker it sits beside under the composer. */
+.pwcode-account-chip {
+  display: inline-flex; min-width: 0; max-width: 12rem; align-items: center; gap: 4px;
+  padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; cursor: pointer;
+  font: inherit; font-size: 11px; color: var(--theme-muted-text-color); outline: none;
+  transition: color 150ms, background-color 150ms;
+}
+.pwcode-account-chip:hover { color: var(--theme-app); background: var(--theme-muted-panel-bg); }
+.pwcode-account-chip:focus-visible { box-shadow: 0 0 0 1px var(--theme-focus); }
+.pwcode-account-chip:disabled { cursor: not-allowed; opacity: 0.5; }
+.pwcode-account-chip-icon { width: 12px; height: 12px; flex-shrink: 0; }

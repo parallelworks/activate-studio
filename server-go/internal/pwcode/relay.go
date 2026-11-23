@@ -82,6 +82,16 @@ func (c *RelayClient) Machine() string { return c.machine }
 // relayPath is the platform path for a daemon request, or "" for one the
 // client does not send.
 func (c *RelayClient) relayPath(method, route string) string {
+	if rest, ok := strings.CutPrefix(route, "/v1/claude-code"); ok {
+		suffix, query, _ := strings.Cut(rest, "?")
+		if query != "" {
+			query = "?" + query
+		}
+		if MachineRoute(method, suffix) == "" {
+			return ""
+		}
+		return "/api/code/machines/" + platform.EncodeURIComponent(c.machine) + "/claude-code" + suffix + query
+	}
 	rest, ok := strings.CutPrefix(route, "/v1/sessions/")
 	if !ok {
 		return ""
@@ -126,6 +136,19 @@ func (c *RelayClient) Call(ctx context.Context, method, route string, body any, 
 		return nil, &DaemonError{Message: "ACTIVATE does not offer this for a session on another machine yet.", Status: http.StatusNotImplemented}
 	}
 	v, err := Request(ctx, relayDoer{c}, method, route, body, timeout)
+	var de *DaemonError
+	if errors.As(err, &de) {
+		return nil, relayError(de)
+	}
+	return v, err
+}
+
+// GetBytes reads a body that is not JSON (an image) through the relay.
+func (c *RelayClient) GetBytes(ctx context.Context, route string, max int64) (*Bytes, error) {
+	if c.origin == "" || c.relayPath(http.MethodGet, route) == "" {
+		return nil, &DaemonError{Message: "ACTIVATE does not offer this for a session on another machine yet.", Status: http.StatusNotImplemented}
+	}
+	v, err := RequestBytes(ctx, relayDoer{c}, route, max)
 	var de *DaemonError
 	if errors.As(err, &de) {
 		return nil, relayError(de)

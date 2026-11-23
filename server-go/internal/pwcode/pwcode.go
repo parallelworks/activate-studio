@@ -169,26 +169,85 @@ func Request(ctx context.Context, client Doer, method, route string, body any, t
 		}
 	}
 	if res.StatusCode >= 400 {
-		detail := ""
-		if o := jsonv.Obj(parsed); o != nil {
-			d, _ := o.Get("detail")
-			t, _ := o.Get("title")
-			switch {
-			case jsonv.Truthy(d):
-				detail = jsonv.String(d)
-			case jsonv.Truthy(t):
-				detail = jsonv.String(t)
-			}
-		}
-		if detail == "" {
-			detail = sliceRunes(string(text), 200)
-		}
-		if detail == "" {
-			detail = strconv.Itoa(res.StatusCode)
-		}
-		return nil, &DaemonError{Message: "pw code daemon: " + detail, Status: res.StatusCode}
+		return nil, statusError(res.StatusCode, parsed, text)
 	}
 	return parsed, nil
+}
+
+// statusError is a daemon's refusal, worded from its problem's detail or
+// title, else its body.
+func statusError(status int, parsed any, text []byte) error {
+	detail := ""
+	if o := jsonv.Obj(parsed); o != nil {
+		d, _ := o.Get("detail")
+		t, _ := o.Get("title")
+		switch {
+		case jsonv.Truthy(d):
+			detail = jsonv.String(d)
+		case jsonv.Truthy(t):
+			detail = jsonv.String(t)
+		}
+	}
+	if detail == "" {
+		detail = sliceRunes(string(text), 200)
+	}
+	if detail == "" {
+		detail = strconv.Itoa(status)
+	}
+	return &DaemonError{Message: "pw code daemon: " + detail, Status: status}
+}
+
+// Bytes is an answer whose body is not JSON, such as an image, as it came.
+type Bytes struct {
+	Type string
+	Body []byte
+}
+
+// ByteGetter is a Client that can also read a body that is not JSON.
+type ByteGetter interface {
+	GetBytes(ctx context.Context, route string, max int64) (*Bytes, error)
+}
+
+// RequestBytes is a GET through client whose answer is kept as it came, up
+// to max bytes; a longer one is refused rather than cut.
+func RequestBytes(ctx context.Context, client Doer, route string, max int64) (*Bytes, error) {
+	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, "http://daemon"+route, nil)
+	if err != nil {
+		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error()}
+	}
+	req.Host = "daemon"
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, transportError(cctx, err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, max+1))
+	if err != nil {
+		return nil, transportError(cctx, err)
+	}
+	if res.StatusCode >= 400 {
+		parsed, _ := jsonv.Decode(body)
+		return nil, statusError(res.StatusCode, parsed, body)
+	}
+	if int64(len(body)) > max {
+		return nil, &DaemonError{Message: "pw code daemon: the answer is larger than the Studio passes on", Status: http.StatusBadGateway}
+	}
+	return &Bytes{Type: res.Header.Get("Content-Type"), Body: body}, nil
+}
+
+func (l *localClient) GetBytes(ctx context.Context, route string, max int64) (*Bytes, error) {
+	sock := l.s.SocketPath()
+	client := &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", sock)
+		},
+		DisableKeepAlives: true,
+	}}
+	defer client.CloseIdleConnections()
+	return RequestBytes(ctx, client, route, max)
 }
 
 // transportError is how Node's request reports a connection that failed:

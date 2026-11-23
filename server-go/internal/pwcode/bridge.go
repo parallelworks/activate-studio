@@ -160,6 +160,22 @@ func (r *remoteClient) Call(ctx context.Context, method, route string, body any,
 	return nil, &DaemonError{Message: r.resource + ": " + said}
 }
 
+// GetBytes reads a body that is not JSON through the bridge; a failure that
+// is not the daemon's answer starts a fresh bridge next time, as Call does.
+func (r *remoteClient) GetBytes(ctx context.Context, route string, max int64) (*Bytes, error) {
+	b := r.bridge()
+	b.mu.Lock()
+	b.last = time.Now()
+	b.mu.Unlock()
+	v, err := RequestBytes(ctx, b, route, max)
+	var de *DaemonError
+	if err != nil && !(errors.As(err, &de) && de.Status != 0) {
+		r.s.bridges.drop(b)
+		b.destroy()
+	}
+	return v, err
+}
+
 func (bs *bridges) drop(b *bridge) {
 	bs.mu.Lock()
 	if bs.m[b.id] == b {

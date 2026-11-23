@@ -1,0 +1,71 @@
+/* The composer's status row: the turn's line, the goal and agents at its
+   end, the agents list and the task list under it. */
+.pwcode-status { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pwcode-status-line { display: flex; align-items: center; column-gap: 12px; min-height: 32px; min-width: 0; }
+.pwcode-status-line[hidden] { display: none; }
+.pwcode-status-activity { flex: 1 0 auto; min-width: 0; }
+.pwcode-status-activity.is-brief { flex: 1 1 0; overflow: hidden; }
+.pwcode-status-end { margin-left: auto; display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+.pwcode-status-end:empty { display: none; }
+.pwcode-status-reconnecting { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 4px; font-size: 13px; color: var(--theme-muted-text-color); min-width: 0; }
+.pwcode-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.pwcode-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pwcode-agent-mark { display: inline-flex; width: 14px; height: 14px; flex-shrink: 0; align-items: center; justify-content: center; }
+
+.pwcode-agents-toggle { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pwcode-agents-open {
+  display: flex; align-items: center; gap: 8px; min-height: 28px; min-width: 0; padding: 0 8px;
+  border: 0; border-radius: 6px; background: transparent; cursor: pointer; text-align: left;
+  font: inherit; font-size: 13px; color: var(--theme-muted-text-color);
+}
+.pwcode-agents-open:hover, .pwcode-agents-open[aria-expanded='true'] { color: var(--theme-app); }
+.pwcode-agents-open:hover { background: var(--theme-hover); }
+.pwcode-agents-open:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
+.pwcode-agents-title { flex-shrink: 0; font-weight: 600; color: var(--theme-app); }
+.pwcode-agents-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwcode-agents-summary:empty { display: none; }
+
+.pwcode-agents-list { border: 1px solid var(--theme-border); border-radius: 12px; background: var(--theme-panel-bg); font-size: 14px; }
+/* Positioned, so the rows' hidden state words scroll and clip with it. */
+.pwcode-agents-list ul { position: relative; list-style: none; margin: 0; padding: 4px; max-height: 204px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.pwcode-agent-row { display: flex; align-items: center; border-radius: 6px; color: var(--theme-muted-text-color); min-width: 0; }
+.pwcode-agent-row:hover { background: var(--theme-hover); color: var(--theme-app); }
+.pwcode-agent-row.is-viewing { background: var(--theme-accent-subtle); color: var(--theme-app); }
+.pwcode-agent-pick {
+  display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-height: 28px; min-width: 0; padding: 2px 4px 2px 8px;
+  border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; text-align: left; font: inherit; font-size: 13px;
+}
+.pwcode-agent-pick:focus-visible, .pwcode-agents-earlier:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: -2px; }
+.pwcode-agent-type { flex-shrink: 0; font-family: var(--pw-font-mono, ui-monospace, monospace); font-weight: 600; }
+.pwcode-agent-desc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwcode-agent-main { font-weight: 600; }
+.pwcode-agent-state { flex-shrink: 0; font-size: 12px; font-weight: 500; }
+.pwcode-tone-warning { color: var(--theme-warning-text); }
+.pwcode-tone-error { color: var(--theme-error-text); }
+.pwcode-tone-muted { color: var(--theme-muted-text-color); }
+.pwcode-agent-time { flex-shrink: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pwcode-agent-action { display: flex; width: 28px; flex-shrink: 0; justify-content: center; }
+.pwcode-agent-dismiss { opacity: 0; transition: opacity 150ms; }
+.pwcode-agent-row:hover .pwcode-agent-dismiss,
+.pwcode-agent-row:focus-within .pwcode-agent-dismiss,
+.pwcode-agent-dismiss.is-shown { opacity: 1; }
+@media (pointer: coarse) { .pwcode-agent-dismiss { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pwcode-agent-dismiss { transition: none; } }
+@media (max-width: 640px) { .pwcode-agent-tokens { display: none; } }
+.pwcode-agents-earlier {
+  display: flex; width: 100%; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px;
+  border: 0; border-radius: 6px; background: transparent; cursor: pointer; text-align: left;
+  font: inherit; font-size: 13px; font-weight: 500; color: var(--theme-muted-text-color);
+}
+.pwcode-agents-earlier:hover { background: var(--theme-hover); color: var(--theme-app); }
+.pwcode-agents-foot { display: flex; justify-content: flex-end; border-top: 1px solid var(--theme-border); padding: 4px; }
+
+/* Over a subagent's transcript: which agent it is, Stop and Back. */
+.pwcode-subagent-bar {
+  display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 4px; min-width: 0;
+  padding: 6px 12px 6px 16px; border-bottom: 1px solid var(--theme-border); background: var(--theme-panel-bg); font-size: 13px;
+}
+.pwcode-subagent-name { display: flex; flex: 1 1 14rem; align-items: center; gap: 8px; min-width: 0; }
+.pwcode-subagent-name .pwcode-agent-desc { flex: 0 1 auto; }
+.pwcode-subagent-actions { margin-left: auto; display: flex; flex-shrink: 0; align-items: center; gap: 8px; }

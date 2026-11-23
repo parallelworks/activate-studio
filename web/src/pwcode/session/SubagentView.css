@@ -1,0 +1,3 @@
+.pwcode-subagent-failed { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: 12px; padding: 40px 16px 0; }
+.pwcode-subagent-model { display: flex; height: 32px; max-width: 280px; min-width: 0; align-items: center; padding: 0 10px; font-size: 13px; color: var(--theme-muted-text-color); }
+.pwcode-subagent-note { box-sizing: content-box; min-height: 1lh; margin: 0; padding: 2px 6px; font-size: 11px; color: var(--theme-muted-text-color); }

@@ -37,6 +37,10 @@ type fakeCodePlatform struct {
 func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rest, ok := cutAny(r.URL.Path, "/api/code/machines/", "/ws/code/machines/"); ok {
 		machine, path, _ := strings.Cut(rest, "/sessions/")
+		route := "/v1/sessions/" + path
+		if m, cc, ok := strings.Cut(rest, "/claude-code"); ok && !strings.Contains(m, "/") {
+			machine, route = m, "/v1/claude-code"+cc
+		}
 		p.mu.Lock()
 		p.relayed = append(p.relayed, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization"))
 		if strings.HasPrefix(r.URL.Path, "/ws/") {
@@ -52,7 +56,7 @@ func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(404)
 			return
 		}
-		r.URL.Path = "/v1/sessions/" + path
+		r.URL.Path = route
 		h.ServeHTTP(w, r)
 		return
 	}

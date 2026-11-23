@@ -1,0 +1,22 @@
+.pwcode-signin { display: flex; min-height: 0; flex-direction: column; gap: 12px; overflow-y: auto; overscroll-behavior: contain; padding: 16px; }
+.pwcode-signin-muted { margin: 0; font-size: 14px; color: var(--theme-muted-text-color); }
+.pwcode-signin-small { margin: 0; font-size: 12px; color: var(--theme-muted-text-color); }
+.pwcode-signin-output {
+  margin: 0; height: min(22rem, 42dvh); min-height: 9rem; min-width: 0; overflow: auto;
+  padding: 8px; border: 1px solid var(--theme-border); border-radius: 6px;
+  background: var(--theme-code-bg); color: var(--theme-code-text);
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.4;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.pwcode-signin-output:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
+.pwcode-signin-code { display: flex; gap: 8px; min-width: 0; }
+.pwcode-signin-input {
+  flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--theme-border-field); border-radius: 6px;
+  background: var(--theme-input-bg); color: var(--theme-app); font-family: var(--font-mono); font-size: 13px;
+}
+.pwcode-signin-input:disabled { background: var(--theme-input-disabled-bg); cursor: not-allowed; }
+.pwcode-signin-input:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 1px; }
+.pwcode-signin-status { margin: 0; font-size: 14px; color: var(--theme-muted-text-color); }
+.pwcode-signin-status.is-done { display: flex; align-items: center; gap: 8px; font-weight: 500; color: var(--theme-app); }
+.pwcode-signin-check { width: 16px; height: 16px; flex-shrink: 0; }
+.pwcode-signin-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }

@@ -38,8 +38,13 @@ import { SaveChatButton } from '../components/SaveChatButton'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
 import { fitControls, watchNotices } from '../chatTop'
 import { PWCodeSession } from '../pwcode/PWCodeSession'
+import { BackgroundCommandHint } from '../pwcode/session/BackgroundCommandHint'
+import { BACKGROUND_TOOL } from '@parallelworks/code'
+
 import { useChatLink } from '../pwcode/useChatLink'
 import { PWCodeToolsNote } from '../pwcode/ToolsNote'
+
+const PWCODE_TOOL_FOOTERS = { [BACKGROUND_TOOL]: BackgroundCommandHint }
 
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
@@ -509,7 +514,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         // the alternative the server allows beside it.
         // The tools that run GUFI show the commands they ran in their row,
         // and fold with the other finished calls.
-        slots: { composerUsage: <EffortPicker conversationId={activeId} />, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolPresentation: gufiToolPresentation },
+        // A pw code session's running Bash step offers moving it to the
+        // background (Ctrl+B); the hint draws nothing in other chats.
+        slots: { composerUsage: <EffortPicker conversationId={activeId} />, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolFooters: PWCODE_TOOL_FOOTERS, toolPresentation: gufiToolPresentation },
         strings: {
           thinking: {
             thoughtFor: (duration: string) => `Worked for ${duration}`,
@@ -591,7 +598,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
                 onClose={() => setShowManage(false)}
               />
             ) : showAttachments ? <AttachmentManager /> : activeId ? (pw.shown && pw.link?.session ? (
-              <PWCodeSession key={activeId} machine={pw.machine} sessionId={pw.link.session} username={cfg.user?.username ?? ''}
+              <PWCodeSession key={activeId} conversationId={activeId} machine={pw.machine} sessionId={pw.link.session} username={cfg.user?.username ?? ''}
                 notes={<PWCodeToolsNote conversationId={activeId} link={pw.link} />} />
             ) : <ChatThread conversationId={activeId} find={active} />) : (
               // Read live, so a theme toggle swaps a light and a dark icon.
@@ -602,7 +609,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           </ChatLayout>
           {activeId && !showAttachments && !showManage && <ConversationScrubber />}
           <SteerBridge />
-          {!showAttachments && !showManage && <SlashPalette canvas={canvasRef} />}
+          {/* A pw code session's composer has its own command menu, which
+              this one would answer Enter for. */}
+          {!showAttachments && !showManage && !pw.shown && <SlashPalette canvas={canvasRef} />}
           {!showAttachments && !showManage && <MentionPalette canvas={canvasRef} />}
           <MentionLinks canvas={canvasRef} libraryIds={libraryIds} />
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
