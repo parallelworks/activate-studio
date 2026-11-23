@@ -229,6 +229,48 @@ func TestAPlanAnswersModeIsHeldToTheCeilingAndLogged(t *testing.T) {
 	}
 }
 
+// A session the Studio drives directly runs on the Studio's own machine,
+// as its terminal does: no ceiling from ACTIVATE, and every mode change is
+// logged, by settings or by a plan's answer on either route.
+func TestTheDirectPathHasNoCeilingAndLogsEveryModeChange(t *testing.T) {
+	f := &fakePW{}
+	m, base, _ := continueModule(t, f, "d1")
+	log := logTo(m)
+	_, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`)
+	id, _ := out["conversationId"].(string)
+	if id == "" {
+		t.Fatalf("continue: %v", out)
+	}
+	s := base + "/api/code/machines/studio/sessions/s1"
+	if code, out, _ := send(t, http.MethodPatch, s+"/settings", `{"permissionMode":"bypass-permissions"}`); code != 200 {
+		t.Errorf("settings: %d %v", code, out)
+	}
+	if code, out, _ := send(t, http.MethodPost, s+"/approvals/ap1", `{"allowed":true,"mode":"bypass-permissions"}`); code != 200 && code != 204 {
+		t.Errorf("plan answer: %d %v", code, out)
+	}
+	if code, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap2", `{"kind":"plan","allowed":true}`); code != 200 {
+		t.Errorf("chat plan answer: %d %v", code, out)
+	}
+	l := log.String()
+	for _, want := range []string{
+		`mode=bypass-permissions via=settings`,
+		`mode=bypass-permissions via="plan answer"`,
+		`mode=auto via="chat plan answer"`,
+	} {
+		if !strings.Contains(l, want) {
+			t.Errorf("not logged: %s\n%s", want, l)
+		}
+	}
+	if n := strings.Count(l, "permission mode changed"); n != 3 || strings.Count(l, "relay=false") < 3 || !strings.Contains(l, "conversation="+id) || !strings.Contains(l, "session=s1") {
+		t.Errorf("each change once, with its chat and session: %d\n%s", n, l)
+	}
+	// A confirm's answer is not a mode change.
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap3", `{"allowed":true}`)
+	if n := strings.Count(log.String(), "permission mode changed"); n != 3 {
+		t.Errorf("a confirm was logged as a mode change: %d", n)
+	}
+}
+
 // An approval's or queued turn's id is one plain segment: no dot segment,
 // encoded or not, no ';', space or '%', so nothing in front of the session
 // can turn it into another route.
