@@ -87,6 +87,57 @@ describe("pw code's approvals", () => {
     expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-1 {"allowed":false}')
   })
 
+  it('answers a question with the options picked or its own words, or talks it through', async () => {
+    const calls = serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null })
+    render(<PWCodeApprovals conversationId="c1" />)
+    const questions = [
+      { question: 'Which mesh?', header: 'Mesh', options: [{ label: 'Coarse' }, { label: 'Fine', description: 'slower' }] },
+      { question: 'Anything else?' },
+    ]
+    act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-approval', { detail: { conversationId: 'c1', approval: { id: 'ap-q', kind: 'ask', questions } } })) })
+    expect(await screen.findByText('pw code asks you some questions')).toBeInTheDocument()
+    const sendBtn = screen.getByRole('button', { name: 'Send' })
+    expect(sendBtn).toBeDisabled()
+    fireEvent.click(screen.getByRole('radio', { name: /Fine/ }))
+    expect(sendBtn).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Your own answer to: Anything else?' }), { target: { value: ' keep the old output ' } })
+    fireEvent.click(sendBtn)
+    await waitFor(() => expect(screen.queryByText('pw code asks you some questions')).not.toBeInTheDocument())
+    expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-q {"allowed":true,"kind":"ask","answers":[{"question":"Which mesh?","picked":["Fine"],"text":""},{"question":"Anything else?","picked":[],"text":"keep the old output"}]}')
+
+    act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-approval', { detail: { conversationId: 'c1', approval: { id: 'ap-r', kind: 'ask', questions: [questions[1]] } } })) })
+    fireEvent.click(await screen.findByRole('button', { name: 'Talk it through' }))
+    await waitFor(() => expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-r {"allowed":false,"kind":"ask","chat":true}'))
+  })
+
+  it('approves or rejects a plan', async () => {
+    const calls = serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null })
+    render(<PWCodeApprovals conversationId="c1" />)
+    act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-approval', { detail: { conversationId: 'c1', approval: { id: 'ap-p', kind: 'plan', plan: '1. mesh\n2. run' } } })) })
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }))
+    await waitFor(() => expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-p {"allowed":false,"kind":"plan"}'))
+  })
+
+  it("rejects a plan with what to change, and shows a long plan whole before it is approved", async () => {
+    const calls = serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null })
+    render(<PWCodeApprovals conversationId="c1" />)
+    act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-approval', { detail: { conversationId: 'c1', approval: { id: 'ap-f', kind: 'plan', plan: '1. mesh' } } })) })
+    fireEvent.change(await screen.findByRole('textbox', { name: 'What to change in the plan' }), { target: { value: ' split step 1 ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    await waitFor(() => expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-f {"allowed":false,"kind":"plan","message":"split step 1"}'))
+
+    const long = 'Step one. ' + 'x'.repeat(700) + ' The last step deletes results.'
+    act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-approval', { detail: { conversationId: 'c1', approval: { id: 'ap-l', kind: 'plan', plan: long } } })) })
+    const approve = await screen.findByRole('button', { name: 'Approve' })
+    expect(screen.queryByText(/The last step deletes results/)).not.toBeInTheDocument()
+    expect(approve).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /Show all/ }))
+    expect(screen.getByText(/The last step deletes results/)).toBeInTheDocument()
+    expect(approve).toBeEnabled()
+    fireEvent.click(approve)
+    await waitFor(() => expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-l {"allowed":true,"kind":"plan"}'))
+  })
+
   it('leaves when pw code says the request was answered elsewhere', async () => {
     serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null })
     render(<PWCodeApprovals conversationId="c1" />)

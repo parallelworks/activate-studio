@@ -184,7 +184,11 @@ func signedIn(v *platform.Viewer) bool { return v != nil && (v.AuthEnabled || v.
 // deployment's: that account runs other people's delegated and standing
 // agents, so its list would show their transcripts and let anyone answer
 // their waiting calls (as sessions.DesktopKey does for desktops).
-func viewerKey(r *http.Request, p *platform.Platform) (string, error) {
+func viewerKey(r *http.Request, p *platform.Platform) (string, error) { return ViewerKey(r, p) }
+
+// ViewerKey is viewerKey, for the chat that drives a session on another
+// machine through the platform with the same credential.
+func ViewerKey(r *http.Request, p *platform.Platform) (string, error) {
 	v, err := p.ViewerOf(r)
 	if err != nil {
 		return "", err

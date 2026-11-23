@@ -1962,6 +1962,12 @@ a.identity-btn { text-decoration: none; }
 .engine-tools-off { color: var(--pw-text); }
 .pwcode-approval .pwcode-command { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
 .pwcode-approval .pwcode-plan { margin: 4px 0 0; white-space: pre-wrap; }
+.pwcode-approval .pwcode-plan-whole { max-height: 40vh; overflow-y: auto; }
+.pwcode-approval .pwcode-plan-change { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; }
+.pwcode-approval .pwcode-question { border: 0; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pwcode-approval .pwcode-question legend { padding: 0; margin-bottom: 2px; }
+.pwcode-approval .pwcode-option { display: flex; gap: 6px; align-items: baseline; }
+.pwcode-approval .pwcode-answer { font: inherit; padding: 4px 8px; border: 1px solid var(--pw-border, currentColor); border-radius: 6px; background: transparent; color: inherit; }
 .agents-kind { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 /* A file input laid over a label drawn as a button. */
 .agents-file { overflow: hidden; }

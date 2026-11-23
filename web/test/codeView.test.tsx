@@ -81,13 +81,22 @@ describe('Continue in Studio', () => {
     { id: 'm2', name: 'laptop', kind: 'existing', status: 'connected', daemonId: 'd2' },
     { id: 'm3', name: 'old', kind: 'existing', status: 'connected', hostname: 'BOX.example' },
   ]
-  it('is offered on the machine whose daemon the chat reaches, and says why not elsewhere', () => {
+  it('is offered on the machine whose daemon the chat reaches, and through ACTIVATE on the others', () => {
     expect(continuable(row({ machineId: 'm1' }), machines, here)).toEqual({ ok: true, why: '' })
-    expect(continuable(row({ machineId: 'm2', machine: 'laptop' }), machines, here).why).toMatch(/on laptop, and this Studio's pw code runs on box.example, so it is read only here/)
     expect(continuable(row({ machineId: 'm3' }), machines, here).ok).toBe(true)
-    expect(continuable(row({ machineId: 'm3' }), machines, { ...here, daemonId: undefined }).ok).toBe(false)
-    expect(continuable(row({ machineId: 'm1', archived: true }), machines, here).why).toMatch(/archived/)
-    expect(continuable(row({ machineId: 'm1' }), machines, { available: false, reason: 'Sign in to use pw code.', chats: [] }).why).toBe('Sign in to use pw code.')
+    // Another machine: through the relay where it is offered.
+    expect(continuable(row({ machineId: 'm2', machine: 'laptop' }), machines, { ...here, relay: true })).toEqual({ ok: true, why: '', relay: true })
+    expect(continuable(row({ machineId: 'm3' }), machines, { ...here, daemonId: undefined, relay: true })).toEqual({ ok: true, why: '', relay: true })
+    // This Studio's own pw code down: the relay still reaches every machine.
+    expect(continuable(row({ machineId: 'm1' }), machines, { available: false, reason: 'pw code did not start here.', chats: [], relay: true }).relay).toBe(true)
+  })
+  it('says what still works here, and where to answer, where it cannot be continued', () => {
+    const elsewhere = continuable(row({ machineId: 'm2', machine: 'laptop' }), machines, { ...here, relay: false, relayReason: 'This Studio is not connected to an ACTIVATE platform.' })
+    expect(elsewhere.ok).toBe(false)
+    expect(elsewhere.why).toBe("This session runs on laptop, and this Studio cannot carry a chat's messages to it for you (This Studio is not connected to an ACTIVATE platform). Here you can read it and Approve or Deny what it waits on; to send it messages, open it in ACTIVATE or where it runs.")
+    expect(elsewhere.why).not.toMatch(/read only here/)
+    expect(continuable(row({ machineId: 'm1', archived: true }), machines, { ...here, relay: true }).why).toBe('This session is archived, so it cannot be continued in a chat; you can still read it here. Restore it in ACTIVATE to continue it.')
+    expect(continuable(row({ machineId: 'm1' }), machines, { available: false, reason: 'Sign in to use pw code.', chats: [] }).why).toMatch(/^Sign in to use pw code\. Here you can read it and Approve or Deny/)
   })
 
   let calls: string[] = []
@@ -95,7 +104,7 @@ describe('Continue in Studio', () => {
     localStorage.clear(); location.hash = ''; calls = []
   })
   afterEach(() => { vi.unstubAllGlobals() })
-  function serve(chats: Here['chats'] = [], refuse = '') {
+  function serve(chats: Here['chats'] = [], refuse = '', relay = false) {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}${init?.body ? ' ' + String(init.body) : ''}`)
       const confirmed = String(init?.body ?? '').includes('"confirmed":true')
@@ -103,9 +112,11 @@ describe('Continue in Studio', () => {
         row({ machineId: 'm1', machine: 'box', id: 's1', title: 'Fix the build' }),
         row({ machineId: 'm2', machine: 'laptop', id: 's2', title: 'On the laptop' }),
       ] }
-        : url === '/api/chat/pwcode/here' ? { ...here, chats }
+        : url === '/api/chat/pwcode/here' ? { ...here, chats, relay }
         : url.startsWith('/api/code-sessions/item') ? { session: row({ machineId: url.includes('m2') ? 'm2' : 'm1', machine: url.includes('m2') ? 'laptop' : 'box', id: url.includes('s2') ? 's2' : 's1', title: 't' }), history: [], earlier: 0 }
-        : url === '/api/chat/pwcode/continue' ? (confirmed ? { conversationId: 'c-new' } : { confirm: 'This session is open on laptop.example. Continuing it here takes it over from there.' })
+        : url === '/api/chat/pwcode/continue' ? (confirmed ? { conversationId: 'c-new' } : url && String(init?.body).includes('"m2"')
+          ? { confirm: 'This session runs on laptop, and stays there: this chat sends your messages, answers and Stop to it through ACTIVATE, as you.', relay: true }
+          : { confirm: 'This session is open on laptop.example. Continuing it here takes it over from there.' })
         : {}
       if (refuse && url === '/api/chat/pwcode/continue' && confirmed) {
         return new Response(JSON.stringify({ error: refuse }), { status: 409, headers: { 'Content-Type': 'application/json' } })
@@ -127,6 +138,19 @@ describe('Continue in Studio', () => {
     await waitFor(() => expect(location.hash).toBe('#chat=c-new'))
     expect(calls).toContain('POST /api/chat/pwcode/continue {"machine":"m1","session":"s1","confirmed":true}')
     expect(getEngine('c-new')).toBe('pwcode')
+  })
+
+  it('continues a session on another machine through ACTIVATE, where it keeps running', async () => {
+    serve([], '', true)
+    render(<CodeView />)
+    fireEvent.click(await screen.findByText('On the laptop'))
+    const go = await screen.findByRole('button', { name: 'Continue in Studio' })
+    await waitFor(() => expect(go).toBeEnabled())
+    fireEvent.click(go)
+    expect(await screen.findByText(/runs on laptop, and stays there/)).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue in Studio' }).at(-1)!)
+    await waitFor(() => expect(location.hash).toBe('#chat=c-new'))
+    expect(calls).toContain('POST /api/chat/pwcode/continue {"machine":"m2","session":"s2","confirmed":true}')
   })
 
   it('says in the dialog why the Studio could not continue, and stays on the session', async () => {
@@ -155,13 +179,13 @@ describe('Continue in Studio', () => {
     expect(calls.some(c => c.startsWith('GET /api/code-sessions/item?machine=m1&id=s1'))).toBe(true)
   })
 
-  it('keeps a session on another machine read only, and opens a chat that continues one', async () => {
+  it('says what works here for a session on another machine ACTIVATE cannot carry a chat to, and opens a chat that continues one', async () => {
     serve([{ session: 's1', conversationId: 'c-old', continued: true }])
     render(<CodeView />)
     expect(await screen.findByText(/in a Studio chat · box/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('On the laptop'))
     const go = await screen.findByRole('button', { name: 'Continue in Studio' })
-    await waitFor(() => expect(screen.getByText(/so it is read only here/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/cannot carry a chat's messages to it for you\. Here you can read it and Approve or Deny/)).toBeInTheDocument())
     expect(go).toBeDisabled()
     fireEvent.click(screen.getByText('Fix the build'))
     fireEvent.click(await screen.findByRole('button', { name: 'Open the Studio chat' }))

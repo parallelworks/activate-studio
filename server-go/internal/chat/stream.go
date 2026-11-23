@@ -172,6 +172,14 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	if rb.Present {
 		_ = json.Unmarshal(rb.Raw, &body)
 	}
+	// A chat that drives a pw code session takes messages only from its
+	// owner, as its Stop and approvals do: nothing another person sends is
+	// stored in it or reaches the session.
+	if c := m.Conv.Get(deref(body.ConversationID)); c != nil && c.PWCode != nil && c.PWCode.Session != "" {
+		if _, err := m.ownPWChat(r, c.ID); err != nil {
+			return err
+		}
+	}
 	model := StripAvailabilityMark(jsString(body.Model))
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

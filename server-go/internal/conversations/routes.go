@@ -33,6 +33,12 @@ type Routes struct {
 
 // VisibleTo is visibleTo(c, username).
 func (rt *Routes) VisibleTo(c *Conversation, username string) bool {
+	// A chat that drives a pw code session on another of its owner's
+	// machines holds that session's turns, copied from their machine: it
+	// is theirs alone, even where chat history is shared.
+	if rt.AuthEnabled() && c.PWCode != nil && c.PWCode.Relay && c.OwnerName() != "" {
+		return username != "" && c.OwnerName() == username
+	}
 	if rt.SharedHistory() || !rt.AuthEnabled() {
 		return true
 	}
