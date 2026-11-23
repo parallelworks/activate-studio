@@ -959,7 +959,10 @@ func (m *Module) codeListing(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
-	if direct {
+	// The Studio's own machine is listed whenever pw code is offered to
+	// the person, chats or not: a new pw code chat's composer offers its
+	// models before the first message makes a session there.
+	if direct || m.pwcodeUnavailable(ctx, r) == "" {
 		rec := &bodyRecorder{header: http.Header{}}
 		if m.writeMachine(rec, r, &conversations.PWCodeLink{}) == nil && rec.status < 400 {
 			if v, err := jsonv.Decode(rec.body); err == nil && jsonv.Obj(v) != nil {

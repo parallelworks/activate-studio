@@ -113,7 +113,7 @@ func (m *Module) enabledModels(r *http.Request) (enabled []string, failing map[s
 // Settings names, and a session continued from the Code page (the
 // person's own), are kept as they are.
 func (m *Module) pwcodeModel(ctx context.Context, r *http.Request, t *pwTarget, link *conversations.PWCodeLink) {
-	if link == nil || link.Continued || link.Session == "" || m.eff().PWCodeModel != "" || !platformModel(link.Model) {
+	if link == nil || link.Continued || link.Session == "" || m.eff().PWCodeModel != "" || t.picked != "" || !platformModel(link.Model) {
 		return
 	}
 	enabled, failing, ok := m.enabledModels(r)

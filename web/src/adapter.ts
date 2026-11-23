@@ -3,6 +3,7 @@ import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getEngine, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
 import { fetchModels } from './api'
+import { firstMessagePick } from './pwcode/newChatModel'
 import { rememberToolCommands } from './components/GufiCommands'
 
 async function listModels(): Promise<ModelsList> {
@@ -44,6 +45,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       agent: getPersona(),
       effort: effortFor(req.conversationId) || null,
       engine: getEngine(req.conversationId) || null,
+      // The model a new pw code chat was set to before its first message;
+      // the server uses it only when this message makes the session.
+      ...firstMessagePick(req.conversationId),
       tools: req.tools,
       // The user's answer to a call held for approval; the server runs what
       // it held for that call, never what the request says to run.

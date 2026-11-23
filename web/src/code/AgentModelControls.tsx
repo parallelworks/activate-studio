@@ -33,7 +33,8 @@ export function AgentModelControls({ api, platform, machine, sessionId, claudeRe
   canStart: boolean
   model: BoundSetting
   modelNames?: Readonly<Record<string, string>> | undefined
-  effort: BoundSetting
+  /** Left out where the composer has its own effort control. */
+  effort?: BoundSetting | undefined
   allocation: BoundSetting
   /** The Claude account Claude's models are listed for. */
   account: string | undefined
@@ -83,7 +84,7 @@ export function AgentModelControls({ api, platform, machine, sessionId, claudeRe
           </button>
         }
       />
-      <EffortPicker effort={effort.value} onPick={effort.onChange} disabled={effort.disabled} className="code-setting-chip" />
+      {effort && <EffortPicker effort={effort.value} onPick={effort.onChange} disabled={effort.disabled} className="code-setting-chip" />}
       {picker.allocation && <AllocationSelector model={model.value} allocation={picker.allocation} />}
     </>
   )
