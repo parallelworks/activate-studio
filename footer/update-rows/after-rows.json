@@ -1,0 +1,538 @@
+[
+ {
+  "ename": "chromium",
+  "state": "reopen",
+  "w": 200,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen",
+    "cut": false,
+    "need": 78,
+    "have": 78
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "reopen",
+  "w": 200,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen",
+    "cut": false,
+    "need": 78,
+    "have": 78
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "reopen",
+  "w": 400,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen now",
+    "cut": false,
+    "need": 78,
+    "have": 78
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "reopen",
+  "w": 400,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen now",
+    "cut": false,
+    "need": 78,
+    "have": 78
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "reload",
+  "w": 200,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated Reload",
+    "cut": false,
+    "need": 50,
+    "have": 50
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "reload",
+  "w": 200,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated Reload",
+    "cut": false,
+    "need": 50,
+    "have": 50
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "reload",
+  "w": 400,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated to v1.203.24 Reload",
+    "cut": false,
+    "need": 123,
+    "have": 123
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "reload",
+  "w": 400,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated to v1.203.24 Reload",
+    "cut": false,
+    "need": 123,
+    "have": 123
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "both",
+  "w": 200,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated Reload",
+    "cut": false,
+    "need": 50,
+    "have": 50
+   },
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen",
+    "cut": false,
+    "need": 78,
+    "have": 78
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "both",
+  "w": 200,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated Reload",
+    "cut": false,
+    "need": 50,
+    "have": 50
+   },
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen",
+    "cut": false,
+    "need": 78,
+    "have": 78
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "both",
+  "w": 400,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated to v1.203.24 Reload",
+    "cut": false,
+    "need": 123,
+    "have": 123
+   },
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen now",
+    "cut": false,
+    "need": 78,
+    "have": 78
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "both",
+  "w": 400,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated to v1.203.24 Reload",
+    "cut": false,
+    "need": 123,
+    "have": 123
+   },
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen now",
+    "cut": false,
+    "need": 78,
+    "have": 78
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "browser",
+  "w": 200,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Reopen to update",
+    "cut": false,
+    "need": 105,
+    "have": 105
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "browser",
+  "w": 200,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Reopen to update",
+    "cut": false,
+    "need": 105,
+    "have": 105
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "browser",
+  "w": 400,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Reopen to update",
+    "cut": false,
+    "need": 105,
+    "have": 105
+   }
+  ]
+ },
+ {
+  "ename": "chromium",
+  "state": "browser",
+  "w": 400,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Reopen to update",
+    "cut": false,
+    "need": 105,
+    "have": 105
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "reopen",
+  "w": 200,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen",
+    "cut": false,
+    "need": 75,
+    "have": 75
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "reopen",
+  "w": 200,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen",
+    "cut": false,
+    "need": 75,
+    "have": 75
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "reopen",
+  "w": 400,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen now",
+    "cut": false,
+    "need": 75,
+    "have": 75
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "reopen",
+  "w": 400,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen now",
+    "cut": false,
+    "need": 75,
+    "have": 75
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "reload",
+  "w": 200,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated Reload",
+    "cut": false,
+    "need": 47,
+    "have": 47
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "reload",
+  "w": 200,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated Reload",
+    "cut": false,
+    "need": 47,
+    "have": 47
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "reload",
+  "w": 400,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated to v1.203.24 Reload",
+    "cut": false,
+    "need": 119,
+    "have": 119
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "reload",
+  "w": 400,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated to v1.203.24 Reload",
+    "cut": false,
+    "need": 119,
+    "have": 119
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "both",
+  "w": 200,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated Reload",
+    "cut": false,
+    "need": 47,
+    "have": 47
+   },
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen",
+    "cut": false,
+    "need": 75,
+    "have": 75
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "both",
+  "w": 200,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated Reload",
+    "cut": false,
+    "need": 47,
+    "have": 47
+   },
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen",
+    "cut": false,
+    "need": 75,
+    "have": 75
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "both",
+  "w": 400,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated to v1.203.24 Reload",
+    "cut": false,
+    "need": 119,
+    "have": 119
+   },
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen now",
+    "cut": false,
+    "need": 75,
+    "have": 75
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "both",
+  "w": 400,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reload",
+    "text": "Updated to v1.203.24 Reload",
+    "cut": false,
+    "need": 119,
+    "have": 119
+   },
+   {
+    "row": "footer-reopen",
+    "text": "Update ready Reopen now",
+    "cut": false,
+    "need": 75,
+    "have": 75
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "browser",
+  "w": 200,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Reopen to update",
+    "cut": false,
+    "need": 99,
+    "have": 99
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "browser",
+  "w": 200,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Reopen to update",
+    "cut": false,
+    "need": 99,
+    "have": 99
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "browser",
+  "w": 400,
+  "theme": "light",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Reopen to update",
+    "cut": false,
+    "need": 99,
+    "have": 99
+   }
+  ]
+ },
+ {
+  "ename": "webkit",
+  "state": "browser",
+  "w": 400,
+  "theme": "dark",
+  "rows": [
+   {
+    "row": "footer-reopen",
+    "text": "Reopen to update",
+    "cut": false,
+    "need": 99,
+    "have": 99
+   }
+  ]
+ }
+]
