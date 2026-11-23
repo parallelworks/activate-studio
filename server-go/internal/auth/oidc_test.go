@@ -518,7 +518,9 @@ func TestFullSignIn(t *testing.T) {
 		t.Fatalf("token call %v", call)
 	}
 	hb, _ := json.Marshal(res.header)
-	if regexp.MustCompile(`pwoa_|eyJ`).Match(hb) {
+	// The provider's tokens by their shape: an access token, or a JWT (an id
+	// token), whose dots a random cookie value in base64url never has.
+	if regexp.MustCompile(`pwoa_[0-9a-f]{8}|eyJ[\w-]+\.[\w-]+\.`).Match(hb) {
 		t.Fatal("a token reached the browser")
 	}
 }
