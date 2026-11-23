@@ -29,6 +29,9 @@ type fakeCodePlatform struct {
 	// the Origin of each events handshake.
 	relayed []string
 	origins []string
+	// listDown makes the sessions listing fail, as a platform that cannot
+	// be read.
+	listDown bool
 }
 
 func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +66,10 @@ func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.listDown {
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
 	p.reads++
 	w.Header().Set("Content-Type", "application/json")
 	machines := []any{map[string]any{"id": "m1", "name": "gpu-box", "kind": "existing", "status": "connected", "daemonId": p.daemonID, "hostname": p.hostname}}

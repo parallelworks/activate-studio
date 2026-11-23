@@ -60,7 +60,9 @@ describe('Index runs on Stats', () => {
     const { OverviewView } = await import('../src/views/OverviewView')
     render(<OverviewView onOpen={() => {}} />)
     await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 30)) })
-    expect(await screen.findByText(/The index runs listed here are the main library's\. zz-mine has its own index/)).toBeInTheDocument()
+    // The view is imported and drawn here: under a full parallel run that
+    // takes longer than the defaults allow.
+    expect(await screen.findByText(/The index runs listed here are the main library's\. zz-mine has its own index/, undefined, { timeout: 10_000 })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Update index' })).toBeNull()
-  })
+  }, 20_000)
 })
