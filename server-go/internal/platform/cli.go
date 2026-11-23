@@ -154,6 +154,12 @@ type ExecOptions struct {
 	Dir string
 	// Stdin, when set, is written to the CLI's standard input.
 	Stdin []byte
+	// AsDeployment runs the CLI with the deployment's own sign-in, for the
+	// Studio's housekeeping that acts as no person (renewing that sign-in,
+	// registering the grounded model). Without it, and without a person's
+	// PW_API_KEY in Env, the CLI gets no sign-in on a Studio several
+	// people use, or after Stop using the pw CLI (EnvironFor).
+	AsDeployment bool
 }
 
 // ExecError is a CLI run that failed, with what execFile's callback gets.
@@ -239,7 +245,7 @@ func (p *Platform) ExecFile(ctx context.Context, file string, args []string, o E
 	var timer *time.Timer
 	var killed atomic.Bool
 	cmd := exec.Command(file, args...)
-	cmd.Env = p.Environ(o.Env)
+	cmd.Env = p.EnvironFor(o.Env, o.AsDeployment)
 	cmd.Dir = o.Dir
 	if o.Stdin != nil {
 		cmd.Stdin = bytes.NewReader(o.Stdin)

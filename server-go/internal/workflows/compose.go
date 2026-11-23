@@ -111,7 +111,9 @@ func usesRef(uses string) string {
 
 // Compose is composeWorkflows; chain false leaves steps without needs
 // unchained.
-func Compose(ctx context.Context, p *platform.Platform, steps []ComposeStep, chain bool) (*ComposeResult, error) {
+// key is the person's platform key the source workflows are read with
+// (never the deployment's on a Studio several people use).
+func Compose(ctx context.Context, p *platform.Platform, key string, steps []ComposeStep, chain bool) (*ComposeResult, error) {
 	if len(steps) == 0 {
 		return nil, errors.New("at least one workflow is required")
 	}
@@ -141,9 +143,11 @@ func Compose(ctx context.Context, p *platform.Platform, steps []ComposeStep, cha
 	for i, s := range steps {
 		name := sourceName(s.Uses)
 		var doc any
-		if r := p.WorkflowRecord(ctx, name, p.GatewayKey()); r != nil {
+		if key == "" && (p.AuthEnabled() || p.Stopped()) {
+			missing = append(missing, name)
+		} else if r := p.WorkflowRecord(ctx, name, key); r != nil {
 			doc = r
-		} else if out, err := p.Exec(ctx, []string{"workflows", "get", name, "-o", "json"}, platform.ExecOptions{Timeout: 30 * time.Second, MaxBuffer: 16 << 20}); err != nil {
+		} else if out, err := p.Exec(ctx, []string{"workflows", "get", name, "-o", "json"}, platform.ExecOptions{Timeout: 30 * time.Second, MaxBuffer: 16 << 20, Env: map[string]string{"PW_API_KEY": key}}); err != nil {
 			missing = append(missing, name)
 		} else if v, err := jsonv.DecodeString(out); err != nil {
 			missing = append(missing, name)

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/workflows/wfparser"
@@ -22,16 +23,35 @@ import (
 // shaped for the viewer, from the platform or from a YAML in the library).
 
 // platformAPI is routes.ts's platformApi: a platform API read with the
-// viewer's own platform key, else the deployment's; nil when there is
-// none or the answer is not a JSON success.
+// viewer's key (KeyFor: their own, the owner's on a Studio of one, never
+// the deployment's on a Studio several people use); nil when there is
+// none, without asking, or when the answer is not a JSON success.
 func (r *Routes) platformAPI(ctx context.Context, req *http.Request, path string) any {
-	r.p.EnsureFreshAccess(8 * time.Second)
-	v, err := r.p.ViewerOf(req)
-	if err != nil {
+	key := r.dagKey(req)
+	if key == "" {
 		return nil
 	}
-	key, _ := r.p.KeyFor(v)
+	r.p.EnsureFreshAccess(8 * time.Second)
 	return r.p.APIJSON(ctx, path, key, 20*time.Second)
+}
+
+func (r *Routes) dagKey(req *http.Request) string {
+	v, err := r.p.ViewerOf(req)
+	if err != nil {
+		return ""
+	}
+	key, _ := r.p.KeyFor(v)
+	return key
+}
+
+// noDagCredential is the DAG viewer's answer without a credential to read
+// the account's workflows with.
+const noDagCredential = "Sign in with ACTIVATE under Settings, Accounts to see your workflows."
+
+// refused is plainCLI's answer without a credential, passed on as it is.
+func refused(err error) bool {
+	var e *apierr.Error
+	return errors.As(err, &e) && e.Status == 409
 }
 
 // credentialRemedy names the caller's situation when neither the API nor
@@ -49,10 +69,16 @@ func (r *Routes) credentialRemedy(req *http.Request, cliError string) string {
 		sliceJS(cliError, 120) + "). Add a platform token or API key in Settings, authenticate the CLI here, or set PW_API_KEY."
 }
 
-// plainCLI is routes.ts's execFile(PW_CLI, args, {timeout: 20 s}): the
-// deployment's environment, the error `stderr || message`.
-func (r *Routes) plainCLI(ctx context.Context, args []string) (string, error) {
-	out, err := r.p.Exec(ctx, args, platform.ExecOptions{Timeout: 20 * time.Second})
+// plainCLI is routes.ts's execFile(PW_CLI, args, {timeout: 20 s}), with
+// the viewer's key (dagKey); the error `stderr || message`. Without a key,
+// on a Studio several people use or after Stop using the pw CLI, the CLI
+// is not run.
+func (r *Routes) plainCLI(ctx context.Context, req *http.Request, args []string) (string, error) {
+	key := r.dagKey(req)
+	if key == "" && (r.p.AuthEnabled() || r.p.Stopped()) {
+		return "", platform.KbError(409, noDagCredential)
+	}
+	out, err := r.p.Exec(ctx, args, platform.ExecOptions{Timeout: 20 * time.Second, Env: map[string]string{"PW_API_KEY": key}})
 	if err != nil {
 		return "", plainError(platform.ErrText(err))
 	}
@@ -73,7 +99,10 @@ func (r *Routes) workflowList(w http.ResponseWriter, req *http.Request) (any, er
 		}
 		return jsonv.NewObject("workflows", rows), nil
 	}
-	out, err := r.plainCLI(ctx, []string{"workflows", "ls"})
+	out, err := r.plainCLI(ctx, req, []string{"workflows", "ls"})
+	if refused(err) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, platform.KbError(502, "Cannot list workflows: "+r.credentialRemedy(req, err.Error()))
 	}
@@ -94,7 +123,10 @@ func (r *Routes) workflowItem(w http.ResponseWriter, req *http.Request) (any, er
 	name := notNameChar.ReplaceAllString(req.PathValue("name"), "")
 	wf := r.platformAPI(ctx, req, "/api/workflows/"+platform.EncodeURIComponent(name))
 	if wf == nil {
-		out, err := r.plainCLI(ctx, []string{"workflows", "get", name, "-o", "json"})
+		out, err := r.plainCLI(ctx, req, []string{"workflows", "get", name, "-o", "json"})
+		if refused(err) {
+			return nil, err
+		}
 		if err != nil {
 			return nil, platform.KbError(502, "Cannot read workflow "+name+": "+r.credentialRemedy(req, err.Error()))
 		}

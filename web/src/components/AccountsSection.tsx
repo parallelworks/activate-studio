@@ -28,57 +28,53 @@ import { useAppConfig } from '../config'
  * access says which of these the models come from.
  *
  * On a Studio several people use, every account here is the person's own:
- * the deployment's ACTIVATE credential is its administrator's, shown here
- * and labelled so, and never used for pw code, desktops or the person's
- * own libraries.
+ * the deployment's ACTIVATE credential is its administrator's and is never
+ * used for a person. Only an OpenAI-compatible endpoint the administrator
+ * set may serve everyone's models.
  */
 
-type Method = 'cli' | 'signin' | 'key' | 'deployment'
+type Method = 'cli' | 'signin' | 'key'
 type NoteAt = Note & { at: 'activate' | 'endpoint' }
 
 /** A part of the Studio that ACTIVATE turns on, and how it stands. */
-export interface ActivatePart { part: string; state: 'on' | 'deployment' | 'sign-in' | 'own' | 'cli' | 'endpoint'; detail?: string }
+export interface ActivatePart { part: string; state: 'on' | 'sign-in' | 'cli' | 'endpoint' | 'admin-endpoint' | 'sidecar'; detail?: string }
 
 /**
- * What ACTIVATE turns on in this Studio, each part with its state. On a
- * Studio several people use, pw code, desktops and libraries on ACTIVATE
- * systems run as the person, so they need the person's own sign-in or key;
- * the Workflows page and the assistant's platform tools may use the
- * deployment's credential. On a Studio of one, any ACTIVATE credential
- * serves them all, and the parts that run the pw CLI need it found.
+ * What ACTIVATE turns on in this Studio, each part with its state. Every
+ * part runs with the person's own ACTIVATE credential (on a Studio of one,
+ * the pw CLI on the computer counts as theirs): without one, each asks to
+ * sign in; nothing falls back to another's. Models may also come from an
+ * endpoint: the person's own, or one the administrator set for everyone.
  */
 export function activateParts(access: AccessStatus, aiEnabled: boolean): ActivatePart[] {
   const single = access.single
-  const p = access.platform.source
-  const own = p === 'signin' || p === 'key'
-  const any = p !== 'none'
-  const cliMissing = single && !!access.cli && !access.cli.available
-  const person = (part: string): ActivatePart => single
-    ? { part, state: !any ? 'sign-in' : cliMissing ? 'cli' : 'on' }
-    : { part, state: own ? 'on' : any ? 'own' : 'sign-in' }
-  const shared = (part: string, cli = false): ActivatePart => ({ part, state: !any ? 'sign-in' : cli && cliMissing ? 'cli' : own || single ? 'on' : 'deployment' })
+  const any = access.platform.source !== 'none'
+  const cliMissing = single && !!access.cli && !access.cli.available && !access.cli.stopped
+  const part = (name: string, cli = false): ActivatePart => ({ part: name, state: !any ? 'sign-in' : cli && cliMissing ? 'cli' : 'on' })
+  const m = access.models.source
   const models: ActivatePart[] = !aiEnabled ? [] : [
-    access.models.source === 'endpoint'
-      ? { part: 'Models', state: 'endpoint', detail: access.models.baseUrl ?? undefined }
-      : { part: 'Models', state: any ? (own || single ? 'on' : 'deployment') : 'sign-in' },
+    m === 'endpoint' ? { part: 'Models', state: 'endpoint', detail: access.models.baseUrl ?? undefined }
+      : m === 'admin-endpoint' ? { part: 'Models', state: 'admin-endpoint', detail: access.models.baseUrl ?? undefined }
+      : m === 'sidecar' ? { part: 'Models', state: 'sidecar' }
+      : { part: 'Models', state: m === 'none' ? 'sign-in' : 'on' },
   ]
   return [
-    { ...person('pw code and the Code page') },
-    { ...person('Libraries on ACTIVATE systems (pw ssh)') },
-    shared('Workflows', true),
-    person('Desktops'),
-    ...(aiEnabled ? [shared('The assistant\'s platform tools')] : []),
+    part('pw code and the Code page', true),
+    part('Libraries on ACTIVATE systems (pw ssh)', true),
+    part('Workflows', true),
+    part('Desktops'),
+    ...(aiEnabled ? [part('The assistant\'s platform tools')] : []),
     ...models,
   ]
 }
 
 const PART_STATE: Record<ActivatePart['state'], ReactNode> = {
   on: <StatusLabel variant="success">On</StatusLabel>,
-  deployment: <StatusLabel variant="success">On, with the deployment's credential</StatusLabel>,
   'sign-in': <StatusLabel variant="muted">Sign in to use</StatusLabel>,
-  own: <StatusLabel variant="warning">Needs your own sign-in</StatusLabel>,
   cli: <StatusLabel variant="warning">pw CLI not found</StatusLabel>,
   endpoint: <StatusLabel variant="muted">From your endpoint</StatusLabel>,
+  'admin-endpoint': <StatusLabel variant="muted">From the administrator's endpoint</StatusLabel>,
+  sidecar: <StatusLabel variant="muted">From the model served beside this Studio</StatusLabel>,
 }
 
 /** With AI features off (`aiEnabled` false) only ACTIVATE is here: no
@@ -187,6 +183,13 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
         + (clearKey ? ' Your key was removed.' : ''),
     )
   }
+  // Stop using the pw CLI, and Use it again. Nothing is signed out: the
+  // CLI keeps its sign-ins for the other tools on this computer.
+  const useCli = (use: boolean) => run('activate',
+    () => api('/api/access/cli/use', { method: 'PUT', body: { use } }),
+    use ? 'The Studio uses the pw CLI again.'
+      : 'The Studio no longer uses the pw CLI. Each ACTIVATE part now asks to sign in; the pw CLI is still signed in for other tools.',
+  )
   /** The Advanced options as the server takes them: a stored header left
    *  empty is sent by name alone, which keeps its stored value. */
   const endpointBody = () => ({
@@ -299,7 +302,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
       <h1>Accounts</h1>
       <p className="muted view-sub">
         Your accounts attach to your platform-verified identity, which this connection does not carry. Open the app
-        through the platform session to add one; until then, the Studio uses the deployment's credential.
+        through the platform session to add one.
       </p>
     </>
   )
@@ -324,7 +327,6 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
         ? [{ value: 'signin' as Method, label: 'Sign in with ACTIVATE', description: 'Recommended. Your own ACTIVATE account, approved once on the platform and renewed by the Studio.' }]
         : []),
     { value: 'key', label: 'ACTIVATE API key', description: 'A token or API key from your ACTIVATE account (Account, API keys), until it expires or is revoked.' },
-    ...(single ? [] : [{ value: 'deployment' as Method, label: 'The deployment\'s credential', description: 'Set by this Studio\'s administrator, for the parts that may use it when you have no account of your own.' }]),
   ]
   const shownMethod = method && methods.some(m => m.value === method) ? method : methods[0].value
   const presets: SelectItem<string>[] = PRESETS.map(x => ({ value: x.value, label: x.label }))
@@ -355,9 +357,9 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
   )
 
   // Who the Studio is signed in to ACTIVATE as, for the card's heading.
-  const who = !connected ? 'Not signed in. The Studio works without ACTIVATE; sign in to use the parts below.'
-    : own || single ? `Signed in: ${describeSource(access.platform, single)}.`
-    : `You have no account of your own here; the parts that may use it use ${describeSource(access.platform, false)}.`
+  const who = access.cli?.stopped && !own ? 'Not using the pw CLI. The Studio works as for someone without ACTIVATE; sign in to use the parts below.'
+    : !connected ? 'Not signed in. The Studio works without ACTIVATE; sign in to use the parts below.'
+    : `Signed in: ${describeSource(access.platform, single)}.`
 
   return (
     <div className="model-access accounts">
@@ -370,7 +372,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
 
       <div className="ix-cards">
         <IndexGroup title="ACTIVATE" help={who}
-          actions={own || (single && connected)
+          actions={connected
             ? <StatusLabel variant="success">Signed in</StatusLabel>
             : <StatusLabel variant="muted">Not signed in</StatusLabel>}>
           <ActivatePartsTable parts={activateParts(access, aiEnabled)} />
@@ -386,7 +388,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
             {shownMethod === 'cli' && access.cli && (
               <CliPanel access={access} busy={busy} login={login} loginHost={loginHost} setLoginHost={setLoginHost}
                 onUse={pickContext} onStartLogin={() => void startLogin()} onCancelLogin={() => void cancelLogin()} onDismissLogin={() => setLogin(null)}
-                onChoosePath={x => void chooseCliPath(x)} />
+                onChoosePath={x => void chooseCliPath(x)} onUseCli={x => void useCli(x)} />
             )}
 
             {shownMethod === 'signin' && (
@@ -402,27 +404,6 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
                     The key you added under ACTIVATE API key is kept, and used only while you are signed out.{' '}
                     <Button variant="secondary" size="sm" disabled={busy} onClick={() => void removeKey('activate')}>Remove the key</Button>
                   </p>
-                )}
-              </div>
-            )}
-
-            {shownMethod === 'deployment' && (
-              <div className="access-panel">
-                <p className="muted view-sub">
-                  <StatusBadge variant="muted" size="sm" className="admin-badge">Administrator setting</StatusBadge>{' '}
-                  {access.deployment.source === 'none'
-                    ? 'This deployment has no ACTIVATE credential of its own, so each person signs in or adds a key.'
-                    : `The administrator set this Studio's own ACTIVATE credential${access.deployment.host ? ` (${access.deployment.host})` : ''}${access.deployment.source === 'cli' ? ', the pw CLI sign-in on the server' : ''}.`}
-                  {' '}It serves the Workflows page and the assistant's platform tools for anyone without an account of their
-                  own. pw code, desktops and your own libraries always run as you, so they never use it.
-                  {requirePersonalKey && ' This deployment also requires each person to use their own account for models.'}
-                </p>
-                {stored && (
-                  <div className="key-row">
-                    <Button variant="secondary" disabled={busy} onClick={() => void removeKey('activate')}>
-                      Remove my {endpointStored ? 'endpoint' : 'key'} and use the deployment's
-                    </Button>
-                  </div>
                 )}
               </div>
             )}
@@ -491,7 +472,6 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
                     work with it. Sign in{single ? ' the pw CLI' : ' with ACTIVATE'}, or add a key from your ACTIVATE account (Account, API keys).
                   </p>
                 )}
-                {!single && <SharePanel me={me} busy={busy} run={(what, done) => run('activate', what, done)} />}
               </div>
             )}
             {noteHere('activate')}
@@ -592,7 +572,7 @@ function ActivatePartsTable({ parts }: { parts: ActivatePart[] }) {
   )
 }
 
-function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStartLogin, onCancelLogin, onDismissLogin, onChoosePath, aiEnabled = true }: {
+function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStartLogin, onCancelLogin, onDismissLogin, onChoosePath, onUseCli, aiEnabled = true }: {
   access: AccessStatus
   /** Off: the panel speaks of the platform only (Workflows and libraries on
    *  ACTIVATE systems), since no models are in use. */
@@ -606,8 +586,19 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
   onCancelLogin: () => void
   onDismissLogin: () => void
   onChoosePath: (path: string | null) => void
+  /** Use it again (true) or Stop using the pw CLI (false). */
+  onUseCli: (use: boolean) => void
 }) {
   const cli = access.cli!
+  if (cli.stopped) return (
+    <div className="access-panel">
+      <Callout tone="info" className="rag-banner" title="The Studio is not using the pw CLI"
+        action={<Button variant="primary" size="sm" disabled={busy} onClick={() => onUseCli(true)}>Use it again</Button>}>
+        It reads none of this computer's ACTIVATE sign-ins{cli.envKey ? ', nor PW_API_KEY' : ''}, so it works as for someone
+        without ACTIVATE: every ACTIVATE part asks to sign in. The pw CLI is still signed in, for the other tools on this computer.
+      </Callout>
+    </div>
+  )
   // A key of the person's own is used before a context; an endpoint
   // (models only, chosen under Model access) never displaces one.
   const overridden = access.platform.source === 'key'
@@ -630,6 +621,10 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
         <p className="identity-note access-override">Your ACTIVATE API key is used now. Use on a context removes it.</p>
       )}
       {cli.envKey && <p className="identity-note">PW_API_KEY is set in the Studio's environment, and it is used before the pw CLI.</p>}
+      <div className="key-row cli-stop">
+        <Button variant="secondary" size="sm" disabled={busy} onClick={() => onUseCli(false)}>Stop using the pw CLI</Button>
+        <span className="muted key-note">The Studio then works as for someone without ACTIVATE. The pw CLI stays signed in.</span>
+      </div>
       {aiEnabled && cli.gatewayFromEnv && <p className="identity-note">The model gateway is fixed by PW_GATEWAY_URL; a context on another platform covers the platform only.</p>}
       {cli.contexts.length > 0 ? (
         <>
@@ -772,36 +767,6 @@ function CliLocation({ cli, busy, onChoose }: { cli: NonNullable<AccessStatus['c
         <Button variant="primary" disabled={busy || !input.trim()} onClick={() => onChoose(input.trim())}>Use this location</Button>
       </div>
     </Callout>
-  )
-}
-
-function SharePanel({ me, busy, run }: { me: KeyStatus; busy: boolean; run: (what: () => Promise<unknown>, done?: string) => Promise<boolean> }) {
-  if (me.shared?.active) return (
-    <Callout className="rag-banner shared-key" tone={me.shared.credExpired ? 'warning' : 'success'}
-      title={<>
-        Key ending {me.shared.last4} is shared with everyone on this deployment
-        {me.shared.sharedBy ? `, by ${me.shared.mine ? 'you' : me.shared.sharedBy}` : ''}
-        {me.shared.sharedAt ? ` on ${me.shared.sharedAt.slice(0, 10)}` : ''}
-        {me.shared.credExpired ? '; it has expired and is no longer used' : ''}
-      </>}
-      action={<Button variant="danger" size="sm" disabled={busy} onClick={() => void run(() => api('/api/me/model-key/unshare', { body: {} }))}>Stop sharing</Button>}>
-      <p className="muted key-note">
-        Anyone here without a key of their own calls the gateway with this one, so its owner's quota and usage cover the
-        deployment. Their own keys still take precedence. Anyone can stop the sharing.
-      </p>
-    </Callout>
-  )
-  if (!me.sharingAllowed) return null
-  return (
-    <div className="key-row share-row">
-      <Button variant="secondary" disabled={busy || me.mode === 'none' || !!me.baseUrl}
-        onClick={() => void run(() => api('/api/me/model-key/share', { body: {} }), 'Shared with everyone here.')}>Share this key with everyone</Button>
-      <span className="muted key-note">
-        {me.mode === 'none'
-          ? 'Add your own key above first; you can then share it with everyone here.'
-          : 'Lets people here with no key of their own work with yours, which spends your quota and runs as you. You can stop it at any time.'}
-      </span>
-    </div>
   )
 }
 

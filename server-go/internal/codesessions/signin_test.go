@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -135,12 +136,22 @@ func TestSignedInUsesOnlyTheirOwnKey(t *testing.T) {
 	if code, _ := getCode(t, off+"/api/code-sessions"); code != 200 || len(used) != 1 || used[0] != "Bearer deployment-key" {
 		t.Fatalf("sign-in off: %d %v", code, used)
 	}
+	// After Stop using the pw CLI, the one person has no ACTIVATE
+	// credential: the page asks to sign in and asks the platform nothing.
+	used = nil
+	env := map[string]string{"PW_GATEWAY_URL": plat.URL + "/api/openai/v1", "PW_API_KEY": "deployment-key"}
+	stopped := codeServer(t, env, false).URL
+	os.MkdirAll(env["INDEX_BASE"], 0o755)
+	os.WriteFile(filepath.Join(env["INDEX_BASE"], "access.json"), []byte(`{"stopped": true}`), 0o644)
+	if code, out := getCode(t, stopped+"/api/code-sessions"); code != 409 || !strings.Contains(out["error"].(string), "Settings, Accounts") || len(used) != 0 {
+		t.Fatalf("stopped: %d %v %v", code, out, used)
+	}
 }
 
-// With sign-in on and this host offered (AGENT_LOCAL_SITE=1), every
-// session on its daemon runs as the Studio's account: a person sees and
-// answers only those the Studio started for them.
-func TestSignedInOnThisComputerSeesOnlyTheirs(t *testing.T) {
+// With sign-in on, this host's daemon runs as the Studio's account, so it
+// is not offered even with AGENT_LOCAL_SITE=1: nobody signed in sees,
+// reads or answers its sessions.
+func TestSignedInThisComputerIsNotOffered(t *testing.T) {
 	const mine, theirs = "20261121-120000-aaaaaa", "20261121-120000-bbbbbb"
 	var got answers
 	sock := pwcodetest.Socket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -168,36 +179,20 @@ func TestSignedInOnThisComputerSeesOnlyTheirs(t *testing.T) {
 	}
 	base := signedInServer(t, map[string]string{"PW_CODE_SOCKET": sock, "AGENT_LOCAL_SITE": "1"}, true, func() *platform.Viewer { return v }, own).URL
 
-	v = &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id", Username: "alex"}}
-	code, out := getCode(t, base+"/api/code-sessions")
-	if code != 200 || out["local"] != true {
-		t.Fatalf("list: %d %v", code, out)
-	}
-	if ss := out["sessions"].([]any); len(ss) != 1 || ss[0].(map[string]any)["id"] != mine {
-		t.Fatalf("alex sees %v", ss)
-	}
-	if code, _ := getCode(t, base+"/api/code-sessions/item?machine=mach1&id="+theirs); code != 404 {
-		t.Fatalf("someone else's session read: %d", code)
-	}
-	if code, _ := getCode(t, base+"/api/code-sessions/item?machine=mach1&id="+mine); code != 200 {
-		t.Fatalf("their own session: %d", code)
-	}
-	if code, _ := postAnswer(t, base, `{"machine":"mach1","id":"`+theirs+`","approval":"ap1","allowed":true}`); code != 404 || len(got.got) != 0 {
-		t.Fatalf("someone else's call approved: %d %v", code, got.got)
-	}
-	if code, _ := postAnswer(t, base, `{"machine":"mach1","id":"`+mine+`","approval":"ap1","allowed":true}`); code != 200 || len(got.got) != 1 {
-		t.Fatalf("their own call: %d %v", code, got.got)
-	}
-	// Another person, and nobody signed in, see none of them.
-	v = &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "sam2-id"}}
-	if _, out := getCode(t, base+"/api/code-sessions"); len(out["sessions"].([]any)) != 0 {
-		t.Fatalf("another person sees %v", out["sessions"])
-	}
-	v = &platform.Viewer{AuthEnabled: true}
-	if code, out := getCode(t, base+"/api/code-sessions"); code == 200 && out["local"] == true {
-		t.Fatalf("signed out reads this computer: %v", out)
-	}
-	if code, _ := postAnswer(t, base, `{"machine":"mach1","id":"`+mine+`","approval":"ap1","allowed":true}`); code == 200 || len(got.got) != 1 {
-		t.Fatalf("signed out answered: %d", code)
+	for _, who := range []*platform.Viewer{
+		{AuthEnabled: true, User: &platform.User{ID: "alex-id", Username: "alex"}},
+		{AuthEnabled: true, User: &platform.User{ID: "sam2-id"}},
+		{AuthEnabled: true},
+	} {
+		v = who
+		if code, out := getCode(t, base+"/api/code-sessions"); code == 200 && (out["local"] == true || len(out["sessions"].([]any)) != 0) {
+			t.Fatalf("%v lists this computer: %v", who.User, out)
+		}
+		if code, _ := getCode(t, base+"/api/code-sessions/item?machine=mach1&id="+mine); code < 400 {
+			t.Fatalf("read: %d", code)
+		}
+		if code, _ := postAnswer(t, base, `{"machine":"mach1","id":"`+mine+`","approval":"ap1","allowed":true}`); code < 400 || len(got.got) != 0 {
+			t.Fatalf("answered: %d %v", code, got.got)
+		}
 	}
 }

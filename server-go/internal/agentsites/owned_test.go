@@ -17,20 +17,18 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode/pwcodetest"
 )
 
-// With sign-in on and AGENT_LOCAL_SITE=1, this host's sessions all run as
-// the Studio's account: a person lists, reads, steers, sets the goal of,
-// answers and stops only the ones the Studio started for them, and does
-// not start one here directly.
-func TestThisHostsSessionsAreTheirOwners(t *testing.T) {
+// With sign-in on, this host is not a site even with AGENT_LOCAL_SITE=1:
+// its daemon runs as the Studio's account, and no person borrows the
+// deployment's credential. Nobody lists, reads, steers, sets the goal of,
+// answers, stops or starts a session here, and nothing reaches the daemon.
+func TestWithSignInOnThisHostIsNoSite(t *testing.T) {
 	var mu sync.Mutex
 	var touched []string
 	sock := pwcodetest.Socket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		if r.URL.Path != "/v1/sessions" || r.Method != "GET" {
-			mu.Lock()
-			touched = append(touched, r.Method+" "+r.URL.Path)
-			mu.Unlock()
-		}
+		mu.Lock()
+		touched = append(touched, r.Method+" "+r.URL.Path)
+		mu.Unlock()
 		switch {
 		case r.URL.Path == "/v1/status":
 			io.WriteString(w, `{"protocolVersion":2,"hostname":"here"}`)
@@ -70,33 +68,28 @@ func TestThisHostsSessionsAreTheirOwners(t *testing.T) {
 	ada, bob := &auth.User{ID: "ada"}, &auth.User{ID: "bob"}
 	const hers = "/api/agent-sites/local/sessions/20261122-100000-adaada"
 
-	if c, b := do(ada, "GET", "/api/agent-sites/local/sessions", ""); c != 200 || !strings.Contains(b, "adaada") || strings.Contains(b, "bobbob") {
-		t.Fatalf("ada lists: %d %s", c, b)
-	}
-	if c, b := do(bob, "GET", "/api/agent-sites/local/sessions", ""); c != 200 || strings.Contains(b, "adaada") {
-		t.Fatalf("bob lists ada's: %d %s", c, b)
-	}
-	for _, x := range []struct{ method, path, body string }{
-		{"GET", hers, ""},
-		{"POST", hers + "/goal", `{"action":"clear"}`},
-		{"POST", hers + "/steer", `{"text":"read her notes"}`},
-		{"POST", hers + "/approvals/ap1", `{"allowed":true}`},
-		{"POST", hers + "/interrupt", ""},
-	} {
-		if c, _ := do(bob, x.method, x.path, x.body); c != 404 {
-			t.Errorf("bob %s %s: %d", x.method, x.path, c)
+	for _, u := range []*auth.User{ada, bob} {
+		for _, x := range []struct{ method, path, body string }{
+			{"GET", "/api/agent-sites/local/sessions", ""},
+			{"GET", hers, ""},
+			{"POST", hers + "/goal", `{"action":"clear"}`},
+			{"POST", hers + "/steer", `{"text":"read her notes"}`},
+			{"POST", hers + "/approvals/ap1", `{"allowed":true}`},
+			{"POST", hers + "/interrupt", ""},
+			{"POST", "/api/agent-sites/local/sessions", `{"objective":"x"}`},
+		} {
+			if c, _ := do(u, x.method, x.path, x.body); c < 400 {
+				t.Errorf("%s %s %s: %d", u.ID, x.method, x.path, c)
+			}
 		}
+	}
+	if c, b := do(ada, "GET", "/api/agent-sites", ""); c != 200 || !strings.Contains(b, `"localOffered":false`) {
+		t.Fatalf("sites: %d %s", c, b)
 	}
 	mu.Lock()
 	n := len(touched)
 	mu.Unlock()
 	if n != 0 {
-		t.Fatalf("bob's requests reached the daemon: %v", touched)
-	}
-	if c, b := do(ada, "GET", hers, ""); c != 200 {
-		t.Fatalf("ada reads hers: %d %s", c, b)
-	}
-	if c, b := do(bob, "POST", "/api/agent-sites/local/sessions", `{"objective":"x"}`); c != 403 || !strings.Contains(b, "delegating") {
-		t.Fatalf("a direct start here: %d %s", c, b)
+		t.Fatalf("requests reached the daemon: %v", touched)
 	}
 }

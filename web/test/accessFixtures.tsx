@@ -66,6 +66,12 @@ export function stub(s: Srv) {
       s.access = accessOf({ cli: { ...accessOf().cli!, path: p, source: p ? 'chosen' : 'path', chosenPath: p } })
       return reply({ cli: s.access.cli })
     }
+    if (url === '/api/access/cli/use' && method === 'PUT') {
+      const use = (body as { use: boolean }).use
+      const none = { source: 'none' as const, host: null, context: null }
+      s.access = use ? accessOf() : accessOf({ cli: { ...accessOf().cli!, stopped: true, used: null }, models: none, platform: none, deployment: none })
+      return reply({ ok: true, stopped: !use, models: s.access.models, platform: s.access.platform })
+    }
     if (url === '/api/access/cli/login' && method === 'POST') {
       s.login = { host: 'platform-c.example.com', state: 'waiting', url: 'https://platform-c.example.com/device', code: 'ABCD-EFGH', context: null, message: null }
       return reply({ login: s.login })

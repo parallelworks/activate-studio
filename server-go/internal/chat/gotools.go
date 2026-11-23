@@ -377,10 +377,7 @@ func (t goTools) Access(r *http.Request, freshMS int) (*Access, error) {
 	if freshMS > 0 {
 		p.EnsureFreshAccess(time.Duration(freshMS) * time.Millisecond)
 	}
-	key := p.APIKeyEnv()
-	if key == "" {
-		key = p.CLICredential()
-	}
+	key := p.GatewayKey()
 	var ctxName *string
 	if n := p.CredentialContextName(); n != "" {
 		ctxName = &n

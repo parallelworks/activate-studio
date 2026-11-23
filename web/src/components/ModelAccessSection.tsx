@@ -18,13 +18,14 @@ export { endpointBase, readPlatformHost, testNote, type AccessStatus, type KeyTe
  * endpoint is stored removes the endpoint, after saying so.
  */
 
-type From = 'activate' | 'endpoint' | 'sidecar' | 'none'
+type From = 'activate' | 'endpoint' | 'sidecar' | 'admin-endpoint' | 'none'
 
 /** Where models come from now, as the choice names it. */
 export function modelsFrom(a: AccessStatus): From {
   switch (a.models.source) {
     case 'endpoint': return 'endpoint'
     case 'sidecar': return 'sidecar'
+    case 'admin-endpoint': return 'admin-endpoint'
     case 'none': return 'none'
     default: return 'activate'
   }
@@ -89,7 +90,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
       <h1>Model access</h1>
       <p className="muted view-sub">
         Your own model access attaches to your platform-verified identity, which this connection does not carry. Open the
-        app through the platform session to add it; until then, requests use the deployment's credential.
+        app through the platform session to add it.
       </p>
     </>
   )
@@ -116,7 +117,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
     {
       value: 'activate', label: 'ACTIVATE',
       description: connected
-        ? `The models of your ACTIVATE account, with ${describeSource(access.platform, single)}${!single && !own ? ' (you have no account of your own here)' : ''}.`
+        ? `The models of your ACTIVATE account, with ${describeSource(access.platform, single)}.`
         : 'The models of your ACTIVATE account. Sign in with ACTIVATE under Accounts first.',
     },
     {
@@ -126,6 +127,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         : 'A site AI portal, a provider, or a model server on this computer. Add one under Accounts first.',
     },
     ...(from === 'sidecar' ? [{ value: 'sidecar' as From, label: 'The model served beside this Studio', description: 'Set by the deployment, for anyone without an account of their own.' }] : []),
+    ...(from === 'admin-endpoint' ? [{ value: 'admin-endpoint' as From, label: 'The administrator\'s endpoint', description: `${access.models.baseUrl ?? 'An OpenAI-compatible endpoint'}, set by the administrator for anyone without an account of their own.` }] : []),
   ]
   const shown = pending ?? from
 

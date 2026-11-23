@@ -15,11 +15,11 @@ if (!('PointerEvent' in window)) {
 const EFFECTIVE = {
   appName: 'Studio', kbLabel: 'Notes', theme: 'light', accent: 'navy', surface: 'neutral', navWidth: 240, iconUrl: '', iconUrlDark: '',
   sweepIntervalSec: 300, searchEngine: 'parallel', historyIntervalSec: 86400, suggestedPrompts: ['What is in my folder?'],
-  visionModel: '', disabledTools: [], customTools: [], ragDefaultModel: '', ragTopK: 6, ragAllowDeploymentKey: false,
+  visionModel: '', disabledTools: [], customTools: [], ragDefaultModel: '', ragTopK: 6, 
   ragAdvertiseRagModel: false, ragAdvertiseAgentModel: true, mcpEnabled: true, mcpServers: [], delegationEnabled: true,
   delegationMaxAgents: 6, maxToolRounds: 50, delegationMaxDepth: 1, agentExecution: 'runner', voiceEnabled: false, voiceUrl: '',
   ragProxyEnabled: true, ragEndpointAutoStart: false, ragEndpointName: '', requirePersonalKey: false, chatSharedHistory: true,
-  bannerText: '', bannerColor: '#24612e', bannerWhenEmbedded: false, allowKeySharing: true, kbMission: 'My own files.',
+  bannerText: '', bannerColor: '#24612e', bannerWhenEmbedded: false, kbMission: 'My own files.',
   sections: ['library', 'search', 'query', 'overview', 'history', 'settings', 'help'], aiEnabled: false,
 }
 

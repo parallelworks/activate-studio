@@ -32,6 +32,10 @@ type Record struct {
 	LaunchedAt     string  `json:"launchedAt"`
 	State          string  `json:"state"`
 	EndedAt        *string `json:"endedAt"`
+	// OwnerID is the user ID of whoever launched it, where known: whose
+	// own credential the run is watched with. It is kept in the launch
+	// line only, not in what the routes answer.
+	OwnerID *string `json:"-"`
 }
 
 // Object is the record with runs.ts's keys in their order.
@@ -97,7 +101,7 @@ type Registry struct {
 	appendErr error
 
 	// CLI runs `pw` for the watcher (the deployment's credential).
-	CLI func(ctx context.Context, args []string) (string, error)
+	CLI func(ctx context.Context, args []string, key string) (string, error)
 	// Go runs a background job until the server stops (app.Go).
 	Go func(name string, fn func(ctx context.Context))
 	// Log reports the watcher's events.
@@ -106,7 +110,11 @@ type Registry struct {
 	// Providers.ConversationNote, set by NewRoutes).
 	Note func(conversationID, content string)
 	// SessionKey is the key a run's sessions are listed with, for its owner.
-	SessionKey func(owner *string) string
+	SessionKey func(rec *Record) string
+	// PersonalKey is a person's own platform key by user ID (their
+	// sign-in, else a stored platform key), "" for none; set by the
+	// workflows routes on a Studio several people use.
+	PersonalKey func(userID string) string
 	// Sessions lists a key's sessions.
 	Sessions func(ctx context.Context, key string) ([]*sessions.SessionRow, error)
 }
@@ -115,8 +123,8 @@ type Registry struct {
 // session list of p.
 func New(p *platform.Platform) *Registry {
 	r := &Registry{p: p, file: filepath.Join(p.IndexBase(), "runs.jsonl"), watches: map[string]context.CancelFunc{}, shown: map[string]bool{}}
-	r.CLI = func(ctx context.Context, args []string) (string, error) {
-		out, err := p.Exec(ctx, args, platform.ExecOptions{Timeout: 60 * time.Second, MaxBuffer: 4 << 20})
+	r.CLI = func(ctx context.Context, args []string, key string) (string, error) {
+		out, err := p.Exec(ctx, args, platform.ExecOptions{Timeout: 60 * time.Second, MaxBuffer: 4 << 20, Env: map[string]string{"PW_API_KEY": key}})
 		if err != nil {
 			return "", plainErr(platform.ErrText(err))
 		}
@@ -127,19 +135,28 @@ func New(p *platform.Platform) *Registry {
 	r.Note = func(id, content string) {
 		r.Log("run note for conversation " + id + " not delivered: no conversation store")
 	}
-	r.SessionKey = func(owner *string) string {
-		if owner == nil {
-			// resolveUserCred(null): the single owner's stored key with
-			// sign-in off, else the deployment's.
+	r.SessionKey = func(rec *Record) string {
+		// On a Studio of one, the owner's (KeyFor without a person).
+		if !p.AuthEnabled() {
 			req, _ := http.NewRequest(http.MethodGet, "/", nil)
-			v, err := p.ViewerOf(req)
-			if err == nil {
+			if v, err := p.ViewerOf(req); err == nil {
 				k, _ := p.KeyFor(v)
 				return k
 			}
+			return p.GatewayKey()
 		}
-		// A username names no stored key; a live personal key is Node's.
-		return p.GatewayKey()
+		// On a Studio several people use, only the launcher's own sign-in
+		// or key, never the deployment's.
+		if r.PersonalKey != nil {
+			for _, id := range []*string{rec.OwnerID, rec.Owner} {
+				if id != nil && *id != "" {
+					if k := r.PersonalKey(*id); k != "" {
+						return k
+					}
+				}
+			}
+		}
+		return ""
 	}
 	r.Sessions = func(ctx context.Context, key string) ([]*sessions.SessionRow, error) {
 		return sessions.List(ctx, p, key)
@@ -189,13 +206,14 @@ func (r *Registry) loadLocked() {
 			LaunchedAt     string  `json:"launchedAt"`
 			State          string  `json:"state"`
 			EndedAt        *string `json:"endedAt"`
+			OwnerID        *string `json:"ownerId"`
 		}
 		if json.Unmarshal([]byte(line), &ev) != nil {
 			continue // a torn line is skipped
 		}
 		switch ev.T {
 		case "launch":
-			r.setLocked(&Record{Slug: ev.Slug, Workflow: ev.Workflow, Resource: ev.Resource, ConversationID: ev.ConversationID, Owner: ev.Owner, LaunchedAt: ev.LaunchedAt, State: "running"})
+			r.setLocked(&Record{Slug: ev.Slug, Workflow: ev.Workflow, Resource: ev.Resource, ConversationID: ev.ConversationID, Owner: ev.Owner, OwnerID: ev.OwnerID, LaunchedAt: ev.LaunchedAt, State: "running"})
 		case "end":
 			if rec := r.recs[ev.Slug]; rec != nil {
 				rec.State, rec.EndedAt = ev.State, ev.EndedAt
@@ -232,6 +250,9 @@ func launchLine(rec *Record) *jsonv.Object {
 		v, _ := ro.Get(k)
 		o.Set(k, v)
 	}
+	if rec.OwnerID != nil {
+		o.Set("ownerId", *rec.OwnerID)
+	}
 	return o
 }
 
@@ -239,6 +260,8 @@ func launchLine(rec *Record) *jsonv.Object {
 type RecordInput struct {
 	Slug, Workflow                  string
 	Resource, ConversationID, Owner *string
+	// OwnerID is the launcher's user ID (Record.OwnerID), where known.
+	OwnerID *string
 	// LaunchedAt is now when empty (Node sends its own).
 	LaunchedAt string
 }
@@ -249,7 +272,7 @@ func (r *Registry) RecordRun(in RecordInput) *Record {
 	if at == "" {
 		at = platform.NowISO()
 	}
-	rec := &Record{Slug: in.Slug, Workflow: in.Workflow, Resource: in.Resource, ConversationID: in.ConversationID, Owner: in.Owner, LaunchedAt: at, State: "running"}
+	rec := &Record{Slug: in.Slug, Workflow: in.Workflow, Resource: in.Resource, ConversationID: in.ConversationID, Owner: in.Owner, OwnerID: in.OwnerID, LaunchedAt: at, State: "running"}
 	r.mu.Lock()
 	r.loadLocked()
 	r.setLocked(rec)
@@ -339,7 +362,7 @@ func (r *Registry) showSession(ctx context.Context, slug string) {
 	}
 	c := *rec
 	r.mu.Unlock()
-	key := r.SessionKey(c.Owner)
+	key := r.SessionKey(&c)
 	if key == "" {
 		return
 	}
@@ -415,8 +438,22 @@ func (r *Registry) Watch(slug string) {
 		defer stop()
 		defer cancel()
 		misses := 0
+		r.mu.Lock()
+		var rec Record
+		if p := r.recs[slug]; p != nil {
+			rec = *p
+		}
+		r.mu.Unlock()
+		// Watched with the launcher's own credential: without it (a Studio
+		// several people use, the launcher signed out) the run is not
+		// asked about, and its state stays as it was.
+		key := r.SessionKey(&rec)
+		if key == "" && (r.p.AuthEnabled() || r.p.Stopped()) {
+			r.Log("run " + slug + " is not watched: its launcher has no ACTIVATE sign-in of their own here")
+			return
+		}
 		check := func() bool {
-			out, err := r.CLI(wctx, []string{"workflows", "runs", "view", slug, "-o", "json"})
+			out, err := r.CLI(wctx, []string{"workflows", "runs", "view", slug, "-o", "json"}, key)
 			status := ""
 			if err == nil {
 				status, err = parseView(out)

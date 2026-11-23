@@ -349,7 +349,7 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 		}
 		set("ragTopK", n)
 	}
-	for _, f := range []string{"ragAllowDeploymentKey", "ragAdvertiseRagModel", "ragAdvertiseAgentModel", "chatSharedHistory", "ragEndpointAutoStart", "requirePersonalKey"} {
+	for _, f := range []string{"ragAdvertiseRagModel", "ragAdvertiseAgentModel", "chatSharedHistory", "ragEndpointAutoStart", "requirePersonalKey"} {
 		if v, ok := in(f); ok {
 			set(f, jsval.Truthy(v))
 		}
@@ -373,7 +373,7 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 		}
 		set("bannerColor", orNil(col))
 	}
-	for _, f := range []string{"bannerWhenEmbedded", "allowKeySharing"} {
+	for _, f := range []string{"bannerWhenEmbedded"} {
 		if v, ok := in(f); ok {
 			set(f, jsval.Truthy(v))
 		}

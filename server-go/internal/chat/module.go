@@ -131,7 +131,7 @@ func New(a *app.App) *Module {
 		}
 		return ""
 	}
-	m.LLM = llm.New(m.gatewayBase, m.GatewayKey)
+	m.LLM = llm.New(m.gatewayBase, m.deploymentModelsKey)
 	m.Conv = conversations.New(a.Cfg.IndexBase, a.Cfg.KBRoot, conversations.Hooks{
 		Log: func(msg string) { a.Log.Warn(msg) },
 	})
@@ -215,15 +215,33 @@ func (m *Module) contextName() *string {
 	return m.access.ContextName
 }
 
-// GatewayKey is gateway.ts's gatewayKey: a shared personal key, else the
-// deployment's (PW_API_KEY, else the pw CLI's credential).
+// GatewayKey is the deployment's own credential (PW_API_KEY, else the pw
+// CLI's), "" after Stop using the pw CLI. On a Studio several people use
+// it is the administrator's and serves only housekeeping that acts as no
+// person; work for a person uses deploymentModelsKey or platformKey. A key
+// someone shared with the deployment is no longer used.
 func (m *Module) GatewayKey() string {
-	if k := m.Keys.SharedKey(); k != "" {
-		return k
+	if m.pf != nil && m.pf.Stopped() {
+		return ""
 	}
 	m.accessMu.Lock()
 	defer m.accessMu.Unlock()
 	return m.access.DeploymentKey
+}
+
+// deploymentModelsKey is the key a model call for a person without a
+// credential of their own uses: on a Studio of one the owner's
+// (GatewayKey); on a Studio several people use only an OpenAI-compatible
+// endpoint the administrator set, never the administrator's ACTIVATE
+// credential, so "" where the gateway is an ACTIVATE platform's.
+func (m *Module) deploymentModelsKey() string {
+	if !m.A.Cfg.AuthEnabled() {
+		return m.GatewayKey()
+	}
+	if m.pf == nil || m.pf.PlatformGateway() {
+		return ""
+	}
+	return m.GatewayKey()
 }
 
 // refreshAccess is ensureFreshAccess(ms) and a reread of the platform
@@ -405,4 +423,12 @@ func (m *Module) runsRoute(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	return reqbody.OK(w, reqbody.O("runs", wf.Runs.List(60)))
+}
+
+// noModelCredential is what a model call without a credential says.
+func noModelCredential(shared bool) string {
+	if shared {
+		return "No model credential of your own. Sign in with ACTIVATE, or add an OpenAI-compatible endpoint, under Settings, Accounts."
+	}
+	return "No model credential. Sign in with ACTIVATE, or add an OpenAI-compatible endpoint, under Settings, Accounts."
 }

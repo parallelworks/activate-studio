@@ -13,7 +13,7 @@ import { Button, Callout, type CalloutTone, CopyButton, ExternalLink, Loader, ty
  * says where models come from.
  */
 
-export type Source = 'endpoint' | 'key' | 'signin' | 'shared' | 'env' | 'cli' | 'sidecar' | 'none'
+export type Source = 'endpoint' | 'key' | 'signin' | 'shared' | 'env' | 'cli' | 'sidecar' | 'admin-endpoint' | 'none'
 export type CliSource = 'env' | 'chosen' | 'path' | 'common' | 'none'
 export interface SourceInfo { source: Source; host: string | null; context: string | null; baseUrl?: string | null; last4?: string | null; kind?: string | null }
 export interface CliContext { name: string; server: string; organization: string | null; kind: 'sign-in' | 'api-key' | 'token' | null; expiresAt: string | null; expired: boolean; current: boolean; renewError: string | null }
@@ -23,7 +23,9 @@ export interface AccessStatus {
   authEnabled: boolean
   models: SourceInfo
   platform: SourceInfo
-  /** What requests fall back to without a key of the person's own. */
+  /** What requests fall back to without a credential of the person's own:
+   *  on a Studio of one the owner's; on a Studio several people use only an
+   *  OpenAI-compatible endpoint the administrator set (models), or none. */
   deployment: SourceInfo
   gatewayHost: string | null
   platformOrigin: string | null
@@ -35,6 +37,8 @@ export interface AccessStatus {
     /** Where the Studio found the CLI, and how. */
     path: string | null; source: CliSource; chosenPath: string | null; commonDirs: string[]
     contexts: CliContext[]; chosen: string | null; active: string | null; used: string | null; gatewayFromEnv: boolean; envKey: boolean
+    /** Stop using the pw CLI: the Studio reads none of the computer's ACTIVATE credentials. */
+    stopped?: boolean
   } | null
   login: LoginState | null
 }
@@ -164,6 +168,7 @@ export function describeSource(s: SourceInfo, single: boolean): string {
     case 'shared': return `the key${s.last4 ? ` ending ${s.last4}` : ''} shared with everyone here${at}`
     case 'env': return `${single ? 'PW_API_KEY in the Studio\'s environment' : 'the deployment credential'}${at}`
     case 'sidecar': return 'the model served beside this Studio'
+    case 'admin-endpoint': return `the endpoint the administrator set${s.baseUrl ? ` (${s.baseUrl})` : at}`
     default: return 'none'
   }
 }

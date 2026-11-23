@@ -161,7 +161,7 @@ func New(reg *libraries.Registry, eng *search.Engine, pool *remote.Pool, local *
 		// Read from the file each time it changes, as Node's indexSettings:
 		// Node writes it while it runs beside.
 		Settings: libraries.NewFileIndexSettings(indexBase),
-		Keys:     libraries.DeploymentKeys{},
+		Keys:     libraries.DeploymentKeys{IndexBase: indexBase},
 		KBRoot:   kbRoot, GufiIndex: gufiIndex, SemanticMapDir: semanticMapDir,
 		IndexBase: indexBase, Log: log, DelayScale: 1, RemoteCheck: time.Hour,
 		RemoteFiles: remoteMapFiles,
