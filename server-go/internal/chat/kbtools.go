@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -146,8 +147,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, tctx Tool
 		return fail(p.shown(rel)+" already exists. Pass overwrite=true to replace it, or choose another name, or append=true to add to it.", "exists")
 	}
 	m.note(tctx, p.id(), rel)
+	limit := tctx.rowLimit(rel)
 	if adding && exists {
-		return m.appendKBFile(r, p, rel, ext, content)
+		return m.appendKBFile(r, p, rel, ext, content, limit)
 	}
 	// The other formats asked for beside a Markdown file: checked before
 	// anything is written, so the call writes all of them or none.
@@ -169,6 +171,7 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, tctx Tool
 	// write instead, so no text lands in a file named as a binary format.
 	data, made := []byte(content), ""
 	var missing, problems, style []string
+	dropped := 0
 	if why := docwrite.Unsupported(ext); why != "" {
 		return fail(why, "refused")
 	}
@@ -180,7 +183,13 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, tctx Tool
 	if imageDir == "." {
 		imageDir = ""
 	}
-	if docwrite.Handles(ext) {
+	if ext == ".xlsx" && limit > 0 {
+		b, says, d, err := docwrite.RenderXLSXUpTo(content, limit)
+		if err != nil {
+			return fail("Could not write "+p.shown(rel)+": making the workbook: "+err.Error(), "error")
+		}
+		data, made, dropped = b, fmt.Sprintf("an Excel workbook of %d sheet%s (%s)", len(says), plural(len(says)), strings.Join(says, "; ")), d
+	} else if docwrite.Handles(ext) {
 		out, err := docwrite.Render(ext, content, p.images(imageDir))
 		if err != nil {
 			return fail("Could not write "+p.shown(rel)+": "+err.Error(), "error")
@@ -239,6 +248,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, tctx Tool
 		show = "Give the user its link: " + link + " It opens in the Library viewer."
 		if ext == ".xlsx" {
 			show = moreRows + show
+			if dropped > 0 {
+				show = rowsLeftOut(limit, limit, dropped) + show
+			}
 		}
 	}
 	if source != "" {
@@ -271,6 +283,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, tctx Tool
 	if ext == ".xlsx" {
 		if h := docwrite.Held(data); len(h) > 0 {
 			summary += ": " + strings.Join(h, "; ")
+		}
+		if dropped > 0 {
+			summary += droppedSummary(limit, dropped)
 		}
 	}
 	indexed := " and re-indexed in " + itoaInt(int(ms)) + " ms. "
@@ -781,20 +796,24 @@ func splitFirst(p string) string {
 
 // appendKBFile adds a part to a file already in the library: text at its
 // end, rows to a workbook's sheets.
-func (m *Module) appendKBFile(r *http.Request, p place, rel, ext, content string) (*Outcome, error) {
+func (m *Module) appendKBFile(r *http.Request, p place, rel, ext, content string, limit int) (*Outcome, error) {
 	old, err := p.read(rel, 64<<20)
 	if err != nil {
 		return &Outcome{Result: "Could not read " + p.shown(rel) + " to add to it: " + err.Error(), Summary: "error"}, nil
 	}
 	var data []byte
 	added := itoaInt(jsval.Len(content)) + " bytes"
+	next, dropped := nextPart, 0
 	if ext == ".xlsx" {
-		b, sheets, rows, err := docwrite.AppendXLSX(old, content)
+		b, sheets, rows, d, err := docwrite.AppendXLSX(old, content, limit)
 		if err != nil {
 			return &Outcome{Result: "Could not add to " + rel + ": " + err.Error(), Summary: "error"}, nil
 		}
-		data = b
+		data, dropped = b, d
 		added = itoaInt(rows) + " rows; the workbook now holds: " + strings.Join(sheets, "; ")
+		if dropped > 0 {
+			next = rowsLeftOut(limit, rows, dropped) + "Give the user its link: "
+		}
 	} else {
 		data = append(old, content...)
 	}
@@ -810,10 +829,47 @@ func (m *Module) appendKBFile(r *http.Request, p place, rel, ext, content string
 	m.made.drop(p.key(rel))
 	ms := p.reindex(r.Context(), rel)
 	return &Outcome{
-		Result:  "Added to " + p.shown(rel) + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. " + nextPart + p.link(rel),
-		Summary: "added to " + p.shown(rel) + heldSummary(ext, data),
+		Result:  "Added to " + p.shown(rel) + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. " + next + p.link(rel),
+		Summary: "added to " + p.shown(rel) + heldSummary(ext, data) + droppedSummary(limit, dropped),
 		Files:   []conversations.File{p.file(rel)},
 	}, nil
+}
+
+// rowLimit is the most rows after its header a workbook written to rel
+// may hold: the count the user's message asked for when it asks for a
+// new workbook (by this name, or naming none), else 0 for no limit.
+func (t ToolCtx) rowLimit(rel string) int {
+	if t.RowsAsked <= 0 || !strings.EqualFold(filepath.Ext(rel), ".xlsx") {
+		return 0
+	}
+	if t.RowsFile != "" && !strings.EqualFold(path.Base(t.RowsFile), path.Base(rel)) {
+		return 0
+	}
+	return t.RowsAsked
+}
+
+// rowsLeftOut is said when a workbook write had more rows than the user
+// asked for: the rows past the count were not written, so the parts sent
+// at once with it stop at the count, and the workbook is finished.
+func rowsLeftOut(asked, added, dropped int) string {
+	if added <= 0 {
+		return fmt.Sprintf("The user asked for %d rows and the workbook already held them, so this part's %d row%s %s not written: it holds the %d asked for and is finished. Send no more rows; tell the user it holds %d. ", asked, dropped, plural(dropped), wereWas(dropped), asked, asked)
+	}
+	return fmt.Sprintf("The user asked for %d rows, so the last %d row%s of this part %s not written: the workbook holds the %d asked for and is finished. Send no more rows; tell the user it holds %d. ", asked, dropped, plural(dropped), wereWas(dropped), asked, asked)
+}
+
+func wereWas(n int) string {
+	if n == 1 {
+		return "was"
+	}
+	return "were"
+}
+
+func droppedSummary(asked, dropped int) string {
+	if dropped <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (%d over the %d asked not written)", dropped, asked)
 }
 
 // moreRows is said after a workbook is written: a sheet that holds fewer

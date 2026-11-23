@@ -29,6 +29,8 @@ type emuTools struct {
 	// running at once.
 	pause        time.Duration
 	active, most int
+	// limits is the row limit each write_kb_file call was run with.
+	limits []int
 }
 
 func (e *emuTools) Answer(r *http.Request, in map[string]any, k *string) (*Answered, error) {
@@ -48,9 +50,12 @@ func (e *emuTools) Specs(*http.Request, []string, bool, bool, bool, []string) (*
 	return &Specs{Available: out, Selected: out}, nil
 }
 
-func (e *emuTools) Execute(_ *http.Request, name, args string, _ ToolCtx) (*Outcome, error) {
+func (e *emuTools) Execute(_ *http.Request, name, args string, tctx ToolCtx) (*Outcome, error) {
 	e.mu.Lock()
 	e.ran = append(e.ran, name+" "+args)
+	if name == "write_kb_file" {
+		e.limits = append(e.limits, tctx.rowLimit(writePath(args)))
+	}
 	result := e.result
 	if name == "write_kb_file" && len(e.results) > 0 {
 		result, e.results = e.results[0], e.results[1:]
@@ -754,5 +759,33 @@ func TestTheSameCallIsAnsweredFromTheFirst(t *testing.T) {
 	}
 	if n != 1 || !strings.Contains(requestOf(gw, 2), "a file the user asked you to make does not exist until you write it") {
 		t.Fatalf("searches run %d: %q", n, e.runs())
+	}
+}
+
+// The count of rows a message asks a new workbook to hold goes with each
+// write of it, so the parts a model sends at once stop at the count; a
+// message asking for rows more is not a limit on the whole workbook.
+func TestWritesOfAWorkbookCarryTheRowsAsked(t *testing.T) {
+	for _, c := range []struct {
+		ask  string
+		want int
+	}{
+		{"Write a spreadsheet reports/items.xlsx to my library: 250 rows with columns Name and Description. Do not search first.", 250},
+		{"Write a spreadsheet other.xlsx with 250 rows. Do not search first.", 0},
+		{"Write 250 more rows to reports/items.xlsx. Do not search first.", 0},
+		{"Add 250 rows to reports/items.xlsx. Do not search first.", 0},
+	} {
+		e, base, gw := emuModule(t)
+		gw.load([]reply{
+			said(func(n string) string { return writeEnvelope(n, sheetRows(3)) }, "stop"),
+			said(func(string) string { return "Done. " + strings.Repeat("It is written. ", 12) }, "stop"),
+		})
+		askFor(t, base, c.ask)
+		e.mu.Lock()
+		got := e.limits
+		e.mu.Unlock()
+		if len(got) == 0 || got[0] != c.want {
+			t.Errorf("%q: limits %v, want %d", c.ask, got, c.want)
+		}
 	}
 }

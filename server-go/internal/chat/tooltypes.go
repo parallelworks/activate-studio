@@ -88,6 +88,11 @@ type ToolCtx struct {
 	Model          *string  `json:"model"`
 	ConversationID *string  `json:"conversationId"`
 	UserID         *string  `json:"userId"`
+	// RowsAsked is the count of rows the user's message asks a new
+	// workbook to hold, 0 for none; RowsFile is the file it names, "" for
+	// any (rowCap). A workbook write holds no more than that.
+	RowsAsked int    `json:"rowsAsked,omitempty"`
+	RowsFile  string `json:"rowsFile,omitempty"`
 }
 
 // Prepared is prepareArgs's answer.

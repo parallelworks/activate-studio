@@ -159,3 +159,76 @@ func TestAppendsAtOnceAllLand(t *testing.T) {
 		t.Fatalf("%v", h)
 	}
 }
+
+// A workbook asked for with a count of rows holds no more than that: the
+// parts a model sends at once stop at the count, and each result says the
+// rows past it were not written.
+func TestPartsSentAtOnceStopAtTheRowsAsked(t *testing.T) {
+	dir := t.TempDir()
+	kb := filepath.Join(dir, "kb")
+	os.MkdirAll(kb, 0o755)
+	t.Setenv("PW_CLI", filepath.Join(dir, "no-pw"))
+	cfg, _ := config.Load(func(k string) string {
+		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": kb, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
+	})
+	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
+	mux := http.NewServeMux()
+	kbpkg.Register(mux, a)
+	Register(mux, a)
+	r := httptest.NewRequest("POST", "/api/chat/stream", nil)
+	tctx := ToolCtx{RowsAsked: 250, RowsFile: "sales.xlsx"}
+	rows := func(from, n int) string {
+		var b strings.Builder
+		b.WriteString(`[["Date","Units"]`)
+		for i := from; i < from+n; i++ {
+			b.WriteString(`,["2026-01-01",` + strconv.Itoa(i) + `]`)
+		}
+		return b.String() + "]"
+	}
+	run := func(args string) string {
+		out, ok := Default.executeInGo(r, "write_kb_file", args, tctx)
+		if !ok {
+			t.Fatalf("%s: not run", args)
+		}
+		return out.Result
+	}
+	held := func() int {
+		f, err := excelize.OpenFile(filepath.Join(kb, "reports", "sales.xlsx"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		got, _ := f.GetRows(f.GetSheetList()[0])
+		if last := got[len(got)-1][1]; len(got) > 1 && last != strconv.Itoa(len(got)-1) {
+			t.Errorf("last row %q of %d", last, len(got))
+		}
+		return len(got) - 1
+	}
+	// A first part over the count is cut to it.
+	got := run(`{"path":"reports/sales.xlsx","content":` + strconv.Quote(rows(1, 300)) + `}`)
+	if held() != 250 || !strings.Contains(got, "the last 50 rows of this part were not written") {
+		t.Fatalf("held %d: %s", held(), got)
+	}
+	// A replace and the parts after it, sent in one round, end at 250.
+	run(`{"path":"reports/sales.xlsx","overwrite":true,"content":` + strconv.Quote(rows(1, 100)) + `}`)
+	from := 101
+	var results []string
+	for _, n := range []int{50, 50, 49, 50, 50} {
+		results = append(results, run(`{"path":"reports/sales.xlsx","append":true,"content":`+strconv.Quote(rows(from, n))+`}`))
+		from += n
+	}
+	if held() != 250 || !strings.Contains(results[2], "send the next part") || !strings.Contains(results[3], "the last 49 rows of this part were not written") || !strings.Contains(results[3], "250 rows after the header") || !strings.Contains(results[4], "this part's 50 rows were not written") {
+		t.Fatalf("held %d: %q", held(), results)
+	}
+	// Another file, and a workbook of two sheets, are not limited.
+	run(`{"path":"reports/other.xlsx","content":` + strconv.Quote(rows(1, 300)) + `}`)
+	if f, err := excelize.OpenFile(filepath.Join(kb, "reports", "other.xlsx")); err != nil {
+		t.Fatal(err)
+	} else {
+		got, _ := f.GetRows(f.GetSheetList()[0])
+		f.Close()
+		if len(got) != 301 {
+			t.Errorf("other.xlsx held %d rows", len(got)-1)
+		}
+	}
+}
