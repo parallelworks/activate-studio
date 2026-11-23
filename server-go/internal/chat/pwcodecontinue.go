@@ -494,7 +494,8 @@ func (m *Module) continueRelayed(w http.ResponseWriter, r *http.Request, mach *c
 	workspace := jsonv.String(jsonv.Path(d, "workspace"))
 	status, liveHost := jsonv.String(jsonv.Path(d, "status")), jsonv.String(jsonv.Path(d, "liveHost"))
 	if !confirmed {
-		return reqbody.OK(w, reqbody.O("confirm", relayConfirm(mach.Name, workspace, status, liveHost, m.A.Cfg.AuthEnabled()), "status", status, "title", v.Title, "relay", true))
+		return reqbody.OK(w, reqbody.O("confirm", relayConfirm(mach.Name, workspace, status, liveHost, m.A.Cfg.AuthEnabled()), "status", status, "title", v.Title, "relay", true,
+			"studioTools", m.bridgeOffer(r, bridgeMach{ID: mach.ID, Kind: mach.Kind, Name: mach.Name, Owner: mach.Owner})))
 	}
 	model := jsonv.String(jsonv.Path(d, "model"))
 	link := &conversations.PWCodeLink{Site: pwcode.RelaySite(mach.ID), Relay: true, Session: session, Workspace: workspace,

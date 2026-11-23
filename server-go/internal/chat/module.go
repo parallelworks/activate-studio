@@ -76,7 +76,16 @@ type Module struct {
 	// reached the Studio's tools (mcpbridge.go).
 	bridgeMu     sync.Mutex
 	bridgeVisits map[string]bridgeVisit
-	access       Access
+	// bridgeBusy is whose setup runs now (mcpsetup.go); bridgeRunFn and
+	// bridgeMachineFn stand in for pw ssh and the platform's machine list
+	// in tests.
+	bridgeBusy       map[string]bool
+	bridgePrefStore  *bridgePrefStore
+	bridgeRunFn      bridgeRunner
+	bridgeMachineFn  bridgeMachineFn
+	bridgeMachinesFn bridgeMachinesFn
+	bridgeAttachFn   bridgeAttachFn
+	access           Access
 
 	listings *listingCache
 	noCap    *noTokenCap
@@ -297,6 +306,9 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("POST /api/mcp", m.mcpPost)
 	h("GET /api/mcp", m.mcpGet)
 	h("GET /api/mcp/bridge", m.bridgeRoute)
+	h("POST /api/mcp/bridge/setup", m.bridgeSetup)
+	h("POST /api/mcp/bridge/prefs", m.bridgeDecline)
+	h("GET /api/mcp/bridge/machines", m.bridgeMachinesRoute)
 	m.attachmentRoutes(h)
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }

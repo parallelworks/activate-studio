@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ACCOUNTS_HREF } from '../accounts'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
+import { type MachineTools, type SetupResult, runSetup, setupSaid, takeAutoSetup } from './studioTools'
 
 /** GET /api/mcp/bridge: how this Studio's tools reach a pw code session of
  *  the viewer's on another machine. */
@@ -23,11 +23,14 @@ export interface BridgeReach {
   platformTools?: boolean
   /** When a pw code session of theirs last reached the tools. */
   seen?: { at: string; method: string; client?: string } | null
+  /** Whether the Studio can set it up on the chat's machine for them
+   *  (with ?conversation=). */
+  setup?: MachineTools
 }
 
-async function readReach(): Promise<BridgeReach | null> {
+async function readReach(conversationId?: string): Promise<BridgeReach | null> {
   try {
-    const r = await fetch('/api/mcp/bridge')
+    const r = await fetch(`/api/mcp/bridge${conversationId ? `?conversation=${encodeURIComponent(conversationId)}` : ''}`)
     return r.ok ? await r.json() as BridgeReach : null
   } catch { return null }
 }
@@ -35,12 +38,16 @@ async function readReach(): Promise<BridgeReach | null> {
 /**
  * The setup card for the Studio's tools in pw code on another machine. A
  * session the Studio starts has them already; one elsewhere gets them once
- * the person adds the Studio to pw code there, with the command shown here
- * and an ACTIVATE API key of theirs. "Check that it worked" asks the Studio
- * whether a session of theirs has reached the tools.
+ * pw code there has the Studio. "Set up for me" has the Studio do that
+ * over pw ssh as the person, with the machine's own ACTIVATE sign-in, and
+ * runs as the card opens when they asked for it as they continued the
+ * session. "Do it myself" shows the command, for a machine pw ssh does not
+ * reach. "Check that it worked" asks the Studio whether a session of
+ * theirs has reached the tools.
  */
-export function StudioToolsSetup({ machineName, onDismiss, defaultOpen = false }: {
+export function StudioToolsSetup({ machineName, conversationId, onDismiss, defaultOpen = false }: {
   machineName?: string
+  conversationId?: string
   onDismiss?: () => void
   defaultOpen?: boolean
 }) {
@@ -49,10 +56,39 @@ export function StudioToolsSetup({ machineName, onDismiss, defaultOpen = false }
   const [checking, setChecking] = useState(false)
   const [checked, setChecked] = useState(false)
   const [copied, setCopied] = useState(false)
-  const read = useCallback(async () => { setReach(await readReach()) }, [])
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<SetupResult | null>(null)
+  const [failed, setFailed] = useState('')
+  const auto = useRef(false)
+  const read = useCallback(async () => { setReach(await readReach(conversationId)) }, [conversationId])
   useEffect(() => { void read() }, [read])
+  const where = reach?.setup?.machine || machineName || 'the other machine'
+
+  const setUp = useCallback(async (opts: { replace?: boolean; check?: boolean } = {}) => {
+    if (!conversationId) return
+    setRunning(true)
+    setFailed('')
+    try {
+      const r = await runSetup({ conversationId, ...opts })
+      setResult(r)
+      if (r.done && !r.worked) setOpen(true)
+      await read()
+    } catch (e) {
+      setFailed((e as Error).message)
+      setOpen(true)
+    } finally {
+      setRunning(false)
+    }
+  }, [conversationId, read])
+
+  // Asked for as the session was continued: run once the card knows it can.
+  useEffect(() => {
+    if (auto.current || !reach || !conversationId) return
+    auto.current = true
+    if (takeAutoSetup(conversationId) && reach.setup?.available) void setUp()
+  }, [reach, conversationId, setUp])
+
   if (!reach) return null
-  const where = machineName || 'the other machine'
   const check = async () => {
     setChecking(true)
     await read()
@@ -65,21 +101,53 @@ export function StudioToolsSetup({ machineName, onDismiss, defaultOpen = false }
       setCopied(true)
     } catch { setCopied(false) }
   }
-  if (reach.seen) {
+  if (result?.done && result.worked) {
+    return (
+      <div data-testid="studio-tools-done"><Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
+        {setupSaid(result, where)}
+      </Callout></div>
+    )
+  }
+  if (reach.seen && !result && !failed) {
     return (
       <Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
         pw code reaches this Studio's tools as you: a session of yours last did at {new Date(reach.seen.at).toLocaleTimeString()}.
       </Callout>
     )
   }
+  if (reach.setup?.state === 'set' && !result && !failed) {
+    return (
+      <Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
+        pw code on {where} has this Studio's tools, as you. Sessions started there since it was set up have them; one open from before keeps the tools it started with.{' '}
+        <button type="button" className="code-approval-more" onClick={() => void setUp({ check: true })}>Check it again</button>
+      </Callout>
+    )
+  }
+  const canRun = !!conversationId && !!reach.setup?.available
   return (
-    <Callout tone="info" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
+    <Callout tone={failed || result ? 'warning' : 'info'} size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
       <p>
-        pw code on {where} does not have this Studio's tools (library search, queries, reading files and the rest) yet.{' '}
-        <button type="button" className="code-approval-more" aria-expanded={open} onClick={() => setOpen(o => !o)}>
-          {open ? 'Hide the setup' : 'Set them up once'}
-        </button>
+        {running
+          ? <>Adding this Studio's tools to pw code on {where}, as you…</>
+          : <>pw code on {where} does not have this Studio's tools (library search, queries, reading files and the rest) yet.</>}
       </p>
+      {failed && <p data-testid="studio-tools-failed">{failed}</p>}
+      {result?.ask && (
+        <p>
+          {result.why}{' '}
+          <Button variant="secondary" size="sm" disabled={running} onClick={() => void setUp({ replace: true })}>Replace it</Button>
+        </p>
+      )}
+      {result?.done && !result.worked && <p>{setupSaid(result, where)}</p>}
+      {!running && !result?.ask && (
+        <p>
+          {canRun && <Button variant="primary" size="sm" onClick={() => void setUp({ check: !!result || !!failed })}>{failed || result ? 'Try again' : 'Set up for me'}</Button>}{' '}
+          <button type="button" className="code-approval-more" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+            {open ? 'Hide the steps' : canRun ? 'Do it myself' : 'Set them up once'}
+          </button>
+        </p>
+      )}
+      {!canRun && reach.setup?.why && reach.available && <p className="muted">{reach.setup.why}</p>}
       {open && (!reach.available
         ? <p>{reach.why}</p>
         : <>
@@ -93,9 +161,9 @@ export function StudioToolsSetup({ machineName, onDismiss, defaultOpen = false }
               <Button variant="secondary" size="sm" onClick={() => void copy()}>{copied ? 'Copied' : 'Copy the command'}</Button>
             </p>
             <p>
-              3. Start a pw code session there, or in one already open type /mcp and reconnect studio. Every session there then
-              has the Studio's tools ({reach.tools} of them), as you, with your own libraries.
-              {!reach.platformTools && <> The platform's tools come once you sign in with ACTIVATE in this Studio, under <a href={ACCOUNTS_HREF}>Settings, Accounts</a>.</>}
+              3. Start a pw code session there: every session started there from then on has the Studio's tools
+              ({reach.tools} of them), as you, with your own libraries. One already open keeps the tools it started with.
+              {!reach.platformTools && <> The platform's tools come once you sign in with ACTIVATE in this Studio (Settings, Model access).</>}
             </p>
             <p>
               <Button variant="secondary" size="sm" loading={checking} disabled={checking} onClick={() => void check()}>Check that it worked</Button>

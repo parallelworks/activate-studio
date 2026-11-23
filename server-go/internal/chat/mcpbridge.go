@@ -155,20 +155,12 @@ func (m *Module) bridgeRoute(w http.ResponseWriter, r *http.Request) error {
 	if o := m.pf.Origin(); o != "" {
 		out.SetValue("keyPage", o+"/settings/keys")
 	}
+	url, why := m.bridgeReach(r)
+	if why != "" {
+		out.SetValue("why", why)
+		return reqbody.OK(w, out)
+	}
 	u := user(r)
-	switch {
-	case !m.A.Cfg.AuthEnabled() || u == nil || u.Source != "proxy":
-		out.SetValue("why", "This Studio is not open through the ACTIVATE session proxy, so a pw code session on another machine cannot reach its tools this way.")
-		return reqbody.OK(w, out)
-	case !m.eff().McpEnabled:
-		out.SetValue("why", "MCP access is off for this Studio. An administrator turns it on under Settings, External access.")
-		return reqbody.OK(w, out)
-	}
-	url := bridgeURL(r)
-	if url == "" {
-		out.SetValue("why", "The Studio could not tell its address on ACTIVATE from this request.")
-		return reqbody.OK(w, out)
-	}
 	tc := m.personCtx(r)
 	tools := m.personTools(r, tc)
 	out.SetValue("available", true)
@@ -185,5 +177,24 @@ func (m *Module) bridgeRoute(w http.ResponseWriter, r *http.Request) error {
 	} else {
 		out.SetValue("seen", nil)
 	}
+	if id := r.URL.Query().Get("conversation"); id != "" {
+		out.SetValue("setup", m.bridgeSetupOffer(r, id))
+	}
 	return reqbody.OK(w, out)
+}
+
+// bridgeReach is the Studio's MCP endpoint for r's viewer on another
+// machine, or why there is none.
+func (m *Module) bridgeReach(r *http.Request) (url, why string) {
+	u := user(r)
+	switch {
+	case !m.A.Cfg.AuthEnabled() || u == nil || u.Source != "proxy":
+		return "", "This Studio is not open through the ACTIVATE session proxy, so a pw code session on another machine cannot reach its tools this way."
+	case !m.eff().McpEnabled:
+		return "", "MCP access is off for this Studio. An administrator turns it on under Settings, External access."
+	}
+	if url = bridgeURL(r); url == "" {
+		return "", "The Studio could not tell its address on ACTIVATE from this request."
+	}
+	return url, ""
 }
