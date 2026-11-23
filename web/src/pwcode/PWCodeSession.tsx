@@ -10,7 +10,6 @@ import {
 } from '@parallelworks/ui/ai'
 import {
   loadPwCodeMessages,
-  modelLabel,
   pendingApprovals,
   promptHistory,
   type PwCodeMessages,
@@ -41,6 +40,8 @@ import { TerminalHandoff } from './session/TerminalHandoff'
 import { UsageLimitWait } from './session/UsageLimitWait'
 import { useAwayRecap } from './session/useAwayRecap'
 import { useComposerImages } from './session/useComposerImages'
+import { usePlatformModels } from './session/usePlatformModels'
+import { AgentModelControls } from '../code/AgentModelControls'
 
 import { needsActivate } from '../accounts'
 import { NeedsActivate } from '../components/NeedsActivate'
@@ -188,18 +189,8 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
         {noticeText}
       </NoticeCard>
     ))
-  // The model choices: those the session's machine offers it, the names
-  // the session reports, and the model it is on.
-  const current = settings.model.value ?? detail?.model ?? ''
-  const offered = useSessionModels(machine, sessionId)
-  const modelNames = useMemo(() => {
-    const names: Record<string, string> = {}
-    for (const m of offered) names[m.id] = modelLabel(m.id, m.name)
-    for (const [id, name] of Object.entries(liveState?.modelNames ?? {})) names[id] = name
-    if (current && !names[current]) names[current] = modelLabel(current)
-    return names
-  }, [offered, liveState?.modelNames, current])
-  const models = Object.keys(modelNames)
+  // The platform models pw code can run, for the model picker.
+  const platformModels = usePlatformModels()
 
   // A question, plan or approval that arrives waits for the person: the
   // thread goes to it, as it would while following the turn, even when a
@@ -330,13 +321,23 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
                   {settings.saving && <span className="muted pwcode-saving">Saving…</span>}
                 </>,
                 settingsRight: <>
-                  {models.length > 0 && (
-                    <select className="pwcode-model" aria-label="The session's model" value={current}
-                      disabled={settings.model.disabled} onChange={e => settings.model.onChange(e.target.value)}>
-                      {models.map(id => <option key={id} value={id}>{modelNames[id]}</option>)}
-                    </select>
-                  )}
-                  <EffortPicker effort={settings.effort.value} onPick={settings.effort.onChange} disabled={settings.effort.disabled} />
+                  <AgentModelControls
+                    key={`${machine}/${sessionId}`}
+                    api={pwCode}
+                    platform={platformModels}
+                    machine={machine}
+                    sessionId={sessionId}
+                    claudeReady={screen.claude.available}
+                    canStart={screen.canStart}
+                    model={settings.model}
+                    modelNames={liveState?.modelNames}
+                    effort={settings.effort}
+                    allocation={settings.allocation}
+                    account={settings.account.value ?? undefined}
+                    panel={picker}
+                    onPanelChange={setPicker}
+                    onAccounts={openAccounts}
+                  />
                   <TerminalHandoff machine={machine} sessionId={sessionId} username={username} />
                   <button type="button" className="pwcode-expand" onClick={() => setExpandAll(open => !open)} aria-pressed={!!expandAll}
                     title={expandAll ? 'Fold every step' : 'Open every step'}>{expandAll ? 'Fold steps' : 'Open steps'}</button>
@@ -355,20 +356,6 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
       )}
     </div>
   )
-}
-
-/** The models the session's machine offers it (GET .../models), or none. */
-function useSessionModels(machine: string, sessionId: string): { id: string; name?: string }[] {
-  const [models, setModels] = useState<{ id: string; name?: string }[]>([])
-  useEffect(() => {
-    let gone = false
-    fetch(`/api/code/machines/${encodeURIComponent(machine)}/sessions/${encodeURIComponent(sessionId)}/models`)
-      .then(r => (r.ok ? r.json() : []))
-      .then((v: unknown) => { if (!gone && Array.isArray(v)) setModels(v.filter((m): m is { id: string; name?: string } => typeof m?.id === 'string')) })
-      .catch(() => {})
-    return () => { gone = true }
-  }, [machine, sessionId])
-  return models
 }
 
 function SessionBanner({ banner }: { banner: PwCodeSessionScreen['banner'] }) {

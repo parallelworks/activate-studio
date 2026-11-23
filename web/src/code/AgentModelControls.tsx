@@ -3,7 +3,7 @@ import { lastModelPreference, type PwCodeApi, type PwCodePicker, type PwCodePlat
 import { Combobox } from '@parallelworks/ui'
 import { AllocationSelector, type BoundSetting, EffortPicker, useChat, useChatConfig } from '@parallelworks/ui/ai'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
-import { describeError } from '../pwcode/PWCodeSession'
+import { describeError } from '../pwcode/describeError'
 import { useSavedPreference } from './parts'
 
 /** The model last chosen for a new session, kept in this browser. */
