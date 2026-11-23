@@ -3,7 +3,7 @@ import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getEngine, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
 import { fetchModels } from './api'
-import { firstMessagePick } from './pwcode/newChatModel'
+import { firstMessagePick } from './pwcode/newChatPick'
 import { rememberToolCommands } from './components/GufiCommands'
 
 async function listModels(): Promise<ModelsList> {

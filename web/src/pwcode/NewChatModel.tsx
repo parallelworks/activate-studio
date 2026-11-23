@@ -3,7 +3,7 @@ import type { PwCodePicker } from '@parallelworks/code'
 import type { BoundSetting } from '@parallelworks/ui/ai'
 import { AgentModelControls } from '../code/AgentModelControls'
 import { pwCode } from './api'
-import { onPick, pickModel, pickedModel } from './newChatModel'
+import { onPick, pickModel, pickedModel } from './newChatPick'
 import { usePlatformModels } from './session/usePlatformModels'
 import { PwCodeWords } from './PWCodeSession'
 
@@ -19,7 +19,7 @@ interface MachineFacts { id?: string; claudeCodeAllowed?: boolean; claudeInstall
  * is hidden while pw code answers. It lists what the session would run on
  * (the platform's models pw code can run, and Claude's where the machine
  * runs Claude Code), starting from the model Settings names, and the first
- * message carries the pick (newChatModel.ts).
+ * message carries the pick (newChatPick.ts).
  */
 export function NewChatModel({ conversationId }: { conversationId: string | null }) {
   const [machine, setMachine] = useState<MachineFacts>({})

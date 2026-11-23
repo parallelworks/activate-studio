@@ -13,7 +13,7 @@ vi.mock('../src/pwcode/PWCodeSession', () => ({ PwCodeWords: ({ children }: { ch
 vi.mock('../src/pwcode/session/usePlatformModels', () => ({ usePlatformModels: () => undefined }))
 
 import { NewChatModelSlot } from '../src/pwcode/NewChatModel'
-import { firstMessagePick, pickModel, pickedModel } from '../src/pwcode/newChatModel'
+import { firstMessagePick, pickModel, pickedModel } from '../src/pwcode/newChatPick'
 import { createStudioAdapter } from '../src/adapter'
 
 let canvas: HTMLElement
