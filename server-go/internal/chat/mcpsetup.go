@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
+	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
 )
 
 // "Set up for me": the Studio adds itself to pw code on the machine a
@@ -262,6 +263,16 @@ func (m *Module) bridgeSetupOffer(r *http.Request, id string) bridgeOfferT {
 	return m.bridgeOffer(r, mach)
 }
 
+// bridgeCrossSite is a request sent by a page of another site: a browser
+// names the page's origin on every POST, so one that is not the Studio's
+// does not open a terminal on someone's machine.
+func bridgeCrossSite(r *http.Request) bool {
+	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		return true
+	}
+	return r.Header.Get("Origin") != "" && !sessions.SameOrigin(r)
+}
+
 // bridgeEntry is how the person's pw code settings hold the studio entry.
 type bridgeEntry struct {
 	Config struct {
@@ -321,6 +332,9 @@ func parseBridgeLook(out string) bridgeLooked {
 // entry for another Studio is replaced only when the person said to
 // (replace); one for this Studio is left as it is.
 func (m *Module) bridgeSetup(w http.ResponseWriter, r *http.Request) error {
+	if bridgeCrossSite(r) {
+		return pwErr(403, "Set up pw code from this Studio's own pages.")
+	}
 	rb, err := reqbody.Read(r)
 	if err != nil {
 		return err
@@ -524,6 +538,9 @@ func (m *Module) bridgeAttach() bridgeAttachFn {
 // them there keeps the Studio from offering them again for it until they
 // choose them.
 func (m *Module) bridgeDecline(w http.ResponseWriter, r *http.Request) error {
+	if bridgeCrossSite(r) {
+		return pwErr(403, "Change this from this Studio's own pages.")
+	}
 	rb, err := reqbody.Read(r)
 	if err != nil {
 		return err

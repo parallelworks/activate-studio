@@ -219,9 +219,18 @@ func setupAs(t *testing.T, m *Module, u *auth.User, body string) (int, map[strin
 // worked; a second time it changes nothing.
 func TestSetUpForMeAddsTheStudioOnTheMachine(t *testing.T) {
 	m, f, id := setupStudio(t)
-	code, out := setupAs(t, m, bobProxy, `{"conversationId":"`+id+`"}`)
-	if code != 200 || out["done"] != true || out["changed"] != true || out["worked"] != true {
-		t.Fatalf("%d %v", code, out)
+	// From the Studio's own page through the session proxy.
+	r := setupReq(bobProxy)
+	r.Header.Set("Origin", "https://platform.example")
+	r.Body = io.NopCloser(strings.NewReader(`{"conversationId":"` + id + `"}`))
+	w := httptest.NewRecorder()
+	if err := m.bridgeSetup(w, r); err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if w.Code != 200 || out["done"] != true || out["changed"] != true || out["worked"] != true {
+		t.Fatalf("%d %v", w.Code, out)
 	}
 	if n, _ := out["tools"].(float64); n < 10 {
 		t.Errorf("tools %v", out["tools"])
@@ -243,7 +252,7 @@ func TestSetUpForMeAddsTheStudioOnTheMachine(t *testing.T) {
 	}
 	// Again: the machine is known to have this Studio, so it is not opened.
 	n := len(f.calls)
-	code, out = setupAs(t, m, bobProxy, `{"conversationId":"`+id+`"}`)
+	code, out := setupAs(t, m, bobProxy, `{"conversationId":"`+id+`"}`)
 	if code != 200 || out["changed"] != false || out["already"] != true || out["worked"] != true || f.adds != 1 || len(f.calls) != n {
 		t.Fatalf("again: %d %v, %d adds, %d runs", code, out, f.adds, len(f.calls)-n)
 	}
@@ -394,6 +403,18 @@ func TestSetupRunsOnlyAsTheMachinesOwner(t *testing.T) {
 		t.Errorf("someone else's shared chat: %d %v", code, out)
 	}
 	m.Convs.SharedHistory = func() bool { return false }
+	// A page of another site cannot set it up as him.
+	for _, h := range []map[string]string{{"Origin": "https://elsewhere.example"}, {"Sec-Fetch-Site": "cross-site"}} {
+		r := setupReq(bobProxy)
+		for k, v := range h {
+			r.Header.Set(k, v)
+		}
+		r.Body = io.NopCloser(strings.NewReader(`{"conversationId":"` + id + `"}`))
+		var ae *apierr.Error
+		if err := m.bridgeSetup(httptest.NewRecorder(), r); !errors.As(err, &ae) || ae.Status != 403 {
+			t.Errorf("from another site (%v): %v", h, err)
+		}
+	}
 	if len(f.calls) != 0 {
 		t.Fatalf("ran %v", f.calls)
 	}
