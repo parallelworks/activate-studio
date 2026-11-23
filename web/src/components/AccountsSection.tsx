@@ -685,9 +685,9 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
           <Input aria-label="Platform host to sign in to" value={loginHost} autoComplete="off" placeholder="Platform host, such as platform.example.com"
             onChange={e => setLoginHost(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && loginHost.trim() && !waiting) onStartLogin() }} />
         </div>
-        <Button variant="primary" disabled={busy || waiting || !loginHost.trim() || !cli.available} onClick={onStartLogin}
-          title={!loginHost.trim() ? 'Type the platform\'s host first.' : undefined}>Sign in</Button>
+        <Button variant="primary" disabled={busy || waiting || !loginHost.trim() || !cli.available} onClick={onStartLogin}>Sign in</Button>
       </div>
+      {!loginHost.trim() && <p className="muted key-note">Type the platform's host to sign in to, such as platform.example.com.</p>}
       {login && waiting && login.code && login.url && (
         <DeviceCode device={{ url: login.url, code: login.code }} what={`Sign in to ${login.host}`} onCancel={onCancelLogin} />
       )}
