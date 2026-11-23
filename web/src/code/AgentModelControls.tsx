@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { lastModelPreference, type PwCodeApi, type PwCodePicker, useLastModelPreference, useModelPicker } from '@parallelworks/code'
+import { lastModelPreference, type PwCodeApi, type PwCodePicker, type PwCodePlatformModelList, useLastModelPreference, useModelPicker } from '@parallelworks/code'
 import { Combobox } from '@parallelworks/ui'
 import { AllocationSelector, type BoundSetting, EffortPicker, useChat, useChatConfig } from '@parallelworks/ui/ai'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
@@ -14,14 +14,18 @@ export function useLastAgentModel() {
 /**
  * The model, effort and allocation a session runs with, chosen as PW Code
  * on the web chooses them (its AgentModelControls, without the Claude
- * account chip): the platform's models from the surrounding ChatProvider's
- * adapter (useChat), and Claude's models from the machine where it runs
+ * account chip): the platform's models from `platform`, else from the
+ * surrounding ChatProvider's adapter (useChat), and Claude's models from the machine where it runs
  * Claude Code, through api. Used by the Code page's start and a pw code
  * chat's session composer.
  */
-export function AgentModelControls({ api, machine, sessionId, claudeReady, canStart, model, modelNames, effort, allocation, account, panel, onPanelChange, onAccounts }: {
+export function AgentModelControls({ api, platform, machine, sessionId, claudeReady, canStart, model, modelNames, effort, allocation, account, panel, onPanelChange, onAccounts }: {
   /** The client whose claude-code/models route the picker reads. */
   api: Pick<PwCodeApi, 'useClaudeModels'>
+  /** The platform models pw code can run, in place of the surrounding
+   *  ChatProvider's: a Studio chat's are the Studio assistant's, which may
+   *  be an OpenAI-compatible endpoint's that pw code cannot use. */
+  platform?: PwCodePlatformModelList | undefined
   machine: string
   sessionId?: string | undefined
   /** The machine runs Claude Code and allows it. */
@@ -51,7 +55,7 @@ export function AgentModelControls({ api, machine, sessionId, claudeReady, canSt
     open: panel === 'models',
     model,
     allocation,
-    platform: { models, providerIssues, isLoading: isLoadingModels, error: modelsError, refresh: refreshModels },
+    platform: platform ?? { models, providerIssues, isLoading: isLoadingModels, error: modelsError, refresh: refreshModels },
     reader: currentUser?.username ?? '',
     names: modelNames,
     errorMessage: describeError,
