@@ -321,6 +321,29 @@ describe('Stop using the pw CLI', () => {
   })
 })
 
+describe('the pw CLI card with no sign-ins', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('offers no Stop, and fills in the platform the Studio knows', async () => {
+    const none = { source: 'none' as const, host: null, context: null }
+    stub(srv({ access: accessOf({ models: none, platform: none, deployment: none, cli: { ...accessOf().cli!, contexts: [], active: null, used: null } }) }))
+    render(<AccountsSection />)
+    expect(await screen.findByText(/The pw CLI has no sign-ins yet/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop using the pw CLI' })).toBeNull()
+    expect(screen.getByLabelText('Platform host to sign in to')).toHaveValue('platform-a.example.com')
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
+  })
+
+  it('says once, in the card, that it stopped', async () => {
+    const s = srv()
+    stub(s)
+    render(<AccountsSection />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop using the pw CLI' }))
+    expect(await screen.findByText('The Studio is not using the pw CLI')).toBeInTheDocument()
+    expect(screen.queryByText(/The Studio no longer uses the pw CLI/)).toBeNull()
+  })
+})
+
 describe('what ACTIVATE turns on', () => {
   it('on a Studio of one, any ACTIVATE credential serves every part', () => {
     const key = { source: 'key' as const, host: 'platform-a.example.com', context: null }

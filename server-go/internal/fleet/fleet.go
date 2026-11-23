@@ -137,6 +137,9 @@ type Fleet struct {
 	Renew time.Duration
 	// Mode is the permission mode of the agents' sessions.
 	Mode string
+	// Refused says why no agent runs here now ("" when they may): on a
+	// Studio of one, this computer's pw code needs ACTIVATE.
+	Refused func() string
 
 	dir    string
 	mu     sync.Mutex

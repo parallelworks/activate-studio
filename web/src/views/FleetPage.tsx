@@ -7,6 +7,8 @@ import {
 import { Streamdown } from 'streamdown'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { commandHead } from '../commandHead'
+import { NeedsActivate } from '../components/NeedsActivate'
+import { needsActivate } from '../accounts'
 
 /**
  * The operator base: standing agents with goals, their state, their
@@ -83,12 +85,15 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [message, setMessage] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Why no agent runs here now (no ACTIVATE in use, or a Studio several
+  // people use), from GET /api/fleet; null when they may.
+  const [unavailable, setUnavailable] = useState<string | null>(null)
   const [retiring, setRetiring] = useState<Agent | null>(null)
   // Bumped after an action, so the open agent is read again at once.
   const [acted, setActed] = useState(0)
   const [form, setForm] = useState({ name: '', goal: '', persona: '', model: '', resource: '', every: '1h', onRunEnd: true, watchPath: '', maxTicks: '', maxTokens: '', maxTurns: '' })
 
-  const refresh = () => fetch('/api/fleet').then(r => r.json()).then(d => { setAgents(d.agents ?? []); setError(null) }).catch(() => {})
+  const refresh = () => fetch('/api/fleet').then(r => r.json()).then(d => { setAgents(d.agents ?? []); setUnavailable(d.unavailable ?? null); setError(null) }).catch(() => {})
   useEffect(() => {
     refresh()
     const t = setInterval(refresh, 10_000)
@@ -150,9 +155,12 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
             ))}
           </div>
         )}
-        <Button variant="primary" onClick={() => setCreating(c => !c)}>{creating ? 'Close' : 'New agent'}</Button>
+        {!unavailable && <Button variant="primary" onClick={() => setCreating(c => !c)}>{creating ? 'Close' : 'New agent'}</Button>}
       </div>
-      {live.length === 0 && !creating && (
+      {unavailable && (needsActivate(unavailable)
+        ? <NeedsActivate>{unavailable}</NeedsActivate>
+        : <Callout tone="info" size="sm">{unavailable}</Callout>)}
+      {live.length === 0 && !creating && !unavailable && (
         <EmptyState variant="bare" className="task-empty" title="A standing agent keeps a goal across time."
           description={<>
             <span>
@@ -163,7 +171,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
             <span>Start from a template, or write a goal of your own.</span>
           </>} />
       )}
-      {templates.length > 0 && (live.length === 0 || creating) && (
+      {!unavailable && templates.length > 0 && (live.length === 0 || creating) && (
         <div className="fleet-templates">
           {templates.map(t => (
             <button key={t.key} className="fleet-template" onClick={() => useTemplate(t)} title={t.goal}>
@@ -174,7 +182,7 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
           ))}
         </div>
       )}
-      {creating && (
+      {creating && !unavailable && (
         <div className="fleet-form">
           <Input label="Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Nightly benchmark campaign" />
           <Textarea label="Goal" className="fleet-goal" value={form.goal} onChange={e => setForm({ ...form, goal: e.target.value })} placeholder="What this agent keeps doing, and what it should never do." />

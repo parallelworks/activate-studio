@@ -125,7 +125,6 @@ func TestARestartAfterTheMessageKeepsItWorking(t *testing.T) {
 	waitFor(t, "the wake-up", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
 }
 
-
 // Retest A: a standing agent's new session made on a model its owner's AI
 // connection does not offer is moved to one it does before its first
 // message, and the journal says so.

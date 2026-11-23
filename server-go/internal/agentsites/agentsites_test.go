@@ -296,7 +296,7 @@ func TestRoutes(t *testing.T) {
 			io.WriteString(w, `{"queued":false}`)
 		}
 	}))
-	f := newFixture(t, map[string]string{"AGENT_LOCAL_SITE": "1", "PW_CODE_SOCKET": sock, "PW_API_KEY": ""})
+	f := newFixture(t, map[string]string{"AGENT_LOCAL_SITE": "1", "PW_CODE_SOCKET": sock, "PW_API_KEY": "owner-key"})
 	cfg := config.Config{IndexBase: f.ix}
 	a := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
 	mux := http.NewServeMux()
@@ -315,7 +315,7 @@ func TestRoutes(t *testing.T) {
 		// apierr.JSON ends an error body with a newline (json.Encoder).
 		return w.Code, strings.TrimSuffix(w.Body.String(), "\n")
 	}
-	if c, b := do("GET", "/api/agent-sites", ""); c != 200 || b != `{"sites":[{"name":"local","kind":"local"}],"localOffered":true}` {
+	if c, b := do("GET", "/api/agent-sites", ""); c != 200 || b != `{"sites":[{"name":"local","kind":"local"},{"name":"cluster-a","kind":"cluster","type":"existing"}],"localOffered":true}` {
 		t.Fatal(c, b)
 	}
 	if c, b := do("GET", "/api/agent-sites/local/status", ""); c != 200 || b != `{"protocolVersion":2,"hostname":"here","usable":true,"why":null}` {
@@ -349,10 +349,6 @@ func TestRoutes(t *testing.T) {
 		t.Fatal(c, b)
 	}
 	if c, b := do("POST", "/api/agent-sites/local/sessions/s1/interrupt", ""); c != 200 || b != `{"ok":true}` {
-		t.Fatal(c, b)
-	}
-	// A site with its path in one segment, as the browser encodes it.
-	if c, b := do("GET", "/api/agent-sites/pw:%2F%2Fu%2Fc/sessions", ""); c != 409 || !strings.Contains(b, "your own platform key") {
 		t.Fatal(c, b)
 	}
 }

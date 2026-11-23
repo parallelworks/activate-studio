@@ -175,6 +175,22 @@ func (f *Fleet) tick(id, reason string, force bool) bool {
 // Studio's own account, and no person borrows the deployment's credential.
 const SharedOff = "Standing agents run on this computer's pw code, which acts as the Studio's own account, so they do not run on a Studio several people use."
 
+// NeedsActivate says why a standing agent does not run on a Studio of one
+// with no ACTIVATE credential in use: this computer's pw code signs in
+// with it.
+const NeedsActivate = "Standing agents run on this computer's pw code, which needs ACTIVATE. Sign in with ACTIVATE under Settings, Accounts."
+
+// refused is why no agent is made or woken now, or "".
+func (f *Fleet) refused() string {
+	if f.A.Cfg.AuthEnabled() {
+		return SharedOff
+	}
+	if f.Refused != nil {
+		return f.Refused()
+	}
+	return ""
+}
+
 func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 	fail := func(why string) {
 		f.mu.Lock()
@@ -187,8 +203,8 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 			f.setState(cur, "idle", "the wake-up could not start: "+cut(why, 160))
 		}
 	}
-	if f.A.Cfg.AuthEnabled() {
-		fail(SharedOff)
+	if why := f.refused(); why != "" {
+		fail(why)
 		return
 	}
 	c := f.Daemon()

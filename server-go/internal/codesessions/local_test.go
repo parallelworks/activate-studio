@@ -35,7 +35,9 @@ func TestLocalSessions(t *testing.T) {
 		}
 	}))
 	dir := t.TempDir()
-	env := map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": filepath.Join(dir, "kb"), "STUDIO_WEB_DIST": filepath.Join(dir, "web"), "PW_CODE_SOCKET": sock}
+	env := map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": filepath.Join(dir, "kb"), "STUDIO_WEB_DIST": filepath.Join(dir, "web"), "PW_CODE_SOCKET": sock,
+		// ACTIVATE on this computer, models from a server here: the Code page lists this computer.
+		"PW_API_KEY": "owner-key", "OPENAI_BASE_URL": "http://127.0.0.1:11434/v1"}
 	cfg, err := config.Load(func(k string) string { return env[k] })
 	if err != nil {
 		t.Fatal(err)

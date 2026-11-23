@@ -35,7 +35,7 @@ func TestAStartMovesOffAModelNotOffered(t *testing.T) {
 			io.WriteString(w, `{}`)
 		}
 	}))
-	env := map[string]string{"AGENT_LOCAL_SITE": "1", "PW_CODE_SOCKET": sock, "PW_GATEWAY_URL": "https://platform.example/api/openai/v1"}
+	env := map[string]string{"AGENT_LOCAL_SITE": "1", "PW_API_KEY": "owner-key", "PW_CODE_SOCKET": sock, "PW_GATEWAY_URL": "https://platform.example/api/openai/v1"}
 	p := platform.New(platform.Options{IndexBase: t.TempDir(), Home: t.TempDir(),
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }})
 	s := &Sites{P: p, Daemon: pwcode.New(p)}

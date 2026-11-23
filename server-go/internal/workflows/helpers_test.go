@@ -137,7 +137,9 @@ func newFixture(t *testing.T, env map[string]string, curated ...string) *fixture
 		}
 		return ans(args, key)
 	}
-	r.Runs.CLI = func(ctx context.Context, args []string, _ string) (string, error) { return "", errors.New("no watcher in tests") }
+	r.Runs.CLI = func(ctx context.Context, args []string, _ string) (string, error) {
+		return "", errors.New("no watcher in tests")
+	}
 	r.Runs.Note = func(string, string) {}
 	r.Runs.Log = func(string) {}
 	t.Cleanup(r.Runs.Stop)
