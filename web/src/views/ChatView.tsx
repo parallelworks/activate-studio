@@ -481,7 +481,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
         // The model picker's Manage link and the no-model empty state's button.
-        extraLinks: { manageProviders: '#view=settings:access', addProvider: '#view=settings:access' },
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: '#view=settings:accounts' },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
@@ -520,15 +520,15 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             feedbackPlaceholder: 'Tell the assistant what to do instead…',
           },
           emptyState: {
-            noProvidersTitle: 'Model credential needed',
-            noProvidersBody: 'Add your API key or platform token under Settings, Model access. Browsing, search, and adding material work without one.',
-            addProvider: 'Open Model access',
+            noProvidersTitle: 'A model is needed',
+            noProvidersBody: 'Sign in with ACTIVATE, or add an OpenAI-compatible endpoint such as a model server on this computer, under Settings, Accounts. Browsing, search, and adding material work without one.',
+            addProvider: 'Open Accounts',
           },
           sidebar: {
             manageProviders: 'Model access',
           },
           input: {
-            placeholderNoProviders: 'Add your model credential to start chatting',
+            placeholderNoProviders: 'Add a model under Settings, Accounts to start chatting',
           },
         },
       }}
@@ -541,7 +541,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
                 variant="bar"
                 tone="warning"
                 live
-                action={<Button variant="primary" size="sm" onClick={() => { location.hash = '#view=settings:access' }}>Open Settings</Button>}
+                action={/Model access/.test(credNote)
+                  ? <Button variant="primary" size="sm" onClick={() => { location.hash = '#view=settings:access' }}>Open Model access</Button>
+                  : <Button variant="primary" size="sm" onClick={() => { location.hash = '#view=settings:accounts' }}>Open Accounts</Button>}
                 onDismiss={dismissNote}
               >
                 {credNote}

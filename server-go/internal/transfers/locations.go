@@ -152,7 +152,7 @@ func suggestFor(l LibraryLoc) *Suggest {
 // locations are off: the viewer's clusters, reached with their own key.
 func signedInHint(v Viewer) string {
 	if v.Key == "" {
-		return "With sign-in on, saved locations are off. Your clusters can be written once you add your own platform key in Settings, Model access."
+		return "With sign-in on, saved locations are off. Your clusters can be written once you add your own platform key in Settings, Accounts."
 	}
 	return "With sign-in on, saved locations are off. Your clusters, reached with your own key, can be written."
 }

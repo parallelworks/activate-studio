@@ -119,7 +119,7 @@ func (s *Sites) ClientFor(site, key string, authEnabled bool) (pwcode.Client, er
 		return s.Daemon.Local(), nil
 	}
 	if key == "" {
-		return nil, kb(409, "Agents on your clusters run with your own platform key: add your ACTIVATE API key under Settings, Model access.")
+		return nil, kb(409, "Agents on your clusters run with your own platform key: add your ACTIVATE API key under Settings, Accounts.")
 	}
 	return s.Daemon.Remote(v, key), nil
 }

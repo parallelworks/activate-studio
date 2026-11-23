@@ -93,7 +93,7 @@ Where the Studio opens something outside itself (a link, or a folder from the wi
 
 ## Models
 
-Settings, Model access takes any OpenAI-compatible endpoint, as on Linux. A model server on Windows, such as Ollama for Windows, is reached from WSL at the Windows host's address, which `ip route show | awk '/default/ {print $3}'` prints, as `http://<host address>:11434/v1`. That server has to listen on all addresses (`OLLAMA_HOST=0.0.0.0`), and Windows Firewall may need to allow it. With `networkingMode=mirrored`, `127.0.0.1` reaches Windows directly.
+Settings, Accounts takes any OpenAI-compatible endpoint, as on Linux. A model server on Windows, such as Ollama for Windows, is reached from WSL at the Windows host's address, which `ip route show | awk '/default/ {print $3}'` prints, as `http://<host address>:11434/v1`. That server has to listen on all addresses (`OLLAMA_HOST=0.0.0.0`), and Windows Firewall may need to allow it. With `networkingMode=mirrored`, `127.0.0.1` reaches Windows directly.
 
 ## Updating and removing
 

@@ -423,7 +423,7 @@ func NotFoundMessage(tried, base string) string {
 		return fmt.Sprintf("%s does not exist (404). The base URL ends before /chat/completions: try %s%s.", tried, origin, trimmed)
 	}
 	if regexp.MustCompile(`(?i)/v\d+[a-z0-9]*$`).MatchString(path) {
-		return fmt.Sprintf("%s does not exist (404). If %s is the right address, the endpoint does not list its models: type their names under Advanced (Settings, Model access, OpenAI-compatible endpoint), and Test then tries a chat completion with the first.", tried, base)
+		return fmt.Sprintf("%s does not exist (404). If %s is the right address, the endpoint does not list its models: type their names under Advanced (Settings, Accounts, OpenAI-compatible endpoint), and Test then tries a chat completion with the first.", tried, base)
 	}
 	return fmt.Sprintf("%s does not exist (404). An OpenAI-compatible base URL usually ends in a version, such as %s%s/v1.", tried, origin, path)
 }

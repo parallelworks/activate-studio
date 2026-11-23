@@ -2,6 +2,8 @@ import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } 
 import { Button, Callout, ConfirmModal, EmptyState, Loader, SearchInput, StatusDot } from '@parallelworks/ui'
 import { Streamdown } from 'streamdown'
 import { keepEngineFor } from '../labelScope'
+import { NeedsActivate } from '../components/NeedsActivate'
+import { needsActivate } from '../accounts'
 
 /**
  * The viewer's pw code sessions on the platform (PW Code on the web): every
@@ -159,6 +161,8 @@ export function rowMeta(s: CodeSession, inChat: boolean, d?: Delegated): string 
 /** A library file's link in the Studio. */
 const fileHref = (rel: string) => `#open=file:${encodeURIComponent(rel).replace(/%2F/gi, '/')}`
 
+/** The Code page. With no ACTIVATE credential for it the server says so,
+ *  naming Settings, Accounts, and the page shows the sign-in prompt. */
 export function CodeView() {
   const [machines, setMachines] = useState<Machine[]>([])
   const [rows, setRows] = useState<CodeSession[] | null>(null)
@@ -315,7 +319,9 @@ export function CodeView() {
               title="Work a chat handed to pw code, in a library folder">Delegated ({delegatedHere})</Button>
           </div>
         )}
-        {error && <Callout tone="warning" size="sm" className="code-callout">{error}</Callout>}
+        {error && (needsActivate(error)
+          ? <NeedsActivate className="code-callout">{error}</NeedsActivate>
+          : <Callout tone="warning" size="sm" className="code-callout">{error}</Callout>)}
         {!error && (
           <p className="muted code-machines" title={machines.map(m => `${m.name}: ${m.status.replace(/_/g, ' ')}`).join('\n')}>
             {connected.length

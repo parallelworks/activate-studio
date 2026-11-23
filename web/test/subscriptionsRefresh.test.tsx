@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { platformCredential, SubscriptionsPanel } from '../src/components/ModelAccessSection'
+import { platformCredential } from '../src/components/accessShared'
+import { SubscriptionsPanel } from '../src/components/AccountsSection'
 
 const answer = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 

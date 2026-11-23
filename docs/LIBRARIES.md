@@ -203,7 +203,7 @@ in `GET /api/user-libraries`); pw ssh where the pw CLI is on this machine
 with a key to act with (`pw`), and on a Studio with sign-in off always
 (`pwOffered`), where the form says why it cannot be used yet (`pwWhy`:
 the Studio does not find the pw CLI, or the CLI is not signed in) with a
-way to Settings, Model access; the workflow where the platform hosts the
+way to Settings, Accounts; the workflow where the platform hosts the
 Studio, which is sign-in on or `PW_PLATFORM_HOST` set (`workflow`), and
 the client config's `platform`. A choice with one option is not shown. A
 Studio on someone's own computer therefore never shows workflow or

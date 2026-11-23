@@ -1,5 +1,6 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { ModelAccessSection } from '../components/ModelAccessSection'
+import { AccountsSection } from '../components/AccountsSection'
 import { IndexBuildSettings, IndexStorageSettings } from '../components/IndexingSection'
 import { IndexGroup } from '../components/IndexGroup'
 import { WorkflowsSection } from '../components/WorkflowsSection'
@@ -149,7 +150,7 @@ const PWCODE_MODES: SelectItem<Effective['pwcodePermissionMode']>[] = [
   { value: 'plan', label: 'Plan first' },
 ]
 
-type SectionId = 'general' | 'indexing' | 'transfers' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
+type SectionId = 'general' | 'indexing' | 'transfers' | 'accounts' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
 
 /** The tabs of Settings, General, in order. Each has an address of its own
  *  (#view=settings:<tab>); #view=settings:general opens the first. Branding
@@ -187,51 +188,52 @@ export function settingsTarget(id: string | null | undefined): { section: Sectio
   if (id === 'indexing') return { section: 'indexing', tab: 'sync-search' }
   const indexing = INDEXING_TABS.find(t => t.value === id)
   if (indexing) return { section: 'indexing', tab: indexing.value }
-  const sections: SectionId[] = ['general', 'transfers', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']
+  const sections: SectionId[] = ['general', 'transfers', 'accounts', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']
   return { section: sections.includes(id as SectionId) ? id as SectionId : 'general', tab: 'appearance' }
 }
 
 /** Sections with nothing to set while AI features are off: every setting in
  *  them is the assistant's. Their addresses open General, AI features, where
  *  the switch is. External access stays (MCP serves outside clients with no
- *  model here), and so does Model access, which also holds the ACTIVATE
- *  credential the Workflows page and ACTIVATE libraries use. */
+ *  model here), and so does Accounts, which holds the ACTIVATE account the
+ *  Workflows page and ACTIVATE libraries use. Model access, which says
+ *  where models come from, opens Accounts. */
 export const AI_ONLY_SECTIONS: readonly SectionId[] = ['tools', 'previews', 'ext']
 
 /** The section and tab to show for a target: an AI-only section, while AI
- *  features are off, is General, AI features. */
+ *  features are off, is General, AI features; Model access is Accounts. */
 export function shownSettingsTarget<T extends { section: SectionId; tab: SettingsTab }>(t: T, aiEnabled: boolean): T | { section: SectionId; tab: SettingsTab } {
+  if (!aiEnabled && t.section === 'access') return { section: 'accounts', tab: t.tab }
   return !aiEnabled && AI_ONLY_SECTIONS.includes(t.section) ? { section: 'general', tab: 'ai' } : t
 }
 
 /**
- * The settings rail, in order. Model access appears where the deployment
- * signs users in, and on a single-user install (`single`), where it holds
- * the one user's model endpoint. Feature previews is its own section rather
- * than a heading at the foot of another one: a capability nobody can
- * find is off for everyone regardless of the switch. Workflows appears
- * only when the Studio runs on the platform, since it lists the platform's.
+ * The settings rail, in order. Accounts, the ACTIVATE account and model
+ * endpoints, appears where the deployment signs users in, and on a
+ * single-user install (`single`); Model access, where models come from,
+ * beside it with the assistant's sections. Feature previews is its own
+ * section rather than a heading at the foot of another one: a capability
+ * nobody can find is off for everyone regardless of the switch. Workflows
+ * appears when the Studio reaches the platform, and, where Accounts is,
+ * also before anyone has signed in, to say so.
  */
 export function settingsSections(opts: { authEnabled: boolean; platform?: boolean; single?: boolean; aiEnabled?: boolean; transfers?: boolean }): { id: SectionId; label: string; group: string | null }[] {
+  const accounts = opts.authEnabled || !!opts.single
   // Transfers, beside Indexing, where the server has transfers.
   const xfer = opts.transfers ? [{ id: 'transfers' as SectionId, label: 'Transfers', group: 'Studio' }] : []
-  // With AI features off, the assistant's sections leave the rail. Model
-  // access keeps only its ACTIVATE credential, so it is named for that and
-  // sits with the Studio's own sections.
-  if (opts.aiEnabled === false) return [
-    { id: 'general', label: 'General', group: 'Studio' },
-    { id: 'indexing', label: 'Indexing', group: 'Studio' },
+  const studio = [
+    { id: 'general' as SectionId, label: 'General', group: 'Studio' },
+    { id: 'indexing' as SectionId, label: 'Indexing', group: 'Studio' },
     ...xfer,
-    ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
-    ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'ACTIVATE access', group: 'Studio' }] : []),
-    { id: 'rag', label: 'External access', group: null },
+    ...(opts.platform || accounts ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
+    ...(accounts ? [{ id: 'accounts' as SectionId, label: 'Accounts', group: 'Studio' }] : []),
   ]
+  // With AI features off, the assistant's sections leave the rail, and so
+  // does Model access: there are no models to choose.
+  if (opts.aiEnabled === false) return [...studio, { id: 'rag', label: 'External access', group: null }]
   return [
-    { id: 'general', label: 'General', group: 'Studio' },
-    { id: 'indexing', label: 'Indexing', group: 'Studio' },
-    ...xfer,
-    ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
-    ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
+    ...studio,
+    ...(accounts ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
     { id: 'tools', label: 'Assistant tools', group: 'Assistant' },
     { id: 'previews', label: 'Feature previews', group: 'Assistant' },
     { id: 'ext', label: 'Extensions', group: 'Assistant' },
@@ -671,7 +673,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       Off takes Chat and Agents out of the sidebar, hides the settings only the assistant uses, and sends nothing
                       to a model; search, the library, query and statistics work as before. They can be switched back on here at
                       any time. Saved as you switch.
-                      {(me?.single || me?.authEnabled) && <> The model endpoint is under <a href="#view=settings:access">Model access</a>.</>}
+                      {(me?.single || me?.authEnabled) && <> Where models come from is under <a href="#view=settings:access">Model access</a>, and the accounts behind them under <a href="#view=settings:accounts">Accounts</a>.</>}
                     </p>
                   ) : (
                     <p className="muted view-sub">
@@ -830,7 +832,8 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
             </>
           )}
 
-          {section === 'access' && <ModelAccessSection requirePersonalKey={form.requirePersonalKey} aiEnabled={aiEnabled} />}
+          {section === 'accounts' && <AccountsSection requirePersonalKey={form.requirePersonalKey} aiEnabled={aiEnabled} />}
+          {section === 'access' && <ModelAccessSection requirePersonalKey={form.requirePersonalKey} />}
 
           {section === 'tools' && (
             <>

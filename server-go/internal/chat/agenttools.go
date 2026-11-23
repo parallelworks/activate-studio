@@ -50,7 +50,7 @@ func init() {
 	}
 }
 
-const noPlatformKey = "No platform credential: the user can add their ACTIVATE API key under Settings, Model access."
+const noPlatformKey = "No platform credential: the user can add their ACTIVATE API key under Settings, Accounts."
 
 /* ---- run_workflow ---- */
 

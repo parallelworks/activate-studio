@@ -8,6 +8,9 @@ import { Streamdown } from 'streamdown'
 import { useWorkflowFields, forgetPlatformData } from '../components/WorkflowFields'
 import { openSessionWindow, sessionOfRun, showsInStudio, type SessionInfo } from '../components/SessionView'
 import { openInSideView, PageSideViewHost } from '../components/RunPane'
+import { NeedsActivate } from '../components/NeedsActivate'
+import { needsActivate } from '../accounts'
+import { useAppConfig } from '../config'
 
 /**
  * The Workflows tab: this Studio's curated set of ACTIVATE workflows, as
@@ -59,7 +62,22 @@ function TileIcon({ src, letter }: { src: string | null; letter: string }) {
   return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
 }
 
+/** The Workflows page, or, before the person has an ACTIVATE credential,
+ *  the prompt to sign in. */
 export function WorkflowsView() {
+  const cfg = useAppConfig()
+  // Nothing is asked of the platform before the configuration says whether
+  // the person reaches it.
+  if (!cfg.loaded) return null
+  if (!cfg.platform) return (
+    <div className="overview-view workflows-view">
+      <NeedsActivate>Workflows run ACTIVATE workflows on your clusters, each from its own form, as you.</NeedsActivate>
+    </div>
+  )
+  return <WorkflowsPage />
+}
+
+function WorkflowsPage() {
   const [tiles, setTiles] = useState<Tile[] | null>(null)
   const [configured, setConfigured] = useState(true)
   const [error, setError] = useState('')
@@ -92,7 +110,7 @@ export function WorkflowsView() {
   const t = open ? tiles?.find(x => x.name === open) : undefined
   const list = (
     <div className="overview-view workflows-view">
-      {error && <Callout tone="error">{error}</Callout>}
+      {error && (needsActivate(error) ? <NeedsActivate>{error}</NeedsActivate> : <Callout tone="error">{error}</Callout>)}
       {!configured && <p className="muted">No workflows are offered yet. An administrator picks them under Settings, Workflows.</p>}
       {tiles && tiles.length > 0 && (
         <div className="wf-tiles">

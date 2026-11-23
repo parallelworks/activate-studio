@@ -602,7 +602,7 @@ describe('Settings, Indexing, Libraries', () => {
   })
 
   it('offers pw ssh beside ssh on a computer of its own, and says why it cannot be used yet', async () => {
-    const why = 'The Studio does not find the pw CLI on this computer. Install it, or choose where it is under Settings, Model access, pw CLI.'
+    const why = 'The Studio does not find the pw CLI on this computer. Install it, or choose where it is under Settings, Accounts, pw CLI.'
     const s = server({ platform: true, ssh: true, canBuild: true, pw: false, pwOffered: true, pwWhy: why })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
@@ -610,7 +610,9 @@ describe('Settings, Indexing, Libraries', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Remote computer' }))
     // The systems over pw ssh come first, and say why they cannot be used yet.
     expect(await screen.findByText(why)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Model access' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Accounts' })).toBeInTheDocument()
+    // A missing pw CLI is said as it is, not as a sign-in.
+    expect(screen.getByText('pw ssh cannot be used yet')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test connection' })).toBeNull()
     // A host over ssh is beside them.
     fireEvent.click(screen.getByRole('combobox', { name: 'Remote computer' }))

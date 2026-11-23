@@ -355,7 +355,7 @@ func (m *Module) models(w http.ResponseWriter, r *http.Request) error {
 	}
 	forConfig := r.URL.Query().Get("config") == "1"
 	if !forConfig && m.personalRequired(cred) {
-		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", "This deployment requires your own model credential: add your API key or platform token in Settings, Model access."))
+		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", "This deployment requires your own model credential: add your API key or platform token in Settings, Accounts."))
 	}
 	viewer := ""
 	if u := user(r); u != nil {
@@ -480,7 +480,7 @@ func (m *Module) health(w http.ResponseWriter, r *http.Request) error {
 	cred := m.cred(r)
 	if m.personalRequired(cred) {
 		return reqbody.OK(w, reqbody.O("ok", false, "status", "key-required", "models", 0, "gatewayHost", "",
-			"message", "This deployment requires your own model credential; add it in Settings, Model access.", "lastCallFailure", nil, "checkedAt", now))
+			"message", "This deployment requires your own model credential; add it in Settings, Accounts.", "lastCallFailure", nil, "checkedAt", now))
 	}
 	if r.URL.Query().Get("fresh") == "1" {
 		m.LLM.InvalidateProbes()

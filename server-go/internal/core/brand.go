@@ -440,6 +440,9 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	if f := c.a.Providers.LocalCode; f != nil && f(r) {
 		set("localCode", true)
 	}
+	if f := c.a.Providers.Accounts; f != nil && f(r) {
+		set("accounts", true)
+	}
 	n := 0
 	for _, w := range eff.WorkflowCollection {
 		if w != "" {

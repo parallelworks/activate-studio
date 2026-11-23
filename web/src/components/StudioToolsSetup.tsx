@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { ACCOUNTS_HREF } from '../accounts'
 import { Button, Callout } from '@parallelworks/ui'
 
 /** GET /api/mcp/bridge: how this Studio's tools reach a pw code session of
@@ -94,7 +95,7 @@ export function StudioToolsSetup({ machineName, onDismiss, defaultOpen = false }
             <p>
               3. Start a pw code session there, or in one already open type /mcp and reconnect studio. Every session there then
               has the Studio's tools ({reach.tools} of them), as you, with your own libraries.
-              {!reach.platformTools && <> The platform's tools come once you sign in with ACTIVATE in this Studio (Settings, Model access).</>}
+              {!reach.platformTools && <> The platform's tools come once you sign in with ACTIVATE in this Studio, under <a href={ACCOUNTS_HREF}>Settings, Accounts</a>.</>}
             </p>
             <p>
               <Button variant="secondary" size="sm" loading={checking} disabled={checking} onClick={() => void check()}>Check that it worked</Button>

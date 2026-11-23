@@ -433,7 +433,7 @@ func (u *Users) Target(root string, keys Keys, sshSite SiteFn) (*Target, error) 
 	} else {
 		t.Key = keys.KeyOf(owner)
 		if t.Key == "" {
-			return nil, apierr.New(409, "This library is read with your own platform key: add your ACTIVATE API key under Settings, Model access.")
+			return nil, apierr.New(409, "This library is read with your own platform key: add your ACTIVATE API key under Settings, Accounts.")
 		}
 	}
 	return t, nil

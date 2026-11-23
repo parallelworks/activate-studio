@@ -1,4 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ACCOUNTS_HREF, SIGN_IN_TO_USE, needsActivate } from '../accounts'
 import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
 import { useChat } from '@parallelworks/ui/ai'
 import { type Engine, getEngine, setEngine } from '../labelScope'
@@ -92,7 +93,8 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
     return () => { gone = true }
   }, [open, conversationId, session.session])
 
-  const shown = !!info && (info.pwcode || info.setting === 'pwcode' || !!session.url)
+  // pw code waiting only for an ACTIVATE sign-in shows too, saying so.
+  const shown = !!info && (info.pwcode || info.setting === 'pwcode' || !!session.url || needsActivate(info.reason))
   const current: 'pwcode' | 'studio' = (info && (chosen || info.default)) || 'studio'
   return shown && info ? <EngineMenu {...{ info, current, session, tools, open, setOpen, conversationId, setChosen }} /> : null
 }
@@ -138,10 +140,15 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
         return (
           <button key={e.value} className={`persona-row ${current === e.value ? 'on' : ''}`} disabled={off} aria-pressed={current === e.value} onClick={() => pick(e.value)}>
             <span className="persona-name">{e.label}{e.value === info.default && <span className="persona-shared">default</span>}</span>
-            <span className="muted">{off && info.reason ? info.reason : e.value === 'pwcode' ? `${e.hint} ${pwModel}` : e.hint}</span>
+            <span className="muted">{off && info.reason ? (needsActivate(info.reason) ? `${SIGN_IN_TO_USE}.` : info.reason) : e.value === 'pwcode' ? `${e.hint} ${pwModel}` : e.hint}</span>
           </button>
         )
       })}
+      {!info.pwcode && needsActivate(info.reason) && (
+        <p className="engine-tools engine-tools-off">
+          {info.reason} <a href={ACCOUNTS_HREF} onClick={() => setOpen(false)}>Open Accounts</a>
+        </p>
+      )}
       {tools && (
         <p className={`engine-tools ${tools.connected ? '' : 'engine-tools-off'}`}>
           {tools.connected

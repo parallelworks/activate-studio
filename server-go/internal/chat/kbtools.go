@@ -646,7 +646,7 @@ func (m *Module) labelSuggestionsRoute(w http.ResponseWriter, r *http.Request) e
 			}
 		}
 		if model == "" {
-			return apierr.New(400, "No model is available to this deployment for labelling. Add your model credential in Settings, Model access.")
+			return apierr.New(400, "No model is available to this deployment for labelling. Add your model credential in Settings, Accounts.")
 		}
 	}
 	limit := 40
@@ -667,7 +667,7 @@ func (m *Module) labelSuggestionsRoute(w http.ResponseWriter, r *http.Request) e
 		if hasCred {
 			return apierr.New(502, "The model refused the request (%s). Try a different model on the RAG endpoint settings page.", detail)
 		}
-		return apierr.New(502, "No personal model credential is loaded, and the deployment credential was refused (%s). Add your key in Settings, Model access.", detail)
+		return apierr.New(502, "No personal model credential is loaded, and the deployment credential was refused (%s). Add your key in Settings, Accounts.", detail)
 	}
 	return reqbody.OK(w, out)
 }
