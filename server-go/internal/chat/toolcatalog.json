@@ -696,7 +696,7 @@
   },
   {
    "name": "write_kb_file",
-   "description": "Write a file into the knowledge base and index it, for material generated in the conversation: a report, a case file, a script, a geometry (ASCII STL), a note, a spreadsheet. Use ONLY when the user asked for something to be created or saved. Text formats are written as given. A .pdf or .docx (Word) path is made from Markdown you write as content: headings, paragraphs, bold and italic, links, bulleted and numbered lists, tables, block quotes, code blocks and images. An image, ![alt](path), is embedded from the library at its own size, scaled down to fit the page: a PNG, JPEG, GIF, WebP, BMP or TIFF, by its path relative to the new file's folder or from the library's top (spaces in the name are fine, as written) (files attached in the chat are under uploads/chat/). Web images are not fetched; the result lists any image that was not embedded. Table columns are sized so that words stay whole; a table with too many columns for the page is reported, and the fix is orientation: landscape or fewer columns. Footnotes ([^1] in the text and [^1]: the note on a line of its own) become superscript numbers, with the notes listed under a Notes heading at the end. Task list items (- [x], - [ ]) are drawn as checked and empty boxes. A character the PDF font does not have is replaced by an equivalent or a placeholder and reported; tell the user which characters were replaced. A line holding only \\newpage starts a new page. To set the layout, open the Markdown with a front matter block: a line ---, then key: value lines, then ---. The keys are cover (true makes everything before the first \\newpage a cover page: centered, with no page number, and the pages after it numbered from 1; write the title as # Title, a subtitle as ## Subtitle, then lines such as who it is for and the date, with no pipe characters), align (justify or left), leaders (italic or as-written), orientation (portrait or landscape), font (a family such as Times New Roman, Arial or Calibri, or serif or sans), size (body text in points, 8 to 16), margin (inches, 0.5 to 2), spacing (line spacing, 1 to 2), and header and footer (a short line of text, up to 120 characters, centered at the top and bottom of every page, for a document marking or a title; the footer sits on the line above the page number); for example ---\\ncover: true\\nfont: Times New Roman\\nsize: 11\\n---. The defaults are justified body text, portrait US Letter, a sans-serif font, one-inch margins, line spacing 1.15, black text, no cover; pages are numbered. A paragraph that opens with a label is set with the label in italic and a colon, then the rest in roman type (*Why now:* The contract ends in March.); a bold label or one ending in a period is set that way too, unless leaders is as-written, and a key with a short value (**Date:** 14 November 2026) keeps its form. Write the document plainly: state what a thing is, what it does and what is needed, and each fact once, in the section where a reader looks for it; prefer paragraphs to bulleted lists, keeping lists and tables for items and figures; use no em dashes or double hyphens. Separate sections with headings: a --- line between them becomes space, and no lines are drawn. Write no table of contents: Word and Google Docs make one from the headings. Captions read Figure 1. or Table 1. and sit under a figure or above a table. Where the library's conventions set rules for fonts, structure or wording, they come first. The result of a write reports what a check of the writing found (dashes, intensifiers, repeated sentences, length); weigh it, and revise where it applies. A .xlsx (Excel) path is made from rows: CSV, Markdown tables (one sheet each, named by the heading above it), or JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[[\"header\",...],[...]]}]}; numbers become numbers, a value starting with = is a formula, and the first row is the header. Write each row as values: a formula that makes many rows (SEQUENCE, LET or another spilled array) shows as one row outside Excel 365 and in the library's text. The result says how many rows each sheet holds; check it against what was asked before saying the file is done. Slides (.pptx) and older formats (.doc, .xls) are not made. Excluded and dot-directories are refused, and an existing file is only replaced with overwrite=true. A large file (a spreadsheet of many rows, a long report) is written in parts with append=true, each part well under the output limit, since a request cut off at that limit does not run. For a report, write it once as a Markdown (.md) file and pass also (pdf, docx, or both): the documents are made beside it under its name in the same call, so the report is sent once, not once per format. source in place of content makes a .pdf or .docx from a Markdown file already in the library. To change a report afterwards, call edit_kb_file on the Markdown: only the changed text is sent, and the documents made from it are made again. After writing a viewable file (STL, markdown, case files), show_in_viewer displays it.",
+   "description": "Write a file into the knowledge base and index it, for material generated in the conversation: a report, a case file, a script, a geometry (ASCII STL), a note, a spreadsheet. Use ONLY when the user asked for something to be created or saved. Text formats are written as given. A .pdf or .docx (Word) path is made from Markdown you write as content: headings, paragraphs, bold and italic, links, bulleted and numbered lists, tables, block quotes, code blocks and images. An image, ![alt](path), is embedded from the library at its own size, scaled down to fit the page: a PNG, JPEG, GIF, WebP, BMP or TIFF, by its path relative to the new file's folder or from the library's top (spaces in the name are fine, as written) (files attached in the chat are under uploads/chat/). Web images are not fetched; the result lists any image that was not embedded. Table columns are sized so that words stay whole; a table with too many columns for the page is reported, and the fix is orientation: landscape or fewer columns. Footnotes ([^1] in the text and [^1]: the note on a line of its own) become superscript numbers, with the notes listed under a Notes heading at the end. Task list items (- [x], - [ ]) are drawn as checked and empty boxes. A character the PDF font does not have is replaced by an equivalent or a placeholder and reported; tell the user which characters were replaced. A line holding only \\newpage starts a new page. To set the layout, open the Markdown with a front matter block: a line ---, then key: value lines, then ---. The keys are cover (true makes everything before the first \\newpage a cover page: centered, with no page number, and the pages after it numbered from 1; write the title as # Title, a subtitle as ## Subtitle, then lines such as who it is for and the date, with no pipe characters), align (justify or left), leaders (italic or as-written), orientation (portrait or landscape), font (a family such as Times New Roman, Arial or Calibri, or serif or sans), size (body text in points, 8 to 16), margin (inches, 0.5 to 2), spacing (line spacing, 1 to 2), and header and footer (a short line of text, up to 120 characters, centered at the top and bottom of every page, for a document marking or a title; the footer sits on the line above the page number); for example ---\\ncover: true\\nfont: Times New Roman\\nsize: 11\\n---. The defaults are justified body text, portrait US Letter, a sans-serif font, one-inch margins, line spacing 1.15, black text, no cover; pages are numbered. A paragraph that opens with a label is set with the label in italic and a colon, then the rest in roman type (*Why now:* The contract ends in March.); a bold label or one ending in a period is set that way too, unless leaders is as-written, and a key with a short value (**Date:** 14 November 2026) keeps its form. Write the document plainly: state what a thing is, what it does and what is needed, and each fact once, in the section where a reader looks for it; prefer paragraphs to bulleted lists, keeping lists and tables for items and figures; use no em dashes or double hyphens. Separate sections with headings: a --- line between them becomes space, and no lines are drawn. Write no table of contents: Word and Google Docs make one from the headings. Captions read Figure 1. or Table 1. and sit under a figure or above a table. Where the library's conventions set rules for fonts, structure or wording, they come first. The result of a write reports what a check of the writing found (dashes, intensifiers, repeated sentences, length); weigh it, and revise where it applies. A .xlsx (Excel) path is made from rows: CSV, Markdown tables (one sheet each, named by the heading above it), or JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[[\"header\",...],[...]]}]}; numbers become numbers, a value starting with = is a formula, and the first row is the header. Write each row as values: a formula that makes many rows (SEQUENCE, LET or another spilled array) shows as one row outside Excel 365 and in the library's text. The result says how many rows each sheet holds; check it against what was asked before saying the file is done. Slides (.pptx) and older formats (.doc, .xls) are not made. Excluded and dot-directories are refused, and an existing file is only replaced with overwrite=true. A large file (a spreadsheet of many rows, a long report) is written in parts with append=true, each part well under the output limit, since a request cut off at that limit does not run. For a report, write it once as a Markdown (.md) file and pass also (pdf, docx, or both): the documents are made beside it under its name in the same call, so the report is sent once, not once per format. source in place of content makes a .pdf or .docx from a Markdown file already in the library. To change a report afterwards, call edit_kb_file on the Markdown: only the changed text is sent, and the documents made from it are made again. After writing a viewable file (STL, markdown, case files), show_in_viewer displays it. On a Studio where people have libraries of their own, a path names its library the way the Library does (\"My library/notes/a.md\"). When neither the user nor the path names one, the Studio decides from this chat's files (the library they are mostly in) or asks the user; the result says which library the file went to, with a link to give the user.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -730,6 +730,10 @@
      "append": {
       "type": "boolean",
       "description": "Add content to the end of the file instead of replacing it, making the file when it is not there: text is added as given, and a .xlsx gets the rows, under the sheet of the same name (a header row that repeats the sheet's is not added again); a part is {\"sheets\":[{\"name\":\"...\",\"rows\":[[...]]}]}, or rows alone ([[...],[...]], or one row [...]) for the first sheet. overwrite=true replaces the whole workbook, with the rows added before. Write a large file this way, in parts of under about 12,000 characters each: the first call without append, then one call with append=true for each next part. A .pdf or .docx is made whole: write its Markdown in parts to a .md file, then make it with source."
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library to write in, on a Studio where people have libraries of their own: \"My library\" for the user's own, or the main library by its name. Give it only when the user named one; the path may also start with the library's name, such as \"My library/notes/a.md\". Left out, the Studio picks the library this chat works in, or asks the user."
      }
     },
     "required": [
@@ -747,7 +751,7 @@
   },
   {
    "name": "edit_kb_file",
-   "description": "Change part of a text file in the knowledge base in place: a report's Markdown, a note, a script, a case file. Send only the text to change, not the file again. Each edit replaces find, the text as it is in the file (enough of it to occur once), with replace; all=true replaces every place it occurs; an empty replace removes it. append adds text at the end. Either every edit applies or nothing is changed, and the result says which edit did not apply and why. A .pdf or .docx made from the file (write_kb_file with also or source) is made again from the edited text, so use this for every correction to a report after it is written. A PDF, Word or Excel file is not edited itself: edit the Markdown it was made from. Read the file first (read_kb_file) when you do not have its current text.",
+   "description": "Change part of a text file in the knowledge base in place: a report's Markdown, a note, a script, a case file. Send only the text to change, not the file again. Each edit replaces find, the text as it is in the file (enough of it to occur once), with replace; all=true replaces every place it occurs; an empty replace removes it. append adds text at the end. Either every edit applies or nothing is changed, and the result says which edit did not apply and why. A .pdf or .docx made from the file (write_kb_file with also or source) is made again from the edited text, so use this for every correction to a report after it is written. A PDF, Word or Excel file is not edited itself: edit the Markdown it was made from. Read the file first (read_kb_file) when you do not have its current text. On a Studio where people have libraries of their own, a path may start with its library's name (\"My library/notes/a.md\"); the result names the library.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -783,6 +787,10 @@
      "append": {
       "type": "string",
       "description": "Text to add at the end of the file."
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library the files are in: \"My library\" or the main library by its name, when the user named one; the paths may also start with the library's name. Left out, the library that has the file is used."
      }
     },
     "required": [
@@ -820,7 +828,7 @@
   },
   {
    "name": "move_kb_files",
-   "description": "Move or rename files and folders within the main library (the knowledge base), with the Library's own move: extracted text and previews follow, and the index is updated. Use when the user asks to move, reorganize or file things away; for renaming one item where it is, rename_kb_file is simpler. dest is the folder to move into (\"/\" for the library's top; it is created when missing); name renames a single item, in place when dest is omitted. An existing file is never replaced: a name already taken is skipped and reported. To move to another library, this computer, a cluster or another host, use transfer_files.",
+   "description": "Move or rename files and folders within the main library (the knowledge base), with the Library's own move: extracted text and previews follow, and the index is updated. Use when the user asks to move, reorganize or file things away; for renaming one item where it is, rename_kb_file is simpler. dest is the folder to move into (\"/\" for the library's top; it is created when missing); name renames a single item, in place when dest is omitted. An existing file is never replaced: a name already taken is skipped and reported. To move to another library, this computer, a cluster or another host, use transfer_files. On a Studio where people have libraries of their own, a path may start with its library's name (\"My library/notes/a.md\"); the result names the library.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -838,6 +846,10 @@
      "name": {
       "type": "string",
       "description": "New name for a single item (optional)"
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library the files are in: \"My library\" or the main library by its name, when the user named one; the paths may also start with the library's name. Left out, the library that has the file is used."
      }
     },
     "required": [
@@ -847,7 +859,7 @@
   },
   {
    "name": "rename_kb_file",
-   "description": "Rename one file or folder in the main library (the knowledge base) where it is, with the Library's own rename: extracted text and previews follow, and the index is updated. Use when the user asks to rename something. name is the new name only, with no folder; to move it as well, use move_kb_files. A name already taken is refused and reported.",
+   "description": "Rename one file or folder in the main library (the knowledge base) where it is, with the Library's own rename: extracted text and previews follow, and the index is updated. Use when the user asks to rename something. name is the new name only, with no folder; to move it as well, use move_kb_files. A name already taken is refused and reported. On a Studio where people have libraries of their own, a path may start with its library's name (\"My library/notes/a.md\"); the result names the library.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -858,6 +870,10 @@
      "name": {
       "type": "string",
       "description": "New name, e.g. \"report-final.md\""
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library the files are in: \"My library\" or the main library by its name, when the user named one; the paths may also start with the library's name. Left out, the library that has the file is used."
      }
     },
     "required": [
@@ -868,7 +884,7 @@
   },
   {
    "name": "copy_kb_files",
-   "description": "Copy files and folders within the main library into a folder (created when missing) and index the copies. A copy whose name is taken is named \"<name> copy\" (then \"copy 2\" and on), so nothing is replaced. Use when the user asks to copy or duplicate something, e.g. to keep an original before editing. To copy to another library, this computer, a cluster or another host, use transfer_files.",
+   "description": "Copy files and folders within the main library into a folder (created when missing) and index the copies. A copy whose name is taken is named \"<name> copy\" (then \"copy 2\" and on), so nothing is replaced. Use when the user asks to copy or duplicate something, e.g. to keep an original before editing. To copy to another library, this computer, a cluster or another host, use transfer_files. On a Studio where people have libraries of their own, a path may start with its library's name (\"My library/notes/a.md\"); the result names the library.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -882,6 +898,10 @@
      "dest": {
       "type": "string",
       "description": "Folder to copy into, library-relative; \"/\" is the top"
+     },
+     "library": {
+      "type": "string",
+      "description": "Which library the files are in: \"My library\" or the main library by its name, when the user named one; the paths may also start with the library's name. Left out, the library that has the file is used."
      }
     },
     "required": [

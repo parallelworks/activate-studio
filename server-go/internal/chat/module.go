@@ -50,6 +50,10 @@ func init() {
 
 // Module is the track's state.
 type Module struct {
+	// where is what each chat worked with and the place its person chose
+	// for its writes (where.go).
+	whereOnce sync.Once
+	where     *chatTouches
 	A     *app.App
 	Keys  *modelkeys.Store
 	LLM   *llm.Client

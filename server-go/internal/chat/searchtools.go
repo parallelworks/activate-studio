@@ -184,7 +184,19 @@ func (m *Module) toolSearchKB(r *http.Request, args map[string]any, ctx ToolCtx)
 		}
 	}
 	reg := m.Corpus.Reg
-	libs, omittedList, err := reg.Scope(scopeParam(args["library"], ctx), viewerOfCtx(ctx), m.primaryLabel())
+	scope := scopeParam(args["library"], ctx)
+	both := false
+	if len(scope) == 0 {
+		// With a space of their own, a person's search covers it and the
+		// main library, and each hit says which.
+		if own, ok := ownSpaceLib(r); ok {
+			scope, both = []string{libraries.PrimaryID, own.ID}, true
+		}
+	}
+	libs, omittedList, err := reg.Scope(scope, viewerOfCtx(ctx), m.primaryLabel())
+	if err != nil && both {
+		libs, omittedList, err = reg.Scope(nil, viewerOfCtx(ctx), m.primaryLabel())
+	}
 	if err != nil {
 		return nil, err
 	}
