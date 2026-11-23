@@ -163,7 +163,7 @@ func TestCutOffRequestIsAskedAgainInParts(t *testing.T) {
 		t.Errorf("no notice: %.600s", sse)
 	}
 	again := requestOf(gw, 1)
-	if !strings.Contains(again, "append=true") || !strings.Contains(again, "cut off at the output limit") {
+	if !strings.Contains(again, "append=true") || !strings.Contains(again, "cut off at the output limit") || !strings.Contains(again, "send the next part at once") || strings.Contains(again, "was a lookup request") {
 		t.Errorf("the second request has no guidance: %.300s", again)
 	}
 	if first, second := maxTokensOf(t, requestOf(gw, 0)), maxTokensOf(t, again); second <= first {
@@ -316,7 +316,7 @@ func TestAnnouncedActionIsAskedForOnce(t *testing.T) {
 	if countWrites(e) != 1 || !strings.Contains(answerOf(sse), "The sheet is written") {
 		t.Fatalf("ran %q; %d requests; answer %.300s", e.runs(), len(gw.requests), answerOf(sse))
 	}
-	if strings.Contains(requestOf(gw, 2), "No further tool calls are available") || !strings.Contains(requestOf(gw, 2), "made no lookup request") {
+	if strings.Contains(requestOf(gw, 2), "No further tool calls are available") || !strings.Contains(requestOf(gw, 2), "made no tool request") {
 		t.Errorf("the third request was not the nudge: %.300s", requestOf(gw, 2))
 	}
 }

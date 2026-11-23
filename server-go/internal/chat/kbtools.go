@@ -204,6 +204,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if made != "" {
 		wrote = made + ", " + itoaInt(len(data)) + " bytes"
 		show = "Give the user its link: " + link + " It opens in the Library viewer."
+		if ext == ".xlsx" {
+			show = moreRows + show
+		}
 	}
 	if source != "" {
 		wrote += ", from " + source
@@ -744,7 +747,15 @@ func (m *Module) appendKBFile(r *http.Request, rel, abs, ext, content string) (*
 	m.made.drop(rel)
 	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
 	return &Outcome{
-		Result:  "Added to " + rel + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. Add the next part the same way, or give the user its link once the last part is in: " + libraryLink(rel),
+		Result:  "Added to " + rel + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. " + nextPart + libraryLink(rel),
 		Summary: "added to " + rel,
 	}, nil
 }
+
+// moreRows is said after a workbook is written: a sheet that holds fewer
+// rows than were asked for is not finished, and the model adds the rest
+// itself rather than leaving the user a partial file.
+const moreRows = "If the user asked for more rows than a sheet now holds, the workbook is not finished: send the next rows now with write_kb_file, the same path, append=true and the same sheet name, part after part until it holds them all, before you reply to the user. "
+
+// nextPart is said after a part is added to a file.
+const nextPart = "If the file does not yet hold all that was asked for, send the next part now the same way (append=true), before you reply to the user; once the last part is in, give the user its link: "
