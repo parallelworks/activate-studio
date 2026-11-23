@@ -47,6 +47,7 @@ import { needsActivate } from '../accounts'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { announceModel } from './liveModel'
 import { PlanAnswer, openPlan } from './session/PlanAnswer'
+import { focusComposer, focusWaiting } from './session/focusAnswer'
 
 export { describeError }
 
@@ -204,6 +205,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   const waited = useRef(waiting)
   useEffect(() => {
     const timers: number[] = []
+    let moved = false
     if (waiting > waited.current) {
       // The card renders and grows after the event: the thread's own
       // "Jump to latest" goes to its end once it has settled.
@@ -211,8 +213,12 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
         timers.push(window.setTimeout(() => {
           const jump = [...(pane.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(b => b.textContent?.trim() === 'Jump to latest')
           if (jump) jump.click()
+          // And the keyboard goes to its first answer (session/focusAnswer.ts).
+          if (!moved) moved = focusWaiting(pane.current)
         }, ms))
       }
+    } else if (waiting === 0 && waited.current > 0) {
+      for (const ms of [100, 400]) timers.push(window.setTimeout(() => { focusComposer(pane.current) }, ms))
     }
     waited.current = waiting
     return () => { for (const t of timers) window.clearTimeout(t) }

@@ -306,6 +306,16 @@ export function ConversationScrubber() {
             className={`chat-scrubber-tick${t.role === 'user' ? ' user' : ''}${i === current ? ' current' : ''}`}
             style={{ width: `${MIN_TICK + Math.round((MAX_TICK - MIN_TICK) * Math.sqrt(t.text.length / longest))}px` }}
             title={`Message ${i + 1} of ${ticks.length}`}
+            aria-label={`Message ${i + 1} of ${ticks.length}`}
+            // One Tab stop for the whole rail, the message in view; Up and
+            // Down move along it, so Tab does not walk every message.
+            tabIndex={i === current ? 0 : -1}
+            onKeyDown={e => {
+              const to = e.key === 'ArrowUp' ? i - 1 : e.key === 'ArrowDown' ? i + 1 : e.key === 'Home' ? 0 : e.key === 'End' ? ticks.length - 1 : -1
+              if (to < 0 || to >= ticks.length || to === i) return
+              e.preventDefault()
+              ;(e.currentTarget.parentElement?.children[to] as HTMLElement | undefined)?.focus()
+            }}
             onMouseEnter={e => show(i, e.currentTarget)}
             onMouseLeave={() => setHover(h => (h === i ? null : h))}
             onFocus={e => show(i, e.currentTarget)}

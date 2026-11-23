@@ -1661,6 +1661,11 @@ a.identity-btn { text-decoration: none; }
 .chat-scrubber-tick:hover, .chat-scrubber-tick:focus-visible {
   background: var(--pw-navy); height: 5px; outline: none;
 }
+/* From the keyboard the rail opens as it does under the pointer, and the
+   tick in focus has a ring: a 5px tick alone did not show where focus was. */
+.chat-scrubber:focus-within .chat-scrubber-rail { opacity: 1; }
+.chat-scrubber:focus-within .chat-scrubber-tick { max-width: none; }
+.chat-scrubber-tick:focus-visible { outline: 2px solid var(--theme-link); outline-offset: 2px; }
 /* Where you are now, so the rail reads as a position and not just a list. */
 .chat-scrubber-tick.current { background: var(--pw-navy); height: 5px; }
 .chat-scrubber-card {
