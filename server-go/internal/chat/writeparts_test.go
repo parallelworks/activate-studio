@@ -52,9 +52,13 @@ func TestWriteKBFileInParts(t *testing.T) {
 		t.Fatal(got)
 	}
 
-	run(`{"path":"reports/items.xlsx","content":"{\"sheets\":[{\"name\":\"Items\",\"rows\":[[\"Name\",\"Count\"],[\"bolt\",4]]}]}"}`)
+	// The result says what each sheet holds, so the model can check it
+	// against what was asked.
+	if got := run(`{"path":"reports/items.xlsx","content":"{\"sheets\":[{\"name\":\"Items\",\"rows\":[[\"Name\",\"Count\"],[\"bolt\",4]]}]}"}`); !strings.Contains(got, "Items, 1 row after the header") {
+		t.Fatal(got)
+	}
 	got := run(`{"path":"reports/items.xlsx","append":true,"content":"{\"sheets\":[{\"name\":\"Items\",\"rows\":[[\"Name\",\"Count\"],[\"nut\",\"12\"],[\"washer\",\"=1+1\"]]},{\"name\":\"Notes\",\"rows\":[[\"Note\"],[\"checked\"]]}]}"}`)
-	if !strings.Contains(got, "4 rows") || !strings.Contains(got, "2 sheets") {
+	if !strings.Contains(got, "4 rows") || !strings.Contains(got, "Items, 3 rows after the header; Notes, 1 row after the header") {
 		t.Fatal(got)
 	}
 	f, err := excelize.OpenFile(filepath.Join(kb, "reports", "items.xlsx"))
