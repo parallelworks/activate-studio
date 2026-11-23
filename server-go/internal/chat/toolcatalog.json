@@ -729,7 +729,7 @@
      },
      "append": {
       "type": "boolean",
-      "description": "Add content to the end of the file instead of replacing it, making the file when it is not there: text is added as given, and a .xlsx gets the rows, under the sheet of the same name (a header row that repeats the sheet's is not added again). Write a large file this way, in parts of under about 12,000 characters each: the first call without append, then one call with append=true for each next part. A .pdf or .docx is made whole: write its Markdown in parts to a .md file, then make it with source."
+      "description": "Add content to the end of the file instead of replacing it, making the file when it is not there: text is added as given, and a .xlsx gets the rows, under the sheet of the same name (a header row that repeats the sheet's is not added again); a part is {\"sheets\":[{\"name\":\"...\",\"rows\":[[...]]}]}, or rows alone ([[...],[...]], or one row [...]) for the first sheet. overwrite=true replaces the whole workbook, with the rows added before. Write a large file this way, in parts of under about 12,000 characters each: the first call without append, then one call with append=true for each next part. A .pdf or .docx is made whole: write its Markdown in parts to a .md file, then make it with source."
      }
     },
     "required": [

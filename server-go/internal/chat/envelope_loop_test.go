@@ -381,3 +381,22 @@ func TestEmptyTurnsWhileWritingPartsAreNudged(t *testing.T) {
 		t.Errorf("final prompt %.600s", last)
 	}
 }
+
+// An envelope that ended on its own but lacks its last closing brackets is
+// read with them added; at the output limit it is not (that is a request
+// cut off, asked again in parts).
+func TestEnvelopeMissingItsLastBracketsRuns(t *testing.T) {
+	short := func(n string) string { w := writeEnvelope(n, sheetRows(2)); return w[:len(w)-3] }
+	e, base, gw := emuModule(t)
+	gw.load([]reply{said(short, "stop"), said(func(string) string { return "Written. " + strings.Repeat("Done. ", 40) }, "stop")})
+	sse := ask(t, base)
+	if countWrites(e) != 1 || strings.Contains(answerOf(sse), "studio-tools-1") {
+		t.Fatalf("ran %q; answer %.300s", e.runs(), answerOf(sse))
+	}
+	e, base, gw = emuModule(t)
+	gw.load([]reply{said(short, "length"), said(func(string) string { return "Gave up." }, "stop")})
+	ask(t, base)
+	if countWrites(e) != 0 || !strings.Contains(requestOf(gw, 1), "cut off at the output limit") {
+		t.Fatalf("a cut-off request was closed and run: %q", e.runs())
+	}
+}

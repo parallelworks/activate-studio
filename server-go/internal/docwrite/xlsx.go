@@ -83,11 +83,18 @@ func csvSheet(content string) ([]Sheet, error) {
 }
 
 func jsonSheets(t string) ([]Sheet, error) {
-	dec := json.NewDecoder(strings.NewReader(t))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil, fmt.Errorf("reading the JSON: %v", err)
+	v, err := decodeRows(t)
+	if err != nil {
+		// JSON that only lacks its last closing brackets (]]} where
+		// ]]}]} was meant) is read with them added.
+		if closed, ok := CloseJSON(t); ok {
+			if v2, err2 := decodeRows(closed); err2 == nil {
+				v, err = v2, nil
+			}
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading the JSON: %v. A workbook's JSON is {\"sheets\":[{\"name\":\"...\",\"rows\":[[...],[...]]}]}", err)
 	}
 	switch x := v.(type) {
 	case map[string]any:
@@ -113,6 +120,11 @@ func jsonSheets(t string) ([]Sheet, error) {
 		}
 		return out, nil
 	case []any:
+		// A flat list of values is one row, as a model adding a single
+		// row sends it.
+		if len(x) > 0 && allScalars(x) {
+			return []Sheet{{Rows: [][]any{x}}}, nil
+		}
 		rows, err := rowsOf(x, nil)
 		if err != nil {
 			return nil, err
@@ -120,6 +132,94 @@ func jsonSheets(t string) ([]Sheet, error) {
 		return []Sheet{{Rows: rows}}, nil
 	}
 	return nil, fmt.Errorf("the JSON is not rows")
+}
+
+func decodeRows(t string) (any, error) {
+	dec := json.NewDecoder(strings.NewReader(t))
+	dec.UseNumber()
+	var v any
+	err := dec.Decode(&v)
+	return v, err
+}
+
+func allScalars(xs []any) bool {
+	for _, x := range xs {
+		switch x.(type) {
+		case []any, map[string]any:
+			return false
+		}
+	}
+	return true
+}
+
+// CloseJSON adds the closing brackets JSON text lacks at its end: the
+// brackets and braces still open, closed in order. ok is false when none
+// are missing, when the text ends inside a string, or when a closer does
+// not match what is open (a mistake inside the text, not at its end).
+func CloseJSON(s string) (string, bool) {
+	var open []byte
+	in := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if in {
+			switch c {
+			case '\\':
+				i++
+			case '"':
+				in = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			in = true
+		case '{', '[':
+			open = append(open, c)
+		case '}', ']':
+			if len(open) == 0 {
+				return s, false
+			}
+			want := byte('{')
+			if c == ']' {
+				want = '['
+			}
+			if open[len(open)-1] != want {
+				return s, false
+			}
+			open = open[:len(open)-1]
+		}
+	}
+	if in || len(open) == 0 {
+		return s, false
+	}
+	t := strings.TrimRight(s, " \t\r\n")
+	if strings.HasSuffix(t, ",") || strings.HasSuffix(t, ":") {
+		return s, false
+	}
+	var b strings.Builder
+	b.WriteString(t)
+	for i := len(open) - 1; i >= 0; i-- {
+		if open[i] == '{' {
+			b.WriteByte('}')
+		} else {
+			b.WriteByte(']')
+		}
+	}
+	return b.String(), true
+}
+
+// Held is what each sheet of a workbook holds ("Items, 20 rows after the
+// header"), or nil when it cannot be read.
+func Held(data []byte) []string {
+	sheets, err := readSheets(data)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, s := range sheets {
+		out = append(out, held(s.Name, len(s.Rows)))
+	}
+	return out
 }
 
 // rowsOf takes rows as arrays, or as objects whose keys (in the order the
