@@ -29,6 +29,7 @@ type Module struct {
 	Libs     *Libraries
 	Previews *Previews
 	Office   *Office
+	Grid     *Grid
 	Files    *Files
 	Tags     *Tags
 	Jobs     *Jobs
@@ -60,7 +61,7 @@ func (f forgetting) Changed(ctx context.Context, what ...string) {
 // New is the module for a.
 func New(a *app.App) *Module {
 	roots := RootsFrom(a.Cfg)
-	m := &Module{A: a, Roots: roots, Office: &Office{}, Jobs: &Jobs{}, Fetch: &http.Client{}}
+	m := &Module{A: a, Roots: roots, Office: &Office{}, Grid: &Grid{}, Jobs: &Jobs{}, Fetch: &http.Client{}}
 	ix := forgetting{ProviderIndexer{A: a}, m}
 	// Any change to the index drops the counts Stats shows, including one
 	// not made through this module, such as a sweep's.
@@ -132,6 +133,7 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	h("GET /api/kb/pdf-info", m.pdfInfo)
 	h("GET /api/kb/pdf-page", m.pdfPage)
 	h("GET /api/kb/office-preview", m.officePreview)
+	h("GET /api/kb/sheet", m.sheetGrid)
 	h("GET /api/kb/office-media", m.officeMedia)
 	h("GET /api/kb/dirs", m.dirs)
 	h("GET /api/kb/stats", m.statsRoute)

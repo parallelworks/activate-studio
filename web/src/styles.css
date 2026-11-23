@@ -2933,53 +2933,6 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .pdf-page-js { margin: 0; }
 .pdf-page-js canvas { display: block; width: 100%; height: 100%; }
 
-/* CSV and TSV files as a table (Viewer, Table tab). The table scrolls in a
-   box of its own, sized to the window, so its header row stays in view:
-   the library pane scrolls the whole file, and a header pinned to that
-   would sit under the viewer's own sticky head and tabs. */
-.csv-view { padding: 12px 20px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.csv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.csv-filter {
-  flex: 0 1 280px; min-width: 160px; padding: 5px 8px; font: inherit; font-size: 13px;
-  border: 1px solid var(--pw-border-strong); border-radius: 6px; background: var(--pw-panel); color: var(--pw-text);
-}
-.csv-count { font-size: 12px; }
-.csv-scroll {
-  overflow: auto; max-height: max(260px, calc(100dvh - 230px));
-  border: 1px solid var(--pw-border); border-radius: 8px; background: var(--pw-panel);
-}
-.csv-table { border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 1.45; width: max-content; min-width: 100%; }
-/* Columns take their content's width, so short values never wrap; a long
-   value wraps at a reading width inside its cell (.csv-c), since a table
-   cell's own max-width does not hold under automatic table layout. */
-.csv-table th, .csv-table td {
-  padding: 5px 10px; text-align: left; vertical-align: top;
-  border-bottom: 1px solid var(--pw-border); border-right: 1px solid var(--pw-border);
-}
-.csv-c { max-width: 26rem; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
-.csv-table th:last-child, .csv-table td:last-child { border-right: none; }
-.csv-table thead th {
-  position: sticky; top: 0; z-index: 2; background: var(--pw-bg); padding: 0;
-  border-bottom: 1px solid var(--pw-border-strong); white-space: nowrap;
-}
-.csv-table thead th button {
-  all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 6px; width: 100%;
-  padding: 6px 10px; font-weight: 600; color: var(--pw-text); cursor: pointer;
-}
-.csv-table thead th.num button { justify-content: flex-end; }
-.csv-table thead th button:hover { background: var(--theme-hover); }
-.csv-table thead th button:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; }
-.csv-sort { font-size: 9px; color: var(--pw-muted); min-width: 9px; }
-.csv-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.csv-table tbody tr:nth-child(even) td { background: var(--pw-bg); }
-.csv-table tbody tr:hover td { background: var(--theme-hover); }
-.csv-table .csv-n {
-  position: sticky; left: 0; z-index: 1; text-align: right; color: var(--pw-muted);
-  font-variant-numeric: tabular-nums; background: var(--pw-panel); min-width: 3ch; white-space: nowrap;
-}
-.csv-table thead .csv-n { z-index: 3; background: var(--pw-bg); }
-.csv-more { display: flex; align-items: center; gap: 12px; }
-
 /* Code: the person's pw code sessions as PW Code on the web shows them.
    The packages' sessions list sits beside the start of a new session; both
    scroll on their own. The packages' parts bring their own look; these
@@ -3455,3 +3408,85 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
    test/sessionScope.test.ts keeps new ones to that. */
 .pwcode-expand { font: inherit; font-size: 12px; background: transparent; color: var(--pw-text-muted, inherit); border: 0; cursor: pointer; padding: 2px 4px; }
 .pwcode-expand:hover { color: inherit; text-decoration: underline; }
+
+/* The spreadsheet grid (SheetGrid.tsx): a workbook's sheet, or a CSV or
+   TSV file. It scrolls in a box of its own, sized to the window, with its
+   column letters, row numbers and frozen rows and columns kept in view
+   (sticky layers); only the cells in view are drawn. Colours follow the
+   Studio's theme; a cell's own fill and text colour come from the file. */
+.sg { display: flex; flex-direction: column; gap: 8px; padding: 10px 20px 14px; min-width: 0; --sg-line: var(--theme-border); --sg-head: var(--theme-muted-panel-bg); --sg-sel: color-mix(in srgb, var(--theme-info) 16%, transparent); --sg-act: var(--theme-info); }
+.sg-bar { display: flex; align-items: flex-start; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
+.sg-ref {
+  flex: none; min-width: 64px; padding: 3px 8px; border: 1px solid var(--pw-border); border-radius: 6px;
+  font: 12px/18px var(--pw-mono, ui-monospace, monospace); text-align: center; background: var(--pw-panel);
+}
+.sg-what {
+  flex: 1 1 260px; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px;
+  /* Two lines whatever is selected, the rest scrolling here: a bar that grew
+     with a long value would move the grid under the pointer. */
+  height: 42px; box-sizing: border-box; overflow: auto; padding: 3px 0; font-size: 13px; line-height: 18px;
+}
+.sg-formula { font-size: 12px; color: var(--theme-info-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-raw { font-size: 12px; font-variant-numeric: tabular-nums; }
+.sg-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.sg-filter {
+  width: 11rem; padding: 4px 8px; border: 1px solid var(--theme-border-field); border-radius: 6px;
+  background: var(--theme-input-bg); color: var(--pw-text); font: inherit; font-size: 13px;
+}
+.sg-copied { font-size: 12px; }
+.sg-scroll {
+  position: relative; overflow: auto; height: max(280px, calc(100dvh - 290px)); outline: none;
+  border: 1px solid var(--pw-border); border-radius: 8px; background: var(--theme-panel-bg);
+  font-size: 12px; line-height: 16px; overscroll-behavior: contain; user-select: none; -webkit-user-select: none;
+}
+.sg-scroll:focus-visible { box-shadow: 0 0 0 2px var(--theme-focus-ring); }
+.sg-canvas { position: relative; }
+.sg-top { position: sticky; top: 0; z-index: 3; display: flex; }
+.sg-main { display: flex; }
+.sg-corner, .sg-left { position: sticky; left: 0; z-index: 2; flex: none; background: var(--theme-panel-bg); }
+.sg-corner { z-index: 4; }
+.sg-top > .sg-layer { background: var(--theme-panel-bg); }
+.sg-layer { position: relative; flex: none; }
+.sg-cell, .sg-head {
+  position: absolute; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 2px 5px; border-right: 1px solid var(--sg-line); border-bottom: 1px solid var(--sg-line);
+  color: var(--pw-text); font-variant-numeric: tabular-nums;
+}
+/* A value sits at the bottom of its cell, as in Excel, unless the file
+   says top or centre. */
+.sg-cell { display: flex; align-items: flex-end; }
+.sg-cell.top { align-items: flex-start; }
+.sg-cell.mid { align-items: center; }
+.sg-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-cell.wrap .sg-t { white-space: pre-wrap; overflow-wrap: anywhere; text-overflow: clip; max-height: 100%; }
+.sg-cell.sel { box-shadow: inset 0 0 0 999px var(--sg-sel); }
+.sg-cell.act { outline: 2px solid var(--sg-act); outline-offset: -2px; z-index: 1; }
+.sg-head {
+  background: var(--sg-head); color: var(--pw-muted); text-align: center; font-size: 12px;
+  cursor: default; padding: 3px 2px;
+}
+.sg-head.on { background: color-mix(in srgb, var(--theme-info) 22%, var(--sg-head)); color: var(--pw-text); }
+.sg-n { text-align: right; padding-right: 6px; }
+.sg-all { border-right: 1px solid var(--sg-line); }
+/* The line under the frozen rows and right of the frozen columns. */
+.sg-top { box-shadow: 0 1px 0 var(--theme-border-strong); }
+.sg-left, .sg-corner { box-shadow: 1px 0 0 var(--theme-border-strong); }
+.sg-none { position: sticky; left: 12px; margin: 12px; }
+.sg-foot { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
+.sg-tabs { display: flex; gap: 2px; overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+.sg-tab {
+  flex: none; padding: 4px 12px; border: 1px solid var(--pw-border); border-top: none; border-radius: 0 0 6px 6px;
+  background: var(--sg-head); color: var(--pw-muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.sg-tab:hover { color: var(--pw-text); }
+.sg-tab.on { background: var(--theme-panel-bg); color: var(--pw-text); font-weight: 600; box-shadow: inset 0 2px 0 var(--sg-act); }
+.sg-tab:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; }
+.sg-note { font-size: 12px; }
+.sheet-print-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 20px 0; font-size: 13px; }
+@media (max-width: 640px) {
+  .sg { padding: 8px 8px 10px; }
+  .sg-tools { margin-left: 0; }
+  .sg-filter { width: 8rem; }
+  .sg-scroll { height: max(260px, calc(100dvh - 400px)); }
+}
