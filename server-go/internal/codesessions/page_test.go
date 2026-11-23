@@ -300,7 +300,7 @@ func TestOnASharedStudioThisComputerIsNotOffered(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/status":
-			json.NewEncoder(w).Encode(map[string]any{"protocolVersion": pwcode.ProtocolVersion, "machineId": "mach1", "hostname": "box.example"})
+			json.NewEncoder(w).Encode(map[string]any{"protocolVersion": pwcode.ProtocolVersion, "machineId": "mach1", "hostname": "box.example", "permissionModes": []string{"read-only", "auto"}})
 		case "/v1/sessions":
 			if r.Method == http.MethodGet {
 				json.NewEncoder(w).Encode([]any{map[string]any{"id": mine, "name": "my summary"}, map[string]any{"id": theirs, "name": "sam's agent"}})

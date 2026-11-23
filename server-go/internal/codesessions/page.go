@@ -239,9 +239,15 @@ func callLocal(w http.ResponseWriter, r *http.Request, c pwcode.Client, method, 
 // sign-in, where every session is the one person's.
 func (t *pageTarget) localMachineView() *jsonv.Object {
 	m := t.machine
-	return jsonv.NewObject("id", m.ID, "name", m.Name, "kind", "local", "owner", "", "hostname", m.Hostname,
+	o := jsonv.NewObject("id", m.ID, "name", m.Name, "kind", "local", "owner", "", "hostname", m.Hostname,
 		"status", m.Status, "daemonId", m.DaemonID, "claudeCodeAllowed", false, "remoteStart", !t.only,
 		"directories", !t.only, "sessionGroups", true)
+	// The new session form offers the modes the daemon accepts; without
+	// them the package falls back to a list that has no auto.
+	if len(m.PermissionModes) > 0 {
+		o.Set("permissionModes", m.PermissionModes)
+	}
+	return o
 }
 
 // pageListing is GET /api/code/sessions: the viewer's machines and

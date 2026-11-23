@@ -45,6 +45,8 @@ import { AgentModelControls } from '../code/AgentModelControls'
 
 import { needsActivate } from '../accounts'
 import { NeedsActivate } from '../components/NeedsActivate'
+import { announceModel } from './liveModel'
+import { PlanAnswer, openPlan } from './session/PlanAnswer'
 
 export { describeError }
 
@@ -168,6 +170,8 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
     onPatched: () => void mutate(),
     onError: showError,
   })
+  // The chat bar's engine button names the model this session runs on now.
+  useEffect(() => { announceModel(conversationId, settings.model.value) }, [conversationId, settings.model.value])
   const screen = usePwCodeSessionScreen({
     conversation,
     composer: page,
@@ -233,6 +237,8 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
       workspace={detail.workspace} added={addDirs} allowed={allowedDirs} pullRequests={detail.pullRequests} />
   )
   const viewing = agent ? agents.find(a => a.id === agent) : undefined
+  // A plan waiting on an answer is answered here (session/PlanAnswer.tsx).
+  const plan = useMemo(() => openPlan(transcript ? pendingApprovals(transcript) : null), [transcript])
 
   return (
     <div className="pwcode-session" ref={pane} onPasteCapture={composerImages.onPaste}>
@@ -279,6 +285,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
                   <OutputCard key={o.id} title={o.command} text={o.text} onDismiss={() => page.dismissOutput(o.id)} dismissLabel="Dismiss" />
                 ))}
                 {page.endNote && <NoticeCard><span className="pwcode-end-note">{page.endNote}</span></NoticeCard>}
+                {plan && <PlanAnswer key={plan.id} conversationId={conversationId} approvalId={plan.id} />}
               </>}
               composer={{
                 attachments: false,
