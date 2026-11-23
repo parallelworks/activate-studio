@@ -3,6 +3,7 @@ package chat
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -338,5 +339,319 @@ func TestTheCeilingCheckFailsClosed(t *testing.T) {
 	}
 	if got := strings.Join(remote.settings, "|"); got != `{"permissionMode":"read-only"}` {
 		t.Errorf("settings sent: %s", got)
+	}
+}
+
+func serveAs(typ, body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", typ)
+		_, _ = w.Write([]byte(body))
+	}
+}
+
+// The session view's images pass through as the machine serves them, as
+// pictures only: anything else, such as a page or an SVG, which could run
+// script from the Studio's origin, is refused.
+func TestASessionsImagesPassAsPicturesOnly(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	_, base, _, _ := relayModule(t, local, remote)
+	relayedChat(t, base)
+	remote.routes = map[string]http.HandlerFunc{
+		"GET /v1/sessions/s1/images/img-1":        serveAs("image/png", "PNGDATA"),
+		"GET /v1/sessions/s1/images/page":         serveAs("text/html", "<script>x</script>"),
+		"GET /v1/sessions/s1/images/svg":          serveAs("image/svg+xml", "<svg onload=x>"),
+		"GET /v1/sessions/s1/github-images/0a1b2": serveAs("image/jpeg; charset=binary", "JPG"),
+	}
+	s := base + "/api/code/machines/m2/sessions/s1"
+	res, err := http.Get(s + "/images/img-1?preview=true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || string(body) != "PNGDATA" || res.Header.Get("Content-Type") != "image/png" || res.Header.Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(res.Header.Get("Content-Security-Policy"), "sandbox") {
+		t.Errorf("image: %d %q %v", res.StatusCode, body, res.Header)
+	}
+	if res, _ := http.Get(s + "/github-images/0a1b2"); res == nil || res.StatusCode != 200 || res.Header.Get("Content-Type") != "image/jpeg" {
+		t.Errorf("github image: %v", res)
+	}
+	for _, ref := range []string{"page", "svg"} {
+		res, _ := http.Get(s + "/images/" + ref)
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 502 || strings.Contains(string(b), "<") {
+			t.Errorf("%s: %d %s", ref, res.StatusCode, b)
+		}
+	}
+	for _, ref := range []string{"%2e%2e", "a%2Fb", "%252e%252e"} {
+		if res, _ := http.Get(s + "/images/" + ref); res == nil || res.StatusCode != 404 {
+			t.Errorf("%s: %v", ref, res)
+		}
+	}
+	remote.mu.Lock()
+	asked := remote.asked
+	remote.mu.Unlock()
+	if len(asked) == 0 || asked[0] != "GET /v1/sessions/s1/images/img-1?preview=true" {
+		t.Errorf("asked: %v", asked)
+	}
+	// Another person's chat is not found here either.
+	m2 := strings.Replace(s, "/m2/", "/m9/", 1)
+	if res, _ := http.Get(m2 + "/images/img-1"); res == nil || res.StatusCode != 404 {
+		t.Errorf("another machine: %v", res)
+	}
+}
+
+// What the session view sends beyond talking to the session reaches it on
+// both paths: its goal, commands, background, recap, subagents and images.
+func TestTheSessionViewsRoutesReachTheSession(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	_, base, _, _ := relayModule(t, local, remote)
+	relayedChat(t, base)
+	ok := serveAs("application/json", `{"ok":true}`)
+	routes := []string{
+		"POST /goal", "POST /clear", "POST /compact", "POST /plan", "POST /shell", "POST /commands",
+		"POST /background", "POST /recap", "POST /images", "GET /worktree", "GET /pull-requests",
+		"GET /claude-code/accounts", "GET /subagents/a1", "POST /subagents/a1/messages",
+		"POST /subagents/a1/direction", "POST /subagents/a1/direction/withdraw", "POST /subagents/a1/stop",
+		"POST /subagents/a1/dismiss", "POST /subagents/stop-all",
+	}
+	remote.routes = map[string]http.HandlerFunc{}
+	for _, r := range routes {
+		method, suffix, _ := strings.Cut(r, " ")
+		remote.routes[method+" /v1/sessions/s1"+suffix] = ok
+	}
+	s := base + "/api/code/machines/m2/sessions/s1"
+	for _, r := range routes {
+		method, suffix, _ := strings.Cut(r, " ")
+		body := ""
+		if method == http.MethodPost {
+			body = `{}`
+		}
+		if code, out, _ := send(t, method, s+suffix, body); code != 200 || out["ok"] != true {
+			t.Errorf("%s: %d %v", r, code, out)
+		}
+	}
+	// Managing the session is the Code page's, not the chat's. Each would be
+	// answered if it got through, so a leak counts below.
+	refused := []string{"POST /rename", "POST /archive", "POST /pin", "PUT /group", "POST /fork", "POST /worktree/leave", "DELETE ", "POST /subagents/a1/x"}
+	for _, r := range refused {
+		method, suffix, _ := strings.Cut(r, " ")
+		remote.routes[method+" /v1/sessions/s1"+suffix] = ok
+	}
+	for _, r := range refused {
+		method, suffix, _ := strings.Cut(r, " ")
+		if code, _, _ := send(t, method, s+suffix, `{}`); code != 404 && code != 405 {
+			t.Errorf("%s: %d", r, code)
+		}
+	}
+	remote.mu.Lock()
+	n := len(remote.asked)
+	remote.mu.Unlock()
+	if n != len(routes) {
+		t.Errorf("the session was asked %d times, want %d", n, len(routes))
+	}
+}
+
+// A chat follows its session into the one /clear made, as PW Code on the
+// web does, when the chat's own target reaches it in the same folder.
+func TestAChatFollowsItsSessionCleared(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	m, base, _, _ := relayModule(t, local, remote)
+	log := logTo(m)
+	id := relayedChat(t, base)
+	remote.detail = map[string]any{"workspace": "/home/me/repo"}
+	remote.routes = map[string]http.HandlerFunc{
+		"GET /v1/sessions/s2": serveAs("application/json", `{"id":"s2","workspace":"/home/me/repo","status":"idle"}`),
+		"GET /v1/sessions/s3": serveAs("application/json", `{"id":"s3","workspace":"/home/me/other","status":"idle"}`),
+	}
+	follow := base + "/api/chat/pwcode/" + id + "/follow"
+	if code, out, _ := send(t, http.MethodPost, follow, `{"session":"s3"}`); code != 409 {
+		t.Errorf("another folder: %d %v", code, out)
+	}
+	for _, bad := range []string{`{"session":"../s2"}`, `{"session":""}`, `{}`} {
+		if code, _, _ := send(t, http.MethodPost, follow, bad); code != 400 {
+			t.Errorf("%s: %d", bad, code)
+		}
+	}
+	if code, out, _ := send(t, http.MethodPost, follow, `{"session":"s2"}`); code != 200 || out["session"] != "s2" {
+		t.Errorf("follow: %d %v", code, out)
+	}
+	if c := m.Conv.Get(id); c == nil || c.PWCode == nil || c.PWCode.Session != "s2" {
+		t.Errorf("the chat's session: %+v", c)
+	}
+	if !strings.Contains(log.String(), "followed a cleared session") || !strings.Contains(log.String(), "to=s2") {
+		t.Errorf("not logged: %s", log.String())
+	}
+}
+
+// A session the Studio drives directly serves its images the same way.
+func TestADirectSessionsImagesPass(t *testing.T) {
+	f := &fakePW{}
+	_, base, _ := continueModule(t, f, "d1")
+	if _, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`); out["conversationId"] == nil {
+		t.Fatalf("continue: %v", out)
+	}
+	f.routes = map[string]http.HandlerFunc{"GET /v1/sessions/s1/images/r1": serveAs("image/webp", "WEBP")}
+	res, err := http.Get(base + "/api/code/machines/studio/sessions/s1/images/r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || string(b) != "WEBP" || res.Header.Get("Content-Type") != "image/webp" {
+		t.Errorf("%d %q %v", res.StatusCode, b, res.Header)
+	}
+}
+
+// The account panel reaches the viewer's own pw code on a machine: the one
+// the Studio drives for them, or one of theirs through ACTIVATE as them.
+// Only the account routes pass, and a change is logged.
+func TestTheAccountRoutesReachTheViewersOwnPWCode(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	m, base, plat, _ := relayModule(t, local, remote)
+	log := logTo(m)
+	list := serveAs("application/json", `[{"name":"default"}]`)
+	ok := serveAs("application/json", `{"ok":true}`)
+	for _, f := range []*fakePW{local, remote} {
+		f.routes = map[string]http.HandlerFunc{
+			"GET /v1/claude-code/accounts":            list,
+			"GET /v1/claude-code/models":              list,
+			"POST /v1/claude-code/logins":             serveAs("application/json", `{"id":"l1"}`),
+			"GET /v1/claude-code/logins/l1":           ok,
+			"POST /v1/claude-code/logins/l1/input":    ok,
+			"DELETE /v1/claude-code/logins/l1":        ok,
+			"DELETE /v1/claude-code/accounts/work":    ok,
+			"POST /v1/claude-code/accounts/work/move": ok,
+			// Answered if they got through, so a leak counts below.
+			"POST /v1/claude-code/accounts":    ok,
+			"GET /v1/claude-code/settings":     ok,
+			"POST /v1/claude-code/logins/l1/x": ok,
+		}
+	}
+	for machine, f := range map[string]*fakePW{"studio": local, "m2": remote} {
+		u := base + "/api/code/machines/" + machine + "/claude-code"
+		res, err := http.Get(u + "/accounts?namesOnly=true")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 200 || !strings.Contains(string(b), "default") {
+			t.Errorf("%s accounts: %d %s", machine, res.StatusCode, b)
+		}
+		for _, r := range []string{"GET /models", "POST /logins", "GET /logins/l1", "POST /logins/l1/input", "DELETE /logins/l1", "DELETE /accounts/work", "POST /accounts/work/move"} {
+			method, suffix, _ := strings.Cut(r, " ")
+			body := ""
+			if method == http.MethodPost {
+				body = `{}`
+			}
+			if code, _, _ := send(t, method, u+suffix, body); code != 200 {
+				t.Errorf("%s %s: %d", machine, r, code)
+			}
+		}
+		for _, r := range []string{"POST /accounts", "PUT /accounts/work", "GET /accounts/..", "DELETE /accounts/a%2Fb", "GET /settings", "POST /logins/l1/x"} {
+			method, suffix, _ := strings.Cut(r, " ")
+			if code, _, _ := send(t, method, u+suffix, `{}`); code != 404 && code != 405 {
+				t.Errorf("%s %s: %d", machine, r, code)
+			}
+		}
+		f.mu.Lock()
+		n := len(f.asked)
+		f.mu.Unlock()
+		if n != 8 {
+			t.Errorf("%s was asked %d times, want 8", machine, n)
+		}
+	}
+	plat.mu.Lock()
+	relayed := strings.Join(plat.relayed, "\n")
+	plat.mu.Unlock()
+	if !strings.Contains(relayed, "GET /api/code/machines/m2/claude-code/accounts Bearer k") {
+		t.Errorf("not relayed as the viewer: %s", relayed)
+	}
+	if n := strings.Count(log.String(), "Claude Code account change"); n != 6 {
+		t.Errorf("account changes logged: %d\n%s", n, log.String())
+	}
+	// A machine id is one plain segment, refused before ACTIVATE is asked.
+	plat.mu.Lock()
+	before := len(plat.relayed)
+	plat.mu.Unlock()
+	for _, odd := range []string{"a%2Fb", "a%20b", "a;b", "%2e%2e"} {
+		if code, _, _ := send(t, http.MethodGet, base+"/api/code/machines/"+odd+"/claude-code/accounts", ""); code != 404 {
+			t.Errorf("odd machine %s: %d", odd, code)
+		}
+	}
+	plat.mu.Lock()
+	after := len(plat.relayed)
+	plat.mu.Unlock()
+	if after != before {
+		t.Errorf("an odd machine id reached ACTIVATE: %d requests", after-before)
+	}
+}
+
+// A slash command keeps to the chat's rules: /permissions with a mode is a
+// mode change, held to the machine's ceiling and logged; one that manages
+// the session is refused before it is sent.
+func TestASlashCommandKeepsToTheChatsRules(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	m, base, _, _ := relayModule(t, local, remote)
+	log := logTo(m)
+	relayedChat(t, base)
+	remote.routes = map[string]http.HandlerFunc{"POST /v1/sessions/s1/commands": serveAs("application/json", `{"output":"ok"}`)}
+	s := base + "/api/code/machines/m2/sessions/s1/commands"
+	for body, want := range map[string]int{
+		`{"name":"permissions","args":"bypass-permissions"}`: 403,
+		`{"name":"permissions","args":"yolo"}`:               400,
+		`{"name":"permissions","args":"set auto now"}`:       400,
+		`{"name":"rename","args":"x"}`:                       403,
+		`{"name":"fork"}`:                                    403,
+		`{"name":"archive"}`:                                 403,
+		`{"name":"resume","args":"s9"}`:                      403,
+		`{"name":"remote-control","args":"off"}`:             403,
+	} {
+		if code, out, _ := send(t, http.MethodPost, s, body); code != want {
+			t.Errorf("%s: %d %v, want %d", body, code, out, want)
+		}
+	}
+	remote.mu.Lock()
+	n := len(remote.asked)
+	remote.mu.Unlock()
+	if n != 0 {
+		t.Errorf("a refused command reached the session %d times", n)
+	}
+	for _, body := range []string{`{"name":"permissions","args":"read-only"}`, `{"name":"permissions"}`, `{"name":"cost"}`, `{"name":"model","args":"x"}`} {
+		if code, out, _ := send(t, http.MethodPost, s, body); code != 200 {
+			t.Errorf("%s: %d %v", body, code, out)
+		}
+	}
+	remote.routes["POST /v1/sessions/s1/plan"] = serveAs("application/json", `{"ok":true}`)
+	if code, _, _ := send(t, http.MethodPost, base+"/api/code/machines/m2/sessions/s1/plan", `{}`); code != 200 {
+		t.Errorf("plan: %d", code)
+	}
+	if l := log.String(); strings.Count(l, "permission mode changed") != 2 || !strings.Contains(l, "mode=read-only via=command") || !strings.Contains(l, "mode=plan via=command") {
+		t.Errorf("the mode change by command is logged once: %s", l)
+	}
+}
+
+// The machine record of the Studio's own pw code carries what its daemon
+// allows, as the platform's record does, so the account panel offers
+// signing in and removing an account where the daemon does.
+func TestTheDirectMachineCarriesWhatItsDaemonAllows(t *testing.T) {
+	f := &fakePW{status: map[string]any{"machineId": "d1", "hostname": "gpu-box.example", "claudeLogin": true, "claudeAccountRemove": true, "claudeCodeAllowed": true, "claudeInstalled": true, "secret": "x"}}
+	_, base, _ := continueModule(t, f, "d1")
+	if _, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`); out["conversationId"] == nil {
+		t.Fatalf("continue: %v", out)
+	}
+	out := get(t, base+"/api/code/sessions")
+	var direct map[string]any
+	for _, m := range out["machines"].([]any) {
+		if mm := m.(map[string]any); mm["id"] == "studio" {
+			direct = mm
+		}
+	}
+	if direct == nil || direct["claudeLogin"] != true || direct["claudeAccountRemove"] != true || direct["claudeCodeAllowed"] != true || direct["claudeInstalled"] != true {
+		t.Errorf("direct machine: %v", direct)
+	}
+	if _, leaked := direct["secret"]; leaked {
+		t.Errorf("a status field the record does not name was passed on: %v", direct)
 	}
 }

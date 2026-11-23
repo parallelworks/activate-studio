@@ -1,0 +1,24 @@
+.pwcode-tasks { border: 1px solid var(--pw-border); border-radius: 12px; background: var(--theme-panel-bg); padding: 4px; font-size: 13px; }
+.pwcode-tasks-head, .pwcode-tasks-more {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; border: 0; border-radius: 6px;
+  background: transparent; color: var(--pw-muted); font: inherit; text-align: left; cursor: pointer; padding: 0 8px;
+}
+.pwcode-tasks-head { min-height: 28px; }
+.pwcode-tasks-more { min-height: 24px; font-size: 12px; padding-left: 30px; }
+.pwcode-tasks-head:hover, .pwcode-tasks-more:hover { background: var(--theme-hover); color: var(--pw-text); }
+.pwcode-tasks-head:focus-visible, .pwcode-tasks-more:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
+.pwcode-tasks-chevron { width: 14px; height: 14px; flex-shrink: 0; }
+.pwcode-tasks-title { flex-shrink: 0; font-weight: 600; color: var(--pw-text); }
+.pwcode-tasks-progress { flex-shrink: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pwcode-tasks-running { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A quarter of the window, but three rows, as the terminal caps its panel. */
+.pwcode-tasks-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; max-height: max(25dvh, 4.75rem); }
+.pwcode-tasks-list.pwcode-tasks-all { max-height: min(204px, max(25dvh, 4.75rem)); }
+.pwcode-task { display: flex; align-items: center; gap: 8px; min-height: 24px; min-width: 0; padding: 0 8px; }
+.pwcode-task-mark { width: 14px; flex-shrink: 0; text-align: center; font-family: var(--pw-font-mono, ui-monospace, monospace); user-select: none; }
+.pwcode-task-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwcode-task-completed .pwcode-task-mark { color: var(--theme-success-text); }
+.pwcode-task-completed .pwcode-task-label { color: var(--pw-muted); text-decoration: line-through; }
+.pwcode-task-in_progress .pwcode-task-mark { color: var(--theme-accent); }
+.pwcode-task-in_progress .pwcode-task-label { color: var(--pw-text); font-weight: 600; }
+.pwcode-task-pending .pwcode-task-mark, .pwcode-task-pending .pwcode-task-label { color: var(--pw-muted); }

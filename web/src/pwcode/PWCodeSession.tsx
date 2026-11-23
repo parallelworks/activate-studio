@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  ActivityLine,
   EffortPicker,
   ExpandAllProvider,
   NoticeBar,
@@ -19,6 +18,8 @@ import {
   type PwCodeSessionScreen,
   sessionDraftKey,
   sessionSettingsOptions,
+  useComposerPastes,
+  useGoalNotice,
   usePwCodeComposer,
   usePwCodeConversation,
   usePwCodeSessionScreen,
@@ -26,7 +27,22 @@ import {
   useStaleFor,
 } from '@parallelworks/code'
 import { IntlProvider } from 'use-intl'
-import { pwCode } from './api'
+import { followCleared, pwCode } from './api'
+import { describeError } from './describeError'
+import { AccountChip, AccountPanelModal } from './session/AccountPanel'
+import { SessionActivity, SessionStatusRow, type StatusActivity, useSessionAgents, useSwitcherState } from './session/AgentSwitcher'
+import { BackgroundCommandsContext, useBackgroundShortcut } from './session/BackgroundCommandHint'
+import { ComposerImages } from './session/ComposerImages'
+import { SessionContextRow } from './session/ContextRow'
+import { GoalControl } from './session/GoalControl'
+import { SessionTasks } from './session/SessionTasks'
+import { SubagentView, type SubagentTasks } from './session/SubagentView'
+import { TerminalHandoff } from './session/TerminalHandoff'
+import { UsageLimitWait } from './session/UsageLimitWait'
+import { useAwayRecap } from './session/useAwayRecap'
+import { useComposerImages } from './session/useComposerImages'
+
+export { describeError }
 
 /**
  * A pw code chat, shown as PW Code on the web shows a session: the
@@ -54,6 +70,8 @@ export function PWCodeSession(props: PWCodeSessionProps) {
 }
 
 export interface PWCodeSessionProps {
+  /** The Studio chat that holds the session. */
+  conversationId: string
   machine: string
   sessionId: string
   username: string
@@ -63,28 +81,37 @@ export interface PWCodeSessionProps {
   settingsExtra?: ReactNode
 }
 
-/** Words a refusal or failure the way the platform's problems carry them. */
-export function describeError(error: unknown): string {
-  if (!error) return ''
-  if (typeof error === 'string') return error
-  const e = error as { detail?: unknown; title?: unknown; message?: unknown; error?: unknown }
-  for (const v of [e.detail, e.error, e.message, e.title]) if (typeof v === 'string' && v) return v
-  return String(error)
-}
-
 const noop = () => {}
 
-function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWCodeSessionProps) {
+// The platform's model list sets when a paste is saved as a file rather than
+// sent as text, before the session reports its own limit; the Studio's chat
+// does not hold that list, so until then a paste stays text.
+const pasteApi = { uploadPaste: pwCode.uploadPaste, usePlatformModels: () => NO_MODELS }
+const NO_MODELS = { models: [] }
+
+/** A short screen, such as a phone on its side, starts with the task list
+ *  folded: open, it would cover the transcript the composer leaves. */
+function tasksStartOpen(): boolean {
+  return !window.matchMedia?.('(max-height: 32rem)').matches
+}
+
+function SessionPane({ conversationId, machine, sessionId, username, notes, settingsExtra }: PWCodeSessionProps) {
   const [expandAll, setExpandAll] = useState<boolean | undefined>(undefined)
   const [note, setNote] = useState('')
   const notify = useCallback((text: string) => setNote(text), [])
-  const { picker, handleLocally, addsToTranscript } = useSessionPicker()
+  const { picker, setPicker, handleLocally, addsToTranscript } = useSessionPicker()
+  // /clear makes a new session: the chat goes on with it, as PW Code on the
+  // web moves to it.
+  const onCleared = useCallback((newId: string) => {
+    if (newId && newId !== sessionId) followCleared(conversationId, newId).catch((e: unknown) => setNote(describeError(e)))
+  }, [conversationId, sessionId])
   const sessions = pwCode.useSessions()
   const listed = sessions.data?.sessions?.find(s => s.id === sessionId && s.machineId === machine)
   const read = pwCode.useSessionDetail(machine, sessionId, listed)
   const { data: detail, mutate, fresh } = read
   const machineRead = pwCode.useMachine(machine)
 
+  const goalNotice = useGoalNotice()
   const conversation = usePwCodeConversation({
     api: pwCode,
     machine,
@@ -93,13 +120,14 @@ function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWC
     detail: read,
     describeError,
     notify,
-    // The Studio shows the session its chat holds; /clear and a move are
-    // made where the session runs, so nothing here follows them.
-    onCleared: noop,
+    onCleared,
+    // A session moved to another machine is continued from there again.
     onMoved: noop,
+    goalNotice,
   })
-  const { liveState, transcript, messages, queued, notice, dismissNotice, showError } = conversation
+  const { liveState, transcript, messages, queued, notice, dismissNotice, showError, addDirs, allowedDirs } = conversation
 
+  const composerImages = useComposerImages({ machine, sessionId, messages: transcript?.messages, onError: notify })
   const { connected, disconnected } = pwCode.useSessionEvents(machine, sessionId, fresh ? conversation.cursor : undefined, conversation.onEvent)
   const staleFor = useStaleFor(detail, connected)
   const page = usePwCodeComposer({
@@ -110,13 +138,27 @@ function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWC
     machineInfo: machineRead.machine,
     feed: { connected, disconnected },
     staleFor,
+    images: composerImages,
     handleLocally,
     notify,
-    onCleared: noop,
+    onCleared,
     onArchived: noop,
   })
-  const { composer: state } = page
+  const { composer: state, background } = page
+
+  // A subagent is shown in place of the main transcript, as PW Code on the
+  // web shows one picked in its status row.
+  const [agent, setAgent] = useState<string | undefined>(undefined)
+  useEffect(() => { setAgent(undefined) }, [sessionId])
+  useBackgroundShortcut(background, !agent)
+  const switcher = useSwitcherState()
+  const agents = useSessionAgents(conversation)
+  const [tasksOpen, setTasksOpen] = useState(tasksStartOpen)
+
   const history = useMemo(() => promptHistory(username, { id: sessionId, messages: transcript?.messages }), [username, sessionId, transcript?.messages])
+  const draftKey = sessionDraftKey(sessionId, detail)
+  useAwayRecap({ machine, sessionId, draftKey, turnEndSeq: transcript?.turnEndSeq, idle: page.idle })
+  const pastes = useComposerPastes(pasteApi, { machine, sessionId, liveState, detail, describeError })
   const settings = pwCode.useSessionSettings({
     ...sessionSettingsOptions(machine, conversation, page),
     onPatched: () => void mutate(),
@@ -129,10 +171,9 @@ function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWC
     machine: machineRead,
     staleFor,
     settings,
-    images: [],
+    images: composerImages.images,
     describeError,
   })
-  void picker
 
   const noticeCard = (notice || note) && (
     <NoticeCard tone={notice?.warn ? 'warning' : 'neutral'} onDismiss={() => { dismissNotice(); setNote('') }}>
@@ -174,87 +215,136 @@ function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWC
     return () => { for (const t of timers) window.clearTimeout(t) }
   }, [waiting])
 
+  const openAccounts = () => setPicker('claude')
+  const activityLine = (a: PwCodeSessionActivity | null): StatusActivity =>
+    a ? brief => (a.kind === 'usageLimit'
+      ? <UsageLimitWait resumeAt={a.resumeAt} onOpenAccounts={openAccounts} />
+      : <SessionActivity activity={a} brief={brief} />) : null
+  const tasksNode = (todos: SubagentTasks | undefined) => todos?.length
+    ? <SessionTasks todos={todos} open={tasksOpen} onOpenChange={setTasksOpen} />
+    : null
+  const status = (line: StatusActivity, { goal, tasks }: { goal?: ReactNode; tasks?: SubagentTasks }) =>
+    line || goal || tasks?.length || agents.length > 0
+      ? <SessionStatusRow conversation={conversation} activity={line} goal={goal} tasks={tasksNode(tasks)}
+          agent={agent} onSelectAgent={setAgent} switcher={switcher} />
+      : undefined
+  const banner = <SessionBanner banner={screen.banner} />
+  const contextRow = detail && (
+    <SessionContextRow machine={machine} sessionId={sessionId} machineName={page.machineName}
+      workspace={detail.workspace} added={addDirs} allowed={allowedDirs} pullRequests={detail.pullRequests} />
+  )
+  const viewing = agent ? agents.find(a => a.id === agent) : undefined
+
   return (
-    <div className="pwcode-session" ref={pane}>
+    <div className="pwcode-session" ref={pane} onPasteCapture={composerImages.onPaste}>
       <p className="sr-only" role="status">{screen.statusText}</p>
       <ExpandAllProvider value={expandAll}>
-        <SessionView
-          sessionKey={sessionDraftKey(sessionId, detail)}
-          foldEveryRun
-          pinPrompt
-          messages={messages}
-          streamingMessage={transcript?.streaming ?? null}
-          queuedMessages={queued}
-          canRemoveQueued={conversation.canRemoveQueued}
-          queueDelivery={conversation.queueDelivery}
-          turn={{ running: page.turn.running, onStop: () => void page.turn.stop(), stopping: page.turn.stopping }}
-          onSend={(text) => page.send(text)}
-          addsToTranscript={addsToTranscript}
-          onApprovalAnswer={conversation.answerApproval}
-          showAuthor={screen.showAuthor}
-          currentUsername={username}
-          loading={screen.loading}
-          error={screen.failed ? (
-            <div className="pwcode-session-failed">
-              <p role="alert">{screen.failed.message}</p>
-              <button type="button" className="code-approval-more" onClick={screen.retry}>Try again</button>
-            </div>
-          ) : undefined}
-          banners={<SessionBanner banner={screen.banner} />}
-          label="pw code session"
-          flush
-          find
-          workingIndicator={false}
-          footer={<>
-            {page.outputs.map(o => (
-              <OutputCard key={o.id} title={o.command} text={o.text} onDismiss={() => page.dismissOutput(o.id)} dismissLabel="Dismiss" />
-            ))}
-            {page.endNote && <NoticeCard><span className="pwcode-end-note">{page.endNote}</span></NoticeCard>}
-          </>}
-          composer={{
-            attachments: false,
-            tools: false,
-            allowEmpty: screen.allowEmpty,
-            requireModel: false,
-            history,
-            recall: page.recall,
-            disabled: state.disabled,
-            placeholder: state.placeholder,
-            inputLabel: 'Message to this session',
-            sendLabel: 'Send',
-            activity: screen.activity ? <SessionActivity activity={screen.activity} /> : undefined,
-            notices: <>
-              {screen.untrusted && <NoticeCard tone="warning">{screen.untrusted}</NoticeCard>}
-              {noticeCard}
-              {notes}
-            </>,
-            context: detail && <SessionContext machineName={page.machineName} workspace={detail.workspace} />,
-            settingsLeft: <>
-              <PermissionPicker
-                mode={screen.permission.mode}
-                ceiling={screen.permission.ceiling}
-                accepted={screen.permission.accepted}
-                onPick={settings.setMode}
-                disabled={screen.permission.disabled}
-              />
-              {settingsExtra}
-              {settings.saving && <span className="muted pwcode-saving">Saving…</span>}
-            </>,
-            settingsRight: <>
-              {models.length > 0 && (
-                <select className="pwcode-model" aria-label="The session's model" value={current}
-                  disabled={settings.model.disabled} onChange={e => settings.model.onChange(e.target.value)}>
-                  {models.map(id => <option key={id} value={id}>{modelNames[id]}</option>)}
-                </select>
-              )}
-              <EffortPicker effort={settings.effort.value} onPick={settings.effort.onChange} disabled={settings.effort.disabled} />
-              <button type="button" className="pwcode-expand" onClick={() => setExpandAll(open => !open)} aria-pressed={!!expandAll}
-                title={expandAll ? 'Fold every step' : 'Open every step'}>{expandAll ? 'Fold steps' : 'Open steps'}</button>
-            </>,
-            hint: state.hint || undefined,
-          }}
-        />
+        <BackgroundCommandsContext value={background}>
+          {agent && (
+            <SubagentView key={agent} machine={machine} sessionId={sessionId} subId={agent}
+              listed={viewing} usage={liveState?.subagentUsage?.[agent]}
+              subscribe={conversation.subscribe} loadPalette={page.loadPalette} sessionLock={page.sessionLock}
+              sessionBanner={banner} notice={noticeCard} status={(line, { tasks }) => status(line, { tasks })} context={contextRow}
+              modelNames={liveState?.modelNames} pastes={pastes} username={username}
+              onSent={conversation.refreshSubagents} onBack={() => setAgent(undefined)} />
+          )}
+          <div className="pwcode-main" hidden={!!agent}>
+            <SessionView
+              sessionKey={draftKey}
+              foldEveryRun
+              pinPrompt
+              messages={messages}
+              streamingMessage={transcript?.streaming ?? null}
+              queuedMessages={queued}
+              canRemoveQueued={conversation.canRemoveQueued}
+              queueDelivery={conversation.queueDelivery}
+              turn={{ running: page.turn.running, onStop: () => void page.turn.stop(), stopping: page.turn.stopping }}
+              onSend={(text) => page.send(text)}
+              addsToTranscript={addsToTranscript}
+              onApprovalAnswer={conversation.answerApproval}
+              showAuthor={screen.showAuthor}
+              currentUsername={username}
+              loading={screen.loading}
+              error={screen.failed ? (
+                <div className="pwcode-session-failed">
+                  <p role="alert">{screen.failed.message}</p>
+                  <button type="button" className="code-approval-more" onClick={screen.retry}>Try again</button>
+                </div>
+              ) : undefined}
+              banners={banner}
+              label="pw code session"
+              flush
+              find
+              workingIndicator={false}
+              footer={<>
+                {page.outputs.map(o => (
+                  <OutputCard key={o.id} title={o.command} text={o.text} onDismiss={() => page.dismissOutput(o.id)} dismissLabel="Dismiss" />
+                ))}
+                {page.endNote && <NoticeCard><span className="pwcode-end-note">{page.endNote}</span></NoticeCard>}
+              </>}
+              composer={{
+                attachments: false,
+                tools: false,
+                allowEmpty: screen.allowEmpty,
+                requireModel: false,
+                history,
+                recall: page.recall,
+                disabled: state.disabled,
+                placeholder: state.placeholder,
+                inputLabel: 'Message to this session',
+                sendLabel: 'Send',
+                pastes,
+                slash: { commands: screen.commands, label: 'Commands', onOpen: page.openPalette, loading: page.paletteLoading },
+                activity: status(activityLine(screen.activity), {
+                  goal: screen.goal && conversation.goal ? (
+                    <GoalControl key={`${machine}/${sessionId}`} machine={machine} sessionId={sessionId}
+                      label={screen.goal} status={conversation.goal} locked={state.locked} />
+                  ) : null,
+                  tasks: transcript?.todos,
+                }),
+                notices: <>
+                  {screen.untrusted && <NoticeCard tone="warning">{screen.untrusted}</NoticeCard>}
+                  {noticeCard}
+                  <ComposerImages images={composerImages.images} onRemove={composerImages.remove} />
+                  {notes}
+                </>,
+                context: contextRow,
+                settingsLeft: <>
+                  <PermissionPicker
+                    mode={screen.permission.mode}
+                    ceiling={screen.permission.ceiling}
+                    accepted={screen.permission.accepted}
+                    onPick={settings.setMode}
+                    disabled={screen.permission.disabled}
+                  />
+                  <AccountChip model={settings.model.value} account={settings.account.value} onOpen={openAccounts} />
+                  {settingsExtra}
+                  {settings.saving && <span className="muted pwcode-saving">Saving…</span>}
+                </>,
+                settingsRight: <>
+                  {models.length > 0 && (
+                    <select className="pwcode-model" aria-label="The session's model" value={current}
+                      disabled={settings.model.disabled} onChange={e => settings.model.onChange(e.target.value)}>
+                      {models.map(id => <option key={id} value={id}>{modelNames[id]}</option>)}
+                    </select>
+                  )}
+                  <EffortPicker effort={settings.effort.value} onPick={settings.effort.onChange} disabled={settings.effort.disabled} />
+                  <TerminalHandoff machine={machine} sessionId={sessionId} username={username} />
+                  <button type="button" className="pwcode-expand" onClick={() => setExpandAll(open => !open)} aria-pressed={!!expandAll}
+                    title={expandAll ? 'Fold every step' : 'Open every step'}>{expandAll ? 'Fold steps' : 'Open steps'}</button>
+                </>,
+                hint: state.hint || undefined,
+              }}
+            />
+          </div>
+        </BackgroundCommandsContext>
       </ExpandAllProvider>
+      {picker === 'claude' && (
+        <AccountPanelModal key={`accounts:${machine}/${sessionId}`} machine={machine} machineName={page.machineName}
+          sessionId={sessionId} machineFacts={screen.claude} waitingAtLimit={screen.waitingAtLimit}
+          account={settings.account} onClose={() => setPicker(p => (p === 'claude' ? null : p))}
+          onMovedOthers={notify} onMoveError={showError} />
+      )}
     </div>
   )
 }
@@ -273,16 +363,6 @@ function useSessionModels(machine: string, sessionId: string): { id: string; nam
   return models
 }
 
-/** The session's machine and folder, under the transcript. */
-function SessionContext({ machineName, workspace }: { machineName: string; workspace: string }) {
-  const folder = workspace.split('/').filter(Boolean).pop() ?? workspace
-  return (
-    <div className="pwcode-context" title={`${machineName}:${workspace}`}>
-      <span className="pwcode-context-chip">{machineName}:{folder}</span>
-    </div>
-  )
-}
-
 function SessionBanner({ banner }: { banner: PwCodeSessionScreen['banner'] }) {
   if (!banner) return null
   return (
@@ -290,16 +370,4 @@ function SessionBanner({ banner }: { banner: PwCodeSessionScreen['banner'] }) {
       {banner.body}
     </NoticeBar>
   )
-}
-
-/** The line over the composer while the session works or its feed is down. */
-function SessionActivity({ activity }: { activity: PwCodeSessionActivity }) {
-  switch (activity.kind) {
-    case 'reconnecting':
-      return <div className="pwcode-reconnecting muted">{activity.text}</div>
-    case 'usageLimit':
-      return <div className="pwcode-reconnecting muted">pw code waits for its usage limit to reset{activity.resumeAt ? `, at ${new Date(activity.resumeAt).toLocaleTimeString()}` : ''}.</div>
-    case 'working':
-      return <ActivityLine startedAt={activity.startedAt} inputTokens={activity.inputTokens} outputTokens={activity.outputTokens} word={activity.word} />
-  }
 }

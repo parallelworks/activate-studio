@@ -45,6 +45,8 @@ type pwHere struct {
 	site     string
 	daemonID string
 	hostname string
+	// status is what the daemon reported, such as what it allows.
+	status any
 }
 
 // pwcodeDaemon is the viewer's pw code daemon and its site, as
@@ -85,7 +87,7 @@ func (m *Module) pwcodeHere(ctx context.Context, r *http.Request) (*pwHere, erro
 		return nil, pwErr(502, "Your pw code daemon did not answer.")
 	}
 	return &pwHere{client: client, site: site,
-		daemonID: jsonv.String(jsonv.Path(st, "machineId")), hostname: jsonv.String(jsonv.Path(st, "hostname"))}, nil
+		daemonID: jsonv.String(jsonv.Path(st, "machineId")), hostname: jsonv.String(jsonv.Path(st, "hostname")), status: st}, nil
 }
 
 type pwHereAt struct {

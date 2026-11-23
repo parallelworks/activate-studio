@@ -1,0 +1,10 @@
+.pwcode-handoff-popover { width: min(26rem, calc(100vw - 32px)); padding: 16px; }
+.pwcode-handoff { display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.pwcode-handoff p { margin: 0; }
+.pwcode-handoff-command { display: flex; flex-direction: column; gap: 6px; }
+.pwcode-handoff-muted { margin: 0; font-size: 13px; color: var(--pw-muted); }
+.pwcode-handoff-note { font-size: 12px; color: var(--pw-muted); }
+.pwcode-handoff-text { font-size: 13px; word-break: normal; }
+.pwcode-handoff-prompt { margin-inline-end: 1ch; color: var(--pw-muted); user-select: none; }
+.pwcode-handoff-session { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+.pwcode-handoff-open { width: 100%; }

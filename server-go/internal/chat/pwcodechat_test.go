@@ -58,6 +58,10 @@ type fakePW struct {
 	// answers it with an error.
 	onInterrupt     func()
 	refuseInterrupt bool
+	// routes answers a path (method and path, "GET /v1/...") before the
+	// rest, for a test's own routes; asked records the requests it took.
+	routes map[string]http.HandlerFunc
+	asked  []string
 }
 
 func (f *fakePW) add(ev map[string]any) {
@@ -75,7 +79,15 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	f.mu.Lock()
 	f.calls++
+	h := f.routes[r.Method+" "+p]
+	if h != nil {
+		f.asked = append(f.asked, r.Method+" "+r.URL.RequestURI())
+	}
 	f.mu.Unlock()
+	if h != nil {
+		h(w, r)
+		return
+	}
 	switch {
 	case p == "/v1/status":
 		st := map[string]any{"protocolVersion": pwcode.ProtocolVersion}

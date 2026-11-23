@@ -119,6 +119,145 @@ func (m *Module) pwcodeProxyRoutes(h func(pattern string, fn func(http.ResponseW
 	h("GET /api/pwcode-feed/sessions", m.codeListFeed)
 	h("GET /api/chat/pwcode/{id}/machine", m.codeMachine)
 	h("GET /api/code/sessions", m.codeListing)
+	h("POST /api/chat/pwcode/{id}/follow", m.codeFollow)
+	for _, method := range []string{"GET", "POST", "DELETE"} {
+		h(method+" /api/code/machines/{machine}/claude-code/{rest...}", m.codeAccounts)
+	}
+}
+
+// machineTarget is the viewer's own pw code on a machine: directMachine is
+// the one the Studio drives for them (this Studio's when no one signs in,
+// else theirs on the cluster the Studio runs on, reached with their own
+// key), and any other is one of their machines through ACTIVATE, which
+// answers only for the person's own.
+func (m *Module) machineTarget(r *http.Request, machine string) (pwcode.Client, error) {
+	if machine != directMachine {
+		if !pwcode.IsRouteID(machine) {
+			return nil, pwErr(404, "Not a machine.")
+		}
+		return m.relayClient(r, machine)
+	}
+	c, _, err := m.pwcodeDaemon(r)
+	return c, err
+}
+
+// codeAccounts sends the account panel's requests on to the viewer's own
+// pw code on the machine: its Claude Code accounts, their models, signing
+// one in, removing one and moving its sessions. A change is logged.
+func (m *Module) codeAccounts(w http.ResponseWriter, r *http.Request) error {
+	suffix := "/" + r.PathValue("rest")
+	key := pwcode.MachineRoute(r.Method, suffix)
+	if key == "" {
+		return writeProblem(w, http.StatusNotFound, "The Studio does not send this to pw code; do it in PW Code on the web or where pw code runs.")
+	}
+	machine := r.PathValue("machine")
+	client, err := m.machineTarget(r, machine)
+	if err != nil {
+		return writeErr(w, err)
+	}
+	var body any
+	if r.Method == http.MethodPost {
+		rb, err := reqbody.Read(r)
+		if err != nil {
+			return writeProblem(w, http.StatusBadRequest, apiMessage(err))
+		}
+		if rb.Present {
+			if body, err = jsonv.Decode(rb.Raw); err != nil {
+				return writeProblem(w, http.StatusBadRequest, "The body is not JSON.")
+			}
+		} else {
+			body = jsonv.NewObject()
+		}
+	}
+	route := "/v1/claude-code" + suffix
+	if q := r.URL.RawQuery; q != "" {
+		route += "?" + q
+	}
+	v, err := client.Call(r.Context(), r.Method, route, body, 0)
+	if err != nil {
+		return writeErr(w, err)
+	}
+	switch key {
+	case "DELETE /accounts/{name}", "POST /accounts/{name}/move", "POST /logins":
+		m.A.Log.Info("pw code: Claude Code account change", "user", userID(r), "machine", machine, "action", key, "route", suffix)
+	}
+	if v == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return nil
+	}
+	return reqbody.OK(w, v)
+}
+
+// imageTypes are what a session's image is served as: pictures only, never
+// a page or an SVG, which could run script from the Studio's origin.
+var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
+
+// maxImage is the largest image the Studio passes on.
+const maxImage = 25 << 20
+
+// codeImage passes one of the session's images on as the session's
+// machine serves it.
+func (m *Module) codeImage(w http.ResponseWriter, r *http.Request, t *pwTarget, route string) error {
+	g, ok := t.client.(pwcode.ByteGetter)
+	if !ok {
+		return writeProblem(w, http.StatusNotImplemented, "The Studio cannot read this session's images.")
+	}
+	b, err := g.GetBytes(r.Context(), route, maxImage)
+	if err != nil {
+		return writeErr(w, err)
+	}
+	typ, _, _ := strings.Cut(b.Type, ";")
+	typ = strings.ToLower(strings.TrimSpace(typ))
+	if !imageTypes[typ] {
+		return writeProblem(w, http.StatusBadGateway, "The session's machine did not answer with a picture.")
+	}
+	w.Header().Set("Content-Type", typ)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	_, _ = w.Write(b.Body)
+	return nil
+}
+
+// codeFollow moves the viewer's chat to the session its session was
+// cleared into (/clear makes a new one, here or wherever the session is
+// directed from), so the chat goes on with it as PW Code on the web does.
+// Only a session the chat's own target reaches, as the viewer, in the same
+// workspace, is followed.
+func (m *Module) codeFollow(w http.ResponseWriter, r *http.Request) error {
+	c, t, err := m.ownPWCode(r)
+	if err != nil {
+		return err
+	}
+	rb, err := reqbody.Read(r)
+	if err != nil {
+		return err
+	}
+	v, _ := jsonv.Decode(rb.Raw)
+	next := jsonv.String(jsonv.Path(v, "session"))
+	if !pwcode.IsRouteID(next) {
+		return pwErr(400, "Not a pw code session id.")
+	}
+	if next == c.PWCode.Session {
+		return reqbody.OK(w, reqbody.O("session", next))
+	}
+	ctx := r.Context()
+	was, err := pwcode.GetSession(ctx, t.client, c.PWCode.Session)
+	if err != nil {
+		return err
+	}
+	now, err := pwcode.GetSession(ctx, t.client, next)
+	if err != nil {
+		return err
+	}
+	if ws := jsonv.String(jsonv.Path(was, "workspace")); ws == "" || ws != jsonv.String(jsonv.Path(now, "workspace")) {
+		return pwErr(409, "That session is not this chat's session cleared: it works in another folder.")
+	}
+	l := *c.PWCode
+	l.Session = next
+	m.Conv.SetPWCode(c.ID, &l)
+	m.A.Log.Info("pw code chat: followed a cleared session", "user", userID(r), "conversation", c.ID, "from", c.PWCode.Session, "to", next, "site", l.Site)
+	return reqbody.OK(w, reqbody.O("session", next))
 }
 
 // codeProxy sends one of the view's requests on to the session.
@@ -151,6 +290,13 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			body = jsonv.NewObject()
 		}
 	}
+	if key == "GET /images/{ref}" || key == "GET /github-images/{asset}" {
+		route := "/v1/sessions/" + url.PathEscape(id) + suffix
+		if q := r.URL.RawQuery; q != "" {
+			route += "?" + q
+		}
+		return m.codeImage(w, r, t, route)
+	}
 	var lastSeq int64
 	switch key {
 	case "PATCH /settings":
@@ -164,6 +310,10 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			if err := m.checkMode(r, c, t, jsonv.String(jsonv.Path(o, "mode"))); err != nil {
 				return writeErr(w, err)
 			}
+		}
+	case "POST /commands":
+		if err := m.checkCommand(r, c, t, body); err != nil {
+			return writeErr(w, err)
 		}
 	case "POST /messages":
 		m.studioToolsFor(ctx, r, c, t)
@@ -193,6 +343,16 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 	case "POST /approvals/{approval}":
 		if mode := jsonv.String(jsonv.Path(body, "mode")); mode != "" {
 			m.logModeChange(r, c, t, mode, "plan answer")
+		}
+	case "POST /plan":
+		// Plan mode is a mode too: the session plans until a plan's answer
+		// moves it on.
+		m.logModeChange(r, c, t, "plan", "command")
+	case "POST /commands":
+		if jsonv.String(jsonv.Path(body, "name")) == "permissions" {
+			if mode := strings.TrimSpace(jsonv.String(jsonv.Path(body, "args"))); mode != "" {
+				m.logModeChange(r, c, t, mode, "command")
+			}
 		}
 	case "POST /messages":
 		m.recordSent(r, c, t, jsonv.String(jsonv.Path(body, "text")), lastSeq)
@@ -260,6 +420,31 @@ func (m *Module) checkMode(r *http.Request, c *conversations.Conversation, t *pw
 		return pwErr(403, name+" takes at most "+ceiling+" from ACTIVATE"+why+". A wider mode is set on the machine itself, in pw code there.")
 	}
 	return nil
+}
+
+// sessionCommands are the slash commands that manage the session or how its
+// machine takes remote control: the Code page's, or the machine's own.
+var sessionCommands = map[string]bool{"rename": true, "fork": true, "archive": true, "resume": true, "remote-control": true}
+
+// checkCommand holds a slash command to the chat's rules: /permissions with
+// a mode is a mode change, held to the same check as the picker's (and
+// logged once it succeeds); one that manages the session is refused.
+func (m *Module) checkCommand(r *http.Request, c *conversations.Conversation, t *pwTarget, body any) error {
+	name := jsonv.String(jsonv.Path(body, "name"))
+	if sessionCommands[name] {
+		return pwErr(403, "/"+name+" is not sent from a chat: manage the session on the Code page, or where it runs.")
+	}
+	if name != "permissions" {
+		return nil
+	}
+	args := strings.TrimSpace(jsonv.String(jsonv.Path(body, "args")))
+	if args == "" {
+		return nil
+	}
+	if _, ok := modeRank[args]; !ok {
+		return pwErr(400, "Change the session's mode with the permission picker, or /permissions and one mode: read-only, accept-edits, auto or bypass-permissions.")
+	}
+	return m.checkMode(r, c, t, args)
 }
 
 // logModeChange records a permission mode change the Studio sent, and how.
@@ -394,8 +579,10 @@ func (m *Module) writeMachine(w http.ResponseWriter, r *http.Request, l *convers
 		return reqbody.OK(w, mach)
 	}
 	name := l.MachineName
-	if name == "" {
-		if h, err := m.pwcodeHereCached(r.Context(), r); err == nil && h != nil {
+	var st any
+	if h, err := m.pwcodeHereCached(r.Context(), r); err == nil && h != nil {
+		st = h.status
+		if name == "" {
 			name = h.hostname
 		}
 	}
@@ -406,9 +593,21 @@ func (m *Module) writeMachine(w http.ResponseWriter, r *http.Request, l *convers
 	if u := user(r); u != nil {
 		owner = u.Username
 	}
-	return reqbody.OK(w, jsonv.NewObject("id", directMachine, "name", firstNonEmpty(name, "this Studio's machine"), "kind", "local",
-		"owner", owner, "status", "connected"))
+	rec := jsonv.NewObject("id", directMachine, "name", firstNonEmpty(name, "this Studio's machine"), "kind", "local",
+		"owner", owner, "status", "connected")
+	// What the session view offers follows what the daemon allows, as the
+	// platform's machine record carries it: signing an account in, removing
+	// one, and the Claude Code integration itself.
+	for _, k := range directFacts {
+		if v := jsonv.Path(st, k); v != nil {
+			rec.Set(k, v)
+		}
+	}
+	return reqbody.OK(w, rec)
 }
+
+// directFacts are the daemon's status fields the machine record passes on.
+var directFacts = []string{"claudeCodeAllowed", "claudeInstalled", "claudeLogin", "claudeAccountRemove", "remoteStart", "remoteMaxPermissionMode", "sessionImages", "version"}
 
 // feedHeartbeat is the frame the platform sends a feed that asked for a
 // heartbeat; seq 0 keeps it out of the reader's cursor.

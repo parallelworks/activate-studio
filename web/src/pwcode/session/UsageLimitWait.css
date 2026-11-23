@@ -1,0 +1,7 @@
+.pwcode-limit { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 4px; font-size: 13px; color: var(--theme-warning-text); }
+.pwcode-limit-button { width: 100%; border: 0; border-radius: 4px; background: transparent; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.pwcode-limit-button:hover { background: var(--theme-warning-muted); }
+.pwcode-limit-button:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 1px; }
+.pwcode-limit-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.pwcode-limit-text { min-width: 0; text-wrap: pretty; }
+.pwcode-limit-switch { flex-shrink: 0; font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }

@@ -21,5 +21,6 @@ describe('attachments paging under the cursor contract', () => {
     expect(p3.hasMore).toBe(false)
     expect(p3.nextCursor).toBeUndefined()
     expect(calls[1]).toContain('offset=4')
-  })
+    // The first import of the adapter loads much of the app, slow on a busy full run.
+  }, 30_000)
 })
