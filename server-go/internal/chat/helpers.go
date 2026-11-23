@@ -358,14 +358,22 @@ func splitEnvelope(content string, nonces []string, names []string, hasNames boo
 	if !found {
 		return content, nil
 	}
-	var b strings.Builder
+	// The text around requests, in pieces set apart. Text after the last
+	// request is left out when it made calls: a natively calling model
+	// cannot write after its calls, and what is written there comes
+	// before their results ("no results came back").
+	var pieces []string
 	last := 0
 	for _, s := range cut {
-		b.WriteString(content[last:s.from])
+		if p := strings.TrimSpace(content[last:s.from]); p != "" {
+			pieces = append(pieces, p)
+		}
 		last = s.to
 	}
-	b.WriteString(content[last:])
-	rest := strings.TrimSpace(b.String())
+	if p := strings.TrimSpace(content[last:]); p != "" && len(calls) == 0 {
+		pieces = append(pieces, p)
+	}
+	rest := strings.Join(pieces, "\n\n")
 	// What is left with no letter or digit is no prose.
 	if !strings.ContainsFunc(rest, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
 		rest = ""

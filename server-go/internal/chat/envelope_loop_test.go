@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 )
@@ -23,6 +25,10 @@ type emuTools struct {
 	// what write_kb_file calls return, in turn.
 	result  string
 	results []string
+	// pause is how long a write takes; active and most count the writes
+	// running at once.
+	pause        time.Duration
+	active, most int
 }
 
 func (e *emuTools) Answer(r *http.Request, in map[string]any, k *string) (*Answered, error) {
@@ -49,7 +55,17 @@ func (e *emuTools) Execute(_ *http.Request, name, args string, _ ToolCtx) (*Outc
 	if name == "write_kb_file" && len(e.results) > 0 {
 		result, e.results = e.results[0], e.results[1:]
 	}
+	if name == "write_kb_file" {
+		e.active++
+		e.most = max(e.most, e.active)
+	}
 	e.mu.Unlock()
+	if name == "write_kb_file" {
+		time.Sleep(e.pause)
+		e.mu.Lock()
+		e.active--
+		e.mu.Unlock()
+	}
 	if result == "" {
 		result = "Wrote it."
 	}
@@ -497,7 +513,8 @@ func TestNoBracketsLeftAfterARequest(t *testing.T) {
 	env := writeEnvelope("ab12cd34", "x")
 	for in, want := range map[string]string{
 		env + `"}`:                            "",
-		"Saving.\n" + env + "\"}\nMore text.": "Saving.\n\nMore text.",
+		"Saving.\n" + env + "\"}\nMore text.": "Saving.",
+		"I'll add them before calling it complete." + env + "The workbook was not confirmed complete; no results came back.": "I'll add them before calling it complete.",
 	} {
 		prose, calls := splitEnvelope(in, []string{"ab12cd34"}, []string{"write_kb_file"}, true)
 		if prose != want || len(calls) != 1 {
@@ -579,7 +596,7 @@ func TestCutOffRequestsForTheRestEndWithWhatTheWorkbookHolds(t *testing.T) {
 	cut := said(func(n string) string { w := writeEnvelope(n, sheetRows(400)); return w[:len(w)/2] }, "length")
 	gw.load([]reply{
 		said(func(n string) string { return writeEnvelope(n, sheetRows(30)) }, "stop"),
-		cut, cut, cut, cut, cut, cut,
+		cut, cut, cut, cut, cut, cut, cut, cut,
 	})
 	sse := askFor(t, base, "Make reports/items.xlsx with 600 rows of items. Do not search first.")
 	a := answerOf(sse)
@@ -590,17 +607,105 @@ func TestCutOffRequestsForTheRestEndWithWhatTheWorkbookHolds(t *testing.T) {
 		t.Errorf("the re-ask gives no size: %.400s", r)
 	}
 	nudges := 0
-	for i := 3; i < 7; i++ {
+	for i := 3; i < 9; i++ {
 		if r := requestOf(gw, i); strings.Contains(r, "holds 30 of the 600 rows the user asked for") && strings.Contains(r, "at most 50 rows in each request") {
 			nudges++
 		}
 	}
-	if nudges < 3 {
+	if nudges < 6 {
 		t.Errorf("nudged %d times after cut-offs", nudges)
 	}
-	for in, want := range map[string]int{`[["a"],["b"]`: 10, "no rows": 50, strings.Repeat(`["a"],`, 120): 29, strings.Repeat(`["a"],`, 900): 50} {
+	for in, want := range map[string]int{`[["a"],["b"]`: 10, "no rows": 50, strings.Repeat(`["a"],`, 40): 19, strings.Repeat(`["a"],`, 900): 50} {
 		if got := rowsPerPart(in); got != want {
 			t.Errorf("%.20q: %d", in, got)
 		}
+	}
+}
+
+// Parts sent in one round are written one at a time in the order asked,
+// so the last result is what the workbook holds; text written before a
+// round's calls is set apart from the next round's; and a turn whose
+// answer does not give the count ends with what the workbook holds.
+func TestPartsInOneRoundLandInOrderAndTheTurnSaysWhatTheWorkbookHolds(t *testing.T) {
+	e, base, gw := emuModule(t)
+	e.pause = 20 * time.Millisecond
+	e.results = []string{
+		"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 20 rows after the header), 900 bytes) and re-indexed in 1 ms.",
+		"Added to reports/items.xlsx (20 rows; the workbook now holds: Items, 40 rows after the header; 9000 bytes in all) and re-indexed in 1 ms.",
+		"Added to reports/items.xlsx (20 rows; the workbook now holds: Items, 60 rows after the header; 9000 bytes in all) and re-indexed in 1 ms.",
+	}
+	part := func(i int) string {
+		b, _ := json.Marshal(sheetRows(20))
+		a := ""
+		if i > 0 {
+			a = `"append":true,`
+		}
+		return `{"name":"write_kb_file","arguments":{"path":"reports/items.xlsx",` + a + `"part":` + strconv.Itoa(i) + `,"content":` + string(b) + `}}`
+	}
+	gw.load([]reply{
+		said(func(n string) string {
+			return "I'll add the rows in parts and check the count before calling it complete.\n" +
+				`{"protocol":"studio-tools-1","nonce":"` + n + `","calls":[` + part(0) + "," + part(1) + "," + part(2) + `]}`
+		}, "stop"),
+		said(func(string) string {
+			return "The workbook was not confirmed complete. " + strings.Repeat("No results came back. ", 12)
+		}, "stop"),
+	})
+	sse := askFor(t, base, "Make reports/items.xlsx with 60 rows of items. Do not search first.")
+	a := answerOf(sse)
+	var order []string
+	for _, r := range e.runs() {
+		if i := strings.Index(r, `"part":`); i >= 0 {
+			order = append(order, r[i+7:i+8])
+		}
+	}
+	if strings.Join(order, "") != "012" || e.most != 1 {
+		t.Errorf("parts ran %v, %d at once", order, e.most)
+	}
+	if !strings.Contains(a, "complete.\n\nThe workbook") {
+		t.Errorf("rounds run together: %.300s", a)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(a), "reports/items.xlsx holds 60 of the 60 rows asked for.") {
+		t.Errorf("no closing count: %.600s", a)
+	}
+}
+
+// A reply giving up after a cut-off request is nudged again while the
+// workbook is short, and the cut-off's notice is not left on a later reply.
+func TestGivingUpAfterACutOffIsNudgedAndTheNoticeIsNotLeftOver(t *testing.T) {
+	e, base, gw := emuModule(t)
+	e.results = []string{
+		"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 30 rows after the header), 900 bytes) and re-indexed in 1 ms.",
+		"Added to reports/items.xlsx (30 rows; the workbook now holds: Items, 60 rows after the header; 9000 bytes in all) and re-indexed in 1 ms.",
+	}
+	cut := said(func(n string) string { w := writeEnvelope(n, sheetRows(400)); return w[:len(w)/2] }, "length")
+	gw.load([]reply{
+		said(func(n string) string { return writeEnvelope(n, sheetRows(30)) }, "stop"),
+		cut, cut,
+		said(func(string) string {
+			return "I can't complete the remaining rows because file-writing tools aren't available in this reply. " + strings.Repeat("Sorry. ", 30)
+		}, "stop"),
+		said(func(n string) string { return writeEnvelope(n, sheetRows(31)) }, "stop"),
+		said(func(string) string { return "The workbook holds all 60 rows. " + strings.Repeat("Done. ", 30) }, "stop"),
+	})
+	sse := askFor(t, base, "Make reports/items.xlsx with 60 rows of items. Do not search first.")
+	a := answerOf(sse)
+	if countWrites(e) != 2 || strings.Contains(a, "cut off") || strings.Contains(a, "can't complete") || !strings.Contains(a, "all 60 rows") {
+		t.Fatalf("ran %d writes; answer %.600s", countWrites(e), a)
+	}
+}
+
+// A cut-off request's notice belongs to its round: a later reply that
+// ends the turn is not followed by it.
+func TestCutOffNoticeIsNotLeftOnALaterReply(t *testing.T) {
+	_, base, gw := emuModule(t)
+	cut := said(func(n string) string { w := writeEnvelope(n, sheetRows(400)); return w[:len(w)/2] }, "length")
+	gw.load([]reply{
+		cut, cut,
+		said(func(string) string { return "Here is the plan in outline instead. " + strings.Repeat("A step. ", 40) }, "stop"),
+	})
+	a := answerOf(askFor(t, base, "Write a plan as notes/plan.md. Do not search first."))
+	if !strings.Contains(a, "plan in outline") || strings.Contains(a, "cut off") {
+		t.Fatalf("answer %.400s", a)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/docwrite"
@@ -116,6 +117,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if err != nil {
 		return fail(err.Error(), "refused")
 	}
+	// One write to a file at a time: an append reads the file and writes
+	// it back, and two at once would lose or reorder a part.
+	defer lockPath(abs)()
 	overwrite := argTrue(args, "overwrite")
 	_, statErr := os.Stat(abs)
 	exists := statErr == nil
@@ -806,4 +810,14 @@ func heldSummary(ext string, data []byte) string {
 		return ": " + strings.Join(h, "; ")
 	}
 	return ""
+}
+
+var pathLocks sync.Map
+
+// lockPath holds a library file for one write and returns its release.
+func lockPath(abs string) func() {
+	v, _ := pathLocks.LoadOrStore(abs, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }

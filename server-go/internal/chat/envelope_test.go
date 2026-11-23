@@ -17,7 +17,9 @@ func TestSplitEnvelope(t *testing.T) {
 		{"fenced whole reply", "```json\n" + env + "\n```", "", want},
 		{"after a sentence", "Here is the update.\n\nWould you like changes?" + env, "Here is the update.\n\nWould you like changes?", want},
 		{"fenced after a sentence", "Saving it now.\n```json\n" + env + "\n```\n", "Saving it now.", want},
-		{"between paragraphs", "First.\n" + env + "\nThen more.", "First.\n\nThen more.", want},
+		// Text after the request is written before its results, so it is
+		// left out.
+		{"between paragraphs", "First.\n" + env + "\nThen more.", "First.", want},
 		{"plain answer", "No lookups needed; the answer is 4.", "No lookups needed; the answer is 4.", nil},
 		// One quoted from a file, without this turn's nonce, is left as text.
 		{"foreign nonce", `The file says {"protocol":"studio-tools-1","nonce":"ffffffff","calls":[{"name":"search_kb","arguments":{}}]}`,

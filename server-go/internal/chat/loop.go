@@ -189,6 +189,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		nonces := append(turnNonces(p.messages, st.baseLen), nonce)
 		withheld = false
 		heldText = ""
+		pendingNote = ""
 		for attempt := 0; ; attempt++ {
 			streamThis := !ns && (attempt == 0 || !retryUnstreamed)
 			drop := dropTokenCap || m.noCap.has(model)
@@ -492,6 +493,22 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		fileAsked = askedFile(st.lastUser.Text())
 	}
 	shortNudges := 0
+	// closeRows ends a turn that wrote a workbook against a count of rows
+	// with what it holds, from the last write's result, unless the answer
+	// already gives that count: the model's last words can predate the
+	// results of its last parts.
+	closeRows := func() {
+		if asked <= 0 || heldRows < 0 || strings.Contains(*st.finalContent, strconv.Itoa(heldRows)) {
+			return
+		}
+		line := fmt.Sprintf("%s holds %d of the %d rows asked for.", orStr(heldPath, "The workbook"), heldRows, asked)
+		if heldRows > asked {
+			line = fmt.Sprintf("%s holds %d rows; %d were asked for.", orStr(heldPath, "The workbook"), heldRows, asked)
+		}
+		note := turnSeparator(*st.finalContent) + line
+		*st.finalContent += note
+		res.event("content", reqbody.O("text", note))
+	}
 	for iter := 0; iter < maxRounds; iter++ {
 		*st.turnBreak = true
 		for _, s := range m.Conv.TakeSteers(st.convID) {
@@ -529,6 +546,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		showHeld := func() {
 			if heldText != "" {
 				st.callbacks.OnContent(heldText)
+				st.flushCites()
 				heldText = ""
 			}
 		}
@@ -623,23 +641,46 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			outcomes := make([]*Outcome, len(calls))
 			toolStart := time.Now()
 			st.timing("calls", int64(len(calls)), "")
+			// Writes to library files run one at a time in the order asked,
+			// so parts appended in one round land in order and each result
+			// says what the file holds after it; other calls run beside them.
+			var par, seq []int
+			for i, tc := range calls {
+				if tc.Function.Name == "write_kb_file" {
+					seq = append(seq, i)
+				} else {
+					par = append(par, i)
+				}
+			}
+			run := func(i int) {
+				outcomes[i] = m.runCall(r, st, calls[i], i, names, available, notRun, held != nil && held.i == i, toolCache, &cacheMu, toolCtx)
+			}
 			var cursorMu sync.Mutex
 			cursor := 0
 			var wg sync.WaitGroup
-			workers := min(6, len(calls))
+			if len(seq) > 0 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for _, i := range seq {
+						run(i)
+					}
+				}()
+			}
+			workers := min(6, len(par))
 			for w := 0; w < workers; w++ {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
 					for {
 						cursorMu.Lock()
-						i := cursor
+						k := cursor
 						cursor++
 						cursorMu.Unlock()
-						if i >= len(calls) {
+						if k >= len(par) {
 							return
 						}
-						outcomes[i] = m.runCall(r, st, calls[i], i, names, available, notRun, held != nil && held.i == i, toolCache, &cacheMu, toolCtx)
+						run(par[k])
 					}
 				}()
 			}
@@ -717,9 +758,9 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		// A workbook short of the rows the user asked for, with no request
 		// to add them, is not the end: the model is asked to add the rest
 		// (emulated path), whatever its reply says.
-		// A request cut off is a try, not a stop: the nudge is sent again
-		// after one, up to maxShortNudges.
-		if foldSystem && asked > 0 && heldRows >= 0 && heldRows < asked && (!nudged || withheld) && shortNudges < maxShortNudges && iter < maxRounds-1 && ctx.Err() == nil {
+		// It is sent again after a reply that stops short (a request cut
+		// off, or text giving up), up to maxShortNudges.
+		if foldSystem && asked > 0 && heldRows >= 0 && heldRows < asked && shortNudges < maxShortNudges && iter < maxRounds-1 && ctx.Err() == nil {
 			nudged = true
 			shortNudges++
 			m.A.Log.Warn("workbook short of the rows asked; asking for the rest", "iter", iter, "held", heldRows, "asked", asked)
@@ -778,6 +819,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			break
 		}
 		showHeld()
+		closeRows()
 		st.finish(turn.FinishReason, "")
 		return nil
 	}
@@ -789,7 +831,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	if changed {
 		// After a write the Studio made, the answer says what was done,
 		// with the tool results' figures, not doubts about its own file.
-		closing = "Say what was done, with the figures the tool results gave (such as how many rows a file holds), and plainly what was asked for that was not done."
+		closing = "Say what was done, with the figures the tool results gave (such as how many rows a file holds), and plainly what was asked for that was not done. Tools are left out of this last step only: do not tell the user they are unavailable."
 	}
 	push(llm.Message{Role: "user", Content: sp("No further tool calls are available for this reply. Give your final answer now, using only the information gathered above. " + closing)})
 	var gathered []string
@@ -834,6 +876,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 		m.A.Log.Warn("forced final answer came back empty", "attempt", attempt)
 		finalMessages = append(finalMessages, llm.Message{Role: "user", Content: sp("Reply with the final answer as plain text.")})
 	}
+	closeRows()
 	if hitLimit {
 		note := fmt.Sprintf("\n\n*Stopped after %d tool rounds, the limit set under Settings, Assistant tools. Ask to continue and the assistant picks up from here.*", maxRounds)
 		*st.finalContent += note
@@ -1168,7 +1211,7 @@ func tailChars(s string, n int) string {
 
 // maxShortNudges is how many times a turn asks for the rest of a workbook
 // short of the rows asked for.
-const maxShortNudges = 4
+const maxShortNudges = 6
 
 // askedRowsRe reads a count of rows from a request: "250 rows", "600 data
 // rows", "1,000 records".
@@ -1253,11 +1296,11 @@ func askedFile(text string) string {
 var rowSepRe = regexp.MustCompile(`\]\s*,\s*\[`)
 
 // rowsPerPart is how many rows to ask for in each part after a request
-// cut off at the output limit: a quarter of the rows it got to, from 10
-// to 50; 50 when it shows none.
+// cut off at the output limit: half the rows it got to, from 10 to 50;
+// 50 when it shows none.
 func rowsPerPart(cut string) int {
 	seen := len(rowSepRe.FindAllStringIndex(cut, -1))
-	n := seen / 4
+	n := seen / 2
 	switch {
 	case seen == 0:
 		return 50
