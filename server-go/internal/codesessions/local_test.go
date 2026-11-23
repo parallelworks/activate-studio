@@ -24,7 +24,7 @@ func TestLocalSessions(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/status":
-			json.NewEncoder(w).Encode(map[string]any{"protocolVersion": pwcode.ProtocolVersion, "machineId": "mach1", "hostname": "box.example"})
+			json.NewEncoder(w).Encode(map[string]any{"protocolVersion": pwcode.ProtocolVersion, "machineId": "mach1", "hostname": "box.example", "permissionModes": []string{"read-only", "auto"}})
 		case "/v1/sessions":
 			json.NewEncoder(w).Encode([]any{map[string]any{"id": "20261121-120000-abcdef", "name": "pump summary", "status": "idle", "messages": 3, "workspace": "/kb/agents/x"}})
 		case "/v1/sessions/20261121-120000-abcdef":
@@ -75,6 +75,17 @@ func TestLocalSessions(t *testing.T) {
 	}
 	if res, _ := http.Get(srv.URL + "/api/code-sessions/item?machine=other&id=20261121-120000-abcdef"); res.StatusCode != 404 {
 		t.Fatalf("another machine: %d", res.StatusCode)
+	}
+	// The Code page's new session form offers the modes the daemon accepts:
+	// without them the package falls back to a list with no auto.
+	res, _ = http.Get(srv.URL + pagePrefix + "/sessions")
+	var page struct{ Machines []map[string]any }
+	json.NewDecoder(res.Body).Decode(&page)
+	if len(page.Machines) != 1 {
+		t.Fatalf("this computer on the Code page: %d %v", res.StatusCode, page.Machines)
+	}
+	if modes, _ := page.Machines[0]["permissionModes"].([]any); res.StatusCode != 200 || len(modes) != 2 || modes[1] != "auto" {
+		t.Fatalf("this computer on the Code page: %d %v", res.StatusCode, page.Machines)
 	}
 	m, v, err := Find(httptest.NewRequest("GET", "/", nil), p, "mach1", "20261121-120000-abcdef")
 	if err != nil || m.Name != LocalName || v.Title != "pump summary" {

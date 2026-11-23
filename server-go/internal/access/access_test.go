@@ -128,7 +128,7 @@ func TestAccessSourcesAndChoice(t *testing.T) {
 	if !strings.HasPrefix(raw, `{"single":true,"authEnabled":false,"models":{"source":"endpoint","host":"127.0.0.1:11434","context":null,"baseUrl":"http://127.0.0.1:11434/v1","last4":"ocal","kind":"api-key"},"platform":{"source":"cli","host":"platform-a.example.com","context":"work"},"deployment":{"source":"cli","host":"platform-a.example.com","context":"work"},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":false,"cli":{"available":true,"version":"v7.1.0","path":"`+cli+`","source":"env","chosenPath":null,"commonDirs":[`) {
 		t.Fatal(raw)
 	}
-	if !strings.HasSuffix(raw, `"chosen":null,"active":"work","used":"work","gatewayFromEnv":false,"envKey":false},"login":null}`) || strings.Contains(raw, "work-api-key") {
+	if !strings.HasSuffix(raw, `"chosen":null,"active":"work","used":"work","gatewayFromEnv":false,"envKey":false,"stopped":false},"login":null}`) || strings.Contains(raw, "work-api-key") {
 		t.Fatal(raw)
 	}
 	_ = body
@@ -163,10 +163,12 @@ func TestAccessOnASignedInDeployment(t *testing.T) {
 		"cred": nil, "keyStatus": map[string]any{"mode": "none"}, "sharedLast4": nil})
 	s := newStudio(t, map[string]string{"PW_CREDENTIALS_DIR": credsDir(t), "PW_API_KEY": "env-key"}, n)
 	_, _, raw := s.do("GET", "/api/access", nil)
-	if raw != `{"single":false,"authEnabled":true,"models":{"source":"env","host":"platform-a.example.com","context":null},"platform":{"source":"env","host":"platform-a.example.com","context":null},"deployment":{"source":"env","host":"platform-a.example.com","context":null},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":true,"cli":null,"login":null}` {
+	// The deployment's ACTIVATE credential (PW_API_KEY here) is the
+	// administrator's: a person without one of their own has none.
+	if raw != `{"single":false,"authEnabled":true,"models":{"source":"none","host":null,"context":null},"platform":{"source":"none","host":null,"context":null},"deployment":{"source":"none","host":null,"context":null},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":true,"cli":null,"login":null}` {
 		t.Fatal(raw)
 	}
-	for _, c := range [][2]string{{"PUT", "/api/access/cli/path"}, {"PUT", "/api/access/source"}, {"POST", "/api/access/cli/login"}, {"GET", "/api/access/cli/login"}, {"POST", "/api/access/cli/login/cancel"}} {
+	for _, c := range [][2]string{{"PUT", "/api/access/cli/path"}, {"PUT", "/api/access/source"}, {"PUT", "/api/access/cli/use"}, {"POST", "/api/access/cli/login"}, {"GET", "/api/access/cli/login"}, {"POST", "/api/access/cli/login/cancel"}} {
 		var b any
 		if c[0] != "GET" {
 			b = map[string]any{}
@@ -394,5 +396,35 @@ func TestSignInComesBeforeAPastedKey(t *testing.T) {
 	v.SignIn, v.Cred = "", &platform.Cred{Key: "pasted"}
 	if models, plat = s.routes.sources(v); src(models) != "key" || src(plat) != "key" || s.routes.ownPlatformKey(v) != "pasted" {
 		t.Fatalf("without a sign-in: models %s, platform %s", src(models), src(plat))
+	}
+}
+
+// Stop using the pw CLI and Use it again, on a Studio of one: with it
+// stopped, nothing ACTIVATE is in use, and the CLI's own sign-in and
+// context choices wait until it is used again.
+func TestStopUsingThePwCLIAndUseItAgain(t *testing.T) {
+	cli := fakeCLI(t, `[ "$1" = "--version" ] && echo "pw version v7.1.0"`)
+	n := newNode(t, map[string]any{"authEnabled": false, "user": nil, "cred": nil, "keyStatus": map[string]any{"mode": "none"}, "sharedLast4": nil})
+	s := newStudio(t, map[string]string{"PW_CREDENTIALS_DIR": credsDir(t), "PW_CLI": cli, "PATH": "/usr/bin:/bin"}, n)
+	st, _, raw := s.do("PUT", "/api/access/cli/use", map[string]any{"use": false})
+	if st != 200 || raw != `{"ok":true,"stopped":true,"models":{"source":"none","host":null,"context":null},"platform":{"source":"none","host":null,"context":null}}` {
+		t.Fatal(st, raw)
+	}
+	_, body, raw := s.do("GET", "/api/access", nil)
+	if !strings.Contains(raw, `"stopped":true`) || !strings.Contains(raw, `"used":null`) || !strings.Contains(raw, `"deployment":{"source":"none"`) {
+		t.Fatal(raw)
+	}
+	_ = body
+	for _, c := range [][2]string{{"POST", "/api/access/cli/login"}, {"PUT", "/api/access/source"}} {
+		if st, body, _ := s.do(c[0], c[1], map[string]any{"host": "platform-a.example.com", "context": "work"}); st != 409 || !strings.HasPrefix(body["error"].(string), "The Studio is not using the pw CLI.") {
+			t.Fatal(c, st, body)
+		}
+	}
+	if st, body, _ := s.do("PUT", "/api/access/cli/use", map[string]any{"use": "no"}); st != 400 {
+		t.Fatal(st, body)
+	}
+	st, _, raw = s.do("PUT", "/api/access/cli/use", map[string]any{"use": true})
+	if st != 200 || !strings.HasPrefix(raw, `{"ok":true,"stopped":false,"models":{"source":"cli","host":"platform-a.example.com","context":"work"}`) {
+		t.Fatal(st, raw)
 	}
 }

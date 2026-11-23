@@ -17,7 +17,7 @@ import (
 
 // localAgentTools reach a pw code daemon, which runs without the
 // platform: they are offered without it where this Studio offers its own
-// host as a site (sign-in off, or AGENT_LOCAL_SITE=1).
+// host as a site (sign-in off, unless AGENT_LOCAL_SITE=0).
 var localAgentTools = map[string]bool{"agent_sites": true, "agent_sessions": true, "start_agent": true, "agent_status": true,
 	"agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true, "delegate": true}
 

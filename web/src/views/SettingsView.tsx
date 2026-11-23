@@ -46,7 +46,6 @@ interface Effective {
   customTools: { name: string; description: string; command: string }[]
   ragDefaultModel: string
   ragTopK: number
-  ragAllowDeploymentKey: boolean
   ragAdvertiseRagModel: boolean
   ragAdvertiseAgentModel: boolean
   mcpEnabled: boolean
@@ -69,7 +68,6 @@ interface Effective {
   bannerText: string
   bannerColor: string
   bannerWhenEmbedded: boolean
-  allowKeySharing: boolean
   kbMission: string
   sections: string[]
   aiEnabled: boolean
@@ -696,14 +694,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     <label className="key-persist">
                       <Checkbox checked={form.requirePersonalKey}
                         onCheckedChange={v => setForm({ ...form, requirePersonalKey: v })} />
-                      Require each user to add their own model credential (chat and models refuse the deployment credential, though a key another user has shared here is accepted; browsing, search, and adding material stay open to everyone)
-                    </label>
-                  )}
-                  {me?.authEnabled && (
-                    <label className="key-persist">
-                      <Checkbox checked={form.allowKeySharing}
-                        onCheckedChange={v => setForm({ ...form, allowKeySharing: v })} />
-                      Let a user share their own model credential with everyone here, standing in for the deployment credential (useful where the deployment has none; the sharer's quota covers the group)
+                      Require each user to add their own model credential (chat and models refuse the endpoint you set for everyone and the model served beside the Studio; browsing, search, and adding material stay open to everyone)
                     </label>
                   )}
                   {me?.authEnabled && (
@@ -1070,11 +1061,6 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     onValueChange={v => setForm({ ...form, ragTopK: v ?? 0 })} />
                 </Field>
               </div>
-              <label className="key-persist">
-                <Checkbox checked={form.ragAllowDeploymentKey}
-                  onCheckedChange={v => setForm({ ...form, ragAllowDeploymentKey: v })} />
-                Allow callers without a bearer key to use the deployment credential (off means every caller must present their own key)
-              </label>
               <label className="key-persist">
                 <Checkbox checked={form.ragAdvertiseAgentModel}
                   onCheckedChange={v => setForm({ ...form, ragAdvertiseAgentModel: v })} />

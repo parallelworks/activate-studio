@@ -295,11 +295,16 @@ func (p *Platform) SharedKeyLast4() string {
 	return e.Last4
 }
 
-// GatewayKey is gatewayKey(): the shared key, else PW_API_KEY, else the
-// pw CLI's credential.
+// GatewayKey is the deployment's own credential: PW_API_KEY (or
+// OPENAI_API_KEY), else the pw CLI's sign-in for the gateway's host; ""
+// after Stop using the pw CLI. On a Studio of one it is the owner's own.
+// On a Studio several people use it is the administrator's, and serves
+// only the Studio's housekeeping that acts as no person; work for a person
+// goes through KeyFor, which never gives it. A key someone shared with
+// the deployment (SharedKey) is no longer used.
 func (p *Platform) GatewayKey() string {
-	if k := p.SharedKey(); k != "" {
-		return k
+	if p.Stopped() {
+		return ""
 	}
 	if p.apiKey != "" {
 		return p.apiKey
@@ -307,11 +312,16 @@ func (p *Platform) GatewayKey() string {
 	return p.CLICredential()
 }
 
-// KeyFor is platformKeyFor / sessionKeyFor: the viewer's own platform key,
-// else the deployment's; own says which.
+// KeyFor is the platform key work for the viewer runs with: their own
+// sign-in or key; on a Studio of one, without either, the owner's
+// (GatewayKey), with own false. On a Studio several people use it is never
+// the deployment's: "" without a credential of the person's own.
 func (p *Platform) KeyFor(v *Viewer) (key string, own bool) {
 	if k := v.PlatformKey(); k != "" {
 		return k, true
+	}
+	if (v != nil && v.AuthEnabled) || p.AuthEnabled() {
+		return "", false
 	}
 	return p.GatewayKey(), false
 }

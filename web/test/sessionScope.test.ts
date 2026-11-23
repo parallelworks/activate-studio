@@ -62,6 +62,13 @@ describe('the Studio\'s restyles of the package\'s chat', () => {
     expect(toolRows.length).toBeGreaterThan(0)
     for (const s of toolRows) expect(s).toContain(GUARD)
   })
+  it('leave the session thread\'s top to the band under the header buttons', () => {
+    // The band sticks to the top of the thread's content box: padding on
+    // the session's thread pushed it down off the buttons, so text ran
+    // behind them and the band hid a line further down.
+    const padded = all.filter(s => /pwcode-session[^,]*\.chat-thread$/.test(s))
+    expect(padded).toEqual([])
+  })
   it('leave the session its own pinned prompt off', () => {
     // The chat's header buttons float where the package pins the session's
     // first prompt, so the Studio does not ask for it (PWCodeSession.tsx).

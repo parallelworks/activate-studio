@@ -297,7 +297,7 @@ func (s *Routes) keyOf(r *http.Request) (string, error) {
 	}
 	key := KeyFor(s.p, v)
 	if key == "" {
-		return "", platform.KbError(409, "No platform credential: add your ACTIVATE API key under Settings, Accounts.")
+		return "", platform.KbError(409, "No platform credential: sign in with ACTIVATE under Settings, Accounts.")
 	}
 	return key, nil
 }
