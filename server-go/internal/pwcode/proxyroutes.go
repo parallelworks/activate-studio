@@ -15,6 +15,7 @@ var proxyRoutes = map[string]bool{
 	"GET /transcript":            true,
 	"GET /palette":               true,
 	"GET /subagents":             true,
+	"GET /models":                true,
 	"POST /messages":             true,
 	"POST /direction":            true,
 	"POST /direction/withdraw":   true,

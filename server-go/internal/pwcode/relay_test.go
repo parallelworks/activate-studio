@@ -29,6 +29,7 @@ func TestTheRelayMapsOnlyTheRoutesThePlatformRelays(t *testing.T) {
 		"POST /v1/sessions/s1/direction":        "/api/code/machines/m%202/sessions/s1/direction",
 		"PATCH /v1/sessions/s1/settings":        "/api/code/machines/m%202/sessions/s1/settings",
 		"GET /v1/sessions/s1/transcript?tail=1": "/api/code/machines/m%202/sessions/s1/transcript?tail=1",
+		"GET /v1/sessions/s1/models":            "/api/code/machines/m%202/sessions/s1/models",
 		"DELETE /v1/sessions/s1/queued/t1":      "/api/code/machines/m%202/sessions/s1/queued/t1",
 		// The platform relays these; the Studio does not send them.
 		"DELETE /v1/sessions/s1":             "",

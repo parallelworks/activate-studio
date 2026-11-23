@@ -11,6 +11,7 @@ import {
 } from '@parallelworks/ui/ai'
 import {
   loadPwCodeMessages,
+  modelLabel,
   promptHistory,
   type PwCodeMessages,
   type PwCodeSessionActivity,
@@ -137,7 +138,17 @@ function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWC
       {notice?.text ?? note}
     </NoticeCard>
   )
-  const modelNames = liveState?.modelNames ?? {}
+  // The model choices: those the session's machine offers it, the names
+  // the session reports, and the model it is on.
+  const current = settings.model.value ?? detail?.model ?? ''
+  const offered = useSessionModels(machine, sessionId)
+  const modelNames = useMemo(() => {
+    const names: Record<string, string> = {}
+    for (const m of offered) names[m.id] = modelLabel(m.id, m.name)
+    for (const [id, name] of Object.entries(liveState?.modelNames ?? {})) names[id] = name
+    if (current && !names[current]) names[current] = modelLabel(current)
+    return names
+  }, [offered, liveState?.modelNames, current])
   const models = Object.keys(modelNames)
 
   return (
@@ -208,9 +219,8 @@ function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWC
             </>,
             settingsRight: <>
               {models.length > 0 && (
-                <select className="pwcode-model" aria-label="The session's model" value={settings.model.value ?? ''}
+                <select className="pwcode-model" aria-label="The session's model" value={current}
                   disabled={settings.model.disabled} onChange={e => settings.model.onChange(e.target.value)}>
-                  {!models.includes(settings.model.value ?? '') && settings.model.value && <option value={settings.model.value}>{settings.model.value}</option>}
                   {models.map(id => <option key={id} value={id}>{modelNames[id]}</option>)}
                 </select>
               )}
@@ -224,6 +234,20 @@ function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWC
       </ExpandAllProvider>
     </div>
   )
+}
+
+/** The models the session's machine offers it (GET .../models), or none. */
+function useSessionModels(machine: string, sessionId: string): { id: string; name?: string }[] {
+  const [models, setModels] = useState<{ id: string; name?: string }[]>([])
+  useEffect(() => {
+    let gone = false
+    fetch(`/api/code/machines/${encodeURIComponent(machine)}/sessions/${encodeURIComponent(sessionId)}/models`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((v: unknown) => { if (!gone && Array.isArray(v)) setModels(v.filter((m): m is { id: string; name?: string } => typeof m?.id === 'string')) })
+      .catch(() => {})
+    return () => { gone = true }
+  }, [machine, sessionId])
+  return models
 }
 
 /** The session's machine and folder, under the transcript. */
