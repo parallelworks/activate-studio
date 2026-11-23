@@ -463,8 +463,12 @@ func init() {
 				lib = p.id()
 			}
 			if list {
-				// A folder looked at counts once, not each file in it.
-				m.note(ctx, lib, path2(edgeSlashes.ReplaceAllString(jsString(args["path"]), ""), "."))
+				// A folder looked at counts once, not each file in it; a
+				// look at a library's top is the model finding its way,
+				// not the chat's material.
+				if dir := edgeSlashes.ReplaceAllString(jsString(args["path"]), ""); dir != "" {
+					m.note(ctx, lib, path2(dir, "."))
+				}
 				return o, nil
 			}
 			for _, f := range o.Files {
