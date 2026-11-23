@@ -98,9 +98,9 @@ That identity drives three things: conversations are stamped with an owner and t
 
 Personal credentials live in a vault beside the index (`server/src/credentials.ts`), encrypted with AES-256-GCM under a key file written 0600, and never leave the server: status APIs expose the last four characters and timestamps only. A key can be stored or held in memory for a session. The interface states the trust model: a key pasted here is available to the server and its operator.
 
-Four postures are supported. A single-user deployment runs on the deployment credential. `DISABLE_PERSONAL_KEYS` refuses personal keys entirely. The default lets each user add their own and falls back to the deployment credential. `REQUIRE_PERSONAL_KEY` refuses the deployment credential for chat and model listing while leaving browsing, search, and ingestion open to everyone.
+Four postures are supported. A single-user deployment runs on the deployment credential, which is that person's own (Stop using the pw CLI sets it aside). `DISABLE_PERSONAL_KEYS` refuses personal keys entirely. The default lets each user add their own; with sign-in on, the deployment credential is never lent to a person, and is used only for the Studio's own housekeeping (its sign-in renewal, registering the grounded model at `/v1`, its icon, image descriptions while indexing, reading its workflow collection). Models may fall back to an OpenAI-compatible endpoint the administrator set or the sidecar. `REQUIRE_PERSONAL_KEY` refuses those for chat and model listing while leaving browsing, search, and ingestion open to everyone.
 
-One user can also promote their key for everyone else. A promoted key is stored under a reserved vault subject and returned by `gatewayKey()` ahead of the deployment credential, so it covers every path that would otherwise have none, including keyless callers to the `/v1` surface and captioning during a sweep. It satisfies a deployment that requires personal keys. Personal keys take precedence for whoever has one, any verified user can stop the sharing, and the panel names who provided it.
+Key sharing (one user's key promoted for everyone) is removed: each person uses their own ACTIVATE sign-in or key.
 
 ## 8. The /v1 surface
 
@@ -165,7 +165,7 @@ server/src/
   tags.ts          label read/write, inheritance, vocabulary, overlay reapply
   tagsOverlay.ts   inode-keyed label store for filesystems without xattrs
   labeling.ts      label proposals for unlabelled material
-  credentials.ts   per-user credential vault, shared-key promotion
+  credentials.ts   per-user credential vault
   auth.ts          platform JWT verification
   conversations.ts chat history, ownership, saved transcripts
   attachments.ts   chat attachments

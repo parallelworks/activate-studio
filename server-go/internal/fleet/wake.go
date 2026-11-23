@@ -170,6 +170,11 @@ func (f *Fleet) tick(id, reason string, force bool) bool {
 
 // wake starts the round: instructions, the session (made or renewed),
 // the message and its goal.
+// SharedOff says why a standing agent does not wake on a Studio several
+// people use: it would run on this host's pw code, which acts as the
+// Studio's own account, and no person borrows the deployment's credential.
+const SharedOff = "Standing agents run on this computer's pw code, which acts as the Studio's own account, so they do not run on a Studio several people use."
+
 func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 	fail := func(why string) {
 		f.mu.Lock()
@@ -181,6 +186,10 @@ func (f *Fleet) wake(ctx context.Context, a Agent, events []string) {
 			f.scheduleNext(cur)
 			f.setState(cur, "idle", "the wake-up could not start: "+cut(why, 160))
 		}
+	}
+	if f.A.Cfg.AuthEnabled() {
+		fail(SharedOff)
+		return
 	}
 	c := f.Daemon()
 	if c == nil {

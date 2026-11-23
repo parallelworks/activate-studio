@@ -207,7 +207,7 @@ func ViewerKey(r *http.Request, p *platform.Platform) (string, error) {
 	if k := sessions.KeyFor(p, v); k != "" {
 		return k, nil
 	}
-	return "", platform.KbError(409, "No platform credential: add your ACTIVATE API key under Settings, Accounts.")
+	return "", platform.KbError(409, "No platform credential: sign in with ACTIVATE under Settings, Accounts.")
 }
 
 func (s *routes) fetch(r *http.Request, path string, out any) error { return fetch(r, s.p, path, out) }

@@ -171,7 +171,7 @@ func (e *Endpoint) Start() Status {
 	args = append(args, "--openai", "--name", name, "--subdomain", name, "-o", "text", "--")
 	args = append(args, e.Self...)
 	cmd := exec.Command(cli, args...)
-	cmd.Env = e.p.Environ(map[string]string{"STUDIO_TARGET_PORT": strconv.Itoa(e.port), "STUDIO_INJECT_KEY": key})
+	cmd.Env = e.p.EnvironAsDeployment(map[string]string{"STUDIO_TARGET_PORT": strconv.Itoa(e.port), "STUDIO_INJECT_KEY": key})
 	t := &tail{e: e, cmd: cmd}
 	cmd.Stdout, cmd.Stderr = t, t
 	e.mu.Lock()

@@ -3442,7 +3442,6 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .pwcode-context-chip { font: 12px/1.6 var(--pw-font-mono, ui-monospace, monospace); color: var(--pw-text-muted, inherit); border: 1px solid var(--pw-border, currentColor); border-radius: 999px; padding: 0 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pwcode-saving, .pwcode-reconnecting { font-size: 12px; }
 .pwcode-reconnecting { padding: 4px 2px; }
-.pwcode-session .chat-thread { padding-top: 44px; }
 /* The session views (a pw code chat's, the Code page's) are the package's
    as PW Code on the web shows them. The Studio's restyles of the package's
    chat markup (its tool rows, code blocks, tables, bubbles and menus) are

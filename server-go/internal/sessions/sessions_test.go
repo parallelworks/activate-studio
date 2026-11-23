@@ -36,9 +36,13 @@ type fixture struct {
 	studio   *httptest.Server
 	routes   *Routes
 	cliLog   string
+	p        *platform.Platform
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T) *fixture { return newFixtureWith(t, false) }
+
+// newFixtureWith is newFixture on a Studio several people use when auth.
+func newFixtureWith(t *testing.T, auth bool) *fixture {
 	t.Helper()
 	ResetCache()
 	f := &fixture{t: t, runs: map[string]any{}}
@@ -78,7 +82,9 @@ func newFixture(t *testing.T) *fixture {
 		"PW_CLI":             cli,
 		"PW_CREDENTIALS_DIR": filepath.Join(dir, "creds"),
 	}
-	p := platform.New(platform.Options{IndexBase: t.TempDir(), Home: t.TempDir(), LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }})
+	p := platform.New(platform.Options{IndexBase: t.TempDir(), Home: t.TempDir(), LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
+		AuthEnabled: func() bool { return auth }})
+	f.p = p
 	a := &app.App{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	mux := http.NewServeMux()
 	f.routes = Register(mux, a, p)

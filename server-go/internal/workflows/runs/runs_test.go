@@ -30,7 +30,7 @@ func registry(t *testing.T, ix string) (*Registry, func() []note) {
 	var notes []note
 	r.Note = func(id, c string) { mu.Lock(); notes = append(notes, note{id, c}); mu.Unlock() }
 	r.Log = func(string) {}
-	r.SessionKey = func(*string) string { return "k" }
+	r.SessionKey = func(*Record) string { return "k" }
 	r.Sessions = func(context.Context, string) ([]*sessions.SessionRow, error) {
 		return nil, errors.New("no network in tests")
 	}
@@ -65,7 +65,7 @@ func lines(t *testing.T, file string) []map[string]any {
 func TestRunFollowedToItsEndAndReported(t *testing.T) {
 	r, notes := registry(t, t.TempDir())
 	var views atomic.Int32
-	r.CLI = func(_ context.Context, args []string) (string, error) {
+	r.CLI = func(_ context.Context, args []string, _ string) (string, error) {
 		if strings.Join(args[:3], " ") != "workflows runs view" {
 			t.Error(args)
 		}
@@ -115,7 +115,7 @@ func TestUnfinishedRunsAreWatchedAgainFromTheFile(t *testing.T) {
 	r, _ := registry(t, ix)
 	var mu sync.Mutex
 	asked := map[string]bool{}
-	r.CLI = func(_ context.Context, args []string) (string, error) {
+	r.CLI = func(_ context.Context, args []string, _ string) (string, error) {
 		mu.Lock()
 		asked[args[3]] = true
 		mu.Unlock()
@@ -142,7 +142,7 @@ func TestUnfinishedRunsAreWatchedAgainFromTheFile(t *testing.T) {
 func TestARunThePlatformKeepsFailingIsDropped(t *testing.T) {
 	r, _ := registry(t, t.TempDir())
 	var n atomic.Int32
-	r.CLI = func(context.Context, []string) (string, error) {
+	r.CLI = func(context.Context, []string, string) (string, error) {
 		n.Add(1)
 		return "", errors.New("Workflow run not found")
 	}
@@ -173,7 +173,7 @@ func TestAnotherProcessesLaunchIsRead(t *testing.T) {
 
 func TestSessionShownOnceInItsConversation(t *testing.T) {
 	r, notes := registry(t, t.TempDir())
-	r.CLI = func(context.Context, []string) (string, error) { return `{"status":"running"}`, nil }
+	r.CLI = func(context.Context, []string, string) (string, error) { return `{"status":"running"}`, nil }
 	r.Sessions = func(context.Context, string) ([]*sessions.SessionRow, error) {
 		return []*sessions.SessionRow{{Name: "other", Status: "running"}, {Name: "jupyter-s-1", User: "me", Status: "running"}}, nil
 	}

@@ -72,6 +72,20 @@ func NewRoutes(a *app.App, p *platform.Platform) *Routes {
 	r := &Routes{a: a, p: p, Runs: runs.New(p), Schema: NewSchema(p)}
 	r.CLI = r.execCLI
 	if a != nil {
+		// A run is watched with its launcher's own key (runs.SessionKey).
+		r.Runs.PersonalKey = func(id string) string {
+			if f := a.Providers.SignInKey; f != nil {
+				if k := f(id); k != "" {
+					return k
+				}
+			}
+			if f := a.Providers.PersonalCred; f != nil {
+				if k, base, ok := f(id, ""); ok && base == "" {
+					return k
+				}
+			}
+			return ""
+		}
 		// Read at each note: the chat track sets the provider after this
 		// track registers.
 		r.Runs.Note = func(id, content string) {
@@ -563,7 +577,7 @@ func (r *Routes) definitionOf(ctx context.Context, e *Entry, key string) (*Defin
 
 /* ---- the routes ---- */
 
-const noCredential = "No platform credential: add your ACTIVATE API key under Settings, Accounts."
+const noCredential = "No platform credential: sign in with ACTIVATE under Settings, Accounts."
 
 type viewerKey struct {
 	key      string
@@ -1180,7 +1194,12 @@ func (r *Routes) run(w http.ResponseWriter, req *http.Request) (any, error) {
 		if u, ok := v.username.(string); ok {
 			owner = &u
 		}
-		r.Runs.RecordRun(runs.RecordInput{Slug: s, Workflow: e.Entry, Owner: owner})
+		var ownerID *string
+		if v.userID != "" {
+			id := v.userID
+			ownerID = &id
+		}
+		r.Runs.RecordRun(runs.RecordInput{Slug: s, Workflow: e.Entry, Owner: owner, OwnerID: ownerID})
 		return jsonv.NewObject("ok", true, "dryRun", false, "slug", s, "message", "Run "+s+" submitted."), nil
 	}
 	return jsonv.NewObject("ok", true, "dryRun", false, "slug", nil, "message", sliceJS(jsTrim(out), 2000)), nil

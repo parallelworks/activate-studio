@@ -145,10 +145,10 @@ func TestNoCredentialIsASentence(t *testing.T) {
 	m, srv, _, _ := newTestModule(t, map[string]string{"PW_API_KEY": ""})
 	m.setAccess(&Access{GatewayBase: "http://127.0.0.1:9/v1"})
 	sse := post(t, srv.URL, map[string]any{"model": "m", "messages": []any{}})
-	if !strings.Contains(sse, "event: error\ndata: {\"message\":\"No gateway credential (set PW_API_KEY") {
+	if !strings.Contains(sse, "event: error\ndata: {\"message\":\"No model credential. Sign in with ACTIVATE, or add an OpenAI-compatible endpoint, under Settings, Accounts.\",\"kind\":\"credential\"}") {
 		t.Errorf("%q", sse)
 	}
-	if out := get(t, srv.URL+"/api/chat/models"); !strings.HasPrefix(out["error"].(string), "no gateway credential") {
+	if out := get(t, srv.URL+"/api/chat/models"); !strings.HasPrefix(out["error"].(string), "No model credential.") {
 		t.Errorf("models: %v", out)
 	}
 }

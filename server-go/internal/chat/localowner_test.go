@@ -25,11 +25,9 @@ func localOwners(t *testing.T) (*Module, *http.Request, func() []string) {
 	var touched []string
 	sock := pwcodetest.Socket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		if !(r.URL.Path == "/v1/sessions" && r.Method == "GET") && r.URL.Path != "/v1/status" {
-			mu.Lock()
-			touched = append(touched, r.Method+" "+r.URL.Path)
-			mu.Unlock()
-		}
+		mu.Lock()
+		touched = append(touched, r.Method+" "+r.URL.Path)
+		mu.Unlock()
 		switch {
 		case r.URL.Path == "/v1/status":
 			io.WriteString(w, `{"protocolVersion":2,"hostname":"here"}`)
@@ -54,49 +52,26 @@ func localOwners(t *testing.T) (*Module, *http.Request, func() []string) {
 	return m, r, func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), touched...) }
 }
 
-// Review 2, R4: each of the chat's agent tools keeps to the person's own
-// sessions on this host: another's is not listed, read, steered, given a
-// goal, answered or stopped, and nothing is started here directly.
-func TestTheChatsAgentToolsKeepToTheirOwnersSessions(t *testing.T) {
+// With sign-in on, the chat's agent tools offer no session on this host,
+// even with AGENT_LOCAL_SITE=1: its daemon runs as the Studio's account.
+// Nothing is listed, read, steered, given a goal, answered, stopped or
+// started there, by anyone, and nothing reaches the daemon.
+func TestWithSignInOnTheChatsAgentToolsHaveNoLocalSite(t *testing.T) {
 	m, bob, touched := localOwners(t)
-	out, err := goExecutors["agent_sessions"](m, bob, map[string]any{"site": "local"}, ToolCtx{})
-	if err != nil || strings.Contains(out.Result, "adaada") {
-		t.Fatalf("bob lists ada's: %v %+v", err, out)
+	ada := auth.WithUser(httptest.NewRequest("POST", "/api/chat", nil), &auth.User{ID: "ada"})
+	if m.localAgents() {
+		t.Fatal("the local site is offered")
 	}
-	for _, name := range []string{"agent_status", "agent_steer", "agent_goal", "agent_approve", "agent_stop"} {
-		args := map[string]any{"site": "local", "session": adaSession, "text": "read her notes", "action": "clear", "approval": "ap1", "allow": true}
-		if out, err := goExecutors[name](m, bob, args, ToolCtx{}); err == nil {
-			t.Errorf("%s on ada's session: %+v", name, out)
-		} else if !strings.Contains(err.Error(), "not one of yours") {
-			t.Errorf("%s: %v", name, err)
+	for _, r := range []*http.Request{ada, bob} {
+		for _, name := range []string{"agent_sessions", "agent_status", "agent_steer", "agent_goal", "agent_approve", "agent_stop", "start_agent"} {
+			args := map[string]any{"site": "local", "session": adaSession, "text": "read her notes", "action": "clear", "approval": "ap1", "allow": true, "objective": "x"}
+			out, err := goExecutors[name](m, r, args, ToolCtx{})
+			if err == nil && strings.Contains(out.Result, "adaada") {
+				t.Errorf("%s: %+v", name, out)
+			}
 		}
 	}
-	if out, err := goExecutors["start_agent"](m, bob, map[string]any{"site": "local", "objective": "x"}, ToolCtx{}); err == nil || !strings.Contains(err.Error(), "delegating") {
-		t.Errorf("a direct start here: %v %+v", err, out)
-	}
 	if got := touched(); len(got) != 0 {
-		t.Fatalf("bob's calls reached the daemon: %v", got)
-	}
-}
-
-// Review 2, R1: a session given by name is looked up among the person's
-// own on this host: another's is neither listed back nor matched, so its
-// name and state stay theirs.
-func TestASessionByNameIsLookedUpAmongTheirOwn(t *testing.T) {
-	m, bob, touched := localOwners(t)
-	out, err := goExecutors["agent_status"](m, bob, map[string]any{"site": "local", "session": "report"}, ToolCtx{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(out.Result, "adaada") || strings.Contains(out.Result, "weekly report") || strings.Contains(out.Result, "cycycy") || !strings.Contains(out.Result, "No session on that site matches") {
-		t.Fatalf("bob by name: %s", out.Result)
-	}
-	if got := touched(); len(got) != 0 {
-		t.Fatalf("bob's call reached the daemon: %v", got)
-	}
-	ada := auth.WithUser(httptest.NewRequest("POST", "/api/chat", nil), &auth.User{ID: "ada"})
-	out, err = goExecutors["agent_status"](m, ada, map[string]any{"site": "local", "session": "report"}, ToolCtx{})
-	if err != nil || strings.Contains(out.Result, "More than one") {
-		t.Fatalf("ada by name: %v %+v", err, out)
+		t.Fatalf("calls reached the daemon: %v", got)
 	}
 }

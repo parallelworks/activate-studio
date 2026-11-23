@@ -1,6 +1,8 @@
 package extract
 
 import (
+	"github.com/parallelworks/activate-studio/server-go/internal/pwstop"
+
 	"bufio"
 	"bytes"
 	"context"
@@ -46,8 +48,12 @@ func VisionFromEnv() Vision {
 	return Vision{Model: os.Getenv("ADE_VISION_MODEL"), Key: GatewayKey(), BaseURL: os.Getenv("PW_GATEWAY_URL")}
 }
 
-// GatewayKey is enrich.py's gateway_key().
+// GatewayKey is enrich.py's gateway_key(); "" after Stop using the pw CLI
+// (pwstop).
 func GatewayKey() string {
+	if pwstop.In("") {
+		return ""
+	}
 	if k := os.Getenv("PW_API_KEY"); k != "" {
 		return k
 	}

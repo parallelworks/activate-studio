@@ -290,10 +290,10 @@ func TestTheCodePageRefusesOtherSites(t *testing.T) {
 	}
 }
 
-// On a shared Studio whose pw code runs on this computer, every session
-// there runs as the Studio's account: a person lists and changes only the
-// sessions the Studio started for them, and starts none from the Code page.
-func TestOnThisComputerAPersonManagesOnlyTheirOwn(t *testing.T) {
+// On a shared Studio, pw code on this computer runs as the Studio's
+// account, so the Code page offers none of its sessions, even with
+// AGENT_LOCAL_SITE=1: nobody lists, changes or starts one there.
+func TestOnASharedStudioThisComputerIsNotOffered(t *testing.T) {
 	const mine, theirs = "20261123-120000-aaaaaa", "20261123-120000-bbbbbb"
 	got := &asked{}
 	sock := pwcodetest.Socket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -323,40 +323,22 @@ func TestOnThisComputerAPersonManagesOnlyTheirOwn(t *testing.T) {
 	base := signedInServer(t, map[string]string{"PW_CODE_SOCKET": sock, "AGENT_LOCAL_SITE": "1"}, true, func() *platform.Viewer { return v }, own).URL + pagePrefix
 	v = &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id", Username: "alex"}}
 
-	code, out := send(t, "GET", base+"/sessions", "", nil)
-	if code != 200 {
+	if code, out := send(t, "GET", base+"/sessions", "", nil); code == 200 && len(out["sessions"].([]any)) != 0 {
 		t.Fatalf("listing: %d %v", code, out)
 	}
-	ss, ms := out["sessions"].([]any), out["machines"].([]any)
-	if len(ss) != 1 || ss[0].(map[string]any)["id"] != mine || ss[0].(map[string]any)["machineId"] != "mach1" {
-		t.Fatalf("alex sees %v", ss)
-	}
-	if len(ms) != 1 || ms[0].(map[string]any)["kind"] != "local" || ms[0].(map[string]any)["remoteStart"] != false {
-		t.Fatalf("machines %v", ms)
-	}
-	if code, _ := send(t, "POST", base+"/machines/mach1/sessions/"+theirs+"/archive", "", nil); code != 404 {
-		t.Fatalf("someone else's session archived: %d", code)
-	}
-	if code, _ := send(t, "DELETE", base+"/machines/mach1/sessions/"+theirs, "", nil); code != 404 {
-		t.Fatalf("someone else's session deleted: %d", code)
-	}
-	if code, _ := send(t, "POST", base+"/machines/mach1/sessions", `{"workspace":"/w","permissionMode":"read-only"}`, nil); code != 403 {
-		t.Fatalf("started a session as the Studio's account: %d", code)
-	}
-	if code, _ := send(t, "POST", base+"/machines/mach1/sessions/"+mine+"/fork", "", nil); code != 403 {
-		t.Fatalf("forked: %d", code)
+	for _, x := range [][3]string{
+		{"POST", "/machines/mach1/sessions/" + theirs + "/archive", ""},
+		{"DELETE", "/machines/mach1/sessions/" + theirs, ""},
+		{"POST", "/machines/mach1/sessions", `{"workspace":"/w","permissionMode":"read-only"}`},
+		{"POST", "/machines/mach1/sessions/" + mine + "/fork", ""},
+		{"POST", "/machines/mach1/sessions/" + mine + "/rename", `{"name":"pumps"}`},
+	} {
+		if code, _ := send(t, x[0], base+x[1], x[2], nil); code < 400 {
+			t.Errorf("%s %s: %d", x[0], x[1], code)
+		}
 	}
 	if got.n() != 0 {
 		t.Fatalf("sent %v", got.reqs)
-	}
-	if code, _ := send(t, "POST", base+"/machines/mach1/sessions/"+mine+"/rename", `{"name":"pumps"}`, nil); code != 200 {
-		t.Fatalf("their own: %d", code)
-	}
-	if sent, body := got.last(); sent != "POST /v1/sessions/"+mine+"/rename" || body["name"] != "pumps" {
-		t.Fatalf("sent %q %v", sent, body)
-	}
-	if code, _ := send(t, "POST", base+"/machines/other/sessions/"+mine+"/rename", `{"name":"x"}`, nil); code != 404 {
-		t.Fatalf("another machine: %d", code)
 	}
 }
 

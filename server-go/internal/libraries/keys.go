@@ -1,6 +1,8 @@
 package libraries
 
 import (
+	"github.com/parallelworks/activate-studio/server-go/internal/pwstop"
+
 	"encoding/json"
 	"net/url"
 	"os"
@@ -26,13 +28,16 @@ type Keys interface {
 type DeploymentKeys struct {
 	Getenv      func(string) string
 	AuthEnabled bool
+	// IndexBase is where Stop using the pw CLI is kept (pwstop); ""
+	// is INDEX_BASE's.
+	IndexBase string
 }
 
 // KeyOf is keyOf without personal keys.
 func (k DeploymentKeys) KeyOf(owner string) string {
 	// Only the one user of a Studio without sign-in ("single") acts with
 	// the deployment's key; a signed-in owner needs their own.
-	if k.AuthEnabled || owner != "single" {
+	if k.AuthEnabled || owner != "single" || pwstop.In(k.IndexBase) {
 		return ""
 	}
 	get := k.Getenv
