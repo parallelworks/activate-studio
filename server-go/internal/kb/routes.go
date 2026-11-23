@@ -1366,7 +1366,11 @@ func (m *Module) job(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 	n := jsNumberOr(id, -1)
 	if n >= JobIDBase {
-		if j := m.Jobs.Get(int(n)); j != nil {
+		viewer := ""
+		if JobOwner != nil {
+			viewer = JobOwner(r)
+		}
+		if j := m.Jobs.GetFor(int(n), viewer); j != nil {
 			writeJSON(w, 200, j)
 			return nil
 		}

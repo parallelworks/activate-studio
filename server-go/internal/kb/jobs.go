@@ -2,6 +2,7 @@ package kb
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -27,7 +28,14 @@ type Job struct {
 	StartedAt  string
 	FinishedAt *string
 	MS         *int64
+	// Owner is the person whose space the job works in, "" for a job any
+	// viewer may read (JobOwner).
+	Owner string
 }
+
+// JobOwner is who a request is from, for a job in a person's space; set
+// by the libraries track, nil when the Studio has no one signed in.
+var JobOwner func(r *http.Request) string
 
 func (j *Job) obj() *Obj {
 	return O("id", j.ID, "kind", j.Kind, "phase", j.Phase, "state", j.State, "done", j.Done, "total", j.Total,
@@ -78,12 +86,17 @@ func (h *JobHandle) Phase(phase, current string) {
 // run goes on in the background. The returned object is the job as it is
 // when the route answers.
 func (j *Jobs) Start(ctx context.Context, kind string, total int, first func(h *JobHandle), run func(ctx context.Context, h *JobHandle) (any, error)) *Obj {
+	return j.StartFor("", ctx, kind, total, first, run)
+}
+
+// StartFor is Start for a job only owner may read (GetFor).
+func (j *Jobs) StartFor(owner string, ctx context.Context, kind string, total int, first func(h *JobHandle), run func(ctx context.Context, h *JobHandle) (any, error)) *Obj {
 	j.mu.Lock()
 	if j.jobs == nil {
 		j.jobs = map[int]*Job{}
 	}
 	j.seq++
-	job := &Job{ID: JobIDBase + j.seq, Kind: kind, Phase: "starting", State: "running", Total: total, StartedAt: isoNow()}
+	job := &Job{ID: JobIDBase + j.seq, Kind: kind, Phase: "starting", State: "running", Total: total, StartedAt: isoNow(), Owner: owner}
 	j.jobs[job.ID] = job
 	j.ord = append(j.ord, job.ID)
 	// Finished jobs are kept only long enough to be read once or twice.
@@ -128,11 +141,15 @@ func (j *Jobs) snapshot(job *Job) *Obj {
 }
 
 // Get is getJob, nil when the id is not one of this server's.
-func (j *Jobs) Get(id int) *Obj {
+func (j *Jobs) Get(id int) *Obj { return j.GetFor(id, "") }
+
+// GetFor is a job viewer may read: nil when there is no such job, or it
+// works in another person's space.
+func (j *Jobs) GetFor(id int, viewer string) *Obj {
 	j.mu.Lock()
 	job := j.jobs[id]
 	j.mu.Unlock()
-	if job == nil {
+	if job == nil || (job.Owner != "" && job.Owner != viewer) {
 		return nil
 	}
 	return j.snapshot(job)
