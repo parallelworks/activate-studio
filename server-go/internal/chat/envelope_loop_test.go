@@ -298,3 +298,51 @@ func TestBrokenEnvelope(t *testing.T) {
 		t.Errorf("an envelope the reply opens with: %+v %v", b, ok)
 	}
 }
+
+// A short turn that says what it will do, after lookups, with no request
+// (F) is asked once for the request, with its tools: the file is written,
+// not left to a final answer that cannot write it.
+func TestAnnouncedActionIsAskedForOnce(t *testing.T) {
+	e, base, gw := emuModule(t)
+	gw.load([]reply{
+		said(func(n string) string {
+			return `{"protocol":"studio-tools-1","nonce":"` + n + `","calls":[{"name":"search_kb","arguments":{"query":"items"}}]}`
+		}, "stop"),
+		said(func(string) string { return "I'll write the spreadsheet now." }, "stop"),
+		said(func(n string) string { return writeEnvelope(n, sheetRows(3)) }, "stop"),
+		said(func(string) string { return "The sheet is written with 3 rows. " + strings.Repeat("Done. ", 40) }, "stop"),
+	})
+	sse := ask(t, base)
+	if countWrites(e) != 1 || !strings.Contains(answerOf(sse), "The sheet is written") {
+		t.Fatalf("ran %q; %d requests; answer %.300s", e.runs(), len(gw.requests), answerOf(sse))
+	}
+	if strings.Contains(requestOf(gw, 2), "No further tool calls are available") || !strings.Contains(requestOf(gw, 2), "made no lookup request") {
+		t.Errorf("the third request was not the nudge: %.300s", requestOf(gw, 2))
+	}
+}
+
+// The Studio's own search before the first turn (G) is said as the
+// Studio's, not as a search of the model's, and is not run when the user
+// asked for no search.
+func TestPresearchIsTheStudios(t *testing.T) {
+	e, base, gw := emuModule(t)
+	gw.load([]reply{said(func(string) string { return "An answer. " + strings.Repeat("More. ", 40) }, "stop")})
+	sse := ask(t, base)
+	if !strings.Contains(sse, "Studio searched your libraries first") || strings.Contains(sse, `"name":"search_kb"`) {
+		t.Errorf("stream %.400s", sse)
+	}
+	if !strings.Contains(requestOf(gw, 0), "you did not ask for this search") {
+		t.Errorf("the prompt does not say whose search it was")
+	}
+	if n := len(e.runs()); n != 1 {
+		t.Fatalf("ran %q", e.runs())
+	}
+
+	e, base, gw = emuModule(t)
+	gw.load([]reply{said(func(string) string { return "An answer. " + strings.Repeat("More. ", 40) }, "stop")})
+	sse = post(t, base, map[string]any{"model": "genai-pro", "conversationId": "c-env2", "userMessageId": "u1",
+		"messages": []any{map[string]any{"role": "user", "content": "Make the items spreadsheet. Do not search first."}}})
+	if len(e.runs()) != 0 || strings.Contains(sse, "Studio searched") {
+		t.Errorf("searched anyway: %q", e.runs())
+	}
+}
