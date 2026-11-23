@@ -5,6 +5,7 @@ import {
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
 import { EffortPicker } from '../components/EffortPicker'
+import { NewChatModelSlot } from '../pwcode/NewChatModel'
 import { MentionPalette } from '../components/MentionPalette'
 import { MentionLinks } from '../components/MentionLinks'
 import { breakable } from '../components/breakable'
@@ -559,7 +560,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         // and fold with the other finished calls.
         // A pw code session's running Bash step offers moving it to the
         // background (Ctrl+B); the hint draws nothing in other chats.
-        slots: { composerUsage: <EffortPicker conversationId={activeId} />, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolFooters: PWCODE_TOOL_FOOTERS, toolPresentation: gufiToolPresentation },
+        slots: { composerUsage: <><NewChatModelSlot conversationId={activeId} hasSession={!!pw.link?.session} /><EffortPicker conversationId={activeId} /></>, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolFooters: PWCODE_TOOL_FOOTERS, toolPresentation: gufiToolPresentation },
         strings: {
           thinking: {
             thoughtFor: (duration: string) => `Worked for ${duration}`,

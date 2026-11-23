@@ -92,6 +92,11 @@ type streamBody struct {
 	// Engine is the composer's choice of what answers: "pwcode",
 	// "studio", or empty for the deployment's (pwcodechat.go).
 	Engine *string `json:"engine"`
+	// PWCodeModel and PWCodeAllocation are the model a new pw code chat's
+	// composer chose before its first message, and the allocation that
+	// bills it: its session is made with them.
+	PWCodeModel      *string `json:"pwcodeModel"`
+	PWCodeAllocation *string `json:"pwcodeAllocation"`
 }
 
 func sp(s string) *string { return &s }

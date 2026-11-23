@@ -64,6 +64,16 @@ export { describeError }
  * it: what answers the chat, and its notes.
  */
 export function PWCodeSession(props: PWCodeSessionProps) {
+  return (
+    <PwCodeWords loading={<div className="pwcode-session pwcode-session-loading" aria-busy="true" />}>
+      <SessionPane {...props} />
+    </PwCodeWords>
+  )
+}
+
+/** pw code's words around its parts (@parallelworks/code reads them from
+ *  use-intl), and `loading` until they are loaded. */
+export function PwCodeWords({ children, loading = null }: { children: ReactNode; loading?: ReactNode }) {
   const [messages, setMessages] = useState<PwCodeMessages | null>(loadedMessages)
   useEffect(() => {
     if (messages) return
@@ -71,10 +81,10 @@ export function PWCodeSession(props: PWCodeSessionProps) {
     void loadMessages().then(m => { if (!gone) setMessages(m) }, () => {})
     return () => { gone = true }
   }, [messages])
-  if (!messages) return <div className="pwcode-session pwcode-session-loading" aria-busy="true" />
+  if (!messages) return <>{loading}</>
   return (
     <IntlProvider locale="en" messages={messages} timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}>
-      <SessionPane {...props} />
+      {children}
     </IntlProvider>
   )
 }

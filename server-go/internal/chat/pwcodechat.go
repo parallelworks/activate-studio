@@ -161,8 +161,13 @@ type pwTarget struct {
 	// chatModel is the model chosen under the message box, which a
 	// session moves to when its own is not offered (pwcodemodel.go);
 	// modelMoved says the session moved for this message.
-	chatModel  string
-	modelMoved bool
+	chatModel string
+	// picked is the pw code model (and the allocation that bills it, nil
+	// for none given) the person chose in a new pw code chat before its
+	// first message, which its session is made with.
+	picked      string
+	pickedAlloc *string
+	modelMoved  bool
 	// modelStuck says the session should have moved and could not.
 	modelStuck bool
 	// relay: the session is on another machine, reached through the
@@ -454,6 +459,14 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 		if e.PWCodeModel != "" {
 			req.Set("model", e.PWCodeModel)
 		}
+		// The model the person chose before the first message wins over
+		// the Studio's, with the allocation that bills it.
+		if t.picked != "" {
+			req.Set("model", t.picked)
+			if t.pickedAlloc != nil {
+				req.Set("allocation", *t.pickedAlloc)
+			}
+		}
 		s, err := pwcode.CreateSession(ctx, t.client, req)
 		if err != nil {
 			return nil, false, err
@@ -583,6 +596,11 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		return fail(err)
 	}
 	t.chatModel = StripAvailabilityMark(jsString(body.Model))
+	// A pick is for the session a first message makes: one the chat has
+	// already keeps its own model.
+	if prior == nil || prior.Session == "" {
+		t.picked, t.pickedAlloc = strings.TrimSpace(deref(body.PWCodeModel)), body.PWCodeAllocation
+	}
 	if old := c.PWCode; old != nil && prior == nil && !old.Continued && old.Session != "" && old.Site == t.site {
 		_, _ = pwcode.ArchiveSession(ctx, t.client, old.Session)
 	}
@@ -908,7 +926,10 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 				def = engineStudio
 			}
 		}
-		return reqbody.OK(w, reqbody.O("setting", setting, "default", def, "pwcode", why == "", "reason", reason, "toolsDown", tools))
+		// model is the one Settings names for pw code, which a new chat's
+		// session runs on unless the person picks another first ("" for
+		// pw code's own).
+		return reqbody.OK(w, reqbody.O("setting", setting, "default", def, "pwcode", why == "", "reason", reason, "toolsDown", tools, "model", m.eff().PWCodeModel))
 	})
 	// The conversation's pw code session as it is now: whether a turn is
 	// running, what it waits to be approved, and where it shows on the web,

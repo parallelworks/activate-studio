@@ -156,3 +156,42 @@ func TestAnAgentSessionStartsOnAModelTheConnectionOffers(t *testing.T) {
 		t.Fatalf("the chat's tools run without its model: %q", deref(tc.Model))
 	}
 }
+
+// A new pw code chat's composer offers pw code's models before the first
+// message: the model picked there, with the allocation that bills it, is
+// the one the session is made with, over the Studio's own (Settings), and
+// the Studio does not move it to another.
+func TestANewPWCodeChatStartsOnTheModelPickedBeforeItsFirstMessage(t *testing.T) {
+	first := func(t *testing.T, env map[string]string, pick map[string]any) (*fakePW, *conversations.PWCodeLink) {
+		t.Helper()
+		f := &fakePW{script: helloTurn, model: "acct:anthropic/claude-x"}
+		m, base, gw := pwModuleGW(t, f, env)
+		gw.models = `{"data":[{"id":"acct:codex/gpt-a","object":"model"}]}`
+		c := m.Conv.Create(nil, "")
+		body := map[string]any{"conversationId": c.ID, "userMessageId": "u1", "model": "acct:codex/gpt-a",
+			"messages": []any{map[string]any{"role": "user", "content": "Hi"}}}
+		for k, v := range pick {
+			body[k] = v
+		}
+		post(t, base, body)
+		if len(f.created) != 1 {
+			t.Fatalf("created %d sessions", len(f.created))
+		}
+		return f, m.Conv.Get(c.ID).PWCode
+	}
+	// A platform model the connection does not offer, picked by the
+	// person: the session is made with it and the allocation that bills
+	// it, and the Studio does not move it to one it offers.
+	f, l := first(t, nil, map[string]any{"pwcodeModel": "acct:anthropic/claude-x", "pwcodeAllocation": "alloc-1"})
+	if f.created[0]["model"] != "acct:anthropic/claude-x" || f.created[0]["allocation"] != "alloc-1" || len(f.settings) != 0 || l.ModelNote != "" {
+		t.Errorf("picked: created %v %v, settings %q, note %q", f.created[0]["model"], f.created[0]["allocation"], f.settings, l.ModelNote)
+	}
+	// The pick wins over the model Settings names.
+	if f, _ := first(t, map[string]string{"PWCODE_MODEL": "claude-code/haiku"}, map[string]any{"pwcodeModel": "claude-code/sonnet"}); f.created[0]["model"] != "claude-code/sonnet" || f.created[0]["allocation"] != nil {
+		t.Errorf("over Settings: %v %v", f.created[0]["model"], f.created[0]["allocation"])
+	}
+	// Without a pick, the Studio's own, as before.
+	if f, _ := first(t, map[string]string{"PWCODE_MODEL": "claude-code/haiku"}, nil); f.created[0]["model"] != "claude-code/haiku" {
+		t.Errorf("no pick: %v", f.created[0]["model"])
+	}
+}
