@@ -731,7 +731,7 @@ func (m *Module) appendKBFile(r *http.Request, rel, abs, ext, content string) (*
 			return &Outcome{Result: "Could not add to " + rel + ": " + err.Error(), Summary: "error"}, nil
 		}
 		data = b
-		added = itoaInt(rows) + " rows; the workbook has " + itoaInt(sheets) + " sheets"
+		added = itoaInt(rows) + " rows; the workbook now holds: " + strings.Join(sheets, "; ")
 	} else {
 		data = append(old, content...)
 	}

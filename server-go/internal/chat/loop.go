@@ -405,7 +405,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			if st.lastUser != nil {
 				q = jsTrim(st.lastUser.Text())
 			}
-			if q != "" && jsval.Len(q) > 12 {
+			if q != "" && jsval.Len(q) > 12 && !noSearchRe.MatchString(q) {
 				seedStart := time.Now()
 				args, _ := jsonobj.Marshal(reqbody.O("query", jsval.Slice(q, 300)))
 				seeded, err := m.Tools.Execute(r, "search_kb", string(args), toolCtx())
@@ -414,15 +414,18 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 					callID := "seed-" + strconv.FormatInt(time.Now().UnixMilli(), 10)
 					zero := 0
 					push(llm.Message{Role: "assistant", Content: nil, ToolCalls: []llm.ToolCall{{Index: &zero, ID: callID, Type: "function", Function: llm.Function{Name: "search_kb", Arguments: string(args)}}}})
-					push(llm.Message{Role: "tool", ToolCallID: callID, Content: sp(seeded.Result)})
+					push(llm.Message{Role: "tool", ToolCallID: callID, Content: sp(presearchNote + seeded.Result)})
 					st.citedMu.Lock()
 					for _, f := range seeded.Files {
 						st.cited.Known[f.Path] = deref(f.Library)
 					}
 					st.citedMu.Unlock()
-					line := "\n↳ pre-searched the knowledge base\n"
+					// The Studio's own search, not one the model chose: said
+					// as a line of the reply's progress, not as a tool call
+					// of the model's.
+					line := "\n↳ Studio searched your libraries first, for the model to answer from\n"
 					*st.finalReasoning += line
-					res.event("tool", reqbody.O("phase", "result", "name", "search_kb", "summary", "pre-searched the knowledge base", "pretty", line))
+					res.event("reasoning", reqbody.O("text", line))
 				}
 			}
 		}
@@ -430,6 +433,9 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 
 	maxRounds := int(m.eff().MaxToolRounds)
 	hitLimit := true
+	// nudged: a short turn that said what it would do, with no request,
+	// was answered once with a note to make the request (emulated path).
+	nudged := false
 	for iter := 0; iter < maxRounds; iter++ {
 		*st.turnBreak = true
 		for _, s := range m.Conv.TakeSteers(st.convID) {
@@ -628,6 +634,18 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			continue
 		}
 		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && !withheld && !showsSomething.MatchString(turn.Content) && jsval.Len(jsTrim(turn.Content)) < 200) {
+			// A model on the text protocol that says "I'll write it now"
+			// and stops is asked once to make the request, with its tools,
+			// rather than forced to a final answer without them.
+			if foldSystem && !nudged && iter < maxRounds-1 && ctx.Err() == nil && (jsTrim(turn.Content) == "" || announcesRe.MatchString(turn.Content)) {
+				nudged = true
+				m.A.Log.Warn("short turn with no request; asking for the request", "iter", iter)
+				if c := jsTrim(turn.Content); c != "" {
+					push(llm.Message{Role: "assistant", Content: sp(c)})
+				}
+				push(llm.Message{Role: "system", Content: sp(nudgeNote)})
+				continue
+			}
 			m.A.Log.Warn("empty turn with no tool calls; forcing final answer", "iter", iter)
 			hitLimit = false
 			break
@@ -859,9 +877,25 @@ func askAgainNote(e brokenEnv, cut bool) string {
 	if e.path != "" {
 		what += " (" + e.path + ")"
 	}
-	parts := "Write a large file in parts: call write_kb_file with the first part, then again with append=true for each next part, each part under about 12,000 characters. A spreadsheet's part is rows as JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[...]}]}; a part's rows are added to the sheet of the same name."
+	parts := "Write a large file in parts: call write_kb_file with the first part, then again with append=true for each next part, each part under about 12,000 characters. A spreadsheet's part is rows as JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[...]}]}; a part's rows are added to the sheet of the same name, as values (not a formula that makes the rows). The file is not done until every part is in: each write's result says how many rows each sheet holds, so keep adding parts until it holds all that was asked for, and only then tell the user it is done, with the count the result gave."
 	if cut {
 		return what + " that was cut off at the output limit before it ended, so nothing ran. Send it again with less in each request. " + parts
 	}
 	return what + " that could not be read as JSON, so nothing ran. Send it again as one JSON object: inside a string value, such as a file's content, write every quote as \\\" and every line break as \\n. " + parts
 }
+
+// noSearchRe: the user asked for no search first ("do not search", "don't
+// search the library", "without searching"), so the Studio does not run its
+// own before the model's first turn.
+var noSearchRe = regexp.MustCompile(`(?i)\b(do not|don't|dont|no need to|without|never|no)\s+(search|searching|look\s+up|lookups?)\b`)
+
+// presearchNote heads the Studio's own search's results in the prompt, so
+// the model knows it did not ask for that search.
+const presearchNote = "The Studio searched the libraries for the user's message before your first turn (you did not ask for this search; say so if the user asks):\n"
+
+// announcesRe: a short reply that says what it is about to do rather than
+// doing it ("I'll write the file now", "Let me create it").
+var announcesRe = regexp.MustCompile(`(?i)\b(i'll|i’ll|i will|let me|i am going to|i'm going to|i’m going to|going to|next,? i|now (writing|creating|saving|making)|writing (it|the|that)|creating (it|the|that))\b`)
+
+// nudgeNote answers such a reply once on the emulated path.
+const nudgeNote = "Your last reply said what you would do but made no lookup request, so nothing ran. If the user's request needs a lookup (write_kb_file to save a file, say), reply now with the JSON request and nothing else; otherwise give your final answer."

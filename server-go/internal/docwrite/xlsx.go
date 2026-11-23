@@ -217,12 +217,22 @@ func cellValue(v any) any {
 	return fmt.Sprint(v)
 }
 
-func renderXLSX(content string) ([]byte, int, error) {
+func renderXLSX(content string) ([]byte, []string, error) {
 	sheets, err := Sheets(content)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	return workbook(sheets)
+}
+
+// held says what a sheet holds, for the model to check against what was
+// asked: "Sales, 49 rows after the header".
+func held(name string, rows int) string {
+	if rows <= 0 {
+		return name + ", empty"
+	}
+	n := rows - 1
+	return fmt.Sprintf("%s, %d row%s after the header", name, n, plural(n))
 }
 
 // AppendXLSX adds the rows of content (in any form Sheets reads) to the
@@ -232,14 +242,14 @@ func renderXLSX(content string) ([]byte, int, error) {
 // again; a part naming a new sheet adds that sheet. The workbook is made
 // again from its rows, so its header, widths and filter cover them all.
 // rows is how many rows were added.
-func AppendXLSX(existing []byte, content string) (data []byte, sheets, rows int, err error) {
+func AppendXLSX(existing []byte, content string) (data []byte, sheets []string, rows int, err error) {
 	parts, err := Sheets(content)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, nil, 0, err
 	}
 	have, err := readSheets(existing)
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("reading the workbook to add to: %v", err)
+		return nil, nil, 0, fmt.Errorf("reading the workbook to add to: %v", err)
 	}
 	for _, p := range parts {
 		i := -1
@@ -263,8 +273,8 @@ func AppendXLSX(existing []byte, content string) (data []byte, sheets, rows int,
 		have[i].Rows = append(have[i].Rows, add...)
 		rows += len(add)
 	}
-	data, n, err := workbook(have)
-	return data, n, rows, err
+	data, sheets, err = workbook(have)
+	return data, sheets, rows, err
 }
 
 // readSheets is a workbook's sheets as rows: values as their text (typed
@@ -312,7 +322,9 @@ func sameRow(a, b []any) bool {
 }
 
 // workbook writes sheets as an .xlsx: the first row of each the header.
-func workbook(sheets []Sheet) ([]byte, int, error) {
+// held is what each sheet holds, by its name in the workbook.
+func workbook(sheets []Sheet) ([]byte, []string, error) {
+	var says []string
 	f := excelize.NewFile()
 	defer f.Close()
 	used := map[string]bool{}
@@ -335,12 +347,13 @@ func workbook(sheets []Sheet) ([]byte, int, error) {
 			name = string([]rune(base)[:min(len([]rune(base)), 31-len(suffix))]) + suffix
 		}
 		used[strings.ToLower(name)] = true
+		says = append(says, held(name, len(s.Rows)))
 		if i == 0 {
 			if err := f.SetSheetName("Sheet1", name); err != nil {
-				return nil, 0, err
+				return nil, nil, err
 			}
 		} else if _, err := f.NewSheet(name); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		cols := 0
 		widths := map[int]int{}
@@ -350,14 +363,14 @@ func workbook(sheets []Sheet) ([]byte, int, error) {
 				cell, _ := excelize.CoordinatesToCellName(c+1, r+1)
 				if str, ok := v.(string); ok && strings.HasPrefix(str, "=") && len(str) > 1 {
 					if err := f.SetCellFormula(name, cell, str[1:]); err != nil {
-						return nil, 0, err
+						return nil, nil, err
 					}
 					widths[c] = max(widths[c], 10)
 					continue
 				}
 				val := cellValue(v)
 				if err := f.SetCellValue(name, cell, val); err != nil {
-					return nil, 0, err
+					return nil, nil, err
 				}
 				widths[c] = max(widths[c], utf8.RuneCountInString(fmt.Sprint(val)))
 			}
@@ -380,7 +393,7 @@ func workbook(sheets []Sheet) ([]byte, int, error) {
 	}
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	return buf.Bytes(), len(sheets), nil
+	return buf.Bytes(), says, nil
 }
