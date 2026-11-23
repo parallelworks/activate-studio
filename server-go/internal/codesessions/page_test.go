@@ -300,7 +300,7 @@ func TestOnThisComputerAPersonManagesOnlyTheirOwn(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/status":
-			json.NewEncoder(w).Encode(map[string]any{"protocolVersion": pwcode.ProtocolVersion, "machineId": "mach1", "hostname": "box.example"})
+			json.NewEncoder(w).Encode(map[string]any{"protocolVersion": pwcode.ProtocolVersion, "machineId": "mach1", "hostname": "box.example", "permissionModes": []string{"read-only", "auto"}})
 		case "/v1/sessions":
 			if r.Method == http.MethodGet {
 				json.NewEncoder(w).Encode([]any{map[string]any{"id": mine, "name": "my summary"}, map[string]any{"id": theirs, "name": "sam's agent"}})
@@ -333,6 +333,10 @@ func TestOnThisComputerAPersonManagesOnlyTheirOwn(t *testing.T) {
 	}
 	if len(ms) != 1 || ms[0].(map[string]any)["kind"] != "local" || ms[0].(map[string]any)["remoteStart"] != false {
 		t.Fatalf("machines %v", ms)
+	}
+	// The new session form offers the modes the daemon accepts, auto among them.
+	if modes, _ := ms[0].(map[string]any)["permissionModes"].([]any); len(modes) != 2 || modes[1] != "auto" {
+		t.Fatalf("this computer's permission modes: %v", ms[0])
 	}
 	if code, _ := send(t, "POST", base+"/machines/mach1/sessions/"+theirs+"/archive", "", nil); code != 404 {
 		t.Fatalf("someone else's session archived: %d", code)

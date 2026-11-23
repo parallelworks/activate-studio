@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher, shortModel } from '../src/components/PWCodeEngine'
 import { getEngine } from '../src/labelScope'
+import { announceModel } from '../src/pwcode/liveModel'
 
 const chat = vi.hoisted(() => ({ loadConversation: vi.fn(async () => {}) }))
 vi.mock('@parallelworks/ui/ai', () => ({
@@ -204,6 +205,22 @@ describe("The model pw code answers with", () => {
     act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: 'c1', session: 's2', model: 'acct:codex/gpt-b', modelNote: '' } })) })
     await waitFor(() => expect(screen.queryByText(new RegExp(note.replace(/[.()]/g, '\\$&')))).toBeNull())
     canvas.remove()
+  })
+  it('follows the model the session runs on now, picked after the chat was linked', async () => {
+    serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null }, { pwcode: { session: 's1', model: 'claude-code/haiku' } })
+    // The session view said its model before the button mounted.
+    announceModel('c7', 'claude-code/haiku')
+    const { unmount } = render(<PWCodeEngine conversationId="c7" />)
+    expect(await screen.findByRole('button', { name: 'pw code · haiku' })).toBeInTheDocument()
+    act(() => announceModel('c7', 'claude-code/sonnet'))
+    expect(await screen.findByRole('button', { name: 'pw code · sonnet' })).toBeInTheDocument()
+    // Another chat's session changing model leaves this one's name alone.
+    act(() => announceModel('c8', 'claude-code/opus'))
+    expect(screen.getByRole('button', { name: 'pw code · sonnet' })).toBeInTheDocument()
+    unmount()
+    // Opened again, it names the model last said, not the one linked.
+    render(<PWCodeEngine conversationId="c7" />)
+    expect(await screen.findByRole('button', { name: 'pw code · sonnet' })).toBeInTheDocument()
   })
   it('says once in the chat when the Studio moved the session to another model', async () => {
     render(<PWCodeModelNotice conversationId="c1" />)

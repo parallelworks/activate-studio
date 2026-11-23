@@ -3,6 +3,7 @@ import { ACCOUNTS_HREF, SIGN_IN_TO_USE, needsActivate } from '../accounts'
 import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
 import { useChat } from '@parallelworks/ui/ai'
 import { type Engine, getEngine, setEngine } from '../labelScope'
+import { liveModel, onModel } from '../pwcode/liveModel'
 
 /** GET /api/chat/engine: what answers by default, and whether pw code is
  *  offered to this person (with why not). */
@@ -35,6 +36,13 @@ const ENGINES: { value: 'pwcode' | 'studio'; label: string; hint: string }[] = [
  *  (GET /api/chat/conversations/:id) or from a reply as it streams. */
 function useSession(conversationId: string | null): SessionInfo {
   const [s, setS] = useState<SessionInfo>({})
+  // The model the session runs on now (pwcode/liveModel.ts), over the one
+  // the chat was linked with.
+  const [live, setLive] = useState<string | undefined>()
+  useEffect(() => {
+    setLive(conversationId ? liveModel(conversationId) : undefined)
+    return conversationId ? onModel(conversationId, setLive) : undefined
+  }, [conversationId])
   useEffect(() => {
     setS({})
     if (!conversationId) return
@@ -52,7 +60,7 @@ function useSession(conversationId: string | null): SessionInfo {
     window.addEventListener('ade-pwcode-session', on)
     return () => { gone = true; window.removeEventListener('ade-pwcode-session', on) }
   }, [conversationId])
-  return s
+  return live ? { ...s, model: live } : s
 }
 
 /**

@@ -607,7 +607,9 @@ func (m *Module) writeMachine(w http.ResponseWriter, r *http.Request, l *convers
 }
 
 // directFacts are the daemon's status fields the machine record passes on.
-var directFacts = []string{"claudeCodeAllowed", "claudeInstalled", "claudeLogin", "claudeAccountRemove", "remoteStart", "remoteMaxPermissionMode", "sessionImages", "version"}
+// permissionModes is the modes the daemon accepts: without it the package
+// offers its older list, which has no auto.
+var directFacts = []string{"claudeCodeAllowed", "claudeInstalled", "claudeLogin", "claudeAccountRemove", "remoteStart", "remoteMaxPermissionMode", "permissionModes", "sessionImages", "version"}
 
 // feedHeartbeat is the frame the platform sends a feed that asked for a
 // heartbeat; seq 0 keeps it out of the reader's cursor.

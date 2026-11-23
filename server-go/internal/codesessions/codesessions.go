@@ -34,6 +34,9 @@ type Machine struct {
 	Status   string `json:"status"`
 	Error    string `json:"error,omitempty"`
 	DaemonID string `json:"daemonId,omitempty"`
+	// PermissionModes are the modes the daemon accepts, as its status
+	// lists them; the session views offer only these.
+	PermissionModes []string `json:"permissionModes,omitempty"`
 }
 
 // approval is a decision a session is waiting on, as its daemon reports
