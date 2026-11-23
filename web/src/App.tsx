@@ -16,6 +16,7 @@ import { HistoryView } from './views/HistoryView'
 import { useInstall } from './install'
 import { WorkflowsView } from './views/WorkflowsView'
 import { CodePage } from './code/CodePage'
+import { useCodeWaiting } from './code/waiting'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
@@ -207,6 +208,8 @@ export default function App() {
   // seen, so the read marks them seen first; a transfer's details mark
   // theirs and send the summary.
   const [xferSummary, setXferSummary] = useState<TransferSummary | null>(null)
+  // Sessions waiting on the person, as PW Code on the web's menu counts them.
+  const codeWaiting = useCodeWaiting(cfg.loaded && (!!cfg.platform || !!cfg.localCode) && sectionAllowed('code', cfg))
   const onTransfers = view === 'transfers'
   useEffect(() => {
     if (!hasTransfers) return
@@ -567,6 +570,12 @@ export default function App() {
                   {item.icon}
                   <span>{item.label}</span>
                   {item.id === 'transfers' && <TransferMark summary={xferSummary} />}
+                  {item.id === 'code' && !!codeWaiting && (
+                    <span className="nav-xfer-mark" title={`${codeWaiting} waiting for you`} data-testid="nav-code-waiting">
+                      <CountBadge count={codeWaiting} max={99} size="sm" variant="warning" />
+                      <span className="sr-only">{codeWaiting} waiting for you</span>
+                    </span>
+                  )}
                 </button>
               )
             }

@@ -190,3 +190,13 @@ describe('the Code page', () => {
     expect(sent.filter(s => s.path === '/api/chat/pwcode/continue').map(s => s.body)).toEqual([{ machine: 'm1', session: 'new1', confirmed: true }])
   })
 })
+
+describe('the Code entry in the menu', () => {
+  it('counts the sessions waiting on the person, as PW Code on the web does, leaving out archived ones', async () => {
+    const { waitsOnYou } = await import('../src/code/waiting')
+    expect(waitsOnYou({ status: 'awaiting_approval' })).toBe(true)
+    expect(waitsOnYou({ status: 'idle', approvals: [{}] })).toBe(true)
+    expect(waitsOnYou({ status: 'running' })).toBe(false)
+    expect(waitsOnYou({ status: 'awaiting_approval', archivedAt: now })).toBe(false)
+  })
+})
