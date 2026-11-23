@@ -72,7 +72,11 @@ type Module struct {
 	prompt  promptCache
 
 	accessMu sync.Mutex
-	access   Access
+	// bridgeVisits is when each person's pw code session elsewhere last
+	// reached the Studio's tools (mcpbridge.go).
+	bridgeMu     sync.Mutex
+	bridgeVisits map[string]bridgeVisit
+	access       Access
 
 	listings *listingCache
 	noCap    *noTokenCap
@@ -292,6 +296,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("POST /v1/chat/completions", m.v1Completions)
 	h("POST /api/mcp", m.mcpPost)
 	h("GET /api/mcp", m.mcpGet)
+	h("GET /api/mcp/bridge", m.bridgeRoute)
 	m.attachmentRoutes(h)
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
