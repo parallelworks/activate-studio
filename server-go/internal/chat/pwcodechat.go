@@ -996,8 +996,10 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 			return reqbody.OK(w, reqbody.O("ok", true))
 		}
 		answer := jsonv.NewObject("allowed", in.Allowed)
+		mode := ""
 		if in.Kind == "plan" && in.Allowed {
-			answer.Set("mode", planMode(in.Mode, t.relay))
+			mode = planMode(in.Mode, t.relay)
+			answer.Set("mode", mode)
 		} else if in.Kind == "plan" && !in.Allowed {
 			if msg := sliceRunes(strings.TrimSpace(in.Message), 2000); msg != "" {
 				answer.Set("feedback", msg)
@@ -1011,6 +1013,9 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		}
 		if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
 			return err
+		}
+		if mode != "" {
+			m.logModeChange(r, c, t, mode, "chat plan answer")
 		}
 		return reqbody.OK(w, reqbody.O("ok", true))
 	})
