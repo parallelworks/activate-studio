@@ -3405,3 +3405,19 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
   .cli-contexts td { display: block; height: auto; padding: 0; white-space: normal; }
   .cli-contexts td:last-child { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
 }
+
+/* A pw code chat: the session view of @parallelworks/ui/ai, filling the
+   chat's column as the Studio's own thread does (pwcode/PWCodeSession.tsx). */
+.pwcode-session { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; min-width: 0; }
+.pwcode-session > :not(.pwcode-session-tools):not(.sr-only) { flex: 1 1 auto; min-height: 0; }
+.pwcode-session-tools { position: absolute; left: 12px; top: 10px; z-index: 2; }
+.pwcode-session-tools .code-approval-more { font-size: 12px; }
+.pwcode-session-failed { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 16px; }
+.pwcode-context { display: flex; padding: 0 2px; }
+.pwcode-context-chip { font: 12px/1.6 var(--pw-font-mono, ui-monospace, monospace); color: var(--pw-text-muted, inherit); border: 1px solid var(--pw-border, currentColor); border-radius: 999px; padding: 0 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwcode-model { font: inherit; font-size: 12px; background: transparent; color: inherit; border: 1px solid var(--pw-border, currentColor); border-radius: 6px; padding: 2px 6px; max-width: 14rem; }
+.pwcode-saving, .pwcode-reconnecting { font-size: 12px; }
+.pwcode-reconnecting { padding: 4px 2px; }
+.pwcode-session .chat-thread { padding-top: 44px; }
+.pwcode-expand { font: inherit; font-size: 12px; background: transparent; color: var(--pw-text-muted, inherit); border: 0; cursor: pointer; padding: 2px 4px; }
+.pwcode-expand:hover { color: inherit; text-decoration: underline; }

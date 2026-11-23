@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -119,7 +120,7 @@ func (m *Module) pwcodeHereCached(ctx context.Context, r *http.Request) (*pwHere
 // by the daemon id the platform keeps for it, or by host name where the
 // platform keeps none.
 func sameMachine(mach *codesessions.Machine, h *pwHere) bool {
-	if mach == nil || h == nil {
+	if mach == nil || h == nil || forceRelay() {
 		return false
 	}
 	if mach.DaemonID != "" || h.daemonID == "" {
@@ -127,6 +128,12 @@ func sameMachine(mach *codesessions.Machine, h *pwHere) bool {
 	}
 	return mach.Hostname != "" && strings.EqualFold(mach.Hostname, h.hostname)
 }
+
+// forceRelay is for testing only: with STUDIO_PWCODE_FORCE_RELAY=1 a
+// session on the Studio's own machine is continued through the platform
+// relay too, as one on another machine is, so the relay can be exercised
+// end to end with a single connected machine. Off by default.
+func forceRelay() bool { return os.Getenv("STUDIO_PWCODE_FORCE_RELAY") == "1" }
 
 // ownChats is the viewer's own conversations that run in a pw code
 // session, by session id.

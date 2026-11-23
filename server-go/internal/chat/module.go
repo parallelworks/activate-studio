@@ -276,6 +276,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	m.chatSaveRoutes(h)
 	m.pwcodeRoutes(h)
 	m.pwcodeContinueRoutes(h)
+	m.pwcodeProxyRoutes(h)
 	m.keyRoutes(h)
 	h("GET /api/chat/models", m.models)
 	h("GET /api/ai/health", m.health)

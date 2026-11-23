@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
 )
@@ -370,4 +371,44 @@ func (s *routes) item(w http.ResponseWriter, r *http.Request) (any, error) {
 		waiting = append(waiting, a)
 	}
 	return map[string]any{"session": v, "history": hist, "earlier": dropped, "approvals": waiting}, nil
+}
+
+// PlatformMachine is one of the viewer's machines as the platform lists it
+// (an AgentMachine, with its remote permission ceiling), read as the viewer.
+func PlatformMachine(r *http.Request, p *platform.Platform, machineID string) (*jsonv.Object, error) {
+	var body struct {
+		Machines []json.RawMessage `json:"machines"`
+	}
+	if err := fetch(r, p, "/api/code/sessions", &body); err != nil {
+		return nil, err
+	}
+	for _, raw := range body.Machines {
+		v, err := jsonv.Decode(raw)
+		if o := jsonv.Obj(v); err == nil && o != nil && jsonv.String(jsonv.Path(o, "id")) == machineID {
+			return o, nil
+		}
+	}
+	return nil, platform.KbError(404, "The platform does not list that machine as yours.")
+}
+
+// PlatformListing is the viewer's machines and sessions as the platform
+// lists them (/api/code/sessions), each as the platform gives it.
+func PlatformListing(r *http.Request, p *platform.Platform) (machines, sessions []*jsonv.Object, err error) {
+	var body struct {
+		Machines []json.RawMessage `json:"machines"`
+		Sessions []json.RawMessage `json:"sessions"`
+	}
+	if err := fetch(r, p, "/api/code/sessions", &body); err != nil {
+		return nil, nil, err
+	}
+	decode := func(raws []json.RawMessage) []*jsonv.Object {
+		var out []*jsonv.Object
+		for _, raw := range raws {
+			if v, err := jsonv.Decode(raw); err == nil && jsonv.Obj(v) != nil {
+				out = append(out, jsonv.Obj(v))
+			}
+		}
+		return out
+	}
+	return decode(body.Machines), decode(body.Sessions), nil
 }

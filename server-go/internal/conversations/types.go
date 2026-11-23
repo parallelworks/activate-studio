@@ -396,6 +396,9 @@ type PWCodeLink struct {
 	Relay       bool   `json:"relay,omitempty"`
 	Machine     string `json:"machine,omitempty"`
 	MachineName string `json:"machineName,omitempty"`
+	// ToolsError is why the session lacked the Studio's tools at the last
+	// message, after a retry; empty when it had them.
+	ToolsError string `json:"toolsError,omitempty"`
 	// Persona is the agent instructions the conversation chose when its
 	// session was made, "" for none: a session with instructions works in
 	// agents/<persona>/, whose AGENTS.md carries them.
