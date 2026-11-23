@@ -312,6 +312,32 @@ func (p *Platform) GatewayKey() string {
 	return p.CLICredential()
 }
 
+// HasActivate says whether this computer gives the Studio an ACTIVATE
+// credential: PW_API_KEY, or a pw CLI context that holds a sign-in, a token
+// or a key (the one for the gateway's platform, else the CLI's current
+// one). False after Stop using the pw CLI. It reads no token and renews
+// nothing, so it is cheap to ask on every request.
+func (p *Platform) HasActivate() bool {
+	if p.Stopped() {
+		return false
+	}
+	if p.apiKey != "" {
+		return true
+	}
+	s := p.ReadStore()
+	holds := func(name string) bool {
+		i, ok := s.identity(name)
+		return ok && (i.Token != "" || i.APIKey != "" || i.OAuth != nil)
+	}
+	if n := p.CredentialContextName(); n != "" && holds(n) {
+		return true
+	}
+	if n := p.ActiveContextName(); n != "" && holds(n) {
+		return true
+	}
+	return false
+}
+
 // KeyFor is the platform key work for the viewer runs with: their own
 // sign-in or key; on a Studio of one, without either, the owner's
 // (GatewayKey), with own false. On a Studio several people use it is never

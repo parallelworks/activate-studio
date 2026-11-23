@@ -68,6 +68,11 @@ export function activateParts(access: AccessStatus, aiEnabled: boolean): Activat
   ]
 }
 
+/** The host of a platform origin such as https://platform.example.com, or "". */
+function hostOf(origin: string | null | undefined): string {
+  try { return origin ? new URL(origin).host : '' } catch { return '' }
+}
+
 const PART_STATE: Record<ActivatePart['state'], ReactNode> = {
   on: <StatusLabel variant="success">On</StatusLabel>,
   'sign-in': <StatusLabel variant="muted">Sign in to use</StatusLabel>,
@@ -135,7 +140,9 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
         setPreset(presetOf(a.models.baseUrl)); setBaseUrl(a.models.baseUrl); fillEndpoint(k.endpoint)
       }
       filled.current = true
-      setLoginHost(h => h || a.login?.host || (a.cli?.contexts.find(c => c.name === a.cli?.active)?.server ?? ''))
+      // The platform to sign in to: a sign-in under way, the CLI's current
+      // context, else the platform the Studio knows (its gateway's).
+      setLoginHost(h => h || a.login?.host || (a.cli?.contexts.find(c => c.name === a.cli?.active)?.server ?? '') || hostOf(a.platformOrigin))
       // Whether the platform takes a key that models take: asked after the
       // page shows, since it can take a moment.
       if (aiEnabled && a.models.source === 'key') void api<Health>(`/api/ai/health${fresh ? '?fresh=1' : ''}`).then(setHealth, () => setHealth(null))
@@ -187,8 +194,8 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
   // CLI keeps its sign-ins for the other tools on this computer.
   const useCli = (use: boolean) => run('activate',
     () => api('/api/access/cli/use', { method: 'PUT', body: { use } }),
-    use ? 'The Studio uses the pw CLI again.'
-      : 'The Studio no longer uses the pw CLI. Each ACTIVATE part now asks to sign in; the pw CLI is still signed in for other tools.',
+    // Stopping needs no note: the card itself then says so.
+    use ? 'The Studio uses the pw CLI again.' : undefined,
   )
   /** The Advanced options as the server takes them: a stored header left
    *  empty is sent by name alone, which keeps its stored value. */
@@ -621,10 +628,12 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
         <p className="identity-note access-override">Your ACTIVATE API key is used now. Use on a context removes it.</p>
       )}
       {cli.envKey && <p className="identity-note">PW_API_KEY is set in the Studio's environment, and it is used before the pw CLI.</p>}
-      <div className="key-row cli-stop">
-        <Button variant="secondary" size="sm" disabled={busy} onClick={() => onUseCli(false)}>Stop using the pw CLI</Button>
-        <span className="muted key-note">The Studio then works as for someone without ACTIVATE. The pw CLI stays signed in.</span>
-      </div>
+      {(cli.contexts.length > 0 || cli.envKey) && (
+        <div className="key-row cli-stop">
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => onUseCli(false)}>Stop using the pw CLI</Button>
+          <span className="muted key-note">The Studio then works as for someone without ACTIVATE. The pw CLI stays signed in.</span>
+        </div>
+      )}
       {aiEnabled && cli.gatewayFromEnv && <p className="identity-note">The model gateway is fixed by PW_GATEWAY_URL; a context on another platform covers the platform only.</p>}
       {cli.contexts.length > 0 ? (
         <>
@@ -676,7 +685,8 @@ function CliPanel({ access, busy, login, loginHost, setLoginHost, onUse, onStart
           <Input aria-label="Platform host to sign in to" value={loginHost} autoComplete="off" placeholder="Platform host, such as platform.example.com"
             onChange={e => setLoginHost(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && loginHost.trim() && !waiting) onStartLogin() }} />
         </div>
-        <Button variant="primary" disabled={busy || waiting || !loginHost.trim() || !cli.available} onClick={onStartLogin}>Sign in</Button>
+        <Button variant="primary" disabled={busy || waiting || !loginHost.trim() || !cli.available} onClick={onStartLogin}
+          title={!loginHost.trim() ? 'Type the platform\'s host first.' : undefined}>Sign in</Button>
       </div>
       {login && waiting && login.code && login.url && (
         <DeviceCode device={{ url: login.url, code: login.code }} what={`Sign in to ${login.host}`} onCancel={onCancelLogin} />

@@ -79,8 +79,9 @@ func call(ctx context.Context, c pwcode.Client, route string, out any) error {
 
 func (s *routes) localMachine(ctx context.Context, c pwcode.Client) (Machine, error) {
 	var st struct {
-		MachineID string `json:"machineId"`
-		Hostname  string `json:"hostname"`
+		MachineID       string   `json:"machineId"`
+		Hostname        string   `json:"hostname"`
+		PermissionModes []string `json:"permissionModes"`
 	}
 	if err := call(ctx, c, "/v1/status", &st); err != nil {
 		return Machine{}, err
@@ -89,7 +90,7 @@ func (s *routes) localMachine(ctx context.Context, c pwcode.Client) (Machine, er
 	if id == "" {
 		id = agentsites.Local
 	}
-	return Machine{ID: id, Name: LocalName, Kind: "local", Hostname: st.Hostname, Status: "connected", DaemonID: st.MachineID}, nil
+	return Machine{ID: id, Name: LocalName, Kind: "local", Hostname: st.Hostname, Status: "connected", DaemonID: st.MachineID, PermissionModes: st.PermissionModes}, nil
 }
 
 func (s *routes) localList(r *http.Request, c pwcode.Client) (any, error) {

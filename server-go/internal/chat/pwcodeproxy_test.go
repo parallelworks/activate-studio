@@ -636,7 +636,7 @@ func TestASlashCommandKeepsToTheChatsRules(t *testing.T) {
 // allows, as the platform's record does, so the account panel offers
 // signing in and removing an account where the daemon does.
 func TestTheDirectMachineCarriesWhatItsDaemonAllows(t *testing.T) {
-	f := &fakePW{status: map[string]any{"machineId": "d1", "hostname": "gpu-box.example", "claudeLogin": true, "claudeAccountRemove": true, "claudeCodeAllowed": true, "claudeInstalled": true, "secret": "x"}}
+	f := &fakePW{status: map[string]any{"machineId": "d1", "hostname": "gpu-box.example", "claudeLogin": true, "claudeAccountRemove": true, "claudeCodeAllowed": true, "claudeInstalled": true, "permissionModes": []any{"read-only", "auto"}, "secret": "x"}}
 	_, base, _ := continueModule(t, f, "d1")
 	if _, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`); out["conversationId"] == nil {
 		t.Fatalf("continue: %v", out)
@@ -650,6 +650,11 @@ func TestTheDirectMachineCarriesWhatItsDaemonAllows(t *testing.T) {
 	}
 	if direct == nil || direct["claudeLogin"] != true || direct["claudeAccountRemove"] != true || direct["claudeCodeAllowed"] != true || direct["claudeInstalled"] != true {
 		t.Errorf("direct machine: %v", direct)
+	}
+	// Without the modes the daemon accepts, the permission menu falls back
+	// to a list with no auto.
+	if modes, _ := direct["permissionModes"].([]any); len(modes) != 2 || modes[1] != "auto" {
+		t.Errorf("direct machine's permission modes: %v", direct["permissionModes"])
 	}
 	if _, leaked := direct["secret"]; leaked {
 		t.Errorf("a status field the record does not name was passed on: %v", direct)

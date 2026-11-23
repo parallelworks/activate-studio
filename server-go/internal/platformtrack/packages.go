@@ -46,6 +46,12 @@ func registerPackages(mux *http.ServeMux, a *app.App, p *platform.Platform) {
 	// tools through the chat module (registered later, so looked up when a
 	// session starts).
 	fl := fleet.New(a, fleet.Local(daemon))
+	fl.Refused = func() string {
+		if !p.HasActivate() {
+			return fleet.NeedsActivate
+		}
+		return ""
+	}
 	fl.Start = func(ctx context.Context, c pwcode.Client, owner *auth.User, grant, workspace, model, mode string, allow []string) (string, error) {
 		if chat.Default == nil {
 			return "", errors.New("the Studio's tools are not set up")

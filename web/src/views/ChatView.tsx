@@ -522,6 +522,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             thoughtFor: (duration: string) => `Worked for ${duration}`,
           },
           agentTranscript: {
+            // A pw code chat answers a plan under the transcript
+            // (pwcode/session/PlanAnswer.tsx); the Studio has no terminal.
+            planPending: 'Plan waiting for your answer, below',
             approvalPending: 'Waiting for an answer',
             denyWithFeedback: 'No, and tell the assistant why',
             feedbackPlaceholder: 'Tell the assistant what to do instead…',
