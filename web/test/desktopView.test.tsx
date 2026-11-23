@@ -93,6 +93,18 @@ describe('DesktopView', () => {
     await client(2)
   })
 
+  it('refused for want of an ACTIVATE sign-in, asks to sign in and opens Accounts', async () => {
+    render(<DesktopView user="alex" name="desk" />)
+    const c = await client()
+    logs = { status: 409, body: { error: 'A desktop opens with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Accounts, then try again.' } }
+    act(() => c.emit('disconnect', { clean: false }))
+    expect(await screen.findByText('Sign in with ACTIVATE to use this')).toBeTruthy()
+    expect(screen.getByText(/A desktop opens with your own ACTIVATE sign-in/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Accounts' }))
+    expect(location.hash).toBe('#view=settings:accounts')
+    history.replaceState(null, '', location.pathname)
+  })
+
   it('a desktop the relay cannot find is tried again after pauses, then it says so and stops', async () => {
     render(<DesktopView user="alex" name="desk" />)
     const c = await client()

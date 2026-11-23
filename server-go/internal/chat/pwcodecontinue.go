@@ -62,7 +62,7 @@ func (m *Module) pwcodeDaemon(r *http.Request) (pwcode.Client, string, error) {
 	}
 	key := m.viewerPlatformKey(r)
 	if key == "" {
-		return nil, "", pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Model access.")
+		return nil, "", pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.")
 	}
 	site := m.pwSite()
 	if site == "" {

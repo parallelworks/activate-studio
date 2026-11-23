@@ -301,6 +301,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
+	a.Providers.Accounts = func(*http.Request) bool { return !m.Keys.Disabled() }
 	a.Providers.PersonalCred = func(sub, cookieHeader string) (string, string, bool) {
 		if sub != "" && cookieHeader != "" {
 			m.Keys.Hydrate(sub, cookieHeader)

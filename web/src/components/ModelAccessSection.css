@@ -44,3 +44,4 @@
   .model-access .header-row .header-name { flex: 1 1 100%; }
   .model-access .header-row .grow { flex: 1 1 calc(100% - 48px); }
 }
+.model-access .admin-badge { margin-right: 4px; vertical-align: 1px; }

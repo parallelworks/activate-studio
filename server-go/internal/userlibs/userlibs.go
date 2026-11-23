@@ -293,9 +293,9 @@ func (m *Module) sessionErr(name, key string, err error) error {
 	msg := err.Error()
 	if l := strings.ToLower(msg); strings.Contains(l, "unauthorized") || strings.Contains(l, "status 401") {
 		if m.FromSignIn != nil && m.FromSignIn(key) {
-			return apierr.New(502, "The platform refused your ACTIVATE sign-in for %s (Unauthorized). Sign out under Settings, Model access, sign in again, then try again.", name)
+			return apierr.New(502, "The platform refused your ACTIVATE sign-in for %s (Unauthorized). Sign out under Settings, Accounts, sign in again, then try again.", name)
 		}
-		return apierr.New(502, "The platform refused the credential the Studio used for you on %s (Unauthorized). Sign in with ACTIVATE under Settings, Model access, then try again.", name)
+		return apierr.New(502, "The platform refused the credential the Studio used for you on %s (Unauthorized). Sign in with ACTIVATE under Settings, Accounts, then try again.", name)
 	}
 	return apierr.New(502, "Your session to %s did not open: %s", name, msg)
 }
@@ -317,7 +317,7 @@ func (m *Module) pwKey(w who) (owner, key string, err error) {
 		if owner == single {
 			return "", "", apierr.New(409, "The pw CLI on this computer is not signed in. Run pw auth, then test again.")
 		}
-		return "", "", apierr.New(409, "Indexes on your clusters are read with your own platform key: add your ACTIVATE API key under Settings, Model access.")
+		return "", "", apierr.New(409, "Indexes on your clusters are read with your own platform key: add your ACTIVATE API key under Settings, Accounts.")
 	}
 	return owner, key, nil
 }
@@ -333,13 +333,13 @@ func (m *Module) pwUnavailable(w who) string {
 		if env := m.getenv("PW_CLI"); strings.Contains(env, "/") {
 			set = " PW_CLI names " + env + ", which is not there."
 		}
-		return "The Studio does not find the pw CLI on this computer." + set + " Install it, or choose where it is under Settings, Model access, pw CLI."
+		return "The Studio does not find the pw CLI on this computer." + set + " Install it, or choose where it is under Settings, Accounts, pw CLI."
 	}
 	if m.keyOf(w, owner) == "" {
 		if owner == single {
-			return "The pw CLI on this computer is not signed in to a platform. Sign it in under Settings, Model access."
+			return "The pw CLI on this computer is not signed in to a platform. Sign it in under Settings, Accounts."
 		}
-		return "Systems on the platform are reached with your own platform key: add your ACTIVATE API key under Settings, Model access."
+		return "Systems on the platform are reached with your own platform key: add your ACTIVATE API key under Settings, Accounts."
 	}
 	return ""
 }
@@ -795,7 +795,7 @@ func (m *Module) addFromCluster(ctx context.Context, w who, b *jsonv.Object) (*l
 	}
 	key := m.keyOf(w, owner)
 	if key == "" {
-		return nil, apierr.New(409, "Libraries on your clusters are built with your own platform key: add your ACTIVATE API key under Settings, Model access.")
+		return nil, apierr.New(409, "Libraries on your clusters are built with your own platform key: add your ACTIVATE API key under Settings, Accounts.")
 	}
 	site := str(field(b, "site"))
 	if !siteRe.MatchString(site) {
@@ -869,7 +869,7 @@ func (m *Module) refresh(ctx context.Context, w who, id string) (*libraries.User
 	}
 	key := m.keyOf(w, owner)
 	if key == "" {
-		return nil, apierr.New(409, "add your ACTIVATE API key under Settings, Model access")
+		return nil, apierr.New(409, "add your ACTIVATE API key under Settings, Accounts")
 	}
 	mode, state := "build", "building"
 	if deref(d.IndexRoot) != "" {

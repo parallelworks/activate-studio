@@ -598,21 +598,21 @@ func CredentialRejectionMessage(owner string, kind, credExpiresAt, context *stri
 		if context != nil {
 			c = *context
 		}
-		return "The platform rejected the pw CLI context " + c + " (401). Sign in again under Settings, Model access (or with pw auth), or choose another context there."
+		return "The platform rejected the pw CLI context " + c + " (401). Sign in again under Settings, Accounts (or with pw auth), or choose another context there."
 	}
 	if owner == "deployment" {
-		return "The platform rejected the deployment credential (401). An operator must replace it in the deployment settings; until then, add your own token or API key under Settings, Model access."
+		return "The platform rejected the deployment credential (401). An operator must replace it in the deployment settings; until then, add your own token or API key under Settings, Accounts."
 	}
 	if credExpiresAt != nil && *credExpiresAt != "" {
 		if t, ok := parseDate(*credExpiresAt); ok && t.Before(now) {
-			return "Your platform token expired at " + t.UTC().Format("Jan 2, 2006, 3:04 PM") + " UTC; tokens last 24 hours from login. Paste a fresh token under Settings, Model access, or an API key from Account, API keys, which does not expire."
+			return "Your platform token expired at " + t.UTC().Format("Jan 2, 2006, 3:04 PM") + " UTC; tokens last 24 hours from login. Paste a fresh token under Settings, Accounts, or an API key from Account, API keys, which does not expire."
 		}
 	}
 	what := "credential"
 	if kind != nil && *kind == "token" {
 		what = "token"
 	}
-	return "The platform rejected your stored " + what + " (401). If it was a platform token it has likely expired, since tokens last 24 hours from login. Paste a fresh token under Settings, Model access, or an API key from Account, API keys, which does not expire."
+	return "The platform rejected your stored " + what + " (401). If it was a platform token it has likely expired, since tokens last 24 hours from login. Paste a fresh token under Settings, Accounts, or an API key from Account, API keys, which does not expire."
 }
 
 func parseDate(s string) (time.Time, bool) {

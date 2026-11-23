@@ -305,3 +305,26 @@ func TestAttachmentsRoundTrip(t *testing.T) {
 		t.Errorf("bad id: %d %v", code, out)
 	}
 }
+
+// Settings, Accounts is offered wherever a person can keep credentials of
+// their own: /api/config's accounts, which lets the Workflows and Code
+// pages show and ask to sign in. A deployment that keeps none has no
+// Accounts, and those pages stay hidden there.
+func TestAccountsOfferedUnlessPersonalKeysAreOff(t *testing.T) {
+	dir := t.TempDir()
+	env := map[string]string{"INDEX_BASE": dir, "KB_ROOT": filepath.Join(dir, "kb"), "STUDIO_NODE": "off", "HOME": dir}
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
+	cfg, _ := config.Load(func(k string) string { return env[k] })
+	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
+	Register(http.NewServeMux(), a)
+	r := httptest.NewRequest("GET", "/api/config", nil)
+	if a.Providers.Accounts == nil || !a.Providers.Accounts(r) {
+		t.Fatal("Accounts not offered with personal keys on")
+	}
+	t.Setenv("DISABLE_PERSONAL_KEYS", "1")
+	if a.Providers.Accounts(r) {
+		t.Error("Accounts offered on a deployment that keeps no personal credentials")
+	}
+}

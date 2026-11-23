@@ -6,10 +6,10 @@ import { ClusterLibraryForm } from './ClusterLibraryForm'
 import { LibraryImport } from './LibraryImport'
 import { LocalLibraryForm } from './LocalLibraryForm'
 import { PwSystemField } from './PwSystemField'
-import { SshLibraryForm } from './SshLibraryForm'
+import { PwBlocked, SshLibraryForm } from './SshLibraryForm'
 import { SharedWithMe } from './SharedWithMe'
 import { SpaceForm } from './SpaceForm'
-import { accessLabel, knownAppConfig, useAppConfig } from '../config'
+import { useAppConfig } from '../config'
 
 /**
  * Add a library, in one model: where it is, whose account reads it, and
@@ -215,10 +215,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
         </p>
       )}
       {pwBlocked ? (
-        <Callout tone="warning" title="pw ssh cannot be used yet"
-          action={<Button variant="secondary" size="sm" onClick={() => void (location.hash = '#view=settings:access')}>Open {accessLabel(knownAppConfig())}</Button>}>
-          {systems?.why}
-        </Callout>
+        <PwBlocked why={systems?.why} />
       ) : (
         <>
           <div className="lib-add-choices">

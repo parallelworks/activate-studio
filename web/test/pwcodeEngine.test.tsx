@@ -56,11 +56,20 @@ describe('What answers a conversation', () => {
   })
 
   it('says why pw code is not offered when the Studio is set to it', async () => {
-    serve({ setting: 'pwcode', default: 'studio', pwcode: false, reason: 'pw code runs as you: sign in with ACTIVATE under Settings, Model access.' })
+    serve({ setting: 'pwcode', default: 'studio', pwcode: false, reason: 'pw code runs as you: sign in with ACTIVATE under Settings, Accounts.' })
     render(<PWCodeEngine conversationId="c1" />)
     fireEvent.click(await screen.findByRole('button', { name: /Studio/ }))
     expect(await screen.findByText(/sign in with ACTIVATE/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /pw code/ })).toBeDisabled()
+  })
+
+  it('where pw code waits only for an ACTIVATE sign-in, says so and links to Accounts', async () => {
+    serve({ setting: 'auto', default: 'studio', pwcode: false, reason: 'pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Accounts.' })
+    render(<PWCodeEngine conversationId={null} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Studio/ }))
+    expect(await screen.findByText('Sign in with ACTIVATE to use this.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /pw code/ })).toBeDisabled()
+    expect(screen.getByRole('link', { name: 'Open Accounts' })).toHaveAttribute('href', '#view=settings:accounts')
   })
 
   it('stays out of the way where pw code is not offered', async () => {

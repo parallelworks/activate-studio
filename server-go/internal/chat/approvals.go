@@ -174,7 +174,7 @@ func (m *Module) changesAvailable(viewer *Viewer, key *string, owner, username *
 	}
 	if key == nil || *key == "" {
 		if m.A.Cfg.AuthEnabled() {
-			return Changes{Why: "changes run only with your own platform key, which you can add under Settings, Model access"}
+			return Changes{Why: "changes run only with your own platform key, which you can add under Settings, Accounts"}
 		}
 		return Changes{Why: "no platform credential is configured"}
 	}
@@ -312,7 +312,7 @@ func (m *Module) answerHeld(r *http.Request, a answer, viewer *Viewer, key *stri
 			tool = a.Tool
 		}
 		if (key == nil || *key == "") && !localAsksFirst(tool) {
-			return &Answered{Why: "Running this needs your own platform key, which you can add under Settings, Model access; nothing ran."}
+			return &Answered{Why: "Running this needs your own platform key, which you can add under Settings, Accounts; nothing ran."}
 		}
 		if !enabled(tool) {
 			return &Answered{Why: tool + " is turned off for this deployment; nothing ran."}

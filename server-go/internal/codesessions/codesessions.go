@@ -201,12 +201,12 @@ func ViewerKey(r *http.Request, p *platform.Platform) (string, error) {
 		if k := v.PlatformKey(); k != "" {
 			return k, nil
 		}
-		return "", platform.KbError(409, "The Code page lists your pw code sessions with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then try again.")
+		return "", platform.KbError(409, "The Code page lists your pw code sessions with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Accounts, then try again.")
 	}
 	if k := sessions.KeyFor(p, v); k != "" {
 		return k, nil
 	}
-	return "", platform.KbError(409, "No platform credential: add your ACTIVATE API key under Settings, Model access.")
+	return "", platform.KbError(409, "No platform credential: add your ACTIVATE API key under Settings, Accounts.")
 }
 
 func (s *routes) fetch(r *http.Request, path string, out any) error { return fetch(r, s.p, path, out) }
@@ -226,7 +226,7 @@ func fetch(r *http.Request, p *platform.Platform, path string, out any) error {
 	case res == nil:
 		return platform.KbError(502, "The platform did not answer.")
 	case res.Status == http.StatusUnauthorized:
-		return platform.KbError(401, "The platform refused your credential; sign in again, or renew your API key under Settings, Model access.")
+		return platform.KbError(401, "The platform refused your credential; sign in again, or renew your API key under Settings, Accounts.")
 	case res.Status == http.StatusForbidden || res.Status == http.StatusNotFound && strings.HasSuffix(path, "/sessions"):
 		return platform.KbError(404, "PW Code on the web is not turned on for your account on this platform. It is a preview; ask your administrator to enable it.")
 	case res.Status == http.StatusNotFound:

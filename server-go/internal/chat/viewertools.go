@@ -141,7 +141,7 @@ func (m *Module) toolShowInViewer(r *http.Request, args map[string]any, ctx Tool
 /* ---- the pw CLI for tools ---- */
 
 const noCLIMessage = "The Studio cannot find the pw CLI, so platform actions (workflows, clusters, status) cannot run from here. " +
-	"Install it, or choose where it is under Settings, Model access, pw CLI; in a container, bind the CLI and its credentials in, or set PW_CLI to its path."
+	"Install it, or choose where it is under Settings, Accounts, pw CLI; in a container, bind the CLI and its credentials in, or set PW_CLI to its path."
 
 var (
 	upgradeNoise = regexp.MustCompile(`(?i)new version of the PW CLI|pw upgrade`)
@@ -174,13 +174,13 @@ func cliAuthFailure(stdout, stderr string, personal bool) string {
 		return ""
 	}
 	if personal {
-		return "The platform refused the user's own key for this command (unauthorized). It may have expired or been revoked; ask the user to add a current ACTIVATE API key under Settings, Model access. This is a credential problem, not a problem with the command or its inputs."
+		return "The platform refused the user's own key for this command (unauthorized). It may have expired or been revoked; ask the user to add a current ACTIVATE API key under Settings, Accounts. This is a credential problem, not a problem with the command or its inputs."
 	}
 	state := "missing"
 	if refused {
 		state = "refused by the platform"
 	}
-	return "No usable platform credential for this command: the user has no personal ACTIVATE key in this Studio, and the deployment's own credential was " + state + ". Ask the user to add their ACTIVATE API key under Settings, Model access. This is a credential problem, not a problem with the command or its inputs."
+	return "No usable platform credential for this command: the user has no personal ACTIVATE key in this Studio, and the deployment's own credential was " + state + ". Ask the user to add their ACTIVATE API key under Settings, Accounts. This is a credential problem, not a problem with the command or its inputs."
 }
 
 // jsonFromCli is the first JSON value in the CLI's output.

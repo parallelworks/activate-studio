@@ -15,7 +15,7 @@ import { SshLibraryForm } from '../components/SshLibraryForm'
 import { useTransfersReady } from '../components/TransfersReady'
 import { placesText, transfersPresent } from '../transferApi'
 import {
-  AI_SECTIONS, SECTION_SWITCHES, accessLabel, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
+  AI_SECTIONS, SECTION_SWITCHES, reloadAppConfig, saveAiEnabled, saveSections, saveSettings, sectionAllowed, sectionsSetting, useAppConfig,
 } from '../config'
 import { type ThemeChoice, currentThemeChoice, setThemeChoice } from '../theme'
 import { plural } from '../plural'
@@ -62,7 +62,7 @@ export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }:
           <Switch checked={shown.includes(s.id)} onCheckedChange={v => toggle(s.id, v)} aria-label={s.label} />
           <span>
             {s.label}
-            {(s.id === 'workflows' || s.id === 'code') && !platform && <span className="muted"> (needs a platform login)</span>}
+            {(s.id === 'workflows' || s.id === 'code') && !platform && <span className="muted"> (needs ACTIVATE)</span>}
           </span>
         </label>
       ))}
@@ -121,7 +121,7 @@ function AiStep({ enabled, sections, me, connected, onSaved, onOpenAccess }: {
    *  through the pw CLI login (the footer's count). */
   connected: Connected | null
   onSaved: (saved: { host: string; model: string; status: KeyStatus }) => void
-  /** Closes setup and opens Settings, Model access. */
+  /** Closes setup and opens Settings, Accounts. */
   onOpenAccess: () => void
 }) {
   const [baseUrl, setBaseUrl] = useState(me?.baseUrl ?? '')
@@ -172,7 +172,7 @@ function AiStep({ enabled, sections, me, connected, onSaved, onOpenAccess }: {
   }
 
   const access = (
-    <a href="#view=settings:access" onClick={e => { e.preventDefault(); onOpenAccess() }}>Settings, Model access</a>
+    <a href="#view=settings:accounts" onClick={e => { e.preventDefault(); onOpenAccess() }}>Settings, Accounts</a>
   )
   return (
     <>
@@ -197,8 +197,8 @@ function AiStep({ enabled, sections, me, connected, onSaved, onOpenAccess }: {
             set up under OpenAI-compatible endpoint, Advanced, in {access}.
           </p>
           <p className="muted" style={{ margin: 0 }}>
-            An ACTIVATE account works too: set it up in {access}, under ACTIVATE (pw CLI) or ACTIVATE API key, or enter it
-            here with the base URL <code>https://&lt;platform host&gt;/api/openai/v1</code> and an API key from the account.
+            An ACTIVATE account works too, and also turns on pw code, workflows and libraries on ACTIVATE systems: set it
+            up in {access}, under ACTIVATE, or enter it here with the base URL <code>https://&lt;platform host&gt;/api/openai/v1</code> and an API key from the account.
           </p>
           {connected && !saved && (
             <Callout tone="success">
@@ -407,7 +407,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
   }
   const openAccess = async () => {
     await finish()
-    location.hash = '#view=settings:access'
+    location.hash = '#view=settings:accounts'
   }
   const openTransfers = async () => {
     await finish()
@@ -528,7 +528,8 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             <p className="muted" style={{ margin: 0 }}>Pages to show in the sidebar. Settings and Help always show.</p>
             <SidebarSwitches value={cfg.sections} platform={!!cfg.platform} aiEnabled={aiOn} onChange={changeSections} />
             <p className="muted" style={{ margin: 0 }}>
-              Workflows runs ACTIVATE workflows, so it needs an ACTIVATE credential (Settings, {accessLabel(cfg)}). For workflow
+              Workflows and Code need ACTIVATE: until you sign in under <a href="#view=settings:accounts" onClick={e => { e.preventDefault(); void openAccess() }}>Settings, Accounts</a>,
+              they say so and point there. For workflow
               YAML files of your own, without ACTIVATE, use <ExternalLink href={MERIDIAN_URL}>Meridian</ExternalLink>, the
               open-source workflow engine.
             </p>
@@ -644,7 +645,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             </ul>
             {aiOn && !endpoint && !connected && (
               <p className="muted" style={{ margin: 0 }}>
-                Chat needs a model: set one up in <a href="#view=settings:access" onClick={e => { e.preventDefault(); void openAccess() }}>Settings, Model access</a>.
+                Chat needs a model: sign in with ACTIVATE, or add an OpenAI-compatible endpoint, in <a href="#view=settings:accounts" onClick={e => { e.preventDefault(); void openAccess() }}>Settings, Accounts</a>.
               </p>
             )}
           </>

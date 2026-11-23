@@ -72,7 +72,7 @@ describe('a space of one\'s own', () => {
       if (u === '/api/me/platform-sign-in' && m === 'POST') { signedIn = true; return json({ state: 'signed-in', account: 'ada', host: 'platform.example.com' }) }
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText('A folder on a remote computer needs your ACTIVATE sign-in')).toBeInTheDocument()
+    expect(await screen.findByText('Sign in with ACTIVATE to use this')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Make the folder' })).toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
     expect(await screen.findByLabelText('Folder')).toHaveValue('~/studio')
@@ -93,11 +93,11 @@ describe('a space of one\'s own', () => {
   it('offers the sign-in again when the platform refuses the credential', async () => {
     stub((m, u) => {
       if (u === '/api/user-libraries/space' && m === 'GET') return json({ ...STATUS, credential: 'key', signInOffered: true })
-      if (u === '/api/user-libraries/space/test') return json({ error: 'The platform refused the credential the Studio used for you on cluster-a (Unauthorized). Sign in with ACTIVATE under Settings, Model access, then try again.' }, 502)
+      if (u === '/api/user-libraries/space/test') return json({ error: 'The platform refused the credential the Studio used for you on cluster-a (Unauthorized). Sign in with ACTIVATE under Settings, Accounts, then try again.' }, 502)
       if (u === '/api/me/platform-sign-in') return json({ state: 'none', host: 'platform.example.com' })
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText(/with the API key you added under Settings, Model access/)).toBeInTheDocument()
+    expect(await screen.findByText(/with the API key you added under Settings, Accounts/)).toBeInTheDocument()
     await chooseHome()
     fireEvent.click(button('Check the folder'))
     expect(await screen.findByText(/refused the credential/)).toBeInTheDocument()

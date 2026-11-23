@@ -12,7 +12,7 @@ import (
 )
 
 // FindPwCLI is config.ts's findPwCli: PW_CLI (a path is taken as it is,
-// found or not), the location chosen in Model access
+// found or not), the location chosen in Settings, Accounts
 // (INDEX_BASE/pw-cli.json), PATH, then the usual folders; bare "pw" when
 // there is none.
 // TODO(access track): move to the package that owns PUT /api/access/cli/path.

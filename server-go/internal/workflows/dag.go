@@ -37,7 +37,7 @@ func (r *Routes) platformAPI(ctx context.Context, req *http.Request, path string
 // credentialRemedy names the caller's situation when neither the API nor
 // the CLI could answer.
 func (r *Routes) credentialRemedy(req *http.Request, cliError string) string {
-	yours := "you have not added your own under Settings, Model access"
+	yours := "you have not added your own under Settings, Accounts"
 	if v, err := r.p.ViewerOf(req); err == nil && v.Cred != nil {
 		if v.Cred.BaseURL != "" {
 			yours = "your stored credential is a provider key, which covers chat only and is never sent to the platform"

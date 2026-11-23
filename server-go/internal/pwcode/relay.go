@@ -138,7 +138,7 @@ func relayError(de *DaemonError) error {
 	said := strings.TrimPrefix(de.Message, "pw code daemon: ")
 	switch de.Status {
 	case http.StatusUnauthorized:
-		return &DaemonError{Status: de.Status, Message: "ACTIVATE refused your credential; sign in again, or renew your API key under Settings, Model access."}
+		return &DaemonError{Status: de.Status, Message: "ACTIVATE refused your credential; sign in again, or renew your API key under Settings, Accounts."}
 	case http.StatusForbidden:
 		return &DaemonError{Status: de.Status, Message: "The session's machine does not take this from ACTIVATE (" + said + "). Answer it where the session runs."}
 	case 0:

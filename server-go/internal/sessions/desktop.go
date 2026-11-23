@@ -81,12 +81,12 @@ func DesktopKey(p *platform.Platform, v *platform.Viewer) (string, error) {
 		if k := v.PlatformKey(); k != "" {
 			return k, nil
 		}
-		return "", platform.KbError(409, "A desktop opens with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then try again.")
+		return "", platform.KbError(409, "A desktop opens with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Accounts, then try again.")
 	}
 	if k := KeyFor(p, v); k != "" {
 		return k, nil
 	}
-	return "", platform.KbError(409, "No platform credential: add your ACTIVATE API key under Settings, Model access.")
+	return "", platform.KbError(409, "No platform credential: add your ACTIVATE API key under Settings, Accounts.")
 }
 
 // SameOrigin is whether a browser request comes from a page of this

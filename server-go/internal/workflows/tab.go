@@ -144,7 +144,7 @@ func (r *Routes) PlatformError(err error) error {
 	}
 	text := jsTrim(cleanCLI(err.Error()))
 	if authFail.MatchString(text) {
-		return platform.KbError(401, "The platform credential has expired. Add your own platform API key under Settings, Model access, or renew the deployment credential.")
+		return platform.KbError(401, "The platform credential has expired. Add your own platform API key under Settings, Accounts, or renew the deployment credential.")
 	}
 	if netx.CLINetworkFailure(text) {
 		return platform.KbError(503, netx.UnreachableMessage(r.p.Host(), nil))
@@ -563,7 +563,7 @@ func (r *Routes) definitionOf(ctx context.Context, e *Entry, key string) (*Defin
 
 /* ---- the routes ---- */
 
-const noCredential = "No platform credential: add your ACTIVATE API key under Settings, Model access."
+const noCredential = "No platform credential: add your ACTIVATE API key under Settings, Accounts."
 
 type viewerKey struct {
 	key      string

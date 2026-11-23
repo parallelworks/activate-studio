@@ -211,14 +211,14 @@ func (m *Module) pwcodeCheck(ctx context.Context, r *http.Request) (string, time
 			return "Sign in to use pw code.", time.Minute
 		}
 		if m.viewerPlatformKey(r) == "" {
-			return "pw code runs as you: sign in with ACTIVATE under Settings, Model access.", time.Minute
+			return "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.", time.Minute
 		}
 		if userlibs.HomeCluster() == "" {
 			return "This Studio does not know the cluster it runs on (STUDIO_HOME_CLUSTER), so it cannot reach your pw code.", time.Minute
 		}
 		return "", time.Minute
 	}
-	needs := "pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Model access."
+	needs := "pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Accounts."
 	if f := m.A.Providers.PlatformAvailable; f == nil || !f(r, userID(r)) || m.GatewayKey() == "" {
 		return needs, time.Minute
 	}
@@ -307,7 +307,7 @@ func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conver
 	}
 	key := m.viewerPlatformKey(r)
 	if key == "" {
-		return nil, pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Model access.")
+		return nil, pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.")
 	}
 	site := userlibs.HomeCluster()
 	if site == "" {

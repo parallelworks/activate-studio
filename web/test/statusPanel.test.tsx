@@ -181,7 +181,7 @@ describe('the cards', () => {
     expect(libraryLines(freshLibraries([copy], live), null, null)[0]).toMatchObject({ label: 'Copy', state: 'indexed', tone: 'success' })
     expect(freshLibraries([copy], null)).toEqual([copy])
     const conns = connectionLines({ platform: false, authEnabled: true, ai: null, mcp: [{ name: 'crm', tools: 4, error: null, checkedAt: ago(1) }], libs: [lib], userLibs: null })
-    expect(conns.map(c => `${c.kind} ${c.name}: ${c.meta}`)).toEqual(['platform Platform: needs your key', 'mcp crm: connected, 4 tools'])
+    expect(conns.map(c => `${c.kind} ${c.name}: ${c.meta}`)).toEqual(['platform Platform: sign in with ACTIVATE to use it', 'mcp crm: connected, 4 tools'])
     expect(connectionsSummary(conns).text).toBe('1 needs attention')
     const ai = { ok: false, models: 0, gatewayHost: '', message: null, lastCallFailure: null, checkedAt: ago(1) }
     expect(modelSummary({ ...ai, status: 'off' }, null)).toEqual({ text: 'AI features off', tone: 'muted' })

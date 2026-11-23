@@ -1,4 +1,4 @@
-// Package access ports server/src/accessRoutes.ts: Model access as one
+// Package access ports server/src/accessRoutes.ts: Settings, Accounts as one
 // picture (where model calls and platform calls get their credential, the
 // pw CLI's contexts and which one is used), signing the CLI in to a
 // platform, and subscriptions connected through the platform (a ChatGPT
@@ -38,7 +38,7 @@ type account struct {
 	org, user string
 }
 
-// Register registers the ten Model access routes.
+// Register registers the ten access routes (Settings, Accounts and Model access).
 func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Routes {
 	s := &Routes{p: p, a: a, accounts: map[string]account{}}
 	h := func(f func(w http.ResponseWriter, r *http.Request) (any, error)) http.HandlerFunc {
@@ -154,7 +154,7 @@ func (s *Routes) sources(v *platform.Viewer) (models, plat *jsonv.Object) {
 
 func (s *Routes) requireSingle(v *platform.Viewer) error {
 	if v.AuthEnabled {
-		return platform.KbError(403, "The pw CLI on this server belongs to the deployment; choose a credential of your own under Model access instead.")
+		return platform.KbError(403, "The pw CLI on this server belongs to the deployment; choose a credential of your own under Settings, Accounts instead.")
 	}
 	return nil
 }
@@ -428,7 +428,7 @@ func (s *Routes) call(ctx context.Context, key, method, path string, body any) (
 		}
 		st := res.StatusCode
 		if st == 401 || st == 403 {
-			return nil, platform.KbError(st, "The platform refused this credential ("+itoa(st)+")"+tail+". It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Model access.")
+			return nil, platform.KbError(st, "The platform refused this credential ("+itoa(st)+")"+tail+". It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Settings, Accounts.")
 		}
 		code := 502
 		if st == 404 {

@@ -72,7 +72,7 @@ func (m *Module) enabled() bool {
 // person is the verified person behind r, or why there is none.
 func (m *Module) person(r *http.Request) (*auth.User, error) {
 	if !m.A.Cfg.AuthEnabled() {
-		return nil, apierr.New(409, "This Studio has one user, who signs the pw CLI in under Settings, Model access.")
+		return nil, apierr.New(409, "This Studio has one user, who signs the pw CLI in under Settings, Accounts.")
 	}
 	if os.Getenv("DISABLE_PERSONAL_KEYS") == "1" {
 		return nil, apierr.New(403, "This Studio keeps no personal credentials (DISABLE_PERSONAL_KEYS).")

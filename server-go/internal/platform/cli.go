@@ -18,7 +18,7 @@ import (
 
 // NoCLIMessage is config.ts's NO_CLI_MESSAGE.
 const NoCLIMessage = "The Studio cannot find the pw CLI, so platform actions (workflows, clusters, status) cannot run from here. " +
-	"Install it, or choose where it is under Settings, Model access, pw CLI; in a container, bind the CLI and its credentials in, or set PW_CLI to its path."
+	"Install it, or choose where it is under Settings, Accounts, pw CLI; in a container, bind the CLI and its credentials in, or set PW_CLI to its path."
 
 // CLI sources, as PwCliSource.
 const (
@@ -45,7 +45,7 @@ func runnableFile(f string) bool {
 	return executable(f)
 }
 
-// ChosenCLI is chosenPwCli: the location chosen in Model access, or "".
+// ChosenCLI is chosenPwCli: the location chosen in Settings, Accounts, or "".
 func (p *Platform) ChosenCLI() string {
 	b, err := os.ReadFile(p.cliChoiceFile())
 	if err != nil {

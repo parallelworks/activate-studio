@@ -69,7 +69,7 @@ func TestWorkflowListFromTheAPIAndTheCLI(t *testing.T) {
 
 	bad := newFixture(t, map[string]string{"PW_CLI": fakeCLI(t, `echo 'not signed in' >&2; exit 1`)})
 	a := bad.do("GET", "/api/workflows", nil)
-	if a.status != 502 || !strings.HasPrefix(jsStr(jsonv.Path(a.json, "error")), "Cannot list workflows: no platform credential available (this deployment has none, and you have not added your own under Settings, Model access), and the pw CLI on this host is not usable (not signed in") {
+	if a.status != 502 || !strings.HasPrefix(jsStr(jsonv.Path(a.json, "error")), "Cannot list workflows: no platform credential available (this deployment has none, and you have not added your own under Settings, Accounts), and the pw CLI on this host is not usable (not signed in") {
 		t.Fatal(a.status, string(a.body))
 	}
 }

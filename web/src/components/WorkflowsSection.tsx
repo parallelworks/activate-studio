@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Callout, Checkbox, ExternalLink, IconButton, Input, Loader, SearchInput, Table, toast } from '@parallelworks/ui'
 import { ArrowDownIcon, ArrowUpIcon } from '@parallelworks/ui/icons'
-import { accessLabel, useAppConfig } from '../config'
+import { useAppConfig } from '../config'
+import { NeedsActivate } from './NeedsActivate'
 
 /**
  * Settings > Workflows: which platform workflows this Studio offers on its
@@ -13,8 +14,27 @@ import { accessLabel, useAppConfig } from '../config'
 interface CatalogRow { name: string; displayName: string; description: string; tags?: string[]; curated: boolean }
 interface GithubRow { entry: string; title: string; description: string }
 
+/** Settings, Workflows, or, before the person has an ACTIVATE credential,
+ *  what it is for and the prompt to sign in. */
 export function WorkflowsSection() {
   const cfg = useAppConfig()
+  if (!cfg.loaded) return <h1>Workflows</h1>
+  if (!cfg.platform) return (
+    <>
+      <h1>Workflows</h1>
+      <p className="muted view-sub">
+        ACTIVATE workflows are picked here from your ACTIVATE account, the marketplace, or a GitHub repository, and offered
+        on the Workflows page. Without ACTIVATE, write and run workflow YAML files with{' '}
+        <ExternalLink href="https://github.com/parallelworks/meridian">Meridian</ExternalLink>, the open-source workflow
+        engine, on your own computers.
+      </p>
+      <NeedsActivate />
+    </>
+  )
+  return <WorkflowsSettings />
+}
+
+function WorkflowsSettings() {
   const [catalog, setCatalog] = useState<CatalogRow[] | null>(null)
   const [source, setSource] = useState<'deployment' | 'viewer'>('deployment')
   const [market, setMarket] = useState<CatalogRow[]>([])
@@ -92,8 +112,8 @@ export function WorkflowsSection() {
       <h1>Workflows</h1>
       <p className="muted view-sub">Workflows are YAML files, run one of two ways.</p>
       <p className="muted view-sub">
-        <i>ACTIVATE workflows:</i> with an ACTIVATE credential (a pw CLI sign-in or an API key, under{' '}
-        <a href="#view=settings:access">{accessLabel(cfg)}</a>), the Workflows page offers the workflows picked below as tiles,
+        <i>ACTIVATE workflows:</i> with your ACTIVATE account (under{' '}
+        <a href="#view=settings:accounts">Accounts</a>), the Workflows page offers the workflows picked below as tiles,
         each run from its own form under the viewer's account. Pick them from the account this Studio runs under, the
         marketplace, or a GitHub repository; a viewer who lacks an account workflow can add a copy from its tile.
       </p>

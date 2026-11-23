@@ -31,6 +31,12 @@ const ORDER = ['chat', 'library', 'search', 'query', 'overview', 'agents', 'work
 describe('sidebar sections', () => {
   it('shows every page when nothing is saved, and Settings and Help always', () => {
     expect(SECTION_SWITCHES.every(s => s.id === 'workflows' || s.id === 'code' || sectionAllowed(s.id, {}))).toBe(true)
+    // Workflows and Code need ACTIVATE: shown where it is reached, or where
+    // Accounts can sign in to it (they then ask to sign in), hidden otherwise.
+    expect(sectionAllowed('workflows', {})).toBe(false)
+    expect(sectionAllowed('workflows', { accounts: true })).toBe(true)
+    expect(sectionAllowed('code', { accounts: true })).toBe(true)
+    expect(sectionAllowed('workflows', { platform: true })).toBe(true)
     const cfg = { sections: ['library', 'search', 'settings', 'help'] }
     expect(sectionAllowed('chat', cfg)).toBe(false)
     expect(sectionAllowed('agents', cfg)).toBe(false)
@@ -70,7 +76,7 @@ describe('sidebar sections', () => {
     render(<SidebarSwitches value={['library', 'search', 'settings', 'help']} platform={false} onChange={onChange} />)
     expect(screen.getByRole('switch', { name: 'Chat' })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('switch', { name: 'Library' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getAllByText('(needs a platform login)')).toHaveLength(2)
+    expect(screen.getAllByText('(needs ACTIVATE)')).toHaveLength(2)
     fireEvent.click(screen.getByRole('switch', { name: 'Library' }))
     expect(onChange).toHaveBeenLastCalledWith(['search', 'settings', 'help'])
     fireEvent.click(screen.getByRole('switch', { name: 'Agents' }))
@@ -576,7 +582,7 @@ describe('the setup wizard', () => {
     expect(s.calls.some(c => c.url === '/api/setup/complete')).toBe(true)
   })
 
-  it('Skip this step moves on and saves nothing; the Model access link closes setup and opens it', async () => {
+  it('Skip this step moves on and saves nothing; the Accounts link closes setup and opens it', async () => {
     const s = server()
     const onClose = open(s)
     next()
@@ -588,10 +594,10 @@ describe('the setup wizard', () => {
     expect(sent(s, 'POST', '/api/me/model-key')).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     heading('AI features')
-    fireEvent.click(screen.getAllByRole('link', { name: 'Settings, Model access' })[0])
+    fireEvent.click(screen.getAllByRole('link', { name: 'Settings, Accounts' })[0])
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(false))
     expect(s.calls.some(c => c.url === '/api/setup/complete')).toBe(true)
-    expect(location.hash).toBe('#view=settings:access')
+    expect(location.hash).toBe('#view=settings:accounts')
     history.replaceState(null, '', location.pathname)
   })
 

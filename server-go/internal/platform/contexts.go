@@ -266,7 +266,7 @@ func (p *Platform) loadChoice() string {
 	return str(v.PWContext)
 }
 
-// ChosenContext is chosenContext: the context chosen in Model access,
+// ChosenContext is chosenContext: the context chosen in Settings, Accounts,
 // while the CLI still has it.
 func (p *Platform) ChosenContext() string {
 	p.rereadChoice()

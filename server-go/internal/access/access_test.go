@@ -353,7 +353,7 @@ func TestPlatformRefusalsAndReach(t *testing.T) {
 		w.WriteHeader(401)
 		io.WriteString(w, `{"error":"bad token"}`)
 	})
-	if st, body, _ := s.do("GET", "/api/access/subscriptions", nil); st != 401 || body["error"] != "The platform refused this credential (401): bad token. It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Model access." {
+	if st, body, _ := s.do("GET", "/api/access/subscriptions", nil); st != 401 || body["error"] != "The platform refused this credential (401): bad token. It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Settings, Accounts." {
 		t.Fatal(st, body)
 	}
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500); io.WriteString(w, "oops") })
