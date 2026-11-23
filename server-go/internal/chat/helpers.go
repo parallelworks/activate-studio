@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
@@ -344,6 +345,11 @@ func splitEnvelope(content string, nonces []string, names []string, hasNames boo
 					from, to = loc[0], len(content)-len(rest)+3
 				}
 			}
+			// Quotes and brackets left after the object, as a model that
+			// closes its request twice leaves them ("}), go with it.
+			for to < len(content) && strings.IndexByte("\"'}])", content[to]) >= 0 {
+				to++
+			}
 			cut = append(cut, span{from, to})
 			at = to
 			break
@@ -359,7 +365,12 @@ func splitEnvelope(content string, nonces []string, names []string, hasNames boo
 		last = s.to
 	}
 	b.WriteString(content[last:])
-	return strings.TrimSpace(b.String()), calls
+	rest := strings.TrimSpace(b.String())
+	// What is left with no letter or digit is no prose.
+	if !strings.ContainsFunc(rest, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+		rest = ""
+	}
+	return rest, calls
 }
 
 // orderedFromJSON keeps nothing of the key order Go's decoder lost; the

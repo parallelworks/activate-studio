@@ -490,3 +490,117 @@ func TestRowsHeldAndAsked(t *testing.T) {
 		}
 	}
 }
+
+// Quotes and brackets a model leaves after its request ("} after a
+// complete envelope) are not shown.
+func TestNoBracketsLeftAfterARequest(t *testing.T) {
+	env := writeEnvelope("ab12cd34", "x")
+	for in, want := range map[string]string{
+		env + `"}`:                            "",
+		"Saving.\n" + env + "\"}\nMore text.": "Saving.\n\nMore text.",
+	} {
+		prose, calls := splitEnvelope(in, []string{"ab12cd34"}, []string{"write_kb_file"}, true)
+		if prose != want || len(calls) != 1 {
+			t.Errorf("%q: prose %q, %d calls", in, prose, len(calls))
+		}
+	}
+}
+
+// A request withheld while the turn goes on (Studio asks for the rest of
+// a workbook) is a progress line, not an answer telling the user to do
+// what the Studio is doing; and the model's text in a round it is asked
+// again is not shown.
+func TestWithheldRequestMidTurnIsAProgressLine(t *testing.T) {
+	e, base, gw := emuModule(t)
+	e.results = []string{
+		"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 30 rows after the header), 900 bytes) and re-indexed in 1 ms.",
+		"Added to reports/items.xlsx (30 rows; the workbook now holds: Items, 60 rows after the header; 9000 bytes in all) and re-indexed in 1 ms.",
+	}
+	cut := said(func(n string) string { w := writeEnvelope(n, sheetRows(400)); return w[:len(w)/2] }, "length")
+	gw.load([]reply{
+		said(func(n string) string { return writeEnvelope(n, sheetRows(30)) }, "stop"),
+		cut, cut,
+		said(func(n string) string { return writeEnvelope(n, sheetRows(31)) }, "stop"),
+		said(func(string) string { return "The workbook holds all 60 rows. " + strings.Repeat("Done. ", 30) }, "stop"),
+	})
+	sse := askFor(t, base, "Make reports/items.xlsx with 60 rows of items. Do not search first.")
+	a := answerOf(sse)
+	if countWrites(e) != 2 || !strings.Contains(a, "all 60 rows") {
+		t.Fatalf("ran %d writes; answer %.400s", countWrites(e), a)
+	}
+	if strings.Contains(a, "output limit") || strings.Contains(a, "Ask for it in smaller parts") || !strings.Contains(sse, "was cut off again; nothing ran") {
+		t.Errorf("the notice is in the answer, or no progress line: %.600s", a)
+	}
+}
+
+// A file the user asked for, not yet written, is asked for again when the
+// model gives up without a request (here after searching for it), not
+// left to a final answer without tools; its giving-up text is not shown.
+func TestFileAskedForIsWritten(t *testing.T) {
+	e, base, gw := emuModule(t)
+	search := func(q string) reply {
+		return said(func(n string) string {
+			return `{"protocol":"studio-tools-1","nonce":"` + n + `","calls":[{"name":"search_kb","arguments":{"query":"` + q + `"}}]}`
+		}, "stop")
+	}
+	gw.load([]reply{
+		search("emu.xlsx"),
+		said(func(string) string { return "I can't write the spreadsheet from the tools available in this chat." }, "stop"),
+		said(func(n string) string { return writeEnvelope(n, sheetRows(3)) }, "stop"),
+		said(func(string) string { return "Wrote emu.xlsx with 3 rows. " + strings.Repeat("Done. ", 30) }, "stop"),
+	})
+	sse := askFor(t, base, "Write a spreadsheet emu.xlsx of sales, three rows. Do not search first.")
+	a := answerOf(sse)
+	if countWrites(e) != 1 || strings.Contains(a, "I can't write") || !strings.Contains(a, "Wrote emu.xlsx") {
+		t.Fatalf("ran %q; answer %.300s", e.runs(), a)
+	}
+	if !strings.Contains(requestOf(gw, 2), "nothing has been written yet") {
+		t.Errorf("no nudge: %.300s", requestOf(gw, 2))
+	}
+	for in, want := range map[string]string{
+		"Write a spreadsheet emu-250f.xlsx with 250 rows": "emu-250f.xlsx",
+		"make reports/plan.md and a PDF":                  "reports/plan.md",
+		"what does reports/plan.md say?":                  "",
+		"write a short summary":                           "",
+	} {
+		if got := askedFile(in); got != want {
+			t.Errorf("%q: %q", in, got)
+		}
+	}
+}
+
+// A workbook short of the rows asked for, whose model keeps sending the
+// rest in one request cut off at the output limit: each re-ask and nudge
+// says how many rows to send in each request, a cut-off does not stop the
+// nudges, and a turn that ends on one says what the workbook holds, once.
+func TestCutOffRequestsForTheRestEndWithWhatTheWorkbookHolds(t *testing.T) {
+	e, base, gw := emuModule(t)
+	e.results = []string{"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 30 rows after the header), 900 bytes) and re-indexed in 1 ms."}
+	cut := said(func(n string) string { w := writeEnvelope(n, sheetRows(400)); return w[:len(w)/2] }, "length")
+	gw.load([]reply{
+		said(func(n string) string { return writeEnvelope(n, sheetRows(30)) }, "stop"),
+		cut, cut, cut, cut, cut, cut,
+	})
+	sse := askFor(t, base, "Make reports/items.xlsx with 600 rows of items. Do not search first.")
+	a := answerOf(sse)
+	if strings.Count(a, "holds 30 of the 600 rows asked for") != 1 || strings.Count(a, "output limit") != 1 {
+		t.Fatalf("answer %.600s", a)
+	}
+	if r := requestOf(gw, 2); !strings.Contains(r, "at most 50 rows in each request") {
+		t.Errorf("the re-ask gives no size: %.400s", r)
+	}
+	nudges := 0
+	for i := 3; i < 7; i++ {
+		if r := requestOf(gw, i); strings.Contains(r, "holds 30 of the 600 rows the user asked for") && strings.Contains(r, "at most 50 rows in each request") {
+			nudges++
+		}
+	}
+	if nudges < 3 {
+		t.Errorf("nudged %d times after cut-offs", nudges)
+	}
+	for in, want := range map[string]int{`[["a"],["b"]`: 10, "no rows": 50, strings.Repeat(`["a"],`, 120): 29, strings.Repeat(`["a"],`, 900): 50} {
+		if got := rowsPerPart(in); got != want {
+			t.Errorf("%.20q: %d", in, got)
+		}
+	}
+}
