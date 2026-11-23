@@ -12,6 +12,20 @@ import { createPwCodeApi, type PwCodePaths } from '@parallelworks/code'
  */
 export const pwClient = createClient<PwCodePaths>({ baseUrl: typeof location === 'undefined' ? '' : location.origin })
 
+// A command typed in the session's composer reads the session's palette
+// first, and the package sends the line as a message when the palette
+// comes back empty: "/plan ..." then reached the session as text, which it
+// refuses. A palette that could not be read fails the command instead, with
+// the Studio's reason (the session not taken up yet, say), and the line
+// stays in the composer to send again.
+pwClient.use({
+  async onResponse({ request, response }) {
+    if (response.ok || request.method !== 'GET' || !/\/sessions\/[^/]+\/palette$/.test(new URL(request.url).pathname)) return undefined
+    const p = await response.clone().json().catch(() => null) as { detail?: string; error?: string } | null
+    throw new Error(p?.detail ?? p?.error ?? `The session's commands could not be read (${response.status}). Try again in a moment.`)
+  },
+})
+
 /** The Studio's address for a feed the package names by its platform path. */
 export function feedURL(path: string, origin = location.origin): string {
   return origin.replace(/^http/, 'ws') + '/api/pwcode-feed' + path.replace(/^\/ws\/code/, '')

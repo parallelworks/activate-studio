@@ -473,6 +473,21 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		route += "?" + q
 	}
 	v, err := t.client.Call(ctx, r.Method, route, body, 0)
+	if err != nil && takesSessionUp(r.Method, key) && isNotLive(err) {
+		// A saved session the daemon has not taken up yet (the chat was
+		// just opened, or the daemon let it go while idle): the palette
+		// a command needs, a settings change or anything sent to it takes
+		// it up first, as PW Code on the web's server does. Reading it does
+		// not. The platform does not relay attach.
+		if !t.relay {
+			if _, aerr := pwcode.AttachSession(ctx, t.client, id); aerr == nil {
+				v, err = t.client.Call(ctx, r.Method, route, body, 0)
+			}
+		}
+		if err != nil && isNotLive(err) {
+			return writeProblem(w, http.StatusConflict, notLiveYet)
+		}
+	}
 	if err != nil {
 		return writeErr(w, err)
 	}
@@ -507,6 +522,24 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	return reqbody.OK(w, v)
+}
+
+// notLiveYet is what the chat says when the session could not be taken up
+// for a request that needs it live: the daemon's own "attach it first"
+// names a step the person cannot take here.
+const notLiveYet = "The Studio is still connecting to this session. Try again in a moment."
+
+// takesSessionUp is whether a request needs the session live: the palette
+// (read only when a command is typed) and everything that changes or is
+// sent to the session.
+func takesSessionUp(method, key string) bool {
+	return key == "GET /palette" || method != http.MethodGet
+}
+
+// isNotLive is whether the daemon answered that the session is not live.
+func isNotLive(err error) bool {
+	var de *pwcode.DaemonError
+	return errors.As(err, &de) && notLiveMessage(de.Message)
 }
 
 // checkSettings refuses a settings change the Studio does not make: a
