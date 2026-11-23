@@ -85,6 +85,13 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if len(also) > 0 && source != "" {
 		return fail("also goes with content. To make another format from "+source+", call write_kb_file for that path with the same source.", "error")
 	}
+	adding := args["append"] == true
+	if adding && (source != "" || len(also) > 0) {
+		return fail("append adds content to one file; it does not go with source or also.", "error")
+	}
+	if adding && (ext == ".pdf" || ext == ".docx") {
+		return fail("A "+ext+" is made whole, not added to. Write its Markdown in parts to a .md file (append=true for each part after the first), then make "+rel+" with source set to that .md file.", "error")
+	}
 	if source != "" {
 		if !docwrite.Handles(ext) {
 			return fail("source makes a .pdf, .docx or .xlsx from a text file in the library. To copy a file, use copy_kb_files.", "error")
@@ -110,8 +117,11 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	overwrite := args["overwrite"] == true
 	_, statErr := os.Stat(abs)
 	exists := statErr == nil
-	if exists && !overwrite {
-		return fail(rel+" already exists. Pass overwrite=true to replace it, or choose another name.", "exists")
+	if exists && !overwrite && !adding {
+		return fail(rel+" already exists. Pass overwrite=true to replace it, or choose another name, or append=true to add to it.", "exists")
+	}
+	if adding && exists {
+		return m.appendKBFile(r, rel, abs, ext, content)
 	}
 	// The other formats asked for beside a Markdown file: checked before
 	// anything is written, so the call writes all of them or none.
@@ -704,4 +714,37 @@ func splitFirst(p string) string {
 		return p[:i]
 	}
 	return p
+}
+
+// appendKBFile adds a part to a file already in the library: text at its
+// end, rows to a workbook's sheets.
+func (m *Module) appendKBFile(r *http.Request, rel, abs, ext, content string) (*Outcome, error) {
+	old, err := os.ReadFile(abs)
+	if err != nil {
+		return &Outcome{Result: "Could not read " + rel + " to add to it: " + err.Error(), Summary: "error"}, nil
+	}
+	var data []byte
+	added := itoaInt(jsval.Len(content)) + " bytes"
+	if ext == ".xlsx" {
+		b, sheets, rows, err := docwrite.AppendXLSX(old, content)
+		if err != nil {
+			return &Outcome{Result: "Could not add to " + rel + ": " + err.Error(), Summary: "error"}, nil
+		}
+		data = b
+		added = itoaInt(rows) + " rows; the workbook has " + itoaInt(sheets) + " sheets"
+	} else {
+		data = append(old, content...)
+	}
+	if len(data) > 32*1024*1024 {
+		return &Outcome{Result: rel + " would be over 32 MB; write the rest as another file.", Summary: "too large"}, nil
+	}
+	if err := m.writeLibraryFile(abs, data); err != nil {
+		return nil, err
+	}
+	m.made.drop(rel)
+	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
+	return &Outcome{
+		Result:  "Added to " + rel + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. Add the next part the same way, or give the user its link once the last part is in: " + libraryLink(rel),
+		Summary: "added to " + rel,
+	}, nil
 }

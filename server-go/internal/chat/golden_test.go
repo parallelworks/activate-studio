@@ -40,6 +40,9 @@ type reply struct {
 	frames []any
 	body   any
 	whole  bool
+	// fn, when set, makes the reply from the request's body, as a model
+	// answering the prompt it was sent would.
+	fn func(req []byte) reply
 }
 
 type fakeGateway struct {
@@ -73,6 +76,9 @@ func (g *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rp = reply{frames: []any{delta(map[string]any{"content": "(script ran out)"}), finish("stop")}}
 		}
 		g.mu.Unlock()
+		if rp.fn != nil {
+			rp = rp.fn(b)
+		}
 		if rp.status != 0 || rp.whole {
 			w.Header().Set("Content-Type", "application/json")
 			if rp.status != 0 {
