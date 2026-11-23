@@ -248,6 +248,9 @@ func TestWakeFollowDecide(t *testing.T) {
 		t.Fatalf("created %d, message %q", len(d.created), d.messages[1])
 	}
 	waitFor(t, "working", func() bool { return f.Get(a.ID).Note == "wake-up 2 working" })
+	// The note comes before the wake-up ends (it sets the round's goal
+	// after), and Follow leaves an agent alone while it wakes.
+	waitFor(t, "the wake-up to end", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
 	// A message while it works goes straight into the session.
 	if !f.Message(a.ID, "also check the GPU queue") || len(d.steered) != 1 {
 		t.Fatalf("steered %v", d.steered)
