@@ -364,8 +364,12 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	afterChange := false
 	messages := st.messages
 	push := func(ms ...llm.Message) { *messages = append(*messages, ms...) }
+	rowsAsked, rowsFile := 0, ""
+	if st.lastUser != nil {
+		rowsAsked, rowsFile = rowCap(st.lastUser.Text())
+	}
 	toolCtx := func() ToolCtx {
-		return ToolCtx{LabelScope: st.labelScope, Library: st.library, UserKey: st.pwToolKey, Model: strOrNil(model), ConversationID: strOrNil(st.convID), UserID: strOrNil(userID(r))}
+		return ToolCtx{LabelScope: st.labelScope, Library: st.library, UserKey: st.pwToolKey, Model: strOrNil(model), ConversationID: strOrNil(st.convID), UserID: strOrNil(userID(r)), RowsAsked: rowsAsked, RowsFile: rowsFile}
 	}
 
 	if st.resume != nil {
@@ -1260,6 +1264,25 @@ func askedRows(text string) int {
 	}
 	return best
 }
+
+// rowCap is the count of rows a message asks a new workbook to hold and
+// the file it names ("" for none): a message that asks to write, create
+// or make something with a count of rows, not "more rows" or rows added
+// to a file already there. 0 when it asks for none. A model that sends
+// the parts of a workbook all at once cannot see the count until they
+// have run, so the write itself stops at it.
+func rowCap(text string) (int, string) {
+	if !makeVerbRe.MatchString(text) || moreRowsRe.MatchString(text) {
+		return 0, ""
+	}
+	n := askedRows(text)
+	if n == 0 {
+		return 0, ""
+	}
+	return n, askedFile(text)
+}
+
+var moreRowsRe = regexp.MustCompile(`(?i)\b(?:more|another|additional|extra)\s+(?:\d[\d,]*\s+)?(?:data\s+)?(?:rows|records|lines|entries)\b|\b(?:add|append)\b`)
 
 var (
 	heldPartRe = regexp.MustCompile(`(?:workbook of \d+ sheets? \(|now holds: )([^\n]*?)(?:\)[;,.] |\)$|; \d+ bytes in all)`)

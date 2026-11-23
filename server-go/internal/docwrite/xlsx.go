@@ -318,11 +318,24 @@ func cellValue(v any) any {
 }
 
 func renderXLSX(content string) ([]byte, []string, error) {
+	data, says, _, err := RenderXLSXUpTo(content, 0)
+	return data, says, err
+}
+
+// RenderXLSXUpTo makes a workbook from content as Render does, keeping at
+// most limit rows after the header when it has one sheet (0 keeps all).
+// dropped is how many rows past limit were left out.
+func RenderXLSXUpTo(content string, limit int) (data []byte, says []string, dropped int, err error) {
 	sheets, err := Sheets(content)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
-	return workbook(sheets)
+	if limit > 0 && len(sheets) == 1 && len(sheets[0].Rows)-1 > limit {
+		dropped = len(sheets[0].Rows) - 1 - limit
+		sheets[0].Rows = sheets[0].Rows[:limit+1]
+	}
+	data, says, err = workbook(sheets)
+	return data, says, dropped, err
 }
 
 // held says what a sheet holds, for the model to check against what was
@@ -344,15 +357,22 @@ func held(name string, rows int) string {
 // a part whose first row repeats that sheet's header does not add it
 // again; a part naming a new sheet adds that sheet. The workbook is made
 // again from its rows, so its header, widths and filter cover them all.
-// rows is how many rows were added.
-func AppendXLSX(existing []byte, content string) (data []byte, sheets []string, rows int, err error) {
+// rows is how many rows were added. When limit is over 0 and the workbook
+// has one sheet, rows past limit after the header are not added; dropped
+// is how many of this part's rows were left out. Rows it already held
+// stay.
+func AppendXLSX(existing []byte, content string, limit int) (data []byte, sheets []string, rows, dropped int, err error) {
 	parts, err := Sheets(content)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, 0, err
 	}
 	have, err := readSheets(existing)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("reading the workbook to add to: %v", err)
+		return nil, nil, 0, 0, fmt.Errorf("reading the workbook to add to: %v", err)
+	}
+	before := 0
+	if len(have) == 1 {
+		before = len(have[0].Rows)
 	}
 	for _, p := range parts {
 		i := -1
@@ -376,8 +396,14 @@ func AppendXLSX(existing []byte, content string) (data []byte, sheets []string, 
 		have[i].Rows = append(have[i].Rows, add...)
 		rows += len(add)
 	}
+	if limit > 0 && len(have) == 1 && len(have[0].Rows)-1 > limit {
+		keep := max(limit+1, before)
+		dropped = len(have[0].Rows) - keep
+		have[0].Rows = have[0].Rows[:keep]
+		rows -= dropped
+	}
 	data, sheets, err = workbook(have)
-	return data, sheets, rows, err
+	return data, sheets, rows, dropped, err
 }
 
 // readSheets is a workbook's sheets as rows: values as their text (typed
