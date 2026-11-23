@@ -1,6 +1,5 @@
 import { type ReactNode, useMemo, useState } from 'react'
 import {
-  lastModelPreference,
   machineChip,
   machineMenu,
   machinesById,
@@ -20,8 +19,6 @@ import {
   startShortlist,
   triageSessions,
   useCompactAgo,
-  useLastModelPreference,
-  useModelPicker,
   useStartLocation,
   useStartModel,
   useStartPermissionMode,
@@ -31,29 +28,26 @@ import {
   waitingQuestions,
   waitingSince,
 } from '@parallelworks/code'
-import { ActionMenu, Combobox, Loader, LoadingRegion, type MenuEntry, menuDivider, Section, Skeleton, StatusDot, toast } from '@parallelworks/ui'
+import { ActionMenu, Loader, LoadingRegion, type MenuEntry, menuDivider, Section, Skeleton, StatusDot, toast } from '@parallelworks/ui'
 import {
-  AllocationSelector,
   type ApprovalAnswerValue,
   ApprovalBlock,
-  type BoundSetting,
   ChatInput,
   ChatStage,
-  EffortPicker,
   NoticeCard,
   PermissionPicker,
   StageList,
   StageListRowContent,
   stageListRowClassName,
   useChat,
-  useChatConfig,
 } from '@parallelworks/ui/ai'
 import { ChevronDownIcon, ChevronRightIcon } from '@parallelworks/ui/icons'
 import { useTranslations } from 'use-intl'
 import { describeError } from '../pwcode/PWCodeSession'
 import { type PageSession, pwCodePage } from './api'
+import { AgentModelControls, useLastAgentModel } from './AgentModelControls'
 import { DirectoryPicker } from './DirectoryPicker'
-import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useSavedPreference, useStartAccount, useStartEffort, useStartMachine, useStartMode } from './parts'
+import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useStartAccount, useStartEffort, useStartMachine, useStartMode } from './parts'
 
 /**
  * A new session, as PW Code on the web starts one (its AgentsStart): the
@@ -229,7 +223,7 @@ function Composer({ location, finding, permission, onStarted, t }: {
   const { machine, directories, directory } = location
   const { selectedProvider, selectedAllocation, models, hasLoadedModels } = useChat()
   const [panel, setPanel] = useState<PwCodePicker>(null)
-  const last = useLastModelPreference(useSavedPreference(lastModelPreference))
+  const last = useLastAgentModel()
   const settings = useStartModel(pwCodePage, {
     machine,
     platform: { models: hasLoadedModels ? models : undefined, model: selectedProvider, allocation: selectedAllocation },
@@ -274,8 +268,9 @@ function Composer({ location, finding, permission, onStarted, t }: {
       }
       settingsLeft={<PermissionPicker mode={permission.mode} ceiling={permission.ceiling} accepted={permission.accepted} onPick={permission.pick} />}
       settingsRight={
-        <ModelControls
+        <AgentModelControls
           key={machine?.id}
+          api={pwCodePage}
           machine={machine?.id ?? ''}
           claudeReady={claudeReady}
           canStart={canStart}
@@ -283,69 +278,10 @@ function Composer({ location, finding, permission, onStarted, t }: {
           effort={{ value: effort, onChange: rememberEffort, disabled: disabled.effort }}
           allocation={{ value: allocation, onChange: settings.pickAllocation, disabled: disabled.allocation }}
           account={account}
-          remember={last.remember}
           panel={panel}
-          onPanel={setPanel}
+          onPanelChange={setPanel}
         />
       }
     />
-  )
-}
-
-/** The model and effort a session starts with, chosen as PW Code on the
- *  web chooses them (its AgentModelControls): the platform's models, and
- *  Claude's where the machine runs Claude Code. */
-function ModelControls({ machine, claudeReady, canStart, model, effort, allocation, account, remember, panel, onPanel }: {
-  machine: string
-  claudeReady: boolean
-  canStart: boolean
-  model: BoundSetting
-  effort: BoundSetting
-  allocation: BoundSetting
-  account: string | undefined
-  remember: (model: string, allocation: string | null | undefined) => void
-  panel: PwCodePicker
-  onPanel: (panel: PwCodePicker) => void
-}) {
-  const { models, providerIssues, refreshModels, isLoadingModels, modelsError, currentUser } = useChat()
-  const { strings } = useChatConfig()
-  const picker = useModelPicker(pwCodePage, {
-    machine,
-    claudeReady,
-    canStart,
-    account,
-    open: panel === 'models',
-    model,
-    allocation,
-    platform: { models, providerIssues, isLoading: isLoadingModels, error: modelsError, refresh: refreshModels },
-    reader: currentUser?.username ?? '',
-    errorMessage: describeError,
-    remember,
-    onAccounts: () => {},
-  })
-  return (
-    <>
-      <Combobox
-        items={picker.entries}
-        value={model.value}
-        disabled={model.disabled}
-        open={panel === 'models'}
-        onOpenChange={open => {
-          if (open) picker.opened()
-          onPanel(open ? 'models' : null)
-        }}
-        onValueChange={value => picker.pick(value ?? '')}
-        aria-label={strings.modelPicker.choose}
-        placeholder={strings.modelPicker.search}
-        trigger={
-          <button type="button" data-testid="agents-model-chip" className="code-setting-chip">
-            <span className="code-chip-label">{picker.label}</span>
-            <ChevronDownIcon className="code-chip-caret" aria-hidden />
-          </button>
-        }
-      />
-      <EffortPicker effort={effort.value} onPick={effort.onChange} disabled={effort.disabled} className="code-setting-chip" />
-      {picker.allocation && <AllocationSelector model={model.value} allocation={picker.allocation} />}
-    </>
   )
 }
