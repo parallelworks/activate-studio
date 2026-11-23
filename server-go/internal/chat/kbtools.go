@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/docwrite"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
@@ -59,7 +60,7 @@ func (m *Module) toolGetLabels(r *http.Request, _ map[string]any, _ ToolCtx) (*O
 
 var edgeSlashes = regexp.MustCompile(`^/+|/+$`)
 
-func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
+func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, tctx ToolCtx) (*Outcome, error) {
 	rel := edgeSlashes.ReplaceAllString(argString(args, "path"), "")
 	content := argString(args, "content")
 	source := edgeSlashes.ReplaceAllString(jsTrim(argString(args, "source")), "")
@@ -68,14 +69,28 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	fail := func(result, summary string) (*Outcome, error) {
 		return &Outcome{Result: result, Summary: summary + ": " + jsval.Slice(result, 160), Failed: true}, nil
 	}
-	if err := mainLibraryWritable(r); err != nil {
-		return fail(err.Error(), "error")
-	}
 	if rel == "" || (content == "" && source == "") {
 		return fail("path and content are required (or source in place of content: a Markdown file in the library to make a .pdf or .docx from)", "error")
 	}
 	if content != "" && source != "" {
 		return fail("Give content or source, not both: source makes the file from a Markdown file already in the library.", "error")
+	}
+	// The library it goes to: the one the call names, else the chat's
+	// (where.go). Written to the person's space as them.
+	p, rel, why, ask, err := m.toolPlace(r, tctx, args, rel, !argTrue(args, "append") && !argTrue(args, "overwrite"))
+	if err != nil {
+		return fail(err.Error(), "refused")
+	}
+	if ask != nil {
+		return fail(ask.askText(), "asks where")
+	}
+	if err := p.writable(); err != nil {
+		return fail(err.Error(), "error")
+	}
+	if source != "" {
+		if q, rest, ok := m.splitNamed(r, source); ok && q.id() == p.id() {
+			source = rest
+		}
 	}
 	ext := strings.ToLower(filepath.Ext(rel))
 	also, bad := alsoFormats(args["also"])
@@ -99,9 +114,9 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 		if !docwrite.Handles(ext) {
 			return fail("source makes a .pdf, .docx or .xlsx from a text file in the library. To copy a file, use copy_kb_files.", "error")
 		}
-		text, why := m.sourceText(source)
-		if why != "" {
-			return fail(why, "error")
+		text, bad := m.sourceText(p, source)
+		if bad != "" {
+			return fail(bad, "error")
 		}
 		content = text
 	}
@@ -113,43 +128,41 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 			return fail("Not writable: "+part+" is excluded.", "refused")
 		}
 	}
-	abs, err := kb.Resolve(rel, m.A.Cfg.KBRoot)
-	if err != nil {
+	if err := p.check(rel); err != nil {
 		return fail(err.Error(), "refused")
 	}
 	// One write to a file at a time: an append reads the file and writes
 	// it back, and two at once would lose or reorder a part.
-	defer lockPath(abs)()
+	defer lockPath(p.lockKey(rel))()
 	overwrite := argTrue(args, "overwrite")
-	_, statErr := os.Stat(abs)
-	exists := statErr == nil
+	exists := p.exists(rel)
 	var prevHeld []string
 	if exists && ext == ".xlsx" && overwrite && !adding {
-		if old, err := os.ReadFile(abs); err == nil {
+		if old, err := p.read(rel, 64<<20); err == nil {
 			prevHeld = docwrite.Held(old)
 		}
 	}
 	if exists && !overwrite && !adding {
-		return fail(rel+" already exists. Pass overwrite=true to replace it, or choose another name, or append=true to add to it.", "exists")
+		return fail(p.shown(rel)+" already exists. Pass overwrite=true to replace it, or choose another name, or append=true to add to it.", "exists")
 	}
+	m.note(tctx, p.id(), rel)
 	if adding && exists {
-		return m.appendKBFile(r, rel, abs, ext, content)
+		return m.appendKBFile(r, p, rel, ext, content)
 	}
 	// The other formats asked for beside a Markdown file: checked before
 	// anything is written, so the call writes all of them or none.
 	stem := strings.TrimSuffix(rel, filepath.Ext(rel))
-	type beside struct{ rel, abs, ext string }
+	type beside struct{ rel, ext string }
 	var extra []beside
 	for _, f := range also {
 		orel := stem + "." + f
-		oabs, err := kb.Resolve(orel, m.A.Cfg.KBRoot)
-		if err != nil {
+		if err := p.check(orel); err != nil {
 			return fail(err.Error(), "refused")
 		}
-		if _, err := os.Stat(oabs); err == nil && !overwrite {
-			return fail(orel+" already exists. Pass overwrite=true to replace it, or choose another name.", "exists")
+		if p.exists(orel) && !overwrite {
+			return fail(p.shown(orel)+" already exists. Pass overwrite=true to replace it, or choose another name.", "exists")
 		}
-		extra = append(extra, beside{orel, oabs, "." + f})
+		extra = append(extra, beside{orel, "." + f})
 	}
 	// A PDF, Word or Excel file is made from what the model wrote
 	// (Markdown, or rows); other office formats are refused with what to
@@ -168,41 +181,49 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 		imageDir = ""
 	}
 	if docwrite.Handles(ext) {
-		out, err := docwrite.Render(ext, content, libraryImages(m.A.Cfg.KBRoot, imageDir))
+		out, err := docwrite.Render(ext, content, p.images(imageDir))
 		if err != nil {
-			return fail("Could not write "+rel+": "+err.Error(), "error")
+			return fail("Could not write "+p.shown(rel)+": "+err.Error(), "error")
 		}
 		data, made, missing, problems, style = out.Data, out.Note, out.Missing, out.Problems, out.Style
 	} else if isReport(ext) {
 		style = docwrite.StyleCheck(content)
 	}
-	if err := m.writeLibraryFile(abs, data); err != nil {
+	if err := p.write(rel, data); err != nil {
+		if p.space {
+			return fail("Could not write "+p.shown(rel)+": "+err.Error(), "error")
+		}
 		return nil, err
 	}
 	if source != "" {
-		m.made.set(rel, source, data)
+		m.made.set(p.key(rel), p.key(source), data)
 	} else {
-		m.made.drop(rel)
+		m.made.drop(p.key(rel))
 	}
 	var alsoMade []string
-	links := []string{libraryLink(rel)}
+	links := []string{p.link(rel)}
+	files := []conversations.File{p.file(rel)}
 	for _, x := range extra {
-		out, err := docwrite.Render(x.ext, content, libraryImages(m.A.Cfg.KBRoot, imageDir))
+		out, err := docwrite.Render(x.ext, content, p.images(imageDir))
 		if err != nil {
-			return fail("Wrote "+rel+", but could not make "+x.rel+": "+err.Error(), "error")
+			return fail("Wrote "+p.shown(rel)+", but could not make "+x.rel+": "+err.Error(), "error")
 		}
-		if err := m.writeLibraryFile(x.abs, out.Data); err != nil {
+		if err := p.write(x.rel, out.Data); err != nil {
+			if p.space {
+				return fail("Wrote "+p.shown(rel)+", but could not write "+p.shown(x.rel)+": "+err.Error(), "error")
+			}
 			return nil, err
 		}
-		m.made.set(x.rel, rel, out.Data)
+		m.made.set(p.key(x.rel), p.key(rel), out.Data)
 		alsoMade = append(alsoMade, x.rel+" ("+out.Note+")")
-		links = append(links, libraryLink(x.rel))
+		links = append(links, p.link(x.rel))
+		files = append(files, p.file(x.rel))
 		missing, problems = addNew(missing, out.Missing), addNew(problems, out.Problems)
 		if len(style) == 0 {
 			style = out.Style
 		}
 	}
-	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
+	ms := p.reindex(r.Context(), rel)
 	base := rel[strings.LastIndex(rel, "/")+1:]
 	link := links[0]
 	show := "show_in_viewer can display it."
@@ -246,15 +267,30 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if len(problems) > 0 {
 		show = "The document was made with these problems: " + strings.Join(problems, "; ") + ". A front matter option that was not understood kept its default. Correct the text or the options and make the document again (edit_kb_file on its Markdown, or this call again with overwrite=true), and tell the user of any that stand. " + show
 	}
-	summary := "wrote " + rel
+	summary := "wrote " + p.shown(rel)
 	if ext == ".xlsx" {
 		if h := docwrite.Held(data); len(h) > 0 {
 			summary += ": " + strings.Join(h, "; ")
 		}
 	}
+	indexed := " and re-indexed in " + itoaInt(int(ms)) + " ms. "
+	if p.space {
+		indexed = "; its index is updated shortly. "
+	}
+	where := ""
+	if m.spacesFor(r) {
+		// The library is said, with why when the chat chose it, and the
+		// link opens the file there.
+		where = "Saved to " + links[0] + "."
+		if why != "" {
+			where += " It went there because " + why + "; say so, and that it can be moved."
+		}
+		where += " Tell the user where it is with that link. "
+	}
 	return &Outcome{
-		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show + styleAdvice(style),
+		Result:  "Wrote " + p.shown(rel) + " (" + wrote + ")" + replaced + indexed + where + show + styleAdvice(style),
 		Summary: summary,
+		Files:   files,
 	}, nil
 }
 
@@ -745,10 +781,10 @@ func splitFirst(p string) string {
 
 // appendKBFile adds a part to a file already in the library: text at its
 // end, rows to a workbook's sheets.
-func (m *Module) appendKBFile(r *http.Request, rel, abs, ext, content string) (*Outcome, error) {
-	old, err := os.ReadFile(abs)
+func (m *Module) appendKBFile(r *http.Request, p place, rel, ext, content string) (*Outcome, error) {
+	old, err := p.read(rel, 64<<20)
 	if err != nil {
-		return &Outcome{Result: "Could not read " + rel + " to add to it: " + err.Error(), Summary: "error"}, nil
+		return &Outcome{Result: "Could not read " + p.shown(rel) + " to add to it: " + err.Error(), Summary: "error"}, nil
 	}
 	var data []byte
 	added := itoaInt(jsval.Len(content)) + " bytes"
@@ -765,14 +801,18 @@ func (m *Module) appendKBFile(r *http.Request, rel, abs, ext, content string) (*
 	if len(data) > 32*1024*1024 {
 		return &Outcome{Result: rel + " would be over 32 MB; write the rest as another file.", Summary: "too large"}, nil
 	}
-	if err := m.writeLibraryFile(abs, data); err != nil {
+	if err := p.write(rel, data); err != nil {
+		if p.space {
+			return &Outcome{Result: "Could not add to " + p.shown(rel) + ": " + err.Error(), Summary: "error", Failed: true}, nil
+		}
 		return nil, err
 	}
-	m.made.drop(rel)
-	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
+	m.made.drop(p.key(rel))
+	ms := p.reindex(r.Context(), rel)
 	return &Outcome{
-		Result:  "Added to " + rel + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. " + nextPart + libraryLink(rel),
-		Summary: "added to " + rel + heldSummary(ext, data),
+		Result:  "Added to " + p.shown(rel) + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. " + nextPart + p.link(rel),
+		Summary: "added to " + p.shown(rel) + heldSummary(ext, data),
+		Files:   []conversations.File{p.file(rel)},
 	}, nil
 }
 

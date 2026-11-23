@@ -606,9 +606,18 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 				canonical string
 			}
 			var held *heldCall
+			var heldWhere *whereDecision
 			notRun := map[int]*Outcome{}
 			for i, tc := range calls {
 				name := tc.Function.Name
+				// A new file whose library is not clear waits for the
+				// person to say where (where.go).
+				if name == "write_kb_file" && held == nil && st.convID != "" && st.kbChanges.OK && st.readerAllows(name, names) {
+					if d := m.writeAsks(r, toolCtx(), tc.Function.Arguments); d != nil {
+						held, heldWhere = &heldCall{i, name, json.RawMessage(tc.Function.Arguments), tc.Function.Arguments}, d
+						continue
+					}
+				}
 				if !names.AsksFirst[name] || !st.readerAllows(name, names) {
 					continue
 				}
@@ -740,10 +749,14 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 				id := parts[held.i].ID
 				messageID := "srv-" + strconv.FormatInt(time.Now().UnixMilli(), 10)
 				turnMsgs := append([]llm.Message{}, (*messages)[st.baseLen:]...)
-				approval, err := m.Tools.Hold(r, map[string]any{
+				in := map[string]any{
 					"conversationId": st.convID, "messageId": messageID, "toolCallId": id, "tool": held.tool, "canonical": held.canonical,
 					"args": held.args, "turn": turnMsgs, "groups": st.groupList(),
-				})
+				}
+				if heldWhere != nil {
+					in["where"], in["whereWhy"] = heldWhere.options, heldWhere.why
+				}
+				approval, err := m.Tools.Hold(r, in)
 				if err != nil {
 					return err
 				}

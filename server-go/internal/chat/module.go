@@ -50,12 +50,16 @@ func init() {
 
 // Module is the track's state.
 type Module struct {
-	A     *app.App
-	Keys  *modelkeys.Store
-	LLM   *llm.Client
-	Conv  *conversations.Store
-	Tools Tools
-	Convs *conversations.Routes
+	// where is what each chat worked with and the place its person chose
+	// for its writes (where.go).
+	whereOnce sync.Once
+	where     *chatTouches
+	A         *app.App
+	Keys      *modelkeys.Store
+	LLM       *llm.Client
+	Conv      *conversations.Store
+	Tools     Tools
+	Convs     *conversations.Routes
 	// Ext is the deployment's extensions (skills, agents, custom tools).
 	Ext *extensions.Set
 	// MCP is the client for the attached MCP servers.

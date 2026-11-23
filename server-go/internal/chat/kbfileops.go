@@ -160,11 +160,15 @@ func reindexed(ctx context.Context, o *kb.Outcome) string {
 	return " Re-indexed in " + itoaInt(int(ms)) + " ms."
 }
 
-func (m *Module) toolMoveKBFiles(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
-	if err := mainLibraryWritable(r); err != nil {
+func (m *Module) toolMoveKBFiles(r *http.Request, args map[string]any, tctx ToolCtx) (*Outcome, error) {
+	paths := pathArgs(args["paths"])
+	p, paths, err := m.opPlace(r, tctx, args, paths)
+	if err != nil {
 		return nil, err
 	}
-	paths := pathArgs(args["paths"])
+	if err := p.writable(); err != nil {
+		return nil, err
+	}
 	name := jsTrim(argString(args, "name"))
 	rawDest, hasDest := args["dest"].(string)
 	if len(paths) == 0 {
@@ -178,6 +182,16 @@ func (m *Module) toolMoveKBFiles(r *http.Request, args map[string]any, _ ToolCtx
 	}
 	if (!hasDest || jsTrim(rawDest) == "") && name == "" {
 		return &Outcome{Result: "dest is required: the folder to move into (\"/\" for the library's top), or give name to rename in place.", Summary: "error", Failed: true}, nil
+	}
+	if hasDest {
+		d, err := m.destIn(r, p, rawDest)
+		if err != nil {
+			return nil, err
+		}
+		rawDest = d
+	}
+	if p.space {
+		return m.moveInSpace(r, tctx, p, paths, name, rawDest, hasDest)
 	}
 	files := kb.Default.Files
 	parent := path.Dir(paths[0])
@@ -230,6 +244,11 @@ func (m *Module) toolMoveKBFiles(r *http.Request, args map[string]any, _ ToolCtx
 	} else {
 		result += "\n" + strings.TrimSpace(reindexed(r.Context(), o))
 	}
+	if m.spacesFor(r) {
+		// On a Studio with spaces the library is named.
+		result += "\nAll in " + p.label() + "."
+		summary += " in " + p.label()
+	}
 	return &Outcome{Result: strings.TrimSpace(result), Summary: summary, Failed: len(o.Moved) == 0}, nil
 }
 
@@ -243,15 +262,26 @@ func (m *Module) toolRenameKBFile(r *http.Request, args map[string]any, tc ToolC
 	if jsTrim(argString(args, "name")) == "" {
 		return &Outcome{Result: "name is required: the new name, without a folder.", Summary: "error", Failed: true}, nil
 	}
-	return m.toolMoveKBFiles(r, map[string]any{"paths": []any{p[0]}, "name": args["name"]}, tc)
+	return m.toolMoveKBFiles(r, map[string]any{"paths": []any{p[0]}, "name": args["name"], "library": args["library"]}, tc)
 }
 
-func (m *Module) toolCopyKBFiles(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
-	if err := mainLibraryWritable(r); err != nil {
+func (m *Module) toolCopyKBFiles(r *http.Request, args map[string]any, tctx ToolCtx) (*Outcome, error) {
+	paths := pathArgs(args["paths"])
+	p, paths, err := m.opPlace(r, tctx, args, paths)
+	if err != nil {
 		return nil, err
 	}
-	paths := pathArgs(args["paths"])
+	if err := p.writable(); err != nil {
+		return nil, err
+	}
 	rawDest, _ := args["dest"].(string)
+	if jsTrim(rawDest) != "" {
+		d, err := m.destIn(r, p, rawDest)
+		if err != nil {
+			return nil, err
+		}
+		rawDest = d
+	}
 	if len(paths) == 0 {
 		return &Outcome{Result: "paths is required: one or more library paths to copy.", Summary: "error", Failed: true}, nil
 	}
@@ -262,6 +292,9 @@ func (m *Module) toolCopyKBFiles(r *http.Request, args map[string]any, _ ToolCtx
 		return &Outcome{Result: "dest is required: the folder to copy into (\"/\" for the library's top). A copy into the same folder is named \"<name> copy\".", Summary: "error", Failed: true}, nil
 	}
 	dest := folderArg(rawDest)
+	if p.space {
+		return m.copyInSpace(r, tctx, p, paths, dest)
+	}
 	if err := m.ensureFolder(dest); err != nil {
 		return nil, err
 	}
@@ -279,6 +312,11 @@ func (m *Module) toolCopyKBFiles(r *http.Request, args map[string]any, _ ToolCtx
 	summary := "copied " + countOf(len(o.Moved), "item", "items")
 	if len(o.Skipped) > 0 {
 		summary += ", skipped " + itoaInt(len(o.Skipped))
+	}
+	if m.spacesFor(r) {
+		// On a Studio with spaces the library is named.
+		result += "\nAll in " + p.label() + "."
+		summary += " in " + p.label()
 	}
 	return &Outcome{Result: strings.TrimSpace(result), Summary: summary, Failed: len(o.Moved) == 0}, nil
 }

@@ -184,7 +184,19 @@ func (m *Module) toolSearchKB(r *http.Request, args map[string]any, ctx ToolCtx)
 		}
 	}
 	reg := m.Corpus.Reg
-	libs, omittedList, err := reg.Scope(scopeParam(args["library"], ctx), viewerOfCtx(ctx), m.primaryLabel())
+	scope := scopeParam(args["library"], ctx)
+	both := false
+	if len(scope) == 0 {
+		// With a space of their own, a person's search covers it and the
+		// main library, and each hit says which.
+		if own, ok := ownSpaceLib(r); ok {
+			scope, both = []string{libraries.PrimaryID, own.ID}, true
+		}
+	}
+	libs, omittedList, err := reg.Scope(scope, viewerOfCtx(ctx), m.primaryLabel())
+	if err != nil && both {
+		libs, omittedList, err = reg.Scope(nil, viewerOfCtx(ctx), m.primaryLabel())
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -369,11 +381,31 @@ func (m *Module) toolListLibraries(r *http.Request, _ map[string]any, ctx ToolCt
 	reg := m.Corpus.Reg
 	libs := reg.List(m.primaryLabel(), viewerOfCtx(ctx))
 	lines := make([]string, len(libs))
+	// On a Studio with spaces, what the person may do in each library.
+	own, spaces := ownSpaceLib(r)
+	writes := map[string]bool{}
+	if spaces {
+		if all, err := kb.LibraryResolver.All(r); err == nil {
+			for _, l := range all {
+				if l.AsViewer() && l.Writable {
+					writes[l.ID] = true
+				}
+			}
+		}
+	}
 	for i, l := range libs {
 		kind := " (read only)"
 		switch {
+		case spaces && l.Primary && mainLibraryWritable(r) == nil:
+			kind = " (the shared library, read and write)"
+		case spaces && l.Primary:
+			kind = " (the shared library, read only for you: only its administrators change it)"
 		case l.Primary:
 			kind = " (the knowledge base, read and write)"
+		case spaces && l.ID == own.ID:
+			kind = " (My library, your own: read and write, written as you; name it My library in a path)"
+		case writes[l.ID]:
+			kind = " (your library on " + l.Site + ", read and write)"
 		case l.Site != "":
 			kind = " (your library on " + l.Site + ", read only)"
 		}
