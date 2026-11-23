@@ -85,6 +85,7 @@ type Module struct {
 	bridgeMachineFn  bridgeMachineFn
 	bridgeMachinesFn bridgeMachinesFn
 	bridgeAttachFn   bridgeAttachFn
+	bridgeClustersFn bridgeClustersFn
 	access           Access
 
 	listings *listingCache

@@ -166,6 +166,7 @@ func (m *Module) bridgeRoute(w http.ResponseWriter, r *http.Request) error {
 	out.SetValue("available", true)
 	out.SetValue("url", url)
 	out.SetValue("command", bridgeCommand(url))
+	out.SetValue("paste", bridgePaste(url))
 	out.SetValue("tools", len(tools))
 	out.SetValue("ownKey", deref(tc.UserKey) != "")
 	out.SetValue("platformTools", slices.ContainsFunc(tools, func(s ToolSpec) bool { return isPlatformTool(s.Name) }))

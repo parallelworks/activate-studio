@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -89,6 +91,19 @@ printf 'who=%s\n' "$("$p" auth whoami 2>/dev/null | tail -n 1)"
 printf 'entry=%s\n' "$("$p" code mcp get --scope user "$1" -o json 2>/dev/null | tr -d '\r\n')"
 `
 
+// bridgePaste is the command a person pastes in a terminal on the machine
+// to do what Set up for me does there: the same entry, which uses that
+// machine's own pw sign-in, so it needs no key.
+func bridgePaste(url string) string {
+	return "pw code mcp add --scope user --force " + studioMCPName + " -- sh -c " + bridgeQuote(bridgeShim) +
+		" " + bridgeShimName + " " + bridgeQuote(url) + ` "$(command -v pw)"`
+}
+
+// bridgeQuote is s in single quotes for a POSIX shell.
+func bridgeQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // bridgeTry sends one tools/list through the shim, as a session would.
 const bridgeTry = `printf '%s\n' "$1" | sh -c "$2" ` + bridgeShimName + ` "$3" "$4"`
 
@@ -160,35 +175,131 @@ func (m *Module) bridgeMachines(r *http.Request) ([]bridgeMach, error) {
 	return out, nil
 }
 
-// bridgeSite is the pw ssh site of the viewer's machine mach and their own
-// platform credential, or why the Studio cannot open a terminal there for
-// them. Only the person's own credential: a Studio's account never opens a
-// terminal on someone's machine, and only on a machine of theirs.
-func (m *Module) bridgeSite(r *http.Request, mach bridgeMach) (site, key string, err error) {
+// bridgeCheck is whether the viewer may have the Studio set up pw code on
+// mach, and their own ACTIVATE credential to do it with: never the
+// Studio's account, and only on a machine of theirs (an existing cluster
+// they log in to, though an administrator shared it with them).
+func (m *Module) bridgeCheck(r *http.Request, mach bridgeMach) (key string, err error) {
 	name := firstNonEmpty(mach.Name, mach.ID)
 	u := user(r)
 	if u == nil || u.Username == "" {
-		return "", "", pwErr(401, "Sign in to set up pw code.")
+		return "", pwErr(401, "Sign in to set up pw code.")
 	}
 	switch {
 	case mach.Kind == "local":
-		return "", "", pwErr(409, name+" is a computer that connected itself to ACTIVATE, and the Studio cannot open a terminal on it: do it yourself in a terminal there.")
+		return "", pwErr(409, name+" is a computer that connected itself to ACTIVATE, and the Studio cannot open a terminal on it: do it yourself in a terminal there.")
 	case mach.Kind != "cloud" && mach.Kind != "instance" && mach.Kind != "existing":
-		return "", "", pwErr(409, "The Studio does not know how to reach "+name+" (an ACTIVATE machine of kind "+firstNonEmpty(mach.Kind, "unknown")+"): do it yourself in a terminal there.")
+		return "", pwErr(409, "The Studio does not know how to reach "+name+" (an ACTIVATE machine of kind "+firstNonEmpty(mach.Kind, "unknown")+"): do it yourself in a terminal there.")
 	case mach.Name == "" || !bridgeName.MatchString(mach.Name) || mach.Owner != "" && !bridgeName.MatchString(mach.Owner):
-		return "", "", pwErr(409, "The Studio cannot name "+name+" to pw ssh: do it yourself in a terminal there.")
+		return "", pwErr(409, "The Studio cannot name "+name+" to pw ssh: do it yourself in a terminal there.")
 	case mach.Kind != "existing" && !strings.EqualFold(mach.Owner, u.Username):
-		return "", "", pwErr(403, name+" is "+firstNonEmpty(mach.Owner, "someone else")+"'s, not yours: only its owner sets up pw code there.")
+		return "", pwErr(403, name+" is "+firstNonEmpty(mach.Owner, "someone else")+"'s, not yours: only its owner sets up pw code there.")
 	}
 	key = m.viewerPlatformKey(r)
 	if key == "" {
-		return "", "", pwErr(409, "The Studio reaches "+name+" with your own ACTIVATE sign-in, and has none for you: sign in with ACTIVATE under Settings, Accounts, or do it yourself.")
+		return "", pwErr(409, "The Studio reaches "+name+" with your own ACTIVATE sign-in, and has none for you: sign in with ACTIVATE under Settings, Accounts, or do it yourself.")
 	}
-	site = "pw://" + mach.Name
-	if mach.Kind != "existing" {
-		site = "pw://" + mach.Owner + "/" + mach.Name
+	return key, nil
+}
+
+// bridgeSite is the pw ssh site of the viewer's machine mach, always
+// pw://<owner>/<name> (pw ssh finds no cluster by its bare name), and
+// their own ACTIVATE credential. An existing cluster's owner is the one
+// the pw code listing gives; where it gives none, the one the viewer's own
+// cluster listing gives for that name; and only then the viewer.
+func (m *Module) bridgeSite(r *http.Request, mach bridgeMach) (site, key string, err error) {
+	key, err = m.bridgeCheck(r, mach)
+	if err != nil {
+		return "", "", err
 	}
-	return site, key, nil
+	owner := mach.Owner
+	if owner == "" {
+		if owner, err = m.bridgeOwner(r, key, mach.Name); err != nil {
+			return "", "", err
+		}
+	}
+	return "pw://" + owner + "/" + mach.Name, key, nil
+}
+
+// bridgeCluster is one cluster in the viewer's ACTIVATE cluster listing
+// (/api/clusters): its owner is User, or the owner in its pw:// URI.
+type bridgeCluster struct {
+	Name, Type, User, URI string
+}
+
+// bridgeClustersFn is the clusters the platform lists to the viewer, asked
+// with their own key (a test seam).
+type bridgeClustersFn func(r *http.Request, key string) ([]bridgeCluster, error)
+
+func (m *Module) bridgeClusters() bridgeClustersFn {
+	if m.bridgeClustersFn != nil {
+		return m.bridgeClustersFn
+	}
+	return func(r *http.Request, key string) ([]bridgeCluster, error) {
+		res := m.pf.APIFetch(r.Context(), "/api/clusters", key, 30*time.Second)
+		if res == nil || !res.OK {
+			status := 0
+			if res != nil {
+				status = res.Status
+			}
+			return nil, fmt.Errorf("ACTIVATE did not list your clusters (HTTP %d)", status)
+		}
+		var raw []struct {
+			Name string  `json:"name"`
+			Type *string `json:"type"`
+			User *string `json:"user"`
+			URI  string  `json:"uri"`
+		}
+		if err := json.Unmarshal(res.Raw, &raw); err != nil {
+			return nil, fmt.Errorf("ACTIVATE's cluster listing was not one: %w", err)
+		}
+		out := make([]bridgeCluster, 0, len(raw))
+		for _, c := range raw {
+			out = append(out, bridgeCluster{Name: c.Name, Type: deref(c.Type), User: deref(c.User), URI: c.URI})
+		}
+		return out, nil
+	}
+}
+
+// bridgeOwner is the owner of the existing cluster named name, as the
+// viewer's own cluster listing gives it: the one cluster of that name, or,
+// where there is none or the listing cannot be read, the viewer. Two or
+// more of that name are not guessed between.
+func (m *Module) bridgeOwner(r *http.Request, key, name string) (string, error) {
+	me := user(r).Username
+	cs, err := m.bridgeClusters()(r, key)
+	if err != nil {
+		m.A.Log.Warn("mcp setup: the owner of an existing cluster is taken to be the viewer", "machine", name, "err", err.Error())
+		return me, nil
+	}
+	var owners []string
+	for _, c := range cs {
+		if c.Name != name || c.Type != "" && c.Type != "existing" {
+			continue
+		}
+		o := c.User
+		if o == "" {
+			if rest, ok := strings.CutPrefix(c.URI, "pw://"); ok {
+				if who, n, ok := strings.Cut(rest, "/"); ok && n == name {
+					o = who
+				}
+			}
+		}
+		if o != "" && bridgeName.MatchString(o) && !slices.Contains(owners, o) {
+			owners = append(owners, o)
+		}
+	}
+	switch len(owners) {
+	case 0:
+		return me, nil
+	case 1:
+		return owners[0], nil
+	}
+	sites := make([]string, len(owners))
+	for i, o := range owners {
+		sites[i] = "pw://" + o + "/" + name
+	}
+	return "", pwErr(409, "ACTIVATE lists more than one cluster named "+name+" to you ("+strings.Join(sites, ", ")+"), and the Studio does not guess which one this is: do it yourself in a terminal there.")
 }
 
 // bridgeChat is the viewer's own relayed chat id and its machine.
@@ -233,7 +344,7 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 	o := bridgeOfferT{Machine: firstNonEmpty(mach.Name, mach.ID), MachineID: mach.ID}
 	url, why := m.bridgeReach(r)
 	if why == "" {
-		if _, _, err := m.bridgeSite(r, mach); err != nil {
+		if _, err := m.bridgeCheck(r, mach); err != nil {
 			why = apiMessage(err)
 		}
 	}
@@ -414,7 +525,7 @@ func (m *Module) bridgeInstall(r *http.Request, site, key string, mach bridgeMac
 	machine := firstNonEmpty(mach.Name, mach.ID)
 	who := userID(r)
 	reached := func(err error) error {
-		return pwErr(502, "The Studio could not reach "+machine+" with pw ssh as you ("+firstLine(apiMessage(err), 300)+"). Do it yourself in a terminal there.")
+		return pwErr(502, "The Studio could not reach "+machine+" with pw ssh as you, at "+site+" ("+firstLine(apiMessage(err), 300)+"). Do it yourself in a terminal there.")
 	}
 	res, err := run(ctx, site, key, []string{"sh", "-c", bridgeLook, "studio-look", studioMCPName}, 90*time.Second)
 	if err != nil {

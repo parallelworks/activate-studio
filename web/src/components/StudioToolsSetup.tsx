@@ -10,8 +10,11 @@ export interface BridgeReach {
   why?: string
   /** The Studio's MCP endpoint at its address on ACTIVATE. */
   url?: string
-  /** The command the person runs once on the machine. */
+  /** The command the person runs once on the machine, with a key of theirs. */
   command?: string
+  /** The command to paste in a terminal on the machine that adds what Set up
+   *  for me adds: it uses pw's own sign-in there, so it needs no key. */
+  paste?: string
   /** The text in the command the person replaces with their key. */
   keyHole?: string
   /** Where the person makes an ACTIVATE API key. */
@@ -55,7 +58,8 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
   const [open, setOpen] = useState(defaultOpen)
   const [checking, setChecking] = useState(false)
   const [checked, setChecked] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState('')
+  const [withKey, setWithKey] = useState(false)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<SetupResult | null>(null)
   const [failed, setFailed] = useState('')
@@ -95,11 +99,11 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
     setChecking(false)
     setChecked(true)
   }
-  const copy = async () => {
+  const copy = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(reach.command ?? '')
-      setCopied(true)
-    } catch { setCopied(false) }
+      await navigator.clipboard.writeText(text)
+      setCopied(text)
+    } catch { setCopied('') }
   }
   if (result?.done && result.worked) {
     return (
@@ -123,6 +127,22 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
       </Callout>
     )
   }
+  const startThere = <>
+    Start a pw code session there: every session started there from then on has the Studio's tools
+    ({reach.tools} of them), as you, with your own libraries. One already open keeps the tools it started with.
+    {!reach.platformTools && <> The platform's tools come once you sign in with ACTIVATE in this Studio (Settings, Model access).</>}
+  </>
+  const keySteps = (first: string, second: string) => <>
+    <p>
+      {first}. Make an ACTIVATE API key with the platform scope
+      {reach.keyPage ? <> under <a href={reach.keyPage} target="_blank" rel="noreferrer">API keys in ACTIVATE</a></> : <> (Account, Authentication, API Keys)</>}.
+    </p>
+    <p>{second}. In a terminal on {where}, run this once, with your key in place of {reach.keyHole}:</p>
+    <pre className="studio-tools-command">{reach.command}</pre>
+    <p>
+      <Button variant="secondary" size="sm" onClick={() => void copy(reach.command ?? '')}>{copied === reach.command ? 'Copied' : reach.paste ? 'Copy the key command' : 'Copy the command'}</Button>
+    </p>
+  </>
   const canRun = !!conversationId && !!reach.setup?.available
   return (
     <Callout tone={failed || result ? 'warning' : 'info'} size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
@@ -151,20 +171,23 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
       {open && (!reach.available
         ? <p>{reach.why}</p>
         : <>
-            <p>
-              1. Make an ACTIVATE API key with the platform scope
-              {reach.keyPage ? <> under <a href={reach.keyPage} target="_blank" rel="noreferrer">API keys in ACTIVATE</a></> : <> (Account, Authentication, API Keys)</>}.
-            </p>
-            <p>2. In a terminal on {where}, run this once, with your key in place of {reach.keyHole}:</p>
-            <pre className="studio-tools-command">{reach.command}</pre>
-            <p>
-              <Button variant="secondary" size="sm" onClick={() => void copy()}>{copied ? 'Copied' : 'Copy the command'}</Button>
-            </p>
-            <p>
-              3. Start a pw code session there: every session started there from then on has the Studio's tools
-              ({reach.tools} of them), as you, with your own libraries. One already open keeps the tools it started with.
-              {!reach.platformTools && <> The platform's tools come once you sign in with ACTIVATE in this Studio (Settings, Model access).</>}
-            </p>
+            {reach.paste
+              ? <>
+                  <p>1. In a terminal on {where}, paste this once. It adds the same entry the Studio would, which uses pw's own ACTIVATE sign-in there, so it needs no key (it needs curl):</p>
+                  <pre className="studio-tools-command" data-testid="studio-tools-paste">{reach.paste}</pre>
+                  <p>
+                    <Button variant="secondary" size="sm" onClick={() => void copy(reach.paste ?? '')}>{copied === reach.paste ? 'Copied' : 'Copy the command'}</Button>{' '}
+                    <button type="button" className="code-approval-more" aria-expanded={withKey} onClick={() => setWithKey(k => !k)}>
+                      {withKey ? 'Hide the key steps' : 'No curl there? Use an ACTIVATE API key'}
+                    </button>
+                  </p>
+                  {withKey && keySteps('a', 'b')}
+                  <p>2. {startThere}</p>
+                </>
+              : <>
+                  {keySteps('1', '2')}
+                  <p>3. {startThere}</p>
+                </>}
             <p>
               <Button variant="secondary" size="sm" loading={checking} disabled={checking} onClick={() => void check()}>Check that it worked</Button>
               {checked && !checking && <span className="muted studio-tools-check"> Not yet: no pw code session of yours has reached the tools since the Studio started.</span>}
