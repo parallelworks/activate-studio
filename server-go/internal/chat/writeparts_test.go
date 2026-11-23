@@ -6,13 +6,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/docwrite"
 	kbpkg "github.com/parallelworks/activate-studio/server-go/internal/kb"
 )
 
@@ -121,5 +124,38 @@ func TestWriteKBFileTakesWhatModelsSend(t *testing.T) {
 	o = run(`{"path":"r/sales.xlsx","overwrite":true,"content":"{\"sheets\":[{\"name\":\"Sales\",\"rows\":[[\"a\"]]}]] x"}`)
 	if !o.Failed || !strings.Contains(o.Summary, "reading the JSON") {
 		t.Errorf("a failed write: %+v", o)
+	}
+}
+
+// Parts appended to one workbook at once all land: one write to a file
+// runs at a time.
+func TestAppendsAtOnceAllLand(t *testing.T) {
+	dir := t.TempDir()
+	kb := filepath.Join(dir, "kb")
+	os.MkdirAll(kb, 0o755)
+	t.Setenv("PW_CLI", filepath.Join(dir, "no-pw"))
+	cfg, _ := config.Load(func(k string) string {
+		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": kb, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
+	})
+	a := app.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
+	mux := http.NewServeMux()
+	kbpkg.Register(mux, a)
+	Register(mux, a)
+	r := httptest.NewRequest("POST", "/api/chat/stream", nil)
+	if out, ok := Default.executeInGo(r, "write_kb_file", `{"path":"r/items.xlsx","content":"{\"sheets\":[{\"name\":\"Items\",\"rows\":[[\"Name\"]]}]}"}`, ToolCtx{}); !ok || out.Failed {
+		t.Fatal(out)
+	}
+	var wg sync.WaitGroup
+	for i := range 12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			Default.executeInGo(r, "write_kb_file", `{"path":"r/items.xlsx","append":true,"content":"{\"sheets\":[{\"name\":\"Items\",\"rows\":[[\"item `+strconv.Itoa(i)+`\"]]}]}"}`, ToolCtx{})
+		}()
+	}
+	wg.Wait()
+	b, _ := os.ReadFile(filepath.Join(kb, "r", "items.xlsx"))
+	if h := docwrite.Held(b); len(h) != 1 || h[0] != "Items, 12 rows after the header" {
+		t.Fatalf("%v", h)
 	}
 }
