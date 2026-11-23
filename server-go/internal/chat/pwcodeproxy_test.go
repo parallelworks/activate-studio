@@ -62,8 +62,21 @@ func TestTheCodeRoutesReachOnlyTheViewersOwnChatsSessions(t *testing.T) {
 	if code, _, _ := send(t, http.MethodPatch, s+"/settings", `{"permissionMode":"yolo"}`); code != 400 {
 		t.Errorf("unknown mode: %d", code)
 	}
+	// An allocation comes only with the model it bills.
+	if code, _, _ := send(t, http.MethodPatch, s+"/settings", `{"allocation":"a1"}`); code != 400 {
+		t.Errorf("allocation alone: %d", code)
+	}
 	if len(remote.settings) != 0 {
 		t.Errorf("settings reached the session: %v", remote.settings)
+	}
+	// The session view's model picker sends the model with its allocation.
+	for _, b := range []string{`{"model":"host/default","allocation":""}`, `{"model":"me:openai/gpt-5","allocation":"a1"}`} {
+		if code, out, _ := send(t, http.MethodPatch, s+"/settings", b); code != 200 {
+			t.Errorf("%s: %d %v", b, code, out)
+		}
+	}
+	if len(remote.settings) != 2 {
+		t.Errorf("model picks sent: %v", remote.settings)
 	}
 }
 

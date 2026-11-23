@@ -1058,8 +1058,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    bar's engine button names; the composer's model picker sets only the
    Studio assistant's, so it is hidden then (PWCodeEngine marks the canvas).
    The selector reaches into the package's composer: its picker is the
-   button there that opens a dialog. */
-.chat-canvas[data-engine='pwcode'] .chat-composer [class*='justify-end'] > button[aria-haspopup='dialog'] { display: none; }
+   button there that opens a dialog. A chat shown as its pw code session
+   (.pwcode-session) has the session's own composer, whose effort picker is
+   such a button too, so it is left alone. */
+.chat-canvas[data-engine='pwcode'] .chat-composer:not(.pwcode-session *) [class*='justify-end'] > button[aria-haspopup='dialog'] { display: none; }
 /* The package's find bar (Ctrl+F in a conversation) spans the top of the
    thread, under these controls. It stops short of them, or sits below them
    where the thread is too narrow, so its count and buttons stay in view;

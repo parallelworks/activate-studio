@@ -205,7 +205,8 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 }
 
 // checkSettings refuses a settings change the Studio does not make: a
-// field other than mode, model and effort, a mode it does not know, or,
+// field other than mode, model (with the allocation that bills it) and
+// effort, a mode it does not know, or,
 // for a relayed session, a mode above what the machine takes from
 // ACTIVATE.
 func (m *Module) checkSettings(r *http.Request, c *conversations.Conversation, t *pwTarget, body any) error {
@@ -214,6 +215,12 @@ func (m *Module) checkSettings(r *http.Request, c *conversations.Conversation, t
 		return pwErr(400, "Name the mode, model or effort to change.")
 	}
 	for _, k := range o.Keys() {
+		// The allocation that bills a model comes with the model: the
+		// session view's picker sends it with every pick ("" for a model
+		// that bills none).
+		if k == "allocation" && o.Has("model") {
+			continue
+		}
 		if !settingsFields[k] {
 			return pwErr(400, "The Studio changes a session's mode, model and effort only; change "+k+" where the session runs.")
 		}

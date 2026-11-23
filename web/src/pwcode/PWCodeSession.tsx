@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ActivityLine,
   EffortPicker,
@@ -12,6 +12,7 @@ import {
 import {
   loadPwCodeMessages,
   modelLabel,
+  pendingApprovals,
   promptHistory,
   type PwCodeMessages,
   type PwCodeSessionActivity,
@@ -151,8 +152,30 @@ function SessionPane({ machine, sessionId, username, notes, settingsExtra }: PWC
   }, [offered, liveState?.modelNames, current])
   const models = Object.keys(modelNames)
 
+  // A question, plan or approval that arrives waits for the person: the
+  // thread goes to it, as it would while following the turn, even when a
+  // note over the composer moved the thread off its end meanwhile.
+  const pane = useRef<HTMLDivElement>(null)
+  const waiting = transcript ? pendingApprovals(transcript).length : 0
+  const waited = useRef(waiting)
+  useEffect(() => {
+    const timers: number[] = []
+    if (waiting > waited.current) {
+      // The card renders and grows after the event: the thread's own
+      // "Jump to latest" goes to its end once it has settled.
+      for (const ms of [150, 500, 1200]) {
+        timers.push(window.setTimeout(() => {
+          const jump = [...(pane.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(b => b.textContent?.trim() === 'Jump to latest')
+          if (jump) jump.click()
+        }, ms))
+      }
+    }
+    waited.current = waiting
+    return () => { for (const t of timers) window.clearTimeout(t) }
+  }, [waiting])
+
   return (
-    <div className="pwcode-session">
+    <div className="pwcode-session" ref={pane}>
       <p className="sr-only" role="status">{screen.statusText}</p>
       <ExpandAllProvider value={expandAll}>
         <SessionView
