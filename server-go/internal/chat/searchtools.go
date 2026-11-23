@@ -381,11 +381,31 @@ func (m *Module) toolListLibraries(r *http.Request, _ map[string]any, ctx ToolCt
 	reg := m.Corpus.Reg
 	libs := reg.List(m.primaryLabel(), viewerOfCtx(ctx))
 	lines := make([]string, len(libs))
+	// On a Studio with spaces, what the person may do in each library.
+	own, spaces := ownSpaceLib(r)
+	writes := map[string]bool{}
+	if spaces {
+		if all, err := kb.LibraryResolver.All(r); err == nil {
+			for _, l := range all {
+				if l.AsViewer() && l.Writable {
+					writes[l.ID] = true
+				}
+			}
+		}
+	}
 	for i, l := range libs {
 		kind := " (read only)"
 		switch {
+		case spaces && l.Primary && mainLibraryWritable(r) == nil:
+			kind = " (the shared library, read and write)"
+		case spaces && l.Primary:
+			kind = " (the shared library, read only for you: only its administrators change it)"
 		case l.Primary:
 			kind = " (the knowledge base, read and write)"
+		case spaces && l.ID == own.ID:
+			kind = " (My library, your own: read and write, written as you; name it My library in a path)"
+		case writes[l.ID]:
+			kind = " (your library on " + l.Site + ", read and write)"
 		case l.Site != "":
 			kind = " (your library on " + l.Site + ", read only)"
 		}

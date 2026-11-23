@@ -580,3 +580,54 @@ func (m *Module) answerWhere(r *http.Request, rec *HeldCall, args string) (strin
 	}
 	return "The user chose " + pick.Shown + ". " + o.Result, o.Summary, o.Failed
 }
+
+// userNamed is the library the person's latest message names in plain
+// words, when it names exactly one: "my library" (or their space's name)
+// or the main library ("the shared library", "the main library", or its
+// name).
+func (m *Module) userNamed(r *http.Request, ctx ToolCtx) (place, bool) {
+	conv := deref(ctx.ConversationID)
+	if conv == "" || m.Conv == nil {
+		return place{}, false
+	}
+	c := m.Conv.Get(conv)
+	if c == nil {
+		return place{}, false
+	}
+	said := ""
+	for i := len(c.Messages) - 1; i >= 0; i-- {
+		if c.Messages[i].Role == "user" && c.Messages[i].Content != nil {
+			said = strings.ToLower(*c.Messages[i].Content)
+			break
+		}
+	}
+	if said == "" {
+		return place{}, false
+	}
+	own, hasOwn := ownSpaceLib(r)
+	main := m.mainPlace(r)
+	mineWords := []string{"my library", "my own library", "my space", "my personal library"}
+	if hasOwn && own.Label != "" {
+		mineWords = append(mineWords, strings.ToLower(own.Label))
+	}
+	mainWords := []string{"shared library", "main library", "team library", strings.ToLower(main.label())}
+	has := func(words []string) bool {
+		for _, w := range words {
+			if w != "" && strings.Contains(said, w) {
+				return true
+			}
+		}
+		return false
+	}
+	mine, shared := hasOwn && has(mineWords), has(mainWords)
+	switch {
+	case mine && !shared:
+		return place{m: m, r: r, lib: own, space: true}, true
+	case shared && !mine && mainLibraryWritable(r) == nil:
+		// For a person who may not change it, naming the shared library
+		// is more likely where the material is than where to save: they
+		// are asked.
+		return main, true
+	}
+	return place{}, false
+}

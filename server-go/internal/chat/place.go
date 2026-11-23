@@ -139,7 +139,12 @@ func (p place) read(rel string, max int64) ([]byte, error) {
 		case 404:
 			return nil, os.ErrNotExist
 		case 409:
-			return nil, errIsFolder
+			// A folder or a link is a 409, and so is a space that cannot
+			// be reached (no key, no folder yet): only a listing tells.
+			if p.isFolder(rel) {
+				return nil, errIsFolder
+			}
+			return nil, err
 		case 413:
 			return nil, errTooLarge
 		}
@@ -306,6 +311,13 @@ func (m *Module) toolPlace(r *http.Request, ctx ToolCtx, args map[string]any, re
 	if !m.spacesFor(r) {
 		return m.mainPlace(r), rel, "", nil, nil
 	}
+	// The person named the library in their own words ("save it to my
+	// library"): that wins, whether or not the model passed it on.
+	if creating {
+		if q, ok := m.userNamed(r, ctx); ok {
+			return q, rel, "the user asked for " + q.label(), nil, nil
+		}
+	}
 	own, _ := ownSpaceLib(r)
 	mine, main := place{m: m, r: r, lib: own, space: true}, m.mainPlace(r)
 	if !creating {
@@ -327,4 +339,20 @@ func (m *Module) toolPlace(r *http.Request, ctx ToolCtx, args map[string]any, re
 		return place{}, rel, "", &d, nil
 	}
 	return d.place, rel, d.why, nil, nil
+}
+
+// isFolder says whether rel is a folder in a space, from its parent's
+// listing.
+func (p place) isFolder(rel string) bool {
+	entries, err := kb.SpaceFiles.List(p.r, p.lib, parentOf(rel))
+	if err != nil {
+		return false
+	}
+	base := rel[strings.LastIndex(rel, "/")+1:]
+	for _, e := range entries {
+		if e.Name == base {
+			return e.Type == "dir"
+		}
+	}
+	return false
 }

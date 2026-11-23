@@ -30,14 +30,22 @@ type spaceFake struct {
 	files  map[string]string
 	dirs   map[string]bool
 	handed []string
+	// down is why the space cannot be reached, as a 409; "" when it can.
+	down string
 }
 
 func (s *spaceFake) All(*http.Request) ([]kbpkg.Library, error) { return s.libs, nil }
 func (s *spaceFake) hand(rels ...string) {
 	s.handed = append(s.handed, rels...)
 }
-func (s *spaceFake) List(*http.Request, kbpkg.Library, string) ([]kbpkg.Entry, error) {
-	return nil, nil
+func (s *spaceFake) List(_ *http.Request, lib kbpkg.Library, rel string) ([]kbpkg.Entry, error) {
+	var out []kbpkg.Entry
+	for k := range s.dirs {
+		if p, ok := strings.CutPrefix(k, lib.ID+":"); ok && path.Dir(p) == path.Clean("./"+rel) || ok && rel == "" && !strings.Contains(p, "/") {
+			out = append(out, kbpkg.Entry{Name: path.Base(p), Type: "dir"})
+		}
+	}
+	return out, nil
 }
 func (s *spaceFake) Mkdir(_ *http.Request, lib kbpkg.Library, rel string) error {
 	s.hand(rel)
@@ -46,12 +54,18 @@ func (s *spaceFake) Mkdir(_ *http.Request, lib kbpkg.Library, rel string) error 
 }
 func (s *spaceFake) Put(_ *http.Request, lib kbpkg.Library, rel string, src io.Reader, _ int64) error {
 	s.hand(rel)
+	if s.down != "" {
+		return apierr.New(409, "%s", s.down)
+	}
 	b, _ := io.ReadAll(src)
 	s.files[lib.ID+":"+rel] = string(b)
 	return nil
 }
 func (s *spaceFake) Get(_ *http.Request, lib kbpkg.Library, rel string, max int64) ([]byte, error) {
 	s.hand(rel)
+	if s.down != "" {
+		return nil, apierr.New(409, "%s", s.down)
+	}
 	if s.dirs[lib.ID+":"+rel] {
 		return nil, apierr.New(409, "a folder")
 	}
@@ -463,5 +477,70 @@ func TestAHeldWriteCarriesItsPlaces(t *testing.T) {
 	got := m.answerHeld(r, answer{ConversationID: c.ID, MessageID: "m1", ToolCallID: "t1"}, &Viewer{ID: rec.Viewer, Name: rec.ViewerName}, nil, func(string) bool { return true })
 	if !got.OK || !strings.Contains(got.Result, "declined") || b.inMain("plan.md") || b.space.files["space-ada:plan.md"] != "" {
 		t.Errorf("%+v", got)
+	}
+}
+
+// A library the person names in their own words wins, though the model
+// did not pass it on.
+func TestTheLibraryThePersonNamesInWordsWins(t *testing.T) {
+	b := newWhereBed(t)
+	m := b.m
+	say := func(text string) string {
+		title := "Words"
+		c := m.Conv.Create(&title, "")
+		m.Conv.RecordUserTurn(c.ID, "u1", text, nil, "")
+		return c.ID
+	}
+	raw := `{"path":"meeting-note.md","content":"x"}`
+	// My library, though the chat's files are all in the shared one.
+	conv := say("Save a short note to my library called meeting-note.md.")
+	m.note(ToolCtx{ConversationID: sp(conv)}, kbpkg.PrimaryID, "team/plan.md")
+	if d := m.writeAsks(b.req(true), ToolCtx{ConversationID: sp(conv)}, raw); d != nil {
+		t.Fatalf("asked: %+v", d)
+	}
+	out := b.call(b.req(true), conv, "write_kb_file", raw)
+	if out.Failed || b.space.files["space-ada:meeting-note.md"] != "x" || !strings.Contains(out.Result, "the user asked for My library") {
+		t.Fatalf("%+v", out)
+	}
+	// The shared library, by an administrator.
+	conv = say("Put the note in the shared library please.")
+	out = b.call(b.req(true), conv, "write_kb_file", raw)
+	if out.Failed || !b.inMain("meeting-note.md") {
+		t.Fatalf("%+v", out)
+	}
+	os.Remove(filepath.Join(b.kb, "meeting-note.md"))
+	// The shared library, by a person who may not change it: asked, with
+	// My library offered, never refused or written there.
+	conv = say("Save a note to the shared library.")
+	d := m.writeAsks(b.req(false), ToolCtx{ConversationID: sp(conv)}, raw)
+	if d == nil || d.options[0].Library != "space-ada" {
+		t.Fatalf("%+v", d)
+	}
+	for _, o := range d.options {
+		if o.Library == kbpkg.PrimaryID {
+			t.Errorf("offered the shared library: %+v", o)
+		}
+	}
+	// Both named: asked.
+	conv = say("Copy the shared library's plan into my library as a note.")
+	if d := m.writeAsks(b.req(true), ToolCtx{ConversationID: sp(conv)}, raw); d == nil {
+		t.Error("not asked when both are named")
+	}
+}
+
+// A space that cannot be reached is not taken for a file already there:
+// the write says why it failed.
+func TestAnUnreachableSpaceSaysWhy(t *testing.T) {
+	b := newWhereBed(t)
+	b.space.down = "This library is read with your own platform key: add your ACTIVATE API key under Settings, Accounts."
+	out := b.call(b.req(true), "c-down", "write_kb_file", `{"path":"My library/meeting-note.md","content":"x"}`)
+	if !out.Failed || strings.Contains(out.Result, "already exists") || !strings.Contains(out.Result, "your own platform key") {
+		t.Fatalf("%+v", out)
+	}
+	// A folder is still told from a file.
+	b.space.down = ""
+	out = b.call(b.req(true), "c-down", "write_kb_file", `{"path":"My library/notes","content":"x"}`)
+	if !out.Failed || !strings.Contains(out.Result, "already exists") {
+		t.Fatalf("a folder: %+v", out)
 	}
 }
