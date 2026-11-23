@@ -88,7 +88,6 @@ export function SubagentView({
       ref={sessionView}
       sessionKey={view.draftKey}
       foldEveryRun
-      pinPrompt
       messages={messages}
       streamingMessage={transcript?.streaming ?? null}
       queuedMessages={view.queued}

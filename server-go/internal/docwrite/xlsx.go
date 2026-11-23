@@ -222,6 +222,97 @@ func renderXLSX(content string) ([]byte, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
+	return workbook(sheets)
+}
+
+// AppendXLSX adds the rows of content (in any form Sheets reads) to the
+// workbook existing: each part's rows go under the sheet of the same name
+// (a part with no name, or the only sheet's, goes to the first sheet), and
+// a part whose first row repeats that sheet's header does not add it
+// again; a part naming a new sheet adds that sheet. The workbook is made
+// again from its rows, so its header, widths and filter cover them all.
+// rows is how many rows were added.
+func AppendXLSX(existing []byte, content string) (data []byte, sheets, rows int, err error) {
+	parts, err := Sheets(content)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	have, err := readSheets(existing)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("reading the workbook to add to: %v", err)
+	}
+	for _, p := range parts {
+		i := -1
+		for k, h := range have {
+			if strings.EqualFold(strings.TrimSpace(h.Name), strings.TrimSpace(p.Name)) {
+				i = k
+			}
+		}
+		if i < 0 && (strings.TrimSpace(p.Name) == "" || len(have) == 1 && len(parts) == 1) && len(have) > 0 {
+			i = 0
+		}
+		if i < 0 {
+			have = append(have, p)
+			rows += len(p.Rows)
+			continue
+		}
+		add := p.Rows
+		if len(add) > 0 && len(have[i].Rows) > 0 && sameRow(add[0], have[i].Rows[0]) {
+			add = add[1:]
+		}
+		have[i].Rows = append(have[i].Rows, add...)
+		rows += len(add)
+	}
+	data, n, err := workbook(have)
+	return data, n, rows, err
+}
+
+// readSheets is a workbook's sheets as rows: values as their text (typed
+// again when written), a formula as =formula.
+func readSheets(b []byte) ([]Sheet, error) {
+	f, err := excelize.OpenReader(bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var out []Sheet
+	for _, name := range f.GetSheetList() {
+		grid, err := f.GetRows(name)
+		if err != nil {
+			return nil, err
+		}
+		s := Sheet{Name: name}
+		for r, row := range grid {
+			var cells []any
+			for c, v := range row {
+				cell, _ := excelize.CoordinatesToCellName(c+1, r+1)
+				if fm, _ := f.GetCellFormula(name, cell); fm != "" {
+					cells = append(cells, "="+fm)
+					continue
+				}
+				cells = append(cells, v)
+			}
+			s.Rows = append(s.Rows, cells)
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+func sameRow(a, b []any) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if strings.TrimSpace(fmt.Sprint(a[i])) != strings.TrimSpace(fmt.Sprint(b[i])) {
+			return false
+		}
+	}
+	return true
+}
+
+// workbook writes sheets as an .xlsx: the first row of each the header.
+func workbook(sheets []Sheet) ([]byte, int, error) {
 	f := excelize.NewFile()
 	defer f.Close()
 	used := map[string]bool{}

@@ -495,11 +495,11 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
    first-child form clamped the separator's grab strip to a 52px sliver,
    which read as resizing having disappeared. */
 .chat-canvas > .flex.h-full > :first-child > div[class*="justify-between"] { height: 52px; }
-.chat-canvas main [class*="flex-shrink-0"][class*="border-b"] {
+.chat-canvas main [class*="flex-shrink-0"][class*="border-b"]:where(:not(.pwcode-session *, .code-page *)) {
   height: 52px; display: flex; align-items: center;
   padding-top: 0 !important; padding-bottom: 0 !important;
 }
-.chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div { flex: 1; }
+.chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div:where(:not(.pwcode-session *, .code-page *)) { flex: 1; }
 
 /* ---- library view ---- */
 .library { display: flex; padding: 12px; flex: 1; min-height: 0; }
@@ -917,36 +917,36 @@ textarea.field { line-height: 1.5; }
 
 /* Streamdown code blocks (chat + markdown viewer): platform strip header,
    hairline border, compact type instead of the package's rounded-xl card. */
-[data-streamdown='code-block'] {
+[data-streamdown='code-block']:where(:not(.pwcode-session *, .code-page *)) {
   margin: 10px 0; padding: 0; gap: 0;
   border-radius: 8px; border: 1px solid var(--pw-border);
   background: #f8fafc; overflow: hidden;
 }
-[data-streamdown='code-block-header'] {
+[data-streamdown='code-block-header']:where(:not(.pwcode-session *, .code-page *)) {
   height: 28px; padding: 0 10px;
   background: #f1f5f9; border-bottom: 1px solid var(--pw-border);
   font-size: 11px; letter-spacing: 0.02em;
 }
-[data-streamdown='code-block-header'] span:empty::before { content: 'code'; }
-[data-streamdown='code-block'] > div:has(> [data-streamdown='code-block-actions']) {
+[data-streamdown='code-block-header'] span:empty:where(:not(.pwcode-session *, .code-page *))::before { content: 'code'; }
+[data-streamdown='code-block'] > div:has(> [data-streamdown='code-block-actions']):where(:not(.pwcode-session *, .code-page *)) {
   margin-top: -28px; height: 28px; align-items: center; padding-right: 4px; top: 0;
 }
-[data-streamdown='code-block-actions'] {
+[data-streamdown='code-block-actions']:where(:not(.pwcode-session *, .code-page *)) {
   border: none; background: transparent; backdrop-filter: none; padding: 0 2px; gap: 0;
 }
-[data-streamdown='code-block-actions'] svg { width: 13px; height: 13px; }
-[data-streamdown='code-block-body'] {
+[data-streamdown='code-block-actions'] svg:where(:not(.pwcode-session *, .code-page *)) { width: 13px; height: 13px; }
+[data-streamdown='code-block-body']:where(:not(.pwcode-session *, .code-page *)) {
   font-size: 13px; line-height: 1.55;
   border: none; border-radius: 0; background: transparent; padding: 0;
 }
-[data-streamdown='code-block-body'] pre { margin: 0; padding: 10px 12px; background: transparent !important; }
-[data-streamdown='inline-code'] {
+[data-streamdown='code-block-body'] pre:where(:not(.pwcode-session *, .code-page *)) { margin: 0; padding: 10px 12px; background: transparent !important; }
+[data-streamdown='inline-code']:where(:not(.pwcode-session *, .code-page *)) {
   font-size: 0.88em; padding: 1px 5px; border-radius: 5px;
   background: #eef2f6; border: 1px solid var(--pw-border);
 }
-[data-theme='dark'] [data-streamdown='code-block'] { background: var(--pw-input-bg); }
-[data-theme='dark'] [data-streamdown='code-block-header'] { background: var(--theme-hover); }
-[data-theme='dark'] [data-streamdown='inline-code'] { background: var(--theme-hover); border-color: var(--pw-border); }
+[data-theme='dark'] [data-streamdown='code-block']:where(:not(.pwcode-session *, .code-page *)) { background: var(--pw-input-bg); }
+[data-theme='dark'] [data-streamdown='code-block-header']:where(:not(.pwcode-session *, .code-page *)) { background: var(--theme-hover); }
+[data-theme='dark'] [data-streamdown='inline-code']:where(:not(.pwcode-session *, .code-page *)) { background: var(--theme-hover); border-color: var(--pw-border); }
 
 /* Monospace surfaces share the platform's Geist Mono. */
 code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block'], [data-streamdown='inline-code'] {
@@ -1082,7 +1082,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .chat-canvas main .chat-thread { padding-top: var(--chat-notice-pad, 0px); }
   .chat-controls .scope-btn { padding: 4px 7px; }
   .chat-controls .scope-btn span { display: none; }
-  .chat-canvas main [class*="border-b"] button[class*="min-w-"] {
+  .chat-canvas main [class*="border-b"] button[class*="min-w-"]:where(:not(.pwcode-session *, .code-page *)) {
     min-width: 0 !important;
     max-width: calc(100vw - 190px);
     overflow: hidden;
@@ -1119,8 +1119,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* Streaming thinking peek: a little more room than the package's 5rem so
    whole sentences fit, and calmer type for the reasoning text. */
-.chat-canvas [class*="max-h-20"] { max-height: 8.5rem; }
-.chat-canvas [class*="border-l-2"] [class*="text-sm"] { line-height: 1.55; }
+.chat-canvas [class*="max-h-20"]:where(:not(.pwcode-session *, .code-page *)) { max-height: 8.5rem; }
+.chat-canvas [class*="border-l-2"] [class*="text-sm"]:where(:not(.pwcode-session *, .code-page *)) { line-height: 1.55; }
 
 /* The footer lines' detail popovers, opening upward from each line */
 .identity-btn {
@@ -1163,7 +1163,7 @@ a.identity-btn { text-decoration: none; }
 
 /* Inline images in chat replies: bounded, framed, click target stays the
    surrounding citation link rather than the image itself. */
-.chat-canvas [data-streamdown] img, .chat-canvas .prose img {
+.chat-canvas [data-streamdown] img:where(:not(.pwcode-session *, .code-page *)), .chat-canvas .prose img:where(:not(.pwcode-session *, .code-page *)) {
   max-width: min(100%, 640px); max-height: 440px; border-radius: 8px;
   border: 1px solid var(--pw-border); display: block; margin: 6px 0;
 }
@@ -1395,20 +1395,20 @@ a.identity-btn { text-decoration: none; }
 }
 
 /* Own chat bubble in the accent pill, matching the selection styling. */
-.chat-canvas .rounded-br-md {
+.chat-canvas .rounded-br-md:where(:not(.pwcode-session *, .code-page *)) {
   background: var(--pw-active-pill);
   color: var(--pw-navy);
 }
 
 /* The table-download dropdown's bg-background/hover:bg-muted utilities have
    no compiled CSS in the shipped bundle; paint the menu directly. */
-.chat-canvas div.top-full {
+.chat-canvas div.top-full:where(:not(.pwcode-session *, .code-page *)) {
   background: var(--pw-panel);
   border-color: var(--pw-border);
   box-shadow: var(--theme-shadow-lg);
 }
-.chat-canvas div.top-full button { color: var(--pw-text); }
-.chat-canvas div.top-full button:hover { background: var(--pw-hover-row, #f3f4f6); }
+.chat-canvas div.top-full button:where(:not(.pwcode-session *, .code-page *)) { color: var(--pw-text); }
+.chat-canvas div.top-full button:hover:where(:not(.pwcode-session *, .code-page *)) { background: var(--pw-hover-row, #f3f4f6); }
 
 /* Tailwind v4 utilities in streamdown resolve --color-* tokens; undefined
    they collapse to black borders and transparent backgrounds. Map them to
@@ -1427,19 +1427,19 @@ a.identity-btn { text-decoration: none; }
    carry <wbr> there (components/breakable.tsx), which WebKit's table sizing
    honors where it ignores overflow-wrap. Breaking anywhere kept columns
    narrow but split words mid way, which read badly. */
-.chat-canvas [data-streamdown='table-wrapper'] > div:has(> table) { max-height: none !important; }
-.chat-canvas [data-streamdown='table'] td :is(a, button, code) { word-break: normal; overflow-wrap: normal; }
+.chat-canvas [data-streamdown='table-wrapper'] > div:has(> table):where(:not(.pwcode-session *, .code-page *)) { max-height: none !important; }
+.chat-canvas [data-streamdown='table'] td :is(a, button, code):where(:not(.pwcode-session *, .code-page *)) { word-break: normal; overflow-wrap: normal; }
 /* Headers wrap between words like the cells under them: kept on one line,
    a long header alone held its column wide enough to push the last
    column out of view. */
-.chat-canvas [data-streamdown='table'] th { white-space: normal; }
-.chat-canvas [data-streamdown='table'] thead th { border-bottom: 1px solid var(--pw-border-strong); }
-.chat-canvas [data-streamdown='table'] tbody tr:nth-child(even) { background: var(--pw-bg); }
+.chat-canvas [data-streamdown='table'] th:where(:not(.pwcode-session *, .code-page *)) { white-space: normal; }
+.chat-canvas [data-streamdown='table'] thead th:where(:not(.pwcode-session *, .code-page *)) { border-bottom: 1px solid var(--pw-border-strong); }
+.chat-canvas [data-streamdown='table'] tbody tr:nth-child(even):where(:not(.pwcode-session *, .code-page *)) { background: var(--pw-bg); }
 /* divide-y sets 1px row borders whose color utility is missing (falls back
    to black); give the dividers and header their token colors directly. */
-.chat-canvas [data-streamdown='table'] thead,
-.chat-canvas [data-streamdown='table'] tbody tr { border-bottom-color: var(--pw-border); }
-.chat-canvas [data-streamdown='table'] thead { background: var(--pw-bg); }
+.chat-canvas [data-streamdown='table'] thead:where(:not(.pwcode-session *, .code-page *)),
+.chat-canvas [data-streamdown='table'] tbody tr:where(:not(.pwcode-session *, .code-page *)) { border-bottom-color: var(--pw-border); }
+.chat-canvas [data-streamdown='table'] thead:where(:not(.pwcode-session *, .code-page *)) { background: var(--pw-bg); }
 
 /* "Calls:" line above the spec expander on the tools settings card */
 .tool-calls {
@@ -2651,7 +2651,7 @@ a.identity-btn { text-decoration: none; }
    row it folds into and nothing jumps when it does. These reach into the
    package's markup (its test ids), so a markup change only loses the
    effect. */
-.chat-reasoning-tail { display: none; }
+.chat-reasoning-tail:where(:not(.pwcode-session *, .code-page *)) { display: none; }
 /* The thread holds its own absolutely placed children (the screen reader
    labels): unpositioned, it let them out, and each box around it then had
    the whole conversation's height to scroll. The composer sits inside the
@@ -2667,19 +2667,19 @@ a.identity-btn { text-decoration: none; }
    Pinned to the top of whatever places it, a label adds no scroll height. */
 .chat-canvas .chat-thread .sr-only { top: 0; left: 0; }
 .chat-canvas .overflow-hidden:has(.chat-thread) { overflow: clip; }
-[data-testid="tool-call-part"] { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
-[data-testid="tool-call-part"] > :first-child { flex: 0 1 auto; min-width: 0; }
-[data-testid="tool-call-part"] > :only-child { flex: 1 1 auto; }
-[data-testid="tool-call-part"] > :first-child + div {
+[data-testid="tool-call-part"]:where(:not(.pwcode-session *, .code-page *)) { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+[data-testid="tool-call-part"] > :first-child:where(:not(.pwcode-session *, .code-page *)) { flex: 0 1 auto; min-width: 0; }
+[data-testid="tool-call-part"] > :only-child:where(:not(.pwcode-session *, .code-page *)) { flex: 1 1 auto; }
+[data-testid="tool-call-part"] > :first-child + div:where(:not(.pwcode-session *, .code-page *)) {
   margin: 0; flex: 0 1 auto; max-width: 45%; min-width: 0;
   line-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* A call the user answered says who allowed or declined it on a line of
    its own under the row; the result summary stays on the row and takes
    what room is left there. */
-[data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) { flex-wrap: wrap; row-gap: 0; }
-[data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) > :first-child + div:not([data-testid="tool-decision"]) { flex: 1 1 0; }
-[data-testid="tool-call-part"] > [data-testid="tool-decision"] { flex: 1 0 100%; margin-top: 0; }
+[data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]):where(:not(.pwcode-session *, .code-page *)) { flex-wrap: wrap; row-gap: 0; }
+[data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) > :first-child + div:not([data-testid="tool-decision"]):where(:not(.pwcode-session *, .code-page *)) { flex: 1 1 0; }
+[data-testid="tool-call-part"] > [data-testid="tool-decision"]:where(:not(.pwcode-session *, .code-page *)) { flex: 1 0 100%; margin-top: 0; }
 /* The Workflows page with its side view: the page and the view side by
    side, stacked on a narrow screen, as the chat does. */
 .wf-with-side { flex: 1; min-height: 0; display: flex; gap: 12px; position: relative; }
@@ -3443,5 +3443,11 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .pwcode-saving, .pwcode-reconnecting { font-size: 12px; }
 .pwcode-reconnecting { padding: 4px 2px; }
 .pwcode-session .chat-thread { padding-top: 44px; }
+/* The session views (a pw code chat's, the Code page's) are the package's
+   as PW Code on the web shows them. The Studio's restyles of the package's
+   chat markup (its tool rows, code blocks, tables, bubbles and menus) are
+   for the Studio's own thread, so each ends in
+   :where(:not(.pwcode-session *, .code-page *)), which adds no specificity.
+   test/sessionScope.test.ts keeps new ones to that. */
 .pwcode-expand { font: inherit; font-size: 12px; background: transparent; color: var(--pw-text-muted, inherit); border: 0; cursor: pointer; padding: 2px 4px; }
 .pwcode-expand:hover { color: inherit; text-decoration: underline; }

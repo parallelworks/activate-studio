@@ -251,7 +251,6 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
             <SessionView
               sessionKey={draftKey}
               foldEveryRun
-              pinPrompt
               messages={messages}
               streamingMessage={transcript?.streaming ?? null}
               queuedMessages={queued}

@@ -26,7 +26,7 @@ func TestSplitEnvelope(t *testing.T) {
 		{"unoffered tool", `Done.{"protocol":"studio-tools-1","nonce":"ab12cd34","calls":[{"name":"rm_rf","arguments":{}}]}`, "Done.", nil},
 	}
 	for _, c := range cases {
-		prose, calls := splitEnvelope(c.in, "ab12cd34", names, true)
+		prose, calls := splitEnvelope(c.in, []string{"ab12cd34"}, names, true)
 		if prose != c.prose || !reflect.DeepEqual(calls, c.calls) {
 			t.Errorf("%s: got %q, %#v; want %q, %#v", c.name, prose, calls, c.prose, c.calls)
 		}

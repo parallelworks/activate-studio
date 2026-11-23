@@ -167,8 +167,15 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 	dropEffort := false
 	retryUnstreamed := false
 	res := st.res
+	// A tool request of the model's that could not be read is asked for
+	// again once per turn; after that it is withheld, and its notice is
+	// the answer (withheld keeps the notice from being taken for a stub).
+	askedAgain := false
+	withheld := false
 
 	turnWithRetry := func(p payload) (*llm.Turn, error) {
+		nonces := append(turnNonces(p.messages, st.baseLen), nonce)
+		withheld = false
 		for attempt := 0; ; attempt++ {
 			streamThis := !ns && (attempt == 0 || !retryUnstreamed)
 			drop := dropTokenCap || m.noCap.has(model)
@@ -203,7 +210,36 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 					if text == "" {
 						text = buffered
 					}
-					prose, calls := splitEnvelope(text, nonce, offered, p.hasTools)
+					prose, calls := splitEnvelope(text, nonces, offered, p.hasTools)
+					if calls == nil && p.hasTools {
+						if be, ok := brokenEnvelope(text, nonces); ok {
+							why := deref(t.FinishReason)
+							cut := be.cutOff || why == "length"
+							m.A.Log.Warn("model's tool request could not be read", "model", model, "tool", be.tool, "finish", why, "cutOff", cut, "chars", jsval.Len(text), "attempt", attempt)
+							if !askedAgain && ctx.Err() == nil {
+								askedAgain = true
+								line := "\n↳ " + upperFirst(be.asked()) + " could not be read; asking it again\n"
+								if cut {
+									line = "\n↳ " + upperFirst(be.asked()) + " was cut off; asking it again in smaller parts\n"
+									p.maxTokens = m.raisedCap(p, model)
+								}
+								*st.finalReasoning += line
+								res.event("reasoning", reqbody.O("text", line))
+								p.messages = append(append([]llm.Message{}, p.messages...), llm.Message{Role: "system", Content: sp(askAgainNote(be, cut))})
+								continue
+							}
+							withheld = true
+							prose = strings.TrimSpace(text[:be.at])
+							note := upperFirst(be.asked()) + " could not be read, so nothing ran."
+							if cut {
+								note = upperFirst(be.asked()) + " was cut off at the model's output limit, so nothing ran. Ask for it in smaller parts, for example a few sheets or sections at a time."
+							}
+							if prose != "" {
+								prose += "\n\n"
+							}
+							prose += note
+						}
+					}
 					if calls == nil && attempt < 2 && ctx.Err() == nil && looksLikeRefusal(text) {
 						m.A.Log.Warn("model refused the emulated tool format; retrying with a plainer request", "attempt", attempt)
 						// Node writes a corrective note into the emulated prompt here, which
@@ -591,7 +627,7 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			}
 			continue
 		}
-		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && !showsSomething.MatchString(turn.Content) && jsval.Len(jsTrim(turn.Content)) < 200) {
+		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && !withheld && !showsSomething.MatchString(turn.Content) && jsval.Len(jsTrim(turn.Content)) < 200) {
 			m.A.Log.Warn("empty turn with no tool calls; forcing final answer", "iter", iter)
 			hitLimit = false
 			break
@@ -777,4 +813,55 @@ func (m *Module) runCall(r *http.Request, st *loopState, tc llm.ToolCall, i int,
 	rememberCall(cache, cacheMu, name, tc.Function.Arguments, out.Result)
 	st.markThinking()
 	return out
+}
+
+// emNonceRe reads the nonce from an emulated call's id, em-<nonce>-<ms>-<i>.
+var emNonceRe = regexp.MustCompile(`^em-([0-9a-f]+)-\d+-\d+$`)
+
+// turnNonces are the nonces issued earlier in this turn: those of the
+// emulated calls among its messages (from base on; a turn resumed after
+// an approval carries its calls from before). Nonces of earlier turns,
+// before base, and any quoted in a file are not among them.
+func turnNonces(messages []llm.Message, base int) []string {
+	var out []string
+	if base < 0 || base > len(messages) {
+		return nil
+	}
+	for _, mm := range messages[base:] {
+		for _, tc := range mm.ToolCalls {
+			if x := emNonceRe.FindStringSubmatch(tc.ID); x != nil && !contains(out, x[1]) {
+				out = append(out, x[1])
+			}
+		}
+	}
+	return out
+}
+
+// raisedCap is the output limit for asking again after a request was cut
+// off: twice the turn's, up to 32768 tokens, and no more than the model's
+// window leaves when that is known. A provider that refuses it is asked
+// without a limit (the token cap retry above).
+func (m *Module) raisedCap(p payload, model string) int {
+	up := min(max(p.maxTokens, MaxCompletionTokens)*2, 32768)
+	if w := m.windowFor(model); w > 0 {
+		up = min(up, w-estimateTokens(p.messages)-512)
+	}
+	return max(up, p.maxTokens)
+}
+
+// askAgainNote tells the model why its request did not run and how to
+// send it so that it does.
+func askAgainNote(e brokenEnv, cut bool) string {
+	what := "Your last reply was a lookup request"
+	if e.tool != "" {
+		what += " for " + e.tool
+	}
+	if e.path != "" {
+		what += " (" + e.path + ")"
+	}
+	parts := "Write a large file in parts: call write_kb_file with the first part, then again with append=true for each next part, each part under about 12,000 characters. A spreadsheet's part is rows as JSON {\"sheets\":[{\"name\":\"...\",\"rows\":[...]}]}; a part's rows are added to the sheet of the same name."
+	if cut {
+		return what + " that was cut off at the output limit before it ended, so nothing ran. Send it again with less in each request. " + parts
+	}
+	return what + " that could not be read as JSON, so nothing ran. Send it again as one JSON object: inside a string value, such as a file's content, write every quote as \\\" and every line break as \\n. " + parts
 }
