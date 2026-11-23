@@ -332,6 +332,11 @@ describe('the pw CLI card with no sign-ins', () => {
     expect(screen.queryByRole('button', { name: 'Stop using the pw CLI' })).toBeNull()
     expect(screen.getByLabelText('Platform host to sign in to')).toHaveValue('platform-a.example.com')
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
+    expect(screen.queryByText(/Type the platform's host to sign in to/)).toBeNull()
+    // Emptied, the field says what Sign in needs, in a line everyone sees.
+    fireEvent.change(screen.getByLabelText('Platform host to sign in to'), { target: { value: '' } })
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeDisabled()
+    expect(screen.getByText(/Type the platform's host to sign in to/)).toBeInTheDocument()
   })
 
   it('says once, in the card, that it stopped', async () => {
