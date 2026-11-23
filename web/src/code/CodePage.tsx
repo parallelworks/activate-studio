@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SWRConfig } from 'swr'
 import { IntlProvider } from 'use-intl'
 import { loadPwCodeMessages, type PwCodeMessages,  } from '@parallelworks/code'
-import { Button, EmptyState, type MenuEntry, Popover } from '@parallelworks/ui'
+import { Button, type MenuEntry, Popover } from '@parallelworks/ui'
 import { ChatProvider } from '@parallelworks/ui/ai'
 import { createOpenAIChatAdapter } from '@parallelworks/ui/ai/openai'
 import { AddIcon, ExternalLinkIcon, HelpIcon, SidebarOpenIcon } from '@parallelworks/ui/icons'
+import { NeedsActivate } from '../components/NeedsActivate'
 import { useAppConfig } from '../config'
 import { type PageSession, pwCodePage } from './api'
 import { CodeSidebar } from './CodeSidebar'
@@ -184,12 +185,12 @@ function CodeScreen() {
 }
 
 /** Where the person has no ACTIVATE sign-in of their own: the Code page
- *  lists and starts sessions only as them, so it sends them to sign in. */
+ *  lists, starts and changes sessions only as them, so it asks them to
+ *  sign in under Settings, Accounts, as every ACTIVATE feature does. */
 function SignInNeeded() {
   return (
     <div className="code-page code-sign-in" data-testid="code-sign-in">
-      <EmptyState title="Sign in with ACTIVATE to use this" description="The Code page lists, starts and changes your pw code sessions as you, with your own ACTIVATE sign-in."
-        action={<Button variant="primary" size="sm" href="#view=settings:accounts">Open Settings, Accounts</Button>} />
+      <NeedsActivate>The Code page lists, starts and changes your pw code sessions as you, with your own ACTIVATE sign-in.</NeedsActivate>
     </div>
   )
 }

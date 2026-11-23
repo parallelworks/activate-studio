@@ -359,3 +359,16 @@ func TestOnThisComputerAPersonManagesOnlyTheirOwn(t *testing.T) {
 		t.Fatalf("another machine: %d", code)
 	}
 }
+
+// With no platform, the page asks the person to sign in under Settings,
+// Accounts, which is what connects one, and calls nothing.
+func TestWithNoPlatformTheCodePageAsksToSignIn(t *testing.T) {
+	v := &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id", Username: "alex"}}
+	base := signedInServer(t, map[string]string{}, false, func() *platform.Viewer { return v }, nil).URL + pagePrefix
+	if code, out := send(t, "GET", base+"/where", "", nil); code != 200 || out["signIn"] != true || out["local"] != false {
+		t.Fatalf("where: %d %v", code, out)
+	}
+	if code, _ := send(t, "GET", base+"/sessions", "", nil); code != 409 {
+		t.Fatalf("sessions: %d", code)
+	}
+}

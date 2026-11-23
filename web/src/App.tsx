@@ -209,7 +209,7 @@ export default function App() {
   // theirs and send the summary.
   const [xferSummary, setXferSummary] = useState<TransferSummary | null>(null)
   // Sessions waiting on the person, as PW Code on the web's menu counts them.
-  const codeWaiting = useCodeWaiting(cfg.loaded && (!!cfg.platform || !!cfg.localCode) && sectionAllowed('code', cfg))
+  const codeWaiting = useCodeWaiting(cfg.loaded && sectionAllowed('code', cfg))
   const onTransfers = view === 'transfers'
   useEffect(() => {
     if (!hasTransfers) return

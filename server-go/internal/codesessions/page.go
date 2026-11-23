@@ -81,8 +81,9 @@ func (s *routes) pageWhere(w http.ResponseWriter, r *http.Request) {
 	}
 	// No ACTIVATE sign-in of their own: the page sends them to Settings,
 	// Accounts, rather than calling routes that would refuse.
+	// With no platform at all, signing in under Accounts is what connects one.
 	_, err := viewerKey(r, s.p)
-	writeJSON(w, http.StatusOK, jsonv.NewObject("local", false, "codeUrl", code, "signIn", code != "" && err != nil))
+	writeJSON(w, http.StatusOK, jsonv.NewObject("local", false, "codeUrl", code, "signIn", code == "" || err != nil))
 }
 
 // writeProblem answers as the platform does (application/problem+json), so
