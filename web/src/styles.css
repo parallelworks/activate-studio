@@ -2170,6 +2170,10 @@ a.identity-btn { text-decoration: none; }
    collapse button past the pane's edge. */
 .rail-head .library-switch { margin-right: auto; flex: 1 1 0; min-width: 0; max-width: none; }
 .rail-head .rail-actions { flex-shrink: 0; }
+/* The Library's own head holds six controls: spaced a little closer than
+   the chat rail's, so "Library" fits whole beside them at the rail's
+   default width. */
+.library-rail .rail-head:not(.rail-head-switch) .rail-actions { gap: 4px; }
 /* With more than one library the picker has a row of its own over the
    buttons, so a library's name reads in full at any tree width. */
 .rail-head.rail-head-switch { height: auto; flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
