@@ -256,7 +256,7 @@ export async function deleteConversations(ids: string[]): Promise<{ deleted: str
   }).then(r => json<{ deleted: string[]; skipped: string[] }>(r))
 }
 
-interface NoteMessage { id: string; content?: string | null; parts?: { kind?: string; id?: string; name?: string; args?: string; status?: string; result?: string }[] }
+interface NoteMessage { id: string; content?: string | null; finishReason?: string; stopped?: boolean; parts?: { kind?: string; id?: string; name?: string; args?: string; status?: string; result?: string }[] }
 
 /** The note that opens a chat continued from a pw code session says where
  *  it came from; it is not a reply, so it has nothing to regenerate. The
@@ -265,10 +265,13 @@ interface NoteMessage { id: string; content?: string | null; parts?: { kind?: st
  *  styles.css hides Regenerate in the message holding that link. Notes
  *  saved before this are marked too. */
 export const CONTINUED_NOTE_MARK = 'note=continued'
-// It also settles the failed steps a later call recovered (recoveredSteps.ts).
+// It also settles the failed steps a later call recovered (recoveredSteps.ts),
+// and marks a reply ended by Stop as stopped.
 export function markNotes<T extends { messages?: NoteMessage[] }>(c: T): T {
   for (const m of c.messages ?? []) {
     if (Array.isArray(m.parts)) m.parts = foldRecovered(m.parts)
+    // A reply ended by Stop is stored so; the chat marks it Stopped.
+    if (m.finishReason === 'stopped') m.stopped = true
     if (m.id.startsWith('note-continued-') && m.content && !m.content.includes(CONTINUED_NOTE_MARK)) {
       m.content = m.content.replace('](#view=code?', `](#view=code?${CONTINUED_NOTE_MARK}&`)
     }

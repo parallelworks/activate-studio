@@ -34,6 +34,18 @@ describe('a reply that runs on without its page', () => {
     expect(await a.conversations.generating?.('c1')).toBeNull()
   }, 30_000)
 
+  it('shows as Stopped once stored', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const body = url.endsWith('/generating') ? null
+        : { id: 'c1', messages: [...chat.messages, { id: 'srv-1', role: 'assistant', content: 'Part one.', finishReason: 'stopped' }, { id: 'srv-2', role: 'assistant', content: 'Done.', finishReason: 'stop' }] }
+      return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) }
+    }))
+    const { createStudioAdapter } = await import('../src/adapter')
+    const c = await createStudioAdapter().conversations.get('c1') as { messages: { id: string; stopped?: boolean }[] }
+    expect(c.messages.find(m => m.id === 'srv-1')?.stopped).toBe(true)
+    expect(c.messages.find(m => m.id === 'srv-2')?.stopped).toBeUndefined()
+  }, 30_000)
+
   it('is ended by Stop', async () => {
     const calls = serve(null)
     const { createStudioAdapter } = await import('../src/adapter')
