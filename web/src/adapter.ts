@@ -1,4 +1,4 @@
-import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
+import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getEngine, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
@@ -21,6 +21,8 @@ async function listModels(): Promise<ModelsList> {
 
 /** Stream one completion from the server's tool-loop endpoint over SSE. */
 const CUT_OFF = 'The reply was cut off before it arrived, for example by a restart of the Studio. Retry sends the message again.'
+/** The connection dropped while the reply runs on in the Studio. */
+const RUNS_ON = 'The connection to the reply was lost, but the Studio is still writing it. Open this chat again to follow it.'
 
 /** The conversation's effort; a conversation without one yet (a new
  *  chat's first turn) takes the last one chosen and keeps it from then on. */
@@ -169,6 +171,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       // Stop aborts the read; anything else is the connection dropping.
       if (signal?.aborted) throw e
       if (content) break
+      if (req.conversationId && await replyRunning(req.conversationId).catch(() => null)) throw new Error(RUNS_ON)
       throw new Error(CUT_OFF)
     }
     const { done, value } = chunk
@@ -273,6 +276,21 @@ export function markNotes<T extends { messages?: NoteMessage[] }>(c: T): T {
   return c
 }
 
+/** The Studio assistant's reply running in a conversation, as far as it
+ *  has got: a reply runs on when its page goes (a closed tab, a reload),
+ *  and the chat follows it from here until it ends. null when none runs. */
+export async function replyRunning(id: string): Promise<GeneratingReply | null> {
+  const res = await fetch(`/api/chat/conversations/${encodeURIComponent(id)}/generating`)
+  if (res.status === 404) return null
+  return json<GeneratingReply | null>(res)
+}
+
+/** Stops the reply running in a conversation: the only way it ends early,
+ *  as closing the page leaves it running. */
+async function stopReply(id: string): Promise<void> {
+  await fetch(`/api/chat/conversations/${encodeURIComponent(id)}/stop`, { method: 'POST' }).then(r => json(r))
+}
+
 export function createStudioAdapter(): ChatAdapter {
   return {
     // Conversations live server-side beside the index; browser storage is
@@ -282,7 +300,14 @@ export function createStudioAdapter(): ChatAdapter {
       // One read with the chat page's other parts (chatRecord.ts), or the
       // one started when the pointer came to the chat in the list; the
       // thread gets its own copy, since it changes what it is given.
-      get: id => (takeReadAhead(id) ?? readChat(id)).then(c => markNotes(structuredClone(c) as { messages?: NoteMessage[] })) as ReturnType<ChatAdapter['conversations']['get']>,
+      // A reply still running in it comes with it, so the chat shows it
+      // being written and follows it to its end.
+      get: id => Promise.all([
+        (takeReadAhead(id) ?? readChat(id)).then(c => markNotes(structuredClone(c) as { messages?: NoteMessage[] })),
+        replyRunning(id).catch(() => null),
+      ]).then(([c, generating]) => (generating ? { ...c, generating } : c)) as ReturnType<ChatAdapter['conversations']['get']>,
+      generating: replyRunning,
+      stop: stopReply,
       create: title => fetch('/api/chat/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

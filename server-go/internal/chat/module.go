@@ -121,6 +121,8 @@ type Module struct {
 	notes *noteQueue
 	// pw is pw code chat's state (pwcodechat.go).
 	pw pwState
+	// live is the Studio assistant's replies running now (liveturn.go).
+	live liveTurns
 }
 
 // Default is the registered module.
@@ -310,6 +312,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	m.Convs.Register(mux, h)
 	m.chatSaveRoutes(h)
+	m.liveRoutes(h)
 	m.pwcodeRoutes(h)
 	m.pwcodeContinueRoutes(h)
 	m.pwcodeProxyRoutes(h)

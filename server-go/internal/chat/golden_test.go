@@ -43,6 +43,9 @@ type reply struct {
 	// fn, when set, makes the reply from the request's body, as a model
 	// answering the prompt it was sent would.
 	fn func(req []byte) reply
+	// wait, when set, holds the reply after its first frame until it is
+	// closed (or the request goes).
+	wait <-chan struct{}
 }
 
 type fakeGateway struct {
@@ -88,9 +91,17 @@ func (g *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		for _, f := range rp.frames {
+		for i, f := range rp.frames {
 			b, _ := json.Marshal(f)
 			fmt.Fprintf(w, "data: %s\n\n", b)
+			if i == 0 && rp.wait != nil {
+				w.(http.Flusher).Flush()
+				select {
+				case <-rp.wait:
+				case <-r.Context().Done():
+					return
+				}
+			}
 		}
 		io.WriteString(w, "data: [DONE]\n\n")
 	default:
