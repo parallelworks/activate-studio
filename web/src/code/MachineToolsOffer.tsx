@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
+import { isConnected, type PwCodeMachine } from '@parallelworks/code'
 import { type MachineTools, type SetupResult, runSetup, setMachineTools, setupSaid } from '../components/studioTools'
 
 const OFFERED = 'ade-studio-tools-offered'
@@ -17,14 +18,24 @@ function markOffered(id: string): void {
   } catch { /* offered again after a reload */ }
 }
 
+/** What Add says of a machine that is not online. */
+export const notConnected = (machine: string) => `${machine} is not connected. Start it, then add the tools.`
+
 /**
  * The Code page's offer of the Studio's tools, once for each of the
  * person's machines that lacks them and that the Studio reaches over pw ssh
  * as them: Add sets it up there now; Not on <machine> keeps the Studio from
  * offering it there again until they choose it (in a chat's setup card, or
- * by ticking it as they continue a session there).
+ * by ticking it as they continue a session there). Only a machine online
+ * as the page's own machine list shows it (on, with its pw code connected)
+ * is offered, and, where the page has a machine chosen, only that one.
  */
-export function MachineToolsOffer() {
+export function MachineToolsOffer({ machines: listed, selected }: {
+  /** The Code page's machines, as its listing gives them. */
+  machines: readonly Pick<PwCodeMachine, 'id' | 'status'>[]
+  /** The machine chosen on the page, if one is. */
+  selected?: string
+}) {
   const [machines, setMachines] = useState<MachineTools[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null)
@@ -47,10 +58,18 @@ export function MachineToolsOffer() {
       </Callout></div>
     )
   }
-  const next = machines?.find(m => m.state === 'offer' && !skipped.includes(m.machineId) && !before.includes(m.machineId))
+  const online = (id: string) => isConnected(listed.find(m => m.id === id))
+  const next = machines?.find(m => m.state === 'offer' && online(m.machineId) && (!selected || m.machineId === selected)
+    && !skipped.includes(m.machineId) && !before.includes(m.machineId))
   return next ? <Offer next={next} busy={busy} onAdd={() => void add(next)} onDecline={() => decline(next)} /> : null
 
   async function add(next: MachineTools) {
+    // Gone offline since the offer showed: said, and pw ssh is not tried.
+    if (!online(next.machineId)) {
+      setSaid({ tone: 'warning', text: notConnected(next.machine) })
+      setSkipped(s => [...s, next.machineId])
+      return
+    }
     setBusy(true)
     try {
       const r: SetupResult = await runSetup({ machineId: next.machineId })

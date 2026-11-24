@@ -147,9 +147,9 @@ func setupStudio(t *testing.T) (*Module, *fakeMachine, string) {
 	f := &fakeMachine{who: "bob", curl: true, m: m, as: bobProxy}
 	m.bridgeRunFn = f.run
 	machines := map[string]bridgeMach{
-		"m-bob":    {ID: "m-bob", Kind: "cloud", Name: "bobs-cluster", Owner: "bob"},
-		"m-laptop": {ID: "m-laptop", Kind: "local", Name: "bobs-laptop", Owner: "bob"},
-		"m-ada":    {ID: "m-ada", Kind: "cloud", Name: "adas-cluster", Owner: "ada"},
+		"m-bob":    {ID: "m-bob", Kind: "cloud", Name: "bobs-cluster", Owner: "bob", Status: "connected"},
+		"m-laptop": {ID: "m-laptop", Kind: "local", Name: "bobs-laptop", Owner: "bob", Status: "connected"},
+		"m-ada":    {ID: "m-ada", Kind: "cloud", Name: "adas-cluster", Owner: "ada", Status: "connected"},
 	}
 	m.bridgeMachineFn = func(r *http.Request, id string) (bridgeMach, error) {
 		if mach, ok := machines[id]; ok {
@@ -278,7 +278,7 @@ func TestAMachineAlreadySetUpIsSkipped(t *testing.T) {
 		t.Fatalf("%v, %d adds", out, f.adds)
 	}
 	r := setupReq(bobProxy)
-	if o := m.bridgeOffer(r, bridgeMach{ID: "m-bob", Kind: "cloud", Name: "bobs-cluster", Owner: "bob"}); o.State != "set" {
+	if o := m.bridgeOffer(r, bridgeMach{ID: "m-bob", Kind: "cloud", Name: "bobs-cluster", Owner: "bob", Status: "connected"}); o.State != "set" {
 		t.Errorf("offer %+v", o)
 	}
 }

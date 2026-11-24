@@ -23,7 +23,7 @@ import (
 func existingStudio(t *testing.T, owner string, clusters []bridgeCluster, listErr error) (*Module, *fakeMachine, *[]string) {
 	t.Helper()
 	m, f, _ := setupStudio(t)
-	lab := bridgeMach{ID: "m-lab", Kind: "existing", Name: "labcluster", Owner: owner}
+	lab := bridgeMach{ID: "m-lab", Kind: "existing", Name: "labcluster", Owner: owner, Status: "connected"}
 	m.bridgeMachineFn = func(r *http.Request, id string) (bridgeMach, error) {
 		if id == lab.ID {
 			return lab, nil
