@@ -5,6 +5,7 @@ import { getChatLibrary, getEffort, getLabelScope, getLastEngine, getPersona, ha
 import { GOES_TO, GOES_TO_SESSION } from './chatLinks'
 import { fetchModels } from './api'
 import { firstMessagePick } from './pwcode/newChatPick'
+import { firstMessageStart } from './pwcode/newChatStart'
 import { foldRecovered, recoveryTracker } from './recoveredSteps'
 import { rememberToolCommands } from './components/GufiCommands'
 
@@ -54,6 +55,8 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       // The model a new pw code chat was set to before its first message;
       // the server uses it only when this message makes the session.
       ...firstMessagePick(req.conversationId),
+      // Where it was set to start, the same way.
+      ...firstMessageStart(req.conversationId),
       tools: req.tools,
       // The user's answer to a call held for approval; the server runs what
       // it held for that call, never what the request says to run.

@@ -11,6 +11,8 @@ export interface MachineTools {
   machineId: string
   why?: string
   available?: boolean
+  /** A session started there from here is given them as it starts. */
+  attach?: boolean
 }
 
 /** POST /api/mcp/bridge/setup's answer. */
@@ -86,11 +88,12 @@ export function machineHasSaid(where: string): string {
 
 /** How a session's tools stand, as the chat's menu says it. */
 export function sessionToolsSaid({ tools, continued, relay, machine }: {
-  tools: { connected: boolean; count: number; error?: string; machineHas?: boolean } | null
+  tools: { connected: boolean; count: number; error?: string; has?: boolean; machineHas?: boolean } | null
   continued: boolean; relay: boolean; machine?: string
 }): { text: string; ok: boolean; offerNew: boolean } {
   const where = machine || 'its machine'
   if (relay) {
+    if (tools?.has) return { ok: true, offerNew: false, text: `This chat's session on ${where} started with this Studio's tools.` }
     // The platform does not pass a session's MCP state on: what is known
     // is whether pw code on the machine has the Studio.
     return tools?.machineHas

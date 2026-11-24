@@ -410,6 +410,15 @@ type PWCodeLink struct {
 	// session was made, "" for none: a session with instructions works in
 	// agents/<persona>/, whose AGENTS.md carries them.
 	Persona string `json:"persona,omitempty"`
+	// Picked: Workspace is a folder the person chose as the chat started,
+	// so a later session of the chat works there too, and instructions go
+	// into its session rather than into the folder.
+	Picked bool `json:"picked,omitempty"`
+	// HasTools: a session on another machine that started with this
+	// Studio's tools in pw code there. Untold: it has not been given the
+	// Studio's instructions yet, which its first message brings.
+	HasTools bool `json:"hasTools,omitempty"`
+	Untold   bool `json:"untold,omitempty"`
 }
 
 type conversationFields Conversation

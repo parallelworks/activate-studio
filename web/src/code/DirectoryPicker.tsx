@@ -1,5 +1,5 @@
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { directoryChip, listedText, pickedOnClose, type PwCodePathRow, type RecentDirectory } from '@parallelworks/code'
+import { directoryChip, listedText, pickedOnClose, type PwCodeApi, type PwCodePathRow, type RecentDirectory } from '@parallelworks/code'
 import { Input, Kbd, ListboxGroup, ListboxOption, LoadingRegion, Popover, Skeleton, useListboxNavigation } from '@parallelworks/ui'
 import { ArrowUpIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, FolderOpenIcon, HistoryIcon, RepositoryIcon } from '@parallelworks/ui/icons'
 import { useTranslations } from 'use-intl'
@@ -17,7 +17,9 @@ import type { Translate } from './parts'
 type Draft = { typed: string; home: string | undefined; edited: boolean }
 type Machine = Parameters<typeof pwCodePage.usePathCompletion>[0]['machine'] & {}
 
-export function DirectoryPicker({ machine, directory, recents, onPick }: {
+export function DirectoryPicker({ api = pwCodePage, machine, directory, recents, onPick }: {
+  /** The client whose directories route lists the machine's folders. */
+  api?: Pick<PwCodeApi, 'usePathCompletion'>
   machine: Machine
   directory: string
   recents: readonly RecentDirectory[]
@@ -75,12 +77,13 @@ export function DirectoryPicker({ machine, directory, recents, onPick }: {
         </button>
       }
     >
-      <PathField machine={machine} directory={directory} recents={recents} typing={!narrow} onDraft={keepDraft} onUse={use} />
+      <PathField api={api} machine={machine} directory={directory} recents={recents} typing={!narrow} onDraft={keepDraft} onUse={use} />
     </Popover>
   )
 }
 
-function PathField({ machine, directory, recents, typing, onDraft, onUse }: {
+function PathField({ api, machine, directory, recents, typing, onDraft, onUse }: {
+  api: Pick<PwCodeApi, 'usePathCompletion'>
   machine: Machine
   directory: string
   recents: readonly RecentDirectory[]
@@ -93,7 +96,7 @@ function PathField({ machine, directory, recents, typing, onDraft, onUse }: {
   const input = useRef<HTMLInputElement>(null)
   const [typed, setTyped] = useState(() => (directory ? listedText(directory) : ''))
   const [untouched, setUntouched] = useState(true)
-  const { rows, sections, note, listing, loading } = pwCodePage.usePathCompletion({ machine, typed, untouched, recents, describeError })
+  const { rows, sections, note, listing, loading } = api.usePathCompletion({ machine, typed, untouched, recents, describeError })
   const home = listing?.home
   useEffect(() => { onDraft({ typed, home, edited: !untouched }) }, [onDraft, typed, home, untouched])
   useEffect(() => { if (typing) input.current?.select() }, [typing])

@@ -10,8 +10,14 @@ import type { ChatMessage } from '@parallelworks/ui/ai'
 const HEADS = ['Earlier in this conversation, before you joined it:', 'In this conversation since your last reply:']
 const TYPED = "\n\nThe person's new message:\n\n"
 
+// The Studio's instructions after the first message to a session on
+// another machine (relayInstructionsHead, pwcodestart.go).
+const TOLD = '\n\nFrom ACTIVATE Studio, for this session (the person did not type this):\n\n'
+
 /** What the person typed, from a message the Studio sent a session. */
-export function typedPart(text: string): string {
+export function typedPart(sent: string): string {
+  const told = sent.indexOf(TOLD)
+  const text = told < 0 ? sent : sent.slice(0, told)
   if (!HEADS.some(h => text.startsWith(h))) return text
   const at = text.indexOf(TYPED)
   return at < 0 ? text : text.slice(at + TYPED.length)

@@ -22,6 +22,13 @@ export function pickModel(conversationId: string | null | undefined, change: Par
   window.dispatchEvent(new CustomEvent(EVENT))
 }
 
+/** Forgets the pick: the chat is to start on another machine, whose models
+ *  are its own. */
+export function clearModelPick(conversationId: string | null | undefined): void {
+  picks.delete(conversationId ?? NEW_CHAT)
+  window.dispatchEvent(new CustomEvent(EVENT))
+}
+
 /** What a message to the Studio carries for the session it makes: the
  *  pick of a chat with no conversation yet moves to the one it gets. */
 export function firstMessagePick(conversationId: string | null | undefined): { pwcodeModel?: string; pwcodeAllocation?: string | null } {

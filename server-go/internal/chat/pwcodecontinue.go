@@ -205,7 +205,8 @@ func continuedHistory(items []any, model string, now string) (msgs []conversatio
 		str := func(k string) string { return jsonv.String(jsonv.Path(o, k)) }
 		switch str("kind") {
 		case "user":
-			turns = append(turns, &turn{user: str("text")})
+			typed, _, _ := strings.Cut(str("text"), relayInstructionsHead)
+			turns = append(turns, &turn{user: typed})
 		case "assistant", "recap", "plan_view", "goal_view":
 			if t := strings.TrimSpace(str("text")); t != "" {
 				cur().text = append(cur().text, t)

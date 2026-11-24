@@ -356,6 +356,9 @@ type bridgeOfferT struct {
 	Why       string `json:"why,omitempty"`
 	// Available is whether the Studio can set it up there (the card).
 	Available bool `json:"available"`
+	// Attach: the machine takes the Studio's tools into a session as it
+	// starts, so one started from here has them without a setup.
+	Attach bool `json:"attach,omitempty"`
 }
 
 func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
@@ -383,7 +386,7 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 		o.State, o.Why = "unavailable", apiMessage(err)
 		return o
 	}
-	o.Available = true
+	o.Available, o.Attach = true, mach.Attach
 	switch {
 	case p.Declined:
 		o.State = "declined"

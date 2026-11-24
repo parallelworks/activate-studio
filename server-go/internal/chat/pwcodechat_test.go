@@ -71,6 +71,26 @@ func (f *fakePW) add(ev map[string]any) {
 	f.events = append(f.events, string(b))
 }
 
+// runTurn runs a turn for text; f.mu is held.
+func (f *fakePW) runTurn(text string) string {
+	f.turn++
+	tid := "tn" + strconv.Itoa(f.turn)
+	go func(script []map[string]any) {
+		time.Sleep(30 * time.Millisecond)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.add(map[string]any{"type": "user_message", "content": text, "turnId": tid})
+		for _, ev := range script {
+			e := map[string]any{"turnId": tid}
+			for k, v := range ev {
+				e[k] = v
+			}
+			f.add(e)
+		}
+	}(f.script)
+	return tid
+}
+
 func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	send := func(v any) {
 		w.Header().Set("Content-Type", "application/json")
@@ -107,6 +127,9 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&req)
 		f.mu.Lock()
 		f.created = append(f.created, req)
+		if p, _ := req["prompt"].(string); p != "" {
+			f.runTurn(p)
+		}
 		f.mu.Unlock()
 		send(map[string]any{"id": "s1", "status": "idle"})
 	case p == "/v1/sessions/s1/state":
@@ -136,21 +159,7 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&req)
 		f.mu.Lock()
 		f.messages = append(f.messages, req.Text)
-		f.turn++
-		tid := "tn" + strconv.Itoa(f.turn)
-		go func(script []map[string]any) {
-			time.Sleep(30 * time.Millisecond)
-			f.mu.Lock()
-			defer f.mu.Unlock()
-			f.add(map[string]any{"type": "user_message", "content": req.Text, "turnId": tid})
-			for _, ev := range script {
-				e := map[string]any{"turnId": tid}
-				for k, v := range ev {
-					e[k] = v
-				}
-				f.add(e)
-			}
-		}(f.script)
+		tid := f.runTurn(req.Text)
 		f.mu.Unlock()
 		send(map[string]any{"queued": false, "turnId": tid})
 	case strings.HasPrefix(p, "/v1/sessions/s1/approvals/"):

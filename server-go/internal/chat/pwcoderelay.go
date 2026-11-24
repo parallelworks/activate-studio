@@ -135,8 +135,9 @@ type relayStart struct {
 // newRelaySession starts a session on old's machine and folder, in the mode
 // and on the model the old one had, and is the chat's link to it. The new
 // session has seen none of the chat (LastMessage is empty), so its first
-// message brings the conversation so far.
-func (m *Module) newRelaySession(ctx context.Context, t *pwTarget, old *conversations.PWCodeLink) relayStart {
+// message brings the conversation so far, and the Studio's instructions
+// where pw code there has the Studio's tools (has).
+func (m *Module) newRelaySession(ctx context.Context, t *pwTarget, old *conversations.PWCodeLink, has bool) relayStart {
 	mode := ""
 	if d, err := pwcode.GetSession(ctx, t.client, old.Session); err == nil {
 		mode = jsonv.String(jsonv.Path(d, "permissionMode"))
@@ -161,5 +162,6 @@ func (m *Module) newRelaySession(ctx context.Context, t *pwTarget, old *conversa
 	link.URL = firstNonEmpty(jsonv.String(jsonv.Path(s, "url")), jsonv.String(jsonv.Path(s, "remoteUrl")))
 	link.Model = firstNonEmpty(jsonv.String(jsonv.Path(s, "model")), old.Model)
 	link.ModelNote, link.ModelFrom, link.ToolsError = "", "", ""
+	link.HasTools, link.Untold = has, has
 	return relayStart{link: &link}
 }

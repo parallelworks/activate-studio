@@ -20,6 +20,14 @@ export interface Here {
 /** What still works for a session the Studio cannot carry on in a chat. */
 const STILL_HERE = 'You can still answer what it waits on here, and open it in ACTIVATE or where it runs.'
 
+/** Whether m is the machine whose daemon this viewer's pw code chat reaches,
+ *  by the daemon id the platform keeps for it, else its host name. */
+export function sameMachine(m: MachineRef, here: Here): boolean {
+  return here.available && (m.daemonId || !here.daemonId
+    ? !!m.daemonId && m.daemonId === here.daemonId
+    : !!m.hostname && m.hostname.toLowerCase() === (here.hostname ?? '').toLowerCase())
+}
+
 /** Whether the Studio can continue s in a chat for this viewer, and why
  *  not. On the machine whose daemon the chat reaches it is driven there;
  *  on another of the viewer's machines it is driven through ACTIVATE and
@@ -28,11 +36,7 @@ export function continuable(s: SessionRef, machines: readonly MachineRef[], here
   if (!here) return { ok: false, why: 'Checking where this Studio runs pw code…' }
   if (s.archivedAt) return { ok: false, why: 'This session is archived, so it cannot be continued in a chat. Restore it first.' }
   const m = machines.find(x => x.id === s.machineId)
-  // By the daemon id the platform keeps for the machine, else its host name.
-  const same = here.available && !!m && (m.daemonId || !here.daemonId
-    ? !!m.daemonId && m.daemonId === here.daemonId
-    : !!m.hostname && m.hostname.toLowerCase() === (here.hostname ?? '').toLowerCase())
-  if (same) return { ok: true, why: '' }
+  if (m && sameMachine(m, here)) return { ok: true, why: '' }
   if (here.relay) return { ok: true, why: '', relay: true }
   if (!here.available && !here.relayReason) return { ok: false, why: `${here.reason || 'pw code chat is not offered to you on this Studio.'} ${STILL_HERE}` }
   const why = here.relayReason || here.reason

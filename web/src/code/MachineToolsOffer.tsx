@@ -29,14 +29,22 @@ export const notConnected = (machine: string) => `${machine} is not connected. S
  * by ticking it as they continue a session there). Only a machine online
  * as the page's own machine list shows it (on, with its pw code connected)
  * is offered, and, where the page has a machine chosen, only that one.
+ *
+ * Where a session is about to start on one of them (always: a new chat, or
+ * the Code page's start), it says each time that the session there lacks
+ * the Studio's tools, with Add, or why it cannot.
  */
-export function MachineToolsOffer({ machines: listed, selected }: {
+export function MachineToolsOffer({ machines: listed, selected, always = false, mode }: {
   /** The Code page's machines, as its listing gives them. */
-  machines: readonly Pick<PwCodeMachine, 'id' | 'status'>[]
+  machines: readonly (Pick<PwCodeMachine, 'id' | 'status'> & { name?: string })[]
   /** The machine chosen on the page, if one is. */
   selected?: string
+  always?: boolean
+  /** The permission mode the session would start in. */
+  mode?: string
 }) {
   const [machines, setMachines] = useState<MachineTools[] | null>(null)
+  const [none, setWhy] = useState('')
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null)
   const [skipped, setSkipped] = useState<string[]>([])
@@ -45,7 +53,8 @@ export function MachineToolsOffer({ machines: listed, selected }: {
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/mcp/bridge/machines')
-      const d = r.ok ? await r.json() as { machines?: MachineTools[] } : null
+      const d = r.ok ? await r.json() as { why?: string; machines?: MachineTools[] } : null
+      setWhy(d?.why ?? '')
       setMachines(d?.machines ?? [])
     } catch { setMachines([]) }
   }, [])
@@ -59,6 +68,23 @@ export function MachineToolsOffer({ machines: listed, selected }: {
     )
   }
   const online = (id: string) => isConnected(listed.find(m => m.id === id))
+  if (always) {
+    const name = listed.find(m => m.id === selected)?.name ?? 'that machine'
+    const at = machines?.find(m => m.machineId === selected)
+    const why = at?.why || none
+    if (!machines || !selected) return null
+    if (at?.state === 'set' || (at?.attach && at.state === 'offer')) {
+      // pw code asks before each tool in a turn sent from elsewhere, and
+      // in read-only and plan mode runs none that would ask.
+      return mode === 'read-only' || mode === 'plan'
+        ? <p className="muted pwcode-start-note" data-testid="machine-tools-mode">In {mode === 'plan' ? 'plan' : 'read-only'} mode pw code on {name} does not run this Studio's tools for a chat here. In accept edits it asks you before each one.</p>
+        : null
+    }
+    if (at && at.state !== 'unavailable' && online(selected)) {
+      return <Offer next={at} busy={busy} lacks onAdd={() => void add(at)} onDecline={at.state === 'offer' ? () => { decline(at); void load() } : undefined} />
+    }
+    return <p className="muted pwcode-start-note" data-testid="machine-tools-none">{lacksTools(name)}{why ? ` They cannot be added there now: ${why}` : ''}</p>
+  }
   const next = machines?.find(m => m.state === 'offer' && online(m.machineId) && (!selected || m.machineId === selected)
     && !skipped.includes(m.machineId) && !before.includes(m.machineId))
   return next ? <Offer next={next} busy={busy} onAdd={() => void add(next)} onDecline={() => decline(next)} /> : null
@@ -92,18 +118,22 @@ export function MachineToolsOffer({ machines: listed, selected }: {
   }
 }
 
-function Offer({ next, busy, onAdd, onDecline }: { next: MachineTools; busy: boolean; onAdd: () => void; onDecline: () => void }) {
+/** What a session on machine goes without. */
+const lacksTools = (machine: string) => `pw code on ${machine} does not have this Studio's tools, so a session there works with its own.`
+
+function Offer({ next, busy, lacks = false, onAdd, onDecline }: { next: MachineTools; busy: boolean; lacks?: boolean; onAdd: () => void; onDecline?: () => void }) {
   useEffect(() => { markOffered(next.machineId) }, [next.machineId])
   return (
     <div data-testid="machine-tools-offer"><Callout tone="info" size="sm" className="studio-tools-setup">
       <p>
         {busy
           ? <>Adding this Studio's tools to pw code on {next.machine}, as you…</>
+          : lacks ? <>{lacksTools(next.machine)} Add them (library search, queries, reading files and the rest)? The Studio sets it up there over pw ssh as you, with that machine's own ACTIVATE sign-in, and a session started after that has them.</>
           : <>Add this Studio's tools (library search, queries, reading files and the rest) to pw code on {next.machine}? The Studio sets it up there over pw ssh as you, with that machine's own ACTIVATE sign-in, so sessions you start there have them.</>}
       </p>
       <p>
         <Button variant="primary" size="sm" loading={busy} disabled={busy} onClick={onAdd}>Add</Button>{' '}
-        <Button variant="ghost" size="sm" disabled={busy} onClick={onDecline}>Not on {next.machine}</Button>
+        {onDecline && <Button variant="ghost" size="sm" disabled={busy} onClick={onDecline}>Not on {next.machine}</Button>}
       </p>
     </Callout></div>
   )

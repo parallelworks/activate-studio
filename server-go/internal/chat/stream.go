@@ -106,14 +106,21 @@ type streamBody struct {
 	// Engine is the composer's choice of what answers: "pwcode",
 	// "studio", or empty for the deployment's (pwcodechat.go).
 	Engine *string `json:"engine"`
+	// NewChatEngine is the engine last chosen in this browser, which a
+	// chat nothing has answered yet starts with.
+	NewChatEngine *string `json:"newChatEngine"`
 	// PWCodeModel and PWCodeAllocation are the model a new pw code chat's
 	// composer chose before its first message, and the allocation that
 	// bills it: its session is made with them.
-	// NewChatEngine is the engine last chosen in this browser, which a
-	// chat nothing has answered yet starts with.
-	NewChatEngine    *string `json:"newChatEngine"`
 	PWCodeModel      *string `json:"pwcodeModel"`
 	PWCodeAllocation *string `json:"pwcodeAllocation"`
+	// PWCodeMachine, PWCodeFolder and PWCodeMode are where the composer
+	// chose to start it: another of the person's machines (its platform
+	// id), the folder, and, on another machine, the permission mode
+	// (pwcodestart.go).
+	PWCodeMachine *string `json:"pwcodeMachine"`
+	PWCodeFolder  *string `json:"pwcodeFolder"`
+	PWCodeMode    *string `json:"pwcodeMode"`
 
 	// engineNote is the note stored after the reply when the Studio
 	// assistant answers in pw code's place (engineFor); never read from

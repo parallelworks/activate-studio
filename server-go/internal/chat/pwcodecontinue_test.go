@@ -45,6 +45,10 @@ func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if m, cc, ok := strings.Cut(rest, "/claude-code"); ok && !strings.Contains(m, "/") {
 			machine, route = m, "/v1/claude-code"+cc
 		}
+		// The folders a new session there could work in.
+		if m, ok := strings.CutSuffix(rest, "/directories"); ok && !strings.Contains(m, "/") {
+			machine, route = m, "/v1/directories"
+		}
 		p.mu.Lock()
 		p.relayed = append(p.relayed, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization"))
 		if strings.HasPrefix(r.URL.Path, "/ws/") {
