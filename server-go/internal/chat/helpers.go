@@ -718,8 +718,46 @@ func GatewayChatMessage(msg, model string) string {
 	default:
 		cause = "Pick another model from the list while it recovers. "
 	}
-	return model + " cannot be called right now: its provider returned an error. " + cause +
-		"Other models are unaffected. Provider said: " + jsval.Slice(msg, 200)
+	return shortModel(model) + " cannot be called right now: its provider returned an error. " + cause +
+		"Other models are unaffected. Provider said: " + jsval.Slice(providerSaid(msg), 200)
+}
+
+// shortModel is a model as the person picks it: its name without the
+// account and provider it is listed under ("acct:codex/gpt-a" is gpt-a).
+func shortModel(model string) string {
+	if i := strings.LastIndexAny(model, ":/"); i >= 0 && i < len(model)-1 && model != "the model" {
+		return model[i+1:]
+	}
+	return model
+}
+
+// providerSaid is what the provider said in its own words: the message of
+// an error body ("gateway chat 502: {"error":{"message":...}}"), else the
+// text after the gateway's status, else the whole.
+func providerSaid(msg string) string {
+	text := msg
+	if i := strings.Index(msg, ": "); i >= 0 && chatStatusRe.MatchString(msg[:i+2]) {
+		text = strings.TrimSpace(msg[i+2:])
+	}
+	var body struct {
+		Error   json.RawMessage `json:"error"`
+		Message string          `json:"message"`
+	}
+	if json.Unmarshal([]byte(text), &body) == nil {
+		var inner struct {
+			Message string `json:"message"`
+		}
+		var plain string
+		switch {
+		case json.Unmarshal(body.Error, &inner) == nil && strings.TrimSpace(inner.Message) != "":
+			return strings.TrimSpace(inner.Message)
+		case json.Unmarshal(body.Error, &plain) == nil && strings.TrimSpace(plain) != "":
+			return strings.TrimSpace(plain)
+		case strings.TrimSpace(body.Message) != "":
+			return strings.TrimSpace(body.Message)
+		}
+	}
+	return text
 }
 
 // emptyReplyNote is emptyReplyNote(o).
