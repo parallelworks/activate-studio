@@ -1,7 +1,7 @@
 import { ALL_LIBRARIES, LibrarySwitch, libraryReadOnlyWhy, libraryWritable } from '../components/LibrarySwitch'
 import { currentLibrary, libraryOf, onLibraryChange, warmRemoteHosts } from '../api'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   Button, Callout, Checkbox, ConfirmModal, EmptyState, IconButton, Input, Modal, ProgressBar, RefreshButton,
   toast, useContextMenu, type MenuEntry,
@@ -33,7 +33,7 @@ import { MID_QUERY, useMediaQuery, usePhoneLayout } from '../phoneLayout'
 const RAIL_MIN = 220
 const RAIL_MAX = 520
 /** The narrowest an open file reads well beside the tree, in pixels. */
-export const FILE_MIN = 480
+const FILE_MIN = 480
 /** The divider between the tree and the file. */
 const DIVIDER = 5
 
@@ -580,14 +580,16 @@ export function LibraryView({ display, onDisplay }: {
   // The tree cannot be collapsed there, since it is the page.
   const phone = usePhoneLayout()
   // Between the phone width and 1200px, where the tree at its width would
-  // leave the open file narrower than FILE_MIN, the tree gives way to the file
-  // as if collapsed. » brings it back beside that file; « or opening another
-  // file lets it give way again. Nothing is remembered, so a wider window shows
-  // the tree as it was. From 1200px up the layout is as before.
+  // leave the open file narrower than FILE_MIN, the tree folds to its strip.
+  // » brings it back beside that file; « or opening another file folds it
+  // again. It stays mounted while folded, so its open folders, selection and
+  // uploads are as they were, and the saved collapse setting is not touched.
+  // From 1200px up the layout is as before.
   const mid = useMediaQuery(MID_QUERY)
   const cardRef = useRef<HTMLDivElement>(null)
+  const stripRef = useRef<HTMLDivElement>(null)
   const [cardWidth, setCardWidth] = useState(0)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const card = cardRef.current
     if (!card || !mid) return
     const measure = () => setCardWidth(card.clientWidth)
@@ -597,11 +599,20 @@ export function LibraryView({ display, onDisplay }: {
     ro.observe(card)
     return () => ro.disconnect()
   }, [mid])
-  const openKey = display ? `${display.kind}:${display.target}` : null
-  const [treeAskedFor, setTreeAskedFor] = useState<string | null>(null)
+  const openKey = display ? JSON.stringify([display.kind, display.target, display.kind === 'file' ? display.lib : undefined]) : null
+  // What » asked for holds for the file it was asked beside, not for a later
+  // visit to it.
+  const [asked, setAsked] = useState({ key: openKey, tree: false })
+  if (asked.key !== openKey) setAsked({ key: openKey, tree: false })
+  const askTree = (tree: boolean) => setAsked({ key: openKey, tree })
   const crowded = mid && openKey !== null && cardWidth > 0 && cardWidth - railWidth - DIVIDER < FILE_MIN
-  const givesWay = crowded && treeAskedFor !== openKey
-  const collapsed = (railCollapsed || givesWay) && !phone
+  const folded = crowded && !(asked.key === openKey && asked.tree)
+  const collapsed = !phone && (crowded ? folded : railCollapsed)
+  const treeMounted = !collapsed || (folded && !railCollapsed)
+  // Focus inside the tree as it folds goes to the button that brings it back.
+  useLayoutEffect(() => {
+    if (folded && railRef.current?.contains(document.activeElement)) stripRef.current?.querySelector('button')?.focus()
+  }, [folded])
 
   return (
     <>
@@ -612,13 +623,14 @@ export function LibraryView({ display, onDisplay }: {
       onDrop={e => { e.preventDefault(); setDropOver(false); if (writableAt(targetDir) || libOffer.allowed) void uploadTo(targetDir, e.dataTransfer.items) }}
     >
       <div ref={cardRef} className="library-card card">
-        {collapsed ? (
-          <div className="rail-strip">
-            <IconButton icon="»" label="Expand knowledge base tree" onClick={() => { setRailCollapsed(false); if (givesWay) setTreeAskedFor(openKey) }} />
+        {collapsed && (
+          <div ref={stripRef} className="rail-strip">
+            <IconButton icon="»" label="Expand knowledge base tree" onClick={() => { if (crowded) askTree(true); else setRailCollapsed(false) }} />
           </div>
-        ) : (
+        )}
+        {treeMounted && (
           <>
-            <aside ref={railRef} className="library-rail" style={{ width: railWidth }}>
+            <aside ref={railRef} className="library-rail" style={{ width: railWidth, display: collapsed ? 'none' : undefined }}>
               <div className={`rail-head${cfg.libraries && cfg.libraries.length > 1 ? ' rail-head-switch' : ''}`}>
                 {cfg.libraries && cfg.libraries.length > 1
                   ? <LibrarySwitch libraries={cfg.libraries} />
@@ -654,7 +666,7 @@ export function LibraryView({ display, onDisplay }: {
                       if (paths[0]) onDisplay({ kind: 'file', target: paths[0] })
                     }}
                   />
-                  {!phone && <IconButton icon="«" label="Collapse tree" onClick={() => { if (crowded) setTreeAskedFor(null); else setRailCollapsed(true) }} />}
+                  {!phone && <IconButton icon="«" label="Collapse tree" onClick={() => { if (crowded) askTree(false); else setRailCollapsed(true) }} />}
                 </span>
               </div>
               {selectMode && (
@@ -771,7 +783,7 @@ export function LibraryView({ display, onDisplay }: {
               )}
               <TransferPanel />
             </aside>
-            <div className="divider" onMouseDown={onDividerDown} title="Drag to resize" />
+            {!collapsed && <div className="divider" onMouseDown={onDividerDown} title="Drag to resize" />}
           </>
         )}
         {phone && display && (

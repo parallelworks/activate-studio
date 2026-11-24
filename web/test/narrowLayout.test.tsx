@@ -130,19 +130,21 @@ describe('a file opened in the Library between the phone width and 1200px', () =
     await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 20)) })
     return (d: D) => view.rerender(<LibraryView display={d} onDisplay={vi.fn()} />)
   }
-  const tree = () => document.querySelector('.library-rail')
+  /** The tree, if it shows. */
+  const tree = () => { const t = document.querySelector<HTMLElement>('.library-rail'); return t && t.style.display !== 'none' ? t : null }
+  const expand = () => fireEvent.click(screen.getByRole('button', { name: 'Expand knowledge base tree' }))
   const readme: D = { kind: 'file', target: 'notes/readme.md' }
 
   it('has the tree give way to the file, until » brings it back', async () => {
     sized(900)
     const open = await show(readme)
     expect(tree()).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Expand knowledge base tree' }))
+    expand()
     expect(tree()).not.toBeNull()
     // Another file from the tree: the tree gives way to it again.
     open({ kind: 'file', target: 'notes/plan.md' })
     expect(tree()).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Expand knowledge base tree' }))
+    expand()
     fireEvent.click(screen.getByRole('button', { name: 'Collapse tree' }))
     expect(tree()).toBeNull()
     // Nothing is remembered for wider windows.
@@ -150,6 +152,40 @@ describe('a file opened in the Library between the phone width and 1200px', () =
     // With the file closed the tree is back.
     open(null)
     expect(tree()).not.toBeNull()
+  })
+
+  it('folds again on a later visit to a file it was brought back beside', async () => {
+    sized(900)
+    const open = await show(readme)
+    expand()
+    open({ kind: 'file', target: 'notes/plan.md' })
+    open(readme)
+    expect(tree()).toBeNull()
+    expand()
+    open(null)
+    open(readme)
+    expect(tree()).toBeNull()
+  })
+
+  it('leaves the saved collapse setting alone', async () => {
+    sized(900)
+    localStorage.setItem('ade-rail-collapsed', '1')
+    await show(readme)
+    expand()
+    expect(tree()).not.toBeNull()
+    expect(localStorage.getItem('ade-rail-collapsed')).toBe('1')
+  })
+
+  it('keeps the tree as it was while it is folded, and the focus on the way back to it', async () => {
+    sized(900)
+    const open = await show(null)
+    const before = tree()
+    screen.getByRole('button', { name: 'Collapse tree' }).focus()
+    open(readme)
+    expect(tree()).toBeNull()
+    expect(screen.getByRole('button', { name: 'Expand knowledge base tree' })).toHaveFocus()
+    expand()
+    expect(tree()).toBe(before)
   })
 
   it('keeps the tree beside a file that has room, and from 1200px up', async () => {
