@@ -182,16 +182,20 @@ function stubServer(s: Server) {
       s.libs = s.libs.map(l => (l.id === every[1] ? { ...l, copyOf: { ...(l.copyOf as object), every: (body as { every: number }).every } } : l))
       return reply({ library: s.libs.find(l => l.id === every[1]) })
     }
-    if (path === '/api/user-libraries/ssh/build/test') {
-      return reply({ ok: true, create: ['/home/me/data'], indexDir: '/home/me/.activate-studio/indexes/data-1a2b3c4d', gufiBin: '/opt/gufi/bin', steps: [
-        { name: 'ssh', ok: true, detail: 'Connected to me@box on port 2222, a Linux host.' },
+    if (path === '/api/user-libraries/space' && method === 'GET') {
+      // No cluster of its own, and no pw sign-in: a host over ssh needs neither.
+      return reply({ available: false, why: 'No sign-in.', cluster: '', suggested: '~/studio', spaces: [], pw: !!s.pw, ssh: s.ssh, signInOffered: false, credential: '' })
+    }
+    if (path === '/api/user-libraries/space/test') {
+      return reply({ ok: true, create: ['/home/me/data'], sourceRoot: '/home/me/data', account: 'me', acl: true, fs: 'ext4', owned: true, readOnly: null, canShare: false, shareWhy: 'x', myLibraryWhy: null, steps: [
+        { name: 'account', ok: true, detail: 'Your session reaches me@box as me (uid 1000).' },
+        { name: 'folder', ok: true, detail: '/home/me/data does not exist yet. It is made, closed to other accounts, when you confirm.' },
         { name: 'gufi', ok: true, detail: 'gufi_query 0.7.0 in /opt/gufi/bin.' },
-        { name: 'source', ok: true, detail: '/home/me/data does not exist yet; it is created, empty, when the build starts.' },
         { name: 'index', ok: true, detail: 'The index is written in /home/me/.activate-studio/indexes/data-1a2b3c4d.' },
         { name: 'extract', ok: true, warn: true, detail: 'No Python 3.10 or later with SQLite\'s full-text module on me@box, so the index has names and metadata only.' },
       ] })
     }
-    if (path === '/api/user-libraries/ssh/build') {
+    if (path === '/api/user-libraries/space' && method === 'POST') {
       s.user = [...s.user, BUILT_REMOTE]
       return reply(BUILT_REMOTE)
     }
@@ -307,8 +311,8 @@ describe('what Add a library offers', () => {
     expect(hosted.builders()).toEqual(['pw', 'workflow'])
     const workflowOnly = addChoices({ buildHere: false, ssh: false, pw: false, workflow: true })
     expect(workflowOnly.how('system')).toEqual(['build'])
-    // A folder of one's own comes first on a system.
-    expect(addChoices({ buildHere: false, ssh: false, pw: true, workflow: false, space: true }).how('system')).toEqual(['own', 'build', 'connect'])
+    // A folder to index is one choice, on whatever system it is.
+    expect(addChoices({ buildHere: false, ssh: false, pw: true, workflow: false, space: true }).how('system')).toEqual(['build', 'connect'])
     // A copy of a folder in a Transfers location is made from Transfers.
     const copyOnly = addChoices({ buildHere: true, ssh: false, pw: false, workflow: false, copy: true })
     expect(copyOnly.where).toEqual(['here'])
@@ -669,18 +673,25 @@ describe('Settings, Indexing, Libraries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Remote computer' }))
     fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@box:2222' } })
-    fireEvent.change(screen.getByLabelText('Source folder'), { target: { value: '~/data' } })
+    fireEvent.change(await screen.findByLabelText('Folder'), { target: { value: '~/data' } })
     // Built there, the depth starts at Meaning on documents, made with the
     // Studio's model, and the form says what the first build sends.
     expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(/^Search by meaning there uses the Studio's embedding model\./)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+    expect(screen.getByText(/^Search by meaning there uses the Studio's embedding model\. The first build on a remote computer sends the model and its packages/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Text + OCR' }))
+    expect(screen.queryByText(/^Search by meaning there uses/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Meaning on documents' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check the folder' }))
     expect(await screen.findByText(/no Python 3\.10 or later/i)).toBeInTheDocument()
-    expect(posted(s, '/api/user-libraries/ssh/build/test')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data' })
-    fireEvent.click(screen.getByRole('button', { name: 'Build the index' }))
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Create it and build' }))
+    expect(screen.getByText('Text extraction')).toBeInTheDocument()
+    expect(posted(s, '/api/user-libraries/space/test')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data' })
+    fireEvent.click(screen.getByRole('button', { name: 'Index the folder' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Create this folder?' })
+    expect(dialog).toHaveTextContent('/home/me/data')
+    expect(dialog).toHaveTextContent('on me@box:2222, as me')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create it and build' }))
     const row = await waitFor(() => rowOf('data on box'))
-    expect(posted(s, '/api/user-libraries/ssh/build')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', gufiBin: '/opt/gufi/bin', depth: 'meaning-documents', create: true })
+    expect(posted(s, '/api/user-libraries/space')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', depth: 'meaning-documents', create: true })
     expect(within(row).getByText('Index built there over ssh')).toBeInTheDocument()
     expect(within(row).getByText(/· Read only \(on me@box\)$/)).toBeInTheDocument()
     expect(within(row).getByTitle('me@box:/home/me/data')).toBeInTheDocument()

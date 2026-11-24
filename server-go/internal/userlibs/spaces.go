@@ -22,6 +22,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
+	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
 )
 
 // A person's own space (docs/MULTI-USER.md, Personal spaces): a folder they
@@ -36,30 +37,21 @@ const SuggestedSpace = "~/studio"
 // HomeCluster is the cluster spaces are made on (libraries.HomeCluster).
 func HomeCluster() string { return libraries.HomeCluster() }
 
-// spaceCheckSh reads, as the person, what a space at $1 needs: the account,
-// the folder (made, open to them alone, when $3 is 1), whether another
-// account could swap a folder on the way to it, whether its file system
-// takes ACLs, and where GUFI ($2 the Studio's copy) can run from.
+// spaceCheckSh reads, as the person, what a folder to index at $1 is: the
+// account, the folder (made, closed to every other account, when $3 is 1),
+// how another account could write in it or move it (transfers.LooseSh,
+// with $4 the grants its owner made from the Studio), whether its file
+// system takes ACLs, and where GUFI ($2 the Studio's copy) can run from.
 const spaceCheckSh = `umask 077
-uid=$(id -u) || exit 2
-user=$(id -un)
+LOOSE_OK=$4
+` + transfers.LooseSh + `
 home=$(cd ~ 2>/dev/null && pwd -P)
-printf 'uid=%s\nuser=%s\nhome=%s\nplatform=%s\n' "$uid" "$user" "$home" "$(uname -sm)"
-st() { stat -c "$1" -- "$2" 2>/dev/null; }
-loose() {
-  o=$(st %u "$1"); m=$(st %a "$1"); g=$(st %G "$1")
-  if [ -z "$o" ] || [ -z "$m" ]; then echo unknown; return; fi
-  if [ "$o" != 0 ] && [ "$o" != "$uid" ]; then echo owner; return; fi
-  mm=$((8#$m))
-  [ $((mm & 512)) -ne 0 ] && return
-  if [ $((mm & 2)) -ne 0 ]; then echo other; return; fi
-  if [ $((mm & 16)) -ne 0 ] && [ "$g" != "$user" ]; then echo group; return; fi
-}
+printf 'uid=%s\nuser=%s\nhome=%s\nplatform=%s\n' "$lz_uid" "$lz_user" "$home" "$(uname -sm)"
 p=$1
 case "$p" in "~") p=$home;; "~/"*) p="$home/${p#"~/"}";; esac
 case "$p" in /*) ;; *) echo path=relative; exit 0;; esac
 echo "target=$p"
-if [ "$3" = 1 ] && [ ! -e "$p" ] && [ ! -L "$p" ]; then mkdir -p -- "$p" 2>/dev/null && echo made=1; fi
+if [ "$3" = 1 ] && [ ! -e "$p" ] && [ ! -L "$p" ]; then mkdir -p -m 700 -- "$p" 2>/dev/null && echo made=1; fi
 if [ -e "$p" ] || [ -L "$p" ]; then
   echo exists=1
   [ -d "$p" ] || { echo kind=notdir; exit 0; }
@@ -73,34 +65,39 @@ fi
 echo "real=$r"
 [ -r "$r" ] && [ -x "$r" ] && echo readable=1
 [ -w "$r" ] && echo writable=1
-echo "owner=$(st %u "$r")"
-echo "mode=$(st %a "$r")"
-echo "fgroup=$(st %G "$r")"
+echo "owner=$(lz_stat %u %u "$r")"
+echo "mode=$(lz_stat %a %Lp "$r")"
+echo "fgroup=$(lz_stat %G %Sg "$r")"
 # The mount's own type: stat -f reports ext4 as ext2/ext3.
 fs=$(findmnt -n -o FSTYPE -T "$r" 2>/dev/null | head -n 1)
 [ -n "$fs" ] || fs=$(stat -f -c %T -- "$r" 2>/dev/null)
 echo "fs=$fs"
-d=$r
-while [ "$d" != / ]; do
+# A folder to be made goes under $r, the nearest one there is.
+w=''; d=$r
+if [ -e "$p" ] || [ -L "$p" ]; then echo "self=$(loose "$r" self)"; else w=$(loose "$r"); fi
+while [ -z "$w" ] && [ "$d" != / ]; do
   d=${d%/*}; [ -n "$d" ] || d=/
   w=$(loose "$d")
-  if [ -n "$w" ]; then echo "unsafe=$w $d"; break; fi
 done
-if [ "$(st %u "$r")" = "$uid" ] && [ -w "$r" ]; then
+if [ -n "$w" ]; then echo "unsafe=$w $d"; fi
+if [ "$(lz_stat %u %u "$r")" = "$lz_uid" ] && [ -w "$r" ]; then
   if t=$(mktemp -- "$r/.studio-acl-XXXXXX" 2>/dev/null); then
-    if command -v setfacl >/dev/null 2>&1 && setfacl -m "u:$uid:r" -- "$t" 2>/dev/null; then echo acl=1; else echo acl=0; fi
+    if command -v setfacl >/dev/null 2>&1 && setfacl -m "u:$lz_uid:r" -- "$t" 2>/dev/null; then echo acl=1; else echo acl=0; fi
     rm -f -- "$t"
   fi
 fi
 a="$home/.activate-studio"
-if [ -e "$a" ] || [ -L "$a" ]; then echo "studio=$(st %u "$a")"; fi
+if [ -e "$a" ] || [ -L "$a" ]; then echo "studio=$(lz_stat %u %u "$a")"; fi
 [ -x "$a/gufi/$2/bin/gufi_query" ] && echo gufi=ok
 for b in /usr/local/bin /usr/bin /opt/gufi/bin; do
   [ -x "$b/gufi_query" ] && [ -x "$b/gufi_dir2index" ] || continue
-  [ "$(st %u "$b")" = 0 ] || continue
+  [ "$(lz_stat %u %u "$b")" = 0 ] || continue
   if [ -z "$(loose "$b")" ] && [ -z "$(loose "$b/gufi_query")" ] && [ -z "$(loose "$b/gufi_dir2index")" ]; then echo "sysgufi=$b"; break; fi
 done
 exit 0`
+
+// looseBinSh says how another account could change GUFI's tools in $1.
+const looseBinSh = transfers.LooseSh + `for p in "$1" "$1/gufi_query" "$1/gufi_dir2index"; do w=$(loose "$p"); [ -n "$w" ] && { printf '%s\n' "$w"; break; }; done; exit 0`
 
 // spacePrepareSh keeps ~/.activate-studio to the person alone.
 const spacePrepareSh = `umask 077; a="$HOME/.activate-studio"; mkdir -p "$a" && chmod 700 "$a" && echo ready`
@@ -139,6 +136,31 @@ type spaceFound struct {
 	SendGufi bool
 	// readable and writable: the account can open the folder, and write in it.
 	readable, writable bool
+	// Owned: the account owns the folder, or will once it is made.
+	Owned bool
+	// GufiLoose: another account could change the GUFI found there.
+	GufiLoose bool
+	// Made: this check made the folder.
+	Made bool
+	// Closed: no other account can open the folder.
+	Closed bool
+	// ReadOnly is why the Library does not write in the folder: another
+	// account could write in it, owns it, or could move it, and so could
+	// send a write elsewhere. "" where none can.
+	ReadOnly string
+}
+
+// shareWhy is why the folder cannot be shared from here, "" when it can.
+func (f *spaceFound) shareWhy(t *spaceTarget) string {
+	switch {
+	case t.transport == "ssh":
+		return "It is reached over ssh on a Studio only you use, so there is nobody here to share it with."
+	case !f.Owned:
+		return "Another account owns the folder, and only its owner can share it."
+	case f.ReadOnly != "":
+		return "Another account could change what a share opens, so it is not shared until the warning above is settled."
+	}
+	return ""
 }
 
 func (f *spaceFound) json() *jsonv.Object {
@@ -147,7 +169,14 @@ func (f *spaceFound) json() *jsonv.Object {
 		create = append(create, f.Target)
 	}
 	return jsonv.NewObject("ok", f.OK, "steps", stepsJSON(f.Steps), "sourceRoot", f.Target, "create", create,
-		"account", f.Info.Account, "acl", f.Info.ACL, "fs", f.Info.FS)
+		"account", f.Info.Account, "acl", f.Info.ACL, "fs", f.Info.FS, "owned", f.Owned, "readOnly", orNil(f.ReadOnly))
+}
+
+func orNil(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // gufiBundle is the GUFI the Studio carries (the folder above GUFI_BIN,
@@ -206,31 +235,51 @@ func bundleRuns(platform string) bool {
 	return false
 }
 
-// checkSpace runs the check over the person's session and reads it.
-func (m *Module) checkSpace(ctx context.Context, site, key, folder string, create bool) (*spaceFound, error) {
+// spaceAsk is a folder to check: the folder as it was given, whether to
+// make it, the GUFI to use when the person named one, and the grants a
+// library of it already has.
+type spaceAsk struct {
+	folder string
+	create bool
+	gufi   *string
+	grants []string
+	// folderOnly: what the folder is, without GUFI.
+	folderOnly bool
+}
+
+// grantsLine is the grants as LOOSE_OK takes them.
+func grantsLine(grants []string) string { return strings.Join(grants, " ") }
+
+// checkSpace runs the check over the person's session and reads it. What it
+// refuses is what makes a library unusable: a folder that cannot be opened,
+// made or is not one, the home folder or one that holds it, the Studio's
+// own, and no GUFI. A folder another account could write in or move is
+// indexed and read as the person, and the Library does not write in it
+// (spaceFound.ReadOnly).
+func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spaceFound, error) {
 	bundle, version := m.gufiBundle()
 	v := version
 	if v == "" {
 		v = "none"
 	}
 	flag := "0"
-	if create {
+	if q.create {
 		flag = "1"
 	}
-	res, err := m.Pool.Run(ctx, site, key, []string{"bash", "-c", spaceCheckSh, "_", folder, v, flag}, 90*time.Second)
+	res, err := m.Pool.Run(ctx, h.Site, h.Key, []string{"bash", "-c", spaceCheckSh, "_", q.folder, v, flag, grantsLine(q.grants)}, 90*time.Second)
 	if err != nil {
-		return nil, m.sessionErr(remote.ShortName(site), key, err)
+		return nil, m.sessionErr(remote.ShortName(h.Site), h.Key, err)
 	}
 	kv := keyValues(res.Stdout)
 	uid, err := strconv.Atoi(kv["uid"])
 	if err != nil {
-		return nil, apierr.New(502, "%s did not say which account your session reaches: %s", remote.ShortName(site), lastOrExit(res.Stderr, res.Code))
+		return nil, apierr.New(502, "%s did not say which account your session reaches: %s", h.Name, lastOrExit(res.Stderr, res.Code))
 	}
 	user, home := kv["user"], kv["home"]
 	f := &spaceFound{Home: home, Info: libraries.SpaceInfo{Account: user, UID: uid, FS: fsName(kv["fs"]), ACL: kv["acl"] == "1"}}
 	add := func(s step) { f.Steps = append(f.Steps, s) }
 	done := func() *spaceFound { f.OK = allOK(f.Steps); return f }
-	add(step{Name: "account", OK: true, Detail: fmt.Sprintf("Your session reaches %s as %s (uid %d). The library is read and written as that account.", remote.ShortName(site), user, uid)})
+	add(step{Name: "account", OK: true, Detail: fmt.Sprintf("Your session reaches %s as %s (uid %d). The folder is indexed and read as that account.", h.Name, user, uid)})
 	if kv["path"] == "relative" {
 		add(step{Name: "folder", Detail: "Give an absolute folder, or one under ~."})
 		return done(), nil
@@ -245,8 +294,7 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 		add(step{Name: "folder", Detail: "Your account cannot open " + f.Target + "."})
 		return done(), nil
 	}
-	exists := kv["exists"] == "1"
-	f.Missing = !exists
+	f.Missing, f.Made = kv["exists"] != "1", kv["made"] == "1"
 	where := f.Real
 	if f.Missing {
 		where = posixNormalize(f.Target)
@@ -265,21 +313,51 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 	case inside(home, where):
 		add(step{Name: "folder", Detail: where + " holds your home folder. Choose a folder inside your home folder, such as " + SuggestedSpace + "."})
 		return done(), nil
+	case !f.Missing && !f.readable:
+		add(step{Name: "folder", Detail: "Your account cannot open " + f.Real + "."})
+		return done(), nil
+	case f.Missing && !f.writable:
+		add(step{Name: "folder", Detail: fmt.Sprintf("%s does not exist, or your account cannot open it, and it cannot be made: your account cannot write in %s.", f.Target, f.Real)})
+		return done(), nil
 	}
-	owner := kv["owner"]
 	mode, _ := strconv.ParseUint(kv["mode"], 8, 32)
-	mine := owner == strconv.Itoa(uid)
+	if f.Missing && kv["acl"] == "" {
+		// Whether a folder made there takes ACLs is known once it is made.
+		f.Info.ACL = true
+	}
+	f.Closed = f.Missing || mode&0o077 == 0
+	f.Owned = f.Missing || kv["owner"] == strconv.Itoa(uid)
+	if q.create && !f.Missing && !f.Made && !f.Owned {
+		add(step{Name: "folder", Detail: f.Real + " was made by another account meanwhile. Choose another folder."})
+		return done(), nil
+	}
+	// readOnly is a finding that leaves the folder read and not written:
+	// what another account could do, and what to change.
+	const redirect = "another account could send what the Studio writes there elsewhere"
+	readOnly := func(name, found, fix string) {
+		if f.ReadOnly == "" {
+			f.ReadOnly = found + ", so it is read only here: " + redirect + ". " + fix
+		}
+		add(step{Name: name, OK: true, Warn: true, Detail: found + ". It is indexed and read as you, and the Library does not write in it, since " + redirect + ". " + fix})
+	}
+	const again = " and refresh the library, or check again before adding it."
+	self := ""
+	if !f.Missing {
+		self = kv["self"]
+	}
 	switch {
-	case f.Missing && !mine:
-		add(step{Name: "folder", Detail: fmt.Sprintf("%s does not exist, and it would be made in %s, which another account owns.", f.Target, f.Real)})
 	case f.Missing:
-		add(step{Name: "folder", OK: true, Detail: f.Target + " does not exist yet. It is made, open to you alone, when you confirm."})
-	case !mine:
-		add(step{Name: "folder", Detail: fmt.Sprintf("%s belongs to another account (uid %s). The folder must be one you own.", f.Real, owner)})
-	case mode&0o002 != 0:
-		add(step{Name: "folder", Detail: fmt.Sprintf("Every account there can write in %s (mode %s). Make it yours alone first (chmod o-w), or choose another folder.", f.Real, kv["mode"])})
-	case mode&0o020 != 0 && kv["fgroup"] != user:
-		add(step{Name: "folder", Detail: fmt.Sprintf("Members of the group %s can write in %s (mode %s). Make it yours alone first (chmod g-w), or choose another folder.", kv["fgroup"], f.Real, kv["mode"])})
+		add(step{Name: "folder", OK: true, Detail: f.Target + " does not exist yet. It is made, closed to other accounts, when you confirm."})
+	case !f.Owned:
+		readOnly("folder", fmt.Sprintf("%s belongs to another account (uid %s)", f.Real, kv["owner"]), "To write in it here, use a folder you own.")
+	case self == "other":
+		readOnly("folder", fmt.Sprintf("Every account there can write in %s (mode %s)", f.Real, kv["mode"]), "To write in it here, run chmod go-w on it"+again)
+	case self == "group":
+		readOnly("folder", fmt.Sprintf("Members of the group %s can write in %s (mode %s)", kv["fgroup"], f.Real, kv["mode"]), "To write in it here, run chmod g-w on it"+again)
+	case self == "acl":
+		readOnly("folder", fmt.Sprintf("The ACL on %s lets another account or group write in it", f.Real), "To write in it here, take that entry off with setfacl"+again)
+	case self != "":
+		readOnly("folder", "Who can write in "+f.Real+" could not be read", "Check it there, then"+strings.TrimPrefix(again, " and"))
 	case mode&0o055 != 0:
 		add(step{Name: "folder", OK: true, Warn: true, Detail: fmt.Sprintf("Other accounts can open %s now (mode %s). The index stays in your ~/.activate-studio, which only you can open; to keep the files to yourself too, run chmod 700 on the folder.", f.Real, kv["mode"])})
 	default:
@@ -287,22 +365,25 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 	}
 	if u := kv["unsafe"]; u != "" {
 		why, dir, _ := strings.Cut(u, " ")
-		said := map[string]string{"owner": "belongs to another account", "other": "can be written by every account", "group": "can be written by a group", "unknown": "could not be read"}[why]
-		add(step{Name: "path", Detail: fmt.Sprintf("%s %s, so another account could move or replace a folder under it. Choose a folder under your home folder.", dir, said)})
+		readOnly("path", fmt.Sprintf("%s %s, so another account could move or replace a folder under it", dir, transfers.LooseSaid(why)), "To write in it here, use a folder under your home folder.")
 	} else {
 		add(step{Name: "path", OK: true, Detail: "No other account can move or replace the folders on the way to it."})
 	}
 	if s := kv["studio"]; s != "" && s != strconv.Itoa(uid) {
 		add(step{Name: "index", Detail: "~/.activate-studio belongs to another account, so the Studio cannot keep your index there."})
 	}
-	switch kv["acl"] {
-	case "1":
-		add(step{Name: "sharing", OK: true, Detail: fmt.Sprintf("Its file system (%s) takes POSIX ACLs, so you can share single folders with named people.", f.Info.FS)})
-	case "0":
-		add(step{Name: "sharing", OK: true, Warn: true, Detail: fmt.Sprintf("Its file system (%s) does not take POSIX ACLs here. You can share with everyone on the cluster, or with a group you belong to, by mode bits.", f.Info.FS)})
+	switch {
+	case !f.Owned || f.ReadOnly != "" || remote.IsSSH(h.Site):
+	case kv["acl"] == "1":
+		add(step{Name: "sharing", OK: true, Detail: fmt.Sprintf("Its file system (%s) takes POSIX ACLs, so it can be shared with named people and groups.", f.Info.FS)})
+	case kv["acl"] == "0":
+		add(step{Name: "sharing", OK: true, Warn: true, Detail: fmt.Sprintf("Its file system (%s) does not take POSIX ACLs here, so it can be shared with every account for reading only.", f.Info.FS)})
 	}
 	own := studio + "/gufi/" + version + "/bin"
 	switch {
+	case q.folderOnly:
+	case deref(q.gufi) != "":
+		m.foundGufi(ctx, h, f, q.gufi, home, strings.HasPrefix(kv["platform"], "Darwin"))
 	case version != "" && kv["gufi"] == "ok":
 		f.GufiBin = own
 		add(step{Name: "gufi", OK: true, Detail: "GUFI runs from your own copy in ~/.activate-studio."})
@@ -313,13 +394,31 @@ func (m *Module) checkSpace(ctx context.Context, site, key, folder string, creat
 		f.GufiBin = kv["sysgufi"]
 		add(step{Name: "gufi", OK: true, Detail: "GUFI runs from " + f.GufiBin + ", installed for every account."})
 	default:
-		why := "the Studio has no copy of GUFI to send"
-		if bundle != "" {
-			why = "the Studio's copy of GUFI is not built for " + strings.TrimSpace(kv["platform"])
+		if m.foundGufi(ctx, h, f, nil, home, strings.HasPrefix(kv["platform"], "Darwin")); f.GufiBin == "" && bundle != "" {
+			last := &f.Steps[len(f.Steps)-1]
+			last.Detail += " The Studio's copy of GUFI is not built for " + strings.TrimSpace(kv["platform"]) + "."
 		}
-		add(step{Name: "gufi", Detail: fmt.Sprintf("There is no GUFI there that only root can change, and %s.", why)})
 	}
 	return done(), nil
+}
+
+// foundGufi is the GUFI installed there: in the folder given, else where
+// the test of a build looks. One another account could change is used, as
+// the person who named or installed it knows it, with a warning.
+func (m *Module) foundGufi(ctx context.Context, h probeHost, f *spaceFound, given *string, home string, mac bool) {
+	c := connected{Home: home, Mac: mac}
+	g := m.gufiStep(h, m.runner(ctx, h), &f.Steps, c.expand(given), home, mac, true)
+	if !g.Ran {
+		return
+	}
+	f.GufiBin = g.Bin
+	if r, err := m.Pool.Run(ctx, h.Site, h.Key, []string{"bash", "-c", looseBinSh, "_", g.Bin}, 60*time.Second); err == nil {
+		if how := lastLine(r.Stdout); how != "" {
+			last := &f.Steps[len(f.Steps)-1]
+			last.Warn, f.GufiLoose = true, true
+			last.Detail += " It " + transfers.LooseSaid(how) + ", and it runs as you."
+		}
+	}
 }
 
 // sendGufi puts the Studio's GUFI in the person's ~/.activate-studio.
@@ -534,73 +633,224 @@ func spaceFolder(b *jsonv.Object) (string, error) {
 	return *p, nil
 }
 
-// testSpace is the check alone.
+// spaceRequest is the folder a request asks to index, and the parts of a
+// build it may name: the index folder and GUFI's.
+func spaceRequest(b *jsonv.Object) (spaceAsk, *string, error) {
+	folder, err := spaceFolder(b)
+	if err != nil {
+		return spaceAsk{}, nil, err
+	}
+	idx, err := remotePath(field(b, "indexRoot"), "index folder")
+	if err != nil {
+		return spaceAsk{}, nil, err
+	}
+	bin, err := remotePath(field(b, "gufiBin"), "GUFI bin directory")
+	if err != nil {
+		return spaceAsk{}, nil, err
+	}
+	return spaceAsk{folder: folder, gufi: bin}, idx, nil
+}
+
+// myLibraryWhy is why the folder cannot be the person's My library, where
+// their chats are saved: it must take writes, and what indexes it must be
+// nobody else's to change, and its index stays where only they can open
+// it. "" when it can be.
+func myLibraryWhy(f *spaceFound, idx *string) string {
+	switch {
+	case f.ReadOnly != "":
+		return "My library is where your chats are saved, so it has to be a folder the Library writes in."
+	case f.GufiLoose:
+		return "My library is indexed only with a GUFI no other account can change, which runs as you."
+	case deref(idx) != "":
+		return "My library keeps its index in ~/.activate-studio, which only you can open. Leave the index folder empty."
+	}
+	return ""
+}
+
+// testSpace is the check alone, with what the build would find: where the
+// index goes and what reads the files there.
 func (m *Module) testSpace(ctx context.Context, w who, b *jsonv.Object) (*jsonv.Object, error) {
 	t, err := m.spaceSession(w, b)
 	if err != nil {
 		return nil, err
 	}
-	folder, err := spaceFolder(b)
+	q, idx, err := spaceRequest(b)
 	if err != nil {
 		return nil, err
 	}
-	f, err := m.checkSpace(ctx, t.site, t.key, folder, false)
+	f, err := m.checkSpace(ctx, t.host, q)
 	if err != nil {
 		return nil, err
 	}
-	return f.json().Set("system", t.name), nil
+	o := f.json()
+	if f.OK {
+		src := f.Real
+		if f.Missing {
+			src = f.Target
+		}
+		p := m.probeFolders(ctx, t.host, buildSpec{SourceRoot: src, IndexRoot: idx}, gufiFound{Bin: f.GufiBin, Ran: true})
+		for _, s := range p.Steps {
+			if !s.OK || s.Name == "index" || s.Name == "extract" {
+				f.Steps = append(f.Steps, s)
+			}
+		}
+		f.OK = allOK(f.Steps)
+		o = f.json()
+		create := []any{}
+		for _, c := range p.Create {
+			create = append(create, c)
+		}
+		if f.OK {
+			o.Set("create", create)
+		}
+	}
+	why := f.shareWhy(t)
+	return o.Set("system", t.name).Set("canShare", f.OK && why == "").Set("shareWhy", orNil(why)).Set("myLibraryWhy", orNil(myLibraryWhy(f, idx))), nil
 }
 
-// addSpace makes a person's space: the check, the folder when confirmed,
-// their own GUFI, and the build of its index, as them.
-func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*libraries.UserDef, int, error) {
+// wantsMyLibrary is whether a folder becomes a space. On a Studio people
+// sign in to that is their My library, which they ask for (myLibrary; a
+// request that does not say is one, as before); any other folder of theirs
+// is a library named by its folder.
+func (m *Module) wantsMyLibrary(b *jsonv.Object, f *spaceFound, idx *string) (bool, error) {
+	v, given := field(b, "myLibrary").(bool)
+	if !m.Users.AuthEnabled {
+		// On a Studio one person uses, the main library is theirs. A folder
+		// closed to every other account is written so that it stays closed.
+		return f.ReadOnly == "" && f.Owned && f.Closed, nil
+	}
+	if given && !v {
+		return false, nil
+	}
+	if why := myLibraryWhy(f, idx); why != "" {
+		if given {
+			return false, apierr.New(409, "%s", why)
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+// addSpace makes a library of a folder on one of the person's systems: the
+// check, the folder when confirmed, GUFI, the build of its index as them,
+// and the share asked for with it.
+func (m *Module) addSpace(ctx context.Context, w who, b *jsonv.Object) (*libraries.UserDef, int, string, error) {
 	t, err := m.spaceSession(w, b)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 	owner, site, key := t.owner, t.site, t.key
-	folder, err := spaceFolder(b)
+	q, idx, err := spaceRequest(b)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
-	f, err := m.checkSpace(ctx, site, key, folder, false)
+	f, err := m.checkSpace(ctx, t.host, q)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 	if !f.OK {
-		return nil, 0, spaceNotPassed(f)
+		return nil, 0, "", spaceNotPassed(f)
+	}
+	var share *shareAsk
+	if v, ok := field(b, "share").(*jsonv.Object); ok {
+		if share, err = shareRequest(v, f.Info); err != nil {
+			return nil, 0, "", err
+		}
+		if why := f.shareWhy(t); why != "" {
+			return nil, 0, "", apierr.New(409, "%s", why)
+		}
+	}
+	mine, err := m.wantsMyLibrary(b, f, idx)
+	if err != nil {
+		return nil, 0, "", err
 	}
 	if f.Missing {
 		if field(b, "create") != true {
-			return nil, 0, apierr.New(409, "%s does not exist yet. Confirm to create it.", f.Target)
+			return nil, 0, "", apierr.New(409, "%s does not exist yet. Confirm to create it.", f.Target)
 		}
-		if f, err = m.checkSpace(ctx, site, key, folder, true); err != nil {
-			return nil, 0, err
+		q.create = true
+		if f, err = m.checkSpace(ctx, t.host, q); err != nil {
+			return nil, 0, "", err
 		}
 		if !f.OK {
-			return nil, 0, spaceNotPassed(f)
+			return nil, 0, "", spaceNotPassed(f)
 		}
 		if f.Missing {
-			return nil, 0, apierr.New(502, "%s could not be made.", f.Target)
+			return nil, 0, "", apierr.New(502, "%s could not be made.", f.Target)
+		}
+		if share != nil && f.shareWhy(t) != "" {
+			return nil, 0, "", apierr.New(409, "%s", f.shareWhy(t))
+		}
+		if mine, err = m.wantsMyLibrary(b, f, idx); err != nil {
+			return nil, 0, "", err
+		}
+	}
+	// A folder made My library is the person's alone.
+	if share != nil {
+		mine = mine && !m.Users.AuthEnabled
+	}
+	for _, d := range m.load(owner) {
+		if d.Build != nil && d.Shared == nil && d.Transport == t.transport && d.Site == t.conn.Site && intOf(d.Port) == t.conn.Port && d.Build.SourceRoot == f.Real {
+			return nil, 0, "", apierr.New(409, "%s is already your library %s.", f.Real, d.ShownLabel(m.Users.AuthEnabled))
 		}
 	}
 	if r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", spacePrepareSh}, 60*time.Second); err != nil || !strings.Contains(r.Stdout, "ready") {
-		return nil, 0, apierr.New(502, "Your ~/.activate-studio could not be kept to you alone on %s.", t.name)
+		return nil, 0, "", apierr.New(502, "Your ~/.activate-studio could not be kept to you alone on %s.", t.name)
 	}
 	if f.SendGufi {
 		if err := m.sendGufi(ctx, site, key); err != nil {
-			return nil, 0, err
-		}
-	}
-	for _, d := range m.load(owner) {
-		if d.Space != nil && d.Build != nil && d.Transport == t.transport && d.Site == t.conn.Site && intOf(d.Port) == t.conn.Port && d.Build.SourceRoot == f.Real {
-			return nil, 0, apierr.New(409, "%s is already your library %s.", f.Real, d.ShownLabel(m.Users.AuthEnabled))
+			return nil, 0, "", err
 		}
 	}
 	bin := f.GufiBin
-	r := &buildReq{owner: owner, host: t.host, conn: t.conn, spec: buildSpec{SourceRoot: f.Real, GufiBin: &bin}}
+	r := &buildReq{owner: owner, host: t.host, conn: t.conn, spec: buildSpec{SourceRoot: f.Real, IndexRoot: idx, GufiBin: &bin}}
 	info := f.Info
-	return m.addBuildFor(ctx, w, t.transport, r, b, &addOpts{Space: &info})
+	o := &addOpts{found: f}
+	if mine {
+		o.Space = &info
+	}
+	d, job, err := m.addBuildFor(ctx, w, t.transport, r, b, o)
+	if err != nil || share == nil {
+		return d, job, "", err
+	}
+	// The library is there whether or not the share could be set.
+	if _, err := m.addShare(ctx, w, d.ID, share.object()); err != nil {
+		return d, job, err.Error(), nil
+	}
+	return d, job, "", nil
+}
+
+// foundAt is what the check finds of a library's folder now; nil where it
+// could not be read.
+func (m *Module) foundAt(ctx context.Context, h probeHost, folder string, grants []string) *spaceFound {
+	f, err := m.checkSpace(ctx, h, spaceAsk{folder: folder, grants: grants, folderOnly: true})
+	if err != nil || f.Real == "" || f.Missing {
+		return nil
+	}
+	return f
+}
+
+// keep records on a library what the check found of its folder: whether
+// its owner can share it, and whether the Library writes in it. Each write
+// checks again (transfers.RemoteFS.Guard), so a folder that could not be
+// read is left as it was recorded.
+func (f *spaceFound) keep(d *libraries.UserDef) {
+	d.Guard = true
+	if f == nil {
+		return
+	}
+	d.ReadOnly = nil
+	if f.ReadOnly != "" {
+		d.ReadOnly = ptr(f.ReadOnly)
+	}
+	if d.Space != nil {
+		return
+	}
+	d.Own = nil
+	if f.Owned {
+		info := f.Info
+		d.Own = &info
+	}
 }
 
 func spaceNotPassed(f *spaceFound) error {

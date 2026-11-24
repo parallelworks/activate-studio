@@ -200,13 +200,13 @@ export function LibraryView({ display, onDisplay }: {
   // Why labels cannot be set at a path: the main library on a shared
   // Studio, read only for everyone but its administrators.
   const labelsLockedAt = (p: string): string | null => libraryReadOnlyWhy(cfg.libraries, libraryAt(p))
-  // A folder of the viewer's own space, which they can share: the space and
+  // A folder the viewer owns, which they can share: its library and
   // the folder within it ('' for all of it).
   const spaceAt = (p: string): { library: string; path: string } | null => {
     const clean = p.replace(/^\/+/, '')
     const id = inAll ? clean.split('/')[0] : libId
     const lib = cfg.libraries?.find(l => l.id === id)
-    if (!lib?.space || lib.sharedFrom) return null
+    if (!(lib?.space || (lib?.own && lib.access?.via !== 'ssh')) || lib.sharedFrom || lib.readOnlyWhy) return null
     return { library: id, path: inAll ? clean.split('/').slice(1).join('/') : clean }
   }
   // A tree path as Transfers names it: its library and the path there.

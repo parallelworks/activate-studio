@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { Button, Callout, Input } from '@parallelworks/ui'
-import { api, type IndexDepth, type PwSystems } from '../api'
-import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } from './IndexDepth'
+import { type PwSystems } from '../api'
 import { sshOptionsProblem } from '../sshOptions'
 import { openAccounts } from '../accounts'
 import { NeedsActivate } from './NeedsActivate'
-import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
+import { postJson, StepList, type CheckStep } from './LibraryFormParts'
 import { PwSystemField } from './PwSystemField'
 
 /**
@@ -17,28 +16,19 @@ import { PwSystemField } from './PwSystemField'
  * used yet (no pw CLI found, no sign-in), the form says why instead. Used
  * by Settings, Indexing, Libraries and by the setup wizard.
  *
- * By default (`mode` connect) the GUFI index is there already: the
- * connection test runs first and reports each step (the connection, GUFI,
- * the index, the source directory), and Add is offered once a test of the
- * fields as they now stand has passed. Read only.
- *
- * With `mode` build, the Studio builds the index there: the test checks
- * the connection, that GUFI is installed, the source folder and the index
- * folder (made if missing, after asking), and whether text extraction can
- * run; Build the index starts gufi_dir2index there, at the index depth
- * chosen (OCR where tesseract is installed there, search by meaning where
- * the Studio's model can run), and the library shows its progress in the
- * list. The depth starts at Meaning on documents; the form says what the
- * first build sends there for it.
- * The server tests again before either.
+ * The GUFI index is there already: the connection test runs first and
+ * reports each step (the connection, GUFI, the index, the source
+ * directory), and Add is offered once a test of the fields as they now
+ * stand has passed. The server tests again before it adds. Read only. A
+ * folder to index there is IndexFolderForm's.
  */
 export interface SshLibraryAdded { id: string; label: string }
 
-interface TestResult { ok: boolean; steps: CheckStep[]; gufiBin?: string; gufiVersion?: string; directories?: number; indexDir?: string; create?: string[] }
+interface TestResult { ok: boolean; steps: CheckStep[]; gufiBin?: string; gufiVersion?: string; directories?: number }
 
 const EMPTY = { label: '', destination: '', sshOptions: '', cluster: '', indexRoot: '', sourceRoot: '', gufiBin: '' }
 
-export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mode = 'connect', onOpenAccess, cluster, destination }: {
+export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', onOpenAccess, cluster, destination }: {
   onAdded?: (lib: SshLibraryAdded) => void
   /** The system, chosen by the form around this one (Add a library); the
    *  form then shows no System or Host field of its own. */
@@ -46,38 +36,32 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   destination?: string
   compact?: boolean
   transport?: 'ssh' | 'pw'
-  mode?: 'connect' | 'build'
   /** Opens Settings, Accounts; by default, by its address. */
   onOpenAccess?: () => void
 }) {
   const pw = transport === 'pw'
-  const build = mode === 'build'
   const [form, setForm] = useState(EMPTY)
   const [result, setResult] = useState<TestResult | null>(null)
   // The fields the last test ran with; a change after it asks for another.
   const [tested, setTested] = useState('')
   const [busy, setBusy] = useState<'test' | 'add' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [confirming, setConfirming] = useState(false)
-  const [depth, setDepth] = useState<IndexDepth>(DEFAULT_REMOTE_LIBRARY_DEPTH)
   // Over pw ssh: the person's systems on the platform (PwSystemField), or
   // why pw ssh cannot be used here.
   const [systems, setSystems] = useState<PwSystems | null>(null)
 
   const clusterOf = cluster ?? form.cluster
   const destinationOf = (destination ?? form.destination).trim()
-  const paths = build
-    ? { sourceRoot: form.sourceRoot.trim(), indexRoot: form.indexRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
-    : { indexRoot: form.indexRoot.trim(), sourceRoot: form.sourceRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
+  const paths = { indexRoot: form.indexRoot.trim(), sourceRoot: form.sourceRoot.trim() || undefined, gufiBin: form.gufiBin.trim() || undefined }
   const options = form.sshOptions.trim()
   const optionsProblem = pw ? null : sshOptionsProblem(options)
   const conn = pw ? { cluster: clusterOf, ...paths } : { destination: destinationOf, ...(options ? { sshOptions: options } : {}), ...paths }
   const passed = !!result?.ok && tested === JSON.stringify(conn)
   const set = (patch: Partial<typeof EMPTY>) => { setForm(f => ({ ...f, ...patch })); setError(null) }
   const host = pw ? clusterOf : destinationOf.replace(/^.*@/, '').replace(/:\d+$/, '')
-  const name = String((build ? paths.sourceRoot : paths.indexRoot) ?? '').replace(/\/+$/, '').split('/').pop() || (build ? 'folder' : 'index')
-  const route = `/api/user-libraries/${pw ? 'pw' : 'ssh'}${build ? '/build' : ''}`
-  const required = build ? paths.sourceRoot : paths.indexRoot
+  const name = paths.indexRoot.replace(/\/+$/, '').split('/').pop() || 'index'
+  const route = `/api/user-libraries/${pw ? 'pw' : 'ssh'}`
+  const required = paths.indexRoot
 
   const test = async () => {
     setBusy('test'); setError(null); setResult(null)
@@ -95,7 +79,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   const add = async () => {
     setBusy('add'); setError(null)
     try {
-      const lib = await postJson<SshLibraryAdded>(route, { ...conn, label: form.label.trim() || undefined, ...(build ? { depth } : {}), ...(build && result?.create?.length ? { create: true } : {}) })
+      const lib = await postJson<SshLibraryAdded>(route, { ...conn, label: form.label.trim() || undefined })
       setForm(f => ({ ...EMPTY, cluster: f.cluster })); setResult(null); setTested('')
       onAdded?.({ id: lib.id, label: lib.label })
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy(null) }
@@ -114,13 +98,9 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
     <div className="ssh-library-form">
       {!compact && (
         <p className="muted view-sub">
-          {build
-            ? (pw
-              ? 'A folder on one of your remote computers, indexed there with GUFI over pw ssh with this computer\'s pw sign-in. The build runs there and leaves the folder as it is.'
-              : 'A folder on a remote computer, indexed there with GUFI over ssh with your own keys. The build runs there and leaves the folder as it is. The Studio cannot answer a password prompt, so key access is needed.')
-            : (pw
-              ? 'An existing GUFI index on one of your remote computers, read over pw ssh with this computer\'s pw sign-in. Read only: nothing is written there.'
-              : 'An existing GUFI index on a remote computer, read over ssh with your own keys. The Studio cannot answer a password prompt, so key access is needed. Read only: nothing is written there.')}
+          {pw
+            ? 'An existing GUFI index on one of your remote computers, read over pw ssh with this computer\'s pw sign-in. Read only: nothing is written there.'
+            : 'An existing GUFI index on a remote computer, read over ssh with your own keys. The Studio cannot answer a password prompt, so key access is needed. Read only: nothing is written there.'}
         </p>
       )}
       {pw && systems?.error && (
@@ -142,27 +122,15 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
               description={help('For a jump host or other settings: -J, -p, -i, -l, -F, and -o Keyword=value. Used on every ssh to this host.')} onChange={e => set({ sshOptions: e.target.value })} />
           </>
         )}
-        {build ? (
-          <>
-            <Input label="Source folder" mono placeholder="~/data" spellCheck={false} value={form.sourceRoot}
-              description={help(`The folder to index on that ${where}. Created, empty, if it does not exist.`)} onChange={e => set({ sourceRoot: e.target.value })} />
-            <Input label="Index folder" hint="optional" mono placeholder="~/.activate-studio/indexes/…" spellCheck={false} value={form.indexRoot}
-              description={help('Where the index is written there: an empty or new folder, outside the source folder.')} onChange={e => set({ indexRoot: e.target.value })} />
-          </>
-        ) : (
-          <>
-            <Input label="Index directory" mono placeholder="/path/to/index" spellCheck={false} value={form.indexRoot}
-              description={help(`The top of the GUFI index on that ${where}: the directory with db.db.`)} onChange={e => set({ indexRoot: e.target.value })} />
-            <Input label="Source directory" hint="optional" mono placeholder="/path/to/files" spellCheck={false} value={form.sourceRoot}
-              description={help('The indexed files, for previews. Without it, names and metadata only.')} onChange={e => set({ sourceRoot: e.target.value })} />
-          </>
-        )}
+        <Input label="Index directory" mono placeholder="/path/to/index" spellCheck={false} value={form.indexRoot}
+          description={help(`The top of the GUFI index on that ${where}: the directory with db.db.`)} onChange={e => set({ indexRoot: e.target.value })} />
+        <Input label="Source directory" hint="optional" mono placeholder="/path/to/files" spellCheck={false} value={form.sourceRoot}
+          description={help('The indexed files, for previews. Without it, names and metadata only.')} onChange={e => set({ sourceRoot: e.target.value })} />
         <Input label="GUFI bin directory" hint="optional" mono placeholder="found by the test" spellCheck={false} value={form.gufiBin}
           description={help('Where GUFI\'s tools are. The test looks on the PATH, in ~/.activate-studio/gufi, /usr/local/bin, ~/usr/local/bin, and /opt/gufi/bin.')} onChange={e => set({ gufiBin: e.target.value })} />
         <Input label="Label" hint="optional" placeholder={required && host ? name : 'Shown in the Library switcher'} value={form.label}
           onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
       </div>
-      {build && <IndexDepthControl value={depth} onChange={setDepth} disabled={busy !== null} note={remoteMeaningNote} />}
       {result && <StepList steps={result.steps} label="Connection test" />}
       {error && <Callout tone="error" live>{error}</Callout>}
       <div className="query-actions">
@@ -170,15 +138,11 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
           Test connection
         </Button>
         <Button variant="primary" loading={busy === 'add'} disabled={!passed || busy !== null}
-          onClick={() => (build && result?.create?.length ? setConfirming(true) : void add())}>
-          {build ? 'Build the index' : 'Add library'}
+          onClick={() => void add()}>
+          Add library
         </Button>
         {result && !passed && !busy && <span className="muted">{result.ok ? 'Fields changed: test again to add.' : 'Fix the failing step and test again.'}</span>}
       </div>
-      {build && (
-        <CreateConfirm paths={result?.create ?? []} where={host ? `on ${host}` : undefined} open={confirming} onClose={() => setConfirming(false)}
-          onConfirm={async () => { setConfirming(false); await add() }} />
-      )}
     </div>
   )
 }

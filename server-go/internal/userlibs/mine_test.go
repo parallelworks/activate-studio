@@ -34,6 +34,11 @@ func TestOwnLibraryIsWrittenAsItsOwner(t *testing.T) {
 	id := b.Body["id"].(string)
 	got := h.waitFor(id)
 	eq(t, []any{got["state"], got["mine"]}, []any{"ready", true}, "built and written as the person")
+	if d := find(h.m.load("single"), id); !d.Guard || d.Own == nil || d.Own.UID != os.Getuid() || d.ReadOnly != nil {
+		t.Fatalf("what the check found: %+v", d)
+	}
+	// One added before that check has none of it, and stays as it was.
+	h.m.Users.Update("single", id, func(d *libraries.UserDef) { d.Guard, d.Own = false, nil })
 
 	SpaceEvery = 50 * time.Millisecond
 	t.Cleanup(func() { SpaceEvery = 20 * time.Second })

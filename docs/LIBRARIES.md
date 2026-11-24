@@ -17,15 +17,17 @@ The names follow whether people sign in, so each mode has one My library.
 - Sign-in off (the Mac and Linux apps, a Studio one person uses): the main
   library is the person's own folder, read and written as them, and its
   default name is **My library** (`settings.MainLabelPersonal`). A folder of
-  their own on a remote computer (Add a library, Remote computer, **A new folder**) is
-  another library, named by its folder and shown with "(on <system>)". A
+  their own on a remote computer (Add a library, Remote computer, **Index a
+  folder**) is another library, named by its folder and shown with "(on <system>)". A
   folder made that way before this rule, stored under the name My library,
   keeps its record and files and is shown by its folder's name
   (`libraries.UserDef.ShownLabel`); nothing stored changes.
 - Sign-in on: the main library is the one people share, read only for all
   but its administrators, and its default name is **Shared library**
   (`settings.MainLabelShared`). **My library** is each person's own folder
-  on a remote computer (Add a library, Remote computer, **My own folder**).
+  on a remote computer (Add a library, Remote computer, **Index a folder**,
+  with **My library** chosen), where their chats are saved. Any other folder
+  they index is named by its folder.
 
 A name set in Settings, General (`kbLabel`) or by `KB_LABEL` is used in
 either mode. `/api/config` answers `signIn`, and the web app's
@@ -55,7 +57,9 @@ nothing is stored or migrated. It has four parts:
   on a shared Studio are the deployment's.
 - `write`: whether the viewer may change its files from the Library. Only
   libraries read as the viewer can be: My library, a folder shared with
-  them for writing, and an index they built on one of their systems.
+  them for writing, and an index they built on one of their systems, unless
+  another account could change its folder (`readOnlyWhy` then says how;
+  [Folders another account could change](#folders-another-account-could-change)).
 - `index`: `built` by the Studio, or `connected` as it was, which is always
   read only, and `sharedFrom`, the account that shared a folder.
 
@@ -184,14 +188,18 @@ file (see "Reading originals through another host").
 
 **Add a library** (`web/src/components/AddLibrary.tsx`) is one form, used
 in Settings and in the Library's Add menu, in the terms of `access` above.
-*Where:* this computer (sign-in off), a system, or a bucket. *System:* one
+*Where it is:* this computer (sign-in off), a system, or a bucket. *System:* one
 of the viewer's clusters over pw ssh (`PwSystemField`, the Studio's own
 cluster first), or a host over plain ssh where sign-in is off; it is
 picked once and the forms below take it. The form then says the library
-is read as the viewer there. *What:* on a remote computer, the viewer's own folder
-(My library), an index the Studio builds of a folder there, or an index
-that is there already, connected read only; here, a folder to build or an
-index to connect. A folder on a cluster can be built over the pw ssh
+is read as the viewer there. *What:* a folder to index, or an index that is
+there already, connected read only. *Who sees it*, for a folder on a system
+(`web/src/components/IndexFolderForm.tsx`): only the viewer, or shared as
+it is added with a person, a group or everyone, for reading or for reading
+and writing (everyone for reading), through the same code as **Share…**.
+It is offered where the viewer owns the folder; otherwise the form says
+why. With sign-in on, a folder only the viewer sees can be My library. A
+folder here is seen by whoever uses the Studio. A folder on a cluster can be built over the pw ssh
 session or, on a Studio the platform hosts, by the platform's index
 workflow (**Build with**). On a cluster, the folders others shared with
 the viewer there are listed under the form (`SharedWithMe`, by the
@@ -665,6 +673,50 @@ keys, agent, and `~/.ssh/config`, on a Studio with sign-in off) or
 a list (`GET /api/user-libraries/pw/systems`, below). No workflow and no scheduler are
 involved (`server/src/remoteBuild.ts`).
 
+The form uses `POST /api/user-libraries/space/test` and `.../space`, with
+`{cluster | destination, sshOptions?, sourceRoot, indexRoot?, gufiBin?,
+label?, depth?, create?, myLibrary?, share?: {kind, name?, access}}`. The
+check runs as the person and refuses only what makes the library
+unusable: a folder that cannot be opened or made, a file, the home folder
+or one that holds it, one in `~/.activate-studio`, a `~/.activate-studio`
+of another account, and no GUFI. A folder that does not exist yet is made
+with mode 700. It answers `owned`, `readOnly`, `canShare`, `shareWhy` and
+`myLibraryWhy` beside its steps. GUFI is the one named, the person's own
+copy (sent from the Studio's where that runs there), one only root can
+change, or one found where the connection test looks; one another account
+could change is used with a warning, and never for My library. A `share`
+that cannot be granted is refused before anything is made; one the system
+refuses afterwards leaves the library and comes back as `shareError`. With
+sign-in on, a request without `myLibrary` makes My library, as before the
+form asked.
+
+### Folders another account could change
+
+A folder that belongs to another account, that its group, every account or
+an ACL lets others write in, or that is under a folder another account
+could move (owned by another account other than root, or writable by others
+without the sticky bit), is indexed and read as the person, and the Studio
+writes nothing in it: no upload, new folder, rename, move, delete, share or
+transfer. The Studio's writers find a path and then use it by name, so
+another account able to rename a folder on the way could send the write to
+another of the person's folders between the two. Nothing rechecks at the
+write itself, so such a folder is read only rather than checked more often.
+`readOnlyWhy` on the library says which folder, and the `chmod` that closes
+it; a rebuild reads it again (`spaceFound.keep`).
+
+Each write to a library added this way checks the folder and the ones above
+it again, in the helper that makes the change (`RemoteFS.Guard`,
+`transfers.LooseSh`), and is refused where the answer changed, so a `chmod
+g+w` stops writes at once and `chmod g-w` lets them go on. A group that has
+the account's own name is the account's own. Accounts and groups the owner
+shared the folder with for writing from the Studio are let through
+(`RemoteFS.Shared`), as a share for writing always was: no write follows a
+link, whoever made it. Libraries added before this have no `guard` in their
+record and are written as they were.
+
+### The check before a build
+
+The same build can be asked for without the form, as a library list does.
 **Test connection** (`POST /api/user-libraries/ssh/build/test`, or
 `.../pw/build/test`) reports five steps: the session reaches the system;
 GUFI is installed there, both `gufi_dir2index` and `gufi_query`, looked
@@ -816,7 +868,8 @@ change. The account is read from their session the first time they write
 and kept with the library (`writer`); a session that later reaches another
 account is refused. Unlike My library, what the Studio writes takes the
 person's umask and the folder's default ACL, so a folder shared by group
-stays shared. As in My library, a path outside the library's folder, or
+stays shared; in a folder of the person's own that is closed to other
+accounts, it stays closed. As in My library, a path outside the library's folder, or
 one through a link, is refused before anything is written, the Library
 lists the folders as they are on disk, and the index is built again about
 20 seconds after the last change. An index connected as it is stays read

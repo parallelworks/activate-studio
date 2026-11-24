@@ -51,11 +51,13 @@ mark=$1; cmd=$2; root=$3; shift 3
 # already open to them, when it is readable as they read the folder. The
 # nearest folder that exists decides, so a path made in several levels
 # takes one answer. A default ACL, where there is one, wins over either.
-like() { [ "${PRIV:-}" = 1 ] || return 0; local a=$1; while [ ! -d "$a" ]; do a=$(dirof "$a"); done; if [ -n "$(find -- "$a" -maxdepth 0 -perm -004 2>/dev/null)" ]; then umask 022; else umask 077; fi; }
+# With PRIV=2 (a folder of the person's own), a folder open to its group is
+# written with their umask, as its group reads it; a closed one stays closed.
+like() { [ -n "${PRIV:-}" ] || return 0; local a=$1; while [ ! -d "$a" ]; do a=$(dirof "$a"); done; if [ -n "$(find -- "$a" -maxdepth 0 -perm -004 2>/dev/null)" ]; then umask 022; elif [ "$PRIV" = 2 ] && [ -n "$(find -- "$a" -maxdepth 0 -perm -040 2>/dev/null)" ]; then :; else umask 077; fi; }
 # closed: in a private location, a folder closed to other accounts with no
 # ACL of its own; a file a mover wrote (rsync keeps the source's mode) and
 # landed there is closed the same way, as like makes what the helper writes.
-closed() { [ "${PRIV:-}" = 1 ] || return 1; [ -z "$(find -- "$1" -maxdepth 0 -perm -004 2>/dev/null)" ] || return 1; case "$(ls -ld -- "$1" 2>/dev/null | cut -d' ' -f1)" in *+) return 1;; esac; return 0; }
+closed() { [ -n "${PRIV:-}" ] || return 1; [ -z "$(find -- "$1" -maxdepth 0 -perm -004 2>/dev/null)" ] || return 1; [ "$PRIV" = 2 ] && [ -n "$(find -- "$1" -maxdepth 0 -perm -040 2>/dev/null)" ] && return 1; case "$(ls -ld -- "$1" 2>/dev/null | cut -d' ' -f1)" in *+) return 1;; esac; return 0; }
 [ "$cmd" = read ] || printf '%s\n' "$mark"
 fail() { printf '%s\n' "$2" >&2; exit "$1"; }
 [ "$cmd" = home ] && { cd -P ~ 2>/dev/null && pwd -P; exit; }
@@ -73,13 +75,14 @@ dirof() { case "$1" in */*) printf '%s' "${1%/*}";; *) printf .;; esac; }
 # their folders (one open to more people, say). The nearest part that
 # exists is looked at, before anything is made.
 plain() {
-  [ "${PRIV:-}" = 1 ] || [ "${LINKS:-}" = 1 ] || return 0
+  [ -n "${PRIV:-}" ] || [ "${LINKS:-}" = 1 ] || return 0
   local a=$1
   while [ ! -e "$a" ] && [ ! -L "$a" ]; do a=$(dirof "$a"); done
   [ -L "$a" ] && return 1
   [ -d "$a" ] || a=$(dirof "$a")
   [ "$(cd -P -- "$a" 2>/dev/null && pwd -P)" = "$(cd -L -- "$a" 2>/dev/null && pwd -L)" ]
 }
+if [ "${GUARD:-}" = 1 ]; then case "$cmd" in write|mkdir|land|remove|rmstage|rmtree) guard ;; esac; fi
 G=0; find . -maxdepth 0 -printf '' >/dev/null 2>&1 && G=1
 F='%y\t%s\t%T@\t%m\t%p\0'
 SF='%HT%t%z%t%m%t%Lp%t%N'
@@ -223,6 +226,15 @@ type RemoteFS struct {
 	// one, no write goes through a link, but what is written takes the
 	// owner's umask and the folder's default ACL.
 	NoLinks bool
+	// Own: a folder of the viewer's own, written with no link followed and
+	// with their umask, except that a folder closed to other accounts stays
+	// closed to them.
+	Own bool
+	// Guard: each write checks first that no other account can write in the
+	// folder or move it (LooseSh), other than those in Shared, as ACL
+	// entries name them, and is refused otherwise.
+	Guard  bool
+	Shared []string
 	// Kept: commands other than reading and writing a file go over the
 	// session kept open to the host (Kept), as the Library's searches do,
 	// rather than a session started for each. A session to a cluster
@@ -243,9 +255,11 @@ func toolArgv(mark, cmd, root string, args ...string) []string {
 }
 
 // privateTool is the helper for a private location (RemoteFS.Private),
-// and linksTool for one whose writes only refuse links (RemoteFS.NoLinks).
+// ownTool for a folder of the viewer's own (RemoteFS.Own), and linksTool
+// for one whose writes only refuse links (RemoteFS.NoLinks).
 const (
 	privateTool = "PRIV=1\n" + tool
+	ownTool     = "PRIV=2\n" + tool
 	linksTool   = "LINKS=1\n" + tool
 )
 
@@ -263,13 +277,19 @@ func toolArgvOf(script, mark, cmd, root string, args ...string) []string {
 
 // script is the helper the location's commands run.
 func (r *RemoteFS) script() string {
+	guard := ""
+	if r.Guard {
+		guard = "GUARD=1\n" + LooseOK(r.Shared) + guardSh
+	}
 	switch {
 	case r.Private:
-		return privateTool
+		return guard + privateTool
+	case r.Own:
+		return guard + ownTool
 	case r.NoLinks:
-		return linksTool
+		return guard + linksTool
 	}
-	return tool
+	return guard + tool
 }
 
 // afterMark is a helper's output after its marker line; ok false when the
@@ -445,7 +465,7 @@ func (r *RemoteFS) runWith(ctx context.Context, mark string, input io.Reader, cm
 		status = 404
 	case 5, 6, 7, 11:
 		status = 400
-	case 10:
+	case 10, 13:
 		status = 409
 	}
 	return res, r.named(status, msg)

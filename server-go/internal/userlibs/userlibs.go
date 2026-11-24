@@ -466,6 +466,13 @@ func Register(mux *http.ServeMux, a *app.App) {
 	a.Providers.SpaceFolder = m.SpaceFolder
 	a.Providers.SpaceChanged = m.SpaceTransferred
 	a.Providers.SpaceAccount = m.SpaceAccount
+	a.Providers.WriteShares = func(root string) []string {
+		owner, d, err := m.Users.FindRoot(root)
+		if err != nil || d == nil {
+			return nil
+		}
+		return m.writeShares(owner, d.ID)
+	}
 	if !a.Cfg.FrontAuth {
 		registerWhoami(mux, a)
 	}
@@ -564,11 +571,15 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		return m.testSpace(r.Context(), w, b)
 	}))
 	mux.HandleFunc("POST "+base+"/space", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
-		d, job, err := m.addSpace(context.WithoutCancel(r.Context()), w, b)
+		d, job, shareErr, err := m.addSpace(context.WithoutCancel(r.Context()), w, b)
 		if err != nil {
 			return nil, err
 		}
-		return m.public(w.owner(), d, job), nil
+		o := m.public(w.owner(), d, job)
+		if shareErr != "" {
+			o.Set("shareError", shareErr)
+		}
+		return o, nil
 	}))
 	mux.HandleFunc("GET "+base+"/{id}/shares", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 		return m.listShares(w, r.PathValue("id"))
@@ -753,6 +764,12 @@ func (m *Module) public(owner string, d *libraries.UserDef, job int) *jsonv.Obje
 	o.Set("access", libraries.UserAccess(*d, writable))
 	if d.Space != nil {
 		o.Set("space", jsonv.NewObject("account", d.Space.Account, "acl", d.Space.ACL, "fs", d.Space.FS))
+	}
+	if d.Own != nil && d.Mine() {
+		o.Set("own", jsonv.NewObject("account", d.Own.Account, "acl", d.Own.ACL, "fs", d.Own.FS))
+	}
+	if d.ReadOnly != nil {
+		o.Set("readOnlyWhy", *d.ReadOnly)
 	}
 	if d.Shared != nil {
 		o.Set("shared", jsonv.NewObject("from", d.Shared.From, "access", d.Shared.Access, "share", d.Shared.ShareID))
@@ -1122,7 +1139,7 @@ func (m *Module) remove(w who, id string) error {
 		}
 	}
 	// A space's shares end with it; a library made from a share leaves it.
-	if gone != nil && gone.Space != nil {
+	if gone != nil && gone.Shareable() != nil {
 		m.endShares(w, owner, gone)
 	}
 	defer m.forgetAdopted(owner, gone)

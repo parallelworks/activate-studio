@@ -267,6 +267,9 @@ type Library struct {
 	// Mine: a library the viewer built on one of their systems, written
 	// as them through the same path as a space (UserDef.Mine).
 	Mine bool
+	// Own: Mine, over a folder the viewer's account owns, so they can share
+	// it (UserDef.Own).
+	Own bool
 	// SharedFrom is the account that shared the folder, for a library made
 	// from someone else's share.
 	SharedFrom string
@@ -303,6 +306,7 @@ type PublicLibrary struct {
 	FormatNote *string `json:"formatNote"`
 	Space      bool    `json:"space,omitempty"`
 	Mine       bool    `json:"mine,omitempty"`
+	Own        bool    `json:"own,omitempty"`
 	SharedFrom string  `json:"sharedFrom,omitempty"`
 	// FromBucket: its files are objects read from a bucket one at a time.
 	FromBucket bool `json:"fromBucket,omitempty"`
@@ -314,7 +318,8 @@ type PublicLibrary struct {
 	// write in it, and whether its index was built or connected.
 	Access Access `json:"access"`
 	// ReadOnlyWhy is why the viewer may not change a library others may:
-	// the main library for a signed-in person on a shared Studio.
+	// the main library for a signed-in person on a shared Studio, or a
+	// library of theirs that another account could send a write out of.
 	ReadOnlyWhy string `json:"readOnlyWhy,omitempty"`
 }
 
@@ -331,7 +336,7 @@ func strOrNil(s string) *string {
 func Public(l Library) PublicLibrary {
 	return PublicLibrary{ID: l.ID, Label: l.Label, Primary: l.Primary, Writable: l.Writable, Pinned: l.Pinned,
 		Source: l.SourceRoot != "" || l.Site != "", Caps: l.Caps, Site: strOrNil(l.Site), Meaning: strOrNil(l.Meaning),
-		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, Mine: l.Mine, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil,
+		Depth: strOrNil(l.Depth), FormatNote: FormatNote(l.Format), Space: l.Space, Mine: l.Mine, Own: l.Own, SharedFrom: l.SharedFrom, FromBucket: l.Bucket != nil,
 		Host: localHost(l), Access: accessOf(l), ReadOnlyWhy: l.ReadOnlyWhy}
 }
 

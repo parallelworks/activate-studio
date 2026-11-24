@@ -121,10 +121,8 @@ func defaultIndexDir(home, source string) string {
 
 // probeBuild is the check before a build, step by step.
 func (m *Module) probeBuild(ctx context.Context, h probeHost, spec buildSpec) *probe {
-	dest := h.Name
 	p := &probe{}
 	run := m.runner(ctx, h)
-	add := func(s step) { p.Steps = append(p.Steps, s) }
 	done := func() *probe { p.OK = allOK(p.Steps); return p }
 	c := m.connectStep(h, run, &p.Steps)
 	if c == nil {
@@ -135,6 +133,26 @@ func (m *Module) probeBuild(ctx context.Context, h probeHost, spec buildSpec) *p
 		p.OS = &c.OS
 		return done()
 	}
+	m.probeFoldersInto(p, h, run, c, spec, g)
+	return done()
+}
+
+// probeFolders is the rest of the check before a build, where the session
+// and GUFI are known: the folder, where its index goes and what reads its
+// files there.
+func (m *Module) probeFolders(ctx context.Context, h probeHost, spec buildSpec, g gufiFound) *probe {
+	p := &probe{}
+	run := m.runner(ctx, h)
+	if c := m.connectStep(h, run, &p.Steps); c != nil {
+		m.probeFoldersInto(p, h, run, c, spec, g)
+	}
+	p.OK = allOK(p.Steps)
+	return p
+}
+
+func (m *Module) probeFoldersInto(p *probe, h probeHost, run runFn, c *connected, spec buildSpec, g gufiFound) {
+	dest := h.Name
+	add := func(s step) { p.Steps = append(p.Steps, s) }
 	source := *c.expand(&spec.SourceRoot)
 	indexDir := ""
 	if e := c.expand(spec.IndexRoot); e != nil {
@@ -145,7 +163,7 @@ func (m *Module) probeBuild(ctx context.Context, h probeHost, spec buildSpec) *p
 	if !strings.HasPrefix(source, "/") || !strings.HasPrefix(indexDir, "/") {
 		add(step{Name: "source", Detail: fmt.Sprintf("The home folder of the login on %s could not be read, so ~ cannot be resolved; give absolute paths.", dest)})
 		p.OS = &c.OS
-		return done()
+		return
 	}
 	kv := keyValues(run([]string{"sh", "-c", buildCheck, "_", source, indexDir}, 0).Stdout)
 	create := []string{}
@@ -255,7 +273,6 @@ func (m *Module) probeBuild(ctx context.Context, h probeHost, spec buildSpec) *p
 	}
 	p.SourceRoot, p.IndexDir, p.Create = &source, &indexDir, create
 	p.Model, p.Platform = model, platform
-	return done()
 }
 
 func fieldsHave(list, v string) bool {
@@ -396,6 +413,9 @@ type addOpts struct {
 	IDBase, Label string
 	Space         *libraries.SpaceInfo
 	Shared        *libraries.SharedInfo
+	// found is what the check of the folder found; nil for a build asked
+	// for without it, whose folder is checked once it is there.
+	found *spaceFound
 }
 
 // addBuildFor is addBuild for a host already chosen.
@@ -464,6 +484,13 @@ func (m *Module) addBuildFor(ctx context.Context, w who, transport string, r *bu
 	d := libraries.UserDef{ID: id, Label: label(field(b, "label"), fallback), Transport: transport, Existing: ptr(false), Site: r.conn.Site,
 		Destination: r.conn.Destination, OS: nonEmpty(p.OS), GufiVersion: p.GufiVersion, Resource: resource, SourceDir: build.SourceRoot,
 		State: "building", Build: build, Space: o.Space, Shared: o.Shared}
+	if o.Shared == nil {
+		f := o.found
+		if f == nil {
+			f = m.foundAt(ctx, r.host, build.SourceRoot, nil)
+		}
+		f.keep(&d)
+	}
 	if r.conn.Port != 0 {
 		d.Port = ptr(r.conn.Port)
 	}
@@ -503,12 +530,21 @@ func (m *Module) rebuildRemote(ctx context.Context, w who, owner string, d *libr
 	if err := m.startRemote(ctx, site, key, &build, false); err != nil {
 		return nil, err
 	}
+	// Who can write in the folder is read again: a chmod there turns the
+	// Library's writes on or off.
+	var found *spaceFound
+	if d.Guard && d.Shared == nil {
+		found = m.foundAt(ctx, probeHost{Site: site, Key: key, Name: remote.SiteName(site)}, spaceRoot(d), m.writeShares(owner, d.ID))
+	}
 	state := "building"
 	if deref(d.IndexRoot) != "" {
 		state = "updating"
 	}
 	next := m.update(owner, d.ID, func(x *libraries.UserDef) {
 		x.State, x.Error, x.Build = state, nil, &build
+		if found != nil {
+			found.keep(x)
+		}
 	})
 	if next == nil {
 		return nil, apierr.New(404, "no such library")

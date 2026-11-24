@@ -65,6 +65,19 @@ type UserDef struct {
 	// systems is written as, read from their session the first time they
 	// write in it; nil until then and for every other library.
 	Writer *WriterInfo `json:"writer,omitempty"`
+	// Own is what the check found about a library of the owner's own (Mine)
+	// whose folder their account owns, so they can share it; nil where
+	// another account owns the folder, and for every other library.
+	Own *SpaceInfo `json:"own,omitempty"`
+	// Guard: each write checks again that no other account can write in the
+	// folder or move it (transfers.LooseSh), and is refused otherwise. Set
+	// for every library added since the check was made.
+	Guard bool `json:"guard,omitempty"`
+	// ReadOnly is why the Library does not write in a library that its
+	// owner otherwise could: another account can write in its folder, owns
+	// it, or can move it, so it could send a write elsewhere. The check sets
+	// it when the library is added and each time it is refreshed.
+	ReadOnly *string `json:"readOnly,omitempty"`
 }
 
 // WriterInfo is the account and uid on the system a library is written as.
@@ -110,17 +123,35 @@ func (d *UserDef) WritableBy(owner string, authEnabled bool) bool {
 // WrittenAsOwner: the Library writes in it as its owner (a space, a
 // folder shared with them for writing, or a library of theirs, Mine).
 func (d *UserDef) WrittenAsOwner() bool {
+	if d.ReadOnly != nil {
+		return false
+	}
 	return d.Space != nil || (d.Shared != nil && d.Shared.Access == "write") || d.Mine()
 }
 
-// Account is the cluster account and uid a space or a shared library was
-// made for; ok false for any other library.
+// Shareable is what the check found about a folder its owner can share: a
+// space, or a library of theirs over a folder their account owns; nil for
+// any other.
+func (d *UserDef) Shareable() *SpaceInfo {
+	if d.Space != nil {
+		return d.Space
+	}
+	if d.Own != nil && d.Mine() {
+		return d.Own
+	}
+	return nil
+}
+
+// Account is the cluster account and uid a space, a shared library or a
+// folder of the owner's own was made for; ok false for any other library.
 func (d *UserDef) Account() (account string, uid int, ok bool) {
 	switch {
 	case d.Space != nil:
 		return d.Space.Account, d.Space.UID, true
 	case d.Shared != nil:
 		return d.Shared.Account, d.Shared.UID, true
+	case d.Own != nil && d.Mine():
+		return d.Own.Account, d.Own.UID, true
 	case d.Writer != nil && d.Mine():
 		return d.Writer.Account, d.Writer.UID, true
 	}

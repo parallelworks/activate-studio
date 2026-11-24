@@ -858,10 +858,12 @@ func (r *Registry) userLibrariesOf(viewer Viewer) []Library {
 		if d.WritableBy(owner, u.AuthEnabled) {
 			l.Writable = true
 			if d.Mine() {
-				l.Mine = true
+				l.Mine, l.Own = true, d.Own != nil
 			} else {
 				l.Space = true
 			}
+		} else if d.ReadOnly != nil {
+			l.ReadOnlyWhy = *d.ReadOnly
 		}
 		if d.Shared != nil {
 			l.SharedFrom = d.Shared.From

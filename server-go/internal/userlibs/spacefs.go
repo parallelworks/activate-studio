@@ -67,6 +67,9 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	// Only the person whose library it is writes in it, and only in a
 	// space, a folder shared with them for writing, or a library they
 	// built on one of their systems.
+	if d != nil && o == owner && d.ReadOnly != nil {
+		return nil, w, "", nil, apierr.New(403, "%s", *d.ReadOnly)
+	}
 	if d == nil || !d.WrittenAsOwner() || o != owner {
 		return nil, w, "", nil, apierr.New(404, "no such space")
 	}
@@ -85,7 +88,10 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	// theirs elsewhere takes their umask and the folder's own ACL. Neither
 	// writes through a link.
 	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: site, KeyText: key, Dir: root, Name: d.ShownLabel(m.Users.AuthEnabled),
-		Timeout: 10 * time.Minute, Private: !d.Mine(), NoLinks: d.Mine(), Kept: true}
+		Timeout: 10 * time.Minute, Private: !d.Mine(), NoLinks: d.Mine(), Own: d.Mine() && d.Own != nil, Kept: true}
+	if d.Guard {
+		fs.Guard, fs.Shared = true, m.writeShares(owner, d.ID)
+	}
 	return fs, w, owner, d, nil
 }
 
