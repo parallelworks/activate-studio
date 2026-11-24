@@ -1578,6 +1578,11 @@ a.identity-btn { text-decoration: none; }
   box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
 }
 .next-up-chip:hover { border-color: var(--pw-navy); }
+/* A written file: opens in the viewer, so it reads as a link, not a message. */
+.next-up-open { display: inline-flex; align-items: center; gap: 5px; color: var(--pw-navy); }
+.next-up-open > svg { flex: none; }
+.next-up-open > span:first-of-type { overflow: hidden; text-overflow: ellipsis; }
+.next-up-also { flex: none; color: var(--pw-muted); font-size: 11px; }
 
 /* Slash-command palette above the composer. */
 .slash-palette {

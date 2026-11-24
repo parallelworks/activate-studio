@@ -591,6 +591,19 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
       </div>
     )
   }
+  // A folder opened by link (the chat's "Open the N files written") is
+  // shown in the tree; the viewer says so rather than failing.
+  if (error && /is a directory/i.test(error)) {
+    return (
+      <div className="viewer empty">
+        <EmptyState
+          variant="bare"
+          title={shown(path)}
+          description="A folder. Its files are listed in the tree; pick one to open it."
+        />
+      </div>
+    )
+  }
   if (error) {
     return (
       <div className="viewer">
