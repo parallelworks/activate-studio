@@ -99,7 +99,11 @@ func (m *Module) unfollow(t *pwTurn) {
 
 type pwAvail struct {
 	why string
-	at  time.Time
+	// barred: pw code is not for this viewer here (no ACTIVATE sign-in of
+	// theirs, or none set up for this Studio), as against pw code being
+	// down or failing, which the Studio assistant does not answer for.
+	barred bool
+	at     time.Time
 	// ttl is how long the answer holds: a minute, and longer when this
 	// host's pw code did not start, so a chat does not wait on it often.
 	ttl time.Duration
@@ -186,21 +190,28 @@ var pwSites = agentsites.Current
 // (cheap: no workspace is made), or "" when it is. Answers are kept a
 // minute per viewer.
 func (m *Module) pwcodeUnavailable(ctx context.Context, r *http.Request) string {
+	why, _ := m.pwcodeAvailability(ctx, r)
+	return why
+}
+
+// pwcodeAvailability is pwcodeUnavailable's answer, and whether it bars
+// this viewer from pw code here (pwAvail.barred).
+func (m *Module) pwcodeAvailability(ctx context.Context, r *http.Request) (string, bool) {
 	who := userID(r)
 	m.pw.mu.Lock()
 	if a, ok := m.pw.avail[who]; ok && time.Since(a.at) < a.ttl {
 		m.pw.mu.Unlock()
-		return a.why
+		return a.why, a.barred
 	}
 	m.pw.mu.Unlock()
-	why, ttl := m.pwcodeCheck(ctx, r)
+	why, barred, ttl := m.pwcodeCheck(ctx, r)
 	m.pw.mu.Lock()
 	if m.pw.avail == nil {
 		m.pw.avail = map[string]pwAvail{}
 	}
-	m.pw.avail[who] = pwAvail{why: why, at: time.Now(), ttl: ttl}
+	m.pw.avail[who] = pwAvail{why: why, barred: barred, at: time.Now(), ttl: ttl}
 	m.pw.mu.Unlock()
-	return why
+	return why, barred
 }
 
 // forgetPWCodeAvailability drops what was kept of whether pw code is
@@ -216,41 +227,45 @@ func (m *Module) forgetPWCodeAvailability(owner string) {
 	m.pw.mu.Unlock()
 }
 
-// pwcodeCheck is pwcodeUnavailable's answer and how long it holds. pw code
-// is offered only under ACTIVATE: a Studio with no platform connected (one
-// run on its own, with any OpenAI-compatible endpoint) answers with the
-// Studio assistant, and asks nothing of pw code.
-func (m *Module) pwcodeCheck(ctx context.Context, r *http.Request) (string, time.Duration) {
+// pwcodeCheck is pwcodeUnavailable's answer, whether it bars the viewer
+// (pwAvail.barred), and how long it holds. pw code is offered only under
+// ACTIVATE: a Studio with no platform connected (one run on its own, with
+// any OpenAI-compatible endpoint) answers with the Studio assistant, and
+// asks nothing of pw code.
+func (m *Module) pwcodeCheck(ctx context.Context, r *http.Request) (string, bool, time.Duration) {
 	s := pwSites()
 	if s == nil {
-		return "pw code is not set up on this Studio.", time.Minute
+		return "pw code is not set up on this Studio.", true, time.Minute
 	}
 	if m.A.Cfg.AuthEnabled() {
 		if user(r) == nil {
-			return "Sign in to use pw code.", time.Minute
+			return "Sign in to use pw code.", true, time.Minute
 		}
 		if m.viewerPlatformKey(r) == "" {
-			return "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.", time.Minute
+			return "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.", true, time.Minute
 		}
 		if userlibs.HomeCluster() == "" {
-			return "This Studio does not know the cluster it runs on (STUDIO_HOME_CLUSTER), so it cannot reach your pw code.", time.Minute
+			return "This Studio does not know the cluster it runs on (STUDIO_HOME_CLUSTER), so it cannot reach your pw code.", true, time.Minute
 		}
-		return "", time.Minute
+		return "", false, time.Minute
 	}
 	needs := "pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Accounts."
 	if f := m.A.Providers.PlatformAvailable; f == nil || !f(r, userID(r)) || m.GatewayKey() == "" {
-		return needs, time.Minute
+		return needs, true, time.Minute
+	}
+	if err := m.localPWCodeRefused(); err != nil {
+		return apiMessage(err), true, time.Minute
 	}
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	st, err := s.Daemon.EnsureDaemon(cctx)
 	if err != nil {
-		return "pw code did not start here: " + err.Error(), 5 * time.Minute
+		return "pw code did not start here: " + err.Error(), false, 5 * time.Minute
 	}
 	if why := pwcode.UnusableReason(st); why != "" {
-		return why, 5 * time.Minute
+		return why, false, 5 * time.Minute
 	}
-	return "", time.Minute
+	return "", false, time.Minute
 }
 
 // viewerPlatformKey is the viewer's own ACTIVATE credential (their sign-in
@@ -276,73 +291,141 @@ func conversationEngine(c *conversations.Conversation) string {
 }
 
 // pwcodeWhyFor says why pw code cannot answer c for r's viewer, "" when it
-// can: a chat whose session runs on another machine needs the relay, any
-// other this Studio's own pw code.
-func (m *Module) pwcodeWhyFor(r *http.Request, c *conversations.Conversation) string {
+// can, and whether that bars the viewer (pwAvail.barred): a chat whose
+// session runs on another machine needs the relay, which only a platform
+// and the viewer's own ACTIVATE credential make, any other this Studio's
+// own pw code.
+func (m *Module) pwcodeWhyFor(r *http.Request, c *conversations.Conversation) (string, bool) {
 	if c != nil && c.PWCode != nil && c.PWCode.Relay {
-		return m.relayUnavailable(r)
+		why := m.relayUnavailable(r)
+		return why, why != ""
 	}
-	return m.pwcodeUnavailable(r.Context(), r)
+	return m.pwcodeAvailability(r.Context(), r)
 }
+
+// engineView is how a conversation stands for the chat bar and for its
+// next message (engineState).
+type engineView struct {
+	// newChat is the engine a new chat starts with, current the one this
+	// conversation answers with when the message picks none.
+	newChat, current string
+	// why says why pw code cannot answer the conversation, "" when it can.
+	why string
+	// toolsDown says why auto answers with the Studio assistant for now.
+	toolsDown string
+	// fallback is the note on a reply the Studio assistant gives in pw
+	// code's place: the conversation is pw code's (its own engine, the
+	// last choice, or the deployment's setting), but pw code is not for
+	// this viewer here. "" when the conversation's engine answers.
+	fallback string
+}
+
+// fallbackNote is the line under the Studio assistant's reply when it
+// answers a pw code chat for a viewer pw code is not for (engineView.
+// fallback). It is stored as a note after the reply, in markdown, its
+// links marked with engineNoteMark so the chat draws it as a quiet line.
+func fallbackNote(why string, c *conversations.Conversation) string {
+	s := "pw code is not available to you here, so the Studio assistant answered. "
+	if strings.Contains(why, "Settings, Accounts") {
+		// Each such reason comes down to an ACTIVATE sign-in of the
+		// viewer's own.
+		s += "Sign in with ACTIVATE under [Settings, Accounts](#view=settings:accounts?open=activate&" + engineNoteMark + ") to switch back."
+	} else {
+		s += why + " [About switching](#view=help:chat?" + engineNoteMark + ")"
+	}
+	if c != nil && c.PWCode != nil && c.PWCode.Relay && c.PWCode.Session != "" {
+		where := c.PWCode.MachineName
+		if where == "" {
+			where = c.PWCode.Machine
+		}
+		if where == "" {
+			where = "its machine"
+		}
+		s += " The pw code session on " + where + " keeps running there, and does not see this reply."
+	}
+	return s
+}
+
+// engineNoteMark is in each link of a fallback note (fallbackNote), which
+// the chat's styles draw as a quiet line; the links' views ignore it.
+const engineNoteMark = "note=engine"
 
 // engineState is how a conversation stands for the chat bar and for its
-// next message, from one rule: newChat is the engine a new chat starts
-// with (the deployment's setting, where "auto" is pw code when it is
-// offered and reached the Studio's tools lately), current the engine the
-// conversation answers with when nothing is picked (its own, else newChat,
-// or the last choice for a new chat, hint), why says why pw code cannot
-// answer it ("" when it can), and toolsDown why auto answers with the
-// Studio assistant for now.
-func (m *Module) engineState(r *http.Request, c *conversations.Conversation, hint string) (newChat, current, why, toolsDown string) {
-	why = m.pwcodeWhyFor(r, c)
+// next message, from one rule (engineView): a new chat starts with the
+// deployment's setting, where "auto" is pw code when it is offered and
+// reached the Studio's tools lately; a conversation answers with its own
+// engine, else the last choice for a new chat (hint), else a new chat's.
+// Where that is pw code and pw code is not for this viewer here (barred:
+// no ACTIVATE sign-in of theirs, say), the Studio assistant answers
+// instead, with a note; where pw code is only down, it does not.
+func (m *Module) engineState(r *http.Request, c *conversations.Conversation, hint string) engineView {
+	why, barred := m.pwcodeWhyFor(r, c)
+	v := engineView{why: why}
 	switch setting := m.eff().ChatEngine; {
 	case setting == engineStudio:
-		newChat = engineStudio
+		v.newChat = engineStudio
 	case setting == enginePWCode:
-		newChat = enginePWCode
+		v.newChat = enginePWCode
 	case why != "":
-		newChat = engineStudio
+		v.newChat = engineStudio
 	default:
-		newChat = enginePWCode
+		v.newChat = enginePWCode
 		if down := m.toolsDown(m.pwSite()); down != "" {
-			toolsDown = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio assistant answers new chats by default for now."
-			newChat = engineStudio
+			v.toolsDown = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio assistant answers new chats by default for now."
+			v.newChat = engineStudio
 		}
 	}
-	current = conversationEngine(c)
-	if current == "" {
-		current = newChat
+	v.current = conversationEngine(c)
+	if v.current == "" {
+		v.current = v.newChat
 		if hint == enginePWCode || hint == engineStudio {
-			current = hint
+			v.current = hint
 		}
 	}
-	return
+	if barred {
+		if v.current == enginePWCode {
+			v.current = engineStudio
+			v.fallback = fallbackNote(why, c)
+		}
+		// A new chat of this viewer's starts with the Studio assistant.
+		v.newChat = engineStudio
+	}
+	return v
 }
 
-// engineFor is the engine that answers this message: the composer's choice
-// when it names one, else the conversation's own (engineState). A message
-// for pw code that cannot reach it is an error. The answer is kept on the
-// conversation, so the next message, from any browser, goes there too.
-func (m *Module) engineFor(r *http.Request, asked, hint, convID string) (string, error) {
+// engineFor is the engine that answers this message, and the note to put
+// under the reply when the Studio assistant answers in pw code's place
+// (engineView.fallback): the message's own pick when it names one, else
+// the conversation's (engineState). A message that picks pw code where pw
+// code cannot answer is an error, as is a pw code chat's where pw code is
+// down; one in a pw code chat whose viewer pw code is not for is the
+// Studio assistant's. The engine is kept on the conversation, so the next
+// message, from any browser, goes there too: a chat the Studio assistant
+// answered in pw code's place stays with it, as after any switch, until
+// the person switches it back.
+func (m *Module) engineFor(r *http.Request, asked, hint, convID string) (string, string, error) {
 	c := m.Conv.Get(convID)
-	engine := asked
+	engine, note := asked, ""
 	var why string
 	if engine == enginePWCode || engine == "" {
-		var current string
-		_, current, why, _ = m.engineState(r, c, hint)
+		v := m.engineState(r, c, hint)
+		why = v.why
 		if engine == "" {
-			engine = current
+			engine, note = v.current, v.fallback
 		}
 	}
 	if engine != enginePWCode {
 		engine = engineStudio
 	} else if why != "" {
-		return "", pwErr(409, why)
+		return "", "", pwErr(409, why)
 	}
-	if c != nil {
+	// A chat the Studio assistant answers in pw code's place is kept as
+	// the Studio assistant's once that reply is stored (answer), so one it
+	// could not answer either is still pw code's.
+	if c != nil && note == "" {
 		m.Conv.SetEngine(convID, engine)
 	}
-	return engine, nil
+	return engine, note, nil
 }
 
 // localPWCodeRefused says why this computer's pw code is not used, on a
@@ -574,7 +657,8 @@ func pwcodeContext(c *conversations.Conversation, fresh bool, current string) st
 	}
 	var lines []string
 	for _, mm := range msgs[start:] {
-		if mm.ID == current || mm.Content == nil || strings.TrimSpace(*mm.Content) == "" {
+		// A fallback note (fallbackNote) is about pw code, not for it.
+		if mm.ID == current || mm.Content == nil || strings.TrimSpace(*mm.Content) == "" || strings.HasPrefix(mm.ID, "note-engine-") {
 			continue
 		}
 		who := "The person"
@@ -1023,7 +1107,8 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 				c = v
 			}
 		}
-		def, current, why, down := m.engineState(r, c, r.URL.Query().Get("last"))
+		v := m.engineState(r, c, r.URL.Query().Get("last"))
+		def, current, why, down := v.newChat, v.current, v.why, v.toolsDown
 		var reason, tools any
 		if why != "" {
 			reason = why
@@ -1053,6 +1138,12 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		}
 		if m.Conv.Answering(c.ID) || m.following(c.ID) {
 			return apierr.New(409, "A reply is being written in this chat; switch when it ends.")
+		}
+		// The menu offers pw code only where it can answer (engineState).
+		if engine == enginePWCode {
+			if why, _ := m.pwcodeWhyFor(r, c); why != "" {
+				return pwErr(409, why)
+			}
 		}
 		m.Conv.SetEngine(c.ID, engine)
 		return reqbody.OK(w, reqbody.O("engine", engine))

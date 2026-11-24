@@ -248,6 +248,12 @@ func afterNotes(c *Conversation, parent *string) *string {
 
 // AppendNote is appendConversationNote.
 func (s *Store) AppendNote(conversationID, content string) bool {
+	return s.AppendNoteKind(conversationID, "", content)
+}
+
+// AppendNoteKind appends a note whose id names its kind ("note-engine-...",
+// say), so the chat can tell it from other notes.
+func (s *Store) AppendNoteKind(conversationID, kind, content string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.find(conversationID)
@@ -259,7 +265,11 @@ func (s *Store) AppendNote(conversationID, content string) bool {
 		parent = strp(c.Messages[n-1].ID)
 	}
 	now := s.now()
-	c.Messages = append(c.Messages, Message{ID: fmt.Sprintf("note-%s-%s", base36(now.UnixMilli()), randBase36(5)), Role: "assistant", Content: strp(content), ParentID: parent, Timestamp: iso(now)})
+	prefix := "note-"
+	if kind != "" {
+		prefix += kind + "-"
+	}
+	c.Messages = append(c.Messages, Message{ID: fmt.Sprintf("%s%s-%s", prefix, base36(now.UnixMilli()), randBase36(5)), Role: "assistant", Content: strp(content), ParentID: parent, Timestamp: iso(now)})
 	c.UpdatedAt = iso(s.now())
 	s.persist()
 	return true

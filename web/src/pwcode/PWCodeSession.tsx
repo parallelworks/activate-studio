@@ -29,6 +29,7 @@ import {
 import { IntlProvider } from 'use-intl'
 import { followCleared, pwCode } from './api'
 import { describeError } from './describeError'
+import { withoutCarried } from './carried'
 import { AccountChip, AccountPanelModal } from './session/AccountPanel'
 import { SessionActivity, SessionStatusRow, type StatusActivity, useSessionAgents, useSwitcherState } from './session/AgentSwitcher'
 import { BackgroundCommandsContext, useBackgroundShortcut } from './session/BackgroundCommandHint'
@@ -196,7 +197,9 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   const agents = useSessionAgents(conversation)
   const [tasksOpen, setTasksOpen] = useState(tasksStartOpen)
 
-  const history = useMemo(() => promptHistory(username, { id: sessionId, messages: transcript?.messages }), [username, sessionId, transcript?.messages])
+  // The person's earlier messages as they typed them, without the turns
+  // the Studio carried over to the session (carried.ts).
+  const history = useMemo(() => promptHistory(username, { id: sessionId, messages: withoutCarried(transcript?.messages) }), [username, sessionId, transcript?.messages])
   const draftKey = sessionDraftKey(sessionId, detail)
   useAwayRecap({ machine, sessionId, draftKey, turnEndSeq: transcript?.turnEndSeq, idle: page.idle })
   const pastes = useComposerPastes(pasteApi, { machine, sessionId, liveState, detail, describeError })
@@ -222,7 +225,9 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   // it (read as this person, chatRecord.ts) is drawn, as before the session
   // view: a first open over a slow relay shows the conversation at once.
   const stored = useMemo(() => (detail ? undefined : storedMessages(cachedChat(conversationId)?.messages)), [detail, conversationId])
-  const shownMessages = stored ?? messages
+  // The session's transcript holds what the Studio sent it, the turns it
+  // missed before the person's message; the chat shows what they typed.
+  const shownMessages = useMemo(() => withoutCarried(stored ?? messages), [stored, messages])
 
   const noticeText = notice?.text ?? note
   // A refusal for want of an ACTIVATE sign-in gets the one prompt every

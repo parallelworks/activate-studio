@@ -153,6 +153,13 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         // answers this message; the chat says why.
         window.dispatchEvent(new CustomEvent('ade-pwcode-fallback', { detail: payload }))
         break
+      case 'engine_fallback':
+        // pw code is not for this person here: the Studio assistant answers,
+        // and the chat is its own from this reply on. The server stores a
+        // note after the reply, which the chat reads once the reply ends.
+        if (req.conversationId) knowEngine(req.conversationId, 'studio')
+        window.dispatchEvent(new CustomEvent('ade:engine-fallback', { detail: { conversationId: req.conversationId, note: payload.note } }))
+        break
       case 'steer':
         // The running reply took a message queued during it (SteerBridge).
         window.dispatchEvent(new CustomEvent('ade-steer-applied', { detail: String(payload.id ?? '') }))

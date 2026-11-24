@@ -2,10 +2,10 @@ import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, us
 import { SIGN_IN_TO_USE, accountsHref, needsActivate } from '../accounts'
 import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
 import { useChat } from '@parallelworks/ui/ai'
-import { getLastEngine, switchEngine } from '../labelScope'
+import { getLastEngine, knowEngine, switchEngine } from '../labelScope'
 import { sessionToolsSaid } from './studioTools'
 import { liveModel, onModel } from '../pwcode/liveModel'
-import { cachedChat, readChat, type ChatRecord } from '../chatRecord'
+import { cachedChat, readChat, takeReadAhead, type ChatRecord } from '../chatRecord'
 
 /** GET /api/chat/engine: what answers by default, and whether pw code is
  *  offered to this person (with why not). */
@@ -102,7 +102,14 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
     if (conversationId) q.set('conversation', conversationId)
     const last = getLastEngine()
     if (last) q.set('last', last)
-    fetch(`/api/chat/engine?${q}`).then(r => (r.ok ? r.json() : null)).then(setInfo, () => setInfo(null))
+    fetch(`/api/chat/engine?${q}`).then(r => (r.ok ? r.json() : null)).then((d: EngineInfo | null) => {
+      setInfo(d)
+      // What answers a chat now, by the rule its next message is sent by:
+      // the Studio assistant, for a pw code chat whose person pw code is
+      // not for here, so the chat shows its own thread and its next
+      // message goes through the Studio, not to the session.
+      if (conversationId && d?.answered && d.current) knowEngine(conversationId, d.current)
+    }, () => setInfo(null))
   }, [conversationId])
   useEffect(() => {
     read()
@@ -276,6 +283,50 @@ export function EngineMarks() {
   }, [mixed, currentConversation?.id])
   return null
 }
+
+/**
+ * When the Studio assistant answers a pw code chat for a person pw code is
+ * not for here (no ACTIVATE sign-in of theirs, say), the server stores a
+ * note after its reply saying why (engine_fallback). This reads the chat
+ * again once that reply ends, so the note shows at once; the styles draw
+ * it as a quiet line (its links carry ENGINE_NOTE_MARK).
+ */
+export function EngineNoteReader() {
+  const { currentConversation, isStreaming, loadConversation } = useChat()
+  const owed = useRef(new Set<string>())
+  const [told, bump] = useState(0)
+  const load = useRef(loadConversation)
+  load.current = loadConversation
+  useEffect(() => {
+    const on = (e: Event) => {
+      const id = (e as CustomEvent).detail?.conversationId as string | undefined
+      if (id) { owed.current.add(id); bump(n => n + 1) }
+    }
+    window.addEventListener('ade:engine-fallback', on)
+    return () => window.removeEventListener('ade:engine-fallback', on)
+  }, [])
+  const id = currentConversation?.id ?? null
+  useEffect(() => {
+    if (!id || isStreaming || !owed.current.has(id)) return
+    // The chat takes a read of the conversation only once it has settled
+    // the reply it streamed, a moment after the stream ends; a read made
+    // ahead of an open, before the reply ended, has no note.
+    const t = setTimeout(() => {
+      owed.current.delete(id)
+      takeReadAhead(id)
+      void load.current(id)
+    }, NOTE_READ_MS)
+    return () => clearTimeout(t)
+  }, [id, isStreaming, told])
+  return null
+}
+
+/** How long after a reply ends the chat is read again for its note. */
+const NOTE_READ_MS = 1_000
+
+/** In each link of a fallback note (EngineNoteReader), as the server
+ *  writes it. */
+export const ENGINE_NOTE_MARK = 'note=engine'
 
 /** A question pw code asks (an ask): its options are picked by label. */
 interface Question { question: string; header?: string; multiSelect?: boolean; options?: { label: string; description?: string }[] }
