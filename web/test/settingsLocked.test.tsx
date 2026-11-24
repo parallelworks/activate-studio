@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../src/views/SettingsView'
 import { WorkflowsSection } from '../src/components/WorkflowsSection'
@@ -103,5 +103,24 @@ describe('The sidebar width', () => {
     expect(ownNavWidth()).toBe(320)
     expect(puts).toEqual([])
     await waitFor(() => expect(document.documentElement.style.getPropertyValue('--nav-w')).toBe('320px'))
+  })
+})
+
+describe('Save on a Settings tab with several Save rows', () => {
+  it('reports the result next to the Save that was pressed, and only there', async () => {
+    const puts = stub(false)
+    at('#view=settings:rag')
+    render(<SettingsView />)
+    await screen.findByRole('heading', { name: 'External access' })
+    const saves = await screen.findAllByRole('button', { name: 'Save settings' })
+    expect(saves.length).toBeGreaterThan(2)
+    fireEvent.click(saves[1]!)
+    await waitFor(() => expect(screen.getByText('Saved.')).toBeInTheDocument())
+    expect(puts).toHaveLength(1)
+    expect(screen.getAllByText('Saved.')).toHaveLength(1)
+    expect(within(saves[1]!.parentElement!).getByText('Saved.')).toBeInTheDocument()
+    fireEvent.click(saves[2]!)
+    await waitFor(() => expect(within(saves[2]!.parentElement!).getByText('Saved.')).toBeInTheDocument())
+    expect(screen.getAllByText('Saved.')).toHaveLength(1)
   })
 })

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -27,8 +27,9 @@ describe('a file the turn wrote', () => {
     const chip = await screen.findByRole('button', { name: 'Open reports/q3-summary.pdf in the Library. Also written as q3-summary.md' })
     expect(chip).toHaveTextContent('q3-summary.pdf+md')
     const ta = document.querySelector('textarea')!
-    // The placeholder and Tab offer the message, never the file.
-    expect(ta.getAttribute('placeholder')).toBe('Follow run sim-00012 until it finishes and tell me the outcome  (Tab)')
+    // The placeholder and Tab offer the message, never the file. An effect sets it after the chips are
+    // drawn, so wait for it.
+    await waitFor(() => expect(ta.getAttribute('placeholder')).toBe('Follow run sim-00012 until it finishes and tell me the outcome  (Tab)'))
     fireEvent.click(chip)
     expect(location.hash).toBe('#open=file:reports/q3-summary.pdf')
     expect(ta.value).toBe('')

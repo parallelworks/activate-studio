@@ -146,8 +146,12 @@ function PanelContent({
     if (!browsing) accounts.choose(a)
     else if (a.signInRequired) accounts.choose(a)
   }
+  // The list brings its highlighted account into view only while the reader is in it. Its
+  // start row, set on load, would otherwise scroll the page around a settings card to it.
+  const [inList, setInList] = useState(false)
   const navigation = useListboxNavigation({
     items: accounts.accounts,
+    open: inList,
     onChoose: choose,
     onDismiss: inModal ? onClose : undefined,
     isDisabled: accounts.isDisabled,
@@ -192,6 +196,7 @@ function PanelContent({
     <AccountList
       accounts={accounts}
       navigation={navigation}
+      onInList={setInList}
       menu={menu}
       selected={setting.value}
       hasActions={!setting.disabled}
@@ -301,9 +306,10 @@ function useAccountMenu(accountActions: (account: Account) => AccountAction[]) {
   return { contextMenu, openFor, actions, opener }
 }
 
-function AccountList({ accounts, navigation, menu, selected, hasActions, browsing, choices, describeError }: {
+function AccountList({ accounts, navigation, onInList, menu, selected, hasActions, browsing, choices, describeError }: {
   accounts: AccountPanelState
   navigation: ListboxNavigation<Account>
+  onInList: (inList: boolean) => void
   menu: ReturnType<typeof useAccountMenu>
   selected: string | null | undefined
   hasActions: boolean
@@ -343,6 +349,8 @@ function AccountList({ accounts, navigation, menu, selected, hasActions, browsin
           tabIndex={0}
           aria-label={t('claude.accounts')}
           aria-activedescendant={navigation.hostProps['aria-activedescendant']}
+          onFocus={() => onInList(true)}
+          onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) onInList(false) }}
           onKeyDown={event => {
             // Keys pressed on a row's actions button stay with that button.
             if (event.target === event.currentTarget) navigation.handleKey(event)
