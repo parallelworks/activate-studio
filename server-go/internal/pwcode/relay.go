@@ -92,6 +92,11 @@ func (c *RelayClient) relayPath(method, route string) string {
 		}
 		return "/api/code/machines/" + platform.EncodeURIComponent(c.machine) + "/claude-code" + suffix + query
 	}
+	// A new session on the machine: the platform's own create, which the
+	// Code page uses too.
+	if method == http.MethodPost && route == "/v1/sessions" {
+		return "/api/code/machines/" + platform.EncodeURIComponent(c.machine) + "/sessions"
+	}
 	rest, ok := strings.CutPrefix(route, "/v1/sessions/")
 	if !ok {
 		return ""

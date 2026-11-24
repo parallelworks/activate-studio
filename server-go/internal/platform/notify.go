@@ -6,6 +6,12 @@ import "net/http"
 // so its own pw commands and gateway follow (frontBridge.ts); clearKey also
 // removes the single owner's stored key there. Without Node it does nothing.
 func (p *Platform) AccessChanged(clearKey bool) error {
+	p.accessMu.Lock()
+	hooks := append([]func(){}, p.accessHooks...)
+	p.accessMu.Unlock()
+	for _, h := range hooks {
+		h()
+	}
 	b := p.Node()
 	if b == nil {
 		return nil
@@ -21,4 +27,13 @@ func (p *Platform) InvalidateProviderProbes() {
 			p.log.Warn("provider probes: Node did not answer", "err", err.Error())
 		}
 	}
+}
+
+// OnAccessChanged is told whenever the Studio's own ACTIVATE access
+// changes (the pw CLI signed in or out, a context or key chosen), so what
+// was kept from it is asked again.
+func (p *Platform) OnAccessChanged(fn func()) {
+	p.accessMu.Lock()
+	p.accessHooks = append(p.accessHooks, fn)
+	p.accessMu.Unlock()
 }

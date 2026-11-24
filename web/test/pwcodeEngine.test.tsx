@@ -1,35 +1,36 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher, shortModel } from '../src/components/PWCodeEngine'
-import { getEngine } from '../src/labelScope'
+import { getLastEngine, knownEngine } from '../src/labelScope'
 import { announceModel } from '../src/pwcode/liveModel'
 
-const chat = vi.hoisted(() => ({ loadConversation: vi.fn(async () => {}) }))
+const chat = vi.hoisted(() => ({ loadConversation: vi.fn(async () => {}), streaming: false }))
 vi.mock('@parallelworks/ui/ai', () => ({
-  useChat: () => ({ currentConversation: { id: 'c9' }, isStreaming: false, loadConversation: chat.loadConversation }),
+  useChat: () => ({ currentConversation: { id: 'c9' }, isStreaming: chat.streaming, loadConversation: chat.loadConversation }),
 }))
 
-type Engine = { setting: string; default: string; pwcode: boolean; reason: string | null; toolsDown?: string | null }
+type Engine = { setting: string; default: string; current?: string; pwcode: boolean; reason: string | null; toolsDown?: string | null }
 
-function serve(engine: Engine, conversation: Record<string, unknown> = {}) {
+function serve(engine: Engine, conversation: Record<string, unknown> = {}, pwState: Record<string, unknown> = { session: 's1', status: 'idle', tools: { connected: true, count: 31 } }) {
   const calls: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push(`${init?.method ?? 'GET'} ${url}${init?.body ? ' ' + String(init.body) : ''}`)
-    const body = url === '/api/chat/engine' ? engine
+    const body = url.startsWith('/api/chat/engine') ? (init?.method === 'PUT' ? { engine: 'x' } : engine)
+      : url.endsWith('/engine') ? { engine: JSON.parse(String(init?.body)).engine }
       : url.startsWith('/api/chat/conversations/') ? conversation
-      : url.startsWith('/api/chat/pwcode/') ? { session: 's1', status: 'idle', tools: { connected: true, count: 31 } }
+      : url.startsWith('/api/chat/pwcode/') ? pwState
       : { ok: true }
     return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }))
   return calls
 }
 
-beforeEach(() => { localStorage.clear() })
+beforeEach(() => { localStorage.clear(); chat.streaming = false })
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('What answers a conversation', () => {
-  it('shows pw code as the default where it is offered, links the session, and keeps a change per chat', async () => {
-    serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null }, { pwcode: { url: 'https://platform.example/code?session=s1', session: 's1' } })
+  it('shows pw code as the default where it is offered, links the session, and keeps a change for the chat', async () => {
+    const calls = serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null }, { pwcode: { url: 'https://platform.example/code?session=s1', session: 's1' } })
     render(<PWCodeEngine conversationId="c1" />)
     const button = await screen.findByRole('button', { name: /pw code/ })
     fireEvent.click(button)
@@ -37,19 +38,60 @@ describe('What answers a conversation', () => {
     expect(await screen.findByText(/has the Studio's tools: 31 of them, the index included/)).toBeInTheDocument()
     expect(screen.getByText('default')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Studio assistant/ }))
-    expect(getEngine('c1')).toBe('studio')
-    expect(await screen.findByRole('button', { name: /Studio/ })).toBeInTheDocument()
+    // The switch is the conversation's, kept by the server, and the last
+    // choice here, which new chats start with.
+    await waitFor(() => expect(calls).toContain('PUT /api/chat/conversations/c1/engine {"engine":"studio"}'))
+    await waitFor(() => expect(knownEngine('c1')).toBe('studio'))
+    expect(getLastEngine()).toBe('studio')
+  })
+
+  it("reads for its own conversation, each time it opens, and marks current apart from a new chat's default", async () => {
+    const calls = serve({ setting: 'auto', default: 'studio', current: 'pwcode', pwcode: true, reason: null }, { pwcode: { session: 's1', continued: true, machine: 'm1' } })
+    localStorage.setItem('ade-chat-engine', 'studio')
+    render(<PWCodeEngine conversationId="c1" />)
+    const button = await screen.findByRole('button', { name: /pw code/ })
+    expect(calls).toContain('GET /api/chat/engine?conversation=c1&last=studio')
+    const before = calls.filter(c => c.startsWith('GET /api/chat/engine')).length
+    fireEvent.click(button)
+    await waitFor(() => expect(calls.filter(c => c.startsWith('GET /api/chat/engine')).length).toBeGreaterThan(before))
+    const pw = await screen.findByRole('button', { name: /^pw code/, pressed: true })
+    expect(pw).toHaveClass('on')
+    const studio = screen.getByRole('button', { name: /Studio assistant/ })
+    expect(studio).not.toHaveClass('on')
+    expect(studio).toHaveTextContent('default')
+    expect(pw).not.toHaveTextContent('default')
+  })
+
+  it('does not switch while a reply is being written, and says why', async () => {
+    chat.streaming = true
+    const calls = serve({ setting: 'auto', default: 'pwcode', current: 'pwcode', pwcode: true, reason: null }, { pwcode: { session: 's1' } })
+    render(<PWCodeEngine conversationId="c1" />)
+    fireEvent.click(await screen.findByRole('button', { name: /pw code/ }))
+    expect(await screen.findByText(/A reply is being written; switch what answers when it ends/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Studio assistant/ })).toBeDisabled()
+    expect(calls.some(c => c.startsWith('PUT'))).toBe(false)
+  })
+
+  it("says what is known of a relayed session's tools, and offers a new session there that has them", async () => {
+    const calls = serve({ setting: 'auto', default: 'pwcode', current: 'pwcode', pwcode: true, reason: null },
+      { pwcode: { session: 's1', continued: true, relay: true, machine: 'm1', machineName: 'box-a' } },
+      { session: 's1', status: 'idle', tools: { connected: false, count: 0, relay: true, machineHas: true }, continued: true, relay: true })
+    render(<PWCodeEngine conversationId="c1" />)
+    fireEvent.click(await screen.findByRole('button', { name: /pw code/ }))
+    expect(await screen.findByText(/pw code on box-a has this Studio's tools, as you\. Sessions started there since it was set up have them; one open from before keeps the tools it started with\. This chat's session has them only if it started after that\./)).toBeInTheDocument()
+    expect(screen.queryByText(/tries to reconnect them/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Start a new session there with them' }))
+    await waitFor(() => expect(calls).toContain('POST /api/chat/pwcode/c1/new-session'))
   })
 
   it('links a chat that continues a session back to it on the Code page', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const body = url === '/api/chat/engine' ? { setting: 'auto', default: 'studio', pwcode: true, reason: null }
+      const body = url.startsWith('/api/chat/engine') ? { setting: 'auto', default: 'studio', current: 'pwcode', pwcode: true, reason: null }
         : url.startsWith('/api/chat/conversations/') ? { pwcode: { url: 'https://platform.example/code/m1/s1', session: 's1', continued: true, machine: 'm1' } }
         : url.startsWith('/api/chat/pwcode/') ? { session: 's1', status: 'idle', tools: null, continued: true }
         : {}
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
-    localStorage.setItem('ade-chat-engine-by-chat', JSON.stringify({ c1: 'pwcode' }))
     render(<PWCodeEngine conversationId="c1" />)
     fireEvent.click(await screen.findByRole('button', { name: /pw code/ }))
     expect(await screen.findByRole('link', { name: 'See it on the Code page' })).toHaveAttribute('href', '#view=code?machine=m1&session=s1')
@@ -76,7 +118,7 @@ describe('What answers a conversation', () => {
   it('stays out of the way where pw code is not offered', async () => {
     const calls = serve({ setting: 'auto', default: 'studio', pwcode: false, reason: 'pw code needs ACTIVATE' })
     const { container } = render(<PWCodeEngine conversationId={null} />)
-    await waitFor(() => expect(calls).toContain('GET /api/chat/engine'))
+    await waitFor(() => expect(calls).toContain('GET /api/chat/engine?'))
     expect(container).toBeEmptyDOMElement()
   })
 })
@@ -194,16 +236,20 @@ describe("The model pw code answers with", () => {
   it('is named on the button and in the menu, and the composer is told pw code answers', async () => {
     expect(shortModel('acct:codex/gpt-6.2-sol')).toBe('gpt-6.2-sol')
     expect(shortModel('claude-code/haiku')).toBe('haiku')
-    const note = "pw code's own model, acct:anthropic/claude-x, is not enabled for your AI connection, so this chat runs on acct:codex/gpt-b, the model chosen for the Studio assistant."
-    serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null }, { pwcode: { session: 's1', model: 'acct:codex/gpt-b', modelNote: note } })
+    const note = 'Runs on gpt-b because sonnet-x is not enabled for you. Choose another under Settings, External access, pw code model.'
+    serve({ setting: 'auto', default: 'pwcode', pwcode: true, reason: null }, { pwcode: { session: 's1', model: 'acct:codex/gpt-b', modelFrom: 'acct:anthropic/sonnet-x', modelNote: note } })
     const canvas = document.createElement('div'); canvas.className = 'chat-canvas'; document.body.appendChild(canvas)
     render(<PWCodeEngine conversationId="c1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'pw code · gpt-b' }))
-    expect(await screen.findByText(new RegExp(note.replace(/[.()]/g, '\\$&')))).toBeInTheDocument()
+    // Short names in the text, the full ids on hover, and the setting a link.
+    const link = await screen.findByRole('link', { name: 'Settings, External access' })
+    expect(link).toHaveAttribute('href', '#view=settings:rag')
+    expect(link.parentElement).toHaveTextContent(note)
+    expect(link.parentElement).toHaveAttribute('title', 'acct:anthropic/sonnet-x → acct:codex/gpt-b')
     expect(canvas.getAttribute('data-engine')).toBe('pwcode')
     // A new session has no note of its own: the old one's does not stay.
     act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: 'c1', session: 's2', model: 'acct:codex/gpt-b', modelNote: '' } })) })
-    await waitFor(() => expect(screen.queryByText(new RegExp(note.replace(/[.()]/g, '\\$&')))).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Settings, External access' })).toBeNull())
     canvas.remove()
   })
   it('follows the model the session runs on now, picked after the chat was linked', async () => {

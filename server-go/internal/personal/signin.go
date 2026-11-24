@@ -40,6 +40,8 @@ type SignIns struct {
 	Now     func() time.Time
 	// Expire ends a code nobody approved.
 	Expire time.Duration
+	// Kept is told whose sign-in was just kept; nil for none.
+	Kept func(owner string)
 
 	mu       sync.Mutex
 	runs     map[string]*run
@@ -438,6 +440,9 @@ func (s *SignIns) finish(owner, username, host, staging string, started time.Tim
 	}
 	if s.Log != nil {
 		s.Log.Info("personal sign-in kept", "owner", libraries.OwnerHash(owner), "host", host)
+	}
+	if s.Kept != nil {
+		s.Kept(owner)
 	}
 	return State{State: "signed-in", Host: host, Account: who, SignedIn: rec.SignedIn}
 }

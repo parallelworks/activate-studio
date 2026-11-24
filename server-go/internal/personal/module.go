@@ -32,6 +32,9 @@ func Of(a *app.App) *Module {
 		return m
 	}
 	m := &Module{A: a, SignIns: New(platform.Of(a), a.Cfg.IndexBase, a.Log)}
+	// What was kept from reading as the person (whether pw code is offered
+	// to them, their libraries' listings) goes once their sign-in is kept.
+	m.SignIns.Kept = a.Providers.ForgetCredential
 	inst[a] = m
 	return m
 }

@@ -38,6 +38,10 @@ func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rest, ok := cutAny(r.URL.Path, "/api/code/machines/", "/ws/code/machines/"); ok {
 		machine, path, _ := strings.Cut(rest, "/sessions/")
 		route := "/v1/sessions/" + path
+		// A new session on the machine.
+		if m, ok := strings.CutSuffix(rest, "/sessions"); ok && !strings.Contains(m, "/") {
+			machine, route = m, "/v1/sessions"
+		}
 		if m, cc, ok := strings.Cut(rest, "/claude-code"); ok && !strings.Contains(m, "/") {
 			machine, route = m, "/v1/claude-code"+cc
 		}
@@ -230,12 +234,16 @@ func TestAContinuedSessionTakenElsewhereFailsClosed(t *testing.T) {
 	if sse := post(t, base, map[string]any{"conversationId": id, "userMessageId": "u2", "messages": []any{map[string]any{"role": "user", "content": "go on"}}}); !strings.Contains(sse, "was archived") || len(f.created) != 0 {
 		t.Errorf("archived since: %s", sse)
 	}
-	// The person's choice of the Studio assistant still holds.
-	if e, _ := m.engineFor(httptest.NewRequest("GET", "/", nil), engineStudio, id); e != engineStudio {
+	if e, _ := m.engineFor(httptest.NewRequest("GET", "/", nil), "", "", id); e != enginePWCode {
+		t.Errorf("a continued chat answers in pw code: %s", e)
+	}
+	// The person's choice of the Studio assistant holds, and stays the
+	// chat's until they switch again.
+	if e, _ := m.engineFor(httptest.NewRequest("GET", "/", nil), engineStudio, "", id); e != engineStudio {
 		t.Errorf("engine: %s", e)
 	}
-	if e, _ := m.engineFor(httptest.NewRequest("GET", "/", nil), "", id); e != enginePWCode {
-		t.Errorf("a continued chat answers in pw code: %s", e)
+	if e, _ := m.engineFor(httptest.NewRequest("GET", "/", nil), "", "", id); e != engineStudio {
+		t.Errorf("after a switch to the Studio assistant: %s", e)
 	}
 }
 

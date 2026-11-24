@@ -71,6 +71,38 @@ export function setupSaid(r: SetupResult, where: string, inChat = true): string 
     : `pw code on ${where} now has this Studio's tools${n}, as you, through its own ACTIVATE sign-in; no key was made.`
   const live = r.live === 'now'
     ? ' This session has them now.'
-    : ` Sessions you start there from now on have them${r.liveWhy ? `; this one could not take them now (${r.liveWhy.replace(/\.$/, '')})` : inChat ? '; one already open, this one included, keeps the tools it started with' : '; one already open keeps the tools it started with'}.`
+    : ` Sessions you start there from now on have them${r.liveWhy ? `; this one could not take them now (${r.liveWhy.replace(/\.$/, '')})` : inChat ? `; one already open, this one included, ${KEEPS_TOOLS}` : `; one already open ${KEEPS_TOOLS}`}.`
   return how + live
+}
+
+/** What pw code does with MCP servers: it reads them when a session
+ *  starts, so the menu, the setup card and its result say it alike. */
+export const KEEPS_TOOLS = 'keeps the tools it started with'
+
+/** The setup card's word for a machine whose pw code has the tools. */
+export function machineHasSaid(where: string): string {
+  return `pw code on ${where} has this Studio's tools, as you. Sessions started there since it was set up have them; one open from before ${KEEPS_TOOLS}.`
+}
+
+/** How a session's tools stand, as the chat's menu says it. */
+export function sessionToolsSaid({ tools, continued, relay, machine }: {
+  tools: { connected: boolean; count: number; error?: string; machineHas?: boolean } | null
+  continued: boolean; relay: boolean; machine?: string
+}): { text: string; ok: boolean; offerNew: boolean } {
+  const where = machine || 'its machine'
+  if (relay) {
+    // The platform does not pass a session's MCP state on: what is known
+    // is whether pw code on the machine has the Studio.
+    return tools?.machineHas
+      ? { ok: false, offerNew: true, text: `${machineHasSaid(where)} This chat's session has them only if it started after that.` }
+      : { ok: false, offerNew: false, text: `This chat's session runs on ${where} and ${KEEPS_TOOLS}. pw code there does not have this Studio's tools yet; the card in the chat adds them, and sessions started there afterwards have them.` }
+  }
+  if (tools?.connected) return { ok: true, offerNew: false, text: `This chat's pw code session has the Studio's tools: ${tools.count} of them, the index included.` }
+  const why = tools?.error ? `: ${tools.error}` : ''
+  if (continued) {
+    return tools
+      ? { ok: false, offerNew: false, text: `This chat's pw code session does not have the Studio's tools${why}. The next message tries to reconnect them.` }
+      : { ok: false, offerNew: false, text: 'This session began outside the Studio, so it works with its own tools and not the Studio\'s library tools: pw code cannot add them to a session that already exists.' }
+  }
+  return { ok: false, offerNew: false, text: `This chat's pw code session does not have the Studio's tools${why}. The next message reconnects them or starts a session that has them.` }
 }

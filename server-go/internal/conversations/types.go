@@ -3,6 +3,7 @@ package conversations
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 )
@@ -353,6 +354,10 @@ type Conversation struct {
 	// PWCode is the pw code session this conversation runs in, when its
 	// replies come from pw code.
 	PWCode *PWCodeLink `json:"pwcode,omitempty"`
+	// Engine is what answers the conversation ("pwcode" or "studio"): the
+	// engine that answered it last, or the one the person switched it to.
+	// "" for a conversation stored before it was kept.
+	Engine string `json:"engine,omitempty"`
 	// Extra is the stored conversation's other fields and key order.
 	Extra Extra `json:"-"`
 }
@@ -390,6 +395,8 @@ type PWCodeLink struct {
 	// it there from pw code's own model, which the AI connection does not
 	// offer.
 	ModelNote string `json:"modelNote,omitempty"`
+	// ModelFrom is the model the session was moved off, with ModelNote.
+	ModelFrom string `json:"modelFrom,omitempty"`
 	// Relay: the session runs on another of the person's machines and
 	// the chat drives it through the platform's relay as them, so it
 	// stays where it is (Site is then pwcode.RelaySite(Machine)).
@@ -407,7 +414,7 @@ type PWCodeLink struct {
 
 type conversationFields Conversation
 
-var conversationKeys = keys("id", "title", "owner", "createdAt", "updatedAt", "activeBranchId", "messages", "pwcode")
+var conversationKeys = keys("id", "title", "owner", "createdAt", "updatedAt", "activeBranchId", "messages", "pwcode", "engine")
 
 // MarshalJSON writes the fields in their declared order over the stored object.
 func (c Conversation) MarshalJSON() ([]byte, error) {
@@ -423,6 +430,32 @@ func (c *Conversation) UnmarshalJSON(b []byte) error {
 	x, err := readExtra(b, conversationKeys)
 	*c, c.Extra = Conversation(v), x
 	return err
+}
+
+// AnsweredBy is what answers the conversation when nothing is picked for
+// a message: the engine it keeps (the last to answer it, or the one the
+// person switched it to); for one stored before that was kept, the engine
+// of its last reply (pw code's are pwc- and pwh- messages, notes are not
+// replies), or "pwcode" for a chat that continues a session; "" for a chat
+// nothing has answered yet, which a new chat's default answers.
+func (c *Conversation) AnsweredBy() string {
+	if c.Engine == "pwcode" || c.Engine == "studio" {
+		return c.Engine
+	}
+	for i := len(c.Messages) - 1; i >= 0; i-- {
+		m := c.Messages[i]
+		if m.Role != "assistant" || strings.HasPrefix(m.ID, "note-") {
+			continue
+		}
+		if strings.HasPrefix(m.ID, "pwc-") || strings.HasPrefix(m.ID, "pwh-") || (m.Model != nil && strings.HasPrefix(*m.Model, "pw code")) {
+			return "pwcode"
+		}
+		return "studio"
+	}
+	if c.PWCode != nil && c.PWCode.Continued {
+		return "pwcode"
+	}
+	return ""
 }
 
 // OwnerName is the owner, ” for none.

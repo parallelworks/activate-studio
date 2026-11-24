@@ -73,46 +73,46 @@ export function setEffort(value: string, conversationId?: string | null): void {
 }
 
 /** What answers a conversation: 'pwcode', 'studio', or '' for the Studio's
- *  default (GET /api/chat/engine). Each conversation keeps its own, a new
- *  chat starts from the last one chosen, and both are kept in this
- *  browser. */
+ *  default (GET /api/chat/engine). The server keeps each conversation's
+ *  own (the engine that answered it last, or the one the person switched
+ *  it to), so a chat answers the same from any browser; this browser keeps
+ *  only the last choice, which a new chat starts with. */
 export type Engine = '' | 'pwcode' | 'studio'
 const ENGINE_LAST = 'ade-chat-engine'
-const ENGINE_BY_CHAT = 'ade-chat-engine-by-chat'
 const validEngine = (v: unknown): Engine => (v === 'pwcode' || v === 'studio' ? v : '')
-function enginesByChat(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(ENGINE_BY_CHAT) || '{}') as Record<string, string> } catch { return {} }
+/** The engine last chosen in this browser, for new chats. */
+export function getLastEngine(): Engine {
+  try { return validEngine(localStorage.getItem(ENGINE_LAST)) } catch { return '' }
 }
-export function getEngine(conversationId?: string | null): Engine {
-  try {
-    if (conversationId) {
-      const kept = enginesByChat()[conversationId]
-      if (kept !== undefined) return validEngine(kept)
-    }
-    return validEngine(localStorage.getItem(ENGINE_LAST))
-  } catch { return '' }
+/** What is known here of each conversation's engine: the server's answer
+ *  (the chat's record, a reply's stream, a switch), so the chat's parts
+ *  agree on it until it is read again. */
+const known = new Map<string, Engine>()
+export function knownEngine(conversationId: string | null | undefined): Engine {
+  return conversationId ? known.get(conversationId) ?? '' : ''
 }
-/** Keeps an engine for one conversation only, leaving the last choice for
- *  new chats as it is: a chat that continues a pw code session answers
- *  there. */
-export function keepEngineFor(conversationId: string, value: Engine): void {
-  try {
-    const all = enginesByChat()
-    all[conversationId] = validEngine(value)
-    localStorage.setItem(ENGINE_BY_CHAT, JSON.stringify(all))
-  } catch { /* storage unavailable: the server answers a continued chat in pw code */ }
-}
-export function setEngine(value: Engine, conversationId?: string | null): void {
+/** Records what answers a conversation, as the server says it now. */
+export function knowEngine(conversationId: string, value: Engine): void {
   const v = validEngine(value)
-  try {
-    localStorage.setItem(ENGINE_LAST, v)
-    if (conversationId) {
-      const all = enginesByChat()
-      all[conversationId] = v
-      const keys = Object.keys(all)
-      for (const k of keys.slice(0, Math.max(0, keys.length - 200))) delete all[k]
-      localStorage.setItem(ENGINE_BY_CHAT, JSON.stringify(all))
-    }
-  } catch { /* storage unavailable: the choice lasts until reload */ }
-  window.dispatchEvent(new CustomEvent('ade:chat-engine', { detail: { value: v, conversationId: conversationId ?? null } }))
+  if (known.get(conversationId) === v) return
+  known.set(conversationId, v)
+  window.dispatchEvent(new CustomEvent('ade:chat-engine', { detail: { value: v, conversationId } }))
+}
+/**
+ * The person switches what answers a conversation, between turns: the
+ * server keeps it for that conversation (PUT .../engine), and it becomes
+ * the last choice, which new chats start with. A chat with no
+ * conversation yet keeps it here until its first message. Rejects with
+ * the server's reason (a reply being written, say).
+ */
+export async function switchEngine(value: 'pwcode' | 'studio', conversationId?: string | null): Promise<void> {
+  if (conversationId) {
+    const res = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/engine`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ engine: value }),
+    })
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `${res.status}`)
+  }
+  try { localStorage.setItem(ENGINE_LAST, value) } catch { /* storage unavailable: the choice lasts until reload */ }
+  if (conversationId) knowEngine(conversationId, value)
+  else window.dispatchEvent(new CustomEvent('ade:chat-engine', { detail: { value, conversationId: null } }))
 }

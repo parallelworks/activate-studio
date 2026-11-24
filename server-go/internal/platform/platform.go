@@ -41,6 +41,10 @@ type Options struct {
 
 // Platform is one process's platform state.
 type Platform struct {
+	// accessHooks are told when the Studio's own access changes.
+	accessMu    sync.Mutex
+	accessHooks []func()
+
 	indexBase, kbRoot string
 	lookup            func(string) (string, bool)
 	log               *slog.Logger

@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mutate, useSWRConfig } from 'swr'
 import { cachedChat, clearChatRecords, prefetchChat, readChat, takeReadAhead } from '../src/chatRecord'
@@ -93,6 +93,22 @@ describe("A chat's kept record", () => {
     expect(result.current.link?.session).toBe('ada-session')
     expect(result.current.machine).toBe('m2')
     await waitFor(() => expect(calls).toEqual(['/api/chat/conversations/c1']))
+  })
+
+  it("goes through the Studio, not the session's own view, while the Studio assistant has the last reply", async () => {
+    const answers: { id: string; role: string; model?: string }[] = [{ id: 'u1', role: 'user' }, { id: 'pwc-1', role: 'assistant', model: 'pw code · haiku' }]
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ id: 'c3', engine: 'pwcode', pwcode: { session: 's1' }, messages: answers }), { status: 200 })))
+    const { result } = renderHook(() => useChatLink('c3'))
+    await waitFor(() => expect(result.current.shown).toBe(true))
+    // The Studio assistant answers; switched back, the next message must
+    // reach the session through the Studio, with the turn it missed.
+    answers.push({ id: 'u2', role: 'user' }, { id: 'a2', role: 'assistant', model: 'acct:codex/gpt-b' })
+    act(() => { window.dispatchEvent(new CustomEvent('ade:chat-answered', { detail: { conversationId: 'c3' } })) })
+    await waitFor(() => expect(result.current.shown).toBe(false))
+    // pw code answers again: its view comes back.
+    answers.push({ id: 'u3', role: 'user' }, { id: 'pwc-2', role: 'assistant', model: 'pw code · haiku' })
+    act(() => { window.dispatchEvent(new CustomEvent('ade:chat-answered', { detail: { conversationId: 'c3' } })) })
+    await waitFor(() => expect(result.current.shown).toBe(true))
   })
 
   it('waits for the read of a chat never opened', async () => {

@@ -124,6 +124,10 @@ func (rt *Routes) get(w http.ResponseWriter, r *http.Request) error {
 	}
 	c = WithOwnCommands(WithHolders(rt.Store.WithUnanswered(c), held, who.ViewerID), who.ViewerID, rt.AuthEnabled())
 	o := reqbody.Parse(c)
+	// What answers it, for one stored before that was kept too.
+	if e := c.AnsweredBy(); e != "" {
+		reqbody.Put(o, "engine", e)
+	}
 	reqbody.Put(o, "isOwner", true)
 	reqbody.Put(o, "canCollaborate", true)
 	return reqbody.OK(w, o)

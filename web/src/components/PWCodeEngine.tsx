@@ -2,20 +2,32 @@ import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, us
 import { SIGN_IN_TO_USE, accountsHref, needsActivate } from '../accounts'
 import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
 import { useChat } from '@parallelworks/ui/ai'
-import { type Engine, getEngine, setEngine } from '../labelScope'
+import { getLastEngine, switchEngine } from '../labelScope'
+import { sessionToolsSaid } from './studioTools'
 import { liveModel, onModel } from '../pwcode/liveModel'
 import { cachedChat, readChat, type ChatRecord } from '../chatRecord'
 
 /** GET /api/chat/engine: what answers by default, and whether pw code is
  *  offered to this person (with why not). */
-interface EngineInfo { setting: 'auto' | 'pwcode' | 'studio'; default: 'pwcode' | 'studio'; pwcode: boolean; reason: string | null; toolsDown?: string | null }
+interface EngineInfo {
+  setting: 'auto' | 'pwcode' | 'studio'
+  /** What a new chat starts with. */
+  default: 'pwcode' | 'studio'
+  /** What this conversation answers with (its own, or a new chat's). */
+  current?: 'pwcode' | 'studio'
+  /** Something has answered the conversation. */
+  answered?: boolean
+  pwcode: boolean
+  reason: string | null
+  toolsDown?: string | null
+}
 
 /** How the Studio's tools stand in the conversation's pw code session. */
-interface ToolsState { connected: boolean; count: number; error?: string }
+interface ToolsState { connected: boolean; count: number; error?: string; relay?: boolean; machineHas?: boolean }
 
 /** continued: the chat continues a session from the Code page, on the
  *  platform's machine `machine`. */
-interface SessionInfo { url?: string; session?: string; model?: string; modelNote?: string; continued?: boolean; machine?: string }
+interface SessionInfo { url?: string; session?: string; model?: string; modelNote?: string; modelFrom?: string; continued?: boolean; machine?: string; machineName?: string; relay?: boolean }
 
 /** A model id's last part, as the chat bar names it: "haiku" for
  *  claude-code/haiku, "gpt-6.2-sol" for owner:codex/gpt-6.2-sol. */
@@ -37,7 +49,7 @@ function sessionInfo(c: ChatRecord | undefined): SessionInfo {
   const p = c?.pwcode as Record<string, unknown> | undefined
   if (!p) return {}
   const str = (k: string) => (typeof p[k] === 'string' ? p[k] as string : undefined)
-  return { url: str('url'), session: str('session'), model: str('model'), modelNote: str('modelNote'), continued: !!p.continued, machine: str('machine') }
+  return { url: str('url'), session: str('session'), model: str('model'), modelNote: str('modelNote'), modelFrom: str('modelFrom'), continued: !!p.continued, machine: str('machine'), machineName: str('machineName'), relay: !!p.relay }
 }
 
 /** The pw code session a conversation has, from the conversation itself
@@ -64,7 +76,7 @@ function useSession(conversationId: string | null): SessionInfo {
       const d = (e as CustomEvent).detail as SessionInfo & { conversationId?: string }
       // The note is the session's as the server has it now: a new session
       // has none, so an old session's note does not stay.
-      if (d.conversationId === conversationId) setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model, modelNote: d.modelNote }))
+      if (d.conversationId === conversationId) setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model, modelNote: d.modelNote, modelFrom: d.modelFrom }))
     }
     window.addEventListener('ade-pwcode-session', on)
     return () => { gone = true; window.removeEventListener('ade-pwcode-session', on) }
@@ -80,24 +92,39 @@ function useSession(conversationId: string | null): SessionInfo {
  */
 export function PWCodeEngine({ conversationId }: { conversationId: string | null }) {
   const [info, setInfo] = useState<EngineInfo | null>(null)
-  const [chosen, setChosen] = useState<Engine>(() => getEngine(conversationId))
   const [open, setOpen] = useState(false)
   const session = useSession(conversationId)
+  const { isStreaming } = useChat()
 
+  // Read for this conversation, by the rule its next message is sent by.
   const read = useCallback(() => {
-    fetch('/api/chat/engine').then(r => (r.ok ? r.json() : null)).then(setInfo, () => setInfo(null))
-  }, [])
+    const q = new URLSearchParams()
+    if (conversationId) q.set('conversation', conversationId)
+    const last = getLastEngine()
+    if (last) q.set('last', last)
+    fetch(`/api/chat/engine?${q}`).then(r => (r.ok ? r.json() : null)).then(setInfo, () => setInfo(null))
+  }, [conversationId])
   useEffect(() => {
     read()
-    // A fallback changes what answers by default for a while.
+    // A sign-in (in this tab or another), a fallback, or a switch changes
+    // what answers.
+    const onEngine = (e: Event) => {
+      const d = (e as CustomEvent).detail as { conversationId?: string | null }
+      if ((d?.conversationId ?? null) === conversationId) read()
+    }
     window.addEventListener('ade:model-access-changed', read)
     window.addEventListener('ade-pwcode-fallback', read)
+    window.addEventListener('ade:chat-engine', onEngine)
     return () => {
       window.removeEventListener('ade:model-access-changed', read)
       window.removeEventListener('ade-pwcode-fallback', read)
+      window.removeEventListener('ade:chat-engine', onEngine)
     }
-  }, [read])
-  useEffect(() => { setChosen(getEngine(conversationId)) }, [conversationId])
+  }, [read, conversationId])
+  // Read again each time the menu opens and when a reply ends: cheap, and
+  // never stale.
+  useEffect(() => { if (open) read() }, [open, read])
+  useEffect(() => { if (!isStreaming) read() }, [isStreaming, read])
   const [tools, setTools] = useState<ToolsState | null>(null)
   useEffect(() => {
     setTools(null)
@@ -111,15 +138,25 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
   }, [open, conversationId, session.session])
 
   // pw code waiting only for an ACTIVATE sign-in shows too, saying so.
-  const shown = !!info && (info.pwcode || info.setting === 'pwcode' || !!session.url || needsActivate(info.reason))
-  const current: 'pwcode' | 'studio' = (info && (chosen || info.default)) || 'studio'
-  return shown && info ? <EngineMenu {...{ info, current, session, tools, open, setOpen, conversationId, setChosen }} /> : null
+  const shown = !!info && (info.pwcode || info.setting === 'pwcode' || !!session.url || needsActivate(info.reason) || info.current === 'pwcode')
+  const current: 'pwcode' | 'studio' = info?.current ?? info?.default ?? 'studio'
+  return shown && info ? <EngineMenu {...{ info, current, session, tools, open, setOpen, conversationId, running: isStreaming, reread: read }} /> : null
+}
+
+/** The note on which model pw code runs a chat on, its setting a link and
+ *  the models' full ids on hover. */
+function ModelNote({ session, close }: { session: SessionInfo; close: () => void }) {
+  const note = session.modelNote ?? ''
+  const at = note.indexOf('Settings, External access')
+  const ids = [session.modelFrom, session.model].filter(Boolean).join(' → ')
+  const text = at < 0 ? <>{note}</> : <>{note.slice(0, at)}<a href="#view=settings:rag" onClick={close}>Settings, External access</a>{note.slice(at + 'Settings, External access'.length)}</>
+  return <span title={ids || undefined}>{text}</span>
 }
 
 /** The chat bar's engine button and its menu. */
-function EngineMenu({ info, current, session, tools, open, setOpen, conversationId, setChosen }: {
+function EngineMenu({ info, current, session, tools, open, setOpen, conversationId, running, reread }: {
   info: EngineInfo; current: 'pwcode' | 'studio'; session: SessionInfo; tools: ToolsState | null; open: boolean
-  setOpen: (v: boolean) => void; conversationId: string | null; setChosen: (v: Engine) => void
+  setOpen: (v: boolean) => void; conversationId: string | null; running: boolean; reread: () => void
 }) {
   // The canvas says what answers, so the composer's model picker, which
   // sets the Studio assistant's model only, is hidden while pw code does.
@@ -128,15 +165,31 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
     canvas?.setAttribute('data-engine', current)
     return () => canvas?.removeAttribute('data-engine')
   }, [current])
+  const [error, setError] = useState('')
+  useEffect(() => { if (!open) setError('') }, [open])
+  const close = () => setOpen(false)
   // pw code answers with its own model, which the composer's picker does
   // not set; the picker is hidden while pw code answers (styles.css).
-  const pwModel = session.modelNote || (session.model ? `This chat runs on ${session.model}.` : "It runs on pw code's own model, or the one Settings names.")
+  const pwModel = session.modelNote
+    ? <ModelNote session={session} close={close} />
+    : session.model ? <span title={session.model}>This chat runs on {shortModel(session.model)}.</span> : <>It runs on pw code&apos;s own model, or the one Settings names.</>
+  // A relayed chat moves to a new session on its machine, which has the
+  // tools pw code there has now; its next message carries the chat over.
+  const [starting, setStarting] = useState(false)
+  const startNew = async () => {
+    if (!conversationId) return
+    setStarting(true); setError('')
+    try {
+      const res = await fetch(`/api/chat/pwcode/${encodeURIComponent(conversationId)}/new-session`, { method: 'POST' })
+      const d = (await res.json().catch(() => ({}))) as { session?: string; url?: string; model?: string; error?: string }
+      if (!res.ok) throw new Error(d.error ?? `${res.status}`)
+      window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId, session: d.session, url: d.url, model: d.model } }))
+      reread(); close()
+    } catch (e) { setError(String((e as Error).message ?? e)) } finally { setStarting(false) }
+  }
   const pick = (v: 'pwcode' | 'studio') => {
-    // The Studio's default is kept as '', so a change of setting reaches it.
-    const value: Engine = v === info.default ? '' : v
-    setEngine(value, conversationId)
-    setChosen(value)
-    setOpen(false)
+    if (v === current || running) { close(); return }
+    switchEngine(v, conversationId).then(() => { reread(); close() }, e => setError(String((e as Error).message ?? e)))
   }
   return (
     <Popover
@@ -154,34 +207,34 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
     >
       {ENGINES.map(e => {
         const off = e.value === 'pwcode' && !info.pwcode
+        const busy = running && e.value !== current
         return (
-          <button key={e.value} className={`persona-row ${current === e.value ? 'on' : ''}`} disabled={off} aria-pressed={current === e.value} onClick={() => pick(e.value)}>
-            <span className="persona-name">{e.label}{e.value === info.default && <span className="persona-shared">default</span>}</span>
-            <span className="muted">{off && info.reason ? (needsActivate(info.reason) ? `${SIGN_IN_TO_USE}.` : info.reason) : e.value === 'pwcode' ? `${e.hint} ${pwModel}` : e.hint}</span>
+          <button key={e.value} className={`persona-row ${current === e.value ? 'on' : ''}`} disabled={off || busy} aria-pressed={current === e.value} onClick={() => pick(e.value)}>
+            <span className="persona-name">{e.label}{e.value === info.default && <span className="persona-shared" title="What a new chat starts with">default</span>}</span>
+            <span className="muted">{off && info.reason ? (needsActivate(info.reason) ? `${SIGN_IN_TO_USE}.` : info.reason) : e.value === 'pwcode' ? <>{e.hint} {pwModel}</> : e.hint}</span>
           </button>
         )
       })}
+      {running && <p className="engine-tools engine-tools-off">A reply is being written; switch what answers when it ends.</p>}
+      {error && <p className="engine-tools engine-tools-off" role="alert">{error}</p>}
       {!info.pwcode && needsActivate(info.reason) && (
         <p className="engine-tools engine-tools-off">
-          {info.reason} <a href={accountsHref('activate')} onClick={() => setOpen(false)}>Open Accounts</a>
+          {info.reason} <a href={accountsHref('activate')} onClick={close}>Open Accounts</a>
         </p>
       )}
-      {tools && (
-        <p className={`engine-tools ${tools.connected ? '' : 'engine-tools-off'}`}>
-          {tools.connected
-            ? `This chat's pw code session has the Studio's tools: ${tools.count} of them, the index included.`
-            : session.continued
-              ? `This chat's pw code session does not have the Studio's tools${tools.error ? `: ${tools.error}` : ''}. The next message tries to reconnect them.`
-              : `This chat's pw code session does not have the Studio's tools${tools.error ? `: ${tools.error}` : ''}. The next message reconnects them or starts a session that has them.`}
-        </p>
-      )}
-      {!tools && session.continued && (
-        <p className="engine-tools engine-tools-off">This session began outside the Studio, so it works with its own tools and not the Studio's library tools: pw code cannot add them to a session that already exists.</p>
-      )}
+      {(tools || session.continued) && current === 'pwcode' && (() => {
+        const said = sessionToolsSaid({ tools, continued: !!session.continued, relay: !!session.relay || !!tools?.relay, machine: session.machineName || session.machine })
+        return (
+          <p className={`engine-tools ${said.ok ? '' : 'engine-tools-off'}`}>
+            {said.text}
+            {said.offerNew && conversationId && <>{' '}<button type="button" className="code-approval-more" disabled={running || starting} onClick={() => void startNew()}>{starting ? 'Starting…' : 'Start a new session there with them'}</button></>}
+          </p>
+        )
+      })()}
       {!tools && !session.continued && info.toolsDown && <p className="engine-tools engine-tools-off">{info.toolsDown}</p>}
       {session.continued && session.machine && session.session && (
         <p className="engine-web">
-          This chat continues a pw code session. <a href={codePageLink(session.machine, session.session)} onClick={() => setOpen(false)}>See it on the Code page</a>
+          This chat continues a pw code session. <a href={codePageLink(session.machine, session.session)} onClick={close}>See it on the Code page</a>
         </p>
       )}
       {session.url && (
@@ -191,6 +244,37 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
       )}
     </Popover>
   )
+}
+
+/**
+ * In a chat both engines have answered, each Studio assistant reply says
+ * so beside its model (pw code's already read "pw code · model"), and the
+ * replies' details stay in view, so a chat that switched reads clearly.
+ */
+export function EngineMarks() {
+  const { currentConversation } = useChat()
+  const messages = (currentConversation?.messages ?? []) as { id: string; role: string; model?: string }[]
+  const replies = messages.filter(m => m.role === 'assistant' && !m.id.startsWith('note-'))
+  const pw = (m: { id: string; model?: string }) => m.id.startsWith('pwc-') || m.id.startsWith('pwh-') || !!m.model?.startsWith('pw code')
+  const mixed = replies.some(pw) && replies.some(m => !pw(m))
+  useEffect(() => {
+    const canvas = document.querySelector('.chat-canvas')
+    if (!canvas) return
+    if (!mixed) { canvas.removeAttribute('data-engines-mixed'); return }
+    canvas.setAttribute('data-engines-mixed', '')
+    const mark = () => {
+      for (const meta of canvas.querySelectorAll('.chat-meta')) {
+        const model = meta.children[1] as HTMLElement | undefined
+        if (!model || model.dataset.engineLabel !== undefined || /^\d/.test(model.textContent ?? '')) continue
+        model.dataset.engineLabel = (model.textContent ?? '').startsWith('pw code') ? '' : 'Studio'
+      }
+    }
+    mark()
+    const mo = new MutationObserver(mark)
+    mo.observe(canvas, { childList: true, subtree: true })
+    return () => { mo.disconnect(); canvas.removeAttribute('data-engines-mixed') }
+  }, [mixed, currentConversation?.id])
+  return null
 }
 
 /** A question pw code asks (an ask): its options are picked by label. */

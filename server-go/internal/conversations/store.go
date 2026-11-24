@@ -400,6 +400,9 @@ func (s *Store) TakeSteers(conversationID string) []Steer {
 	return list
 }
 
+// Answering says a reply is being written in the conversation.
+func (s *Store) Answering(id string) bool { return s.isAnswering(id) }
+
 func (s *Store) isAnswering(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -675,6 +678,22 @@ func (s *Store) SetPWCode(id string, link *PWCodeLink) bool {
 	}
 	c.PWCode = link
 	s.persist()
+	return true
+}
+
+// SetEngine keeps what answers a conversation ("pwcode" or "studio");
+// false when the conversation is gone.
+func (s *Store) SetEngine(id, engine string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.find(id)
+	if c == nil {
+		return false
+	}
+	if c.Engine != engine {
+		c.Engine = engine
+		s.persist()
+	}
 	return true
 }
 

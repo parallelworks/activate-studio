@@ -35,7 +35,20 @@ export function clearViewerCaches(): void {
   if (typeof window !== 'undefined') queueMicrotask(() => window.dispatchEvent(new Event(VIEWER_CACHES_CLEARED)))
 }
 
+/** The channel the Studio's tabs tell each other on that an ACTIVATE
+ *  sign-in or key changed, so a chat open in another tab reads again;
+ *  null where there is none. */
+let channel: BroadcastChannel | null | undefined
+export function accessChannel(): BroadcastChannel | null {
+  if (channel === undefined) {
+    try { channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('ade-model-access') : null } catch { channel = null }
+  }
+  return channel
+}
+
 if (typeof window !== 'undefined') {
-  // Settings, Accounts says so when an ACTIVATE sign-in or key changes.
+  // Settings, Accounts says so when an ACTIVATE sign-in or key changes,
+  // in this tab or, over the channel, in another.
   window.addEventListener('ade:model-access-changed', clearViewerCaches)
+  accessChannel()?.addEventListener('message', () => window.dispatchEvent(new CustomEvent('ade:model-access-changed')))
 }
