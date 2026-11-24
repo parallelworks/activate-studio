@@ -84,8 +84,10 @@ func TestRunFollowedToItsEndAndReported(t *testing.T) {
 	if rec.State != "running" {
 		t.Fatal(rec.State)
 	}
-	waitFor(t, "completed", func() bool { return r.List(10)[0].State == "completed" })
-	if r.List(10)[0].EndedAt == nil {
+	// The run reads completed before its note is left and the fleet hears
+	// of it (MarkEnded does those after its lock), so wait for the last.
+	waitFor(t, "ended", func() bool { mu.Lock(); defer mu.Unlock(); return len(ended) > 0 })
+	if r.List(10)[0].State != "completed" || r.List(10)[0].EndedAt == nil {
 		t.Fatal("endedAt")
 	}
 	var ts []any
