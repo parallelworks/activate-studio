@@ -6,7 +6,7 @@ import { IndexGroup } from '../components/IndexGroup'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { TransfersSettingsSection } from '../components/TransfersSettingsSection'
 import { transfersPresent } from '../transferApi'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { okJSON } from '../api'
 import {
   ActionMenu, Autocomplete, Button, Callout, type CalloutTone, Checkbox, CopyButton, CopyCodeBlock,
@@ -161,6 +161,18 @@ const CLAUDE_CODE: SelectItem<NonNullable<Effective['claudeCodeAccounts']>>[] = 
 /** Claude Code accounts as they stand for the viewer (GET /api/settings). */
 interface ClaudeCodeState { on: boolean; personal: boolean; locked?: string }
 
+/** The Studio's own settings, read only for a person who may not change
+ *  them, with why. The server refuses their changes either way. */
+function Locked({ why, quiet, children }: { why?: string; quiet?: boolean; children: ReactNode }) {
+  if (!why) return <>{children}</>
+  return (
+    <>
+      {!quiet && <Callout tone="info">{why} They show here as they are set; ask one of them for a change.</Callout>}
+      <fieldset disabled className="settings-locked">{children}</fieldset>
+    </>
+  )
+}
+
 type SectionId = 'general' | 'indexing' | 'transfers' | 'accounts' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
 
 /** The tabs of Settings, General, in order. Each has an address of its own
@@ -289,6 +301,10 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const [form, setForm] = useState<Effective | null>(null)
   const [deploymentCred, setDeploymentCred] = useState<boolean | null>(null)
   const [claudeCode, setClaudeCode] = useState<ClaudeCodeState | null>(null)
+  /** Why this person may not change the Studio's settings (GET
+   *  /api/settings): on a Studio with sign-in, all but its administrators. */
+  const [locked, setLocked] = useState<string | undefined>()
+  const [toolsApproved, setToolsApproved] = useState(true)
   // Where the GUFI command log is written (server/src/gufiLog.ts).
   const [gufiLogFile, setGufiLogFile] = useState<{ path: string; bytes: number } | null>(null)
   const [note, setNote] = useState('')
@@ -423,7 +439,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const loadForm = () => {
     setTheme(null)
     fetch('/api/settings').then(r => r.json())
-      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null); setClaudeCode(d.claudeCode ?? null) })
+      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null); setClaudeCode(d.claudeCode ?? null); setLocked(d.locked || undefined); setToolsApproved(d.customToolsApproved !== false) })
       .catch(() => setNote('Could not load settings.'))
     fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) })
       .catch(() => {}).finally(() => setSetupKnown(true))
@@ -593,6 +609,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       } else setThemeChoice(t)
                     }} />
                   </Field>
+                  <Locked why={locked}>
                   <div className="settings-grid">
                     {!setupAvailable && (
                       <Field label="Default theme for new visitors">
@@ -659,7 +676,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       )}
                     </Field>
                     <label className="key-persist">
-                      <Checkbox checked={!!form.bannerWhenEmbedded}
+                      <Checkbox disabled={!!locked} checked={!!form.bannerWhenEmbedded}
                         onCheckedChange={v => setForm({ ...form, bannerWhenEmbedded: v })} />
                       <span>Show it inside the platform frame too, which already draws its own</span>
                     </label>
@@ -668,20 +685,24 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     <Button variant="primary" onClick={() => void saveBanner()} loading={bannerBusy}>{bannerBusy ? 'Saving…' : 'Save banner'}</Button>
                     {bannerNote && <span className="muted">{bannerNote}</span>}
                   </div>
+                  </Locked>
                 </TabPanel>
 
                 <TabPanel value="sidebar">
                   <p className="muted view-sub">Pages the sidebar shows; Settings and Help always show. Saved as you switch.</p>
-                  <SidebarSwitches value={form.sections} platform={!!cfg.platform} aiEnabled={aiEnabled} onChange={next => {
+                  <Locked why={locked}>
+                  <SidebarSwitches disabled={!!locked} value={form.sections} platform={!!cfg.platform} aiEnabled={aiEnabled} onChange={next => {
                     setForm({ ...form, sections: next })
                     setSectionsNote('')
                     saveSections(next).catch(e => setSectionsNote(String((e as Error).message ?? e)))
                   }} />
+                  </Locked>
                   {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
                   <Field group className="settings-field" label="Width"
-                    description={navWidthPreset(cfg.navWidth)
+                    description={(navWidthPreset(cfg.navWidth)
                       ? 'The sidebar\'s width when it is not collapsed. Its right edge can also be dragged; a double click there returns it to Default.'
-                      : `Dragged to ${cfg.navWidth} pixels. Pick a width here, or double click the sidebar's right edge for Default.`}>
+                      : `Dragged to ${cfg.navWidth} pixels. Pick a width here, or double click the sidebar's right edge for Default.`)
+                      + (cfg.settingsLocked ? ' Kept in this browser, for you alone.' : '')}>
                     <SegmentedControl options={NAV_WIDTH_OPTIONS} value={navWidthPreset(cfg.navWidth) ?? ''} aria-label="Sidebar width"
                       onValueChange={v => {
                         const px = NAV_WIDTHS[v as keyof typeof NAV_WIDTHS]
@@ -693,6 +714,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </TabPanel>
 
                 <TabPanel value="ai">
+                  <Locked why={locked}>
                   {aiEnabled ? (
                     <p className="muted view-sub">
                       Off takes Chat and Agents out of the sidebar, hides the settings only the assistant uses, and sends nothing
@@ -706,7 +728,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     </p>
                   )}
                   <div className="access-switch">
-                    <Switch checked={form.aiEnabled !== false} aria-label="AI features" onLabel="On" offLabel="Off"
+                    <Switch disabled={!!locked} checked={form.aiEnabled !== false} aria-label="AI features" onLabel="On" offLabel="Off"
                       onCheckedChange={v => {
                         setSectionsNote('')
                         saveAiEnabled(v, form.sections)
@@ -719,14 +741,14 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   {aiEnabled && (<>
                   {me?.authEnabled && (
                     <label className="key-persist">
-                      <Checkbox checked={form.requirePersonalKey}
+                      <Checkbox disabled={!!locked} checked={form.requirePersonalKey}
                         onCheckedChange={v => setForm({ ...form, requirePersonalKey: v })} />
                       Require each user to add their own model credential (chat and models refuse the endpoint you set for everyone and the model served beside the Studio; browsing, search, and adding material stay open to everyone)
                     </label>
                   )}
                   {me?.authEnabled && (
                     <label className="key-persist">
-                      <Checkbox checked={form.chatSharedHistory}
+                      <Checkbox disabled={!!locked} checked={form.chatSharedHistory}
                         onCheckedChange={v => setForm({ ...form, chatSharedHistory: v })} />
                       Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; chats someone saved to the main library stay there either way)
                     </label>
@@ -767,10 +789,13 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   </div>
                   {saveRow(false)}
                   </>)}
+                  </Locked>
                 </TabPanel>
 
                 <TabPanel value="updates">
-                  <UpdatesSection onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
+                  <Locked why={locked}>
+                    <UpdatesSection locked={!!locked} onPolicySaved={updates => setForm(f => f && ({ ...f, updates } as Effective))} />
+                  </Locked>
                 </TabPanel>
 
                 <TabPanel value="server">
@@ -789,6 +814,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </TabPanel>
 
                 <TabPanel value="sync-search">
+                  <Locked why={locked}>
                   <div className="ix-cards">
                   <IndexGroup title="Search" help="How a search covers several libraries, and how long each library may take.">
                     <Field label="Search across libraries"
@@ -818,6 +844,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   </IndexGroup>
                   </div>
                   {saveRow(false)}
+                  </Locked>
                 </TabPanel>
 
                 <TabPanel value="building">
@@ -827,12 +854,13 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </TabPanel>
 
                 <TabPanel value="storage">
+                  <Locked why={locked}>
                   <div className="ix-cards">
                   <IndexStorageSettings />
                   <IndexGroup title="GUFI command log" help="A record of the commands run to read an index, for finding a slow or failing search.">
                     <div>
                       <label className="key-persist">
-                        <Checkbox checked={!!form.gufiLog} onCheckedChange={v => setForm({ ...form, gufiLog: v })} />
+                        <Checkbox disabled={!!locked} checked={!!form.gufiLog} onCheckedChange={v => setForm({ ...form, gufiLog: v })} />
                         Log GUFI commands: every command run to read an index, with when it ran, what asked for it, how long it took, how it ended, and the end of its error output
                       </label>
                       {form.gufiLog && gufiLogFile && (
@@ -845,6 +873,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   </IndexGroup>
                   </div>
                   {saveRow(false)}
+                  </Locked>
                 </TabPanel>
               </Tabs>
             </>
@@ -855,6 +884,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
 
           {section === 'tools' && (
             <>
+            <Locked why={locked}>
               <h1>Assistant tools</h1>
               <p className="muted view-sub">
                 Everything the chat assistant can call. Built-in tools are part of the server; unchecking one hides it from the model, and clicking a name shows what it actually calls plus its exact specification, so you can copy the shape into a custom tool or extension file with your own changes. Custom tools are commands you define here (saved with these settings, not as files); each appears to the assistant as a callable tool and runs on this server with its output returned to the conversation.
@@ -866,6 +896,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     onValueChange={v => setForm({ ...form, maxToolRounds: v ?? 0 })} />
                 </Field>
               </div>
+              </Locked>
               <div className="tools-grid">
               {TOOL_GROUPS.map(([group, names]) => {
                 const rows = catalog.filter(t => t.builtin && names.includes(t.name))
@@ -876,7 +907,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     {rows.map(t => (
                       <div key={t.name}>
                         <div className="tool-row">
-                          <Checkbox
+                          <Checkbox disabled={!!locked}
                             aria-label={t.name}
                             checked={!form.disabledTools.includes(t.name)}
                             onCheckedChange={on => setForm({
@@ -911,7 +942,14 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 )
               })}
               </div>
+              <Locked why={locked} quiet>
               <div className="tool-group">Custom tools</div>
+              {!toolsApproved && form.customTools.length > 0 && (
+                <Callout tone="warning">
+                  These custom tools do not run yet: they were not saved by one of this Studio's administrators. They run
+                  once an administrator saves these settings.
+                </Callout>
+              )}
               <div className="custom-tools">
                 {form.customTools.map((t, i) => (
                   <div className="custom-tool-row" key={i}>
@@ -927,11 +965,12 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 <Button variant="secondary" onClick={() => setForm({ ...form, customTools: [...form.customTools, { name: '', description: '', command: '' }] })}>Add custom tool</Button>
               </div>
               {saveRow()}
+            </Locked>
             </>
           )}
 
           {section === 'rag' && (
-            <>
+            <Locked why={locked}>
               <h1>External access</h1>
               {/* With AI features off, only MCP is left: the client brings its
                   own model. The grounded model, delegation and attached
@@ -959,7 +998,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   : 'This deployment is open, so no header is needed.'}
               </p>
               <div className="access-switch">
-                <Switch checked={form.mcpEnabled} onCheckedChange={v => setForm({ ...form, mcpEnabled: v })} onLabel="On" offLabel="Off" aria-label="Serve MCP" />
+                <Switch disabled={!!locked} checked={form.mcpEnabled} onCheckedChange={v => setForm({ ...form, mcpEnabled: v })} onLabel="On" offLabel="Off" aria-label="Serve MCP" />
                 <span>Serve MCP at /api/mcp.{aiEnabled && ' Individual tools can be disabled under Assistant tools.'}</span>
               </div>
               <p className="field-label">pw code</p>
@@ -1020,7 +1059,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 work you would steer at every step.
               </p>
               <div className="access-switch">
-                <Switch checked={form.delegationEnabled} onCheckedChange={v => setForm({ ...form, delegationEnabled: v })} onLabel="On" offLabel="Off" aria-label="Delegate to pw code agents" />
+                <Switch disabled={!!locked} checked={form.delegationEnabled} onCheckedChange={v => setForm({ ...form, delegationEnabled: v })} onLabel="On" offLabel="Off" aria-label="Delegate to pw code agents" />
                 <span>Let the assistant delegate work to pw code agents</span>
               </div>
               {saveRow(false)}
@@ -1067,7 +1106,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
 
               <div className="tool-group">Grounded model (OpenAI-compatible /v1)</div>
               <div className="access-switch">
-                <Switch checked={form.ragProxyEnabled} onCheckedChange={v => setForm({ ...form, ragProxyEnabled: v })} onLabel="On" offLabel="Off" aria-label="Serve the grounded model" />
+                <Switch disabled={!!locked} checked={form.ragProxyEnabled} onCheckedChange={v => setForm({ ...form, ragProxyEnabled: v })} onLabel="On" offLabel="Off" aria-label="Serve the grounded model" />
                 <span>Serve the grounded model at /v1.</span>
               </div>
               {!form.ragProxyEnabled && (
@@ -1101,7 +1140,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </Field>
               </div>
               <label className="key-persist">
-                <Checkbox checked={form.ragAdvertiseAgentModel}
+                <Checkbox disabled={!!locked} checked={form.ragAdvertiseAgentModel}
                   onCheckedChange={v => setForm({ ...form, ragAdvertiseAgentModel: v })} />
                 Advertise <code>studio-agent</code> in model listings
               </label>
@@ -1109,7 +1148,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 Runs the full assistant pipeline on the server (system prompt, search, read, query, labels) and returns a finished cited answer. Slower, several model calls per question. The right choice inside tool-calling harnesses such as pw code.
               </p>
               <label className="key-persist">
-                <Checkbox checked={form.ragAdvertiseRagModel}
+                <Checkbox disabled={!!locked} checked={form.ragAdvertiseRagModel}
                   onCheckedChange={v => setForm({ ...form, ragAdvertiseRagModel: v })} />
                 Advertise <code>studio-rag</code> in model listings
               </label>
@@ -1123,7 +1162,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   onChange={e => setForm({ ...form, ragEndpointName: e.target.value })} />
               </div>
               <label className="key-persist">
-                <Checkbox checked={form.ragEndpointAutoStart}
+                <Checkbox disabled={!!locked} checked={form.ragEndpointAutoStart}
                   onCheckedChange={v => setForm({ ...form, ragEndpointAutoStart: v })} />
                 Register on the platform automatically at startup
               </label>
@@ -1195,18 +1234,18 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               )}
               </>)}
               </>}
-            </>
+            </Locked>
           )}
 
           {section === 'previews' && (
-            <>
+            <Locked why={locked}>
               <h1>Feature previews</h1>
               <p className="muted view-sub">
                 Capabilities that work end to end but are still being shaped. Each is off until switched on here, and each
                 shows its control in the interface only when it is on and configured.
               </p>
               <div className="access-switch">
-                <Switch checked={form.voiceEnabled} onCheckedChange={v => setForm({ ...form, voiceEnabled: v })} onLabel="On" offLabel="Off" aria-label="Voice conversations" />
+                <Switch disabled={!!locked} checked={form.voiceEnabled} onCheckedChange={v => setForm({ ...form, voiceEnabled: v })} onLabel="On" offLabel="Off" aria-label="Voice conversations" />
                 <span>Voice conversations: talk with the assistant out loud, through a speech service you deploy</span>
               </div>
               {form.voiceEnabled && (
@@ -1224,7 +1263,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </>
               )}
               {saveRow()}
-            </>
+            </Locked>
           )}
 
           {section === 'workflows' && <WorkflowsSection />}

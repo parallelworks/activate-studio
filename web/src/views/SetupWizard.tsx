@@ -40,8 +40,10 @@ const STEP = { welcome: 0, studio: 1, appearance: 2, ai: 3, sidebar: 4, folder: 
 
 /** Switches for the sidebar's pages, saved as the sections setting. With
  *  AI features off, Chat and Agents are not offered: they cannot show. */
-export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }: {
+export function SidebarSwitches({ value, platform, aiEnabled = true, onChange, disabled }: {
   value: string[] | undefined
+  /** Read only: the person may not change the Studio's pages. */
+  disabled?: boolean
   platform: boolean
   aiEnabled?: boolean
   onChange: (sections: string[]) => void
@@ -60,7 +62,7 @@ export function SidebarSwitches({ value, platform, aiEnabled = true, onChange }:
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px 16px' }}>
       {SECTION_SWITCHES.filter(s => aiEnabled || !AI_SECTIONS.includes(s.id)).map(s => (
         <label key={s.id} className="key-persist" style={{ margin: 0, color: 'var(--pw-text)' }}>
-          <Switch checked={shown.includes(s.id)} onCheckedChange={v => toggle(s.id, v)} aria-label={s.label} />
+          <Switch checked={shown.includes(s.id)} disabled={disabled} onCheckedChange={v => toggle(s.id, v)} aria-label={s.label} />
           <span>
             {s.label}
             {(s.id === 'workflows' || s.id === 'code') && !platform && <span className="muted"> (needs ACTIVATE)</span>}

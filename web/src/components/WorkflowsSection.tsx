@@ -49,9 +49,11 @@ function WorkflowsSettings() {
   const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [dirty, setDirty] = useState(false)
+  // Why the person may not change the collection, which is the Studio's.
+  const [locked, setLocked] = useState<string | undefined>()
 
   useEffect(() => {
-    fetch('/api/settings').then(r => r.json()).then(d => setPicked(d.effective?.workflowCollection ?? [])).catch(() => {})
+    fetch('/api/settings').then(r => r.json()).then(d => { setPicked(d.effective?.workflowCollection ?? []); setLocked(d.locked || undefined) }).catch(() => {})
     fetch('/api/workflows/catalog').then(async r => {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error ?? `${r.status}`)
@@ -124,6 +126,8 @@ function WorkflowsSettings() {
         engine, on your own computers.
       </p>
 
+      {locked && <Callout tone="info">{locked} The collection shows here as they set it.</Callout>}
+      <fieldset disabled={!!locked} className="settings-locked">
       <div className="tool-group">Offered here ({picked.length})</div>
       {picked.length === 0 && <p className="muted">None yet. Tick workflows below.</p>}
       {picked.length > 0 && (
@@ -212,6 +216,7 @@ function WorkflowsSettings() {
           ))}
         </Table>
       )}
+      </fieldset>
     </>
   )
 }

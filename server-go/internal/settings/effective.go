@@ -1,6 +1,9 @@
 package settings
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -263,8 +266,11 @@ func (s *Store) envOr(k, d string) string {
 
 // Effective is effectiveSettings(): saved settings over environment
 // defaults.
-func (s *Store) Effective() Effective {
-	m := s.Saved()
+func (s *Store) Effective() Effective { return s.EffectiveOf(s.Saved()) }
+
+// EffectiveOf is the effective settings were m the saved ones: what a save
+// of m would make them.
+func (s *Store) EffectiveOf(m map[string]json.RawMessage) Effective {
 	env := s.env
 	setupDone := field[bool](m, "setupDone")
 	freshPersonal := s.PersonalInstall() && !or(setupDone, false)
@@ -450,4 +456,43 @@ func defaultSearchTimeLimit(ms string) Number {
 		return Number(n / 1000)
 	}
 	return 20
+}
+
+// CustomToolsApprovedKey is where the saved settings keep a digest of the
+// custom tools as an administrator (or the one person of a Studio without
+// sign-in) last saved them. PUT /api/settings writes it; nothing a request
+// sends sets it.
+const CustomToolsApprovedKey = "customToolsApproved"
+
+// CustomToolsDigest is the digest of a list of custom tools.
+func CustomToolsDigest(tools []json.RawMessage) string {
+	var b bytes.Buffer
+	b.WriteByte('[')
+	for i, t := range tools {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		if json.Compact(&b, t) != nil {
+			b.Write(t)
+		}
+	}
+	b.WriteByte(']')
+	sum := sha256.Sum256(b.Bytes())
+	return hex.EncodeToString(sum[:])
+}
+
+// CustomToolsApproved says whether e's custom tools may run. Each runs a
+// command as the Studio's own account, so on a Studio with sign-in they
+// run only as its administrators last saved them: a list that reached the
+// settings file any other way (an older release saved by someone else, a
+// hand edit) waits until an administrator saves Settings again.
+func (s *Store) CustomToolsApproved(e Effective) bool {
+	if !s.authEnabled || len(e.CustomTools) == 0 {
+		return true
+	}
+	var d string
+	if json.Unmarshal(s.Saved()[CustomToolsApprovedKey], &d) != nil || d == "" {
+		return false
+	}
+	return d == CustomToolsDigest(e.CustomTools)
 }

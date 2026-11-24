@@ -410,6 +410,10 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	// Whether people sign in: it decides what the main library is called
 	// (theirs, or the one they share) and what My library means.
 	set("signIn", c.a.Cfg.AuthEnabled())
+	// Whether the Studio's settings are its administrators' and not this
+	// person's: the app then keeps a preference such as the sidebar's
+	// width in the browser instead.
+	set("settingsLocked", c.SettingsLocked(r) != "")
 	set("theme", eff.Theme)
 	set("accent", eff.Accent)
 	set("surface", eff.Surface)

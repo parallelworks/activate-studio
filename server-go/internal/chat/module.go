@@ -168,7 +168,15 @@ func New(a *app.App) *Module {
 	return m
 }
 
-func (m *Module) eff() settings.Effective { return m.A.Settings.Effective() }
+func (m *Module) eff() settings.Effective {
+	e := m.A.Settings.Effective()
+	// A custom tool runs a command as the Studio's own account: on a
+	// Studio with sign-in, only as its administrators last saved them.
+	if !m.A.Settings.CustomToolsApproved(e) {
+		e.CustomTools = []json.RawMessage{}
+	}
+	return e
+}
 
 // known is whether this server knows the viewer: with sign-in off there is
 // one, and with the front verifying identity it is the front's.

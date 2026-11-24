@@ -41,7 +41,9 @@ const errText = (e: unknown) => String((e as Error)?.message ?? e)
  * new version, are the page's update flow (updateFlow.ts), which the
  * footer shares.
  */
-export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
+export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload, locked }: {
+  /** Read only: the policy is the Studio's administrators'. */
+  locked?: boolean
   /** Called with the policy once it is saved, so a form holding the other
    *  settings does not save the old one back. */
   onPolicySaved?: (policy: UpdatePolicy) => void
@@ -189,13 +191,13 @@ export function UpdatesSection({ onPolicySaved, pollMs, giveUpMs, reload }: {
 
       <Field className="settings-field" controlFirst label="Check for updates automatically"
         description="A minute after the Studio starts, then every 15 minutes, and when the window opens after a longer gap.">
-        <Switch checked={policy.check} disabled={policyBusy}
+        <Switch checked={policy.check} disabled={locked || policyBusy}
           onCheckedChange={v => void savePolicy({ ...policy, check: v })} />
       </Field>
       {status.mode === 'app' && (
         <Field className="settings-field" controlFirst label="Install updates automatically when idle"
           description="Installs a new version once no chat reply or indexing has run for ten minutes.">
-          <Switch checked={policy.install === 'auto'} disabled={!policy.check || policyBusy}
+          <Switch checked={policy.install === 'auto'} disabled={locked || !policy.check || policyBusy}
             onCheckedChange={v => void savePolicy({ ...policy, install: v ? 'auto' : 'manual' })} />
         </Field>
       )}

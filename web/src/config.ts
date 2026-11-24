@@ -30,6 +30,9 @@ export interface AppConfig {
    *  person's own (My library); with it, the main library is the one they
    *  share, and My library is each person's folder on a system. */
   signIn?: boolean
+  /** The Studio's settings are its administrators' (a Studio with sign-in,
+   *  and this person is not one): preferences stay in this browser. */
+  settingsLocked?: boolean
   /** The Code page lists this computer's own pw code sessions (no platform). */
   localCode?: boolean
   /** The person can set up accounts of their own here (Settings, Accounts),
@@ -137,7 +140,7 @@ export function useAppConfig(): AppConfig {
           theme: d.theme === 'dark' ? 'dark' : 'light',
           accent: d.accent || 'none',
           surface: d.surface || 'warm',
-          navWidth: clampNavWidth(d.navWidth),
+          navWidth: clampNavWidth((d.settingsLocked && ownNavWidth()) || d.navWidth),
           kbLabel: d.kbLabel || DEFAULTS.kbLabel,
           suggestedPrompts: d.suggestedPrompts?.length ? d.suggestedPrompts : DEFAULTS.suggestedPrompts,
           bannerText: d.bannerText ?? '',
@@ -149,6 +152,7 @@ export function useAppConfig(): AppConfig {
           sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
           platform: !!d.platform,
           signIn: !!d.signIn,
+          settingsLocked: !!d.settingsLocked,
           localCode: !!d.localCode,
           accounts: !!d.accounts,
           aiEnabled: d.aiEnabled !== false,
@@ -201,11 +205,26 @@ export function applyRememberedNavWidth(): void {
   if (typeof w === 'number') applyNavWidth(w)
 }
 
-/** Save the navigation's width, applied at once. */
+/** Where a person who may not change the Studio's settings keeps their own
+ *  sidebar width: the saved navWidth is the Studio's, for everyone. */
+const OWN_NAV_WIDTH = 'ade-nav-width'
+
+/** This browser's own sidebar width, or 0. */
+export function ownNavWidth(): number {
+  try { return Number(localStorage.getItem(OWN_NAV_WIDTH)) || 0 } catch { return 0 }
+}
+
+/** Save the navigation's width, applied at once: for the Studio, or only in
+ *  this browser for a person whose Studio's settings are its administrators'. */
 export async function saveNavWidth(px: number): Promise<void> {
   const w = clampNavWidth(px)
   applyNavWidth(w)
   if (cached) cached = { ...cached, navWidth: w }
+  if (cached?.settingsLocked) {
+    try { localStorage.setItem(OWN_NAV_WIDTH, String(w)) } catch { /* storage unavailable */ }
+    reloadAppConfig()
+    return
+  }
   await saveSettings({ navWidth: w })
 }
 
