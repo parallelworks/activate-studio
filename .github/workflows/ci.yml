@@ -179,13 +179,22 @@ jobs:
         working-directory: server-go
         run: sh scripts/crossvet.sh
 
-  macos:
+  # The macOS suite in two halves on two runners, which together take about
+  # as long as the server half alone: the server build and its tests (with
+  # the Go helper and rsync tests), and the web client's two Vitest runs.
+  # The macos job below is the required check and passes only when both do.
+  macos-suite:
     # The Studio is expected to run from source on a laptop, and macOS is
     # where that claim rots quietly: a Linux-only assumption in the server
     # or a tool that exists only under apt shows up here and nowhere else.
     # GUFI is not built in this job, which takes far longer than the tests
     # and has its own upstream CI; what is checked is that the server and
     # web build and the suite passes on macOS.
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [server, web]
+    name: macos (${{ matrix.part }})
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -197,15 +206,18 @@ jobs:
           node-version: 26
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - name: install extraction tools
+        if: matrix.part == 'server'
         run: brew install tesseract poppler
       # The helper a library's build on a Mac runs there (cmd/studio-remote),
       # built and run as darwin-arm64: its text pass, its check of a kit,
       # and ONNX Runtime's library taken from a wheel.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.part == 'server'
         with:
           go-version-file: server-go/go.mod
           cache-dependency-path: server-go/go.sum
       - name: go test (the remote helper)
+        if: matrix.part == 'server'
         working-directory: server-go
         run: go test ./cmd/studio-remote ./internal/remotepass && go test -run 'TestONNXRuntimeFromTheWheel|TestHelperPlatforms' ./internal/userlibs
       # The rsync macOS ships (2.6.9 or openrsync) run with the command
@@ -213,14 +225,38 @@ jobs:
       # through a stand-in remote shell, to a folder whose name holds
       # spaces, quotes, $() and wildcards. The log shows what it offers.
       - name: go test (the system rsync)
+        if: matrix.part == 'server'
         working-directory: server-go
         run: go test -v -run 'TestSystemRsync|TestRsync|TestRemotePathThroughShell' ./internal/transfers
       - name: install the document readers
+        if: matrix.part == 'server'
         run: python3 indexer/fetch_embed.py --deps indexer/.deps --readers-only
       # The runner's python3 can be newer than the pinned wheels; the map's
       # own build is then left to the Linux job, and its tests here skip.
       - name: install the embedding packages
+        if: matrix.part == 'server'
         run: python3 indexer/fetch_embed.py --deps indexer/.deps || echo "no pinned wheels for this Python; the semantic map's build tests skip"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm test
+      - name: pnpm build
+        if: matrix.part == 'server'
+        run: pnpm build
+      # `pnpm test` is test:server then test:web; each half runs its own.
+      - name: pnpm test:${{ matrix.part }}
+        env:
+          PART: ${{ matrix.part }}
+        run: pnpm "test:$PART"
+
+  # The required check: both halves passed. It runs even when one failed or
+  # was cancelled, so the check always reports.
+  macos:
+    if: ${{ always() }}
+    needs: macos-suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: both halves passed
+        env:
+          RESULT: ${{ needs.macos-suite.result }}
+        run: |
+          echo "macos (server) and macos (web): $RESULT"
+          [ "$RESULT" = success ]
