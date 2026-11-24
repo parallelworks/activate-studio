@@ -45,3 +45,27 @@
   .model-access .header-row .grow { flex: 1 1 calc(100% - 48px); }
 }
 .model-access .admin-badge { margin-right: 4px; vertical-align: 1px; }
+
+/* Settings, Accounts: each account a row that opens (AccountRow). The
+   heading is the whole row's button: name and one line on the left, the
+   state and a chevron on the right. */
+.accounts .account-row-heading { margin: 0; font: inherit; }
+.accounts .account-row-head {
+  display: flex; align-items: center; gap: 8px 12px; width: 100%; padding: 12px 16px;
+  border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: inherit;
+}
+.accounts .account-row-head:hover .account-row-chev { color: var(--pw-text); }
+.accounts .account-row-head:focus-visible { outline: 2px solid var(--theme-focus, var(--pw-accent)); outline-offset: -2px; }
+.accounts .account-row-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.accounts .account-row-state { flex-shrink: 0; }
+.accounts .account-row-chev { flex-shrink: 0; color: var(--pw-muted); transition: transform 0.2s ease; }
+.accounts .account-row-chev.open { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .accounts .account-row-chev { transition: none; } }
+.accounts .account-who { margin: 0; }
+/* A phone: the state goes under the name, the chevron stays at the right. */
+@container indexing (max-width: 480px) {
+  .accounts .account-row-head { flex-wrap: wrap; }
+  .accounts .account-row-title { flex-basis: calc(100% - 30px); }
+  .accounts .account-row-state { order: 3; flex-basis: 100%; }
+  .accounts .account-row-chev { order: 2; }
+}

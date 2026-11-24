@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { accountsHref } from '../accounts'
 import { Button, DisclosurePanel, IconButton, StatusDot, type BadgeVariant } from '@parallelworks/ui'
 import { ChevronRightIcon } from '@parallelworks/ui/icons'
 import { api, currentLibrary, type IndexStatus, type PublicLibrary, type UserLibrary } from '../api'
@@ -220,10 +221,10 @@ export function connectionLines(o: {
   const rows: ConnLine[] = []
   if (o.platform) {
     rows.push(o.ai?.platformAccess === false
-      ? { key: 'platform', kind: 'platform', name: 'Platform', meta: 'your key does not reach it', tone: 'warning', onClick: () => go('#view=settings:accounts') }
+      ? { key: 'platform', kind: 'platform', name: 'Platform', meta: 'your key does not reach it', tone: 'warning', onClick: () => go(accountsHref('activate')) }
       : { key: 'platform', kind: 'platform', name: 'Platform', meta: 'connected', tone: 'success' })
   } else if (o.authEnabled) {
-    rows.push({ key: 'platform', kind: 'platform', name: 'Platform', meta: 'sign in with ACTIVATE to use it', tone: 'warning', onClick: () => go('#view=settings:accounts') })
+    rows.push({ key: 'platform', kind: 'platform', name: 'Platform', meta: 'sign in with ACTIVATE to use it', tone: 'warning', onClick: () => go(accountsHref('activate')) })
   }
   for (const m of o.mcp ?? []) {
     const key = `mcp:${m.name}`

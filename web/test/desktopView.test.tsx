@@ -101,7 +101,7 @@ describe('DesktopView', () => {
     expect(await screen.findByText('Sign in with ACTIVATE to use this')).toBeTruthy()
     expect(screen.getByText(/A desktop opens with your own ACTIVATE sign-in/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open Accounts' }))
-    expect(location.hash).toBe('#view=settings:accounts')
+    expect(location.hash).toBe('#view=settings:accounts?open=activate')
     history.replaceState(null, '', location.pathname)
   })
 

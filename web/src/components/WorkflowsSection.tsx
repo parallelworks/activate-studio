@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { accountsHref } from '../accounts'
 import { Button, Callout, Checkbox, ExternalLink, IconButton, Input, Loader, SearchInput, Table, toast } from '@parallelworks/ui'
 import { ArrowDownIcon, ArrowUpIcon } from '@parallelworks/ui/icons'
 import { useAppConfig } from '../config'
@@ -113,7 +114,7 @@ function WorkflowsSettings() {
       <p className="muted view-sub">Workflows are YAML files, run one of two ways.</p>
       <p className="muted view-sub">
         <i>ACTIVATE workflows:</i> with your ACTIVATE account (under{' '}
-        <a href="#view=settings:accounts">Accounts</a>), the Workflows page offers the workflows picked below as tiles,
+        <a href={accountsHref('activate')}>Accounts</a>), the Workflows page offers the workflows picked below as tiles,
         each run from its own form under the viewer's account. Pick them from the account this Studio runs under, the
         marketplace, or a GitHub repository; a viewer who lacks an account workflow can add a copy from its tile.
       </p>

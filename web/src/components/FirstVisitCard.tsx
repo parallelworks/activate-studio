@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
 import { useAppConfig } from '../config'
-import { ACCOUNTS_HREF } from '../accounts'
+import { accountsHref } from '../accounts'
 
 /**
  * Where people sign in, nobody gets the setup walkthrough (it sets the
@@ -37,7 +37,7 @@ export function FirstVisitCard() {
         <p><strong>My library</strong> is your own folder on one of your remote computers, read and written as you. Where it is
           offered, add it in the Library from the arrow beside <strong>+ Add</strong>: <strong>Add a library…</strong>.</p>
         <p><strong>Settings, Accounts</strong> is where you sign in with ACTIVATE, as yourself: My library, pw code, workflows and
-          desktops run with that sign-in, never with the Studio's own account. <a href={ACCOUNTS_HREF} onClick={close}>Open Accounts</a></p>
+          desktops run with that sign-in, never with the Studio's own account. <a href={accountsHref('activate')} onClick={close}>Open Accounts</a></p>
       </Callout>
     </div>
   )

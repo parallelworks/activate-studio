@@ -189,7 +189,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
 export function PwBlocked({ why, onOpen }: { why?: string | null; onOpen?: () => void }) {
   if (why && /pw CLI/.test(why) && /not find|not there/.test(why)) return (
     <Callout tone="warning" title="pw ssh cannot be used yet"
-      action={<Button variant="secondary" size="sm" onClick={() => (onOpen ? onOpen() : openAccounts())}>Open Accounts</Button>}>
+      action={<Button variant="secondary" size="sm" onClick={() => (onOpen ? onOpen() : openAccounts('activate'))}>Open Accounts</Button>}>
       {why}
     </Callout>
   )

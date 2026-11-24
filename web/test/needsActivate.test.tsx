@@ -33,7 +33,7 @@ describe('one prompt for every ACTIVATE feature without a credential', () => {
     render(<WorkflowsView />)
     expect(await screen.findByText('Sign in with ACTIVATE to use this')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Open Accounts' }))
-    expect(location.hash).toBe('#view=settings:accounts')
+    expect(location.hash).toBe('#view=settings:accounts?open=activate')
     expect(calls.some(u => u.startsWith('/api/workflows'))).toBe(false)
   })
 
