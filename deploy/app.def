@@ -97,6 +97,21 @@ Stage: build
     esac
     python3 /opt/src/indexer/fetch_embed.py --platform "linux-${EMBED_ARCH}-cp311" \
         --deps /opt/app/indexer/.deps --model /opt/app/index/models/minilm-l6
+    # Everything from here to the end of this stage builds GUFI into
+    # /opt/gufi. CI (container.yaml) can hand in the /opt/gufi an earlier
+    # build of this same file made, as .gufi-prebuilt/ beside the source:
+    # its cache key is this file's hash, which covers the base image digest,
+    # GUFI_COMMIT and every step below, so compiling again would give the
+    # same files. The final stage checks the binaries and their libraries
+    # either way. A build without .gufi-prebuilt (by hand, or an image CI
+    # publishes) compiles GUFI as before.
+    if [ -f /opt/src/.gufi-prebuilt/gufi.tar.gz ] &&
+       [ "$(cat /opt/src/.gufi-prebuilt/commit 2>/dev/null)" = "${GUFI_COMMIT}" ]; then
+        echo "GUFI ${GUFI_COMMIT}: the earlier build in .gufi-prebuilt"
+        tar -xzf /opt/src/.gufi-prebuilt/gufi.tar.gz -C /opt
+        test -x /opt/gufi/bin/gufi_dir2index
+        exit 0
+    fi
     # A shallow clone cannot check out an arbitrary commit, so fetch just
     # that one.
     git init -q /opt/gufi-src

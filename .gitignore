@@ -10,6 +10,8 @@ __pycache__/
 .DS_Store
 studio-bundle.tar.gz
 deploy/.cache/
+# GUFI from an earlier container build, put here by container.yaml only.
+.gufi-prebuilt/
 # deploy/mac/build_app.sh: its outputs and its download cache.
 deploy/mac/out/
 deploy/mac/.cache/
