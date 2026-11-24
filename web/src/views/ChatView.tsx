@@ -37,7 +37,7 @@ import { TransferNoteWatcher } from '../components/TransferNoteWatcher'
 import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCommands'
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 import { SaveChatButton } from '../components/SaveChatButton'
-import { EngineMarks, PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
+import { EngineMarks, EngineNoteReader, PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
 import { fitControls, watchNotices } from '../chatTop'
 import { PWCodeSession } from '../pwcode/PWCodeSession'
 import { BackgroundCommandHint } from '../pwcode/session/BackgroundCommandHint'
@@ -610,6 +610,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           {!showAttachments && !showManage && <PWCodeModelNotice conversationId={activeId} />}
           <FilterReloader />
           <TransferNoteWatcher />
+          <EngineNoteReader />
           {!pw.shown && <PWCodeWatcher />}
           <RetryWithModel />
           <ModelShare />

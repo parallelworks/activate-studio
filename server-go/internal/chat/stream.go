@@ -114,6 +114,11 @@ type streamBody struct {
 	NewChatEngine    *string `json:"newChatEngine"`
 	PWCodeModel      *string `json:"pwcodeModel"`
 	PWCodeAllocation *string `json:"pwcodeAllocation"`
+
+	// engineNote is the note stored after the reply when the Studio
+	// assistant answers in pw code's place (engineFor); never read from
+	// the request.
+	engineNote string
 }
 
 func sp(s string) *string { return &s }
@@ -244,10 +249,17 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	// pw code answers where it is chosen or, by default, offered; a
 	// resumed Studio approval is the Studio assistant's.
 	if _, isResume := body.Resume.(map[string]any); !isResume {
-		engine, err := m.engineFor(r, deref(body.Engine), deref(body.NewChatEngine), convID)
+		engine, note, err := m.engineFor(r, deref(body.Engine), deref(body.NewChatEngine), convID)
 		if err != nil {
 			res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
 			return nil
+		}
+		if note != "" {
+			// pw code is not for this person here: the Studio assistant
+			// answers, and a note after its reply says why (once: the chat
+			// is the Studio assistant's from now on).
+			body.engineNote = note
+			res.event("engine_fallback", reqbody.O("conversationId", convID, "note", note))
 		}
 		if engine == enginePWCode {
 			err := m.streamPWCode(r, res, &body, convID)
@@ -564,6 +576,12 @@ func (m *Module) answer(r *http.Request, res *sseWriter, body streamBody, convID
 			Model: finalModel, HasModel: true, Reasoning: finalReasoning, ReasoningDuration: reasoningDur(),
 			TokensUsed: tokensUsed(), Parts: finalParts, FinishReason: deref(finishReason),
 		})
+		if body.engineNote != "" {
+			// The note follows the reply, and the chat is the Studio
+			// assistant's from now on (engineFor).
+			m.Conv.AppendNoteKind(convID, "engine", body.engineNote)
+			m.Conv.SetEngine(convID, engineStudio)
+		}
 		if jsTrim(finalContent) == "" && !paused {
 			m.A.Log.Warn("empty reply", "model", model, "finishReason", deref(finishReason), "toolCalls", callCount, "modelReasoned", modelReasoned)
 			var ct *float64

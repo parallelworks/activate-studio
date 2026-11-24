@@ -3388,6 +3388,14 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 /* A continued chat's opening note is not a reply: no Regenerate on it
    (markNotes, adapter.ts, marks its Code page link). */
 .group:has(a[href*="note=continued"]):not(:has(.group)) button[aria-label="Regenerate response"] { display: none; }
+/* The note under a reply the Studio assistant gave in pw code's place
+   (EngineNoteReader, PWCodeEngine.tsx; its links carry note=engine) is a
+   quiet line, not a reply: smaller, muted, close under the reply, and with
+   nothing to copy or regenerate. */
+.group:has(a[href*="note=engine"]):not(:has(.group)) { padding-top: 0; }
+.group:has(a[href*="note=engine"]):not(:has(.group)) .chat-ink { font-size: 13px; line-height: 1.45; color: var(--pw-muted); }
+.group:has(a[href*="note=engine"]):not(:has(.group)) .chat-ink p { margin: 0; }
+.group:has(a[href*="note=engine"]):not(:has(.group)) .chat-actions { display: none; }
 
 /* Settings, Model access, the pw CLI contexts: a context's name wraps, and
    where the section is narrow (1280 with Status open) each context stacks
