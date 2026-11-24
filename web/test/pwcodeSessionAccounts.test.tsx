@@ -117,6 +117,33 @@ describe('The account panel', () => {
     expect(screen.queryByRole('button', { name: 'Close Claude Code accounts' })).toBeNull()
   })
 
+  it('in a settings card, scrolls nothing until the reader moves in the list', () => {
+    // The selected account starts highlighted; bringing it into view on load scrolled the
+    // whole Settings page down to it.
+    const scrolled = vi.fn()
+    const had = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scrolled
+    try {
+      hooks.panel = panel({
+        accounts: [{ name: 'a' }, { name: 'b' }, { name: 'c' }, { name: 'd' }],
+        startIndex: 3, selectedIndex: 3,
+      })
+      render(intl(<AccountPanelBody machine="studio" machineName="This machine" machineFacts={facts} />))
+      const list = screen.getByRole('listbox')
+      expect(within(list).getAllByRole('option')[3]).toHaveAttribute('data-highlighted')
+      expect(scrolled).not.toHaveBeenCalled()
+      fireEvent.mouseMove(within(list).getAllByRole('option')[1]!)
+      expect(scrolled).not.toHaveBeenCalled()
+      fireEvent.focus(list)
+      fireEvent.keyDown(list, { key: 'ArrowDown' })
+      expect(within(list).getAllByRole('option')[2]).toHaveAttribute('data-highlighted')
+      expect(scrolled).toHaveBeenCalled()
+      expect(list).toHaveAttribute('aria-activedescendant', within(list).getAllByRole('option')[2]!.id)
+    } finally {
+      Element.prototype.scrollIntoView = had
+    }
+  })
+
   it('says when the machine has none, and when it cannot run them', () => {
     hooks.panel = panel({ accounts: [], empty: true })
     const { unmount } = render(intl(<AccountPanelBody machine="gpu-box" machineName="gpu-box" machineFacts={facts} />))

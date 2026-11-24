@@ -309,6 +309,8 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const [gufiLogFile, setGufiLogFile] = useState<{ path: string; bytes: number } | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  // Which Save row the note and the busy state belong to: several tabs have more than one.
+  const [savedAt, setSavedAt] = useState('')
   const [models, setModels] = useState<string[]>([])
   const [catalog, setCatalog] = useState<CatalogTool[]>([])
   const [mcpStatus, setMcpStatus] = useState<{ name: string; url: string; tools: number; error: string | null }[]>([])
@@ -498,9 +500,10 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
     if (setupAvailable) window.dispatchEvent(new Event('ade:setup-open'))
   }, [setupAsked, setupKnown, setupAvailable])
 
-  const save = async (reload = true) => {
+  const save = async (where: string, reload = true) => {
     if (!form) return
     setBusy(true)
+    setSavedAt(where)
     setNote('')
     try {
       const res = await fetch('/api/settings', {
@@ -537,12 +540,16 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const sections = settingsSections({ authEnabled: !!me?.authEnabled, platform: !!cfg.platform, single: !!me?.single, aiEnabled, transfers: hasTransfers })
 
   const mcpJson = JSON.stringify({ mcpServers: { 'studio-kb': { type: 'http', url: `${location.origin}/api/mcp`, ...(me?.authEnabled ? { headers: { Authorization: 'Bearer <platform token>' } } : {}) } } }, null, 2)
-  const saveRow = (reload = true) => (
-    <div className="query-actions">
-      <Button variant="primary" onClick={() => void save(reload)} loading={busy}>{busy ? 'Saving…' : 'Save settings'}</Button>
-      {note && <span className="muted">{note}</span>}
-    </div>
-  )
+  // Each row reports its own save; the others wait while one runs.
+  const saveRow = (where: string, reload = true) => {
+    const mine = savedAt === where
+    return (
+      <div className="query-actions">
+        <Button variant="primary" onClick={() => void save(where, reload)} loading={busy && mine} disabled={busy && !mine}>{busy && mine ? 'Saving…' : 'Save settings'}</Button>
+        {note && mine && <span className="muted" role="status">{note}</span>}
+      </div>
+    )
+  }
 
   const ragEpTone: CalloutTone = ragEp?.state === 'running' ? 'success' : ragEp?.state === 'error' || ragEpError ? 'error' : 'default'
   const surfaces: SelectItem<string>[] = Object.entries(SURFACES).map(([k, v]) => ({ value: k, label: v.label }))
@@ -787,7 +794,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       />
                     </Field>
                   </div>
-                  {saveRow(false)}
+                  {saveRow('vision', false)}
                   </>)}
                   </Locked>
                 </TabPanel>
@@ -843,7 +850,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     </Field>
                   </IndexGroup>
                   </div>
-                  {saveRow(false)}
+                  {saveRow('history', false)}
                   </Locked>
                 </TabPanel>
 
@@ -872,7 +879,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     </div>
                   </IndexGroup>
                   </div>
-                  {saveRow(false)}
+                  {saveRow('gufi-log', false)}
                   </Locked>
                 </TabPanel>
               </Tabs>
@@ -964,7 +971,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 ))}
                 <Button variant="secondary" onClick={() => setForm({ ...form, customTools: [...form.customTools, { name: '', description: '', command: '' }] })}>Add custom tool</Button>
               </div>
-              {saveRow()}
+              {saveRow('tools')}
             </Locked>
             </>
           )}
@@ -1043,7 +1050,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     onValueChange={v => v && setForm({ ...form, claudeCodeAccounts: v })} />
                 </Field>
               </div>
-              {saveRow(false)}
+              {saveRow('pwcode', false)}
               </>}
 
               <div className="tool-group">Delegation (agents working for the assistant)</div>
@@ -1062,7 +1069,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 <Switch disabled={!!locked} checked={form.delegationEnabled} onCheckedChange={v => setForm({ ...form, delegationEnabled: v })} onLabel="On" offLabel="Off" aria-label="Delegate to pw code agents" />
                 <span>Let the assistant delegate work to pw code agents</span>
               </div>
-              {saveRow(false)}
+              {saveRow('delegation', false)}
 
               <div className="tool-group">Attached MCP servers (tools from elsewhere)</div>
               <p className="muted view-sub">
@@ -1095,12 +1102,12 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               <div className="query-actions">
                 <Button variant="secondary" onClick={() => setForm({ ...form, mcpServers: [...(form.mcpServers ?? []), { name: '', url: '', header: '' }] })}>Attach a server</Button>
               </div>
-              {saveRow(false)}
+              {saveRow('mcp-servers', false)}
               </>}
 
               <p className="field-label">Other MCP clients (settings JSON)</p>
               <CopyCodeBlock className="mcp-snippet" text={mcpJson} label="MCP settings">{mcpJson}</CopyCodeBlock>
-              {saveRow(false)}
+              {saveRow('mcp-clients', false)}
 
               {aiEnabled && <>
 
@@ -1114,7 +1121,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   Off: /v1 refuses calls, and any platform registration is taken down with it. Turn it on to configure the models, keys, and platform registration.
                 </p>
               )}
-              {!form.ragProxyEnabled && saveRow(false)}
+              {!form.ragProxyEnabled && saveRow('grounded', false)}
               {form.ragProxyEnabled && (<>
               <p className="muted view-sub">
                 The endpoint at{' '}
@@ -1166,7 +1173,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   onCheckedChange={v => setForm({ ...form, ragEndpointAutoStart: v })} />
                 Register on the platform automatically at startup
               </label>
-              {saveRow(false)}
+              {saveRow('rag', false)}
               <div className="tool-group">Platform registration</div>
               <p className="muted view-sub">
                 Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. Platform callers reach it with their own credentials; the deployment credential covers only keyless clients such as pw code. Requires an authenticated pw CLI on the host.
@@ -1262,7 +1269,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   <Input label="Unmute session URL" value={form.voiceUrl} placeholder="https://unmute.example" onChange={e => setForm({ ...form, voiceUrl: e.target.value })} />
                 </>
               )}
-              {saveRow()}
+              {saveRow('previews')}
             </Locked>
           )}
 
