@@ -330,6 +330,15 @@ func (m *Module) toolDeleteKBFiles(r *http.Request, args map[string]any, _ ToolC
 	if len(paths) == 0 {
 		return &Outcome{Result: "paths is required.", Summary: "error", Failed: true}, nil
 	}
+	if args[preparedKey] != true {
+		// A call approved on its card was prepared already (mainPathsIn):
+		// its paths are the ones the card listed.
+		for i, p := range paths {
+			if t := m.mainRel(r, p); t != "" {
+				paths[i] = t
+			}
+		}
+	}
 	d := kb.Default.Files.DeletePaths(paths, nil)
 	o := &kb.Outcome{Roots: d.Roots, RootDB: d.RootDB}
 	lines := make([]string, 0, len(d.Deleted)+len(d.Skipped))
@@ -349,6 +358,40 @@ func (m *Module) toolDeleteKBFiles(r *http.Request, args map[string]any, _ ToolC
 }
 
 /* ---- the approval of a library change ---- */
+
+// preparedKey marks a delete's arguments as the ones its approval card
+// listed, so the main library's name is not taken off its paths twice.
+const preparedKey = "\x00prepared"
+
+// mainPathsIn is a delete's arguments with the main library's name taken
+// off the front of each path ("My library/notes/a.md"), before the card
+// lists them.
+func (m *Module) mainPathsIn(r *http.Request, args string) string {
+	var v map[string]any
+	if json.Unmarshal([]byte(args), &v) != nil {
+		return args
+	}
+	list, ok := v["paths"].([]any)
+	if !ok {
+		return args
+	}
+	changed := false
+	for i, x := range list {
+		if s, ok := x.(string); ok {
+			if t := m.mainRel(r, s); t != s && t != "" {
+				list[i], changed = t, true
+			}
+		}
+	}
+	if !changed {
+		return args
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return args
+	}
+	return string(b)
+}
 
 // prepareKBArgs is a held library call's arguments in canonical form, or
 // what is wrong with them: every path an existing file in the main
@@ -466,7 +509,7 @@ func (m *Module) runKBTool(r *http.Request, name string, args *jsonobj.Object) (
 		return "The " + name + " tool is not available here.", true
 	}
 	req := r
-	in := map[string]any{"paths": func() []any {
+	in := map[string]any{preparedKey: true, "paths": func() []any {
 		out := []any{}
 		for _, p := range kbPaths(args) {
 			out = append(out, p)

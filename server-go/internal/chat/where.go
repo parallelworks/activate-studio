@@ -93,21 +93,50 @@ func (m *Module) placeNamed(r *http.Request, name string) (place, bool) {
 	return place{}, false
 }
 
-// splitNamed takes a library's name off the front of rel ("My library/a.md")
-// on a Studio with spaces: the library and the path in it.
-func (m *Module) splitNamed(r *http.Request, rel string) (place, string, bool) {
-	if !m.spacesFor(r) {
-		return place{}, rel, false
+// libraryNameAt is the library a path's first part names: on a Studio
+// where the person has a space, any library of theirs (placeNamed); on
+// every Studio, the main library by its name (My library on a Studio one
+// person uses, Shared library where people sign in, or the name it was
+// given), and by "My library" where nobody signs in.
+func (m *Module) libraryNameAt(r *http.Request, first string) (place, bool) {
+	if m.spacesFor(r) {
+		return m.placeNamed(r, first)
 	}
-	first, rest, ok := strings.Cut(rel, "/")
+	n := strings.ToLower(strings.TrimSpace(first))
+	if n != "" && (n == strings.ToLower(m.primaryLabel()) || n == "my library" && !m.A.Settings.SignIn()) {
+		return m.mainPlace(r), true
+	}
+	return place{}, false
+}
+
+// splitNamed takes a library's name off the front of rel ("My library/a.md"):
+// the library and the path in it. A folder of that name at the top of the
+// library is a folder, not a name: the path is kept whole.
+func (m *Module) splitNamed(r *http.Request, rel string) (place, string, bool) {
+	first, rest, ok := strings.Cut(strings.TrimLeft(rel, "/"), "/")
 	if !ok || rest == "" {
 		return place{}, rel, false
 	}
-	p, found := m.placeNamed(r, first)
+	p, found := m.libraryNameAt(r, first)
 	if !found {
 		return place{}, rel, false
 	}
+	if p.folderAt(first) {
+		return p, rel, true
+	}
 	return p, rest, true
+}
+
+// mainRel is rel with the main library's name taken off its front, for a
+// tool that works in the main library only (delete_kb_files); a path
+// that names another library, or none, is left as it is.
+func (m *Module) mainRel(r *http.Request, rel string) string {
+	t := strings.Trim(rel, "/")
+	first, rest, _ := strings.Cut(t, "/")
+	if p, ok := m.libraryNameAt(r, first); ok && p.id() == kb.PrimaryID && !p.folderAt(first) {
+		return rest
+	}
+	return rel
 }
 
 // namedPlace is the library a call names, by its library argument or the
@@ -443,7 +472,7 @@ func (d whereDecision) askText() string {
 /* ---- reads name their library too ---- */
 
 func init() {
-	for _, name := range []string{"read_kb_file", "read_original", "list_kb_dir", "show_in_viewer"} {
+	for _, name := range []string{"read_kb_file", "read_original", "list_kb_dir", "show_in_viewer", "apply_labels"} {
 		inner := goExecutors[name]
 		if inner == nil {
 			continue
@@ -484,9 +513,9 @@ func init() {
 }
 
 // libraryFromPath reads a library named at the front of a path ("My
-// library/notes/a.md") as the call's library, on a Studio with spaces.
+// library/notes/a.md") as the call's library.
 func (m *Module) libraryFromPath(r *http.Request, args map[string]any) map[string]any {
-	if lib, _ := args["library"].(string); strings.TrimSpace(lib) != "" || !m.spacesFor(r) {
+	if lib, _ := args["library"].(string); strings.TrimSpace(lib) != "" {
 		return args
 	}
 	out := map[string]any{}

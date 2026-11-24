@@ -671,7 +671,11 @@ func (m *Module) toolSuggestLabels(r *http.Request, args map[string]any, ctx Too
 		}
 		t.lib = libapi.ToKB(lib)
 	}
-	out, err := m.suggestLabels(r.Context(), t, argString(args, "dir"), limit, reqbody.Truthy(args["include_labelled"]), model, credArgs{key: deref(ctx.UserKey)})
+	dir := argString(args, "dir")
+	if t.lib.ID == kb.PrimaryID {
+		dir = m.mainRel(r, dir)
+	}
+	out, err := m.suggestLabels(r.Context(), t, dir, limit, reqbody.Truthy(args["include_labelled"]), model, credArgs{key: deref(ctx.UserKey)})
 	var re *labelReadError
 	if errors.As(err, &re) {
 		return nil, &toolError{re.err.Error()}
