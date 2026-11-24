@@ -647,8 +647,8 @@ func TestClaudeCodeAccountsAreTheAdministratorsToChange(t *testing.T) {
 		t.Fatalf("%d %s", r.status, r.raw)
 	}
 
-	// Where people sign in, someone who is not an administrator may save
-	// the rest of the form, but not change it.
+	// Where people sign in, someone who is not an administrator may send
+	// it back as it stands, but not change it.
 	e = newEnv(t, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/keys", "STUDIO_CONFIG_FILE": filepath.Join(t.TempDir(), "studio.env")})
 	s = e.do("GET", "/api/settings", nil)
 	cc := s.body["claudeCode"].(map[string]any)
@@ -658,7 +658,7 @@ func TestClaudeCodeAccountsAreTheAdministratorsToChange(t *testing.T) {
 	if r := e.do("PUT", "/api/settings", map[string]any{"claudeCodeAccounts": "on"}); r.status != 403 {
 		t.Fatalf("%d %s", r.status, r.raw)
 	}
-	if r := e.do("PUT", "/api/settings", map[string]any{"claudeCodeAccounts": "auto", "appName": "Lab"}); r.status != 200 {
+	if r := e.do("PUT", "/api/settings", map[string]any{"claudeCodeAccounts": "auto"}); r.status != 200 {
 		t.Fatalf("%d %s", r.status, r.raw)
 	}
 	// The deployment sets it as administrators do.

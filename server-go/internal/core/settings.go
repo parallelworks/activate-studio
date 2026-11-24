@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
-	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
@@ -29,22 +28,62 @@ func (c *Core) getSettings(w http.ResponseWriter, r *http.Request) error {
 	cc := jsonobj.New()
 	cc.SetValue("on", pwcode.ClaudeCodeOff(r.Context()) == "")
 	cc.SetValue("personal", c.a.Settings.PersonalInstall())
-	if why := c.claudeCodeLocked(r); why != "" {
-		cc.SetValue("locked", why)
+	locked := c.SettingsLocked(r)
+	if locked != "" {
+		cc.SetValue("locked", locked)
 	}
 	o.SetValue("claudeCode", cc)
+	// Why the person may not change the Studio's settings; absent when
+	// they may.
+	if locked != "" {
+		o.SetValue("locked", locked)
+	}
+	// Whether the saved custom tools may run (settings.CustomToolsApproved).
+	o.SetValue("customToolsApproved", c.a.Settings.CustomToolsApproved(c.a.Settings.Effective()))
 	return ok(w, o)
 }
 
-// claudeCodeLocked is why the person may not change claudeCodeAccounts, or
-// "": on a Studio with sign-in, only its administrators (the deployment's
-// owner and STUDIO_ADMINS, as for the main library) decide whether pw
-// code may run on Claude Code accounts for everyone.
-func (c *Core) claudeCodeLocked(r *http.Request) string {
-	if !c.a.Cfg.AuthEnabled() || mainlib.Admin(mainlib.User(true, auth.UserOf(r))) {
+// SettingsAdminOnly is the refusal of a change to the Studio's settings to
+// a signed-in person who does not administer it.
+const SettingsAdminOnly = "On a Studio with sign-in, only its administrators change its settings."
+
+// SettingsLocked is why the person in r may not change the Studio's
+// settings, or "": on a Studio with sign-in they apply to everyone (and
+// custom tools run commands as the Studio's own account), so only its
+// administrators change them: the deployment's owner and STUDIO_ADMINS,
+// as for the main library.
+func (c *Core) SettingsLocked(r *http.Request) string {
+	if ok, _ := mainlib.Request(c.a, r); ok {
 		return ""
 	}
-	return "Only this Studio's administrators change whether Claude Code accounts are offered."
+	return SettingsAdminOnly
+}
+
+// savedMap is next as Settings.EffectiveOf takes it.
+func savedMap(next *jsonobj.Object) map[string]json.RawMessage {
+	m := map[string]json.RawMessage{}
+	for _, k := range next.Keys() {
+		m[k] = next.Get(k)
+	}
+	return m
+}
+
+// changedSettings is the settings whose effective value differs between a
+// and b, by their names in the API.
+func changedSettings(a, b settings.Effective) []string {
+	var am, bm map[string]json.RawMessage
+	ab, _ := json.Marshal(a)
+	bb, _ := json.Marshal(b)
+	json.Unmarshal(ab, &am)
+	json.Unmarshal(bb, &bm)
+	var out []string
+	keys, _ := jsonobj.Parse(ab)
+	for _, k := range keys.Keys() {
+		if string(am[k]) != string(bm[k]) {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 var (
@@ -439,14 +478,7 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 		if !slices.Contains(settings.ClaudeCodeModes, v) {
 			return bad("claudeCodeAccounts must be auto, on or off")
 		}
-		// The whole form comes back on every save: only a change is the
-		// administrators'.
-		if v != c.a.Settings.Effective().ClaudeCodeAccounts {
-			if why := c.claudeCodeLocked(r); why != "" {
-				return apierr.New(http.StatusForbidden, "%s", why)
-			}
-			set("claudeCodeAccounts", v)
-		}
+		set("claudeCodeAccounts", v)
 	}
 	if _, ok := in("pwcodePermissionMode"); ok {
 		v := jsval.Trim(str("pwcodePermissionMode"))
@@ -478,6 +510,26 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := in("ragEndpointName"); ok {
 		n := slugRe.ReplaceAllString(strings.ToLower(str("ragEndpointName")), "-")
 		set("ragEndpointName", orNil(jsval.Slice(edgeDash.ReplaceAllString(n, ""), 40)))
+	}
+	// Every setting applies to the whole Studio. The forms send back what
+	// they show, so a value as it already stands is no change; any change
+	// is its administrators', and none of the request is saved otherwise.
+	after := c.a.Settings.EffectiveOf(savedMap(next))
+	if why := c.SettingsLocked(r); why != "" {
+		if changed := changedSettings(c.a.Settings.Effective(), after); len(changed) > 0 {
+			return apierr.New(http.StatusForbidden, "%s Not saved: %s.", why, strings.Join(changed, ", "))
+		}
+		o := jsonobj.New()
+		o.SetValue("effective", c.a.Settings.Effective())
+		o.SetValue("saved", c.a.Settings.SavedObject())
+		return ok(w, o)
+	}
+	// Custom tools run as they were last saved here, by an administrator
+	// (settings.CustomToolsApproved).
+	if c.a.Cfg.AuthEnabled() && len(after.CustomTools) > 0 {
+		next.SetValue(settings.CustomToolsApprovedKey, settings.CustomToolsDigest(after.CustomTools))
+	} else {
+		next.Delete(settings.CustomToolsApprovedKey)
 	}
 	if err := c.a.Settings.WriteObject(next); err != nil {
 		return err

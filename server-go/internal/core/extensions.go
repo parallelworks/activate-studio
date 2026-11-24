@@ -67,7 +67,24 @@ func (c *Core) mayChangeMain(r *http.Request) error {
 	return nil
 }
 
+// ExtensionsAdminOnly is the refusal of a new or changed skill or persona
+// to a signed-in person who does not administer the Studio.
+const ExtensionsAdminOnly = "On a Studio with sign-in, skills and personas are the Studio's for everyone: only its administrators add or change them."
+
+// mayChangeExtensions refuses a skill or persona (shared or not: both are
+// offered to everyone) to all but the Studio's administrators where people
+// sign in.
+func (c *Core) mayChangeExtensions(r *http.Request) error {
+	if c.SettingsLocked(r) != "" {
+		return apierr.New(403, "%s", ExtensionsAdminOnly)
+	}
+	return nil
+}
+
 func (c *Core) extPersonaWrite(w http.ResponseWriter, r *http.Request) error {
+	if err := c.mayChangeExtensions(r); err != nil {
+		return err
+	}
 	b, err := body(r)
 	if err != nil {
 		return err
@@ -95,6 +112,9 @@ func (c *Core) extPersonaWrite(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Core) extSkillWrite(w http.ResponseWriter, r *http.Request) error {
+	if err := c.mayChangeExtensions(r); err != nil {
+		return err
+	}
 	b, err := body(r)
 	if err != nil {
 		return err

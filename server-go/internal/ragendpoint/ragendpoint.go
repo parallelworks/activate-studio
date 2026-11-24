@@ -22,8 +22,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
@@ -263,6 +265,10 @@ func (e *Endpoint) MaybeAutoStart(log func(string)) {
 	e.Start()
 }
 
+// AdminOnly is the refusal of a start or stop to a signed-in person who
+// does not administer the Studio.
+const AdminOnly = "On a Studio with sign-in, only its administrators start or stop the Studio's model endpoint."
+
 // Register serves the three routes, fills the StopRagEndpoint provider,
 // auto-starts at start where this process owns the track's jobs, and
 // stops the child with the server.
@@ -271,9 +277,20 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Endpoint {
 	h := func(f func() Status) http.HandlerFunc {
 		return platform.Handler(a.Log, func(http.ResponseWriter, *http.Request) (any, error) { return f().json(), nil })
 	}
+	// Starting or stopping it registers the Studio's model on the platform
+	// with the deployment's credential, for everyone: on a Studio with
+	// sign-in, its administrators' to do.
+	admin := func(f func() Status) http.HandlerFunc {
+		return platform.Handler(a.Log, func(_ http.ResponseWriter, r *http.Request) (any, error) {
+			if ok, _ := mainlib.Request(a, r); !ok {
+				return nil, apierr.New(403, "%s", AdminOnly)
+			}
+			return f().json(), nil
+		})
+	}
 	mux.Handle("GET /api/rag/endpoint", h(e.Status))
-	mux.Handle("POST /api/rag/endpoint/start", h(e.Start))
-	mux.Handle("POST /api/rag/endpoint/stop", h(e.Stop))
+	mux.Handle("POST /api/rag/endpoint/start", admin(e.Start))
+	mux.Handle("POST /api/rag/endpoint/stop", admin(e.Stop))
 	a.Providers.StopRagEndpoint = func(*http.Request) { e.Stop() }
 	if p.OwnsJobs() {
 		a.OnStart("rag endpoint: auto-start", func(context.Context) { e.MaybeAutoStart(func(m string) { a.Log.Info(m) }) })
