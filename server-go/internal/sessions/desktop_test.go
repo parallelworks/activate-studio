@@ -209,9 +209,9 @@ func TestDesktopRefusals(t *testing.T) {
 		{"a desktop that is not VNC", "/api/session-desktop/alex/notvnc/websockify", "", nil, 404, "No desktop session notvnc of alex is visible to you."},
 		{"signed out", "/api/session-desktop/alex/desk/websockify", "", &platform.Viewer{AuthEnabled: true}, 401, "Sign in to the Studio to open a desktop."},
 		{"signed in with no key of their own", "/api/session-desktop/alex/desk/websockify", "", &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id"}}, 409,
-			"A desktop opens with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then try again."},
+			"A desktop opens with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Accounts, then try again."},
 		{"a provider key is not a platform key", "/api/session-desktop/alex/desk/websockify", "", &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id"}, Cred: &platform.Cred{Key: "k", BaseURL: "https://models.example.com"}}, 409,
-			"A desktop opens with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then try again."},
+			"A desktop opens with your own ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Accounts, then try again."},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

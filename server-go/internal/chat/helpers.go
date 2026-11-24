@@ -3,7 +3,9 @@ package chat
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
@@ -210,8 +213,8 @@ func parseEnvelope(content, nonce string, names []string, hasNames bool) []envCa
 	if !strings.HasPrefix(t, "{") {
 		return nil
 	}
-	var d map[string]any
-	if json.Unmarshal([]byte(t), &d) != nil || d == nil {
+	d := decodeEnvelope(t)
+	if d == nil {
 		return nil
 	}
 	var raw []any
@@ -247,6 +250,17 @@ func parseEnvelope(content, nonce string, names []string, hasNames bool) []envCa
 			continue
 		}
 		args, has := o["arguments"]
+		// A file's content written as JSON itself (a spreadsheet's
+		// sheets), not as a string of it, is taken as its text.
+		if am, ok := args.(map[string]any); ok {
+			if c, ok := am["content"]; ok {
+				switch c.(type) {
+				case map[string]any, []any:
+					b, _ := json.Marshal(c)
+					am["content"] = string(b)
+				}
+			}
+		}
 		var a string
 		if s, ok := args.(string); ok {
 			a = s
@@ -267,16 +281,24 @@ var fenceAroundRe = regexp.MustCompile("(?s)```[a-z_]*\\s*$")
 // splitEnvelope reads a reply on the emulated tool path. A reply that is
 // the envelope alone gives its calls and no text. Some models write a
 // sentence or two first and the envelope after it, or between paragraphs;
-// such an envelope counts when it carries this turn's nonce (one quoted
-// from a file or an earlier turn does not), and is cut out of the text the
-// user sees, along with a markdown fence around it. With no envelope found
-// the text comes back whole and calls is nil.
-func splitEnvelope(content, nonce string, names []string, hasNames bool) (string, []envCall) {
+// such an envelope counts when it carries a nonce of this turn's (nonces:
+// the current one and any issued earlier in the same turn; one quoted from
+// a file or an earlier turn does not), and is cut out of the text the user
+// sees, along with a markdown fence around it. With no envelope found the
+// text comes back whole and calls is nil.
+func splitEnvelope(content string, nonces []string, names []string, hasNames bool) (string, []envCall) {
+	nonce := ""
+	if len(nonces) > 0 {
+		nonce = nonces[len(nonces)-1]
+	}
 	if calls := parseEnvelope(content, nonce, names, hasNames); calls != nil {
 		return "", calls
 	}
-	if nonce == "" || !strings.Contains(content, "studio-tools-1") {
+	if len(nonces) == 0 || !strings.Contains(content, "studio-tools-1") {
 		return content, nil
+	}
+	ours := func(d map[string]any) bool {
+		return d != nil && d["protocol"] == "studio-tools-1" && contains(nonces, jsString(d["nonce"]))
 	}
 	type span struct{ from, to int }
 	var cut []span
@@ -289,21 +311,44 @@ func splitEnvelope(content, nonce string, names []string, hasNames bool) (string
 		}
 		k += at
 		at = k + 1
-		// The object opens at one of the few braces just before the marker.
-		for open, tries := strings.LastIndex(content[:k], "{"), 0; open >= 0 && tries < 4 && k-open < 400; open, tries = strings.LastIndex(content[:open], "{"), tries+1 {
+		// The object opens at one of the braces before the marker: the
+		// nearest when protocol is its first key, further back when the
+		// calls come first.
+		for open, tries := strings.LastIndex(content[:k], "{"), 0; open >= 0 && tries < envelopeBraces; open, tries = strings.LastIndex(content[:open], "{"), tries+1 {
 			dec := json.NewDecoder(strings.NewReader(content[open:]))
 			var d map[string]any
-			if dec.Decode(&d) != nil || d["protocol"] != "studio-tools-1" || jsString(d["nonce"]) != nonce {
+			end := -1
+			if dec.Decode(&d) == nil && ours(d) {
+				end = open + int(dec.InputOffset())
+			} else if r, ok := repairJSON(content[open:]); ok {
+				// One that decodes only once repaired runs to the end of
+				// the reply, as an envelope after the prose does.
+				rd := json.NewDecoder(strings.NewReader(r))
+				var d2 map[string]any
+				if rd.Decode(&d2) == nil && ours(d2) && strings.Trim(r[rd.InputOffset():], " \t\r\n`") == "" {
+					end = len(content)
+				}
+			}
+			if end < 0 {
 				continue
 			}
-			end := open + int(dec.InputOffset())
 			found = true
 			calls = append(calls, parseEnvelope(content[open:end], nonce, names, hasNames)...)
+			if end == len(content) {
+				cut = append(cut, span{open, end})
+				at = end
+				break
+			}
 			from, to := open, end
 			if loc := fenceAroundRe.FindStringIndex(content[:from]); loc != nil {
 				if rest := strings.TrimLeft(content[to:], " \t\r\n"); strings.HasPrefix(rest, "```") {
 					from, to = loc[0], len(content)-len(rest)+3
 				}
+			}
+			// Quotes and brackets left after the object, as a model that
+			// closes its request twice leaves them ("}), go with it.
+			for to < len(content) && strings.IndexByte("\"'}])", content[to]) >= 0 {
+				to++
 			}
 			cut = append(cut, span{from, to})
 			at = to
@@ -313,14 +358,27 @@ func splitEnvelope(content, nonce string, names []string, hasNames bool) (string
 	if !found {
 		return content, nil
 	}
-	var b strings.Builder
+	// The text around requests, in pieces set apart. Text after the last
+	// request is left out when it made calls: a natively calling model
+	// cannot write after its calls, and what is written there comes
+	// before their results ("no results came back").
+	var pieces []string
 	last := 0
 	for _, s := range cut {
-		b.WriteString(content[last:s.from])
+		if p := strings.TrimSpace(content[last:s.from]); p != "" {
+			pieces = append(pieces, p)
+		}
 		last = s.to
 	}
-	b.WriteString(content[last:])
-	return strings.TrimSpace(b.String()), calls
+	if p := strings.TrimSpace(content[last:]); p != "" && len(calls) == 0 {
+		pieces = append(pieces, p)
+	}
+	rest := strings.Join(pieces, "\n\n")
+	// What is left with no letter or digit is no prose.
+	if !strings.ContainsFunc(rest, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+		rest = ""
+	}
+	return rest, calls
 }
 
 // orderedFromJSON keeps nothing of the key order Go's decoder lost; the
@@ -598,21 +656,21 @@ func CredentialRejectionMessage(owner string, kind, credExpiresAt, context *stri
 		if context != nil {
 			c = *context
 		}
-		return "The platform rejected the pw CLI context " + c + " (401). Sign in again under Settings, Model access (or with pw auth), or choose another context there."
+		return "The platform rejected the pw CLI context " + c + " (401). Sign in again under Settings, Accounts (or with pw auth), or choose another context there."
 	}
 	if owner == "deployment" {
-		return "The platform rejected the deployment credential (401). An operator must replace it in the deployment settings; until then, add your own token or API key under Settings, Model access."
+		return "The platform rejected the deployment credential (401). An operator must replace it in the deployment settings; until then, add your own token or API key under Settings, Accounts."
 	}
 	if credExpiresAt != nil && *credExpiresAt != "" {
 		if t, ok := parseDate(*credExpiresAt); ok && t.Before(now) {
-			return "Your platform token expired at " + t.UTC().Format("Jan 2, 2006, 3:04 PM") + " UTC; tokens last 24 hours from login. Paste a fresh token under Settings, Model access, or an API key from Account, API keys, which does not expire."
+			return "Your platform token expired at " + t.UTC().Format("Jan 2, 2006, 3:04 PM") + " UTC; tokens last 24 hours from login. Paste a fresh token under Settings, Accounts, or an API key from Account, API keys, which does not expire."
 		}
 	}
 	what := "credential"
 	if kind != nil && *kind == "token" {
 		what = "token"
 	}
-	return "The platform rejected your stored " + what + " (401). If it was a platform token it has likely expired, since tokens last 24 hours from login. Paste a fresh token under Settings, Model access, or an API key from Account, API keys, which does not expire."
+	return "The platform rejected your stored " + what + " (401). If it was a platform token it has likely expired, since tokens last 24 hours from login. Paste a fresh token under Settings, Accounts, or an API key from Account, API keys, which does not expire."
 }
 
 func parseDate(s string) (time.Time, bool) {
@@ -808,4 +866,186 @@ func (m *Module) withToolCheck(r *http.Request, h llm.Health, key, baseURL strin
 	}
 	_ = o.SetValue("toolCheck", tc)
 	return o
+}
+
+// envelopeBraces is how many braces before the marker are tried as the
+// envelope's opening one.
+const envelopeBraces = 64
+
+// decodeEnvelope decodes a reply that is an envelope alone: as written,
+// or once repaired (repairJSON). It is nil when neither decodes.
+func decodeEnvelope(t string) map[string]any {
+	var d map[string]any
+	if json.Unmarshal([]byte(t), &d) == nil && d != nil {
+		return d
+	}
+	r, ok := repairJSON(t)
+	if !ok {
+		return nil
+	}
+	d = nil
+	if json.Unmarshal([]byte(r), &d) != nil || d == nil {
+		return nil
+	}
+	return d
+}
+
+// repairJSON mends what models get wrong writing JSON inside JSON: a
+// string value that holds JSON written raw ("content":"{"sheets":...}"
+// with its quotes not escaped), line breaks and tabs left raw inside a
+// string, and a quote inside a string not escaped (taken as text unless
+// what follows it ends the string). ok is false when nothing was changed.
+func repairJSON(s string) (string, bool) {
+	var b strings.Builder
+	b.Grow(len(s) + 64)
+	in := false
+	changed := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !in {
+			b.WriteByte(c)
+			if c == '"' {
+				in = true
+				// A value that opens with raw JSON: take that JSON whole
+				// and write it as one string.
+				if j := i + 1; j < len(s) && (s[j] == '{' || s[j] == '[') && afterColon(s, i) {
+					dec := json.NewDecoder(strings.NewReader(s[j:]))
+					var v any
+					if dec.Decode(&v) == nil {
+						end := j + int(dec.InputOffset())
+						if end < len(s) && s[end] == '"' {
+							q, _ := json.Marshal(s[j:end])
+							b.WriteString(string(q[1 : len(q)-1]))
+							b.WriteByte('"')
+							i = end
+							in = false
+							changed = true
+						}
+					}
+				}
+			}
+			continue
+		}
+		switch c {
+		case '\\':
+			b.WriteByte(c)
+			if i+1 < len(s) {
+				i++
+				b.WriteByte(s[i])
+			}
+		case '"':
+			if endsString(s[i+1:]) {
+				b.WriteByte(c)
+				in = false
+			} else {
+				b.WriteString(`\"`)
+				changed = true
+			}
+		case '\n':
+			b.WriteString(`\n`)
+			changed = true
+		case '\r':
+			b.WriteString(`\r`)
+			changed = true
+		case '\t':
+			b.WriteString(`\t`)
+			changed = true
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String(), changed
+}
+
+// afterColon says whether the quote at i opens an object's value.
+func afterColon(s string, i int) bool {
+	k := strings.TrimRight(s[:i], " \t\r\n")
+	return strings.HasSuffix(k, ":")
+}
+
+// endsString says whether a quote followed by rest closes a string: what
+// comes next, past spaces, is a comma, a colon, a closing bracket or the
+// end.
+func endsString(rest string) bool {
+	r := strings.TrimLeft(rest, " \t\r\n")
+	return r == "" || strings.ContainsRune(",:}]", rune(r[0]))
+}
+
+var (
+	envNameRe = regexp.MustCompile(`"name"\s*:\s*"([A-Za-z0-9_.-]{1,64})"`)
+	envPathRe = regexp.MustCompile(`"path"\s*:\s*"([^"\\\n]{1,200})"`)
+)
+
+// brokenEnv is a tool request of the model's that could not be read.
+type brokenEnv struct {
+	// at is where it starts in the reply; what is before it is prose.
+	at int
+	// tool and path are what it asked for, where they can be read.
+	tool, path string
+	// cutOff: the reply ended before the request did.
+	cutOff bool
+}
+
+// brokenEnvelope finds an envelope that did not decode: the marker, with
+// a nonce of this turn's after it, or at the start of a reply that opens
+// with the object. Text that only quotes an envelope from a file (another
+// nonce, after prose) is not one.
+func brokenEnvelope(text string, nonces []string) (brokenEnv, bool) {
+	k := strings.Index(text, "studio-tools-1")
+	if k < 0 {
+		return brokenEnv{}, false
+	}
+	head := jsTrim(fenceOpenRe.ReplaceAllString(jsTrim(text), ""))
+	opens := strings.HasPrefix(head, "{") && strings.Index(head, "studio-tools-1") < 200
+	near := text[k:min(len(text), k+200)]
+	has := false
+	for _, n := range nonces {
+		if n != "" && strings.Contains(near, n) {
+			has = true
+		}
+	}
+	if !opens && !has {
+		return brokenEnv{}, false
+	}
+	at := 0
+	if !opens {
+		if o := strings.LastIndex(text[:k], "{"); o >= 0 {
+			at = o
+		}
+		if loc := fenceAroundRe.FindStringIndex(text[:at]); loc != nil {
+			at = loc[0]
+		}
+	}
+	e := brokenEnv{at: at}
+	rest := text[at:]
+	if m := envNameRe.FindStringSubmatch(rest); m != nil {
+		e.tool = m[1]
+	}
+	if m := envPathRe.FindStringSubmatch(rest); m != nil {
+		e.path = m[1]
+	}
+	// Cut off: no closing brace balances the opening one, as a reply
+	// stopped at the output limit leaves it.
+	if o := strings.Index(rest, "{"); o >= 0 {
+		r, _ := repairJSON(rest[o:])
+		var v any
+		err := json.NewDecoder(strings.NewReader(r)).Decode(&v)
+		e.cutOff = err != nil && (errors.Is(err, io.ErrUnexpectedEOF) || err == io.EOF)
+	}
+	return e, true
+}
+
+// asked is what a broken request asked for, said for the person: "the
+// request to write reports/a.xlsx".
+func (e brokenEnv) asked() string {
+	verb := "the model's request"
+	switch {
+	case e.tool == "write_kb_file" && e.path != "":
+		return verb + " to write " + e.path
+	case e.tool != "" && e.path != "":
+		return verb + " to run " + e.tool + " on " + e.path
+	case e.tool != "":
+		return verb + " to run " + e.tool
+	}
+	return verb + " for a tool"
 }

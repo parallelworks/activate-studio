@@ -1,0 +1,38 @@
+.pwcode-goal-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  font: inherit; font-size: 12px; line-height: 1.4; cursor: pointer;
+  padding: 2px 10px; border-radius: 999px;
+  border: 1px solid var(--theme-border); background: var(--theme-panel-bg); color: inherit;
+}
+.pwcode-goal-chip:hover { background: var(--theme-panel-hover); }
+.pwcode-goal-chip:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
+.pwcode-goal-label { font-size: 12px; min-width: 0; }
+.pwcode-goal-elapsed { font-variant-numeric: tabular-nums; color: var(--theme-muted-text-color); white-space: nowrap; }
+
+.pwcode-goal-panel { width: min(24rem, calc(100vw - 32px)); }
+.pwcode-goal-body { display: flex; flex-direction: column; gap: 12px; }
+.pwcode-goal-stack { display: flex; flex-direction: column; gap: 6px; }
+.pwcode-goal-note { margin: 0; font-size: 14px; color: var(--theme-muted-text-color); }
+.pwcode-goal-small { margin: 0; font-size: 12px; color: var(--theme-muted-text-color); }
+.pwcode-goal-error { margin: 0; font-size: 12px; color: var(--theme-error-text); }
+.pwcode-goal-condition {
+  margin: 0; max-height: 12rem; overflow-y: auto; font-size: 14px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.pwcode-goal-facts {
+  margin: 0; display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px;
+  font-size: 12px; font-variant-numeric: tabular-nums; color: var(--theme-muted-text-color);
+}
+.pwcode-goal-fact { display: inline-flex; align-items: center; gap: 6px; }
+.pwcode-goal-check {
+  display: flex; flex-direction: column; gap: 2px; font-size: 12px;
+  border-top: 1px solid var(--theme-border); padding-top: 12px;
+}
+.pwcode-goal-check h3 { margin: 0; font-size: 12px; font-weight: 500; }
+.pwcode-goal-check p { margin: 0; color: var(--theme-muted-text-color); overflow-wrap: anywhere; }
+.pwcode-goal-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  border-top: 1px solid var(--theme-border); padding-top: 12px;
+}
+.pwcode-goal-actions-end { justify-content: flex-end; border-top: 0; padding-top: 0; }
+.pwcode-goal-clear { margin-left: auto; }

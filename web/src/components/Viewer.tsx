@@ -11,6 +11,7 @@ import { DagViewer } from './DagViewer'
 import { PdfJsPages } from './PdfJsPages'
 import { pageWidth, stepZoom, useSettled, ZOOM_MAX, ZOOM_MIN, ZoomView, type ZoomControl, type Zooming } from './ZoomView'
 import { CsvTable, DELIMITED_SUFFIXES } from './CsvTable'
+import { GRID_SUFFIXES, SheetWorkbook } from './SheetWorkbook'
 import { LockedButton } from './LockedButton'
 import { useShownPath } from '../libraryPath'
 
@@ -52,10 +53,12 @@ function officeLabel(suffix: string): string {
  * over, and only a file that is as it was falls back. A page past the end
  * of a file that still reads the same gets the page count read again.
  */
-function PagedPreview({ path, version, office, markdown, recheck, onUnavailable, zooming }: {
+function PagedPreview({ path, version, office, noOutline, markdown, recheck, onUnavailable, zooming }: {
   path: string
   version?: number
   office: boolean
+  /** No outline in place of the pages (a workbook: its grid is that). */
+  noOutline?: boolean
   markdown: boolean
   recheck: () => Promise<FileCheck>
   onUnavailable: (why: string) => void
@@ -69,7 +72,7 @@ function PagedPreview({ path, version, office, markdown, recheck, onUnavailable,
   const [error, setError] = useState<string | null>(null)
   const [stage, setStage] = useState<'pages' | 'pdfjs' | 'outline' | 'text'>('pages')
   const [fallbackText, setFallbackText] = useState<string | null>(null)
-  const outline = OUTLINE_SUFFIXES.includes(suffixOf(path))
+  const outline = OUTLINE_SUFFIXES.includes(suffixOf(path)) && !noOutline
   // Several page images can fail at once; the first one decides.
   const failed = useRef(false)
 
@@ -436,6 +439,12 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
   // Set when the file has no preview to show (no page images and nothing
   // read from it): the Preview tab goes and the indexed text says why.
   const [previewGone, setPreviewGone] = useState<string | null>(null)
+  // A workbook shows as a grid; Print view is LibreOffice's pages of it.
+  // gridFailed holds why the grid could not read the file, which then
+  // shows its print view.
+  const [sheetPrint, setSheetPrint] = useState(false)
+  const [gridFailed, setGridFailed] = useState('')
+  const [printGone, setPrintGone] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [tags, setTags] = useState<{ own: string[]; inherited: string[] }>({ own: [], inherited: [] })
   // Find in this file. Matches are painted with the CSS Custom Highlight
@@ -508,6 +517,9 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
     setError(null)
     setConfirming(false)
     setPreviewGone(null)
+    setSheetPrint(false)
+    setGridFailed('')
+    setPrintGone('')
     setGone(false)
     if (!path) return
     setMissing(false)
@@ -609,6 +621,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
   const isModel = file.kind === 'model'
   const isPdf = suffix === '.pdf'
   const isOffice = OFFICE_SUFFIXES.includes(suffix)
+  const isGrid = GRID_SUFFIXES.includes(suffix) && !sheetPrint && !gridFailed
   const isText = file.kind === 'text'
   const isJson = JSON_SUFFIXES.includes(suffix)
   const isYaml = YAML_SUFFIXES.includes(suffix)
@@ -675,21 +688,45 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
     <ZoomView zooming={zooming} label="Image" className="image-zoom">
       {fit => <ZoomImage src={api.rawUrl(path, file.mtime)} alt={path} fit={fit} zoom={zoom} onError={() => { void recheck() }} />}
     </ZoomView>
+  ) : isGrid ? (
+    <SheetWorkbook
+      key={`${path}@${file.mtime}@${file.size}`}
+      path={path}
+      version={file.mtime}
+      onFail={why => { void recheck().then(state => { if (state === 'same') setGridFailed(why || 'The workbook could not be read.') }) }}
+      tools={printGone
+        ? <span className="muted sg-note" role="status">{printGone}</span>
+        : <Button variant="secondary" size="sm" onClick={() => setSheetPrint(true)} title="The workbook as LibreOffice prints it, page by page, with its charts">Print view</Button>}
+    />
   ) : isPdf || isOffice ? (
     // Keyed by the file and its version: kept across files, the first
     // render of the next one used the last one's page count, asked for
     // pages it does not have, and their errors sent it to the fallback;
     // a file rewritten in place starts over with its new pages.
+    <>
+    {GRID_SUFFIXES.includes(suffix) && (
+      <div className="sheet-print-bar">
+        <span className="muted">{gridFailed ? `The grid could not read this workbook (${gridFailed}), so this is its print view.` : 'Print view: the workbook as LibreOffice prints it.'}</span>
+        {!gridFailed && <Button variant="secondary" size="sm" onClick={() => setSheetPrint(false)}>Grid</Button>}
+      </div>
+    )}
     <PagedPreview
       key={`${path}@${file.mtime}@${file.size}`}
       path={path}
       version={file.mtime}
       office={isOffice}
+      noOutline={GRID_SUFFIXES.includes(suffix) && !gridFailed}
       markdown={extractedMarkdown}
       recheck={recheck}
       zooming={zooming}
-      onUnavailable={why => { void recheck().then(state => { if (state === 'same') { setPreviewGone(why); setTab('indexed') } }) }}
+      onUnavailable={why => {
+        // A workbook's print view needs LibreOffice: without it, back to
+        // the grid, which does not.
+        if (GRID_SUFFIXES.includes(suffix) && !gridFailed) { setSheetPrint(false); setPrintGone(why || 'Print view needs LibreOffice, which this Studio does not have.'); return }
+        void recheck().then(state => { if (state === 'same') { setPreviewGone(why); setTab('indexed') } })
+      }}
     />
+    </>
   ) : isText ? (
     <div className="viewer-body">
       {isMarkdown
@@ -795,7 +832,9 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
             <span className="find-count muted">
               {hitCount
                 ? `${Math.min(hitIdx, hitCount - 1) + 1} of ${hitCount}`
-                : (isPdf || isOffice || isImage) && active === 'preview' && file.content != null
+                : (isGrid || isDelimited) && active === 'preview'
+                  ? findText ? 'Use Filter rows in the grid to find rows holding text' : ''
+                  : (isPdf || isOffice || isImage) && active === 'preview' && file.content != null
                   ? <>Pages are images; <Button variant="ghost" size="sm" onClick={() => setTab('indexed')}>show matches in the indexed text</Button></>
                   : findText ? 'No matches' : ''}
             </span>

@@ -32,6 +32,11 @@ export interface AppConfig {
   signIn?: boolean
   /** The Code page lists this computer's own pw code sessions (no platform). */
   localCode?: boolean
+  /** The person can set up accounts of their own here (Settings, Accounts),
+   *  so a page that needs ACTIVATE shows, asking them to sign in, before
+   *  they have; without it such a page is left out, as on a deployment that
+   *  keeps no personal credentials. */
+  accounts?: boolean
   /** False when AI features are off: no Chat, no Agents, no model line. */
   aiEnabled?: boolean
   /** How many workflows this Studio offers on its Workflows tab. */
@@ -145,6 +150,7 @@ export function useAppConfig(): AppConfig {
           platform: !!d.platform,
           signIn: !!d.signIn,
           localCode: !!d.localCode,
+          accounts: !!d.accounts,
           aiEnabled: d.aiEnabled !== false,
           workflowCount: typeof d.workflowCount === 'number' ? d.workflowCount : 0,
           loaded: true,
@@ -228,11 +234,6 @@ export const ALWAYS_SHOWN = ['settings', 'help']
 /** The pages that call a model, gone while AI features are off. */
 export const AI_SECTIONS = ['chat', 'agents']
 
-/** What Settings calls the section with the ACTIVATE credential: Model
- *  access, or ACTIVATE access while AI features are off and it holds only
- *  that credential. */
-export function accessLabel(cfg: { aiEnabled?: boolean }): string { return aiOn(cfg) ? 'Model access' : 'ACTIVATE access' }
-
 /** Whether AI features are on. Unset (before the configuration arrives,
  *  or from an older server) counts as on, as it always has. */
 export function aiOn(cfg: { aiEnabled?: boolean }): boolean { return cfg.aiEnabled !== false }
@@ -245,21 +246,24 @@ export function aiPagesMounted(cfg: { aiEnabled?: boolean; loaded: boolean }): b
   return cfg.loaded ? aiOn(cfg) : cfg.aiEnabled === true
 }
 
+type Gate = { sections?: string[]; platform?: boolean; localCode?: boolean; aiEnabled?: boolean; accounts?: boolean }
+
 /** Whether a page shows: in the saved sections (none saved means all), or
- *  always shown. Workflows and Code list what is on the platform, so they need one,
- *  and Chat and Agents need AI features on. */
-export function sectionAllowed(id: string, cfg: { sections?: string[]; platform?: boolean; localCode?: boolean; aiEnabled?: boolean }): boolean {
-  if (id === 'workflows' && !cfg.platform) return false
+ *  always shown. Workflows and Code list what is on the platform, so they
+ *  need it, or Accounts to sign in from: without a credential they show
+ *  "Sign in with ACTIVATE to use this". Chat and Agents need AI features on. */
+export function sectionAllowed(id: string, cfg: Gate): boolean {
+  if (id === 'workflows' && !cfg.platform && !cfg.accounts) return false
   // Code lists the platform's sessions, or this computer's own where the
   // Studio offers it to pw code with no platform.
-  if (id === 'code' && !cfg.platform && !cfg.localCode) return false
+  if (id === 'code' && !cfg.platform && !cfg.localCode && !cfg.accounts) return false
   if (AI_SECTIONS.includes(id) && cfg.aiEnabled === false) return false
   return !cfg.sections?.length || cfg.sections.includes(id) || ALWAYS_SHOWN.includes(id)
 }
 
 /** The page to show for a requested one: itself when allowed, otherwise the
  *  first allowed page in sidebar order. */
-export function shownView<T extends string>(view: T, order: readonly T[], cfg: { sections?: string[]; platform?: boolean; localCode?: boolean; aiEnabled?: boolean }): T {
+export function shownView<T extends string>(view: T, order: readonly T[], cfg: Gate): T {
   if (sectionAllowed(view, cfg)) return view
   return order.find(id => sectionAllowed(id, cfg)) ?? view
 }

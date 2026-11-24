@@ -65,7 +65,13 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		}
 		f.Seen(auth.UserOf(r))
 		f.Follow(r.Context())
-		return map[string]any{"agents": f.For(r)}, nil
+		// unavailable says why no agent runs here, so the page asks to sign
+		// in rather than offering templates; null when they may.
+		var why any
+		if w := f.refused(); w != "" {
+			why = w
+		}
+		return map[string]any{"agents": f.For(r), "unavailable": why}, nil
 	}))
 	mux.HandleFunc("POST /api/fleet", h(func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err := gate(); err != nil {
@@ -80,6 +86,9 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform, f *Fleet) {
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
 			return nil, apierr.New(400, "a JSON body is required")
+		}
+		if why := f.refused(); why != "" {
+			return nil, apierr.New(409, "%s", why)
 		}
 		ag, err := f.Create(Input{Name: in.Name, Goal: in.Goal, Persona: str(in.Persona), Model: in.Model, Resource: str(in.Resource), Every: in.Every,
 			WatchPath: str(in.WatchPath), ConversationID: str(in.ConversationID), OnRunEnd: in.OnRunEnd,

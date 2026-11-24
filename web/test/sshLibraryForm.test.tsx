@@ -106,14 +106,15 @@ function stubSystems(list: unknown) {
 describe('connecting an index on a cluster over pw ssh', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('says why pw ssh cannot be used yet, with a way to Model access, and no fields', async () => {
-    stubSystems({ usable: false, why: 'The pw CLI on this computer is not signed in to a platform. Sign it in under Settings, Model access.', systems: [], error: null })
+  it('asks to sign in with ACTIVATE when pw ssh has no credential, with a way to Accounts, and no fields', async () => {
+    stubSystems({ usable: false, why: 'The pw CLI on this computer is not signed in to a platform. Sign it in under Settings, Accounts.', systems: [], error: null })
     const onOpenAccess = vi.fn()
     render(<SshLibraryForm transport="pw" onOpenAccess={onOpenAccess} />)
     expect(await screen.findByText(/is not signed in to a platform/)).toBeInTheDocument()
+    expect(screen.getByText('Sign in with ACTIVATE to use this')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test connection' })).toBeNull()
     expect(screen.queryByLabelText('Index directory')).toBeNull()
-    fireEvent.click(button('Open Model access'))
+    fireEvent.click(button('Open Accounts'))
     expect(onOpenAccess).toHaveBeenCalled()
   })
 

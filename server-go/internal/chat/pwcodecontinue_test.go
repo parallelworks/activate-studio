@@ -20,9 +20,46 @@ type fakeCodePlatform struct {
 	daemonID string
 	hostname string
 	sessions []map[string]any
+	// others are more of the viewer's machines; relay stands in for the
+	// platform's relay to each machine's daemon, by machine id, as
+	// /api/code/machines/{m}/sessions/{id}... and the events WebSocket.
+	others []map[string]any
+	relay  map[string]http.Handler
+	// relayed records each relayed request as "METHOD path auth"; origins
+	// the Origin of each events handshake.
+	relayed []string
+	origins []string
+	// listDown makes the sessions listing fail, as a platform that cannot
+	// be read.
+	listDown bool
 }
 
 func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if rest, ok := cutAny(r.URL.Path, "/api/code/machines/", "/ws/code/machines/"); ok {
+		machine, path, _ := strings.Cut(rest, "/sessions/")
+		route := "/v1/sessions/" + path
+		if m, cc, ok := strings.Cut(rest, "/claude-code"); ok && !strings.Contains(m, "/") {
+			machine, route = m, "/v1/claude-code"+cc
+		}
+		p.mu.Lock()
+		p.relayed = append(p.relayed, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization"))
+		if strings.HasPrefix(r.URL.Path, "/ws/") {
+			p.origins = append(p.origins, r.Header.Get("Origin"))
+		}
+		h := p.relay[machine]
+		p.mu.Unlock()
+		if r.Header.Get("Authorization") != "Bearer k" {
+			w.WriteHeader(401)
+			return
+		}
+		if h == nil {
+			w.WriteHeader(404)
+			return
+		}
+		r.URL.Path = route
+		h.ServeHTTP(w, r)
+		return
+	}
 	if r.URL.Path != "/api/code/sessions" {
 		w.WriteHeader(404)
 		return
@@ -33,17 +70,37 @@ func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.listDown {
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
 	p.reads++
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"machines": []any{map[string]any{"id": "m1", "name": "gpu-box", "kind": "existing", "status": "connected", "daemonId": p.daemonID, "hostname": p.hostname}},
-		"sessions": p.sessions,
-	})
+	machines := []any{map[string]any{"id": "m1", "name": "gpu-box", "kind": "existing", "status": "connected", "daemonId": p.daemonID, "hostname": p.hostname}}
+	for _, o := range p.others {
+		machines = append(machines, o)
+	}
+	json.NewEncoder(w).Encode(map[string]any{"machines": machines, "sessions": p.sessions})
+}
+
+func cutAny(s string, prefixes ...string) (string, bool) {
+	for _, p := range prefixes {
+		if rest, ok := strings.CutPrefix(s, p); ok {
+			return rest, true
+		}
+	}
+	return "", false
 }
 
 // continueModule is a test Studio whose pw code is f, under a platform
 // that lists session s1 on machine m1 as the viewer's.
 func continueModule(t *testing.T, f *fakePW, daemonID string, env ...string) (*Module, string, *fakeCodePlatform) {
+	m, base, plat, _ := continueModuleAt(t, f, daemonID, env...)
+	return m, base, plat
+}
+
+// continueModuleAt is continueModule with the platform's address.
+func continueModuleAt(t *testing.T, f *fakePW, daemonID string, env ...string) (*Module, string, *fakeCodePlatform, string) {
 	plat := &fakeCodePlatform{daemonID: daemonID, hostname: "gpu-box.example", sessions: []map[string]any{
 		{"machineId": "m1", "id": "s1", "autoName": "Fix the build", "workspace": "/home/me/repo", "status": "idle", "messages": 2},
 	}}
@@ -57,7 +114,7 @@ func continueModule(t *testing.T, f *fakePW, daemonID string, env ...string) (*M
 		e[env[i]] = env[i+1]
 	}
 	m, base := pwModule(t, f, e)
-	return m, base, plat
+	return m, base, plat, ps.URL
 }
 
 var earlierTurns = []any{
@@ -125,8 +182,8 @@ func TestContinueStaysReadOnlyWhereTheStudioCannotDriveIt(t *testing.T) {
 	f := &fakePW{}
 	_, base, plat := continueModule(t, f, "d2")
 	code, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`)
-	if code != 409 || !strings.Contains(out["error"].(string), "stays read only") || f.attached != 0 {
-		t.Errorf("other machine: %d %v", code, out)
+	if code != 404 || !strings.Contains(out["error"].(string), "does not reach this session on gpu-box") || !strings.Contains(out["error"].(string), "Approve or Deny") || f.attached != 0 {
+		t.Errorf("other machine, relay not reaching it: %d %v", code, out)
 	}
 	// A session the platform does not list as the viewer's.
 	plat.mu.Lock()
@@ -140,7 +197,7 @@ func TestContinueStaysReadOnlyWhereTheStudioCannotDriveIt(t *testing.T) {
 	plat.sessions = []map[string]any{{"machineId": "m1", "id": "s1", "status": "idle"}}
 	plat.mu.Unlock()
 	f.detail = map[string]any{"archivedAt": "2026-11-20T00:00:00Z"}
-	if code, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`); code != 409 || !strings.Contains(out["error"].(string), "archived") {
+	if code, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/continue", `{"machine":"m1","session":"s1","confirmed":true}`); code != 409 || !strings.Contains(out["error"].(string), "archived") || !strings.Contains(out["error"].(string), "still read it") {
 		t.Errorf("archived: %d %v", code, out)
 	}
 	// Open on another host: the question says it is taken over.

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Button, Callout, Loader, Popover, Select, StatusDot, type BadgeVariant } from '@parallelworks/ui'
 import type RFB from '@novnc/novnc'
+import { NeedsActivate } from './NeedsActivate'
+import { needsActivate } from '../accounts'
 
 /**
  * A platform desktop session drawn in the Studio. A desktop has no host of
@@ -357,7 +359,9 @@ export function DesktopView({ user, name, className = '', onClosed }: { user: st
             {phase === 'waiting' && <p className="muted">{status === null ? <Loader inline size={14} label="Checking the desktop…" /> : `Desktop ${name} is ${status || 'not running'}. It shows here once it is running.`}</p>}
             {phase === 'connecting' && <p className="muted"><Loader inline size={14} label={tries.current ? 'Reconnecting to the desktop…' : 'Connecting to the desktop…'} /></p>}
             {phase === 'closed' && <p className="muted">{reason}</p>}
-            {(phase === 'failed' || phase === 'refused') && <Callout variant="bar" tone="error">{reason || 'The desktop did not answer.'}</Callout>}
+            {phase === 'refused' && needsActivate(reason)
+              ? <NeedsActivate>{reason}</NeedsActivate>
+              : (phase === 'failed' || phase === 'refused') && <Callout variant="bar" tone="error">{reason || 'The desktop did not answer.'}</Callout>}
             {reason && (phase === 'connecting' || phase === 'waiting') && <p className="muted desktop-reason">{reason}</p>}
             {logText && (phase === 'connecting' || phase === 'failed') && <pre className="desktop-logs" aria-label="Start-up logs">{logText}</pre>}
           </div>

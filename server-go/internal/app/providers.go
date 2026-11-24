@@ -34,6 +34,12 @@ type Providers struct {
 	// offered as an agent site.
 	// Owner: codesessions. Unset: false.
 	LocalCode func(r *http.Request) bool
+	// Accounts is whether the viewer can set up accounts of their own here
+	// (Settings, Accounts: an ACTIVATE sign-in, key or pw CLI context, and
+	// model endpoints): false where the deployment keeps no personal
+	// credentials. Pages that need ACTIVATE then show, asking to sign in,
+	// instead of hiding. Owner: chat track. Unset: false.
+	Accounts func(r *http.Request) bool
 	// OwnSessions are the pw code sessions the Studio started for the
 	// viewer of r, one source for each part that starts them: chats
 	// (chat), delegations (delegation) and standing agents (fleet). With

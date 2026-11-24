@@ -252,21 +252,72 @@ func nullable(s string) any {
 
 func (p *Platform) choiceFile() string { return filepath.Join(p.indexBase, "access.json") }
 
-func (p *Platform) loadChoice() string {
+func (p *Platform) loadChoice() (string, bool) {
 	b, err := os.ReadFile(p.choiceFile())
 	if err != nil {
-		return ""
+		return "", false
 	}
 	var v struct {
-		PWContext any `json:"pwContext"`
+		PWContext any  `json:"pwContext"`
+		Stopped   bool `json:"stopped"`
 	}
 	if json.Unmarshal(b, &v) != nil {
-		return ""
+		return "", false
 	}
-	return str(v.PWContext)
+	return str(v.PWContext), v.Stopped
 }
 
-// ChosenContext is chosenContext: the context chosen in Model access,
+// Stopped says the owner of a Studio of one chose Stop using the pw CLI
+// in Settings, Accounts: the Studio then reads no ACTIVATE credential of
+// the computer's (the pw CLI's sign-ins, PW_API_KEY), and works as for
+// someone without ACTIVATE. The CLI itself stays signed in, for the other
+// tools on the computer.
+func (p *Platform) Stopped() bool {
+	p.rereadChoice()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stopped
+}
+
+// Stop records Stop using the pw CLI (true) or Use it again (false).
+func (p *Platform) Stop(stopped bool) error {
+	p.mu.Lock()
+	p.stopped = stopped
+	p.mu.Unlock()
+	if err := p.writeChoice(); err != nil {
+		return err
+	}
+	p.reach.reset()
+	if err := p.AccessChanged(false); err != nil {
+		p.log.Warn("access choice: Node did not answer", "err", err.Error())
+	}
+	return nil
+}
+
+// writeChoice writes access.json: the chosen context, as Node wrote it,
+// and stopped when set.
+func (p *Platform) writeChoice() error {
+	if err := os.MkdirAll(p.indexBase, 0o755); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	name, stopped := p.chosen, p.stopped
+	p.mu.Unlock()
+	fields := []string{}
+	if name != "" {
+		fields = append(fields, "\n \"pwContext\": "+string(jsonv.MustMarshal(name)))
+	}
+	if stopped {
+		fields = append(fields, "\n \"stopped\": true")
+	}
+	body := "{}"
+	if len(fields) > 0 {
+		body = "{" + strings.Join(fields, ",") + "\n}"
+	}
+	return os.WriteFile(p.choiceFile(), []byte(body), 0o644)
+}
+
+// ChosenContext is chosenContext: the context chosen in Settings, Accounts,
 // while the CLI still has it.
 func (p *Platform) ChosenContext() string {
 	p.rereadChoice()
@@ -311,15 +362,8 @@ func (p *Platform) ChooseContext(name string) error {
 	p.mu.Lock()
 	p.chosen = name
 	p.mu.Unlock()
-	if err := os.MkdirAll(p.indexBase, 0o755); err != nil {
-		return err
-	}
 	// JSON.stringify({ pwContext: name ?? undefined }, null, 1)
-	body := "{}"
-	if name != "" {
-		body = "{\n \"pwContext\": " + string(jsonv.MustMarshal(name)) + "\n}"
-	}
-	if err := os.WriteFile(p.choiceFile(), []byte(body), 0o644); err != nil {
+	if err := p.writeChoice(); err != nil {
 		return err
 	}
 	p.syncGateway()
@@ -445,6 +489,9 @@ func (p *Platform) PlatformGateway() bool {
 // CredentialContextName is credentialContextName: the context whose
 // credential the gateway gets.
 func (p *Platform) CredentialContextName() string {
+	if p.Stopped() {
+		return ""
+	}
 	p.syncGateway()
 	s := p.ReadStore()
 	if s == nil {

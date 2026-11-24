@@ -1,0 +1,4 @@
+/* A plan's answer, under the transcript over the composer (PlanAnswer.tsx). */
+.pwcode-plan-answer { margin: 8px 0; }
+.pwcode-plan-answer p { margin: 0 0 6px; font-size: 13px; }
+.pwcode-plan-answer .pwcode-answer { width: 100%; box-sizing: border-box; font: inherit; padding: 4px 8px; border: 1px solid var(--pw-border, currentColor); border-radius: 6px; background: transparent; color: inherit; }

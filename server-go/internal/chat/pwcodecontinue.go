@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -44,6 +45,8 @@ type pwHere struct {
 	site     string
 	daemonID string
 	hostname string
+	// status is what the daemon reported, such as what it allows.
+	status any
 }
 
 // pwcodeDaemon is the viewer's pw code daemon and its site, as
@@ -54,6 +57,9 @@ func (m *Module) pwcodeDaemon(r *http.Request) (pwcode.Client, string, error) {
 		return nil, "", pwErr(409, "pw code is not set up on this Studio.")
 	}
 	if !m.A.Cfg.AuthEnabled() {
+		if err := m.localPWCodeRefused(); err != nil {
+			return nil, "", err
+		}
 		return s.Daemon.Local(), m.pwSite(), nil
 	}
 	if user(r) == nil {
@@ -61,7 +67,7 @@ func (m *Module) pwcodeDaemon(r *http.Request) (pwcode.Client, string, error) {
 	}
 	key := m.viewerPlatformKey(r)
 	if key == "" {
-		return nil, "", pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Model access.")
+		return nil, "", pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.")
 	}
 	site := m.pwSite()
 	if site == "" {
@@ -84,7 +90,7 @@ func (m *Module) pwcodeHere(ctx context.Context, r *http.Request) (*pwHere, erro
 		return nil, pwErr(502, "Your pw code daemon did not answer.")
 	}
 	return &pwHere{client: client, site: site,
-		daemonID: jsonv.String(jsonv.Path(st, "machineId")), hostname: jsonv.String(jsonv.Path(st, "hostname"))}, nil
+		daemonID: jsonv.String(jsonv.Path(st, "machineId")), hostname: jsonv.String(jsonv.Path(st, "hostname")), status: st}, nil
 }
 
 type pwHereAt struct {
@@ -119,7 +125,7 @@ func (m *Module) pwcodeHereCached(ctx context.Context, r *http.Request) (*pwHere
 // by the daemon id the platform keeps for it, or by host name where the
 // platform keeps none.
 func sameMachine(mach *codesessions.Machine, h *pwHere) bool {
-	if mach == nil || h == nil {
+	if mach == nil || h == nil || forceRelay() {
 		return false
 	}
 	if mach.DaemonID != "" || h.daemonID == "" {
@@ -127,6 +133,12 @@ func sameMachine(mach *codesessions.Machine, h *pwHere) bool {
 	}
 	return mach.Hostname != "" && strings.EqualFold(mach.Hostname, h.hostname)
 }
+
+// forceRelay is for testing only: with STUDIO_PWCODE_FORCE_RELAY=1 a
+// session on the Studio's own machine is continued through the platform
+// relay too, as one on another machine is, so the relay can be exercised
+// end to end with a single connected machine. Off by default.
+func forceRelay() bool { return os.Getenv("STUDIO_PWCODE_FORCE_RELAY") == "1" }
 
 // ownChats is the viewer's own conversations that run in a pw code
 // session, by session id.
@@ -247,13 +259,16 @@ func continuedHistory(items []any, model string, now string) (msgs []conversatio
 
 // continueNote opens a continued chat: where the session came from, and a
 // link to all of it on the Code page.
-func continueNote(v *codesessions.View, dropped int) string {
+func continueNote(v *codesessions.View, dropped int, extra ...string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Continued from the pw code session **%s** on %s", strings.ReplaceAll(v.Title, "*", ""), v.Machine)
 	if v.Workspace != "" {
 		fmt.Fprintf(&b, ", in `%s`", strings.ReplaceAll(shortWorkspace(v.Workspace), "`", ""))
 	}
 	b.WriteString(". Messages you send here go to that session.")
+	for _, e := range extra {
+		b.WriteString(e)
+	}
 	if dropped > 0 {
 		s := "s"
 		if dropped == 1 {
@@ -308,11 +323,17 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 			}
 			chats = append(chats, reqbody.O("session", id, "conversationId", c.ID, "title", title, "continued", c.PWCode.Continued))
 		}
+		// Sessions on the viewer's other machines go through the relay.
+		var relayWhy any
+		if why := m.relayUnavailable(r); why != "" {
+			relayWhy = why
+		}
+		relay := relayWhy == nil
 		here, err := m.pwcodeHereCached(r.Context(), r)
 		if err != nil {
-			return reqbody.OK(w, reqbody.O("available", false, "reason", apiMessage(err), "chats", chats))
+			return reqbody.OK(w, reqbody.O("available", false, "reason", apiMessage(err), "chats", chats, "relay", relay, "relayReason", relayWhy))
 		}
-		return reqbody.OK(w, reqbody.O("available", true, "daemonId", here.daemonID, "hostname", here.hostname, "chats", chats))
+		return reqbody.OK(w, reqbody.O("available", true, "daemonId", here.daemonID, "hostname", here.hostname, "chats", chats, "relay", relay, "relayReason", relayWhy))
 	})
 	// Continue one of the viewer's sessions in a new chat. The first call
 	// checks and answers with what to ask the person; the call with
@@ -333,18 +354,20 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 		if c := m.ownChats(r)[in.Session]; c != nil && in.Session != "" {
 			return reqbody.OK(w, reqbody.O("conversationId", c.ID, "existing", true))
 		}
-		// pw code chat must be the viewer's own before the platform is read.
+		// The viewer's own pw code chat, or failing that the relay, must be
+		// theirs before the platform is read: nothing is read as the
+		// Studio's account.
 		ctx := r.Context()
-		here, err := m.pwcodeHere(ctx, r)
-		if err != nil {
-			return err
+		here, hereErr := m.pwcodeHere(ctx, r)
+		if hereErr != nil && m.relayUnavailable(r) != "" {
+			return hereErr
 		}
 		mach, v, err := codesessions.Find(r, m.pf, in.Machine, in.Session)
 		if err != nil {
 			return err
 		}
-		if !sameMachine(mach, here) {
-			return pwErr(409, fmt.Sprintf("This session is on %s, and this Studio's pw code runs on %s for you, so it stays read only here. Open it in ACTIVATE to answer it.", mach.Name, firstNonEmpty(here.hostname, "another machine")))
+		if hereErr != nil || !sameMachine(mach, here) {
+			return m.continueRelayed(w, r, mach, v, in.Session, in.Confirmed)
 		}
 		d, err := pwcode.GetSession(ctx, here.client, in.Session)
 		var de *pwcode.DaemonError
@@ -354,7 +377,7 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 			return err
 		}
 		if jsonv.String(jsonv.Path(d, "archivedAt")) != "" {
-			return pwErr(409, "This session is archived. Restore it in ACTIVATE, then continue it here.")
+			return pwErr(409, archivedWhy)
 		}
 		status, liveHost := jsonv.String(jsonv.Path(d, "status")), jsonv.String(jsonv.Path(d, "liveHost"))
 		if !in.Confirmed {
@@ -407,6 +430,8 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 // message: still there, not archived, not taken by a daemon on another
 // host since, and open in this daemon. Its studio server, when it has
 // one, is checked as a chat's own is; it is never archived or replaced.
+// A session on another machine (relayed) is only read: its machine
+// decides the rest.
 func (m *Module) continuedSession(ctx context.Context, r *http.Request, t *pwTarget, l *conversations.PWCodeLink) error {
 	where := firstNonEmpty(l.MachineName, l.Site)
 	if l.Site != t.site {
@@ -415,12 +440,15 @@ func (m *Module) continuedSession(ctx context.Context, r *http.Request, t *pwTar
 	d, err := pwcode.GetSession(ctx, t.client, l.Session)
 	var de *pwcode.DaemonError
 	if errors.As(err, &de) && de.Status == http.StatusNotFound {
-		return pwErr(409, "The pw code session this chat continues is no longer on "+where+". Start a new chat to go on.")
+		return pwErr(409, "The pw code session this chat continues is no longer on "+where+", or ACTIVATE does not reach that machine for you now. Start a new chat to go on.")
 	} else if err != nil {
 		return err
 	}
 	if jsonv.String(jsonv.Path(d, "archivedAt")) != "" {
 		return pwErr(409, "The pw code session this chat continues was archived. Restore it in ACTIVATE to go on here, or start a new chat.")
+	}
+	if t.relay {
+		return nil
 	}
 	if jsonv.String(jsonv.Path(d, "status")) == "live_elsewhere" {
 		return pwErr(409, "The pw code session this chat continues is now open on "+firstNonEmpty(jsonv.String(jsonv.Path(d, "liveHost")), "another machine")+". Continue it again from the Code page to take it back.")
@@ -442,3 +470,54 @@ func (m *Module) continuedSession(ctx context.Context, r *http.Request, t *pwTar
 }
 
 func notLiveMessage(s string) bool { return strings.Contains(strings.ToLower(s), "not live") }
+
+// archivedWhy is why an archived session is not continued, and what still
+// works with it here.
+const archivedWhy = "This session is archived, so it cannot be continued in a chat; you can still read it on the Code page. Restore it in ACTIVATE to continue it here."
+
+// continueRelayed is the continue route for a session on another of the
+// viewer's machines: it is read through the platform's relay, as them,
+// and the chat made drives it there, so nothing is attached or moved.
+func (m *Module) continueRelayed(w http.ResponseWriter, r *http.Request, mach *codesessions.Machine, v *codesessions.View, session string, confirmed bool) error {
+	ctx := r.Context()
+	client, err := m.relayClient(r, mach.ID)
+	if err != nil {
+		return err
+	}
+	d, err := pwcode.GetSession(ctx, client, session)
+	var de *pwcode.DaemonError
+	if errors.As(err, &de) && de.Status == http.StatusNotFound {
+		return pwErr(404, "ACTIVATE does not reach this session on "+mach.Name+" for you now. You can still read it on the Code page, and Approve or Deny what it waits on, when its machine answers.")
+	} else if err != nil {
+		return pwErr(502, "ACTIVATE did not read the session on "+mach.Name+": "+apiMessage(err)+" You can still read it on the Code page, or open it in ACTIVATE.")
+	}
+	if jsonv.String(jsonv.Path(d, "archivedAt")) != "" {
+		return pwErr(409, archivedWhy)
+	}
+	workspace := jsonv.String(jsonv.Path(d, "workspace"))
+	status, liveHost := jsonv.String(jsonv.Path(d, "status")), jsonv.String(jsonv.Path(d, "liveHost"))
+	if !confirmed {
+		return reqbody.OK(w, reqbody.O("confirm", relayConfirm(mach.Name, workspace, status, liveHost, m.A.Cfg.AuthEnabled()), "status", status, "title", v.Title, "relay", true,
+			"studioTools", m.bridgeOffer(r, bridgeMach{ID: mach.ID, Kind: mach.Kind, Name: mach.Name, Owner: mach.Owner})))
+	}
+	model := jsonv.String(jsonv.Path(d, "model"))
+	link := &conversations.PWCodeLink{Site: pwcode.RelaySite(mach.ID), Relay: true, Session: session, Workspace: workspace,
+		URL: v.URL, Model: model, CreatedAt: m.Conv.Now(), Continued: true, Machine: mach.ID, MachineName: mach.Name}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	hist, dropped := continuedHistory(jsonv.Arr(jsonv.Path(d, "history")), model, now)
+	note := conversations.Message{ID: fmt.Sprintf("note-continued-%d", time.Now().UnixMilli()), Role: "assistant", Content: sp(continueNote(v, dropped, relayNote(mach.Name))), Timestamp: now}
+	if len(hist) > 0 {
+		hist[0].ParentID = &note.ID
+	}
+	msgs := append([]conversations.Message{note}, hist...)
+	link.LastMessage = msgs[len(msgs)-1].ID
+	owner := ""
+	if u := user(r); u != nil {
+		owner = u.Username
+	}
+	title := v.Title
+	c := m.Conv.CreateWith(&title, owner, msgs, link)
+	m.A.Log.Info("pw code chat: continued a session on another machine through the platform", "session", session, "conversation", c.ID, "status", status)
+	return reqbody.OK(w, reqbody.O("conversationId", c.ID, "relay", true,
+		"tools", reqbody.O("connected", false, "count", 0, "note", "This session runs on "+mach.Name+" and keeps its own tools there, not the Studio's library tools.")))
+}

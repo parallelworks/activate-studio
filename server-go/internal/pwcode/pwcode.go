@@ -169,26 +169,156 @@ func Request(ctx context.Context, client Doer, method, route string, body any, t
 		}
 	}
 	if res.StatusCode >= 400 {
-		detail := ""
-		if o := jsonv.Obj(parsed); o != nil {
-			d, _ := o.Get("detail")
-			t, _ := o.Get("title")
-			switch {
-			case jsonv.Truthy(d):
-				detail = jsonv.String(d)
-			case jsonv.Truthy(t):
-				detail = jsonv.String(t)
-			}
-		}
-		if detail == "" {
-			detail = sliceRunes(string(text), 200)
-		}
-		if detail == "" {
-			detail = strconv.Itoa(res.StatusCode)
-		}
-		return nil, &DaemonError{Message: "pw code daemon: " + detail, Status: res.StatusCode}
+		return nil, statusError(res.StatusCode, parsed, text)
 	}
 	return parsed, nil
+}
+
+// statusError is a daemon's refusal, worded from its problem's detail or
+// title, else its body.
+func statusError(status int, parsed any, text []byte) error {
+	detail := ""
+	if o := jsonv.Obj(parsed); o != nil {
+		d, _ := o.Get("detail")
+		t, _ := o.Get("title")
+		switch {
+		case jsonv.Truthy(d):
+			detail = jsonv.String(d)
+		case jsonv.Truthy(t):
+			detail = jsonv.String(t)
+		}
+	}
+	if detail == "" {
+		detail = sliceRunes(string(text), 200)
+	}
+	if detail == "" {
+		detail = strconv.Itoa(status)
+	}
+	return &DaemonError{Message: "pw code daemon: " + detail, Status: status}
+}
+
+// Bytes is an answer whose body is not JSON, such as an image, as it came.
+type Bytes struct {
+	Type string
+	Body []byte
+}
+
+// ByteGetter is a Client that can also read a body that is not JSON.
+type ByteGetter interface {
+	GetBytes(ctx context.Context, route string, max int64) (*Bytes, error)
+}
+
+// RequestBytes is a GET through client whose answer is kept as it came, up
+// to max bytes; a longer one is refused rather than cut.
+func RequestBytes(ctx context.Context, client Doer, route string, max int64) (*Bytes, error) {
+	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, "http://daemon"+route, nil)
+	if err != nil {
+		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error()}
+	}
+	req.Host = "daemon"
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, transportError(cctx, err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, max+1))
+	if err != nil {
+		return nil, transportError(cctx, err)
+	}
+	if res.StatusCode >= 400 {
+		parsed, _ := jsonv.Decode(body)
+		return nil, statusError(res.StatusCode, parsed, body)
+	}
+	if int64(len(body)) > max {
+		return nil, &DaemonError{Message: "pw code daemon: the answer is larger than the Studio passes on", Status: http.StatusBadGateway}
+	}
+	return &Bytes{Type: res.Header.Get("Content-Type"), Body: body}, nil
+}
+
+// Stream is an answer handed on as it arrives: its media type, and its
+// body, which the caller closes.
+type Stream struct {
+	Type string
+	Body io.ReadCloser
+}
+
+// StreamGetter is a Client that can hand a GET's answer on as it arrives,
+// for a large one whose start is of use before its end: a transcript the
+// daemon answers tail first.
+type StreamGetter interface {
+	GetStream(ctx context.Context, route string) (*Stream, error)
+}
+
+// streamLimit is how long a streamed answer may take in all, so a stalled
+// machine or relay never holds the request open.
+var streamLimit = 2 * time.Minute
+
+// RequestStream is a GET through client whose body is handed back unread.
+// A refusal (a status of 400 or more) is read and returned as the daemon's
+// error, as Request returns it.
+func RequestStream(ctx context.Context, client Doer, route string) (*Stream, error) {
+	cctx, cancel := context.WithTimeout(ctx, streamLimit)
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, "http://daemon"+route, nil)
+	if err != nil {
+		cancel()
+		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error()}
+	}
+	req.Host = "daemon"
+	req.Header.Set("Accept", "application/json")
+	res, err := client.Do(req)
+	if err != nil {
+		cancel()
+		return nil, transportError(cctx, err)
+	}
+	if res.StatusCode >= 400 {
+		defer cancel()
+		defer res.Body.Close()
+		text, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+		parsed, _ := jsonv.Decode(text)
+		return nil, statusError(res.StatusCode, parsed, text)
+	}
+	return &Stream{Type: res.Header.Get("Content-Type"), Body: cancelOnClose{res.Body, cancel}}, nil
+}
+
+// cancelOnClose ends a streamed request's deadline with its body.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
+}
+
+// GetStream hands on a GET's answer from this host's daemon as it arrives.
+func (l *localClient) GetStream(ctx context.Context, route string) (*Stream, error) {
+	sock := l.s.SocketPath()
+	client := &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", sock)
+		},
+		// The connection closes with the body.
+		DisableKeepAlives: true,
+	}}
+	return RequestStream(ctx, client, route)
+}
+
+func (l *localClient) GetBytes(ctx context.Context, route string, max int64) (*Bytes, error) {
+	sock := l.s.SocketPath()
+	client := &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", sock)
+		},
+		DisableKeepAlives: true,
+	}}
+	defer client.CloseIdleConnections()
+	return RequestBytes(ctx, client, route, max)
 }
 
 // transportError is how Node's request reports a connection that failed:
@@ -308,6 +438,11 @@ func (s *Service) EnsureDaemon(ctx context.Context) (*jsonv.Object, error) {
 
 func (s *Service) ensure(ctx context.Context) (*jsonv.Object, error) {
 	st := s.Status(ctx, nil)
+	if st == nil && s.p.Stopped() {
+		// Started by the Studio, the daemon would run on the pw CLI's
+		// sign-in, which the Studio was told to stop using.
+		return nil, &DaemonError{Message: "The Studio is not using the pw CLI, so it does not start pw code. Choose Use it again under Settings, Accounts."}
+	}
 	if st == nil {
 		args := []string{"code", "daemon", "start"}
 		if c := s.p.PWContext(); c != "" {

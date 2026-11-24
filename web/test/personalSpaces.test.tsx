@@ -18,10 +18,23 @@ function stub(route: Route) {
     const method = init?.method ?? 'GET'
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
     calls.push({ method, url, body })
-    return route(method, url, body) ?? json({ error: `no route for ${method} ${url}` }, 404)
+    return route(method, url, body) ?? (url === '/api/user-libraries/pw/systems' ? json(HOME_SYSTEMS) : json({ error: `no route for ${method} ${url}` }, 404))
   }))
   return calls
 }
+
+// The viewer's clusters on a Studio cluster-a hosts.
+const HOME_SYSTEMS = { usable: true, why: null, error: null, systems: [
+  { name: 'cluster-a', label: 'cluster-a', status: 'active', running: true, type: null },
+] }
+const choose = async (name: string) => {
+  fireEvent.click(await screen.findByRole('combobox'))
+  const o = await screen.findByRole('option', { name })
+  fireEvent.pointerDown(o)
+  fireEvent.click(o)
+}
+/** The Studio's own cluster is never chosen for the person: they choose it. */
+const chooseHome = () => choose('cluster-a, where this Studio runs running')
 
 const button = (name: string) => screen.getByRole('button', { name })
 const STATUS = { available: true, why: '', cluster: 'cluster-a', suggested: '~/studio', spaces: [] }
@@ -59,13 +72,14 @@ describe('a space of one\'s own', () => {
       if (u === '/api/me/platform-sign-in' && m === 'POST') { signedIn = true; return json({ state: 'signed-in', account: 'ada', host: 'platform.example.com' }) }
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText('A folder on a remote computer needs your ACTIVATE sign-in')).toBeInTheDocument()
+    expect(await screen.findByText('Sign in with ACTIVATE to use this')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Make the folder' })).toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
     expect(await screen.findByLabelText('Folder')).toHaveValue('~/studio')
+    await chooseHome()
     // Said once, by the form around it, not again in the folder's form
     // (phase 4, K).
-    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-a, with your ACTIVATE sign-in')
+    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-a, where this Studio runs, with your ACTIVATE sign-in')
     expect(screen.queryByText(/^Reached on/)).toBeNull()
   })
 
@@ -79,11 +93,12 @@ describe('a space of one\'s own', () => {
   it('offers the sign-in again when the platform refuses the credential', async () => {
     stub((m, u) => {
       if (u === '/api/user-libraries/space' && m === 'GET') return json({ ...STATUS, credential: 'key', signInOffered: true })
-      if (u === '/api/user-libraries/space/test') return json({ error: 'The platform refused the credential the Studio used for you on cluster-a (Unauthorized). Sign in with ACTIVATE under Settings, Model access, then try again.' }, 502)
+      if (u === '/api/user-libraries/space/test') return json({ error: 'The platform refused the credential the Studio used for you on cluster-a (Unauthorized). Sign in with ACTIVATE under Settings, Accounts, then try again.' }, 502)
       if (u === '/api/me/platform-sign-in') return json({ state: 'none', host: 'platform.example.com' })
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText(/with the API key you added under Settings, Model access/)).toBeInTheDocument()
+    expect(await screen.findByText(/with the API key you added under Settings, Accounts/)).toBeInTheDocument()
+    await chooseHome()
     fireEvent.click(button('Check the folder'))
     expect(await screen.findByText(/refused the credential/)).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' })).toBeInTheDocument()
@@ -100,6 +115,7 @@ describe('a space of one\'s own', () => {
     const folder = await screen.findByLabelText('Folder')
     expect(folder).toHaveValue('~/studio')
     expect(button('Make the folder')).toBeDisabled()
+    await chooseHome()
     fireEvent.click(button('Check the folder'))
     expect(await screen.findByText('Reached cluster-a as ada.')).toBeInTheDocument()
     fireEvent.click(button('Make the folder'))
@@ -112,7 +128,7 @@ describe('a space of one\'s own', () => {
     expect(button('Make the folder')).toBeDisabled()
   })
 
-  it('is made on the system chosen: the Studio\'s cluster first, another cluster, or a host over ssh where allowed', async () => {
+  it('is made on the system chosen: the Studio\'s cluster listed first but not chosen for them, another cluster, or a host over ssh where allowed', async () => {
     const SYSTEMS = { usable: true, why: null, error: null, systems: [
       { name: 'cluster-b', label: 'cluster-b', status: 'active', running: true, type: null },
       { name: 'cluster-a', label: 'cluster-a', status: 'active', running: true, type: null },
@@ -123,13 +139,19 @@ describe('a space of one\'s own', () => {
       if (u === '/api/user-libraries/space/test') return json(PASSED)
     })
     render(<AddLibrary options={{ buildHere: false, ssh: true, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('cluster-a'))
-    const pick = async (name: string) => {
-      fireEvent.click(screen.getByRole('combobox'))
-      const o = await screen.findByRole('option', { name })
-      fireEvent.pointerDown(o)
-      fireEvent.click(o)
-    }
+    // Nothing is chosen until the person chooses: the Studio's own cluster
+    // is not a default, and is not called a remote computer.
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('Choose a cluster'))
+    expect(button('Check the folder')).toBeDisabled()
+    expect(screen.queryByText(/Remote computer/)).toBeNull()
+    fireEvent.click(screen.getByRole('combobox'))
+    const names = (await screen.findAllByRole('option')).map(o => o.textContent)
+    expect(names[0]).toContain('cluster-a, where this Studio runs')
+    expect(names.join('|')).not.toContain("the Studio's cluster")
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    const pick = choose
+    await pick('cluster-a, where this Studio runs running')
+    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-a, where this Studio runs, with your ACTIVATE sign-in')
     fireEvent.click(button('Check the folder'))
     await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ cluster: 'cluster-a', sourceRoot: '~/studio' }))
     await pick('cluster-b running')
@@ -150,6 +172,7 @@ describe('a space of one\'s own', () => {
       }
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={vi.fn()} />)
+    await chooseHome()
     expect(await screen.findByText(/Folders shared with you on cluster-a could not be checked: cluster-a did not answer within 20 seconds\./)).toBeInTheDocument()
     expect(screen.queryByText(/Nothing is shared with your account yet/)).not.toBeInTheDocument()
   })
@@ -165,6 +188,7 @@ describe('a space of one\'s own', () => {
     const onAdded = vi.fn()
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={onAdded} />)
     // Picking a system as oneself also lists what others shared there.
+    await chooseHome()
     expect(await screen.findByRole('heading', { name: 'Shared with you on cluster-a' })).toBeInTheDocument()
     const table = await screen.findByRole('table', { name: 'Shared with me' })
     expect(within(table).getByText('ada, for team')).toBeInTheDocument()

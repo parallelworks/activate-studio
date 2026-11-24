@@ -109,7 +109,7 @@ func (s *routes) answerOnPlatform(r *http.Request, b approveBody, answer *jsonv.
 	case res.StatusCode >= 200 && res.StatusCode < 300:
 		return nil
 	case res.StatusCode == http.StatusUnauthorized:
-		return platform.KbError(401, "The platform refused your credential; sign in again, or renew your API key under Settings, Model access.")
+		return platform.KbError(401, "The platform refused your credential; sign in again, or renew your API key under Settings, Accounts.")
 	case res.StatusCode == http.StatusConflict:
 		return platform.KbError(409, "That approval is no longer waiting: the session went on, or someone answered it.")
 	case res.StatusCode == http.StatusNotFound:

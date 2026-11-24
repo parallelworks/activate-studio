@@ -83,11 +83,18 @@ func csvSheet(content string) ([]Sheet, error) {
 }
 
 func jsonSheets(t string) ([]Sheet, error) {
-	dec := json.NewDecoder(strings.NewReader(t))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil, fmt.Errorf("reading the JSON: %v", err)
+	v, err := decodeRows(t)
+	if err != nil {
+		// JSON that only lacks its last closing brackets (]]} where
+		// ]]}]} was meant) is read with them added.
+		if closed, ok := CloseJSON(t); ok {
+			if v2, err2 := decodeRows(closed); err2 == nil {
+				v, err = v2, nil
+			}
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading the JSON: %v. A workbook's JSON is {\"sheets\":[{\"name\":\"...\",\"rows\":[[...],[...]]}]}", err)
 	}
 	switch x := v.(type) {
 	case map[string]any:
@@ -113,6 +120,11 @@ func jsonSheets(t string) ([]Sheet, error) {
 		}
 		return out, nil
 	case []any:
+		// A flat list of values is one row, as a model adding a single
+		// row sends it.
+		if len(x) > 0 && allScalars(x) {
+			return []Sheet{{Rows: [][]any{x}}}, nil
+		}
 		rows, err := rowsOf(x, nil)
 		if err != nil {
 			return nil, err
@@ -120,6 +132,94 @@ func jsonSheets(t string) ([]Sheet, error) {
 		return []Sheet{{Rows: rows}}, nil
 	}
 	return nil, fmt.Errorf("the JSON is not rows")
+}
+
+func decodeRows(t string) (any, error) {
+	dec := json.NewDecoder(strings.NewReader(t))
+	dec.UseNumber()
+	var v any
+	err := dec.Decode(&v)
+	return v, err
+}
+
+func allScalars(xs []any) bool {
+	for _, x := range xs {
+		switch x.(type) {
+		case []any, map[string]any:
+			return false
+		}
+	}
+	return true
+}
+
+// CloseJSON adds the closing brackets JSON text lacks at its end: the
+// brackets and braces still open, closed in order. ok is false when none
+// are missing, when the text ends inside a string, or when a closer does
+// not match what is open (a mistake inside the text, not at its end).
+func CloseJSON(s string) (string, bool) {
+	var open []byte
+	in := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if in {
+			switch c {
+			case '\\':
+				i++
+			case '"':
+				in = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			in = true
+		case '{', '[':
+			open = append(open, c)
+		case '}', ']':
+			if len(open) == 0 {
+				return s, false
+			}
+			want := byte('{')
+			if c == ']' {
+				want = '['
+			}
+			if open[len(open)-1] != want {
+				return s, false
+			}
+			open = open[:len(open)-1]
+		}
+	}
+	if in || len(open) == 0 {
+		return s, false
+	}
+	t := strings.TrimRight(s, " \t\r\n")
+	if strings.HasSuffix(t, ",") || strings.HasSuffix(t, ":") {
+		return s, false
+	}
+	var b strings.Builder
+	b.WriteString(t)
+	for i := len(open) - 1; i >= 0; i-- {
+		if open[i] == '{' {
+			b.WriteByte('}')
+		} else {
+			b.WriteByte(']')
+		}
+	}
+	return b.String(), true
+}
+
+// Held is what each sheet of a workbook holds ("Items, 20 rows after the
+// header"), or nil when it cannot be read.
+func Held(data []byte) []string {
+	sheets, err := readSheets(data)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, s := range sheets {
+		out = append(out, held(s.Name, len(s.Rows)))
+	}
+	return out
 }
 
 // rowsOf takes rows as arrays, or as objects whose keys (in the order the
@@ -217,11 +317,143 @@ func cellValue(v any) any {
 	return fmt.Sprint(v)
 }
 
-func renderXLSX(content string) ([]byte, int, error) {
+func renderXLSX(content string) ([]byte, []string, error) {
+	data, says, _, err := RenderXLSXUpTo(content, 0)
+	return data, says, err
+}
+
+// RenderXLSXUpTo makes a workbook from content as Render does, keeping at
+// most limit rows after the header when it has one sheet (0 keeps all).
+// dropped is how many rows past limit were left out.
+func RenderXLSXUpTo(content string, limit int) (data []byte, says []string, dropped int, err error) {
 	sheets, err := Sheets(content)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
+	if limit > 0 && len(sheets) == 1 && len(sheets[0].Rows)-1 > limit {
+		dropped = len(sheets[0].Rows) - 1 - limit
+		sheets[0].Rows = sheets[0].Rows[:limit+1]
+	}
+	data, says, err = workbook(sheets)
+	return data, says, dropped, err
+}
+
+// held says what a sheet holds, for the model to check against what was
+// asked: "Sales, 49 rows after the header".
+func held(name string, rows int) string {
+	if rows <= 0 {
+		return name + ", empty"
+	}
+	n := rows - 1
+	if n == 0 {
+		return name + ", 0 rows after the header: the header only"
+	}
+	return fmt.Sprintf("%s, %d row%s after the header", name, n, plural(n))
+}
+
+// AppendXLSX adds the rows of content (in any form Sheets reads) to the
+// workbook existing: each part's rows go under the sheet of the same name
+// (a part with no name, or the only sheet's, goes to the first sheet), and
+// a part whose first row repeats that sheet's header does not add it
+// again; a part naming a new sheet adds that sheet. The workbook is made
+// again from its rows, so its header, widths and filter cover them all.
+// rows is how many rows were added. When limit is over 0 and the workbook
+// has one sheet, rows past limit after the header are not added; dropped
+// is how many of this part's rows were left out. Rows it already held
+// stay.
+func AppendXLSX(existing []byte, content string, limit int) (data []byte, sheets []string, rows, dropped int, err error) {
+	parts, err := Sheets(content)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	have, err := readSheets(existing)
+	if err != nil {
+		return nil, nil, 0, 0, fmt.Errorf("reading the workbook to add to: %v", err)
+	}
+	before := 0
+	if len(have) == 1 {
+		before = len(have[0].Rows)
+	}
+	for _, p := range parts {
+		i := -1
+		for k, h := range have {
+			if strings.EqualFold(strings.TrimSpace(h.Name), strings.TrimSpace(p.Name)) {
+				i = k
+			}
+		}
+		if i < 0 && (strings.TrimSpace(p.Name) == "" || len(have) == 1 && len(parts) == 1) && len(have) > 0 {
+			i = 0
+		}
+		if i < 0 {
+			have = append(have, p)
+			rows += len(p.Rows)
+			continue
+		}
+		add := p.Rows
+		if len(add) > 0 && len(have[i].Rows) > 0 && sameRow(add[0], have[i].Rows[0]) {
+			add = add[1:]
+		}
+		have[i].Rows = append(have[i].Rows, add...)
+		rows += len(add)
+	}
+	if limit > 0 && len(have) == 1 && len(have[0].Rows)-1 > limit {
+		keep := max(limit+1, before)
+		dropped = len(have[0].Rows) - keep
+		have[0].Rows = have[0].Rows[:keep]
+		rows -= dropped
+	}
+	data, sheets, err = workbook(have)
+	return data, sheets, rows, dropped, err
+}
+
+// readSheets is a workbook's sheets as rows: values as their text (typed
+// again when written), a formula as =formula.
+func readSheets(b []byte) ([]Sheet, error) {
+	f, err := excelize.OpenReader(bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var out []Sheet
+	for _, name := range f.GetSheetList() {
+		grid, err := f.GetRows(name)
+		if err != nil {
+			return nil, err
+		}
+		s := Sheet{Name: name}
+		for r, row := range grid {
+			var cells []any
+			for c, v := range row {
+				cell, _ := excelize.CoordinatesToCellName(c+1, r+1)
+				if fm, _ := f.GetCellFormula(name, cell); fm != "" {
+					cells = append(cells, "="+fm)
+					continue
+				}
+				cells = append(cells, v)
+			}
+			s.Rows = append(s.Rows, cells)
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+func sameRow(a, b []any) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if strings.TrimSpace(fmt.Sprint(a[i])) != strings.TrimSpace(fmt.Sprint(b[i])) {
+			return false
+		}
+	}
+	return true
+}
+
+// workbook writes sheets as an .xlsx: the first row of each the header.
+// held is what each sheet holds, by its name in the workbook.
+func workbook(sheets []Sheet) ([]byte, []string, error) {
+	var says []string
 	f := excelize.NewFile()
 	defer f.Close()
 	used := map[string]bool{}
@@ -244,12 +476,13 @@ func renderXLSX(content string) ([]byte, int, error) {
 			name = string([]rune(base)[:min(len([]rune(base)), 31-len(suffix))]) + suffix
 		}
 		used[strings.ToLower(name)] = true
+		says = append(says, held(name, len(s.Rows)))
 		if i == 0 {
 			if err := f.SetSheetName("Sheet1", name); err != nil {
-				return nil, 0, err
+				return nil, nil, err
 			}
 		} else if _, err := f.NewSheet(name); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		cols := 0
 		widths := map[int]int{}
@@ -259,14 +492,14 @@ func renderXLSX(content string) ([]byte, int, error) {
 				cell, _ := excelize.CoordinatesToCellName(c+1, r+1)
 				if str, ok := v.(string); ok && strings.HasPrefix(str, "=") && len(str) > 1 {
 					if err := f.SetCellFormula(name, cell, str[1:]); err != nil {
-						return nil, 0, err
+						return nil, nil, err
 					}
 					widths[c] = max(widths[c], 10)
 					continue
 				}
 				val := cellValue(v)
 				if err := f.SetCellValue(name, cell, val); err != nil {
-					return nil, 0, err
+					return nil, nil, err
 				}
 				widths[c] = max(widths[c], utf8.RuneCountInString(fmt.Sprint(val)))
 			}
@@ -289,7 +522,7 @@ func renderXLSX(content string) ([]byte, int, error) {
 	}
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	return buf.Bytes(), len(sheets), nil
+	return buf.Bytes(), says, nil
 }

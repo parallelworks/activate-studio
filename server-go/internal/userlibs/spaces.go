@@ -475,7 +475,7 @@ func (m *Module) pwSpaceTarget(w who, owner, site string) (*spaceTarget, error) 
 		if owner == single {
 			return nil, apierr.New(409, "The pw CLI on this computer is not signed in. Run pw auth, then try again.")
 		}
-		return nil, apierr.New(409, "A folder of your own on a remote computer is reached with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Model access, then come back here.")
+		return nil, apierr.New(409, "A folder of your own on a remote computer is reached with your ACTIVATE sign-in. Sign in with ACTIVATE under Settings, Accounts, then come back here.")
 	}
 	name := remote.ShortName(site)
 	return &spaceTarget{owner: owner, site: site, key: key, transport: "pw", name: name,

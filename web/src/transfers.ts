@@ -107,6 +107,24 @@ export async function startPathJob(
   try {
     for (let i = 0; i < paths.length && !p.indexError; i += PATHS_PER_JOB) {
       const job = await start(paths.slice(i, i + PATHS_PER_JOB))
+      // A server that did the work at once answers what it did, not a job
+      // to watch (an older Studio's for a person's space): taken as done.
+      // An answer that is neither says why, rather than a poll of a job
+      // that never started.
+      if (typeof job?.id !== 'number') {
+        const r = job as unknown as { skipped?: { path: string; reason: string }[]; moved?: unknown; copied?: unknown; deleted?: unknown; indexMs?: number; error?: string } | null
+        if (!r || (r.moved === undefined && r.copied === undefined && r.deleted === undefined)) {
+          throw new Error(r?.error ?? `the ${kind} did not start`)
+        }
+        const skipped = r.skipped ?? []
+        const n = Math.min(PATHS_PER_JOB, paths.length - i)
+        p.failed.push(...skipped.map(x => ({ name: x.path, error: x.reason })))
+        p.done = i + n - skipped.length
+        p.indexMs += r.indexMs ?? 0
+        treeChanged()
+        update(id, p)
+        continue
+      }
       let landed = false
       for (;;) {
         await new Promise(r => setTimeout(r, 500))

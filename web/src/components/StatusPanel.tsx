@@ -220,10 +220,10 @@ export function connectionLines(o: {
   const rows: ConnLine[] = []
   if (o.platform) {
     rows.push(o.ai?.platformAccess === false
-      ? { key: 'platform', kind: 'platform', name: 'Platform', meta: 'your key does not reach it', tone: 'warning', onClick: () => go('#view=settings:access') }
+      ? { key: 'platform', kind: 'platform', name: 'Platform', meta: 'your key does not reach it', tone: 'warning', onClick: () => go('#view=settings:accounts') }
       : { key: 'platform', kind: 'platform', name: 'Platform', meta: 'connected', tone: 'success' })
   } else if (o.authEnabled) {
-    rows.push({ key: 'platform', kind: 'platform', name: 'Platform', meta: 'needs your key', tone: 'warning', onClick: () => go('#view=settings:access') })
+    rows.push({ key: 'platform', kind: 'platform', name: 'Platform', meta: 'sign in with ACTIVATE to use it', tone: 'warning', onClick: () => go('#view=settings:accounts') })
   }
   for (const m of o.mcp ?? []) {
     const key = `mcp:${m.name}`

@@ -10,7 +10,34 @@ export interface ApprovalAlternative { tool: string; label: string; description?
 /** The location a held save_transfer_location call would save. */
 export interface HeldLocation { label: string; host: string; root: string; rsyncPath?: string; port?: number; sshOptions?: string }
 
-type HeldApproval = ApprovalPart & { instead?: ApprovalAlternative[]; transfer?: HeldTransfer; savedLocation?: HeldLocation }
+/** A place a held write may go: the person picks one, and the answer
+ *  carries the call with that library and path (args), which the server
+ *  checks against the places it offered. */
+export interface WhereOption { label: string; library: string; path: string; shown: string; args: string }
+
+type HeldApproval = ApprovalPart & { instead?: ApprovalAlternative[]; transfer?: HeldTransfer; savedLocation?: HeldLocation; where?: WhereOption[] }
+
+/** Asks where a new file goes when the chat's context does not say: a
+ *  button for each place, with the path it would get, and one to not save. */
+function WhereChoice({ held, onPick }: { held: HeldApproval; onPick: (o: WhereOption | null) => void }) {
+  return (
+    <section className="chat-xfer" aria-label={held.header ?? 'Where should this be saved?'} data-testid="chat-where">
+      <p className="tool-approval-where-head"><strong>{held.header ?? 'Where should this be saved?'}</strong></p>
+      {held.reason && <p className="chat-xfer-muted">{held.reason}</p>}
+      <div className="tool-approval-where-options">
+        {(held.where ?? []).map(o => (
+          <div key={o.args} className="tool-approval-alt">
+            <Button variant="secondary" size="sm" onClick={() => onPick(o)}>{o.label}</Button>
+            <span className="tool-approval-alt-note chat-xfer-mono">{o.shown}</span>
+          </div>
+        ))}
+        <div className="tool-approval-alt">
+          <Button variant="ghost" size="sm" onClick={() => onPick(null)}>Don't save it</Button>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 /** The location the assistant asks to save, drawn above the approval
  *  buttons as the transfer plan is: its label, host and folder. */
@@ -65,6 +92,13 @@ export function ToolApproval({ part, onApprovalAnswer }: PartRendererProps) {
   const alternatives = answer && !held.resolved && !expired && held.approvalKind === 'confirm' ? held.instead ?? [] : []
   const transfer = held.transfer?.plan ? held.transfer : undefined
   const saved = held.savedLocation?.host ? held.savedLocation : undefined
+  if (held.where?.length && answer && !held.resolved && !expired) {
+    return (
+      <div className="tool-approval">
+        <WhereChoice held={held} onPick={o => answer(held.id, o ? { kind: 'confirm', allowed: true, args: o.args } : { kind: 'confirm', allowed: false })} />
+      </div>
+    )
+  }
   return (
     <div className="tool-approval">
       {transfer && !held.resolved && !expired && <ChatTransferPlan transfer={transfer} />}

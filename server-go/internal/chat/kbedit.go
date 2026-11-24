@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/docwrite"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 )
@@ -145,11 +146,11 @@ func (m *Module) libraryText(rel string, wait time.Duration) (string, string) {
 }
 
 // sourceText is the Markdown (or rows) a document is made from.
-func (m *Module) sourceText(rel string) (string, string) {
+func (m *Module) sourceText(p place, rel string) (string, string) {
 	if ext := strings.ToLower(filepath.Ext(rel)); docwrite.Handles(ext) || docwrite.Unsupported(ext) != "" {
 		return "", "source is a text file, such as the report's Markdown; " + rel + " is not one."
 	}
-	text, why := m.libraryText(rel, 3*time.Second)
+	text, why := p.text(rel, 3*time.Second)
 	if why == "" && strings.TrimSpace(text) == "" {
 		return "", rel + " is empty."
 	}
@@ -276,7 +277,7 @@ func applyEdits(text string, edits []textEdit) (string, int, string) {
 	return text, changed, ""
 }
 
-func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
+func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, tctx ToolCtx) (*Outcome, error) {
 	fail := func(result string) (*Outcome, error) {
 		return &Outcome{Result: result, Summary: "error", Failed: true}, nil
 	}
@@ -292,19 +293,27 @@ func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx)
 	if len(edits) == 0 && add == "" {
 		return fail("Give edits, a list of {find, replace}, or append, the text to add at the end.")
 	}
+	p, rel, _, _, err := m.toolPlace(r, tctx, args, rel, false)
+	if err != nil {
+		return fail(err.Error())
+	}
 	ext := strings.ToLower(filepath.Ext(rel))
 	if docwrite.Handles(ext) || docwrite.Unsupported(ext) != "" {
-		if rec, ok := m.made.get(rel); ok {
-			return fail(rel + " is made from " + rec.Source + ". Edit " + rec.Source + " with edit_kb_file and " + rel + " is made again.")
+		if rec, ok := m.made.get(p.key(rel)); ok {
+			src := p.unkey(rec.Source)
+			return fail(p.shown(rel) + " is made from " + p.shown(src) + ". Edit " + p.shown(src) + " with edit_kb_file and " + p.shown(rel) + " is made again.")
 		}
 		return fail("A " + ext + " file is not edited in place. Write it again with write_kb_file; or write the report as a Markdown file with also, so that later changes are edits to the Markdown.")
 	}
-	if kb.Default != nil {
-		if err := mainLibraryWritable(r); err != nil {
+	if kb.Default != nil || p.space {
+		if err := p.writable(); err != nil {
 			return fail(err.Error())
 		}
 	}
-	text, why := m.libraryText(rel, 0)
+	if err := p.check(rel); err != nil {
+		return fail(err.Error())
+	}
+	text, why := p.text(rel, 0)
 	if why != "" {
 		return fail(why)
 	}
@@ -322,21 +331,19 @@ func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx)
 		}
 	}
 	if next == text {
-		return &Outcome{Result: rel + " already reads that way; nothing was changed.", Summary: "no change"}, nil
+		return &Outcome{Result: p.shown(rel) + " already reads that way; nothing was changed.", Summary: "no change"}, nil
 	}
 	if len(next) > maxEditBytes {
 		return fail("The file would be over 2 MB; nothing was changed.")
 	}
-	abs, err := kb.Resolve(rel, m.A.Cfg.KBRoot)
-	if err != nil {
-		return fail(err.Error())
-	}
-	if err := m.writeLibraryFile(abs, []byte(next)); err != nil {
+	if err := p.write(rel, []byte(next)); err != nil {
+		if p.space {
+			return fail("Could not write " + p.shown(rel) + ": " + err.Error())
+		}
 		return nil, err
 	}
-	ix := kb.ProviderIndexer{A: m.A}
-	ms, _ := kb.ReindexForFile(r.Context(), ix, rel)
-	top := func(p string) string { return strings.SplitN(p, "/", 2)[0] }
+	m.note(tctx, p.id(), rel)
+	reindex := []string{rel}
 
 	// The documents made from this file, made again; one that was changed
 	// or replaced since is left as it is.
@@ -345,45 +352,43 @@ func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx)
 		imageDir = ""
 	}
 	var remade, left, missing, problems []string
-	links := []string{libraryLink(rel)}
-	roots := map[string]bool{top(rel): true}
-	for _, out := range m.made.from(rel) {
-		oabs, err := kb.Resolve(out, m.A.Cfg.KBRoot)
-		if err != nil {
-			m.made.drop(out)
+	links := []string{p.link(rel)}
+	for _, outKey := range m.made.from(p.key(rel)) {
+		out := p.unkey(outKey)
+		if p.check(out) != nil {
+			m.made.drop(outKey)
 			continue
 		}
-		rec, _ := m.made.get(out)
-		m.writeMu.Lock()
-		was, err := os.ReadFile(oabs)
-		m.writeMu.Unlock()
+		rec, _ := m.made.get(outKey)
+		was, err := p.read(out, 64<<20)
 		if err != nil {
-			m.made.drop(out)
+			m.made.drop(outKey)
 			continue
 		}
 		if sumOf(was) != rec.Sum {
-			m.made.drop(out)
+			m.made.drop(outKey)
 			left = append(left, out)
 			continue
 		}
-		doc, err := docwrite.Render(strings.ToLower(filepath.Ext(out)), next, libraryImages(m.A.Cfg.KBRoot, imageDir))
+		doc, err := docwrite.Render(strings.ToLower(filepath.Ext(out)), next, p.images(imageDir))
 		if err != nil {
 			left = append(left, out+" ("+err.Error()+")")
 			continue
 		}
-		if err := m.writeLibraryFile(oabs, doc.Data); err != nil {
+		if err := p.write(out, doc.Data); err != nil {
+			if p.space {
+				left = append(left, out+" ("+err.Error()+")")
+				continue
+			}
 			return nil, err
 		}
-		m.made.set(out, rel, doc.Data)
+		m.made.set(outKey, p.key(rel), doc.Data)
 		remade = append(remade, out+" ("+doc.Note+")")
-		links = append(links, libraryLink(out))
+		links = append(links, p.link(out))
 		missing, problems = addNew(missing, doc.Missing), addNew(problems, doc.Problems)
-		if !roots[top(out)] {
-			roots[top(out)] = true
-			more, _ := kb.ReindexForFile(r.Context(), ix, out)
-			ms += more
-		}
+		reindex = append(reindex, out)
 	}
+	ms := p.reindex(r.Context(), reindex...)
 	did := []string{}
 	if len(edits) > 0 {
 		did = append(did, itoaInt(changed)+" place"+pluralS(changed)+" changed")
@@ -391,7 +396,7 @@ func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx)
 	if add != "" {
 		did = append(did, "text added at the end")
 	}
-	res := "Edited " + rel + " (" + strings.Join(did, ", ") + "; " + itoaInt(len(next)) + " bytes) and re-indexed in " + itoaInt(int(ms)) + " ms."
+	res := "Edited " + p.shown(rel) + " (" + strings.Join(did, ", ") + "; " + itoaInt(len(next)) + " bytes) and re-indexed in " + itoaInt(int(ms)) + " ms."
 	if len(remade) > 0 {
 		res += " Made again from it: " + strings.Join(remade, ", ") + "."
 	}
@@ -412,7 +417,7 @@ func (m *Module) toolEditKBFile(r *http.Request, args map[string]any, _ ToolCtx)
 	} else {
 		res += " Link: " + links[0]
 	}
-	return &Outcome{Result: res, Summary: "edited " + rel}, nil
+	return &Outcome{Result: res, Summary: "edited " + p.shown(rel), Files: []conversations.File{p.file(rel)}}, nil
 }
 
 func pluralS(n int) string {

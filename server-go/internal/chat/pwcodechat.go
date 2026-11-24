@@ -161,10 +161,18 @@ type pwTarget struct {
 	// chatModel is the model chosen under the message box, which a
 	// session moves to when its own is not offered (pwcodemodel.go);
 	// modelMoved says the session moved for this message.
-	chatModel  string
-	modelMoved bool
+	chatModel string
+	// picked is the pw code model (and the allocation that bills it, nil
+	// for none given) the person chose in a new pw code chat before its
+	// first message, which its session is made with.
+	picked      string
+	pickedAlloc *string
+	modelMoved  bool
 	// modelStuck says the session should have moved and could not.
 	modelStuck bool
+	// relay: the session is on another machine, reached through the
+	// platform (pwcoderelay.go).
+	relay bool
 }
 
 func pwErr(status int, msg string) error { return &apierr.Error{Status: status, Message: msg} }
@@ -208,14 +216,14 @@ func (m *Module) pwcodeCheck(ctx context.Context, r *http.Request) (string, time
 			return "Sign in to use pw code.", time.Minute
 		}
 		if m.viewerPlatformKey(r) == "" {
-			return "pw code runs as you: sign in with ACTIVATE under Settings, Model access.", time.Minute
+			return "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.", time.Minute
 		}
 		if userlibs.HomeCluster() == "" {
 			return "This Studio does not know the cluster it runs on (STUDIO_HOME_CLUSTER), so it cannot reach your pw code.", time.Minute
 		}
 		return "", time.Minute
 	}
-	needs := "pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Model access."
+	needs := "pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Accounts."
 	if f := m.A.Providers.PlatformAvailable; f == nil || !f(r, userID(r)) || m.GatewayKey() == "" {
 		return needs, time.Minute
 	}
@@ -253,13 +261,20 @@ func (m *Module) engineFor(r *http.Request, asked, convID string) (string, error
 	setting := m.eff().ChatEngine
 	// A chat that continues a pw code session is answered there unless the
 	// person chose the Studio assistant for it.
-	continued := false
+	continued, relayed := false, false
 	if c := m.Conv.Get(convID); asked == "" && c != nil && c.PWCode != nil && c.PWCode.Continued {
-		continued = true
+		continued, relayed = true, c.PWCode.Relay
 	}
 	switch {
 	case asked == engineStudio:
 		return engineStudio, nil
+	case relayed:
+		// The session runs on another machine: what it needs is the relay,
+		// not this Studio's own pw code.
+		if why := m.relayUnavailable(r); why != "" {
+			return "", pwErr(409, why)
+		}
+		return enginePWCode, nil
 	case asked == enginePWCode || continued || (asked == "" && setting == enginePWCode):
 		if why := m.pwcodeUnavailable(r.Context(), r); why != "" {
 			return "", pwErr(409, why)
@@ -274,15 +289,32 @@ func (m *Module) engineFor(r *http.Request, asked, convID string) (string, error
 	return engineStudio, nil
 }
 
+// localPWCodeRefused says why this computer's pw code is not used, on a
+// Studio of one: it signs in with the computer's ACTIVATE login, so with
+// none, or after Stop using the pw CLI, nothing reaches it (a daemon
+// already running included).
+func (m *Module) localPWCodeRefused() error {
+	if m.pf != nil && !m.pf.HasActivate() {
+		return pwErr(409, "pw code needs ACTIVATE. Sign in with ACTIVATE under Settings, Accounts.")
+	}
+	return nil
+}
+
 // pwcodeTarget is the daemon and folder for a conversation's session: the
 // site and folder it already has, else the person's own (My library's
 // folder when it is on the Studio's cluster, else ~/studio-chat).
 func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conversations.PWCodeLink) (*pwTarget, error) {
+	if link != nil && link.Relay {
+		return m.relayTarget(r, link)
+	}
 	s := pwSites()
 	if s == nil {
 		return nil, pwErr(409, "pw code is not set up on this Studio.")
 	}
 	if !m.A.Cfg.AuthEnabled() {
+		if err := m.localPWCodeRefused(); err != nil {
+			return nil, err
+		}
 		if link != nil && link.Site == agentsites.Local && link.Workspace != "" {
 			return &pwTarget{client: s.Daemon.Local(), site: agentsites.Local, workspace: link.Workspace}, nil
 		}
@@ -294,7 +326,7 @@ func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conver
 	}
 	key := m.viewerPlatformKey(r)
 	if key == "" {
-		return nil, pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Model access.")
+		return nil, pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.")
 	}
 	site := userlibs.HomeCluster()
 	if site == "" {
@@ -427,6 +459,14 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 		if e.PWCodeModel != "" {
 			req.Set("model", e.PWCodeModel)
 		}
+		// The model the person chose before the first message wins over
+		// the Studio's, with the allocation that bills it.
+		if t.picked != "" {
+			req.Set("model", t.picked)
+			if t.pickedAlloc != nil {
+				req.Set("allocation", *t.pickedAlloc)
+			}
+		}
 		s, err := pwcode.CreateSession(ctx, t.client, req)
 		if err != nil {
 			return nil, false, err
@@ -521,6 +561,14 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if u := user(r); u != nil {
 		owner = u.Username
 	}
+	// pw code works as the chat's owner: another person's message to an
+	// existing chat does not start or reach a session there.
+	if old := m.Conv.Get(convID); old != nil {
+		if _, err := m.ownPWChat(r, convID); err != nil {
+			res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
+			return nil
+		}
+	}
 	m.Conv.RecordUserTurn(convID, msgID, content, body.ParentMessageID, owner)
 	fail := func(err error) error {
 		res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
@@ -548,6 +596,11 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		return fail(err)
 	}
 	t.chatModel = StripAvailabilityMark(jsString(body.Model))
+	// A pick is for the session a first message makes: one the chat has
+	// already keeps its own model.
+	if prior == nil || prior.Session == "" {
+		t.picked, t.pickedAlloc = strings.TrimSpace(deref(body.PWCodeModel)), body.PWCodeAllocation
+	}
 	if old := c.PWCode; old != nil && prior == nil && !old.Continued && old.Session != "" && old.Site == t.site {
 		_, _ = pwcode.ArchiveSession(ctx, t.client, old.Session)
 	}
@@ -571,7 +624,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	// The session's tool calls run in the scope of this message; the
 	// session is told of a scope it has not seen.
 	scopeNote := ""
-	if note := m.pwScope(r, body, link); note != link.ScopeNote || (fresh && note != "") {
+	if note := m.pwScope(r, body, link); !t.relay && (note != link.ScopeNote || (fresh && note != "")) {
 		link.ScopeNote = note
 		scopeNote = "Scope from the Studio's chat bar: " + firstNonEmpty(note, "the person's default libraries.") + "\n\n"
 	}
@@ -638,6 +691,9 @@ type pwTurn struct {
 	model    string
 	failed   string
 	finished bool
+	// stopped: the person stopped the turn (Stop), so its ending in an
+	// error is what they asked for (under m.pw.mu).
+	stopped bool
 }
 
 func (t *pwTurn) mine(ev *jsonv.Object) bool {
@@ -676,23 +732,23 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 	case "state":
 		if u := jsonv.String(jsonv.Path(ev, "state", "remoteUrl")); u != "" && u != t.link.URL {
 			t.link.URL = u
-			t.res.event("pwcode", reqbody.O("session", t.link.Session, "url", u, "site", t.link.Site, "workspace", t.link.Workspace, "model", t.link.Model, "modelNote", t.link.ModelNote))
+			t.emit("pwcode", reqbody.O("session", t.link.Session, "url", u, "site", t.link.Site, "workspace", t.link.Workspace, "model", t.link.Model, "modelNote", t.link.ModelNote))
 		}
 	case "chunk":
 		if t.mine(ev) {
 			s := str("content")
 			t.content.WriteString(s)
-			t.res.event("content", reqbody.O("text", s))
+			t.emit("content", reqbody.O("text", s))
 		}
 	case "reasoning":
 		if s := str("content"); s != "" && t.mine(ev) {
-			t.res.event("reasoning", reqbody.O("text", s))
+			t.emit("reasoning", reqbody.O("text", s))
 		}
 	case "tool_start":
 		if t.mine(ev) {
 			id, name := str("callId"), strings.TrimPrefix(str("name"), studioToolPrefix)
 			t.parts = append(t.parts, conversations.Part{Kind: "tool_call", ID: id, Name: name, Args: str("args"), Status: "running"})
-			t.res.event("tool", reqbody.O("phase", "call", "id", id, "name", name, "args", str("args")))
+			t.emit("tool", reqbody.O("phase", "call", "id", id, "name", name, "args", str("args")))
 		}
 	case "tool_end":
 		if t.mine(ev) {
@@ -710,7 +766,7 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 					t.parts[i].Result = &r
 				}
 			}
-			t.res.event("tool", reqbody.O("phase", "result", "id", id, "name", name, "summary", firstLine(result, 160), "error", bad))
+			t.emit("tool", reqbody.O("phase", "result", "id", id, "name", name, "summary", firstLine(result, 160), "error", bad))
 		}
 	case "approval_request":
 		a := jsonv.Obj(jsonv.Path(ev, "approval"))
@@ -721,14 +777,14 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 					a.Set(k, strings.TrimPrefix(v, studioToolPrefix))
 				}
 			}
-			t.res.event("pwcode_approval", reqbody.O("conversationId", t.convID, "session", t.link.Session, "url", t.link.URL, "approval", a))
+			t.emit("pwcode_approval", reqbody.O("conversationId", t.convID, "session", t.link.Session, "url", t.link.URL, "approval", a))
 		}
 	case "approval_resolved":
-		t.res.event("pwcode_approval_resolved", reqbody.O("conversationId", t.convID, "approvalId", str("approvalId")))
+		t.emit("pwcode_approval_resolved", reqbody.O("conversationId", t.convID, "approvalId", str("approvalId")))
 	case "warning":
 		if s := str("content"); strings.HasPrefix(s, "mcp studio:") {
 			t.m.A.Log.Warn("pw code chat: the Studio's MCP server did not connect", "session", t.link.Session, "detail", s)
-			t.res.event("reasoning", reqbody.O("text", "\n↳ the Studio's library tools did not connect to pw code\n"))
+			t.emit("reasoning", reqbody.O("text", "\n↳ the Studio's library tools did not connect to pw code\n"))
 		}
 	case "error":
 		if t.mine(ev) {
@@ -739,7 +795,7 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 		if t.mine(ev) {
 			if s := str("content"); s != "" {
 				if t.content.Len() == 0 {
-					t.res.event("content", reqbody.O("text", s))
+					t.emit("content", reqbody.O("text", s))
 				}
 				t.content.Reset()
 				t.content.WriteString(s)
@@ -759,9 +815,21 @@ func (t *pwTurn) finish() {
 	m := t.m
 	messageID := "pwc-" + strconv.FormatInt(time.Now().UnixMilli(), 10)
 	content := t.content.String()
+	m.pw.mu.Lock()
+	stopped := t.stopped
+	m.pw.mu.Unlock()
+	if stopped && t.failed != "" {
+		// A stopped turn ends with the daemon's error for it (its model
+		// call cancelled): it was stopped, not failed.
+		t.failed = ""
+		if strings.TrimSpace(content) == "" {
+			content = "Stopped."
+			t.emit("content", reqbody.O("text", content))
+		}
+	}
 	if t.failed != "" && strings.TrimSpace(content) == "" {
 		content = "pw code did not finish this reply: " + t.failed
-		t.res.event("content", reqbody.O("text", content))
+		t.emit("content", reqbody.O("text", content))
 	}
 	model := t.model
 	if model == "" {
@@ -785,7 +853,7 @@ func (t *pwTurn) finish() {
 			s = ""
 		}
 		reasoning = fmt.Sprintf("pw code ran %d tool call%s in %ds.", calls, s, int(max(1, time.Since(t.started).Round(time.Second).Seconds())))
-		t.res.event("reasoning", reqbody.O("text", reasoning))
+		t.emit("reasoning", reqbody.O("text", reasoning))
 	}
 	m.Conv.RecordAssistantTurn(t.convID, conversations.Message{
 		ID: messageID, Role: "assistant", Content: sp(content), ParentID: t.parent, Timestamp: nowISO(),
@@ -796,8 +864,10 @@ func (t *pwTurn) finish() {
 	if t.failed != "" {
 		m.A.Log.Warn("pw code chat turn did not finish", "session", t.link.Session, "why", t.failed)
 	}
-	t.res.event("done", reqbody.O("content", content, "finishReason", "stop", "model", shown, "messageId", messageID))
-	t.res.end()
+	t.emit("done", reqbody.O("content", content, "finishReason", "stop", "model", shown, "messageId", messageID))
+	if t.res != nil {
+		t.res.end()
+	}
 }
 
 // sliceRunes is s cut to n runes.
@@ -856,7 +926,10 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 				def = engineStudio
 			}
 		}
-		return reqbody.OK(w, reqbody.O("setting", setting, "default", def, "pwcode", why == "", "reason", reason, "toolsDown", tools))
+		// model is the one Settings names for pw code, which a new chat's
+		// session runs on unless the person picks another first ("" for
+		// pw code's own).
+		return reqbody.OK(w, reqbody.O("setting", setting, "default", def, "pwcode", why == "", "reason", reason, "toolsDown", tools, "model", m.eff().PWCodeModel))
 	})
 	// The conversation's pw code session as it is now: whether a turn is
 	// running, what it waits to be approved, and where it shows on the web,
@@ -882,7 +955,9 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		}
 		// How the session's studio server stands, for the chat bar's menu.
 		var tools any
-		if s, err := studioMCPState(r.Context(), t.client, c.PWCode.Session); err == nil && s != nil {
+		if t.relay {
+			tools = reqbody.O("connected", false, "count", 0, "relay", true)
+		} else if s, err := studioMCPState(r.Context(), t.client, c.PWCode.Session); err == nil && s != nil {
 			v, _ := s.Get("connected")
 			_, n := serverTools(s)
 			tools = reqbody.O("connected", jsonv.Truthy(v) && jsonv.String(jsonv.Path(s, "err")) == "", "count", n, "error", jsonv.String(jsonv.Path(s, "err")))
@@ -892,14 +967,28 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 			codePage = CodePageLink(c.PWCode.Machine, c.PWCode.Session)
 		}
 		return reqbody.OK(w, reqbody.O("session", c.PWCode.Session, "url", c.PWCode.URL, "status", jsonv.String(jsonv.Path(d, "status")),
-			"answering", m.following(c.ID), "approvals", approvals, "tools", tools, "continued", c.PWCode.Continued, "codePage", codePage, "model", c.PWCode.Model, "modelNote", c.PWCode.ModelNote))
+			"answering", m.following(c.ID), "approvals", approvals, "tools", tools, "continued", c.PWCode.Continued, "codePage", codePage, "model", c.PWCode.Model, "modelNote", c.PWCode.ModelNote,
+			"relay", c.PWCode.Relay, "machine", relayMachine(c.PWCode)))
 	})
 	h("POST /api/chat/pwcode/{id}/interrupt", func(w http.ResponseWriter, r *http.Request) error {
 		c, t, err := m.ownPWCode(r)
 		if err != nil {
 			return err
 		}
+		// The turn is marked before the session is stopped: its error for
+		// the stop can reach the chat before the interrupt is answered.
+		m.pw.mu.Lock()
+		turn := m.pw.turns[c.ID]
+		if turn != nil {
+			turn.stopped = true
+		}
+		m.pw.mu.Unlock()
 		if _, err := pwcode.InterruptSession(r.Context(), t.client, c.PWCode.Session); err != nil {
+			if turn != nil {
+				m.pw.mu.Lock()
+				turn.stopped = false
+				m.pw.mu.Unlock()
+			}
 			return err
 		}
 		return reqbody.OK(w, reqbody.O("ok", true))
@@ -920,12 +1009,37 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		var in struct {
 			Allowed bool   `json:"allowed"`
 			Message string `json:"message"`
+			// An ask's answers, one per question, or chat to talk them
+			// through instead; a plan's feedback with a rejection.
+			Answers []askAnswer `json:"answers"`
+			Chat    bool        `json:"chat"`
+			Kind    string      `json:"kind"`
+			// Mode is what an approved plan leaves plan mode into.
+			Mode string `json:"mode"`
 		}
 		if rb.Present {
 			_ = json.Unmarshal(rb.Raw, &in)
 		}
+		if in.Kind == "ask" {
+			answer, err := askAnswerBody(in.Answers, in.Chat)
+			if err != nil {
+				return err
+			}
+			if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
+				return err
+			}
+			return reqbody.OK(w, reqbody.O("ok", true))
+		}
 		answer := jsonv.NewObject("allowed", in.Allowed)
-		if !in.Allowed {
+		mode := ""
+		if in.Kind == "plan" && in.Allowed {
+			mode = planMode(in.Mode, t.relay)
+			answer.Set("mode", mode)
+		} else if in.Kind == "plan" && !in.Allowed {
+			if msg := sliceRunes(strings.TrimSpace(in.Message), 2000); msg != "" {
+				answer.Set("feedback", msg)
+			}
+		} else if !in.Allowed {
 			msg := sliceRunes(strings.TrimSpace(in.Message), 500)
 			if msg == "" {
 				msg = "Denied from the Studio."
@@ -935,8 +1049,46 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
 			return err
 		}
+		if mode != "" {
+			m.logModeChange(r, c, t, mode, "chat plan answer")
+		}
 		return reqbody.OK(w, reqbody.O("ok", true))
 	})
+}
+
+// planMode is the mode an approved plan's session leaves plan mode into.
+// pw code changes the mode only when the answer names one, so without it
+// the session stays in plan mode and refuses every edit. The direct path
+// takes auto, as the terminal's Approve does; through the relay the
+// machine refuses a mode above its remote ceiling, accept-edits unless its
+// owner widened it, so that is the default there.
+func planMode(asked string, relay bool) string {
+	switch asked {
+	case "auto", "accept-edits":
+		if !(relay && asked == "auto") {
+			return asked
+		}
+	}
+	if relay {
+		return "accept-edits"
+	}
+	return "auto"
+}
+
+// ownPWChat is the viewer's own chat id: 404 where they cannot see it, 403
+// where it is someone else's shared with them.
+func (m *Module) ownPWChat(r *http.Request, id string) (*conversations.Conversation, error) {
+	c, err := m.visibleChat(r, id)
+	if err != nil {
+		return nil, err
+	}
+	if m.A.Cfg.AuthEnabled() {
+		u := user(r)
+		if u == nil || c.Owner == nil || *c.Owner != u.Username {
+			return nil, pwErr(403, "Only the person whose chat this is can direct its pw code session.")
+		}
+	}
+	return c, nil
 }
 
 func approvalRe(s string) bool {
@@ -954,15 +1106,9 @@ func approvalRe(s string) bool {
 // ownPWCode is the viewer's own conversation with a pw code session, and
 // that session's daemon reached as them.
 func (m *Module) ownPWCode(r *http.Request) (*conversations.Conversation, *pwTarget, error) {
-	c, err := m.visibleChat(r, r.PathValue("id"))
+	c, err := m.ownPWChat(r, r.PathValue("id"))
 	if err != nil {
 		return nil, nil, err
-	}
-	if m.A.Cfg.AuthEnabled() {
-		u := user(r)
-		if u == nil || c.Owner == nil || *c.Owner != u.Username {
-			return nil, nil, pwErr(403, "Only the person whose chat this is can direct its pw code session.")
-		}
 	}
 	if c.PWCode == nil || c.PWCode.Session == "" {
 		return nil, nil, pwErr(409, "This chat has no pw code session.")
@@ -975,4 +1121,12 @@ func (m *Module) ownPWCode(r *http.Request) (*conversations.Conversation, *pwTar
 		return nil, nil, pwErr(409, "This chat's pw code session is on "+c.PWCode.Site+", which this Studio does not reach for you.")
 	}
 	return c, t, nil
+}
+
+// emit writes one event to the request following the turn, when one is:
+// a turn the Studio records in the background has none.
+func (t *pwTurn) emit(name string, payload any) {
+	if t.res != nil {
+		t.res.event(name, payload)
+	}
 }

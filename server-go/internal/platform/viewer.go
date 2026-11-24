@@ -295,11 +295,16 @@ func (p *Platform) SharedKeyLast4() string {
 	return e.Last4
 }
 
-// GatewayKey is gatewayKey(): the shared key, else PW_API_KEY, else the
-// pw CLI's credential.
+// GatewayKey is the deployment's own credential: PW_API_KEY (or
+// OPENAI_API_KEY), else the pw CLI's sign-in for the gateway's host; ""
+// after Stop using the pw CLI. On a Studio of one it is the owner's own.
+// On a Studio several people use it is the administrator's, and serves
+// only the Studio's housekeeping that acts as no person; work for a person
+// goes through KeyFor, which never gives it. A key someone shared with
+// the deployment (SharedKey) is no longer used.
 func (p *Platform) GatewayKey() string {
-	if k := p.SharedKey(); k != "" {
-		return k
+	if p.Stopped() {
+		return ""
 	}
 	if p.apiKey != "" {
 		return p.apiKey
@@ -307,11 +312,42 @@ func (p *Platform) GatewayKey() string {
 	return p.CLICredential()
 }
 
-// KeyFor is platformKeyFor / sessionKeyFor: the viewer's own platform key,
-// else the deployment's; own says which.
+// HasActivate says whether this computer gives the Studio an ACTIVATE
+// credential: PW_API_KEY, or a pw CLI context that holds a sign-in, a token
+// or a key (the one for the gateway's platform, else the CLI's current
+// one). False after Stop using the pw CLI. It reads no token and renews
+// nothing, so it is cheap to ask on every request.
+func (p *Platform) HasActivate() bool {
+	if p.Stopped() {
+		return false
+	}
+	if p.apiKey != "" {
+		return true
+	}
+	s := p.ReadStore()
+	holds := func(name string) bool {
+		i, ok := s.identity(name)
+		return ok && (i.Token != "" || i.APIKey != "" || i.OAuth != nil)
+	}
+	if n := p.CredentialContextName(); n != "" && holds(n) {
+		return true
+	}
+	if n := p.ActiveContextName(); n != "" && holds(n) {
+		return true
+	}
+	return false
+}
+
+// KeyFor is the platform key work for the viewer runs with: their own
+// sign-in or key; on a Studio of one, without either, the owner's
+// (GatewayKey), with own false. On a Studio several people use it is never
+// the deployment's: "" without a credential of the person's own.
 func (p *Platform) KeyFor(v *Viewer) (key string, own bool) {
 	if k := v.PlatformKey(); k != "" {
 		return k, true
+	}
+	if (v != nil && v.AuthEnabled) || p.AuthEnabled() {
+		return "", false
 	}
 	return p.GatewayKey(), false
 }

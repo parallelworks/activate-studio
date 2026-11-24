@@ -15,13 +15,21 @@ describe('delimited files', () => {
     expect(detectDelimiter('a,b\n1,2\n', '.csv')).toBe(',')
     expect(detectDelimiter('a,b\tc\n', '.tsv')).toBe('\t')
   })
-  it('sorts a numeric column as numbers and filters rows', () => {
+  it('shows the file in the grid, with its header frozen, and sorts a numeric column as numbers and filters rows', () => {
     render(<CsvTable text={'item,count\nbolt,10\nnut,9\nwasher,100\n'} suffix=".csv" />)
-    fireEvent.click(screen.getByRole('button', { name: /count/ }))
-    const firstCol = () => [...document.querySelectorAll('tbody tr')].map(r => r.children[1].textContent)
-    expect(firstCol()).toEqual(['nut', 'bolt', 'washer'])
+    const col = (c: number) => [...document.querySelectorAll(`.sg-layer .sg-cell[data-c="${c}"]`)]
+      .filter(e => Number((e as HTMLElement).dataset.r) > 0)
+      .sort((a, b) => parseFloat((a as HTMLElement).style.top) - parseFloat((b as HTMLElement).style.top))
+      .map(e => e.textContent)
+    expect(col(0)).toEqual(['bolt', 'nut', 'washer'])
+    expect(screen.getByText('count').closest('.sg-cell')).toHaveStyle({ fontWeight: '600' })
+    // Sort by the selected column: count, numerically.
+    fireEvent.mouseDown(screen.getByText('10').closest('.sg-cell')!, { button: 0 })
+    fireEvent.click(screen.getByRole('button', { name: 'Sort' }))
+    expect(col(0)).toEqual(['nut', 'bolt', 'washer'])
     fireEvent.change(screen.getByLabelText('Filter rows'), { target: { value: 'wash' } })
-    expect(firstCol()).toEqual(['washer'])
-    expect(screen.getByText(/1 of 3 rows, 2 columns/)).toBeTruthy()
+    expect(col(0)).toEqual(['washer'])
+    expect(screen.getByText(/1 of 3 rows, sorted/)).toBeTruthy()
+    expect(screen.getByText(/3 rows, 2 columns, comma separated/)).toBeTruthy()
   })
 })

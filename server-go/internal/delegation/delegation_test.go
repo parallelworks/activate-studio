@@ -108,7 +108,7 @@ func stand(t *testing.T) (*Service, *daemon, string, *httptest.Server) {
 	d := &daemon{status: "running"}
 	sock := pwcodetest.Socket(t, d)
 	env := map[string]string{"INDEX_BASE": ix, "KB_ROOT": root, "STUDIO_WEB_DIST": filepath.Join(dir, "web"), "STUDIO_NODE": "off",
-		"GUFI_BIN": filepath.Join(dir, "no-gufi"), "PW_CODE_SOCKET": sock}
+		"GUFI_BIN": filepath.Join(dir, "no-gufi"), "PW_CODE_SOCKET": sock, "PW_API_KEY": "owner-key"}
 	t.Setenv("PW_CLI", filepath.Join(dir, "no-pw"))
 	cfg, err := config.Load(func(k string) string { return env[k] })
 	if err != nil {

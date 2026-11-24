@@ -34,6 +34,14 @@ type sseWriter struct {
 	w     http.ResponseWriter
 	f     http.Flusher
 	ended bool
+	// tap sees every event, also once the page has gone (liveturn.go).
+	tap func(name string, data []byte)
+}
+
+func (s *sseWriter) setTap(f func(name string, data []byte)) {
+	s.mu.Lock()
+	s.tap = f
+	s.mu.Unlock()
 }
 
 func (s *sseWriter) raw(b string) {
@@ -55,6 +63,12 @@ func (s *sseWriter) event(name string, data any) {
 	b, err := jsonobj.Marshal(data)
 	if err != nil {
 		b = []byte("null")
+	}
+	s.mu.Lock()
+	tap := s.tap
+	s.mu.Unlock()
+	if tap != nil {
+		tap(name, b)
 	}
 	s.raw("event: " + name + "\ndata: " + string(b) + "\n\n")
 }
@@ -92,6 +106,11 @@ type streamBody struct {
 	// Engine is the composer's choice of what answers: "pwcode",
 	// "studio", or empty for the deployment's (pwcodechat.go).
 	Engine *string `json:"engine"`
+	// PWCodeModel and PWCodeAllocation are the model a new pw code chat's
+	// composer chose before its first message, and the allocation that
+	// bills it: its session is made with them.
+	PWCodeModel      *string `json:"pwcodeModel"`
+	PWCodeAllocation *string `json:"pwcodeAllocation"`
 }
 
 func sp(s string) *string { return &s }
@@ -172,6 +191,14 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	if rb.Present {
 		_ = json.Unmarshal(rb.Raw, &body)
 	}
+	// A chat that drives a pw code session takes messages only from its
+	// owner, as its Stop and approvals do: nothing another person sends is
+	// stored in it or reaches the session.
+	if c := m.Conv.Get(deref(body.ConversationID)); c != nil && c.PWCode != nil && c.PWCode.Session != "" {
+		if _, err := m.ownPWChat(r, c.ID); err != nil {
+			return err
+		}
+	}
 	model := StripAvailabilityMark(jsString(body.Model))
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -233,16 +260,23 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	return m.answerOnPast(r, res, &body, convID, model)
+}
+
+// answer writes the Studio assistant's reply to a message, and stores it
+// in the conversation.
+func (m *Module) answer(r *http.Request, res *sseWriter, body streamBody, convID, model string) error {
+	ctx := r.Context()
 	userCred := m.cred(r)
 	if userCred == nil {
 		m.refreshAccess(r, 15000)
 	}
 	if m.personalRequired(userCred) {
-		res.event("error", reqbody.O("message", "This deployment requires your own model credential. Add your API key or platform token in Settings, Model access, then retry. Browsing, search, and adding material work without one.", "kind", "credential"))
+		res.event("error", reqbody.O("message", "This deployment requires your own model credential. Add your API key or platform token in Settings, Accounts, then retry. Browsing, search, and adding material work without one.", "kind", "credential"))
 		return nil
 	}
-	if m.GatewayKey() == "" && userCred == nil && !m.LLM.SidecarConfigured() {
-		res.event("error", reqbody.O("message", "No gateway credential (set PW_API_KEY, authenticate the pw CLI, or add your key in Settings); chat is unavailable."))
+	if m.deploymentModelsKey() == "" && userCred == nil && !m.LLM.SidecarConfigured() {
+		res.event("error", reqbody.O("message", noModelCredential(m.A.Cfg.AuthEnabled()), "kind", "credential"))
 		return nil
 	}
 
@@ -583,7 +617,12 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	})
 	if failErr != nil && !recorded {
 		errorID := shortID()
-		m.A.Log.Error("chat stream failed", "err", failErr.Error(), "errorId", errorID)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			// Stop, which the person asked for.
+			m.A.Log.Info("chat reply stopped", "conversation", convID)
+		} else {
+			m.A.Log.Error("chat stream failed", "err", failErr.Error(), "errorId", errorID)
+		}
 		if ctx.Err() == nil {
 			msg := failErr.Error()
 			var auth *llm.AuthError

@@ -333,9 +333,16 @@ func (t goTools) Hold(r *http.Request, in map[string]any) (json.RawMessage, erro
 		Args           json.RawMessage   `json:"args"`
 		Turn           []json.RawMessage `json:"turn"`
 		Groups         []string          `json:"groups"`
+		Where          []whereOption     `json:"where"`
+		WhereWhy       string            `json:"whereWhy"`
 	}
 	remarshal(in, &b)
 	rec := newHold(b.ConversationID, b.MessageID, b.ToolCallID, b.Tool, b.Canonical, viewer, b.Turn, b.Groups, t.m.held.now())
+	if len(b.Where) > 0 {
+		rec.Where = b.Where
+		t.m.held.hold(rec)
+		return jsonobj.Marshal(wherePart(b.ToolCallID, b.Where, b.WhereWhy, rec.ExpiresAt))
+	}
 	if isTransferAsksFirst(b.Tool) {
 		canonical, approval, err := t.m.holdTransfer(r, b.ConversationID, b.ToolCallID, b.Tool, b.Canonical, b.Args, rec.ExpiresAt)
 		if err != nil {
@@ -377,10 +384,7 @@ func (t goTools) Access(r *http.Request, freshMS int) (*Access, error) {
 	if freshMS > 0 {
 		p.EnsureFreshAccess(time.Duration(freshMS) * time.Millisecond)
 	}
-	key := p.APIKeyEnv()
-	if key == "" {
-		key = p.CLICredential()
-	}
+	key := p.GatewayKey()
 	var ctxName *string
 	if n := p.CredentialContextName(); n != "" {
 		ctxName = &n

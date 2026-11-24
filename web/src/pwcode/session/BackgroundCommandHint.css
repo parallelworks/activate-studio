@@ -1,0 +1,8 @@
+.pwcode-background-hint {
+  margin-top: 2px; padding: 0; border: 0; background: none; text-align: left;
+  font: inherit; font-size: 13px; color: var(--theme-muted-text-color);
+  cursor: pointer; border-radius: 4px; text-underline-offset: 2px;
+}
+.pwcode-background-hint:hover:not(:disabled) { color: inherit; text-decoration: underline; }
+.pwcode-background-hint:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
+.pwcode-background-hint:disabled { opacity: 0.5; cursor: default; }

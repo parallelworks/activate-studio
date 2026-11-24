@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button, Callout, Field, Input, SegmentedControl } from '@parallelworks/ui'
 import type { PwSystems, UserLibrary } from '../api'
 import { BucketLibraryForm } from './BucketLibraryForm'
@@ -6,10 +6,10 @@ import { ClusterLibraryForm } from './ClusterLibraryForm'
 import { LibraryImport } from './LibraryImport'
 import { LocalLibraryForm } from './LocalLibraryForm'
 import { PwSystemField } from './PwSystemField'
-import { SshLibraryForm } from './SshLibraryForm'
+import { PwBlocked, SshLibraryForm } from './SshLibraryForm'
 import { SharedWithMe } from './SharedWithMe'
 import { SpaceForm } from './SpaceForm'
-import { accessLabel, knownAppConfig, useAppConfig } from '../config'
+import { useAppConfig } from '../config'
 
 /**
  * Add a library, in one model: where it is, whose account reads it, and
@@ -58,7 +58,9 @@ export interface AddOptions {
    *  people sign in), and
    *  the folders shared with them there. */
   space?: boolean
-  /** The Studio's own cluster, offered first among the viewer's systems. */
+  /** The cluster this Studio runs on, where a cluster hosts it: listed
+   *  first among the viewer's clusters as the one this Studio runs on, read
+   *  as the viewer there, and never chosen for them. */
   home?: string
 }
 
@@ -80,6 +82,10 @@ export function addChoices(o: AddOptions) {
 }
 
 const WHERE_LABEL: Record<Where, string> = { here: 'This computer', system: 'Remote computer', bucket: 'Bucket' }
+/** On a Studio a cluster hosts, its own cluster is among the viewer's
+ *  clusters, so they are not all remote. */
+const WHERE_LABEL_HOSTED: Record<Where, string> = { ...WHERE_LABEL, system: 'Your clusters' }
+export const whereLabel = (w: Where, home?: string) => (home ? WHERE_LABEL_HOSTED : WHERE_LABEL)[w]
 const HOW_LABEL: Record<How, string> = { own: 'My own folder', build: 'Index a folder', connect: 'Connect an index' }
 
 /** What a folder of the viewer's own on a system is called. Where people
@@ -94,12 +100,15 @@ const BUILDER_LABEL: Record<'pw' | 'workflow', string> = { pw: 'pw ssh', workflo
 /** The choice in the Remote computer list for a host over plain ssh. */
 const SSH_HOST = '\u0000ssh'
 
-function describe(where: Where, how: How | undefined, overSSH: boolean, builder: Via | undefined, signIn = true): string {
+function describe(where: Where, how: How | undefined, overSSH: boolean, builder: Via | undefined, signIn = true, home?: string): string {
   if (where === 'bucket') return 'A bucket, or a folder in one, of an rclone remote: any S3 compatible store, AWS or on premises (MinIO, Ceph and the like), or another store rclone lists. Read with the Studio\'s account, from its listing, for finding and searching by name, size and time; an object is read only when you open it. Read only.'
   if (where === 'here') {
+    // On a Studio a cluster hosts, this computer is that cluster, which the
+    // viewer can also reach as themselves.
+    const asYou = home ? ` To read it as your own account instead, choose Your clusters, then ${home}, where this Studio runs.` : ''
     return how === 'build'
-      ? 'A folder on this computer, read with the Studio\'s account, indexed with GUFI and kept in step with the folder as it changes. Read only.'
-      : 'A GUFI index already built on this computer, read with the Studio\'s account. Read only: the Studio searches it and never writes to it.'
+      ? `A folder on this computer, read with the Studio's account, not yours, indexed with GUFI and kept in step with the folder as it changes. Read only.${asYou}`
+      : `A GUFI index already built on this computer, read with the Studio's account, not yours. Read only: the Studio searches it and never writes to it.${asYou}`
   }
   if (how === 'own') {
     return signIn
@@ -156,7 +165,6 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   const builders = overSSH || how !== 'build' ? [] : choices.builders()
   const [builderPicked, setBuilder] = useState<Via | null>(null)
   const builder = overSSH ? 'ssh' : builderPicked && builders.includes(builderPicked) ? builderPicked : builders[0]
-  useEffect(() => { if (options.home && !cluster) setCluster(options.home) }, [options.home, cluster])
 
   if (importing) {
     return (
@@ -175,7 +183,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   const systemChoice = where === 'system' && !workflowOnly && (
     <div className="settings-grid lib-add-system">
       {pickSystems && (
-        <PwSystemField value={cluster} preferred={options.home} onChange={c => { setCluster(c); setOverSSH(false) }} onSystems={setSystems}
+        <PwSystemField value={cluster} home={options.home} onChange={c => { setCluster(c); setOverSSH(false) }} onSystems={setSystems}
           extra={options.ssh ? [{ value: SSH_HOST, label: 'A host over ssh…', description: 'user@host, with your own keys' }] : []}
           extraValue={overSSH ? SSH_HOST : null} onExtra={() => setOverSSH(true)} />
       )}
@@ -196,21 +204,18 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
       <div className="lib-add-choices">
         {choices.where.length > 1 && (
           <Field label="Where">
-            <SegmentedControl label="Where" value={where} onValueChange={v => { holdHeight(); setWhere(v) }} options={choices.where.map(w => ({ value: w, label: WHERE_LABEL[w] }))} />
+            <SegmentedControl label="Where" value={where} onValueChange={v => { holdHeight(); setWhere(v) }} options={choices.where.map(w => ({ value: w, label: whereLabel(w, options.home) }))} />
           </Field>
         )}
       </div>
       {systemChoice}
       {where === 'system' && !workflowOnly && (
         <p className="muted lib-add-as" data-testid="read-as">
-          Read as you{system ? ` on ${system}` : ''}, with {asYou}, never the Studio&apos;s own account.
+          Read as you{system ? ` on ${system}` : ''}{system && system === options.home ? ', where this Studio runs' : ''}, with {asYou}, never the Studio&apos;s own account.
         </p>
       )}
       {pwBlocked ? (
-        <Callout tone="warning" title="pw ssh cannot be used yet"
-          action={<Button variant="secondary" size="sm" onClick={() => void (location.hash = '#view=settings:access')}>Open {accessLabel(knownAppConfig())}</Button>}>
-          {systems?.why}
-        </Callout>
+        <PwBlocked why={systems?.why} />
       ) : (
         <>
           <div className="lib-add-choices">
@@ -226,7 +231,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
               </Field>
             )}
           </div>
-          <p className="muted lib-add-about">{describe(where, how, overSSH, builder, signIn)}</p>
+          <p className="muted lib-add-about">{describe(where, how, overSSH, builder, signIn, options.home)}</p>
           {where === 'bucket' && <BucketLibraryForm onAdded={lib => onAdded(lib, true, true)} />}
           {where === 'here' && (how === 'build'
             ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />

@@ -587,7 +587,7 @@ func (s *SignIns) Token(ctx context.Context, owner string) (string, error) {
 func (s *SignIns) renew(dir string) (string, time.Time, error) {
 	out, err := s.exec(context.Background(), dir, 30*time.Second, "auth", "token", "--print", "-o", "json")
 	if err != nil {
-		return "", time.Time{}, errors.New("Your platform sign-in could not be renewed (" + err.Error() + "). Sign in again under Settings, Model access.")
+		return "", time.Time{}, errors.New("Your platform sign-in could not be renewed (" + err.Error() + "). Sign in again under Settings, Accounts.")
 	}
 	var d struct {
 		AccessToken string   `json:"access_token"`
@@ -597,7 +597,7 @@ func (s *SignIns) renew(dir string) (string, time.Time, error) {
 		json.Unmarshal([]byte(out[i:j+1]), &d)
 	}
 	if strings.TrimSpace(d.AccessToken) == "" {
-		return "", time.Time{}, errors.New("Your platform sign-in gave no token. Sign in again under Settings, Model access.")
+		return "", time.Time{}, errors.New("Your platform sign-in gave no token. Sign in again under Settings, Accounts.")
 	}
 	until := s.now().Add(10 * time.Minute)
 	if d.ExpiresIn != nil {

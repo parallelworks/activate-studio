@@ -117,4 +117,21 @@ describe('path jobs', () => {
     expect(r.failed).toEqual([{ name: 'x', error: 'not found' }])
     expect(changed.mock.calls.length).toBeGreaterThanOrEqual(2)
   }, 8000)
+
+  it('take an answer of what was done (no job) as done, and never poll a job without an id', async () => {
+    const start = vi.fn(async () => ({ moved: [{ from: 'a.md', to: 'd/a.md' }], skipped: [{ path: 'b.md', reason: 'already there' }], indexMs: 0 }) as never)
+    const r = await startPathJob('move', ['a.md', 'b.md'], 'd', start)
+    expect(api.job).not.toHaveBeenCalled()
+    expect(r.indexError).toBeUndefined()
+    expect(r.done).toBe(1)
+    expect(r.failed).toEqual([{ name: 'b.md', error: 'already there' }])
+  })
+
+  it('say why a move did not start, not "no such job"', async () => {
+    const refused = await startPathJob('move', ['a.md'], 'd', vi.fn(async () => { throw new Error('Your library is read only here') }))
+    expect(refused.indexError).toBe('Your library is read only here')
+    const odd = await startPathJob('move', ['a.md'], 'd', vi.fn(async () => ({}) as never))
+    expect(odd.indexError).toBe('the move did not start')
+    expect(api.job).not.toHaveBeenCalled()
+  })
 })

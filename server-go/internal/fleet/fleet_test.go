@@ -248,6 +248,9 @@ func TestWakeFollowDecide(t *testing.T) {
 		t.Fatalf("created %d, message %q", len(d.created), d.messages[1])
 	}
 	waitFor(t, "working", func() bool { return f.Get(a.ID).Note == "wake-up 2 working" })
+	// The note comes before the wake-up ends (it sets the round's goal
+	// after), and Follow leaves an agent alone while it wakes.
+	waitFor(t, "the wake-up to end", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
 	// A message while it works goes straight into the session.
 	if !f.Message(a.ID, "also check the GPU queue") || len(d.steered) != 1 {
 		t.Fatalf("steered %v", d.steered)
@@ -300,9 +303,17 @@ func TestApprovalGoneAndBudget(t *testing.T) {
 	delete(d.status, s1)
 	d.mu.Unlock()
 	f.Tick(a.ID, "the person asked again", false)
+	// The new session gets its id before its first message is sent: wait for both.
 	waitFor(t, "a new session", func() bool { g := f.Get(a.ID); return g.Session != "" && g.Session != s1 })
-	if g := f.Get(a.ID); len(g.Sessions) != 1 || g.Sessions[0] != s1 || !strings.Contains(d.messages[1], "This is a new session") || !strings.Contains(d.messages[1], "Digest written") {
-		t.Fatalf("renewed %+v\n%s", g, d.messages[1])
+	waitFor(t, "its first message", func() bool { d.mu.Lock(); defer d.mu.Unlock(); return len(d.messages) > 1 })
+	// And for the wake-up to end (it sets the round's goal after the
+	// message): follow leaves an agent alone while it wakes.
+	waitFor(t, "the wake-up to end", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return !f.busy[a.ID] })
+	d.mu.Lock()
+	second := d.messages[1]
+	d.mu.Unlock()
+	if g := f.Get(a.ID); len(g.Sessions) != 1 || g.Sessions[0] != s1 || !strings.Contains(second, "This is a new session") || !strings.Contains(second, "Digest written") {
+		t.Fatalf("renewed %+v\n%s", g, second)
 	}
 	d.finish(f.Get(a.ID).Session, "Done again.", 5)
 	f.follow(context.Background())

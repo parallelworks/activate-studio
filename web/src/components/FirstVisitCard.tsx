@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
 import { useAppConfig } from '../config'
+import { ACCOUNTS_HREF } from '../accounts'
 
 /**
  * Where people sign in, nobody gets the setup walkthrough (it sets the
  * Studio itself, which is the deployment's to set), so a person's first
  * visit says what the two libraries they meet are: the one everyone shares,
- * and My library, their own folder on a remote computer. It shows once per
+ * and My library, their own folder on a remote computer, and where they
+ * sign in with ACTIVATE (Settings, Accounts). It shows once per
  * person in each browser, and changes nothing.
  */
 const seenKey = (user: string) => `ade-first-visit:${user}`
@@ -34,6 +36,8 @@ export function FirstVisitCard() {
           {readOnly ? 'It is read only for you; its administrators change it.' : 'You may change it.'}</p>
         <p><strong>My library</strong> is your own folder on one of your remote computers, read and written as you. Where it is
           offered, add it in the Library from the arrow beside <strong>+ Add</strong>: <strong>Add a library…</strong>.</p>
+        <p><strong>Settings, Accounts</strong> is where you sign in with ACTIVATE, as yourself: My library, pw code, workflows and
+          desktops run with that sign-in, never with the Studio's own account. <a href={ACCOUNTS_HREF} onClick={close}>Open Accounts</a></p>
       </Callout>
     </div>
   )

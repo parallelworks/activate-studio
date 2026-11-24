@@ -298,7 +298,7 @@ func (m *Module) ownSpace(ctx context.Context, w who, id string) (string, string
 	}
 	key := m.keyOf(w, owner)
 	if key == "" {
-		return "", "", nil, apierr.New(409, "Sign the pw CLI in under Settings, Model access, so the Studio can share as you.")
+		return "", "", nil, apierr.New(409, "Sign the pw CLI in under Settings, Accounts, so the Studio can share as you.")
 	}
 	if err := m.sameAccount(ctx, d.Site, key, d.Space.UID); err != nil {
 		return "", "", nil, err

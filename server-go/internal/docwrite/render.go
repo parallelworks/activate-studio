@@ -106,11 +106,12 @@ func Render(suffix, content string, src ImageSource) (*Rendered, error) {
 		}
 		return &Rendered{Data: data, Note: "a Word document made from the Markdown" + withImages(len(pics)) + o.describe(), Missing: missing, Problems: append(problems, crowded...), Style: StyleCheck(content)}, nil
 	case ".xlsx":
-		data, n, err := renderXLSX(content)
+		data, says, err := renderXLSX(content)
 		if err != nil {
 			return nil, fmt.Errorf("making the workbook: %v", err)
 		}
-		return &Rendered{Data: data, Note: fmt.Sprintf("an Excel workbook of %d sheet%s", n, plural(n))}, nil
+		n := len(says)
+		return &Rendered{Data: data, Note: fmt.Sprintf("an Excel workbook of %d sheet%s (%s)", n, plural(n), strings.Join(says, "; "))}, nil
 	}
 	return nil, fmt.Errorf("%s files are not made here", suffix)
 }

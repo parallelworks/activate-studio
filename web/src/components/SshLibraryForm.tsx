@@ -3,7 +3,8 @@ import { Button, Callout, Input } from '@parallelworks/ui'
 import { api, type IndexDepth, type PwSystems } from '../api'
 import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } from './IndexDepth'
 import { sshOptionsProblem } from '../sshOptions'
-import { accessLabel, knownAppConfig } from '../config'
+import { openAccounts } from '../accounts'
+import { NeedsActivate } from './NeedsActivate'
 import { CreateConfirm, postJson, StepList, type CheckStep } from './LibraryFormParts'
 import { PwSystemField } from './PwSystemField'
 
@@ -46,7 +47,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   compact?: boolean
   transport?: 'ssh' | 'pw'
   mode?: 'connect' | 'build'
-  /** Opens Settings, Model access; by default, by its address. */
+  /** Opens Settings, Accounts; by default, by its address. */
   onOpenAccess?: () => void
 }) {
   const pw = transport === 'pw'
@@ -105,10 +106,7 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
   if (pw && systems && !systems.usable) {
     return (
       <div className="ssh-library-form">
-        <Callout tone="warning" title="pw ssh cannot be used yet"
-          action={<Button variant="secondary" size="sm" onClick={() => (onOpenAccess ? onOpenAccess() : void (location.hash = '#view=settings:access'))}>Open {accessLabel(knownAppConfig())}</Button>}>
-          {systems.why}
-        </Callout>
+        <PwBlocked why={systems.why} onOpen={onOpenAccess} />
       </div>
     )
   }
@@ -183,4 +181,17 @@ export function SshLibraryForm({ onAdded, compact = false, transport = 'ssh', mo
       )}
     </div>
   )
+}
+
+/** Why pw ssh cannot be used yet: the pw CLI is not found, which is said as
+ *  it is, or no ACTIVATE credential, which is the prompt every ACTIVATE
+ *  feature shows. Both open Settings, Accounts, where either is set. */
+export function PwBlocked({ why, onOpen }: { why?: string | null; onOpen?: () => void }) {
+  if (why && /pw CLI/.test(why) && /not find|not there/.test(why)) return (
+    <Callout tone="warning" title="pw ssh cannot be used yet"
+      action={<Button variant="secondary" size="sm" onClick={() => (onOpen ? onOpen() : openAccounts())}>Open Accounts</Button>}>
+      {why}
+    </Callout>
+  )
+  return <NeedsActivate onOpen={onOpen}>{why}</NeedsActivate>
 }

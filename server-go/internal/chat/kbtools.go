@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -11,8 +12,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/docwrite"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
@@ -58,21 +61,37 @@ func (m *Module) toolGetLabels(r *http.Request, _ map[string]any, _ ToolCtx) (*O
 
 var edgeSlashes = regexp.MustCompile(`^/+|/+$`)
 
-func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx) (*Outcome, error) {
+func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, tctx ToolCtx) (*Outcome, error) {
 	rel := edgeSlashes.ReplaceAllString(argString(args, "path"), "")
 	content := argString(args, "content")
 	source := edgeSlashes.ReplaceAllString(jsTrim(argString(args, "source")), "")
+	// A write that did not happen is failed, and its row in the chat says
+	// why, not only that it did not.
 	fail := func(result, summary string) (*Outcome, error) {
-		return &Outcome{Result: result, Summary: summary}, nil
-	}
-	if err := mainLibraryWritable(r); err != nil {
-		return fail(err.Error(), "error")
+		return &Outcome{Result: result, Summary: summary + ": " + jsval.Slice(result, 160), Failed: true}, nil
 	}
 	if rel == "" || (content == "" && source == "") {
 		return fail("path and content are required (or source in place of content: a Markdown file in the library to make a .pdf or .docx from)", "error")
 	}
 	if content != "" && source != "" {
 		return fail("Give content or source, not both: source makes the file from a Markdown file already in the library.", "error")
+	}
+	// The library it goes to: the one the call names, else the chat's
+	// (where.go). Written to the person's space as them.
+	p, rel, why, ask, err := m.toolPlace(r, tctx, args, rel, !argTrue(args, "append") && !argTrue(args, "overwrite"))
+	if err != nil {
+		return fail(err.Error(), "refused")
+	}
+	if ask != nil {
+		return fail(ask.askText(), "asks where")
+	}
+	if err := p.writable(); err != nil {
+		return fail(err.Error(), "error")
+	}
+	if source != "" {
+		if q, rest, ok := m.splitNamed(r, source); ok && q.id() == p.id() {
+			source = rest
+		}
 	}
 	ext := strings.ToLower(filepath.Ext(rel))
 	also, bad := alsoFormats(args["also"])
@@ -85,13 +104,20 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if len(also) > 0 && source != "" {
 		return fail("also goes with content. To make another format from "+source+", call write_kb_file for that path with the same source.", "error")
 	}
+	adding := argTrue(args, "append")
+	if adding && (source != "" || len(also) > 0) {
+		return fail("append adds content to one file; it does not go with source or also.", "error")
+	}
+	if adding && (ext == ".pdf" || ext == ".docx") {
+		return fail("A "+ext+" is made whole, not added to. Write its Markdown in parts to a .md file (append=true for each part after the first), then make "+rel+" with source set to that .md file.", "error")
+	}
 	if source != "" {
 		if !docwrite.Handles(ext) {
 			return fail("source makes a .pdf, .docx or .xlsx from a text file in the library. To copy a file, use copy_kb_files.", "error")
 		}
-		text, why := m.sourceText(source)
-		if why != "" {
-			return fail(why, "error")
+		text, bad := m.sourceText(p, source)
+		if bad != "" {
+			return fail(bad, "error")
 		}
 		content = text
 	}
@@ -103,37 +129,49 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 			return fail("Not writable: "+part+" is excluded.", "refused")
 		}
 	}
-	abs, err := kb.Resolve(rel, m.A.Cfg.KBRoot)
-	if err != nil {
+	if err := p.check(rel); err != nil {
 		return fail(err.Error(), "refused")
 	}
-	overwrite := args["overwrite"] == true
-	_, statErr := os.Stat(abs)
-	exists := statErr == nil
-	if exists && !overwrite {
-		return fail(rel+" already exists. Pass overwrite=true to replace it, or choose another name.", "exists")
+	// One write to a file at a time: an append reads the file and writes
+	// it back, and two at once would lose or reorder a part.
+	defer lockPath(p.lockKey(rel))()
+	overwrite := argTrue(args, "overwrite")
+	exists := p.exists(rel)
+	var prevHeld []string
+	if exists && ext == ".xlsx" && overwrite && !adding {
+		if old, err := p.read(rel, 64<<20); err == nil {
+			prevHeld = docwrite.Held(old)
+		}
+	}
+	if exists && !overwrite && !adding {
+		return fail(p.shown(rel)+" already exists. Pass overwrite=true to replace it, or choose another name, or append=true to add to it.", "exists")
+	}
+	m.note(tctx, p.id(), rel)
+	limit := tctx.rowLimit(rel)
+	if adding && exists {
+		return m.appendKBFile(r, p, rel, ext, content, limit)
 	}
 	// The other formats asked for beside a Markdown file: checked before
 	// anything is written, so the call writes all of them or none.
 	stem := strings.TrimSuffix(rel, filepath.Ext(rel))
-	type beside struct{ rel, abs, ext string }
+	type beside struct{ rel, ext string }
 	var extra []beside
 	for _, f := range also {
 		orel := stem + "." + f
-		oabs, err := kb.Resolve(orel, m.A.Cfg.KBRoot)
-		if err != nil {
+		if err := p.check(orel); err != nil {
 			return fail(err.Error(), "refused")
 		}
-		if _, err := os.Stat(oabs); err == nil && !overwrite {
-			return fail(orel+" already exists. Pass overwrite=true to replace it, or choose another name.", "exists")
+		if p.exists(orel) && !overwrite {
+			return fail(p.shown(orel)+" already exists. Pass overwrite=true to replace it, or choose another name.", "exists")
 		}
-		extra = append(extra, beside{orel, oabs, "." + f})
+		extra = append(extra, beside{orel, "." + f})
 	}
 	// A PDF, Word or Excel file is made from what the model wrote
 	// (Markdown, or rows); other office formats are refused with what to
 	// write instead, so no text lands in a file named as a binary format.
 	data, made := []byte(content), ""
 	var missing, problems, style []string
+	dropped := 0
 	if why := docwrite.Unsupported(ext); why != "" {
 		return fail(why, "refused")
 	}
@@ -145,42 +183,56 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if imageDir == "." {
 		imageDir = ""
 	}
-	if docwrite.Handles(ext) {
-		out, err := docwrite.Render(ext, content, libraryImages(m.A.Cfg.KBRoot, imageDir))
+	if ext == ".xlsx" && limit > 0 {
+		b, says, d, err := docwrite.RenderXLSXUpTo(content, limit)
 		if err != nil {
-			return fail("Could not write "+rel+": "+err.Error(), "error")
+			return fail("Could not write "+p.shown(rel)+": making the workbook: "+err.Error(), "error")
+		}
+		data, made, dropped = b, fmt.Sprintf("an Excel workbook of %d sheet%s (%s)", len(says), plural(len(says)), strings.Join(says, "; ")), d
+	} else if docwrite.Handles(ext) {
+		out, err := docwrite.Render(ext, content, p.images(imageDir))
+		if err != nil {
+			return fail("Could not write "+p.shown(rel)+": "+err.Error(), "error")
 		}
 		data, made, missing, problems, style = out.Data, out.Note, out.Missing, out.Problems, out.Style
 	} else if isReport(ext) {
 		style = docwrite.StyleCheck(content)
 	}
-	if err := m.writeLibraryFile(abs, data); err != nil {
+	if err := p.write(rel, data); err != nil {
+		if p.space {
+			return fail("Could not write "+p.shown(rel)+": "+err.Error(), "error")
+		}
 		return nil, err
 	}
 	if source != "" {
-		m.made.set(rel, source, data)
+		m.made.set(p.key(rel), p.key(source), data)
 	} else {
-		m.made.drop(rel)
+		m.made.drop(p.key(rel))
 	}
 	var alsoMade []string
-	links := []string{libraryLink(rel)}
+	links := []string{p.link(rel)}
+	files := []conversations.File{p.file(rel)}
 	for _, x := range extra {
-		out, err := docwrite.Render(x.ext, content, libraryImages(m.A.Cfg.KBRoot, imageDir))
+		out, err := docwrite.Render(x.ext, content, p.images(imageDir))
 		if err != nil {
-			return fail("Wrote "+rel+", but could not make "+x.rel+": "+err.Error(), "error")
+			return fail("Wrote "+p.shown(rel)+", but could not make "+x.rel+": "+err.Error(), "error")
 		}
-		if err := m.writeLibraryFile(x.abs, out.Data); err != nil {
+		if err := p.write(x.rel, out.Data); err != nil {
+			if p.space {
+				return fail("Wrote "+p.shown(rel)+", but could not write "+p.shown(x.rel)+": "+err.Error(), "error")
+			}
 			return nil, err
 		}
-		m.made.set(x.rel, rel, out.Data)
+		m.made.set(p.key(x.rel), p.key(rel), out.Data)
 		alsoMade = append(alsoMade, x.rel+" ("+out.Note+")")
-		links = append(links, libraryLink(x.rel))
+		links = append(links, p.link(x.rel))
+		files = append(files, p.file(x.rel))
 		missing, problems = addNew(missing, out.Missing), addNew(problems, out.Problems)
 		if len(style) == 0 {
 			style = out.Style
 		}
 	}
-	ms, _ := kb.ReindexForFile(r.Context(), kb.ProviderIndexer{A: m.A}, rel)
+	ms := p.reindex(r.Context(), rel)
 	base := rel[strings.LastIndex(rel, "/")+1:]
 	link := links[0]
 	show := "show_in_viewer can display it."
@@ -194,6 +246,12 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if made != "" {
 		wrote = made + ", " + itoaInt(len(data)) + " bytes"
 		show = "Give the user its link: " + link + " It opens in the Library viewer."
+		if ext == ".xlsx" {
+			show = moreRows + show
+			if dropped > 0 {
+				show = rowsLeftOut(limit, limit, dropped) + show
+			}
+		}
 	}
 	if source != "" {
 		wrote += ", from " + source
@@ -206,6 +264,12 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	replaced := ""
 	if exists {
 		replaced = ", replacing the previous version"
+		// A workbook replaced in full may have held rows added in parts:
+		// the result says what was dropped, so a model that meant to add
+		// rows sees it replaced them.
+		if ext == ".xlsx" && prevHeld != nil {
+			replaced += ", which held " + strings.Join(prevHeld, "; ") + " (overwrite=true replaces a workbook; append=true adds rows to it)"
+		}
 	}
 	if len(missing) > 0 {
 		// Said first, so the model fixes the paths and writes it again
@@ -215,9 +279,33 @@ func (m *Module) toolWriteKBFile(r *http.Request, args map[string]any, _ ToolCtx
 	if len(problems) > 0 {
 		show = "The document was made with these problems: " + strings.Join(problems, "; ") + ". A front matter option that was not understood kept its default. Correct the text or the options and make the document again (edit_kb_file on its Markdown, or this call again with overwrite=true), and tell the user of any that stand. " + show
 	}
+	summary := "wrote " + p.shown(rel)
+	if ext == ".xlsx" {
+		if h := docwrite.Held(data); len(h) > 0 {
+			summary += ": " + strings.Join(h, "; ")
+		}
+		if dropped > 0 {
+			summary += droppedSummary(limit, dropped)
+		}
+	}
+	indexed := " and re-indexed in " + itoaInt(int(ms)) + " ms. "
+	if p.space {
+		indexed = "; its index is updated shortly. "
+	}
+	where := ""
+	if m.spacesFor(r) {
+		// The library is said, with why when the chat chose it, and the
+		// link opens the file there.
+		where = "Saved to " + links[0] + "."
+		if why != "" {
+			where += " It went there because " + why + "; say so, and that it can be moved."
+		}
+		where += " Tell the user where it is with that link. "
+	}
 	return &Outcome{
-		Result:  "Wrote " + rel + " (" + wrote + ")" + replaced + " and re-indexed in " + itoaInt(int(ms)) + " ms. " + show + styleAdvice(style),
-		Summary: "wrote " + rel,
+		Result:  "Wrote " + p.shown(rel) + " (" + wrote + ")" + replaced + indexed + where + show + styleAdvice(style),
+		Summary: summary,
+		Files:   files,
 	}, nil
 }
 
@@ -646,7 +734,7 @@ func (m *Module) labelSuggestionsRoute(w http.ResponseWriter, r *http.Request) e
 			}
 		}
 		if model == "" {
-			return apierr.New(400, "No model is available to this deployment for labelling. Add your model credential in Settings, Model access.")
+			return apierr.New(400, "No model is available to this deployment for labelling. Add your model credential in Settings, Accounts.")
 		}
 	}
 	limit := 40
@@ -667,7 +755,7 @@ func (m *Module) labelSuggestionsRoute(w http.ResponseWriter, r *http.Request) e
 		if hasCred {
 			return apierr.New(502, "The model refused the request (%s). Try a different model on the RAG endpoint settings page.", detail)
 		}
-		return apierr.New(502, "No personal model credential is loaded, and the deployment credential was refused (%s). Add your key in Settings, Model access.", detail)
+		return apierr.New(502, "No personal model credential is loaded, and the deployment credential was refused (%s). Add your key in Settings, Accounts.", detail)
 	}
 	return reqbody.OK(w, out)
 }
@@ -704,4 +792,128 @@ func splitFirst(p string) string {
 		return p[:i]
 	}
 	return p
+}
+
+// appendKBFile adds a part to a file already in the library: text at its
+// end, rows to a workbook's sheets.
+func (m *Module) appendKBFile(r *http.Request, p place, rel, ext, content string, limit int) (*Outcome, error) {
+	old, err := p.read(rel, 64<<20)
+	if err != nil {
+		return &Outcome{Result: "Could not read " + p.shown(rel) + " to add to it: " + err.Error(), Summary: "error"}, nil
+	}
+	var data []byte
+	added := itoaInt(jsval.Len(content)) + " bytes"
+	next, dropped := nextPart, 0
+	if ext == ".xlsx" {
+		b, sheets, rows, d, err := docwrite.AppendXLSX(old, content, limit)
+		if err != nil {
+			return &Outcome{Result: "Could not add to " + rel + ": " + err.Error(), Summary: "error"}, nil
+		}
+		data, dropped = b, d
+		added = itoaInt(rows) + " rows; the workbook now holds: " + strings.Join(sheets, "; ")
+		if dropped > 0 {
+			next = rowsLeftOut(limit, rows, dropped) + "Give the user its link: "
+		}
+	} else {
+		data = append(old, content...)
+	}
+	if len(data) > 32*1024*1024 {
+		return &Outcome{Result: rel + " would be over 32 MB; write the rest as another file.", Summary: "too large"}, nil
+	}
+	if err := p.write(rel, data); err != nil {
+		if p.space {
+			return &Outcome{Result: "Could not add to " + p.shown(rel) + ": " + err.Error(), Summary: "error", Failed: true}, nil
+		}
+		return nil, err
+	}
+	m.made.drop(p.key(rel))
+	ms := p.reindex(r.Context(), rel)
+	return &Outcome{
+		Result:  "Added to " + p.shown(rel) + " (" + added + "; " + itoaInt(len(data)) + " bytes in all) and re-indexed in " + itoaInt(int(ms)) + " ms. " + next + p.link(rel),
+		Summary: "added to " + p.shown(rel) + heldSummary(ext, data) + droppedSummary(limit, dropped),
+		Files:   []conversations.File{p.file(rel)},
+	}, nil
+}
+
+// rowLimit is the most rows after its header a workbook written to rel
+// may hold: the count the user's message asked for when it asks for a
+// new workbook (by this name, or naming none), else 0 for no limit.
+func (t ToolCtx) rowLimit(rel string) int {
+	if t.RowsAsked <= 0 || !strings.EqualFold(filepath.Ext(rel), ".xlsx") {
+		return 0
+	}
+	if t.RowsFile != "" && !strings.EqualFold(path.Base(t.RowsFile), path.Base(rel)) {
+		return 0
+	}
+	return t.RowsAsked
+}
+
+// rowsLeftOut is said when a workbook write had more rows than the user
+// asked for: the rows past the count were not written, so the parts sent
+// at once with it stop at the count, and the workbook is finished.
+func rowsLeftOut(asked, added, dropped int) string {
+	if added <= 0 {
+		return fmt.Sprintf("The user asked for %d rows and the workbook already held them, so this part's %d row%s %s not written: it holds the %d asked for and is finished. Send no more rows; tell the user it holds %d. ", asked, dropped, plural(dropped), wereWas(dropped), asked, asked)
+	}
+	return fmt.Sprintf("The user asked for %d rows, so the last %d row%s of this part %s not written: the workbook holds the %d asked for and is finished. Send no more rows; tell the user it holds %d. ", asked, dropped, plural(dropped), wereWas(dropped), asked, asked)
+}
+
+func wereWas(n int) string {
+	if n == 1 {
+		return "was"
+	}
+	return "were"
+}
+
+func droppedSummary(asked, dropped int) string {
+	if dropped <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("; %d row%s past the %d asked %s not written, so the workbook is finished", dropped, plural(dropped), asked, wereWas(dropped))
+}
+
+// moreRows is said after a workbook is written: a sheet that holds fewer
+// rows than were asked for is not finished, and the model adds the rest
+// itself rather than leaving the user a partial file.
+const moreRows = "If the user asked for more rows than a sheet now holds, the workbook is not finished: send the next rows now with write_kb_file, the same path, append=true and the same sheet name, part after part until it holds them all, before you reply to the user. "
+
+// nextPart is said after a part is added to a file.
+const nextPart = "If the file does not yet hold all that was asked for, send the next part now the same way (append=true), before you reply to the user; once the last part is in, give the user its link: "
+
+// argTrue reads a yes/no argument as a model may write it: true, or the
+// text "true" or "yes", or 1.
+func argTrue(args map[string]any, k string) bool {
+	switch v := args[k].(type) {
+	case bool:
+		return v
+	case string:
+		s := strings.ToLower(strings.TrimSpace(v))
+		return s == "true" || s == "yes" || s == "1"
+	case float64:
+		return v == 1
+	case json.Number:
+		return v.String() == "1"
+	}
+	return false
+}
+
+// heldSummary is what a workbook's sheets hold, for its row in the chat.
+func heldSummary(ext string, data []byte) string {
+	if ext != ".xlsx" {
+		return ""
+	}
+	if h := docwrite.Held(data); len(h) > 0 {
+		return ": " + strings.Join(h, "; ")
+	}
+	return ""
+}
+
+var pathLocks sync.Map
+
+// lockPath holds a library file for one write and returns its release.
+func lockPath(abs string) func() {
+	v, _ := pathLocks.LoadOrStore(abs, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }

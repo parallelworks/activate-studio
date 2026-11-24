@@ -4,6 +4,8 @@ import { api, type IndexDepth, type SpaceCheck, type SpaceStatus, type UserLibra
 import { DEFAULT_REMOTE_LIBRARY_DEPTH, IndexDepthControl, remoteMeaningNote } from './IndexDepth'
 import { CreateConfirm, StepList } from './LibraryFormParts'
 import { PlatformSignInPanel } from './PlatformSignInPanel'
+import { NeedsActivate } from './NeedsActivate'
+import { SIGN_IN_TO_USE, needsActivate } from '../accounts'
 import { PwSystemField } from './PwSystemField'
 import { useAppConfig } from '../config'
 
@@ -69,21 +71,24 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
   if (!status.available && status.cluster && status.signInOffered && !status.credential) {
     return (
       <div className="space-sign-in">
-        <Callout tone="info" title={signIn ? 'My library needs your ACTIVATE sign-in' : 'A folder on a remote computer needs your ACTIVATE sign-in'}>
+        <Callout tone="info" title={SIGN_IN_TO_USE}>
           {signIn ? 'My library is a folder of yours' : 'This is a folder of yours'} on {status.cluster}, which the Studio reaches as your own account. Sign in with
-          ACTIVATE and approve the code on the platform, then choose the folder here.
+          ACTIVATE here and approve the code on the platform, then choose the folder. The sign-in is kept under Settings, Accounts.
         </Callout>
         <PlatformSignInPanel onChanged={signedIn} />
       </div>
     )
   }
-  if (!status.available) return <Callout tone="info" title={signIn ? 'My library is not available' : 'A folder on a remote computer is not available'}>{status.why}</Callout>
+  if (!status.available) return needsActivate(status.why)
+    ? <NeedsActivate>{status.why}</NeedsActivate>
+    : <Callout tone="info" title={signIn ? 'My library is not available' : 'A folder on a remote computer is not available'}>{status.why}</Callout>
 
   const pwOK = status.pw !== false
   const chosen = given !== undefined || destination !== undefined
   const ssh = destination !== undefined || (!chosen && (overSSH || !pwOK) && !!status.ssh)
-  // A cluster the form around this one has not chosen yet is the Studio's.
-  const system = destination !== undefined ? destination.trim() : given ? given : ssh ? host.trim() : cluster
+  // A cluster the form around this one has not chosen yet stays unchosen:
+  // nothing is made until the person picks one.
+  const system = destination !== undefined ? destination.trim() : given !== undefined ? given : ssh ? host.trim() : cluster
   const where = system || 'that remote computer'
   const typed = folder.trim() || status.suggested
   const at = ssh ? { destination: system } : { cluster: system }
@@ -113,20 +118,20 @@ export function SpaceForm({ onAdded, cluster: given, destination }: {
           whose account reads it; this adds only what it does not say. */}
       {chosen
         ? !ssh && status.credential === 'key' && (
-          <p className="muted view-sub">Reached with the API key you added under Settings, Model access, in place of your sign-in. Signing in with ACTIVATE there instead renews itself.</p>
+          <p className="muted view-sub">Reached with the API key you added under Settings, Accounts, in place of your sign-in. Signing in with ACTIVATE there instead renews itself.</p>
         )
         : (
           <p className="muted view-sub">
             {ssh
               ? `Reached on ${where} as you over ssh with your own keys, agent and ~/.ssh/config.`
               : status.credential === 'key'
-                ? `Reached on ${where} as you with the API key you added under Settings, Model access. Signing in with ACTIVATE there instead renews itself.`
+                ? `Reached on ${where} as you with the API key you added under Settings, Accounts. Signing in with ACTIVATE there instead renews itself.`
                 : `Reached on ${where} as you with your ACTIVATE sign-in.`}
           </p>
         )}
       <div className="settings-grid">
         {pwOK && !chosen && (
-          <PwSystemField value={cluster} preferred={status.cluster || undefined}
+          <PwSystemField value={cluster} home={status.cluster || undefined}
             onChange={c => { setCluster(c); setOverSSH(false); reset() }}
             extra={status.ssh ? [{ value: SSH, label: 'A host over ssh…', description: 'user@host, with your own keys' }] : []}
             extraValue={overSSH ? SSH : null} onExtra={() => { setOverSSH(true); reset() }} />

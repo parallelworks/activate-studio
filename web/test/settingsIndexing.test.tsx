@@ -25,11 +25,11 @@ vi.mock('../src/components/LibrariesSection', () => ({
 const EFFECTIVE = {
   appName: 'Studio', kbLabel: 'Notes', theme: 'light', accent: 'navy', surface: 'neutral', iconUrl: '', iconUrlDark: '',
   sweepIntervalSec: 300, searchEngine: 'parallel', gufiLog: false, historyIntervalSec: 86400, suggestedPrompts: [],
-  visionModel: '', disabledTools: [], customTools: [], ragDefaultModel: '', ragTopK: 6, ragAllowDeploymentKey: false,
+  visionModel: '', disabledTools: [], customTools: [], ragDefaultModel: '', ragTopK: 6, 
   ragAdvertiseRagModel: false, ragAdvertiseAgentModel: true, mcpEnabled: true, mcpServers: [], delegationEnabled: true,
   delegationMaxAgents: 6, maxToolRounds: 50, delegationMaxDepth: 1, agentExecution: 'runner', voiceEnabled: false, voiceUrl: '',
   ragProxyEnabled: true, ragEndpointAutoStart: false, ragEndpointName: '', requirePersonalKey: false, chatSharedHistory: true,
-  bannerText: '', bannerColor: '#24612e', bannerWhenEmbedded: false, allowKeySharing: true, kbMission: '',
+  bannerText: '', bannerColor: '#24612e', bannerWhenEmbedded: false, kbMission: '',
   sections: [], aiEnabled: true,
 }
 
@@ -86,8 +86,8 @@ describe('Settings, Indexing', () => {
     expect(settingsTarget('sync-search')).toEqual({ section: 'indexing', tab: 'sync-search' })
     expect(settingsTarget('building')).toEqual({ section: 'indexing', tab: 'building' })
     expect(settingsTarget('storage')).toEqual({ section: 'indexing', tab: 'storage' })
-    // General's Indexing tab opened on the search and sync settings.
-    expect(settingsTarget('indexing')).toEqual({ section: 'indexing', tab: 'sync-search' })
+    // The section's own address opens its first tab, as the rail does.
+    expect(settingsTarget('indexing')).toEqual({ section: 'indexing', tab: 'libraries' })
   })
 
   it('#view=settings:libraries opens the Libraries tab, without a second heading', async () => {
@@ -111,9 +111,16 @@ describe('Settings, Indexing', () => {
     expect(location.hash).toBe('#view=settings:libraries?add=1')
   })
 
-  it('#view=settings:indexing opens Sync and search, which saves through Save settings', async () => {
-    const s = stub()
+  it('#view=settings:indexing opens the section on its first tab, Libraries', async () => {
+    stub()
     at('#view=settings:indexing')
+    render(<SettingsView />)
+    expect(await screen.findByRole('tab', { name: 'Libraries' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('#view=settings:sync-search opens Sync and search, which saves through Save settings', async () => {
+    const s = stub()
+    at('#view=settings:sync-search')
     render(<SettingsView />)
     expect(await screen.findByRole('tab', { name: 'Sync and search' })).toHaveAttribute('aria-selected', 'true')
     for (const l of ['Search across libraries', 'Background sync interval (seconds, 0 pauses)', 'Corpus history snapshot (seconds between points)']) {

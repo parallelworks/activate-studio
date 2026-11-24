@@ -90,7 +90,7 @@ func (m *Module) callKey(cred *modelkeys.Cred, model string) string {
 
 func (m *Module) listingKey(cred *modelkeys.Cred, viewer string) string {
 	if cred == nil {
-		return viewer + "|" + lastN(m.GatewayKey(), 8) + "|" + m.gatewayBase()
+		return viewer + "|" + lastN(m.deploymentModelsKey(), 8) + "|" + m.gatewayBase()
 	}
 	return viewer + "|" + lastN(cred.Key, 8) + "|" + cred.Base()
 }
@@ -145,7 +145,7 @@ func labelled(mo *jsonobj.Object, provider, engine string) *jsonobj.Object {
 func (m *Module) computeListing(ctx context.Context, cred *modelkeys.Cred, r *http.Request) (*listing, error) {
 	sidecar := m.LLM.SidecarModels(ctx)
 	var wire *llm.Listing
-	if m.GatewayKey() != "" || cred != nil {
+	if m.deploymentModelsKey() != "" || cred != nil {
 		var err error
 		key, base := "", ""
 		var ep *modelkeys.Endpoint
@@ -337,7 +337,7 @@ func objs(xs []*jsonobj.Object) []*jsonobj.Object {
 }
 
 func (m *Module) personalRequired(cred *modelkeys.Cred) bool {
-	return m.eff().RequirePersonalKey && m.A.Cfg.AuthEnabled() && !m.Keys.Disabled() && cred == nil && !m.Keys.Shared("").Active
+	return m.eff().RequirePersonalKey && m.A.Cfg.AuthEnabled() && !m.Keys.Disabled() && cred == nil
 }
 
 func (m *Module) models(w http.ResponseWriter, r *http.Request) error {
@@ -350,12 +350,12 @@ func (m *Module) models(w http.ResponseWriter, r *http.Request) error {
 	}
 	m.refreshAccess(r, 8000)
 	cred := m.cred(r)
-	if m.GatewayKey() == "" && cred == nil && !m.LLM.SidecarConfigured() {
-		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", "no gateway credential: set PW_API_KEY or authenticate the pw CLI"))
+	if m.deploymentModelsKey() == "" && cred == nil && !m.LLM.SidecarConfigured() {
+		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", noModelCredential(m.A.Cfg.AuthEnabled())))
 	}
 	forConfig := r.URL.Query().Get("config") == "1"
 	if !forConfig && m.personalRequired(cred) {
-		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", "This deployment requires your own model credential: add your API key or platform token in Settings, Model access."))
+		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", "This deployment requires your own model credential: add your API key or platform token in Settings, Accounts."))
 	}
 	viewer := ""
 	if u := user(r); u != nil {
@@ -480,7 +480,7 @@ func (m *Module) health(w http.ResponseWriter, r *http.Request) error {
 	cred := m.cred(r)
 	if m.personalRequired(cred) {
 		return reqbody.OK(w, reqbody.O("ok", false, "status", "key-required", "models", 0, "gatewayHost", "",
-			"message", "This deployment requires your own model credential; add it in Settings, Model access.", "lastCallFailure", nil, "checkedAt", now))
+			"message", "This deployment requires your own model credential; add it in Settings, Accounts.", "lastCallFailure", nil, "checkedAt", now))
 	}
 	if r.URL.Query().Get("fresh") == "1" {
 		m.LLM.InvalidateProbes()
@@ -534,7 +534,9 @@ func (m *Module) keyStatusPayload(sub string) *jsonobj.Object {
 	o := reqbody.O("authEnabled", true, "verified", true, "gatewayHost", m.gatewayHostName())
 	putStatus(o, m.Keys.Status(sub))
 	reqbody.Put(o, "shared", m.Keys.Shared(sub))
-	reqbody.Put(o, "sharingAllowed", m.eff().AllowKeySharing)
+	// A key is no longer shared with the deployment: no one acts with
+	// another person's credential (Settings, Accounts).
+	reqbody.Put(o, "sharingAllowed", false)
 	return o
 }
 
@@ -699,14 +701,7 @@ func (m *Module) keyRoutes(h func(string, func(http.ResponseWriter, *http.Reques
 		if u == nil {
 			return apierr.New(403, "not verified")
 		}
-		if !m.eff().AllowKeySharing {
-			return apierr.New(403, "this deployment does not allow sharing a personal key")
-		}
-		m.Keys.Hydrate(u.ID, r.Header.Get("Cookie"))
-		if err := m.Keys.Share(u.ID, orStr(u.Name, u.Username)); err != nil {
-			return apierr.New(400, "%s", err.Error())
-		}
-		return reqbody.OK(w, m.keyStatusPayload(u.ID))
+		return apierr.New(403, "A key is no longer shared with everyone here: each person uses their own ACTIVATE sign-in or key, under Settings, Accounts.")
 	}))
 	h("POST /api/me/model-key/unshare", guard(func(w http.ResponseWriter, r *http.Request) error {
 		u := user(r)
@@ -805,7 +800,7 @@ func (m *Module) suggestions(w http.ResponseWriter, r *http.Request) error {
 	}
 	// A conversation is owned by username, as the stream records it; the
 	// viewer's id is another form of it on a platform sign-in.
-	if u := user(r); c.OwnerName() != "" && u != nil && u.Username != "" && c.OwnerName() != u.Username && !m.eff().ChatSharedHistory {
+	if u := user(r); c.OwnerName() != "" && u != nil && u.Username != "" && c.OwnerName() != u.Username && (!m.eff().ChatSharedHistory || c.PWCode != nil && c.PWCode.Relay) {
 		return apierr.New(403, "not your conversation")
 	}
 	return reqbody.OK(w, SuggestNext(c))

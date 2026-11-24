@@ -53,6 +53,15 @@ type fakePW struct {
 	settings []string
 	// refuseSettings makes the settings PATCH fail.
 	refuseSettings bool
+	interrupts     int
+	// onInterrupt runs before the interrupt is answered; refuseInterrupt
+	// answers it with an error.
+	onInterrupt     func()
+	refuseInterrupt bool
+	// routes answers a path (method and path, "GET /v1/...") before the
+	// rest, for a test's own routes; asked records the requests it took.
+	routes map[string]http.HandlerFunc
+	asked  []string
 }
 
 func (f *fakePW) add(ev map[string]any) {
@@ -70,7 +79,15 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	f.mu.Lock()
 	f.calls++
+	h := f.routes[r.Method+" "+p]
+	if h != nil {
+		f.asked = append(f.asked, r.Method+" "+r.URL.RequestURI())
+	}
 	f.mu.Unlock()
+	if h != nil {
+		h(w, r)
+		return
+	}
 	switch {
 	case p == "/v1/status":
 		st := map[string]any{"protocolVersion": pwcode.ProtocolVersion}
@@ -162,6 +179,19 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.mcp = "ok"
 		}
 		f.mu.Unlock()
+		w.WriteHeader(204)
+	case p == "/v1/sessions/s1/interrupt":
+		f.mu.Lock()
+		f.interrupts++
+		hook, refuse := f.onInterrupt, f.refuseInterrupt
+		f.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		if refuse {
+			http.Error(w, `{"detail":"no turn to stop"}`, http.StatusConflict)
+			return
+		}
 		w.WriteHeader(204)
 	case p == "/v1/sessions/s1/archive":
 		f.mu.Lock()
@@ -340,6 +370,15 @@ func TestPWCodeApprovalReachesTheChatAndIsAnswered(t *testing.T) {
 	code, out, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+c.ID+"/approvals/ap-1", `{"allowed":false}`)
 	if code != 200 || out["ok"] != true || len(f.answers) != 1 || !strings.Contains(f.answers[0], `"allowed":false`) || !strings.Contains(f.answers[0], "Denied from the Studio.") {
 		t.Errorf("%d %v %v", code, out, f.answers)
+	}
+	// An approved plan names the mode it leaves plan mode into, or the
+	// session stays in plan mode.
+	f.answers = nil
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+c.ID+"/approvals/ap-3", `{"kind":"plan","allowed":true}`)
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+c.ID+"/approvals/ap-4", `{"kind":"plan","allowed":true,"mode":"accept-edits"}`)
+	send(t, http.MethodPost, base+"/api/chat/pwcode/"+c.ID+"/approvals/ap-5", `{"kind":"plan","allowed":true,"mode":"bypass-permissions"}`)
+	if got := strings.Join(f.answers, "\n"); got != `ap-3 {"allowed":true,"mode":"auto"}`+"\n"+`ap-4 {"allowed":true,"mode":"accept-edits"}`+"\n"+`ap-5 {"allowed":true,"mode":"auto"}` {
+		t.Errorf("plan approvals:\n%s", got)
 	}
 	plain := m.Conv.Create(nil, "")
 	if st := get(t, base+"/api/chat/pwcode/"+plain.ID); st["session"] != nil || st["status"] != "idle" {

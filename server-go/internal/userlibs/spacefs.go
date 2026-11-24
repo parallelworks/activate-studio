@@ -106,7 +106,7 @@ func (m *Module) writeSession(w who, owner string, d *libraries.UserDef) (string
 	}
 	key := m.keyOf(w, owner)
 	if key == "" {
-		return "", "", apierr.New(409, "Sign in with ACTIVATE under Settings, Model access, so the Studio can reach your library as you.")
+		return "", "", apierr.New(409, "Sign in with ACTIVATE under Settings, Accounts, so the Studio can reach your library as you.")
 	}
 	return d.Site, key, nil
 }

@@ -370,7 +370,7 @@ func (m *Module) sessionOf(w who, owner string, d *libraries.UserDef) (site, key
 	}
 	key = m.keyOf(w, owner)
 	if key == "" {
-		return "", "", apierr.New(409, "This library is reached with your own platform key: add your ACTIVATE API key under Settings, Model access.")
+		return "", "", apierr.New(409, "This library is reached with your own platform key: add your ACTIVATE API key under Settings, Accounts.")
 	}
 	return d.Site, key, nil
 }

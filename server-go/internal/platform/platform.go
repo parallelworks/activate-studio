@@ -16,6 +16,8 @@ package platform
 import (
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -60,6 +62,8 @@ type Platform struct {
 	cliInfo   *cliInfoCache
 	// The chosen context (access.json), read at start and written by Choose.
 	chosen string
+	// Stop using the pw CLI (access.json's stopped).
+	stopped bool
 	// Gateway: the base URL as Node's GATEWAY_BASE, a live binding moved
 	// by syncGateway.
 	gatewayFromEnv bool
@@ -99,7 +103,8 @@ func New(o Options) *Platform {
 	}
 	p.initGateway()
 	p.FindCLI()
-	p.chosen = p.loadChoice()
+	p.chosen, p.stopped = p.loadChoice()
+	p.markChoiceRead()
 	p.syncGateway()
 	return p
 }
@@ -143,6 +148,16 @@ func (p *Platform) Node() *NodeBridge {
 	return n
 }
 
+// AuthEnabled says people sign in to this Studio (several people use it).
+func (p *Platform) AuthEnabled() bool { return p.authEnabled != nil && p.authEnabled() }
+
+// noSignInHome is an empty folder for a CLI run with no sign-in.
+func (p *Platform) noSignInHome() string {
+	d := filepath.Join(os.TempDir(), "studio-pw-no-sign-in-"+strconv.Itoa(os.Getuid()))
+	_ = os.MkdirAll(d, 0o700)
+	return d
+}
+
 // PWContext is what Node's process.env.PW_CONTEXT holds: the chosen
 // context, else the one the server started with, else unset (applyEnv).
 func (p *Platform) PWContext() string {
@@ -156,9 +171,28 @@ func (p *Platform) PWContext() string {
 // PW_CONTEXT as Node's applyEnv leaves it, and over that set (a value of
 // "" removes the variable, as nodeproc.Environ).
 func (p *Platform) Environ(set map[string]string) []string {
+	return p.EnvironFor(set, false)
+}
+
+// EnvironAsDeployment is Environ for the Studio's housekeeping that acts
+// as the deployment (ExecOptions.AsDeployment).
+func (p *Platform) EnvironAsDeployment(set map[string]string) []string {
+	return p.EnvironFor(set, true)
+}
+
+// EnvironFor is Environ. A CLI run for a person carries their PW_API_KEY;
+// without one, on a Studio several people use or after Stop using the
+// pw CLI, it runs with no sign-in at all (an empty home and credentials
+// folder, no PW_API_KEY), so it cannot act with the deployment's.
+func (p *Platform) EnvironFor(set map[string]string, asDeployment bool) []string {
 	over := map[string]string{"PW_CONTEXT": p.PWContext()}
 	for k, v := range set {
 		over[k] = v
+	}
+	_, ownHome := set["HOME"]
+	if !ownHome && set["PW_API_KEY"] == "" && (p.AuthEnabled() && !asDeployment || p.Stopped()) {
+		none := p.noSignInHome()
+		over["HOME"], over["PW_CREDENTIALS_DIR"], over["PW_API_KEY"], over["OPENAI_API_KEY"], over["PW_CONTEXT"] = none, none, "", "", ""
 	}
 	// A person's credential runs the CLI in their own home (internal/pwhome).
 	if _, ok := set["HOME"]; !ok {

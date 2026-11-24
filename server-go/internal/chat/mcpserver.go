@@ -16,8 +16,10 @@ import (
 // The knowledge base as an MCP server at POST /api/mcp (mcp.ts):
 // streamable-HTTP MCP, stateless, one JSON-RPC message per POST. Only the
 // corpus-reading tools are exposed, except to a pw code chat's token, which
-// gets the Studio's own tools (pwcodetools.go), or to a standing agent's
-// session, which has one too.
+// gets the Studio's own tools (pwcodetools.go), to a standing agent's
+// session, which has one too, and to a person the platform's session proxy
+// vouches for, a pw code session of theirs on another machine
+// (mcpbridge.go).
 
 // mcpExposed are the tools an MCP client may call.
 var mcpExposed = []string{"search_kb", "read_kb_file", "read_original", "list_kb_dir", "query_corpus", "get_labels", "studio_docs"}
@@ -99,6 +101,7 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 	if token != "" && user(r) == nil && cfg.AuthEnabled() && cfg.Auth.Required {
 		return reqbody.JSON(w, 401, reqbody.O("error", "authentication required"))
 	}
+	person := !chatGrant && m.personGrant(r, token)
 	rb, err := reqbody.Read(r)
 	if err != nil {
 		return err
@@ -136,6 +139,9 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 	}
 	switch method {
 	case "initialize":
+		if person {
+			m.bridgeSeen(r, method)
+		}
 		pv := mcpProtocolVersion
 		if s, ok := jsonobj.String(param("protocolVersion")); ok {
 			pv = s
@@ -145,6 +151,14 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 	case "ping":
 		return reqbody.OK(w, rpcResult(id, jsonobj.New()))
 	case "tools/list":
+		if person {
+			m.bridgeSeen(r, method)
+			tools := []json.RawMessage{}
+			for _, s := range m.personTools(r, m.personCtx(r)) {
+				tools = append(tools, chatToolJSON(s))
+			}
+			return reqbody.OK(w, rpcResult(id, reqbody.O("tools", tools)))
+		}
 		if chatGrant {
 			tools := []json.RawMessage{}
 			for _, s := range m.chatTools(r, grantDelegates(chat.Conv)) {
@@ -163,7 +177,16 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 			args = json.RawMessage("{}")
 		}
 		tc := ToolCtx{}
-		if chatGrant {
+		if person {
+			// A person's own pw code session on another machine, through
+			// the session proxy: the tools a pw code chat of theirs gets,
+			// as them, on their own credential.
+			tc = m.personCtx(r)
+			if !slices.Contains(specNames(m.personTools(r, tc)), name) {
+				return reqbody.OK(w, rpcError(id, -32602, "unknown tool: "+name))
+			}
+			m.bridgeSeen(r, method)
+		} else if chatGrant {
 			// A pw code chat's call runs as the Studio assistant's would: the
 			// conversation's scope, the person's key, the tools they left on.
 			if !slices.Contains(specNames(m.chatTools(r, grantDelegates(chat.Conv))), name) {

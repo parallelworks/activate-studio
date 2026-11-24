@@ -37,6 +37,9 @@ type HeldCall struct {
 	Instead        json.RawMessage   `json:"instead"`
 	HeldAt         string            `json:"heldAt"`
 	ExpiresAt      string            `json:"expiresAt"`
+	// Where is the places a held write offered the person (where.go);
+	// the answer runs the write with the one they chose.
+	Where []whereOption `json:"where,omitempty"`
 }
 
 func approvalTTL() time.Duration {
@@ -174,7 +177,7 @@ func (m *Module) changesAvailable(viewer *Viewer, key *string, owner, username *
 	}
 	if key == nil || *key == "" {
 		if m.A.Cfg.AuthEnabled() {
-			return Changes{Why: "changes run only with your own platform key, which you can add under Settings, Model access"}
+			return Changes{Why: "changes run only with your own platform key, which you can add under Settings, Accounts"}
 		}
 		return Changes{Why: "no platform credential is configured"}
 	}
@@ -246,7 +249,12 @@ func (m *Module) takeAnswer(a answer, viewer *Viewer, now time.Time) (*HeldCall,
 		m.dropHeldTransfer(rec, "the tool changed")
 		return nil, "", "The " + rec.Tool + " tool changed after this was asked; nothing ran. Ask again to run it."
 	}
-	if a.Args != nil {
+	if len(rec.Where) > 0 {
+		// A choice of place: the answer's call must be one offered.
+		if a.Allowed && (a.Args == nil || pickedWhere(rec.Where, *a.Args) == nil) {
+			return nil, "", "Choose one of the places offered; nothing was written."
+		}
+	} else if a.Args != nil {
 		held := map[string]json.RawMessage{}
 		_ = json.Unmarshal([]byte(rec.Args), &held)
 		var sent any
@@ -311,8 +319,8 @@ func (m *Module) answerHeld(r *http.Request, a answer, viewer *Viewer, key *stri
 		if a.Tool != "" && a.Tool != pending.Tool {
 			tool = a.Tool
 		}
-		if (key == nil || *key == "") && !localAsksFirst(tool) {
-			return &Answered{Why: "Running this needs your own platform key, which you can add under Settings, Model access; nothing ran."}
+		if (key == nil || *key == "") && !localAsksFirst(tool) && len(pending.Where) == 0 {
+			return &Answered{Why: "Running this needs your own platform key, which you can add under Settings, Accounts; nothing ran."}
 		}
 		if !enabled(tool) {
 			return &Answered{Why: tool + " is turned off for this deployment; nothing ran."}
@@ -335,6 +343,10 @@ func (m *Module) answerHeld(r *http.Request, a answer, viewer *Viewer, key *stri
 	}
 	if isTransferAsksFirst(tool) {
 		out, summary, failed := m.answerTransfer(r, rec, true)
+		return &Answered{OK: true, Rec: hr, Tool: tool, Result: out, Summary: summary, Failed: failed}
+	}
+	if len(rec.Where) > 0 {
+		out, summary, failed := m.answerWhere(r, rec, *a.Args)
 		return &Answered{OK: true, Rec: hr, Tool: tool, Result: out, Summary: summary, Failed: failed}
 	}
 	args, err := jsonobj.Parse([]byte(rec.Args))

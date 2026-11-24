@@ -1,6 +1,10 @@
-import type { ChatAdapter, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
+import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
+import { forgetChat, readChat, takeReadAhead } from './chatRecord'
+import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getEngine, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
 import { fetchModels } from './api'
+import { firstMessagePick } from './pwcode/newChatPick'
+import { foldRecovered, recoveryTracker } from './recoveredSteps'
 import { rememberToolCommands } from './components/GufiCommands'
 
 async function listModels(): Promise<ModelsList> {
@@ -17,6 +21,8 @@ async function listModels(): Promise<ModelsList> {
 
 /** Stream one completion from the server's tool-loop endpoint over SSE. */
 const CUT_OFF = 'The reply was cut off before it arrived, for example by a restart of the Studio. Retry sends the message again.'
+/** The connection dropped while the reply runs on in the Studio. */
+const RUNS_ON = 'The connection to the reply was lost, but the Studio is still writing it. Open this chat again to follow it.'
 
 /** The conversation's effort; a conversation without one yet (a new
  *  chat's first turn) takes the last one chosen and keeps it from then on. */
@@ -42,6 +48,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       agent: getPersona(),
       effort: effortFor(req.conversationId) || null,
       engine: getEngine(req.conversationId) || null,
+      // The model a new pw code chat was set to before its first message;
+      // the server uses it only when this message makes the session.
+      ...firstMessagePick(req.conversationId),
       tools: req.tools,
       // The user's answer to a call held for approval; the server runs what
       // it held for that call, never what the request says to run.
@@ -65,6 +74,8 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
     }
   }
   signal?.addEventListener('abort', interruptPWCode, { once: true })
+  // A failed step a later call recovers is settled when that call ends.
+  const recovery = recoveryTracker()
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -92,6 +103,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         // Tool activity streams as structured part deltas; the package
         // renders them as tool blocks (running → resolved) in the thread.
         if (payload.phase === 'call') {
+          recovery.start(payload.id ?? payload.name, payload.name, payload.args ?? '')
           handlers.onPart?.({
             type: 'tool_start',
             id: payload.id ?? payload.name,
@@ -111,6 +123,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
             result: payload.summary ?? '',
             isError: !!payload.error,
           })
+          for (const r of recovery.end(payload.id ?? payload.name, payload.summary ?? '', !!payload.error)) {
+            handlers.onPart?.({ type: 'tool_end', id: r.id, result: r.result, isError: false })
+          }
         }
         break
       case 'approval':
@@ -156,6 +171,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       // Stop aborts the read; anything else is the connection dropping.
       if (signal?.aborted) throw e
       if (content) break
+      if (req.conversationId && await replyRunning(req.conversationId).catch(() => null)) throw new Error(RUNS_ON)
       throw new Error(CUT_OFF)
     }
     const { done, value } = chunk
@@ -210,7 +226,10 @@ export function setChatListFilter(f: 'all' | 'mine'): void {
   localStorage.setItem('ade-chat-filter', f)
 }
 export function getChatListFilter(): 'all' | 'mine' { return chatFilter }
-export function setViewerUsername(u: string): void { viewerUsername = u }
+export function setViewerUsername(u: string): void {
+  viewerUsername = u
+  setCacheViewer(u)
+}
 
 interface OwnedSummary { id: string; title?: string; owner?: string | null }
 function decorateConversations<T extends OwnedSummary>(rows: T[]): T[] {
@@ -237,22 +256,42 @@ export async function deleteConversations(ids: string[]): Promise<{ deleted: str
   }).then(r => json<{ deleted: string[]; skipped: string[] }>(r))
 }
 
-interface NoteMessage { id: string; content?: string | null }
+interface NoteMessage { id: string; content?: string | null; finishReason?: string; stopped?: boolean; parts?: { kind?: string; id?: string; name?: string; args?: string; status?: string; result?: string }[] }
 
 /** The note that opens a chat continued from a pw code session says where
  *  it came from; it is not a reply, so it has nothing to regenerate. The
  *  chat shows Regenerate on every assistant message, so its link to the
- *  Code page is marked here (CodeView reads only machine and session) and
+ *  Code page is marked here (the Code page reads only machine and session) and
  *  styles.css hides Regenerate in the message holding that link. Notes
  *  saved before this are marked too. */
 export const CONTINUED_NOTE_MARK = 'note=continued'
+// It also settles the failed steps a later call recovered (recoveredSteps.ts),
+// and marks a reply ended by Stop as stopped.
 export function markNotes<T extends { messages?: NoteMessage[] }>(c: T): T {
   for (const m of c.messages ?? []) {
+    if (Array.isArray(m.parts)) m.parts = foldRecovered(m.parts)
+    // A reply ended by Stop is stored so; the chat marks it Stopped.
+    if (m.finishReason === 'stopped') m.stopped = true
     if (m.id.startsWith('note-continued-') && m.content && !m.content.includes(CONTINUED_NOTE_MARK)) {
       m.content = m.content.replace('](#view=code?', `](#view=code?${CONTINUED_NOTE_MARK}&`)
     }
   }
   return c
+}
+
+/** The Studio assistant's reply running in a conversation, as far as it
+ *  has got: a reply runs on when its page goes (a closed tab, a reload),
+ *  and the chat follows it from here until it ends. null when none runs. */
+export async function replyRunning(id: string): Promise<GeneratingReply | null> {
+  const res = await fetch(`/api/chat/conversations/${encodeURIComponent(id)}/generating`)
+  if (res.status === 404) return null
+  return json<GeneratingReply | null>(res)
+}
+
+/** Stops the reply running in a conversation: the only way it ends early,
+ *  as closing the page leaves it running. */
+async function stopReply(id: string): Promise<void> {
+  await fetch(`/api/chat/conversations/${encodeURIComponent(id)}/stop`, { method: 'POST' }).then(r => json(r))
 }
 
 export function createStudioAdapter(): ChatAdapter {
@@ -261,18 +300,28 @@ export function createStudioAdapter(): ChatAdapter {
     // partitioned inside the platform iframe and loses history.
     conversations: {
       list: () => fetch('/api/chat/conversations').then(r => json<OwnedSummary[]>(r)).then(decorateConversations) as ReturnType<ChatAdapter['conversations']['list']>,
-      get: id => fetch(`/api/chat/conversations/${id}`).then(r => json<{ messages?: NoteMessage[] }>(r)).then(markNotes) as ReturnType<ChatAdapter['conversations']['get']>,
+      // One read with the chat page's other parts (chatRecord.ts), or the
+      // one started when the pointer came to the chat in the list; the
+      // thread gets its own copy, since it changes what it is given.
+      // A reply still running in it comes with it, so the chat shows it
+      // being written and follows it to its end.
+      get: id => Promise.all([
+        (takeReadAhead(id) ?? readChat(id)).then(c => markNotes(structuredClone(c) as { messages?: NoteMessage[] })),
+        replyRunning(id).catch(() => null),
+      ]).then(([c, generating]) => (generating ? { ...c, generating } : c)) as ReturnType<ChatAdapter['conversations']['get']>,
+      generating: replyRunning,
+      stop: stopReply,
       create: title => fetch('/api/chat/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
       }).then(r => json(r)),
-      rename: async (id, title) => { await fetch(`/api/chat/conversations/${id}`, {
+      rename: async (id, title) => { forgetChat(id); await fetch(`/api/chat/conversations/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
       }).then(r => json(r)) },
-      remove: async id => { await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => json(r)) },
+      remove: async id => { forgetChat(id); await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => json(r)) },
     },
     models: { list: listModels },
     // The composer's Tools menu: one switch per kind of tool the server

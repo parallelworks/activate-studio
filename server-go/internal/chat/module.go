@@ -50,12 +50,16 @@ func init() {
 
 // Module is the track's state.
 type Module struct {
-	A     *app.App
-	Keys  *modelkeys.Store
-	LLM   *llm.Client
-	Conv  *conversations.Store
-	Tools Tools
-	Convs *conversations.Routes
+	// where is what each chat worked with and the place its person chose
+	// for its writes (where.go).
+	whereOnce sync.Once
+	where     *chatTouches
+	A         *app.App
+	Keys      *modelkeys.Store
+	LLM       *llm.Client
+	Conv      *conversations.Store
+	Tools     Tools
+	Convs     *conversations.Routes
 	// Ext is the deployment's extensions (skills, agents, custom tools).
 	Ext *extensions.Set
 	// MCP is the client for the attached MCP servers.
@@ -72,7 +76,21 @@ type Module struct {
 	prompt  promptCache
 
 	accessMu sync.Mutex
-	access   Access
+	// bridgeVisits is when each person's pw code session elsewhere last
+	// reached the Studio's tools (mcpbridge.go).
+	bridgeMu     sync.Mutex
+	bridgeVisits map[string]bridgeVisit
+	// bridgeBusy is whose setup runs now (mcpsetup.go); bridgeRunFn and
+	// bridgeMachineFn stand in for pw ssh and the platform's machine list
+	// in tests.
+	bridgeBusy       map[string]bool
+	bridgePrefStore  *bridgePrefStore
+	bridgeRunFn      bridgeRunner
+	bridgeMachineFn  bridgeMachineFn
+	bridgeMachinesFn bridgeMachinesFn
+	bridgeAttachFn   bridgeAttachFn
+	bridgeClustersFn bridgeClustersFn
+	access           Access
 
 	listings *listingCache
 	noCap    *noTokenCap
@@ -103,6 +121,8 @@ type Module struct {
 	notes *noteQueue
 	// pw is pw code chat's state (pwcodechat.go).
 	pw pwState
+	// live is the Studio assistant's replies running now (liveturn.go).
+	live liveTurns
 }
 
 // Default is the registered module.
@@ -127,7 +147,7 @@ func New(a *app.App) *Module {
 		}
 		return ""
 	}
-	m.LLM = llm.New(m.gatewayBase, m.GatewayKey)
+	m.LLM = llm.New(m.gatewayBase, m.deploymentModelsKey)
 	m.Conv = conversations.New(a.Cfg.IndexBase, a.Cfg.KBRoot, conversations.Hooks{
 		Log: func(msg string) { a.Log.Warn(msg) },
 	})
@@ -211,15 +231,33 @@ func (m *Module) contextName() *string {
 	return m.access.ContextName
 }
 
-// GatewayKey is gateway.ts's gatewayKey: a shared personal key, else the
-// deployment's (PW_API_KEY, else the pw CLI's credential).
+// GatewayKey is the deployment's own credential (PW_API_KEY, else the pw
+// CLI's), "" after Stop using the pw CLI. On a Studio several people use
+// it is the administrator's and serves only housekeeping that acts as no
+// person; work for a person uses deploymentModelsKey or platformKey. A key
+// someone shared with the deployment is no longer used.
 func (m *Module) GatewayKey() string {
-	if k := m.Keys.SharedKey(); k != "" {
-		return k
+	if m.pf != nil && m.pf.Stopped() {
+		return ""
 	}
 	m.accessMu.Lock()
 	defer m.accessMu.Unlock()
 	return m.access.DeploymentKey
+}
+
+// deploymentModelsKey is the key a model call for a person without a
+// credential of their own uses: on a Studio of one the owner's
+// (GatewayKey); on a Studio several people use only an OpenAI-compatible
+// endpoint the administrator set, never the administrator's ACTIVATE
+// credential, so "" where the gateway is an ACTIVATE platform's.
+func (m *Module) deploymentModelsKey() string {
+	if !m.A.Cfg.AuthEnabled() {
+		return m.GatewayKey()
+	}
+	if m.pf == nil || m.pf.PlatformGateway() {
+		return ""
+	}
+	return m.GatewayKey()
 }
 
 // refreshAccess is ensureFreshAccess(ms) and a reread of the platform
@@ -274,8 +312,10 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	m.Convs.Register(mux, h)
 	m.chatSaveRoutes(h)
+	m.liveRoutes(h)
 	m.pwcodeRoutes(h)
 	m.pwcodeContinueRoutes(h)
+	m.pwcodeProxyRoutes(h)
 	m.keyRoutes(h)
 	h("GET /api/chat/models", m.models)
 	h("GET /api/ai/health", m.health)
@@ -291,10 +331,15 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("POST /v1/chat/completions", m.v1Completions)
 	h("POST /api/mcp", m.mcpPost)
 	h("GET /api/mcp", m.mcpGet)
+	h("GET /api/mcp/bridge", m.bridgeRoute)
+	h("POST /api/mcp/bridge/setup", m.bridgeSetup)
+	h("POST /api/mcp/bridge/prefs", m.bridgeDecline)
+	h("GET /api/mcp/bridge/machines", m.bridgeMachinesRoute)
 	m.attachmentRoutes(h)
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
+	a.Providers.Accounts = func(*http.Request) bool { return !m.Keys.Disabled() }
 	a.Providers.PersonalCred = func(sub, cookieHeader string) (string, string, bool) {
 		if sub != "" && cookieHeader != "" {
 			m.Keys.Hydrate(sub, cookieHeader)
@@ -398,4 +443,12 @@ func (m *Module) runsRoute(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	return reqbody.OK(w, reqbody.O("runs", wf.Runs.List(60)))
+}
+
+// noModelCredential is what a model call without a credential says.
+func noModelCredential(shared bool) string {
+	if shared {
+		return "No model credential of your own. Sign in with ACTIVATE, or add an OpenAI-compatible endpoint, under Settings, Accounts."
+	}
+	return "No model credential. Sign in with ACTIVATE, or add an OpenAI-compatible endpoint, under Settings, Accounts."
 }

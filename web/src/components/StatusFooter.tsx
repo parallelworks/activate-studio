@@ -19,6 +19,14 @@ import { reloadOntoNewest, useShellUpdate } from '../shellWorker'
 import { plural } from '../plural'
 import { steadyCount } from '../steady'
 
+/** The sync row's words: when the background sync last finished. */
+export function syncedLine(iso: string | null): string {
+  return iso ? `Synced ${ago(iso)}` : 'Sync pending'
+}
+
+/** A footer row's words start with a capital, as the rest of Studio's do. */
+const sentence = (s: string | undefined) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '')
+
 function ago(iso: string | null): string {
   // Null just means no sweep has completed since the server started.
   if (!iso) return 'pending'
@@ -507,13 +515,16 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
 
   const busy = syncing || !!idx?.running
   const summary = indexSummary(idx, stats?.files, countedIn(cfg.libraries ?? [], stats?.lib))
+  // The row itself is short enough for the narrowest sidebar; which
+  // libraries the count covers is in its tooltip.
+  const row = indexSummary(idx, stats?.files)
   const railUpdate = failed ? 'The update failed' : installing ? 'Updating' : `Version ${update} is available`
   if (collapsed) {
     return (
       <div className="sidenav-footer">
         {after.reopen && (
           <button className="status-line footer-rail-update" title="Reopen the app to finish updating. Opens Settings, Updates."
-            aria-label="Reopen to finish updating" onClick={openUpdates}>
+            aria-label="Reopen to update" onClick={openUpdates}>
             <StatusDot variant="warning" size={7} />
           </button>
         )}
@@ -523,7 +534,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             <StatusDot variant={failed ? 'warning' : 'info'} pulse={installing} size={7} />
           </button>
         )}
-        <div className="status-line" title={`${summary.text}${summary.detail ? `: ${summary.detail}` : ''}, sync ${ago(idx?.lastSweepAt ?? null)}`}>
+        <div className="status-line" title={`${summary.text}${summary.detail ? `: ${summary.detail}` : ''}, ${syncedLine(idx?.lastSweepAt ?? null).toLowerCase()}`}>
           <StatusDot variant={summary.tone} pulse={summary.pulse} size={7} />
         </div>
       </div>
@@ -546,7 +557,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={who.verified ? 'success' : 'muted'} size={7} />
-                {who.verified ? who.user?.username : 'identity not verified'}
+                <span className="identity-text">{who.verified ? who.user?.username : 'Identity not verified'}</span>
               </button>
             }
           />
@@ -562,23 +573,22 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={ai.status === 'ok' ? 'success' : ai.status === 'unconfigured' ? 'muted' : 'warning'} size={7} />
-                {ai.status === 'ok' ? modelsReady(ai.models) : AI_LABEL[ai.status]}
+                <span className="identity-text">{sentence(ai.status === 'ok' ? modelsReady(ai.models) : AI_LABEL[ai.status])}</span>
               </button>
             }
           />
         </div>
       )}
       {(updated || (shellNewer && build)) && (
-        <div className="status-line" data-testid="footer-reload" title="A new version was deployed while this page was open, or since this device last loaded the page">
+        <div className="status-line" data-testid="footer-reload" title={`Version ${(updated ?? build)?.version} was deployed while this page was open, or since this device last loaded the page`}>
           <StatusDot variant="warning" size={7} />
-          Updated to {(updated ?? build)?.version}
-          <Button variant="secondary" size="xs" onClick={() => { void reloadOntoNewest() }}>Reload</Button>
+          <span className="identity-text">Updated<span className="footer-long"> to {(updated ?? build)?.version}</span></span>
+          <Button variant="ghost" size="xs" className="footer-sync" onClick={() => { void reloadOntoNewest() }}>Reload</Button>
         </div>
       )}
       {after.reopen && (
-        <div className="status-line" data-testid="footer-reopen" title="The update changed the app's window, which updates when the app reopens. Quit and reopen the app to finish.">
+        <div className="status-line" data-testid="footer-reopen" title="The update is installed and changed the app's window, which updates when the app reopens. Quit and reopen the app to finish.">
           <StatusDot variant="warning" size={7} />
-          Reopen to finish updating
           <ReopenApp compact />
         </div>
       )}
@@ -599,27 +609,28 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           {installing ? (
             <Button variant="ghost" size="xs" className="footer-sync footer-update" title="An update is being installed. Opens the Build panel, with its progress."
               onClick={() => setBuildOpen(true)}>
-              updating…
+              Updating…
             </Button>
           ) : failed ? (
             <Button variant="ghost" size="xs" className="footer-sync footer-update" title="The update was not installed. Opens the Build panel, which says why."
               onClick={() => setBuildOpen(true)}>
-              update failed
+              Update failed
             </Button>
           ) : update ? (
             <Button variant="ghost" size="xs" className="footer-sync footer-update footer-update-available" title={`Version ${update} is available. Opens the Build panel, with Update now.`}
-              onClick={() => setBuildOpen(true)}>
-              update available
+              aria-label="Update available" onClick={() => setBuildOpen(true)}>
+              <span>Update<span className="footer-long"> available</span></span>
             </Button>
           ) : after.updated ? (
-            <Button variant="ghost" size="xs" className="footer-sync" title="This version is newer than the one last opened here. Opens What's new."
+            <Button variant="ghost" size="xs" className="footer-sync" title="Updated since you last opened Studio. Shows what changed."
               onClick={() => { after.clear(); openWhatsNew() }}>
-              what's new
+              What&apos;s new
             </Button>
           ) : updates ? (
             <Button variant="ghost" size="xs" className="footer-sync" title={checked === 'check failed' && flow.error ? flow.error : 'Check for a newer version now'}
+              aria-label={checking || checked ? undefined : 'Check for updates'}
               loading={checking} disabled={checking || !!flow.busy} onClick={() => void checkNow()}>
-              {checking ? 'checking…' : checked ?? 'check for updates'}
+              {checking ? 'Checking…' : checked ? sentence(checked) : <span>Check<span className="footer-long"> for updates</span></span>}
             </Button>
           ) : null}
         </div>
@@ -632,19 +643,19 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           onSync={() => { void sync() }}
           syncing={syncing}
           trigger={
-            <button className="identity-btn" title={summary.detail ?? undefined}>
-              <StatusDot variant={summary.tone} pulse={summary.pulse} size={7} />
-              {summary.text}
+            <button className="identity-btn" title={summary.detail ?? summary.text}>
+              <StatusDot variant={row.tone} pulse={row.pulse} size={7} />
+              <span className="identity-text">{row.text}</span>
             </button>
           }
         />
       </div>
       <div className="status-line muted2">
         {idx?.job
-          ? <>for {fmtDuration(elapsed(idx.job))}</>
-          : <>sync {ago(idx?.lastSweepAt ?? null)}</>}
+          ? <span className="identity-text">Running for {fmtDuration(elapsed(idx.job))}</span>
+          : <span className="identity-text">{syncedLine(idx?.lastSweepAt ?? null)}</span>}
         <Button variant="ghost" size="xs" className="footer-sync" onClick={sync} loading={syncing} disabled={busy}>
-          {idx?.job ? 'indexing…' : busy ? 'syncing…' : 'sync now'}
+          {idx?.job ? 'Indexing…' : busy ? 'Syncing…' : 'Sync now'}
         </Button>
       </div>
     </div>

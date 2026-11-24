@@ -121,7 +121,9 @@ func newFixture(t *testing.T, env map[string]string, curated ...string) *fixture
 	}
 	ix := t.TempDir()
 	kb := t.TempDir()
-	p := platform.New(platform.Options{IndexBase: ix, KBRoot: kb, Home: t.TempDir(), LookupEnv: func(k string) (string, bool) { v, ok := full[k]; return v, ok }})
+	// AUTH_ON=1 is a Studio several people use (sign-in on).
+	p := platform.New(platform.Options{IndexBase: ix, KBRoot: kb, Home: t.TempDir(), LookupEnv: func(k string) (string, bool) { v, ok := full[k]; return v, ok },
+		AuthEnabled: func() bool { return full["AUTH_ON"] == "1" }})
 	f := &fixture{t: t, p: p}
 	r := NewRoutes(nil, p)
 	r.Curated = func() []string { return curated }
@@ -135,7 +137,9 @@ func newFixture(t *testing.T, env map[string]string, curated ...string) *fixture
 		}
 		return ans(args, key)
 	}
-	r.Runs.CLI = func(ctx context.Context, args []string) (string, error) { return "", errors.New("no watcher in tests") }
+	r.Runs.CLI = func(ctx context.Context, args []string, _ string) (string, error) {
+		return "", errors.New("no watcher in tests")
+	}
 	r.Runs.Note = func(string, string) {}
 	r.Runs.Log = func(string) {}
 	t.Cleanup(r.Runs.Stop)

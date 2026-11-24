@@ -38,7 +38,7 @@ func TestComposedWorkflowPassesTheSchema(t *testing.T) {
 	fakeNet(t)
 	p := composePlatform(t)
 	ctx := context.Background()
-	c, err := Compose(ctx, p, []ComposeStep{{Uses: "cloudinit"}, {Uses: "Hello.World"}}, true)
+	c, err := Compose(ctx, p, "", []ComposeStep{{Uses: "cloudinit"}, {Uses: "Hello.World"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestComposeKeepsMarketplaceAndGitHubReferences(t *testing.T) {
 	fakeNet(t)
 	p := composePlatform(t)
 	ctx := context.Background()
-	c, err := Compose(ctx, p, []ComposeStep{{Uses: "marketplace/cloudinit/v1.0.1"}, {Uses: "github/org/repo/wf"}}, true)
+	c, err := Compose(ctx, p, "", []ComposeStep{{Uses: "marketplace/cloudinit/v1.0.1"}, {Uses: "github/org/repo/wf"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestComposeKeepsMarketplaceAndGitHubReferences(t *testing.T) {
 	if v := NewSchema(p).Validate(ctx, c.YAML); v.OK == nil || !*v.OK {
 		t.Fatal(v.Errors)
 	}
-	if _, err := Compose(ctx, p, nil, true); err == nil {
+	if _, err := Compose(ctx, p, "", nil, true); err == nil {
 		t.Fatal("no steps is an error")
 	}
 }

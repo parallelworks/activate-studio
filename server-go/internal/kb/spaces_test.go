@@ -2,6 +2,7 @@ package kb
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
@@ -23,6 +25,9 @@ type spaceStub struct {
 	remoteStub
 	calls []string
 	files map[string]string
+	// gate, when set, holds a move until it is closed; a move whose
+	// request has ended by then notes so.
+	gate chan struct{}
 }
 
 func (s *spaceStub) Library(r *http.Request, id string) (Library, error) {
@@ -60,7 +65,14 @@ func (s *spaceStub) Rename(_ *http.Request, _ Library, rel, name string) (string
 	s.note("rename " + rel + " " + name)
 	return filepath.Join(filepath.Dir(rel), name), nil
 }
-func (s *spaceStub) Move(_ *http.Request, _ Library, rels []string, dest string) ([]Moved, []Skipped, error) {
+func (s *spaceStub) Move(r *http.Request, _ Library, rels []string, dest string) ([]Moved, []Skipped, error) {
+	if s.gate != nil {
+		<-s.gate
+		if r.Context().Err() != nil {
+			s.note("move after its request ended")
+			return nil, nil, r.Context().Err()
+		}
+	}
 	s.note("move " + strings.Join(rels, ",") + " " + dest)
 	return []Moved{{From: rels[0], To: dest + "/" + filepath.Base(rels[0])}}, nil, nil
 }
@@ -173,5 +185,116 @@ func TestWritesInASpaceRunThroughSpaceFiles(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(kbRoot); len(entries) != 0 {
 		t.Fatalf("this host's folder was written: %v", entries)
+	}
+}
+
+// A move or delete in a person's space asked for as a job (async), as the
+// Library panel asks, is answered with a job that /api/jobs/<id> serves
+// until it is done, and only to that person; the work goes on after the
+// request has ended. Before, it was done at once and answered without an
+// id, and the panel's poll of the job said "no such job".
+func TestSpaceMovesAndDeletesAsJobsThePanelCanWatch(t *testing.T) {
+	kbRoot, ix := t.TempDir(), t.TempDir()
+	env := map[string]string{"KB_ROOT": kbRoot, "INDEX_BASE": ix, "STUDIO_NODE": "off", "GUFI_BIN": filepath.Join(ix, "no-gufi")}
+	cfg, err := config.Load(func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(app.New(cfg, slog.New(slog.DiscardHandler), nil, nil))
+	mux := http.NewServeMux()
+	m.Routes(mux)
+	stub := &spaceStub{files: map[string]string{}, gate: make(chan struct{})}
+	oldR, oldS, oldO := LibraryResolver, SpaceFiles, JobOwner
+	LibraryResolver, SpaceFiles = stub, stub
+	JobOwner = func(r *http.Request) string { return r.Header.Get("X-Test-Person") }
+	defer func() { LibraryResolver, SpaceFiles, JobOwner = oldR, oldS, oldO }()
+
+	do := func(who, method, url, body string) (int, map[string]any) {
+		ctx, cancel := context.WithCancel(context.Background())
+		req := httptest.NewRequest(method, url, strings.NewReader(body)).WithContext(ctx)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Test-Person", who)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		// As a server does once the handler has answered.
+		cancel()
+		var out map[string]any
+		json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	wait := func(id any) map[string]any {
+		for range 200 {
+			c, j := do("ana", "GET", fmt.Sprintf("/api/jobs/%v", id), "")
+			if c != 200 {
+				t.Fatalf("job %v: %d %v", id, c, j)
+			}
+			if j["state"] != "running" {
+				return j
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("job %v still running", id)
+		return nil
+	}
+
+	type answer struct {
+		c int
+		b map[string]any
+	}
+	got := make(chan answer, 1)
+	go func() {
+		c, b := do("ana", "POST", "/api/kb/move", `{"library":"mine","paths":["a.md","b.md","c.md","d.md","e.md"],"dest":"plans","async":true}`)
+		got <- answer{c, b}
+	}()
+	var c int
+	var job map[string]any
+	select {
+	case a := <-got:
+		c, job = a.c, a.b
+	case <-time.After(3 * time.Second):
+		close(stub.gate)
+		<-got
+		t.Fatal("the move was done before the answer, not as a job")
+	}
+	id, ok := job["id"].(float64)
+	if c != 200 || !ok || id < JobIDBase || job["kind"] != "move" || job["total"] != float64(5) {
+		t.Fatalf("move: %d %v", c, job)
+	}
+	if c, j := do("ben", "GET", fmt.Sprintf("/api/jobs/%v", id), ""); c != 404 {
+		t.Errorf("another person read the job: %d %v", c, j)
+	}
+	if c, j := do("ana", "GET", fmt.Sprintf("/api/jobs/%v", id), ""); c != 200 || j["state"] != "running" {
+		t.Errorf("running job: %d %v", c, j)
+	}
+	close(stub.gate)
+	j := wait(id)
+	if j["state"] != "done" || j["done"] != float64(5) || fmt.Sprint(j["result"].(map[string]any)["moved"]) != "[map[from:a.md to:plans/a.md]]" {
+		t.Fatalf("finished move: %v", j)
+	}
+	if got := strings.Join(stub.calls, "; "); !strings.Contains(got, "move a.md,b.md,c.md,d.md,e.md plans") || strings.Contains(got, "after its request ended") {
+		t.Errorf("calls: %s", got)
+	}
+
+	c, job = do("ana", "POST", "/api/kb/delete", `{"library":"mine","paths":["old.md"],"async":true}`)
+	if c != 200 || job["kind"] != "delete" {
+		t.Fatalf("delete: %d %v", c, job)
+	}
+	if j := wait(job["id"]); j["state"] != "done" || fmt.Sprint(j["result"].(map[string]any)["deleted"]) != "[old.md]" {
+		t.Fatalf("finished delete: %v", j)
+	}
+	c, job = do("ana", "DELETE", "/api/kb/dir?library=mine&path=old&async=1", "")
+	if c != 200 || job["kind"] != "delete" {
+		t.Fatalf("delete dir: %d %v", c, job)
+	}
+	if j := wait(job["id"]); j["state"] != "done" {
+		t.Fatalf("finished delete dir: %v", j)
+	}
+	// A move that cannot start says why, as an error, not a job.
+	if c, b := do("ana", "POST", "/api/kb/move", `{"library":"mine","paths":["../x"],"dest":"plans","async":true}`); c < 400 || b["error"] == nil {
+		t.Errorf("bad move: %d %v", c, b)
+	}
+	// Without async, the answer is what was done, as before.
+	if c, b := do("ana", "POST", "/api/kb/move", `{"library":"mine","paths":["f.md"],"dest":"plans"}`); c != 200 || b["reindexing"] != true {
+		t.Errorf("move at once: %d %v", c, b)
 	}
 }

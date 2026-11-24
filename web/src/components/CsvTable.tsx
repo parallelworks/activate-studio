@@ -1,15 +1,8 @@
-import { useMemo, useState } from 'react'
-import { Button } from '@parallelworks/ui'
+import { useMemo } from 'react'
+import { type GridCell, type GridSheetData, SheetGrid } from './SheetGrid'
 
-/**
- * A CSV or TSV file as a table: the first row is the header, which stays
- * in view while the rows scroll; numeric columns are right aligned and
- * sort as numbers; a filter keeps the rows holding its text. Rows are
- * drawn a page at a time, so a large file does not hold the page.
- */
 
 export const DELIMITED_SUFFIXES = ['.csv', '.tsv']
-const PAGE = 500
 const CANDIDATES = [',', '\t', ';', '|']
 
 /** RFC 4180 fields: quotes around a field allow the delimiter, line breaks
@@ -74,105 +67,50 @@ function asNumber(v: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-type Sort = { col: number; dir: 1 | -1 } | null
-
+/**
+ * A CSV or TSV file in the spreadsheet grid (SheetGrid.tsx), as a workbook
+ * sheet is: its first row is the header, frozen and bold; numbers sit to
+ * the right; columns are as wide as their values ask, within limits. Rows
+ * filter, and sort by the selected column under the header.
+ */
 export function CsvTable({ text, suffix, truncated }: { text: string; suffix: string; truncated?: boolean }) {
-  const { header, body, cols, partial, delim } = useMemo(() => {
+  const { data, partial, delim, body } = useMemo(() => {
     const delim = detectDelimiter(text, suffix)
     const { rows, partial } = parseDelimited(text, delim, truncated)
     const cols = rows.reduce((n, r) => Math.max(n, r.length), 0)
-    return { header: rows[0] ?? [], body: rows.slice(1), cols, partial, delim }
+    const widths = Array.from({ length: cols }, (_, c) => {
+      let longest = 0
+      for (let r = 0; r < Math.min(rows.length, 300); r++) longest = Math.max(longest, Math.min(60, (rows[r][c] ?? '').length))
+      return Math.max(56, Math.min(400, longest * 7 + 18))
+    })
+    const data: GridSheetData = {
+      name: suffix.slice(1).toUpperCase(),
+      rows: rows.length,
+      cols,
+      totalRows: rows.length,
+      totalCols: cols,
+      colWidths: widths,
+      frozenRows: rows.length > 1 ? 1 : 0,
+      styles: [{ b: true }],
+      cells: rows.map((row, r) => ({
+        r,
+        c: row.flatMap((v, c): GridCell[] => v === '' ? [] : [r === 0 ? [c, v, 0] : asNumber(v) !== null ? [c, v, -1, '', '', 'n'] : [c, v]]),
+      })),
+    }
+    return { data, partial, delim, body: Math.max(0, rows.length - 1) }
   }, [text, suffix, truncated])
-  const numeric = useMemo(() => Array.from({ length: cols }, (_, c) => {
-    let seen = 0
-    for (const r of body) {
-      const v = r[c] ?? ''
-      if (!v.trim()) continue
-      if (asNumber(v) === null) return false
-      if (++seen >= 200) break
-    }
-    return seen > 0
-  }), [body, cols])
-  const [filter, setFilter] = useState('')
-  const [sort, setSort] = useState<Sort>(null)
-  const [limit, setLimit] = useState(PAGE)
 
-  const shown = useMemo(() => {
-    const q = filter.trim().toLowerCase()
-    let rows = body.map((r, i) => ({ r, n: i + 1 }))
-    if (q) rows = rows.filter(({ r }) => r.some(v => v.toLowerCase().includes(q)))
-    if (sort) {
-      const { col, dir } = sort
-      const num = numeric[col]
-      rows = [...rows].sort((a, b) => {
-        const x = a.r[col] ?? '', y = b.r[col] ?? ''
-        if (num) {
-          const nx = asNumber(x), ny = asNumber(y)
-          if (nx === null || ny === null) return nx === null ? (ny === null ? 0 : 1) : -1
-          return (nx - ny) * dir
-        }
-        if (!x || !y) return !x ? (!y ? 0 : 1) : -1
-        return x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' }) * dir
-      })
-    }
-    return rows
-  }, [body, filter, sort, numeric])
-
-  if (!cols) return <p className="muted pad">This file has no rows.</p>
-
-  const cycle = (c: number) => setSort(s => (!s || s.col !== c ? { col: c, dir: 1 } : s.dir === 1 ? { col: c, dir: -1 } : null))
+  if (!data.cols) return <p className="muted pad">This file has no rows.</p>
   const delimName = delim === '\t' ? 'tab' : delim === ',' ? 'comma' : delim === ';' ? 'semicolon' : 'pipe'
-
   return (
-    <div className="csv-view">
-      <div className="csv-bar">
-        <input
-          className="csv-filter"
-          type="search"
-          placeholder="Filter rows"
-          aria-label="Filter rows"
-          value={filter}
-          onChange={e => { setFilter(e.target.value); setLimit(PAGE) }}
-        />
-        <span className="muted csv-count">
-          {filter.trim() ? `${shown.length.toLocaleString()} of ` : ''}{body.length.toLocaleString()} rows, {cols} columns, {delimName} separated
-        </span>
-      </div>
-      <div className="csv-scroll">
-        <table className="csv-table">
-          <thead>
-            <tr>
-              <th className="csv-n" aria-label="Row" />
-              {Array.from({ length: cols }, (_, c) => {
-                const dir = sort?.col === c ? sort.dir : 0
-                return (
-                  <th key={c} className={numeric[c] ? 'num' : undefined} aria-sort={dir === 1 ? 'ascending' : dir === -1 ? 'descending' : 'none'}>
-                    <button type="button" onClick={() => cycle(c)} title="Sort by this column">
-                      {header[c] || `Column ${c + 1}`}
-                      <span className="csv-sort" aria-hidden>{dir === 1 ? '▲' : dir === -1 ? '▼' : ''}</span>
-                    </button>
-                  </th>
-                )
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {shown.slice(0, limit).map(({ r, n }) => (
-              <tr key={n}>
-                <td className="csv-n">{n}</td>
-                {Array.from({ length: cols }, (_, c) => <td key={c} className={numeric[c] ? 'num' : undefined}><div className="csv-c">{r[c] ?? ''}</div></td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {shown.length > limit && (
-        <div className="csv-more">
-          <span className="muted">Showing {limit.toLocaleString()} of {shown.length.toLocaleString()} rows.</span>
-          <Button variant="secondary" size="sm" onClick={() => setLimit(l => l + PAGE * 4)}>Show more</Button>
-        </div>
-      )}
-      {(truncated || partial) && <p className="muted pad">The first part of the file is shown; use Download for all of it.</p>}
-    </div>
+    <SheetGrid
+      data={data}
+      label="Table"
+      sortable
+      note={<>
+        {`${body.toLocaleString()} rows, ${data.cols} columns, ${delimName} separated. `}
+        {(truncated || partial) && 'The first part of the file is shown; use Download for all of it.'}
+      </>}
+    />
   )
 }

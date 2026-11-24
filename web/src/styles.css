@@ -431,25 +431,32 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 .sidenav-group-inner { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
 .sidenav.collapsed .sidenav-group, .sidenav.collapsed .sidenav-group-body, .sidenav.collapsed .sidenav-group-inner { display: contents; }
 .sidenav.collapsed .sidenav-group-head { display: none; }
-.sidenav-footer { padding: 10px 8px 0; border-top: 1px solid var(--pw-border); }
-.status-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--pw-muted); padding: 2px 0; }
+.sidenav-footer { padding: 10px 8px 0; border-top: 1px solid var(--pw-border); container: navfooter / inline-size; }
+/* One list: every row on one line, left aligned, at the same size, its dot
+   beside the text. A row's text is cut with an ellipsis before it wraps. */
+.status-line { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 18px; color: var(--pw-muted); padding: 2px 0; min-width: 0; white-space: nowrap; }
+/* The dots keep their size; only text gives way. */
+.status-line > span:first-child:not(.identity-text), .identity-btn > span:first-child { flex-shrink: 0; }
 /* Reserves the footer's height while its first read is in flight. */
 .footer-pending { min-height: 74px; }
 .footer-skeleton { margin: 4px 0 10px; }
 .status-line.muted2 { color: var(--pw-muted); }
-/* The action beside a footer line gives way first: at the Narrow width it
-   wraps onto two lines before the line's own text, such as the version, is
-   cut. The text keeps its full width up to what the action's minimum leaves
-   it; only a longer one, such as a clone's git describe, is cut. */
-.footer-sync { margin-left: auto; flex-shrink: 1; min-width: 6em; white-space: normal; text-align: right; line-height: 1.2; }
-.status-line:has(> .footer-sync) > .identity-btn { flex-shrink: 0; max-width: calc(100% - 6em - 6px); }
-/* A newer version: "update available" carries the footer's one tint, the info
+/* The action at the end of a row: plain text at the row's own size and
+   weight, the text color, underlined on hover. It takes the room it needs;
+   the row's own text is cut first. */
+.footer-sync.footer-sync { margin-left: auto; flex-shrink: 0; height: auto; min-height: 0; padding: 0 2px; font-size: 12px;
+  font-weight: 400; line-height: 18px; color: var(--pw-text); background: none; white-space: nowrap; }
+.footer-sync.footer-sync:hover:not(:disabled) { background: none; text-decoration: underline; text-underline-offset: 2px; }
+/* On the narrowest sidebar the longer actions drop their last words: Check,
+   Update. Their tooltips and accessible names keep the whole. */
+@container navfooter (max-width: 190px) { .footer-long { display: none; } }
+/* A newer version: "Update available" carries the footer's one tint, the info
    color the collapsed rail's dot uses, so it is seen without calling out. The
-   class is doubled to outrank the ghost button's own colors. */
-.footer-update-available.footer-update-available { color: var(--theme-info-text); background: var(--theme-info-muted); font-weight: 500; }
-.footer-update-available.footer-update-available:hover { color: var(--theme-info-text); background: color-mix(in srgb, var(--theme-info) 22%, transparent); }
-/* A long build name (a clone's git describe) stays on one line. */
-.status-line .identity-btn { min-width: 0; }
+   class is repeated to outrank the ghost button's own colors. */
+.footer-update-available.footer-update-available.footer-update-available { color: var(--theme-info-text); background: var(--theme-info-muted); padding: 0 6px; border-radius: 4px; }
+.footer-update-available.footer-update-available.footer-update-available:hover { color: var(--theme-info-text); background: color-mix(in srgb, var(--theme-info) 22%, transparent); text-decoration: none; }
+/* The row's text, as a button's label: left aligned, cut with an ellipsis. */
+.status-line .identity-btn { min-width: 0; text-align: left; }
 .identity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- content area ---- */
@@ -488,11 +495,11 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
    first-child form clamped the separator's grab strip to a 52px sliver,
    which read as resizing having disappeared. */
 .chat-canvas > .flex.h-full > :first-child > div[class*="justify-between"] { height: 52px; }
-.chat-canvas main [class*="flex-shrink-0"][class*="border-b"] {
+.chat-canvas main [class*="flex-shrink-0"][class*="border-b"]:where(:not(.pwcode-session *, .code-page *)) {
   height: 52px; display: flex; align-items: center;
   padding-top: 0 !important; padding-bottom: 0 !important;
 }
-.chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div { flex: 1; }
+.chat-canvas main [class*="flex-shrink-0"][class*="border-b"] > div:where(:not(.pwcode-session *, .code-page *)) { flex: 1; }
 
 /* ---- library view ---- */
 .library { display: flex; padding: 12px; flex: 1; min-height: 0; }
@@ -910,36 +917,36 @@ textarea.field { line-height: 1.5; }
 
 /* Streamdown code blocks (chat + markdown viewer): platform strip header,
    hairline border, compact type instead of the package's rounded-xl card. */
-[data-streamdown='code-block'] {
+[data-streamdown='code-block']:where(:not(.pwcode-session *, .code-page *)) {
   margin: 10px 0; padding: 0; gap: 0;
   border-radius: 8px; border: 1px solid var(--pw-border);
   background: #f8fafc; overflow: hidden;
 }
-[data-streamdown='code-block-header'] {
+[data-streamdown='code-block-header']:where(:not(.pwcode-session *, .code-page *)) {
   height: 28px; padding: 0 10px;
   background: #f1f5f9; border-bottom: 1px solid var(--pw-border);
   font-size: 11px; letter-spacing: 0.02em;
 }
-[data-streamdown='code-block-header'] span:empty::before { content: 'code'; }
-[data-streamdown='code-block'] > div:has(> [data-streamdown='code-block-actions']) {
+[data-streamdown='code-block-header'] span:empty:where(:not(.pwcode-session *, .code-page *))::before { content: 'code'; }
+[data-streamdown='code-block'] > div:has(> [data-streamdown='code-block-actions']):where(:not(.pwcode-session *, .code-page *)) {
   margin-top: -28px; height: 28px; align-items: center; padding-right: 4px; top: 0;
 }
-[data-streamdown='code-block-actions'] {
+[data-streamdown='code-block-actions']:where(:not(.pwcode-session *, .code-page *)) {
   border: none; background: transparent; backdrop-filter: none; padding: 0 2px; gap: 0;
 }
-[data-streamdown='code-block-actions'] svg { width: 13px; height: 13px; }
-[data-streamdown='code-block-body'] {
+[data-streamdown='code-block-actions'] svg:where(:not(.pwcode-session *, .code-page *)) { width: 13px; height: 13px; }
+[data-streamdown='code-block-body']:where(:not(.pwcode-session *, .code-page *)) {
   font-size: 13px; line-height: 1.55;
   border: none; border-radius: 0; background: transparent; padding: 0;
 }
-[data-streamdown='code-block-body'] pre { margin: 0; padding: 10px 12px; background: transparent !important; }
-[data-streamdown='inline-code'] {
+[data-streamdown='code-block-body'] pre:where(:not(.pwcode-session *, .code-page *)) { margin: 0; padding: 10px 12px; background: transparent !important; }
+[data-streamdown='inline-code']:where(:not(.pwcode-session *, .code-page *)) {
   font-size: 0.88em; padding: 1px 5px; border-radius: 5px;
   background: #eef2f6; border: 1px solid var(--pw-border);
 }
-[data-theme='dark'] [data-streamdown='code-block'] { background: var(--pw-input-bg); }
-[data-theme='dark'] [data-streamdown='code-block-header'] { background: var(--theme-hover); }
-[data-theme='dark'] [data-streamdown='inline-code'] { background: var(--theme-hover); border-color: var(--pw-border); }
+[data-theme='dark'] [data-streamdown='code-block']:where(:not(.pwcode-session *, .code-page *)) { background: var(--pw-input-bg); }
+[data-theme='dark'] [data-streamdown='code-block-header']:where(:not(.pwcode-session *, .code-page *)) { background: var(--theme-hover); }
+[data-theme='dark'] [data-streamdown='inline-code']:where(:not(.pwcode-session *, .code-page *)) { background: var(--theme-hover); border-color: var(--pw-border); }
 
 /* Monospace surfaces share the platform's Geist Mono. */
 code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block'], [data-streamdown='inline-code'] {
@@ -1051,8 +1058,10 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    bar's engine button names; the composer's model picker sets only the
    Studio assistant's, so it is hidden then (PWCodeEngine marks the canvas).
    The selector reaches into the package's composer: its picker is the
-   button there that opens a dialog. */
-.chat-canvas[data-engine='pwcode'] .chat-composer [class*='justify-end'] > button[aria-haspopup='dialog'] { display: none; }
+   button there that opens a dialog. A chat shown as its pw code session
+   (.pwcode-session) has the session's own composer, whose effort picker is
+   such a button too, so it is left alone. */
+.chat-canvas[data-engine='pwcode'] .chat-composer:not(.pwcode-session *) [class*='justify-end'] > button[aria-haspopup='dialog'] { display: none; }
 /* The package's find bar (Ctrl+F in a conversation) spans the top of the
    thread, under these controls. It stops short of them, or sits below them
    where the thread is too narrow, so its count and buttons stay in view;
@@ -1073,7 +1082,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .chat-canvas main .chat-thread { padding-top: var(--chat-notice-pad, 0px); }
   .chat-controls .scope-btn { padding: 4px 7px; }
   .chat-controls .scope-btn span { display: none; }
-  .chat-canvas main [class*="border-b"] button[class*="min-w-"] {
+  .chat-canvas main [class*="border-b"] button[class*="min-w-"]:where(:not(.pwcode-session *, .code-page *)) {
     min-width: 0 !important;
     max-width: calc(100vw - 190px);
     overflow: hidden;
@@ -1110,8 +1119,8 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 
 /* Streaming thinking peek: a little more room than the package's 5rem so
    whole sentences fit, and calmer type for the reasoning text. */
-.chat-canvas [class*="max-h-20"] { max-height: 8.5rem; }
-.chat-canvas [class*="border-l-2"] [class*="text-sm"] { line-height: 1.55; }
+.chat-canvas [class*="max-h-20"]:where(:not(.pwcode-session *, .code-page *)) { max-height: 8.5rem; }
+.chat-canvas [class*="border-l-2"] [class*="text-sm"]:where(:not(.pwcode-session *, .code-page *)) { line-height: 1.55; }
 
 /* The footer lines' detail popovers, opening upward from each line */
 .identity-btn {
@@ -1154,7 +1163,7 @@ a.identity-btn { text-decoration: none; }
 
 /* Inline images in chat replies: bounded, framed, click target stays the
    surrounding citation link rather than the image itself. */
-.chat-canvas [data-streamdown] img, .chat-canvas .prose img {
+.chat-canvas [data-streamdown] img:where(:not(.pwcode-session *, .code-page *)), .chat-canvas .prose img:where(:not(.pwcode-session *, .code-page *)) {
   max-width: min(100%, 640px); max-height: 440px; border-radius: 8px;
   border: 1px solid var(--pw-border); display: block; margin: 6px 0;
 }
@@ -1386,20 +1395,20 @@ a.identity-btn { text-decoration: none; }
 }
 
 /* Own chat bubble in the accent pill, matching the selection styling. */
-.chat-canvas .rounded-br-md {
+.chat-canvas .rounded-br-md:where(:not(.pwcode-session *, .code-page *)) {
   background: var(--pw-active-pill);
   color: var(--pw-navy);
 }
 
 /* The table-download dropdown's bg-background/hover:bg-muted utilities have
    no compiled CSS in the shipped bundle; paint the menu directly. */
-.chat-canvas div.top-full {
+.chat-canvas div.top-full:where(:not(.pwcode-session *, .code-page *)) {
   background: var(--pw-panel);
   border-color: var(--pw-border);
   box-shadow: var(--theme-shadow-lg);
 }
-.chat-canvas div.top-full button { color: var(--pw-text); }
-.chat-canvas div.top-full button:hover { background: var(--pw-hover-row, #f3f4f6); }
+.chat-canvas div.top-full button:where(:not(.pwcode-session *, .code-page *)) { color: var(--pw-text); }
+.chat-canvas div.top-full button:hover:where(:not(.pwcode-session *, .code-page *)) { background: var(--pw-hover-row, #f3f4f6); }
 
 /* Tailwind v4 utilities in streamdown resolve --color-* tokens; undefined
    they collapse to black borders and transparent backgrounds. Map them to
@@ -1418,19 +1427,19 @@ a.identity-btn { text-decoration: none; }
    carry <wbr> there (components/breakable.tsx), which WebKit's table sizing
    honors where it ignores overflow-wrap. Breaking anywhere kept columns
    narrow but split words mid way, which read badly. */
-.chat-canvas [data-streamdown='table-wrapper'] > div:has(> table) { max-height: none !important; }
-.chat-canvas [data-streamdown='table'] td :is(a, button, code) { word-break: normal; overflow-wrap: normal; }
+.chat-canvas [data-streamdown='table-wrapper'] > div:has(> table):where(:not(.pwcode-session *, .code-page *)) { max-height: none !important; }
+.chat-canvas [data-streamdown='table'] td :is(a, button, code):where(:not(.pwcode-session *, .code-page *)) { word-break: normal; overflow-wrap: normal; }
 /* Headers wrap between words like the cells under them: kept on one line,
    a long header alone held its column wide enough to push the last
    column out of view. */
-.chat-canvas [data-streamdown='table'] th { white-space: normal; }
-.chat-canvas [data-streamdown='table'] thead th { border-bottom: 1px solid var(--pw-border-strong); }
-.chat-canvas [data-streamdown='table'] tbody tr:nth-child(even) { background: var(--pw-bg); }
+.chat-canvas [data-streamdown='table'] th:where(:not(.pwcode-session *, .code-page *)) { white-space: normal; }
+.chat-canvas [data-streamdown='table'] thead th:where(:not(.pwcode-session *, .code-page *)) { border-bottom: 1px solid var(--pw-border-strong); }
+.chat-canvas [data-streamdown='table'] tbody tr:nth-child(even):where(:not(.pwcode-session *, .code-page *)) { background: var(--pw-bg); }
 /* divide-y sets 1px row borders whose color utility is missing (falls back
    to black); give the dividers and header their token colors directly. */
-.chat-canvas [data-streamdown='table'] thead,
-.chat-canvas [data-streamdown='table'] tbody tr { border-bottom-color: var(--pw-border); }
-.chat-canvas [data-streamdown='table'] thead { background: var(--pw-bg); }
+.chat-canvas [data-streamdown='table'] thead:where(:not(.pwcode-session *, .code-page *)),
+.chat-canvas [data-streamdown='table'] tbody tr:where(:not(.pwcode-session *, .code-page *)) { border-bottom-color: var(--pw-border); }
+.chat-canvas [data-streamdown='table'] thead:where(:not(.pwcode-session *, .code-page *)) { background: var(--pw-bg); }
 
 /* "Calls:" line above the spec expander on the tools settings card */
 .tool-calls {
@@ -1652,6 +1661,11 @@ a.identity-btn { text-decoration: none; }
 .chat-scrubber-tick:hover, .chat-scrubber-tick:focus-visible {
   background: var(--pw-navy); height: 5px; outline: none;
 }
+/* From the keyboard the rail opens as it does under the pointer, and the
+   tick in focus has a ring: a 5px tick alone did not show where focus was. */
+.chat-scrubber:focus-within .chat-scrubber-rail { opacity: 1; }
+.chat-scrubber:focus-within .chat-scrubber-tick { max-width: none; }
+.chat-scrubber-tick:focus-visible { outline: 2px solid var(--theme-link); outline-offset: 2px; }
 /* Where you are now, so the rail reads as a position and not just a list. */
 .chat-scrubber-tick.current { background: var(--pw-navy); height: 5px; }
 .chat-scrubber-card {
@@ -1962,6 +1976,12 @@ a.identity-btn { text-decoration: none; }
 .engine-tools-off { color: var(--pw-text); }
 .pwcode-approval .pwcode-command { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
 .pwcode-approval .pwcode-plan { margin: 4px 0 0; white-space: pre-wrap; }
+.pwcode-approval .pwcode-plan-whole { max-height: 40vh; overflow-y: auto; }
+.pwcode-approval .pwcode-plan-change { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; }
+.pwcode-approval .pwcode-question { border: 0; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pwcode-approval .pwcode-question legend { padding: 0; margin-bottom: 2px; }
+.pwcode-approval .pwcode-option { display: flex; gap: 6px; align-items: baseline; }
+.pwcode-approval .pwcode-answer { font: inherit; padding: 4px 8px; border: 1px solid var(--pw-border, currentColor); border-radius: 6px; background: transparent; color: inherit; }
 .agents-kind { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 /* A file input laid over a label drawn as a button. */
 .agents-file { overflow: hidden; }
@@ -2150,6 +2170,10 @@ a.identity-btn { text-decoration: none; }
    collapse button past the pane's edge. */
 .rail-head .library-switch { margin-right: auto; flex: 1 1 0; min-width: 0; max-width: none; }
 .rail-head .rail-actions { flex-shrink: 0; }
+/* The Library's own head holds six controls: spaced a little closer than
+   the chat rail's, so "Library" fits whole beside them at the rail's
+   default width. */
+.library-rail .rail-head:not(.rail-head-switch) .rail-actions { gap: 4px; }
 /* With more than one library the picker has a row of its own over the
    buttons, so a library's name reads in full at any tree width. */
 .rail-head.rail-head-switch { height: auto; flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
@@ -2636,7 +2660,7 @@ a.identity-btn { text-decoration: none; }
    row it folds into and nothing jumps when it does. These reach into the
    package's markup (its test ids), so a markup change only loses the
    effect. */
-.chat-reasoning-tail { display: none; }
+.chat-reasoning-tail:where(:not(.pwcode-session *, .code-page *)) { display: none; }
 /* The thread holds its own absolutely placed children (the screen reader
    labels): unpositioned, it let them out, and each box around it then had
    the whole conversation's height to scroll. The composer sits inside the
@@ -2652,19 +2676,19 @@ a.identity-btn { text-decoration: none; }
    Pinned to the top of whatever places it, a label adds no scroll height. */
 .chat-canvas .chat-thread .sr-only { top: 0; left: 0; }
 .chat-canvas .overflow-hidden:has(.chat-thread) { overflow: clip; }
-[data-testid="tool-call-part"] { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
-[data-testid="tool-call-part"] > :first-child { flex: 0 1 auto; min-width: 0; }
-[data-testid="tool-call-part"] > :only-child { flex: 1 1 auto; }
-[data-testid="tool-call-part"] > :first-child + div {
+[data-testid="tool-call-part"]:where(:not(.pwcode-session *, .code-page *)) { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+[data-testid="tool-call-part"] > :first-child:where(:not(.pwcode-session *, .code-page *)) { flex: 0 1 auto; min-width: 0; }
+[data-testid="tool-call-part"] > :only-child:where(:not(.pwcode-session *, .code-page *)) { flex: 1 1 auto; }
+[data-testid="tool-call-part"] > :first-child + div:where(:not(.pwcode-session *, .code-page *)) {
   margin: 0; flex: 0 1 auto; max-width: 45%; min-width: 0;
   line-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* A call the user answered says who allowed or declined it on a line of
    its own under the row; the result summary stays on the row and takes
    what room is left there. */
-[data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) { flex-wrap: wrap; row-gap: 0; }
-[data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) > :first-child + div:not([data-testid="tool-decision"]) { flex: 1 1 0; }
-[data-testid="tool-call-part"] > [data-testid="tool-decision"] { flex: 1 0 100%; margin-top: 0; }
+[data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]):where(:not(.pwcode-session *, .code-page *)) { flex-wrap: wrap; row-gap: 0; }
+[data-testid="tool-call-part"]:has(> [data-testid="tool-decision"]) > :first-child + div:not([data-testid="tool-decision"]):where(:not(.pwcode-session *, .code-page *)) { flex: 1 1 0; }
+[data-testid="tool-call-part"] > [data-testid="tool-decision"]:where(:not(.pwcode-session *, .code-page *)) { flex: 1 0 100%; margin-top: 0; }
 /* The Workflows page with its side view: the page and the view side by
    side, stacked on a narrow screen, as the chat does. */
 .wf-with-side { flex: 1; min-height: 0; display: flex; gap: 12px; position: relative; }
@@ -2913,128 +2937,97 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .pdf-page-js { margin: 0; }
 .pdf-page-js canvas { display: block; width: 100%; height: 100%; }
 
-/* CSV and TSV files as a table (Viewer, Table tab). The table scrolls in a
-   box of its own, sized to the window, so its header row stays in view:
-   the library pane scrolls the whole file, and a header pinned to that
-   would sit under the viewer's own sticky head and tabs. */
-.csv-view { padding: 12px 20px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.csv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.csv-filter {
-  flex: 0 1 280px; min-width: 160px; padding: 5px 8px; font: inherit; font-size: 13px;
-  border: 1px solid var(--pw-border-strong); border-radius: 6px; background: var(--pw-panel); color: var(--pw-text);
+/* Code: the person's pw code sessions as PW Code on the web shows them.
+   The packages' sessions list sits beside the start of a new session; both
+   scroll on their own. The packages' parts bring their own look; these
+   rules place them and draw what the Studio writes itself. */
+.code-page { display: flex; flex: 1; min-height: 0; border-top: 1px solid var(--pw-border); background: var(--pw-panel); }
+.code-page-loading { min-height: 200px; }
+.code-sign-in { align-items: center; justify-content: center; padding: 24px; }
+.code-sidebar { display: flex; min-height: 0; flex: none; }
+.code-sidebar-search { display: flex; flex-direction: column; gap: 6px; padding: 0 8px 6px; }
+.code-sidebar-search > button { align-self: flex-start; }
+.code-sidebar-loading { display: flex; flex-direction: column; gap: 14px; padding: 12px; }
+.code-sidebar-sketch { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.code-session-row { all: unset; box-sizing: border-box; display: flex; flex: 1; min-width: 0; padding: 4px 0; cursor: pointer; text-align: left; }
+.code-session-row:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; border-radius: 6px; }
+.code-row-leading { display: flex; align-items: center; gap: 4px; }
+.code-row-dot { display: flex; }
+.code-row-detail { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--pw-muted); }
+.code-row-detail > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.code-row-machine { font-family: ui-monospace, monospace; flex-shrink: 1000; }
+.code-row-chat, .code-row-delegated { flex: none; }
+.code-row-detail > .code-row-sep { flex: none; margin: 0 5px; overflow: visible; }
+.code-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.code-mark-row { width: 12px; height: 12px; }
+.code-mark-row svg { width: 12px; height: 12px; }
+.code-mark-rail { width: 16px; height: 16px; }
+.code-mark-limit { width: 10px; height: 10px; color: var(--theme-warning, #b54708); }
+.code-pinned { display: inline-flex; color: var(--pw-muted); }
+.code-pinned svg { width: 11px; height: 11px; }
+.code-main { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.code-main-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding: 8px 12px 0; flex-wrap: wrap; }
+.code-start-top, .code-start-below { width: 100%; max-width: var(--chat-column, 50rem); margin: 0 auto; padding: 0 16px; box-sizing: border-box; }
+.code-start-top { margin-bottom: 12px; }
+.code-start-below { display: flex; flex-direction: column; gap: 20px; padding-bottom: 24px; }
+.code-start-none { text-align: center; font-size: 12px; color: var(--pw-muted); padding: 0 24px 16px; }
+.code-start-failed { padding: 24px; }
+.code-sketch-row { display: flex; align-items: center; justify-content: space-between; height: 36px; }
+/* The composer's chips: the machine and the folder, then the model and effort. */
+.code-chip, .code-setting-chip {
+  all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 16rem;
+  padding: 3px 7px; border-radius: 6px; font-size: 12px; color: var(--pw-muted); cursor: pointer;
 }
-.csv-count { font-size: 12px; }
-.csv-scroll {
-  overflow: auto; max-height: max(260px, calc(100dvh - 230px));
-  border: 1px solid var(--pw-border); border-radius: 8px; background: var(--pw-panel);
-}
-.csv-table { border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 1.45; width: max-content; min-width: 100%; }
-/* Columns take their content's width, so short values never wrap; a long
-   value wraps at a reading width inside its cell (.csv-c), since a table
-   cell's own max-width does not hold under automatic table layout. */
-.csv-table th, .csv-table td {
-  padding: 5px 10px; text-align: left; vertical-align: top;
-  border-bottom: 1px solid var(--pw-border); border-right: 1px solid var(--pw-border);
-}
-.csv-c { max-width: 26rem; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
-.csv-table th:last-child, .csv-table td:last-child { border-right: none; }
-.csv-table thead th {
-  position: sticky; top: 0; z-index: 2; background: var(--pw-bg); padding: 0;
-  border-bottom: 1px solid var(--pw-border-strong); white-space: nowrap;
-}
-.csv-table thead th button {
-  all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 6px; width: 100%;
-  padding: 6px 10px; font-weight: 600; color: var(--pw-text); cursor: pointer;
-}
-.csv-table thead th.num button { justify-content: flex-end; }
-.csv-table thead th button:hover { background: var(--theme-hover); }
-.csv-table thead th button:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; }
-.csv-sort { font-size: 9px; color: var(--pw-muted); min-width: 9px; }
-.csv-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.csv-table tbody tr:nth-child(even) td { background: var(--pw-bg); }
-.csv-table tbody tr:hover td { background: var(--theme-hover); }
-.csv-table .csv-n {
-  position: sticky; left: 0; z-index: 1; text-align: right; color: var(--pw-muted);
-  font-variant-numeric: tabular-nums; background: var(--pw-panel); min-width: 3ch; white-space: nowrap;
-}
-.csv-table thead .csv-n { z-index: 3; background: var(--pw-bg); }
-.csv-more { display: flex; align-items: center; gap: 12px; }
-
-/* Code: the viewer's pw code sessions on the platform. The list and the
-   chosen session scroll on their own, side by side; on a phone they stack. */
-/* The list takes about a third of the page, between 220 and 380 pixels,
-   so the session beside it keeps room at medium widths. */
-.code-view { display: grid; grid-template-columns: clamp(220px, 34%, 380px) minmax(0, 1fr); flex: 1; min-height: 0; border-top: 1px solid var(--pw-border); }
-.code-list { border-right: 1px solid var(--pw-border); overflow: auto; padding: 12px 10px 20px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
-.code-list-head { display: flex; flex-direction: column; gap: 8px; padding: 0 4px 4px; }
-.code-machines { font-size: 12px; margin: 2px 6px 4px; }
-.code-callout { margin: 6px 4px; }
-.code-group { display: flex; flex-direction: column; }
-.code-group ul { list-style: none; margin: 0; padding: 0; }
-.code-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--pw-muted); margin: 10px 8px 4px; }
-.code-row {
-  all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: flex-start; gap: 9px;
-  padding: 7px 8px; border-radius: 6px; cursor: pointer;
-}
-.code-row:hover { background: var(--theme-hover); }
-.code-row.on { background: var(--theme-hover); box-shadow: inset 2px 0 0 var(--pw-navy); }
-.code-row:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; }
-.code-row > :first-child { margin-top: 5px; flex: none; }
-.code-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.code-row-title { font-size: 13px; color: var(--pw-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.code-row-meta { font-size: 11.5px; color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.code-row-when { font-size: 11.5px; color: var(--pw-muted); flex: none; margin-top: 1px; }
-.code-archived-toggle { align-self: flex-start; margin: 6px 4px; }
-.code-detail { overflow: auto; min-height: 0; padding: 16px 24px 32px; container-type: inline-size; container-name: code-detail; }
-/* The title and its actions stay in view while the conversation scrolls
-   under them: the head sticks to the top of .code-detail, over its padding.
-   The title shares a line with the actions and the details run the full
-   width under both; in a narrow pane the actions go under the title. */
-.code-detail-head {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 16px; margin: -16px 0 12px;
-  position: sticky; top: -16px; z-index: 3; background: var(--pw-panel); padding: 16px 0 10px; border-bottom: 1px solid var(--pw-border);
-}
-.code-detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
-.code-detail-actions > :not(.code-continue-error) { white-space: nowrap; }
-@container code-detail (max-width: 520px) {
-  .code-detail-head { grid-template-columns: minmax(0, 1fr); }
-  .code-detail-actions { justify-content: flex-start; }
-  .code-continue-error { text-align: left; }
-}
-.code-continue-why { font-size: 12px; margin: -4px 0 12px; }
-.code-continue-error { font-size: 12px; color: var(--theme-error-text); flex-basis: 100%; text-align: right; }
-.code-detail-head h2 {
-  font-size: 17px; margin: 0; font-weight: 600; min-width: 0; overflow-wrap: break-word;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-}
-.code-detail-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--pw-muted); align-items: center; min-width: 0; }
-/* The workspace path on one line, cut at the end; its title holds all of it. */
-.code-detail-meta .code-path { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
-.code-status { display: inline-flex; align-items: center; gap: 6px; color: var(--pw-text); }
+.code-setting-chip { font-size: 11px; padding: 2px 6px; max-width: 12rem; }
+.code-chip:hover, .code-setting-chip:hover { background: var(--theme-hover); color: var(--pw-text); }
+.code-chip:focus-visible, .code-setting-chip:focus-visible { outline: 2px solid var(--pw-link); outline-offset: 1px; }
+.code-chip[disabled], .code-setting-chip[disabled] { opacity: .5; cursor: not-allowed; }
+.code-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-chip-icon, .code-chip-caret { width: 12px; height: 12px; flex: none; }
+.code-machine-icon { width: 14px; height: 14px; flex: none; object-fit: contain; }
+.code-path-popover { width: min(32rem, calc(100vw - 32px)); overflow: hidden; }
+.code-path { display: flex; flex-direction: column; max-height: inherit; font-size: 13px; }
+.code-path-field { display: flex; gap: 8px; padding: 8px; flex: none; }
+.code-path-field > * { flex: 1; min-width: 0; }
+.code-path-list { min-height: 0; max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--pw-border); padding: 4px; }
+.code-path-loading { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 12px; }
+.code-path-note { margin: 0; padding: 8px 10px; font-size: 12px; color: var(--pw-muted); }
+.code-path-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 6px 12px; border-top: 1px solid var(--pw-border); font-size: 12px; color: var(--pw-muted); }
+.code-path-keys > span { display: inline-flex; align-items: center; gap: 6px; }
+.code-path-icon { width: 14px; height: 14px; color: var(--pw-muted); }
+.code-path-icon-wrap { display: flex; }
+.code-path-recent { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.code-path-recent > :first-child { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.code-path-recent > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.code-path-open { all: unset; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: -6px -8px -6px 0; border-radius: 6px; color: var(--pw-muted); cursor: pointer; }
+.code-path-open:hover { background: var(--theme-hover); color: var(--pw-text); }
+.code-path-open svg { width: 14px; height: 14px; }
+@media (max-width: 639.98px) { .code-path-keys { display: none; } }
+.code-needs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.code-needs-head { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; cursor: pointer; }
+.code-needs-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.code-needs-when { flex: none; font-size: 12px; }
+.code-needs-chevron { width: 14px; height: 14px; flex: none; color: var(--pw-muted); }
+.code-needs-in { margin: 6px 0 0 16px; font-size: 12px; }
+.code-how { font-size: 13px; }
+.code-how h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
+.code-how ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.code-how-command { display: inline-flex; align-items: center; gap: 2px; margin: 0 4px; }
+.code-how-command code { font-family: ui-monospace, monospace; font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--theme-muted-panel-bg); }
+.code-how-popover { width: min(26rem, calc(100vw - 32px)); padding: 12px 14px; }
+.code-linked-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; }
+.code-linked-title { min-width: 0; overflow-wrap: anywhere; }
+.code-linked-path { margin-top: 4px; }
+.code-linked-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.code-linked-why { margin: 6px 0 0; font-size: 12px; }
+.code-worktree { display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.code-worktree-where { padding: 8px 12px; border-radius: 6px; background: var(--theme-muted-panel-bg); }
+.code-worktree-where code { display: block; font-family: ui-monospace, monospace; overflow-wrap: anywhere; color: var(--pw-text); }
+.code-worktree-lines { margin: 4px 0 0; max-height: 6rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: 12px; }
 .code-mono { font-family: ui-monospace, monospace; font-size: 11.5px; overflow-wrap: anywhere; }
-.code-transcript { display: flex; flex-direction: column; gap: 10px; max-width: 880px; }
-.code-msg.user { align-self: flex-end; max-width: 85%; }
-.code-msg.user .code-msg-body {
-  white-space: pre-wrap; overflow-wrap: anywhere; background: var(--theme-muted-panel-bg); border: 1px solid var(--pw-border);
-  border-radius: 12px 12px 4px 12px; padding: 8px 12px; font-size: 13.5px; line-height: 1.5;
-}
-.code-msg.assistant { font-size: 14px; }
-.code-tool { font-size: 12.5px; border-left: 2px solid var(--pw-border); padding-left: 10px; }
-.code-tool summary { cursor: pointer; color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.code-tool-name { font-weight: 600; color: var(--pw-text); }
-.code-tool-args { font-family: ui-monospace, monospace; font-size: 11.5px; }
-.code-tool-run-body { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px; }
-.code-tool pre {
-  margin: 6px 0 2px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
-  font-size: 11.5px; background: var(--theme-muted-panel-bg); border-radius: 6px; padding: 8px 10px;
-}
-.code-note { font-size: 12.5px; color: var(--pw-muted); }
-.code-note.error, .code-note.warning { color: var(--theme-error, #b42318); }
-@media (max-width: 760px) {
-  .code-view { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; }
-  .code-list { border-right: none; border-bottom: 1px solid var(--pw-border); max-height: 45vh; }
-  .code-detail { padding: 14px 16px 28px; }
-  .code-detail-head { margin-top: -14px; top: -14px; padding-top: 14px; }
+@media (max-width: 720px) {
+  .code-main-actions { padding: 8px 8px 0; }
+  .code-start-top, .code-start-below { padding: 0 12px; }
 }
 
 /* SearchInput draws its own clear button; WebKitGTK still draws the
@@ -3328,24 +3321,16 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .lib-import-drop { font-size: 12px; }
 .lib-import.drop-over { outline: 2px dashed var(--pw-link); outline-offset: 4px; border-radius: 6px; }
 
-/* Delegated work on the Code page: the filter, and the note on a session. */
-.code-list-filters { display: flex; gap: 6px; padding: 0 12px 8px; }
-.code-delegated { margin: 0 16px 12px; padding: 10px 12px; border: 1px solid var(--pw-border); border-radius: 8px; font-size: 13px; }
+/* Delegated work on the Code page: the note on a linked session. */
+.code-delegated { margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--pw-border); border-radius: 8px; font-size: 13px; }
 .code-delegated p { margin: 0; }
 .code-delegated-files { margin: 6px 0 0; padding-left: 18px; }
 .code-delegated-files li { margin: 2px 0; overflow-wrap: anywhere; }
-.code-approvals { margin: 12px 0 4px; max-width: 880px; padding: 10px 12px; border: 1px solid var(--theme-warning); border-radius: 8px; background: var(--theme-warning-muted); font-size: 13px; }
-.code-approvals h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
-.code-approvals ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .code-approval { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .code-approval p { margin: 0; }
-.code-approval-what { flex: 1 1 260px; min-width: 0; }
-.code-approval-command { margin: 4px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--pw-panel); border: 1px solid var(--pw-border); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* A long command shows its start until opened; Approve waits for that. */
 .code-approval-more { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--pw-accent, var(--theme-link-color)); font-size: 12px; cursor: pointer; text-decoration: underline; }
 .code-approval-why { margin: 4px 0 0; font-size: 12px; }
-.code-approval-actions { display: flex; gap: 6px; flex: none; }
-.code-approval-note { margin: 8px 0 0; font-size: 12px; }
 .task-moved { margin-bottom: 12px; }
 .fleet-migrated { margin: 8px 0; }
 .fleet-folder { margin: 4px 0 8px; font-size: 13px; }
@@ -3375,6 +3360,14 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 
 /* A call a standing agent waits to have approved, whole, with its answer. */
 .fleet-approval-text { margin: 6px 0; padding: 6px 8px; overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; }
+.studio-tools-setup p { margin: 4px 0; }
+.studio-tools-command { margin: 6px 0; padding: 6px 8px; overflow-wrap: anywhere; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--theme-muted-panel-bg); border-radius: 4px; user-select: all; }
+.studio-tools-tick {
+  display: block;
+  margin-top: var(--space-3, 12px);
+  font-size: var(--text-sm, 13px);
+}
+
 .fleet-approval-actions { display: flex; gap: 8px; }
 .fleet-approval-cut, .fleet-approval-reason { display: block; margin: 4px 0; }
 
@@ -3398,4 +3391,106 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
   .cli-contexts tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding: 8px 12px; }
   .cli-contexts td { display: block; height: auto; padding: 0; white-space: normal; }
   .cli-contexts td:last-child { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+}
+
+/* A pw code chat: the session view of @parallelworks/ui/ai, filling the
+   chat's column as the Studio's own thread does (pwcode/PWCodeSession.tsx). */
+.pwcode-session { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; min-width: 0; }
+.pwcode-session > :not(.pwcode-session-tools):not(.sr-only) { flex: 1 1 auto; min-height: 0; }
+.pwcode-session-tools { position: absolute; left: 12px; top: 10px; z-index: 2; }
+.pwcode-session-tools .code-approval-more { font-size: 12px; }
+.pwcode-session-failed { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 16px; }
+.pwcode-context { display: flex; padding: 0 2px; }
+.pwcode-context-chip { font: 12px/1.6 var(--pw-font-mono, ui-monospace, monospace); color: var(--pw-text-muted, inherit); border: 1px solid var(--pw-border, currentColor); border-radius: 999px; padding: 0 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwcode-saving, .pwcode-reconnecting { font-size: 12px; }
+.pwcode-reconnecting { padding: 4px 2px; }
+/* The session views (a pw code chat's, the Code page's) are the package's
+   as PW Code on the web shows them. The Studio's restyles of the package's
+   chat markup (its tool rows, code blocks, tables, bubbles and menus) are
+   for the Studio's own thread, so each ends in
+   :where(:not(.pwcode-session *, .code-page *)), which adds no specificity.
+   test/sessionScope.test.ts keeps new ones to that. */
+.pwcode-expand { font: inherit; font-size: 12px; background: transparent; color: var(--pw-text-muted, inherit); border: 0; cursor: pointer; padding: 2px 4px; }
+.pwcode-expand:hover { color: inherit; text-decoration: underline; }
+
+/* The spreadsheet grid (SheetGrid.tsx): a workbook's sheet, or a CSV or
+   TSV file. It scrolls in a box of its own, sized to the window, with its
+   column letters, row numbers and frozen rows and columns kept in view
+   (sticky layers); only the cells in view are drawn. Colours follow the
+   Studio's theme; a cell's own fill and text colour come from the file. */
+.sg { display: flex; flex-direction: column; gap: 8px; padding: 10px 20px 14px; min-width: 0; --sg-line: var(--theme-border); --sg-head: var(--theme-muted-panel-bg); --sg-sel: color-mix(in srgb, var(--theme-info) 16%, transparent); --sg-act: var(--theme-info); }
+.sg-bar { display: flex; align-items: flex-start; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
+.sg-ref {
+  flex: none; min-width: 64px; padding: 3px 8px; border: 1px solid var(--pw-border); border-radius: 6px;
+  font: 12px/18px var(--pw-mono, ui-monospace, monospace); text-align: center; background: var(--pw-panel);
+}
+.sg-what {
+  flex: 1 1 260px; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px;
+  /* Two lines whatever is selected, the rest scrolling here: a bar that grew
+     with a long value would move the grid under the pointer. */
+  height: 42px; box-sizing: border-box; overflow: auto; padding: 3px 0; font-size: 13px; line-height: 18px;
+}
+.sg-formula { font-size: 12px; color: var(--theme-info-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-raw { font-size: 12px; font-variant-numeric: tabular-nums; }
+.sg-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.sg-filter {
+  width: 11rem; padding: 4px 8px; border: 1px solid var(--theme-border-field); border-radius: 6px;
+  background: var(--theme-input-bg); color: var(--pw-text); font: inherit; font-size: 13px;
+}
+.sg-copied { font-size: 12px; }
+.sg-scroll {
+  position: relative; overflow: auto; height: max(280px, calc(100dvh - 290px)); outline: none;
+  border: 1px solid var(--pw-border); border-radius: 8px; background: var(--theme-panel-bg);
+  font-size: 12px; line-height: 16px; overscroll-behavior: contain; user-select: none; -webkit-user-select: none;
+}
+.sg-scroll:focus-visible { box-shadow: 0 0 0 2px var(--theme-focus-ring); }
+.sg-canvas { position: relative; }
+.sg-top { position: sticky; top: 0; z-index: 3; display: flex; }
+.sg-main { display: flex; }
+.sg-corner, .sg-left { position: sticky; left: 0; z-index: 2; flex: none; background: var(--theme-panel-bg); }
+.sg-corner { z-index: 4; }
+.sg-top > .sg-layer { background: var(--theme-panel-bg); }
+.sg-layer { position: relative; flex: none; }
+.sg-cell, .sg-head {
+  position: absolute; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 2px 5px; border-right: 1px solid var(--sg-line); border-bottom: 1px solid var(--sg-line);
+  color: var(--pw-text); font-variant-numeric: tabular-nums;
+}
+/* A value sits at the bottom of its cell, as in Excel, unless the file
+   says top or centre. */
+.sg-cell { display: flex; align-items: flex-end; }
+.sg-cell.top { align-items: flex-start; }
+.sg-cell.mid { align-items: center; }
+.sg-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-cell.wrap .sg-t { white-space: pre-wrap; overflow-wrap: anywhere; text-overflow: clip; max-height: 100%; }
+.sg-cell.sel { box-shadow: inset 0 0 0 999px var(--sg-sel); }
+.sg-cell.act { outline: 2px solid var(--sg-act); outline-offset: -2px; z-index: 1; }
+.sg-head {
+  background: var(--sg-head); color: var(--pw-muted); text-align: center; font-size: 12px;
+  cursor: default; padding: 3px 2px;
+}
+.sg-head.on { background: color-mix(in srgb, var(--theme-info) 22%, var(--sg-head)); color: var(--pw-text); }
+.sg-n { text-align: right; padding-right: 6px; }
+.sg-all { border-right: 1px solid var(--sg-line); }
+/* The line under the frozen rows and right of the frozen columns. */
+.sg-top { box-shadow: 0 1px 0 var(--theme-border-strong); }
+.sg-left, .sg-corner { box-shadow: 1px 0 0 var(--theme-border-strong); }
+.sg-none { position: sticky; left: 12px; margin: 12px; }
+.sg-foot { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
+.sg-tabs { display: flex; gap: 2px; overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+.sg-tab {
+  flex: none; padding: 4px 12px; border: 1px solid var(--pw-border); border-top: none; border-radius: 0 0 6px 6px;
+  background: var(--sg-head); color: var(--pw-muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.sg-tab:hover { color: var(--pw-text); }
+.sg-tab.on { background: var(--theme-panel-bg); color: var(--pw-text); font-weight: 600; box-shadow: inset 0 2px 0 var(--sg-act); }
+.sg-tab:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; }
+.sg-note { font-size: 12px; }
+.sheet-print-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 20px 0; font-size: 13px; }
+@media (max-width: 640px) {
+  .sg { padding: 8px 8px 10px; }
+  .sg-tools { margin-left: 0; }
+  .sg-filter { width: 8rem; }
+  .sg-scroll { height: max(260px, calc(100dvh - 400px)); }
 }

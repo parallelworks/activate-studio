@@ -2,7 +2,7 @@
 
 The Workflows tab offers a set of ACTIVATE workflows chosen for this Studio. Each appears as a tile; opening one shows the workflow's own input form, and Validate or Run submits it to the platform. The assistant sees the same set: `list_workflows` lists those workflows first, marked `offeredHere`, marketplace and GitHub entries included, and `get_workflow`, `workflow_configs`, and `run_workflow` accept every kind of entry.
 
-The tab appears only when the Studio can reach a platform, through the viewer's own platform key or the deployment's credential. A Studio running anywhere else does not show it.
+The tab appears only when the Studio can reach a platform with the viewer's own ACTIVATE credential (on a Studio of one, the pw CLI's sign-in or `PW_API_KEY` counts as theirs). Without one it says **Sign in with ACTIVATE to use this**. A Studio running anywhere else does not show it.
 
 ## Choosing the set
 
@@ -39,7 +39,7 @@ The Studio reads repositories through GitHub's public API, which allows 60 reque
 
 ## Who a run belongs to
 
-Workflow records on the platform are per user, and a run uses the caller's credential. A viewer with their own platform key runs their own copy of each workflow, under their own allocation and permissions. When a viewer lacks a curated workflow, the tile's form offers to add it: the Studio copies the deployment account's definition into the viewer's account with `pw workflows create`. A viewer without a key runs under the deployment's credential.
+Workflow records on the platform are per user, and a run uses the caller's credential. A viewer with their own platform key runs their own copy of each workflow, under their own allocation and permissions. When a viewer lacks a curated workflow, the tile's form offers to add it: the Studio copies the deployment account's definition into the viewer's account with `pw workflows create`. On a Studio several people use, a viewer without a key of their own runs nothing: the deployment's credential is never lent to a person, so no run goes under someone else's account and allocation. The curated list itself is read from the deployment's account, which the Studio uses only to read those definitions.
 
 Only workflows in the set can be run from the tab; any other name is refused with 403.
 

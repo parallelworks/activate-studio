@@ -15,11 +15,11 @@ if (!('PointerEvent' in window)) {
 const EFFECTIVE = {
   appName: 'Studio', kbLabel: 'Notes', theme: 'light', accent: 'navy', surface: 'neutral', navWidth: 240, iconUrl: '', iconUrlDark: '',
   sweepIntervalSec: 300, searchEngine: 'parallel', historyIntervalSec: 86400, suggestedPrompts: ['What is in my folder?'],
-  visionModel: '', disabledTools: [], customTools: [], ragDefaultModel: '', ragTopK: 6, ragAllowDeploymentKey: false,
+  visionModel: '', disabledTools: [], customTools: [], ragDefaultModel: '', ragTopK: 6, 
   ragAdvertiseRagModel: false, ragAdvertiseAgentModel: true, mcpEnabled: true, mcpServers: [], delegationEnabled: true,
   delegationMaxAgents: 6, maxToolRounds: 50, delegationMaxDepth: 1, agentExecution: 'runner', voiceEnabled: false, voiceUrl: '',
   ragProxyEnabled: true, ragEndpointAutoStart: false, ragEndpointName: '', requirePersonalKey: false, chatSharedHistory: true,
-  bannerText: '', bannerColor: '#24612e', bannerWhenEmbedded: false, allowKeySharing: true, kbMission: 'My own files.',
+  bannerText: '', bannerColor: '#24612e', bannerWhenEmbedded: false, kbMission: 'My own files.',
   sections: ['library', 'search', 'query', 'overview', 'history', 'settings', 'help'], aiEnabled: false,
 }
 
@@ -60,12 +60,12 @@ beforeEach(() => { localStorage.clear() })
 afterEach(() => { vi.unstubAllGlobals(); at('') })
 
 describe('the settings rail with AI features off', () => {
-  it('leaves out the assistant sections, and names Model access for the ACTIVATE credential it keeps', () => {
+  it('leaves out the assistant sections and Model access, and keeps Accounts for the ACTIVATE account', () => {
     const on = settingsSections({ authEnabled: false, single: true, platform: true })
     const off = settingsSections({ authEnabled: false, single: true, platform: true, aiEnabled: false })
-    expect(on.map(s => s.id)).toEqual(['general', 'indexing', 'workflows', 'access', 'tools', 'previews', 'ext', 'rag'])
-    expect(off.map(s => s.id)).toEqual(['general', 'indexing', 'workflows', 'access', 'rag'])
-    expect(off.find(s => s.id === 'access')).toEqual({ id: 'access', label: 'ACTIVATE access', group: 'Studio' })
+    expect(on.map(s => s.id)).toEqual(['general', 'indexing', 'workflows', 'accounts', 'access', 'tools', 'previews', 'ext', 'rag'])
+    expect(off.map(s => s.id)).toEqual(['general', 'indexing', 'workflows', 'accounts', 'rag'])
+    expect(off.find(s => s.id === 'accounts')).toEqual({ id: 'accounts', label: 'Accounts', group: 'Studio' })
     expect(off.some(s => s.group === 'Assistant')).toBe(false)
     // Without sign-in or a single user there is no access section either way.
     expect(settingsSections({ authEnabled: false, aiEnabled: false }).map(s => s.id)).toEqual(['general', 'indexing', 'rag'])
@@ -77,7 +77,9 @@ describe('the settings rail with AI features off', () => {
       expect(shownSettingsTarget({ section: id, tab: 'appearance' }, true)).toEqual({ section: id, tab: 'appearance' })
     }
     expect(shownSettingsTarget({ section: 'rag', tab: 'appearance' }, false)).toEqual({ section: 'rag', tab: 'appearance' })
-    expect(shownSettingsTarget({ section: 'access', tab: 'appearance' }, false)).toEqual({ section: 'access', tab: 'appearance' })
+    // Model access, with no models to choose, is Accounts.
+    expect(shownSettingsTarget({ section: 'access', tab: 'appearance' }, false)).toEqual({ section: 'accounts', tab: 'appearance' })
+    expect(shownSettingsTarget({ section: 'access', tab: 'appearance' }, true)).toEqual({ section: 'access', tab: 'appearance' })
   })
 })
 
@@ -88,7 +90,7 @@ describe('Settings with AI features off', () => {
     render(<SettingsView />)
     const sw = await screen.findByRole('switch', { name: 'AI features' })
     expect(sw).toHaveAttribute('aria-checked', 'false')
-    expect(rail()).toEqual(['General', 'Indexing', 'ACTIVATE access', 'External access'])
+    expect(rail()).toEqual(['General', 'Indexing', 'Workflows', 'Accounts', 'External access'])
     const panel = screen.getByRole('tabpanel')
     expect(within(panel).getByText(/^Off\. On adds Chat and Agents/)).toBeInTheDocument()
     for (const label of ['Mission and context', 'Suggested questions (one per line)', 'Vision model for image captioning']) {
@@ -139,7 +141,7 @@ describe('Settings with AI features off', () => {
     // The Assistant group is back, closed as groups are when they do not
     // hold the page open, which stays General, AI features.
     fireEvent.click(await screen.findByRole('button', { name: 'Assistant' }))
-    await waitFor(() => expect(rail()).toEqual(['General', 'Indexing', 'Model access', 'Assistant tools', 'Feature previews', 'Extensions', 'External access']))
+    await waitFor(() => expect(rail()).toEqual(['General', 'Indexing', 'Workflows', 'Accounts', 'Model access', 'Assistant tools', 'Feature previews', 'Extensions', 'External access']))
     expect(screen.getByRole('tab', { name: 'AI features' })).toHaveAttribute('aria-selected', 'true')
     const panel = screen.getByRole('tabpanel')
     for (const label of ['Mission and context', 'Suggested questions (one per line)', 'Vision model for image captioning']) {

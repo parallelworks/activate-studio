@@ -1,5 +1,6 @@
 import { LibrariesSection } from '../components/LibrariesSection'
 import { ModelAccessSection } from '../components/ModelAccessSection'
+import { AccountsSection } from '../components/AccountsSection'
 import { IndexBuildSettings, IndexStorageSettings } from '../components/IndexingSection'
 import { IndexGroup } from '../components/IndexGroup'
 import { WorkflowsSection } from '../components/WorkflowsSection'
@@ -45,7 +46,6 @@ interface Effective {
   customTools: { name: string; description: string; command: string }[]
   ragDefaultModel: string
   ragTopK: number
-  ragAllowDeploymentKey: boolean
   ragAdvertiseRagModel: boolean
   ragAdvertiseAgentModel: boolean
   mcpEnabled: boolean
@@ -68,7 +68,6 @@ interface Effective {
   bannerText: string
   bannerColor: string
   bannerWhenEmbedded: boolean
-  allowKeySharing: boolean
   kbMission: string
   sections: string[]
   aiEnabled: boolean
@@ -149,7 +148,7 @@ const PWCODE_MODES: SelectItem<Effective['pwcodePermissionMode']>[] = [
   { value: 'plan', label: 'Plan first' },
 ]
 
-type SectionId = 'general' | 'indexing' | 'transfers' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
+type SectionId = 'general' | 'indexing' | 'transfers' | 'accounts' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
 
 /** The tabs of Settings, General, in order. Each has an address of its own
  *  (#view=settings:<tab>); #view=settings:general opens the first. Branding
@@ -176,62 +175,61 @@ export type IndexingTab = typeof INDEXING_TABS[number]['value']
 export type SettingsTab = GeneralTab | IndexingTab
 
 /** The section and tab an address names: a tab's id, a section's own id, or
- *  anything else for General's first tab. #view=settings:indexing, General's
- *  Indexing tab before Indexing was a section, opens Sync and search, where
- *  that tab's first settings are now; the rail opens the section on its
- *  first tab, Libraries. */
+ *  anything else for General's first tab. A section opens on its first tab,
+ *  by the rail or by its address: #view=settings:indexing opens Libraries. */
 export function settingsTarget(id: string | null | undefined): { section: SectionId; tab: SettingsTab; anchor?: 'branding' } {
   const general = GENERAL_TABS.find(t => t.value === id)
   if (general) return { section: 'general', tab: general.value }
   if (id === 'branding') return { section: 'general', tab: 'appearance', anchor: 'branding' }
-  if (id === 'indexing') return { section: 'indexing', tab: 'sync-search' }
+  if (id === 'indexing') return { section: 'indexing', tab: INDEXING_TABS[0].value }
   const indexing = INDEXING_TABS.find(t => t.value === id)
   if (indexing) return { section: 'indexing', tab: indexing.value }
-  const sections: SectionId[] = ['general', 'transfers', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']
+  const sections: SectionId[] = ['general', 'transfers', 'accounts', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']
   return { section: sections.includes(id as SectionId) ? id as SectionId : 'general', tab: 'appearance' }
 }
 
 /** Sections with nothing to set while AI features are off: every setting in
  *  them is the assistant's. Their addresses open General, AI features, where
  *  the switch is. External access stays (MCP serves outside clients with no
- *  model here), and so does Model access, which also holds the ACTIVATE
- *  credential the Workflows page and ACTIVATE libraries use. */
+ *  model here), and so does Accounts, which holds the ACTIVATE account the
+ *  Workflows page and ACTIVATE libraries use. Model access, which says
+ *  where models come from, opens Accounts. */
 export const AI_ONLY_SECTIONS: readonly SectionId[] = ['tools', 'previews', 'ext']
 
 /** The section and tab to show for a target: an AI-only section, while AI
- *  features are off, is General, AI features. */
+ *  features are off, is General, AI features; Model access is Accounts. */
 export function shownSettingsTarget<T extends { section: SectionId; tab: SettingsTab }>(t: T, aiEnabled: boolean): T | { section: SectionId; tab: SettingsTab } {
+  if (!aiEnabled && t.section === 'access') return { section: 'accounts', tab: t.tab }
   return !aiEnabled && AI_ONLY_SECTIONS.includes(t.section) ? { section: 'general', tab: 'ai' } : t
 }
 
 /**
- * The settings rail, in order. Model access appears where the deployment
- * signs users in, and on a single-user install (`single`), where it holds
- * the one user's model endpoint. Feature previews is its own section rather
- * than a heading at the foot of another one: a capability nobody can
- * find is off for everyone regardless of the switch. Workflows appears
- * only when the Studio runs on the platform, since it lists the platform's.
+ * The settings rail, in order. Accounts, the ACTIVATE account and model
+ * endpoints, appears where the deployment signs users in, and on a
+ * single-user install (`single`); Model access, where models come from,
+ * beside it with the assistant's sections. Feature previews is its own
+ * section rather than a heading at the foot of another one: a capability
+ * nobody can find is off for everyone regardless of the switch. Workflows
+ * appears when the Studio reaches the platform, and, where Accounts is,
+ * also before anyone has signed in, to say so.
  */
 export function settingsSections(opts: { authEnabled: boolean; platform?: boolean; single?: boolean; aiEnabled?: boolean; transfers?: boolean }): { id: SectionId; label: string; group: string | null }[] {
+  const accounts = opts.authEnabled || !!opts.single
   // Transfers, beside Indexing, where the server has transfers.
   const xfer = opts.transfers ? [{ id: 'transfers' as SectionId, label: 'Transfers', group: 'Studio' }] : []
-  // With AI features off, the assistant's sections leave the rail. Model
-  // access keeps only its ACTIVATE credential, so it is named for that and
-  // sits with the Studio's own sections.
-  if (opts.aiEnabled === false) return [
-    { id: 'general', label: 'General', group: 'Studio' },
-    { id: 'indexing', label: 'Indexing', group: 'Studio' },
+  const studio = [
+    { id: 'general' as SectionId, label: 'General', group: 'Studio' },
+    { id: 'indexing' as SectionId, label: 'Indexing', group: 'Studio' },
     ...xfer,
-    ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
-    ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'ACTIVATE access', group: 'Studio' }] : []),
-    { id: 'rag', label: 'External access', group: null },
+    ...(opts.platform || accounts ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
+    ...(accounts ? [{ id: 'accounts' as SectionId, label: 'Accounts', group: 'Studio' }] : []),
   ]
+  // With AI features off, the assistant's sections leave the rail, and so
+  // does Model access: there are no models to choose.
+  if (opts.aiEnabled === false) return [...studio, { id: 'rag', label: 'External access', group: null }]
   return [
-    { id: 'general', label: 'General', group: 'Studio' },
-    { id: 'indexing', label: 'Indexing', group: 'Studio' },
-    ...xfer,
-    ...(opts.platform ? [{ id: 'workflows' as SectionId, label: 'Workflows', group: 'Studio' }] : []),
-    ...(opts.authEnabled || opts.single ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
+    ...studio,
+    ...(accounts ? [{ id: 'access' as SectionId, label: 'Model access', group: 'Assistant' }] : []),
     { id: 'tools', label: 'Assistant tools', group: 'Assistant' },
     { id: 'previews', label: 'Feature previews', group: 'Assistant' },
     { id: 'ext', label: 'Extensions', group: 'Assistant' },
@@ -323,6 +321,21 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
     setSection(id)
     history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:${id}`)
   }
+  // On a phone the rail is a strip that scrolls sideways: the section open
+  // is brought into it, rather than left past its right edge.
+  // Checked after each render until done for the section, since the
+  // sections listed arrive with the account and settings.
+  const navRef = useRef<HTMLElement>(null)
+  const navShown = useRef<string | null>(null)
+  useEffect(() => {
+    const nav = navRef.current
+    const on = nav?.querySelector<HTMLElement>('button.active')
+    if (!nav || !on || navShown.current === section) return
+    navShown.current = section
+    if (nav.scrollWidth <= nav.clientWidth) return
+    const a = on.getBoundingClientRect(), n = nav.getBoundingClientRect()
+    if (a.left < n.left || a.right > n.right) nav.scrollLeft += a.left - n.left - (n.width - a.width) / 2
+  })
   const updatesFlow = useUpdateFlow()
   const tabs = GENERAL_TABS.filter(t => t.value !== 'updates' || !updatesFlow.none)
   const [theme, setTheme] = useState<ThemeChoice | null>(null)
@@ -507,7 +520,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   return (
     <div className="settings-view">
       <div className="help-docs card">
-        <nav className="help-nav">
+        <nav className="help-nav" ref={navRef}>
           <div className="help-nav-head"><span>Settings</span></div>
           {/* Grouped like the user guide's rail: a group opens when it holds
               the section being edited, and a header click opens or closes it. */}
@@ -671,7 +684,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       Off takes Chat and Agents out of the sidebar, hides the settings only the assistant uses, and sends nothing
                       to a model; search, the library, query and statistics work as before. They can be switched back on here at
                       any time. Saved as you switch.
-                      {(me?.single || me?.authEnabled) && <> The model endpoint is under <a href="#view=settings:access">Model access</a>.</>}
+                      {(me?.single || me?.authEnabled) && <> Where models come from is under <a href="#view=settings:access">Model access</a>, and the accounts behind them under <a href="#view=settings:accounts">Accounts</a>.</>}
                     </p>
                   ) : (
                     <p className="muted view-sub">
@@ -694,14 +707,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     <label className="key-persist">
                       <Checkbox checked={form.requirePersonalKey}
                         onCheckedChange={v => setForm({ ...form, requirePersonalKey: v })} />
-                      Require each user to add their own model credential (chat and models refuse the deployment credential, though a key another user has shared here is accepted; browsing, search, and adding material stay open to everyone)
-                    </label>
-                  )}
-                  {me?.authEnabled && (
-                    <label className="key-persist">
-                      <Checkbox checked={form.allowKeySharing}
-                        onCheckedChange={v => setForm({ ...form, allowKeySharing: v })} />
-                      Let a user share their own model credential with everyone here, standing in for the deployment credential (useful where the deployment has none; the sharer's quota covers the group)
+                      Require each user to add their own model credential (chat and models refuse the endpoint you set for everyone and the model served beside the Studio; browsing, search, and adding material stay open to everyone)
                     </label>
                   )}
                   {me?.authEnabled && (
@@ -830,7 +836,8 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
             </>
           )}
 
-          {section === 'access' && <ModelAccessSection requirePersonalKey={form.requirePersonalKey} aiEnabled={aiEnabled} />}
+          {section === 'accounts' && <AccountsSection requirePersonalKey={form.requirePersonalKey} aiEnabled={aiEnabled} />}
+          {section === 'access' && <ModelAccessSection requirePersonalKey={form.requirePersonalKey} />}
 
           {section === 'tools' && (
             <>
@@ -1067,11 +1074,6 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     onValueChange={v => setForm({ ...form, ragTopK: v ?? 0 })} />
                 </Field>
               </div>
-              <label className="key-persist">
-                <Checkbox checked={form.ragAllowDeploymentKey}
-                  onCheckedChange={v => setForm({ ...form, ragAllowDeploymentKey: v })} />
-                Allow callers without a bearer key to use the deployment credential (off means every caller must present their own key)
-              </label>
               <label className="key-persist">
                 <Checkbox checked={form.ragAdvertiseAgentModel}
                   onCheckedChange={v => setForm({ ...form, ragAdvertiseAgentModel: v })} />

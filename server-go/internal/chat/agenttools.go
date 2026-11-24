@@ -50,7 +50,7 @@ func init() {
 	}
 }
 
-const noPlatformKey = "No platform credential: the user can add their ACTIVATE API key under Settings, Model access."
+const noPlatformKey = "No platform credential: the user can add their ACTIVATE API key under Settings, Accounts."
 
 /* ---- run_workflow ---- */
 
@@ -556,7 +556,7 @@ func (m *Module) toolRunWorkflow(r *http.Request, args map[string]any, ctx ToolC
 					if truthy(resource) {
 						res = runs.Str(tmpl(resource))
 					}
-					routes.Runs.RecordRun(runs.RecordInput{Slug: launched, Workflow: wfName, Resource: res, ConversationID: ctx.ConversationID, Owner: ctx.UserID})
+					routes.Runs.RecordRun(runs.RecordInput{Slug: launched, Workflow: wfName, Resource: res, ConversationID: ctx.ConversationID, Owner: ctx.UserID, OwnerID: ctx.UserID})
 				}
 			}
 		}

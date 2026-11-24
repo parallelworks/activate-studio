@@ -15,7 +15,8 @@ import { OverviewView } from './views/OverviewView'
 import { HistoryView } from './views/HistoryView'
 import { useInstall } from './install'
 import { WorkflowsView } from './views/WorkflowsView'
-import { CodeView } from './views/CodeView'
+import { CodePage } from './code/CodePage'
+import { useCodeWaiting } from './code/waiting'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
@@ -195,7 +196,8 @@ export default function App() {
   const { canInstall, install } = useInstall()
   // A deployment can leave sections out, which is how the Studio becomes an
   // index viewer with no assistant. Settings and Help always stay reachable.
-  // The Workflows tab lists platform workflows, so it exists only there.
+  // The Workflows tab lists platform workflows, so it exists only there, or
+  // where Accounts can sign in to the platform (it then asks to sign in).
   // Transfers needs a server that has them: an older one answers 404 and
   // the page stays out of the menu, so the page can ship before the server.
   const [hasTransfers, setHasTransfers] = useState<boolean | null>(null)
@@ -206,6 +208,8 @@ export default function App() {
   // seen, so the read marks them seen first; a transfer's details mark
   // theirs and send the summary.
   const [xferSummary, setXferSummary] = useState<TransferSummary | null>(null)
+  // Sessions waiting on the person, as PW Code on the web's menu counts them.
+  const codeWaiting = useCodeWaiting(cfg.loaded && sectionAllowed('code', cfg))
   const onTransfers = view === 'transfers'
   useEffect(() => {
     if (!hasTransfers) return
@@ -242,7 +246,7 @@ export default function App() {
     history.replaceState(null, '', location.pathname + location.search + (next === 'chat' ? '' : `#view=${next}`))
     setView(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.loaded, cfg.sections, cfg.platform, cfg.localCode, cfg.aiEnabled, view])
+  }, [cfg.loaded, cfg.sections, cfg.platform, cfg.localCode, cfg.aiEnabled, cfg.accounts, view])
 
   // First-run setup on a single-user install, and again from Settings. A
   // framed page is a session inside the platform, or an embed, never a first run.
@@ -294,7 +298,7 @@ export default function App() {
   useEffect(() => { setPanelView(view) }, [view])
   const searchScope = useSearchScope()
   const pageNote = view === 'search' ? SEARCH_NOTE[searchReach(cfg.libraries ?? [], searchScope)]
-    : view === 'code' && !cfg.platform ? 'Your pw code sessions on this computer'
+    : view === 'code' && !cfg.platform && cfg.localCode ? 'Your pw code sessions on this computer'
     : PAGE_NOTES[view]
   useEffect(() => { if (cfg.loaded) document.title = cfg.appName }, [cfg])
   // The tab's library: its own choice, else All libraries where there are
@@ -566,6 +570,12 @@ export default function App() {
                   {item.icon}
                   <span>{item.label}</span>
                   {item.id === 'transfers' && <TransferMark summary={xferSummary} />}
+                  {item.id === 'code' && !!codeWaiting && (
+                    <span className="nav-xfer-mark" title={`${codeWaiting} waiting for you`} data-testid="nav-code-waiting">
+                      <CountBadge count={codeWaiting} max={99} size="sm" variant="warning" />
+                      <span className="sr-only">{codeWaiting} waiting for you</span>
+                    </span>
+                  )}
                 </button>
               )
             }
@@ -676,8 +686,9 @@ export default function App() {
         <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView onOpen={openFile} /></div>
         <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
         {aiPagesMounted(cfg) && <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>}
-        {cfg.platform && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
-        {(cfg.platform || cfg.localCode) && view === 'code' && <div className="view"><CodeView /></div>}
+        {/* Without ACTIVATE, where Accounts can sign in to it, these ask to sign in. */}
+        {allowed('workflows') && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
+        {allowed('code') && view === 'code' && <div className="view"><CodePage /></div>}
         <div className={view === 'settings' ? 'view with-toggle' : 'view hidden'}>
           <SettingsView active={view === 'settings'} />
           {view === 'settings' && <PanelToggle className="panel-toggle-float" />}

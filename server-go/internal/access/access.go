@@ -1,4 +1,4 @@
-// Package access ports server/src/accessRoutes.ts: Model access as one
+// Package access ports server/src/accessRoutes.ts: Settings, Accounts as one
 // picture (where model calls and platform calls get their credential, the
 // pw CLI's contexts and which one is used), signing the CLI in to a
 // platform, and subscriptions connected through the platform (a ChatGPT
@@ -38,7 +38,7 @@ type account struct {
 	org, user string
 }
 
-// Register registers the ten Model access routes.
+// Register registers the eleven access routes (Settings, Accounts and Model access).
 func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Routes {
 	s := &Routes{p: p, a: a, accounts: map[string]account{}}
 	h := func(f func(w http.ResponseWriter, r *http.Request) (any, error)) http.HandlerFunc {
@@ -47,6 +47,7 @@ func Register(mux *http.ServeMux, a *app.App, p *platform.Platform) *Routes {
 	mux.HandleFunc("GET /api/access", h(s.get))
 	mux.HandleFunc("PUT /api/access/cli/path", h(s.cliPath))
 	mux.HandleFunc("PUT /api/access/source", h(s.source))
+	mux.HandleFunc("PUT /api/access/cli/use", h(s.use))
 	mux.HandleFunc("POST /api/access/cli/login", h(s.loginStart))
 	mux.HandleFunc("GET /api/access/cli/login", h(s.loginGet))
 	mux.HandleFunc("POST /api/access/cli/login/cancel", h(s.loginCancel))
@@ -84,18 +85,22 @@ func nullable(s string) any {
 	return s
 }
 
-// deploymentSource is the deployment's own chain: a shared key,
-// PW_API_KEY, the pw CLI.
+// deploymentSource is what work for a person without a credential of
+// their own falls back to. On a Studio of one, the owner's: PW_API_KEY,
+// else the pw CLI, none after Stop using the pw CLI. On a Studio several
+// people use, the administrator's ACTIVATE credential is never a person's,
+// so only an OpenAI-compatible endpoint the administrator set (a gateway
+// that is not an ACTIVATE platform's) serves them, for models only.
 func (s *Routes) deploymentSource(v *platform.Viewer, single bool) *jsonv.Object {
 	host := hostOf(s.p.GatewayBase())
-	if s.p.SharedKey() != "" {
-		var last4 any
-		if v.SharedLast4 != nil {
-			last4 = *v.SharedLast4
-		} else {
-			last4 = nullable(s.p.SharedKeyLast4())
+	if !single {
+		if !s.p.PlatformGateway() && s.p.GatewayKey() != "" {
+			return jsonv.NewObject("source", "admin-endpoint", "host", host, "context", nil, "baseUrl", nullable(s.p.GatewayBase()))
 		}
-		return jsonv.NewObject("source", "shared", "host", host, "context", nil, "last4", last4)
+		return jsonv.NewObject("source", "none", "host", nil, "context", nil)
+	}
+	if s.p.Stopped() {
+		return jsonv.NewObject("source", "none", "host", nil, "context", nil)
 	}
 	if s.p.APIKeyEnv() != "" {
 		return jsonv.NewObject("source", "env", "host", host, "context", nil)
@@ -142,19 +147,23 @@ func (s *Routes) sources(v *platform.Viewer) (models, plat *jsonv.Object) {
 	default:
 		models = dep
 	}
-	if v.SignIn != "" {
+	switch {
+	case v.SignIn != "":
 		plat = signIn
-	} else if cred != nil && cred.BaseURL == "" {
+	case cred != nil && cred.BaseURL == "":
 		plat = mine("key", gw)
-	} else {
+	case single:
 		plat = dep
+	default:
+		// Never the deployment's on a Studio several people use.
+		plat = jsonv.NewObject("source", "none", "host", nil, "context", nil)
 	}
 	return models, plat
 }
 
 func (s *Routes) requireSingle(v *platform.Viewer) error {
 	if v.AuthEnabled {
-		return platform.KbError(403, "The pw CLI on this server belongs to the deployment; choose a credential of your own under Model access instead.")
+		return platform.KbError(403, "The pw CLI on this server belongs to the deployment; choose a credential of your own under Settings, Accounts instead.")
 	}
 	return nil
 }
@@ -187,6 +196,9 @@ func (s *Routes) get(w http.ResponseWriter, r *http.Request) (any, error) {
 			"used", nullable(s.p.CredentialContextName()),
 			"gatewayFromEnv", s.p.GatewayFromEnv(),
 			"envKey", s.p.APIKeyEnv() != "",
+			// Stop using the pw CLI: the Studio reads none of the computer's
+			// ACTIVATE credentials (stopped in access.json).
+			"stopped", s.p.Stopped(),
 		))
 		out.Set("login", s.p.Login().JSON())
 	} else {
@@ -241,6 +253,9 @@ func (s *Routes) source(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err := s.requireSingle(v); err != nil {
 		return nil, err
 	}
+	if s.p.Stopped() {
+		return nil, platform.KbError(409, stoppedNote)
+	}
 	name := ""
 	if c, _ := body.Get("context"); c != nil && c != jsonv.Undefined {
 		name = jsonv.String(c)
@@ -259,6 +274,37 @@ func (s *Routes) source(w http.ResponseWriter, r *http.Request) (any, error) {
 	models, plat := s.sources(v)
 	return jsonv.NewObject("ok", true, "chosen", nullable(s.p.ChosenContext()), "active", nullable(s.p.ActiveContextName()),
 		"models", models, "platform", plat), nil
+}
+
+const stoppedNote = "The Studio is not using the pw CLI. Choose Use it again under Settings, Accounts first."
+
+// use is Stop using the pw CLI ({use: false}) and Use it again ({use:
+// true}), on a Studio of one. Stopping signs nothing out: the pw CLI keeps
+// its sign-ins for the other tools on the computer; the Studio only stops
+// reading them, and PW_API_KEY, so it works as for someone without
+// ACTIVATE until it is used again.
+func (s *Routes) use(w http.ResponseWriter, r *http.Request) (any, error) {
+	body, err := platform.BodyObject(r)
+	if err != nil {
+		return nil, err
+	}
+	v, err := s.p.ViewerOf(r)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSingle(v); err != nil {
+		return nil, err
+	}
+	u, _ := body.Get("use")
+	if b, ok := u.(bool); !ok {
+		return nil, platform.KbError(400, "use must be true or false")
+	} else if err := s.p.Stop(!b); err != nil {
+		return nil, err
+	}
+	s.p.InvalidateProviderProbes()
+	s.ResetAccounts()
+	models, plat := s.sources(v)
+	return jsonv.NewObject("ok", true, "stopped", s.p.Stopped(), "models", models, "platform", plat), nil
 }
 
 // viewerAfterClear is the viewer once Node removed the single owner's
@@ -295,6 +341,9 @@ func (s *Routes) loginStart(w http.ResponseWriter, r *http.Request) (any, error)
 	}
 	if err := s.requireSingle(v); err != nil {
 		return nil, err
+	}
+	if s.p.Stopped() {
+		return nil, platform.KbError(409, stoppedNote)
 	}
 	host, _ := body.Get("host")
 	st, err := s.p.StartLogin(jsonv.String(undefToNil(host)), 0, 0)
@@ -428,7 +477,7 @@ func (s *Routes) call(ctx context.Context, key, method, path string, body any) (
 		}
 		st := res.StatusCode
 		if st == 401 || st == 403 {
-			return nil, platform.KbError(st, "The platform refused this credential ("+itoa(st)+")"+tail+". It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Model access.")
+			return nil, platform.KbError(st, "The platform refused this credential ("+itoa(st)+")"+tail+". It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Settings, Accounts.")
 		}
 		code := 502
 		if st == 404 {
