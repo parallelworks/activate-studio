@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -124,4 +125,41 @@ func askAnswerBody(in []askAnswer, chat bool) (*jsonv.Object, error) {
 		out = append(out, o)
 	}
 	return jsonv.NewObject("answers", out), nil
+}
+
+type relayStart struct {
+	link *conversations.PWCodeLink
+	err  error
+}
+
+// newRelaySession starts a session on old's machine and folder, in the mode
+// and on the model the old one had, and is the chat's link to it. The new
+// session has seen none of the chat (LastMessage is empty), so its first
+// message brings the conversation so far.
+func (m *Module) newRelaySession(ctx context.Context, t *pwTarget, old *conversations.PWCodeLink) relayStart {
+	mode := ""
+	if d, err := pwcode.GetSession(ctx, t.client, old.Session); err == nil {
+		mode = jsonv.String(jsonv.Path(d, "permissionMode"))
+	}
+	if mode == "" {
+		mode = "read-only"
+	}
+	req := jsonv.NewObject("workspace", old.Workspace, "permissionMode", mode)
+	if old.Model != "" {
+		req.Set("model", old.Model)
+	}
+	s, err := pwcode.CreateSession(ctx, t.client, req)
+	if err != nil {
+		return relayStart{err: pwErr(502, "ACTIVATE did not start a session on "+firstNonEmpty(old.MachineName, old.Machine)+": "+apiMessage(err))}
+	}
+	id := firstNonEmpty(jsonv.String(jsonv.Path(s, "id")), jsonv.String(jsonv.Path(s, "session", "id")))
+	if id == "" {
+		return relayStart{err: pwErr(502, "ACTIVATE started a session but did not say which.")}
+	}
+	link := *old
+	link.Session, link.LastMessage, link.CreatedAt = id, "", m.Conv.Now()
+	link.URL = firstNonEmpty(jsonv.String(jsonv.Path(s, "url")), jsonv.String(jsonv.Path(s, "remoteUrl")))
+	link.Model = firstNonEmpty(jsonv.String(jsonv.Path(s, "model")), old.Model)
+	link.ModelNote, link.ModelFrom, link.ToolsError = "", "", ""
+	return relayStart{link: &link}
 }

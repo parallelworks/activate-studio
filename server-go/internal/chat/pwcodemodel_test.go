@@ -12,9 +12,9 @@ import (
 func TestPWCodeChatPicksAModelTheConnectionOffers(t *testing.T) {
 	offered := []string{"acct:codex/gpt-a", "acct:codex/gpt-b", "test-model"}
 	for _, c := range []struct{ current, chosen, want string }{
-		{"acct:anthropic/claude-x", "acct:codex/gpt-b", "acct:codex/gpt-b"}, // the Studio assistant's model
-		{"acct:anthropic/claude-x", "test-model", "acct:codex/gpt-a"},       // not a platform model: the first one offered
-		{"acct:anthropic/claude-x", "", "acct:codex/gpt-a"},
+		{"acct:anthropic/sonnet-x", "acct:codex/gpt-b", "acct:codex/gpt-b"}, // the Studio assistant's model
+		{"acct:anthropic/sonnet-x", "test-model", "acct:codex/gpt-a"},       // not a platform model: the first one offered
+		{"acct:anthropic/sonnet-x", "", "acct:codex/gpt-a"},
 		{"acct:codex/gpt-a", "acct:codex/gpt-b", ""},  // offered: kept
 		{"claude-code/haiku", "acct:codex/gpt-b", ""}, // pw code's own backend: kept
 		{"", "acct:codex/gpt-b", ""},
@@ -23,7 +23,7 @@ func TestPWCodeChatPicksAModelTheConnectionOffers(t *testing.T) {
 			t.Errorf("pick(%q, %q) = %q, want %q", c.current, c.chosen, got, c.want)
 		}
 	}
-	if pickPWCodeModel("acct:anthropic/claude-x", "", nil, nil) != "" {
+	if pickPWCodeModel("acct:anthropic/sonnet-x", "", nil, nil) != "" {
 		t.Error("an empty listing changes nothing")
 	}
 	// A model offered whose call just failed for this person is left for
@@ -32,7 +32,7 @@ func TestPWCodeChatPicksAModelTheConnectionOffers(t *testing.T) {
 	if got := pickPWCodeModel("acct:codex/gpt-a", "acct:codex/gpt-b", offered, failing); got != "acct:codex/gpt-b" {
 		t.Errorf("off a failing model: %q", got)
 	}
-	if got := pickPWCodeModel("acct:anthropic/claude-x", "acct:codex/gpt-a", offered, failing); got != "acct:codex/gpt-b" {
+	if got := pickPWCodeModel("acct:anthropic/sonnet-x", "acct:codex/gpt-a", offered, failing); got != "acct:codex/gpt-b" {
 		t.Errorf("a failing choice: %q", got)
 	}
 	if got := pickPWCodeModel("acct:codex/gpt-a", "", []string{"acct:codex/gpt-a"}, failing); got != "" {
@@ -62,7 +62,7 @@ func TestPWCodeChatModelFailuresArePerKey(t *testing.T) {
 	if len(f.settings) != 1 || f.settings[0] != `{"model":"acct:codex/gpt-b"}` {
 		t.Fatalf("their own failure: settings %q", f.settings)
 	}
-	if !strings.Contains(sse, `"modelNote":"pw code's own model, acct:codex/gpt-a, failed when you last used it, in the last ten minutes, so this chat runs on acct:codex/gpt-b`) ||
+	if !strings.Contains(sse, `"modelNote":"Runs on gpt-b because gpt-a failed for you in the last ten minutes.`) ||
 		strings.Contains(sse, "not enabled") {
 		t.Errorf("note:\n%s", sse)
 	}
@@ -71,23 +71,23 @@ func TestPWCodeChatModelFailuresArePerKey(t *testing.T) {
 // Review 1, finding 21: a move that fails is said in the chat, not only
 // logged, and the link keeps the model the session is on.
 func TestPWCodeChatSaysWhenTheModelCannotMove(t *testing.T) {
-	f := &fakePW{script: helloTurn, model: "acct:anthropic/claude-x", refuseSettings: true}
+	f := &fakePW{script: helloTurn, model: "acct:anthropic/sonnet-x", refuseSettings: true}
 	m, base, gw := pwModuleGW(t, f, nil)
 	gw.models = `{"data":[{"id":"acct:codex/gpt-a","object":"model"}]}`
 	c := m.Conv.Create(nil, "")
 	sse := post(t, base, map[string]any{"conversationId": c.ID, "userMessageId": "u1",
 		"messages": []any{map[string]any{"role": "user", "content": "Hi"}}})
-	if !strings.Contains(sse, `"modelStuck":true`) || !strings.Contains(sse, "is not enabled for your AI connection, and the Studio could not move this chat to acct:codex/gpt-a: ") ||
+	if !strings.Contains(sse, `"modelStuck":true`) || !strings.Contains(sse, "sonnet-x is not enabled for you, and pw code did not take gpt-a in its place: ") ||
 		!strings.Contains(sse, `"modelMoved":false`) {
 		t.Errorf("pwcode event:\n%s", sse)
 	}
-	if l := m.Conv.Get(c.ID).PWCode; l == nil || l.Model != "acct:anthropic/claude-x" {
+	if l := m.Conv.Get(c.ID).PWCode; l == nil || l.Model != "acct:anthropic/sonnet-x" {
 		t.Errorf("link: %+v", l)
 	}
 }
 
 func TestPWCodeChatMovesOffAModelTheConnectionDoesNotOffer(t *testing.T) {
-	f := &fakePW{script: helloTurn, model: "acct:anthropic/claude-x"}
+	f := &fakePW{script: helloTurn, model: "acct:anthropic/sonnet-x"}
 	m, base, gw := pwModuleGW(t, f, nil)
 	gw.models = `{"data":[{"id":"acct:codex/gpt-a","object":"model"},{"id":"acct:codex/gpt-b","object":"model"}]}`
 	c := m.Conv.Create(nil, "")
@@ -96,12 +96,12 @@ func TestPWCodeChatMovesOffAModelTheConnectionDoesNotOffer(t *testing.T) {
 	if len(f.settings) != 1 || f.settings[0] != `{"model":"acct:codex/gpt-b"}` {
 		t.Fatalf("settings sent: %q", f.settings)
 	}
-	if !strings.Contains(sse, `"model":"acct:codex/gpt-b","modelNote":"pw code's own model, acct:anthropic/claude-x, is not enabled for your AI connection, so this chat runs on acct:codex/gpt-b, the model chosen for the Studio assistant.`) ||
+	if !strings.Contains(sse, `"model":"acct:codex/gpt-b","modelNote":"Runs on gpt-b because sonnet-x is not enabled for you. Choose another under Settings, External access, pw code model."`) ||
 		!strings.Contains(sse, `"modelMoved":true`) {
 		t.Errorf("pwcode event:\n%s", sse)
 	}
 	l := m.Conv.Get(c.ID).PWCode
-	if l == nil || l.Model != "acct:codex/gpt-b" || !strings.Contains(l.ModelNote, "Settings, External access, pw code model") {
+	if l == nil || l.Model != "acct:codex/gpt-b" || !strings.Contains(l.ModelNote, "Settings, External access, pw code model") || l.ModelFrom != "acct:anthropic/sonnet-x" {
 		t.Fatalf("link: %+v", l)
 	}
 	// The next message finds the session on an offered model and leaves it.
@@ -114,8 +114,8 @@ func TestPWCodeChatMovesOffAModelTheConnectionDoesNotOffer(t *testing.T) {
 }
 
 func TestPWCodeChatKeepsTheModelSettingsName(t *testing.T) {
-	f := &fakePW{script: helloTurn, model: "acct:anthropic/claude-x"}
-	m, base, gw := pwModuleGW(t, f, map[string]string{"PWCODE_MODEL": "acct:anthropic/claude-x"})
+	f := &fakePW{script: helloTurn, model: "acct:anthropic/sonnet-x"}
+	m, base, gw := pwModuleGW(t, f, map[string]string{"PWCODE_MODEL": "acct:anthropic/sonnet-x"})
 	gw.models = `{"data":[{"id":"acct:codex/gpt-a","object":"model"}]}`
 	c := m.Conv.Create(nil, "")
 	post(t, base, map[string]any{"conversationId": c.ID, "userMessageId": "u1",
@@ -131,18 +131,18 @@ func TestPWCodeChatKeepsTheModelSettingsName(t *testing.T) {
 // pw code chat's tools carry the model the chat runs on, so a delegated
 // session starts on it.
 func TestAnAgentSessionStartsOnAModelTheConnectionOffers(t *testing.T) {
-	f := &fakePW{script: helloTurn, model: "acct:anthropic/claude-x"}
+	f := &fakePW{script: helloTurn, model: "acct:anthropic/sonnet-x"}
 	m, _, gw := pwModuleGW(t, f, nil)
 	gw.models = `{"data":[{"id":"acct:codex/gpt-a","object":"model"},{"id":"acct:codex/gpt-b","object":"model"}]}`
 	r := httptest.NewRequest("POST", "/api/chat", nil)
 	if m.A.Providers.AgentModel == nil {
 		t.Fatal("the chat does not offer the rule to agents")
 	}
-	pick, why := m.A.Providers.AgentModel(r, "acct:anthropic/claude-x", "acct:codex/gpt-b")
-	if pick != "acct:codex/gpt-b" || !strings.Contains(why, "acct:anthropic/claude-x is not enabled for the AI connection") {
+	pick, why := m.A.Providers.AgentModel(r, "acct:anthropic/sonnet-x", "acct:codex/gpt-b")
+	if pick != "acct:codex/gpt-b" || !strings.Contains(why, "acct:anthropic/sonnet-x is not enabled for the AI connection") {
 		t.Fatalf("pick %q, %q", pick, why)
 	}
-	if pick, _ := m.agentModel(r, "acct:anthropic/claude-x", ""); pick != "acct:codex/gpt-a" {
+	if pick, _ := m.agentModel(r, "acct:anthropic/sonnet-x", ""); pick != "acct:codex/gpt-a" {
 		t.Fatalf("with nothing chosen: %q", pick)
 	}
 	if pick, _ := m.agentModel(r, "acct:codex/gpt-a", "acct:codex/gpt-b"); pick != "" {
@@ -164,7 +164,7 @@ func TestAnAgentSessionStartsOnAModelTheConnectionOffers(t *testing.T) {
 func TestANewPWCodeChatStartsOnTheModelPickedBeforeItsFirstMessage(t *testing.T) {
 	first := func(t *testing.T, env map[string]string, pick map[string]any) (*fakePW, *conversations.PWCodeLink) {
 		t.Helper()
-		f := &fakePW{script: helloTurn, model: "acct:anthropic/claude-x"}
+		f := &fakePW{script: helloTurn, model: "acct:anthropic/sonnet-x"}
 		m, base, gw := pwModuleGW(t, f, env)
 		gw.models = `{"data":[{"id":"acct:codex/gpt-a","object":"model"}]}`
 		c := m.Conv.Create(nil, "")
@@ -182,8 +182,8 @@ func TestANewPWCodeChatStartsOnTheModelPickedBeforeItsFirstMessage(t *testing.T)
 	// A platform model the connection does not offer, picked by the
 	// person: the session is made with it and the allocation that bills
 	// it, and the Studio does not move it to one it offers.
-	f, l := first(t, nil, map[string]any{"pwcodeModel": "acct:anthropic/claude-x", "pwcodeAllocation": "alloc-1"})
-	if f.created[0]["model"] != "acct:anthropic/claude-x" || f.created[0]["allocation"] != "alloc-1" || len(f.settings) != 0 || l.ModelNote != "" {
+	f, l := first(t, nil, map[string]any{"pwcodeModel": "acct:anthropic/sonnet-x", "pwcodeAllocation": "alloc-1"})
+	if f.created[0]["model"] != "acct:anthropic/sonnet-x" || f.created[0]["allocation"] != "alloc-1" || len(f.settings) != 0 || l.ModelNote != "" {
 		t.Errorf("picked: created %v %v, settings %q, note %q", f.created[0]["model"], f.created[0]["allocation"], f.settings, l.ModelNote)
 	}
 	// The pick wins over the model Settings names.

@@ -1,7 +1,7 @@
 import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
-import { getChatLibrary, getEffort, getEngine, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
+import { getChatLibrary, getEffort, getLabelScope, getLastEngine, getPersona, hasEffort, knowEngine, setEffort } from './labelScope'
 import { fetchModels } from './api'
 import { firstMessagePick } from './pwcode/newChatPick'
 import { foldRecovered, recoveryTracker } from './recoveredSteps'
@@ -47,7 +47,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       library: getChatLibrary(),
       agent: getPersona(),
       effort: effortFor(req.conversationId) || null,
-      engine: getEngine(req.conversationId) || null,
+      // What answers is the conversation's, which the server keeps; the
+      // last choice made here is for a chat nothing has answered yet.
+      newChatEngine: getLastEngine() || null,
       // The model a new pw code chat was set to before its first message;
       // the server uses it only when this message makes the session.
       ...firstMessagePick(req.conversationId),
@@ -136,6 +138,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
       case 'pwcode':
         // pw code answers: its session, and where PW Code on the web shows it.
         pwcodeSession = String(payload.session ?? '')
+        if (req.conversationId) knowEngine(req.conversationId, 'pwcode')
         window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: req.conversationId, ...payload } }))
         break
       case 'pwcode_approval':
@@ -144,6 +147,8 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         window.dispatchEvent(new CustomEvent(event === 'pwcode_approval' ? 'ade-pwcode-approval' : 'ade-pwcode-approval-resolved', { detail: payload }))
         break
       case 'pwcode_fallback':
+        // The Studio assistant answered, and the chat goes on with it.
+        if (req.conversationId) knowEngine(req.conversationId, 'studio')
         // pw code could not reach the Studio's tools, so the Studio assistant
         // answers this message; the chat says why.
         window.dispatchEvent(new CustomEvent('ade-pwcode-fallback', { detail: payload }))
@@ -154,6 +159,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         break
       case 'done':
         finishReason = payload.finishReason ?? 'stop'
+        // A reply pw code did not give is the Studio assistant's.
+        if (req.conversationId && !pwcodeSession && !errorMessage) knowEngine(req.conversationId, 'studio')
+        if (req.conversationId) window.dispatchEvent(new CustomEvent('ade:chat-answered', { detail: { conversationId: req.conversationId } }))
         model = payload.model ?? null
         if (payload.messageId) { messageId = payload.messageId; handlers.onMessageId?.(payload.messageId) }
         break

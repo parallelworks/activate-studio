@@ -106,7 +106,10 @@ describe('one status for every view', () => {
     expect(asked.filter(u => u.startsWith('/api/kb/stats')).length).toBeGreaterThan(statsBefore)
     expect(within(stats).getAllByText(/Built the index in 4 min 12 s/).length).toBeGreaterThan(0)
     await act(async () => { await new Promise(r => setTimeout(r, 0)) })
-  })
+    // Its own waits allow 5 s each, after loading both views afresh: the
+    // test's limit is above them, not vitest's 5 s default, which a busy
+    // full run went past.
+  }, 20_000)
 })
 
 describe('the footer\'s index panel', () => {

@@ -109,6 +109,9 @@ type streamBody struct {
 	// PWCodeModel and PWCodeAllocation are the model a new pw code chat's
 	// composer chose before its first message, and the allocation that
 	// bills it: its session is made with them.
+	// NewChatEngine is the engine last chosen in this browser, which a
+	// chat nothing has answered yet starts with.
+	NewChatEngine    *string `json:"newChatEngine"`
 	PWCodeModel      *string `json:"pwcodeModel"`
 	PWCodeAllocation *string `json:"pwcodeAllocation"`
 }
@@ -241,7 +244,7 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	// pw code answers where it is chosen or, by default, offered; a
 	// resumed Studio approval is the Studio assistant's.
 	if _, isResume := body.Resume.(map[string]any); !isResume {
-		engine, err := m.engineFor(r, deref(body.Engine), convID)
+		engine, err := m.engineFor(r, deref(body.Engine), deref(body.NewChatEngine), convID)
 		if err != nil {
 			res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
 			return nil
@@ -255,6 +258,9 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 			// pw code could not reach the Studio's tools: the Studio
 			// assistant answers this message with them, and says why.
 			m.A.Log.Warn("pw code chat: the Studio assistant answers in pw code's place", "conversation", convID, "detail", down.detail)
+			// The chat goes on with the engine that answered it, until the
+			// person switches it back.
+			m.Conv.SetEngine(convID, engineStudio)
 			res.event("pwcode_fallback", reqbody.O("conversationId", convID,
 				"reason", down.Error()+", so the Studio assistant answered this message with the Studio's own tools."))
 		}

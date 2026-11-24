@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
-import { type MachineTools, type SetupResult, runSetup, setupSaid, takeAutoSetup } from './studioTools'
+import { KEEPS_TOOLS, type MachineTools, type SetupResult, machineHasSaid, runSetup, setupSaid, takeAutoSetup } from './studioTools'
 
 /** GET /api/mcp/bridge: how this Studio's tools reach a pw code session of
  *  the viewer's on another machine. */
@@ -122,14 +122,14 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
   if (reach.setup?.state === 'set' && !result && !failed) {
     return (
       <Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
-        pw code on {where} has this Studio's tools, as you. Sessions started there since it was set up have them; one open from before keeps the tools it started with.{' '}
+        {machineHasSaid(where)}{' '}
         <button type="button" className="code-approval-more" onClick={() => void setUp({ check: true })}>Check it again</button>
       </Callout>
     )
   }
   const startThere = <>
     Start a pw code session there: every session started there from then on has the Studio's tools
-    ({reach.tools} of them), as you, with your own libraries. One already open keeps the tools it started with.
+    ({reach.tools} of them), as you, with your own libraries. One already open {KEEPS_TOOLS}.
     {!reach.platformTools && <> The platform's tools come once you sign in with ACTIVATE in this Studio (Settings, Model access).</>}
   </>
   const keySteps = (first: string, second: string) => <>

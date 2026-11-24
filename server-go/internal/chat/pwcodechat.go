@@ -203,6 +203,19 @@ func (m *Module) pwcodeUnavailable(ctx context.Context, r *http.Request) string 
 	return why
 }
 
+// forgetPWCodeAvailability drops what was kept of whether pw code is
+// offered to owner (a user id), or to everyone for "" (the Studio's own
+// access changed), so the next read asks again.
+func (m *Module) forgetPWCodeAvailability(owner string) {
+	m.pw.mu.Lock()
+	if owner == "" {
+		m.pw.avail = nil
+	} else {
+		delete(m.pw.avail, owner)
+	}
+	m.pw.mu.Unlock()
+}
+
 // pwcodeCheck is pwcodeUnavailable's answer and how long it holds. pw code
 // is offered only under ACTIVATE: a Studio with no platform connected (one
 // run on its own, with any OpenAI-compatible endpoint) answers with the
@@ -253,41 +266,83 @@ func (m *Module) viewerPlatformKey(r *http.Request) string {
 	return v.PlatformKey()
 }
 
-// engineFor is the engine that answers this message: the composer's choice
-// when it names one, then pw code for a chat that continues a session, else
-// the deployment's setting, where "auto" is pw code
-// when it is offered to this person. A choice of pw code that cannot run
-// is an error; auto falls back to the Studio assistant.
-func (m *Module) engineFor(r *http.Request, asked, convID string) (string, error) {
-	setting := m.eff().ChatEngine
-	// A chat that continues a pw code session is answered there unless the
-	// person chose the Studio assistant for it.
-	continued, relayed := false, false
-	if c := m.Conv.Get(convID); asked == "" && c != nil && c.PWCode != nil && c.PWCode.Continued {
-		continued, relayed = true, c.PWCode.Relay
+// conversationEngine is what answers c when nothing is picked for a
+// message (Conversation.AnsweredBy), "" for none yet.
+func conversationEngine(c *conversations.Conversation) string {
+	if c == nil {
+		return ""
 	}
-	switch {
-	case asked == engineStudio:
-		return engineStudio, nil
-	case relayed:
-		// The session runs on another machine: what it needs is the relay,
-		// not this Studio's own pw code.
-		if why := m.relayUnavailable(r); why != "" {
-			return "", pwErr(409, why)
-		}
-		return enginePWCode, nil
-	case asked == enginePWCode || continued || (asked == "" && setting == enginePWCode):
-		if why := m.pwcodeUnavailable(r.Context(), r); why != "" {
-			return "", pwErr(409, why)
-		}
-		return enginePWCode, nil
+	return c.AnsweredBy()
+}
+
+// pwcodeWhyFor says why pw code cannot answer c for r's viewer, "" when it
+// can: a chat whose session runs on another machine needs the relay, any
+// other this Studio's own pw code.
+func (m *Module) pwcodeWhyFor(r *http.Request, c *conversations.Conversation) string {
+	if c != nil && c.PWCode != nil && c.PWCode.Relay {
+		return m.relayUnavailable(r)
+	}
+	return m.pwcodeUnavailable(r.Context(), r)
+}
+
+// engineState is how a conversation stands for the chat bar and for its
+// next message, from one rule: newChat is the engine a new chat starts
+// with (the deployment's setting, where "auto" is pw code when it is
+// offered and reached the Studio's tools lately), current the engine the
+// conversation answers with when nothing is picked (its own, else newChat,
+// or the last choice for a new chat, hint), why says why pw code cannot
+// answer it ("" when it can), and toolsDown why auto answers with the
+// Studio assistant for now.
+func (m *Module) engineState(r *http.Request, c *conversations.Conversation, hint string) (newChat, current, why, toolsDown string) {
+	why = m.pwcodeWhyFor(r, c)
+	switch setting := m.eff().ChatEngine; {
 	case setting == engineStudio:
-		return engineStudio, nil
+		newChat = engineStudio
+	case setting == enginePWCode:
+		newChat = enginePWCode
+	case why != "":
+		newChat = engineStudio
+	default:
+		newChat = enginePWCode
+		if down := m.toolsDown(m.pwSite()); down != "" {
+			toolsDown = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio assistant answers new chats by default for now."
+			newChat = engineStudio
+		}
 	}
-	if m.pwcodeUnavailable(r.Context(), r) == "" && m.toolsDown(m.pwSite()) == "" {
-		return enginePWCode, nil
+	current = conversationEngine(c)
+	if current == "" {
+		current = newChat
+		if hint == enginePWCode || hint == engineStudio {
+			current = hint
+		}
 	}
-	return engineStudio, nil
+	return
+}
+
+// engineFor is the engine that answers this message: the composer's choice
+// when it names one, else the conversation's own (engineState). A message
+// for pw code that cannot reach it is an error. The answer is kept on the
+// conversation, so the next message, from any browser, goes there too.
+func (m *Module) engineFor(r *http.Request, asked, hint, convID string) (string, error) {
+	c := m.Conv.Get(convID)
+	engine := asked
+	var why string
+	if engine == enginePWCode || engine == "" {
+		var current string
+		_, current, why, _ = m.engineState(r, c, hint)
+		if engine == "" {
+			engine = current
+		}
+	}
+	if engine != enginePWCode {
+		engine = engineStudio
+	} else if why != "" {
+		return "", pwErr(409, why)
+	}
+	if c != nil {
+		m.Conv.SetEngine(convID, engine)
+	}
+	return engine, nil
 }
 
 // localPWCodeRefused says why this computer's pw code is not used, on a
@@ -541,7 +596,13 @@ func pwcodeContext(c *conversations.Conversation, fresh bool, current string) st
 	if len(lines) == 0 {
 		return ""
 	}
-	return "Earlier in this conversation, before you joined it:\n\n" + strings.Join(lines, "\n\n") + "\n\nThe person's new message:\n\n"
+	// A session that answered here before is told what came since; a new
+	// one, what came before it.
+	head := "Earlier in this conversation, before you joined it:"
+	if start > 0 {
+		head = "In this conversation since your last reply:"
+	}
+	return head + "\n\n" + strings.Join(lines, "\n\n") + "\n\nThe person's new message:\n\n"
 }
 
 // streamPWCode answers the message with the conversation's pw code session.
@@ -630,7 +691,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		scopeNote = "Scope from the Studio's chat bar: " + firstNonEmpty(note, "the person's default libraries.") + "\n\n"
 	}
 	m.Conv.SetPWCode(convID, link)
-	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model, "modelNote", link.ModelNote, "modelMoved", t.modelMoved, "modelStuck", t.modelStuck))
+	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model, "modelNote", link.ModelNote, "modelFrom", link.ModelFrom, "modelMoved", t.modelMoved, "modelStuck", t.modelStuck))
 	d, err := pwcode.GetSession(ctx, t.client, link.Session)
 	if err != nil {
 		return fail(err)
@@ -951,28 +1012,50 @@ func firstNonEmpty(vs ...string) string {
 
 func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter, *http.Request) error)) {
 	// What answers in chat for this person, and whether pw code is offered.
+	// For a conversation (?conversation=), by the same rule its next
+	// message is sent by (engineState): default is what a new chat starts
+	// with, current what this one answers with, and pwcode whether pw
+	// code can answer it, with why not.
 	h("GET /api/chat/engine", func(w http.ResponseWriter, r *http.Request) error {
-		why := m.pwcodeUnavailable(r.Context(), r)
-		setting := m.eff().ChatEngine
-		def := engineStudio
-		if why == "" && setting != engineStudio {
-			def = enginePWCode
+		var c *conversations.Conversation
+		if id := r.URL.Query().Get("conversation"); id != "" {
+			if v, err := m.visibleChat(r, id); err == nil {
+				c = v
+			}
 		}
+		def, current, why, down := m.engineState(r, c, r.URL.Query().Get("last"))
 		var reason, tools any
 		if why != "" {
 			reason = why
-		} else if down := m.toolsDown(m.pwSite()); down != "" {
-			// pw code could not reach the Studio's tools a few minutes ago:
-			// it stays a choice, and auto answers with the Studio assistant.
-			tools = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio assistant answers by default for now."
-			if setting == engineAuto {
-				def = engineStudio
-			}
+		}
+		if down != "" {
+			tools = down
 		}
 		// model is the one Settings names for pw code, which a new chat's
 		// session runs on unless the person picks another first ("" for
 		// pw code's own).
-		return reqbody.OK(w, reqbody.O("setting", setting, "default", def, "pwcode", why == "", "reason", reason, "toolsDown", tools, "model", m.eff().PWCodeModel))
+		return reqbody.OK(w, reqbody.O("setting", m.eff().ChatEngine, "default", def, "current", current, "answered", conversationEngine(c) != "",
+			"pwcode", why == "", "reason", reason, "toolsDown", tools, "model", m.eff().PWCodeModel))
+	})
+	// The person switches what answers a conversation, between turns.
+	h("PUT /api/chat/conversations/{id}/engine", func(w http.ResponseWriter, r *http.Request) error {
+		c, err := m.visibleChat(r, r.PathValue("id"))
+		if err != nil {
+			return err
+		}
+		b, err := reqbody.Read(r)
+		if err != nil {
+			return err
+		}
+		engine := jsString(b.M()["engine"])
+		if engine != enginePWCode && engine != engineStudio {
+			return apierr.New(400, "engine is pwcode or studio")
+		}
+		if m.Conv.Answering(c.ID) || m.following(c.ID) {
+			return apierr.New(409, "A reply is being written in this chat; switch when it ends.")
+		}
+		m.Conv.SetEngine(c.ID, engine)
+		return reqbody.OK(w, reqbody.O("engine", engine))
 	})
 	// The conversation's pw code session as it is now: whether a turn is
 	// running, what it waits to be approved, and where it shows on the web,
@@ -999,7 +1082,10 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		// How the session's studio server stands, for the chat bar's menu.
 		var tools any
 		if t.relay {
-			tools = reqbody.O("connected", false, "count", 0, "relay", true)
+			// The platform does not pass a session's MCP state on, so the
+			// menu says what is known: whether pw code on that machine has
+			// this Studio, which sessions started there since have.
+			tools = reqbody.O("connected", false, "count", 0, "relay", true, "machineHas", m.bridgePrefs().get(userID(r), c.PWCode.Machine).URL != "")
 		} else if s, err := studioMCPState(r.Context(), t.client, c.PWCode.Session); err == nil && s != nil {
 			v, _ := s.Get("connected")
 			_, n := serverTools(s)
@@ -1012,6 +1098,30 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		return reqbody.OK(w, reqbody.O("session", c.PWCode.Session, "url", c.PWCode.URL, "status", jsonv.String(jsonv.Path(d, "status")),
 			"answering", m.following(c.ID), "approvals", approvals, "tools", tools, "continued", c.PWCode.Continued, "codePage", codePage, "model", c.PWCode.Model, "modelNote", c.PWCode.ModelNote,
 			"relay", c.PWCode.Relay, "machine", relayMachine(c.PWCode)))
+	})
+	// A chat whose session runs on another machine moves to a new session
+	// there, which has the tools pw code on that machine has now (a session
+	// keeps the ones it started with); its next message gives the new
+	// session the conversation so far. The old session is left as it is.
+	h("POST /api/chat/pwcode/{id}/new-session", func(w http.ResponseWriter, r *http.Request) error {
+		c, t, err := m.ownPWCode(r)
+		if err != nil {
+			return err
+		}
+		if !t.relay {
+			return pwErr(409, "This chat's session is one the Studio reaches itself: it checks the tools before each message.")
+		}
+		if m.Conv.Answering(c.ID) || m.following(c.ID) {
+			return pwErr(409, "A reply is being written in this chat; start a new session when it ends.")
+		}
+		link := m.newRelaySession(r.Context(), t, c.PWCode)
+		if link.err != nil {
+			return link.err
+		}
+		m.Conv.SetPWCode(c.ID, link.link)
+		m.Conv.SetEngine(c.ID, enginePWCode)
+		m.A.Log.Info("pw code chat: started a new session on the chat's machine", "conversation", c.ID, "machine", link.link.Machine, "from", c.PWCode.Session, "session", link.link.Session)
+		return reqbody.OK(w, reqbody.O("session", link.link.Session, "url", link.link.URL, "model", link.link.Model, "machine", relayMachine(link.link)))
 	})
 	h("POST /api/chat/pwcode/{id}/interrupt", func(w http.ResponseWriter, r *http.Request) error {
 		c, t, err := m.ownPWCode(r)

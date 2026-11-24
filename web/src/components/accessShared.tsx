@@ -1,3 +1,4 @@
+import { accessChannel } from '../viewerCache'
 import { Button, Callout, type CalloutTone, CopyButton, ExternalLink, Loader, type SelectItem } from '@parallelworks/ui'
 
 /**
@@ -155,6 +156,8 @@ export const errText = (e: unknown) => String((e as Error)?.message ?? e)
  *  app's configuration (whether the Workflows page shows) is read again. */
 export function announceChange(): void {
   window.dispatchEvent(new CustomEvent('ade:model-access-changed'))
+  // Other tabs of the Studio hear of it too (viewerCache.ts).
+  try { accessChannel()?.postMessage('changed') } catch { /* no channel: this tab only */ }
 }
 
 /** One source in words, for the banner. */

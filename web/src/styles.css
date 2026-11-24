@@ -3499,3 +3499,9 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
   .sg-filter { width: 8rem; }
   .sg-scroll { height: max(260px, calc(100dvh - 400px)); }
 }
+
+/* A chat both engines answered: each reply names its engine beside its
+   model (pw code's already reads "pw code · model"), and the details stay
+   in view so the switch reads clearly. */
+.chat-canvas[data-engines-mixed] .chat-meta { opacity: 1; }
+.chat-canvas[data-engines-mixed] .chat-meta [data-engine-label='Studio']::before { content: 'Studio assistant · '; }

@@ -124,23 +124,22 @@ func (m *Module) pwcodeModel(ctx context.Context, r *http.Request, t *pwTarget, 
 	if pick == "" {
 		return
 	}
-	why := "is not enabled for your AI connection"
+	why := "is not enabled for you"
 	if listed(link.Model, enabled) {
-		why = "failed when you last used it, in the last ten minutes"
+		why = "failed for you in the last ten minutes"
 	}
-	const other = " Settings, External access, pw code model names another."
+	// Two short sentences by the models' short names; the menu shows the
+	// full ids (modelFrom, model) on hover, and links the setting.
+	const other = " Choose another under Settings, External access, pw code model."
 	if _, err := pwcode.SetSessionModel(ctx, t.client, link.Session, pick); err != nil {
 		m.A.Log.Warn("pw code chat: the session's model could not be changed", "session", link.Session, "from", link.Model, "to", pick, "err", err)
 		// Said in the chat too: the turn is about to fail on that model.
-		link.ModelNote = "pw code's own model, " + link.Model + ", " + why + ", and the Studio could not move this chat to " + pick + ": " + oneLineErr(err) + "." + other
+		link.ModelNote = shortModel(link.Model) + " " + why + ", and pw code did not take " + shortModel(pick) + " in its place: " + oneLineErr(err) + "." + other
 		t.modelStuck = true
 		return
 	}
-	which := "the first model it offers"
-	if pick == t.chatModel {
-		which = "the model chosen for the Studio assistant"
-	}
-	link.ModelNote = "pw code's own model, " + link.Model + ", " + why + ", so this chat runs on " + pick + ", " + which + "." + other
+	link.ModelNote = "Runs on " + shortModel(pick) + " because " + shortModel(link.Model) + " " + why + "." + other
+	link.ModelFrom = link.Model
 	link.Model = pick
 	t.modelMoved = true
 }

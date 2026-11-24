@@ -1,5 +1,6 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import { type AccountRowId, accountsHref } from '../accounts'
+import { announceChange } from '../components/accessShared'
 import {
   type BadgeVariant, Button, Callout, EmptyState, ExternalLink, Field, Input, Loader, SegmentedControl, Select, StatusDot, Switch,
 } from '@parallelworks/ui'
@@ -164,7 +165,7 @@ function AiStep({ enabled, sections, me, connected, onSaved, onOpenAccess }: {
       // chat's own remembered pick.
       await saveSettings({ ragDefaultModel: model })
       try { localStorage.setItem('aiChat.model', JSON.stringify(model)) } catch { /* the chat picks the first model */ }
-      window.dispatchEvent(new CustomEvent('ade:model-access-changed'))
+      announceChange()
       const host = hostOf(baseUrl.trim())
       setKey(''); setTest(null)
       setSaved(`Saved. The Studio uses ${model} through ${host}.`)

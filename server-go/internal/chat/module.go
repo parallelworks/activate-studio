@@ -144,6 +144,18 @@ func New(a *app.App) *Module {
 	// the routes that offer the accounts.
 	pwcode.ClaudeCode = pwcode.NewClaudeCodePolicy(a.Cfg.IndexBase,
 		func() string { return a.Settings.Effective().ClaudeCodeAccounts }, a.Settings.PersonalInstall)
+	// Whether pw code is offered to a person is kept a minute; it is asked
+	// again once their ACTIVATE sign-in or key changes, or the Studio's own.
+	if m.pf != nil {
+		m.pf.OnAccessChanged(func() { m.forgetPWCodeAvailability("") })
+	}
+	prev := a.Providers.CredentialChanged
+	a.Providers.CredentialChanged = func(owner string) {
+		m.forgetPWCodeAvailability(owner)
+		if prev != nil {
+			prev(owner)
+		}
+	}
 	m.held = newHeldStore(a.Cfg.IndexBase)
 	m.made = newRenderStore(a.Cfg.IndexBase)
 	m.Keys = modelkeys.New(a.Cfg.IndexBase, a.Cfg.AuthEnabled)

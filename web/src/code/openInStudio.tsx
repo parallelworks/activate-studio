@@ -1,6 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { toast, useConfirm } from '@parallelworks/ui'
-import { keepEngineFor } from '../labelScope'
 import { type MachineTools, markAutoSetup, setMachineTools } from '../components/studioTools'
 
 /** A machine as the Code page's listing gives it. */
@@ -89,7 +88,7 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
   }, [loadHere])
 
   const opened = useCallback((id: string) => {
-    keepEngineFor(id, 'pwcode')
+    // The chat answers in its session: the Studio keeps that for it.
     window.dispatchEvent(new CustomEvent('ade:chats-changed'))
     void loadHere()
     openChat(id)

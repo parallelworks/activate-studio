@@ -37,7 +37,7 @@ import { TransferNoteWatcher } from '../components/TransferNoteWatcher'
 import { GUFI_TOOL_RENDERERS, gufiToolPresentation } from '../components/GufiCommands'
 import { EmptyChatBrand } from '../components/EmptyChatBrand'
 import { SaveChatButton } from '../components/SaveChatButton'
-import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
+import { EngineMarks, PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
 import { fitControls, watchNotices } from '../chatTop'
 import { PWCodeSession } from '../pwcode/PWCodeSession'
 import { BackgroundCommandHint } from '../pwcode/session/BackgroundCommandHint'
@@ -787,6 +787,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             </Popover>
             )}
             {!showAttachments && <PWCodeEngine conversationId={activeId} />}
+            <EngineMarks />
             {activeId && !showAttachments && <SaveChatButton conversationId={activeId} />}
             <PanelToggle className="chat-panel-toggle" />
           </div>
