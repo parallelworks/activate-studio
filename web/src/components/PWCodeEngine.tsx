@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ACCOUNTS_HREF, SIGN_IN_TO_USE, needsActivate } from '../accounts'
+import { SIGN_IN_TO_USE, accountsHref, needsActivate } from '../accounts'
 import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
 import { useChat } from '@parallelworks/ui/ai'
 import { type Engine, getEngine, setEngine } from '../labelScope'
@@ -163,7 +163,7 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
       })}
       {!info.pwcode && needsActivate(info.reason) && (
         <p className="engine-tools engine-tools-off">
-          {info.reason} <a href={ACCOUNTS_HREF} onClick={() => setOpen(false)}>Open Accounts</a>
+          {info.reason} <a href={accountsHref('activate')} onClick={() => setOpen(false)}>Open Accounts</a>
         </p>
       )}
       {tools && (

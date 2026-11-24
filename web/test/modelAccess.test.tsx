@@ -37,7 +37,7 @@ describe('Model access', () => {
     choose('OpenAI-compatible endpoint')
     expect(screen.getByText('Add an endpoint under Accounts')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Open Accounts' }))
-    expect(location.hash).toBe('#view=settings:accounts')
+    expect(location.hash).toBe('#view=settings:accounts?open=endpoint')
     history.replaceState(null, '', location.pathname)
   })
 

@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { AccountsSection, activateParts } from '../src/components/AccountsSection'
+import { NeedsActivate } from '../src/components/NeedsActivate'
+import { accountInHash, accountsHref, openAccounts } from '../src/accounts'
 import { accessOf, choices, choose, reply, srv, stub } from './accessFixtures'
 
 const signedInCli = 'Signed in: pw CLI context work (platform-a.example.com).'
@@ -8,6 +10,16 @@ const signedInCli = 'Signed in: pw CLI context work (platform-a.example.com).'
 const parts = () => Object.fromEntries([...(document.querySelector('table.access-uses-table') as HTMLElement).querySelectorAll('tbody tr, tr')]
   .map(tr => [...tr.querySelectorAll('td')].map(td => td.textContent ?? ''))
   .filter(r => r.length === 2))
+
+/** The button that opens or closes an account's row. */
+const row = (name: string) => screen.getByRole('button', { name })
+/** Opens an account's row, once the page has drawn it. */
+/** Waits for an account's row to be drawn. */
+const openRowShown = (name: string) => screen.findByRole('button', { name })
+const openRow = async (name: string) => {
+  const b = await screen.findByRole('button', { name })
+  if (b.getAttribute('aria-expanded') !== 'true') fireEvent.click(b)
+}
 
 /** A signed-in viewer of a Studio several people use, with what
  *  /api/me/model-key and /api/me/platform-sign-in answer. */
@@ -61,8 +73,11 @@ describe('Settings, Accounts on a Studio of one', () => {
     expect(p.Workflows).toBe('Sign in to use')
     expect(p.Models).toBe('From your endpoint http://127.0.0.1:11434/v1')
     expect(screen.getByLabelText('Base URL')).toHaveValue('http://127.0.0.1:11434/v1')
-    expect(screen.getByText('In use for models')).toBeInTheDocument()
+    expect(within(row('OpenAI-compatible endpoint')).getByText('Saved')).toBeInTheDocument()
     expect(screen.queryByText(/Nothing is used until you Save and use/)).toBeNull()
+    // The endpoint is in use, so its row is open; ACTIVATE is not, so its row is closed.
+    expect(row('OpenAI-compatible endpoint')).toHaveAttribute('aria-expanded', 'true')
+    expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('Subscriptions through ACTIVATE')).toBeNull()
   })
 
@@ -215,6 +230,7 @@ describe('an ACTIVATE API key and an endpoint, each in its own card', () => {
     stub(srv())
     render(<AccountsSection />)
     await screen.findByText(signedInCli)
+    await openRow('OpenAI-compatible endpoint')
     const card = screen.getByRole('heading', { level: 2, name: 'OpenAI-compatible endpoint' }).closest('section')!
     fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://portal.example.org/v1' } })
     expect(within(card).getByRole('button', { name: 'Save and use' })).toBeDisabled()
@@ -248,6 +264,7 @@ describe('Settings, Accounts on a Studio several people use', () => {
       s.access = { ...s.access, models: me, platform: me }
     })
     render(<AccountsSection />)
+    await openRow('ACTIVATE')
     await screen.findByRole('radio', { name: 'Sign in with ACTIVATE' })
     expect(choices()).toEqual(['Sign in with ACTIVATE', 'ACTIVATE API key'])
     expect(screen.getByRole('radio', { name: 'Sign in with ACTIVATE' })).toBeChecked()
@@ -289,6 +306,7 @@ describe('Settings, Accounts on a Studio several people use', () => {
     stub(srv({ access: accessOf({ single: false, authEnabled: true, models: admin, platform: none, deployment: admin, cli: null, signInOffered: true }) }))
     sharedViewer({ mode: 'none' })
     render(<AccountsSection />)
+    await openRow('ACTIVATE')
     await screen.findByRole('radio', { name: 'Sign in with ACTIVATE' })
     expect(parts().Models).toBe('From the administrator\'s endpoint')
     expect(parts().Workflows).toBe('Sign in to use')
@@ -334,6 +352,7 @@ describe('the pw CLI card with no sign-ins', () => {
     stub(srv({ access: accessOf({ models: none, platform: none, deployment: none, cli: { ...accessOf().cli!, contexts: [], active: null, used: null } }) }))
     render(<AccountsSection />)
     expect(await screen.findByText(/The pw CLI has no sign-ins yet/)).toBeInTheDocument()
+    await openRow('ACTIVATE')
     expect(screen.queryByRole('button', { name: 'Stop using the pw CLI' })).toBeNull()
     expect(screen.getByLabelText('Platform host to sign in to')).toHaveValue('platform-a.example.com')
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
@@ -365,5 +384,92 @@ describe('what ACTIVATE turns on', () => {
     const key = { source: 'key' as const, host: 'platform-a.example.com', context: null }
     const a = accessOf({ single: false, authEnabled: true, platform: key, models: key, cli: null })
     expect(activateParts(a, true).every(p => p.state === 'on')).toBe(true)
+  })
+})
+
+describe('each account a row that opens', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); history.replaceState(null, '', location.pathname) })
+  const none = { source: 'none' as const, host: null, context: null }
+  const nothing = () => srv({ access: accessOf({ models: none, platform: none, deployment: none, cli: { ...accessOf().cli!, contexts: [], active: null, used: null } }) })
+  const rows = () => [...document.querySelectorAll('section[data-account]')].map(e => e.getAttribute('data-account'))
+
+  it('with none in use, lists them closed, the endpoint first, each with one line and its state', async () => {
+    stub(nothing())
+    render(<AccountsSection />)
+    await openRowShown('ACTIVATE')
+    expect(rows()).toEqual(['endpoint', 'activate'])
+    expect(row('OpenAI-compatible endpoint')).toHaveAttribute('aria-expanded', 'false')
+    expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'false')
+    expect(row('ACTIVATE')).toHaveAccessibleDescription('Adds pw code, workflows, desktops, ACTIVATE systems and models. Not signed in')
+    expect(row('OpenAI-compatible endpoint')).toHaveAccessibleDescription(/OpenAI API.*Not saved$/)
+    expect(screen.getByRole('heading', { level: 2, name: 'ACTIVATE' })).toBeInTheDocument()
+    // What a row holds is out of the way until it opens.
+    expect(screen.queryByRole('radio', { name: 'pw CLI on this computer' })).toBeNull()
+    fireEvent.click(row('ACTIVATE'))
+    expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('radio', { name: 'pw CLI on this computer' })).toBeVisible()
+    fireEvent.click(row('ACTIVATE'))
+    expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('opens ACTIVATE when it is signed in, and keeps the order and what the person opened when that changes', async () => {
+    const s = srv()
+    stub(s)
+    render(<AccountsSection />)
+    await screen.findByText(signedInCli)
+    expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'true')
+    expect(within(row('ACTIVATE')).getByText('Signed in')).toBeInTheDocument()
+    expect(row('OpenAI-compatible endpoint')).toHaveAttribute('aria-expanded', 'false')
+    // Saving an endpoint changes the state, not the order or the rows open.
+    fireEvent.click(row('OpenAI-compatible endpoint'))
+    s.access = { ...s.access, models: { source: 'endpoint', host: '127.0.0.1:11434', context: null, baseUrl: 'http://127.0.0.1:11434/v1' } }
+    fireEvent.click(within(document.getElementById('account-endpoint')!).getByRole('button', { name: 'Save and use' }))
+    await waitFor(() => expect(within(row('OpenAI-compatible endpoint')).getByText('Saved')).toBeInTheDocument())
+    expect(rows()).toEqual(['endpoint', 'activate'])
+    expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'true')
+    expect(row('OpenAI-compatible endpoint')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('with AI features off opens ACTIVATE, the only account there', async () => {
+    stub(nothing())
+    render(<AccountsSection aiEnabled={false} />)
+    await openRowShown('ACTIVATE')
+    expect(rows()).toEqual(['activate'])
+    expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'true')
+    expect(row('ACTIVATE')).toHaveAccessibleDescription('Adds pw code, workflows, desktops and ACTIVATE systems. Not signed in')
+  })
+
+  it('opens the row an address names and brings it into view, on arrival and from a link later', async () => {
+    const scrolled: string[] = []
+    const was = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this.id) }
+    onTestFinished(() => { Element.prototype.scrollIntoView = was })
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => { cb(0); return 0 })
+    history.replaceState(null, '', accountsHref('endpoint'))
+    stub(nothing())
+    render(<AccountsSection />)
+    await waitFor(() => expect(row('OpenAI-compatible endpoint')).toHaveAttribute('aria-expanded', 'true'))
+    expect(scrolled).toEqual(['account-endpoint'])
+    expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'false')
+    // Sign in with ACTIVATE to use this, elsewhere: Open Accounts asks for the ACTIVATE row.
+    render(<NeedsActivate>Workflows</NeedsActivate>)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Accounts' }))
+    expect(location.hash).toBe('#view=settings:accounts?open=activate')
+    await waitFor(() => expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'true'))
+    expect(scrolled).toEqual(['account-endpoint', 'account-activate'])
+    // The same link again, with the row closed since: no new address, the row opens all the same.
+    fireEvent.click(row('ACTIVATE'))
+    openAccounts('activate')
+    await waitFor(() => expect(row('ACTIVATE')).toHaveAttribute('aria-expanded', 'true'))
+    expect(scrolled).toEqual(['account-endpoint', 'account-activate', 'account-activate'])
+  })
+
+  it('reads the row an address names, and nothing else', () => {
+    expect(accountsHref()).toBe('#view=settings:accounts')
+    expect(accountInHash('#view=settings:accounts?open=endpoint')).toBe('endpoint')
+    expect(accountInHash('#view=settings:accounts?x=1&open=claude-code')).toBe('claude-code')
+    expect(accountInHash('#view=settings:accounts?open=other')).toBeNull()
+    expect(accountInHash('#view=settings:accounts')).toBeNull()
+    expect(accountInHash('#view=settings:access?open=endpoint')).toBeNull()
   })
 })

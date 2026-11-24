@@ -3,7 +3,7 @@ import { Button, Callout, type CalloutTone, ExternalLink, Field, Loader, RadioGr
 import './ModelAccessSection.css'
 import { NeedsActivate } from './NeedsActivate'
 import { type AccessStatus, type Health, type KeyStatus, announceChange, api, describeSource, errText } from './accessShared'
-import { ACCOUNTS_HREF, openAccounts } from '../accounts'
+import { ACCOUNTS_HREF, accountsHref, openAccounts } from '../accounts'
 
 export { endpointBase, readPlatformHost, testNote, type AccessStatus, type KeyTestResult } from './accessShared'
 
@@ -181,7 +181,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
           </p>
         )}
         {me.mode !== 'none' && me.credExpired && me.credExpiresAt && (
-          <p className="identity-note">Your token expired {new Date(me.credExpiresAt).toLocaleString()}. Add a current one under <a href={ACCOUNTS_HREF}>Accounts</a>.</p>
+          <p className="identity-note">Your token expired {new Date(me.credExpiresAt).toLocaleString()}. Add a current one under <a href={accountsHref('activate')}>Accounts</a>.</p>
         )}
       </Callout>
 
@@ -207,7 +207,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         ))}
       {pending === 'endpoint' && (
         <Callout tone="info" className="rag-banner" title="Add an endpoint under Accounts"
-          action={<Button variant="secondary" size="sm" onClick={openAccounts}>Open Accounts</Button>}>
+          action={<Button variant="secondary" size="sm" onClick={() => openAccounts('endpoint')}>Open Accounts</Button>}>
           Under OpenAI-compatible endpoint, enter its base URL and key, then Save and use. Models then come from it.
         </Callout>
       )}

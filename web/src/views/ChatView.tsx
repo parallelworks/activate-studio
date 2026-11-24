@@ -1,4 +1,5 @@
 import React, { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { accountsHref } from '../accounts'
 import {
   Button, Callout, Checkbox, EmptyState, Popover, PopoverClose, SearchInput, SegmentedControl,
 } from '@parallelworks/ui'
@@ -530,7 +531,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
         // The model picker's Manage link and the no-model empty state's button.
-        extraLinks: { manageProviders: '#view=settings:access', addProvider: '#view=settings:accounts' },
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: accountsHref('endpoint') },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.

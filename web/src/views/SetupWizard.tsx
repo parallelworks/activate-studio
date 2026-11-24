@@ -1,4 +1,5 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
+import { type AccountRowId, accountsHref } from '../accounts'
 import {
   type BadgeVariant, Button, Callout, EmptyState, ExternalLink, Field, Input, Loader, SegmentedControl, Select, StatusDot, Switch,
 } from '@parallelworks/ui'
@@ -405,9 +406,9 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
     window.dispatchEvent(new Event('ade:setup-closed'))
     onClose(folderChanged)
   }
-  const openAccess = async () => {
+  const openAccess = async (row?: AccountRowId) => {
     await finish()
-    location.hash = '#view=settings:accounts'
+    location.hash = accountsHref(row)
   }
   const openTransfers = async () => {
     await finish()
@@ -528,7 +529,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             <p className="muted" style={{ margin: 0 }}>Pages to show in the sidebar. Settings and Help always show.</p>
             <SidebarSwitches value={cfg.sections} platform={!!cfg.platform} aiEnabled={aiOn} onChange={changeSections} />
             <p className="muted" style={{ margin: 0 }}>
-              Workflows and Code need ACTIVATE: until you sign in under <a href="#view=settings:accounts" onClick={e => { e.preventDefault(); void openAccess() }}>Settings, Accounts</a>,
+              Workflows and Code need ACTIVATE: until you sign in under <a href={accountsHref('activate')} onClick={e => { e.preventDefault(); void openAccess('activate') }}>Settings, Accounts</a>,
               they say so and point there. For workflow
               YAML files of your own, without ACTIVATE, use <ExternalLink href={MERIDIAN_URL}>Meridian</ExternalLink>, the
               open-source workflow engine.
@@ -605,7 +606,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
                 <p className="muted" style={{ margin: 0 }}>{KINDS[kind].description}</p>
                 {kind === 'local' && <LocalLibraryForm browse compact onAdded={lib => libraryAdded({ id: lib.id, label: lib.label })} />}
                 {kind === 'ssh' && <SshLibraryForm compact onAdded={libraryAdded} />}
-                {kind === 'pw' && <SshLibraryForm compact transport="pw" onAdded={libraryAdded} onOpenAccess={() => void openAccess()} />}
+                {kind === 'pw' && <SshLibraryForm compact transport="pw" onAdded={libraryAdded} onOpenAccess={() => void openAccess('activate')} />}
               </>
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>

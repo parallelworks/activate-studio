@@ -221,7 +221,7 @@ describe('the Code page', () => {
     const notice = await screen.findByTestId('code-sign-in')
     expect(notice).toHaveTextContent('Sign in with ACTIVATE to use this')
     fireEvent.click(within(notice).getByRole('button', { name: 'Open Accounts' }))
-    expect(location.hash).toBe('#view=settings:accounts')
+    expect(location.hash).toBe('#view=settings:accounts?open=activate')
   })
 
   it('says a linked session is gone', async () => {

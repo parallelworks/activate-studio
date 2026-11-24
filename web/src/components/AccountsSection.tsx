@@ -1,11 +1,11 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Button, Callout, Checkbox, Disclosure, ExternalLink, Field, IconButton, Input, Loader, RadioGroup, Select,
   type SelectItem, SettingModeOption, StatusBadge, StatusLabel, Table, Textarea,
 } from '@parallelworks/ui'
 import { CloseIcon } from '@parallelworks/ui/icons'
 import './ModelAccessSection.css'
-import { IndexGroup } from './IndexGroup'
+import { AccountRow } from './AccountRow'
 import { PlatformSignInPanel } from './PlatformSignInPanel'
 import { ClaudeAccountSlot } from './ClaudeAccountSlot'
 import {
@@ -14,18 +14,30 @@ import {
   announceChange, api, chatModel, describeSource, errText, isLocalUrl, platformCredential, presetOf, readPlatformHost, testNote,
 } from './accessShared'
 import { useAppConfig } from '../config'
+import { type AccountRowId, OPEN_ACCOUNT, accountInHash } from '../accounts'
 
 /**
  * Settings, Accounts: the connections the Studio makes for the person, in
- * one place. ACTIVATE first: signing in (with ACTIVATE on a Studio several
- * people use, with the pw CLI on a Studio of one), or an ACTIVATE API key,
- * set up once, with who is signed in and what it turns on here, each part
- * with its state. Then an OpenAI-compatible endpoint, for models from any
- * other service, and a place for the Claude account pw code uses.
+ * one place, each a row that opens (AccountRow), with what it is for and
+ * its state. The Studio works without any of them: chat with a model of
+ * the person's own, local libraries, and remote computers over ssh.
+ * Settings, Model access says which of them the models come from.
  *
- * The Studio works without any of them: chat with a model of the person's
- * own, local libraries, and remote computers over ssh. Settings, Model
- * access says which of these the models come from.
+ * The rows, always in this order: an OpenAI-compatible endpoint, for models
+ * from any service; ACTIVATE, signing in (with ACTIVATE on a Studio several
+ * people use, with the pw CLI on a Studio of one) or an ACTIVATE API key,
+ * with who is signed in and what it turns on here; and the Claude Code
+ * accounts pw code uses. What needs nothing else comes first, and what
+ * builds on another after it: the endpoint stands alone, ACTIVATE adds the
+ * platform, and Claude Code accounts are for pw code, which ACTIVATE runs.
+ *
+ * A row in use (ACTIVATE signed in, an endpoint saved, a Claude Code
+ * account added) starts open and the others closed, so with none in use
+ * the page is a list of what can be set up. With AI features off ACTIVATE
+ * is the only account that turns anything on here, so it starts open.
+ * Each row's start is decided once, when its state is first known, and
+ * then stays as the person leaves it. An address may name a row to open
+ * and bring into view (accountsHref).
  *
  * On a Studio several people use, every account here is the person's own:
  * the deployment's ACTIVATE credential is its administrator's and is never
@@ -111,13 +123,40 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
   const [query, setQuery] = useState('')
   const [advanced, setAdvanced] = useState(false)
   const filled = useRef(false)
-  const endpointCard = useRef<HTMLDivElement | null>(null)
   const fillEndpoint = (e: EndpointSummary | null | undefined) => {
     setAuth(e?.auth ?? 'bearer')
     setHeaderRows((e?.headers ?? []).map(name => ({ name, value: '', stored: true })))
     setModelNames((e?.models ?? []).join('\n'))
     setQuery(e?.query ?? '')
   }
+
+  // Which rows are open: each set once, when its state is first known,
+  // then as the person leaves it. A row an address asked for opens, and
+  // is brought into view once it is drawn.
+  const [opened, setOpened] = useState<Partial<Record<AccountRowId, boolean>>>({})
+  const [reveal, setReveal] = useState<AccountRowId | null>(() => accountInHash(location.hash))
+  const [drawn, setDrawn] = useState(0)
+  const openRow = (id: AccountRowId, open: boolean) => setOpened(o => ({ ...o, [id]: open }))
+  const startRow = useCallback((id: AccountRowId, open: boolean) => {
+    setOpened(o => (id in o ? o : { ...o, [id]: open }))
+    setDrawn(n => n + 1)
+  }, [])
+  useEffect(() => {
+    const ask = (id: AccountRowId | null) => { if (id) setReveal(id) }
+    const onHash = () => ask(accountInHash(location.hash))
+    const onAsk = (e: Event) => ask((e as CustomEvent<AccountRowId>).detail)
+    window.addEventListener('hashchange', onHash)
+    window.addEventListener(OPEN_ACCOUNT, onAsk)
+    return () => { window.removeEventListener('hashchange', onHash); window.removeEventListener(OPEN_ACCOUNT, onAsk) }
+  }, [])
+  useEffect(() => {
+    if (!reveal) return
+    const el = document.getElementById(`account-${reveal}`)
+    if (!el) return
+    setOpened(o => ({ ...o, [reveal]: true }))
+    setReveal(null)
+    requestAnimationFrame(() => el.scrollIntoView?.({ block: 'start', behavior: 'smooth' }))
+  }, [reveal, drawn, access, me])
 
   // Signing the CLI in.
   const [loginHost, setLoginHost] = useState('')
@@ -130,6 +169,10 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
       setMe(k)
       setLoadError('')
       setLogin(l => a.login ?? l)
+      // ACTIVATE opens when signed in, or when it is the only account
+      // here (AI features off); the endpoint when one is saved.
+      startRow('activate', a.platform.source !== 'none' || !aiEnabled)
+      if (aiEnabled) startRow('endpoint', a.models.source === 'endpoint')
       // The way in use; on a shared Studio with none of the person's own
       // yet, signing in with ACTIVATE.
       setMethod(m => m ?? (a.platform.source === 'signin' ? 'signin'
@@ -237,7 +280,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
     setKeyInput('')
     setKeyHost('')
     setNote({ at: 'endpoint', tone: 'info', text: `Moved here, with ${url} as the base URL and the key you entered. Test it, then Save and use.` })
-    endpointCard.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+    setReveal('endpoint')
   }
   /** Test of an ACTIVATE API key. An address with a path is tested as the
    *  endpoint it is. A host whose platform path does not exist is asked
@@ -363,7 +406,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
     </Callout>
   )
 
-  // Who the Studio is signed in to ACTIVATE as, for the card's heading.
+  // Who the Studio is signed in to ACTIVATE as, said first in its row.
   const who = access.cli?.stopped && !own ? 'Not using the pw CLI. The Studio works as for someone without ACTIVATE; sign in to use the parts below.'
     : !connected ? 'Not signed in. The Studio works without ACTIVATE; sign in to use the parts below.'
     : `Signed in: ${describeSource(access.platform, single)}.`
@@ -377,12 +420,74 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
         {aiEnabled && <> Which of them your models come from is under <a href="#view=settings:access">Model access</a>.</>}
       </p>
 
-      <div className="ix-cards">
-        <IndexGroup title="ACTIVATE" help={who}
-          actions={connected
-            ? <StatusLabel variant="success">Signed in</StatusLabel>
-            : <StatusLabel variant="muted">Not signed in</StatusLabel>}>
-          <ActivatePartsTable parts={activateParts(access, aiEnabled)} />
+      <div className="ix-cards accounts-rows">
+        {aiEnabled && (
+          <AccountRow id="endpoint" title="OpenAI-compatible endpoint" open={!!opened.endpoint} onOpenChange={x => openRow('endpoint', x)}
+            description="Models from any service that speaks the OpenAI API: a site AI portal, a provider, or a model server on this computer."
+            state={endpointStored ? <StatusLabel variant="success">Saved</StatusLabel> : <StatusLabel variant="muted">Not saved</StatusLabel>}>
+            <div>
+              <p className="muted view-sub">
+                The base URL usually ends in /v1. It covers models only; the platform parts keep using ACTIVATE. A model
+              server on this computer keeps working with no network.
+                {keyStored && ' Saving one replaces your ACTIVATE API key, which is kept in the same place.'}
+              </p>
+              <div className="key-row">
+                <Field layout="inline" compact label="Endpoint" className="provider-field">
+                  <Select className="provider-select" items={presets} value={preset}
+                    onValueChange={v => { if (!v) return; setPreset(v); const x = PRESETS.find(y => y.value === v); if (x?.url) setBaseUrl(x.url) }} />
+                </Field>
+              </div>
+              <div className="key-row">
+                <div className="grow">
+                  <Input aria-label="Base URL" value={baseUrl} autoComplete="off" placeholder="Base URL, such as https://host/v1"
+                    onChange={e => { setBaseUrl(e.target.value); setPreset(presetOf(e.target.value)) }} />
+                </div>
+              </div>
+              {!endpointStored && baseUrl.trim() !== '' && (
+                <p className="muted key-note">Filled in from the Endpoint choice. Nothing is used until you Save and use.</p>
+              )}
+              <div className="key-row">
+                <div className="grow">
+                  <Input type="password" aria-label="Endpoint key" value={endpointInput} autoComplete="off"
+                    placeholder={auth === 'none' ? 'No key is sent (Advanced, Key header)' : sameEndpoint ? 'Stored; type a new key to replace it' : local ? 'API key, if the server asks for one' : 'API key'}
+                    onChange={e => setEndpointInput(e.target.value)} />
+                </div>
+              </div>
+              <Disclosure className="endpoint-advanced" summaryClassName="endpoint-advanced-summary" panelClassName="endpoint-advanced-panel"
+                open={advanced} onOpenChange={setAdvanced} keepMounted
+                summary={`Advanced${advancedParts.length ? `: ${advancedParts.join(', ')}` : ', for portals that differ'}`}>
+                <EndpointAdvanced auth={auth} setAuth={setAuth} rows={headerRows} setRows={setHeaderRows}
+                  modelNames={modelNames} setModelNames={setModelNames} query={query} setQuery={setQuery} keepStored={sameEndpoint} />
+              </Disclosure>
+              {!single && (
+                <label className="key-persist">
+                  <Checkbox checked={persistKey} onCheckedChange={setPersistKey} />
+                  Remember in this browser (a sealed cookie; the server holds the key in memory only); unchecked keeps it for about 12 hours
+                </label>
+              )}
+              <div className="key-row access-actions">
+                <Button variant="primary" disabled={busy || !canSaveEndpoint}
+                  onClick={async () => { if (await saveKey('endpoint', endpointKey ?? '', baseUrl.trim(), endpointBody())) setEndpointInput('') }}>Save and use</Button>
+                <Button variant="secondary" disabled={busy || !baseUrl.trim()} onClick={() => void testEndpoint(endpointKey ?? NO_KEY, baseUrl.trim(), endpointBody())}>Test</Button>
+                {endpointStored && <Button variant="danger" disabled={busy} onClick={() => void removeKey('endpoint')}>Remove</Button>}
+              </div>
+              {preset === 'github' && (
+                <p className="muted key-note">
+                  Create a fine-grained personal access token with the Models (read) permission on GitHub, and paste it as the key.
+                </p>
+              )}
+              {noteHere('endpoint')}
+            </div>
+          </AccountRow>
+        )}
+
+        <AccountRow id="activate" title="ACTIVATE" open={!!opened.activate} onOpenChange={x => openRow('activate', x)}
+          description={aiEnabled ? 'Adds pw code, workflows, desktops, ACTIVATE systems and models.' : 'Adds pw code, workflows, desktops and ACTIVATE systems.'}
+          state={connected ? <StatusLabel variant="success">Signed in</StatusLabel> : <StatusLabel variant="muted">Not signed in</StatusLabel>}>
+          <div>
+            <p className="muted view-sub account-who">{who}</p>
+            <ActivatePartsTable parts={activateParts(access, aiEnabled)} />
+          </div>
 
           <div>
             <Field group label="How you sign in" className="access-source">
@@ -489,70 +594,10 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
             <SubscriptionsPanel platformOrigin={access.platformOrigin} host={access.platform.host}
               credential={platformCredential(access.platform)} onChanged={() => { announceChange(); void load(true) }} />
           )}
-        </IndexGroup>
+        </AccountRow>
 
-        {aiEnabled && (
-          <div ref={endpointCard}>
-            <IndexGroup title="OpenAI-compatible endpoint"
-              help="Models from any service that speaks the OpenAI API: a site AI portal, a provider, or a model server on this computer. It covers models only."
-              actions={endpointStored ? <StatusLabel variant="success">In use for models</StatusLabel> : <StatusLabel variant="muted">Not saved</StatusLabel>}>
-              <div>
-                <p className="muted view-sub">
-                  The base URL usually ends in /v1. A model server on this computer keeps working with no network.
-                  {keyStored && ' Saving one replaces your ACTIVATE API key, which is kept in the same place.'}
-                </p>
-                <div className="key-row">
-                  <Field layout="inline" compact label="Endpoint" className="provider-field">
-                    <Select className="provider-select" items={presets} value={preset}
-                      onValueChange={v => { if (!v) return; setPreset(v); const x = PRESETS.find(y => y.value === v); if (x?.url) setBaseUrl(x.url) }} />
-                  </Field>
-                </div>
-                <div className="key-row">
-                  <div className="grow">
-                    <Input aria-label="Base URL" value={baseUrl} autoComplete="off" placeholder="Base URL, such as https://host/v1"
-                      onChange={e => { setBaseUrl(e.target.value); setPreset(presetOf(e.target.value)) }} />
-                  </div>
-                </div>
-                {!endpointStored && baseUrl.trim() !== '' && (
-                  <p className="muted key-note">Filled in from the Endpoint choice. Nothing is used until you Save and use.</p>
-                )}
-                <div className="key-row">
-                  <div className="grow">
-                    <Input type="password" aria-label="Endpoint key" value={endpointInput} autoComplete="off"
-                      placeholder={auth === 'none' ? 'No key is sent (Advanced, Key header)' : sameEndpoint ? 'Stored; type a new key to replace it' : local ? 'API key, if the server asks for one' : 'API key'}
-                      onChange={e => setEndpointInput(e.target.value)} />
-                  </div>
-                </div>
-                <Disclosure className="endpoint-advanced" summaryClassName="endpoint-advanced-summary" panelClassName="endpoint-advanced-panel"
-                  open={advanced} onOpenChange={setAdvanced} keepMounted
-                  summary={`Advanced${advancedParts.length ? `: ${advancedParts.join(', ')}` : ', for portals that differ'}`}>
-                  <EndpointAdvanced auth={auth} setAuth={setAuth} rows={headerRows} setRows={setHeaderRows}
-                    modelNames={modelNames} setModelNames={setModelNames} query={query} setQuery={setQuery} keepStored={sameEndpoint} />
-                </Disclosure>
-                {!single && (
-                  <label className="key-persist">
-                    <Checkbox checked={persistKey} onCheckedChange={setPersistKey} />
-                    Remember in this browser (a sealed cookie; the server holds the key in memory only); unchecked keeps it for about 12 hours
-                  </label>
-                )}
-                <div className="key-row access-actions">
-                  <Button variant="primary" disabled={busy || !canSaveEndpoint}
-                    onClick={async () => { if (await saveKey('endpoint', endpointKey ?? '', baseUrl.trim(), endpointBody())) setEndpointInput('') }}>Save and use</Button>
-                  <Button variant="secondary" disabled={busy || !baseUrl.trim()} onClick={() => void testEndpoint(endpointKey ?? NO_KEY, baseUrl.trim(), endpointBody())}>Test</Button>
-                  {endpointStored && <Button variant="danger" disabled={busy} onClick={() => void removeKey('endpoint')}>Remove</Button>}
-                </div>
-                {preset === 'github' && (
-                  <p className="muted key-note">
-                    Create a fine-grained personal access token with the Models (read) permission on GitHub, and paste it as the key.
-                  </p>
-                )}
-                {noteHere('endpoint')}
-              </div>
-            </IndexGroup>
-          </div>
-        )}
-
-        <ClaudeAccountSlot />
+        <ClaudeAccountSlot open={!!opened['claude-code']} onOpenChange={x => openRow('claude-code', x)}
+          onKnown={n => startRow('claude-code', n > 0)} />
       </div>
 
       <p className="muted key-trust">

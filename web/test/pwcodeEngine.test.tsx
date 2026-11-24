@@ -70,7 +70,7 @@ describe('What answers a conversation', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Studio/ }))
     expect(await screen.findByText('Sign in with ACTIVATE to use this.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /pw code/ })).toBeDisabled()
-    expect(screen.getByRole('link', { name: 'Open Accounts' })).toHaveAttribute('href', '#view=settings:accounts')
+    expect(screen.getByRole('link', { name: 'Open Accounts' })).toHaveAttribute('href', '#view=settings:accounts?open=activate')
   })
 
   it('stays out of the way where pw code is not offered', async () => {
