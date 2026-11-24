@@ -44,6 +44,7 @@ import { BackgroundCommandHint } from '../pwcode/session/BackgroundCommandHint'
 import { BACKGROUND_TOOL } from '@parallelworks/code'
 
 import { type ChatLink, useChatLink } from '../pwcode/useChatLink'
+import { ChatMarkdownLink } from '../chatLinks'
 import { VIEWER_CACHES_CLEARED } from '../viewerCache'
 import { prefetchChat } from '../chatRecord'
 import { PWCodeToolsNote } from '../pwcode/ToolsNote'
@@ -543,6 +544,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
               <code className={['rounded bg-muted px-1.5 py-0.5 font-mono text-sm', className].filter(Boolean).join(' ')} data-streamdown="inline-code" {...props}>{breakable(children)}</code>
             ),
           } as object),
+          // A link to a place in the Studio opens in this tab, and says so.
+          a: ChatMarkdownLink,
           img: ({ node: _node, ...props }) =>
             typeof props.src === 'string' && props.src.startsWith('/?embed=') ? (
               <EmbedFrame src={props.src} title={String(props.alt ?? 'embedded viewer')} />

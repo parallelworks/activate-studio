@@ -92,7 +92,7 @@ describe("A chat's kept record", () => {
     expect(result.current.shown).toBe(true)
     expect(result.current.link?.session).toBe('ada-session')
     expect(result.current.machine).toBe('m2')
-    await waitFor(() => expect(calls).toEqual(['/api/chat/conversations/c1']))
+    await waitFor(() => expect(calls.filter(u => !u.startsWith('/api/chat/engine'))).toEqual(['/api/chat/conversations/c1']))
   })
 
   it("goes through the Studio, not the session's own view, while the Studio assistant has the last reply", async () => {

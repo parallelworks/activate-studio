@@ -2,6 +2,7 @@ import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from 
 import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getLabelScope, getLastEngine, getPersona, hasEffort, knowEngine, setEffort } from './labelScope'
+import { GOES_TO, GOES_TO_SESSION } from './chatLinks'
 import { fetchModels } from './api'
 import { firstMessagePick } from './pwcode/newChatPick'
 import { foldRecovered, recoveryTracker } from './recoveredSteps'
@@ -282,13 +283,17 @@ interface NoteMessage { id: string; content?: string | null; finishReason?: stri
 export const CONTINUED_NOTE_MARK = 'note=continued'
 // It also settles the failed steps a later call recovered (recoveredSteps.ts),
 // and marks a reply ended by Stop as stopped.
-export function markNotes<T extends { messages?: NoteMessage[] }>(c: T): T {
+export function markNotes<T extends { id?: string; messages?: NoteMessage[] }>(c: T): T {
   for (const m of c.messages ?? []) {
     if (Array.isArray(m.parts)) m.parts = foldRecovered(m.parts)
     // A reply ended by Stop is stored so; the chat marks it Stopped.
     if (m.finishReason === 'stopped') m.stopped = true
     if (m.id.startsWith('note-continued-') && m.content && !m.content.includes(CONTINUED_NOTE_MARK)) {
       m.content = m.content.replace('](#view=code?', `](#view=code?${CONTINUED_NOTE_MARK}&`)
+    }
+    // Where its messages go follows what answers the chat (chatLinks.tsx).
+    if (m.id.startsWith('note-continued-') && c.id && m.content?.includes(` ${GOES_TO_SESSION}`) && !m.content.includes(GOES_TO)) {
+      m.content = m.content.replace(` ${GOES_TO_SESSION}`, ` [${GOES_TO_SESSION}](${GOES_TO}${c.id})`)
     }
   }
   return c

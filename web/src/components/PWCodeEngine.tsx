@@ -2,25 +2,10 @@ import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, us
 import { SIGN_IN_TO_USE, accountsHref, needsActivate } from '../accounts'
 import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
 import { useChat } from '@parallelworks/ui/ai'
-import { getLastEngine, knowEngine, switchEngine } from '../labelScope'
+import { type EngineInfo, readEngine, switchEngine, useEngine } from '../chatEngine'
 import { sessionToolsSaid } from './studioTools'
 import { liveModel, onModel } from '../pwcode/liveModel'
 import { cachedChat, readChat, takeReadAhead, type ChatRecord } from '../chatRecord'
-
-/** GET /api/chat/engine: what answers by default, and whether pw code is
- *  offered to this person (with why not). */
-interface EngineInfo {
-  setting: 'auto' | 'pwcode' | 'studio'
-  /** What a new chat starts with. */
-  default: 'pwcode' | 'studio'
-  /** What this conversation answers with (its own, or a new chat's). */
-  current?: 'pwcode' | 'studio'
-  /** Something has answered the conversation. */
-  answered?: boolean
-  pwcode: boolean
-  reason: string | null
-  toolsDown?: string | null
-}
 
 /** How the Studio's tools stand in the conversation's pw code session. */
 interface ToolsState { connected: boolean; count: number; error?: string; relay?: boolean; machineHas?: boolean }
@@ -91,43 +76,27 @@ function useSession(conversationId: string | null): SessionInfo {
  * web link sits in its menu once pw code has answered.
  */
 export function PWCodeEngine({ conversationId }: { conversationId: string | null }) {
-  const [info, setInfo] = useState<EngineInfo | null>(null)
+  // What answers, from the one place the chat's parts learn it
+  // (chatEngine.ts); this reads it again when something may have changed
+  // it, and never because it changed.
+  const engine = useEngine(conversationId)
+  const info = engine.info ?? null
   const [open, setOpen] = useState(false)
   const session = useSession(conversationId)
   const { isStreaming } = useChat()
 
-  // Read for this conversation, by the rule its next message is sent by.
-  const read = useCallback(() => {
-    const q = new URLSearchParams()
-    if (conversationId) q.set('conversation', conversationId)
-    const last = getLastEngine()
-    if (last) q.set('last', last)
-    fetch(`/api/chat/engine?${q}`).then(r => (r.ok ? r.json() : null)).then((d: EngineInfo | null) => {
-      setInfo(d)
-      // What answers a chat now, by the rule its next message is sent by:
-      // the Studio assistant, for a pw code chat whose person pw code is
-      // not for here, so the chat shows its own thread and its next
-      // message goes through the Studio, not to the session.
-      if (conversationId && d?.answered && d.current) knowEngine(conversationId, d.current)
-    }, () => setInfo(null))
-  }, [conversationId])
+  const read = useCallback(() => { void readEngine(conversationId) }, [conversationId])
   useEffect(() => {
     read()
-    // A sign-in (in this tab or another), a fallback, or a switch changes
-    // what answers.
-    const onEngine = (e: Event) => {
-      const d = (e as CustomEvent).detail as { conversationId?: string | null }
-      if ((d?.conversationId ?? null) === conversationId) read()
-    }
+    // A sign-in (in this tab or another), or pw code failing to reach the
+    // Studio's tools, changes what answers.
     window.addEventListener('ade:model-access-changed', read)
     window.addEventListener('ade-pwcode-fallback', read)
-    window.addEventListener('ade:chat-engine', onEngine)
     return () => {
       window.removeEventListener('ade:model-access-changed', read)
       window.removeEventListener('ade-pwcode-fallback', read)
-      window.removeEventListener('ade:chat-engine', onEngine)
     }
-  }, [read, conversationId])
+  }, [read])
   // Read again each time the menu opens and when a reply ends: cheap, and
   // never stale.
   useEffect(() => { if (open) read() }, [open, read])
@@ -146,7 +115,7 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
 
   // pw code waiting only for an ACTIVATE sign-in shows too, saying so.
   const shown = !!info && (info.pwcode || info.setting === 'pwcode' || !!session.url || needsActivate(info.reason) || info.current === 'pwcode')
-  const current: 'pwcode' | 'studio' = info?.current ?? info?.default ?? 'studio'
+  const current: 'pwcode' | 'studio' = engine.current || (info?.current ?? info?.default ?? 'studio')
   return shown && info ? <EngineMenu {...{ info, current, session, tools, open, setOpen, conversationId, running: isStreaming, reread: read }} /> : null
 }
 

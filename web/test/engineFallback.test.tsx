@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { act, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@parallelworks/ui/ai'
@@ -9,7 +10,8 @@ vi.mock('@parallelworks/ui/ai', () => ({
 
 import { EngineNoteReader, PWCodeEngine } from '../src/components/PWCodeEngine'
 import { knownEngine } from '../src/labelScope'
-import { typedPart, withoutCarried } from '../src/pwcode/carried'
+import { forgetEngines } from '../src/chatEngine'
+import { typedPart, withEarlier, withoutCarried } from '../src/pwcode/carried'
 
 const sse = (events: [string, unknown][]) => new ReadableStream({
   start(c) {
@@ -18,7 +20,7 @@ const sse = (events: [string, unknown][]) => new ReadableStream({
   },
 })
 
-beforeEach(() => { localStorage.clear(); chat.loadConversation.mockClear(); chat.streaming = true; chat.id = 'c9' })
+beforeEach(() => { localStorage.clear(); forgetEngines(); chat.loadConversation.mockClear(); chat.streaming = true; chat.id = 'c9' })
 afterEach(() => { vi.unstubAllGlobals() })
 
 // A person pw code is not for here gets the Studio assistant in a pw code
@@ -116,5 +118,53 @@ describe("A pw code session's transcript in the chat", () => {
     const stored: ChatMessage[] = [{ id: 'u2', role: 'user', content: 'What did I first ask?' }]
     expect(withoutCarried(stored)).toBe(stored)
     expect(withoutCarried(undefined)).toBeUndefined()
+  })
+})
+
+// While a chat switched to pw code is on pw code, its view drew only the
+// session's turns: everything before the switch was hidden.
+describe("A pw code session's view of a chat switched to it", () => {
+  const record: ChatMessage[] = [
+    { id: 'u1', role: 'user', content: 'Tell me about tides.' },
+    { id: 'a1', role: 'assistant', content: 'Tides rise and fall twice a day.', model: 'gpt-b' } as ChatMessage,
+    { id: 'note-engine-1', role: 'assistant', content: 'A note.' },
+    { id: 'u2', role: 'user', content: 'What did I first ask?' },
+    { id: 'pwc-2', role: 'assistant', content: 'You asked about tides.', model: 'pw code · haiku' } as ChatMessage,
+    { id: 'u3', role: 'user', content: 'Two more?' },
+    { id: 'a3', role: 'assistant', content: 'Two.', model: 'gpt-b' } as ChatMessage,
+    { id: 'u4', role: 'user', content: 'And now?' },
+    { id: 'pwc-4', role: 'assistant', content: 'Now.', model: 'pw code · haiku' } as ChatMessage,
+  ]
+  const session: ChatMessage[] = [
+    { id: 's1', role: 'user', content: "Earlier in this conversation, before you joined it:\n\nThe person: Tell me about tides.\n\nThe Studio assistant: Tides rise [cut]\n\nThe person's new message:\n\nWhat did I first ask?" },
+    { id: 's2', role: 'assistant', content: 'You asked about tides.' },
+    { id: 's3', role: 'user', content: "In this conversation since your last reply:\n\nThe person: Two more?\n\nThe Studio assistant: Two.\n\nThe person's new message:\n\nAnd now?" },
+    { id: 's4', role: 'assistant', content: 'Now.' },
+  ]
+
+  it('draws the turns before the switch above its own, and those the Studio assistant had since where they came, from the chat', () => {
+    const shown = withoutCarried(withEarlier(session, record))
+    expect(shown.map(m => `${m.id}: ${m.content}`)).toEqual([
+      'earlier-u1: Tell me about tides.',
+      'earlier-studio-a1: Tides rise and fall twice a day.',
+      's1: What did I first ask?',
+      's2: You asked about tides.',
+      'earlier-u3: Two more?',
+      'earlier-studio-a3: Two.',
+      's3: And now?',
+      's4: Now.',
+    ])
+    expect((shown[1] as { model?: string }).model).toBe('gpt-b')
+    // A session that started in the chat has nothing earlier to draw.
+    const own: ChatMessage[] = [{ id: 's1', role: 'user', content: 'What did I first ask?' }]
+    expect(withEarlier(own, record)).toBe(own)
+    expect(withEarlier(session, undefined)).toBe(session)
+  })
+
+  it('marks those turns as earlier in the chat', () => {
+    const css = readFileSync('src/styles.css', 'utf8')
+    expect(css).toMatch(/\.pwcode-session \[data-row\^='earlier-'\][^{]*::before \{\s*content: 'Earlier in this chat'/)
+    // Its Studio assistant's replies say so, as in the chat's own thread.
+    expect(css).toContain(".pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio assistant · '; }")
   })
 })

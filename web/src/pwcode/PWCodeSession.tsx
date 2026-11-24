@@ -29,7 +29,7 @@ import {
 import { IntlProvider } from 'use-intl'
 import { followCleared, pwCode } from './api'
 import { describeError } from './describeError'
-import { withoutCarried } from './carried'
+import { withEarlier, withoutCarried } from './carried'
 import { AccountChip, AccountPanelModal } from './session/AccountPanel'
 import { SessionActivity, SessionStatusRow, type StatusActivity, useSessionAgents, useSwitcherState } from './session/AgentSwitcher'
 import { BackgroundCommandsContext, useBackgroundShortcut } from './session/BackgroundCommandHint'
@@ -44,7 +44,7 @@ import { useAwayRecap } from './session/useAwayRecap'
 import { useComposerImages } from './session/useComposerImages'
 import { usePlatformModels } from './session/usePlatformModels'
 import { AgentModelControls } from '../code/AgentModelControls'
-import { cachedChat } from '../chatRecord'
+import { cachedChat, readChat } from '../chatRecord'
 
 import { needsActivate } from '../accounts'
 import { NeedsActivate } from '../components/NeedsActivate'
@@ -131,10 +131,25 @@ function storedMessages(list: unknown[] | undefined): ChatMessage[] | undefined 
   const out = (list ?? []).flatMap(m => {
     const x = m as Partial<ChatMessage>
     return typeof x.id === 'string' && (x.role === 'user' || x.role === 'assistant') && (x.content || x.parts?.length)
-      ? [{ id: x.id, role: x.role, content: x.content ?? '', parts: x.parts, parentId: x.parentId, timestamp: x.timestamp }]
+      ? [{ id: x.id, role: x.role, content: x.content ?? '', parts: x.parts, parentId: x.parentId, timestamp: x.timestamp, model: x.model }]
       : []
   })
   return out.length ? out : undefined
+}
+
+/** The chat's record's messages (chatRecord.ts): kept from the chat's
+ *  open, which reads it, or read here when it was not. */
+function useChatMessages(conversationId: string): ChatMessage[] | undefined {
+  const [record, setRecord] = useState(() => cachedChat(conversationId))
+  useEffect(() => {
+    const kept = cachedChat(conversationId)
+    setRecord(kept)
+    if (kept) return
+    let gone = false
+    readChat(conversationId).then(c => { if (!gone) setRecord(c) }, () => {})
+    return () => { gone = true }
+  }, [conversationId])
+  return useMemo(() => storedMessages(record?.messages), [record])
 }
 
 function SessionPane({ conversationId, machine, sessionId, username, notes, settingsExtra }: PWCodeSessionProps) {
@@ -224,10 +239,12 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   // Until the session's transcript first arrives, the chat's own record of
   // it (read as this person, chatRecord.ts) is drawn, as before the session
   // view: a first open over a slow relay shows the conversation at once.
-  const stored = useMemo(() => (detail ? undefined : storedMessages(cachedChat(conversationId)?.messages)), [detail, conversationId])
+  const record = useChatMessages(conversationId)
+  const stored = useMemo(() => (detail ? undefined : record), [detail, record])
   // The session's transcript holds what the Studio sent it, the turns it
-  // missed before the person's message; the chat shows what they typed.
-  const shownMessages = useMemo(() => withoutCarried(stored ?? messages), [stored, messages])
+  // missed before the person's message: the chat draws those turns from
+  // its record, where they came, and the message as the person typed it.
+  const shownMessages = useMemo(() => withoutCarried(stored ?? withEarlier(messages, record)), [stored, messages, record])
 
   const noticeText = notice?.text ?? note
   // A refusal for want of an ACTIVATE sign-in gets the one prompt every

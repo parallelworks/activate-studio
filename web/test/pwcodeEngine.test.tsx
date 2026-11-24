@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher, shortModel } from '../src/components/PWCodeEngine'
 import { getLastEngine, knownEngine } from '../src/labelScope'
+import { forgetEngines } from '../src/chatEngine'
 import { announceModel } from '../src/pwcode/liveModel'
 
 const chat = vi.hoisted(() => ({ loadConversation: vi.fn(async () => {}), streaming: false }))
@@ -25,7 +26,7 @@ function serve(engine: Engine, conversation: Record<string, unknown> = {}, pwSta
   return calls
 }
 
-beforeEach(() => { localStorage.clear(); chat.streaming = false })
+beforeEach(() => { localStorage.clear(); forgetEngines(); chat.streaming = false })
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('What answers a conversation', () => {

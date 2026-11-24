@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { cachedChat, readChat, type ChatRecord } from '../chatRecord'
-import { type Engine, knowEngine, knownEngine } from '../labelScope'
+import { type Engine, readEngine, useEngine } from '../chatEngine'
 import { sessionMachine } from './api'
 
 /** A chat's pw code session as the Studio keeps it (conversations.PWCodeLink). */
@@ -14,8 +14,9 @@ export interface ChatLink {
   url?: string
 }
 
-/** What answers the chat, as its record has it ('' for nothing yet). */
-function engineOf(c: ChatRecord | null | undefined): Engine {
+/** The engine stored for the chat, as its record has it ('' for nothing
+ *  yet): what is shown until the Studio says what answers it. */
+function storedEngine(c: ChatRecord | null | undefined): Engine {
   return c?.engine === 'pwcode' || c?.engine === 'studio' ? c.engine : ''
 }
 
@@ -46,45 +47,39 @@ function linkOf(c: ChatRecord | null | undefined): ChatLink | null {
  * record is read again behind it; a chat never opened waits for that read.
  */
 export function useChatLink(conversationId: string | null): { link: ChatLink | null; machine: string; shown: boolean } {
-  const fromCache = (id: string | null) => ({ id, link: linkOf(cachedChat(id)), engine: engineOf(cachedChat(id)), behind: behindOf(cachedChat(id)) })
+  const fromCache = (id: string | null) => ({ id, link: linkOf(cachedChat(id)), engine: storedEngine(cachedChat(id)), behind: behindOf(cachedChat(id)) })
   const [read, setRead] = useState(() => fromCache(conversationId))
-  const [, bump] = useState(0)
   // On a switch, what is known of the new chat counts from the same render.
   const cur = read.id === conversationId ? read : fromCache(conversationId)
   const link = cur.link
-  // What answers it: the server's word as last heard here (a switch, a
-  // reply), else its record's.
-  const chosen = knownEngine(conversationId) || cur.engine
+  // What answers it: the Studio's word (chatEngine.ts), the one source the
+  // chat's parts share. Until it comes, the engine its record stores; the
+  // record never sets what answers it, which for a person pw code is not
+  // for here is the Studio assistant whatever the record says.
+  const engine = useEngine(conversationId)
+  const chosen = engine.current || (engine.info === undefined ? cur.engine : '')
   useEffect(() => {
     setRead(fromCache(conversationId))
     if (!conversationId) return
     let gone = false
+    void readEngine(conversationId)
     const reread = () => readChat(conversationId)
-      .then(c => {
-        if (gone) return
-        setRead({ id: conversationId, link: linkOf(c), engine: engineOf(c), behind: behindOf(c) })
-        if (engineOf(c)) knowEngine(conversationId, engineOf(c))
-      })
+      .then(c => { if (!gone) setRead({ id: conversationId, link: linkOf(c), engine: storedEngine(c), behind: behindOf(c) }) })
       .catch(() => { if (!gone) setRead({ id: conversationId, link: null, engine: '', behind: false }) })
     void reread()
-    const onSession = (e: Event) => {
+    // A new session, or a finished reply, changes what the record says of
+    // the chat's session and its last reply. What answers it is not read
+    // from the record, so a change of that leads to no read here.
+    const onChange = (e: Event) => {
       const d = (e as CustomEvent).detail as { conversationId?: string; session?: string }
-      if (d?.conversationId === conversationId && d.session) void reread()
+      if (d?.conversationId === conversationId && (e.type !== 'ade-pwcode-session' || d.session)) void reread()
     }
-    // A switch or a finished reply changes what the chat shows: read the
-    // record again for its last reply.
-    const onEngine = (e: Event) => {
-      const d = (e as CustomEvent).detail as { conversationId?: string | null }
-      if (d?.conversationId === conversationId) { bump(n => n + 1); void reread() }
-    }
-    window.addEventListener('ade-pwcode-session', onSession)
-    window.addEventListener('ade:chat-engine', onEngine)
-    window.addEventListener('ade:chat-answered', onEngine)
+    window.addEventListener('ade-pwcode-session', onChange)
+    window.addEventListener('ade:chat-answered', onChange)
     return () => {
       gone = true
-      window.removeEventListener('ade-pwcode-session', onSession)
-      window.removeEventListener('ade:chat-engine', onEngine)
-      window.removeEventListener('ade:chat-answered', onEngine)
+      window.removeEventListener('ade-pwcode-session', onChange)
+      window.removeEventListener('ade:chat-answered', onChange)
     }
   }, [conversationId])
   const shown = !!link?.session && chosen !== 'studio' && !cur.behind
