@@ -83,8 +83,8 @@ env:
   # The ocr-* release whose ocr-macos-arm64.tar.gz the app uses, and that
   # archive's SHA-256; blank, or a tag for another build_ocr.sh, builds OCR
   # on the run.
-  OCR_RELEASE: ""
-  OCR_SHA256: ""
+  OCR_RELEASE: ocr-1fbcd2827092-macos14
+  OCR_SHA256: 87dff212d61d54143f69eaec4a6d6ff1bae81682f0927d84064afe0089fe7477
 
 concurrency:
   group: mac-app-${{ inputs.release || github.ref }}
