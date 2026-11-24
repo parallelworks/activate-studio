@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LibraryView } from '../src/views/LibraryView'
@@ -93,6 +93,75 @@ describe('a file opened in the Library at the phone width', () => {
     await show({ kind: 'file', target: 'notes/readme.md' })
     expect(screen.queryByRole('button', { name: 'Back to the list' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Collapse tree' })).toBeInTheDocument()
+  })
+})
+
+describe('a file opened in the Library between the phone width and 1200px', () => {
+  // From 761px up the tree sat at its full width beside the file, so at 761 to
+  // about 1045px a window left the open file 196 to 480px wide.
+  let card = 0
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return (this as HTMLElement).classList.contains('library-card') ? card : 0 } })
+  })
+  afterEach(() => { delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth })
+  /** A window `w` px wide, less a 240px navigation and any column the status panel takes. */
+  function sized(w: number, panel = 0) {
+    card = w - 240 - panel
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      matches: q.includes('max-width: 760px') ? w <= 760 : q.includes('min-width: 761px') ? w >= 761 && w <= 1199 : false,
+      media: q, addEventListener() {}, removeEventListener() {},
+    }))
+  }
+  function serve() {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = String(input)
+      if (url.startsWith('/api/config')) return json({ appName: 'Studio', kbLabel: 'Notes', libraries: [{ id: 'kb', label: 'Notes', primary: true, writable: true, pinned: false, source: true, caps: { index: true, fullText: true, vectors: false } }] })
+      if (url.startsWith('/api/kb/tree')) return json({ path: '', entries: [{ name: 'notes', isDir: true }] })
+      if (url.startsWith('/api/kb/file')) return json({ path: 'notes/readme.md', kind: 'text', content: '# Readme', size: 8, mtime: 1 })
+      if (url.includes('/tags')) return json({ own: [], inherited: [] })
+      if (url.startsWith('/api/transfers')) return json({ locations: [] })
+      return json({})
+    }))
+  }
+  type D = Parameters<typeof LibraryView>[0]['display']
+  async function show(display: D) {
+    serve()
+    const view = render(<LibraryView display={display} onDisplay={vi.fn()} />)
+    await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 20)) })
+    return (d: D) => view.rerender(<LibraryView display={d} onDisplay={vi.fn()} />)
+  }
+  const tree = () => document.querySelector('.library-rail')
+  const readme: D = { kind: 'file', target: 'notes/readme.md' }
+
+  it('has the tree give way to the file, until » brings it back', async () => {
+    sized(900)
+    const open = await show(readme)
+    expect(tree()).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand knowledge base tree' }))
+    expect(tree()).not.toBeNull()
+    // Another file from the tree: the tree gives way to it again.
+    open({ kind: 'file', target: 'notes/plan.md' })
+    expect(tree()).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand knowledge base tree' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse tree' }))
+    expect(tree()).toBeNull()
+    // Nothing is remembered for wider windows.
+    expect(localStorage.getItem('ade-rail-collapsed')).not.toBe('1')
+    // With the file closed the tree is back.
+    open(null)
+    expect(tree()).not.toBeNull()
+  })
+
+  it('keeps the tree beside a file that has room, and from 1200px up', async () => {
+    sized(1100)
+    await show(readme)
+    expect(tree()).not.toBeNull()
+    cleanup()
+    // At 1200px the status panel takes a 300px column, so the file is
+    // narrower than at 1100px; the layout there is left as it was.
+    sized(1200, 300)
+    await show(readme)
+    expect(tree()).not.toBeNull()
   })
 })
 

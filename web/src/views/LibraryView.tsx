@@ -28,10 +28,14 @@ import { ShareDialog } from '../components/ShareDialog'
 import { ResultsTransferDialog, useTransfersShown, type ResultItem } from '../components/ResultsTransfer'
 import { destinationWhy, libraryLocation, transferApi } from '../transferApi'
 import { LockedButton } from '../components/LockedButton'
-import { usePhoneLayout } from '../phoneLayout'
+import { MID_QUERY, useMediaQuery, usePhoneLayout } from '../phoneLayout'
 
 const RAIL_MIN = 220
 const RAIL_MAX = 520
+/** The narrowest an open file reads well beside the tree, in pixels. */
+export const FILE_MIN = 480
+/** The divider between the tree and the file. */
+const DIVIDER = 5
 
 /** Human-sized byte counts for the upload panel. */
 export function LibraryView({ display, onDisplay }: {
@@ -575,7 +579,29 @@ export function LibraryView({ display, onDisplay }: {
   // way back to the tree above it. Side by side, the file had no width left.
   // The tree cannot be collapsed there, since it is the page.
   const phone = usePhoneLayout()
-  const collapsed = railCollapsed && !phone
+  // Between the phone width and 1200px, where the tree at its width would
+  // leave the open file narrower than FILE_MIN, the tree gives way to the file
+  // as if collapsed. » brings it back beside that file; « or opening another
+  // file lets it give way again. Nothing is remembered, so a wider window shows
+  // the tree as it was. From 1200px up the layout is as before.
+  const mid = useMediaQuery(MID_QUERY)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [cardWidth, setCardWidth] = useState(0)
+  useEffect(() => {
+    const card = cardRef.current
+    if (!card || !mid) return
+    const measure = () => setCardWidth(card.clientWidth)
+    measure()
+    if (typeof ResizeObserver !== 'function') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(card)
+    return () => ro.disconnect()
+  }, [mid])
+  const openKey = display ? `${display.kind}:${display.target}` : null
+  const [treeAskedFor, setTreeAskedFor] = useState<string | null>(null)
+  const crowded = mid && openKey !== null && cardWidth > 0 && cardWidth - railWidth - DIVIDER < FILE_MIN
+  const givesWay = crowded && treeAskedFor !== openKey
+  const collapsed = (railCollapsed || givesWay) && !phone
 
   return (
     <>
@@ -585,10 +611,10 @@ export function LibraryView({ display, onDisplay }: {
       onDragLeave={() => setDropOver(false)}
       onDrop={e => { e.preventDefault(); setDropOver(false); if (writableAt(targetDir) || libOffer.allowed) void uploadTo(targetDir, e.dataTransfer.items) }}
     >
-      <div className="library-card card">
+      <div ref={cardRef} className="library-card card">
         {collapsed ? (
           <div className="rail-strip">
-            <IconButton icon="»" label="Expand knowledge base tree" onClick={() => setRailCollapsed(false)} />
+            <IconButton icon="»" label="Expand knowledge base tree" onClick={() => { setRailCollapsed(false); if (givesWay) setTreeAskedFor(openKey) }} />
           </div>
         ) : (
           <>
@@ -628,7 +654,7 @@ export function LibraryView({ display, onDisplay }: {
                       if (paths[0]) onDisplay({ kind: 'file', target: paths[0] })
                     }}
                   />
-                  {!phone && <IconButton icon="«" label="Collapse tree" onClick={() => setRailCollapsed(true)} />}
+                  {!phone && <IconButton icon="«" label="Collapse tree" onClick={() => { if (crowded) setTreeAskedFor(null); else setRailCollapsed(true) }} />}
                 </span>
               </div>
               {selectMode && (
