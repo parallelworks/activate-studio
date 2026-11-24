@@ -23,6 +23,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/mcpclient"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
@@ -138,6 +139,11 @@ func New(a *app.App) *Module {
 	m.MCP = remoteTools{m.mcp}
 	m.pf = platform.Of(a)
 	m.Plat = m.pf
+	// Whether pw code may run on Claude Code accounts here, for everything
+	// that starts or changes a pw code session (pwcode.CreateSession) and
+	// the routes that offer the accounts.
+	pwcode.ClaudeCode = pwcode.NewClaudeCodePolicy(a.Cfg.IndexBase,
+		func() string { return a.Settings.Effective().ClaudeCodeAccounts }, a.Settings.PersonalInstall)
 	m.held = newHeldStore(a.Cfg.IndexBase)
 	m.made = newRenderStore(a.Cfg.IndexBase)
 	m.Keys = modelkeys.New(a.Cfg.IndexBase, a.Cfg.AuthEnabled)

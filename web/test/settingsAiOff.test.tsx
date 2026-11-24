@@ -185,6 +185,36 @@ describe('Settings, External access, What answers in chat', () => {
   })
 })
 
+describe('Settings, External access, Claude Code accounts', () => {
+  it('says whether they are on for the viewer, and only an administrator changes it', async () => {
+    const s = stub({ aiEnabled: true, platform: true, claudeCodeAccounts: 'auto' })
+    const base = globalThis.fetch as unknown as (input: string, init?: RequestInit) => Promise<Response>
+    let claudeCode: Record<string, unknown> = { on: false, personal: false, locked: "Only this Studio's administrators change whether Claude Code accounts are offered." }
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+      if (String(input) === '/api/settings' && (init?.method ?? 'GET') === 'GET') return reply({ effective: s.saved, deploymentCredential: false, claudeCode })
+      return base(input, init)
+    }))
+    at('#view=settings:rag')
+    const { unmount } = render(<SettingsView />)
+    window.dispatchEvent(new Event('ade:config-changed'))
+    const pick = await screen.findByRole('combobox', { name: 'Claude Code accounts' })
+    expect(pick).toHaveTextContent('Automatic')
+    expect(pick).toBeDisabled()
+    expect(screen.getByText(/Now off for you\./)).toBeInTheDocument()
+    expect(screen.getByText(/Only this Studio's administrators change/)).toBeInTheDocument()
+    unmount()
+
+    // An administrator, or the one person of a Studio of one, chooses.
+    claudeCode = { on: true, personal: true }
+    render(<SettingsView />)
+    const mine = await screen.findByRole('combobox', { name: 'Claude Code accounts' })
+    expect(mine).toBeEnabled()
+    expect(screen.getByText(/Now on for you\./)).toBeInTheDocument()
+    stub()
+    window.dispatchEvent(new Event('ade:config-changed'))
+  })
+})
+
 describe('Settings, General, Appearance with Branding', () => {
   it('#view=settings:branding opens Appearance at the Branding group', async () => {
     stub({ aiEnabled: true })

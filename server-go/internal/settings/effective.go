@@ -92,6 +92,11 @@ type Effective struct {
 	// PWCodePermissionMode is the permission mode they start in; "" for
 	// the daemon's default.
 	PWCodePermissionMode string `json:"pwcodePermissionMode"`
+	// ClaudeCodeAccounts is whether pw code may run on Claude Code
+	// accounts here: "on", "off", or "auto" (on for a Studio of one, off
+	// where several people sign in or the platform deployed it, except for
+	// a person already using them). See ClaudeCodeModes.
+	ClaudeCodeAccounts string `json:"claudeCodeAccounts"`
 }
 
 // ChatEngines are chatEngine's values; PWCodeModes are
@@ -99,6 +104,8 @@ type Effective struct {
 var (
 	ChatEngines = []string{"auto", "pwcode", "studio"}
 	PWCodeModes = []string{"", "read-only", "accept-edits", "auto", "plan"}
+	// ClaudeCodeModes are claudeCodeAccounts's values.
+	ClaudeCodeModes = []string{"auto", "on", "off"}
 )
 
 // PersonalPrompts, PersonalSections and PersonalMission are settings.ts's.
@@ -380,7 +387,23 @@ func (s *Store) Effective() Effective {
 	if !slices.Contains(PWCodeModes, e.PWCodePermissionMode) {
 		e.PWCodePermissionMode = ""
 	}
+	e.ClaudeCodeAccounts = or(str("claudeCodeAccounts"), claudeCodeEnv(env("CLAUDE_CODE_ACCOUNTS")))
+	if !slices.Contains(ClaudeCodeModes, e.ClaudeCodeAccounts) {
+		e.ClaudeCodeAccounts = "auto"
+	}
 	return e
+}
+
+// claudeCodeEnv reads CLAUDE_CODE_ACCOUNTS: on or off (also 1 or 0, true
+// or false); anything else, or nothing, is auto.
+func claudeCodeEnv(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "on", "1", "true":
+		return "on"
+	case "off", "0", "false":
+		return "off"
+	}
+	return "auto"
 }
 
 func asPolicy(raw json.RawMessage) UpdatePolicy {

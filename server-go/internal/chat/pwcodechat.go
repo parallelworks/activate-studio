@@ -467,7 +467,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 				req.Set("allocation", *t.pickedAlloc)
 			}
 		}
-		s, err := pwcode.CreateSession(ctx, t.client, req)
+		s, err := pwcode.CreateSession(auth.ContextWithUser(ctx, user(r)), t.client, req)
 		if err != nil {
 			return nil, false, err
 		}

@@ -44,6 +44,15 @@ describe('the pw code accounts row on Settings, Accounts', () => {
     expect(known).toHaveBeenCalledWith(0)
   })
 
+  it('shows nothing where Claude Code accounts are off for the person', async () => {
+    here({ available: true, claudeCode: false, claudeCodeReason: 'Claude Code accounts are turned off on this Studio by its administrator.' })
+    names.data = [{ name: 'work' }]
+    const { container } = render(<AccountSlot />)
+    await new Promise(r => setTimeout(r, 20))
+    expect(container).toBeEmptyDOMElement()
+    expect(names.asked.every(([, on]) => !on)).toBe(true)
+  })
+
   it('shows nothing where the Studio has no pw code for the person', async () => {
     const fetch = vi.fn(async () => ({ ok: true, json: async () => ({ available: false }) }))
     vi.stubGlobal('fetch', fetch)

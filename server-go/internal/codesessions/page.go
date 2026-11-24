@@ -209,6 +209,9 @@ func (s *routes) forward(w http.ResponseWriter, r *http.Request, t *pageTarget, 
 		writeProblem(w, http.StatusUnauthorized, "The platform refused your credential; sign in again, or renew your API key under Settings, Accounts.")
 		return
 	}
+	if method == http.MethodGet && path == "/api/code/sessions" && res.StatusCode == http.StatusOK {
+		raw = claudeCodeListing(r, raw)
+	}
 	ct := res.Header.Get("Content-Type")
 	if ct == "" {
 		ct = "application/json"
@@ -321,7 +324,8 @@ func (s *routes) pageClaude(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if t.local != nil {
+	// Where Claude Code accounts are off for the person, there are none.
+	if t.local != nil || pwcode.ClaudeCodeOff(r.Context()) != "" {
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
@@ -446,6 +450,10 @@ func (s *routes) pageCreate(w http.ResponseWriter, r *http.Request) {
 	ws := jsonv.String(jsonv.Path(body, "workspace"))
 	if !strings.HasPrefix(ws, "/") || strings.ContainsAny(ws, "\x00\r\n") {
 		writeProblem(w, http.StatusBadRequest, "The folder must be a full path on the machine.")
+		return
+	}
+	if err := pwcode.ClaudeCodeRefused(r.Context(), body); err != nil {
+		writeErr(w, err)
 		return
 	}
 	mode := jsonv.String(jsonv.Path(body, "permissionMode"))

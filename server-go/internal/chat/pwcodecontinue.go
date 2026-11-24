@@ -89,6 +89,9 @@ func (m *Module) pwcodeHere(ctx context.Context, r *http.Request) (*pwHere, erro
 	if st == nil {
 		return nil, pwErr(502, "Your pw code daemon did not answer.")
 	}
+	// Where Claude Code accounts are off unless in use, whether this
+	// person's pw code already has some, which keeps them on for them.
+	pwcode.LookForAccounts(ctx, client, pwcode.Viewer(r.Context()))
 	return &pwHere{client: client, site: site,
 		daemonID: jsonv.String(jsonv.Path(st, "machineId")), hostname: jsonv.String(jsonv.Path(st, "hostname")), status: st}, nil
 }
@@ -333,7 +336,14 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 		if err != nil {
 			return reqbody.OK(w, reqbody.O("available", false, "reason", apiMessage(err), "chats", chats, "relay", relay, "relayReason", relayWhy))
 		}
-		return reqbody.OK(w, reqbody.O("available", true, "daemonId", here.daemonID, "hostname", here.hostname, "chats", chats, "relay", relay, "relayReason", relayWhy))
+		// Whether this Studio offers Claude Code accounts to the person,
+		// and why not (pwcode.ClaudeCode).
+		var claudeWhy any
+		if why := pwcode.ClaudeCodeOff(r.Context()); why != "" {
+			claudeWhy = why
+		}
+		return reqbody.OK(w, reqbody.O("available", true, "daemonId", here.daemonID, "hostname", here.hostname, "chats", chats, "relay", relay, "relayReason", relayWhy,
+			"claudeCode", claudeWhy == nil, "claudeCodeReason", claudeWhy))
 	})
 	// Continue one of the viewer's sessions in a new chat. The first call
 	// checks and answers with what to ask the person; the call with

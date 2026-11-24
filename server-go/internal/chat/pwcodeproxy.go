@@ -152,6 +152,9 @@ func (m *Module) codeAccounts(w http.ResponseWriter, r *http.Request) error {
 	if key == "" {
 		return writeProblem(w, http.StatusNotFound, "The Studio does not send this to pw code; do it in PW Code on the web or where pw code runs.")
 	}
+	if why := pwcode.ClaudeCodeOff(r.Context()); why != "" {
+		return writeProblem(w, http.StatusForbidden, why)
+	}
 	machine := r.PathValue("machine")
 	client, err := m.machineTarget(r, machine)
 	if err != nil {
@@ -412,6 +415,11 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 	if key == "" {
 		return writeProblem(w, http.StatusNotFound, "The Studio does not send this to a pw code session; do it in PW Code on the web or where the session runs.")
 	}
+	if key == "GET /claude-code/accounts" {
+		if why := pwcode.ClaudeCodeOff(ctx); why != "" {
+			return writeProblem(w, http.StatusForbidden, why)
+		}
+	}
 	var body any
 	if r.Method == http.MethodPost || r.Method == http.MethodPatch {
 		rb, err := reqbody.Read(r)
@@ -563,6 +571,9 @@ func (m *Module) checkSettings(r *http.Request, c *conversations.Conversation, t
 			return pwErr(400, "The Studio changes a session's mode, model and effort only; change "+k+" where the session runs.")
 		}
 	}
+	if err := pwcode.ClaudeCodeRefused(r.Context(), o); err != nil {
+		return err
+	}
 	if !o.Has("permissionMode") {
 		return nil
 	}
@@ -612,10 +623,17 @@ func (m *Module) checkCommand(r *http.Request, c *conversations.Conversation, t 
 	if sessionCommands[name] {
 		return pwErr(403, "/"+name+" is not sent from a chat: manage the session on the Code page, or where it runs.")
 	}
+	args := strings.TrimSpace(jsonv.String(jsonv.Path(body, "args")))
+	// Claude Code accounts, where they are off: neither the command that
+	// manages them nor a switch to one of their models.
+	if name == "claude-code" || (name == "model" && pwcode.IsClaudeModel(args)) {
+		if why := pwcode.ClaudeCodeOff(r.Context()); why != "" {
+			return pwErr(403, why)
+		}
+	}
 	if name != "permissions" {
 		return nil
 	}
-	args := strings.TrimSpace(jsonv.String(jsonv.Path(body, "args")))
 	if args == "" {
 		return nil
 	}
@@ -754,7 +772,7 @@ func (m *Module) writeMachine(w http.ResponseWriter, r *http.Request, l *convers
 		if err != nil {
 			return err
 		}
-		return reqbody.OK(w, mach)
+		return reqbody.OK(w, codesessions.ClaudeCodeShown(r, mach))
 	}
 	name := l.MachineName
 	var st any
@@ -781,7 +799,7 @@ func (m *Module) writeMachine(w http.ResponseWriter, r *http.Request, l *convers
 			rec.Set(k, v)
 		}
 	}
-	return reqbody.OK(w, rec)
+	return reqbody.OK(w, codesessions.ClaudeCodeShown(r, rec))
 }
 
 // directFacts are the daemon's status fields the machine record passes on.
@@ -949,7 +967,7 @@ func (m *Module) codeListing(w http.ResponseWriter, r *http.Request) error {
 		if ms, ss, err := codesessions.PlatformListing(r, m.pf); err == nil {
 			for _, mach := range ms {
 				if relayed[jsonv.String(jsonv.Path(mach, "id"))] {
-					machines = append(machines, mach)
+					machines = append(machines, codesessions.ClaudeCodeShown(r, mach))
 				}
 			}
 			for _, s := range ss {

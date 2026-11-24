@@ -8,8 +8,11 @@ import (
 	"strings"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
 
@@ -21,7 +24,27 @@ func (c *Core) getSettings(w http.ResponseWriter, r *http.Request) error {
 	// deployment credential or the host's pw CLI login.
 	o.SetValue("deploymentCredential", c.a.Providers.GatewayConfigured(r))
 	o.SetValue("gufiLogFile", c.a.Providers.GufiLogInfo())
+	// Claude Code accounts as they stand for this person, and why they may
+	// not change the setting (its administrators do, where people sign in).
+	cc := jsonobj.New()
+	cc.SetValue("on", pwcode.ClaudeCodeOff(r.Context()) == "")
+	cc.SetValue("personal", c.a.Settings.PersonalInstall())
+	if why := c.claudeCodeLocked(r); why != "" {
+		cc.SetValue("locked", why)
+	}
+	o.SetValue("claudeCode", cc)
 	return ok(w, o)
+}
+
+// claudeCodeLocked is why the person may not change claudeCodeAccounts, or
+// "": on a Studio with sign-in, only its administrators (the deployment's
+// owner and STUDIO_ADMINS, as for the main library) decide whether pw
+// code may run on Claude Code accounts for everyone.
+func (c *Core) claudeCodeLocked(r *http.Request) string {
+	if !c.a.Cfg.AuthEnabled() || mainlib.Admin(mainlib.User(true, auth.UserOf(r))) {
+		return ""
+	}
+	return "Only this Studio's administrators change whether Claude Code accounts are offered."
 }
 
 var (
@@ -410,6 +433,20 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 	}
 	if _, ok := in("pwcodeModel"); ok {
 		set("pwcodeModel", orNil(jsval.Slice(jsval.Trim(str("pwcodeModel")), 120)))
+	}
+	if _, ok := in("claudeCodeAccounts"); ok {
+		v := jsval.Trim(str("claudeCodeAccounts"))
+		if !slices.Contains(settings.ClaudeCodeModes, v) {
+			return bad("claudeCodeAccounts must be auto, on or off")
+		}
+		// The whole form comes back on every save: only a change is the
+		// administrators'.
+		if v != c.a.Settings.Effective().ClaudeCodeAccounts {
+			if why := c.claudeCodeLocked(r); why != "" {
+				return apierr.New(http.StatusForbidden, "%s", why)
+			}
+			set("claudeCodeAccounts", v)
+		}
 	}
 	if _, ok := in("pwcodePermissionMode"); ok {
 		v := jsval.Trim(str("pwcodePermissionMode"))

@@ -58,6 +58,10 @@ interface Effective {
   chatEngine: 'auto' | 'pwcode' | 'studio'
   pwcodeModel: string
   pwcodePermissionMode: '' | 'read-only' | 'accept-edits' | 'auto' | 'plan'
+  /** Whether pw code may run on Claude Code accounts here; auto is on for a
+   *  Studio of one and off where people sign in or ACTIVATE deployed it,
+   *  except for someone already using them. */
+  claudeCodeAccounts?: 'auto' | 'on' | 'off'
   voiceEnabled: boolean
   voiceUrl: string
   ragProxyEnabled: boolean
@@ -147,6 +151,15 @@ const PWCODE_MODES: SelectItem<Effective['pwcodePermissionMode']>[] = [
   { value: 'auto', label: 'Auto: pw code decides what to ask' },
   { value: 'plan', label: 'Plan first' },
 ]
+
+const CLAUDE_CODE: SelectItem<NonNullable<Effective['claudeCodeAccounts']>>[] = [
+  { value: 'auto', label: 'Automatic' },
+  { value: 'on', label: 'On' },
+  { value: 'off', label: 'Off' },
+]
+
+/** Claude Code accounts as they stand for the viewer (GET /api/settings). */
+interface ClaudeCodeState { on: boolean; personal: boolean; locked?: string }
 
 type SectionId = 'general' | 'indexing' | 'transfers' | 'accounts' | 'access' | 'tools' | 'rag' | 'previews' | 'ext' | 'workflows'
 
@@ -275,6 +288,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const cfg = useAppConfig()
   const [form, setForm] = useState<Effective | null>(null)
   const [deploymentCred, setDeploymentCred] = useState<boolean | null>(null)
+  const [claudeCode, setClaudeCode] = useState<ClaudeCodeState | null>(null)
   // Where the GUFI command log is written (server/src/gufiLog.ts).
   const [gufiLogFile, setGufiLogFile] = useState<{ path: string; bytes: number } | null>(null)
   const [note, setNote] = useState('')
@@ -409,7 +423,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const loadForm = () => {
     setTheme(null)
     fetch('/api/settings').then(r => r.json())
-      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null) })
+      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null); setClaudeCode(d.claudeCode ?? null) })
       .catch(() => setNote('Could not load settings.'))
     fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) })
       .catch(() => {}).finally(() => setSetupKnown(true))
@@ -976,6 +990,18 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </Field>
                 <Field label="pw code permissions" description="What new pw code chats may do without asking. Studio tools that only read never ask.">
                   <Select items={PWCODE_MODES} value={form.pwcodePermissionMode ?? ''} onValueChange={v => setForm({ ...form, pwcodePermissionMode: v ?? '' })} />
+                </Field>
+                <Field label="Claude Code accounts"
+                  description={<>
+                    Whether pw code may run on Anthropic's models through Claude Code accounts here. Automatic is on for a
+                    Studio of one, and off where people sign in or ACTIVATE deployed the Studio, except for someone whose pw
+                    code already had accounts. Off, nothing in the Studio offers them and the server refuses a session on
+                    one.{claudeCode ? ` Now ${claudeCode.on ? 'on' : 'off'} for you.` : ''}
+                    {claudeCode?.locked && <> {claudeCode.locked}</>}
+                  </>}>
+                  <Select items={CLAUDE_CODE} value={form.claudeCodeAccounts ?? 'auto'} disabled={!!claudeCode?.locked}
+                    aria-label="Claude Code accounts"
+                    onValueChange={v => v && setForm({ ...form, claudeCodeAccounts: v })} />
                 </Field>
               </div>
               {saveRow(false)}
