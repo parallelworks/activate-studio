@@ -96,6 +96,14 @@ export function readEngine(conversationId: string | null): Promise<EngineInfo | 
   return read
 }
 
+/** The Studio's answer for a conversation as the page has it, read only
+ *  when it has none yet: for a part that appears once the chat is open,
+ *  which the chat bar's menu keeps current. */
+export function engineInfo(conversationId: string | null): Promise<EngineInfo | null> {
+  const had = entries.get(conversationId ?? '')
+  return had?.info !== undefined ? Promise.resolve(had.info) : readEngine(conversationId)
+}
+
 /** What answers a conversation, as last heard here. */
 export function knownEngine(conversationId: string | null | undefined): Engine {
   return conversationId ? entries.get(conversationId)?.current ?? '' : ''
