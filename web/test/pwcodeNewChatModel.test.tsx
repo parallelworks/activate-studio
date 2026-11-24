@@ -15,9 +15,11 @@ vi.mock('../src/pwcode/session/usePlatformModels', () => ({ usePlatformModels: (
 import { NewChatModelSlot } from '../src/pwcode/NewChatModel'
 import { firstMessagePick, pickModel, pickedModel } from '../src/pwcode/newChatPick'
 import { createStudioAdapter } from '../src/adapter'
+import { forgetEngines, readEngine } from '../src/chatEngine'
 
 let canvas: HTMLElement
 beforeEach(() => {
+  forgetEngines()
   canvas = document.createElement('div')
   canvas.className = 'chat-canvas'
   canvas.setAttribute('data-engine', 'pwcode')
@@ -40,6 +42,21 @@ describe('a new pw code chat, before its first message', () => {
     // what the session is to run on.
     expect(firstMessagePick('c1')).toEqual({ pwcodeModel: 'claude-code/sonnet' })
   })
+  it('takes the model Settings names from what the page already knows, without reading it again', async () => {
+    // The chat bar's menu has read what answers a new chat (and reads it
+    // again as the person comes back to the tab); the picker that appears
+    // because pw code now answers does not add a read of its own.
+    await readEngine(null)
+    const engineReads = () => vi.mocked(fetch).mock.calls.filter(([u]) => String(u).startsWith('/api/chat/engine')).length
+    expect(engineReads()).toBe(1)
+    render(<NewChatModelSlot conversationId={null} hasSession={false} />, { container: canvas.appendChild(document.createElement('div')) })
+    // The picker shows the model the page already had.
+    const picker = await screen.findByRole('button')
+    await waitFor(() => expect(picker).toHaveTextContent(/\/haiku$/))
+    await act(async () => { await new Promise(r => setTimeout(r, 100)) })
+    expect(engineReads()).toBe(1)
+  })
+
   it('leaves the picking to the session once there is one, and to the Studio assistant\'s picker when it answers', async () => {
     const { rerender } = render(<NewChatModelSlot conversationId="c2" hasSession />, { container: canvas.appendChild(document.createElement('div')) })
     expect(screen.queryByRole('button')).toBeNull()

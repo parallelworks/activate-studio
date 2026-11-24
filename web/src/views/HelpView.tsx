@@ -6,6 +6,7 @@ import { aiOn, useAppConfig } from '../config'
 import { transfersPresent } from '../transferApi'
 import { WhatsNew } from '../components/WhatsNew'
 import { About } from '../components/About'
+import { SectionStrip } from '../components/SectionStrip'
 
 const SECTION_ICONS: Record<string, ReactElement> = {
   chat: <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M14 10.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v7z"/></svg>,
@@ -162,7 +163,7 @@ export function HelpView() {
   return (
     <div className="help-view">
       <div className="help-docs card">
-        <nav className="help-nav">
+        <SectionStrip>
           <div className="help-nav-head">
             {cfg.iconUrl ? <img className="help-nav-icon" src={cfg.iconUrl} alt="" /> : null}
             <span>User guide</span>
@@ -184,7 +185,7 @@ export function HelpView() {
             )
           })}
           <button className={`help-nav-about${active === ABOUT ? ' active' : ''}`} onClick={() => goSection(ABOUT)}>{ABOUT_ICON} <span>{ABOUT}</span></button>
-        </nav>
+        </SectionStrip>
         <article className="help-content">
           {active === WHATS_NEW ? (
             <WhatsNew />

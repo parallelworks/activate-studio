@@ -1,7 +1,11 @@
 package chat
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +17,7 @@ import (
 // minute-old read of this Studio's own pw code would.
 func notOffered(m *Module, why string) {
 	m.pw.mu.Lock()
-	m.pw.avail = map[string]pwAvail{"": {why: why, at: time.Now(), ttl: time.Hour}}
+	m.pw.avail = map[string]pwAvail{"": {why: why, at: time.Now(), ttl: time.Hour, cli: m.studioSignedIn()}}
 	m.pw.mu.Unlock()
 }
 
@@ -194,5 +198,36 @@ func TestARelayedChatStartsANewSessionThere(t *testing.T) {
 		"messages": []any{map[string]any{"role": "user", "content": "go on"}}})
 	if len(remote.messages) != 1 || !strings.Contains(remote.messages[0], "before you joined it") || !strings.HasSuffix(remote.messages[0], "go on") {
 		t.Errorf("message: %q", remote.messages)
+	}
+}
+
+// A sign-in made outside the Studio, the pw CLI at a terminal, reaches
+// the next read of what answers: nothing in the Studio says it changed,
+// so the kept answer and the kept credential must not hide it. A sign-out
+// there does too.
+func TestATerminalSignInIsSeenByTheNextRead(t *testing.T) {
+	creds := t.TempDir()
+	m, base := pwModule(t, &fakePW{script: helloTurn}, map[string]string{"PW_API_KEY": "", "PW_CREDENTIALS_DIR": creds})
+	// The credential is the Studio's own, read from the CLI as it runs.
+	m.Tools = goTools{m}
+	m.setAccess(&Access{GatewayBase: "http://127.0.0.1:9/v1"})
+	if menu := get(t, base+"/api/chat/engine"); menu["pwcode"] != false || !strings.Contains(fmt.Sprint(menu["reason"]), "pw code needs ACTIVATE") {
+		t.Fatalf("before: %v", menu)
+	}
+	store := func(v any) {
+		b, _ := json.Marshal(v)
+		if err := os.WriteFile(filepath.Join(creds, ".credentials"), b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store(map[string]any{"currentIdentity": "a", "identities": map[string]any{
+		"a": map[string]any{"server": "a.example", "apikey": "key-a"},
+	}})
+	if menu := get(t, base+"/api/chat/engine"); menu["pwcode"] != true || menu["default"] != "pwcode" {
+		t.Errorf("after pw auth at a terminal: %v", menu)
+	}
+	store(map[string]any{"identities": map[string]any{}})
+	if menu := get(t, base+"/api/chat/engine"); menu["pwcode"] != false {
+		t.Errorf("after signing the pw CLI out: %v", menu)
 	}
 }
