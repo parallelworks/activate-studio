@@ -107,6 +107,10 @@ type pwAvail struct {
 	// ttl is how long the answer holds: a minute, and longer when this
 	// host's pw code did not start, so a chat does not wait on it often.
 	ttl time.Duration
+	// cli is whether this computer gave the Studio an ACTIVATE credential
+	// then (studioSignedIn): the pw CLI signed in or out at a terminal
+	// tells the Studio nothing, so a read that finds it changed asks again.
+	cli bool
 }
 
 func (m *Module) pwSealer() *keycookie.Sealer {
@@ -198,8 +202,9 @@ func (m *Module) pwcodeUnavailable(ctx context.Context, r *http.Request) string 
 // this viewer from pw code here (pwAvail.barred).
 func (m *Module) pwcodeAvailability(ctx context.Context, r *http.Request) (string, bool) {
 	who := userID(r)
+	cli := m.studioSignedIn()
 	m.pw.mu.Lock()
-	if a, ok := m.pw.avail[who]; ok && time.Since(a.at) < a.ttl {
+	if a, ok := m.pw.avail[who]; ok && time.Since(a.at) < a.ttl && a.cli == cli {
 		m.pw.mu.Unlock()
 		return a.why, a.barred
 	}
@@ -209,9 +214,15 @@ func (m *Module) pwcodeAvailability(ctx context.Context, r *http.Request) (strin
 	if m.pw.avail == nil {
 		m.pw.avail = map[string]pwAvail{}
 	}
-	m.pw.avail[who] = pwAvail{why: why, barred: barred, at: time.Now(), ttl: ttl}
+	m.pw.avail[who] = pwAvail{why: why, barred: barred, at: time.Now(), ttl: ttl, cli: cli}
 	m.pw.mu.Unlock()
 	return why, barred
+}
+
+// studioSignedIn says whether this computer gives the Studio an ACTIVATE
+// credential (PW_API_KEY, or the pw CLI signed in), read afresh: cheap.
+func (m *Module) studioSignedIn() bool {
+	return m.pf != nil && m.pf.HasActivate()
 }
 
 // forgetPWCodeAvailability drops what was kept of whether pw code is
@@ -250,7 +261,16 @@ func (m *Module) pwcodeCheck(ctx context.Context, r *http.Request) (string, bool
 		return "", false, time.Minute
 	}
 	needs := "pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Accounts."
-	if f := m.A.Providers.PlatformAvailable; f == nil || !f(r, userID(r)) || m.GatewayKey() == "" {
+	signedIn := func() bool {
+		f := m.A.Providers.PlatformAvailable
+		return f != nil && f(r, userID(r)) && m.GatewayKey() != ""
+	}
+	// The credential the chat keeps is read again by the routes that use
+	// it; a sign-in at a terminal reaches it here first.
+	if !signedIn() && m.pf != nil {
+		m.refreshAccess(r, 0)
+	}
+	if !signedIn() {
 		return needs, true, time.Minute
 	}
 	if err := m.localPWCodeRefused(); err != nil {

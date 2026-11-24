@@ -3,7 +3,7 @@ import type { PwCodePicker } from '@parallelworks/code'
 import type { BoundSetting } from '@parallelworks/ui/ai'
 import { AgentModelControls } from '../code/AgentModelControls'
 import { pwCode } from './api'
-import { readEngine, useEngine } from '../chatEngine'
+import { engineInfo, useEngine } from '../chatEngine'
 import { onPick, pickModel, pickedModel } from './newChatPick'
 import { usePlatformModels } from './session/usePlatformModels'
 import { PwCodeWords } from './PWCodeSession'
@@ -32,7 +32,7 @@ export function NewChatModel({ conversationId }: { conversationId: string | null
     fetch('/api/code/sessions').then(r => (r.ok ? r.json() : null))
       .then((d: { machines?: MachineFacts[] } | null) => { if (!gone) setMachine(d?.machines?.find(m => m.id === STUDIO_MACHINE) ?? {}) })
       .catch(() => {})
-    void readEngine(conversationId)
+    void engineInfo(conversationId)
     return () => { gone = true }
   }, [conversationId])
   const [pick, setPick] = useState(() => pickedModel(conversationId))

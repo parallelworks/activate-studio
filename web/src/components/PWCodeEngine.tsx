@@ -92,9 +92,17 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
     // Studio's tools, changes what answers.
     window.addEventListener('ade:model-access-changed', read)
     window.addEventListener('ade-pwcode-fallback', read)
+    // So does one made outside the Studio (the pw CLI at a terminal), which
+    // nothing tells the page of: read again when the person comes back to
+    // the tab. Shown and focused at once make one read (readEngine).
+    const back = () => { if (document.visibilityState === 'visible') read() }
+    document.addEventListener('visibilitychange', back)
+    window.addEventListener('focus', back)
     return () => {
       window.removeEventListener('ade:model-access-changed', read)
       window.removeEventListener('ade-pwcode-fallback', read)
+      document.removeEventListener('visibilitychange', back)
+      window.removeEventListener('focus', back)
     }
   }, [read])
   // Read again each time the menu opens and when a reply ends: cheap, and
