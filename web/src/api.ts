@@ -497,7 +497,15 @@ export interface FileContent {
   /** Why a file of a library on another system has no indexed text when
    *  the index is the reason: the library is indexing now, or the file
    *  changed after its last pass (indexedAt, ISO). */
-  index?: { state: 'indexing' } | { state: 'newer'; indexedAt: string }
+  /** Why a file with no text in the index has none, when that is the
+   *  index: indexing now, or the file is newer than the index. A library
+   *  on another system says when its last pass was; one on this computer
+   *  says how often its background sync runs (seconds, 0 when paused) and
+   *  what indexes the change at once, or that it has no index yet. */
+  index?: { state: 'indexing' }
+    | { state: 'newer'; indexedAt: string }
+    | { state: 'newer'; syncEvery: number; catchUp: 'sync' | 'rebuild' }
+    | { state: 'unindexed'; catchUp: 'sync' | 'rebuild' }
 }
 
 /** A search's scope and refined fields (refine.ts on the server). */

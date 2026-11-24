@@ -47,3 +47,30 @@ describe('the Indexed text tab of a file with no text in the index', () => {
     expect(await screen.findByText('No text is stored in the index for this file.')).toBeInTheDocument()
   })
 })
+
+describe('the Indexed text tab of a file in a library on this computer', () => {
+  it('says the background sync adds a new file, and how to add it at once', async () => {
+    serve({ state: 'newer', syncEvery: 300, catchUp: 'sync' })
+    await indexedTab()
+    expect(await screen.findByText("Added or changed since the library's last index pass. The background sync, every 5 minutes, adds its text; Sync now at the bottom of the navigation adds it at once.")).toBeInTheDocument()
+    expect(screen.queryByText(/No text is stored/)).toBeNull()
+  })
+
+  it('names Rebuild for a library built of a folder here', async () => {
+    serve({ state: 'newer', syncEvery: 60, catchUp: 'rebuild' })
+    await indexedTab()
+    expect(await screen.findByText(/The background sync, every minute, adds its text; Rebuild in Settings, Indexing, Libraries adds it at once\./)).toBeInTheDocument()
+  })
+
+  it('says the sync is paused when it is', async () => {
+    serve({ state: 'newer', syncEvery: 0, catchUp: 'sync' })
+    await indexedTab()
+    expect(await screen.findByText(/The background sync is paused, so Sync now at the bottom of the navigation adds its text\./)).toBeInTheDocument()
+  })
+})
+
+it('says a library on this computer with no index yet has none, and how to build it', async () => {
+  serve({ state: 'unindexed', catchUp: 'sync' })
+  await indexedTab()
+  expect(await screen.findByText('This library has no index yet. Build index in Settings, Indexing, Building adds its text.')).toBeInTheDocument()
+})

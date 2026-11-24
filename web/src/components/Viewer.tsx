@@ -366,9 +366,27 @@ export function findPattern(terms: string[]): RegExp {
 
 /** Why the Indexed text tab is empty: the library is indexing, the file
  *  changed after its last pass, or it was indexed and has no text. */
+/** The background sync's interval in words; it runs a minute apart at
+ *  the least. */
+function syncEvery(sec: number): string {
+  const min = Math.round(Math.max(sec, 60) / 60)
+  if (min < 2) return 'minute'
+  if (min < 120) return `${min} minutes`
+  const h = Math.round(min / 60)
+  return h < 48 ? `${h} hours` : `${Math.round(h / 24)} days`
+}
+
 function noIndexedText(file: FileContent, isImage: boolean): string {
   const ix = file.index
   if (ix?.state === 'indexing') return 'Not indexed yet. The library is indexing now; its text appears here when that ends.'
+  if (ix?.state === 'unindexed') {
+    return `This library has no index yet. ${ix.catchUp === 'sync' ? 'Build index in Settings, Indexing, Building' : 'Rebuild in Settings, Indexing, Libraries'} adds its text.`
+  }
+  if (ix?.state === 'newer' && 'catchUp' in ix) {
+    const now = ix.catchUp === 'sync' ? 'Sync now at the bottom of the navigation' : 'Rebuild in Settings, Indexing, Libraries'
+    if (!(ix.syncEvery > 0)) return `Added or changed since the library's last index pass. The background sync is paused, so ${now} adds its text.`
+    return `Added or changed since the library's last index pass. The background sync, every ${syncEvery(ix.syncEvery)}, adds its text; ${now} adds it at once.`
+  }
   if (ix?.state === 'newer') {
     const at = new Date(ix.indexedAt)
     const when = Number.isNaN(at.getTime()) ? '' : ` on ${at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`

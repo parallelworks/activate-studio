@@ -447,6 +447,9 @@ func (m *Module) file(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if note := localIndexNote(lib, sub, out); note != nil {
+			out.Set("index", note)
+		}
 		writeJSON(w, 200, out.Set("path", rel))
 		return nil
 	}
@@ -469,6 +472,9 @@ func (m *Module) file(w http.ResponseWriter, r *http.Request) error {
 	out, err := ReadFileContent(rel, root, m.cacheRoot(lib))
 	if err != nil {
 		return err
+	}
+	if note := localIndexNote(lib, rel, out); note != nil {
+		out.Set("index", note)
 	}
 	writeJSON(w, 200, out)
 	return nil

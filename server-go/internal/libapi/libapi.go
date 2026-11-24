@@ -109,6 +109,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	// The library write routes, builds and read-through settings: Go's in
 	// Node-free mode. With Node beside, they stay Node's, which keeps the
 	// libraries it builds and syncs in its own memory.
+	kb.LocalIndexing = s.localIndexing
 	if a.NodeFree() {
 		mux.HandleFunc("POST /api/libraries", h(s.addLibrary))
 		mux.HandleFunc("DELETE /api/libraries/{id}", h(s.removeLibrary))
