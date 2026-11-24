@@ -605,6 +605,18 @@ func (m *Module) queueSpaceBuild(w who, owner, id string, after time.Duration, t
 	})
 }
 
+// spaceQueued is search.IndexQueued: a build of the space at indexRoot
+// waits for its changes to settle, or for the build under way to end.
+func (m *Module) spaceQueued(indexRoot string) bool {
+	o, d, err := m.Users.FindRoot(indexRoot)
+	if err != nil || d == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.rebuilds[o+"\x00"+d.ID] != nil
+}
+
 // spaceBuild runs the build, or waits for one under way to finish, so
 // what changed during it is indexed too.
 func (m *Module) spaceBuild(w who, owner, id string, tries int) {

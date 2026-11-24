@@ -32,6 +32,8 @@ type spaceFake struct {
 	handed []string
 	// down is why the space cannot be reached, as a 409; "" when it can.
 	down string
+	// changed is the libraries Changed was told of.
+	changed []string
 }
 
 func (s *spaceFake) All(*http.Request) ([]kbpkg.Library, error) { return s.libs, nil }
@@ -99,7 +101,9 @@ func (s *spaceFake) Move(_ *http.Request, lib kbpkg.Library, rels []string, dest
 func (s *spaceFake) Delete(*http.Request, kbpkg.Library, []string) ([]string, []kbpkg.Skipped, error) {
 	return nil, nil, nil
 }
-func (s *spaceFake) Changed(*http.Request, kbpkg.Library, []string) {}
+func (s *spaceFake) Changed(_ *http.Request, lib kbpkg.Library, _ []string) {
+	s.changed = append(s.changed, lib.ID)
+}
 
 type whereBed struct {
 	m     *Module

@@ -494,6 +494,10 @@ export interface FileContent {
   content: string | null
   source: 'raw' | 'extracted' | 'none'
   format?: 'markdown' | 'text'
+  /** Why a file of a library on another system has no indexed text when
+   *  the index is the reason: the library is indexing now, or the file
+   *  changed after its last pass (indexedAt, ISO). */
+  index?: { state: 'indexing' } | { state: 'newer'; indexedAt: string }
 }
 
 /** A search's scope and refined fields (refine.ts on the server). */
