@@ -8,7 +8,8 @@
 #
 # The image bakes in far more than app.def, so a change anywhere in what it
 # copies or builds runs this too; otherwise a break would first surface when
-# someone builds the image by hand.
+# someone builds the image by hand. web/ and docs/ are the exception (see the
+# changes job): ci.yml builds and tests both on every PR.
 # The workflow starts on every PR and push so build-test can be a required
 # check: the changes job decides whether the image is affected, and a
 # skipped build-test counts as passing.
@@ -101,10 +102,15 @@ jobs:
           esac
           if [ -n "$files" ]; then
             image=false
+            # Not web/ or docs/: the image builds the web client as ci.yml's
+            # build-and-test does, from the same lockfile on the same Node,
+            # and copies docs/ in as files nothing in the build or the
+            # smoke test reads. A change to either alone is tested there,
+            # and would only make this job build GUFI and the image again.
             while read -r f; do
               case "$f" in
                 deploy/app.def|.github/workflows/container.yaml|\
-                indexer/*|server/*|web/*|docs/*|extensions-starter/*|\
+                indexer/*|server/*|extensions-starter/*|\
                 package.json|pnpm-lock.yaml|pnpm-workspace.yaml|patches/*)
                   echo "image input changed: $f"; image=true; break ;;
               esac
