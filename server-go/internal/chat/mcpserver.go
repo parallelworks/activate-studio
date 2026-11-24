@@ -26,22 +26,28 @@ var mcpExposed = []string{"search_kb", "read_kb_file", "read_original", "list_kb
 
 const mcpProtocolVersion = "2025-06-18"
 
-// exposedTools is the corpus tools this deployment exposes, in TOOL_SPECS
+// exposedSpecs is the corpus tools this deployment exposes, in TOOL_SPECS
 // order, without those turned off. mcpExposed holds only tools that read.
-func (m *Module) exposedTools() []json.RawMessage {
-	disabled := map[string]bool{}
-	for _, n := range m.eff().DisabledTools {
-		disabled[n] = true
-	}
-	out := []json.RawMessage{}
+func (m *Module) exposedSpecs() []ToolSpec {
+	disabled := m.eff().DisabledTools
+	var out []ToolSpec
 	for _, s := range builtinSpecs {
-		if contains(mcpExposed, s.Name) && !disabled[s.Name] {
-			// Each only reads (MCP's readOnlyHint), so an agent in a read-only
-			// mode may call it.
-			b, _ := jsonobj.Marshal(reqbody.O("name", s.Name, "description", s.Description, "inputSchema", s.Parameters,
-				"annotations", reqbody.O("readOnlyHint", true, "destructiveHint", false, "openWorldHint", false)))
-			out = append(out, b)
+		if contains(mcpExposed, s.Name) && !contains(disabled, s.Name) {
+			out = append(out, s)
 		}
+	}
+	return out
+}
+
+// exposedTools is exposedSpecs as tools/list gives them.
+func (m *Module) exposedTools() []json.RawMessage {
+	out := []json.RawMessage{}
+	for _, s := range m.exposedSpecs() {
+		// Each only reads (MCP's readOnlyHint), so an agent in a read-only
+		// mode may call it.
+		b, _ := jsonobj.Marshal(reqbody.O("name", s.Name, "description", s.Description, "inputSchema", s.Parameters,
+			"annotations", reqbody.O("readOnlyHint", true, "destructiveHint", false, "openWorldHint", false)))
+		out = append(out, b)
 	}
 	return out
 }
@@ -146,22 +152,23 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 		if s, ok := jsonobj.String(param("protocolVersion")); ok {
 			pv = s
 		}
-		return reqbody.OK(w, rpcResult(id, reqbody.O("protocolVersion", pv, "capabilities", reqbody.O("tools", jsonobj.New()),
-			"serverInfo", reqbody.O("name", "activate-studio", "version", "0.1.0"))))
+		res := reqbody.O("protocolVersion", pv, "capabilities", reqbody.O("tools", jsonobj.New()),
+			"serverInfo", reqbody.O("name", "activate-studio", "version", "0.1.0"))
+		// Which tool to use when, for a client that puts a server's
+		// instructions in its model's context.
+		if in := m.mcpInstructions(m.mcpSpecs(r, person, chat), chatGrant); in != "" {
+			res.SetValue("instructions", in)
+		}
+		return reqbody.OK(w, rpcResult(id, res))
 	case "ping":
 		return reqbody.OK(w, rpcResult(id, jsonobj.New()))
 	case "tools/list":
 		if person {
 			m.bridgeSeen(r, method)
-			tools := []json.RawMessage{}
-			for _, s := range m.personTools(r, m.personCtx(r)) {
-				tools = append(tools, chatToolJSON(s))
-			}
-			return reqbody.OK(w, rpcResult(id, reqbody.O("tools", tools)))
 		}
-		if chatGrant {
+		if person || chatGrant {
 			tools := []json.RawMessage{}
-			for _, s := range m.chatTools(r, grantDelegates(chat.Conv)) {
+			for _, s := range m.mcpSpecs(r, person, chat) {
 				tools = append(tools, chatToolJSON(s))
 			}
 			return reqbody.OK(w, rpcResult(id, reqbody.O("tools", tools)))

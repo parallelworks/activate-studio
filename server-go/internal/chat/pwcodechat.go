@@ -526,30 +526,23 @@ func sameCluster(a, b string) bool {
 // its tools to reach for, by the names pw code gives them.
 func (m *Module) pwcodePrompt(tools []ToolSpec) string {
 	e := m.eff()
-	has := map[string]bool{}
-	for _, s := range tools {
-		has[s.Name] = true
-	}
 	t := func(n string) string { return studioToolPrefix + n }
+	g := newToolGuide(specNames(tools), t, true)
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are answering in %s, an ACTIVATE Studio, through the person's chat.", e.AppName)
-	b.WriteString(" The studio MCP server is this Studio's index and tools. It answers from the index in under a second, across every library, including libraries on hosts this session cannot reach, so use it before the shell for anything about the libraries and their files:")
-	b.WriteString("\n- Find files with " + t("search_kb") + " (file names, the words inside files, and meaning), not find, grep or ls. " + t("list_libraries") + " names the libraries; its library argument takes an id or \"all\", and without one it searches the libraries the person chose for this chat.")
-	b.WriteString("\n- Ask " + t("query_corpus") + " about many files at once: the largest, newest or oldest, recent changes, totals by type, and the biggest folders.")
-	b.WriteString("\n- Read a file with " + t("read_kb_file") + ", which returns the text the index holds, PDFs and Office files included. " + t("read_original") + " opens the file itself, and " + t("list_kb_dir") + " lists a folder.")
-	if has["write_kb_file"] {
-		b.WriteString("\n- Save what the person asks to keep with " + t("write_kb_file") + " (Markdown, PDF, Word or Excel), which writes it into the library and indexes it, and change a library file with " + t("edit_kb_file") + ". Its description gives the document layout and writing style, and its result reports a check of the writing.")
+	b.WriteString(" The studio MCP server is this Studio's index and tools. " + guideLead)
+	b.WriteString(g.read())
+	if g.has["write_kb_file"] {
+		b.WriteString(g.write() + " Its description gives the document layout and writing style, and its result reports a check of the writing.")
 		if _, err := os.Stat(filepath.Join(m.A.Cfg.KBRoot, conventionsFile)); err == nil {
 			b.WriteString(" This library's conventions, " + conventionsFile + " at its top, set its own writing and document style; read it with " + t("read_kb_file") + " before you write a document, and follow it where it differs.")
 		}
 	}
-	if has["delegate"] {
+	if g.has["delegate"] {
 		b.WriteString("\n- When the person asks to delegate work, hand it to an agent or have it done in the background, call " + t("delegate") + " with the objective (and the agent instructions they name): it starts a pw code session of its own in a library folder, and the person follows it on the Code page. Do not do delegated work yourself in this chat. Give the person the link its result names, and check on it with " + t("agent_status") + " when they ask.")
 	}
-	if has["run_workflow"] {
-		b.WriteString("\n- Platform workflows, clusters and runs: " + t("list_workflows") + ", " + t("run_workflow") + ", " + t("workflow_runs") + " and " + t("hpc_status") + ".")
-	}
-	b.WriteString("\nUse the shell for work these tools do not cover, such as running code. Name each file you used by its library path; " + t("show_in_viewer") + " gives a link that opens it in the Studio. Your working folder is where you may write other files the person asks for.")
+	b.WriteString(g.platform())
+	b.WriteString(g.rest() + " Your working folder is where you may write other files the person asks for.")
 	if m := strings.TrimSpace(e.KbMission); m != "" {
 		b.WriteString("\n\nAbout the libraries: ")
 		b.WriteString(m)

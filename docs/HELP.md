@@ -233,6 +233,8 @@ Without curl there, use an ACTIVATE API key instead (**No curl there? Use an ACT
 
 Every pw code session on that machine then has the tools a pw code chat of yours gets here, as you: your own libraries, and the platform's tools with your own ACTIVATE sign-in in this Studio, never the Studio's account. ACTIVATE checks the credential and passes the Studio only who you are. This works where the Studio is opened through ACTIVATE and MCP access is on (Settings, External access). A project whose `.mcp.json` lists MCP servers of its own replaces the ones in your user scope, so add the Studio to that project's servers too to use it there.
 
+Each tool's description says what it does better than `find` or `grep`: **search_kb** finds files by name, by the words inside them (PDFs and Office files included) and by meaning, **query_corpus** answers about many files at once (the newest, the largest, the biggest folders), and **read_kb_file** gives a file's text, in libraries on other hosts too. The Studio also sends a short guide to which tool to use when, as its MCP instructions. A client that gives its model a server's instructions, Claude Code among them, has the guide in every session. pw code passes on the tools and not the instructions (through v7.139), so a pw code session you start yourself has the descriptions; one the Studio starts for a chat has the guide in its prompt. If a session searches with the shell instead, ask it to use the studio tools.
+
 # More
 
 ## Getting around
