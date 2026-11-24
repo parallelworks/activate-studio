@@ -4,6 +4,7 @@ import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getEngine, getLabelScope, getPersona, hasEffort, setEffort } from './labelScope'
 import { fetchModels } from './api'
 import { firstMessagePick } from './pwcode/newChatPick'
+import { foldRecovered, recoveryTracker } from './recoveredSteps'
 import { rememberToolCommands } from './components/GufiCommands'
 
 async function listModels(): Promise<ModelsList> {
@@ -71,6 +72,8 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
     }
   }
   signal?.addEventListener('abort', interruptPWCode, { once: true })
+  // A failed step a later call recovers is settled when that call ends.
+  const recovery = recoveryTracker()
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -98,6 +101,7 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
         // Tool activity streams as structured part deltas; the package
         // renders them as tool blocks (running → resolved) in the thread.
         if (payload.phase === 'call') {
+          recovery.start(payload.id ?? payload.name, payload.name, payload.args ?? '')
           handlers.onPart?.({
             type: 'tool_start',
             id: payload.id ?? payload.name,
@@ -117,6 +121,9 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
             result: payload.summary ?? '',
             isError: !!payload.error,
           })
+          for (const r of recovery.end(payload.id ?? payload.name, payload.summary ?? '', !!payload.error)) {
+            handlers.onPart?.({ type: 'tool_end', id: r.id, result: r.result, isError: false })
+          }
         }
         break
       case 'approval':
@@ -246,7 +253,7 @@ export async function deleteConversations(ids: string[]): Promise<{ deleted: str
   }).then(r => json<{ deleted: string[]; skipped: string[] }>(r))
 }
 
-interface NoteMessage { id: string; content?: string | null }
+interface NoteMessage { id: string; content?: string | null; parts?: { kind?: string; id?: string; name?: string; args?: string; status?: string; result?: string }[] }
 
 /** The note that opens a chat continued from a pw code session says where
  *  it came from; it is not a reply, so it has nothing to regenerate. The
@@ -255,8 +262,10 @@ interface NoteMessage { id: string; content?: string | null }
  *  styles.css hides Regenerate in the message holding that link. Notes
  *  saved before this are marked too. */
 export const CONTINUED_NOTE_MARK = 'note=continued'
+// It also settles the failed steps a later call recovered (recoveredSteps.ts).
 export function markNotes<T extends { messages?: NoteMessage[] }>(c: T): T {
   for (const m of c.messages ?? []) {
+    if (Array.isArray(m.parts)) m.parts = foldRecovered(m.parts)
     if (m.id.startsWith('note-continued-') && m.content && !m.content.includes(CONTINUED_NOTE_MARK)) {
       m.content = m.content.replace('](#view=code?', `](#view=code?${CONTINUED_NOTE_MARK}&`)
     }

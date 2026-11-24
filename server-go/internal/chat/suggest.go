@@ -96,9 +96,11 @@ func SuggestNext(c *conversations.Conversation) *jsonobj.Object {
 		}
 		return *p.Result
 	}
+	// A failed call the turn recovered from, by a later call of the same
+	// tool on the same target that went through, needs no retry.
 	var failed []conversations.Part
-	for _, p := range calls {
-		if p.Status == "error" {
+	for i, p := range calls {
+		if p.Status == "error" && !recovered(calls, i, argsOf) {
 			failed = append(failed, p)
 		}
 	}
@@ -165,7 +167,7 @@ func SuggestNext(c *conversations.Conversation) *jsonobj.Object {
 		}
 	}
 	if len(failed) > 0 && len(out) < 3 {
-		push("Retry the "+failed[0].Name+" step that failed and explain what went wrong", "a tool call failed")
+		push("Retry the step that failed"+stepWords(failed[0].Name, argsOf(failed[0]))+" and explain what went wrong", "a tool call failed")
 	}
 	if len(calls) == 0 && u16(content) > 400 {
 		push("Give me the sources behind that, as clickable paths", "a long answer without tool calls")
@@ -176,4 +178,50 @@ func SuggestNext(c *conversations.Conversation) *jsonobj.Object {
 		list = append(list, reqbody.O("text", s.Text, "why", s.Why))
 	}
 	return reqbody.O("after", m.ID, "suggestions", list)
+}
+
+// stepTarget is what a call works on: the file, folder, run or name its
+// arguments give, "" for none.
+func stepTarget(a map[string]any) string {
+	for _, k := range []string{"path", "from", "run", "name"} {
+		if v := strings.TrimSpace(jsString(a[k])); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// recovered says whether calls[i], which failed, was followed by a call of
+// the same tool on the same target that went through.
+func recovered(calls []conversations.Part, i int, args func(conversations.Part) map[string]any) bool {
+	target := stepTarget(args(calls[i]))
+	for _, later := range calls[i+1:] {
+		if later.Name == calls[i].Name && later.Status != "error" && later.Status != "running" && stepTarget(args(later)) == target {
+			return true
+		}
+	}
+	return false
+}
+
+// stepWords names a step in the person's words, as " (writing a.xlsx)",
+// never by its tool's name; "" when there is nothing plain to say.
+func stepWords(name string, a map[string]any) string {
+	target := stepTarget(a)
+	verb := map[string]string{
+		"write_kb_file": "writing", "edit_kb_file": "editing", "read_kb_file": "reading",
+		"read_original": "opening", "list_kb_dir": "listing", "move_kb_files": "moving",
+		"rename_kb_file": "renaming", "copy_kb_files": "copying", "delete_kb_files": "deleting",
+		"run_workflow": "running", "watch_run": "following", "workflow_run_detail": "reading run",
+		"get_workflow": "reading workflow", "validate_workflow": "checking workflow",
+	}[name]
+	switch {
+	case name == "search_kb":
+		if q := strings.TrimSpace(jsString(a["query"])); q != "" {
+			return " (searching for " + q + ")"
+		}
+		return " (a search)"
+	case verb != "" && target != "":
+		return " (" + verb + " " + target + ")"
+	}
+	return ""
 }
