@@ -231,6 +231,9 @@ func (e *Engine) RemoteFile(ctx context.Context, root, rel string) (*kb.Obj, err
 	dir, name := path.Split(sub)
 	if it := e.IndexedTextState(ctx, root, strings.TrimSuffix(dir, "/"), name); it.State == "text" {
 		o = o.Set("truncated", kb.UTF16Len(it.Text) > PreviewBytes).Set("content", kb.SliceUTF16(it.Text, PreviewBytes)).Set("format", "text").Set("source", "extracted")
+		if note := staleNote(t, root, o); note != nil {
+			o = o.Set("index", note)
+		}
 		return o, nil
 	}
 	if note := indexNote(t, root, o); note != nil {
@@ -261,6 +264,25 @@ func indexNote(t *libraries.Target, root string, o *kb.Obj) *kb.Obj {
 		return kb.O("state", "newer", "indexedAt", t.BuiltAt)
 	}
 	return nil
+}
+
+// staleNote is why the indexed text shown for a file of a library on
+// another system is not the file's: the file changed after the library's
+// last pass, so its text is from before; the library may be indexing now.
+// nil when the file is no newer than that pass, or its time is unknown.
+func staleNote(t *libraries.Target, root string, o *kb.Obj) *kb.Obj {
+	built, err := time.Parse(time.RFC3339, t.BuiltAt)
+	if err != nil {
+		return nil
+	}
+	mtime, _ := o.Get("mtime")
+	if m, ok := mtime.(int64); !ok || m <= built.Unix() {
+		return nil
+	}
+	if t.Def.State == "building" || t.Def.State == "updating" || (IndexQueued != nil && IndexQueued(root)) {
+		return kb.O("state", "indexing")
+	}
+	return kb.O("state", "newer", "indexedAt", t.BuiltAt)
 }
 
 // noSourceRoot is why a library on another system opens no file: it was

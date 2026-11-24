@@ -42,3 +42,31 @@ func TestAFileWithoutIndexedTextSaysWhy(t *testing.T) {
 		t.Errorf("never built, or its time unknown: %q", got)
 	}
 }
+
+// Indexed text shown for a file of a library on another system that
+// changed after the library's last pass says it is from before.
+func TestIndexedTextOlderThanTheFileSaysSo(t *testing.T) {
+	file := func(mtime int64) *kb.Obj { return kb.O("path", "a.xlsx", "mtime", mtime, "content", "old rows") }
+	built := "2026-11-23T10:00:00Z" // 1795428000
+	ready := &libraries.Target{Def: libraries.UserDef{State: "ready"}, BuiltAt: built}
+	if n := staleNote(ready, "remote://x", file(1795427000)); n != nil {
+		t.Errorf("unchanged since the pass: %v", n)
+	}
+	n := staleNote(ready, "remote://x", file(1795429000))
+	if st, _ := n.Get("state"); st != "newer" {
+		t.Fatalf("changed after the pass: %v", n)
+	}
+	if at, _ := n.Get("indexedAt"); at != built {
+		t.Errorf("indexedAt %v", at)
+	}
+	building := &libraries.Target{Def: libraries.UserDef{State: "building"}, BuiltAt: built}
+	if st, _ := staleNote(building, "remote://x", file(1795429000)).Get("state"); st != "indexing" {
+		t.Errorf("changed and indexing: %v", st)
+	}
+	if n := staleNote(building, "remote://x", file(1795427000)); n != nil {
+		t.Errorf("indexing, file unchanged: %v", n)
+	}
+	if n := staleNote(&libraries.Target{Def: libraries.UserDef{State: "ready"}}, "remote://y", file(1795429000)); n != nil {
+		t.Errorf("pass time unknown: %v", n)
+	}
+}

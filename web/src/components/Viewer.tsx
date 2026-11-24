@@ -376,14 +376,32 @@ function syncEvery(sec: number): string {
   return h < 48 ? `${h} hours` : `${Math.round(h / 24)} days`
 }
 
+const catchUpNow = (c: 'sync' | 'rebuild') => c === 'sync' ? 'Sync now at the bottom of the navigation' : 'Rebuild in Settings, Indexing, Libraries'
+
+const shortDate = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
+/** The line above indexed text that is older than the file, or null. */
+function staleIndexedText(file: FileContent): string | null {
+  const ix = file.index
+  if (!ix || ix.state === 'unindexed') return null
+  const changed = `This text is from before the file changed on ${shortDate(new Date(file.mtime * 1000))}.`
+  if (ix.state === 'indexing') return `${changed} The library is indexing now; the new text appears here when that ends.`
+  if ('catchUp' in ix) {
+    if (!(ix.syncEvery > 0)) return `${changed} The background sync is paused, so ${catchUpNow(ix.catchUp)} updates it.`
+    return `${changed} It updates at the next background sync (every ${syncEvery(ix.syncEvery)}), or at once with ${catchUpNow(ix.catchUp)}.`
+  }
+  const at = new Date(ix.indexedAt)
+  return `${changed} The library's last index pass was${Number.isNaN(at.getTime()) ? ' before that' : ` on ${shortDate(at)}`}; rebuild the library to update it.`
+}
+
 function noIndexedText(file: FileContent, isImage: boolean): string {
   const ix = file.index
   if (ix?.state === 'indexing') return 'Not indexed yet. The library is indexing now; its text appears here when that ends.'
   if (ix?.state === 'unindexed') {
-    return `This library has no index yet. ${ix.catchUp === 'sync' ? 'Build index in Settings, Indexing, Building' : 'Rebuild in Settings, Indexing, Libraries'} adds its text.`
+    return `This library has no index yet. ${ix.catchUp === 'sync' ? 'Build index in Settings, Indexing, Building' : catchUpNow(ix.catchUp)} adds its text.`
   }
   if (ix?.state === 'newer' && 'catchUp' in ix) {
-    const now = ix.catchUp === 'sync' ? 'Sync now at the bottom of the navigation' : 'Rebuild in Settings, Indexing, Libraries'
+    const now = catchUpNow(ix.catchUp)
     if (!(ix.syncEvery > 0)) return `Added or changed since the library's last index pass. The background sync is paused, so ${now} adds its text.`
     return `Added or changed since the library's last index pass. The background sync, every ${syncEvery(ix.syncEvery)}, adds its text; ${now} adds it at once.`
   }
@@ -691,6 +709,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
     }
   }
 
+  const stale = file.content == null ? null : staleIndexedText(file)
   const indexedView = file.content == null
     ? <p className="muted pad">{noIndexedText(file, isImage)}</p>
     : (
@@ -698,6 +717,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
         {previewGone !== null && isOffice && (
           <p className="muted preview-gone-note">A preview of this file needs LibreOffice, so this is its indexed text.</p>
         )}
+        {stale && <p className="muted index-stale" role="status">{stale}</p>}
         <Callout tone="warning" size="sm" className="index-note">This is the text representation stored in the search index, not the original file.</Callout>
         {(isMarkdown || extractedMarkdown) && file.content.length <= MARKDOWN_FORMAT_MAX
           ? <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
