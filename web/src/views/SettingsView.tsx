@@ -175,15 +175,13 @@ export type IndexingTab = typeof INDEXING_TABS[number]['value']
 export type SettingsTab = GeneralTab | IndexingTab
 
 /** The section and tab an address names: a tab's id, a section's own id, or
- *  anything else for General's first tab. #view=settings:indexing, General's
- *  Indexing tab before Indexing was a section, opens Sync and search, where
- *  that tab's first settings are now; the rail opens the section on its
- *  first tab, Libraries. */
+ *  anything else for General's first tab. A section opens on its first tab,
+ *  by the rail or by its address: #view=settings:indexing opens Libraries. */
 export function settingsTarget(id: string | null | undefined): { section: SectionId; tab: SettingsTab; anchor?: 'branding' } {
   const general = GENERAL_TABS.find(t => t.value === id)
   if (general) return { section: 'general', tab: general.value }
   if (id === 'branding') return { section: 'general', tab: 'appearance', anchor: 'branding' }
-  if (id === 'indexing') return { section: 'indexing', tab: 'sync-search' }
+  if (id === 'indexing') return { section: 'indexing', tab: INDEXING_TABS[0].value }
   const indexing = INDEXING_TABS.find(t => t.value === id)
   if (indexing) return { section: 'indexing', tab: indexing.value }
   const sections: SectionId[] = ['general', 'transfers', 'accounts', 'access', 'tools', 'rag', 'previews', 'ext', 'workflows']

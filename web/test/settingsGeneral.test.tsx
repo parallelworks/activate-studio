@@ -76,7 +76,7 @@ describe('Settings, General tabs', () => {
     expect(settingsTarget('branding')).toEqual({ section: 'general', tab: 'appearance', anchor: 'branding' })
     // Libraries and the old Indexing tab moved to the Indexing section.
     expect(settingsTarget('libraries')).toEqual({ section: 'indexing', tab: 'libraries' })
-    expect(settingsTarget('indexing')).toEqual({ section: 'indexing', tab: 'sync-search' })
+    expect(settingsTarget('indexing')).toEqual({ section: 'indexing', tab: 'libraries' })
     expect(settingsTarget('nonsense')).toEqual({ section: 'general', tab: 'appearance' })
     // No tab shares an id with a section.
     for (const t of GENERAL_TABS) expect(settingsTarget(t.value).section).toBe('general')
