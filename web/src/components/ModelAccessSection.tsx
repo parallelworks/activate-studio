@@ -134,7 +134,8 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   const useActivate = async () => {
     setBusy(true); setError('')
     try {
-      await api('/api/me/model-key/clear', { body: {} })
+      // Only the endpoint: an ACTIVATE key kept beside it stays.
+      await api('/api/me/model-key/clear', { body: { which: 'endpoint' } })
       announceChange()
       setPending(null)
       await load(true)

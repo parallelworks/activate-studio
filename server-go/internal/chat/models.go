@@ -530,9 +530,19 @@ func putStatus(o *jsonobj.Object, st modelkeys.Status) {
 	}
 }
 
+// putKeyStatus adds "activate": the person's ACTIVATE key alone, beside
+// the fields that describe the key chat uses (their endpoint, else that
+// key).
+func (m *Module) putKeyStatus(o *jsonobj.Object, sub string) {
+	a := jsonobj.New()
+	putStatus(a, m.Keys.KeyStatus(sub))
+	reqbody.Put(o, "activate", a)
+}
+
 func (m *Module) keyStatusPayload(sub string) *jsonobj.Object {
 	o := reqbody.O("authEnabled", true, "verified", true, "gatewayHost", m.gatewayHostName())
 	putStatus(o, m.Keys.Status(sub))
+	m.putKeyStatus(o, sub)
 	reqbody.Put(o, "shared", m.Keys.Shared(sub))
 	// A key is no longer shared with the deployment: no one acts with
 	// another person's credential (Settings, Accounts).
@@ -556,19 +566,22 @@ func (m *Module) statusFor(r *http.Request, owner string) *jsonobj.Object {
 	}
 	o := reqbody.O("authEnabled", false, "verified", true, "single", true, "gatewayHost", m.gatewayHostName())
 	putStatus(o, m.Keys.Status(owner))
+	m.putKeyStatus(o, owner)
 	reqbody.Put(o, "shared", reqbody.O("active", false))
 	reqbody.Put(o, "sharingAllowed", false)
 	return o
 }
 
+// setKeyCookies writes what the person keeps in their browser: ade_mk
+// and, beside an ACTIVATE key, ade_me (cleared when there is nothing).
 func (m *Module) setKeyCookies(w http.ResponseWriter, sub string) {
-	for _, c := range KeyCookieJar(m.Keys.Seal(sub)) {
+	for _, c := range append(KeyCookieJar(m.Keys.Seal(sub)), EndpointCookieJar(m.Keys.SealEndpoint(sub))...) {
 		w.Header().Add("Set-Cookie", c)
 	}
 }
 
 func clearKeyCookies(w http.ResponseWriter) {
-	for _, c := range KeyCookieJar(nil) {
+	for _, c := range append(KeyCookieJar(nil), EndpointCookieJar(nil)...) {
 		w.Header().Add("Set-Cookie", c)
 	}
 }
@@ -641,17 +654,27 @@ func (m *Module) keyRoutes(h func(string, func(http.ResponseWriter, *http.Reques
 				return err
 			}
 			m.Keys.Hydrate(owner, r.Header.Get("Cookie"))
+			// Kept in the person's browser unless they said not to.
+			persist := true
+			if p, has := b.M()["persist"]; has && p == false {
+				persist = false
+			}
+			// A key with no base URL is the person's ACTIVATE key, one with
+			// a base URL their endpoint; saving one leaves the other.
 			if put {
 				key := jsTrim(b.Str("key"))
 				if key == "" {
 					return apierr.New(400, "key required")
 				}
-				if err := m.Keys.Set(owner, key, nil, nil); err != nil {
+				if err := m.Keys.SetPersist(owner, key, nil, nil, persist); err != nil {
 					return apierr.New(400, "%s", err.Error())
 				}
 			} else {
 				baseURL := modelkeys.NormalizeBaseURL(b.Get("baseUrl"))
-				stored := m.Keys.Resolve(owner)
+				var stored *modelkeys.Cred
+				if baseURL != nil {
+					stored = m.Keys.ResolveEndpoint(owner)
+				}
 				key := jsTrim(b.Str("key"))
 				if key == "" && baseURL != nil && stored != nil && stored.BaseURL != nil && *stored.BaseURL == *baseURL {
 					key = stored.Key
@@ -661,7 +684,7 @@ func (m *Module) keyRoutes(h func(string, func(http.ResponseWriter, *http.Reques
 				}
 				opts, err := optionsFor(b, baseURL, stored)
 				if err == nil {
-					err = m.Keys.Set(owner, key, baseURL, opts)
+					err = m.Keys.SetPersist(owner, key, baseURL, opts, persist)
 				}
 				if err != nil {
 					return apierr.New(400, "%s", err.Error())
@@ -671,11 +694,7 @@ func (m *Module) keyRoutes(h func(string, func(http.ResponseWriter, *http.Reques
 			}
 			m.A.Providers.ForgetCredential(owner)
 			if user(r) != nil {
-				if p, has := b.M()["persist"]; has && p == false {
-					clearKeyCookies(w)
-				} else {
-					m.setKeyCookies(w, owner)
-				}
+				m.setKeyCookies(w, owner)
 			}
 			return reqbody.OK(w, m.statusFor(r, owner))
 		})
@@ -687,10 +706,36 @@ func (m *Module) keyRoutes(h func(string, func(http.ResponseWriter, *http.Reques
 		if owner == "" {
 			return apierr.New(403, "not verified")
 		}
-		m.Keys.Clear(owner)
+		// which: "endpoint" or "activate" removes that one and leaves the
+		// other; without it, both go, as before.
+		which := r.URL.Query().Get("which")
+		if r.Body != nil && r.ContentLength != 0 {
+			b, err := reqbody.Read(r)
+			if err != nil {
+				return err
+			}
+			if s, ok := b.Get("which").(string); ok && s != "" {
+				which = s
+			}
+		}
+		switch which {
+		case "":
+			m.Keys.Clear(owner)
+		case "endpoint", "activate":
+			m.Keys.Hydrate(owner, r.Header.Get("Cookie"))
+			m.Keys.ClearOne(owner, which == "endpoint")
+		default:
+			return apierr.New(400, "which is endpoint or activate")
+		}
+		m.LLM.InvalidateProbes()
+		m.listings.clear()
 		m.A.Providers.ForgetCredential(owner)
 		if user(r) != nil {
-			clearKeyCookies(w)
+			if which == "" {
+				clearKeyCookies(w)
+			} else {
+				m.setKeyCookies(w, owner)
+			}
 		}
 		return reqbody.OK(w, m.statusFor(r, owner))
 	})
@@ -723,9 +768,14 @@ func (m *Module) keyRoutes(h func(string, func(http.ResponseWriter, *http.Reques
 			return err
 		}
 		m.Keys.Hydrate(owner, r.Header.Get("Cookie"))
-		stored := m.Keys.Resolve(owner)
 		typed := jsTrim(b.Str("key"))
 		baseURL := modelkeys.NormalizeBaseURL(b.Get("baseUrl"))
+		// With a base URL the stored key is the person's endpoint's;
+		// without one, the key chat uses.
+		stored := m.Keys.Resolve(owner)
+		if baseURL != nil {
+			stored = m.Keys.ResolveEndpoint(owner)
+		}
 		if baseURL == nil && stored != nil {
 			baseURL = stored.BaseURL
 		}

@@ -15,6 +15,7 @@ package platform
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,6 +55,15 @@ type Platform struct {
 	// SignInKey is the access token of a person's own sign-in made through
 	// the Studio, "" for none (internal/personal sets it).
 	SignInKey func(owner string) string
+	// OwnKeys is the person's ACTIVATE key and their own model endpoint as
+	// the Studio's key store holds them (owner is SingleOwner with sign-in
+	// off), each nil when absent; set by the chat track, where the keys are
+	// kept, so the viewer and every route read the same two.
+	OwnKeys func(r *http.Request, owner string) (key, endpoint *Cred)
+	// ClearOwnKey removes the one owner's stored ACTIVATE key where the Go
+	// server keeps the keys: only that key when an endpoint is kept beside
+	// it, else what is stored. Nil leaves it to Node (AccessChanged).
+	ClearOwnKey func(owner string)
 
 	// startupContext is PW_CONTEXT as the server started with it, which
 	// following the CLI restores.

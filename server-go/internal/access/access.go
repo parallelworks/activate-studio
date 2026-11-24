@@ -124,22 +124,30 @@ func (s *Routes) sources(v *platform.Viewer) (models, plat *jsonv.Object) {
 		status, _ = jsonv.Decode(v.KeyStatus)
 	}
 	dep := s.deploymentSource(v, single)
-	cred := v.Cred
-	mine := func(source string, host any) *jsonv.Object {
+	// The person's endpoint serves models only; their ACTIVATE key the
+	// platform, and models when they have no endpoint. A person may have
+	// both.
+	endpoint, key := v.EndpointCred(), v.KeyCred()
+	mine := func(source string, host any, cred *platform.Cred) *jsonv.Object {
+		last4, kind := jsonv.Path(status, "last4"), jsonv.Path(status, "kind")
+		if cred != v.Cred {
+			// The status the viewer carries describes its Cred, the other key.
+			last4, kind = nil, nil
+		}
 		return jsonv.NewObject("source", source, "host", host, "context", nil, "baseUrl", nullable(cred.BaseURL),
-			"last4", jsonv.Path(status, "last4"), "kind", jsonv.Path(status, "kind"))
+			"last4", last4, "kind", kind)
 	}
 	gw := hostOf(s.p.GatewayBase())
 	// The person's own platform sign-in comes before a pasted key, for
 	// models and the platform; an endpoint still serves models.
 	signIn := jsonv.NewObject("source", "signin", "host", gw, "context", nil)
 	switch {
-	case cred != nil && cred.BaseURL != "":
-		models = mine("endpoint", hostOf(cred.BaseURL))
+	case endpoint != nil:
+		models = mine("endpoint", hostOf(endpoint.BaseURL), endpoint)
 	case v.SignIn != "":
 		models = signIn
-	case cred != nil:
-		models = mine("key", gw)
+	case key != nil:
+		models = mine("key", gw, key)
 	case jsonv.Str(jsonv.Path(dep, "source")) != "none":
 		models = dep
 	case strings.TrimSuffix(s.p.Getenv("SIDECAR_MODEL_URL"), "/") != "":
@@ -150,8 +158,8 @@ func (s *Routes) sources(v *platform.Viewer) (models, plat *jsonv.Object) {
 	switch {
 	case v.SignIn != "":
 		plat = signIn
-	case cred != nil && cred.BaseURL == "":
-		plat = mine("key", gw)
+	case key != nil:
+		plat = mine("key", gw, key)
 	case single:
 		plat = dep
 	default:
@@ -264,10 +272,29 @@ func (s *Routes) source(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, platform.KbError(400, err.Error())
 	}
 	if c, _ := body.Get("clearKey"); jsonv.Truthy(c) {
-		if err := s.p.AccessChanged(true); err != nil {
-			return nil, err
+		// Where the Go server keeps the keys it removes the key, and an
+		// endpoint kept beside it stays.
+		if f := s.p.ClearOwnKey; f != nil {
+			var kept *platform.Cred
+			if v.KeyCred() != nil {
+				kept = v.EndpointCred()
+			}
+			f(platform.SingleOwner)
+			if err := s.p.AccessChanged(false); err != nil {
+				return nil, err
+			}
+			v = s.viewerAfterClear(r, v)
+			if kept != nil && s.p.Node() == nil {
+				c := *v
+				c.Cred, c.Endpoint = kept, kept
+				v = &c
+			}
+		} else {
+			if err := s.p.AccessChanged(true); err != nil {
+				return nil, err
+			}
+			v = s.viewerAfterClear(r, v)
 		}
-		v = s.viewerAfterClear(r, v)
 	}
 	s.p.InvalidateProviderProbes()
 	s.ResetAccounts()
@@ -323,7 +350,7 @@ func (s *Routes) viewerAfterClear(r *http.Request, v *platform.Viewer) *platform
 		return v
 	}
 	c := *v
-	c.Cred = nil
+	c.Cred, c.Endpoint = nil, nil
 	if c.KeyStatus != nil {
 		c.KeyStatus = []byte(`{"mode":"none"}`)
 	}

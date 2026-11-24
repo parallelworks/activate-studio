@@ -54,6 +54,10 @@ export interface KeyStatus {
   baseUrl?: string | null; gatewayHost?: string; endpoint?: EndpointSummary | null
   shared?: { active: boolean; last4?: string; sharedBy?: string; sharedAt?: string; credExpired?: boolean; mine?: boolean }
   sharingAllowed?: boolean
+  /** The person's ACTIVATE key alone, kept apart from their endpoint (the
+   *  fields above describe the key chat uses: the endpoint, else this key).
+   *  Absent where Node keeps the keys, which hold one or the other. */
+  activate?: Omit<KeyStatus, 'activate' | 'verified' | 'shared' | 'sharingAllowed'> & { verified?: boolean }
 }
 export interface Health { status: string; models: number; gatewayHost?: string; message?: string | null; platformAccess?: boolean | null; unlockUrl?: string | null }
 /** Whether chat can use tools with the model a test used. */

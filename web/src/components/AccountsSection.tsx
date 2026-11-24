@@ -255,7 +255,12 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
     },
     'Saved.',
   )
-  const removeKey = (at: NoteAt['at']) => run(at, async () => { await api('/api/me/model-key/clear', { body: {} }); fillEndpoint(null) }, 'Removed.')
+  // Each row removes its own key; the other stays. Where Node keeps the
+  // keys there is one, and both rows remove it.
+  const removeKey = (at: NoteAt['at']) => run(at, async () => {
+    await api('/api/me/model-key/clear', { body: { which: at } })
+    if (at === 'endpoint' || !me?.activate) fillEndpoint(null)
+  }, 'Removed.')
   const test = (body: Record<string, unknown>) =>
     api<KeyTestResult>('/api/me/model-key/test', { body: { ...body, ...(chatModel() ? { model: chatModel() } : {}) } })
   const testEndpoint = async (key: string, url: string, endpoint: ReturnType<typeof endpointBody>) => {
@@ -358,8 +363,12 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
   )
 
   const single = access.single
-  const stored = me.mode !== 'none'
-  const keyStored = stored && access.models.source !== 'endpoint'
+  // The ACTIVATE key and the endpoint are kept apart (me.activate), so
+  // saving one leaves the other. Where Node keeps the keys there is one
+  // place for both, and saving one replaces the other.
+  const apart = !!me.activate
+  const keyMe = me.activate ?? me
+  const keyStored = apart ? me.activate!.mode !== 'none' : me.mode !== 'none' && access.models.source !== 'endpoint'
   const endpointStored = access.models.source === 'endpoint'
   const signInOffered = !single && !!access.signInOffered
   const signedIn = access.platform.source === 'signin'
@@ -429,7 +438,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
               <p className="muted view-sub">
                 The base URL usually ends in /v1. It covers models only; the platform parts keep using ACTIVATE. A model
               server on this computer keeps working with no network.
-                {keyStored && ' Saving one replaces your ACTIVATE API key, which is kept in the same place.'}
+                {!apart && keyStored && ' Saving one replaces your ACTIVATE API key, which is kept in the same place.'}
               </p>
               <div className="key-row">
                 <Field layout="inline" compact label="Endpoint" className="provider-field">
@@ -525,7 +534,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
                 <p className="muted view-sub">
                   A token or API key from your ACTIVATE account (Account, API keys) covers the platform{aiEnabled ? ' and its models' : ''}.
                   The host is the platform's own, such as platform.example.com.
-                  {endpointStored && ' Saving one replaces your OpenAI-compatible endpoint, which is kept in the same place.'}
+                  {!apart && endpointStored && ' Saving one replaces your OpenAI-compatible endpoint, which is kept in the same place.'}
                 </p>
                 {signedIn && (
                   <p className="identity-note access-override">
@@ -572,10 +581,10 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
                 </div>
                 {keyStored && (
                   <p className="muted key-note">
-                    {me.mode === 'stored' && `Added ${me.addedAt?.slice(0, 10)}, ${single ? 'stored on this computer' : 'remembered in this browser'}.`}
-                    {me.mode === 'session' && `Held in memory until ${me.sessionExpiresAt ? new Date(me.sessionExpiresAt).toLocaleTimeString() : 'later today'}.`}
-                    {me.credExpiresAt && !me.credExpired && ` The token expires ${new Date(me.credExpiresAt).toLocaleString()}; a platform API key does not.`}
-                    {me.credExpired && me.credExpiresAt && ` The token expired ${new Date(me.credExpiresAt).toLocaleString()}.`}
+                    {keyMe.mode === 'stored' && `Added ${keyMe.addedAt?.slice(0, 10)}, ${single ? 'stored on this computer' : 'remembered in this browser'}.`}
+                    {keyMe.mode === 'session' && `Held in memory until ${keyMe.sessionExpiresAt ? new Date(keyMe.sessionExpiresAt).toLocaleTimeString() : 'later today'}.`}
+                    {keyMe.credExpiresAt && !keyMe.credExpired && ` The token expires ${new Date(keyMe.credExpiresAt).toLocaleString()}; a platform API key does not.`}
+                    {keyMe.credExpired && keyMe.credExpiresAt && ` The token expired ${new Date(keyMe.credExpiresAt).toLocaleString()}.`}
                   </p>
                 )}
                 {health?.status === 'ok' && health.platformAccess === false && access.models.source === 'key' && (

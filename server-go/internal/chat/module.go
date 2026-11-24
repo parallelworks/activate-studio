@@ -234,6 +234,17 @@ func (m *Module) cred(r *http.Request) *modelkeys.Cred {
 	return m.Keys.ResolveOrSignIn(id)
 }
 
+// platformCred is the credential for the person's work on the platform
+// (pw code, the platform's tools, workflows): their own sign-in, else
+// their ACTIVATE key; never their endpoint's key.
+func (m *Module) platformCred(r *http.Request) *modelkeys.Cred {
+	id := userID(r)
+	if id != "" {
+		m.Keys.Hydrate(id, r.Header.Get("Cookie"))
+	}
+	return m.Keys.ResolvePlatform(id)
+}
+
 /* ---- the gateway and the deployment credential ---- */
 
 func (m *Module) setAccess(a *Access) {
@@ -366,19 +377,41 @@ func Register(mux *http.ServeMux, a *app.App) {
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }
 	a.Providers.GatewayKey = m.GatewayKey
 	a.Providers.Accounts = func(*http.Request) bool { return !m.Keys.Disabled() }
+	// Work on the platform for a person runs with their ACTIVATE key,
+	// never their endpoint's.
 	a.Providers.PersonalCred = func(sub, cookieHeader string) (string, string, bool) {
 		if sub != "" && cookieHeader != "" {
 			m.Keys.Hydrate(sub, cookieHeader)
 		}
-		c := m.Keys.Resolve(sub)
+		c := m.Keys.ResolveKey(sub)
 		if c == nil {
 			return "", "", false
 		}
-		base := ""
-		if c.BaseURL != nil {
-			base = *c.BaseURL
+		return c.Key, "", true
+	}
+	platform.Of(a).ClearOwnKey = func(owner string) {
+		if m.Keys.ResolveKey(owner) != nil && m.Keys.ResolveEndpoint(owner) != nil {
+			m.Keys.ClearOne(owner, false)
+		} else {
+			m.Keys.Clear(owner)
 		}
-		return c.Key, base, true
+		m.A.Providers.ForgetCredential(owner)
+	}
+	platform.Of(a).OwnKeys = func(r *http.Request, owner string) (key, endpoint *platform.Cred) {
+		if owner != modelkeys.SingleOwner {
+			m.Keys.Hydrate(owner, r.Header.Get("Cookie"))
+		}
+		of := func(c *modelkeys.Cred) *platform.Cred {
+			if c == nil {
+				return nil
+			}
+			out := &platform.Cred{Key: c.Key, BaseURL: c.Base()}
+			if c.Endpoint != nil {
+				out.Endpoint, _ = json.Marshal(c.Endpoint)
+			}
+			return out
+		}
+		return of(m.Keys.ResolveKey(owner)), of(m.Keys.ResolveEndpoint(owner))
 	}
 	// The MCP listing is Go's. Node's, which only its RAG proxy and /api/mcp
 	// still read, drops itself when the saved server list changes

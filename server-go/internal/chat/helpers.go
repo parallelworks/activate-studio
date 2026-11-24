@@ -19,6 +19,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
+	"github.com/parallelworks/activate-studio/server-go/internal/keycookie"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 )
@@ -525,10 +526,21 @@ func (n *noTokenCap) remember(model string) {
 
 const baseAttrs = "Path=/; HttpOnly; Secure; SameSite=None"
 
-// KeyCookieJar is keyCookieJar(chunks).
+// KeyCookieJar is keyCookieJar(chunks): the Set-Cookie values that put
+// chunks in ade_mk and its partitioned twin, or clear them for nil.
 func KeyCookieJar(chunks []string) []string {
+	return cookieJar(keycookie.Cookie, keycookie.CookieP, chunks)
+}
+
+// EndpointCookieJar is KeyCookieJar for ade_me, the endpoint kept beside
+// an ACTIVATE key, with the same attributes.
+func EndpointCookieJar(chunks []string) []string {
+	return cookieJar(keycookie.EndpointCookie, keycookie.EndpointCookieP, chunks)
+}
+
+func cookieJar(plain, partitioned string, chunks []string) []string {
 	var jar []string
-	for _, p := range [][2]string{{"ade_mk", baseAttrs}, {"ade_mkp", baseAttrs + "; Partitioned"}} {
+	for _, p := range [][2]string{{plain, baseAttrs}, {partitioned, baseAttrs + "; Partitioned"}} {
 		name, attrs := p[0], p[1]
 		for i, c := range chunks {
 			jar = append(jar, fmt.Sprintf("%s%d=%s; Max-Age=31536000; %s", name, i, c, attrs))

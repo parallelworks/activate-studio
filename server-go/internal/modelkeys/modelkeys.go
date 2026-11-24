@@ -10,6 +10,14 @@
 // browser cookie (ade_mk, ade_mkp), which hydrates the memory copy on a
 // request. Keys and header values are never logged and never sent to the
 // browser.
+//
+// A person has two slots: their ACTIVATE key (no base URL), which the
+// platform and chat use, and their own OpenAI-compatible endpoint (a base
+// URL), which only chat uses. Saving or removing one leaves the other
+// alone. Where one value is kept, as in every earlier build (the ade_mk
+// cookie, the one owner's vault entry, the copy Node is sent), it is the
+// ACTIVATE key, or the endpoint when there is no key; the endpoint beside
+// a key goes in ade_me and in the vault entry's "endpoint" field.
 package modelkeys
 
 import (
@@ -112,9 +120,13 @@ type Store struct {
 	// (ResolveOrSignIn).
 	SignIn func(sub string) string
 
-	mu       sync.Mutex
-	sessions map[string]*session
-	vaultMu  sync.Mutex
+	mu sync.Mutex
+	// sessions holds each person's ACTIVATE key, endpoints their own
+	// model endpoint: two slots, so saving or removing one leaves the
+	// other alone.
+	sessions  map[string]*session
+	endpoints map[string]*session
+	vaultMu   sync.Mutex
 }
 
 type session struct {
@@ -126,6 +138,9 @@ type session struct {
 	credExpiry *string
 	baseURL    *string
 	endpoint   *Endpoint
+	// persist: kept in the person's browser cookie (false when they chose
+	// not to keep it there).
+	persist bool
 }
 
 // New is the store beside indexBase. authEnabled is authEnabled(); a
@@ -139,6 +154,7 @@ func New(indexBase string, authEnabled func() bool) *Store {
 		disabled:    func() bool { return os.Getenv("DISABLE_PERSONAL_KEYS") == "1" },
 		now:         time.Now,
 		sessions:    map[string]*session{},
+		endpoints:   map[string]*session{},
 	}
 }
 
@@ -394,6 +410,9 @@ type vaultEntry struct {
 	SharedBy    string  `json:"sharedBy,omitempty"`
 	SharedBySub string  `json:"sharedBySub,omitempty"`
 	Opts        string  `json:"opts,omitempty"`
+	// Endpoint is the one owner's endpoint beside the ACTIVATE key this
+	// entry holds; earlier builds ignore it and read the key.
+	Endpoint *vaultEntry `json:"endpoint,omitempty"`
 }
 
 func (s *Store) loadVault() *jsonobj.Object {
@@ -466,20 +485,74 @@ func (s *Store) openOptions(blob string) *Endpoint {
 
 /* ---- keys ---- */
 
-func (s *Store) live(sub string) *session {
-	x := s.sessions[sub]
+func (s *Store) slot(endpoint bool) map[string]*session {
+	if endpoint {
+		return s.endpoints
+	}
+	return s.sessions
+}
+
+func (s *Store) liveIn(m map[string]*session, sub string) *session {
+	x := m[sub]
 	if x == nil {
 		return nil
 	}
 	if s.now().After(x.expiresAt) {
-		delete(s.sessions, sub)
+		delete(m, sub)
 		return nil
 	}
 	return x
 }
 
-// Set is setUserKey(sub, key, persist, baseUrl, endpoint).
+// live is the person's chat-facing session: their endpoint, else their
+// key.
+func (s *Store) live(sub string) *session {
+	if x := s.liveIn(s.endpoints, sub); x != nil {
+		return x
+	}
+	return s.liveIn(s.sessions, sub)
+}
+
+// split is the one owner's vault entry as its two slots.
+func split(e *vaultEntry) (key, endpoint *vaultEntry) {
+	if e == nil {
+		return nil, nil
+	}
+	if e.BaseURL != nil {
+		c := *e
+		c.Endpoint = nil
+		return nil, &c
+	}
+	c := *e
+	c.Endpoint = nil
+	if e.Endpoint != nil && e.Endpoint.BaseURL != nil {
+		ep := *e.Endpoint
+		ep.Endpoint = nil
+		return &c, &ep
+	}
+	return &c, nil
+}
+
+// joined is the vault entry for the two slots: the key, carrying the
+// endpoint beside it, else the endpoint, as earlier builds wrote it.
+func joined(key, endpoint *vaultEntry) *vaultEntry {
+	if key == nil {
+		return endpoint
+	}
+	c := *key
+	c.Endpoint = endpoint
+	return &c
+}
+
+// Set is setUserKey(sub, key, persist, baseUrl, endpoint): a key with no
+// base URL fills the ACTIVATE slot, one with a base URL the endpoint
+// slot; the other slot is left alone.
 func (s *Store) Set(sub, key string, baseURL *string, endpoint any) error {
+	return s.SetPersist(sub, key, baseURL, endpoint, true)
+}
+
+// SetPersist is Set, saying whether the person's cookie keeps it.
+func (s *Store) SetPersist(sub, key string, baseURL *string, endpoint any, persist bool) error {
 	if s.Disabled() {
 		return problem("personal keys are disabled on this deployment")
 	}
@@ -529,11 +602,17 @@ func (s *Store) Set(sub, key string, baseURL *string, endpoint any) error {
 			b, _ := json.Marshal(opts)
 			e.Opts, _ = s.sealer.Encrypt(b)
 		}
-		setEntry(v, sub, e)
+		k, ep := split(entryOf(v, sub))
+		if u == nil {
+			k = &e
+		} else {
+			ep = &e
+		}
+		setEntry(v, sub, *joined(k, ep))
 		return s.saveVault(v)
 	}
 	s.mu.Lock()
-	s.sessions[sub] = &session{key: trimmed, expiresAt: s.now().Add(sessionTTL), addedAt: addedAt, last4: last4, kind: kind, credExpiry: exp, baseURL: u, endpoint: opts}
+	s.slot(u != nil)[sub] = &session{key: trimmed, expiresAt: s.now().Add(sessionTTL), addedAt: addedAt, last4: last4, kind: kind, credExpiry: exp, baseURL: u, endpoint: opts, persist: persist}
 	s.mu.Unlock()
 	s.vaultMu.Lock()
 	defer s.vaultMu.Unlock()
@@ -583,10 +662,11 @@ func (s *Store) ScrubPersonal() int {
 	return n
 }
 
-// Clear is clearUserKey(sub).
+// Clear is clearUserKey(sub): both of the person's keys.
 func (s *Store) Clear(sub string) {
 	s.mu.Lock()
 	delete(s.sessions, sub)
+	delete(s.endpoints, sub)
 	s.mu.Unlock()
 	s.vaultMu.Lock()
 	defer s.vaultMu.Unlock()
@@ -597,16 +677,42 @@ func (s *Store) Clear(sub string) {
 	}
 }
 
+// ClearOne removes one of the person's keys, their endpoint or their
+// ACTIVATE key, and leaves the other.
+func (s *Store) ClearOne(sub string, endpoint bool) {
+	s.mu.Lock()
+	delete(s.slot(endpoint), sub)
+	s.mu.Unlock()
+	s.vaultMu.Lock()
+	defer s.vaultMu.Unlock()
+	v := s.loadVault()
+	if !v.Has(sub) {
+		return
+	}
+	k, ep := split(entryOf(v, sub))
+	if endpoint {
+		ep = nil
+	} else {
+		k = nil
+	}
+	if e := joined(k, ep); e != nil {
+		setEntry(v, sub, *e)
+	} else {
+		v.Delete(sub)
+	}
+	_ = s.saveVault(v)
+}
+
 // Share is shareUserKey(sub, sharedBy).
 func (s *Store) Share(sub, sharedBy string) error {
-	cred := s.Resolve(sub)
+	cred := s.ResolveKey(sub)
 	if cred == nil {
 		return problem("add your own key first, then share it")
 	}
 	if cred.BaseURL != nil {
 		return problem("a key bound to a custom provider cannot be shared; the deployment credential always calls this deployment's gateway")
 	}
-	st := s.Status(sub)
+	st := s.KeyStatus(sub)
 	blob, err := s.sealer.Encrypt([]byte(cred.Key))
 	if err != nil {
 		return err
@@ -724,10 +830,20 @@ func (st Status) Fields() [][2]any {
 	return out
 }
 
-// Status is getUserKeyStatus(sub).
-func (s *Store) Status(sub string) Status {
+// Status is getUserKeyStatus(sub): the key chat uses, the person's
+// endpoint, else their ACTIVATE key.
+func (s *Store) Status(sub string) Status { return s.statusOf(sub, true) }
+
+// KeyStatus is the status of the person's ACTIVATE key alone.
+func (s *Store) KeyStatus(sub string) Status { return s.statusOf(sub, false) }
+
+func (s *Store) statusOf(sub string, endpointFirst bool) Status {
 	if s.onDisk(sub) {
-		e := entryOf(s.loadVault(), sub)
+		k, ep := split(entryOf(s.loadVault(), sub))
+		e := k
+		if endpointFirst && ep != nil {
+			e = ep
+		}
 		if e == nil {
 			return Status{Mode: "none"}
 		}
@@ -739,35 +855,66 @@ func (s *Store) Status(sub string) Status {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	x := s.live(sub)
+	x := s.liveIn(s.sessions, sub)
+	if endpointFirst {
+		x = s.live(sub)
+	}
 	if x == nil {
 		return Status{Mode: "none"}
 	}
 	return Status{Mode: "session", Last4: x.last4, AddedAt: x.addedAt, SessionExpiresAt: iso(x.expiresAt), Kind: x.kind, CredExpiresAt: x.credExpiry, CredExpired: expired(x.credExpiry, s.now()), BaseURL: x.baseURL, Endpoint: SummaryOf(x.endpoint)}
 }
 
-// Resolve is resolveUserCred(sub): the caller's own credential, or nil.
-// With sign-in off, a request without a user is the one user's.
 // ResolveOrSignIn is the credential for a person's model calls: an
 // OpenAI-compatible endpoint they chose, else their own platform sign-in
-// (SignIn), else a key they pasted. The sign-in comes before a pasted
-// ACTIVATE key, as it does for the platform (platform.Viewer.PlatformKey),
-// since it renews itself. A one-person Studio and a deployment without
-// personal keys never use one.
+// (SignIn), else their ACTIVATE key. The sign-in comes before a pasted
+// ACTIVATE key, as it does for the platform (ResolvePlatform), since it
+// renews itself. A one-person Studio and a deployment without personal
+// keys never use one.
 func (s *Store) ResolveOrSignIn(sub string) *Cred {
-	c := s.Resolve(sub)
-	if c != nil && c.Base() != "" {
+	if c := s.ResolveEndpoint(sub); c != nil {
 		return c
 	}
-	if s.SignIn != nil && sub != "" && sub != SingleOwner && sub != sharedSub && !s.Disabled() && s.authEnabled() {
-		if k := s.SignIn(sub); k != "" {
-			return &Cred{Key: k}
-		}
+	if k := s.signIn(sub); k != "" {
+		return &Cred{Key: k}
 	}
-	return c
+	return s.ResolveKey(sub)
 }
 
+// ResolvePlatform is the credential for a person's work on the platform:
+// their own platform sign-in, else their ACTIVATE key; never their
+// endpoint's key.
+func (s *Store) ResolvePlatform(sub string) *Cred {
+	if k := s.signIn(sub); k != "" {
+		return &Cred{Key: k}
+	}
+	return s.ResolveKey(sub)
+}
+
+func (s *Store) signIn(sub string) string {
+	if s.SignIn != nil && sub != "" && sub != SingleOwner && sub != sharedSub && !s.Disabled() && s.authEnabled() {
+		return s.SignIn(sub)
+	}
+	return ""
+}
+
+// Resolve is resolveUserCred(sub): the caller's own credential for chat,
+// their endpoint, else their ACTIVATE key, or nil. With sign-in off, a
+// request without a user is the one user's.
 func (s *Store) Resolve(sub string) *Cred {
+	if c := s.ResolveEndpoint(sub); c != nil {
+		return c
+	}
+	return s.ResolveKey(sub)
+}
+
+// ResolveKey is the person's ACTIVATE key (no base URL), or nil.
+func (s *Store) ResolveKey(sub string) *Cred { return s.resolve(sub, false) }
+
+// ResolveEndpoint is the person's own endpoint, or nil.
+func (s *Store) ResolveEndpoint(sub string) *Cred { return s.resolve(sub, true) }
+
+func (s *Store) resolve(sub string, endpoint bool) *Cred {
 	if sub == "" && !s.authEnabled() {
 		sub = SingleOwner
 	}
@@ -775,7 +922,11 @@ func (s *Store) Resolve(sub string) *Cred {
 		return nil
 	}
 	if s.onDisk(sub) {
-		e := entryOf(s.loadVault(), sub)
+		k, ep := split(entryOf(s.loadVault(), sub))
+		e := k
+		if endpoint {
+			e = ep
+		}
 		if e == nil || expired(e.ExpiresAt, s.now()) {
 			return nil
 		}
@@ -791,57 +942,96 @@ func (s *Store) Resolve(sub string) *Cred {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	x := s.live(sub)
+	x := s.liveIn(s.slot(endpoint), sub)
 	if x == nil || expired(x.credExpiry, s.now()) {
 		return nil
 	}
 	return &Cred{Key: x.key, BaseURL: x.baseURL, Endpoint: x.endpoint}
 }
 
-// Seal is sealKeyCookie(sub): the session key sealed with its subject,
-// in cookie-sized chunks; nil without a session.
-func (s *Store) Seal(sub string) []string {
-	s.mu.Lock()
-	x := s.live(sub)
-	var k keycookie.Key
-	if x != nil {
-		k = keycookie.Key{Sub: sub, Key: x.key, BaseURL: x.baseURL}
-		if x.endpoint != nil {
-			k.Options, _ = json.Marshal(x.endpoint)
-		}
+func cookieKey(sub string, x *session) keycookie.Key {
+	k := keycookie.Key{Sub: sub, Key: x.key, BaseURL: x.baseURL}
+	if x.endpoint != nil {
+		k.Options, _ = json.Marshal(x.endpoint)
 	}
-	s.mu.Unlock()
-	if x == nil {
+	return k
+}
+
+// layout is what the two cookies hold for sub: ade_mk the ACTIVATE key,
+// else the endpoint (as every earlier build wrote it); ade_me the endpoint
+// beside a key. kept limits it to what the person chose to keep in their
+// browser.
+func (s *Store) layout(sub string, kept bool) (main, beside *keycookie.Key) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pick := func(m map[string]*session) *keycookie.Key {
+		x := s.liveIn(m, sub)
+		if x == nil || (kept && !x.persist) {
+			return nil
+		}
+		k := cookieKey(sub, x)
+		return &k
+	}
+	key, ep := pick(s.sessions), pick(s.endpoints)
+	if key == nil {
+		return ep, nil
+	}
+	return key, ep
+}
+
+func (s *Store) chunks(k *keycookie.Key) []string {
+	if k == nil {
 		return nil
 	}
-	chunks, err := s.sealer.Seal(k)
+	c, err := s.sealer.Seal(*k)
 	if err != nil {
 		return nil
 	}
-	return chunks
+	return c
 }
 
-// Hydrate is hydrateFromCookie(sub, cookieHeader): a signed-in user with
-// no live key gets the one their cookie carries, if it was sealed for them.
+// Seal is sealKeyCookie(sub): the ade_mk value, sealed with its subject,
+// in cookie-sized chunks; nil when the person keeps no key in their
+// browser.
+func (s *Store) Seal(sub string) []string {
+	main, _ := s.layout(sub, true)
+	return s.chunks(main)
+}
+
+// SealEndpoint is the ade_me value: the endpoint kept beside an ACTIVATE
+// key in ade_mk, sealed with its subject; nil otherwise.
+func (s *Store) SealEndpoint(sub string) []string {
+	_, beside := s.layout(sub, true)
+	return s.chunks(beside)
+}
+
+// Hydrate is hydrateFromCookie(sub, cookieHeader): each of a signed-in
+// user's keys that is not live is taken from their cookies, if sealed for
+// them.
 func (s *Store) Hydrate(sub, cookieHeader string) {
 	if sub == "" || cookieHeader == "" || s.Disabled() {
 		return
 	}
 	s.mu.Lock()
-	has := s.live(sub) != nil
+	hasKey, hasEndpoint := s.liveIn(s.sessions, sub) != nil, s.liveIn(s.endpoints, sub) != nil
 	s.mu.Unlock()
-	if has {
+	if hasKey && hasEndpoint {
 		return
 	}
-	k, ok := s.sealer.FromCookies(sub, cookieHeader)
-	if !ok || strings.TrimSpace(k.Key) == "" {
-		return
+	key, ep := s.sealer.Both(sub, cookieHeader)
+	for _, x := range []struct {
+		k   *keycookie.Key
+		has bool
+	}{{key, hasKey}, {ep, hasEndpoint}} {
+		if x.k == nil || x.has || strings.TrimSpace(x.k.Key) == "" {
+			continue
+		}
+		var opts any
+		if len(bytes.TrimSpace(x.k.Options)) > 0 {
+			_ = json.Unmarshal(x.k.Options, &opts)
+		}
+		_ = s.Set(sub, x.k.Key, x.k.BaseURL, opts)
 	}
-	var opts any
-	if len(bytes.TrimSpace(k.Options)) > 0 {
-		_ = json.Unmarshal(k.Options, &opts)
-	}
-	_ = s.Set(sub, k.Key, k.BaseURL, opts)
 }
 
 // IsProblem reports whether err is a validation message (a 400).
@@ -850,8 +1040,11 @@ func IsProblem(err error) bool {
 	return errors.As(err, &p)
 }
 
-// SealedSession is the session key sealed for sub as one value (the
-// header Node mirrors it from); ” without a session.
+// SealedSession is the person's key sealed for sub as one value (the
+// header Node mirrors it from): their ACTIVATE key, else their endpoint,
+// as earlier builds sent it, since Node's routes that remain are the
+// platform's; "" without one.
 func (s *Store) SealedSession(sub string) string {
-	return strings.Join(s.Seal(sub), "")
+	main, _ := s.layout(sub, false)
+	return strings.Join(s.chunks(main), "")
 }
