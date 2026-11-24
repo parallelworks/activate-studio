@@ -2,7 +2,7 @@
  "specs": [
   {
    "name": "search_kb",
-   "description": "Full-text and semantic search over the connected knowledge base. Returns matching file paths with snippets. Use this before answering questions about the knowledge base content. Use query for a plain search, or name and text for a refined one: name for file and folder names (words, or patterns such as *.docx), text for the words in files and their meaning, with match \"all\" to look for the text only in files whose name or path matches.",
+   "description": "Find files in the Studio's libraries by name, by the words inside them and by meaning: full-text and semantic search over the connected knowledge base. Use this instead of find, grep or glob for library files: it answers from the index in under a second, searches the text of PDFs, Office files and images the index has read, which grep cannot, and reaches libraries on other hosts. Returns matching file paths with snippets. Use this before answering questions about the knowledge base content. Use query for a plain search, or name and text for a refined one: name for file and folder names (words, or patterns such as *.docx), text for the words in files and their meaning, with match \"all\" to look for the text only in files whose name or path matches.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -44,7 +44,7 @@
   },
   {
    "name": "read_kb_file",
-   "description": "Read the text the knowledge base holds for files, by relative path (as returned by search_kb or list_kb_dir): the text in the index, which is what search matched. That is the extracted text of an office document or PDF, the OCR or description of an image, and a plain text file's contents. It works when the original file cannot be reached. Each result says its source. It says plainly when the index holds no text for a file; for a plain text file the index has none for, the original is read. The index can lag behind a file changed since the library was last indexed, and holds at most the first 500,000 characters of a file: read_original opens the file itself. To read several files, pass them together in paths in one call: each comes back under its own heading, the first part of each when there are many. To show a file to the user, use show_in_viewer.",
+   "description": "Read the text the knowledge base holds for files, by relative path (as returned by search_kb or list_kb_dir): the text in the index, which is what search matched. Use this instead of cat or a file-reading tool for library files: it returns the words of PDFs, Office files and images, and reads libraries on other hosts. That is the extracted text of an office document or PDF, the OCR or description of an image, and a plain text file's contents. It works when the original file cannot be reached. Each result says its source. It says plainly when the index holds no text for a file; for a plain text file the index has none for, the original is read. The index can lag behind a file changed since the library was last indexed, and holds at most the first 500,000 characters of a file: read_original opens the file itself. To read several files, pass them together in paths in one call: each comes back under its own heading, the first part of each when there are many. To show a file to the user, use show_in_viewer.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -636,7 +636,7 @@
   },
   {
    "name": "query_corpus",
-   "description": "Structured statistics about the corpus from the file index: largest, newest, oldest, recent (last N days), by_extension totals, big_directories. Use for questions about corpus composition, sizes, and recent activity.",
+   "description": "Structured statistics about the corpus from the file index: largest, newest, oldest, recent (last N days), by_extension totals, big_directories. Use for questions about corpus composition, sizes, and recent activity, instead of find, du or ls: one call covers every file from the index, with its size and date, without walking the file tree, and reaches libraries on other hosts.",
    "parameters": {
     "type": "object",
     "properties": {
