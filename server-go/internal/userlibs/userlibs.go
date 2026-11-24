@@ -462,6 +462,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	m := Of(a)
 	m.Routes(mux, a.Log)
 	kb.SpaceFiles = m.SpaceFiles()
+	search.IndexQueued = m.spaceQueued
 	a.Providers.SpaceFolder = m.SpaceFolder
 	a.Providers.SpaceChanged = m.SpaceTransferred
 	a.Providers.SpaceAccount = m.SpaceAccount

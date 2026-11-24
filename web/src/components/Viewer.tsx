@@ -364,6 +364,19 @@ export function findPattern(terms: string[]): RegExp {
   }).join('|'), 'giu')
 }
 
+/** Why the Indexed text tab is empty: the library is indexing, the file
+ *  changed after its last pass, or it was indexed and has no text. */
+function noIndexedText(file: FileContent, isImage: boolean): string {
+  const ix = file.index
+  if (ix?.state === 'indexing') return 'Not indexed yet. The library is indexing now; its text appears here when that ends.'
+  if (ix?.state === 'newer') {
+    const at = new Date(ix.indexedAt)
+    const when = Number.isNaN(at.getTime()) ? '' : ` on ${at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
+    return `Added or changed after the library's last index pass${when}. Rebuild the library to add its text.`
+  }
+  return `No text is stored in the index for this file${isImage ? ' yet; the next index pass adds OCR text and a description' : ''}.`
+}
+
 /** Indexed text longer than this (UTF-16 units) is shown as plain text:
  *  formatting a long manual's text as Markdown holds the page for seconds
  *  in WebKit (the Linux and macOS windows), about a second in Chromium. */
@@ -661,7 +674,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
   }
 
   const indexedView = file.content == null
-    ? <p className="muted pad">No text is stored in the index for this file{isImage ? ' yet; the next index pass adds OCR text and a description' : ''}.</p>
+    ? <p className="muted pad">{noIndexedText(file, isImage)}</p>
     : (
       <div className="viewer-body">
         {previewGone !== null && isOffice && (

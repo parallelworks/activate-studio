@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/extensions"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/keycookie"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
@@ -643,7 +644,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	// The turn runs on past the request, so its reply is recorded when the
 	// person has left; the request writes its events while it lasts.
 	tctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pwcodeTurnLimit)
-	turn := &pwTurn{m: m, res: res, convID: convID, link: link, parent: body.UserMessageID, started: time.Now(), done: make(chan struct{})}
+	turn := &pwTurn{m: m, res: res, convID: convID, link: link, parent: body.UserMessageID, started: time.Now(), done: make(chan struct{}), spaceChanged: m.workspaceSpace(r, link)}
 	events := make(chan *jsonv.Object, 256)
 	followErr := make(chan error, 1)
 	go func() {
@@ -694,6 +695,42 @@ type pwTurn struct {
 	// stopped: the person stopped the turn (Stop), so its ending in an
 	// error is what they asked for (under m.pw.mu).
 	stopped bool
+	// spaceChanged queues the build of the person's space when the
+	// session works in it; nil when it does not. wrote: the turn ran a
+	// tool of pw code's own that may change files (its Studio tools tell
+	// the index themselves).
+	spaceChanged func()
+	wrote        bool
+}
+
+// pwReadOnlyTools are pw code's own tools that change no file.
+var pwReadOnlyTools = map[string]bool{"read": true, "grep": true, "glob": true, "ls": true, "list": true,
+	"webfetch": true, "websearch": true, "todoread": true, "todowrite": true}
+
+// workspaceSpace is how a turn tells the person's space that it changed,
+// when the session's folder is in it: pw code's own tools write there on
+// disk, which the space's index does not hear of, so the turn's end
+// queues its build as a write from the Library does. nil when the folder
+// is not in the space.
+func (m *Module) workspaceSpace(r *http.Request, link *conversations.PWCodeLink) func() {
+	f := m.A.Providers.SpaceFolder
+	u := user(r)
+	if link == nil || link.Relay || link.Workspace == "" || f == nil || u == nil || kb.SpaceFiles == nil {
+		return nil
+	}
+	site, folder := f(u.Username)
+	folder = strings.TrimSuffix(folder, "/")
+	ws := strings.TrimSuffix(link.Workspace, "/")
+	if folder == "" || !sameCluster(site, link.Site) || (ws != folder && !strings.HasPrefix(ws, folder+"/")) {
+		return nil
+	}
+	lib, ok := ownSpaceLib(r)
+	if !ok {
+		return nil
+	}
+	// The turn ends after the request has.
+	rr := r.WithContext(context.WithoutCancel(r.Context()))
+	return func() { kb.SpaceFiles.Changed(rr, lib, nil) }
 }
 
 func (t *pwTurn) mine(ev *jsonv.Object) bool {
@@ -747,6 +784,9 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 	case "tool_start":
 		if t.mine(ev) {
 			id, name := str("callId"), strings.TrimPrefix(str("name"), studioToolPrefix)
+			if !strings.HasPrefix(str("name"), studioToolPrefix) && !pwReadOnlyTools[strings.ToLower(name)] {
+				t.wrote = true
+			}
 			t.parts = append(t.parts, conversations.Part{Kind: "tool_call", ID: id, Name: name, Args: str("args"), Status: "running"})
 			t.emit("tool", reqbody.O("phase", "call", "id", id, "name", name, "args", str("args")))
 		}
@@ -813,6 +853,9 @@ func (t *pwTurn) finish() {
 	}
 	t.finished = true
 	m := t.m
+	if t.wrote && t.spaceChanged != nil {
+		t.spaceChanged()
+	}
 	messageID := "pwc-" + strconv.FormatInt(time.Now().UnixMilli(), 10)
 	content := t.content.String()
 	m.pw.mu.Lock()

@@ -231,8 +231,36 @@ func (e *Engine) RemoteFile(ctx context.Context, root, rel string) (*kb.Obj, err
 	dir, name := path.Split(sub)
 	if it := e.IndexedTextState(ctx, root, strings.TrimSuffix(dir, "/"), name); it.State == "text" {
 		o = o.Set("truncated", kb.UTF16Len(it.Text) > PreviewBytes).Set("content", kb.SliceUTF16(it.Text, PreviewBytes)).Set("format", "text").Set("source", "extracted")
+		return o, nil
+	}
+	if note := indexNote(t, root, o); note != nil {
+		o = o.Set("index", note)
 	}
 	return o, nil
+}
+
+// IndexQueued says whether a build of the library at indexRoot is waiting
+// to start (a space waits for its changes to settle). Set by the
+// libraries track; nil says none is.
+var IndexQueued func(indexRoot string) bool
+
+// indexNote is why a file of a library on another system has no text in
+// its index when that is the index and not the file: the library is
+// indexing now, or the file changed after its last pass. nil when the
+// file was indexed and has no text.
+func indexNote(t *libraries.Target, root string, o *kb.Obj) *kb.Obj {
+	if t.Def.State == "building" || t.Def.State == "updating" || (IndexQueued != nil && IndexQueued(root)) {
+		return kb.O("state", "indexing")
+	}
+	built, err := time.Parse(time.RFC3339, t.BuiltAt)
+	if err != nil {
+		return nil
+	}
+	mtime, _ := o.Get("mtime")
+	if m, ok := mtime.(int64); ok && m > built.Unix() {
+		return kb.O("state", "newer", "indexedAt", t.BuiltAt)
+	}
+	return nil
 }
 
 // noSourceRoot is why a library on another system opens no file: it was
