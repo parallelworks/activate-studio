@@ -30,6 +30,18 @@ func UserOf(r *http.Request) *User {
 	return u
 }
 
+// UserFromContext is the user a request's context carries, as UserOf
+// reads it, for work that has the context and not the request.
+func UserFromContext(ctx context.Context) *User {
+	u, _ := ctx.Value(ctxKey{}).(*User)
+	return u
+}
+
+// ContextWithUser is ctx carrying u, as WithUser's request does.
+func ContextWithUser(ctx context.Context, u *User) context.Context {
+	return context.WithValue(ctx, ctxKey{}, u)
+}
+
 // WithUser is r carrying u.
 func WithUser(r *http.Request, u *User) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, u))

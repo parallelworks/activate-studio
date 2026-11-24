@@ -79,7 +79,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -144,7 +145,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -209,7 +211,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -280,7 +283,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -363,7 +367,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -439,7 +444,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -511,7 +517,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -594,7 +601,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -677,7 +685,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -760,7 +769,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  },
  {
@@ -843,7 +853,8 @@
    "serveWorkflows": "{\"vllm\":{\"workflow\":\"vllm-endpoint\",\"inputs\":{}},\"ollama\":{\"workflow\":\"ollama-endpoint\",\"inputs\":{}}}",
    "chatEngine": "auto",
    "pwcodeModel": "",
-   "pwcodePermissionMode": ""
+   "pwcodePermissionMode": "",
+   "claudeCodeAccounts": "auto"
   }
  }
 ]

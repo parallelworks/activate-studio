@@ -7,13 +7,17 @@ import { pwCode } from '../pwcode/api'
 import { AccountPanelBody } from '../pwcode/session/AccountPanel'
 import { AccountRow } from './AccountRow'
 
-interface Here { available: boolean; hostname?: string }
+/** GET /api/chat/pwcode/here: whether the Studio runs pw code for the
+ *  person, and whether it offers Claude Code accounts (false where the
+ *  deployment turned them off for them). */
+interface Here { available: boolean; hostname?: string; claudeCode?: boolean }
 
 /**
  * Settings, Accounts: the accounts pw code uses where this Studio runs it for
  * the person (machine "studio": this computer, or their own pw code on the
  * Studio's cluster), managed with the same panel as a session's account
- * chip. Nothing shows where the Studio has no pw code for them.
+ * chip. Nothing shows where the Studio has no pw code for them, or where
+ * Claude Code accounts are off for them (Settings, External access).
  *
  * A row like the page's others, its state the number of accounts. The page
  * is told that number once it is known (`onKnown`), for whether the row
@@ -34,7 +38,7 @@ export function ClaudeAccountSlot({ open = true, onOpenChange, onKnown }: {
     void loadPwCodeMessages('en').then(m => { if (!gone) setMessages(m) }, () => {})
     return () => { gone = true }
   }, [])
-  const shown = !!here?.available && !!messages
+  const shown = !!here?.available && here.claudeCode !== false && !!messages
   // The names alone, as the panel reads them (one read, shared with it).
   const names = pwCode.useClaudeAccountNames('studio', shown)
   const count = names.data?.length ?? null

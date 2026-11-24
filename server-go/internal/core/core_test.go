@@ -629,3 +629,41 @@ func TestModelSTEPTooComplex(t *testing.T) {
 		t.Fatalf("not tried again: %d", w.Code)
 	}
 }
+
+func TestClaudeCodeAccountsAreTheAdministratorsToChange(t *testing.T) {
+	// A Studio of one: its person decides, and auto is on.
+	e := newEnv(t, nil)
+	s := e.do("GET", "/api/settings", nil)
+	if s.body["effective"].(map[string]any)["claudeCodeAccounts"] != "auto" {
+		t.Fatalf("%s", s.raw)
+	}
+	if cc := s.body["claudeCode"].(map[string]any); cc["personal"] != true || cc["locked"] != nil {
+		t.Fatalf("%v", cc)
+	}
+	if r := e.do("PUT", "/api/settings", map[string]any{"claudeCodeAccounts": "sometimes"}); r.status != 400 {
+		t.Fatalf("%d %s", r.status, r.raw)
+	}
+	if r := e.do("PUT", "/api/settings", map[string]any{"claudeCodeAccounts": "off"}); r.status != 200 || r.body["effective"].(map[string]any)["claudeCodeAccounts"] != "off" {
+		t.Fatalf("%d %s", r.status, r.raw)
+	}
+
+	// Where people sign in, someone who is not an administrator may save
+	// the rest of the form, but not change it.
+	e = newEnv(t, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/keys", "STUDIO_CONFIG_FILE": filepath.Join(t.TempDir(), "studio.env")})
+	s = e.do("GET", "/api/settings", nil)
+	cc := s.body["claudeCode"].(map[string]any)
+	if cc["personal"] != false || !strings.Contains(fmt.Sprint(cc["locked"]), "administrators") {
+		t.Fatalf("%v", cc)
+	}
+	if r := e.do("PUT", "/api/settings", map[string]any{"claudeCodeAccounts": "on"}); r.status != 403 {
+		t.Fatalf("%d %s", r.status, r.raw)
+	}
+	if r := e.do("PUT", "/api/settings", map[string]any{"claudeCodeAccounts": "auto", "appName": "Lab"}); r.status != 200 {
+		t.Fatalf("%d %s", r.status, r.raw)
+	}
+	// The deployment sets it as administrators do.
+	e = newEnv(t, map[string]string{"CLAUDE_CODE_ACCOUNTS": "on", "PW_PLATFORM_HOST": "platform.example.com"})
+	if s := e.do("GET", "/api/settings", nil); s.body["effective"].(map[string]any)["claudeCodeAccounts"] != "on" {
+		t.Fatalf("%s", s.raw)
+	}
+}

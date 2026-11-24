@@ -28,6 +28,8 @@ func (m *Module) StudioSession(ctx context.Context, c pwcode.Client, owner *auth
 	if owner != nil {
 		r = auth.WithUser(r, owner)
 	}
+	// Whose session it is, for what it may run on (pwcode.ClaudeCode).
+	ctx = r.Context()
 	tools := m.chatTools(r, false)
 	want := specNames(tools)
 	token, err := m.issueChatToken(owner, grant)

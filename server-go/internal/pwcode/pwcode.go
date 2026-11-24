@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"io"
 	"net"
 	"net/http"
@@ -471,9 +472,25 @@ func trimJS(s string) string { return wsTrim.ReplaceAllString(s, "") }
 func sid(id string) string { return "/v1/sessions/" + platform.EncodeURIComponent(id) }
 
 // CreateSession is POST /v1/sessions with the request as given (an
-// object whose absent fields are left out, as Node's).
+// object whose absent fields are left out, as Node's). Where Claude Code
+// accounts are off for the person ctx is for (ClaudeCode), a session on a
+// claude-code/ model or a Claude account is refused before pw code is
+// asked, and one pw code starts on such a model by its own default is
+// archived and refused.
 func CreateSession(ctx context.Context, c Client, req *jsonv.Object) (*jsonv.Object, error) {
-	return obj(c.Call(ctx, http.MethodPost, "/v1/sessions", req, 0))
+	if err := ClaudeCodeRefused(ctx, req); err != nil {
+		return nil, err
+	}
+	s, err := obj(c.Call(ctx, http.MethodPost, "/v1/sessions", req, 0))
+	if err == nil && s != nil && IsClaudeModel(jsonv.String(jsonv.Path(s, "model"))) {
+		if why := ClaudeCodeOff(ctx); why != "" {
+			if id := jsonv.String(jsonv.Path(s, "id")); id != "" {
+				_, _ = ArchiveSession(ctx, c, id)
+			}
+			return nil, apierr.New(403, "%s pw code started the session on its default model, %s; choose another model, such as under Settings, External access, pw code model.", why, jsonv.String(jsonv.Path(s, "model")))
+		}
+	}
+	return s, err
 }
 
 // ListSessions is GET /v1/sessions.
