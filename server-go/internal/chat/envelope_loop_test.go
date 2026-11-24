@@ -74,6 +74,9 @@ func (e *emuTools) Execute(_ *http.Request, name, args string, tctx ToolCtx) (*O
 	if result == "" {
 		result = "Wrote it."
 	}
+	if strings.HasPrefix(result, "FAIL ") {
+		return &Outcome{Result: result, Summary: "error", Failed: true}, nil
+	}
 	return &Outcome{Result: result, Summary: "wrote"}, nil
 }
 
@@ -640,7 +643,7 @@ func TestPartsInOneRoundLandInOrderAndTheTurnSaysWhatTheWorkbookHolds(t *testing
 		"Added to reports/items.xlsx (20 rows; the workbook now holds: Items, 60 rows after the header; 9000 bytes in all) and re-indexed in 1 ms.",
 	}
 	part := func(i int) string {
-		b, _ := json.Marshal(sheetRows(20))
+		b, _ := json.Marshal(strings.ReplaceAll(sheetRows(20), "Item xxx", "Item "+strconv.Itoa(i)))
 		a := ""
 		if i > 0 {
 			a = `"append":true,`
@@ -786,6 +789,55 @@ func TestWritesOfAWorkbookCarryTheRowsAsked(t *testing.T) {
 		e.mu.Unlock()
 		if len(got) == 0 || got[0] != c.want {
 			t.Errorf("%q: limits %v, want %d", c.ask, got, c.want)
+		}
+	}
+}
+
+// A part a model sends twice in one round, as a replace and again as an
+// append, is written once: the append is answered with the first one's
+// result, and other parts run. A part whose first write failed is
+// written again.
+func TestAPartSentTwiceInOneRoundIsWrittenOnce(t *testing.T) {
+	rows := func(from, n int, header bool) string {
+		var r []string
+		if header {
+			r = append(r, `["Name","Count"]`)
+		}
+		for i := from; i < from+n; i++ {
+			r = append(r, `["item `+strconv.Itoa(i)+`",`+strconv.Itoa(i)+`]`)
+		}
+		return "[" + strings.Join(r, ",") + "]"
+	}
+	call := func(content string, add bool) string {
+		b, _ := json.Marshal(content)
+		mode := `"overwrite":true`
+		if add {
+			mode = `"append":true`
+		}
+		return `{"name":"write_kb_file","arguments":{"path":"reports/items.xlsx",` + mode + `,"content":` + string(b) + `}}`
+	}
+	for _, c := range []struct {
+		first  string
+		writes int
+	}{
+		{"Wrote reports/items.xlsx (an Excel workbook of 1 sheet (Items, 25 rows after the header), 900 bytes) and re-indexed in 1 ms.", 2},
+		{"FAIL Could not write reports/items.xlsx: making the workbook: bad JSON", 3},
+	} {
+		e, base, gw := emuModule(t)
+		e.results = []string{c.first}
+		gw.load([]reply{
+			said(func(n string) string {
+				return `{"protocol":"studio-tools-1","nonce":"` + n + `","calls":[` + call(rows(1, 25, true), false) + "," + call(rows(1, 25, true), true) + "," +
+					call(rows(1, 25, false), true) + "," + call(rows(26, 25, false), true) + `]}`
+			}, "stop"),
+			said(func(string) string { return "The workbook is written. " + strings.Repeat("Done. ", 30) }, "stop"),
+		})
+		askFor(t, base, "Make reports/items.xlsx with items. Do not search first.")
+		if got := countWrites(e); got != c.writes {
+			t.Errorf("first write %.20q: ran %d writes, want %d: %q", c.first, got, c.writes, e.runs())
+		}
+		if r := requestOf(gw, 1); c.writes == 2 && !strings.Contains(r, "these rows are the same as the rows of an earlier write") {
+			t.Errorf("no note on the repeated part: %.400s", r)
 		}
 	}
 }

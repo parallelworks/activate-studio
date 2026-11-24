@@ -869,7 +869,7 @@ func droppedSummary(asked, dropped int) string {
 	if dropped <= 0 {
 		return ""
 	}
-	return fmt.Sprintf(" (%d over the %d asked not written)", dropped, asked)
+	return fmt.Sprintf("; %d row%s past the %d asked %s not written, so the workbook is finished", dropped, plural(dropped), asked, wereWas(dropped))
 }
 
 // moreRows is said after a workbook is written: a sheet that holds fewer
