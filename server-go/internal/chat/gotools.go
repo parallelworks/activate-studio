@@ -301,6 +301,9 @@ func (t goTools) Prepare(r *http.Request, name, args, changeKey string) (*Prepar
 	if account != nil {
 		username = account.Username
 	}
+	if isKBAsksFirst(name) {
+		args = m.mainPathsIn(r, args)
+	}
 	obj, canonical, problem := prepareArgs(name, args, username)
 	if problem == "" && isKBAsksFirst(name) {
 		// A change in the main library is not offered for approval to a

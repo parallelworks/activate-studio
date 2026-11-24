@@ -41,10 +41,10 @@ func (m *Module) opPlace(r *http.Request, tctx ToolCtx, args map[string]any, pat
 // folder in another library is refused.
 func (m *Module) destIn(r *http.Request, p place, raw string) (string, error) {
 	t := edgeSlashes.ReplaceAllString(jsTrim(raw), "")
-	if t == "" || !m.spacesFor(r) {
+	if t == "" {
 		return raw, nil
 	}
-	if q, ok := m.placeNamed(r, t); ok {
+	if q, ok := m.libraryNameAt(r, t); ok && !q.folderAt(t) {
 		if q.id() != p.id() {
 			return "", &toolError{"To move or copy into " + q.label() + " from " + p.label() + ", use transfer_files: this tool works inside one library."}
 		}

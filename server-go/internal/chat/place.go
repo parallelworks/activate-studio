@@ -343,6 +343,19 @@ func (m *Module) toolPlace(r *http.Request, ctx ToolCtx, args map[string]any, re
 
 // isFolder says whether rel is a folder in a space, from its parent's
 // listing.
+// folderAt says whether rel is a folder, in the main library or a space.
+func (p place) folderAt(rel string) bool {
+	if !p.space {
+		abs, err := kb.Resolve(rel, p.m.A.Cfg.KBRoot)
+		if err != nil {
+			return false
+		}
+		st, err := os.Stat(abs)
+		return err == nil && st.IsDir()
+	}
+	return p.isFolder(rel)
+}
+
 func (p place) isFolder(rel string) bool {
 	entries, err := kb.SpaceFiles.List(p.r, p.lib, parentOf(rel))
 	if err != nil {
