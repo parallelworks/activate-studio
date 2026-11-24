@@ -167,12 +167,7 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			case t.Def.Shell != nil && !*t.Def.Shell:
 				x.Why = remote.NoShell(t.Site)
 			default:
-				// A space is written as in the Library: what lands is closed
-				// to other accounts unless its folder is open to them, and
-				// no write goes through a link.
-				// A library the viewer built on one of their systems is
-				// written as them the same way, without the space's closing.
-				x.FS = &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site), Private: l.Space, NoLinks: l.Mine}
+				x.FS = userFS(run, t, l, a.Providers.WriteShares)
 				if l.Space || l.Mine {
 					x.Space = l.IndexRoot
 				}
@@ -213,8 +208,8 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			}
 		}
 		x.Writable, x.ReadOnly = LibraryWritable(l.Writable, by, v.AuthOn)
-		if l.Primary && v.MainReadOnly != "" {
-			x.Writable, x.ReadOnly = false, v.MainReadOnly
+		if why := libraryReadOnly(l, v); why != "" {
+			x.Writable, x.ReadOnly = false, why
 		}
 		if l.CopyOf != nil {
 			// Studio's next look at its location would remove what lands here.
@@ -233,6 +228,30 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 		out = append(out, x)
 	}
 	return out
+}
+
+// userFS is a person's library on one of their systems, written as in the
+// Library: in a space, what lands is closed to other accounts unless its
+// folder is open to them, and no write goes through a link. A library the
+// viewer built is written as them the same way, without the space's
+// closing. One whose folder was checked when it was added is checked again
+// at each write, apart from those its owner shared it with.
+func userFS(run Runner, t *libraries.Target, l libraries.Library, shares func(indexRoot string) []string) *RemoteFS {
+	fs := &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site), Private: l.Space, NoLinks: l.Mine, Own: l.Own, Guard: t.Def.Guard}
+	if fs.Guard && shares != nil {
+		fs.Shared = shares(l.IndexRoot)
+	}
+	return fs
+}
+
+// libraryReadOnly is why the viewer writes nothing in a library they reach: the
+// main library of a Studio others administer, or a folder where another
+// account could send what lands elsewhere. "" where neither holds.
+func libraryReadOnly(l libraries.Library, v Viewer) string {
+	if l.Primary {
+		return v.MainReadOnly
+	}
+	return l.ReadOnlyWhy
 }
 
 // bucketReadOnly is why a bucket library is not a place for transfers: its

@@ -45,6 +45,8 @@ export interface PublicLibrary {
   space?: boolean
   /** A library the viewer built on one of their systems, written as them. */
   mine?: boolean
+  /** One whose folder the viewer owns, so they can share it. */
+  own?: boolean
   /** Where it is, whose account reads it, whether the viewer may write in
    *  it, and whether its index was built or connected. */
   access?: LibraryAccess
@@ -254,6 +256,13 @@ export interface UserLibrary {
   /** Built by the Studio on one of the viewer's systems, so read and
    *  written as them in the Library. */
   mine?: boolean
+  /** One whose folder the viewer owns, so they can share it. */
+  own?: { account: string; acl: boolean; fs: string } | null
+  /** Why the Library does not write in its folder: another account could
+   *  change where a write goes. */
+  readOnlyWhy?: string | null
+  /** Added with a share that could not be set: why. */
+  shareError?: string
   access?: LibraryAccess
   /** A folder another account shared with the viewer. */
   shared?: { from: string; access: 'read' | 'write'; share: string } | null
@@ -288,7 +297,17 @@ export interface SpaceStatus {
 export interface SpaceCheck {
   ok: boolean; steps: { name: string; ok: boolean; detail: string; warn?: boolean }[]
   sourceRoot: string; create: string[]; account: string; acl: boolean; fs: string
+  /** The viewer owns the folder, or will once it is made. */
+  owned?: boolean
+  /** Why the Library would not write in it; null where it would. */
+  readOnly?: string | null
+  /** Whether the viewer can share it, and why not. */
+  canShare?: boolean; shareWhy?: string | null
+  /** Why it cannot be My library; null where it can. */
+  myLibraryWhy?: string | null
 }
+/** A folder to index on one of the viewer's systems. */
+export interface SpaceAsk { sourceRoot: string; cluster?: string; destination?: string; sshOptions?: string; indexRoot?: string; gufiBin?: string }
 /** A folder of a space shared with an account, a group or every account. */
 export interface FolderShare {
   id: string; from: string; space: string; path: string; label: string; folder: string
@@ -851,8 +870,8 @@ export const api = {
    *  or why the list could not be had. */
   pwSystems: () => getJson<PwSystems>('/api/user-libraries/pw/systems'),
   spaceStatus: () => getJson<SpaceStatus>('/api/user-libraries/space'),
-  testSpace: (body: { sourceRoot: string; cluster?: string; destination?: string }) => sendJson<SpaceCheck>('POST', '/api/user-libraries/space/test', body),
-  addSpace: (body: { sourceRoot: string; cluster?: string; destination?: string; label?: string; depth?: IndexDepth; create?: boolean }) =>
+  testSpace: (body: SpaceAsk) => sendJson<SpaceCheck>('POST', '/api/user-libraries/space/test', body),
+  addSpace: (body: SpaceAsk & { label?: string; depth?: IndexDepth; create?: boolean; myLibrary?: boolean; share?: { kind: FolderShare['kind']; name?: string; access: FolderShare['access'] } }) =>
     sendJson<UserLibrary>('POST', '/api/user-libraries/space', body),
   spaceShares: (id: string) =>
     sendJson<{ shares: FolderShare[]; acl: boolean; fs: string; account: string }>('GET', `/api/user-libraries/${encodeURIComponent(id)}/shares`),

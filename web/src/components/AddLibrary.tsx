@@ -8,8 +8,7 @@ import { LocalLibraryForm } from './LocalLibraryForm'
 import { PwSystemField } from './PwSystemField'
 import { PwBlocked, SshLibraryForm } from './SshLibraryForm'
 import { SharedWithMe } from './SharedWithMe'
-import { SpaceForm } from './SpaceForm'
-import { useAppConfig } from '../config'
+import { IndexFolderForm } from './IndexFolderForm'
 
 /**
  * Add a library, in one model: where it is, whose account reads it, and
@@ -22,11 +21,13 @@ import { useAppConfig } from '../config'
  * - Read as: on a system, always the viewer, with their own sign-in or ssh
  *   keys, so it holds what their account can read there; here and in a
  *   bucket, the account the Studio runs as. The form says which.
- * - What: on a system, a folder of the viewer's own (read and
- *   written as them, closed to others), an index the Studio builds of a
- *   folder there (written as them where their account may write), or an
- *   index that is there already, connected as it is and read only. Here,
- *   a folder to build or an index to connect, read only.
+ * - What: a folder to index, or an index that is there already,
+ *   connected as it is and read only. A folder on a system is written as
+ *   the viewer where their account may write and no other account could
+ *   send a write elsewhere; a folder here is read only.
+ * - Who sees it: a folder on a system is the viewer's alone, or shared as
+ *   it is added where they own it (IndexFolderForm). What is here is seen
+ *   by whoever uses the Studio.
  *
  * The system is chosen once, at the top, and the forms below take it. On a
  * cluster the viewer reaches as themselves, the folders others shared with
@@ -36,7 +37,7 @@ import { useAppConfig } from '../config'
  */
 
 export type Where = 'here' | 'system' | 'bucket'
-export type How = 'own' | 'build' | 'connect'
+export type How = 'build' | 'connect'
 export type Via = 'pw' | 'ssh' | 'workflow'
 
 export interface AddOptions {
@@ -54,9 +55,9 @@ export interface AddOptions {
   copy?: boolean
   /** A bucket of an rclone remote, indexed here from its listing (sign-in off). */
   bucket?: boolean
-  /** A folder of the viewer's own on one of their systems (My library where
-   *  people sign in), and
-   *  the folders shared with them there. */
+  /** A folder on one of the viewer's systems, indexed as them, can be
+   *  added, shared, and be their My library where people sign in, and the
+   *  folders shared with them there are listed. */
   space?: boolean
   /** The cluster this Studio runs on, where a cluster hosts it: listed
    *  first among the viewer's clusters as the one this Studio runs on, read
@@ -72,12 +73,12 @@ export function addChoices(o: AddOptions) {
   const how = (w: Where, overSSH = false): How[] => {
     if (w === 'bucket') return []
     if (w === 'here') return [...(o.buildHere ? ['build' as const] : []), 'connect']
-    if (overSSH) return [...(o.space ? ['own' as const] : []), 'build', 'connect']
-    return [...(o.space ? ['own' as const] : []), ...(o.pw || o.workflow ? ['build' as const] : []), ...(o.pw ? ['connect' as const] : [])]
+    if (overSSH) return ['build', 'connect']
+    return [...(o.space || o.pw || o.workflow ? ['build' as const] : []), ...(o.pw ? ['connect' as const] : [])]
   }
   /** How a folder on a cluster is built: over the pw ssh session, or as a
    *  job of the platform's index workflow. */
-  const builders = (): Via[] => [...(o.pw ? ['pw' as const] : []), ...(o.workflow ? ['workflow' as const] : [])]
+  const builders = (): Via[] => [...(o.pw || o.space ? ['pw' as const] : []), ...(o.workflow ? ['workflow' as const] : [])]
   return { where, how, builders }
 }
 
@@ -86,21 +87,13 @@ const WHERE_LABEL: Record<Where, string> = { here: 'This computer', system: 'Rem
  *  clusters, so they are not all remote. */
 const WHERE_LABEL_HOSTED: Record<Where, string> = { ...WHERE_LABEL, system: 'Your clusters' }
 export const whereLabel = (w: Where, home?: string) => (home ? WHERE_LABEL_HOSTED : WHERE_LABEL)[w]
-const HOW_LABEL: Record<How, string> = { own: 'My own folder', build: 'Index a folder', connect: 'Connect an index' }
-
-/** What a folder of the viewer's own on a system is called. Where people
- *  sign in it is My library, theirs beside the main library they share; on
- *  a Studio only they use, the main library is already their library, so
- *  this is a new folder there, a library named by its folder. */
-export function howLabel(h: How, signIn: boolean): string {
-  return h === 'own' && !signIn ? 'A new folder' : HOW_LABEL[h]
-}
+const HOW_LABEL: Record<How, string> = { build: 'Index a folder', connect: 'Connect an index' }
 const BUILDER_LABEL: Record<'pw' | 'workflow', string> = { pw: 'pw ssh', workflow: 'Workflow job' }
 
 /** The choice in the Remote computer list for a host over plain ssh. */
 const SSH_HOST = '\u0000ssh'
 
-function describe(where: Where, how: How | undefined, overSSH: boolean, builder: Via | undefined, signIn = true, home?: string): string {
+function describe(where: Where, how: How | undefined, overSSH: boolean, builder: Via | undefined, home?: string): string {
   if (where === 'bucket') return 'A bucket, or a folder in one, of an rclone remote: any S3 compatible store, AWS or on premises (MinIO, Ceph and the like), or another store rclone lists. Read with the Studio\'s account, from its listing, for finding and searching by name, size and time; an object is read only when you open it. Read only.'
   if (where === 'here') {
     // On a Studio a cluster hosts, this computer is that cluster, which the
@@ -110,14 +103,9 @@ function describe(where: Where, how: How | undefined, overSSH: boolean, builder:
       ? `A folder on this computer, read with the Studio's account, not yours, indexed with GUFI and kept in step with the folder as it changes. Read only.${asYou}`
       : `A GUFI index already built on this computer, read with the Studio's account, not yours. Read only: the Studio searches it and never writes to it.${asYou}`
   }
-  if (how === 'own') {
-    return signIn
-      ? 'My library: a new folder in your home on that remote computer, made as your own account and closed to other accounts, indexed there as you. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
-      : 'A new folder in your home on that remote computer, made as your own account and closed to other accounts, indexed there as you, and named by the folder. Read and written as you: you can add, move and delete files in it from the Library, and share folders in it with other accounts.'
-  }
   if (how === 'connect') return 'A GUFI index already on that remote computer, read as you. Read only: nothing is written there.'
-  if (builder === 'workflow') return 'A folder on that cluster, indexed there by the platform\'s index workflow with your own key, on the login node or as a Slurm job. Read as you, read only.'
-  return `A folder on that remote computer, indexed there with GUFI ${overSSH ? 'over ssh' : 'over pw ssh'} as you. The build reads the text of its files where it can and leaves the folder as it is. Read and written as you where your account may write there.`
+  if (builder === 'workflow') return 'A folder on that cluster, indexed there by the platform\'s index workflow with your own key, on the login node or as a Slurm job. Read as you, read only, and seen only by you.'
+  return `A folder there, new or one you already have, indexed with GUFI ${overSSH ? 'over ssh' : 'over pw ssh'} as you. The build reads the text of its files where it can and leaves the folder as it is. Read and written as you where your account may write in it; the check says when it will be read only.`
 }
 
 export function AddLibrary({ options, browse = false, onAdded, onStarted, onImported }: {
@@ -135,7 +123,6 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   onImported?: (added: number) => void
 }) {
   const [importing, setImporting] = useState(false)
-  const signIn = !!useAppConfig().signIn
   // A choice that shows a shorter form would shorten the page, and where
   // the form ends the page the browser scrolls up to fit, moving the
   // choices under the pointer: the form keeps the tallest height it had.
@@ -182,6 +169,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   const asYou = overSSH ? 'your own ssh keys, agent and ~/.ssh/config' : 'your ACTIVATE sign-in'
   const systemChoice = where === 'system' && !workflowOnly && (
     <div className="settings-grid lib-add-system">
+      {choices.where.length === 1 && <div className="field-label lib-add-where">Where it is</div>}
       {pickSystems && (
         <PwSystemField value={cluster} home={options.home} onChange={c => { setCluster(c); setOverSSH(false) }} onSystems={setSystems}
           extra={options.ssh ? [{ value: SSH_HOST, label: 'A host over ssh…', description: 'user@host, with your own keys' }] : []}
@@ -203,8 +191,8 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
       {onImported && <div><Button variant="ghost" size="sm" onClick={() => setImporting(true)}>Import a library list from a file…</Button></div>}
       <div className="lib-add-choices">
         {choices.where.length > 1 && (
-          <Field label="Where">
-            <SegmentedControl label="Where" value={where} onValueChange={v => { holdHeight(); setWhere(v) }} options={choices.where.map(w => ({ value: w, label: whereLabel(w, options.home) }))} />
+          <Field label="Where it is">
+            <SegmentedControl label="Where it is" value={where} onValueChange={v => { holdHeight(); setWhere(v) }} options={choices.where.map(w => ({ value: w, label: whereLabel(w, options.home) }))} />
           </Field>
         )}
       </div>
@@ -221,7 +209,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
           <div className="lib-add-choices">
             {hows.length > 1 && (
               <Field label="What">
-                <SegmentedControl label="What" value={how} onValueChange={v => { holdHeight(); setHow(v) }} options={hows.map(h => ({ value: h, label: howLabel(h, signIn) }))} />
+                <SegmentedControl label="What" value={how} onValueChange={v => { holdHeight(); setHow(v) }} options={hows.map(h => ({ value: h, label: HOW_LABEL[h] }))} />
               </Field>
             )}
             {builders.length > 1 && (
@@ -231,21 +219,24 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
               </Field>
             )}
           </div>
-          <p className="muted lib-add-about">{describe(where, how, overSSH, builder, signIn, options.home)}</p>
+          {where === 'here' && how === 'build' && (
+            <Field label="Who sees it"><p className="muted lib-add-who">Whoever uses this Studio.</p></Field>
+          )}
+          <p className="muted lib-add-about">{describe(where, how, overSSH, builder, options.home)}</p>
           {where === 'bucket' && <BucketLibraryForm onAdded={lib => onAdded(lib, true, true)} />}
           {where === 'here' && (how === 'build'
             ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />
             : <LocalLibraryForm key="here-connect" compact browse={browse} onAdded={lib => onAdded(lib, false)} />)}
-          {where === 'system' && how === 'own' && (
-            <SpaceForm key={`own-${overSSH ? 'ssh' : 'pw'}`} {...(overSSH ? { destination: system } : { cluster: system })} onAdded={lib => onAdded(lib, true)} />
-          )}
           {where === 'system' && how === 'build' && builder === 'workflow' && (
             <ClusterLibraryForm compact {...(workflowOnly ? {} : { site: system })} onStarted={lib => onStarted?.(lib)} />
           )}
-          {where === 'system' && (how === 'build' || how === 'connect') && builder !== 'workflow' && (
-            <SshLibraryForm key={`${overSSH ? 'ssh' : 'pw'}-${how}`} compact transport={overSSH ? 'ssh' : 'pw'} mode={how === 'build' ? 'build' : 'connect'}
-              {...(overSSH ? { destination: system } : { cluster: system })}
-              onAdded={lib => onAdded(lib, how === 'build')} />
+          {where === 'system' && how === 'build' && builder !== 'workflow' && (
+            <IndexFolderForm key={overSSH ? 'ssh' : 'pw'} {...(overSSH ? { destination: system } : { cluster: system })} holdHeight={holdHeight}
+              onAdded={lib => onAdded(lib, true)} />
+          )}
+          {where === 'system' && how === 'connect' && (
+            <SshLibraryForm key={overSSH ? 'ssh' : 'pw'} compact transport={overSSH ? 'ssh' : 'pw'} {...(overSSH ? { destination: system } : { cluster: system })}
+              onAdded={lib => onAdded(lib, false)} />
           )}
           {where === 'system' && !overSSH && options.space && system && (
             <section className="lib-add-shared" aria-label={`Shared with you on ${system}`}>

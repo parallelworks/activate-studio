@@ -82,6 +82,9 @@ type Providers struct {
 	// SpaceFolder is owner's own space, My library: the site it is on
 	// and its folder there; "" and "" for none.
 	SpaceFolder func(owner string) (site, folder string)
+	// WriteShares is who the library at an index root is shared with for
+	// writing, as ACL entries name them (user:bob, group:team).
+	WriteShares func(indexRoot string) []string
 	// SpaceChanged queues the index build of a person's space (a library
 	// written as them, named by its index root) after a transfer changed
 	// its files, as a write from the Library does. viewer is the signed-in

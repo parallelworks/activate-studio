@@ -43,7 +43,7 @@ func perm(t *testing.T, p string) os.FileMode {
 	return fi.Mode().Perm()
 }
 
-func TestSpaceCheckRefusesWhatAnotherAccountCouldChange(t *testing.T) {
+func TestTheFolderCheckRefusesWhatCannotBeIndexed(t *testing.T) {
 	h, homes := buildHarness(t)
 	t.Setenv("STUDIO_HOME_CLUSTER", "cluster-a")
 	h.m.GufiBin = fakeBundle(t, gufiBinDir())
@@ -56,7 +56,7 @@ func TestSpaceCheckRefusesWhatAnotherAccountCouldChange(t *testing.T) {
 	if r.Body["ok"] != true {
 		t.Fatalf("%v", r.Body)
 	}
-	match(t, stepDetail(r, "folder"), `does not exist yet\. It is made, open to you alone`, "missing")
+	match(t, stepDetail(r, "folder"), `does not exist yet\. It is made, closed to other accounts`, "missing")
 	match(t, stepDetail(r, "gufi"), `copies its GUFI`, "gufi sent")
 	eq(t, r.Body["create"], []any{home + "/studio"}, "create")
 	if _, err := os.Stat(filepath.Join(home, "studio")); err == nil {
@@ -66,19 +66,17 @@ func TestSpaceCheckRefusesWhatAnotherAccountCouldChange(t *testing.T) {
 	match(t, firstFailed(h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~"})), `That is your home folder`, "home")
 	match(t, firstFailed(h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/.activate-studio/x"})), `the Studio's own`, "studio")
 
-	open := filepath.Join(home, "open")
-	os.MkdirAll(open, 0o755)
-	os.Chmod(open, 0o777)
-	match(t, firstFailed(h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/open"})), `Every account there can write in .*/open \(mode 777\)`, "open folder")
-
-	// A folder of the person's own, under one every account may write in:
-	// someone else could rename it away and put theirs in its place.
-	os.MkdirAll(filepath.Join(open, "mine"), 0o700)
-	match(t, firstFailed(h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/open/mine"})), `/open can be written by every account, so another account could move or replace`, "unsafe path")
-	os.Chmod(open, 0o777|os.ModeSticky)
-	r = h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/open/mine"})
-	if r.Body["ok"] != true {
-		t.Fatalf("the sticky bit keeps others from renaming it: %v", r.Body)
+	write(t, filepath.Join(home, "a-file"), "x")
+	match(t, firstFailed(h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/a-file"})), `is a file, not a folder`, "a file")
+	match(t, firstFailed(h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": filepath.Dir(home)})), `holds your home folder`, "above home")
+	if os.Getuid() != 0 {
+		closed := filepath.Join(home, "closed")
+		os.MkdirAll(filepath.Join(closed, "in"), 0o755)
+		os.Chmod(closed, 0o300)
+		match(t, firstFailed(h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/closed"})), `Your account cannot open`, "not readable")
+		os.Chmod(closed, 0o500)
+		match(t, firstFailed(h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/closed/new"})), `cannot be made: your account cannot write in`, "cannot be made")
+		os.Chmod(closed, 0o700)
 	}
 
 	shared := filepath.Join(home, "shared")

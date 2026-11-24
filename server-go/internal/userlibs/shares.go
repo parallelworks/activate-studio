@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
+	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
 )
 
 // Folder sharing (docs/MULTI-USER.md, Folder sharing): the owner of a space
@@ -139,19 +140,30 @@ func newShareID() string {
 
 // shareSh applies ($1 apply) or takes back ($1 revoke) a share, as the
 // owner: $2 the folder, $3 user, group or everyone, $4 the account or
-// group, $5 r or w, $6 the space's folder. An apply prints opened=<folder>
+// group, $5 r or w, $6 the space's folder. With $7 1, an apply is refused
+// where another account could change that folder or move it (LooseSh, with
+// $8 the grants its owner made). An apply prints opened=<folder>
 // for each folder above the shared one that it opened for passing through,
 // which had no entry for the recipient before. A revoke reads, on standard
 // input, one per line, the folders above it to close again: those the
 // share opened that no other share to the same recipient needs.
 const shareSh = `set -f
-op=$1 f=$2 kind=$3 name=$4 perm=$5 root=$6
+op=$1 f=$2 kind=$3 name=$4 perm=$5 root=$6 LOOSE_OK=$8
 uid=$(id -u)
 fail() { printf '%s\n' "$2" >&2; exit "$1"; }
+` + transfers.LooseSh + `
 [ -d "$f" ] && [ ! -L "$f" ] || fail 4 "$f is not a folder."
 F=$(cd -P -- "$f" 2>/dev/null && pwd -P) || fail 4 "$f cannot be opened."
 R=$(cd -P -- "$root" 2>/dev/null && pwd -P) || fail 4 "$root cannot be opened."
 case "$F/" in "${R%/}"/*) ;; *) fail 6 "$f is not in your library.";; esac
+if [ "$7" = 1 ] && [ "$op" = apply ]; then
+  w=$(looseway "$R")
+  case "${w%% *}" in
+  '') ;;
+  owner) fail 13 "${w#* } belongs to another account, which could change what a share opens." ;;
+  *) fail 13 "Another account can write in ${w#* }, and could change what a share opens. Close it to other accounts, then share." ;;
+  esac
+fi
 [ "$(stat -c %u -- "$F")" = "$uid" ] || fail 7 "$F belongs to another account, so it cannot be shared from here."
 case "$kind" in
 user) id -u -- "$name" >/dev/null 2>&1 || fail 8 "There is no account $name there."; who=u:$name; long=user:$name ;;
@@ -288,7 +300,7 @@ func (m *Module) ownSpace(ctx context.Context, w who, id string) (string, string
 		return "", "", nil, apierr.New(401, "Sign in to share.")
 	}
 	d := find(m.load(owner), id)
-	if d == nil || d.Space == nil {
+	if d == nil || d.Shareable() == nil {
 		return "", "", nil, apierr.New(404, "no such space")
 	}
 	// A space over plain ssh is on a Studio one person uses, with nobody
@@ -300,7 +312,7 @@ func (m *Module) ownSpace(ctx context.Context, w who, id string) (string, string
 	if key == "" {
 		return "", "", nil, apierr.New(409, "Sign the pw CLI in under Settings, Accounts, so the Studio can share as you.")
 	}
-	if err := m.sameAccount(ctx, d.Site, key, d.Space.UID); err != nil {
+	if err := m.sameAccount(ctx, d.Site, key, d.Shareable().UID); err != nil {
 		return "", "", nil, err
 	}
 	return owner, key, d, nil
@@ -310,7 +322,7 @@ func (m *Module) ownSpace(ctx context.Context, w who, id string) (string, string
 func (m *Module) listShares(w who, id string) (*jsonv.Object, error) {
 	owner := w.owner()
 	d := find(m.load(owner), id)
-	if owner == "" || d == nil || d.Space == nil {
+	if owner == "" || d == nil || d.Shareable() == nil {
 		return nil, apierr.New(404, "no such space")
 	}
 	list := []any{}
@@ -319,7 +331,7 @@ func (m *Module) listShares(w who, id string) (*jsonv.Object, error) {
 			list = append(list, s.json(""))
 		}
 	}
-	return jsonv.NewObject("shares", list, "acl", d.Space.ACL, "fs", d.Space.FS, "account", d.Space.Account), nil
+	return jsonv.NewObject("shares", list, "acl", d.Shareable().ACL, "fs", d.Shareable().FS, "account", d.Shareable().Account), nil
 }
 
 // runShare runs shareSh; close is a revoke's folders to close again. It
@@ -329,8 +341,12 @@ func (m *Module) runShare(ctx context.Context, site, key string, s Share, op str
 	if s.Access == "write" {
 		perm = "w"
 	}
+	guard := ""
+	if d := find(m.load(s.Owner), s.Space); d != nil && d.Guard {
+		guard = "1"
+	}
 	input := strings.NewReader(strings.Join(append(close, ""), "\n"))
-	r, err := m.Pool.RunOnce(ctx, site, key, []string{"bash", "-c", shareSh, "_", op, s.Folder, s.Kind, s.Name, perm, s.Root}, 30*time.Minute, input)
+	r, err := m.Pool.RunOnce(ctx, site, key, []string{"bash", "-c", shareSh, "_", op, s.Folder, s.Kind, s.Name, perm, s.Root, guard, grantsLine(m.writeShares(s.Owner, s.Space))}, 30*time.Minute, input)
 	if err != nil {
 		return nil, m.sessionErr(remote.ShortName(site), key, err)
 	}
@@ -385,16 +401,16 @@ func (m *Module) noteOpened(id string, opened []string) {
 	})
 }
 
-// addShare grants a share, or changes the access of one already there.
-func (m *Module) addShare(ctx context.Context, w who, id string, b *jsonv.Object) (*jsonv.Object, error) {
-	owner, key, d, err := m.ownSpace(ctx, w, id)
-	if err != nil {
-		return nil, err
-	}
-	rel, err := shareRel(field(b, "path"))
-	if err != nil {
-		return nil, err
-	}
+// shareAsk is a share as it is asked for.
+type shareAsk struct{ kind, name, access string }
+
+func (s *shareAsk) object() *jsonv.Object {
+	return jsonv.NewObject("path", "", "kind", s.kind, "name", s.name, "access", s.access)
+}
+
+// shareRequest reads whom a share is for and what it lets them do, and
+// refuses one the folder's file system or owner cannot give.
+func shareRequest(b *jsonv.Object, info libraries.SpaceInfo) (*shareAsk, error) {
 	kind, name, access := str(field(b, "kind")), strings.TrimSpace(str(field(b, "name"))), str(field(b, "access"))
 	if access == "" {
 		access = "read"
@@ -408,20 +424,54 @@ func (m *Module) addShare(ctx context.Context, w who, id string, b *jsonv.Object
 		return nil, apierr.New(400, "Every account can be given read only. Share with a person or a group to let them write.")
 	case kind != "everyone" && !accountRe.MatchString(name):
 		return nil, apierr.New(400, "name: an account or group on the cluster")
-	case kind == "user" && name == d.Space.Account:
+	case kind == "user" && name == info.Account:
 		return nil, apierr.New(400, "That is your own account.")
-	case kind != "everyone" && !d.Space.ACL:
-		return nil, apierr.New(409, "Sharing with one person or group needs POSIX ACLs, which this file system (%s) does not take. You can share the folder with every account instead.", d.Space.FS)
+	case kind != "everyone" && !info.ACL:
+		return nil, apierr.New(409, "Sharing with one person or group needs POSIX ACLs, which this file system (%s) does not take. You can share the folder with every account instead.", info.FS)
 	}
 	if kind == "everyone" {
 		name = ""
 	}
+	return &shareAsk{kind, name, access}, nil
+}
+
+// writeShares is who a library of owner's is shared with for writing, as
+// ACL entries name them.
+func (m *Module) writeShares(owner, id string) []string {
+	var out []string
+	for _, s := range m.loadShares() {
+		if s.Owner == owner && s.Space == id && s.Access == "write" && s.Kind != "everyone" {
+			out = append(out, s.who())
+		}
+	}
+	return out
+}
+
+// addShare grants a share, or changes the access of one already there.
+func (m *Module) addShare(ctx context.Context, w who, id string, b *jsonv.Object) (*jsonv.Object, error) {
+	owner, key, d, err := m.ownSpace(ctx, w, id)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := shareRel(field(b, "path"))
+	if err != nil {
+		return nil, err
+	}
+	if d.ReadOnly != nil {
+		return nil, apierr.New(409, "%s", *d.ReadOnly)
+	}
+	info := *d.Shareable()
+	ask, err := shareRequest(b, info)
+	if err != nil {
+		return nil, err
+	}
+	kind, name, access := ask.kind, ask.name, ask.access
 	root := spaceRoot(d)
 	folder := root
 	if rel != "" {
 		folder = strings.TrimRight(root, "/") + "/" + rel
 	}
-	s := Share{ID: newShareID(), Owner: owner, OwnerAccount: d.Space.Account, Space: id, SpaceLabel: d.ShownLabel(m.Users.AuthEnabled), Site: d.Site,
+	s := Share{ID: newShareID(), Owner: owner, OwnerAccount: info.Account, Space: id, SpaceLabel: d.ShownLabel(m.Users.AuthEnabled), Site: d.Site,
 		Root: root, Folder: folder, Rel: rel, Kind: kind, Name: name, Access: access, CreatedAt: isoNow()}
 	var was *Share
 	for _, x := range m.loadShares() {
@@ -776,7 +826,8 @@ func (m *Module) addShared(ctx context.Context, w who, shareID string, b *jsonv.
 // checkShared is the check for a shared folder: the person can open it,
 // and GUFI can run as them.
 func (m *Module) checkShared(ctx context.Context, site, key, folder, from string) (*spaceFound, error) {
-	f, err := m.checkSpace(ctx, site, key, folder, false)
+	f, err := m.checkSpace(ctx, probeHost{Site: site, Key: key, Name: remote.ShortName(site), Reached: remote.ShortName(site),
+		Advice: func(msg string) string { return pwAdvice(msg, site) }}, spaceAsk{folder: folder})
 	if err != nil {
 		return nil, err
 	}
@@ -803,7 +854,7 @@ func (m *Module) sharesChanged(owner string, d *libraries.UserDef) {
 	type lib struct{ owner, id string }
 	var todo []lib
 	for _, s := range m.loadShares() {
-		mine := d.Space != nil && s.Owner == owner && s.Space == d.ID
+		mine := d.Shareable() != nil && s.Owner == owner && s.Space == d.ID
 		fromIt := d.Shared != nil && s.ID == d.Shared.ShareID
 		if !mine && !fromIt {
 			continue

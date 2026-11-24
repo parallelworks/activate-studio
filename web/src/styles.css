@@ -2306,6 +2306,11 @@ a.identity-btn { text-decoration: none; }
 .lib-add-choices { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 .lib-add-choices > * { min-width: 0; max-width: 100%; }
 .lib-add-about { margin: 0; max-width: var(--settings-measure); }
+.lib-add-who { margin: 0; }
+.lib-add-where { grid-column: 1 / -1; margin: 0; font-size: 14px; line-height: 20px; color: inherit; }
+.lib-add-sees { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.lib-add-my { display: flex; flex-direction: column; gap: 4px; }
+.lib-add-my-line { display: flex; align-items: flex-start; gap: 8px; max-width: var(--settings-measure); cursor: pointer; }
 .lib-create-list { margin: 0; padding-left: 18px; }
 .lib-create-list code { word-break: break-all; }
 .local-library-browse { margin-bottom: 14px; max-width: var(--settings-measure); }
