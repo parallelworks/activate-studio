@@ -6,6 +6,7 @@ import { IndexGroup } from '../components/IndexGroup'
 import { WorkflowsSection } from '../components/WorkflowsSection'
 import { TransfersSettingsSection } from '../components/TransfersSettingsSection'
 import { transfersPresent } from '../transferApi'
+import { SectionStrip } from '../components/SectionStrip'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { okJSON } from '../api'
 import {
@@ -557,7 +558,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   return (
     <div className="settings-view">
       <div className="help-docs card">
-        <nav className="help-nav" ref={navRef}>
+        <SectionStrip navRef={navRef}>
           <div className="help-nav-head"><span>Settings</span></div>
           {/* Grouped like the user guide's rail: a group opens when it holds
               the section being edited, and a header click opens or closes it. */}
@@ -583,7 +584,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               </div>
             )
           })}
-        </nav>
+        </SectionStrip>
         <article className="help-content settings-content">
 
           {section === 'general' && (
