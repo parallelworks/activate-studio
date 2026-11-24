@@ -105,6 +105,15 @@ describe('the Fleet page over pw code sessions', () => {
     } finally { location.hash = '' }
   })
 
+  it('opens nothing for a hand-made link whose id does not decode', async () => {
+    location.hash = '#view=agents:fleet?agent=%'
+    try {
+      render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+      expect(await screen.findByText('Queue watcher', { selector: '.task-card-objective' })).toBeInTheDocument()
+      expect(document.querySelector('.fleet-card.selected')).toBeNull()
+    } finally { location.hash = '' }
+  })
+
   it('answers a call its session waits to have approved, from the detail', async () => {
     const waiting = { ...agent, note: 'waiting for your approval: Bash: rm -rf build' }
     let approval: Record<string, unknown> = { id: 'ap1', kind: 'confirm', tool: 'Bash', command: 'rm -rf build', commandLength: 12, approvable: true }
@@ -145,6 +154,15 @@ describe('the Fleet page over pw code sessions', () => {
     fireEvent.click(screen.getByRole('button', { name: /Show the whole command \(60 lines/ }))
     await waitFor(() => expect(screen.getByText(/echo line 60/, { selector: '.fleet-approval-text' })).toBeInTheDocument())
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
+    cleanup()
+    // After review 2, R6: a call with a tool and no command has nothing to
+    // open, and is offered Approve as on the Code page.
+    approval = { id: 'ap3', kind: 'confirm', tool: 'WebFetch', reason: 'Fetch the release notes', approvable: true }
+    render(<FleetPage personas={[]} onOpenTask={() => {}} />)
+    fireEvent.click(await screen.findByText('Queue watcher', { selector: '.task-card-objective' }))
+    expect(await screen.findByText('Fetch the release notes')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(posts).toContainEqual({ url: '/api/fleet/watch-abcd/approve', body: { approval: 'ap3', allowed: true } }))
     cleanup()
     // A plan is answered on the Code page, not here.
     approval = { id: 'ap1', kind: 'plan', reason: 'Rewrite the build', approvable: false }

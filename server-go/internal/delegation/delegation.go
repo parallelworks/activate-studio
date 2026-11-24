@@ -88,9 +88,23 @@ type Service struct {
 	// looking; the record says it is still working, and the next look at
 	// it (agent_status, the Code page) picks it up again.
 	Watch time.Duration
+	// Hold is how long a session that has stopped on an error with its
+	// goal still active must stay so before its record is finished. The
+	// daemon reads such a session idle for a moment at the end of a failed
+	// turn, before the goal's check is armed and the session reads running
+	// again; the next turn clears the error.
+	Hold time.Duration
 
 	mu       sync.Mutex
 	watching map[string]bool
+	erred    map[string]erred
+}
+
+// erred is when a look first found a session stopped on an error with
+// its goal active, and the error it had.
+type erred struct {
+	at  time.Time
+	err string
 }
 
 // Default is the service Register made.
@@ -98,7 +112,8 @@ var Default *Service
 
 // New is a service over a's library and the registered agent sites.
 func New(a *app.App) *Service {
-	return &Service{A: a, Sites: agentsites.Current, Poll: 20 * time.Second, Watch: 12 * time.Hour, watching: map[string]bool{}}
+	return &Service{A: a, Sites: agentsites.Current, Poll: 20 * time.Second, Watch: 12 * time.Hour, Hold: 2 * time.Second,
+		watching: map[string]bool{}, erred: map[string]erred{}}
 }
 
 func owner(r *http.Request) string {
@@ -403,20 +418,16 @@ func Settled(st *jsonv.Object) bool {
 		return true
 	}
 	// A turn that ended on an error (a model the connection does not
-	// offer, say) leaves the goal active with nothing working on it.
+	// offer, say) leaves the goal active with nothing working on it. The
+	// daemon clears the error when the next turn starts, and Look holds a
+	// record for a moment before it believes one (see held).
 	if text(jsonv.Path(st, "lastError")) != "" {
 		return true
 	}
 	if len(jsonv.Arr(jsonv.Path(st, "approvals"))) > 0 {
 		return true
 	}
-	g := jsonv.Obj(jsonv.Path(st, "goal"))
-	if g == nil {
-		return true
-	}
-	active, _ := g.Get("active")
-	paused, _ := g.Get("paused")
-	return active != true || paused == true
+	return !goalActive(st)
 }
 
 // watch looks at the session until it settles, then finishes its record.
@@ -467,7 +478,7 @@ func (s *Service) Look(ctx context.Context, session, key string) bool {
 		}
 		return false
 	}
-	if !Settled(st) {
+	if !Settled(st) || !s.held(session, st) {
 		if rec.State != "working" {
 			rec.State = "working"
 			s.save(rec)
@@ -482,6 +493,47 @@ func (s *Service) Look(ctx context.Context, session, key string) bool {
 	}
 	s.finish(ctx, rec, st)
 	return rec.State != "waiting"
+}
+
+// held says whether a settled session has stayed settled long enough to
+// finish its record. Only a session stopped on an error with its goal
+// still active is held, for s.Hold from the first look that found it so
+// with the same error: a goal session reads that way for a moment between
+// a failed turn and the goal's check, and the check goes on with a new
+// turn when the error was a passing one.
+func (s *Service) held(session string, st *jsonv.Object) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := text(jsonv.Path(st, "lastError"))
+	if e == "" || waiting(st) || !goalActive(st) {
+		delete(s.erred, session)
+		return true
+	}
+	now := time.Now()
+	if s.erred == nil {
+		s.erred = map[string]erred{}
+	}
+	first, ok := s.erred[session]
+	if !ok || first.err != e {
+		s.erred[session] = erred{now, e}
+		return false
+	}
+	if now.Sub(first.at) < s.Hold {
+		return false
+	}
+	delete(s.erred, session)
+	return true
+}
+
+// goalActive says whether the session's goal is set and not paused.
+func goalActive(st *jsonv.Object) bool {
+	g := jsonv.Obj(jsonv.Path(st, "goal"))
+	if g == nil {
+		return false
+	}
+	active, _ := g.Get("active")
+	paused, _ := g.Get("paused")
+	return active == true && paused != true
 }
 
 // waiting says whether a settled session waits for a person to approve a
