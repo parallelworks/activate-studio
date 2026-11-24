@@ -1489,6 +1489,10 @@ a.identity-btn { text-decoration: none; }
   background: var(--pw-rail-bg);
   padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
 }
+/* Beside the page the rail is the nav itself; its wrapper and arrows only
+   take part at the phone width, where the rail is a strip (SectionStrip). */
+.section-strip { display: contents; }
+.strip-more { display: none; }
 .help-nav-head {
   /* Matches the Chats and Library rail headers: 14px semibold, normal case. */
   display: flex; align-items: center; gap: 8px; padding: 0 10px 10px;
@@ -2138,6 +2142,21 @@ a.identity-btn { text-decoration: none; }
     scrollbar-width: none;
   }
   .help-nav::-webkit-scrollbar { display: none; }
+  /* The strip's arrows (SectionStrip): over each edge with sections past
+     it, fading the chips they cover into the strip's own color. */
+  .section-strip { display: block; position: relative; flex: 0 0 auto; min-width: 0; }
+  .strip-more {
+    display: flex; align-items: center; position: absolute; top: 0; bottom: 1px; width: 44px;
+    padding: 0 6px; border: 0; color: var(--pw-text); cursor: pointer;
+  }
+  .strip-more-before { left: 0; justify-content: flex-start; background: linear-gradient(to right, var(--pw-rail-bg) 60%, transparent); }
+  .strip-more-after { right: 0; justify-content: flex-end; background: linear-gradient(to left, var(--pw-rail-bg) 60%, transparent); }
+  /* A round button, so it does not read as a group's own chevron. */
+  .strip-more-dot {
+    display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--pw-panel); border: 1px solid var(--pw-border-strong); box-shadow: 0 1px 3px rgba(16, 24, 40, 0.12);
+  }
+  .strip-more:hover .strip-more-dot { color: var(--pw-link); border-color: var(--pw-link); }
   .help-nav-head { display: none; }
   .help-nav button { white-space: nowrap; flex: 0 0 auto; }
   /* A group's pages follow its name along the strip, rather than hanging
@@ -2153,12 +2172,21 @@ a.identity-btn { text-decoration: none; }
     overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   }
   .query-view, .hist-view { overflow-y: auto; }
-  /* The library's resizable rail stacks above the listing; a drag divider
-     makes no sense stacked, and the rail's inline width from a desktop
-     resize must not survive the rotation. */
-  .library { flex-direction: column; }
-  .library-rail { width: 100% !important; max-height: 40vh; }
+  /* The library's tree and the open file take the whole width in turn
+     (LibraryView): the tree until a file opens, then the file under a way
+     back. They used to sit side by side in the card, the tree at full width,
+     which left the file 0px. A drag divider makes no sense here, and the
+     rail's inline width from a desktop resize must not survive the
+     rotation. */
+  .library, .library-card { flex-direction: column; }
+  .library-rail { width: 100% !important; flex: 1 1 auto; }
   .library .divider { display: none; }
+  .library:not(.has-open) .library-main { display: none; }
+  .library.has-open .library-rail { display: none; }
+  .library-back {
+    display: flex; align-items: center; flex-shrink: 0; padding: 6px 8px;
+    border-bottom: 1px solid var(--pw-border); background: var(--pw-rail-bg);
+  }
   .query-row .grow, .query-form select.field { max-width: 100%; }
   /* A condition row: field and condition side by side, the value below. */
   .filter-row { flex-wrap: wrap; }

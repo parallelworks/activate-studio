@@ -28,6 +28,7 @@ import { ShareDialog } from '../components/ShareDialog'
 import { ResultsTransferDialog, useTransfersShown, type ResultItem } from '../components/ResultsTransfer'
 import { destinationWhy, libraryLocation, transferApi } from '../transferApi'
 import { LockedButton } from '../components/LockedButton'
+import { usePhoneLayout } from '../phoneLayout'
 
 const RAIL_MIN = 220
 const RAIL_MAX = 520
@@ -569,16 +570,23 @@ export function LibraryView({ display, onDisplay }: {
   useEffect(() => { if (selectedFile) selectLibraryEntry({ path: selectedFile, isDir: false }) }, [selectedFile])
   useEffect(() => () => selectLibraryEntry(null), [])
 
+  // On a phone the tree and the open file take the whole width in turn, as a
+  // phone's file app does: the tree until a file opens, then the file, with a
+  // way back to the tree above it. Side by side, the file had no width left.
+  // The tree cannot be collapsed there, since it is the page.
+  const phone = usePhoneLayout()
+  const collapsed = railCollapsed && !phone
+
   return (
     <>
     <div
-      className={`library ${dropOver ? 'drop-over' : ''}`}
+      className={`library${display ? ' has-open' : ''}${dropOver ? ' drop-over' : ''}`}
       onDragOver={e => { e.preventDefault(); setDropOver(true) }}
       onDragLeave={() => setDropOver(false)}
       onDrop={e => { e.preventDefault(); setDropOver(false); if (writableAt(targetDir) || libOffer.allowed) void uploadTo(targetDir, e.dataTransfer.items) }}
     >
       <div className="library-card card">
-        {railCollapsed ? (
+        {collapsed ? (
           <div className="rail-strip">
             <IconButton icon="»" label="Expand knowledge base tree" onClick={() => setRailCollapsed(false)} />
           </div>
@@ -620,7 +628,7 @@ export function LibraryView({ display, onDisplay }: {
                       if (paths[0]) onDisplay({ kind: 'file', target: paths[0] })
                     }}
                   />
-                  <IconButton icon="«" label="Collapse tree" onClick={() => setRailCollapsed(true)} />
+                  {!phone && <IconButton icon="«" label="Collapse tree" onClick={() => setRailCollapsed(true)} />}
                 </span>
               </div>
               {selectMode && (
@@ -739,6 +747,14 @@ export function LibraryView({ display, onDisplay }: {
             </aside>
             <div className="divider" onMouseDown={onDividerDown} title="Drag to resize" />
           </>
+        )}
+        {phone && display && (
+          <div className="library-back">
+            <Button variant="ghost" size="sm" onClick={() => onDisplay(null)}>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m10 4-4 4 4 4"/></svg>
+              Back to the list
+            </Button>
+          </div>
         )}
         <section className="library-main">
           {display?.kind === 'workflow_dag' ? (
