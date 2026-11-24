@@ -220,6 +220,10 @@ func TestPartsSentAtOnceStopAtTheRowsAsked(t *testing.T) {
 	if held() != 250 || !strings.Contains(results[2], "send the next part") || !strings.Contains(results[3], "the last 49 rows of this part were not written") || !strings.Contains(results[3], "250 rows after the header") || !strings.Contains(results[4], "this part's 50 rows were not written") {
 		t.Fatalf("held %d: %q", held(), results)
 	}
+	// The chat row says what was left out, and that the workbook is done.
+	if out, _ := Default.executeInGo(r, "write_kb_file", `{"path":"reports/sales.xlsx","append":true,"content":`+strconv.Quote(rows(251, 20))+`}`, tctx); !strings.HasSuffix(out.Summary, "250 rows after the header; 20 rows past the 250 asked were not written, so the workbook is finished") {
+		t.Errorf("summary %q", out.Summary)
+	}
 	// Another file, and a workbook of two sheets, are not limited.
 	run(`{"path":"reports/other.xlsx","content":` + strconv.Quote(rows(1, 300)) + `}`)
 	if f, err := excelize.OpenFile(filepath.Join(kb, "reports", "other.xlsx")); err != nil {

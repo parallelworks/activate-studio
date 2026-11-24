@@ -678,8 +678,21 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
+					var done []sentPart
 					for _, i := range seq {
+						part, ok := workbookPart(calls[i].Function.Arguments)
+						if ok {
+							if j := part.repeats(done); j >= 0 && !outcomes[j].Failed {
+								m.A.Log.Info("tool call not run: the rows of a part written earlier in this reply", "tool", calls[i].Function.Name)
+								outcomes[i] = &Outcome{Result: "[Not run: these rows are the same as the rows of an earlier write to " + part.path + " in this reply, so adding them would repeat them in the workbook. Its result is below; add the next rows instead.]\n" + outcomes[j].Result, Summary: "not run: the same rows as an earlier part"}
+								continue
+							}
+						}
 						run(i)
+						if ok && !outcomes[i].Failed {
+							part.i = i
+							done = append(done, part)
+						}
 					}
 				}()
 			}
@@ -1263,6 +1276,80 @@ func askedRows(text string) int {
 		return 0
 	}
 	return best
+}
+
+// sentPart is a workbook part a round wrote: its path, and its rows.
+type sentPart struct {
+	i    int
+	path string
+	rows [][]any
+}
+
+// workbookPart reads a write_kb_file call that writes rows to one sheet of
+// a workbook; ok is false for any other call.
+func workbookPart(args string) (sentPart, bool) {
+	var v map[string]any
+	if json.Unmarshal([]byte(args), &v) != nil {
+		return sentPart{}, false
+	}
+	p, _ := v["path"].(string)
+	content, _ := v["content"].(string)
+	p = strings.ToLower(strings.Trim(p, "/"))
+	if !strings.HasSuffix(p, ".xlsx") || content == "" {
+		return sentPart{}, false
+	}
+	sheets, err := docwrite.Sheets(content)
+	if err != nil || len(sheets) != 1 || len(sheets[0].Rows) == 0 {
+		return sentPart{}, false
+	}
+	return sentPart{path: p, rows: sheets[0].Rows}, true
+}
+
+// repeats is the call of a part written before it in the round to the
+// same workbook with the same rows past the header (the header is the
+// first row of the round's first part to it), -1 for none. A model that
+// sends a first part as a replace and again as an append would otherwise
+// write its rows twice.
+func (p sentPart) repeats(done []sentPart) int {
+	var header []any
+	for _, d := range done {
+		if d.path == p.path {
+			header = d.rows[0]
+			break
+		}
+	}
+	if header == nil {
+		return -1
+	}
+	body := func(rows [][]any) string {
+		if len(rows) > 0 && rowText(rows[0]) == rowText(header) {
+			rows = rows[1:]
+		}
+		var b strings.Builder
+		for _, r := range rows {
+			b.WriteString(rowText(r))
+			b.WriteByte('\n')
+		}
+		return b.String()
+	}
+	mine := body(p.rows)
+	if mine == "" {
+		return -1
+	}
+	for _, d := range done {
+		if d.path == p.path && body(d.rows) == mine {
+			return d.i
+		}
+	}
+	return -1
+}
+
+func rowText(r []any) string {
+	cells := make([]string, len(r))
+	for k, c := range r {
+		cells[k] = strings.TrimSpace(fmt.Sprint(c))
+	}
+	return strings.Join(cells, "\x1f")
 }
 
 // rowCap is the count of rows a message asks a new workbook to hold and
