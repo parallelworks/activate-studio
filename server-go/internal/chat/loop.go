@@ -841,7 +841,12 @@ func (m *Module) loop(ctx context.Context, r *http.Request, st *loopState) error
 			heldText += pendingNote
 			pendingNote = ""
 		}
-		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && !withheld && !showsSomething.MatchString(turn.Content) && jsval.Len(jsTrim(turn.Content)) < 200) {
+		// After tools, a short reply that says what it will do next ("Let
+		// me read the other file.") is not an answer, and the turn goes on
+		// to a final one; a short reply that answers ("The folder holds 1
+		// file: notes/readme.md") is the answer. It has been shown as it
+		// came, so a second, forced answer would follow it.
+		if jsTrim(turn.Content) == "" || (usedTools && !afterChange && !withheld && !showsSomething.MatchString(turn.Content) && jsval.Len(jsTrim(turn.Content)) < 200 && announcesNext(turn.Content)) {
 			// A model on the text protocol that says "I'll write it now"
 			// and stops is asked once to make the request, with its tools,
 			// rather than forced to a final answer without them.
@@ -1189,6 +1194,14 @@ const presearchNote = "The Studio searched the libraries for the user's message 
 // announcesRe: a short reply that says what it is about to do rather than
 // doing it ("I'll write the file now", "Let me create it").
 var announcesRe = regexp.MustCompile(`(?i)\b(i'll|i’ll|i will|let me|i am going to|i'm going to|i’m going to|going to|next,? i|now (writing|creating|saving|making)|writing (it|the|that)|creating (it|the|that))\b`)
+
+// announcesNext: text that says what the model will do next, not an
+// answer. "Let me know" offers more and is not counted.
+func announcesNext(text string) bool {
+	return announcesRe.MatchString(letMeKnowRe.ReplaceAllString(text, ""))
+}
+
+var letMeKnowRe = regexp.MustCompile(`(?i)\blet me know\b`)
 
 // maxNudges is how many times a turn's short or empty replies are answered
 // with nudgeNote.
