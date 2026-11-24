@@ -323,6 +323,21 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
     setSection(id)
     history.replaceState(null, '', `${location.pathname}${location.search}#view=settings:${id}`)
   }
+  // On a phone the rail is a strip that scrolls sideways: the section open
+  // is brought into it, rather than left past its right edge.
+  // Checked after each render until done for the section, since the
+  // sections listed arrive with the account and settings.
+  const navRef = useRef<HTMLElement>(null)
+  const navShown = useRef<string | null>(null)
+  useEffect(() => {
+    const nav = navRef.current
+    const on = nav?.querySelector<HTMLElement>('button.active')
+    if (!nav || !on || navShown.current === section) return
+    navShown.current = section
+    if (nav.scrollWidth <= nav.clientWidth) return
+    const a = on.getBoundingClientRect(), n = nav.getBoundingClientRect()
+    if (a.left < n.left || a.right > n.right) nav.scrollLeft += a.left - n.left - (n.width - a.width) / 2
+  })
   const updatesFlow = useUpdateFlow()
   const tabs = GENERAL_TABS.filter(t => t.value !== 'updates' || !updatesFlow.none)
   const [theme, setTheme] = useState<ThemeChoice | null>(null)
@@ -507,7 +522,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   return (
     <div className="settings-view">
       <div className="help-docs card">
-        <nav className="help-nav">
+        <nav className="help-nav" ref={navRef}>
           <div className="help-nav-head"><span>Settings</span></div>
           {/* Grouped like the user guide's rail: a group opens when it holds
               the section being edited, and a header click opens or closes it. */}
