@@ -12,9 +12,9 @@
 # PATCH as numbers, with a missing PATCH as 0. A Preview install therefore
 # moves on to the next Stable release when it comes out.
 #
-# Steps: checks (the commit is on the branch and builds the Go version, the
-# version is free and in that range, the signing and notary secrets are
-# set); an annotated tag pushed to origin; the GitHub release created as a
+# Steps: checks (the commit is on the branch and builds the Go version, its
+# required CI checks passed, the version is free and in that range, the
+# signing and notary secrets are set); an annotated tag pushed to origin; the GitHub release created as a
 # prerelease with --latest=false (and "latest" checked to be unchanged
 # after); linux-app and mac-app dispatched with release=VERSION and
 # channel=preview, which sign the manifests with
@@ -32,6 +32,10 @@
 #   WAIT=1          wait for the two runs, then run mark_preview.sh --check
 #   PREVIEW_NOTES   text put before the standard release notes
 #   DRY_RUN=1       print what it would do after the checks, change nothing
+#   CI_WAIT=0       fail at once when the commit's required checks are still
+#                   running, rather than waiting for them (up to 45 minutes)
+#   CI_GATE=0       skip the CI check below (a commit whose CI cannot pass
+#                   for a reason outside it; say why in the release notes)
 #   ALLOW_UNSIGNED=1  go on without the macOS signing secrets (the release
 #                   then carries the ad hoc signed app)
 # Needs git and gh, signed in with rights to push tags, create releases and
@@ -64,6 +68,54 @@ for w in linux-app mac-app; do
   git show "origin/$WORKFLOW_REF:.github/workflows/$w.yml" 2>/dev/null | grep -c '^      channel:' >/dev/null ||
     fail ".github/workflows/$w.yml on $WORKFLOW_REF has no channel input"
 done
+
+# The commit's CI: each required check (the ruleset's, below) passed on the
+# commit, or on the head of the pull request it was merged from when that
+# head has the same tree, which is the case when the branch was up to date
+# with main at the squash: main's own run of those checks then repeats one
+# already done on the same files. Otherwise this waits for main's run.
+REQUIRED_CHECKS="${REQUIRED_CHECKS:-build-and-test macos build-test zizmor}"
+# ok, fail, cancelled or wait: the newest run of each required check on a
+# commit. A push to main cancels the runs still queued for the push before
+# it, so a commit in the middle of a series of merges is often cancelled.
+ci_state() {
+  local runs name state=ok line
+  runs="$(gh api --paginate "repos/$REPO/commits/$1/check-runs?per_page=100" \
+    -q '.check_runs[] | [.name, (.id | tostring), .status, (.conclusion // "")] | @tsv' 2>/dev/null)" || { echo wait; return; }
+  for name in $REQUIRED_CHECKS; do
+    line="$(awk -F'\t' -v n="$name" '$1 == n' <<<"$runs" | sort -t$'\t' -k2,2n | tail -n 1)"
+    case "$(cut -f3 <<<"$line")/$(cut -f4 <<<"$line")" in
+      completed/success|completed/skipped|completed/neutral) ;;
+      completed/cancelled) echo cancelled; return ;;
+      completed/*) echo fail; return ;;
+      *) state=wait ;;
+    esac
+  done
+  echo "$state"
+}
+if [ "${CI_GATE:-1}" = 1 ]; then
+  TREE="$(git rev-parse "$COMMIT^{tree}")"
+  HEADS="$(gh api "repos/$REPO/commits/$COMMIT/pulls" -q '.[].head.sha' 2>/dev/null || true)"
+  deadline=$(( $(date +%s) + 45 * 60 ))
+  while :; do
+    via=; state="$(ci_state "$COMMIT")"
+    if [ "$state" != ok ]; then
+      for h in $HEADS; do
+        [ "$(gh api "repos/$REPO/git/commits/$h" -q .tree.sha 2>/dev/null)" = "$TREE" ] || continue
+        [ "$(ci_state "$h")" = ok ] && { state=ok; via=" (on the pull request's head ${h:0:7}, the same tree)"; break; }
+      done
+    fi
+    case "$state" in
+      ok) say "required checks passed for ${COMMIT:0:7}$via"; break ;;
+      fail) fail "a required check ($REQUIRED_CHECKS) failed on ${COMMIT:0:7}; see gh run list --commit $COMMIT" ;;
+      cancelled) fail "a required check on ${COMMIT:0:7} was cancelled, usually by a newer push to $BRANCH: release the newer commit, or rerun the cancelled run" ;;
+    esac
+    [ "${CI_WAIT:-1}" = 1 ] || fail "the required checks on ${COMMIT:0:7} are still running (CI_WAIT=1 waits for them)"
+    [ "$(date +%s)" -lt "$deadline" ] || fail "the required checks on ${COMMIT:0:7} did not finish within 45 minutes"
+    echo "   waiting for the required checks on ${COMMIT:0:7}..."
+    sleep 30
+  done
+fi
 
 # The newest Stable release: not a prerelease, not a draft, a version tag.
 STABLE="$(gh release list -R "$REPO" --exclude-pre-releases --exclude-drafts -L 50 --json tagName -q '.[].tagName' |
