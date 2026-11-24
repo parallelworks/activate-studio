@@ -275,8 +275,8 @@ describe('a newer version, in the footer', () => {
     // One page, one follower: the two do not each poll. Counted by the
     // timers at the poll interval, which a slow runner cannot change.
     const before = s.calls.filter(c => c.url === '/api/updates').length
-    await act(async () => { await new Promise(r => setTimeout(r, 60)) })
-    expect(s.calls.filter(c => c.url === '/api/updates').length - before).toBeGreaterThan(2)
+    // It polls: waited for, not timed, so a loaded runner does not fail it.
+    await waitFor(() => expect(s.calls.filter(c => c.url === '/api/updates').length - before).toBeGreaterThan(2), { timeout: 5000 })
     expect(intervals.mock.calls.filter(([, ms]) => ms === 5)).toHaveLength(1)
     intervals.mockRestore()
   })

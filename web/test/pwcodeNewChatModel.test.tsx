@@ -22,7 +22,7 @@ beforeEach(() => {
   canvas.className = 'chat-canvas'
   canvas.setAttribute('data-engine', 'pwcode')
   document.body.appendChild(canvas)
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url === '/api/chat/engine'
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.startsWith('/api/chat/engine')
     ? { model: 'claude-code/haiku' }
     : { machines: [{ id: 'studio', claudeInstalled: true, claudeCodeAllowed: true }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
 })

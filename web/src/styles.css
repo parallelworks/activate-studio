@@ -3397,6 +3397,10 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .group:has(a[href*="note=engine"]):not(:has(.group)) .chat-ink { font-size: 13px; line-height: 1.45; color: var(--pw-muted); }
 .group:has(a[href*="note=engine"]):not(:has(.group)) .chat-ink p { margin: 0; }
 .group:has(a[href*="note=engine"]):not(:has(.group)) .chat-actions { display: none; }
+/* The notes' links are underlined, not told by colour alone, which in
+   muted text is close to the text's own. */
+.group:has(a[href*="note=engine"]):not(:has(.group)) .chat-ink a,
+.group:has(a[href*="note=continued"]):not(:has(.group)) .chat-ink a { text-decoration: underline; text-underline-offset: 2px; }
 
 /* Settings, Model access, the pw CLI contexts: a context's name wraps, and
    where the section is narrow (1280 with Status open) each context stacks
@@ -3519,3 +3523,12 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
    in view so the switch reads clearly. */
 .chat-canvas[data-engines-mixed] .chat-meta { opacity: 1; }
 .chat-canvas[data-engines-mixed] .chat-meta [data-engine-label='Studio']::before { content: 'Studio assistant · '; }
+/* In a pw code session's view, the chat's turns the session was given as
+   carried over (withEarlier, pwcode/carried.ts) are drawn from the chat's
+   record, each block headed as earlier in the chat, in the same quiet
+   type as the engine labels, with its replies' details in view. */
+.pwcode-session [data-row^='earlier-'] .chat-meta { opacity: 1; }
+.pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio assistant · '; }
+.pwcode-session [data-row^='earlier-']:is(:first-child, :not([data-row^='earlier-']) + [data-row^='earlier-'])::before {
+  content: 'Earlier in this chat'; display: block; padding-top: 8px; font-size: 12px; color: var(--pw-muted);
+}
