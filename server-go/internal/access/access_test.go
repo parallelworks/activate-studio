@@ -17,6 +17,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
+	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 )
 
@@ -426,5 +427,62 @@ func TestStopUsingThePwCLIAndUseItAgain(t *testing.T) {
 	st, _, raw = s.do("PUT", "/api/access/cli/use", map[string]any{"use": true})
 	if st != 200 || !strings.HasPrefix(raw, `{"ok":true,"stopped":false,"models":{"source":"cli","host":"platform-a.example.com","context":"work"}`) {
 		t.Fatal(st, raw)
+	}
+}
+
+// A person with both of their own keys: models come from their endpoint,
+// the platform from their ACTIVATE key, and neither is said to be the
+// other. The endpoint beside the key is known to the Go server only
+// (EndpointOf), as where it keeps the keys.
+func TestAccessWithAnEndpointBesideAnActivateKey(t *testing.T) {
+	n := newNode(t, map[string]any{"authEnabled": true, "user": map[string]any{"id": "u1", "username": "alex", "name": "Alex"},
+		"cred": map[string]any{"key": "pwt_alex.key-1234", "baseUrl": "", "endpoint": nil}, "keyStatus": map[string]any{"mode": "session", "last4": "1234", "kind": "api-key"}, "sharedLast4": nil})
+	s := newStudio(t, map[string]string{"PW_CREDENTIALS_DIR": credsDir(t)}, n)
+	s.p.OwnKeys = func(r *http.Request, owner string) (key, endpoint *platform.Cred) {
+		if owner != "u1" {
+			return nil, nil
+		}
+		return &platform.Cred{Key: "pwt_alex.key-1234"}, &platform.Cred{Key: "sk-alex-5678", BaseURL: "https://models.example.org/v1"}
+	}
+	_, _, raw := s.do("GET", "/api/access", nil)
+	if !strings.Contains(raw, `"models":{"source":"endpoint","host":"models.example.org","context":null,"baseUrl":"https://models.example.org/v1","last4":null,"kind":null},"platform":{"source":"key","host":"platform-a.example.com","context":null,"baseUrl":null,"last4":"1234","kind":"api-key"}`) {
+		t.Fatal(raw)
+	}
+	if strings.Contains(raw, "sk-alex") || strings.Contains(raw, "pwt_alex") {
+		t.Fatal("a key in the answer")
+	}
+}
+
+// Choosing a pw CLI context and dropping the stored key, on a Studio of
+// one with both of the owner's keys kept by the Go server: the key goes,
+// the endpoint stays and still serves models.
+func TestChoosingAContextKeepsTheEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	keys := modelkeys.New(dir, func() bool { return false })
+	u := "https://models.example.org/v1"
+	keys.Set(modelkeys.SingleOwner, "sk-owner-5678", &u, nil)
+	keys.Set(modelkeys.SingleOwner, "pwt_owner.key-1234", nil, nil)
+	cli := fakeCLI(t, `[ "$1" = "--version" ] && echo "pw version v7.1.0"`)
+	env := map[string]string{"PW_CREDENTIALS_DIR": credsDir(t), "PW_CLI": cli, "PATH": "/usr/bin:/bin"}
+	p := platform.New(platform.Options{IndexBase: dir, Home: t.TempDir(), LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }})
+	p.ClearOwnKey = func(owner string) { keys.ClearOne(owner, false) }
+	a := &app.App{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	mux := http.NewServeMux()
+	s := &studio{t: t, routes: Register(mux, a, p), p: p}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	s.url = srv.URL
+	if _, _, raw := s.do("GET", "/api/access", nil); !strings.Contains(raw, `"models":{"source":"endpoint"`) || !strings.Contains(raw, `"platform":{"source":"key"`) {
+		t.Fatal(raw)
+	}
+	st, _, raw := s.do("PUT", "/api/access/source", map[string]any{"context": "lab", "clearKey": true})
+	if st != 200 || !strings.Contains(raw, `"models":{"source":"endpoint","host":"models.example.org"`) || !strings.Contains(raw, `"platform":{"source":"cli","host":"platform-b.example.com","context":"lab"}`) {
+		t.Fatal(st, raw)
+	}
+	if keys.ResolveKey("") != nil || keys.ResolveEndpoint("") == nil {
+		t.Fatal("the key stayed, or the endpoint went")
+	}
+	if _, _, raw := s.do("GET", "/api/access", nil); !strings.Contains(raw, `"models":{"source":"endpoint"`) || !strings.Contains(raw, `"platform":{"source":"cli"`) {
+		t.Fatal(raw)
 	}
 }

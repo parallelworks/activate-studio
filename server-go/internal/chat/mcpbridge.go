@@ -54,7 +54,7 @@ func (m *Module) personGrant(r *http.Request, token string) bool {
 // main library by default, no chat of the Studio's.
 func (m *Module) personCtx(r *http.Request) ToolCtx {
 	tc := ToolCtx{UserID: strOrNil(userID(r))}
-	if cred := m.cred(r); cred != nil && cred.Base() == "" && cred.Key != "" {
+	if cred := m.platformCred(r); cred != nil && cred.Key != "" {
 		tc.UserKey = sp(cred.Key)
 	}
 	return tc

@@ -6,6 +6,13 @@
 // ade_mk1, ...; ade_mkp0... is the CHIPS-partitioned twin). The format is
 // Node's byte for byte, so a cookie either server sealed opens on the
 // other; keys are never logged.
+//
+// A person may keep two: their ACTIVATE key and their own model endpoint.
+// ade_mk holds the ACTIVATE key, or the endpoint when they have no key
+// (as every earlier build wrote it, and still reads it). When it holds the
+// key, ade_me (and its twin ade_mep) holds the endpoint, sealed the same
+// way for the same subject. What a value is comes from inside the seal (a
+// base URL makes it an endpoint), never from the cookie's name.
 package keycookie
 
 import (
@@ -27,7 +34,11 @@ const (
 	// Cookie and CookieP are the cookie names; either one is enough.
 	Cookie  = "ade_mk"
 	CookieP = "ade_mkp"
-	chunk   = 3800
+	// EndpointCookie and EndpointCookieP hold a person's endpoint beside
+	// the ACTIVATE key in Cookie.
+	EndpointCookie  = "ade_me"
+	EndpointCookieP = "ade_mep"
+	chunk           = 3800
 )
 
 // Key is what a cookie carries.
@@ -144,8 +155,35 @@ func parse(header string) map[string]string {
 
 // FromCookies is hydrateFromCookie's reading: the key sealed for sub in
 // either cookie, or false. A cookie sealed for another subject, or from
-// an older build without one, is refused.
+// an older build without one, is refused. It is what every earlier build
+// reads.
 func (s *Sealer) FromCookies(sub, header string) (Key, bool) {
+	return s.fromNames(sub, header, Cookie, CookieP)
+}
+
+// IsEndpoint says whether k is an endpoint (it has a base URL) rather
+// than an ACTIVATE key.
+func (k Key) IsEndpoint() bool { return k.BaseURL != nil && strings.TrimSpace(*k.BaseURL) != "" }
+
+// Both is what a person's cookies carry for sub: their ACTIVATE key and
+// their endpoint, each nil when absent. ade_mk is read as every earlier
+// build reads it; ade_me counts only beside an ACTIVATE key in ade_mk,
+// and only when it holds an endpoint.
+func (s *Sealer) Both(sub, header string) (key, endpoint *Key) {
+	k, ok := s.FromCookies(sub, header)
+	if !ok {
+		return nil, nil
+	}
+	if k.IsEndpoint() {
+		return nil, &k
+	}
+	if e, ok := s.fromNames(sub, header, EndpointCookie, EndpointCookieP); ok && e.IsEndpoint() {
+		return &k, &e
+	}
+	return &k, nil
+}
+
+func (s *Sealer) fromNames(sub, header string, names ...string) (Key, bool) {
 	if sub == "" || header == "" {
 		return Key{}, false
 	}
@@ -161,7 +199,8 @@ func (s *Sealer) FromCookies(sub, header string) (Key, bool) {
 		}
 		return b.String()
 	}
-	for _, blob := range []string{assemble(Cookie), assemble(CookieP)} {
+	for _, name := range names {
+		blob := assemble(name)
 		if blob == "" {
 			continue
 		}

@@ -379,7 +379,7 @@ func (m *Module) chatToolCtx(r *http.Request, conv string) (ToolCtx, *conversati
 			tc.Model = sp(link.Model)
 		}
 	}
-	if cred := m.cred(r); cred != nil && cred.Base() == "" {
+	if cred := m.platformCred(r); cred != nil {
 		tc.UserKey = sp(cred.Key)
 	}
 	return tc, link

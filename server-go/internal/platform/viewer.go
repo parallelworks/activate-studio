@@ -122,11 +122,14 @@ type Cred struct {
 	Endpoint json.RawMessage `json:"endpoint"`
 }
 
-// Viewer is who a request is and the personal credential it carries.
+// Viewer is who a request is and the personal credentials it carries.
+// Cred is the one earlier builds knew: the person's ACTIVATE key, else
+// their endpoint. Endpoint is their endpoint, also when Cred is their key.
 type Viewer struct {
 	AuthEnabled bool            `json:"authEnabled"`
 	User        *User           `json:"user"`
 	Cred        *Cred           `json:"cred"`
+	Endpoint    *Cred           `json:"endpoint,omitempty"`
 	KeyStatus   json.RawMessage `json:"keyStatus"`
 	SharedLast4 *string         `json:"sharedLast4"`
 	// SignIn is the access token of the person's own pw CLI sign-in made
@@ -161,6 +164,29 @@ func (v *Viewer) PlatformKey() string {
 		return ""
 	}
 	return v.Cred.Key
+}
+
+// EndpointCred is the person's own model endpoint, or nil. It covers
+// chat only and is never sent to the platform.
+func (v *Viewer) EndpointCred() *Cred {
+	if v == nil {
+		return nil
+	}
+	if v.Cred != nil && v.Cred.BaseURL != "" {
+		return v.Cred
+	}
+	if v.Endpoint != nil && v.Endpoint.BaseURL != "" {
+		return v.Endpoint
+	}
+	return nil
+}
+
+// KeyCred is the person's pasted ACTIVATE key, or nil.
+func (v *Viewer) KeyCred() *Cred {
+	if v == nil || v.Cred == nil || v.Cred.BaseURL != "" {
+		return nil
+	}
+	return v.Cred
 }
 
 type viewerKey struct{}
@@ -198,6 +224,28 @@ func (p *Platform) ViewerOf(r *http.Request) (*Viewer, error) {
 	} else {
 		v = p.nativeViewer(r)
 	}
+	// Where the Go server keeps the keys, its key store says what they
+	// are: the cookies hydrate it, and a key not kept in the browser is
+	// there too. Node, given the ACTIVATE key, does not know the endpoint
+	// beside it.
+	if p.OwnKeys != nil && p.Getenv("DISABLE_PERSONAL_KEYS") != "1" {
+		owner := v.UserID()
+		if owner == "" && !v.AuthEnabled {
+			owner = SingleOwner
+		}
+		if owner != "" {
+			key, ep := p.OwnKeys(r, owner)
+			if p.Node() == nil {
+				v.Cred = key
+				if key == nil {
+					v.Cred = ep
+				}
+			}
+			if v.Endpoint == nil {
+				v.Endpoint = ep
+			}
+		}
+	}
 	*r = *r.WithContext(context.WithValue(r.Context(), viewerKey{}, v))
 	return v, nil
 }
@@ -219,24 +267,42 @@ func (p *Platform) nativeViewer(r *http.Request) *Viewer {
 	switch {
 	case v.User == nil && !v.AuthEnabled:
 		if e, ok := p.vaultEntry(SingleOwner); ok && !expired(e.ExpiresAt) {
-			if key, err := sealer.Decrypt(e.Blob); err == nil {
-				v.Cred = &Cred{Key: string(key), BaseURL: deref(e.BaseURL)}
-				if e.Opts != "" && v.Cred.BaseURL != "" {
-					if o, err := sealer.Decrypt(e.Opts); err == nil {
-						v.Cred.Endpoint = o
-					}
-				}
+			v.Cred = credOf(sealer, e)
+			if e.Endpoint != nil && e.Endpoint.BaseURL != nil && !expired(e.Endpoint.ExpiresAt) && v.Cred != nil && v.Cred.BaseURL == "" {
+				v.Endpoint = credOf(sealer, *e.Endpoint)
+			} else if v.Cred != nil && v.Cred.BaseURL != "" {
+				v.Endpoint = v.Cred
 			}
 		}
 	case v.User != nil && v.User.ID != "":
-		if k, ok := sealer.FromCookies(v.User.ID, r.Header.Get("Cookie")); ok {
-			v.Cred = &Cred{Key: k.Key, BaseURL: deref(k.BaseURL), Endpoint: k.Options}
+		key, ep := sealer.Both(v.User.ID, r.Header.Get("Cookie"))
+		if ep != nil {
+			v.Endpoint = &Cred{Key: ep.Key, BaseURL: deref(ep.BaseURL), Endpoint: ep.Options}
+			v.Cred = v.Endpoint
+		}
+		if key != nil {
+			v.Cred = &Cred{Key: key.Key, BaseURL: deref(key.BaseURL), Endpoint: key.Options}
 		}
 		if v.AuthEnabled && p.SignInKey != nil {
 			v.SignIn = p.SignInKey(v.User.ID)
 		}
 	}
 	return v
+}
+
+// credOf opens a vault entry's key, or nil.
+func credOf(sealer *keycookie.Sealer, e vaultEntry) *Cred {
+	key, err := sealer.Decrypt(e.Blob)
+	if err != nil {
+		return nil
+	}
+	c := &Cred{Key: string(key), BaseURL: deref(e.BaseURL)}
+	if e.Opts != "" && c.BaseURL != "" {
+		if o, err := sealer.Decrypt(e.Opts); err == nil {
+			c.Endpoint = o
+		}
+	}
+	return c
 }
 
 func deref(s *string) string {
@@ -252,6 +318,8 @@ type vaultEntry struct {
 	ExpiresAt *string `json:"expiresAt"`
 	BaseURL   *string `json:"baseUrl"`
 	Opts      string  `json:"opts"`
+	// Endpoint is the one owner's endpoint beside the ACTIVATE key.
+	Endpoint *vaultEntry `json:"endpoint"`
 }
 
 func (p *Platform) vaultEntry(sub string) (vaultEntry, bool) {

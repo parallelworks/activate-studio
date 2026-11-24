@@ -59,7 +59,7 @@ func (m *Module) toolOptions(w http.ResponseWriter, r *http.Request) error {
 	}
 	options := m.readerToolOptions()
 	var own *string
-	if c := m.cred(r); c != nil && c.BaseURL == nil {
+	if c := m.platformCred(r); c != nil {
 		k := c.Key
 		own = &k
 	}

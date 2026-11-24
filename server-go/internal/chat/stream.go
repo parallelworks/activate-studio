@@ -340,9 +340,11 @@ func (m *Module) answer(r *http.Request, res *sseWriter, body streamBody, convID
 	} else if userCred != nil {
 		userKey, userBase, userEndpoint = userCred.Key, userCred.Base(), userCred.Endpoint
 	}
+	// The platform's tools run with the person's sign-in or ACTIVATE key,
+	// also when chat answers from their endpoint.
 	var pwToolKey *string
-	if userCred != nil && userCred.Base() == "" {
-		pwToolKey = sp(userCred.Key)
+	if c := m.platformCred(r); c != nil {
+		pwToolKey = sp(c.Key)
 	}
 	var changeKey *string
 	if m.A.Cfg.AuthEnabled() {
