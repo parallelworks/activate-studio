@@ -50,7 +50,9 @@ describe('a new pw code chat, before its first message', () => {
     const engineReads = () => vi.mocked(fetch).mock.calls.filter(([u]) => String(u).startsWith('/api/chat/engine')).length
     expect(engineReads()).toBe(1)
     render(<NewChatModelSlot conversationId={null} hasSession={false} />, { container: canvas.appendChild(document.createElement('div')) })
-    expect(await screen.findByRole('button', { name: 'claude-code/haiku' })).toBeInTheDocument()
+    // The picker shows the model the page already had.
+    const picker = await screen.findByRole('button')
+    await waitFor(() => expect(picker).toHaveTextContent(/\/haiku$/))
     await act(async () => { await new Promise(r => setTimeout(r, 100)) })
     expect(engineReads()).toBe(1)
   })
