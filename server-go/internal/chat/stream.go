@@ -34,6 +34,14 @@ type sseWriter struct {
 	w     http.ResponseWriter
 	f     http.Flusher
 	ended bool
+	// tap sees every event, also once the page has gone (liveturn.go).
+	tap func(name string, data []byte)
+}
+
+func (s *sseWriter) setTap(f func(name string, data []byte)) {
+	s.mu.Lock()
+	s.tap = f
+	s.mu.Unlock()
 }
 
 func (s *sseWriter) raw(b string) {
@@ -55,6 +63,12 @@ func (s *sseWriter) event(name string, data any) {
 	b, err := jsonobj.Marshal(data)
 	if err != nil {
 		b = []byte("null")
+	}
+	s.mu.Lock()
+	tap := s.tap
+	s.mu.Unlock()
+	if tap != nil {
+		tap(name, b)
 	}
 	s.raw("event: " + name + "\ndata: " + string(b) + "\n\n")
 }
@@ -246,6 +260,13 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	return m.answerOnPast(r, res, &body, convID, model)
+}
+
+// answer writes the Studio assistant's reply to a message, and stores it
+// in the conversation.
+func (m *Module) answer(r *http.Request, res *sseWriter, body streamBody, convID, model string) error {
+	ctx := r.Context()
 	userCred := m.cred(r)
 	if userCred == nil {
 		m.refreshAccess(r, 15000)
