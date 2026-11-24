@@ -494,14 +494,12 @@ export interface FileContent {
   content: string | null
   source: 'raw' | 'extracted' | 'none'
   format?: 'markdown' | 'text'
-  /** Why a file of a library on another system has no indexed text when
-   *  the index is the reason: the library is indexing now, or the file
-   *  changed after its last pass (indexedAt, ISO). */
-  /** Why a file with no text in the index has none, when that is the
-   *  index: indexing now, or the file is newer than the index. A library
-   *  on another system says when its last pass was; one on this computer
-   *  says how often its background sync runs (seconds, 0 when paused) and
-   *  what indexes the change at once, or that it has no index yet. */
+  /** Why the Indexed text is not the file's as it is, when the index is
+   *  the reason: indexing now, the file is newer than the index (shown
+   *  with no text, or above the older text), or no index yet. A library
+   *  on another system says when its last pass was (indexedAt, ISO); one
+   *  on this computer how often its background sync runs (seconds, 0 when
+   *  paused) and what indexes the change at once. */
   index?: { state: 'indexing' }
     | { state: 'newer'; indexedAt: string }
     | { state: 'newer'; syncEvery: number; catchUp: 'sync' | 'rebuild' }

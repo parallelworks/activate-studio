@@ -7,11 +7,11 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 /** A workbook in a library on another system whose index holds no text
  *  for it, with what the server says about the index. */
-function serve(index?: unknown) {
+function serve(index?: unknown, content: string | null = null) {
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
     const url = String(input)
     const p = new URL(url, 'http://x').searchParams.get('path') ?? ''
-    if (url.startsWith('/api/kb/file')) return json({ path: p, kind: 'other', size: 10, mtime: 1_795_429_000, truncated: false, content: null, source: 'none', ...(index ? { index } : {}) })
+    if (url.startsWith('/api/kb/file')) return json({ path: p, kind: 'other', size: 10, mtime: 1_795_429_000, truncated: false, content, source: content == null ? 'none' : 'extracted', format: 'text', ...(index ? { index } : {}) })
     if (url.startsWith('/api/kb/tags')) return json({ own: [], inherited: [], stored: 'files' })
     if (url.startsWith('/api/tags')) return json({ tags: [] })
     if (url.startsWith('/api/kb/sheet')) return json({ sheets: [{ name: 'Summary' }], index: 0, name: 'Summary', rows: 1, cols: 1, totalRows: 1, totalCols: 1, colWidths: [80], cells: [{ r: 0, c: [[0, 'from the grid']] }] })
@@ -73,4 +73,38 @@ it('says a library on this computer with no index yet has none, and how to build
   serve({ state: 'unindexed', catchUp: 'sync' })
   await indexedTab()
   expect(await screen.findByText('This library has no index yet. Build index in Settings, Indexing, Building adds its text.')).toBeInTheDocument()
+})
+
+describe('indexed text older than the file', () => {
+  it('says so above the text in a library on this computer', async () => {
+    serve({ state: 'newer', syncEvery: 300, catchUp: 'sync' }, 'old rows')
+    await indexedTab()
+    expect(await screen.findByText('old rows')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/^This text is from before the file changed on .*2026.*\. It updates at the next background sync \(every 5 minutes\), or at once with Sync now at the bottom of the navigation\.$/)
+  })
+
+  it('names Rebuild for a library built of a folder here, and the pause', async () => {
+    serve({ state: 'newer', syncEvery: 0, catchUp: 'rebuild' }, 'old rows')
+    await indexedTab()
+    expect(await screen.findByText(/The background sync is paused, so Rebuild in Settings, Indexing, Libraries updates it\./)).toBeInTheDocument()
+  })
+
+  it('gives the last pass in a library on another system', async () => {
+    serve({ state: 'newer', indexedAt: '2026-11-23T10:00:00Z' }, 'old rows')
+    await indexedTab()
+    expect(await screen.findByText(/This text is from before the file changed on .*The library's last index pass was on .*2026.*; rebuild the library to update it\./)).toBeInTheDocument()
+  })
+
+  it('says the library is indexing when it is', async () => {
+    serve({ state: 'indexing' }, 'old rows')
+    await indexedTab()
+    expect(await screen.findByText(/The library is indexing now; the new text appears here when that ends\./)).toBeInTheDocument()
+  })
+
+  it('adds nothing to text that is the file\'s', async () => {
+    serve(undefined, 'current rows')
+    await indexedTab()
+    expect(await screen.findByText('current rows')).toBeInTheDocument()
+    expect(screen.queryByText(/from before the file changed/)).toBeNull()
+  })
 })

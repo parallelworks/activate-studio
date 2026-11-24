@@ -101,3 +101,70 @@ func TestALocalFileTheIndexHasNotCaughtUpWithSaysSo(t *testing.T) {
 		t.Errorf("asked about %v", asked)
 	}
 }
+
+// Indexed text shown for a file of a library on this computer that changed
+// after the index read it says it is from before; text of a file the index
+// holds as it is says nothing more.
+func TestLocalIndexedTextOlderThanTheFileSaysSo(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "kb")
+	cfg, _ := config.Load(func(k string) string {
+		return map[string]string{"INDEX_BASE": filepath.Join(dir, "ix"), "KB_ROOT": root, "STUDIO_WEB_DIST": filepath.Join(dir, "web")}[k]
+	})
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	for _, f := range []string{"reports/same.xlsx", "reports/changed.xlsx"} {
+		p := filepath.Join(root, f)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte("PK"), 0o644)
+		os.Chtimes(p, old, old)
+		c := filepath.Join(cfg.IndexDir, "extract", f+".txt")
+		os.MkdirAll(filepath.Dir(c), 0o755)
+		os.WriteFile(c, []byte("old rows"), 0o644)
+	}
+	now := time.Now()
+	os.Chtimes(filepath.Join(root, "reports/changed.xlsx"), now, now)
+	os.MkdirAll(filepath.Join(cfg.GufiIndex, "reports"), 0o755)
+	os.WriteFile(filepath.Join(cfg.GufiIndex, "db.db"), nil, 0o644)
+	db, err := sql.Open("sqlite", filepath.Join(cfg.GufiIndex, "reports", "db.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Exec("CREATE TABLE entries (name TEXT, type TEXT, inode TEXT, mtime INT64)")
+	for _, n := range []string{"same.xlsx", "changed.xlsx"} {
+		db.Exec("INSERT INTO entries VALUES (?, 'f', '1', ?)", n, old.Unix())
+	}
+	db.Close()
+
+	st := kb.LocalIndex{SyncEvery: 300, CatchUp: "sync"}
+	kb.LocalIndexing = func(lib kb.Library) (kb.LocalIndex, bool) { return st, lib.Primary }
+	t.Cleanup(func() { kb.LocalIndexing = nil })
+	mux := http.NewServeMux()
+	kb.Register(mux, app.New(cfg, slog.New(slog.DiscardHandler), nil, nil))
+	note := func(p string) map[string]any {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/kb/file?path="+p, nil))
+		var out struct {
+			Source  string         `json:"source"`
+			Content string         `json:"content"`
+			Index   map[string]any `json:"index"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &out)
+		if w.Code != 200 || out.Source != "extracted" || out.Content != "old rows" {
+			t.Fatalf("%s: %d %s", p, w.Code, w.Body.String())
+		}
+		return out.Index
+	}
+	if got := note("reports/changed.xlsx"); got["state"] != "newer" || got["syncEvery"] != 300.0 || got["catchUp"] != "sync" {
+		t.Errorf("changed: %v", got)
+	}
+	if got := note("reports/same.xlsx"); got != nil {
+		t.Errorf("unchanged: %v", got)
+	}
+	st.Busy = true
+	if got := note("reports/changed.xlsx"); got["state"] != "indexing" {
+		t.Errorf("changed, while indexing: %v", got)
+	}
+	if got := note("reports/same.xlsx"); got != nil {
+		t.Errorf("unchanged, while indexing: %v", got)
+	}
+}
