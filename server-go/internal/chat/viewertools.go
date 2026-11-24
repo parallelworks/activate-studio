@@ -120,7 +120,7 @@ func (m *Module) toolShowInViewer(r *http.Request, args map[string]any, ctx Tool
 	base := target[strings.LastIndex(target, "/")+1:]
 	label := "Open the " + target + " DAG in the Library"
 	if kind == "file" {
-		label = "Open " + base + " in the Library"
+		label = openIn(base, "the Library")
 	}
 	suffix := strings.ToLower(suffixRe.FindString(target))
 	link := "[" + label + "](" + href + ")"

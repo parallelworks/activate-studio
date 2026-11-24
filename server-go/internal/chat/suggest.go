@@ -160,11 +160,6 @@ func SuggestNext(c *conversations.Conversation) *jsonobj.Object {
 				push("Open "+cite+" and summarize it", "a search cited it")
 			}
 		}
-		if p.Name == "write_kb_file" || p.Name == "edit_kb_file" {
-			if path := jsString(a["path"]); path != "" {
-				push("Open "+path+" in the library", "a file was written")
-			}
-		}
 	}
 	if len(failed) > 0 && len(out) < 3 {
 		push("Retry the step that failed"+stepWords(failed[0].Name, argsOf(failed[0]))+" and explain what went wrong", "a tool call failed")
@@ -177,6 +172,9 @@ func SuggestNext(c *conversations.Conversation) *jsonobj.Object {
 	for _, s := range out {
 		list = append(list, reqbody.O("text", s.Text, "why", s.Why))
 	}
+	// Files the turn wrote are opened, not asked for: they follow the
+	// messages, as chips of their own kind.
+	list = append(list, openChips(calls, argsOf, res)...)
 	return reqbody.O("after", m.ID, "suggestions", list)
 }
 
