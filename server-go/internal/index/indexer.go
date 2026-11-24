@@ -636,6 +636,15 @@ func (ix *Indexer) Running() bool {
 	return ix.current != nil || len(ix.queue) > 0
 }
 
+// Indexing says whether the folder's index is changing or about to: a job
+// runs or waits, a sync is reading the folder, or one asked for is
+// waiting to start.
+func (ix *Indexer) Indexing() bool {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	return ix.current != nil || len(ix.queue) > 0 || ix.sweeping || ix.kickTimer != nil
+}
+
 // Cancel is cancelIndexJob.
 func (ix *Indexer) Cancel(id int) (IndexJob, bool) {
 	ix.mu.Lock()

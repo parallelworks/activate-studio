@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/embed"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
@@ -1336,6 +1337,26 @@ func (b *builds) requestSync(id string, delay time.Duration) {
 			b.log(fmt.Sprintf("library %s: sync failed: %s", id, err))
 		}
 	})
+}
+
+// localIndexing is kb.LocalIndexing: the main library's index, and that
+// of each library built of a folder here, with the background sync that
+// keeps it in step.
+func (s *Service) localIndexing(lib kb.Library) (kb.LocalIndex, bool) {
+	every := float64(s.a.Settings.Effective().SweepIntervalSec)
+	if lib.Primary {
+		return kb.LocalIndex{Busy: s.ix().Indexing(), SyncEvery: every, CatchUp: "sync"}, true
+	}
+	d := s.Reg.AddedDef(lib.ID)
+	if !s.a.NodeFree() || d == nil || d.Build == nil || d.CopyOf != nil || d.Bucket != nil || d.ReadThrough != nil {
+		return kb.LocalIndex{}, false
+	}
+	b := s.builds
+	b.mu.Lock()
+	kicked := b.kicks[lib.ID] != nil
+	b.mu.Unlock()
+	busy := kicked || b.jobOf(lib.ID) != nil || d.Build.State == "building" || d.Build.State == "updating"
+	return kb.LocalIndex{Busy: busy, SyncEvery: every, CatchUp: "rebuild"}, true
 }
 
 func (b *builds) requestAllSyncs() {
