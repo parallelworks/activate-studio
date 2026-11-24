@@ -617,7 +617,12 @@ func (m *Module) answer(r *http.Request, res *sseWriter, body streamBody, convID
 	})
 	if failErr != nil && !recorded {
 		errorID := shortID()
-		m.A.Log.Error("chat stream failed", "err", failErr.Error(), "errorId", errorID)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			// Stop, which the person asked for.
+			m.A.Log.Info("chat reply stopped", "conversation", convID)
+		} else {
+			m.A.Log.Error("chat stream failed", "err", failErr.Error(), "errorId", errorID)
+		}
 		if ctx.Err() == nil {
 			msg := failErr.Error()
 			var auth *llm.AuthError

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -76,7 +77,10 @@ func TestReplyRunsOnWhenThePageGoes(t *testing.T) {
 	gw.load([]reply{r})
 	leave, gone := startReply(t, srv.URL, "c-live", release)
 	var first map[string]any
-	until(t, "the first words", func() bool { first = generatingOf(t, srv.URL, "c-live"); return first != nil && first["content"] == "Part one." })
+	until(t, "the first words", func() bool {
+		first = generatingOf(t, srv.URL, "c-live")
+		return first != nil && first["content"] == "Part one."
+	})
 
 	// The tab closes mid-reply.
 	leave()
@@ -99,6 +103,10 @@ func TestReplyRunsOnWhenThePageGoes(t *testing.T) {
 // stored as stopped.
 func TestStopEndsAReplyRunningWithoutItsPage(t *testing.T) {
 	m, srv, gw, _ := newTestModule(t, nil)
+	var logs lockedBuffer
+	was := m.A.Log
+	m.A.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	defer func() { m.A.Log = was }()
 	release := make(chan struct{})
 	defer close(release)
 	r := text("Part one.", " Part two.")
@@ -125,4 +133,25 @@ func TestStopEndsAReplyRunningWithoutItsPage(t *testing.T) {
 	if c == nil || len(c.Messages) != 2 || c.Messages[1].Text() != "Part one." || c.Messages[1].FinishReason != "stopped" {
 		t.Fatalf("stored %+v", c)
 	}
+	// The person asked for it: logged as stopped, not as a failure.
+	if l := logs.String(); !strings.Contains(l, "chat reply stopped") || strings.Contains(l, "chat stream failed") {
+		t.Errorf("log:\n%s", l)
+	}
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
