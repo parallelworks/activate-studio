@@ -110,6 +110,8 @@ function CodeScreen() {
   const narrow = useNarrow()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [startKey, setStartKey] = useState(0)
+  // The machine chosen to start a session on: the tools are offered there only.
+  const [startMachine, setStartMachine] = useState<string | undefined>()
 
   const open = useCallback((s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => {
     setOpened({ machine: s.machineId, sessionId: s.id })
@@ -165,8 +167,8 @@ function CodeScreen() {
             <HowSessionsAppear compact />
           </Popover>
         </div>
-        <MachineToolsOffer />
-        <CodeStart key={startKey} onOpen={open} onStarted={onStarted} top={link ? answer => (
+        <MachineToolsOffer machines={machines} selected={startMachine} />
+        <CodeStart key={startKey} onOpen={open} onStarted={onStarted} onMachine={setStartMachine} top={link ? answer => (
           <LinkedSession
             session={linked}
             machine={linked ? machines.find(m => m.id === linked.machineId) : undefined}

@@ -12,7 +12,7 @@ const session = (o: Record<string, unknown>) => ({ machineId: 'm1', id: 'x', nam
 interface Sent { method: string; path: string; body: Record<string, unknown> | null }
 
 /** The Studio's routes the page calls, answered as the Studio would. */
-function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown } = {}) {
+function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown; setupStatus?: number } = {}) {
   const sent: Sent[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = input instanceof Request ? input : new Request(new URL(String(input), 'http://studio.example'), init)
@@ -31,7 +31,7 @@ function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: u
       case '/api/chat/pwcode/continue':
         return json(over.continueAnswer ? over.continueAnswer(body ?? {}) : body?.confirmed ? { conversationId: 'c1' } : { confirm: 'Your messages go to mesh refinement on box.' })
       case '/api/mcp/bridge/machines': return json({ available: true, machines: over.toolsMachines ?? [] })
-      case '/api/mcp/bridge/setup': return json(over.setup ?? { done: true, worked: true, changed: true, tools: 40, live: 'next' })
+      case '/api/mcp/bridge/setup': return json(over.setup ?? { done: true, worked: true, changed: true, tools: 40, live: 'next' }, over.setupStatus)
       case '/api/mcp/bridge/prefs': return json({ ok: true })
       case '/api/code-page/machines/m1/directories': return json({ path: '/home/alex', home: '/home/alex', entries: [] })
       case '/api/code-page/machines/m1/sessions':
@@ -142,7 +142,8 @@ describe('the Code page', () => {
   })
 
   it('offers the Studio\'s tools once for a machine that lacks them', async () => {
-    let sent = studio({ toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'set', machine: 'box', machineId: 'm1' }] })
+    const cpu = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3' }
+    let sent = studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'set', machine: 'box', machineId: 'm1' }] })
     render(<CodePage />)
     const offer = await screen.findByTestId('machine-tools-offer')
     expect(offer).toHaveTextContent('pw code on gpu')
@@ -151,13 +152,47 @@ describe('the Code page', () => {
     expect(sent.find(s => s.path === '/api/mcp/bridge/setup')?.body).toEqual({ machineId: 'm2' })
     // Offered once: not again on the next visit.
     cleanup()
-    sent = studio({ toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'offer', machine: 'cpu', machineId: 'm3' }] })
+    sent = studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'offer', machine: 'cpu', machineId: 'm3' }] })
     render(<CodePage />)
     const next = await screen.findByTestId('machine-tools-offer')
     expect(next).toHaveTextContent('pw code on cpu')
     fireEvent.click(within(next).getByRole('button', { name: 'Not on cpu' }))
     await waitFor(() => expect(sent.find(s => s.path === '/api/mcp/bridge/prefs')?.body).toEqual({ machineId: 'm3', add: false }))
     expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
+  })
+
+  // Matthew saw the offer for a cluster that was not connected. Only a
+  // machine the page lists as connected is offered, whatever the Studio's
+  // own answer says.
+  it('offers the tools only on a machine the page shows online', async () => {
+    const stopped = { ...other, status: 'unreachable' }
+    const noDaemon = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3', status: 'no_daemon' }
+    const tpu = { ...other, id: 'm4', name: 'tpu', hostname: 'tpu.example', daemonId: 'd4' }
+    studio({ machines: [machine, stopped, noDaemon, tpu], toolsMachines: [
+      { state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'offer', machine: 'cpu', machineId: 'm3' },
+      { state: 'set', machine: 'box', machineId: 'm1' }, { state: 'set', machine: 'tpu', machineId: 'm4' }] })
+    render(<CodePage />)
+    await listed('mesh refinement')
+    await new Promise(r => setTimeout(r, 50))
+    expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
+  })
+
+  it('offers the tools on the machine chosen on the page, not another', async () => {
+    // box is the one machine to start on, so it is chosen; gpu is online too.
+    const watchOnly = { ...other, remoteStart: false }
+    studio({ machines: [machine, watchOnly], toolsMachines: [
+      { state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'offer', machine: 'box', machineId: 'm1' }] })
+    render(<CodePage />)
+    expect(await screen.findByTestId('machine-tools-offer')).toHaveTextContent('pw code on box')
+  })
+
+  it('says plainly that a machine gone offline is not connected', async () => {
+    const cpu = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3' }
+    studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }],
+      setupStatus: 409, setup: { error: 'gpu is not connected. Start it, then add the tools.' } })
+    render(<CodePage />)
+    fireEvent.click(within(await screen.findByTestId('machine-tools-offer')).getByRole('button', { name: 'Add' }))
+    expect(await screen.findByTestId('machine-tools-said')).toHaveTextContent('gpu is not connected. Start it, then add the tools.')
   })
 
   it('renames and archives from a row menu, as the session actions of the package do', async () => {

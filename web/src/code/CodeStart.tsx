@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   machineChip,
   machineMenu,
@@ -59,9 +59,11 @@ import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useStartAc
 
 type Machine = PwCodeStartMachine & PwCodeMachine
 
-export function CodeStart({ onOpen, onStarted, top }: {
+export function CodeStart({ onOpen, onStarted, onMachine, top }: {
   onOpen: (s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => void
   onStarted: (machine: string, id: string) => void
+  /** The machine chosen to start a session on, as it changes. */
+  onMachine?: (id: string | undefined) => void
   /** Above the composer: the session a link named. */
   top?: (answer: PwCodeStartScreen['answer']) => ReactNode
 }) {
@@ -71,6 +73,8 @@ export function CodeStart({ onOpen, onStarted, top }: {
   const machines = useMemo(() => (data?.machines ?? []) as Machine[], [data])
   const sessions = useMemo(() => data?.sessions ?? [], [data])
   const location = useStartLocation(machines, sessions, useStartMachine())
+  const chosen = location.machine?.id
+  useEffect(() => { onMachine?.(chosen) }, [onMachine, chosen])
   const screen = useStartScreen(pwCodePage, { location, describeError })
   const startMode = useStartPermissionMode(useStartMode(), location.machine)
   const machineById = useMemo(() => machinesById(machines), [machines])

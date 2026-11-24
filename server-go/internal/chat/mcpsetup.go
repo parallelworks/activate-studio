@@ -118,13 +118,28 @@ type bridgeRunner func(ctx context.Context, site, key string, argv []string, tim
 // attaches a server to a live session (sessionMCPAttach).
 type bridgeMach struct {
 	ID, Kind, Name, Owner string
-	Attach                bool
+	// Status is the machine's state in the platform's pw code listing, the
+	// one the Code page shows: connected when it is on and its pw code
+	// answers ACTIVATE.
+	Status string
+	Attach bool
 }
 
 func machOf(o *jsonv.Object) bridgeMach {
 	attach, _ := jsonv.Path(o, "sessionMCPAttach").(bool)
 	return bridgeMach{ID: jsonv.String(jsonv.Path(o, "id")), Kind: jsonv.String(jsonv.Path(o, "kind")),
-		Name: jsonv.String(jsonv.Path(o, "name")), Owner: jsonv.String(jsonv.Path(o, "owner")), Attach: attach}
+		Name: jsonv.String(jsonv.Path(o, "name")), Owner: jsonv.String(jsonv.Path(o, "owner")),
+		Status: jsonv.String(jsonv.Path(o, "status")), Attach: attach}
+}
+
+// bridgeOnline is whether mach is online as the Code page says it is: on,
+// with its pw code connected to ACTIVATE. The Studio neither offers its
+// tools on a machine that is not, nor opens pw ssh to one to add them.
+func bridgeOnline(mach bridgeMach) error {
+	if mach.Status == "connected" {
+		return nil
+	}
+	return pwErr(409, firstNonEmpty(mach.Name, mach.ID)+" is not connected. Start it, then add the tools.")
 }
 
 // bridgeMachineFn is the viewer's machine as the platform lists it to them
@@ -210,6 +225,9 @@ func (m *Module) bridgeCheck(r *http.Request, mach bridgeMach) (key string, err 
 func (m *Module) bridgeSite(r *http.Request, mach bridgeMach) (site, key string, err error) {
 	key, err = m.bridgeCheck(r, mach)
 	if err != nil {
+		return "", "", err
+	}
+	if err := bridgeOnline(mach); err != nil {
 		return "", "", err
 	}
 	owner := mach.Owner
@@ -352,11 +370,21 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 		o.State, o.Why = "unavailable", why
 		return o
 	}
-	o.Available = true
 	p := m.bridgePrefs().get(userID(r), mach.ID)
+	if p.URL != "" && p.URL == url {
+		// Set up already: so it stays while the machine is off, though it
+		// is not checked again until it is on.
+		o.State, o.Available = "set", bridgeOnline(mach) == nil
+		return o
+	}
+	// Offered, declined or not, only on a machine that is on with its pw
+	// code connected: one that comes on later is offered then.
+	if err := bridgeOnline(mach); err != nil {
+		o.State, o.Why = "unavailable", apiMessage(err)
+		return o
+	}
+	o.Available = true
 	switch {
-	case p.URL != "" && p.URL == url:
-		o.State = "set"
 	case p.Declined:
 		o.State = "declined"
 	default:
