@@ -13,14 +13,20 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// droppedSend is where the page asks the shell to send listed files.
-const droppedSend = "/__shell/dropped-send"
+// droppedSend is where the page asks the shell to send listed files, and
+// droppedPart where it asks for one part of a large one.
+const (
+	droppedSend = "/__shell/dropped-send"
+	droppedPart = "/__shell/dropped-part"
+)
 
 // DroppedFile is one file under what was dropped on the window or chosen in
 // its folder chooser: where it goes relative to the destination, and the id
@@ -38,11 +44,14 @@ type DroppedFile struct {
 // which listed files to send, streams them to the ordinary upload. The bytes
 // stay out of the web view, which holds a blob in memory and stalled on large
 // folders. The page never names a path. An id names one listed file and is
-// good for one send; nothing else on disk is reachable, including by other
-// accounts on this computer, which can reach the proxy's port.
+// good for one send, or for the parts of one upload; nothing else on disk is
+// reachable, including by other accounts on this computer, which can reach
+// the proxy's port.
 type droppedFiles struct {
 	mu    sync.Mutex
 	files map[string]string
+	// parts is the upload a file is sent to in parts.
+	parts map[string]string
 }
 
 func (d *droppedFiles) add(abs string) (string, error) {
@@ -119,6 +128,25 @@ func (d *droppedFiles) take(ids []string) ([]string, bool) {
 		delete(d.files, id)
 	}
 	return out, true
+}
+
+// takePart is the path of a listed file, for a part of it sent to an
+// upload: after its first part, only to that upload.
+func (d *droppedFiles) takePart(id, upload string) (string, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	abs, ok := d.files[id]
+	if !ok {
+		return "", false
+	}
+	if at, sent := d.parts[id]; sent && at != upload {
+		return "", false
+	}
+	if d.parts == nil {
+		d.parts = map[string]string{}
+	}
+	d.parts[id] = upload
+	return abs, true
 }
 
 // writeForm writes the multipart form the upload route takes: where each file
@@ -201,6 +229,64 @@ func (p *Proxy) sendDropped(w http.ResponseWriter, r *http.Request) {
 	out.Header.Del("Content-Length")
 	out.Header.Set("Content-Type", form.FormDataContentType())
 	p.studio.ServeHTTP(w, out)
+}
+
+var uploadID = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// sendDroppedPart streams one part of a listed file to the route that takes
+// the parts of an upload, and hands back its answer.
+func (p *Proxy) sendDroppedPart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		partRefused(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	var req struct {
+		Upload string `json:"upload"`
+		Part   int    `json:"part"`
+		File   string `json:"file"`
+		Offset int64  `json:"offset"`
+		Length int64  `json:"length"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		partRefused(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if !uploadID.MatchString(req.Upload) || req.Part < 0 || req.Offset < 0 || req.Length < 1 {
+		partRefused(w, http.StatusBadRequest, "not a part of an upload")
+		return
+	}
+	abs, ok := p.dropped.takePart(req.File, req.Upload)
+	if !ok {
+		partRefused(w, http.StatusNotFound, "this file is no longer listed; add it again")
+		return
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		partRefused(w, http.StatusConflict, "the file could not be read")
+		return
+	}
+	defer f.Close()
+	if st, err := f.Stat(); err != nil || req.Offset+req.Length > st.Size() {
+		partRefused(w, http.StatusConflict, "the file changed while it was sent")
+		return
+	}
+	target := &url.URL{Path: "/api/kb/upload-parts/" + req.Upload + "/" + strconv.Itoa(req.Part)}
+	out := r.Clone(r.Context())
+	out.Method = http.MethodPut
+	out.URL = target
+	out.RequestURI = target.RequestURI()
+	out.Body = io.NopCloser(io.NewSectionReader(f, req.Offset, req.Length))
+	out.ContentLength = req.Length
+	out.Header.Del("Content-Length")
+	out.Header.Set("Content-Type", "application/octet-stream")
+	p.studio.ServeHTTP(w, out)
+}
+
+// partRefused answers as the Studio's routes do, which the page reads.
+func partRefused(w http.ResponseWriter, status int, why string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": why})
 }
 
 // onFileDrop tells the page what landed and where, in the web view's

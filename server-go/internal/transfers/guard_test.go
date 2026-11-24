@@ -40,6 +40,8 @@ func TestAGuardedLocationTakesNoWriteAnotherAccountCouldRedirect(t *testing.T) {
 			root := filepath.Join(parent, "lib")
 			write(t, filepath.Join(root, "keep", "a.txt"), "a")
 			write(t, filepath.Join(root, ".studio-transfer-x", "b.txt"), "b")
+			write(t, filepath.Join(root, ".studio-upload-0", "data"), "")
+			os.Chmod(filepath.Join(root, ".studio-upload-0"), 0o700)
 			os.Chmod(root, 0o700)
 			undo := c.open(parent, root)
 			for _, fs := range []*RemoteFS{
@@ -79,6 +81,8 @@ func writes(ctx context.Context, fs *RemoteFS) map[string]error {
 	out["mkdir"] = fs.Mkdir(ctx, "new")
 	_, out["land"] = fs.Land(ctx, []LandPair{{Staged: "keep/a.txt", Final: "landed.txt"}})
 	_, out["remove a tree"] = fs.RemoveTrees(ctx, []string{"keep"})
+	out["start a file in parts"] = fs.StartParts(ctx, ".studio-upload-1", "large", mb, mb)
+	out["write a part"] = fs.WritePart(ctx, ".studio-upload-0", 0, 1, strings.NewReader("x"))
 	out["remove staging"] = fs.RemoveStaging(ctx, ".studio-transfer-x")
 	return out
 }

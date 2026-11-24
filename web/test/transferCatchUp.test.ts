@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 const api = vi.hoisted(() => ({
   uploadFiles: vi.fn(),
   sendListed: vi.fn(),
+  uploadTarget: () => ({ query: '', back: (p: string) => p }),
   startIndexJob: vi.fn(async () => ({ id: 1 })),
   indexJob: vi.fn(async () => ({ state: 'done', ms: 5 })),
   job: vi.fn(),

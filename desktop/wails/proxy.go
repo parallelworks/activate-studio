@@ -115,6 +115,8 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, proxyStudio bool) 
 		p.serveStart(w)
 	case path == droppedSend && proxyStudio && ready:
 		p.sendDropped(w, r)
+	case path == droppedPart && proxyStudio && ready:
+		p.sendDroppedPart(w, r)
 	case strings.HasPrefix(path, "/__shell/"):
 		http.NotFound(w, r)
 	case !proxyStudio:

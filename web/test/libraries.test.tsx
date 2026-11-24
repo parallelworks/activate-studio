@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, currentLibrary, setLibrary, settleLibraries, withLibrary } from '../src/api'
+import { api, uploadAnswer, type UploadError, currentLibrary, setLibrary, settleLibraries, withLibrary } from '../src/api'
 import { LibrarySwitch, libraryWritable } from '../src/components/LibrarySwitch'
 
 const libs = [
@@ -92,5 +92,88 @@ describe('All libraries addresses each path\'s own library', () => {
     // Paths in two libraries stay addressed to All, which refuses them.
     await api.deleteFiles(['kb/a.txt', 'scratch/b.txt'])
     expect(sent[2]).toEqual({ paths: ['kb/a.txt', 'scratch/b.txt'], library: 'all' })
+  })
+})
+
+describe('where an upload goes', () => {
+  afterEach(() => { setLibrary('kb'); sessionStorage.clear() })
+
+  it('is settled when the files are added, not when they are sent', () => {
+    setLibrary('kb')
+    const main = api.uploadTarget('notes')
+    setLibrary('all')
+    const all = api.uploadTarget('kb/notes')
+    const top = api.uploadTarget('mine')
+    setLibrary('mine')
+    const mine = api.uploadTarget('a b')
+    expect([main.query, main.index]).toEqual(['?dir=notes', { path: 'notes' }])
+    expect([all.query, all.index, all.back('notes/x')]).toEqual(['?dir=notes', { path: 'notes' }, 'kb/notes/x'])
+    expect([top.query, top.index]).toEqual(['?dir=&library=mine', { path: '', library: 'mine' }])
+    expect([mine.query, mine.index, mine.back('x')]).toEqual(['?dir=a%20b&library=mine', { path: 'a b', library: 'mine' }, 'x'])
+  })
+})
+
+describe('what a part answered', () => {
+  const status = (code: number, text: string): unknown => {
+    try { return uploadAnswer(code, text) } catch (e) { return [(e as UploadError).status, (e as Error).message] }
+  }
+  it('is read from its body where the answer began before it was written', () => {
+    expect(status(200, '{"part":0,"left":1}')).toEqual({ part: 0, left: 1 })
+    expect(status(200, '   {"part":0,"left":1}')).toEqual({ part: 0, left: 1 })
+    expect(status(200, '  {"error":"there is no space left there","status":507}')).toEqual([507, 'there is no space left there'])
+    expect(status(200, '  {"error":"the part did not arrive whole","status":503}')).toEqual([503, 'the part did not arrive whole'])
+  })
+  it('is not taken for an answer when it is cut short or a page', () => {
+    expect(status(200, '   ')).toEqual([502, 'upload: 200'])
+    expect(status(200, '<html>Sign in</html>')).toEqual([502, 'upload: 200'])
+    expect(status(403, '{"error":"read only"}')).toEqual([403, 'read only'])
+    expect(status(503, 'upstream')).toEqual([503, 'upload: 503'])
+  })
+})
+
+describe('what a failed file had sent', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+  it('is asked to be removed until something answers', async () => {
+    vi.useFakeTimers()
+    const answers = [null, 503, 200]
+    const fetched = vi.fn(async () => {
+      const a = answers.shift()
+      if (!a) throw new TypeError('Failed to fetch')
+      return new Response('{}', { status: a })
+    })
+    vi.stubGlobal('fetch', fetched)
+    await api.dropParts('x')
+    expect(fetched).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(fetched).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(fetched).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(fetched).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('a part that stops moving', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+  it('fails, to be sent again, and is not taken for a cancelled one', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('XMLHttpRequest', class {
+      upload: { onprogress?: (e: { loaded: number }) => void } = {}
+      onabort?: () => void
+      onprogress?: () => void
+      open() {}
+      setRequestHeader() {}
+      abort() { this.onabort?.() }
+      send() {
+        setTimeout(() => this.upload.onprogress?.({ loaded: 3 }), 100_000)
+        setTimeout(() => this.onprogress?.(), 250_000)
+      }
+    })
+    const ended = vi.fn()
+    void api.sendPart('x', 0, new Blob(['abc'])).catch(ended)
+    await vi.advanceTimersByTimeAsync(429_000)
+    expect(ended).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(ended.mock.calls[0][0]).toMatchObject({ status: 0, message: 'nothing was sent for a while' })
   })
 })

@@ -1,11 +1,11 @@
 //go:build unix
 
-package transfers
+package kb
 
 import "golang.org/x/sys/unix"
 
-// freeBytes is what an unprivileged writer may still use at p.
-func freeBytes(p string) (int64, bool) {
+// FreeBytes is what an unprivileged writer may still use at p.
+func FreeBytes(p string) (int64, bool) {
 	var st unix.Statfs_t
 	if unix.Statfs(p, &st) != nil {
 		return 0, false

@@ -176,6 +176,50 @@ func TestSpaceIsMadeAndWrittenAsThePerson(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "big.bin")); err == nil || len(left) > 0 {
 		t.Fatalf("a refused upload left %v", left)
 	}
+	// A large file in parts, as the person, closed to others throughout.
+	staged, err := s.StartParts(req, lib, "notes/large.bin", 3<<20, 3<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eq(t, perm(t, filepath.Join(dir, staged)), os.FileMode(0o700), "parts closed")
+	if err := s.WritePart(req, lib, staged, 2<<20, 1<<20, bytes.NewReader(bytes.Repeat([]byte("b"), 1<<20))); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WritePart(req, lib, staged, 0, 2<<20, bytes.NewReader(bytes.Repeat([]byte("a"), 2<<20))); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"notes", "../studio/" + staged, staged + "/..", "notes/.studio-upload-x/../a.txt"} {
+		if err := s.WritePart(req, lib, p, 0, 1, strings.NewReader("x")); err == nil {
+			t.Errorf("a part was written in %q", p)
+		}
+		if err := s.DropParts(req, lib, p); err == nil {
+			t.Errorf("dropped %q", p)
+		}
+	}
+	if err := s.LandParts(req, lib, staged, "../large.bin", 3<<20); err == nil {
+		t.Error("landed outside the space")
+	}
+	if err := s.LandParts(req, lib, staged, "notes/large.bin", 3<<20); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "notes", "large.bin")); len(b) != 3<<20 || b[0] != 'a' || b[2<<20] != 'b' {
+		t.Fatal("the large file is not what was sent")
+	}
+	eq(t, perm(t, filepath.Join(dir, "notes", "large.bin")), os.FileMode(0o600), "landed closed")
+	if _, err := s.StartParts(req, lib, "notes/huge.bin", 1<<52, 1<<52); err == nil || !strings.Contains(err.Error(), "not enough free space") {
+		t.Fatalf("a file that does not fit: %v", err)
+	}
+	staged, err = s.StartParts(req, lib, "notes/dropped.bin", 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DropParts(req, lib, staged); err != nil {
+		t.Fatal(err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, "notes", ".studio-upload-*")); len(left) > 0 {
+		t.Fatalf("parts left %v", left)
+	}
+	os.Remove(filepath.Join(dir, "notes", "large.bin"))
 	if err := s.Mkdir(req, lib, "docs"); err != nil {
 		t.Fatal(err)
 	}

@@ -25,6 +25,7 @@ import (
 // in the space, by library id and path. Every path it is handed is kept,
 // so a test sees one that tried to leave the space.
 type spaceFake struct {
+	kbpkg.SpaceFS
 	kbpkg.Resolver
 	libs   []kbpkg.Library
 	files  map[string]string

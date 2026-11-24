@@ -178,6 +178,10 @@ func Resolve(rel, base string) (string, error) {
 	if abs != base && !strings.HasPrefix(abs, base+string(filepath.Separator)) {
 		return "", Error(400, "path escapes the knowledge base root")
 	}
+	// A large file still arriving has no name here yet (uploadparts.go).
+	if in := strings.ToLower(filepath.ToSlash(abs[len(base):])); strings.Contains(in, "/"+partsPrefix) {
+		return "", Error(404, "not found")
+	}
 	return abs, nil
 }
 

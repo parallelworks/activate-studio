@@ -643,7 +643,52 @@ async function postJson<T>(url: string, body: unknown, routed = false): Promise<
   return data as T
 }
 
+/** A request of an upload that failed: `status` is 0 when it got no answer. */
+export class UploadError extends Error {
+  constructor(message: string, readonly status: number) { super(message) }
+}
+
+/** How long a part may go with nothing sent and no answer. A part that has
+ *  been sent waits for the library's host to write it. */
+const PART_STALL_MS = 180_000
+
+/** Waits before a failed file is asked to be removed again. */
+const DROP_WAITS = [5_000, 10_000, 30_000, ...Array<number>(28).fill(60_000)]
+
+async function uploadCall<T>(url: string, init: RequestInit): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(url, init)
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    throw new UploadError('connection failed', 0)
+  }
+  return uploadAnswer<T>(res.status, await res.text().catch(() => ''))
+}
+
+/** What an upload's request answered. A part that took long to write began
+ *  its answer before it was done, so its body says if that failed; and a page
+ *  in place of the answer is a sign-in or a proxy's error. */
+export function uploadAnswer<T>(status: number, text: string): T {
+  let data: any = null
+  try { data = JSON.parse(text) } catch { /* not the Studio's answer, or cut short */ }
+  const ok = status >= 200 && status < 300
+  if (ok && data && data.error === undefined) return data as T
+  throw new UploadError(data?.error ?? `upload: ${status}`, ok ? data?.status ?? 502 : status)
+}
+
+/** Where an upload into dir goes: the query its requests carry, the paths it
+ *  answers with as the tree shows them, and its index pass. Taken when the
+ *  person adds the files, so a library chosen while they go up changes nothing. */
+export interface UploadTarget { query: string; back: (path: string) => string; index: { path: string; library?: string } }
+
 export const api = {
+  uploadTarget: (dir: string): UploadTarget => {
+    const url = withLibrary(`/api/kb/upload?dir=${encodeURIComponent(dir)}`)
+    const t = current === ALL ? splitLibraryPath(dir) : null
+    const id = t?.id ?? current
+    return { query: url.slice(url.indexOf('?')), back: prefixFor(dir), index: { path: t?.rel ?? dir, ...(id === PRIMARY ? {} : { library: id }) } }
+  },
   tree: (path: string, hidden = false) => getJson<{ entries: KbEntry[] }>(`/api/kb/tree?path=${encodeURIComponent(path)}${hidden ? '&hidden=1' : ''}`),
   file: (path: string) => getJson<FileContent>(`/api/kb/file?path=${encodeURIComponent(path)}`),
   downloadUrl: (path: string) => withLibrary(`/api/kb/download?path=${encodeURIComponent(path)}`),
@@ -715,14 +760,15 @@ export const api = {
   uploadFiles: async (
     files: (File | { file: File; rel: string })[],
     dir: string,
-    opts: { deferIndex?: boolean; onBytes?: (sent: number) => void; signal?: AbortSignal } = {},
+    opts: { deferIndex?: boolean; onBytes?: (sent: number) => void; signal?: AbortSignal; to?: UploadTarget } = {},
   ) => {
+    const { query, back } = opts.to ?? api.uploadTarget(dir)
     // Where each file goes is said apart from the file: a part's filename
     // reaches the server as a bare name, whatever folders it was sent with.
     const form = new FormData()
     form.append('paths', JSON.stringify(files.map(f => (f instanceof File ? f.name : f.rel))))
     for (const f of files) form.append('file', f instanceof File ? f : f.file)
-    const url = withLibrary(`/api/kb/upload?dir=${encodeURIComponent(dir)}${opts.deferIndex ? '&index=0' : ''}`)
+    const url = `/api/kb/upload${query}${opts.deferIndex ? '&index=0' : ''}`
     // XHR rather than fetch: only XHR reports how much of the body has gone
     // out, which is what makes a large upload legible while it runs.
     return await new Promise<UploadResult>((resolve, reject) => {
@@ -740,7 +786,7 @@ export const api = {
         let data: any = {}
         try { data = JSON.parse(xhr.responseText) } catch { /* non-JSON error body */ }
         if (xhr.status < 200 || xhr.status >= 300) return reject(new Error(data.error ?? `upload: ${xhr.status}`))
-        resolve({ ...data, saved: (Array.isArray(data.saved) ? data.saved : []).map(prefixFor(dir)) } as UploadResult)
+        resolve({ ...data, saved: (Array.isArray(data.saved) ? data.saved : []).map(back) } as UploadResult)
       }
       xhr.onerror = () => reject(new Error('upload: connection failed'))
       xhr.ontimeout = () => reject(new Error('upload: timed out'))
@@ -748,21 +794,71 @@ export const api = {
     })
   },
 
+  /** Begins a large file, which goes up in parts of `part` bytes. */
+  startParts: (rel: string, size: number, to: UploadTarget, signal?: AbortSignal) =>
+    uploadCall<{ id: string; part: number; parts: number; path: string }>(`/api/kb/upload-parts${to.query}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: rel, size }), signal,
+    }),
+  /** One part of a large file, as the body itself. Ends with an error when
+   *  nothing has moved for a while, so it can be sent again. */
+  sendPart: (id: string, n: number, body: Blob, opts: { onBytes?: (sent: number) => void; signal?: AbortSignal } = {}) =>
+    new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      let stalled: ReturnType<typeof setTimeout> | undefined
+      const alive = () => {
+        clearTimeout(stalled)
+        stalled = setTimeout(() => { reject(new UploadError('nothing was sent for a while', 0)); xhr.abort() }, PART_STALL_MS)
+      }
+      const cancel = () => xhr.abort()
+      if (opts.signal?.aborted) return reject(new DOMException('cancelled', 'AbortError'))
+      opts.signal?.addEventListener('abort', cancel, { once: true })
+      xhr.onloadend = () => { clearTimeout(stalled); opts.signal?.removeEventListener('abort', cancel) }
+      xhr.onabort = () => reject(new DOMException('cancelled', 'AbortError'))
+      xhr.upload.onprogress = e => { alive(); opts.onBytes?.(e.loaded) }
+      xhr.onprogress = alive
+      xhr.onload = () => {
+        try { uploadAnswer(xhr.status, xhr.responseText); resolve() } catch (e) { reject(e as Error) }
+      }
+      xhr.onerror = () => reject(new UploadError('connection failed', 0))
+      xhr.open('PUT', `/api/kb/upload-parts/${id}/${n}`)
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+      alive()
+      xhr.send(body)
+    }),
+  /** One part of a file the desktop window listed, which the window sends. */
+  sendListedPart: (id: string, n: number, linked: string, offset: number, length: number, signal?: AbortSignal) =>
+    uploadCall<unknown>('/__shell/dropped-part', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+      body: JSON.stringify({ upload: id, part: n, file: linked, offset, length }),
+    }),
+  finishParts: async (id: string, to: UploadTarget, signal?: AbortSignal) => {
+    const data = await uploadCall<UploadResult>(`/api/kb/upload-parts/${id}/finish`, { method: 'POST', signal })
+    return { ...data, saved: (Array.isArray(data.saved) ? data.saved : []).map(to.back) }
+  },
+  /** Removes what a large file that failed or was cancelled had sent. Goes
+   *  out even as the page closes, and again while nothing answers: what cut
+   *  the file off may cut this off too. The server does it after 30 minutes. */
+  dropParts: (id: string, waits: number[] = DROP_WAITS): Promise<void> =>
+    fetch(`/api/kb/upload-parts/${id}`, { method: 'DELETE', keepalive: true }).then(r => r.status < 500, () => false).then(ok => {
+      const [wait, ...rest] = waits
+      if (!ok && wait !== undefined) setTimeout(() => { void api.dropParts(id, rest) }, wait)
+    }),
+
   /** Files the desktop window listed: the window streams them from disk to
    *  the same upload, and this answers with what the upload answered. */
-  sendListed: async (files: { rel: string; linked?: string }[], dir: string, signal?: AbortSignal) => {
+  sendListed: async (files: { rel: string; linked?: string }[], dir: string, signal?: AbortSignal, to: UploadTarget = api.uploadTarget(dir)) => {
     const res = await fetch('/__shell/dropped-send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal,
       body: JSON.stringify({
-        target: withLibrary(`/api/kb/upload?dir=${encodeURIComponent(dir)}&index=0`),
+        target: `/api/kb/upload${to.query}&index=0`,
         files: files.map(f => ({ id: f.linked, rel: f.rel })),
       }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error ?? `upload: ${res.status}`)
-    return { ...data, saved: (Array.isArray(data.saved) ? data.saved : []).map(prefixFor(dir)) } as UploadResult
+    return { ...data, saved: (Array.isArray(data.saved) ? data.saved : []).map(to.back) } as UploadResult
   },
 
   dirs: () => getJson<{ dirs: string[] }>('/api/kb/dirs'),
@@ -833,9 +929,9 @@ export const api = {
   // In All mode the folder's prefix names its library, and a library's top
   // folder (an upload into the library itself) is one to index too, which
   // withLib leaves to All and the server refuses: routed here instead.
-  startIndexJob: (dir: string) => {
+  startIndexJob: (dir: string, to?: UploadTarget) => {
     const t = current === ALL ? splitLibraryPath(dir) : null
-    return t
+    return to ? postJson<IndexJob>('/api/index/job', to.index, true) : t
       ? postJson<IndexJob>('/api/index/job', { path: t.rel, ...(t.id === PRIMARY ? {} : { library: t.id }) }, true)
       : postJson<IndexJob>('/api/index/job', { path: dir })
   },
