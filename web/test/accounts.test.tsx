@@ -43,6 +43,10 @@ describe('Settings, Accounts on a Studio of one', () => {
     expect(screen.getByRole('radio', { name: 'pw CLI on this computer' })).toBeChecked()
     // Then other model services, and the place kept for the Claude account.
     expect(screen.getByRole('heading', { level: 2, name: 'OpenAI-compatible endpoint' })).toBeInTheDocument()
+    // No endpoint is saved: the address shown is the first choice's, said to be so.
+    expect(screen.getByText('Not saved')).toBeInTheDocument()
+    expect(screen.getByLabelText('Base URL')).toHaveValue('http://127.0.0.1:11434/v1')
+    expect(screen.getByText('Filled in from the Endpoint choice. Nothing is used until you Save and use.')).toBeInTheDocument()
     expect(screen.getByText('/usr/local/bin/pw').closest('p')).toHaveTextContent('pw v7.1.0 at /usr/local/bin/pw, found on the PATH.')
   })
 
@@ -58,6 +62,7 @@ describe('Settings, Accounts on a Studio of one', () => {
     expect(p.Models).toBe('From your endpoint http://127.0.0.1:11434/v1')
     expect(screen.getByLabelText('Base URL')).toHaveValue('http://127.0.0.1:11434/v1')
     expect(screen.getByText('In use for models')).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing is used until you Save and use/)).toBeNull()
     expect(screen.queryByText('Subscriptions through ACTIVATE')).toBeNull()
   })
 

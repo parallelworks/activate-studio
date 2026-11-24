@@ -495,7 +495,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
           <div ref={endpointCard}>
             <IndexGroup title="OpenAI-compatible endpoint"
               help="Models from any service that speaks the OpenAI API: a site AI portal, a provider, or a model server on this computer. It covers models only."
-              actions={endpointStored ? <StatusLabel variant="success">In use for models</StatusLabel> : <StatusLabel variant="muted">None</StatusLabel>}>
+              actions={endpointStored ? <StatusLabel variant="success">In use for models</StatusLabel> : <StatusLabel variant="muted">Not saved</StatusLabel>}>
               <div>
                 <p className="muted view-sub">
                   The base URL usually ends in /v1. A model server on this computer keeps working with no network.
@@ -513,6 +513,9 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
                       onChange={e => { setBaseUrl(e.target.value); setPreset(presetOf(e.target.value)) }} />
                   </div>
                 </div>
+                {!endpointStored && baseUrl.trim() !== '' && (
+                  <p className="muted key-note">Filled in from the Endpoint choice. Nothing is used until you Save and use.</p>
+                )}
                 <div className="key-row">
                   <div className="grow">
                     <Input type="password" aria-label="Endpoint key" value={endpointInput} autoComplete="off"
