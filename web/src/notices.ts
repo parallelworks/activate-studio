@@ -18,16 +18,32 @@ import { watch, type Watch } from './live'
 
 export interface Notice {
   id: string
-  kind: 'chat' | 'code' | 'fleet' | 'delegated' | 'transfer' | 'library'
-  what: 'waiting' | 'reply' | 'note' | 'finished' | 'failed'
+  kind: 'chat' | 'code' | 'fleet' | 'delegated' | 'transfer' | 'library' | 'share'
+  what: 'waiting' | 'reply' | 'note' | 'finished' | 'failed' | 'shared'
   title: string
   text: string
   at: string
   href: string
   conversation?: string
   session?: string
+  /** The folder someone shared with them, for one of kind share. */
+  share?: NoticeShare
   /** The menu entries that count it. */
   nav: string[]
+}
+
+/** A folder shared with the person, or with a group they are in. */
+export interface NoticeShare {
+  id: string
+  /** The account it is from. */
+  from: string
+  label: string
+  folder: string
+  /** The machine it is on, as its libraries name it, and that machine's name. */
+  site: string
+  system: string
+  group?: string
+  access: 'read' | 'write'
 }
 
 /** The state of one of the person's chats, for its row in the list. */
@@ -54,6 +70,8 @@ export interface Notices {
   sessions: PwCodeSession[]
   /** The Transfers entry's summary, as of the last read. */
   transfers?: TransferSummary
+  /** Whether a folder is shared with them is being asked now. */
+  looking?: boolean
   /** Read at least once. */
   loaded: boolean
 }
@@ -64,6 +82,8 @@ export const NOTICES_EVERY_MS = 30_000
 /** How long after something happens its read goes, so several in a row are
  *  one request, and the server has stored what happened. */
 export const NOTICES_SOON_MS = 400
+/** How soon it is read again while a person's machines are asked. */
+export const NOTICES_LOOKING_MS = 4_000
 /** A reading that comes this soon after the page's own may be from before it. */
 const SETTLE_MS = 3_000
 const CHANNEL = 'studio-notices'
@@ -118,6 +138,7 @@ function take(d: Partial<Notices> | null) {
   if (!d || !Array.isArray(d.items)) return
   state = { items: d.items, chats: d.chats ?? {}, listed: !!d.listed, machines: d.machines ?? [], sessions: d.sessions ?? [], transfers: d.transfers, loaded: true }
   changed()
+  if (d.looking) refreshNotices({ tell: false, after: NOTICES_LOOKING_MS })
 }
 
 async function send(path: string, body?: unknown, keepalive = false): Promise<void> {
@@ -245,6 +266,8 @@ const EVENTS: [string, (e: Event) => void][] = [
   ['ade-pwcode-approval', onChange],
   ['ade-pwcode-approval-resolved', onChange],
   ['ade:fleet-changed', onChange],
+  // With a key of their own, a person is told what is shared with them.
+  ['ade:model-access-changed', onChange],
 ]
 
 function start() {

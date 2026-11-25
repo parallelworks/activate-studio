@@ -37,6 +37,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
+	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/writehelper"
 )
 
@@ -67,6 +68,9 @@ type Module struct {
 	SignedIn func(owner string) bool
 	// FromSignIn: key is an access token of someone's ACTIVATE sign-in.
 	FromSignIn func(key string) bool
+	// RedirectURI is where a sign-in comes back to (OIDC_REDIRECT_URI), at
+	// the Studio's own address.
+	RedirectURI string
 	// Background is the context builds are followed and files sent in.
 	Background func() context.Context
 
@@ -141,6 +145,7 @@ func Of(a *app.App) *Module {
 		}
 		return w.ID
 	}
+	m.RedirectURI = a.Cfg.OIDC.RedirectURI
 	m.SignedIn = func(owner string) bool {
 		f := a.Providers.SignInKey
 		return f != nil && owner != single && f(owner) != ""
@@ -173,6 +178,7 @@ func Of(a *app.App) *Module {
 	prev := a.Providers.CredentialChanged
 	a.Providers.CredentialChanged = func(owner string) {
 		m.lists.forgetOwner(owner)
+		m.forgetLooks(owner)
 		if prev != nil {
 			prev(owner)
 		}
@@ -623,6 +629,11 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 		return m.sharedWithMe(r.Context(), w)
 	}))
 	mux.HandleFunc("POST "+base+"/shared-with-me/{share}/add", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		// The sharer knows the share's ID, so only the Studio's own page
+		// adds it for someone.
+		if sessions.OtherSite(r, os.Getenv("STUDIO_SELF_URL"), m.RedirectURI) {
+			return nil, apierr.New(403, "A page of another site cannot add a folder for you."+sessions.OtherSiteRemedy)
+		}
 		d, job, err := m.addShared(context.WithoutCancel(r.Context()), w, r.PathValue("share"), b)
 		if err != nil {
 			return nil, err

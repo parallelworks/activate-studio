@@ -6,9 +6,10 @@ import { loadPwCodeMessages, type PwCodeMachine, type PwCodeSession } from '@par
 import { createTranslator } from 'use-intl'
 import App from '../src/App'
 import { chatRowState, StudioChatLayout } from '../src/components/ChatList'
+import { SharedWithMe } from '../src/components/SharedWithMe'
 import { NoticesView } from '../src/views/NoticesView'
 import {
-  countFor, NOTICES_EVERY_MS, type Notice, type Notices, publishListing, refreshNotices, sessionSeen, setFrontChat, setReplying, setTransfersShown, useNotices, useNoticesRead,
+  countFor, NOTICES_EVERY_MS, NOTICES_LOOKING_MS, type Notice, type Notices, publishListing, refreshNotices, sessionSeen, setFrontChat, setReplying, setTransfersShown, useNotices, useNoticesRead,
 } from '../src/notices'
 import { useCodeWaiting } from '../src/code/waiting'
 import type { Translate } from '../src/code/parts'
@@ -39,21 +40,31 @@ const FLEET = notice({ id: 'fleet:a1:x', kind: 'fleet', what: 'waiting', title: 
 const DONE = notice({ id: 'delegated:d1:finished:t', kind: 'delegated', what: 'finished', title: 'Draft the report', text: 'Delegated work finished', href: '#view=code?session=d1', session: 'd1', nav: [] })
 const FAILED = notice({ id: 'transfer:t1', kind: 'transfer', what: 'failed', title: 'Nightly copy', text: 'Transfer failed: refused', href: '#view=transfers?transfer=t1', nav: ['transfers'] })
 
+const SHARED = notice({ id: 'share:s-1:write', kind: 'share', what: 'shared', title: 'ada shared proj with you', text: 'Read and write · /home/ada/studio/proj · cluster-a', href: '#view=notices', nav: [],
+  share: { id: 's-1', from: 'ada', label: 'proj', folder: '/home/ada/studio/proj', site: 'cluster-a', system: 'cluster-a', access: 'write' } })
+const GROUP = notice({ id: 'share:s-2:read', kind: 'share', what: 'shared', title: 'ada shared runs with your group team', text: 'Read', href: '#view=notices', nav: [],
+  share: { id: 's-2', from: 'ada', label: 'runs', folder: '/home/ada/studio/runs', site: 'pw://ada/example-box', system: 'example-box', group: 'team', access: 'read' } })
+
 interface Sent { method: string; path: string; body: Record<string, unknown> | null }
 let answer: Partial<Notices>
 let sent: Sent[]
 let config: Record<string, unknown>
+/** What adding a folder shared with the person answers. */
+let added: () => Response | Promise<Response>
 const asked = (path: string) => sent.filter(s => s.path === path)
 
 beforeEach(() => {
   sent = []
   answer = { items: [], chats: {}, listed: true, machines: [machine], sessions: [] }
   config = { appName: 'Studio', platform: true, user: { id: 'u', username: 'alex' } }
+  added = () => new Response(JSON.stringify({ id: 'u-shared-proj', label: 'proj (ada)' }), { status: 200 })
   vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }))
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input)
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : null
     sent.push({ method: init?.method ?? 'GET', path: url, body })
+    if (url.startsWith('/api/user-libraries/shared-with-me/')) return added()
+    if (url === '/api/user-libraries/shared-with-me') return new Response(JSON.stringify({ shares: [{ id: 's-1', from: 'ada', space: 'u-space-studio', path: 'proj', label: 'proj', folder: '/home/ada/studio/proj', kind: 'user', name: 'alex', access: 'write', createdAt: '2026-11-20T10:00:00Z', system: 'cluster-a' }], unreached: [] }), { status: 200 })
     if (url === '/api/notices/dismiss') answer = { ...answer, items: answer.items!.filter(i => !(body!.ids as string[]).includes(i.id)) }
     const out = url === '/api/config' ? config : url.startsWith('/api/notices') ? answer : url.startsWith('/api/transfers/locations') ? { locations: [] } : url.startsWith('/api/transfers/summary') ? answer.transfers ?? {} : url.startsWith('/api/setup/status') ? { firstRun: false } : {}
     return new Response(JSON.stringify(out), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -287,6 +298,77 @@ describe('the Notices page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss all' }))
     expect(await screen.findByText('Nothing needs you')).toBeInTheDocument()
     expect(asked('/api/notices/dismiss').at(-1)!.body).toEqual({ ids: [WAITING.id, FLEET.id, FAILED.id] })
+  })
+})
+
+describe('a folder shared with the person', () => {
+  it('says who shared what, where and for what, is added in one press, and dismisses', async () => {
+    answer = { ...answer, items: [SHARED, GROUP] }
+    render(<><Reader /><NoticesView /></>)
+    const rows = await screen.findAllByTestId('notice')
+    expect(rows[0]).toHaveTextContent('ada shared proj with you')
+    expect(rows[0]).toHaveTextContent('Read and write')
+    expect(rows[0]).toHaveTextContent('cluster-a')
+    expect(rows[0]).toHaveTextContent('/home/ada/studio/proj')
+    expect(rows[1]).toHaveTextContent('ada shared runs with your group team')
+    expect(within(rows[0]).getByTestId('machine-label')).toHaveTextContent('cluster-a')
+    expect(within(rows[1]).getByTestId('machine-label')).toHaveTextContent('example-box')
+    expect(rows[1]).toHaveTextContent('Read')
+    expect(rows[1]).not.toHaveTextContent('Read and write')
+    expect(within(rows[0]).queryByRole('link')).toBeNull()
+
+    let done: (r: Response) => void = () => {}
+    added = () => new Promise<Response>(f => { done = f })
+    fireEvent.click(within(rows[0]).getByRole('button', { name: 'Add to my libraries: proj' }))
+    expect(within(rows[0]).getByRole('button', { name: /Dismiss/ })).toBeDisabled()
+    expect(asked('/api/user-libraries/shared-with-me/s-1/add').map(s => [s.method, s.body])).toEqual([['POST', {}]])
+    answer = { ...answer, items: [GROUP] }
+    await act(async () => { done(new Response(JSON.stringify({ id: 'u-shared-proj', label: 'proj (ada)' }), { status: 200 })) })
+    await waitFor(() => expect(screen.getAllByTestId('notice')).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss ada shared runs with your group team' }))
+    expect(await screen.findByText('Nothing needs you')).toBeInTheDocument()
+    expect(asked('/api/notices/dismiss').at(-1)!.body).toEqual({ ids: [GROUP.id] })
+  })
+
+  it('says why it could not be added, and goes when it is no longer shared', async () => {
+    answer = { ...answer, items: [SHARED] }
+    render(<><Reader /><NoticesView /></>)
+    added = () => new Response(JSON.stringify({ error: 'GUFI does not run there.' }), { status: 409 })
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to my libraries: proj' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('GUFI does not run there.')
+    expect(screen.getByRole('button', { name: 'Add to my libraries: proj' })).toBeEnabled()
+    added = () => { answer = { ...answer, items: [] }; return new Response(JSON.stringify({ error: 'no such share' }), { status: 404 }) }
+    fireEvent.click(screen.getByRole('button', { name: 'Add to my libraries: proj' }))
+    expect(await screen.findByText('Nothing needs you')).toBeInTheDocument()
+  })
+
+  it('is asked for once a key is set, and goes when the folder is added in Add a library', async () => {
+    vi.useFakeTimers()
+    render(<><Reader /><NoticesView /><SharedWithMe onAdded={() => {}} /></>)
+    await tick(0)
+    expect(screen.queryByTestId('notice')).toBeNull()
+    answer = { ...answer, items: [SHARED] }
+    act(() => { window.dispatchEvent(new CustomEvent('ade:model-access-changed')) })
+    await tick(2_000)
+    expect(screen.getByTestId('notice')).toHaveTextContent('ada shared proj with you')
+    answer = { ...answer, items: [] }
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    await tick(100)
+    expect(screen.queryByTestId('notice')).toBeNull()
+  })
+
+  it('is read again soon while the person’s machines are asked, and not after', async () => {
+    vi.useFakeTimers()
+    answer = { ...answer, items: [], looking: true }
+    render(<><Reader /><NoticesView /></>)
+    await tick(0)
+    const n = asked('/api/notices').length
+    answer = { ...answer, items: [SHARED], looking: false }
+    await tick(NOTICES_LOOKING_MS + 100)
+    expect(asked('/api/notices')).toHaveLength(n + 1)
+    expect(screen.getByTestId('notice')).toHaveTextContent('ada shared proj with you')
+    await tick(NOTICES_LOOKING_MS * 3)
+    expect(asked('/api/notices')).toHaveLength(n + 1)
   })
 })
 

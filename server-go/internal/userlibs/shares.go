@@ -54,6 +54,9 @@ type Share struct {
 	// Opened is the folders above Folder the share opened for passing
 	// through, which a revoke closes again where no other share needs them.
 	Opened []string `json:"opened,omitempty"`
+	// Left is the recipients who removed the library they made from it, who
+	// are not told of it again.
+	Left []string `json:"left,omitempty"`
 }
 
 // Adopter is a recipient's library made from a share.
@@ -68,6 +71,7 @@ func (s Share) who() string { return s.Kind + ":" + s.Name }
 type shareStore struct {
 	sharesMu sync.Mutex
 	idents   map[string]clusterIdent
+	looks    map[string]*shareLook
 }
 
 type clusterIdent struct {
@@ -537,7 +541,7 @@ func (m *Module) addShare(ctx context.Context, w who, id string, b *jsonv.Object
 	}
 	s.Opened = opened
 	if was != nil {
-		s.ID, s.CreatedAt, s.Adopters, s.Opened = was.ID, was.CreatedAt, was.Adopters, union(was.Opened, opened)
+		s.ID, s.CreatedAt, s.Adopters, s.Left, s.Opened = was.ID, was.CreatedAt, was.Adopters, was.Left, union(was.Opened, opened)
 	}
 	err = m.modifyShares(func(list []Share) ([]Share, error) {
 		out := []Share{}
@@ -935,6 +939,7 @@ func (m *Module) forgetAdopted(owner string, d *libraries.UserDef) {
 				}
 			}
 			list[i].Adopters = keep
+			list[i].Left = union(list[i].Left, []string{owner})
 		}
 		return list, nil
 	})
