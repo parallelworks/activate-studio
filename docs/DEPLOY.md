@@ -82,7 +82,7 @@ The provider's tokens stay on the server and identify the person; they are never
 
 An organization administrator registers the application once; this changes platform settings and is not done by the Studio.
 
-1. Pick the Studio's address. The application is registered for one exact redirect URI, so the address has to be fixed: reserve a subdomain (`pw subdomains reserve <label>`) and serve the Studio's session on it, giving `https://<label>.<sessions domain>`.
+1. Pick the Studio's address. The application is registered for one exact redirect URI, so the address has to be fixed: reserve a subdomain (`pw subdomains reserve <label>`) and serve the Studio's session on it, giving `https://<label>.<sessions domain>`. Links to items (Copy link) start with this address, so they last as long as it does; a Studio without its own sign-in keeps its links over a relaunch under the same session name, whose subdomain is the same.
 2. Turn on the *OIDC Applications* preview in your account settings, open Organization, Settings, Applications, and add a **web** application with redirect URI `https://<label>.<sessions domain>/api/auth/callback` and post-logout redirect URI `https://<label>.<sessions domain>/`. Allow the scopes `openid`, `profile`, `email` and `groups`, and `offline_access` if sessions should refresh. Create a client secret; it is shown once. The same through the API:
 
    ```bash

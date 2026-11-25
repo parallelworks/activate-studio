@@ -176,6 +176,9 @@ func TestLinksFollowWhatTheLibraryDoes(t *testing.T) {
 	if code, out = h.open(n); code != 410 || out["reason"] != "deleted" {
 		t.Errorf("gone: %d %v", code, out)
 	}
+	if c, _ := h.do("POST", "/api/links", map[string]any{"library": "kb"}); c != 400 {
+		t.Error("a link to no path was made")
+	}
 	if c, _ := h.do("POST", "/api/links", map[string]any{"path": "archive", "library": "kb"}); c != 404 {
 		t.Errorf("a link to nothing: %d", c)
 	}

@@ -276,7 +276,7 @@ permissions:
             type: string
             default: ''
             optional: true
-            tooltip: The session URL this deployment is reached at (e.g. https://my-studio.example). Campaign agents running on other systems use it to reach the task board; empty keeps the board local-only.
+            tooltip: The session URL this deployment is reached at (e.g. https://my-studio.example). Campaign agents running on other systems use it to reach the task board; empty keeps the board local-only. Copy link uses it as the address links start with, so give a fixed subdomain; empty uses the address the page is open at.
           bundle_file:
             label: Bundle File
             type: string

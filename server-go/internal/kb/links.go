@@ -133,7 +133,11 @@ func (m *Module) makeLink(w http.ResponseWriter, r *http.Request) error {
 	if err := b.need(); err != nil {
 		return err
 	}
-	rel, _ := b.str("path")
+	rel, has := b.str("path")
+	if !has {
+		// As from a page of another site, whose body is not JSON.
+		return Error(400, "path: a file or folder in the library")
+	}
 	lid, _ := libraryParam(r, b)
 	var lib Library
 	if strings.ToLower(JSTrim(lid)) == All {
