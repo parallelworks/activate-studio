@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/andybalholm/brotli v1.2.8
+	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/ebitengine/purego v0.11.3
 	github.com/giraffesyo/downmark v0.10.0
 	github.com/giraffesyo/pdf v0.6.0
@@ -25,6 +26,7 @@ require (
 require (
 	github.com/JohannesKaufmann/dom v0.3.1 // indirect
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2 // indirect
+	github.com/aws/smithy-go v1.28.9 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/go-pdf/fpdf v0.9.0 // indirect

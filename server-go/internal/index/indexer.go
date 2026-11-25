@@ -95,6 +95,9 @@ type Hooks struct {
 	// InvalidateContext drops the assistant's cached view of the folder
 	// (chat/context.ts), when a first build's text is in.
 	InvalidateContext func()
+	// JobAllowed is whether a request may see the job over dir: a job of a
+	// person's own library is theirs alone. Nil allows every job.
+	JobAllowed func(r *http.Request, dir string) bool
 }
 
 // Indexer is the main folder's index jobs and sync.

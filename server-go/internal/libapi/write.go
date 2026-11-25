@@ -50,10 +50,22 @@ func (s *Service) addLibrary(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) removeLibrary(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
 	if s.authEnabled(r) {
+		// A person removes their own bucket library; the rest here is the
+		// deployment's.
+		if d, err := s.ownBucket(r); err == nil {
+			if err := s.Reg.RemoveOwned(d.Owner, d.ID); err != nil {
+				return err
+			}
+			apierr.JSON(w, 200, map[string]bool{"ok": true})
+			return nil
+		}
 		return apierr.New(403, "%s", deploymentLibraries)
 	}
-	id := r.PathValue("id")
+	if d := s.Reg.AddedDef(id); d != nil && d.Bucket != nil && s.otherSite(r) {
+		return otherSiteRefused()
+	}
 	if err := s.Reg.Remove(id); err != nil {
 		return err
 	}
@@ -123,7 +135,7 @@ func (s *Service) setDepth(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if d := s.Reg.AddedDef(id); d != nil && d.Bucket != nil && depth != string(index.DepthNames) {
+	if d := s.Reg.BuiltDef(id); d != nil && d.Bucket != nil && depth != string(index.DepthNames) {
 		return apierr.New(409, "%s", bucketNamesOnly)
 	}
 	if _, err := s.ix().Settings.Save(key, map[string]any{"depth": depth}); err != nil {
@@ -148,7 +160,7 @@ func (s *Service) setMeaning(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if d := s.Reg.AddedDef(id); d != nil && d.Bucket != nil && level != "off" {
+	if d := s.Reg.BuiltDef(id); d != nil && d.Bucket != nil && level != "off" {
 		return apierr.New(409, "%s", bucketNamesOnly)
 	}
 	if _, err := s.ix().Settings.Save(key, map[string]any{"meaning": level}); err != nil {

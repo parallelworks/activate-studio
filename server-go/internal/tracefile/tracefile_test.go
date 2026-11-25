@@ -30,7 +30,17 @@ var listing = []entry{
 	{"empty", -1, 1800000000, true},
 	{"projects/alpha/summary.txt", 22, 1700000200, false},
 	{"../escape.txt", 1, 1, false},
-	{"a//b.txt", 7, 1700000400, false},
+	{"a/b.txt", 7, 1700000400, false},
+	{"a//b.txt", 70, 1700000400, false},
+	{"/readme.txt", 70, 1700000400, false},
+	{"notes\n.txt", 70, 1700000400, false},
+	{"tab\there/x.txt", 70, 1700000400, false},
+	{"cut\x1eoff.txt", 70, 1700000400, false},
+	{"del\x7f.txt", 70, 1700000400, false},
+	{"nul\x00.txt", 70, 1700000400, false},
+	{"line\nbreak", -1, 1800000000, true},
+	{"/", -1, 1800000000, true},
+	{"a//", -1, 1800000000, true},
 	{strings.Repeat("x", 300) + "/f.txt", 1, 1, false},
 }
 
@@ -100,11 +110,11 @@ func hexLen(t *testing.T, h string) int {
 func TestStanzasOncePerFolder(t *testing.T) {
 	trace, st := write(t, listing)
 	ls := parse(t, trace)
-	if st.Objects != 6 || st.Bytes != 200000+4+22+3+29+7 {
+	if st.Objects != 7 || st.Bytes != 200000+4+22+3+29+7+70 {
 		t.Errorf("objects %d bytes %d", st.Objects, st.Bytes)
 	}
-	if st.Skipped != 3 {
-		t.Errorf("want 3 skipped (escape, duplicate, long name), got %d", st.Skipped)
+	if st.Skipped != 12 {
+		t.Errorf("want 12 skipped (escape, duplicate, long name, 4 with an empty name, 5 with a control character), got %d", st.Skipped)
 	}
 	seen := map[string]bool{}
 	inos := map[string]string{}
@@ -134,7 +144,7 @@ func TestStanzasOncePerFolder(t *testing.T) {
 			t.Fatalf("type %q", l.typ)
 		}
 	}
-	want := []string{"files", "files/a", "files/empty", "files/projects", "files/projects/alpha", "files/projects/beta", "files/projects/beta/raw", "files/space name"}
+	want := []string{"files", "files/a", "files/empty", "files/projects", "files/projects/alpha", "files/projects/beta", "files/projects/beta/raw", "files/space name", "files/tab\there"}
 	if strings.Join(dirs, "|") != strings.Join(want, "|") {
 		t.Errorf("folders %v, want %v", dirs, want)
 	}
@@ -161,7 +171,7 @@ func TestRunsMatchMemory(t *testing.T) {
 	if got != want {
 		t.Errorf("runs on disk wrote a different trace:\n%q\nwant\n%q", got, want)
 	}
-	if st.Objects != 6 {
+	if st.Objects != 7 {
 		t.Errorf("objects %d", st.Objects)
 	}
 }
@@ -202,7 +212,7 @@ func TestGufiBuildsTheTrace(t *testing.T) {
 		got = append(got, strings.TrimPrefix(l, idx+"/"))
 	}
 	sort.Strings(got)
-	want := []string{"files/a/b.txt|7", "files/projects/alpha/summary.txt|22", "files/projects/beta/plan.md|29", "files/projects/beta/raw/run1.bin|200000", "files/readme.txt|4", "files/space name/a file.txt|3"}
+	want := []string{"files/a/b.txt|7", "files/projects/alpha/summary.txt|22", "files/projects/beta/plan.md|29", "files/projects/beta/raw/run1.bin|200000", "files/readme.txt|4", "files/space name/a file.txt|3", "files/tab\there/x.txt|70"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("index holds\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -332,7 +342,7 @@ func TestGufiKeepsTheInodes(t *testing.T) {
 		}
 		n++
 	}
-	if n != 6 {
+	if n != 7 {
 		t.Errorf("checked %d files", n)
 	}
 }

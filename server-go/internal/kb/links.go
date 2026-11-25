@@ -280,6 +280,12 @@ func (m *Module) findLink(r *http.Request, p links.Place) ([]LinkAt, error) {
 		return Links.Find(r, p)
 	}
 	lib, ok, err := m.Libs.Get(p.Lib)
+	if err == nil && !ok && LibraryResolver != nil {
+		// A person's own bucket, whose ID is no one else's: found for its
+		// owner alone.
+		lib, err = LibraryResolver.Library(r, p.Lib)
+		ok = lib.ID == p.Lib && lib.Bucket
+	}
 	if err != nil || !ok {
 		return nil, nil
 	}

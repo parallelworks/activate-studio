@@ -1,6 +1,5 @@
-import { checked, chooseComputer, chooseFolder, closeMenu, computers, folderRoute, nameComputer } from './addLibraryHelpers'
+import { checked, chooseComputer, chooseFolder, closeMenu, computers, folderRoute, nameComputer, pickOption } from './addLibraryHelpers'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { addChoices } from '../src/components/addLibraryTarget'
 import { addedMessage } from '../src/components/LibraryAddDialogs'
@@ -78,6 +77,7 @@ interface Server {
   pwWhy?: string
   workflow?: boolean
   canBuild?: boolean
+  endpoints?: string[]
   /** An rclone remote among the Transfers locations. */
   rclone?: boolean
   libs: Record<string, unknown>[]
@@ -116,7 +116,7 @@ function stubServer(s: Server) {
       s.user = s.user.map(l => (l.id === depth[1] ? { ...l, depth: (body as { depth: string }).depth } : l))
       return reply({ id: depth[1], depth: (body as { depth: string }).depth })
     }
-    if (path === '/api/libraries' && method === 'GET') return reply({ canBuild: !!s.canBuild, libraries: s.libs.map(l => (l.primary ? { ...l, sourceRoot: s.primary, label: s.primary.split('/').pop() } : l)) })
+    if (path === '/api/libraries' && method === 'GET') return reply({ canBuild: !!s.canBuild, bucketEndpoints: s.endpoints, libraries: s.libs.map(l => (l.primary ? { ...l, sourceRoot: s.primary, label: s.primary.split('/').pop() } : l)) })
     const through = /^\/api\/libraries\/([^/]+)\/read-through(\/test)?$/.exec(path)
     if (through) {
       const b = body as { destination: string; root?: string; sshOptions?: string }
@@ -324,26 +324,6 @@ describe('what Add a library offers', () => {
     expect(addedMessage({ label: 'Papers' }, true, true)).toMatch(/^Building Papers\./)
   })
 })
-
-/** Opens a picker and chooses an option. Its list draws only the rows that
- *  fit its height, which jsdom measures as zero, so layout is given a size
- *  while it is open; `absent` are options that must not be offered. */
-async function pickOption(name: string, label: string, absent: string[] = []) {
-  const rect = Element.prototype.getBoundingClientRect
-  const sizes = ['offsetHeight', 'clientHeight', 'offsetWidth', 'clientWidth'] as const
-  for (const k of sizes) Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => 400 })
-  Element.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, width: 400, height: 400, right: 400, bottom: 400, toJSON() {} }) as DOMRect
-  try {
-    const u = userEvent.setup()
-    await u.click(screen.getByRole('combobox', { name }))
-    const option = await screen.findByRole('option', { name: new RegExp(`^${label}`) })
-    for (const a of absent) expect(screen.queryByRole('option', { name: new RegExp(`^${a}`) })).toBeNull()
-    await u.click(option)
-  } finally {
-    Element.prototype.getBoundingClientRect = rect
-    for (const k of sizes) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k]
-  }
-}
 
 describe('Settings, Indexing, Libraries', () => {
   afterEach(() => { vi.unstubAllGlobals() })
@@ -818,6 +798,23 @@ describe('Settings, Indexing, Libraries', () => {
     const row = await waitFor(() => rowOf('research'))
     expect(within(row).getByText('Index of store, research, from its listing')).toBeInTheDocument()
     expect(within(row).getByText('Listing and indexing')).toBeInTheDocument()
+  })
+
+  it('an ACTIVATE bucket\'s endpoint is chosen from the administrator\'s list where people sign in', async () => {
+    const pw = { ...BUCKET, bucket: { ...BUCKET.bucket!, location: 'pw://ada/papers', csp: 'aws', region: 'us-east-1' } }
+    const s = server({ libs: [PRIMARY, pw], canBuild: false, endpoints: ['https://s3.gateway.example.com'] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('research'))
+    expect(within(row).queryByRole('textbox', { name: 'Endpoint of research' })).toBeNull()
+    await pickOption('Endpoint of research', 's3.gateway.example.com')
+    await waitFor(() => expect(s.calls.find(c => c.method === 'PUT' && c.url === '/api/libraries/research/bucket')?.body).toEqual({ endpoint: 'https://s3.gateway.example.com' }))
+  })
+
+  it('an ACTIVATE bucket has no endpoint to choose where the administrator lists none', async () => {
+    const pw = { ...BUCKET, bucket: { ...BUCKET.bucket!, location: 'pw://ada/papers', csp: 'aws', region: 'us-east-1' } }
+    await renderPage(server({ libs: [PRIMARY, pw], canBuild: false }))
+    const row = await waitFor(() => rowOf('research'))
+    expect(within(row).queryByLabelText('Endpoint of research')).toBeNull()
   })
 
   it('a bucket library says what it holds and what a listing costs, lists again when asked, and takes another interval', async () => {

@@ -364,6 +364,9 @@ func (e *Engine) kindOf(l libraries.Library, viewer libraries.Viewer) string {
 		if l.Bucket.Path != "" {
 			where += ", " + l.Bucket.Path
 		}
+		if l.Bucket.PW() {
+			return "Indexed from a listing of the ACTIVATE bucket " + where
+		}
 		return "Indexed from a listing of " + where
 	case l.Build != nil:
 		return "Built from a folder on this computer"

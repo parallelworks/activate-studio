@@ -268,6 +268,9 @@ func bucketReadOnly(b *libraries.BucketOf) string {
 	if b.Path != "" {
 		where += ", " + b.Path
 	}
+	if b.PW() {
+		return "it is an index of the ACTIVATE bucket " + where + "; copy to and from it with pw buckets cp, or from ACTIVATE"
+	}
 	return "it is an index of " + where + "; transfer to and from that rclone remote instead"
 }
 

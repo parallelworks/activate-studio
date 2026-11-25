@@ -80,6 +80,9 @@ func Register(mux *http.ServeMux, a *app.App) {
 	s.Reg.OnRemoved(func(id string) { kb.LinkStore().DropLibrary("", id) })
 	a.Providers.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
 		v := libraries.ViewerOf(viewer)
+		if r != nil {
+			s.bucketVisit(r)
+		}
 		var out []json.RawMessage
 		for _, l := range s.Reg.List(kbLabel, v) {
 			b, err := json.Marshal(libraries.Public(s.forRequest(r, l)))
@@ -129,12 +132,23 @@ func Register(mux *http.ServeMux, a *app.App) {
 		mux.HandleFunc("POST /api/libraries/{id}/update", h(s.copyUpdate))
 		mux.HandleFunc("PUT /api/libraries/{id}/copy", h(s.copySettings))
 		mux.HandleFunc("POST /api/libraries/bucket", h(s.bucketAdd))
+		mux.HandleFunc("GET /api/libraries/buckets", h(s.pwBucketsList))
+		mux.HandleFunc("POST /api/libraries/buckets/folders", h(s.pwBucketFolders))
 		mux.HandleFunc("PUT /api/libraries/{id}/bucket", h(s.bucketSettings))
 		mux.HandleFunc("GET /api/libraries/{id}/bucket/text", h(s.bucketTextEstimate))
 		mux.HandleFunc("POST /api/libraries/{id}/bucket/text/stop", h(s.bucketTextStop))
 		mux.HandleFunc("PUT /api/libraries/{id}/read-through", h(s.readThroughSave))
 		mux.HandleFunc("POST /api/libraries/{id}/read-through/test", h(s.readThroughTest))
 		index.Of(a).Hooks.RequestAllLibrarySyncs = s.builds.requestAllSyncs
+		index.Of(a).Hooks.JobAllowed = s.jobAllowed
+		changed := a.Providers.CredentialChanged
+		a.Providers.CredentialChanged = func(owner string) {
+			s.builds.pwb.forget(owner)
+			if changed != nil {
+				changed(owner)
+			}
+		}
+		a.OnStart("libraries: ACTIVATE buckets", s.pwStart)
 		a.OnIndexWork("libraries: sync", s.builds.startSync)
 		a.OnIndexWork("libraries: copies", s.builds.startCopies)
 		a.OnIndexWork("libraries: buckets", s.builds.startBuckets)
@@ -317,12 +331,27 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	for _, l := range libs {
 		out = append(out, s.Reg.SettingsView(s.forRequest(r, l)))
 	}
+	// A person's own bucket libraries, where people sign in; those that
+	// waited for them are listed now.
+	s.bucketVisit(r)
+	if v, err := s.viewer(r); err == nil && v != nil {
+		for _, d := range s.Reg.Owned(s.Reg.Users().OwnerOf(*v)) {
+			if l, err := s.Reg.Get(d.ID, s.kbLabel(), v); err == nil {
+				out = append(out, s.Reg.SettingsView(l))
+			}
+		}
+	}
 	// canBuild: localBuildOffered(), libraries built of folders here
 	// where nobody signs in.
 	apierr.JSON(w, 200, struct {
 		Libraries []libraries.SettingsLibrary `json:"libraries"`
 		CanBuild  bool                        `json:"canBuild"`
-	}{out, !s.authEnabled(r)})
+		// Buckets: Add a library speaks of ACTIVATE buckets (pwShown).
+		Buckets bool `json:"buckets"`
+		// BucketEndpoints: the endpoints a bucket can be given, where people
+		// sign in (STUDIO_BUCKET_ENDPOINTS).
+		BucketEndpoints []string `json:"bucketEndpoints,omitempty"`
+	}{out, !s.authEnabled(r), s.pwShown(r), s.bucketEndpoints(r)})
 	return nil
 }
 

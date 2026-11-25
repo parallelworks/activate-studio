@@ -31,6 +31,7 @@ var deploymentUses = map[string]struct {
 	"chat/workflowtools.go":      {1, "platformKey on a Studio of one (sign-in off)"},
 	"core/brand.go":              {1, "housekeeping: the deployment's own icon from the platform"},
 	"extract/image.go":           {2, "housekeeping: image descriptions while indexing, when no person is present"},
+	"libapi/pwbucket.go":         {1, "storedKey: a Studio of one only"},
 	"ragendpoint/ragendpoint.go": {2, "housekeeping: registering the grounded model at /v1 as the deployment, which the administrator turns on"},
 	"search/of.go":               {1, "OwnerKeys: a Studio of one only"},
 	"userlibs/userlibs.go":       {1, "keyOf: a Studio of one only"},

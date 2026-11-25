@@ -287,6 +287,11 @@ func failedLibraries(a *app.App, r *http.Request) []Library {
 		for _, d := range reg.Users().Load(owner) {
 			add(failed(d.ID, d.Label, d.State, d.Error))
 		}
+		for _, d := range reg.Owned(owner) {
+			if d.Build != nil {
+				add(failed(d.ID, d.Label, d.Build.State, d.Build.Error))
+			}
+		}
 	}
 	return out
 }

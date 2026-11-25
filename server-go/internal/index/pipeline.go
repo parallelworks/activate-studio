@@ -922,7 +922,8 @@ func (ix *Indexer) StartOwnJob(rel string, work OwnWork) (IndexJob, error) {
 	ix.mu.Unlock()
 	t0 := time.Now()
 	go func() {
-		ms, err := work(&OwnJob{ix: ix, pub: job})
+		var ms int64
+		err := safeErr(func() (err error) { ms, err = work(&OwnJob{ix: ix, pub: job}); return err })
 		ix.mu.Lock()
 		if err != nil {
 			e := truncRunes(err.Error(), 400)

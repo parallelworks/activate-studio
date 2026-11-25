@@ -78,6 +78,27 @@ The username from the provider is not assumed to be an account on any host. ACTI
 
 The provider's tokens stay on the server and identify the person; they are never used to call the platform or a model. Running workflows, sessions and platform models as the person still needs their own platform key under Settings, Accounts. Sessions are kept across restarts, encrypted, in `INDEX_BASE/oidc-sessions.enc`; the key is `INDEX_BASE/.oidc-session-key`, written 0600, and deleting it ends every sign-in. Signing in again does not ask for a password while the provider's own session lasts. With `offline_access`, the Studio refreshes the provider's tokens as they expire, and a person the provider no longer admits is signed out within the access token's lifetime (an hour on ACTIVATE).
 
+### ACTIVATE buckets on a Studio people sign in to
+
+Each person can add their own ACTIVATE buckets as libraries, with nothing to set per person (Preview; [`LIBRARIES.md`](LIBRARIES.md#activate-buckets)). It is on when:
+
+- the gateway is the platform's (`PW_GATEWAY_URL` or `OPENAI_BASE_URL`, such as `https://platform.example.com/api/openai/v1`), a Government platform the same as a commercial one;
+- the `pw` CLI is on the host (`PW_CLI` names another);
+- GUFI has `gufi_trace2index`, which the packages ship.
+
+Each person signs in to ACTIVATE under Settings, Accounts (the device code, or an API key of their own) and then chooses their buckets in **Add a library**. Without one the menu says so; the deployment's credential is never used for it, with or without `REQUIRE_PERSONAL_KEY=1`. A person who keeps their sign-in has their buckets listed on schedule while they are away; one who does not has them listed when they open the Studio.
+
+| Variable | Meaning |
+|---|---|
+| `AWS_USE_FIPS_ENDPOINT` | `false`: ask the regular S3 endpoints. By default FIPS endpoints are asked in GovCloud and in the US and Canada regions, as the pw CLI asks them |
+| `AWS_ENDPOINT_URL_S3`, `AWS_ENDPOINT_URL` | an address every S3 bucket is asked at, such as one VPC endpoint. One that is not an address is an error in the log as the Studio starts, and AWS buckets are not read until it is corrected |
+| `STUDIO_BUCKET_ENDPOINTS` | the only hosts, separated by commas, that people may choose as a bucket's endpoint, such as `bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com` or `s3.storage.example.com:9443`. A host is taken at the port it is listed with, 443 where none is given. Without the list nobody chooses one. Where sign-in is off, the store's own private endpoints (S3 VPC endpoints, Google Private Service Connect) are taken besides |
+| `STUDIO_SELF_URL` | the Studio's own address (`http://studio.example.com`). Set it, or `OIDC_REDIRECT_URI`, where the Studio is served over plain http through a proxy that rewrites `Host` and sets no `X-Forwarded-Host`: without it the Studio's own page looks like another site's there, and adding, changing or rebuilding a library is refused (403) |
+| `HTTPS_PROXY`, `NO_PROXY` | as for the Studio's other outbound requests; the pw CLI is run with them too. Put the stores' hosts in `NO_PROXY` (`.amazonaws.com`) if they are reached without it |
+| `SSL_CERT_FILE` | a bundle with the network's own certificate authority, for the Studio and the pw CLI |
+
+The host asks the platform and the store itself, so both have to be reachable from it: directly, through the proxy, or through a VPC endpoint. When one cannot be, the person is told so and the Studio's log says why. The pw CLI is run without the host's own cloud credentials (`AWS_*`, `GOOGLE_*`, `AZURE_*`, `CLOUDSDK_*`, and instance metadata on AWS). The indexes are in `INDEX_BASE/users`, about what the same number of files would take.
+
 ### Registering the Studio with ACTIVATE
 
 An organization administrator registers the application once; this changes platform settings and is not done by the Studio.

@@ -72,6 +72,8 @@ type Registry struct {
 	mu         sync.Mutex
 	added      []Def
 	addedStamp string
+	owned      map[string]ownedList // by the owner's folder
+	ownedHash  map[string]string    // an owned library's id to that folder
 	known      map[string]KnownCaps
 	knownKeys  []string
 	knownStamp string
@@ -143,8 +145,17 @@ func (r *Registry) Users() *Users { return r.o.Users }
 // Settings is the index settings the registry reads.
 func (r *Registry) Settings() IndexSettings { return r.o.Settings }
 
-// BuiltLibraryDir is builtLibraryDir: where a built library keeps its files.
+// BuiltLibraryDir is builtLibraryDir: where a built library keeps its
+// files, in its owner's own folder for a person's bucket library.
 func (r *Registry) BuiltLibraryDir(id string) string {
+	if ownedRe.MatchString(id) {
+		r.mu.Lock()
+		hash := r.hashOfLocked(id)
+		r.mu.Unlock()
+		if hash != "" {
+			return filepath.Join(r.o.IndexBase, "users", hash, "buckets", id)
+		}
+	}
 	return filepath.Join(r.o.IndexBase, "libraries", id)
 }
 
@@ -938,7 +949,7 @@ func (r *Registry) List(primaryLabel string, viewer Viewer) []Library {
 			out = append(out, r.fromDef(d, group.pinned))
 		}
 	}
-	for _, u := range r.userLibrariesOf(viewer) {
+	for _, u := range append(r.ownedLibrariesOf(viewer), r.userLibrariesOf(viewer)...) {
 		if !seen[u.ID] {
 			seen[u.ID] = true
 			out = append(out, u)
@@ -1005,7 +1016,7 @@ func (r *Registry) IDFor(label, indexRoot string) string {
 	if base == "" {
 		base = "library"
 	}
-	if strings.HasPrefix(base, "u-") {
+	if strings.HasPrefix(base, "u-") || ownedRe.MatchString(base) {
 		base = "lib-" + base
 		if len(base) > 34 {
 			base = base[:34]
@@ -1026,6 +1037,9 @@ func (r *Registry) IDFor(label, indexRoot string) string {
 func (r *Registry) CheckNewID(id string) error {
 	if !idRe.MatchString(id) {
 		return apierr.New(400, "a library needs an id (letters, digits, dash, underscore) and an index root")
+	}
+	if ownedRe.MatchString(id) {
+		return apierr.New(409, "ids like %s are the Studio's own for people's bucket libraries", id)
 	}
 	if id == "all" {
 		return apierr.New(409, "all is reserved: it names every library at once")
@@ -1121,6 +1135,9 @@ func (r *Registry) AddedDefs() []Def {
 func (r *Registry) ModifyAdded(id string, fn func(*Def)) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if ownedRe.MatchString(id) {
+		return r.modifyOwnedLocked(id, fn)
+	}
 	defs := append([]Def{}, r.loadAddedLocked()...)
 	for i := range defs {
 		if defs[i].ID == id {
@@ -1182,6 +1199,17 @@ func (r *Registry) SetBucketEvery(id string, every int) bool {
 		if d.Bucket != nil {
 			b := *d.Bucket
 			b.Every = every
+			d.Bucket = &b
+		}
+	})
+}
+
+// SetBucketEndpoint changes the address an ACTIVATE bucket is asked at.
+func (r *Registry) SetBucketEndpoint(id, endpoint string) bool {
+	return r.ModifyAdded(id, func(d *Def) {
+		if d.Bucket != nil {
+			b := *d.Bucket
+			b.Endpoint = endpoint
 			d.Bucket = &b
 		}
 	})
@@ -1291,6 +1319,8 @@ func (r *Registry) Remove(id string) error {
 	}
 	os.Remove(filepath.Join(dir, "labels.json"))
 	os.Remove(filepath.Join(dir, "labels.json.bak"))
+	// The copies previews were made from: whole files of a place elsewhere.
+	os.RemoveAll(filepath.Join(r.o.IndexBase, "remote-previews", id))
 	for _, fn := range r.removedHooks {
 		fn(id)
 	}
@@ -1326,7 +1356,7 @@ func (r *Registry) SettingsView(l Library) SettingsLibrary {
 func (r *Registry) ResetForTests(keepKnown bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.added, r.known = nil, nil
+	r.added, r.known, r.owned, r.ownedHash = nil, nil, nil, nil
 	r.probeCache = map[string]probeEntry{}
 	if !keepKnown {
 		os.Remove(r.capsFile())

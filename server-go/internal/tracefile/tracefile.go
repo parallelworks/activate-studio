@@ -62,7 +62,8 @@ type Stats struct {
 	// Dirs counts the folders written, the top one included.
 	Dirs int64
 	// Skipped counts entries left out: a path GUFI cannot hold, a name
-	// that is "." or "..", or a second entry of the same name.
+	// that is empty, "." or "..", one with a control character other than a
+	// tab, or a second entry of the same name.
 	Skipped int64
 }
 
@@ -149,20 +150,25 @@ func fnvInode(rel string, isDir bool, try int) uint64 {
 }
 
 // clean is a listing path split into its names, or false when it cannot
-// be kept. Empty names (a doubled slash) are dropped.
+// be kept. A control character would end a line or a column of the trace, or
+// of what is read from the index; a tab, the one such names have in earnest,
+// ends neither.
+// An empty name (a slash at the start, or two together) has no place in an
+// index, and without it the path would be another object's.
 func clean(p string) ([]string, bool) {
-	if len(p) > maxPath || strings.IndexByte(p, 0) >= 0 {
+	if len(p) > maxPath {
 		return nil, false
 	}
-	var parts []string
-	for _, s := range strings.Split(p, "/") {
-		switch s {
-		case "":
-			continue
-		case ".", "..":
+	for i := 0; i < len(p); i++ {
+		if p[i] < 0x20 && p[i] != '\t' || p[i] == 0x7f {
 			return nil, false
 		}
-		parts = append(parts, s)
+	}
+	parts := strings.Split(p, "/")
+	for _, s := range parts {
+		if s == "" || s == "." || s == ".." {
+			return nil, false
+		}
 	}
 	return parts, true
 }
@@ -189,10 +195,17 @@ func (w *Writer) dir(parts []string) (*dirInfo, bool) {
 }
 
 // Add takes one entry of the listing: its path below the listed folder,
-// its size and modification time (seconds), and whether it is a folder.
+// its size and modification time (seconds), and whether it is a folder,
+// which may end with a slash.
 func (w *Writer) Add(path string, size, mtime int64, isDir bool) error {
 	if w.finished {
 		return errors.New("tracefile: Add after Write")
+	}
+	if isDir {
+		if path == "" {
+			return nil
+		}
+		path = strings.TrimSuffix(path, "/")
 	}
 	parts, ok := clean(path)
 	if !ok {
@@ -200,16 +213,9 @@ func (w *Writer) Add(path string, size, mtime int64, isDir bool) error {
 		return nil
 	}
 	if isDir {
-		if len(parts) == 0 {
-			return nil
-		}
 		if _, ok := w.dir(parts); !ok {
 			w.stats.Skipped++
 		}
-		return nil
-	}
-	if len(parts) == 0 {
-		w.stats.Skipped++
 		return nil
 	}
 	d, ok := w.dir(parts[:len(parts)-1])
