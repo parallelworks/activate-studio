@@ -19,10 +19,12 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 )
 
 // FileName is the instructions file pw code reads.
-const FileName = "AGENTS.md"
+const FileName = ownfile.Name
 
 // SkillsDir is the folder pw code finds a workspace's skills in.
 const SkillsDir = ".agents/skills"
@@ -60,11 +62,12 @@ func CheckName(name string) error {
 // StudioSection is the section the Studio keeps in the folders of its own
 // that its pw code chats work in: how to find files with its tools. It is
 // not one of the instructions a person applies, so it is not listed.
-const StudioSection = "studio_tools"
+// A file with nothing but it is not library content (internal/ownfile).
+const StudioSection = ownfile.Section
 
-func begin(name string) string {
+func begin(name, body string) string {
 	if name == StudioSection {
-		return "<!-- ACTIVATE Studio instructions " + name + ": begin. ACTIVATE Studio writes this section when a chat of its starts work here, and keeps it up to date. Write your own text outside it. -->"
+		return ownfile.Begin(body)
 	}
 	return "<!-- ACTIVATE Studio instructions " + name + ": begin. ACTIVATE Studio replaces this section when these instructions are applied again and removes it when they are taken off. Write your own text outside it. -->"
 }
@@ -142,7 +145,7 @@ func Apply(text, name, body string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	section := begin(name) + "\n\n" + body + "\n\n" + end(name)
+	section := begin(name, body) + "\n\n" + body + "\n\n" + end(name)
 	for _, s := range ss {
 		if s.name == name {
 			return text[:s.start] + section + text[s.end:], nil

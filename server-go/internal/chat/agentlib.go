@@ -13,6 +13,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 )
 
 // localAgentTools reach a pw code daemon, which runs without the
@@ -211,7 +212,7 @@ func (m *Module) agentLibraryFiles(r *http.Request, st any) string {
 			}
 			return nil
 		}
-		if d.IsDir() {
+		if d.IsDir() || ownfile.At(p) {
 			return nil
 		}
 		info, err := d.Info()

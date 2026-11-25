@@ -101,6 +101,9 @@ if [ "$reads" = 1 ] && [ -z "$textwhy" ]; then
   # The Studio searches the text with gufi_query, whose SQLite must read it.
   if [ "$fulltext" = true ]; then "$bin/gufi_query" -n 1 --max-level 0 -E 'SELECT count(*) FROM words;' "$new" >/dev/null 2>&1 || { fulltext=false; textwhy="gufi_query on this system cannot read the text tables"; }; fi
 fi
+# The Studio's own AGENTS.md files are not the library's: the text pass
+# takes them out, and this does where there is none.
+if [ "$reads" != 1 ] && [ -n "$tools" ] && [ -f "$g/ok" ]; then "$helper" leaveout --kb-root "$src" --index "$new" >> "$s/dir2index.log" 2>&1; fi
 # The index answers whole until here: the new one, text and vectors in it,
 # takes its place in one move.
 rmtree "$idx/.old"

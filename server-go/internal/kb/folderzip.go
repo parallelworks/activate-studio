@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 )
 
 // A folder of a library downloads as a zip of what the Library shows in
@@ -76,7 +78,7 @@ func localFolderFiles(abs, name string) ([]zipFile, error) {
 			}
 			return nil
 		}
-		if d.IsDir() || !d.Type().IsRegular() {
+		if d.IsDir() || !d.Type().IsRegular() || ownfile.At(p) {
 			return nil
 		}
 		info, err := d.Info()

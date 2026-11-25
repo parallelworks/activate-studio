@@ -50,7 +50,7 @@ func TestApplyReplaceRemoveKeepsOwnText(t *testing.T) {
 // A section between the person's text keeps both sides, and the person's
 // text after it is untouched by a re-apply.
 func TestSectionInTheMiddle(t *testing.T) {
-	text := "Top.\n\n" + begin("x") + "\n\nold\n\n" + end("x") + "\n\nBottom.\n"
+	text := "Top.\n\n" + begin("x", "") + "\n\nold\n\n" + end("x") + "\n\nBottom.\n"
 	out, err := Apply(text, "x", "new")
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestNewFileAndUnclosedSection(t *testing.T) {
 	if err != nil || !strings.HasPrefix(out, "<!-- ACTIVATE Studio instructions x: begin.") || !strings.HasSuffix(out, end("x")+"\n") {
 		t.Fatalf("%q %v", out, err)
 	}
-	broken := own + "\n" + begin("x") + "\nhalf\n"
+	broken := own + "\n" + begin("x", "") + "\nhalf\n"
 	if _, err := Apply(broken, "x", "y"); !errors.Is(err, ErrUnclosed) {
 		t.Fatalf("unclosed: %v", err)
 	}

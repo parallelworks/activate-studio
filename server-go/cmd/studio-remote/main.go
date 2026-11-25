@@ -3,6 +3,7 @@
 //
 //	studio-remote version             its platform, to show it runs there
 //	studio-remote text [enrich.py's arguments]
+//	studio-remote leaveout --kb-root DIR --index DIR   the Studio's own files out of an index with no text pass
 //	studio-remote embed [embed.py's arguments]   (ONNX Runtime from STUDIO_ORT_LIB)
 //	studio-remote verify DIR NAME=SHA256 ...     files the Studio sent, by digest
 //
@@ -30,7 +31,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: studio-remote version | text ... | embed ... | verify DIR NAME=SHA256 ...")
+		fmt.Fprintln(stderr, "usage: studio-remote version | text ... | leaveout ... | embed ... | verify DIR NAME=SHA256 ...")
 		return 2
 	}
 	switch args[0] {
@@ -39,6 +40,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "text":
 		return remotepass.TextMain(args[1:], stdout, stderr)
+	case "leaveout":
+		return remotepass.LeaveOutMain(args[1:], stderr)
 	case "embed":
 		return embedcli.Main(args[1:], stdout, stderr)
 	case "verify":

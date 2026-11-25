@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"sync"
@@ -89,6 +90,7 @@ func TextMain(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "text: %v\n", err)
 		return 1
 	}
+	index.LeaveOutOwn(filepath.Join(*ix, *subdir), filepath.Join(*kb, *subdir), logf)
 	ocr := !*noOCR && tools.Tesseract != ""
 	res, err := index.WriteWords(ctx, index.WordsOptions{KBRoot: *kb, Index: *ix, Cache: *cache, Subdir: *subdir, NoRecurse: *noRecurse,
 		Jobs: *jobs, NoDocuments: *noDocs, Soffice: *soffice != "", ImagesUseful: ocr, Warn: logf})
@@ -104,6 +106,25 @@ func TextMain(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	fmt.Fprintf(stdout, "enriched %d directories: %d files indexed, %d extract-cache entries\n", res.Dirs, res.Files, sum.Converted)
+	return 0
+}
+
+// LeaveOutMain is `studio-remote leaveout --kb-root DIR --index DIR`, for a
+// build with no text pass: the Studio's own AGENTS.md files taken out of
+// the index (index.LeaveOutOwn), as the text pass takes them out.
+func LeaveOutMain(args []string, stderr io.Writer) int {
+	fs := flag.NewFlagSet("leaveout", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	kb := fs.String("kb-root", "", "the folder indexed")
+	ix := fs.String("index", "", "GUFI index tree top (mirrors kb-root)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *kb == "" || *ix == "" || fs.NArg() > 0 {
+		fmt.Fprintln(stderr, "usage: studio-remote leaveout --kb-root DIR --index DIR")
+		return 2
+	}
+	index.LeaveOutOwn(*ix, *kb, func(s string) { fmt.Fprintln(stderr, s) })
 	return 0
 }
 
