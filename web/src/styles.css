@@ -3011,6 +3011,24 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-pinned svg { width: 11px; height: 11px; }
 .code-main { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
 .code-main-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding: 8px 12px 0; flex-wrap: wrap; }
+/* A session open in the page's pane, or being started: its head, then the
+   session view to the pane's foot. */
+.code-start { display: flex; flex-direction: column; flex: 1 0 auto; min-width: 0; }
+.code-start[hidden] { display: none; }
+.code-start > .pwcode-start-note { flex: none; margin: 4px auto 0; max-width: 46rem; padding: 0 16px; text-align: center; }
+.code-main[data-pane='session'] { overflow: hidden; }
+.code-session { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.code-session-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; flex: none; padding: 6px 12px 8px 16px; border-bottom: 1px solid var(--pw-border); font-size: 12px; }
+.code-session-what { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; flex: 1 1 16rem; }
+.code-session-name { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.code-session-title { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-session-place { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-session-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.code-session-note { margin: 0; padding: 8px 16px 0; font-size: 12px; max-height: 9rem; overflow: auto; flex: none; }
+.code-starting { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: var(--chat-column, 50rem); margin: 0 auto; padding: 24px 16px; box-sizing: border-box; overflow: auto; }
+.code-starting-said { align-self: flex-end; max-width: 80%; padding: 8px 12px; border-radius: 12px; background: var(--theme-muted-panel-bg); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.code-starting-step { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 13px; }
+.code-starting-wait { margin: 0; font-size: 12px; }
 .code-start-top, .code-start-below { width: 100%; max-width: var(--chat-column, 50rem); margin: 0 auto; padding: 0 16px; box-sizing: border-box; }
 .code-start-top { margin-bottom: 12px; }
 .code-start-below { display: flex; flex-direction: column; gap: 20px; padding-bottom: 24px; }
@@ -3036,7 +3054,6 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .pwcode-start:disabled .code-chip { opacity: .6; cursor: default; }
 .pwcode-start .code-chip { max-width: min(16rem, 100%); }
 .pwcode-start-note { flex: 1 1 100%; margin: 2px 7px; font-size: 12px; overflow-wrap: anywhere; }
-.code-main > .pwcode-start-note { flex: none; margin: 4px auto 0; max-width: 46rem; padding: 0 16px; text-align: center; }
 .pwcode-start-note.warn { color: var(--theme-warning, #b54708); }
 .pwcode-start-tools { flex: 1 1 100%; min-width: 0; }
 .code-path-popover { width: min(32rem, calc(100vw - 32px)); overflow: hidden; }
@@ -3081,6 +3098,10 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-mono { font-family: ui-monospace, monospace; font-size: 11.5px; overflow-wrap: anywhere; }
 @media (max-width: 720px) {
   .code-main-actions { padding: 8px 8px 0; }
+  .code-session-head { padding: 6px 8px 8px 12px; }
+  .code-session-what { flex-basis: 100%; }
+  .code-session-actions { width: 100%; justify-content: flex-start; }
+  .code-session-actions > :last-child { margin-left: auto; }
   .code-start-top, .code-start-below { padding: 0 12px; }
 }
 

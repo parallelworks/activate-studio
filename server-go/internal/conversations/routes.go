@@ -27,6 +27,9 @@ type Routes struct {
 	// Who identifies the request; ok false hands it to Node, which knows
 	// the viewer where this server does not.
 	Who func(r *http.Request) (Who, bool)
+	// Renamed, when set, gives a title a person gave a chat to the pw code
+	// session it runs in, and says why the session did not take it, or "".
+	Renamed func(r *http.Request, c *Conversation) string
 	// ToNode passes a request on.
 	ToNode func(w http.ResponseWriter, r *http.Request, why string)
 }
@@ -176,7 +179,13 @@ func (rt *Routes) patch(w http.ResponseWriter, r *http.Request) error {
 	if c == nil {
 		return apierr.New(404, "conversation not found")
 	}
-	return reqbody.OK(w, Summary(c))
+	o := Summary(c)
+	if rt.Renamed != nil && title != nil {
+		if why := rt.Renamed(r, c); why != "" {
+			reqbody.Put(o, "sessionKeeps", why)
+		}
+	}
+	return reqbody.OK(w, o)
 }
 
 func (rt *Routes) steer(w http.ResponseWriter, r *http.Request) error {

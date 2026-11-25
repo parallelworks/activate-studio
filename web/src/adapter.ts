@@ -1,5 +1,6 @@
 import { refreshNotices, setReplying } from './notices'
 import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
+import { toast } from '@parallelworks/ui'
 import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getLabelScope, getLastEngine, getPersona, hasEffort, knowEngine, setEffort } from './labelScope'
@@ -356,7 +357,7 @@ export function createStudioAdapter(): ChatAdapter {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
-      }).then(r => json(r)) },
+      }).then(r => json<{ sessionKeeps?: string }>(r)).then(a => { if (a.sessionKeeps) toast.warning(a.sessionKeeps) }) },
       remove: async id => { forgetChat(id); await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => json(r)) },
     },
     models: { list: listModels },

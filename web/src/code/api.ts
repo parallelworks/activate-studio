@@ -16,13 +16,36 @@ export function pagePath(path: string): string {
   return path
 }
 
+/** The sessions started on this page, by id: the chat the Studio made for
+ *  each, the machine id its view is under, and its first message. */
+export interface StartedSession { conversationId?: string; shownOn?: string; first?: string }
+const startedHere = new Map<string, StartedSession>()
+export const startedSession = (id: string): StartedSession | undefined => startedHere.get(id)
+
+/** A session that is the person's before the listing has it: one their open
+ *  session was cleared into. */
+export const knowSession = (id: string, s: StartedSession): void => { startedHere.set(id, s) }
+
+/** Keeps what the Studio answered a start with, which the client's own
+ *  types leave out. */
+async function keepStarted(request: Request, body: ArrayBuffer | undefined, res: Response): Promise<void> {
+  if (request.method !== 'POST' || !res.ok || !/\/machines\/[^/]+\/sessions$/.test(new URL(request.url).pathname)) return
+  const d = await res.clone().json().catch(() => null) as ({ id?: string } & StartedSession) | null
+  if (!d?.id) return
+  let first: string | undefined
+  try { first = (JSON.parse(new TextDecoder().decode(body)) as { prompt?: string }).prompt } catch { /* no message */ }
+  startedHere.set(d.id, { conversationId: d.conversationId, shownOn: d.shownOn, first })
+}
+
 /** The same request at the Studio's path. A Request is not a RequestInit:
  *  passed as one it loses its body, or throws on a streamed one. */
 const pageFetch = async (request: Request): Promise<Response> => {
   const url = new URL(request.url)
   url.pathname = pagePath(url.pathname)
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
-  return fetch(url, { method: request.method, headers: request.headers, body, signal: request.signal, credentials: 'same-origin' })
+  const res = await fetch(url, { method: request.method, headers: request.headers, body, signal: request.signal, credentials: 'same-origin' })
+  await keepStarted(request, body, res)
+  return res
 }
 
 export const pageClient = createClient<PwCodePaths>({

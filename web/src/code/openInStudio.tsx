@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { toast, useConfirm } from '@parallelworks/ui'
 import { AllowsNote } from '../components/MachineToolsAllow'
 import { type MachineTools, markAutoSetup, setMachineTools } from '../components/studioTools'
+import { startedSession } from './api'
 
 /** A machine as the Code page's listing gives it. */
 export interface MachineRef { id: string; name: string; hostname?: string; daemonId?: string }
@@ -12,7 +13,8 @@ export interface SessionRef { machineId: string; id: string; archivedAt?: string
  *  reaches (or why there is none), and their chats that run in a session. */
 export interface Here {
   available: boolean; reason?: string; daemonId?: string; hostname?: string
-  chats: { session: string; conversationId: string; title?: string; continued?: boolean }[]
+  /** machine is the id the chat's session is shown under. */
+  chats: { session: string; conversationId: string; title?: string; continued?: boolean; machine?: string }[]
   /** Sessions on the viewer's other machines can be continued through
    *  ACTIVATE (the platform's relay), and why not when they cannot. */
   relay?: boolean; relayReason?: string | null
@@ -61,18 +63,32 @@ async function postContinue(body: object): Promise<ContinueAnswer> {
   return out
 }
 
+/** Where the Code page shows a session in its own pane: the machine id its
+ *  view is under (a pw code chat's, or "studio" on the machine whose daemon
+ *  the Studio reaches as the viewer, else its own, through ACTIVATE), and
+ *  the chat that holds it; or why it cannot be shown. */
+export function paneFor(s: SessionRef, machines: readonly MachineRef[], here: Here | null): { machine: string; conversationId?: string; why: string } {
+  const started = startedSession(s.id)
+  if (started?.shownOn) return { machine: started.shownOn, conversationId: started.conversationId, why: '' }
+  const chat = here?.chats.find(c => c.session === s.id)
+  if (chat?.machine) return { machine: chat.machine, conversationId: chat.conversationId, why: '' }
+  const can = continuable({ ...s, archivedAt: null }, machines, here)
+  return { machine: can.ok ? (can.relay ? s.machineId : 'studio') : '', why: can.why }
+}
+
 /**
- * Opening a session: it goes to a Studio chat (Continue in Studio). A
- * session with a chat opens that chat. Otherwise the Studio checks it is the
+ * Continuing a session in a Studio chat, an action of its own: a session
+ * with a chat opens that chat. Otherwise the Studio checks it is the
  * viewer's and says what to ask, the person confirms, and the Studio makes
- * a chat linked to the session, which opens. A session the person has just
- * started here is theirs to continue, so it is not asked again.
+ * a chat linked to the session, which opens.
  */
 export function useOpenInStudio(machines: readonly MachineRef[]): {
   here: Here | null
   /** False when it cannot be continued here: why() says so. */
-  open: (s: SessionRef, opts?: { started?: boolean }) => Promise<boolean>
+  open: (s: SessionRef) => Promise<boolean>
   why: (s: SessionRef) => string
+  /** Reads here again. */
+  reload: () => Promise<void>
   dialog: ReactNode
 } {
   const { confirm, dialog } = useConfirm()
@@ -99,22 +115,12 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
     openChat(id)
   }, [loadHere])
 
-  const open = useCallback(async (s: SessionRef, opts: { started?: boolean } = {}) => {
-    const chat = here?.chats.find(c => c.session === s.id)
-    if (chat) { openChat(chat.conversationId); return true }
+  const open = useCallback(async (s: SessionRef) => {
+    const chat = here?.chats.find(c => c.session === s.id)?.conversationId ?? startedSession(s.id)?.conversationId
+    if (chat) { opened(chat); return true }
     const can = continuable(s, machines, here)
-    if (!can.ok && !opts.started) return false
+    if (!can.ok) return false
     const body = { machine: s.machineId, session: s.id }
-    if (opts.started) {
-      try {
-        const a = await postContinue({ ...body, confirmed: true })
-        if (!a.conversationId) throw new Error('The Studio made no chat for this session.')
-        opened(a.conversationId)
-      } catch (e) {
-        toast.error(`The session started, but the Studio could not open it in a chat: ${(e as Error).message}`)
-      }
-      return true
-    }
     let first: ContinueAnswer
     try {
       first = await postContinue(body)
@@ -157,11 +163,16 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
   }, [here, machines, confirm, opened])
 
   const why = useCallback((s: SessionRef) => {
-    if (here?.chats.some(c => c.session === s.id)) return ''
+    if (here?.chats.some(c => c.session === s.id) || startedSession(s.id)?.conversationId) return ''
     return continuable(s, machines, here).why
   }, [here, machines])
 
-  return { here, open, why, dialog }
+  return { here, open, why, reload: loadHere, dialog }
+}
+
+/** The Code page's address for a session, which opens it in its pane. */
+export function sessionHash(machine: string, session: string): string {
+  return `#view=code?${new URLSearchParams({ machine, session })}`
 }
 
 /** The session a link to the Code page names (#view=code?machine=…&session=…), or null. */

@@ -51,6 +51,7 @@ import { cachedChat, readChat } from '../chatRecord'
 import { needsActivate } from '../accounts'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { announceModel } from './liveModel'
+import { announceName } from './chatNames'
 import { PlanAnswer, openPlan } from './session/PlanAnswer'
 import { focusComposer, focusWaiting } from './session/focusAnswer'
 
@@ -114,8 +115,9 @@ function loadMessages(): Promise<PwCodeMessages> {
 }
 
 export interface PWCodeSessionProps {
-  /** The Studio chat that holds the session. */
-  conversationId: string
+  /** The Studio chat that holds the session; none for one the Code page
+   *  shows that no chat does. */
+  conversationId?: string
   machine: string
   sessionId: string
   username: string
@@ -123,6 +125,11 @@ export interface PWCodeSessionProps {
   notes?: ReactNode
   /** Studio parts drawn in the composer's settings row, left: what answers. */
   settingsExtra?: ReactNode
+  /** The message the session was started with, shown until its transcript
+   *  is read. */
+  first?: string
+  /** /clear made a new session, which the Code page's pane moves to. */
+  onMoved?: (session: string) => void
 }
 
 const noop = () => {}
@@ -132,15 +139,15 @@ const STORED_MS = 1500
 
 /** Tells the notices when the session's turn starts or ends, and when it
  *  asks or is answered, rather than leaving them to their next read. */
-function useNoticeState(conversationId: string, running: boolean, waiting: number) {
+function useNoticeState(conversationId: string | undefined, running: boolean, waiting: number) {
   const was = useRef({ running, waiting })
   useEffect(() => {
-    setReplying(conversationId, running && waiting === 0)
+    if (conversationId) setReplying(conversationId, running && waiting === 0)
     const ended = was.current.running && !running
     if (ended || was.current.waiting !== waiting) refreshNotices({ after: ended ? STORED_MS : undefined })
     was.current = { running, waiting }
   }, [conversationId, running, waiting])
-  useEffect(() => () => setReplying(conversationId, false), [conversationId])
+  useEffect(() => () => { if (conversationId) setReplying(conversationId, false) }, [conversationId])
 }
 
 // The platform's model list sets when a paste is saved as a file rather than
@@ -169,12 +176,12 @@ function storedMessages(list: unknown[] | undefined): ChatMessage[] | undefined 
 
 /** The chat's record's messages (chatRecord.ts): kept from the chat's
  *  open, which reads it, or read here when it was not. */
-function useChatMessages(conversationId: string): ChatMessage[] | undefined {
+function useChatMessages(conversationId: string | undefined): ChatMessage[] | undefined {
   const [record, setRecord] = useState(() => cachedChat(conversationId))
   useEffect(() => {
     const kept = cachedChat(conversationId)
     setRecord(kept)
-    if (kept) return
+    if (kept || !conversationId) return
     let gone = false
     readChat(conversationId).then(c => { if (!gone) setRecord(c) }, () => {})
     return () => { gone = true }
@@ -182,7 +189,7 @@ function useChatMessages(conversationId: string): ChatMessage[] | undefined {
   return useMemo(() => storedMessages(record?.messages), [record])
 }
 
-function SessionPane({ conversationId, machine, sessionId, username, notes, settingsExtra }: PWCodeSessionProps) {
+function SessionPane({ conversationId, machine, sessionId, username, notes, settingsExtra, first, onMoved }: PWCodeSessionProps) {
   const [expandAll, setExpandAll] = useState<boolean | undefined>(undefined)
   const [note, setNote] = useState('')
   const notify = useCallback((text: string) => setNote(text), [])
@@ -190,8 +197,10 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   // /clear makes a new session: the chat goes on with it, as PW Code on the
   // web moves to it.
   const onCleared = useCallback((newId: string) => {
-    if (newId && newId !== sessionId) followCleared(conversationId, newId).catch((e: unknown) => setNote(describeError(e)))
-  }, [conversationId, sessionId])
+    if (!newId || newId === sessionId) return
+    const follow = conversationId ? followCleared(conversationId, newId) : Promise.resolve()
+    follow.then(() => onMoved?.(newId), (e: unknown) => setNote(describeError(e)))
+  }, [conversationId, sessionId, onMoved])
   const sessions = pwCode.useSessions()
   const listed = sessions.data?.sessions?.find(s => s.id === sessionId && s.machineId === machine)
   const read = pwCode.useSessionDetail(machine, sessionId, listed)
@@ -254,7 +263,11 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
     onError: showError,
   })
   // The chat bar's engine button names the model this session runs on now.
-  useEffect(() => { announceModel(conversationId, settings.model.value) }, [conversationId, settings.model.value])
+  useEffect(() => { if (conversationId) announceModel(conversationId, settings.model.value) }, [conversationId, settings.model.value])
+  // The chat's title follows the session's name: the Studio has taken it by
+  // the time this view reads it, so the chat list is read again.
+  const name = listed ? listed.name || listed.autoName || '' : detail?.name || detail?.autoName || ''
+  useEffect(() => { if (conversationId && name) announceName(conversationId, name) }, [conversationId, name])
   const screen = usePwCodeSessionScreen({
     conversation,
     composer: page,
@@ -275,7 +288,10 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   // it (read as this person, chatRecord.ts) is drawn, as before the session
   // view: a first open over a slow relay shows the conversation at once.
   const record = useChatMessages(conversationId)
-  const stored = useMemo(() => (detail ? undefined : record), [detail, record])
+  const stored = useMemo(() => {
+    if (detail) return undefined
+    return record?.length ? record : (first ? [{ id: 'pw-first', role: 'user' as const, content: first }] as ChatMessage[] : undefined)
+  }, [detail, record, first])
   // The session's transcript holds what the Studio sent it, the turns it
   // missed before the person's message: the chat draws those turns from
   // its record, where they came, and the message as the person typed it.
@@ -393,7 +409,8 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
                   <OutputCard key={o.id} title={o.command} text={o.text} onDismiss={() => page.dismissOutput(o.id)} dismissLabel="Dismiss" />
                 ))}
                 {page.endNote && <NoticeCard><span className="pwcode-end-note">{page.endNote}</span></NoticeCard>}
-                {plan && <PlanAnswer key={plan.id} conversationId={conversationId} approvalId={plan.id} />}
+                {plan && <PlanAnswer key={plan.id} approvalId={plan.id}
+                  approvals={conversationId ? `/api/chat/pwcode/${encodeURIComponent(conversationId)}/approvals` : `/api/chat/pwcode/page/${encodeURIComponent(machine)}/${encodeURIComponent(sessionId)}/approvals`} />}
               </>}
               composer={{
                 attachments: false,

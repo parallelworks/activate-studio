@@ -41,7 +41,7 @@ import { rowShortcut, useCodeSessionActions } from './sessionMenu'
  * needs you, pinned, the reader's own groups, then by when, and archived
  * last), each row with its state, machine and pull requests, the row's
  * menu and keys, and a rail of live sessions when the list is folded away.
- * A row opens its session in a Studio chat.
+ * A row opens its session in the page's pane, beside the list.
  */
 
 type SidebarGroup = ConversationSidebarGroup<PageSession> & { label: string }
@@ -49,7 +49,7 @@ type SidebarGroup = ConversationSidebarGroup<PageSession> & { label: string }
 const SIDEBAR_KEY = 'studio.code.sidebar'
 
 export function CodeSidebar({ open, onOpen, onNewSession, delegated, onlyDelegated, onOnlyDelegated, inChat, extraMenu, collapsed, onToggle, drawer }: {
-  /** The session the reader last opened, which the list marks. */
+  /** The session that is open, which the list marks. */
   open: { machine?: string; sessionId?: string }
   onOpen: (s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => void
   onNewSession: () => void

@@ -883,8 +883,10 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if told != "" {
 		link.Untold = false
 		m.Conv.SetPWCode(convID, link)
+		m.nameTold(r, c, t, content)
 	}
 	turn.id = jsonv.String(jsonv.Path(sent, "turnId"))
+	m.giveWaitingName(r, c, t)
 	m.follow(turn)
 	go func() {
 		defer cancel()
@@ -991,6 +993,7 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 	str := func(k string) string { return jsonv.String(jsonv.Path(ev, k)) }
 	switch str("type") {
 	case "state":
+		t.m.Conv.SessionNamed(t.convID, t.link.Session, jsonv.String(jsonv.Path(ev, "state", "name")), jsonv.String(jsonv.Path(ev, "state", "autoName")))
 		if u := jsonv.String(jsonv.Path(ev, "state", "remoteUrl")); u != "" && u != t.link.URL {
 			t.link.URL = u
 			t.emit("pwcode", reqbody.O("session", t.link.Session, "url", u, "site", t.link.Site, "workspace", t.link.Workspace, "model", t.link.Model, "modelNote", t.link.ModelNote))
@@ -1323,62 +1326,75 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		if err != nil {
 			return err
 		}
-		approval := r.PathValue("approval")
-		if !approvalRe(approval) {
-			return pwErr(400, "not an approval id")
-		}
-		rb, err := reqbody.Read(r)
+		return m.answerApproval(w, r, c, t)
+	})
+	// The same for the session the Code page has open, in a chat or not.
+	h("POST /api/chat/pwcode/page/{machine}/{id}/approvals/{approval}", func(w http.ResponseWriter, r *http.Request) error {
+		c, t, err := m.proxiedSession(r)
 		if err != nil {
 			return err
 		}
-		var in struct {
-			Allowed bool   `json:"allowed"`
-			Message string `json:"message"`
-			// An ask's answers, one per question, or chat to talk them
-			// through instead; a plan's feedback with a rejection.
-			Answers []askAnswer `json:"answers"`
-			Chat    bool        `json:"chat"`
-			Kind    string      `json:"kind"`
-			// Mode is what an approved plan leaves plan mode into.
-			Mode string `json:"mode"`
-		}
-		if rb.Present {
-			_ = json.Unmarshal(rb.Raw, &in)
-		}
-		if in.Kind == "ask" {
-			answer, err := askAnswerBody(in.Answers, in.Chat)
-			if err != nil {
-				return err
-			}
-			if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
-				return err
-			}
-			return reqbody.OK(w, reqbody.O("ok", true))
-		}
-		answer := jsonv.NewObject("allowed", in.Allowed)
-		mode := ""
-		if in.Kind == "plan" && in.Allowed {
-			mode = planMode(in.Mode, t.relay)
-			answer.Set("mode", mode)
-		} else if in.Kind == "plan" && !in.Allowed {
-			if msg := sliceRunes(strings.TrimSpace(in.Message), 2000); msg != "" {
-				answer.Set("feedback", msg)
-			}
-		} else if !in.Allowed {
-			msg := sliceRunes(strings.TrimSpace(in.Message), 500)
-			if msg == "" {
-				msg = "Denied from the Studio."
-			}
-			answer.Set("denyMessage", msg)
+		return m.answerApproval(w, r, c, t)
+	})
+}
+
+// answerApproval sends the viewer's answer to what their session waits on.
+func (m *Module) answerApproval(w http.ResponseWriter, r *http.Request, c *conversations.Conversation, t *pwTarget) error {
+	approval := r.PathValue("approval")
+	if !approvalRe(approval) {
+		return pwErr(400, "not an approval id")
+	}
+	rb, err := reqbody.Read(r)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Allowed bool   `json:"allowed"`
+		Message string `json:"message"`
+		// An ask's answers, one per question, or chat to talk them
+		// through instead; a plan's feedback with a rejection.
+		Answers []askAnswer `json:"answers"`
+		Chat    bool        `json:"chat"`
+		Kind    string      `json:"kind"`
+		// Mode is what an approved plan leaves plan mode into.
+		Mode string `json:"mode"`
+	}
+	if rb.Present {
+		_ = json.Unmarshal(rb.Raw, &in)
+	}
+	if in.Kind == "ask" {
+		answer, err := askAnswerBody(in.Answers, in.Chat)
+		if err != nil {
+			return err
 		}
 		if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
 			return err
 		}
-		if mode != "" {
-			m.logModeChange(r, c, t, mode, "chat plan answer")
-		}
 		return reqbody.OK(w, reqbody.O("ok", true))
-	})
+	}
+	answer := jsonv.NewObject("allowed", in.Allowed)
+	mode := ""
+	if in.Kind == "plan" && in.Allowed {
+		mode = planMode(in.Mode, t.relay)
+		answer.Set("mode", mode)
+	} else if in.Kind == "plan" && !in.Allowed {
+		if msg := sliceRunes(strings.TrimSpace(in.Message), 2000); msg != "" {
+			answer.Set("feedback", msg)
+		}
+	} else if !in.Allowed {
+		msg := sliceRunes(strings.TrimSpace(in.Message), 500)
+		if msg == "" {
+			msg = "Denied from the Studio."
+		}
+		answer.Set("denyMessage", msg)
+	}
+	if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
+		return err
+	}
+	if mode != "" {
+		m.logModeChange(r, c, t, mode, "chat plan answer")
+	}
+	return reqbody.OK(w, reqbody.O("ok", true))
 }
 
 // planMode is the mode an approved plan's session leaves plan mode into.

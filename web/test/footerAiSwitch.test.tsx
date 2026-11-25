@@ -1,8 +1,11 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 
+// The first load, which a busy computer takes seconds over, is no part of a
+// test's own time.
+beforeAll(() => import('../src/components/StatusFooter'), 60_000)
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('the footer\'s model line when AI features are switched', () => {

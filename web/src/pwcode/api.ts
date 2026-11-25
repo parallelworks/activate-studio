@@ -12,6 +12,21 @@ import { createPwCodeApi, type PwCodePaths } from '@parallelworks/code'
  */
 export const pwClient = createClient<PwCodePaths>({ baseUrl: typeof location === 'undefined' ? '' : location.origin })
 
+// The session the Code page has open in its own pane, which the listing
+// then has too, in a chat or not.
+let openPane = ''
+export function setOpenPane(machine: string, session: string): void { openPane = machine && session ? `${machine}/${session}` : '' }
+/** Forgets it, unless another has been opened since. */
+export function clearOpenPane(machine: string, session: string): void { if (openPane === `${machine}/${session}`) openPane = '' }
+pwClient.use({
+  onRequest({ request }) {
+    const url = new URL(request.url)
+    if (!openPane || request.method !== 'GET' || url.pathname !== '/api/code/sessions') return undefined
+    url.searchParams.set('open', openPane)
+    return new Request(url, request)
+  },
+})
+
 // A command typed in the session's composer reads the session's palette
 // first, and the package sends the line as a message when the palette
 // comes back empty: "/plan ..." then reached the session as text, which it

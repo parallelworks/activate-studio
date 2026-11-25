@@ -53,13 +53,18 @@ import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useStartAc
  * composer with the machine, the folder, the permission mode (held to the
  * machine's remote ceiling), the model and the effort; under it what waits
  * on the person, answered in place, and the sessions to pick back up. A
- * session started here opens in a Studio chat.
+ * session started here opens in the page's pane.
  */
 
 export type Machine = PwCodeStartMachine & PwCodeMachine
 
-export function CodeStart({ onOpen, onStarted, onMachine, onMode, top }: {
+/** A session being started: where, and its first message. */
+export interface Starting { machine: string; folder: string; prompt: string }
+
+export function CodeStart({ onOpen, onStarting, onStarted, onMachine, onMode, top }: {
   onOpen: (s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => void
+  /** A start was sent (what), or ended without a session (null). */
+  onStarting?: (s: Starting | null) => void
   onStarted: (machine: string, id: string) => void
   /** The machine chosen to start a session on, as it changes. */
   onMachine?: (id: string | undefined) => void
@@ -95,7 +100,7 @@ export function CodeStart({ onOpen, onStarted, onMachine, onMode, top }: {
     <ChatStage heading={t('start.heading')} subheading={t('start.subheading')}>
       {top && <div className="code-start-top">{top(screen.answer)}</div>}
       {screen.showComposer
-        ? <Composer location={location} finding={screen.loading} permission={startMode} onStarted={onStarted} t={t} />
+        ? <Composer location={location} finding={screen.loading} permission={startMode} onStarting={onStarting} onStarted={onStarted} t={t} />
         : <p data-testid="agents-start-none" className="code-start-none">{t('start.startHereNone')}</p>}
       <div className="code-start-below">
         {screen.loading && <ShortlistLoading t={t} />}
@@ -219,10 +224,11 @@ export function MachineChip({ finding, machine, items, t }: { finding: boolean; 
   )
 }
 
-function Composer({ location, finding, permission, onStarted, t }: {
+function Composer({ location, finding, permission, onStarting, onStarted, t }: {
   location: PwCodeStartLocation<Machine>
   finding: boolean
   permission: PwCodeStartPermission
+  onStarting?: (s: Starting | null) => void
   onStarted: (machine: string, id: string) => void
   t: Translate
 }) {
@@ -257,7 +263,14 @@ function Composer({ location, finding, permission, onStarted, t }: {
       attachments={false}
       tools={false}
       requireModel={false}
-      onSend={prompt => starter.start(prompt)}
+      onSend={async prompt => {
+        // The page says where it is starting from the first moment; a start
+        // that fails comes back here, with the message and the reason.
+        onStarting?.({ machine: machine?.name ?? '', folder: directory, prompt })
+        let took: Awaited<ReturnType<typeof starter.start>> | undefined
+        try { took = await starter.start(prompt) } finally { if (!took) onStarting?.(null) }
+        return took
+      }}
       disabled={!starter.ready}
       placeholder={t('start.composerPlaceholder')}
       inputLabel={t('start.composerPlaceholder')}

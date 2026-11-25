@@ -92,12 +92,16 @@ func problemOf(err error) (int, string) {
 }
 
 // proxiedSession is the viewer's own chat with the session the path names,
-// and its daemon reached as them.
+// and its daemon reached as them. A session no chat of theirs holds is the
+// Code page's (pageSession).
 func (m *Module) proxiedSession(r *http.Request) (*conversations.Conversation, *pwTarget, error) {
 	id := r.PathValue("id")
 	c := m.ownChats(r)[id]
-	if c == nil || c.PWCode == nil || r.PathValue("machine") != proxyMachine(c.PWCode) {
-		return nil, nil, pwErr(404, "This Studio has no chat of yours with that pw code session.")
+	if c == nil || c.PWCode == nil {
+		return m.pageSession(r)
+	}
+	if r.PathValue("machine") != proxyMachine(c.PWCode) {
+		return nil, nil, pwErr(404, "That pw code session is not on this machine.")
 	}
 	if _, err := m.ownPWChat(r, c.ID); err != nil {
 		return nil, nil, err
@@ -112,6 +116,46 @@ func (m *Module) proxiedSession(r *http.Request) (*conversations.Conversation, *
 	return c, t, nil
 }
 
+// pageSession is a session the Code page shows in its own pane, which no
+// chat of the viewer's holds: reached as the viewer, by the same two ways a
+// chat is. "studio" is their own pw code where the Studio drives it
+// (pwcodeDaemon: this computer's on a Studio one person uses, else their
+// own daemon on its cluster, with their own sign-in or key); another
+// machine's is reached through the platform with their credential, which
+// answers for their sessions only. The Studio's account is never used. The
+// conversation it stands under has no id, so nothing is kept of it here.
+func (m *Module) pageSession(r *http.Request) (*conversations.Conversation, *pwTarget, error) {
+	id, machine := r.PathValue("id"), r.PathValue("machine")
+	if !pwcode.IsRouteID(id) || !pwcode.IsRouteID(machine) {
+		return nil, nil, pwErr(404, "No such session.")
+	}
+	if codesessions.CrossSite(r) {
+		return nil, nil, pwErr(403, "Sessions are directed from the Studio's own pages.")
+	}
+	// Another person's chat here runs in it.
+	for _, o := range m.Conv.List() {
+		if o.PWCode != nil && o.PWCode.Session == id {
+			return nil, nil, pwErr(404, "This Studio has no pw code session of yours with that id.")
+		}
+	}
+	link := &conversations.PWCodeLink{Session: id, Machine: machine, Continued: true}
+	c := &conversations.Conversation{PWCode: link}
+	if machine == directMachine {
+		if why := m.pwcodeUnavailable(r.Context(), r); why != "" {
+			return nil, nil, pwErr(409, why)
+		}
+		client, site, err := m.pwcodeDaemon(r)
+		if err != nil {
+			return nil, nil, err
+		}
+		link.Site = site
+		return c, &pwTarget{client: client, site: site}, nil
+	}
+	link.Relay, link.Site = true, pwcode.RelaySite(machine)
+	t, err := m.relayTarget(r, link)
+	return c, t, err
+}
+
 func (m *Module) pwcodeProxyRoutes(h func(pattern string, fn func(http.ResponseWriter, *http.Request) error)) {
 	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
 		h(method+" /api/code/machines/{machine}/sessions/{id}", m.codeProxy)
@@ -122,6 +166,7 @@ func (m *Module) pwcodeProxyRoutes(h func(pattern string, fn func(http.ResponseW
 	h("GET /api/chat/pwcode/{id}/machine", m.codeMachine)
 	h("GET /api/code/sessions", m.codeListing)
 	h("POST /api/chat/pwcode/{id}/follow", m.codeFollow)
+	h("POST /api/chat/pwcode/names", m.codeNames)
 	for _, method := range []string{"GET", "POST", "DELETE"} {
 		h(method+" /api/code/machines/{machine}/claude-code/{rest...}", m.codeAccounts)
 	}
@@ -509,6 +554,7 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		if o := jsonv.Obj(v); o != nil && !t.relay {
 			o.Set("machineId", directMachine)
 		}
+		m.sessionNamed(c, v)
 	case "PATCH /settings":
 		if mode := jsonv.String(jsonv.Path(body, "permissionMode")); mode != "" {
 			m.logModeChange(r, c, t, mode, "settings")
@@ -532,6 +578,7 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			l := *c.PWCode
 			l.Untold = false
 			m.Conv.SetPWCode(c.ID, &l)
+			m.nameTold(r, c, t, sentText)
 		}
 		m.recordSent(r, c, t, sentText, lastSeq)
 	}
@@ -626,7 +673,7 @@ var sessionCommands = map[string]bool{"rename": true, "fork": true, "archive": t
 func (m *Module) checkCommand(r *http.Request, c *conversations.Conversation, t *pwTarget, body any) error {
 	name := jsonv.String(jsonv.Path(body, "name"))
 	if sessionCommands[name] {
-		return pwErr(403, "/"+name+" is not sent from a chat: manage the session on the Code page, or where it runs.")
+		return pwErr(403, "/"+name+" is not sent from here: use the session's menu in the Code page's list, or manage it where it runs.")
 	}
 	args := strings.TrimSpace(jsonv.String(jsonv.Path(body, "args")))
 	// Claude Code accounts, where they are off: neither the command that
@@ -720,6 +767,11 @@ func (m *Module) setToolsNote(c *conversations.Conversation, why string) {
 // chat, which its list and search read, and records the session's reply
 // there when it ends.
 func (m *Module) recordSent(r *http.Request, c *conversations.Conversation, t *pwTarget, text string, after int64) {
+	// The Code page's own pane: no chat holds it.
+	if c.ID == "" {
+		return
+	}
+	m.giveWaitingName(r, c, t)
 	if strings.TrimSpace(text) == "" {
 		return
 	}
@@ -964,12 +1016,37 @@ func writeErr(w http.ResponseWriter, err error) error {
 }
 
 // codeListing is /api/code/sessions as the view polls it, for the viewer's
-// own pw code chats only: their machines (the platform's for relayed
-// sessions, the Studio's own for the rest) and their sessions.
+// own pw code chats, and the session the Code page has open (?open=
+// machine/session): their machines (the platform's for relayed sessions,
+// the Studio's own for the rest) and their sessions.
 func (m *Module) codeListing(w http.ResponseWriter, r *http.Request) error {
+	machines, rows := m.ownListing(r, true)
+	return reqbody.OK(w, jsonv.NewObject("machines", machines, "sessions", rows))
+}
+
+// codeNames reads what the viewer's chats' sessions are called now, so the
+// chats are called the same, and answers how many changed.
+func (m *Module) codeNames(w http.ResponseWriter, r *http.Request) error {
+	changed := 0
+	if len(m.ownChats(r)) > 0 {
+		before := m.Conv.Titles()
+		m.ownListing(r, false)
+		for id, was := range before {
+			if c := m.Conv.Get(id); c != nil && deref(c.Title) != was {
+				changed++
+			}
+		}
+	}
+	return reqbody.OK(w, reqbody.O("changed", changed))
+}
+
+// ownListing is the viewer's own machines and sessions codeListing answers;
+// own machine included, when it is to be listed with no chat on it. Each
+// part is read as the viewer, at the same time.
+func (m *Module) ownListing(r *http.Request, ownMachine bool) (machines, rows []any) {
 	ctx := r.Context()
 	own := m.ownChats(r)
-	machines, sessionsOut := []any{}, []any{}
+	machines, rows = []any{}, []any{}
 	relayed, direct := map[string]bool{}, false
 	for _, c := range own {
 		if c.PWCode.Relay {
@@ -978,47 +1055,87 @@ func (m *Module) codeListing(w http.ResponseWriter, r *http.Request) error {
 			direct = true
 		}
 	}
+	openMachine, openID, _ := strings.Cut(r.URL.Query().Get("open"), "/")
+	if openID != "" && openMachine != directMachine {
+		relayed[openMachine] = true
+	}
+	// shown is whether the row of a session on machine is listed: a chat of
+	// the viewer's holds it there, or the Code page has it open.
+	shown := func(s *jsonv.Object, relay bool, machine string) bool {
+		id := jsonv.String(jsonv.Path(s, "id"))
+		c := own[id]
+		if c == nil {
+			return id != "" && id == openID && machine == openMachine
+		}
+		return c.PWCode.Relay == relay && (!relay || c.PWCode.Machine == machine)
+	}
+	var wg sync.WaitGroup
+	// Each with its own copy of the request: finding who it is from keeps
+	// the answer on it.
+	farReq, machineReq, rowsReq := r.WithContext(ctx), r.WithContext(ctx), r.WithContext(ctx)
+	var farMachines, farRows, nearMachines, nearRows []any
 	if len(relayed) > 0 {
-		if ms, ss, err := codesessions.PlatformListing(r, m.pf); err == nil {
+		wg.Go(func() {
+			ms, ss, err := codesessions.PlatformListing(farReq, m.pf)
+			if err != nil {
+				return
+			}
 			for _, mach := range ms {
 				if relayed[jsonv.String(jsonv.Path(mach, "id"))] {
-					machines = append(machines, codesessions.ClaudeCodeShown(r, mach))
+					farMachines = append(farMachines, codesessions.ClaudeCodeShown(farReq, mach))
 				}
 			}
 			for _, s := range ss {
-				if c := own[jsonv.String(jsonv.Path(s, "id"))]; c != nil && c.PWCode.Relay && c.PWCode.Machine == jsonv.String(jsonv.Path(s, "machineId")) {
-					sessionsOut = append(sessionsOut, s)
+				if shown(s, true, jsonv.String(jsonv.Path(s, "machineId"))) {
+					farRows = append(farRows, s)
 				}
 			}
-		}
+		})
 	}
 	// The Studio's own machine is listed whenever pw code is offered to
 	// the person, chats or not: a new pw code chat's composer offers its
 	// models before the first message makes a session there.
-	if direct || m.pwcodeUnavailable(ctx, r) == "" {
-		rec := &bodyRecorder{header: http.Header{}}
-		if m.writeMachine(rec, r, &conversations.PWCodeLink{}) == nil && rec.status < 400 {
-			if v, err := jsonv.Decode(rec.body); err == nil && jsonv.Obj(v) != nil {
-				machines = append(machines, v)
-			}
-		}
-		if t, err := m.pwcodeTarget(ctx, r, nil); err == nil {
-			if list, err := pwcode.ListSessions(ctx, t.client); err == nil {
-				rows := jsonv.Arr(list)
-				if rows == nil {
-					rows = jsonv.Arr(jsonv.Path(list, "sessions"))
-				}
-				for _, s := range rows {
-					o := jsonv.Obj(s)
-					if c := own[jsonv.String(jsonv.Path(o, "id"))]; o != nil && c != nil && !c.PWCode.Relay {
-						o.Set("machineId", directMachine)
-						sessionsOut = append(sessionsOut, o)
-					}
+	if direct || (ownMachine && m.pwcodeUnavailable(ctx, r) == "") {
+		wg.Go(func() {
+			rec := &bodyRecorder{header: http.Header{}}
+			if m.writeMachine(rec, machineReq, &conversations.PWCodeLink{}) == nil && rec.status < 400 {
+				if v, err := jsonv.Decode(rec.body); err == nil && jsonv.Obj(v) != nil {
+					nearMachines = append(nearMachines, v)
 				}
 			}
-		}
+		})
+		wg.Go(func() {
+			client, _, err := m.pwcodeDaemon(rowsReq)
+			if err != nil {
+				return
+			}
+			list, err := pwcode.ListSessions(ctx, client)
+			if err != nil {
+				return
+			}
+			for _, s := range sessionRows(list) {
+				if o := jsonv.Obj(s); o != nil && shown(o, false, directMachine) {
+					o.Set("machineId", directMachine)
+					nearRows = append(nearRows, o)
+				}
+			}
+		})
 	}
-	return reqbody.OK(w, jsonv.NewObject("machines", machines, "sessions", sessionsOut))
+	wg.Wait()
+	machines = append(append(machines, farMachines...), nearMachines...)
+	rows = append(append(rows, farRows...), nearRows...)
+	for _, s := range rows {
+		m.sessionNamed(own[jsonv.String(jsonv.Path(s, "id"))], s)
+	}
+	return machines, rows
+}
+
+// sessionRows is a daemon's list of sessions, in either form it has.
+func sessionRows(list any) []any {
+	if rows := jsonv.Arr(list); rows != nil {
+		return rows
+	}
+	return jsonv.Arr(jsonv.Path(list, "sessions"))
 }
 
 // bodyRecorder keeps a handler's answer for another to use.

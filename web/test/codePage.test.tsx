@@ -4,6 +4,13 @@ import { pagePath } from '../src/code/api'
 import { CodePage } from '../src/code/CodePage'
 import { continuable, sessionInHash, type Here } from '../src/code/openInStudio'
 
+// The session view's client takes the page's fetch as it loads.
+vi.hoisted(() => {
+  const real = globalThis.fetch
+  const current = ((...a: Parameters<typeof fetch>) => (globalThis.fetch === current ? real(...a) : globalThis.fetch(...a))) as typeof fetch
+  globalThis.fetch = current
+})
+
 const machine = { id: 'm1', name: 'box', kind: 'existing', status: 'connected', remoteStart: true, directories: true, claudeCodeAllowed: false, hostname: 'box.example', daemonId: 'd1' }
 const other = { ...machine, id: 'm2', name: 'gpu', hostname: 'gpu.example', daemonId: 'd2' }
 const now = new Date().toISOString()
@@ -12,7 +19,7 @@ const session = (o: Record<string, unknown>) => ({ machineId: 'm1', id: 'x', nam
 interface Sent { method: string; path: string; body: Record<string, unknown> | null }
 
 /** The Studio's routes the page calls, answered as the Studio would. */
-function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown; setupStatus?: number } = {}) {
+function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown; setupStatus?: number; create?: () => Promise<Response> } = {}) {
   const sent: Sent[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = input instanceof Request ? input : new Request(new URL(String(input), 'http://studio.example'), init)
@@ -35,7 +42,9 @@ function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: u
       case '/api/mcp/bridge/prefs': return json({ ok: true })
       case '/api/code-page/machines/m1/directories': return json({ path: '/home/alex', home: '/home/alex', entries: [] })
       case '/api/code-page/machines/m1/sessions':
-        return json({ id: 'new1', machineId: 'm1', name: '', status: 'working', workspace: body?.workspace, createdAt: now, updatedAt: now })
+        if (over.create) return over.create()
+        return json({ id: 'new1', machineId: 'm1', name: '', status: 'working', workspace: body?.workspace, createdAt: now, updatedAt: now, conversationId: 'c1', shownOn: 'studio' }, 201)
+      case '/api/code/sessions': return json({ machines: [], sessions: [] })
       default:
         if (url.pathname.startsWith('/api/code-page/machines/')) return json({})
         return json({})
@@ -51,6 +60,13 @@ const listed = async (name: string) => {
   if (!row) throw new Error(`no row for ${name}`)
   return row
 }
+
+/** Continues a session in a Studio chat, from its row's menu. */
+const continueFrom = async (name: string, item = 'Continue in a Studio chat') => {
+  fireEvent.contextMenu(await listed(name))
+  fireEvent.click(await screen.findByRole('menuitem', { name: item }))
+}
+const pane = () => screen.findByTestId('code-session')
 
 beforeEach(() => {
   location.hash = '#view=code'
@@ -84,12 +100,55 @@ describe('the Code page client', () => {
 })
 
 describe('the Code page', () => {
-  it('lists the sessions as PW Code on the web lists them and opens one in a Studio chat, asking first', async () => {
+  it('opens a session from the list in the page, with the list beside it, and goes to no chat', async () => {
     const sent = studio()
     render(<CodePage />)
-    const row = await listed('mesh refinement')
+    fireEvent.click(await listed('mesh refinement'))
+    const open = await pane()
+    expect(open).toHaveTextContent('mesh refinement')
+    expect(open).toHaveTextContent('box')
+    expect(location.hash).toBe('#view=code?machine=m1&session=s1')
+    expect(sent.some(s => s.path === '/api/chat/pwcode/continue')).toBe(false)
+    await waitFor(() => expect(sent.some(s => s.path === '/api/code/sessions?open=studio%2Fs1')).toBe(true))
+    await waitFor(() => expect(sent.some(s => s.path.startsWith('/api/code/machines/studio/sessions/s1'))).toBe(true))
+    // Another from the list, which is still there; then back.
+    fireEvent.click(await listed('pump curves'))
+    await waitFor(() => expect(screen.getByTestId('code-session')).toHaveTextContent('pump curves'))
+    expect(location.hash).toBe('#view=code?machine=m1&session=s2')
+    act(() => { location.hash = '#view=code?machine=m1&session=s1'; window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    await waitFor(() => expect(screen.getByTestId('code-session')).toHaveTextContent('mesh refinement'))
+    fireEvent.click(screen.getByTestId('code-session-close'))
+    await waitFor(() => expect(screen.queryByTestId('code-session')).toBeNull())
+    expect(location.hash).toBe('#view=code')
+  })
+
+  it('opens a session on another machine through ACTIVATE, and one a chat holds where the chat has it', async () => {
+    const sent = studio({ machines: [machine, other], sessions: [session({ id: 's4', machineId: 'm2', name: 'far one' }), session({ id: 's5', machineId: 'm2', name: 'far chat' })],
+      here: { relay: true, chats: [{ session: 's5', conversationId: 'c5', machine: 'studio' }] } })
+    render(<CodePage />)
+    fireEvent.click(await listed('far one'))
+    expect(within(await pane()).getByTestId('code-continue')).toHaveTextContent('Continue in a Studio chat')
+    await waitFor(() => expect(sent.some(s => s.path.startsWith('/api/code/machines/m2/sessions/s4'))).toBe(true))
+    fireEvent.click(await listed('far chat'))
+    await waitFor(() => expect(screen.getByTestId('code-continue')).toHaveTextContent('Open in its Studio chat'))
+    await waitFor(() => expect(sent.some(s => s.path.startsWith('/api/code/machines/studio/sessions/s5'))).toBe(true))
+  })
+
+  it('shows an archived session and says how to go on with it', async () => {
+    location.hash = '#view=code?machine=m1&session=s6'
+    studio({ sessions: [session({ id: 's6', name: 'old one', archivedAt: now })] })
+    render(<CodePage />)
+    const open = await pane()
+    expect(open).toHaveTextContent('This session is archived.')
+    expect(within(open).getByTestId('code-continue')).toBeDisabled()
+  })
+
+  it('lists the sessions as PW Code on the web lists them and continues one in a Studio chat, asking first', async () => {
+    const sent = studio()
+    render(<CodePage />)
     await listed('pump curves')
-    fireEvent.click(row)
+    fireEvent.click(await listed('mesh refinement'))
+    fireEvent.click(await screen.findByTestId('code-continue'))
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toHaveTextContent('Your messages go to mesh refinement on box.')
     // Asked, not yet made.
@@ -103,7 +162,7 @@ describe('the Code page', () => {
     const tools = { state: 'offer', machine: 'gpu', machineId: 'm2', available: true }
     let sent = studio({ continueAnswer: b => (b.confirmed ? { conversationId: 'c1' } : { confirm: 'This session runs on gpu.', studioTools: tools }) })
     render(<CodePage />)
-    fireEvent.click(await listed('mesh refinement'))
+    await continueFrom('mesh refinement')
     let dialog = await screen.findByRole('dialog')
     const tick = within(dialog).getByTestId('studio-tools-tick') as HTMLInputElement
     expect(tick.checked).toBe(true)
@@ -120,7 +179,7 @@ describe('the Code page', () => {
     location.hash = '#view=code'
     sent = studio({ continueAnswer: b => (b.confirmed ? { conversationId: 'c2' } : { confirm: 'This session runs on gpu.', studioTools: tools }) })
     render(<CodePage />)
-    fireEvent.click(await listed('mesh refinement'))
+    await continueFrom('mesh refinement')
     dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByTestId('studio-tools-tick'))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
@@ -132,7 +191,7 @@ describe('the Code page', () => {
   it('does not ask again for a machine already set up, and still gives the session in front the tools', async () => {
     studio({ continueAnswer: b => (b.confirmed ? { conversationId: 'c3' } : { confirm: 'This session runs on gpu.', studioTools: { state: 'set', machine: 'gpu', machineId: 'm2' } }) })
     render(<CodePage />)
-    fireEvent.click(await listed('mesh refinement'))
+    await continueFrom('mesh refinement')
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).queryByTestId('studio-tools-tick')).toBeNull()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
@@ -255,14 +314,14 @@ describe('the Code page', () => {
     await waitFor(() => expect(sent.some(x => x.method === 'POST' && x.path === '/api/code-page/machines/m1/sessions/s2/archive')).toBe(true))
     // The Studio's own entries lead the menu.
     fireEvent.contextMenu(await listed('pump curves'))
-    expect((await screen.findAllByRole('menuitem')).map(m => m.textContent)).toEqual(expect.arrayContaining(['Continue in Studio', 'Open in ACTIVATE']))
+    expect((await screen.findAllByRole('menuitem')).map(m => m.textContent)).toEqual(expect.arrayContaining(['Open', 'Continue in a Studio chat', 'Open in ACTIVATE']))
   })
 
   it('opens the chat that already continues a session without asking', async () => {
     studio({ here: { chats: [{ session: 's2', conversationId: 'c9' }] } })
     render(<CodePage />)
     expect(await screen.findByText('in a chat')).toBeInTheDocument()
-    fireEvent.click(await listed('pump curves'))
+    await continueFrom('pump curves', 'Open in its Studio chat')
     await waitFor(() => expect(location.hash).toBe('#chat=c9'))
   })
 
@@ -272,7 +331,7 @@ describe('the Code page', () => {
     fireEvent.click(await listed('far away'))
     const card = await screen.findByTestId('code-linked-session')
     expect(card).toHaveTextContent(/runs on gpu.*no relay for you/)
-    expect(within(card).getByRole('button', { name: 'Continue in Studio' })).toBeDisabled()
+    expect(within(card).getByRole('button', { name: 'Continue in a Studio chat' })).toBeDisabled()
     expect(sent.some(s => s.path === '/api/chat/pwcode/continue')).toBe(false)
   })
 
@@ -282,7 +341,7 @@ describe('the Code page', () => {
       delegated: [{ site: 'local', session: 's1', workspace: '/kb/agents/reviewer/q3', folder: 'agents/reviewer/q3', instructions: 'reviewer', objective: 'Summarize', started: now, state: 'finished', files: ['agents/reviewer/q3/summary.md'] }],
     })
     render(<CodePage />)
-    const card = await screen.findByTestId('code-linked-session')
+    const card = await pane()
     expect(card).toHaveTextContent('mesh refinement')
     const note = within(card).getByRole('region', { name: 'Delegated work' })
     expect(note).toHaveTextContent('Delegated from a chat, finished, with the instructions reviewer in its AGENTS.md, in the library folder agents/reviewer/q3.')
@@ -317,20 +376,56 @@ describe('the Code page', () => {
     expect(screen.queryByText('Open in ACTIVATE')).toBeNull()
   })
 
-  it('starts a session on the machine and folder chosen, held to read-only by default, and opens it in a chat', async () => {
+  const start = async (text: string) => {
+    fireEvent.change(await screen.findByRole('textbox', { name: /what should it work on|describe|start/i }), { target: { value: text } })
+    const button = await screen.findByTestId('agents-start-button')
+    await waitFor(() => expect(button).not.toBeDisabled())
+    fireEvent.click(button)
+  }
+
+  it('starts a session on the machine and folder chosen, held to read-only by default, and opens it in the page', async () => {
     const sent = studio()
     render(<CodePage />)
-    const input = await screen.findByRole('textbox', { name: /what should it work on|describe|start/i })
-    fireEvent.change(input, { target: { value: 'refine the inlet mesh' } })
-    const start = await screen.findByTestId('agents-start-button')
-    await waitFor(() => expect(start).not.toBeDisabled())
-    fireEvent.click(start)
+    await start('refine the inlet mesh')
     await waitFor(() => expect(sent.some(s => s.method === 'POST' && s.path === '/api/code-page/machines/m1/sessions')).toBe(true))
     const create = sent.find(s => s.method === 'POST' && s.path === '/api/code-page/machines/m1/sessions')!
     expect(create.body).toMatchObject({ workspace: '/home/alex/solver' })
-    // A session started here is the person's: it opens without asking again.
+    // Open before any listing has it, with its message, where the Studio
+    // said its view is; and no chat is gone to, though one was made for it.
+    const open = await pane()
+    expect(open).toHaveTextContent('refine the inlet mesh')
+    expect(location.hash).toBe('#view=code?machine=m1&session=new1')
+    await waitFor(() => expect(sent.some(s => s.path.startsWith('/api/code/machines/studio/sessions/new1'))).toBe(true))
+    expect(sent.some(s => s.path === '/api/chat/pwcode/continue')).toBe(false)
+    fireEvent.click(within(open).getByRole('button', { name: 'Open in its Studio chat' }))
     await waitFor(() => expect(location.hash).toBe('#chat=c1'))
-    expect(sent.filter(s => s.path === '/api/chat/pwcode/continue').map(s => s.body)).toEqual([{ machine: 'm1', session: 'new1', confirmed: true }])
+  })
+
+  it('says where a session is starting from the first moment, and another can be opened meanwhile', async () => {
+    let made: (r: Response) => void = () => undefined
+    studio({ create: () => new Promise<Response>(r => { made = r }) })
+    render(<CodePage />)
+    await listed('pump curves')
+    await start('refine the inlet mesh')
+    const starting = await screen.findByTestId('code-starting')
+    expect(starting).toHaveTextContent('Starting on box, in /home/alex/solver')
+    expect(starting).toHaveTextContent('refine the inlet mesh')
+    fireEvent.click(await listed('pump curves'))
+    expect(await pane()).toHaveTextContent('pump curves')
+    expect(screen.queryByTestId('code-starting')).toBeNull()
+    // It starts where the person is not looking: they stay where they are.
+    await act(async () => { made(new Response(JSON.stringify({ id: 'new2', machineId: 'm1', name: '', status: 'working', workspace: '/home/alex/solver', createdAt: now, updatedAt: now, conversationId: 'c2', shownOn: 'studio' }), { status: 201, headers: { 'Content-Type': 'application/json' } })); await new Promise(r => setTimeout(r, 20)) })
+    expect(screen.getByTestId('code-session')).toHaveTextContent('pump curves')
+  })
+
+  it('comes back to the message with the reason when a start fails', async () => {
+    studio({ create: async () => new Response(JSON.stringify({ detail: 'box did not answer.' }), { status: 502, headers: { 'Content-Type': 'application/json' } }) })
+    render(<CodePage />)
+    await start('refine the inlet mesh')
+    expect(await screen.findByText(/box did not answer/)).toBeInTheDocument()
+    expect(screen.queryByTestId('code-starting')).toBeNull()
+    expect(screen.queryByTestId('code-session')).toBeNull()
+    expect(await screen.findByDisplayValue('refine the inlet mesh')).toBeVisible()
   })
 })
 
