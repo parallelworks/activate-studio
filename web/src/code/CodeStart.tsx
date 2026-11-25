@@ -85,7 +85,7 @@ export function CodeStart({ onOpen, onStarting, onStarted, tools, top }: {
   top?: (answer: PwCodeStartScreen['answer']) => ReactNode
 }) {
   const t = useTranslations('agents')
-  const { data } = pwCodePage.useSessions()
+  const { data, error } = pwCodePage.useSessions()
   const { compact } = useCompactAgo()
   const machines = useMemo(() => (data?.machines ?? []) as Machine[], [data])
   const sessions = useMemo(() => data?.sessions ?? [], [data])
@@ -100,7 +100,8 @@ export function CodeStart({ onOpen, onStarting, onStarted, tools, top }: {
   if (screen.failed) {
     return (
       <div data-testid="agents-list-error" className="code-start-failed">
-        <NoticeCard tone="danger">{screen.failed.message || 'The Studio could not list your pw code sessions.'}</NoticeCard>
+        {/* As the list beside it says it: the package's words are by its code alone. */}
+        <NoticeCard tone="danger">{describeError(error) || 'The Studio could not list your pw code sessions.'}</NoticeCard>
       </div>
     )
   }

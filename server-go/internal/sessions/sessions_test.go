@@ -204,6 +204,17 @@ func TestListRefused(t *testing.T) {
 	if f.get("/api/sessions", &body) != 502 {
 		t.Fatal(body)
 	}
+	f.platform.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "<html>") })
+	if f.get("/api/sessions", &body) != 502 || body["error"] != "The platform's answer was not a session list." {
+		t.Fatal(body)
+	}
+	// A platform that is not there is said to be, not a fault of the Studio's.
+	f.platform.Close()
+	for _, path := range []string{"/api/sessions", "/api/sessions?run=r1", "/api/sessions/item?user=alex&name=desk"} {
+		if code := f.get(path, &body); code != 502 || body["error"] != "The platform did not answer." {
+			t.Fatal(path, code, body)
+		}
+	}
 }
 
 func TestRunItemAndFile(t *testing.T) {

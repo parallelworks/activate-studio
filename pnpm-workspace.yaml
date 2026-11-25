@@ -29,5 +29,9 @@ overrides:
 # reply, its Stop and its queued messages belong to the chat they were sent in,
 # and a host's own session is not drawn with the provider's stream. No release
 # has it yet; keep those parts until one does (test/chatCrossTalk.test.tsx).
+# That is parallelworks/foundation#843.
+# Find while away: in ChatMessageList and TranscriptFind, rows of a hidden list
+# are not read for find, which kept them as empty. No release has it yet; keep
+# those parts until one does (test/findWhileAway.test.tsx).
 patchedDependencies:
   '@parallelworks/ui@0.151.1': patches/@parallelworks__ui@0.151.1.patch

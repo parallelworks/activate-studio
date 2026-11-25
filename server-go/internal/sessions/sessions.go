@@ -217,7 +217,7 @@ func List(ctx context.Context, p *platform.Platform, key string) ([]*SessionRow,
 	}
 	res, err := platform.Get(ctx, origin+"/api/sessions", map[string]string{"Authorization": "Bearer " + key}, 20*time.Second)
 	if err != nil {
-		return nil, err
+		return nil, platform.KbError(502, "The platform did not answer.")
 	}
 	if !res.OK {
 		status := 502
@@ -228,7 +228,7 @@ func List(ctx context.Context, p *platform.Platform, key string) ([]*SessionRow,
 	}
 	if res.Body == nil {
 		if _, err := jsonv.Decode(res.Raw); err != nil {
-			return nil, errNotJSON
+			return nil, platform.KbError(502, "The platform's answer was not a session list.")
 		}
 	}
 	var raw []any
@@ -248,12 +248,6 @@ func List(ctx context.Context, p *platform.Platform, key string) ([]*SessionRow,
 	cacheMu.Unlock()
 	return rows, nil
 }
-
-type notJSON struct{}
-
-func (notJSON) Error() string { return "the session list is not JSON" }
-
-var errNotJSON error = notJSON{}
 
 func itoa(n int) string { return jsonv.FormatNumber(float64(n)) }
 
