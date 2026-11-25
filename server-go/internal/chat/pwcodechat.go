@@ -855,6 +855,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	// already keeps its own model.
 	if prior == nil || prior.Session == "" {
 		t.picked, t.pickedAlloc = strings.TrimSpace(deref(body.PWCodeModel)), body.PWCodeAllocation
+		t.start.effort = pwcodeEffort(body.PWCodeEffort)
 	}
 	if old := c.PWCode; old != nil && prior == nil && !old.Continued && old.Session != "" && old.Site == t.site {
 		_, _ = pwcode.ArchiveSession(ctx, t.client, old.Session)

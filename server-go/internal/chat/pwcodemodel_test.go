@@ -190,6 +190,15 @@ func TestANewPWCodeChatStartsOnTheModelPickedBeforeItsFirstMessage(t *testing.T)
 	if f, _ := first(t, map[string]string{"PWCODE_MODEL": "claude-code/haiku"}, map[string]any{"pwcodeModel": "claude-code/sonnet"}); f.created[0]["model"] != "claude-code/sonnet" || f.created[0]["allocation"] != nil {
 		t.Errorf("over Settings: %v %v", f.created[0]["model"], f.created[0]["allocation"])
 	}
+	// The effort chosen with it, of pw code's levels; pw code's own without one.
+	if f, _ := first(t, nil, map[string]any{"pwcodeEffort": "xhigh"}); f.created[0]["effort"] != "xhigh" {
+		t.Errorf("effort: %v", f.created[0]["effort"])
+	}
+	for _, pick := range []map[string]any{{"pwcodeEffort": "minimal"}, {"pwcodeEffort": "bogus"}, {"effort": "max"}} {
+		if f, _ := first(t, nil, pick); f.created[0]["effort"] != nil {
+			t.Errorf("effort %v: %v", pick, f.created[0]["effort"])
+		}
+	}
 	// Without a pick, the Studio's own, as before.
 	if f, _ := first(t, map[string]string{"PWCODE_MODEL": "claude-code/haiku"}, nil); f.created[0]["model"] != "claude-code/haiku" {
 		t.Errorf("no pick: %v", f.created[0]["model"])

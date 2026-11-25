@@ -1092,9 +1092,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-canvas[data-engine='pwcode'] .chat-composer:not(.pwcode-session *) [class*='justify-end'] > :is(button[aria-haspopup='dialog'], span.cursor-default) { display: none; }
 /* The package hides its usage slot where the composer is narrow. A new pw
    code chat's model is chosen there, and one with none set takes no message
-   until it is, so on a phone the model stays and the effort goes. */
+   until it is, so on a phone the slot stays, with the effort beside it. */
 .chat-composer:not(.pwcode-session *) [class*='shrink-[10]']:has(> .pwcode-new-model) { display: block; }
-@container (max-width: 27.99rem) { .pwcode-new-model + .composer-effort { display: none; } }
+/* A long model name is cut short before the effort is. */
+.pwcode-new-model { display: flex; min-width: 0; }
+.pwcode-new-model > .code-effort-chip { flex: none; }
 /* The package's find bar (Ctrl+F in a conversation) spans the top of the
    thread, under these controls. It stops short of them, or sits below them
    where the thread is too narrow, so its count and buttons stay in view;

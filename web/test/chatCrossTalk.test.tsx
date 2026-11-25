@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { startEffortPreference } from '@parallelworks/code'
 import { ChatProvider, useChat, type ChatAdapter } from '@parallelworks/ui/ai'
 
 // The session view's client takes the page's fetch as it loads, and the chat
@@ -446,6 +447,17 @@ describe('a new chat pw code answers, with no model for pw code', () => {
     await opened()
     await start(1, 'hello')
     expect(streams.get(ID(1))!.body).toMatchObject({ pwcodeModel: 'm' })
+  })
+
+  it('starts at the effort its slider shows, named as the Studio\'s menu names it', async () => {
+    localStorage.setItem(`studio.code.${startEffortPreference.key}`, '"xhigh"')
+    await show()
+    expect(await screen.findByRole('button', { name: 'Effort: Extra high' })).toBeInTheDocument()
+    expect(screen.queryByTestId('composer-effort')).toBeNull()
+    await act(async () => pickModel(null, { model: 'm' }))
+    await opened()
+    await start(1, 'hello')
+    expect(streams.get(ID(1))!.body).toMatchObject({ pwcodeEffort: 'xhigh' })
   })
 
   it('opens where the Studio assistant is chosen instead', async () => {

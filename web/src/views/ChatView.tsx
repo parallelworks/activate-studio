@@ -5,8 +5,7 @@ import {
 } from '@parallelworks/ui'
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
-import { EffortPicker } from '../components/EffortPicker'
-import { NewChatModelSlot } from '../pwcode/NewChatModel'
+import { ComposerEngineSlot } from '../pwcode/NewChatModel'
 import { PwCodeOwnModel, useModelHeld } from '../pwcode/ownModel'
 import { takeHanded, onFirstMessage } from '../pwcode/firstMessage'
 import { NewChatTargetSlot } from '../pwcode/NewChatTarget'
@@ -28,7 +27,7 @@ import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
 import { useAppConfig } from '../config'
 import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
-import { setLabelScope, setPersona } from '../labelScope'
+import { EFFORT_WORDS, setLabelScope, setPersona } from '../labelScope'
 import { LibraryTicks, scopeLabel } from '../components/LibraryScope'
 import { useChatScope } from '../chatScope'
 import type { Scope } from '../scope'
@@ -625,8 +624,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         // and fold with the other finished calls.
         // A pw code session's running Bash step offers moving it to the
         // background (Ctrl+B); the hint draws nothing in other chats.
-        slots: { composerUsage: <><NewChatModelSlot conversationId={activeId} hasSession={!!pw.link?.session} /><EffortPicker conversationId={activeId} /></>, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolFooters: PWCODE_TOOL_FOOTERS, toolPresentation: gufiToolPresentation },
+        slots: { composerUsage: <ComposerEngineSlot conversationId={activeId} hasSession={!!pw.link?.session} />, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolFooters: PWCODE_TOOL_FOOTERS, toolPresentation: gufiToolPresentation },
         strings: {
+          effort: EFFORT_WORDS,
           thinking: {
             thoughtFor: (duration: string) => `Worked for ${duration}`,
           },
