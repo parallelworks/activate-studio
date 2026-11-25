@@ -33,6 +33,8 @@ let engine: Engine
 let posts: { id: string; text: string }[]
 let reads: string[]
 let held: Promise<void> | null
+let slow: number
+let idle: boolean
 let models: unknown[] | 'fails'
 let settingsModel: string
 let needed: boolean
@@ -67,8 +69,9 @@ function studio() {
       if (m[2] === '/generating') return json(null)
       if (m[2]) return json({})
       if (!c) return json({ error: 'no such chat' }, 404)
-      if (method === 'GET') { reads.push(c.id); if (held) await held }
-      return json({ ...c, activeBranchId: c.messages[c.messages.length - 1]?.id ?? null, isOwner: true, canCollaborate: true, createdAt: now })
+      const then = structuredClone(c)
+      if (method === 'GET') { reads.push(c.id); if (held) await held; if (slow) await new Promise(r => setTimeout(r, slow)) }
+      return json({ ...(slow ? then : c), activeBranchId: c.messages[c.messages.length - 1]?.id ?? null, isOwner: true, canCollaborate: true, createdAt: now })
     }
     if (path === '/api/chat/stream') {
       const b = body()
@@ -93,6 +96,7 @@ function studio() {
       const detail = session(m[1])
       return json(m[2] ? { tail: detail, from: 0, total: detail.history.length } : detail)
     }
+    if (path.endsWith('/palette')) return json({ commands: [{ name: 'help' }], prompts: [] })
     if (path === '/api/code/sessions') return json({ machines: [{ id: 'studio', name: 'box', kind: 'existing', status: 'connected', remoteStart: true, hostname: 'box.example', daemonId: 'd1' }], sessions: [...chats.values()].filter(c => c.pwcode).map(c => ({ ...session(c.pwcode!.session), history: undefined })) })
     if (path.startsWith('/api/tags')) return json({ tags: [] })
     if (path === '/api/me/model-key') return json({ authEnabled: false })
@@ -106,7 +110,7 @@ function session(id: string) {
   const c = [...chats.values()].find(x => x.pwcode?.session === id)
   const asked = c?.messages.find(x => x.role === 'user')?.content ?? ''
   return {
-    id, machineId: 'studio', name: 'a session', workspace: '/w', model: 'm', status: 'running', permissionMode: 'accept-edits', createdAt: now, updatedAt: now, messageCount: 1, messages: 1, lastSeq: 1, turnId: 't1', turnStartedAt: now,
+    id, machineId: 'studio', name: 'a session', workspace: '/w', model: 'm', permissionMode: 'accept-edits', createdAt: now, updatedAt: now, messageCount: 1, messages: 1, lastSeq: 1, ...(idle ? { status: 'idle' } : { status: 'running', turnId: 't1', turnStartedAt: now }),
     history: [{ kind: 'user', text: asked }, { kind: 'assistant', text: `${id} says` }],
   }
 }
@@ -137,7 +141,7 @@ const open = async (n: number) => { await act(async () => { location.hash = `#ch
 const show = async () => { render(<ChatView />); await waitFor(() => expect(screen.getAllByText('New chat').length).toBeGreaterThan(0), { timeout: 5000 }) }
 
 beforeEach(() => {
-  chats = new Map(); streams = new Map(); posts = []; reads = []; held = null; engine = 'studio'; settingsModel = 'inference-server/stub/m'; needed = false
+  chats = new Map(); streams = new Map(); posts = []; reads = []; held = null; slow = 0; idle = false; engine = 'studio'; settingsModel = 'inference-server/stub/m'; needed = false
   models = [{ id: 'm', object: 'model', name: 'm', provider: 'p', provider_type: 'local', provider_name: 'local' }]
   localStorage.clear(); forgetEngines(); forgetModels(); clearChatRecords()
   location.hash = ''
@@ -477,4 +481,27 @@ it.each([['owed', true], ['not owed', false]] as const)('the session shows where
   await act(async () => { fireEvent.input(box, { target: { value: '/' } }); await new Promise(r => setTimeout(r, 60)) })
   const asked = () => vi.mocked(fetch).mock.calls.map(c => String(c[0] instanceof Request ? c[0].url : c[0]))
   await waitFor(() => expect(asked()).toContain('/api/code/machines/studio/sessions/s1/palette'), { timeout: 3000 })
+})
+
+// The chat's read that began before its session existed was taken for the one
+// after it, where that read was slow: the session never showed, and the
+// command was left in the thread with nothing to run it.
+it('a first command runs where the chat is slow to read', async () => {
+  engine = 'pwcode'
+  slow = 500
+  idle = true
+  await show()
+  await start(1, '/help')
+  const c = chats.get(ID(1))!
+  await act(async () => {
+    Object.assign(c, { engine: 'pwcode', pwcode: { session: 's1' }, messages: [] })
+    const s = streams.get(ID(1))!
+    s.send('pwcode', { session: 's1', model: 'm' })
+    s.send('pwcode_first', { text: '/help', refused: '' })
+    s.send('done', { finishReason: 'stop', model: null })
+    s.end()
+  })
+  await waitFor(() => expect(document.querySelector('.pwcode-session')).not.toBeNull(), { timeout: 5000 })
+  const ran = () => vi.mocked(fetch).mock.calls.map(x => x[0]).filter((x): x is Request => x instanceof Request && x.method === 'POST').map(x => new URL(x.url).pathname)
+  await waitFor(() => expect(ran()).toContain('/api/code/machines/studio/sessions/s1/commands'), { timeout: 5000 })
 })

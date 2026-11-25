@@ -111,6 +111,71 @@ describe("A chat's kept record", () => {
     await waitFor(() => expect(result.current.shown).toBe(true))
   })
 
+  /** A Studio that answers each read of a chat when told to, with what the
+   *  chat was as the read arrived. */
+  function slowStudio() {
+    const chat: { session?: string } = {}
+    const answer: ((ok?: boolean) => Promise<void>)[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (!url.startsWith('/api/chat/conversations/')) return Promise.resolve(new Response(JSON.stringify({ current: 'pwcode', setting: 'auto' }), { status: 200 }))
+      const body = JSON.stringify({ id: 'c4', engine: 'pwcode', ...(chat.session ? { pwcode: { session: chat.session } } : {}) })
+      return new Promise<Response>((res, rej) => answer.push(async (ok = true) => {
+        await act(async () => { if (ok) res(new Response(body, { status: 200 })); else rej(new Error('network')); await new Promise(r => setTimeout(r, 20)) })
+      }))
+    }))
+    const change = (event: string, detail: object = {}) => act(() => { window.dispatchEvent(new CustomEvent(event, { detail: { conversationId: 'c4', ...detail } })) })
+    return { chat, answer, change }
+  }
+
+  it.each([['in order', [0, 1]], ['out of order', [1, 0]]] as const)('shows a session made while the chat was being read, the answers %s', async (_what, order) => {
+    const { chat, answer, change } = slowStudio()
+    const { result } = renderHook(() => useChatLink('c4'))
+    expect(answer).toHaveLength(1)
+    chat.session = 's4'
+    change('ade-pwcode-session', { session: 's4' })
+    // Not the read already on its way, which began before the session.
+    expect(answer).toHaveLength(2)
+    for (const n of order) await answer[n]()
+    expect(result.current.link?.session).toBe('s4')
+    await waitFor(() => expect(result.current.shown).toBe(true))
+    expect((cachedChat('c4')?.pwcode as { session: string }).session).toBe('s4')
+    // The end of the reply is a change too.
+    change('ade:chat-answered')
+    expect(answer).toHaveLength(3)
+    await answer[2]()
+    expect(result.current.shown).toBe(true)
+  })
+
+  it('tries a read for a change again, and keeps the session it has', async () => {
+    const { chat, answer, change } = slowStudio()
+    const { result } = renderHook(() => useChatLink('c4'))
+    await answer[0]()
+    chat.session = 's4'
+    change('ade-pwcode-session', { session: 's4' })
+    await answer[1](false)
+    await waitFor(() => expect(answer).toHaveLength(3), { timeout: 4000 })
+    await answer[2]()
+    expect(result.current.link?.session).toBe('s4')
+    change('ade:chat-answered')
+    await answer[3](false)
+    expect(result.current.link?.session).toBe('s4')
+  })
+
+  it('a read begun before a change is not handed to what asks after it', async () => {
+    const { chat, answer, change } = slowStudio()
+    const before = readChat('c4')
+    prefetchChat('c4')
+    chat.session = 's4'
+    change('ade-pwcode-session', { session: 's4' })
+    expect(takeReadAhead('c4')).toBeUndefined()
+    const after = readChat('c4')
+    await answer[1]()
+    await answer[0]()
+    expect((await before).pwcode).toBeUndefined()
+    expect((await after).pwcode?.session).toBe('s4')
+    expect(cachedChat('c4')?.pwcode?.session).toBe('s4')
+  })
+
   it('waits for the read of a chat never opened', async () => {
     studio(() => 'ada')
     const { result } = renderHook(() => useChatLink('c2'))

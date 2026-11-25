@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -105,6 +106,11 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Unlock()
 	if h != nil {
+		// Read first, as the daemon reads a request before it answers: the
+		// client keeps no connection, and one closed while it still sends
+		// the request is an EPIPE to it, not the answer.
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
 		h(w, r)
 		return
 	}
