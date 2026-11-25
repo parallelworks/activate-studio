@@ -354,6 +354,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .sidenav-resize:hover::before, .sidenav-resize.dragging::before, .sidenav-resize:focus-visible:not(.pressed)::before {
   background: linear-gradient(to right, transparent 2px, var(--pw-border-strong) 2px, var(--pw-border-strong) 5px, transparent 5px);
 }
+/* Also while the Library's tree is resized. */
 html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-select: none; }
 @media (max-width: 760px) { .sidenav-resize { display: none; } }
 .sidenav-brand { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
@@ -522,12 +523,23 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
   border-right: 1px solid var(--theme-border, var(--pw-border));
 }
 .library .divider {
+  position: relative; z-index: 2; touch-action: none; outline: none;
   width: 5px; flex-shrink: 0; cursor: col-resize;
   /* The same token the chat rail divides with, and the strip carries the
      rail's own color so no page background shows through beside the line. */
   border-right: 1px solid var(--theme-border, var(--pw-border)); background: var(--pw-rail-bg);
 }
-.library .divider:hover, .resizing .library .divider { background: var(--theme-hover, #e3ebf3); }
+/* A target wider than the line. It reaches over the file's margin, not the
+   tree's scrollbar. */
+.library .divider::before { content: ''; position: absolute; top: 0; bottom: 0; left: -1px; right: -9px; cursor: col-resize; }
+/* The grip: faint until the edge is hovered, dragged or focused. */
+.library .divider::after {
+  content: ''; position: absolute; top: 50%; right: -3px; width: 5px; height: 40px; margin-top: -20px; border-radius: 3px;
+  background: var(--pw-border-strong); box-shadow: 0 0 0 1px var(--pw-panel); pointer-events: none;
+}
+.library .divider:hover, .library .divider.dragging, .library .divider:focus-visible:not(.pressed) { border-right-color: var(--pw-link); }
+.library .divider:hover::after, .library .divider.dragging::after, .library .divider:focus-visible:not(.pressed)::after { background: var(--pw-link); height: 56px; margin-top: -28px; }
+.library .divider:focus-visible:not(.pressed)::after { box-shadow: 0 0 0 3px var(--theme-focus-ring); }
 .rail-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   height: 52px; padding: 0 12px; border-bottom: 1px solid var(--pw-border); flex-shrink: 0;
@@ -548,7 +560,7 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 /* An empty library, or one that could not be listed, says so at the top. */
 .explorer .tree-empty { margin: 8px 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .explorer .tree-row {
-  display: flex; align-items: center; gap: 5px;
+  position: relative; display: flex; align-items: center; gap: 5px;
   min-height: 24px; padding: 2px 8px; line-height: 20px; cursor: pointer; border-radius: 4px;
   white-space: nowrap; overflow: hidden;
   font-family: var(--font-sans); font-size: 13px;
@@ -563,6 +575,9 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 .explorer .tree-row.dir { color: var(--pw-text); font-weight: 500; }
 .explorer .tree-row.file { color: color-mix(in srgb, var(--pw-text) 80%, var(--pw-muted)); }
 .tree-label { overflow: hidden; text-overflow: ellipsis; }
+.explorer .tree-text { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; }
+.explorer .tree-label { min-width: 0; }
+.explorer .tree-row:focus-visible, .explorer[data-keys] .tree-row:focus { outline: 2px solid var(--theme-accent); outline-offset: -2px; }
 .tree-tags { display: inline-flex; gap: 3px; margin-left: 2px; flex-shrink: 0; }
 .tree-tag {
   font-size: 11px; line-height: 15px; padding: 0 6px; border-radius: 999px;
@@ -883,7 +898,15 @@ textarea.field { line-height: 1.5; }
 /* With a pointer, a row's label button shows when the row is hovered or
    selected; on touch screens it stays visible, since there is no hover. */
 @media (hover: hover) {
-  .explorer .row-tag { opacity: 0; }
+  /* Over the row's end, where the name fades out under it, so the name is
+     cut where it was before. */
+  .explorer .row-tag { position: absolute; right: 4px; top: 50%; margin-top: -10px; opacity: 0; }
+  .explorer .tree-row:hover .tree-text, .explorer .tree-row.selected .tree-text {
+    -webkit-mask-image: linear-gradient(to left, transparent 18px, #000 34px); mask-image: linear-gradient(to left, transparent 18px, #000 34px);
+  }
+  .explorer .tree-row:has(.row-tag:focus-visible) .tree-text {
+    -webkit-mask-image: linear-gradient(to left, transparent 18px, #000 34px); mask-image: linear-gradient(to left, transparent 18px, #000 34px);
+  }
   .explorer .tree-row:hover .row-tag, .explorer .tree-row.selected .row-tag, .explorer .row-tag:focus-visible { opacity: 1; }
 }
 .search-label-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
@@ -1661,6 +1684,15 @@ a.identity-btn { text-decoration: none; }
 .mention-head { font-size: 11px; padding: 4px 10px 6px; }
 .mention-item { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
 .mention-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The whole of a name a list cuts (components/NameTip.tsx): the UI package's
+   tooltip, wide enough for a long name. */
+.name-tip {
+  position: fixed; z-index: var(--layer-popover, 1400); max-width: min(460px, calc(100vw - 16px)); box-sizing: border-box; pointer-events: none;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--theme-border); background: var(--theme-panel-bg); color: var(--theme-app); box-shadow: var(--theme-shadow-lg);
+  font-size: 12px; line-height: 16px; white-space: normal; overflow-wrap: anywhere;
+}
+.name-tip-detail { color: var(--theme-muted-text-color); }
 .mention-empty { padding: 8px 10px; font-size: 13px; }
 /* @[path] in a sent message: a link to the file, drawn without touching
    the message's DOM (components/MentionLinks.tsx). */
