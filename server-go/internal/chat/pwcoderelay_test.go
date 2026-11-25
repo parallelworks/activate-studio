@@ -161,6 +161,23 @@ func TestTheRelayIsNeverTheStudiosAccount(t *testing.T) {
 	}
 }
 
+// Where the Code page lists this computer's own sessions, with no platform,
+// nothing is relayed, whatever credential the Studio holds.
+func TestNothingIsRelayedWithNoPlatform(t *testing.T) {
+	m, _, plat, _ := relayModule(t, &fakePW{}, &fakePW{})
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	if why := m.relayUnavailable(r); why != "" {
+		t.Fatalf("with a platform: %q", why)
+	}
+	m.A.Providers.LocalCode = func(*http.Request) bool { return true }
+	if why := m.relayUnavailable(r); !strings.Contains(why, "not connected to an ACTIVATE platform") {
+		t.Errorf("why: %q", why)
+	}
+	if len(plat.relayed) != 0 {
+		t.Errorf("relayed %v", plat.relayed)
+	}
+}
+
 func TestARelayedChatIsOnlyItsOwners(t *testing.T) {
 	local, remote := &fakePW{}, &fakePW{}
 	m, _, plat, _ := relayModule(t, local, remote)

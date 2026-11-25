@@ -68,6 +68,13 @@ function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: u
   return sent
 }
 
+/** Something a test lets go of. */
+const hold = () => {
+  let release = () => {}
+  const held = new Promise<void>(r => { release = r })
+  return { release, held }
+}
+
 /** A session's row in the list beside the start. */
 const listed = async (name: string) => {
   await screen.findAllByText(name)
@@ -428,6 +435,40 @@ describe('the Code page', () => {
     expect(notice).toHaveTextContent('Sign in with ACTIVATE to use this')
     fireEvent.click(within(notice).getByRole('button', { name: 'Open Accounts' }))
     expect(location.hash).toBe('#view=settings:accounts?open=activate')
+    for (const id of ['agents-machine-chip', 'machine-tools-button', 'agents-new-session', 'agents-how-button', 'code-sidebar']) expect(screen.queryByTestId(id)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Open in ACTIVATE' })).toBeNull()
+  })
+
+  it('shows no start or controls before it knows whose sessions they are', async () => {
+    const { release, held } = hold()
+    const sent = studio()
+    const answer = globalThis.fetch
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/code-page/where')) await held
+      return answer(input, init)
+    })
+    render(<CodePage />)
+    await waitFor(() => expect(sent.some(x => x.path.startsWith('/api/chat/pwcode/here'))).toBe(true))
+    await act(async () => { await new Promise(r => setTimeout(r, 30)) })
+    for (const id of ['agents-machine-chip', 'agents-new-session', 'agents-start-button']) expect(screen.queryByTestId(id)).toBeNull()
+    release()
+    expect(await screen.findByTestId('agents-new-session')).toBeInTheDocument()
+  })
+
+  it('with no platform, says nothing of tools on this computer, and why a session is not continued', async () => {
+    location.hash = '#view=code?session=s1'
+    studio({
+      where: { local: true, codeUrl: '' },
+      machines: [{ ...machine, id: 'local', name: 'This computer', kind: 'local' }],
+      sessions: [session({ id: 's1', name: 'mesh refinement', machineId: 'local' })],
+      here: { available: false, reason: 'pw code needs ACTIVATE.', relay: false, relayReason: 'The Studio is not connected to an ACTIVATE platform.', hostname: undefined, daemonId: undefined },
+    })
+    render(<CodePage />)
+    const card = await screen.findByTestId('code-linked-session')
+    await waitFor(() => expect(card).toHaveTextContent('The Studio is not connected to an ACTIVATE platform. You can still answer what it waits on here, and open it in a terminal.'))
+    expect(card).not.toHaveTextContent('open it in ACTIVATE')
+    expect(await screen.findByTestId('agents-machine-chip')).toHaveTextContent('This computer')
+    expect(screen.queryByTestId('machine-tools-button')).toBeNull()
   })
 
   it('says a linked session is gone', async () => {

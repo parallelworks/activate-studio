@@ -81,14 +81,16 @@ function useNarrow(): boolean {
 
 interface Where { local: boolean; codeUrl: string; signIn?: boolean }
 
-function useJSON<T>(url: string): T | null {
-  const [value, setValue] = useState<T | null>(null)
+/** Where the page's sessions are, null until the Studio says; one that does
+ *  not answer leaves the page to say what its list could not do. */
+function useWhere(): Where | null {
+  const [value, setValue] = useState<Where | null>(null)
   useEffect(() => {
     let gone = false
-    const load = () => fetch(url).then(r => (r.ok ? r.json() : null)).then(v => { if (!gone && v) setValue(v as T) }, () => {})
-    void load()
+    const set = (v: Where | null) => { if (!gone) setValue(v ?? { local: false, codeUrl: '' }) }
+    void fetch('/api/code-page/where').then(r => (r.ok ? r.json() as Promise<Where> : null)).then(set, () => set(null))
     return () => { gone = true }
-  }, [url])
+  }, [])
   return value
 }
 
@@ -99,7 +101,7 @@ function CodeScreen() {
   useEffect(() => { publishListing(data) }, [data])
   const machines = useMemo(() => data?.machines ?? [], [data])
   const studio = useOpenInStudio(machines)
-  const where = useJSON<Where>('/api/code-page/where')
+  const where = useWhere()
   const [delegatedList, setDelegated] = useState<{ sessions?: Delegated[] } | null>(null)
   useWatch<{ sessions?: Delegated[] }>('/api/delegated', 30_000, true, setDelegated)
   const delegatedById = useMemo(() => new Map((delegatedList?.sessions ?? []).map(d => [d.session, d])), [delegatedList])
@@ -129,9 +131,12 @@ function CodeScreen() {
   const narrow = useNarrow()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [startKey, setStartKey] = useState(0)
-  // A session on the Studio's own machine starts with its tools.
+  // A session on the Studio's own machine starts with its tools. With no
+  // platform the only machine is this computer, whose pw code the Studio may
+  // only list: then nothing is said of the tools.
   const here = studio.here
-  const isOwn = useCallback((m: MachineRef) => (here ? sameMachine(m, here) : undefined), [here])
+  const local = where?.local === true
+  const isOwn = useCallback((m: MachineRef) => (local ? here?.available || undefined : here ? sameMachine(m, here) : undefined), [here, local])
   const tools = useMachineTools(isOwn)
   // What is being started, and whether the person went to another session
   // meanwhile: it then opens only when they pick it.
@@ -197,7 +202,9 @@ function CodeScreen() {
     ]
   }
 
-  if (where?.signIn) return <SignInNeeded />
+  // Neither the start nor its controls show before the Studio says whose they are.
+  if (!where) return <div className="code-page code-page-loading" aria-busy="true" />
+  if (where.signIn) return <SignInNeeded />
   return (
     <div className="code-page">
       <CodeSidebar
@@ -217,7 +224,7 @@ function CodeScreen() {
         <PageHeadActions>
           {narrow && <Button variant="secondary" size="sm" icon={<SidebarOpenIcon aria-hidden />} data-testid="code-sessions-drawer" onClick={() => setDrawerOpen(true)}>Sessions</Button>}
           <IconButton variant="outline" size="sm" icon={<AddIcon aria-hidden />} label="New session" data-testid="agents-new-session" onClick={newSession} />
-          {where?.codeUrl && !inPane && !(starting && !link) && (
+          {where.codeUrl && !inPane && !(starting && !link) && (
             <IconButton variant="outline" size="sm" icon={<ExternalLinkIcon aria-hidden />} label="Open in ACTIVATE" href={where.codeUrl} target="_blank" rel="noopener noreferrer" />
           )}
           <Popover
