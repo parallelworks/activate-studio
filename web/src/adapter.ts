@@ -10,6 +10,7 @@ import { firstMessagePick } from './pwcode/newChatPick'
 import { handFirstMessage } from './pwcode/firstMessage'
 import { holdModels, modelHeld, PWCODE_MODEL, pwCodeStandsIn } from './pwcode/ownModel'
 import { firstMessageStart } from './pwcode/newChatStart'
+import { askedEngine, newConversation, pwcodeAnswers } from './chatEngine'
 import { foldRecovered, recoveryTracker } from './recoveredSteps'
 import { rememberToolCommands } from './components/GufiCommands'
 
@@ -68,6 +69,8 @@ const readReply: StreamCompletion = async (req, handlers, signal) => {
       // What answers is the conversation's, which the server keeps; the
       // last choice made here is for a chat nothing has answered yet.
       newChatEngine: getLastEngine() || null,
+      // A chat started from the Library is pw code's, or says why not.
+      ...askedEngine(req.conversationId),
       // The model a new pw code chat was set to before its first message;
       // the server uses it only when this message makes the session.
       ...firstMessagePick(req.conversationId),
@@ -160,7 +163,7 @@ const readReply: StreamCompletion = async (req, handlers, signal) => {
       case 'pwcode':
         // pw code answers: its session, and where PW Code on the web shows it.
         pwcodeSession = String(payload.session ?? '')
-        if (req.conversationId) knowEngine(req.conversationId, 'pwcode')
+        if (req.conversationId) pwcodeAnswers(req.conversationId)
         window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: req.conversationId, ...payload } }))
         break
       case 'pwcode_first':
@@ -372,7 +375,10 @@ export function createStudioAdapter(): ChatAdapter {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
-      }).then(r => json(r)),
+      }).then(r => json<Awaited<ReturnType<ChatAdapter['conversations']['create']>>>(r)).then(c => {
+        if (c?.id) newConversation(c.id)
+        return c
+      }),
       rename: async (id, title) => { forgetChat(id); await fetch(`/api/chat/conversations/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

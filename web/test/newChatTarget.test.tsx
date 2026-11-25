@@ -8,7 +8,7 @@ vi.mock('@parallelworks/ui/ai', async original => ({ ...(await original<object>(
 import { createStudioAdapter } from '../src/adapter'
 import { NewChatTargetSlot } from '../src/pwcode/NewChatTarget'
 import { pickModel, pickedModel } from '../src/pwcode/newChatPick'
-import { firstMessageStart, forgetStarts, startOf } from '../src/pwcode/newChatStart'
+import { bindLibraryStart, firstMessageStart, forgetStarts, setStart, startOf } from '../src/pwcode/newChatStart'
 
 // A checkbox forwards its press to its hidden input as a PointerEvent, which
 // jsdom does not define.
@@ -220,5 +220,51 @@ describe('where a new pw code chat starts', () => {
     await waitFor(() => expect(startOf(null).machine?.id).toBe('m2'))
     act(() => clearViewerCaches())
     expect(startOf(null)).toEqual({})
+  })
+})
+
+// New pw code chat here, in the Library (pwcode/chatHere.ts).
+describe('where a chat started from the Library starts', () => {
+  const start = { machine: { id: 'm2' }, folder: '/data/runs', library: { id: 'u-work', path: 'runs', machineName: 'gpu' } }
+
+  it('is the machine and folder found for it, until the person chooses others', async () => {
+    studio()
+    setStart(null, start)
+    render(<Chat />)
+    expect(await machineChip()).toHaveTextContent('gpu')
+    expect(await folderChip()).toHaveTextContent('runs')
+    await waitFor(() => expect(startOf(null)).toMatchObject({ ...start, mode: 'accept-edits' }))
+    await chooseMachine(/box/)
+    await waitFor(() => expect(startOf(null)).toEqual({}))
+    // Another folder is no longer the Library's.
+    act(() => setStart(null, { folder: '/home/me/kb/plans', library: { id: 'kb', path: 'plans', machineName: 'box' } }))
+    await waitFor(async () => expect(await folderChip()).toHaveTextContent('plans'))
+    fireEvent.click(await folderChip())
+    const field = await screen.findByRole('combobox')
+    fireEvent.change(field, { target: { value: '/home/me/other' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+    await waitFor(() => expect(startOf(null)).toEqual({ folder: '/home/me/other' }))
+  })
+
+  it('takes no other machine when that one is not there, and says so', async () => {
+    studio({ machines: [own] })
+    setStart(null, start)
+    render(<Chat />)
+    expect(await screen.findByTestId('pwcode-start-lost', {}, { timeout: 5000 })).toHaveTextContent('/data/runs is on gpu, which takes no new sessions now.')
+    await act(async () => { await new Promise(r => setTimeout(r, 100)) })
+    expect(startOf(null)).toEqual(start)
+    expect(await machineChip()).not.toHaveTextContent('box')
+    expect(screen.queryByTestId('agents-directory-chip')).toBeNull()
+    expect(firstMessageStart(null)).toMatchObject({ pwcodeMachine: 'm2', pwcodeFolder: '/data/runs', pwcodeLibrary: 'u-work', pwcodePath: 'runs' })
+  })
+
+  it('is the new chat\'s alone', () => {
+    setStart(null, start)
+    expect(startOf('c-old')).toEqual({})
+    expect(firstMessageStart('c-old')).toEqual({})
+    expect(bindLibraryStart('c-new')).toBe(true)
+    expect(startOf('c-new')).toEqual(start)
+    expect(startOf(null)).toEqual({})
+    expect(bindLibraryStart('c-next')).toBe(false)
   })
 })

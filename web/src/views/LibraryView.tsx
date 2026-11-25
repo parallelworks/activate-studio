@@ -18,6 +18,7 @@ import { TagMenu } from '../components/TagMenu'
 import { sectionAllowed, useAppConfig } from '../config'
 import { shownPath } from '../libraryPath'
 import { copyItemLink, copyLinkLabel } from '../itemLinks'
+import { askPlace, CHAT_HERE, chatHere, knownPlace } from '../pwcode/chatHere'
 import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
 import { chooseUpload, onShellDrop, shellListsFolders } from '../nativeShell'
 import { downloadPath } from '../libraryDownload'
@@ -460,6 +461,7 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     const group = multiSel.has(path) && multiSel.size > 1 ? ` ${multiSel.size} items` : ''
     const targets = () => (multiSel.has(path) ? [...multiSel] : [path])
     const items: MenuEntry[] = []
+    let hereAt = -1
     if (!isDir) items.push({ label: 'Open', onClick: () => onDisplay({ kind: 'file', target: path }) })
     const locked = readOnlyAt(path)
     const libraryTop = inAll && !path.includes('/')
@@ -496,6 +498,13 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     const labelsLocked = labelsLockedAt(path)
     if (isDir && cfg.aiEnabled !== false) items.push({ label: 'Suggest labels…', disabled: !!labelsLocked, disabledReason: labelsLocked ?? undefined, onClick: () => void runSuggest(path) })
     if (path && sectionAllowed('chat', cfg)) items.push({ label: 'Add to chat', onClick: () => addToChat(path) })
+    // The reason it cannot is written in the entry: a tip does not open on
+    // touch. A bucket's, and a library's read only to the person, is known
+    // here; the rest the Studio finds as the menu opens.
+    const here = (why?: string): MenuEntry => ({ label: CHAT_HERE, disabled: !!why, description: why, onClick: () => void chatHere(itemAt(path), primaryId) })
+    const held = cfg.libraries?.find(l => l.id === libraryAt(path))
+    const noChat = held?.fromBucket || held?.access?.where === 'bucket' ? 'A bucket has no folder a pw code session can work in.' : labelsLocked ? 'This library is read only for you, so a pw code session cannot work here.' : undefined
+    if (!allTop && sectionAllowed('chat', cfg)) hereAt = items.push(here(noChat ?? knownPlace(itemAt(path))?.why)) - 1
     if (path && !libraryTop && canCopyOut) {
       const rows = targets().filter(p => !inAll || p.includes('/'))
       items.push({
@@ -521,13 +530,27 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     if (path && !libraryTop) {
       items.push({ label: isDir ? 'Delete folder…' : 'Delete…', destructive: true, disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => leaveUnsaved(() => setDeleteTarget({ path, isDir, error: '' }), [path])) })
     }
-    openMenu({ clientX: x, clientY: y }, items, {
+    let open = true
+    const show = (rows: MenuEntry[]) => openMenu({ clientX: x, clientY: y }, rows, {
+      themeClassName: 'library-menu',
       onClose: () => {
+        open = false
         const run = afterMenu.current
         afterMenu.current = null
         run?.()
       },
     })
+    show(items)
+    // Where the chat would work is looked at as the person, on the machine
+    // that holds the folder: a reason it cannot comes into the open menu.
+    if (hereAt >= 0 && !noChat && !knownPlace(itemAt(path))) {
+      void askPlace(itemAt(path)).then(({ why }) => {
+        if (!why || !open) return
+        const rows = items.slice()
+        rows[hereAt] = here(why)
+        show(rows)
+      })
+    }
   }
 
   const railRef = useRef<HTMLElement>(null)

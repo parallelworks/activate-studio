@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { bindLibraryStart, startOf } from './pwcode/newChatStart'
 
 /**
  * What answers each conversation, on this page: the one place the chat's
@@ -117,6 +118,40 @@ export function knowEngine(conversationId: string, value: Engine): void {
   put(conversationId, { info: had?.info, current: validEngine(value) })
 }
 
+/** Chats whose first message asks for what they were started on. */
+const asking = new Set<string>()
+
+/** Sets what answers the new chat being written, without making it the
+ *  choice new chats start with ('': the default again). */
+export function setNewChatEngine(value: Engine): void {
+  if ((entries.get('')?.current ?? '') === value) return
+  told.set('', ++clock)
+  put('', { info: entries.get('')?.info, current: value })
+}
+
+/** A conversation was made for the new chat: one started from the Library
+ *  takes where it starts and what answers it along. */
+export function newConversation(conversationId: string): void {
+  const value = entries.get('')?.current ?? ''
+  bindLibraryStart(conversationId)
+  if (!value) return
+  setNewChatEngine('')
+  knowEngine(conversationId, value)
+  asking.add(conversationId)
+}
+
+/** What a message asks for, in a chat that was started on pw code and that
+ *  pw code has not answered: it answers, or says why not. */
+export function askedEngine(conversationId: string | null | undefined): { engine?: 'pwcode' } {
+  return conversationId && asking.has(conversationId) && knownEngine(conversationId) === 'pwcode' ? { engine: 'pwcode' } : {}
+}
+
+/** pw code answers the chat: the server keeps that from here on. */
+export function pwcodeAnswers(conversationId: string): void {
+  asking.delete(conversationId)
+  knowEngine(conversationId, 'pwcode')
+}
+
 /** Calls back on every change; returns the way to stop. */
 export function onEngine(listener: () => void): () => void {
   listeners.add(listener)
@@ -145,12 +180,16 @@ export async function switchEngine(value: 'pwcode' | 'studio', conversationId?: 
   }
   try { localStorage.setItem(ENGINE_LAST, value) } catch { /* storage unavailable: the choice lasts until reload */ }
   if (conversationId) knowEngine(conversationId, value)
-  else await readEngine(null)
+  else {
+    // A chat started from the Library keeps its own choice.
+    setNewChatEngine(startOf(null).library ? value : '')
+    await readEngine(null)
+  }
 }
 
 /** Forgets what is known: someone else is the viewer, or their ACTIVATE
  *  sign-in changed (viewerCache.ts). */
 export function forgetEngines(): void {
-  entries.clear(); told.clear(); reads.clear()
+  entries.clear(); told.clear(); reads.clear(); asking.clear()
   for (const l of [...listeners]) l()
 }
