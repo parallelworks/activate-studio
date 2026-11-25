@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/fleet"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
+	"github.com/parallelworks/activate-studio/server-go/internal/userlibs"
 )
 
 // person is what the sources hold of one person.
@@ -31,6 +32,8 @@ type person struct {
 	work               []delegation.Record
 	fails              []transfers.Transfer
 	libs               []Library
+	shares             []userlibs.SharedNew
+	looking            bool
 }
 
 type studio struct {
@@ -86,6 +89,9 @@ func (s *studio) start() {
 		},
 		TransferSeen: func(r *http.Request, id string) { s.seenXfr = append(s.seenXfr, id) },
 		Libraries:    func(r *http.Request) []Library { return s.of(r).libs },
+		Shares: func(r *http.Request) ([]userlibs.SharedNew, bool) {
+			return s.of(r).shares, s.of(r).looking
+		},
 	})
 	svc.now = func() time.Time { return s.now }
 	mux := http.NewServeMux()
@@ -361,5 +367,53 @@ func TestWhatEndedOrFailedIsNews(t *testing.T) {
 	}
 	if code, _ := s.ask("", "POST", "/api/notices/dismiss", map[string]any{"ids": []string{}}); code != 400 {
 		t.Errorf("nothing to dismiss: %d", code)
+	}
+}
+
+// TestAFolderSharedIsANotice: one for each folder shared with the person or
+// a group of theirs, with what Add to my libraries needs, whenever it was
+// shared, until it is taken back, added or dismissed. Given more access, it
+// is another.
+func TestAFolderSharedIsANotice(t *testing.T) {
+	s := newStudio(t, true)
+	bob := &person{looking: true}
+	s.people["bob"] = bob
+	if a := s.read("bob"); len(a.Items) != 0 || !a.Looking {
+		t.Fatalf("while it is being asked: %s, looking %v", ids(a), a.Looking)
+	}
+	proj := userlibs.SharedNew{ID: "s-1", From: "ada", Label: "proj", Folder: "/home/ada/studio/proj", Site: "pw://ada/example-box", System: "example-box", Access: "read", At: iso(at(-9000))}
+	team := userlibs.SharedNew{ID: "s-2", From: "ada", Label: "runs", Folder: "/home/ada/studio/runs", Site: "cluster-a", System: "cluster-a", Group: "team", Access: "write", At: iso(at(-60))}
+	bob.looking, bob.shares = false, []userlibs.SharedNew{proj, team}
+	a := s.read("bob")
+	if ids(a) != "share shared ada shared runs with your group team []; share shared ada shared proj with you []" || a.Looking {
+		t.Fatalf("items: %s", ids(a))
+	}
+	if got := a.Items[0].Text; got != "Read and write · /home/ada/studio/runs · cluster-a" {
+		t.Errorf("text: %s", got)
+	}
+	want := Share{ID: "s-1", From: "ada", Label: "proj", Folder: "/home/ada/studio/proj", Site: "pw://ada/example-box", System: "example-box", Access: "read"}
+	if a.Items[1].Share == nil || *a.Items[1].Share != want {
+		t.Errorf("share: %+v", a.Items[1].Share)
+	}
+	for _, who := range []string{"ada", "eve"} {
+		if a := s.read(who); len(a.Items) != 0 {
+			t.Errorf("%s sees %s", who, ids(a))
+		}
+	}
+	// Dismissed, it stays so, also long after; with more access it is another.
+	s.ask("bob", "POST", "/api/notices/dismiss", map[string]any{"ids": []string{a.Items[1].ID}})
+	s.now = at(200 * 24 * 60)
+	s.ask("bob", "POST", "/api/notices/dismiss", map[string]any{"ids": []string{"other"}})
+	s.start()
+	if a := s.read("bob"); ids(a) != "share shared ada shared runs with your group team []" {
+		t.Errorf("dismissed: %s", ids(a))
+	}
+	bob.shares[0].Access = "write"
+	if a := s.read("bob"); !strings.Contains(ids(a), "proj") {
+		t.Errorf("more access: %s", ids(a))
+	}
+	bob.shares = nil
+	if a := s.read("bob"); len(a.Items) != 0 {
+		t.Errorf("taken back: %s", ids(a))
 	}
 }

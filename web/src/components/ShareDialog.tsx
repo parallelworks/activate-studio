@@ -66,7 +66,7 @@ export function ShareDialog({ open, onClose, library, path }: {
 
   return (
     <Modal open={open} onClose={onClose} size="lg" title={`Share ${path || 'this space'}`}
-      description="Gives an account on the cluster, a group you are in, or every account access to this folder and everything in it, as a POSIX ACL set as you. They add it under Add a library, Shared with me, and it is indexed and read as them."
+      description="Gives an account on the cluster, a group you are in, or every account access to this folder and everything in it, as a POSIX ACL set as you. Whoever it names, or is in the group, and uses this Studio gets a notice with Add to my libraries. It is also under Add a library, Shared with me, and is indexed and read as them."
       footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
       <div className="share-dialog">
         {!shares && !error && <p className="muted"><Loader inline size={16} label="Loading…" /></p>}

@@ -1,8 +1,8 @@
 // Package notices is what needs the person across the Studio: the chats
 // that wait on them or have a reply they have not seen, the Code page's
 // sessions and the standing agents that wait on them, delegated work that
-// ended, transfers that failed and library indexes that could not be
-// built. The menu's marks, the chat list's marks and the Notices page all
+// ended, transfers that failed, library indexes that could not be built
+// and folders shared with them. The menu's marks, the chat list's marks and the Notices page all
 // read one answer, GET /api/notices, which also carries the Code page's
 // listing, so none of them can disagree.
 //
@@ -23,6 +23,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/fleet"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
+	"github.com/parallelworks/activate-studio/server-go/internal/userlibs"
 )
 
 // Item is one notice.
@@ -30,11 +31,11 @@ type Item struct {
 	// ID names what happened: an approval, a reply, an ended session. One
 	// dismissed comes back only when something else happens there.
 	ID string `json:"id"`
-	// Kind is where it is from: chat, code, fleet, delegated, transfer or
-	// library.
+	// Kind is where it is from: chat, code, fleet, delegated, transfer,
+	// library or share.
 	Kind string `json:"kind"`
-	// What is waiting (it goes on when they answer), reply, note, finished
-	// or failed.
+	// What is waiting (it goes on when they answer), reply, note, finished,
+	// failed or shared.
 	What  string `json:"what"`
 	Title string `json:"title"`
 	Text  string `json:"text"`
@@ -44,8 +45,24 @@ type Item struct {
 	// about, where it is about one.
 	Conversation string `json:"conversation,omitempty"`
 	Session      string `json:"session,omitempty"`
+	// Share is the folder someone shared with them, to add as a library.
+	Share *Share `json:"share,omitempty"`
 	// Nav is the menu entries that count it.
 	Nav []string `json:"nav"`
+}
+
+// Share is a folder someone shared with the person, or with a group they
+// are in: its ID, the account it is from, the folder and its path, the
+// system it is on with its name, the group, and read or write.
+type Share struct {
+	ID     string `json:"id"`
+	From   string `json:"from"`
+	Label  string `json:"label"`
+	Folder string `json:"folder"`
+	Site   string `json:"site"`
+	System string `json:"system"`
+	Group  string `json:"group,omitempty"`
+	Access string `json:"access"`
 }
 
 // Chat is the state of one of the person's chats, for its row in the list.
@@ -77,6 +94,9 @@ type Answer struct {
 	// Transfers is the Transfers entry's summary, which the page would
 	// otherwise ask for as well; absent where it cannot be read.
 	Transfers *transfers.Summary `json:"transfers,omitempty"`
+	// Looking: whether a folder is shared with them is being asked now, for
+	// a page that reads again soon.
+	Looking bool `json:"looking,omitempty"`
 }
 
 // Sources is where the notices come from, each for the person a request
@@ -93,6 +113,8 @@ type Sources struct {
 	// TransferSeen marks a failed transfer seen, as its details do.
 	TransferSeen func(r *http.Request, id string)
 	Libraries    func(r *http.Request) []Library
+	// Shares is what is shared with them that they have not added, or nil.
+	Shares func(r *http.Request) (list []userlibs.SharedNew, looking bool)
 }
 
 // Library is a library whose index could not be built or updated.
@@ -266,6 +288,13 @@ func build(r *http.Request, src Sources, st *record, now time.Time) Answer {
 		items = append(items, Item{ID: "library:" + l.ID + ":" + sum(l.Error), Kind: "library", What: "failed", Title: first(l.Label, l.ID),
 			Text: "The index " + did + ": " + line(l.Error), Href: "#view=settings:libraries"})
 	}
+	if src.Shares != nil {
+		var list []userlibs.SharedNew
+		list, a.Looking = src.Shares(r)
+		for _, s := range list {
+			items = append(items, shared(s))
+		}
+	}
 
 	kept := map[string]bool{}
 	a.Items = []Item{}
@@ -297,6 +326,21 @@ func build(r *http.Request, src Sources, st *record, now time.Time) Answer {
 		return parse(x.At).After(parse(y.At))
 	})
 	return a
+}
+
+// shared is the notice of a folder shared with a person. One given more
+// access is another.
+func shared(s userlibs.SharedNew) Item {
+	label, with, can := first(line(s.Label), "a folder"), "you", "Read"
+	if s.Group != "" {
+		with = "your group " + s.Group
+	}
+	if s.Access == "write" {
+		can = "Read and write"
+	}
+	return Item{ID: "share:" + s.ID + ":" + s.Access, Kind: "share", What: "shared", Title: s.From + " shared " + label + " with " + with,
+		Text: can + " · " + s.Folder + " · " + s.System, At: s.At, Href: "#view=notices",
+		Share: &Share{ID: s.ID, From: s.From, Label: label, Folder: s.Folder, Site: s.Site, System: s.System, Group: s.Group, Access: s.Access}}
 }
 
 // Waits: a session as pw code lists it waits on its person (waiting.ts's
