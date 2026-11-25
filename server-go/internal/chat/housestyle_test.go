@@ -54,14 +54,14 @@ func TestWritingCheckComesBackWithAReport(t *testing.T) {
 func TestPWCodeReadsTheLibrarysConventions(t *testing.T) {
 	m, _ := pwModule(t, &fakePW{}, nil)
 	tools := m.chatTools(httptest.NewRequest(http.MethodGet, "/", nil), true)
-	if p := m.pwcodePrompt(tools); strings.Contains(p, "This library's conventions") {
+	if p := m.pwcodePrompt(tools, folderInLibrary, true); strings.Contains(p, "This library's conventions") {
 		t.Errorf("no conventions file, but: %s", p)
 	}
 	os.MkdirAll(m.A.Cfg.KBRoot, 0o755)
 	if err := os.WriteFile(filepath.Join(m.A.Cfg.KBRoot, conventionsFile), []byte("# Conventions\n"), 0o644); err != nil {
 		t.Fatalf("%q: %v", m.A.Cfg.KBRoot, err)
 	}
-	if p := m.pwcodePrompt(tools); !strings.Contains(p, "This library's conventions, "+conventionsFile+" at its top") || !strings.Contains(p, "a check of the writing") {
+	if p := m.pwcodePrompt(tools, folderInLibrary, true); !strings.Contains(p, "This library's conventions, "+conventionsFile+" at its top") || !strings.Contains(p, "a check of the writing") {
 		t.Errorf("prompt: %s", p)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -56,7 +57,15 @@ func CheckName(name string) error {
 	return nil
 }
 
+// StudioSection is the section the Studio keeps in the folders of its own
+// that its pw code chats work in: how to find files with its tools. It is
+// not one of the instructions a person applies, so it is not listed.
+const StudioSection = "studio_tools"
+
 func begin(name string) string {
+	if name == StudioSection {
+		return "<!-- ACTIVATE Studio instructions " + name + ": begin. ACTIVATE Studio writes this section when a chat of its starts work here, and keeps it up to date. Write your own text outside it. -->"
+	}
 	return "<!-- ACTIVATE Studio instructions " + name + ": begin. ACTIVATE Studio replaces this section when these instructions are applied again and removes it when they are taken off. Write your own text outside it. -->"
 }
 
@@ -255,7 +264,7 @@ func Read(f Folder) (State, error) {
 	if found {
 		st.Exists = true
 		names, err := Applied(string(b))
-		st.Instructions = names
+		st.Instructions = slices.DeleteFunc(names, func(n string) bool { return n == StudioSection })
 		if err != nil {
 			st.Problem = err.Error()
 		}
@@ -296,6 +305,10 @@ func ApplyInstructions(f Folder, name, body string) error {
 	f.Changed([]string{FileName})
 	return nil
 }
+
+// ApplyStudio writes the Studio's own section (StudioSection) into f's
+// AGENTS.md.
+func ApplyStudio(f Folder, body string) error { return ApplyInstructions(f, StudioSection, body) }
 
 // RemoveInstructions takes the named instructions out of f's AGENTS.md,
 // deleting the file when nothing else is left in it. removed is false

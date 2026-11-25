@@ -61,7 +61,7 @@ func TestTheMCPServerSaysWhichToolToUse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in, listed := mcpGuide(t, m, tc.u, tc.headers)
-			for _, s := range append([]string{"search_kb", "query_corpus", "read_kb_file", "not find, grep or ls", "before the shell", "PDFs and Office files"}, tc.has...) {
+			for _, s := range append([]string{"search_kb", "query_corpus", "read_kb_file", "not find, grep or ls", "before the shell", "PDFs and Office files", "knowledge base", "my files", "our docs", "start with search_kb or query_corpus"}, tc.has...) {
 				if !strings.Contains(in, s) {
 					t.Errorf("does not say %q: %s", s, in)
 				}
@@ -104,7 +104,8 @@ func TestTheInstructionsLeaveOutAToolTurnedOff(t *testing.T) {
 func TestThePromptAndTheInstructionsAreOneGuide(t *testing.T) {
 	m, _ := pwModule(t, &fakePW{}, nil)
 	tools := m.chatTools(httptest.NewRequest(http.MethodGet, "/", nil), true)
-	prompt := m.pwcodePrompt(tools)
+	// The instructions do not know the folder a session works in.
+	prompt := m.pwcodePrompt(tools, folderUnknown, true)
 	lines := strings.Split(m.mcpInstructions(tools, true), "\n")
 	if len(lines) < 5 || !strings.HasSuffix(lines[0], guideLead) || !strings.Contains(prompt, guideLead) {
 		t.Fatalf("%q", lines)

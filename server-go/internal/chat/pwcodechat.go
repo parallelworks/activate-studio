@@ -70,6 +70,9 @@ type pwState struct {
 	// here is, by viewer, the daemon their pw code chat reached a moment
 	// ago, for the Code page's reads.
 	here map[string]pwHereAt
+	// sections: what the Studio's section of AGENTS.md was last written as, by
+	// person, machine and folder.
+	sections map[string]string
 }
 
 // following: the Studio still follows a turn in the conversation.
@@ -552,11 +555,13 @@ func sameCluster(a, b string) bool {
 
 // pwcodePrompt is what the Studio tells each pw code chat session: that
 // the studio MCP server is the fastest way into the libraries, and which of
-// its tools to reach for, by the names pw code gives them.
-func (m *Module) pwcodePrompt(tools []ToolSpec) string {
+// its tools to reach for, by the names pw code gives them, in a session that
+// works in folder. chat: its calls are scoped to the chat's libraries.
+func (m *Module) pwcodePrompt(tools []ToolSpec, folder folderKind, chat bool) string {
 	e := m.eff()
 	t := func(n string) string { return studioToolPrefix + n }
-	g := newToolGuide(specNames(tools), t, true)
+	g := newToolGuide(specNames(tools), t, chat)
+	g.folder = folder
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are answering in %s, an ACTIVATE Studio, through the person's chat.", e.AppName)
 	b.WriteString(" The studio MCP server is this Studio's index and tools. " + guideLead)
@@ -619,7 +624,8 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 			allowed = append(allowed, studioToolPrefix+s.Name)
 		}
 	}
-	prompt := m.pwcodePrompt(tools) + m.pickedPersonaPrompt(t)
+	m.studioSection(ctx, r, t, tools)
+	prompt := m.pwcodePrompt(tools, m.folderKind(r, t), true) + m.pickedPersonaPrompt(t)
 	var tried []string
 	for _, url := range m.mcpURLs(t.site != agentsites.Local) {
 		agents := jsonv.NewObject("studio", jsonv.NewObject(
@@ -883,7 +889,10 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if told != "" {
 		link.Untold = false
 		m.Conv.SetPWCode(convID, link)
-		m.nameTold(r, c, t, content)
+		// One continued from elsewhere has its name already.
+		if link.LastMessage == "" {
+			m.nameTold(r, c, t, content)
+		}
 	}
 	turn.id = jsonv.String(jsonv.Path(sent, "turnId"))
 	m.giveWaitingName(r, c, t)
