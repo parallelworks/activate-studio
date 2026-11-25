@@ -166,7 +166,13 @@ func (m *Module) bridgeRoute(w http.ResponseWriter, r *http.Request) error {
 	out.SetValue("available", true)
 	out.SetValue("url", url)
 	out.SetValue("command", bridgeCommand(url))
-	out.SetValue("paste", bridgePaste(url))
+	var setup *bridgeOfferT
+	on := ""
+	if id := r.URL.Query().Get("conversation"); id != "" {
+		o := m.bridgeSetupOffer(r, id)
+		setup, on = &o, o.MachineID
+	}
+	out.SetValue("paste", bridgePaste(url, on))
 	out.SetValue("tools", len(tools))
 	out.SetValue("ownKey", deref(tc.UserKey) != "")
 	out.SetValue("platformTools", slices.ContainsFunc(tools, func(s ToolSpec) bool { return isPlatformTool(s.Name) }))
@@ -178,8 +184,8 @@ func (m *Module) bridgeRoute(w http.ResponseWriter, r *http.Request) error {
 	} else {
 		out.SetValue("seen", nil)
 	}
-	if id := r.URL.Query().Get("conversation"); id != "" {
-		out.SetValue("setup", m.bridgeSetupOffer(r, id))
+	if setup != nil {
+		out.SetValue("setup", setup)
 	}
 	return reqbody.OK(w, out)
 }

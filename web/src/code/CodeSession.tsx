@@ -9,7 +9,9 @@ import { PWCodeSession } from '../pwcode/PWCodeSession'
 import type { PageSession } from './api'
 import type { Starting } from './CodeStart'
 import { type Delegated, DelegatedNote } from './LinkedSession'
-import { SessionMark } from './parts'
+import { MachineIcon, SessionMark } from './parts'
+import { PWCodeToolsNote } from '../pwcode/ToolsNote'
+import { useChatLink } from '../pwcode/useChatLink'
 
 /**
  * A session open in the Code page's own pane, beside the list: what it is
@@ -29,7 +31,7 @@ function shortFolder(p: string): string {
   return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : p
 }
 
-export function CodeSession({ session, machine, pane, sessionId, first, where, username, delegated, inChat, why, url, onContinue, onClose, onMoved }: {
+export function CodeSession({ session, machine, pane, sessionId, first, where, username, delegated, inChat, elsewhere = false, why, url, onContinue, onClose, onMoved }: {
   /** Its row in the page's listing, once it has one. */
   session: PageSession | undefined
   machine: PwCodeMachine | undefined
@@ -43,6 +45,8 @@ export function CodeSession({ session, machine, pane, sessionId, first, where, u
   username: string
   delegated: Delegated | undefined
   inChat: boolean
+  /** On a machine other than the Studio's own. */
+  elsewhere?: boolean
   /** Why it cannot be continued in a chat; empty when it can. */
   why: string
   url: string
@@ -65,7 +69,7 @@ export function CodeSession({ session, machine, pane, sessionId, first, where, u
         title={session ? sessionLabel(session, t) : firstLine(first) || 'New session'}
         mark={session && <SessionMark session={session} machine={machine} size="row" />}
         state={state && <span className={statusTextClass(state.tone)}>{state.stateText}</span>}
-        place={session ? { machine: machine?.name ?? '', folder: session.workspace ?? '' } : where ?? null}
+        place={session ? { machine: machine?.name ?? '', folder: session.workspace ?? '', on: machine } : where ?? null}
         onClose={onClose}
       >
         <Button variant="secondary" size="sm" data-testid="code-continue" onClick={onContinue} disabled={!!why} title={why || undefined}>
@@ -77,10 +81,17 @@ export function CodeSession({ session, machine, pane, sessionId, first, where, u
       {delegated && <div className="code-session-note"><DelegatedNote d={delegated} /></div>}
       <SWRConfig value={paneCache}>
         <PWCodeSession key={`${pane.machine}/${sessionId}`} conversationId={pane.conversationId} machine={pane.machine} sessionId={sessionId}
-          username={username} first={first} onMoved={onMoved} />
+          username={username} first={first} onMoved={onMoved}
+          notes={elsewhere && pane.conversationId ? <PaneTools conversationId={pane.conversationId} /> : undefined} />
       </SWRConfig>
     </section>
   )
+}
+
+/** What the chat that holds the session says of the Studio's tools in it. */
+function PaneTools({ conversationId }: { conversationId: string }) {
+  const { link } = useChatLink(conversationId)
+  return link?.relay ? <PWCodeToolsNote conversationId={conversationId} link={link} /> : null
 }
 
 function firstLine(s: string | undefined): string {
@@ -91,7 +102,7 @@ function SessionHead({ title, mark, state, place, onClose, children }: {
   title: string
   mark?: ReactNode
   state?: ReactNode
-  place: { machine: string; folder: string } | null
+  place: { machine: string; folder: string; on?: PwCodeMachine } | null
   onClose?: () => void
   children?: ReactNode
 }) {
@@ -104,7 +115,7 @@ function SessionHead({ title, mark, state, place, onClose, children }: {
         </div>
         {state}
         {place && (place.machine || place.folder) && (
-          <span className="code-mono muted code-session-place" title={`${place.machine}:${place.folder}`}>{place.machine}{place.folder ? `:${shortFolder(place.folder)}` : ''}</span>
+          <span className="code-mono muted code-session-place" title={`${place.machine}:${place.folder}`}>{place.on && <MachineIcon machine={place.on} />}{place.machine}{place.folder ? `:${shortFolder(place.folder)}` : ''}</span>
         )}
       </div>
       <div className="code-session-actions">
@@ -130,7 +141,7 @@ export function StartingSession({ starting }: { starting: Starting }) {
         {starting.prompt.trim() && <div className="code-starting-said">{starting.prompt}</div>}
         <p className="code-starting-step" role="status">
           <Loader inline decorative size={13} />
-          Starting on {starting.machine || 'its machine'}{starting.folder ? <>, in <span className="code-mono">{starting.folder}</span></> : null}
+          {starting.tools ? "Adding the Studio's tools, then starting on " : 'Starting on '}{starting.machine || 'its machine'}{starting.folder ? <>, in <span className="code-mono">{starting.folder}</span></> : null}
         </p>
         {waited >= 3 && (
           <p className="muted code-starting-wait">

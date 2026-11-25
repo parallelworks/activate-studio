@@ -43,6 +43,9 @@ type startPick struct {
 	machine, folder, mode, model string
 	allocation                   *string
 	effort, account, prompt      string
+	// tools is whether the person chose to add the Studio's tools on the
+	// machine with this start, nil where they were not asked.
+	tools *bool
 }
 
 // startFor is where the session this message makes starts: what the
@@ -56,7 +59,7 @@ func (m *Module) startFor(r *http.Request, body *streamBody, c *conversations.Co
 		}
 		return startPick{}, nil
 	}
-	p := startPick{machine: strings.TrimSpace(deref(body.PWCodeMachine)), folder: strings.TrimSpace(deref(body.PWCodeFolder)), mode: strings.TrimSpace(deref(body.PWCodeMode))}
+	p := startPick{machine: strings.TrimSpace(deref(body.PWCodeMachine)), folder: strings.TrimSpace(deref(body.PWCodeFolder)), mode: strings.TrimSpace(deref(body.PWCodeMode)), tools: body.PWCodeTools}
 	if p.machine == directMachine {
 		p.machine = ""
 	}
@@ -142,14 +145,19 @@ func (m *Module) startElsewhere(ctx context.Context, r *http.Request, body *stre
 }
 
 // startRelayed starts a session on mach through ACTIVATE, as the viewer.
-// The platform's create takes no tools or instructions, so a machine whose
-// pw code has the Studio's tools starts with them, one that attaches
-// servers is given them before its first turn, and its first message
-// brings the Studio's instructions (relayInstructions); on any other the
-// session starts without them, which the composer said.
+// The platform's create takes no tools or instructions on the releases
+// there are, so the Studio's tools come one of three ways: from pw code's
+// settings on the machine, which the Studio adds them to first where the
+// person chose that; with the create request, or attached before the first
+// turn, where the machine's pw code says it takes them. With them, the
+// first message brings the Studio's instructions (relayInstructions).
+// Without them the session starts all the same, and its chat says so.
 func (m *Module) startRelayed(ctx context.Context, r *http.Request, client *pwcode.RelayClient, mach *jsonv.Object, p startPick, chatModel string) (*conversations.PWCodeLink, error) {
 	name := firstNonEmpty(jsonv.String(jsonv.Path(mach, "name")), p.machine)
-	has, attach, toolsURL := m.machineTools(r, mach)
+	has, give, toolsURL, toolsWhy := m.machineTools(r, mach, p.tools)
+	attach := give == "attach"
+	// Given with the create request, it has them from its first turn.
+	has = has || give == "create"
 	req := jsonv.NewObject("workspace", p.folder, "permissionMode", p.mode)
 	for _, f := range [][2]string{{"model", p.model}, {"effort", p.effort}, {"claudeAccount", p.account}, {"allocation", deref(p.allocation)}} {
 		if f[1] != "" {
@@ -163,7 +171,31 @@ func (m *Module) startRelayed(ctx context.Context, r *http.Request, client *pwco
 		}
 		req.Set("prompt", text)
 	}
+	if give == "create" {
+		req.Set("mcpServers", []any{jsonv.NewObject("name", studioMCPName, "url", toolsURL, "platformAuth", true)})
+		allows := []any{}
+		for _, rule := range machineRules(m.bridgeAllows(r)) {
+			allows = append(allows, rule)
+		}
+		req.Set("allowedTools", allows)
+	}
 	s, err := pwcode.CreateSession(auth.ContextWithUser(ctx, user(r)), client, req)
+	// An ACTIVATE that takes the server but not the rules, or neither after
+	// all, refuses the field: the session starts with what it does take.
+	for _, field := range []string{"allowedTools", "mcpServers"} {
+		var refused *pwcode.DaemonError
+		if give != "create" || !errors.As(err, &refused) || refused.Status != http.StatusUnprocessableEntity {
+			break
+		}
+		req.Delete(field)
+		if field == "mcpServers" {
+			has, toolsWhy = false, "ACTIVATE did not take them as the session started"
+			if p.prompt != "" && !attach {
+				req.Set("prompt", p.prompt)
+			}
+		}
+		s, err = pwcode.CreateSession(auth.ContextWithUser(ctx, user(r)), client, req)
+	}
 	if err != nil {
 		code := 502
 		var de *pwcode.DaemonError
@@ -182,7 +214,7 @@ func (m *Module) startRelayed(ctx context.Context, r *http.Request, client *pwco
 	// A model the person's connection does not offer is moved off, as a
 	// session made here is.
 	m.pwcodeModel(ctx, r, &pwTarget{client: client, picked: p.model, chatModel: chatModel}, link)
-	link.Continued = true
+	link.Continued, link.ToolsError = true, toolsWhy
 	if attach {
 		key, err := codesessions.ViewerKey(r, m.pf)
 		if err == nil {
@@ -204,25 +236,39 @@ func (m *Module) startRelayed(ctx context.Context, r *http.Request, client *pwco
 			return nil, pwErr(502, "The session started on "+name+", but it did not take the message: "+apiMessage(err))
 		}
 	}
+	if !has && give == "" && toolsURL != "" && m.bridgePrefs().get(userID(r), p.machine).URL == toolsURL {
+		// It reached them as it started, through an entry the person added.
+		has, link.ToolsError = true, ""
+	}
 	link.HasTools, link.Untold = has, has && p.prompt == ""
 	m.A.Log.Info("pw code chat: started a session on another machine through the platform", "user", userID(r), "machine", p.machine, "session", id, "mode", p.mode, "tools", has)
 	return link, nil
 }
 
-// machineTools is whether pw code on mach has this Studio's tools for the
-// viewer, as the Studio last set it up there, or, failing that, whether a
-// session there can be given them as it starts, and the address to give.
-func (m *Module) machineTools(r *http.Request, mach *jsonv.Object) (has, attach bool, toolsURL string) {
-	toolsURL, why := m.bridgeReach(r)
+// machineTools is how a session about to start on mach gets this Studio's
+// tools for the viewer: pw code there has them (has), as the Studio last set
+// it up or sets it up now (bridgeAtStart), or the session is given them, with
+// its create request ("create") or attached as it starts ("attach"), at
+// toolsURL. why is what kept them from being added there.
+func (m *Module) machineTools(r *http.Request, mach *jsonv.Object, chose *bool) (has bool, give, toolsURL, why string) {
+	toolsURL, why = m.bridgeReach(r)
 	if why != "" {
-		return false, false, ""
+		return false, "", "", ""
 	}
 	b := machOf(mach)
 	p := m.bridgePrefs().get(userID(r), b.ID)
-	if p.URL == toolsURL {
-		return true, false, toolsURL
+	switch {
+	case p.URL == toolsURL:
+		return true, "", toolsURL, ""
+	case !b.gives():
+		has, why = m.bridgeAtStart(r, b, toolsURL, chose)
+		return has, "", toolsURL, why
+	case p.Declined:
+		return false, "", toolsURL, ""
+	case b.Create:
+		return false, "create", toolsURL, ""
 	}
-	return false, b.Attach && !p.Declined, toolsURL
+	return false, "attach", toolsURL, ""
 }
 
 // relayInstructionsHead opens the Studio's instructions after what the
@@ -248,6 +294,11 @@ func (m *Module) startFromCode(r *http.Request, machine string, mach, body *json
 	p := startPick{machine: machine, folder: path.Clean(str("workspace")), mode: str("permissionMode"), model: str("model"), effort: str("effort"), account: str("claudeAccount"), prompt: str("prompt")}
 	if a := str("allocation"); a != "" {
 		p.allocation = &a
+	}
+	if v, ok := jsonv.Path(body, codesessions.StartTools).(bool); ok {
+		p.tools = &v
+		body = body.Clone()
+		body.Delete(codesessions.StartTools)
 	}
 	here, hereErr := m.pwcodeHereCached(ctx, r)
 	own := hereErr == nil && (mach == nil || m.startIsOwn(mach, here))
@@ -429,7 +480,7 @@ func (m *Module) startListing(w http.ResponseWriter, r *http.Request) error {
 	for _, mach := range ms {
 		if m.startIsOwn(mach, here) {
 			ownID = jsonv.String(jsonv.Path(mach, "id"))
-			for _, k := range []string{"kind", "imageUrl"} {
+			for _, k := range []string{"kind", "imageUrl", "csp", "schedulerType", "os"} {
 				if v := jsonv.Path(mach, k); v != nil {
 					own.Set(k, v)
 				}

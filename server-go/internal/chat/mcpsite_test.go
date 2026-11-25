@@ -134,7 +134,7 @@ func TestThePasteCommandAddsTheSameEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	url := "https://platform.example/me/session/ada/studio/api/mcp"
-	cmd := exec.Command("sh", "-c", bridgePaste(url))
+	cmd := exec.Command("sh", "-c", bridgePaste(url, ""))
 	cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin", "HOME=" + dir}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
@@ -158,7 +158,7 @@ func TestThePasteCommandAddsTheSameEntry(t *testing.T) {
 	if at, ours, current := e.target(); at != url || !ours || !current {
 		t.Errorf("entry %v %v %v", at, ours, current)
 	}
-	if strings.Contains(bridgePaste(url), bridgeKeyHole) {
+	if strings.Contains(bridgePaste(url, ""), bridgeKeyHole) {
 		t.Error("the paste command asks for a key")
 	}
 }

@@ -17,6 +17,8 @@ export interface NewChatStart {
   folder?: string
   /** The permission mode, on another machine. */
   mode?: string
+  /** Whether to add the Studio's tools there first, where it was asked. */
+  tools?: boolean
 }
 
 const starts = new Map<string, NewChatStart>()
@@ -37,14 +39,14 @@ export function setStart(conversationId: string | null | undefined, next: NewCha
 
 /** What a message to the Studio carries for the session it makes: the
  *  choice of a chat with no conversation yet moves to the one it gets. */
-export function firstMessageStart(conversationId: string | null | undefined): { pwcodeMachine?: string; pwcodeFolder?: string; pwcodeMode?: string } {
+export function firstMessageStart(conversationId: string | null | undefined): { pwcodeMachine?: string; pwcodeFolder?: string; pwcodeMode?: string; pwcodeTools?: boolean } {
   const s = startOf(conversationId)
   if (conversationId && !starts.has(conversationId) && starts.has(NEW_CHAT)) {
     starts.set(conversationId, s)
     starts.delete(NEW_CHAT)
   }
   return {
-    ...(s.machine ? { pwcodeMachine: s.machine.id, ...(s.mode ? { pwcodeMode: s.mode } : {}) } : {}),
+    ...(s.machine ? { pwcodeMachine: s.machine.id, ...(s.mode ? { pwcodeMode: s.mode } : {}), ...(s.tools !== undefined ? { pwcodeTools: s.tools } : {}) } : {}),
     ...(s.folder ? { pwcodeFolder: s.folder } : {}),
   }
 }

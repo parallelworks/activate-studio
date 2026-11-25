@@ -1,15 +1,19 @@
 package chat
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
+	remotelib "github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 const testToolsURL = "https://platform.example/me/session/ada/studio/api/mcp"
@@ -200,5 +204,120 @@ func TestARefusedCodePageStartMakesNoChat(t *testing.T) {
 	_, _, err := codeStart(t, m, "m2", jsonv.NewObject("workspace", "/nowhere", "permissionMode", "read-only"))
 	if err == nil || !strings.Contains(apiMessage(err), "that folder is not there") || len(m.Conv.List()) != 0 {
 		t.Fatalf("%v, %d chats", err, len(m.Conv.List()))
+	}
+}
+
+// A start the person ticked adds the tools on its machine first, so the
+// session has them; unticked, or where they cannot be added, it starts
+// without them and its chat says why.
+func TestACodePageStartAddsTheToolsFirst(t *testing.T) {
+	for what, c := range map[string]struct {
+		tools any
+		who   string
+		adds  int
+		has   bool
+		says  string
+	}{
+		"ticked":                     {true, "me", 1, true, ""},
+		"unticked":                   {false, "me", 0, false, ""},
+		"not asked":                  {nil, "me", 0, false, ""},
+		"pw there is someone else's": {true, "ada", 0, false, "signed in as ada"},
+	} {
+		local, remote := &fakePW{script: helloTurn}, &fakePW{script: helloTurn}
+		m, _, plat, _ := relayModule(t, local, remote)
+		canStart(plat, map[string]any{"kind": "existing", "owner": "me", "name": "other-box"})
+		toolsReach(m, nil)
+		me := &auth.User{ID: "me", Username: "me", Source: "proxy"}
+		f := &fakeMachine{who: c.who, curl: true, m: m, as: me}
+		m.bridgeRunFn = func(ctx context.Context, site, key string, argv []string, d time.Duration) (rr remotelib.Result, err error) {
+			if len(remote.created) != 0 {
+				t.Errorf("%s: ran on the machine after the session was made", what)
+			}
+			if len(argv) > 3 && argv[2] == bridgeTry {
+				m.bridgeMu.Lock()
+				m.bridgeVisits = map[string]bridgeVisit{"me": {At: time.Now()}}
+				m.bridgeMu.Unlock()
+				return remotelib.Result{Stdout: `{"jsonrpc":"2.0","id":1,"result":{"tools":[{}]}}`}, nil
+			}
+			return f.run(ctx, site, key, argv, d)
+		}
+		body := jsonv.NewObject("workspace", "/home/me/solver", "permissionMode", "read-only", "prompt", "hello")
+		if c.tools != nil {
+			body.Set(codesessions.StartTools, c.tools)
+		}
+		viewerKeys = map[string]string{"me": "k"}
+		r := asViewer(httptest.NewRequest("POST", "/api/code-page/machines/m2/sessions", nil), me)
+		mach, err := codesessions.PlatformMachine(r, m.pf, "m2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, ok, err := m.startFromCode(r, "m2", mach, body)
+		if err != nil || !ok || len(remote.created) != 1 {
+			t.Fatalf("%s: %v %v %v", what, ok, err, remote.created)
+		}
+		if _, sent := remote.created[0][codesessions.StartTools]; sent {
+			t.Errorf("%s: sent to ACTIVATE: %v", what, remote.created[0])
+		}
+		l := chatOf(m, "s1").PWCode
+		prompt, _ := remote.created[0]["prompt"].(string)
+		if f.adds != c.adds || l.HasTools != c.has || strings.Contains(prompt, relayInstructionsHead) != c.has || !strings.Contains(l.ToolsError, c.says) || (c.says == "") != (l.ToolsError == "") {
+			t.Errorf("%s: %d adds, %+v, prompt %q", what, f.adds, l, prompt)
+		}
+		waitFor(t, func() bool { return !m.following(chatOf(m, "s1").ID) })
+	}
+}
+
+// Where a machine's pw code takes MCP servers with a new session, the
+// Studio's go with it, with the tools that only read allowed; a platform
+// that refuses the rules, or the server too, starts it without those.
+func TestASessionElsewhereIsMadeWithTheTools(t *testing.T) {
+	for refuses, want := range map[string]struct {
+		creates int
+		has     bool
+	}{"": {1, true}, "allowedTools": {2, true}, "mcpServers": {3, false}} {
+		local, remote := &fakePW{script: helloTurn}, &fakePW{script: helloTurn}
+		m, _, plat, _ := relayModule(t, local, remote)
+		canStart(plat, map[string]any{"sessionMCPCreate": true, "sessionMCPAttach": true})
+		attached := toolsReach(m, nil)
+		var sent []map[string]any
+		if refuses != "" {
+			remote.routes = map[string]http.HandlerFunc{"POST /v1/sessions": func(w http.ResponseWriter, r *http.Request) {
+				var b map[string]any
+				json.NewDecoder(r.Body).Decode(&b)
+				sent = append(sent, b)
+				if b[refuses] != nil {
+					w.WriteHeader(422)
+					w.Write([]byte(`{"detail":"unexpected property"}`))
+					return
+				}
+				remote.mu.Lock()
+				remote.runTurn(b["prompt"].(string))
+				remote.mu.Unlock()
+				w.Write([]byte(`{"id":"s1"}`))
+			}}
+		}
+		_, ok, err := codeStart(t, m, "m2", jsonv.NewObject("workspace", "/home/me/solver", "permissionMode", "read-only", "prompt", "hello"))
+		if err != nil || !ok || len(*attached) != 0 {
+			t.Fatalf("%v %v, attached %v", ok, err, *attached)
+		}
+		if refuses == "" {
+			sent = remote.created
+		}
+		servers, _ := sent[0]["mcpServers"].([]any)
+		if len(servers) != 1 || servers[0].(map[string]any)["url"] != testToolsURL || servers[0].(map[string]any)["platformAuth"] != true {
+			t.Fatalf("sent %v", sent[0])
+		}
+		for _, a := range sent[0]["allowedTools"].([]any) {
+			if !chatReadTools[strings.TrimPrefix(a.(string), studioToolPrefix)] {
+				t.Errorf("allows %v", a)
+			}
+		}
+		if last, _ := sent[len(sent)-1]["prompt"].(string); strings.Contains(last, relayInstructionsHead) != want.has || !strings.HasPrefix(last, "hello") {
+			t.Errorf("refuses %q: prompt %q", refuses, last)
+		}
+		l := chatOf(m, "s1").PWCode
+		if l.HasTools != want.has || (l.ToolsError == "") != want.has || len(sent) != want.creates {
+			t.Errorf("refuses %q: %+v, %d creates", refuses, l, len(sent))
+		}
 	}
 }

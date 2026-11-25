@@ -43,9 +43,11 @@ import {
 import { ChevronDownIcon, ChevronRightIcon } from '@parallelworks/ui/icons'
 import { useTranslations } from 'use-intl'
 import { describeError } from '../pwcode/PWCodeSession'
-import { type PageSession, pwCodePage } from './api'
+import { type PageSession, pwCodePage, setToolsChoice } from './api'
 import { AgentModelControls, useLastAgentModel } from './AgentModelControls'
 import { DirectoryPicker } from './DirectoryPicker'
+import { addsTools, asksTools, type MachineToolsControl, ToolsChoice, ToolsMark, ToolsMarkButton } from './machineTools'
+import type { MachineLooks } from './machineIcon'
 import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useStartAccount, useStartEffort, useStartMachine, useStartMode } from './parts'
 
 /**
@@ -56,20 +58,24 @@ import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useStartAc
  * session started here opens in the page's pane.
  */
 
-export type Machine = PwCodeStartMachine & PwCodeMachine
+export type Machine = PwCodeStartMachine & PwCodeMachine & MachineLooks
 
 /** A session being started: where, and its first message. */
-export interface Starting { machine: string; folder: string; prompt: string }
+export interface Starting {
+  machine: string; folder: string; prompt: string
+  /** Its icon. */
+  on?: Machine
+  /** The Studio's tools are added there first. */
+  tools?: boolean
+}
 
-export function CodeStart({ onOpen, onStarting, onStarted, onMachine, onMode, top }: {
+export function CodeStart({ onOpen, onStarting, onStarted, tools, top }: {
   onOpen: (s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => void
   /** A start was sent (what), or ended without a session (null). */
   onStarting?: (s: Starting | null) => void
   onStarted: (machine: string, id: string) => void
-  /** The machine chosen to start a session on, as it changes. */
-  onMachine?: (id: string | undefined) => void
-  /** The permission mode it would start in, as it changes. */
-  onMode?: (mode: string) => void
+  /** The Studio's tools on the machines. */
+  tools: MachineToolsControl
   /** Above the composer: the session a link named. */
   top?: (answer: PwCodeStartScreen['answer']) => ReactNode
 }) {
@@ -79,11 +85,8 @@ export function CodeStart({ onOpen, onStarting, onStarted, onMachine, onMode, to
   const machines = useMemo(() => (data?.machines ?? []) as Machine[], [data])
   const sessions = useMemo(() => data?.sessions ?? [], [data])
   const location = useStartLocation(machines, sessions, useStartMachine())
-  const chosen = location.machine?.id
-  useEffect(() => { onMachine?.(chosen) }, [onMachine, chosen])
   const screen = useStartScreen(pwCodePage, { location, describeError })
   const startMode = useStartPermissionMode(useStartMode(), location.machine)
-  useEffect(() => { onMode?.(startMode.mode) }, [onMode, startMode.mode])
   const machineById = useMemo(() => machinesById(machines), [machines])
   const triage = useMemo(() => triageSessions(sessions, machineById), [sessions, machineById])
   const shortlist = startShortlist(triage)
@@ -100,7 +103,7 @@ export function CodeStart({ onOpen, onStarting, onStarted, onMachine, onMode, to
     <ChatStage heading={t('start.heading')} subheading={t('start.subheading')}>
       {top && <div className="code-start-top">{top(screen.answer)}</div>}
       {screen.showComposer
-        ? <Composer location={location} finding={screen.loading} permission={startMode} onStarting={onStarting} onStarted={onStarted} t={t} />
+        ? <Composer location={location} finding={screen.loading} permission={startMode} tools={tools} onStarting={onStarting} onStarted={onStarted} t={t} />
         : <p data-testid="agents-start-none" className="code-start-none">{t('start.startHereNone')}</p>}
       <div className="code-start-below">
         {screen.loading && <ShortlistLoading t={t} />}
@@ -119,7 +122,7 @@ export function CodeStart({ onOpen, onStarting, onStarted, onMachine, onMode, to
                     <StageListRowContent
                       leading={mark && <SessionMark session={s} machine={machine} size="row" label={mark.label} />}
                       label={sessionLabel(s, t)}
-                      meta={<>{multiMachine && machine && <span className="code-mono">{machine.name}</span>}<span>{sessionClock(s, compact)}</span></>}
+                      meta={<>{multiMachine && machine && <MachineName machine={machine} />}<span>{sessionClock(s, compact)}</span></>}
                     />
                   </button>
                 </li>
@@ -160,7 +163,7 @@ function NeedsYou({ sessions, machineById, showMachine, compact, onAnswer, onOpe
                 <button type="button" className="code-needs-head" onClick={() => onOpen(s)}>
                   <StatusDot variant="warning" size={6} pulse />
                   <span className="code-needs-title">{sessionLabel(s, t)}</span>
-                  {showMachine && machine && <span className="code-mono muted">{machine.name}</span>}
+                  {showMachine && machine && <MachineName machine={machine} muted />}
                   <span className="code-needs-when">{t('dash.waitingFor', { when: compact(waitingSince(s)) })}</span>
                   <ChevronRightIcon className="code-needs-chevron" />
                 </button>
@@ -190,17 +193,35 @@ function ShortlistLoading({ t }: { t: Translate }) {
   )
 }
 
-export function machineMenuEntries(location: PwCodeStartLocation<Machine>, t: Translate): MenuEntry[] {
+/** A machine's name after its icon. */
+function MachineName({ machine, muted = false }: { machine: PwCodeMachine; muted?: boolean }) {
+  return <span className={`code-machine-name code-mono${muted ? ' muted' : ''}`}><MachineIcon machine={machine} />{machine.name}</span>
+}
+
+/** The machine menu: each with its icon and the mark of the Studio's tools,
+ *  then what can be done with them on the one chosen. */
+export function machineMenuEntries(location: PwCodeStartLocation<Machine>, t: Translate, tools: MachineToolsControl): MenuEntry[] {
   const menu = machineMenu(location, t)
   const byId = machinesById([...location.startable, ...location.down])
   const icon = (id: string) => {
     const machine = byId.get(id)
     return machine && <MachineIcon machine={machine} />
   }
-  const up = menu.startable.map(m => ({ label: m.label, description: m.description, icon: icon(m.id), checked: m.checked, onClick: () => menu.pick(m.id) }))
+  const up = menu.startable.map(m => {
+    const v = tools.view(byId.get(m.id))
+    return {
+      label: m.label,
+      // The mark is only seen: the words are the row's.
+      description: v ? `${m.description}, ${v.on ? 'with' : 'without'} this Studio's tools` : m.description,
+      icon: icon(m.id), checked: m.checked, onClick: () => menu.pick(m.id),
+      ...(v ? { badge: <ToolsMark on={v.on} /> } : {}),
+    }
+  })
+  const own = tools.entries(location.machine)
   const unavailable = menu.down.map(m => ({ label: m.label, description: m.description, icon: icon(m.id), disabled: true, onClick: () => menu.pick(m.id) }))
-  if (menu.downLabel === undefined) return [...up, ...unavailable]
-  return [...up, menuDivider, { label: menu.downLabel, items: unavailable }]
+  const rest = own.length ? [menuDivider, ...own] : []
+  if (menu.downLabel === undefined) return [...up, ...unavailable, ...rest]
+  return [...up, menuDivider, { label: menu.downLabel, items: unavailable }, ...rest]
 }
 
 export function MachineChip({ finding, machine, items, t }: { finding: boolean; machine: Machine | undefined; items: MenuEntry[]; t: Translate }) {
@@ -224,10 +245,11 @@ export function MachineChip({ finding, machine, items, t }: { finding: boolean; 
   )
 }
 
-function Composer({ location, finding, permission, onStarting, onStarted, t }: {
+function Composer({ location, finding, permission, tools, onStarting, onStarted, t }: {
   location: PwCodeStartLocation<Machine>
   finding: boolean
   permission: PwCodeStartPermission
+  tools: MachineToolsControl
   onStarting?: (s: Starting | null) => void
   onStarted: (machine: string, id: string) => void
   t: Translate
@@ -255,9 +277,19 @@ function Composer({ location, finding, permission, onStarting, onStarted, t }: {
     account,
     onStarted,
   })
+  const toolsThere = tools.view(machine)
+  const asks = asksTools(toolsThere, machine)
+  const [unticked, setUnticked] = useState<Record<string, boolean>>({})
+  const ticked = !!machine && !unticked[machine.id]
+  useEffect(() => {
+    const id = machine?.id
+    if (!id) return
+    setToolsChoice(id, asks ? ticked : undefined)
+    return () => setToolsChoice(id, undefined)
+  }, [machine?.id, asks, ticked])
   const { disabled, canStart } = startControls(machine, starter.starting)
   const claudeReady = !!machine?.claudeCodeAllowed && !!machine?.claudeInstalled
-  return (
+  return <>
     <ChatInput
       allowEmpty
       attachments={false}
@@ -266,9 +298,13 @@ function Composer({ location, finding, permission, onStarting, onStarted, t }: {
       onSend={async prompt => {
         // The page says where it is starting from the first moment; a start
         // that fails comes back here, with the message and the reason.
-        onStarting?.({ machine: machine?.name ?? '', folder: directory, prompt })
+        onStarting?.({ machine: machine?.name ?? '', folder: directory, prompt, on: machine, tools: asks ? ticked : addsTools(toolsThere) })
         let took: Awaited<ReturnType<typeof starter.start>> | undefined
-        try { took = await starter.start(prompt) } finally { if (!took) onStarting?.(null) }
+        try { took = await starter.start(prompt) } finally {
+          if (!took) onStarting?.(null)
+          // What the start kept or did of the machine's tools.
+          void tools.reload()
+        }
         return took
       }}
       disabled={!starter.ready}
@@ -281,7 +317,8 @@ function Composer({ location, finding, permission, onStarting, onStarted, t }: {
       )}
       context={
         <>
-          <MachineChip finding={finding} machine={machine} items={machineMenuEntries(location, t)} t={t} />
+          <MachineChip finding={finding} machine={machine} items={machineMenuEntries(location, t, tools)} t={t} />
+          {machine && <ToolsMarkButton machine={machine} control={tools} mode={permission.mode} />}
           {machine && <DirectoryPicker key={machine.id} machine={machine} directory={directory} recents={directories} onPick={location.pickDirectory} />}
         </>
       }
@@ -302,5 +339,8 @@ function Composer({ location, finding, permission, onStarting, onStarted, t }: {
         />
       }
     />
-  )
+    {asks && toolsThere?.tools && machine && (
+      <ToolsChoice tools={toolsThere.tools} checked={ticked} disabled={starter.starting} onChange={on => setUnticked(u => ({ ...u, [machine.id]: !on }))} />
+    )}
+  </>
 }

@@ -147,6 +147,7 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 	case "initialize":
 		if person {
 			m.bridgeSeen(r, method)
+			m.bridgeMachineSeen(r)
 		}
 		pv := mcpProtocolVersion
 		if s, ok := jsonobj.String(param("protocolVersion")); ok {

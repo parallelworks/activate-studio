@@ -6,7 +6,7 @@ import { PermissionPicker, useChat } from '@parallelworks/ui/ai'
 import { useTranslations } from 'use-intl'
 import { type Machine, MachineChip, machineMenuEntries } from '../code/CodeStart'
 import { DirectoryPicker } from '../code/DirectoryPicker'
-import { MachineToolsOffer } from '../code/MachineToolsOffer'
+import { asksTools, ToolsChoice, ToolsMarkButton, useMachineTools } from '../code/machineTools'
 import { useStartMode } from '../code/parts'
 import type { PageSession } from '../code/api'
 import { VIEWER_CACHES_CLEARED } from '../viewerCache'
@@ -36,6 +36,8 @@ interface StartListing {
   machine?: string
   folder?: string
 }
+
+const isOwn = (m: { id: string }) => m.id === STUDIO_MACHINE
 
 const REREAD_MS = 5_000
 
@@ -89,6 +91,10 @@ export function NewChatTarget({ conversationId, persona }: { conversationId: str
   const machine = at.machine
   const other = !!machine && machine.id !== STUDIO_MACHINE
   const permission = useStartPermissionMode(useStartMode(), other ? machine : undefined)
+  const tools = useMachineTools(isOwn)
+  const toolsThere = tools.view(machine)
+  const asks = asksTools(toolsThere, machine)
+  const ticked = start.tools ?? true
 
   // The machine chosen is no longer there to start on: back to the default,
   // as the row shows it.
@@ -115,8 +121,8 @@ export function NewChatTarget({ conversationId, persona }: { conversationId: str
     : start.folder || listing?.folder || ''
   // What the row shows on another machine is what the message carries.
   useEffect(() => {
-    if (other && start.machine?.id === machine.id) setStart(conversationId, { machine: start.machine, ...(folder ? { folder } : {}), mode: permission.mode })
-  }, [other, machine, start.machine, folder, permission.mode, conversationId])
+    if (other && start.machine?.id === machine.id) setStart(conversationId, { machine: start.machine, ...(folder ? { folder } : {}), mode: permission.mode, ...(asks ? { tools: ticked } : {}) })
+  }, [other, machine, start.machine, folder, permission.mode, asks, ticked, conversationId])
 
   if (!listing?.available) return null
   const location = { ...at, pickMachine, directory: folder }
@@ -131,10 +137,12 @@ export function NewChatTarget({ conversationId, persona }: { conversationId: str
           The {persona} persona works only on this Studio's own pw code machine: a session on {machine.name} has no way to take it from the Studio. Choose Default under Persona, or the Studio's machine.
         </p>
       )}
-      {other && <div className="pwcode-start-tools"><MachineToolsOffer key={machine.id} machines={machines} selected={machine.id} always mode={permission.mode} /></div>}
-      <MachineChip finding={false} machine={machine} items={machineMenuEntries(location, t)} t={t} />
+      <MachineChip finding={false} machine={machine} items={machineMenuEntries(location, t, tools)} t={t} />
+      {machine && <ToolsMarkButton machine={machine} control={tools} mode={permission.mode} />}
       {machine && <DirectoryPicker key={machine.id} api={startApi} machine={machine} directory={folder} recents={at.directories} onPick={pickFolder} />}
       {other && <PermissionPicker mode={permission.mode} ceiling={permission.ceiling} accepted={permission.accepted} onPick={permission.pick} />}
+      {asks && toolsThere?.tools && <ToolsChoice tools={toolsThere.tools} checked={ticked} disabled={isStreaming} onChange={on => setStart(conversationId, { ...start, tools: on })} />}
+      {tools.dialog}
     </fieldset>
   )
 }

@@ -42,6 +42,8 @@ export function continuable(s: SessionRef, machines: readonly MachineRef[], here
   const m = machines.find(x => x.id === s.machineId)
   if (m && sameMachine(m, here)) return { ok: true, why: '' }
   if (here.relay) return { ok: true, why: '', relay: true }
+  // This computer's own list, with no platform, has no ACTIVATE to open it in.
+  if (s.machineId === 'local') return { ok: false, why: `${here.relayReason || here.reason || 'pw code chat is not offered to you on this Studio.'} You can still answer what it waits on here, and open it in a terminal.` }
   if (!here.available && !here.relayReason) return { ok: false, why: `${here.reason || 'pw code chat is not offered to you on this Studio.'} ${STILL_HERE}` }
   const why = here.relayReason || here.reason
   const name = m?.name ?? s.machineId

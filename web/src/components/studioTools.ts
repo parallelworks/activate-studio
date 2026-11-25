@@ -5,8 +5,9 @@
 /** What the Studio says of its tools on one machine for the viewer. */
 export interface MachineTools {
   /** set: pw code there has this Studio; declined: they said not to add it
-   *  there; offer: it can be added; unavailable: the Studio cannot, why says. */
-  state: 'set' | 'declined' | 'offer' | 'unavailable'
+   *  there; offer: it can be added; command: the Studio does not reach it, and
+   *  the person adds it with command; unavailable: neither, why says. */
+  state: 'set' | 'declined' | 'offer' | 'command' | 'unavailable'
   machine: string
   machineId: string
   why?: string
@@ -15,6 +16,13 @@ export interface MachineTools {
   attach?: boolean
   /** The tools Add also sets pw code there to run without asking. */
   allows?: string[]
+  /** They chose to add them there, so a session started there adds them. */
+  chosen?: boolean
+  /** What kept them from being added as a session started there. */
+  held?: string
+  /** What adds them in a terminal there, and what takes them out. */
+  command?: string
+  uncommand?: string
 }
 
 /** POST /api/mcp/bridge/setup's answer. */
@@ -56,6 +64,18 @@ export async function removeTools(body: { conversationId?: string; machineId?: s
   return { removed: !!out.removed, rules: out.rules ?? 0 }
 }
 
+/** What a removal did. */
+export function removedSaid(r: { removed: boolean; rules: number }, where: string): string {
+  return r.removed || r.rules
+    ? `This Studio's tools are out of pw code on ${where}, and so is what it allowed there. A session already open keeps the tools it started with.`
+    : `pw code on ${where} had none of this Studio's tools.`
+}
+
+/** The person took them out of a machine the Studio does not reach. */
+export async function forgetMachineTools(machineId: string): Promise<void> {
+  await fetch('/api/mcp/bridge/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ machineId, forget: true }) }).catch(() => {})
+}
+
 /** Whether the person wants the tools added on machine; not wanting them
  *  keeps the Studio from offering them there again until they choose. */
 export async function setMachineTools(machineId: string, add: boolean): Promise<void> {
@@ -68,6 +88,11 @@ const AUTO = 'ade-studio-tools-auto:'
  *  setup card runs the setup as it opens. */
 export function markAutoSetup(conversationId: string): void {
   try { sessionStorage.setItem(AUTO + conversationId, '1') } catch { /* the card offers the button instead */ }
+}
+
+/** Whether the chat's card is to run the setup as it opens. */
+export function autoSetupWaits(conversationId: string): boolean {
+  try { return sessionStorage.getItem(AUTO + conversationId) === '1' } catch { return false }
 }
 
 /** Whether the chat's card should run the setup now, once. */

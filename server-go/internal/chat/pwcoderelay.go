@@ -19,6 +19,10 @@ import (
 
 // relayClient is the relay to the viewer's sessions on machine, as them.
 func (m *Module) relayClient(r *http.Request, machine string) (*pwcode.RelayClient, error) {
+	// The listing is this computer's then, and nothing relays to it.
+	if f := m.A.Providers.LocalCode; f != nil && f(r) {
+		return nil, pwErr(409, "The Studio is not connected to an ACTIVATE platform.")
+	}
 	if m.pf == nil || m.pf.Origin() == "" {
 		return nil, pwErr(409, "This Studio is not connected to an ACTIVATE platform, which carries messages to sessions on other machines.")
 	}

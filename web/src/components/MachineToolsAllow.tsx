@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import { Button } from '@parallelworks/ui'
-import { removeTools } from './studioTools'
+import { removedSaid, removeTools } from './studioTools'
+
+/** What adding them allows, in a sentence. */
+export const allowsSaid = (allows: string[], lead = 'It') =>
+  `${lead} also sets pw code there to run these tools without asking, as they only read: ${allows.join(', ')}. `
+  + 'The rest still ask, and all of them still ask in a turn sent from a chat here or from the web. Remove takes this back.'
 
 /** What Add allows in pw code on a machine, said where the person chooses it. */
 export function AllowsNote({ allows, lead = 'It' }: { allows?: string[]; lead?: string }) {
   if (!allows?.length) return null
   return (
     <p className="muted" data-testid="studio-tools-allows">
-      {lead} also sets pw code there to run these tools without asking, as they only read: {allows.join(', ')}.
-      The rest still ask, and all of them still ask in a turn sent from a chat here or from the web. Remove takes this back.
+      {allowsSaid(allows, lead)}
     </p>
   )
 }
@@ -30,9 +34,7 @@ export function RemoveTools({ where, body, onRemoved }: {
     setFailed('')
     try {
       const r = await removeTools(body)
-      onRemoved(r.removed || r.rules
-        ? `This Studio's tools are out of pw code on ${where}, and so is what it allowed there. A session already open keeps the tools it started with.`
-        : `pw code on ${where} had none of this Studio's tools.`)
+      onRemoved(removedSaid(r, where))
     } catch (e) {
       setFailed((e as Error).message)
     } finally {

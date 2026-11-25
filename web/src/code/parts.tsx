@@ -1,8 +1,8 @@
+import { useState } from 'react'
 import { CopyButton, RunStatusIcon, StatusDot, usePersistedState } from '@parallelworks/ui'
 import { DesktopIcon, PauseIcon, PinFilledIcon, ClusterIcon } from '@parallelworks/ui/icons'
 import {
   howSessionsAppear,
-  isComputer,
   type PwCodeMachine,
   type PwCodePreference,
   type PwCodeSession,
@@ -17,6 +17,7 @@ import {
   useStartModePreference,
 } from '@parallelworks/code'
 import { useTranslations } from 'use-intl'
+import { type MachineLooks, machineImage } from './machineIcon'
 
 /**
  * The small parts of PW Code on the web's Code page that are its app's own
@@ -78,15 +79,27 @@ export function PinnedMark({ t }: { t: Translate }) {
   )
 }
 
-/** A machine's icon: the one the platform gives a resource, else a
- *  computer's or a server's. */
-export function MachineIcon({ machine }: { machine: PwCodeMachine & { imageUrl?: string } }) {
-  if (!isComputer(machine) && machine.imageUrl) {
-    return <img src={machine.imageUrl} alt="" className="code-machine-icon" onError={e => { e.currentTarget.style.display = 'none' }} />
+/** Images that did not load, so a row drawn again does not try them again. */
+const broken = new Set<string>()
+
+/** A machine's icon, as PW Code on the web picks it (machineIcon.ts): both
+ *  themes' images are drawn and the theme shows one. A computer's or a
+ *  server's glyph where the platform has none, or it did not load. */
+export function MachineIcon({ machine }: { machine: Pick<PwCodeMachine, 'kind'> & MachineLooks }) {
+  const [, setFailed] = useState(0)
+  const image = machineImage(machine)
+  if (!image || broken.has(image.light)) {
+    return machine.kind === 'local'
+      ? <DesktopIcon aria-hidden className="code-machine-icon" />
+      : <ClusterIcon aria-hidden className="code-machine-icon" />
   }
-  return isComputer(machine)
-    ? <DesktopIcon aria-hidden className="code-machine-icon" />
-    : <ClusterIcon aria-hidden className="code-machine-icon" />
+  const fail = () => { broken.add(image.light); setFailed(n => n + 1) }
+  if (!image.dark || broken.has(image.dark)) return <img src={image.light} alt="" className="code-machine-icon" data-testid="machine-icon" onError={fail} />
+  const dark = image.dark
+  return <>
+    <img src={image.light} alt="" className="code-machine-icon on-light" data-testid="machine-icon" onError={fail} />
+    <img src={dark} alt="" className="code-machine-icon on-dark" onError={() => { broken.add(dark); setFailed(n => n + 1) }} />
+  </>
 }
 
 function CopyCommand({ command }: { command: string }) {

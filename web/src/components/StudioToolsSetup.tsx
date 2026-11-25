@@ -131,7 +131,8 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
       </Callout></div>
     )
   }
-  if (reach.seen && !result && !failed) {
+  // A session of theirs somewhere: not this machine's, where that is known.
+  if (reach.seen && !result && !failed && (checked || !reach.setup || reach.setup.state === 'set' || reach.setup.state === 'unavailable')) {
     return (
       <Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
         <p>pw code reaches this Studio's tools as you: a session of yours last did at {new Date(reach.seen.at).toLocaleTimeString()}.</p>
