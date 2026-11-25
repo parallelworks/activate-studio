@@ -429,6 +429,9 @@ func TestTheSessionViewsRoutesReachTheSession(t *testing.T) {
 		if method == http.MethodPost {
 			body = `{}`
 		}
+		if suffix == "/commands" {
+			body = `{"name":"cost"}`
+		}
 		if code, out, _ := send(t, method, s+suffix, body); code != 200 || out["ok"] != true {
 			t.Errorf("%s: %d %v", r, code, out)
 		}

@@ -485,6 +485,9 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			body = jsonv.NewObject()
 		}
 	}
+	if f := misnamedField(body); f != "" {
+		return writeProblem(w, http.StatusBadRequest, "Not a field of this request: "+f+".")
+	}
 	if key == "GET /images/{ref}" || key == "GET /github-images/{asset}" {
 		route := "/v1/sessions/" + url.PathEscape(id) + suffix
 		if q := r.URL.RawQuery; q != "" {
@@ -520,8 +523,15 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		if err := m.checkCommand(r, c, t, body); err != nil {
 			return writeErr(w, err)
 		}
+	case "POST /direction", "POST /subagents/{sub}/messages", "POST /subagents/{sub}/direction":
+		if err := m.refusedLine(jsonv.String(jsonv.Path(body, "text"))); err != nil {
+			return writeErr(w, err)
+		}
 	case "POST /messages":
 		sentText = jsonv.String(jsonv.Path(body, "text"))
+		if err := m.refusedLine(sentText); err != nil {
+			return writeErr(w, err)
+		}
 		if o := jsonv.Obj(body); o != nil {
 			text := sentText
 			if c.PWCode.Untold && strings.TrimSpace(sentText) != "" {
@@ -591,7 +601,7 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 	case "GET /palette":
 		m.learnFrom(r, c.PWCode, v)
 		if o := jsonv.Obj(v); o != nil {
-			o.Set("notListed", notListed())
+			o.Set("notListed", notListed(jsonv.Arr(jsonv.Path(v, "commands"))))
 		}
 	case "POST /messages":
 		if note := untoldScope(c, t, sentText); note != "" {
@@ -695,18 +705,20 @@ func (m *Module) checkMode(r *http.Request, c *conversations.Conversation, t *pw
 	return nil
 }
 
-// sessionCommands are the slash commands that manage the session or how its
-// machine takes remote control: the Code page's, or the machine's own.
-var sessionCommands = map[string]bool{"rename": true, "fork": true, "archive": true, "resume": true, "remote-control": true}
-
 // checkCommand holds a slash command to the chat's rules: /permissions with
 // a mode is a mode change, held to the same check as the picker's (and
 // logged once it succeeds); one that manages the session is refused.
 func (m *Module) checkCommand(r *http.Request, c *conversations.Conversation, t *pwTarget, body any) error {
-	name := jsonv.String(jsonv.Path(body, "name"))
-	if sessionCommands[name] {
-		return pwErr(403, "/"+name+" is not sent from here: use the session's menu in the Code page's list, or manage it where it runs.")
+	o := jsonv.Obj(body)
+	if o == nil {
+		return pwErr(400, "Name the command.")
 	}
+	name, err := m.sentCommand(r.Context(), t, c.PWCode.Session, o)
+	if err != nil {
+		return err
+	}
+	// What is checked is what is sent.
+	o.Set("name", name)
 	args := strings.TrimSpace(jsonv.String(jsonv.Path(body, "args")))
 	// Claude Code accounts, where they are off: neither the command that
 	// manages them nor a switch to one of their models.
@@ -838,10 +850,10 @@ func (m *Module) recordSent(r *http.Request, c *conversations.Conversation, t *p
 		})
 		close(events)
 	}()
-	go func() {
+	m.pw.bg.Go(func() {
 		defer cancel()
 		turn.run(events, followErr)
-	}()
+	})
 }
 
 // codeMachine is the chat's machine as the view reads it (an

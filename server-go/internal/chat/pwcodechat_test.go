@@ -263,7 +263,17 @@ func pwModuleGW(t *testing.T, f *fakePW, env map[string]string) (*Module, string
 	daemon := pwcode.New(m.pf)
 	was := pwSites
 	pwSites = func() *agentsites.Sites { return &agentsites.Sites{P: m.pf, Daemon: daemon} }
-	t.Cleanup(func() { pwSites = was })
+	t.Cleanup(func() {
+		pwSites = was
+		// What is still written to the test's folder, before it goes; a turn
+		// the test left open does not end.
+		done := make(chan struct{})
+		go func() { m.pw.bg.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+	})
 	return m, srv.URL, gw
 }
 

@@ -80,6 +80,8 @@ type pwState struct {
 	// sections: what the Studio's section of AGENTS.md was last written as, by
 	// person, machine and folder.
 	sections map[string]string
+	// bg is what writes to the chats past the request that began it.
+	bg sync.WaitGroup
 }
 
 // following: the Studio still follows a turn in the conversation.
@@ -912,6 +914,9 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 			return nil
 		}
 	}
+	if err := m.refusedLine(content); err != nil {
+		return fail(err)
+	}
 	d, err := pwcode.GetSession(ctx, t.client, link.Session)
 	if err != nil {
 		return fail(err)
@@ -959,10 +964,10 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	turn.id = jsonv.String(jsonv.Path(sent, "turnId"))
 	m.giveWaitingName(r, c, t)
 	m.follow(turn)
-	go func() {
+	m.pw.bg.Go(func() {
 		defer cancel()
 		turn.run(events, followErr)
-	}()
+	})
 	select {
 	case <-turn.done:
 	case <-ctx.Done():
