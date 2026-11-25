@@ -1,6 +1,7 @@
 import { mutate } from 'swr'
 import { clearChatRecords, setRecordViewer } from './chatRecord'
 import { forgetEngines } from './chatEngine'
+import { forgetCommands } from './pwcode/chatCommands'
 import { forgetStarts } from './pwcode/newChatStart'
 import { forgetModelSource } from './pwcode/session/usePlatformModels'
 
@@ -31,6 +32,7 @@ export function clearViewerCaches(): void {
   clearChatRecords()
   forgetEngines()
   forgetStarts()
+  forgetCommands()
   forgetModelSource()
   // SWR's own cache, where the pw code session reads live. Cleared without
   // reading anything again: what is shown next is read as the new viewer.

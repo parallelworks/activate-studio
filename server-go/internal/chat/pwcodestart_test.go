@@ -424,10 +424,13 @@ func TestUnderSignInTheClusterIsReachedAsThePerson(t *testing.T) {
 		t.Helper()
 		r := as(who, http.MethodGet, path, "")
 		if rest, ok := strings.CutPrefix(r.URL.Path, "/api/chat/pwcode/start/machines/"); ok {
-			r.SetPathValue("machine", strings.TrimSuffix(rest, "/directories"))
+			r.SetPathValue("machine", strings.TrimSuffix(strings.TrimSuffix(rest, "/directories"), "/palette"))
 		}
 		rec := httptest.NewRecorder()
 		h := m.startListing
+		if strings.HasSuffix(r.URL.Path, "/palette") {
+			h = m.startPalette
+		}
 		if strings.HasSuffix(r.URL.Path, "/directories") {
 			h = m.startDirectories
 		}
@@ -448,6 +451,17 @@ func TestUnderSignInTheClusterIsReachedAsThePerson(t *testing.T) {
 	code, out := call("cy", "/api/chat/pwcode/start/machines/studio/directories?path=~")
 	if code != 200 || out["home"] != home || mustJSON(out["entries"]) != `[{"name":"runs","repository":true}]` {
 		t.Errorf("folders: %d %v", code, out)
+	}
+	// What pw code has there, in the folder of their own library.
+	var asked []string
+	f.mu.Lock()
+	f.routes = map[string]http.HandlerFunc{"GET /v1/palette": func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Query().Get("workspace"))
+		gives(palette(nil, "moor"))(w, r)
+	}}
+	f.mu.Unlock()
+	if code, out := call("cy", "/api/chat/pwcode/start/machines/studio/palette"); code != 200 || mustJSON(out["prompts"]) != `["moor"]` || len(asked) != 1 || asked[0] != "/home/cy/studio" {
+		t.Errorf("palette: %d %v, asked %v", code, out, asked)
 	}
 	// A path is a word to the script, never part of it.
 	marker := filepath.Join(home, "marker")

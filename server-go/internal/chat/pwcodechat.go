@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,6 +73,10 @@ type pwState struct {
 	here map[string]pwHereAt
 	// needs is whether the viewer's pw code has no model of its own.
 	needs map[string]pwNeedsAt
+	// commands is pw code's own commands, by release; releases is the one
+	// on each of the viewer's machines, as the platform last listed it.
+	commands *pwCommandStore
+	releases map[string]string
 	// sections: what the Studio's section of AGENTS.md was last written as, by
 	// person, machine and folder.
 	sections map[string]string
@@ -711,18 +716,39 @@ func pwFresh(created string) bool {
 // person's new message: every earlier turn for a new session, else those
 // after its last reply.
 func pwcodeContext(c *conversations.Conversation, fresh bool, current string) string {
+	return contextBetween(c, contextAfter(c, fresh), "", current)
+}
+
+// contextAfter is the id of the last message the session has seen, "" for
+// none of the conversation.
+func contextAfter(c *conversations.Conversation, fresh bool) string {
+	switch {
+	case fresh || c.PWCode == nil:
+		return ""
+	case c.PWCode.Owed != nil:
+		return c.PWCode.Owed.After
+	}
+	return c.PWCode.LastMessage
+}
+
+// contextBetween is pwcodeContext for the messages after one, up to
+// another ("" for all there are).
+func contextBetween(c *conversations.Conversation, after, upto, current string) string {
 	msgs := c.Messages
-	start := 0
-	if !fresh && c.PWCode != nil && c.PWCode.LastMessage != "" {
-		start = len(msgs)
-		for i, mm := range msgs {
-			if mm.ID == c.PWCode.LastMessage {
-				start = i + 1
-			}
+	at := func(id string) int {
+		return slices.IndexFunc(msgs, func(mm conversations.Message) bool { return mm.ID == id })
+	}
+	start, end := 0, len(msgs)
+	if after != "" {
+		if start = at(after) + 1; start == 0 {
+			start = end
 		}
 	}
+	if i := at(upto); upto != "" && i >= start {
+		end = i + 1
+	}
 	var lines []string
-	for _, mm := range msgs[start:] {
+	for _, mm := range msgs[start:end] {
 		// A fallback note (fallbackNote) is about pw code, not for it.
 		if mm.ID == current || mm.Content == nil || strings.TrimSpace(*mm.Content) == "" || strings.HasPrefix(mm.ID, "note-engine-") {
 			continue
@@ -851,7 +877,13 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	carried := pwcodeContext(c, fresh, msgID)
 	// The page takes the message from here, once the session is there.
 	takes := body.OpensSession && carried == ""
-	opens := takes && slashLine.MatchString(strings.TrimSpace(content))
+	opens := body.OpensSession && slashLine.MatchString(strings.TrimSpace(content))
+	if opens {
+		// A command takes no turns with it: they go with the first message
+		// sent from the view.
+		m.Conv.DropUserTurn(convID, msgID)
+		link.Owed = owedTurns(c, fresh, carried, msgID)
+	}
 	// The session's tool calls run in the scope of this message; the
 	// session is told of a scope it has not seen.
 	scopeNote := ""
@@ -866,6 +898,9 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		told = m.relayInstructions(r)
 	}
 	m.Conv.SetPWCode(convID, link)
+	if fresh || start.machine != "" {
+		m.learnAtStart(r, t.client, link)
+	}
 	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model, "modelNote", link.ModelNote, "modelFrom", link.ModelFrom, "modelMoved", t.modelMoved, "modelStuck", t.modelStuck))
 	if opens {
 		m.handFirst(res, convID, msgID, content, nil)
@@ -908,6 +943,10 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if err != nil {
 		cancel()
 		return fail(err)
+	}
+	if link.Owed != nil {
+		link.Owed = nil
+		m.Conv.SetPWCode(convID, link)
 	}
 	if told != "" {
 		link.Untold = false

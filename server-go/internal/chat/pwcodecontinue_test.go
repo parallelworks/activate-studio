@@ -46,6 +46,9 @@ func (p *fakeCodePlatform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			machine, route = m, "/v1/claude-code"+cc
 		}
 		// The folders a new session there could work in.
+		if m, ok := strings.CutSuffix(rest, "/palette"); ok && !strings.Contains(m, "/") {
+			machine, route = m, "/v1/palette"
+		}
 		if m, ok := strings.CutSuffix(rest, "/directories"); ok && !strings.Contains(m, "/") {
 			machine, route = m, "/v1/directories"
 		}

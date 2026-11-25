@@ -33,6 +33,32 @@ func (m *Module) handFirst(res *sseWriter, convID, msgID, text string, refused e
 	res.event("done", reqbody.O("finishReason", "stop", "model", nil))
 }
 
+// owedTurns is what a session a command is run in is owed, where the chat
+// has turns it has not seen (carried).
+func owedTurns(c *conversations.Conversation, fresh bool, carried, current string) *conversations.PWCodeOwed {
+	if carried == "" {
+		return nil
+	}
+	o := &conversations.PWCodeOwed{After: contextAfter(c, fresh)}
+	for _, mm := range c.Messages {
+		if mm.ID != current {
+			o.Upto = mm.ID
+		}
+	}
+	return o
+}
+
+// owedContext is the turns the session is owed, which go before text, the
+// first message sent to it from its view. A line pw code reads as a skill
+// is sent as it is.
+func owedContext(c *conversations.Conversation, text string) string {
+	text = strings.TrimSpace(text)
+	if c.PWCode == nil || c.PWCode.Owed == nil || text == "" || slashLine.MatchString(text) {
+		return ""
+	}
+	return contextBetween(c, c.PWCode.Owed.After, c.PWCode.Owed.Upto, "")
+}
+
 // untoldScope is the scope a session has not been told of, with the first
 // message sent to it from its view: one a command started, whose chat has
 // a scope. A line pw code reads as a skill is sent as it is.

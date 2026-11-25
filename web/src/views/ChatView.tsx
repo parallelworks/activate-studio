@@ -711,7 +711,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           <SteerBridge />
           {/* A pw code session's composer has its own command menu, which
               this one would answer Enter for. */}
-          {!showAttachments && !showManage && !pw.shown && <SlashPalette canvas={canvasRef} />}
+          {!showAttachments && !showManage && !pw.shown && <SlashPalette canvas={canvasRef} conversationId={activeId} persona={persona} machine={pw.machine} session={pw.link?.session} />}
           {!showAttachments && !showManage && <MentionPalette canvas={canvasRef} />}
           <MentionLinks canvas={canvasRef} libraryIds={libraryIds} />
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
