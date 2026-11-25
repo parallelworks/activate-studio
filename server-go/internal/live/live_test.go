@@ -113,6 +113,17 @@ func dial(t *testing.T, base, path, user, origin string) (*websocket.Conn, error
 
 func next(t *testing.T, ws *websocket.Conn) map[string]any {
 	t.Helper()
+	for {
+		m := frameOf(t, ws)
+		if m["until"] == nil && m["beat"] == nil {
+			return m
+		}
+	}
+}
+
+// frameOf is the next frame, whatever it is.
+func frameOf(t *testing.T, ws *websocket.Conn) map[string]any {
+	t.Helper()
 	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
 	var m map[string]any
 	if err := websocket.JSON.Receive(ws, &m); err != nil {
@@ -287,11 +298,37 @@ func TestASocketEndsAfterItsLife(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// It says it is there meanwhile.
-	if f := next(t, ws); f["beat"] != true {
+	// It says how long it has, and that it is there meanwhile.
+	if f := frameOf(t, ws); f["until"] == nil || f["until"].(float64) > 200 || f["until"].(float64) < 50 {
+		t.Fatalf("%v", f)
+	}
+	if f := frameOf(t, ws); f["beat"] != true {
 		t.Fatalf("%v", f)
 	}
 	closed(t, ws)
+}
+
+// A silent socket is noticed in time only if one that is there says so:
+// every beat, and never much later, whatever else it sends.
+func TestASocketIsNeverSilentForLong(t *testing.T) {
+	_, s, base := start(t)
+	if s.beat != 4*time.Second {
+		t.Fatalf("beat %v: web/src/live.ts takes one silent for 10 seconds as gone", s.beat)
+	}
+	s.beat = 400 * time.Millisecond
+	ws, err := dial(t, base, "/api/live", "ada", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	say(t, ws, want(map[string][2]int64{"/api/fleet": {1000, 0}}))
+	last := time.Now()
+	for end := last.Add(4 * time.Second); last.Before(end); {
+		frameOf(t, ws)
+		if gap := time.Since(last); gap > 600*time.Millisecond {
+			t.Fatalf("silent for %v", gap)
+		}
+		last = time.Now()
+	}
 }
 
 // What a route answers is for the page, a refusal of its own too; only the

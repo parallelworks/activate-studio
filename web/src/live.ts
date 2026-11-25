@@ -45,8 +45,13 @@ interface Entry {
 /** The tab left hidden this long closes the socket; a glance at another tab
  *  does not. */
 const HIDDEN_FOR_MS = 10_000
-/** A socket that says nothing this long (its heartbeat is 15 s) is gone. */
-const SILENT_MS = 40_000
+/** A socket that says nothing this long (its heartbeat is 4 s) may be gone:
+ *  what is overdue is read by request. */
+const QUIET_MS = 5_000
+/** One that says nothing this long is. */
+const SILENT_MS = 10_000
+/** The next socket is opened this long before the server ends this one. */
+const RENEW_MS = 20_000
 /** A read asked for over the socket that takes longer goes as a request. */
 const ASK_MS = 8_000
 /** Paths due within this of one another go in one request. */
@@ -55,6 +60,11 @@ const TOGETHER_MS = 2_000
  *  platform, and the others do not wait for it. */
 const SLOW_MS = 60_000
 const RETRY_MS = 1_000
+/** For the first one after a socket that lasted, and as much again. */
+const RETRY_SOON_MS = 250
+/** After a socket is lost, what is read once a minute or less often waits
+ *  this long for the next one. */
+const HOLD_MS = 3_000
 const RETRY_MAX_MS = 60_000
 /** One that was open this long was not refused: the next is tried at once. */
 const LASTED_MS = 20_000
@@ -64,6 +74,10 @@ const RETRY_NEVER_MS = 300_000
 const entries = new Map<string, Entry>()
 let opener: ((path: string) => WebSocket) | null = null
 let socket: WebSocket | null = null
+/** The one that takes over from it, while it opens. */
+let next: WebSocket | null = null
+let renewing: ReturnType<typeof setTimeout> | null = null
+let lostAt = 0
 /** The socket is open: the paths are read over it. */
 let open = false
 let everOpen = false
@@ -139,15 +153,16 @@ async function requestTogether(list: Entry[]): Promise<void> {
   try {
     const res = await fetch(`/api/live/read?${list.map(e => `p=${encodeURIComponent(e.path)}`).join('&')}`)
     if (res.ok) reads = (await res.json() as { reads?: { path: string; status: number; body: unknown }[] }).reads ?? null
-    // A server without it: each by itself from now on.
-    if (!reads && (res.ok || res.status === 404 || res.status === 400)) together = false
+    // A server without it: each by itself from now on. One that had a
+    // socket open has it, and is away.
+    if (!reads && !everOpen && (res.ok || res.status === 404 || res.status === 400)) together = false
   } catch { /* the next one */ }
   for (const e of list) {
     const r = reads?.find(x => x.path === e.path)
     if (r) take(e, ns.get(e)!, { status: r.status, text: JSON.stringify(r.body) })
     e.reading--
     if (together) schedule(e)
-    else if (e.subs.size) void request(e).catch(() => {})
+    else if (e.subs.size && !open) void request(e).catch(() => {})
   }
 }
 
@@ -160,8 +175,9 @@ function schedule(e: Entry): void {
 
 function due(e: Entry): void {
   if (!e.subs.size || open || hidden()) return
-  if (!together || !opener || everOpen || fails < 3 || pace(e) >= SLOW_MS) { void request(e).catch(() => {}); return }
   const now = Date.now()
+  if (pace(e) >= SLOW_MS && opener && now - lostAt < HOLD_MS) { e.timer = setTimeout(() => { e.timer = null; due(e) }, lostAt + HOLD_MS - now); return }
+  if (!together || !opener || (!everOpen && fails < 3) || pace(e) >= SLOW_MS) { void request(e).catch(() => {}); return }
   const list = [...entries.values()].filter(x => x === e || (x.subs.size && !x.reading && pace(x) < SLOW_MS && x.at + pace(x) - now <= TOGETHER_MS))
   if (list.length < 2) { void request(e).catch(() => {}); return }
   for (const x of list) if (x.timer) { clearTimeout(x.timer); x.timer = null }
@@ -187,44 +203,109 @@ function tell(): void {
   })
 }
 
-/** Looked at by the clock: a computer that slept finds it out on waking. */
+/** Whether one last heard at `at` has been silent too long, asked each
+ *  second. By the clock, so a computer that slept finds it out on waking, and
+ *  twice, so a page that was busy reads what waits first. */
+function silence(heard: () => number): () => boolean {
+  let late = 0
+  return () => {
+    late = Date.now() - heard() > SILENT_MS ? late + 1 : 0
+    return late > 1
+  }
+}
+
 function heard(): void {
   heardAt = Date.now()
-  silent ??= setInterval(() => {
-    if (Date.now() - heardAt <= SILENT_MS) return
-    socket?.close()
-    lost()
-  }, 5_000)
+  if (silent) return
+  const gone = silence(() => heardAt)
+  silent = setInterval(() => {
+    if (gone()) {
+      const ws = socket
+      lost()
+      ws?.close()
+    } else if (Date.now() - heardAt > QUIET_MS) overdue()
+  }, 1_000)
+}
+
+/** Reads what the socket should have said by now. */
+function overdue(): void {
+  const now = Date.now()
+  const list = [...entries.values()].filter(e => e.subs.size && !e.reading && pace(e) < SLOW_MS && e.at + pace(e) < now)
+  if (together && list.length > 1) void requestTogether(list)
+  else for (const e of list) void request(e).catch(() => {})
 }
 
 function connect(): void {
   if (retry) { clearTimeout(retry); retry = null }
   if (!opener || socket || hidden() || ![...entries.values()].some(e => e.subs.size)) return
+  socket = dial()
+}
+
+/** Opens the next socket while this one is still there, so nothing waits. */
+function renew(): void {
+  renewing = null
+  if (!opener || next || !open || hidden()) return
+  next = dial()
+}
+
+function dial(): WebSocket | null {
   let ws: WebSocket
-  try { ws = opener('/api/live') } catch { return }
-  socket = ws
+  try { ws = opener!('/api/live') } catch { return null }
   ws.onopen = () => {
-    if (socket !== ws) return
-    open = everOpen = true
-    wanted = ''
-    openedAt = Date.now()
-    for (const e of entries.values()) {
-      e.sent = null
-      if (e.timer) { clearTimeout(e.timer); e.timer = null }
-    }
-    heard()
-    tell()
+    if (ws === next) {
+      const was = socket
+      next = null
+      socket = ws
+      if (was) { was.onclose = null; was.onmessage = null; was.close() }
+    } else if (ws !== socket) return
+    taken()
   }
   ws.onmessage = m => {
     if (socket !== ws) return
     heard()
-    let f: { path?: string; status?: number; body?: unknown; same?: string[]; n?: number[] }
+    let f: { path?: string; status?: number; body?: unknown; same?: string[]; n?: number[]; until?: number }
     try { f = JSON.parse(String(m.data)) as typeof f } catch { return }
+    if (typeof f.until === 'number') ends(f.until)
     for (const p of f.same ?? []) got(entries.get(p), null, [])
     if (f.path) got(entries.get(f.path), { status: f.status ?? 0, text: JSON.stringify(f.body ?? null) }, f.n ?? [])
   }
-  ws.onclose = () => { if (socket === ws) lost() }
+  ws.onclose = () => {
+    if (ws === next) {
+      // This one is still there: tried again before it ends.
+      next = null
+      if (open) renewing = setTimeout(renew, 5_000)
+    } else if (ws === socket) lost()
+  }
   ws.onerror = () => { /* it closes */ }
+  return ws
+}
+
+/** A socket is open, the first or one that takes over. */
+function taken(): void {
+  open = everOpen = together = true
+  wanted = ''
+  openedAt = Date.now()
+  lostAt = 0
+  if (renewing) { clearTimeout(renewing); renewing = null }
+  for (const e of entries.values()) {
+    e.sent = null
+    if (e.timer) { clearTimeout(e.timer); e.timer = null }
+  }
+  heard()
+  tell()
+  // Reads asked of the one before, after what is shown.
+  queueMicrotask(() => {
+    if (!open) return
+    for (const e of entries.values()) for (const n of e.asked.keys()) socket?.send(JSON.stringify({ read: e.path, n }))
+  })
+}
+
+/** The server ends the socket in `ms`. */
+function ends(ms: number): void {
+  if (renewing) clearTimeout(renewing)
+  // One that ends as soon as it opened cannot be renewed yet (a proxy that
+  // still hands out the sign-in it did): it is opened again when it ends.
+  renewing = ms > 2 * RENEW_MS ? setTimeout(renew, Math.min(ms - RENEW_MS, 2 ** 31 - 1)) : null
 }
 
 /** A reading that came over the socket; null says what the last one said. */
@@ -241,9 +322,14 @@ function got(e: Entry | undefined, r: Reading | null, asked: number[]): void {
 
 function lost(): void {
   const was = socket
-  if (open && Date.now() - openedAt >= LASTED_MS) fails = 0
-  socket = null
+  const lasted = open && Date.now() - openedAt >= LASTED_MS
+  if (lasted) fails = 0
+  if (open) lostAt = Date.now()
+  // One that was to take over goes on opening.
+  socket = next
+  next = null
   open = false
+  if (renewing) { clearTimeout(renewing); renewing = null }
   if (was) { was.onclose = null; was.onmessage = null }
   if (silent) { clearInterval(silent); silent = null }
   for (const e of entries.values()) {
@@ -251,18 +337,19 @@ function lost(): void {
     e.asked.clear()
     schedule(e)
   }
-  if (!opener || hidden()) return
+  if (!opener || hidden() || socket) return
   fails++
-  retry = setTimeout(connect, !everOpen && fails > 3 ? RETRY_NEVER_MS : Math.min(RETRY_MS * 2 ** (fails - 1), RETRY_MAX_MS))
+  retry = setTimeout(connect, lasted ? RETRY_SOON_MS * (1 + Math.random()) : !everOpen && fails > 3 ? RETRY_NEVER_MS : Math.min(RETRY_MS * 2 ** (fails - 1), RETRY_MAX_MS))
 }
 
 function leave(): void {
   if (retry) { clearTimeout(retry); retry = null }
   if (silent) { clearInterval(silent); silent = null }
-  const was = socket
-  socket = null
+  if (renewing) { clearTimeout(renewing); renewing = null }
+  const both = [socket, next]
+  socket = next = null
   open = false
-  if (was) { was.onclose = null; was.onmessage = null; was.close() }
+  for (const ws of both) if (ws) { ws.onclose = null; ws.onmessage = null; ws.close() }
   for (const e of entries.values()) {
     if (e.timer) { clearTimeout(e.timer); e.timer = null }
     for (const a of e.asked.values()) a.fail(new Error('closed'))
@@ -393,6 +480,26 @@ export function shownInterval(fn: () => void, ms: number): () => void {
 /** The socket's address on this Studio. */
 export const liveURL = (path: string, origin = location.origin) => origin.replace(/^http/, 'ws') + path
 
+/** A feed of the Studio's in the form of the package it is for, with a
+ *  heartbeat as often as the page's socket has: one that goes silent is
+ *  closed, and the package reads and opens another. */
+export function feedSocket(url: string): WebSocket {
+  const ws = new WebSocket(url.replace(/([?&]heartbeat=)\d+/, (_, at: string) => at + '4'))
+  let at = Date.now()
+  const gone = silence(() => at)
+  const timer = setInterval(() => {
+    if (ws.readyState !== WebSocket.OPEN) { at = Date.now(); return }
+    if (!gone()) return
+    clearInterval(timer)
+    // The browser waits for the far end's goodbye before it says so.
+    ws.dispatchEvent(new CloseEvent('close'))
+    ws.close()
+  }, 1_000)
+  ws.addEventListener('message', () => { at = Date.now() })
+  ws.addEventListener('close', () => clearInterval(timer))
+  return ws
+}
+
 /** Lets what is watched come over the socket, for as long as the app is
  *  open; the app calls it once. */
 export function startLive(open: (path: string) => WebSocket = path => new WebSocket(liveURL(path))): () => void {
@@ -410,6 +517,7 @@ export function resetLiveForTests(): void {
   entries.clear()
   everOpen = false
   fails = 0
+  lostAt = asks = 0
   together = true
   wanted = ''
 }

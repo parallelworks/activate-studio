@@ -1,6 +1,6 @@
 import createClient from 'openapi-fetch'
 import { createPwCodeApi, type PwCodePaths } from '@parallelworks/code'
-import { liveURL } from '../live'
+import { feedSocket, liveURL } from '../live'
 
 /**
  * The Code page's client: @parallelworks/code, as PW Code on the web uses
@@ -56,7 +56,7 @@ export const pageClient = createClient<PwCodePaths>({
 
 /** The address of the listing's feed: the Studio sends the listing as it
  *  changes, so the page does not read it on a timer. The page opens no other. */
-const listingFeed = (path: string) => new WebSocket(liveURL('/api/code-page/feed' + path.slice('/ws/code/sessions'.length)))
+const listingFeed = (path: string) => feedSocket(liveURL('/api/code-page/feed' + path.slice('/ws/code/sessions'.length)))
 
 export const pwCodePage = createPwCodeApi(pageClient, {
   openSocket: listingFeed,

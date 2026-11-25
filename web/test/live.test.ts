@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readNow, resetLiveForTests, shownInterval, shownTimeout, startLive, useWatch, watch, type LiveError } from '../src/live'
+import { feedSocket, readNow, resetLiveForTests, shownInterval, shownTimeout, startLive, useWatch, watch, type LiveError } from '../src/live'
 
 // What a page shows is read over one socket: no requests while nothing
 // happens, nothing while the tab is hidden, nothing for what is not shown,
@@ -23,6 +23,9 @@ class Sock {
 }
 const opener = (p: string) => new Sock(p) as unknown as WebSocket
 const sock = () => Sock.all.at(-1)!
+
+/** Time passes on a socket that is there. */
+async function beat(ws: Sock, ms: number) { for (let t = 0; t < ms; t += 4_000) { ws.say({ beat: true }); await tick(4_000) } }
 
 let asked: string[]
 let answer: (u: string) => Response | Promise<Response>
@@ -68,7 +71,7 @@ describe('over the socket', () => {
     expect(a.mock.calls.length).toBe(n + 1)
     expect(a).toHaveBeenLastCalledWith({ agents: [1] })
     asked.length = 0
-    for (let i = 0; i < 40; i++) { await tick(15_000); sock().say({ beat: true }) }
+    await beat(sock(), 600_000)
     expect(asked).toEqual([])
     expect(Sock.all).toHaveLength(1)
     stop()
@@ -180,11 +183,203 @@ describe('over the socket', () => {
     // One that lasts, and then ends, is opened again at once.
     await tick(60_000)
     sock().open()
-    for (let i = 0; i < 4; i++) { sock().say({ beat: true }); await tick(15_000) }
+    await beat(sock(), 60_000)
     const n = Sock.all.length
     sock().close()
     await tick(1_000)
     expect(Sock.all.length).toBe(n + 1)
+    stop()
+  })
+})
+
+describe('a socket that goes silent', () => {
+  it('is noticed within 15 seconds, and what is due is read at once', async () => {
+    const stop = startLive(opener)
+    const on = vi.fn()
+    watch('/api/index/status', 15_000, on)
+    await tick(0)
+    sock().open()
+    sock().say({ path: '/api/index/status', status: 200, body: {} })
+    await beat(sock(), 12_000)
+    // Silent from here, with the next reading due soon.
+    asked.length = 0
+    const n = Sock.all.length
+    let late = 0
+    while (!asked.length && late < 60_000) { await tick(500); late += 500 }
+    expect(asked).toEqual(['/api/index/status'])
+    expect(late).toBeLessThanOrEqual(7_000)
+    // One that comes back is kept; one that does not is gone within 15 s.
+    expect(Sock.all).toHaveLength(n)
+    await tick(15_000 - late)
+    expect(Sock.all.length).toBe(n + 1)
+    stop()
+  })
+
+  it('that comes back is kept, and its readings are taken as before', async () => {
+    const stop = startLive(opener)
+    const on = vi.fn()
+    watch('/api/fleet', 10_000, on)
+    watch('/api/delegated', 10_000, () => {})
+    watch('/api/whoami', 60_000, () => {})
+    await tick(0)
+    sock().open()
+    await beat(sock(), 8_000)
+    asked.length = 0
+    await tick(5_000)
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toMatch(/^\/api\/live\/read\?p=%2Fapi%2Ffleet&p=%2Fapi%2Fdelegated$/)
+    sock().say({ path: '/api/fleet', status: 200, body: { agents: [3] } })
+    expect(on).toHaveBeenLastCalledWith({ agents: [3] })
+    await beat(sock(), 4_000)
+    expect(Sock.all).toHaveLength(1)
+    stop()
+  })
+
+  it('is not taken for gone by a page that was busy', async () => {
+    const stop = startLive(opener)
+    watch('/api/fleet', 10_000, () => {})
+    await tick(0)
+    sock().open()
+    await beat(sock(), 8_000)
+    // Nothing ran for 20 seconds; what came meanwhile is read after.
+    vi.setSystemTime(Date.now() + 20_000)
+    await tick(1_000)
+    sock().say({ beat: true })
+    await beat(sock(), 20_000)
+    expect(Sock.all).toHaveLength(1)
+    stop()
+  })
+
+  it('a feed is closed for its package, which reads for itself', async () => {
+    class Feed extends EventTarget {
+      static OPEN = 1
+      readyState = 1
+      closed = 0
+      constructor(readonly url: string) { super() }
+      close() { this.closed++ }
+    }
+    vi.stubGlobal('WebSocket', Feed)
+    const ws = feedSocket('ws://studio.test/api/code-page/feed?heartbeat=10') as unknown as Feed
+    expect(ws.url).toBe('ws://studio.test/api/code-page/feed?heartbeat=4')
+    const gone = vi.fn()
+    ws.addEventListener('close', gone)
+    for (let i = 0; i < 20; i++) { ws.dispatchEvent(new MessageEvent('message', { data: '{"type":"heartbeat"}' })); await tick(4_000) }
+    expect(gone).not.toHaveBeenCalled()
+    await tick(15_000)
+    expect(gone).toHaveBeenCalledTimes(1)
+    expect(ws.closed).toBe(1)
+    await tick(60_000)
+    expect(gone).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a socket that ends', () => {
+  const follow = () => { for (const [p, ms] of [['/api/fleet', 10_000], ['/api/delegated', 10_000], ['/api/whoami', 60_000], ['/healthz', 60_000]] as const) watch(p, ms, () => {}) }
+
+  it('is taken over by another before, with no request and no reading missed', async () => {
+    const stop = startLive(opener)
+    const on = vi.fn()
+    watch('/api/notices', 30_000, on)
+    follow()
+    await tick(0)
+    const first = sock()
+    first.open()
+    first.say({ until: 300_000 })
+    asked.length = 0
+    await beat(first, 276_000)
+    expect(Sock.all).toHaveLength(1)
+    await beat(first, 8_000)
+    expect(Sock.all).toHaveLength(2)
+    const second = sock()
+    // While it opens, the first goes on.
+    first.say({ path: '/api/notices', status: 200, body: { items: [1] } })
+    expect(on).toHaveBeenLastCalledWith({ items: [1] })
+    expect(first.readyState).toBe(1)
+    const late = readNow('/api/notices')
+    await tick(0)
+    second.open()
+    await tick(0)
+    expect(first.readyState).toBe(3)
+    expect(Object.keys(second.want!).sort()).toEqual(['/api/delegated', '/api/fleet', '/api/notices', '/api/whoami', '/healthz'].sort())
+    // Due when they would have been, and a read under way is asked again.
+    expect(second.want!['/api/notices'][1]).toBeGreaterThan(20_000)
+    expect(second.sent.at(-1)).toEqual({ read: '/api/notices', n: 1 })
+    second.say({ path: '/api/notices', status: 200, body: { items: [2] }, n: [1] })
+    expect(await late).toEqual({ items: [2] })
+    second.say({ until: 300_000 })
+    await beat(second, 60_000)
+    expect(asked).toEqual([])
+    expect(Sock.all).toHaveLength(2)
+    stop()
+  })
+
+  it('tries the next one again while it is there, and goes on with one that is opening', async () => {
+    const stop = startLive(opener)
+    follow()
+    await tick(0)
+    const first = sock()
+    first.open()
+    first.say({ until: 60_000 })
+    await beat(first, 44_000)
+    expect(Sock.all).toHaveLength(2)
+    sock().close()
+    await beat(first, 8_000)
+    expect(Sock.all).toHaveLength(3)
+    for (const path of ['/api/fleet', '/api/delegated']) first.say({ path, status: 200, body: {} })
+    asked.length = 0
+    first.close()
+    await tick(0)
+    expect(Sock.all).toHaveLength(3)
+    sock().open()
+    await tick(0)
+    expect(Object.keys(sock().want!)).toHaveLength(4)
+    expect(asked).toEqual([])
+    stop()
+  })
+
+  it('is not renewed with a sign-in that ends as soon', async () => {
+    const stop = startLive(opener)
+    follow()
+    await tick(0)
+    sock().open()
+    sock().say({ until: 18_000 })
+    await beat(sock(), 16_000)
+    expect(Sock.all).toHaveLength(1)
+    stop()
+  })
+
+  it('without warning: what is due meanwhile goes together, and what is read once a minute waits', async () => {
+    const stop = startLive(opener)
+    follow()
+    await tick(0)
+    sock().open()
+    await beat(sock(), 60_000)
+    asked.length = 0
+    sock().close()
+    await tick(100)
+    expect(asked).toHaveLength(1)
+    expect(new URLSearchParams(asked[0].split('?')[1]).getAll('p').sort()).toEqual(['/api/delegated', '/api/fleet'])
+    // The next one is open within half a second or so.
+    await tick(500)
+    expect(Sock.all).toHaveLength(2)
+    sock().open()
+    await tick(0)
+    expect(sock().want!['/api/whoami'][1]).toBe(0)
+    await beat(sock(), 20_000)
+    expect(asked).toHaveLength(1)
+    // Where none opens, they are read in a few seconds.
+    sock().close()
+    asked.length = 0
+    answer = () => new Response('{}', { status: 404 })
+    await tick(60_000)
+    expect(asked.filter(u => u === '/api/whoami')).toHaveLength(1)
+    // The server was away: it has the combined read when it is back.
+    sock().open()
+    await tick(0)
+    sock().close()
+    asked.length = 0
+    await tick(20_000)
+    expect(asked.some(u => u.startsWith('/api/live/read'))).toBe(true)
     stop()
   })
 })
