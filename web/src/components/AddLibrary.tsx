@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Button, Callout, Checkbox, Field, IconButton, Input, Popover, SegmentedControl, Select, toast } from '@parallelworks/ui'
+import { Button, Callout, Checkbox, Field, IconButton, Input, Loader, Popover, SegmentedControl, Select, toast } from '@parallelworks/ui'
 import { ChevronDownIcon, FolderIcon, HelpIcon } from '@parallelworks/ui/icons'
 import { SIGN_IN_TO_USE, needsActivate } from '../accounts'
 import {
@@ -375,6 +375,10 @@ function FolderForm({ target, place, connect, options, browse, systems, buckets,
   }
 
   // Clusters that cannot be reached yet: the sign-in, or what is missing.
+  // Which it is comes with the viewer's status.
+  if (!target && offered.blocked && !status && !statusError) {
+    return <><Where chip={offered.buckets ? chip : null} naming={null} below={below} /><Loader inline size={16} label="Checking your sign-in…" /></>
+  }
   if (!target && offered.blocked && (!status || status.available || !status.cluster)) {
     return <><Where chip={offered.buckets ? chip : null} naming={null} below={below} /><PwBlocked why={systems?.why} /></>
   }

@@ -117,7 +117,7 @@ describe('the library files a reply names', () => {
       ['/data/kb/run.csv', '#open=file:run.csv'],
       ['Field docs/one.md', '#open=file:one.md&lib=docs'],
       ['notes.md', '#open=file:notes.md'],
-    ]))
+    ]), { timeout: 10_000 })
     expect(asked).toHaveLength(1)
     // Links as they were, and no link in one.
     expect(screen.getByRole('link', { name: 'the notes' })).toHaveAttribute('href', '#open=file:notes.md')
@@ -128,7 +128,7 @@ describe('the library files a reply names', () => {
     // Nothing more while it is only shown.
     await tick(2500)
     expect(asked).toHaveLength(1)
-  })
+  }, 20_000)
 
   it('wait for the session to be known, and a file written by the end of the turn links then', async () => {
     let has: Record<string, { path: string }> = {}

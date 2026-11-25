@@ -129,11 +129,35 @@ export function imageSizes(body: Buffer, type: string): string {
 }
 
 /**
+ * A deployment's own image as the manifest lists it, or null when an
+ * installed app cannot have it and has the Studio's mark: not square, under
+ * Chrome's smallest (144 pixels), or of a size not read here (only PNG is;
+ * the Go server reads JPEG, GIF and WebP too). src is relative to the
+ * manifest, so it holds under a path.
+ */
+export function installIcon(src: string, body: Buffer, type: string): WebManifestIcon | null {
+  const sizes = imageSizes(body, type)
+  const [w, h] = sizes.split('x').map(Number)
+  return w === h && w >= 144 ? { src: src.replace(/^\//, ''), type, sizes } : null
+}
+
+/** One of the Studio's own icon files as the manifest names it: relative to
+ *  the manifest, and with the file's hash, since a browser that installed
+ *  the Studio looks at an icon again only when its address changes. */
+function markSrc(file: string): string {
+  try {
+    const body = fs.readFileSync(path.join(PROJECT_ROOT, 'web', 'dist', file))
+    return `${file}?v=${crypto.createHash('sha1').update(body).digest('hex').slice(0, 10)}`
+  } catch { return file }
+}
+
+/**
  * The web app manifest. No `id`: an id resolves against the origin rather
  * than the manifest's folder, so on a Studio mounted under a path it would
  * take the host's identity; without one the start URL is the identity.
- * The deployment's own icon comes first; the default mark's PNGs stay as
- * the sizes browsers require to offer installation.
+ * With an icon of the deployment's own (installIcon) the Studio's mark is
+ * not listed: browsers take the largest icon, and on a Mac and on Android the
+ * maskable one, whatever comes first.
  */
 /** The cookie holding the page ground the person last saw, as six hex
  *  digits; the page sets it (web/src/theme.ts) and the manifest reads it. */
@@ -150,7 +174,7 @@ export function groundOf(cookieHeader: string | undefined): string | null {
   return null
 }
 
-export function webManifest(o: { name: string; dark: boolean; brand: WebManifestIcon | null; banner?: string | null; ground?: string | null }): Record<string, unknown> {
+export function webManifest(o: { name: string; dark: boolean; brand: WebManifestIcon | null; banner?: string | null; ground?: string | null; src?: (file: string) => string }): Record<string, unknown> {
   // The splash an installed app shows before the page paints takes the
   // ground the person last saw, so a person on the light theme of a dark
   // deployment does not open on a dark screen; without it, the
@@ -160,6 +184,7 @@ export function webManifest(o: { name: string; dark: boolean; brand: WebManifest
   // the two read as one strip from the first frame of an installed launch.
   const bar = o.banner && /^#[0-9a-f]{6}$/i.test(o.banner) ? o.banner : bg
   const name = o.name || 'Studio'
+  const src = o.src ?? markSrc
   return {
     name,
     short_name: name.length > 12 ? name.split(/\s+/).pop()!.slice(0, 12) : name,
@@ -174,11 +199,10 @@ export function webManifest(o: { name: string; dark: boolean; brand: WebManifest
     ...(bar !== bg ? { display_override: ['window-controls-overlay'] } : {}),
     background_color: bg,
     theme_color: bar,
-    icons: [
-      ...(o.brand ? [o.brand] : []),
-      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    icons: o.brand ? [o.brand] : [
+      { src: src('icon-192.png'), sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: src('icon-512.png'), sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: src('icon-maskable-512.png'), sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   }
 }
@@ -353,7 +377,8 @@ export async function kbRoutes(app: FastifyInstance): Promise<void> {
       const got = isUrl(configured)
         ? await fetchRemoteIcon(configured).catch(() => null)
         : fs.existsSync(configured) ? { body: fs.readFileSync(configured), type: mimeFor(configured) } : null
-      if (got) brand = { src: brandUrl('icon') ?? '/api/brand-icon', type: got.type, sizes: imageSizes(got.body, got.type) }
+      const url = brandUrl('icon')
+      if (got && url) brand = installIcon(url, got.body, got.type)
     }
     reply.header('Cache-Control', 'no-store, must-revalidate')
     const banner = eff.bannerText?.trim() ? (eff.bannerColor || '#24612e') : null

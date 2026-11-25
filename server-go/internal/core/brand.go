@@ -1,10 +1,15 @@
 package core
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha1"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"image"
+	_ "image/gif" // ImageSizes reads these formats' sizes
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -14,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	_ "golang.org/x/image/webp"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
@@ -113,29 +120,98 @@ func (c *Core) faviconFile() string {
 	return ""
 }
 
-// iconCache is the remote brand images, kept 10 minutes.
+// iconCache is the remote brand images, kept 10 minutes. busy holds the ones
+// being loaded, each closed when its load is done.
 type iconCache struct {
-	mu sync.Mutex
-	m  map[string]remoteIcon
+	mu   sync.Mutex
+	m    map[string]remoteIcon
+	busy map[string]chan struct{}
 }
 
 type remoteIcon struct {
-	body []byte
+	body []byte // the last image loaded, nil before the first
 	typ  string
 	at   time.Time
+	// failed is when the last try failed, the zero time when it did not.
+	failed time.Time
 }
 
-func newIconCache() *iconCache { return &iconCache{m: map[string]remoteIcon{}} }
+// An image that could not be loaded is not asked for again for a minute, so
+// a server that hangs does not hold up every page.
+const iconRetry = time.Minute
 
-// fetchRemoteIcon is routes.ts's: public images need no credential; a
-// platform blob answers 401 without one, so the deployment's is tried.
-func (c *Core) fetchRemoteIcon(r *http.Request, url string) *remoteIcon {
-	c.icons.mu.Lock()
-	hit, ok := c.icons.m[url]
-	c.icons.mu.Unlock()
-	if ok && time.Since(hit.at) < 10*time.Minute {
-		return &hit
+// imageType is the image type of a body its server calls typ, or "" when it
+// is not an image (a sign-in page in an image's place, say).
+func imageType(body []byte, typ string) string {
+	if t := http.DetectContentType(body); strings.HasPrefix(t, "image/") {
+		return t
 	}
+	head := bytes.ToLower(bytes.TrimSpace(bytes.TrimPrefix(body, []byte("\xef\xbb\xbf"))))
+	head = head[:min(len(head), 4096)]
+	html := bytes.HasPrefix(head, []byte("<!doctype html")) || bytes.Contains(head, []byte("<html"))
+	switch {
+	case html || len(body) == 0:
+		return ""
+	case bytes.HasPrefix(head, []byte("<")) && (bytes.Contains(head, []byte("<svg")) || strings.HasPrefix(strings.ToLower(typ), "image/svg")):
+		return "image/svg+xml"
+	case strings.HasPrefix(strings.ToLower(typ), "image/"):
+		return typ
+	}
+	return ""
+}
+
+func newIconCache() *iconCache {
+	return &iconCache{m: map[string]remoteIcon{}, busy: map[string]chan struct{}{}}
+}
+
+// fetchRemoteIcon is the image at url, or nil when it cannot be loaded (or
+// not before ctx ends). One load runs at a time for an address, whoever
+// waits for it. When it fails, the copy loaded before is used, so a server
+// that is down for a while does not change the icon.
+func (c *Core) fetchRemoteIcon(ctx context.Context, url string) *remoteIcon {
+	ic := c.icons
+	ic.mu.Lock()
+	hit := ic.m[url]
+	fresh := hit.body != nil && time.Since(hit.at) < 10*time.Minute
+	if !fresh && time.Since(hit.failed) >= iconRetry {
+		done := ic.busy[url]
+		if done == nil {
+			done = make(chan struct{})
+			ic.busy[url] = done
+			go func() {
+				got := c.loadRemoteIcon(url)
+				ic.mu.Lock()
+				defer ic.mu.Unlock()
+				if got != nil {
+					ic.m[url] = *got
+				} else {
+					was := ic.m[url]
+					was.failed = time.Now()
+					ic.m[url] = was
+				}
+				delete(ic.busy, url)
+				close(done)
+			}()
+		}
+		ic.mu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
+		ic.mu.Lock()
+		hit = ic.m[url]
+	}
+	ic.mu.Unlock()
+	if hit.body == nil {
+		return nil
+	}
+	return &hit
+}
+
+// loadRemoteIcon is routes.ts's fetchRemoteIcon: public images need no
+// credential; a platform blob answers 401 without one, so the deployment's
+// is tried.
+func (c *Core) loadRemoteIcon(url string) *remoteIcon {
 	attempt := func(withKey bool) *remoteIcon {
 		key := ""
 		if withKey {
@@ -143,7 +219,7 @@ func (c *Core) fetchRemoteIcon(r *http.Request, url string) *remoteIcon {
 				return nil
 			}
 		}
-		req, err := http.NewRequestWithContext(r.Context(), "GET", url, nil)
+		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil
 		}
@@ -163,22 +239,16 @@ func (c *Core) fetchRemoteIcon(r *http.Request, url string) *remoteIcon {
 		if err != nil {
 			return nil
 		}
-		t := res.Header.Get("Content-Type")
+		t := imageType(b, res.Header.Get("Content-Type"))
 		if t == "" {
-			t = "image/png"
+			return nil
 		}
 		return &remoteIcon{body: b, typ: t, at: time.Now()}
 	}
-	got := attempt(false)
-	if got == nil {
-		got = attempt(true)
+	if got := attempt(false); got != nil {
+		return got
 	}
-	if got != nil {
-		c.icons.mu.Lock()
-		c.icons.m[url] = *got
-		c.icons.mu.Unlock()
-	}
-	return got
+	return attempt(true)
 }
 
 // imageOnly: a brand image is an image and nothing else.
@@ -203,12 +273,23 @@ func sendIconFile(w http.ResponseWriter, file string) error {
 	return sendIcon(w, MimeFor(file), "public, max-age=3600", b)
 }
 
+// sendMark answers with the Studio's own mark in place of a configured image
+// that cannot be loaded; failed is the answer where there is no built web app
+// to take it from. Not kept by the browser, so the image shows once it can be.
+func (c *Core) sendMark(w http.ResponseWriter, failed error) error {
+	b, err := os.ReadFile(filepath.Join(c.a.Cfg.WebDist, "icon-512.png"))
+	if err != nil {
+		return failed
+	}
+	return sendIcon(w, "image/png", "no-store", b)
+}
+
 func (c *Core) brandIcon(w http.ResponseWriter, r *http.Request) error {
 	icon := c.configuredIcon(r.URL.Query().Get("variant") == "dark")
 	if isURL(icon) {
-		got := c.fetchRemoteIcon(r, icon)
+		got := c.fetchRemoteIcon(r.Context(), icon)
 		if got == nil {
-			return apierr.New(502, "could not load the configured brand image")
+			return c.sendMark(w, apierr.New(502, "could not load the configured brand image"))
 		}
 		return sendIcon(w, got.typ, "public, max-age=600", got.body)
 	}
@@ -228,9 +309,9 @@ func (c *Core) favicon(w http.ResponseWriter, r *http.Request) error {
 		configured = c.configuredIcon(dark)
 	}
 	if isURL(configured) {
-		got := c.fetchRemoteIcon(r, configured)
+		got := c.fetchRemoteIcon(r.Context(), configured)
 		if got == nil {
-			return apierr.New(502, "could not load the configured favicon")
+			return c.sendMark(w, apierr.New(502, "could not load the configured favicon"))
 		}
 		return sendIcon(w, got.typ, "public, max-age=600", got.body)
 	}
@@ -244,15 +325,52 @@ func (c *Core) favicon(w http.ResponseWriter, r *http.Request) error {
 	return sendIconFile(w, icon)
 }
 
-// ImageSizes is routes.ts's imageSizes: a PNG's pixel size, else "any".
+// ImageSizes is routes.ts's imageSizes: an image's pixel size where its
+// header is read, else "any" (an SVG has none).
 func ImageSizes(body []byte, typ string) string {
 	if strings.Contains(typ, "svg") {
 		return "any"
 	}
-	if len(body) > 24 && binary.BigEndian.Uint32(body) == 0x89504e47 {
-		return strconv.Itoa(int(binary.BigEndian.Uint32(body[16:]))) + "x" + strconv.Itoa(int(binary.BigEndian.Uint32(body[20:])))
+	if i, _, err := image.DecodeConfig(bytes.NewReader(body)); err == nil {
+		return strconv.Itoa(i.Width) + "x" + strconv.Itoa(i.Height)
 	}
 	return "any"
+}
+
+// minInstallIcon is the smallest icon Chrome takes for an app it installs.
+const minInstallIcon = 144
+
+// InstallIcon is routes.ts's installIcon: a deployment's own image as the
+// manifest lists it, or nil when an installed app cannot have it and has the
+// Studio's mark: not an image, not square, too small, or an SVG, from which
+// Chrome made a gray square with a letter. src is relative to the manifest,
+// so it holds under a path.
+func InstallIcon(src string, body []byte, typ string) *jsonobj.Object {
+	if typ = imageType(body, typ); typ == "" {
+		return nil
+	}
+	sizes := ImageSizes(body, typ)
+	w, h, _ := strings.Cut(sizes, "x")
+	if n, _ := strconv.Atoi(w); w != h || n < minInstallIcon {
+		return nil
+	}
+	o := jsonobj.New()
+	o.SetValue("src", strings.TrimPrefix(src, "/"))
+	o.SetValue("type", typ)
+	o.SetValue("sizes", sizes)
+	return o
+}
+
+// markSrc is one of the Studio's own icon files as the manifest names it:
+// relative to the manifest, and with the file's hash, since a browser that
+// installed the Studio looks at an icon again only when its address changes.
+func (c *Core) markSrc(file string) string {
+	b, err := os.ReadFile(filepath.Join(c.a.Cfg.WebDist, file))
+	if err != nil {
+		return file
+	}
+	sum := sha1.Sum(b)
+	return file + "?v=" + hex.EncodeToString(sum[:])[:10]
 }
 
 var hexColor = regexp.MustCompile(`(?i)^#[0-9a-f]{6}$`)
@@ -278,8 +396,11 @@ func GroundOf(r *http.Request) string {
 // page ground the person last saw ("#rrggbb", or "" for none): the splash an
 // installed app shows before the page paints takes it, so a person on the
 // light theme of a dark deployment does not open on a dark screen. Without
-// it the splash is the deployment's default theme's ground.
-func WebManifest(name string, dark bool, brand *jsonobj.Object, banner, ground string) *jsonobj.Object {
+// it the splash is the deployment's default theme's ground. brand is the
+// deployment's own icon (InstallIcon); with one, the Studio's mark is not
+// listed, since browsers take the largest icon, and on a Mac and on Android
+// the maskable one, whatever comes first. src names the mark's files.
+func WebManifest(name string, dark bool, brand *jsonobj.Object, banner, ground string, src func(file string) string) *jsonobj.Object {
 	bg := "#f3f4f6"
 	if dark {
 		bg = "#0c1320"
@@ -310,22 +431,24 @@ func WebManifest(name string, dark bool, brand *jsonobj.Object, banner, ground s
 	}
 	o.SetValue("background_color", bg)
 	o.SetValue("theme_color", bar)
-	icons := []any{}
-	if brand != nil {
-		icons = append(icons, brand)
-	}
-	icon := func(src, sizes, purpose string) *jsonobj.Object {
+	icon := func(file, sizes, purpose string) *jsonobj.Object {
 		i := jsonobj.New()
-		i.SetValue("src", src)
+		i.SetValue("src", src(file))
 		i.SetValue("sizes", sizes)
 		i.SetValue("type", "image/png")
 		i.SetValue("purpose", purpose)
 		return i
 	}
-	icons = append(icons, icon("/icon-192.png", "192x192", "any"), icon("/icon-512.png", "512x512", "any"), icon("/icon-maskable-512.png", "512x512", "maskable"))
+	icons := []any{icon("icon-192.png", "192x192", "any"), icon("icon-512.png", "512x512", "any"), icon("icon-maskable-512.png", "512x512", "maskable")}
+	if brand != nil {
+		icons = []any{brand}
+	}
 	o.SetValue("icons", icons)
 	return o
 }
+
+// manifestIconWait is how long the manifest waits for a configured image.
+var manifestIconWait = 5 * time.Second
 
 func (c *Core) manifest(w http.ResponseWriter, r *http.Request) error {
 	eff := c.a.Settings.Effective()
@@ -334,21 +457,17 @@ func (c *Core) manifest(w http.ResponseWriter, r *http.Request) error {
 		var body []byte
 		typ := ""
 		if isURL(configured) {
-			if got := c.fetchRemoteIcon(r, configured); got != nil {
+			// The manifest does not wait long for it: an install is waiting.
+			ctx, stop := context.WithTimeout(r.Context(), manifestIconWait)
+			if got := c.fetchRemoteIcon(ctx, configured); got != nil {
 				body, typ = got.body, got.typ
 			}
+			stop()
 		} else if b, err := os.ReadFile(configured); err == nil {
 			body, typ = b, MimeFor(configured)
 		}
-		if typ != "" {
-			src := "/api/brand-icon"
-			if u := c.BrandURL("icon", false); u != nil {
-				src = *u
-			}
-			brand = jsonobj.New()
-			brand.SetValue("src", src)
-			brand.SetValue("type", typ)
-			brand.SetValue("sizes", ImageSizes(body, typ))
+		if u := c.BrandURL("icon", false); u != nil {
+			brand = InstallIcon(*u, body, typ)
 		}
 	}
 	banner := ""
@@ -358,7 +477,7 @@ func (c *Core) manifest(w http.ResponseWriter, r *http.Request) error {
 			banner = "#24612e"
 		}
 	}
-	b, err := WebManifest(eff.AppName, eff.Theme == "dark", brand, banner, GroundOf(r)).MarshalJSON()
+	b, err := WebManifest(eff.AppName, eff.Theme == "dark", brand, banner, GroundOf(r), c.markSrc).MarshalJSON()
 	if err != nil {
 		return err
 	}
