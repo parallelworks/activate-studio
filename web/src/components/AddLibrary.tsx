@@ -12,7 +12,7 @@ import { BucketLibraryForm } from './BucketLibraryForm'
 import { ClusterLibraryForm } from './ClusterLibraryForm'
 import { FolderCheckCard, countLine, stepWarnings, type CheckWarning } from './FolderCheckCard'
 import { DEFAULT_LIBRARY_DEPTH, DEFAULT_REMOTE_LIBRARY_DEPTH, DEPTHS, depthHelp, readsImages, useOcrHere } from './IndexDepth'
-import { CreateConfirm, postJson, type CheckStep } from './LibraryFormParts'
+import { CreateConfirm, intoView, postJson, type CheckStep } from './LibraryFormParts'
 import { LibraryImport } from './LibraryImport'
 import { useFolderSuggestions, type FolderSuggestion } from './LocalLibraryForm'
 import { NeedsActivate } from './NeedsActivate'
@@ -221,9 +221,6 @@ function WorkflowOnly({ onStarted }: { onStarted?: (lib: UserLibrary) => void })
     </>
   )
 }
-
-// What opened is below the fold of a short dialog.
-const intoView = (el: HTMLDivElement | null) => { el?.scrollIntoView?.({ block: 'nearest' }) }
 
 function MoreOptions({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactElement | ReactElement[] }) {
   return (

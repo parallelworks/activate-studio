@@ -2405,6 +2405,8 @@ a.identity-btn { text-decoration: none; }
 .lib-review .lib-where-folder { border: 1px solid var(--pw-border); border-radius: 6px; min-height: 28px; width: 100%; }
 .lib-more { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .lib-more-body { width: 100%; scroll-margin-bottom: 80px; }
+/* A form's error, above the dialog's footer. */
+.lib-form-errors { display: flex; flex-direction: column; gap: 8px; scroll-margin-bottom: 80px; }
 .lib-more-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; width: 100%; }
 .lib-more-fields > .lib-add-my { grid-column: 1 / -1; }
 .lib-path-option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }

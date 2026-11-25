@@ -45,6 +45,9 @@ export function CreateConfirm({ paths, where, open, onClose, onConfirm }: {
   )
 }
 
+/** What opened, or a form's error, is below the fold of a short dialog. */
+export const intoView = (el: HTMLDivElement | null) => { el?.scrollIntoView?.({ block: 'nearest' }) }
+
 export async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { method: 'POST', headers: { ...OWN_REQUEST, 'Content-Type': 'application/json' }, body: JSON.stringify(body), ...(signal ? { signal } : {}) })
   const data = (await res.json().catch(() => ({}))) as { error?: string }
