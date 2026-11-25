@@ -26,6 +26,7 @@ import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
 import { setLabelScope, setPersona } from '../labelScope'
 import { LibraryTicks, scopeLabel } from '../components/LibraryScope'
 import { useChatScope } from '../chatScope'
+import type { Scope } from '../scope'
 import { useLabelVocabulary } from '../labelVocabulary'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ConversationScrubber } from '../components/ConversationScrubber'
@@ -48,6 +49,7 @@ import { BACKGROUND_TOOL } from '@parallelworks/code'
 
 import { type ChatLink, useChatLink } from '../pwcode/useChatLink'
 import { ChatMarkdownLink } from '../chatLinks'
+import { CitedPaths, citedMarkdown } from '../citedPaths'
 import { VIEWER_CACHES_CLEARED } from '../viewerCache'
 import { prefetchChat } from '../chatRecord'
 import { setFrontChat } from '../notices'
@@ -550,13 +552,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
         markdownComponents: {
-          // Inline code (a path, most often) wraps after its separators,
-          // never mid word; the classes are Streamdown's own.
-          ...({
-            inlineCode: ({ node: _node, className, children, ...props }: React.ComponentProps<'code'> & { node?: unknown }) => (
-              <code className={['rounded bg-muted px-1.5 py-0.5 font-mono text-sm', className].filter(Boolean).join(' ')} data-streamdown="inline-code" {...props}>{breakable(children)}</code>
-            ),
-          } as object),
+          // Inline code and text, with the library files they name as links.
+          ...citedMarkdown,
           // A link to a place in the Studio opens in this tab, and says so.
           a: ChatMarkdownLink,
           img: ({ node: _node, ...props }) =>
@@ -673,7 +670,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
                     notes={<PWCodeToolsNote conversationId={k.conversationId} link={k.link} />} />
                 </Activity>
               ))}
-              {!(pw.shown && pw.link?.session) && <ChatThread conversationId={activeId} find={active} />}
+              {!(pw.shown && pw.link?.session) && <StudioCited conversationId={activeId} scope={chatScope}><ChatThread conversationId={activeId} find={active} /></StudioCited>}
             </>) : (
               // Read live, so a theme toggle swaps a light and a dark icon.
               <EmptyChatBrand cfg={cfg} dark={effectiveTheme === 'dark'}>
@@ -815,6 +812,18 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         <SideViewHost />
       </div>
     </ChatProvider>
+  )
+}
+
+/** The library files a Studio assistant chat's replies name, as links: in
+ *  the libraries it searches first. */
+function StudioCited({ conversationId, scope, children }: { conversationId: string; scope: Scope; children: React.ReactNode }) {
+  const { currentConversation, isStreaming } = useChat()
+  const open = currentConversation?.id === conversationId
+  return (
+    <CitedPaths key={conversationId} where={open ? { libraries: scope === 'all' ? [] : scope } : null} busy={isStreaming} messages={open ? currentConversation?.messages : undefined}>
+      {children}
+    </CitedPaths>
   )
 }
 

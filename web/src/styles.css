@@ -1642,6 +1642,10 @@ a.identity-btn { text-decoration: none; }
 /* @[path] in a sent message: a link to the file, drawn without touching
    the message's DOM (components/MentionLinks.tsx). */
 ::highlight(studio-mention) { color: var(--pw-link); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+/* A library file a reply names (citedPaths.tsx) is underlined, as a mention
+   is: a link's colour here is the text's own. */
+.markdown a.cited-path { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+.markdown a.cited-path:hover, .markdown a.cited-path:focus-visible { text-decoration-color: currentColor; }
 /* Reasoning effort beside the model: plain text with the select's own
    arrow, like the model name next to it. */
 .composer-effort { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--pw-muted); white-space: nowrap; }

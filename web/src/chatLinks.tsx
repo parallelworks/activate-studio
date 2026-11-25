@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import { createContext, type ComponentProps } from 'react'
 import { ExternalLink } from '@parallelworks/ui'
 import { useEngine } from './chatEngine'
 
@@ -18,6 +18,9 @@ function GoesTo({ conversationId }: { conversationId: string }) {
   return <>{current === 'studio' ? GOES_TO_STUDIO : GOES_TO_SESSION}</>
 }
 
+/** Inside a link, whose text is not made another one (citedPaths.tsx). */
+export const InLink = createContext(false)
+
 /**
  * A link in a chat message. One to a place in the Studio (#view=, #open=,
  * #chat=) opens here, in this tab (App.tsx routes it), so it is a plain
@@ -30,7 +33,7 @@ export function ChatMarkdownLink({ node: _node, href, className, children, ...pr
   if (typeof href === 'string' && href.startsWith('#')) {
     // The markdown hands every link a new tab's target; this one has none.
     const { target: _target, rel: _rel, ...here } = props
-    return <a {...here} href={href} className={cls}>{children}</a>
+    return <a {...here} href={href} className={cls}><InLink.Provider value>{children}</InLink.Provider></a>
   }
-  return <ExternalLink {...props} href={href ?? ''} className={cls}>{children}</ExternalLink>
+  return <ExternalLink {...props} href={href ?? ''} className={cls}><InLink.Provider value>{children}</InLink.Provider></ExternalLink>
 }

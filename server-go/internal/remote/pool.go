@@ -727,6 +727,22 @@ func channelID(site, key string) string {
 	return KeyID(key) + "|" + site
 }
 
+// Live reports whether a session with the site is open, so that a request
+// there makes no connection.
+func (p *Pool) Live(site, key string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, c := range p.channels[channelID(site, key)] {
+		c.mu.Lock()
+		dead := c.dead || c.killed
+		c.mu.Unlock()
+		if !dead {
+			return true
+		}
+	}
+	return false
+}
+
 // pick is a session for the next request: an idle one, else a new one
 // while the host has fewer than the pool's most, else the shortest queue.
 func (p *Pool) pick(id, site, key string) (*channel, error) {

@@ -6,6 +6,8 @@ import { Button, type MenuEntry, Popover, toast } from '@parallelworks/ui'
 import { ChatProvider } from '@parallelworks/ui/ai'
 import { createOpenAIChatAdapter } from '@parallelworks/ui/ai/openai'
 import { AddIcon, ExternalLinkIcon, HelpIcon, SidebarOpenIcon } from '@parallelworks/ui/icons'
+import { ChatMarkdownLink } from '../chatLinks'
+import { citedMarkdown } from '../citedPaths'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { useAppConfig } from '../config'
 import { useWatch } from '../live'
@@ -46,13 +48,17 @@ export function CodePage() {
   )
 }
 
+// A session's replies are drawn as a chat's: the library files they name
+// open here, in this tab.
+const chatConfig = { markdownComponents: { ...citedMarkdown, a: ChatMarkdownLink } }
+
 /** The model picker reads the platform's models from a chat's context. */
 function CodeChat() {
   const cfg = useAppConfig()
   const adapter = useMemo(() => createOpenAIChatAdapter({ baseUrl: '/api/code-page/openai', storageKey: 'studio.code.models' }), [])
   const navigation = useMemo(() => ({ toConversation: () => {}, toNewChat: () => {} }), [])
   return (
-    <ChatProvider adapter={adapter} currentUser={cfg.user ?? { username: '' }} navigation={navigation}>
+    <ChatProvider adapter={adapter} currentUser={cfg.user ?? { username: '' }} navigation={navigation} config={chatConfig}>
       <CodeScreen />
     </ChatProvider>
   )
