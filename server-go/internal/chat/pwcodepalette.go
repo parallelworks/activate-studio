@@ -34,10 +34,10 @@ import (
 var terminalCommands = []string{"agents", "approve", "auth", "rewind", "settings"}
 
 // notListed are the commands "/" leaves out: those the Studio does not
-// send to a session (sessionCommands), and the terminal's.
-func notListed() []any {
+// send to a session, by any name the list gives them, and the terminal's.
+func notListed(commands []any) []any {
 	out := slices.Clone(terminalCommands)
-	for n := range sessionCommands {
+	for n := range refusedAmong(commands) {
 		out = append(out, n)
 	}
 	slices.Sort(out)
@@ -121,6 +121,23 @@ func (s *pwCommandStore) of(version string) (list []any, exact bool) {
 		return seedCommands, false
 	}
 	return list, exact
+}
+
+// every is pw code's own commands in all the releases kept.
+func (s *pwCommandStore) every() []any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.load()
+	var out []any
+	for _, r := range s.all {
+		if r == nil {
+			continue
+		}
+		if v, err := jsonv.Decode(r.Commands); err == nil {
+			out = append(out, jsonv.Arr(v)...)
+		}
+	}
+	return out
 }
 
 // learn keeps the commands of a session's palette for its release.
@@ -342,7 +359,7 @@ func (m *Module) ownList(r *http.Request, machine string) []any {
 // the folder has, less those "/" leaves out.
 func startListed(palette any, own []any, mach *jsonv.Object) *jsonv.Object {
 	out, has := []any{}, map[string]bool{}
-	for _, n := range notListed() {
+	for _, n := range notListed(slices.Concat(own, jsonv.Arr(jsonv.Path(palette, "commands")))) {
 		has[n.(string)] = true
 	}
 	add := func(list []any) {

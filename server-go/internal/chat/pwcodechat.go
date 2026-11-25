@@ -912,6 +912,9 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 			return nil
 		}
 	}
+	if err := m.refusedLine(content); err != nil {
+		return fail(err)
+	}
 	d, err := pwcode.GetSession(ctx, t.client, link.Session)
 	if err != nil {
 		return fail(err)
