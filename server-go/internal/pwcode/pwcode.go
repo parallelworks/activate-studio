@@ -471,17 +471,38 @@ func trimJS(s string) string { return wsTrim.ReplaceAllString(s, "") }
 
 func sid(id string) string { return "/v1/sessions/" + platform.EncodeURIComponent(id) }
 
+// PlanMode is the permission mode of a session that only plans; defaultMode
+// is the one pw code starts in where it was never told another.
+const (
+	PlanMode    = "plan"
+	defaultMode = "accept-edits"
+)
+
 // CreateSession is POST /v1/sessions with the request as given (an
 // object whose absent fields are left out, as Node's). Where Claude Code
 // accounts are off for the person ctx is for (ClaudeCode), a session on a
 // claude-code/ model or a Claude account is refused before pw code is
 // asked, and one pw code starts on such a model by its own default is
 // archived and refused.
+//
+// pw code keeps the mode of any session, /plan's too, as the mode of every
+// later one that names none. A session the Studio makes starts as its
+// settings say, "pw code's default (asks before commands)", so one that
+// comes up in plan mode unasked is made again in pw code's own default.
 func CreateSession(ctx context.Context, c Client, req *jsonv.Object) (*jsonv.Object, error) {
 	if err := ClaudeCodeRefused(ctx, req); err != nil {
 		return nil, err
 	}
 	s, err := obj(c.Call(ctx, http.MethodPost, "/v1/sessions", req, 0))
+	if err == nil && jsonv.String(jsonv.Path(s, "permissionMode")) == PlanMode && jsonv.String(jsonv.Path(req, "permissionMode")) == "" {
+		// Nothing was said in it.
+		if id := jsonv.String(jsonv.Path(s, "id")); id != "" {
+			_, _ = c.Call(ctx, http.MethodDelete, sid(id), nil, 0)
+		}
+		req = req.Clone()
+		req.Set("permissionMode", defaultMode)
+		s, err = obj(c.Call(ctx, http.MethodPost, "/v1/sessions", req, 0))
+	}
 	if err == nil && s != nil && IsClaudeModel(jsonv.String(jsonv.Path(s, "model"))) {
 		if why := ClaudeCodeOff(ctx); why != "" {
 			if id := jsonv.String(jsonv.Path(s, "id")); id != "" {

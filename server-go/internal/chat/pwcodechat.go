@@ -600,8 +600,12 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 	tools := m.chatTools(r, true)
 	want := specNames(tools)
 	// A session is kept while its MCP token has a day left.
-	if l := c.PWCode; l != nil && l.Site == t.site && l.Session != "" && l.Persona == t.persona && pwFresh(l.CreatedAt) {
-		if d, err := pwcode.GetSession(ctx, t.client, l.Session); err == nil && jsonv.String(jsonv.Path(d, "archivedAt")) == "" {
+	planning := false
+	if l := c.PWCode; l != nil && l.Site == t.site && l.Session != "" {
+		d, err := pwcode.GetSession(ctx, t.client, l.Session)
+		// The chat asked to plan: so does the session that takes over.
+		planning = err == nil && jsonv.String(jsonv.Path(d, "permissionMode")) == pwcode.PlanMode
+		if err == nil && l.Persona == t.persona && pwFresh(l.CreatedAt) && jsonv.String(jsonv.Path(d, "archivedAt")) == "" {
 			ck := ensureStudioMCP(ctx, t.client, l.Session, want)
 			if ck.OK {
 				m.setToolsDown(t.site, "")
@@ -642,6 +646,9 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 		req := jsonv.NewObject("workspace", t.workspace, "remoteControl", true, "agent", "studio", "agentsJson", string(agentsJSON), "allowedTools", allowed)
 		if e.PWCodePermissionMode != "" {
 			req.Set("permissionMode", e.PWCodePermissionMode)
+		}
+		if planning {
+			req.Set("permissionMode", pwcode.PlanMode)
 		}
 		if t.start.mode != "" {
 			req.Set("permissionMode", t.start.mode)

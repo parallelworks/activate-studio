@@ -424,7 +424,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
               loading={screen.loading && !stored}
               error={screen.failed ? (
                 <div className="pwcode-session-failed">
-                  <p role="alert">{screen.failed.message}</p>
+                  <p role="alert">{describeError(read.error) || 'The session could not be read.'}</p>
                   <button type="button" className="code-approval-more" onClick={screen.retry}>Try again</button>
                 </div>
               ) : undefined}

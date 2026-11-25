@@ -2,17 +2,20 @@ package codesessions
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode/pwcodetest"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 // asked is what a stand-in platform or daemon was sent.
@@ -431,15 +434,15 @@ func TestTheToolsChoiceGoesToTheChatOnly(t *testing.T) {
 	}
 }
 
-// A machine's icon is fetched from the platform with no credential, and
-// nothing but its icons is.
+// A machine's icon that is the platform's own is fetched with no credential,
+// and nothing but icons is fetched.
 func TestMachineIconsComeFromThePlatformAlone(t *testing.T) {
 	png := []byte("\x89PNG\r\n\x1a\nimage")
 	got := &asked{}
 	plat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got.take(r)
 		switch r.URL.Path {
-		case "/assets/images/icons/compute/slurm.png", "/api/blobs/0123456789abcdef":
+		case "/assets/images/icons/compute/slurm.png":
 			w.Header().Set("Content-Type", "image/png")
 			w.Write(png)
 		case "/assets/images/icons/os/macos.svg":
@@ -453,7 +456,7 @@ func TestMachineIconsComeFromThePlatformAlone(t *testing.T) {
 	t.Cleanup(plat.Close)
 	v := &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id", Username: "alex"}, Cred: &platform.Cred{Key: "alex-own-key"}}
 	base := signedInServer(t, map[string]string{"PW_GATEWAY_URL": plat.URL + "/api/openai/v1"}, false, func() *platform.Viewer { return v }, nil).URL + pagePrefix + "/icon?path="
-	for path, want := range map[string]string{"/assets/images/icons/compute/slurm.png": "image/png", "/api/blobs/0123456789abcdef": "image/png", "/assets/images/icons/os/macos.svg": "image/svg+xml"} {
+	for path, want := range map[string]string{"/assets/images/icons/compute/slurm.png": "image/png", "/assets/images/icons/os/macos.svg": "image/svg+xml"} {
 		for range 2 {
 			res, err := http.Get(base + path)
 			if err != nil {
@@ -465,7 +468,7 @@ func TestMachineIconsComeFromThePlatformAlone(t *testing.T) {
 			}
 		}
 	}
-	if got.n() != 3 {
+	if got.n() != 2 {
 		t.Errorf("asked %v, where each is kept", got.reqs)
 	}
 	for _, a := range got.auth {
@@ -491,4 +494,130 @@ func TestMachineIconsComeFromThePlatformAlone(t *testing.T) {
 	if got.n() != n {
 		t.Errorf("fetched %v", got.reqs[n:])
 	}
+}
+
+// An icon uploaded for a resource is read with the credential of the person
+// the page is for, alone, and kept for it alone.
+func TestUploadedMachineIconsAreReadAsThePerson(t *testing.T) {
+	const alex, sam = "/api/blobs/0123456789alexalex", "/api/blobs/0123456789samsam00"
+	got := &asked{}
+	plat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.take(r)
+		may := map[string]string{"Bearer alex-own-key": alex, "Bearer sam-own-key": sam, "Bearer deployment-key": alex}
+		switch {
+		case r.Header.Get("Authorization") == "Bearer busy-key":
+			w.WriteHeader(503)
+		case may[r.Header.Get("Authorization")] == "":
+			w.WriteHeader(401)
+		case may[r.Header.Get("Authorization")] != r.URL.Path:
+			w.WriteHeader(404)
+		default:
+			w.Header().Set("Content-Type", "image/png")
+			w.Write([]byte("\x89PNG" + r.URL.Path))
+		}
+	}))
+	t.Cleanup(plat.Close)
+	env := func() map[string]string {
+		return map[string]string{"PW_GATEWAY_URL": plat.URL + "/api/openai/v1", "PW_API_KEY": "deployment-key"}
+	}
+	person := func(name, key string) *platform.Viewer {
+		v := &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: name + "-id", Username: name}}
+		if key != "" {
+			v.Cred = &platform.Cred{Key: key}
+		}
+		return v
+	}
+	var v *platform.Viewer
+	base := signedInServer(t, env(), false, func() *platform.Viewer { return v }, nil).URL + pagePrefix + "/icon?path="
+	icon := func(base, path, tag string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, base+path, nil)
+		req.Header.Set("If-None-Match", tag)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res
+	}
+
+	v = person("alex", "alex-own-key")
+	res := icon(base, alex, "")
+	if res.StatusCode != 200 || res.Header.Get("Content-Type") != "image/png" || res.Header.Get("Cache-Control") != "private, no-cache" ||
+		!strings.Contains(res.Header.Get("Content-Security-Policy"), "sandbox") || res.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("alex's own: %d %v", res.StatusCode, res.Header)
+	}
+	// Kept: asked of the platform once, and the browser is told it has it.
+	if again := icon(base, alex, res.Header.Get("ETag")); again.StatusCode != 304 || got.n() != 1 {
+		t.Errorf("again: %d, asked %d times", again.StatusCode, got.n())
+	}
+	// Kept for alex alone: sam is asked for with sam's key, and refused.
+	v = person("sam", "sam-own-key")
+	if res := icon(base, alex, res.Header.Get("ETag")); res.StatusCode != 404 || got.n() != 2 {
+		t.Errorf("sam, alex's icon: %d, asked %d times", res.StatusCode, got.n())
+	}
+	if res := icon(base, sam, ""); res.StatusCode != 200 {
+		t.Errorf("sam's own: %d", res.StatusCode)
+	}
+	// With no ACTIVATE sign-in of their own, or signed out, the platform is
+	// not asked: not with the deployment's key, nor with none.
+	n := got.n()
+	for _, who := range []*platform.Viewer{person("dana", ""), {AuthEnabled: true},
+		{AuthEnabled: true, User: &platform.User{ID: "dana-id"}, Cred: &platform.Cred{Key: "k", BaseURL: "https://models.example.com"}}} {
+		v = who
+		if res := icon(base, alex, ""); res.StatusCode != 404 || got.n() != n {
+			t.Errorf("%v: %d, asked %v", who.User, res.StatusCode, got.reqs[n:])
+		}
+	}
+	for i, a := range got.auth {
+		if a != "Bearer alex-own-key" && a != "Bearer sam-own-key" {
+			t.Errorf("%s was read with %q", got.reqs[i], a)
+		}
+	}
+
+	// One the platform could not answer for is asked for again in a while,
+	// one it does not have is not.
+	v = person("kim", "busy-key")
+	if res := icon(base, alex, ""); res.StatusCode != 404 {
+		t.Errorf("busy: %d", res.StatusCode)
+	}
+	left := func(key, path string) time.Duration {
+		pageIcons.Lock()
+		defer pageIcons.Unlock()
+		return time.Until(pageIcons.m[[2]string{remote.KeyID(key), plat.URL + path}].until)
+	}
+	if d := left("busy-key", alex); d <= 0 || d > pageIconRetry {
+		t.Errorf("busy is kept %v", d)
+	}
+	if d := left("sam-own-key", alex); d < time.Hour {
+		t.Errorf("one sam may not have is kept %v", d)
+	}
+
+	// With sign-in off, the one person's credential is the deployment's.
+	n = got.n()
+	off := codeServer(t, env(), false).URL + pagePrefix + "/icon?path="
+	if res := icon(off, alex, ""); res.StatusCode != 200 || got.n() != n+1 || got.auth[n] != "Bearer deployment-key" {
+		t.Errorf("sign-in off: %d %v", res.StatusCode, got.auth[n:])
+	}
+	// With no credential there at all, none is asked for.
+	none := codeServer(t, map[string]string{"PW_GATEWAY_URL": plat.URL + "/api/openai/v1"}, false).URL + pagePrefix + "/icon?path="
+	n = got.n()
+	if res := icon(none, alex, ""); res.StatusCode != 404 || got.n() != n {
+		t.Errorf("no credential: %d %v", res.StatusCode, got.reqs[n:])
+	}
+}
+
+// What is kept stays within its bounds.
+func TestKeptMachineIconsAreBounded(t *testing.T) {
+	for i := range 3 * pageIconCount {
+		keepPageIcon([2]string{"k", fmt.Sprint(i)}, pageIconBlob{body: make([]byte, 300<<10)})
+		total := 0
+		for _, b := range pageIcons.m {
+			total += len(b.body)
+		}
+		if len(pageIcons.m) > pageIconCount || total != pageIcons.bytes || total > pageIconBytes {
+			t.Fatalf("%d kept, %d bytes, counted %d", len(pageIcons.m), total, pageIcons.bytes)
+		}
+	}
+	pageIcons.m, pageIcons.bytes = nil, 0
 }

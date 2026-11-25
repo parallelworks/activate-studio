@@ -1,8 +1,26 @@
 diff --git a/dist/ai/components/ChatMessageList.js b/dist/ai/components/ChatMessageList.js
-index 2323790a9fbf4669f21a20add2837b3e3c626056..91640722e94fdfcaa338bf9ce0c507c168430722 100644
+index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900f1310faf 100644
 --- a/dist/ai/components/ChatMessageList.js
 +++ b/dist/ai/components/ChatMessageList.js
-@@ -85,10 +85,18 @@ function unread(messages, start, end, index) {
+@@ -6,6 +6,7 @@ import { CheckIcon } from "../../icons/CheckIcon.js";
+ import { ClockIcon } from "../../icons/ClockIcon.js";
+ import { useChat, useChatStream } from "../core/ChatProvider.js";
+ import { useChatConfig } from "../core/config.js";
++import { onScreen } from "../core/onScreen.js";
+ import { ReaderHoldContext } from "../core/readerHold.js";
+ import { RowMemoryContext, createRowMemory, useExpandAll } from "../core/rowMemory.js";
+ import { rowOf, visibleText } from "../core/transcriptFind.js";
+@@ -67,6 +68,9 @@ function heldRows(content) {
+ 	return rows.filter((row) => row !== null);
+ }
+ var READ_PARTS = 50;
++/** How often a hidden list, whose rows' text can't be read, looks whether it
++*  shows again. */
++var HIDDEN_WAIT_MS = 500;
+ /** The next messages to read for a search: those the list doesn't draw and
+ *  hasn't read, about READ_PARTS parts of them, nearest the window first. */
+ function unread(messages, start, end, index) {
+@@ -85,10 +89,18 @@ function unread(messages, start, end, index) {
  	}
  	return picked.sort((a, b) => a - b).flatMap((i) => messages[i] ?? []);
  }
@@ -22,7 +40,44 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..91640722e94fdfcaa338bf9ce0c507c1
  	const isStreaming = isStreamingProp ?? providerStreaming;
  	const conversationId = messages[0]?.conversationId;
  	const textInParts = streamingParts.some((part) => part.kind === "text");
-@@ -278,6 +286,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -195,10 +207,16 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 	const readerRef = useRef(null);
+ 	useEffect(() => {
+ 		if (!indexing || !textIndex || reading.length > 0) return;
+-		const timer = setTimeout(() => {
++		let timer;
++		const read = () => {
++			if (!onScreen(readerRef.current)) {
++				timer = setTimeout(read, HIDDEN_WAIT_MS);
++				return;
++			}
+ 			const next = unread(messages, start, end, textIndex);
+ 			if (next.length > 0) setReading(next);
+-		}, 0);
++		};
++		timer = setTimeout(read, 0);
+ 		return () => clearTimeout(timer);
+ 	}, [
+ 		indexing,
+@@ -212,7 +230,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 	useLayoutEffect(() => {
+ 		if (reading.length === 0 || !textIndex) return;
+ 		const rows = [...readerRef.current?.children ?? []];
+-		for (const message of reading) {
++		if (onScreen(readerRef.current)) for (const message of reading) {
+ 			const row = rows.find((r) => r instanceof HTMLElement && r.dataset["row"] === message.id);
+ 			textIndex.set(message, row ? visibleText(row) : "");
+ 		}
+@@ -258,7 +276,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 		const lowest = keep.length > 0 ? Math.min(...keep) : indexOfRow(rows.at(-1));
+ 		const highest = keep.length > 0 ? Math.max(...keep) : indexOfRow(rows[0]);
+ 		const remember = (gone) => {
+-			const index = windowRef.current.textIndex;
++			const index = onScreen(content) ? windowRef.current.textIndex : void 0;
+ 			for (const row of index ? rows : []) {
+ 				const message = all[indexOfRow(row)];
+ 				if (message && gone(indexOfRow(row))) index?.set(message, visibleText(row));
+@@ -278,6 +296,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	}, []);
  	const isNearBottomRef = useRef(true);
  	const lastScrollTopRef = useRef(0);
@@ -30,7 +85,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..91640722e94fdfcaa338bf9ce0c507c1
  	const [pinned, setPinned] = useState(true);
  	const touchedAtRef = useRef(Number.NEGATIVE_INFINITY);
  	const releaseReaderHold = useCallback(() => {
-@@ -286,7 +295,11 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -286,7 +305,11 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	const handleScroll = useCallback(() => {
  		if (!containerRef.current) return;
  		const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
@@ -43,7 +98,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..91640722e94fdfcaa338bf9ce0c507c1
  		lastScrollTopRef.current = scrollTop;
  		const { messages: all, end: last } = windowRef.current;
  		if (scrollHeight - scrollTop - clientHeight < 24) {
-@@ -295,15 +308,21 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -295,15 +318,21 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  		setPinned(isNearBottomRef.current);
  		fitWindow();
  	}, [fitWindow]);
@@ -66,7 +121,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..91640722e94fdfcaa338bf9ce0c507c1
  	const jumpToLatest = useCallback(() => {
  		const el = containerRef.current;
  		if (el) {
-@@ -452,6 +471,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -452,6 +481,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  		} else if (el && kept?.row.isConnected) {
  			const moved = kept.row.getBoundingClientRect().top - kept.top;
  			if (Math.abs(moved) >= 1) {
@@ -74,7 +129,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..91640722e94fdfcaa338bf9ce0c507c1
  				el.scrollTop += moved;
  				lastScrollTopRef.current = el.scrollTop;
  			}
-@@ -461,7 +481,8 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -461,7 +491,8 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	}, [
  		start,
  		end,
@@ -84,6 +139,33 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..91640722e94fdfcaa338bf9ce0c507c1
  	]);
  	useEffect(() => {
  		if (messageCount === 0) {
+diff --git a/dist/ai/components/TranscriptFind.js b/dist/ai/components/TranscriptFind.js
+index 78a081600db1f1850e5bf603dfe513762801fb70..944146b92da3da6560b1f01bce3b9df929e10bb3 100644
+--- a/dist/ai/components/TranscriptFind.js
++++ b/dist/ai/components/TranscriptFind.js
+@@ -13,6 +13,9 @@ import { isMac } from "../utils.js";
+ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+ import { jsx, jsxs } from "react/jsx-runtime";
+ // src/ai/components/TranscriptFind.tsx
++/** How often a hidden transcript that changed, in which nothing can be found,
++*  looks whether it shows again. */
++var HIDDEN_WAIT_MS = 500;
+ var MATCHES = "transcript-find";
+ var CURRENT = "transcript-find-current";
+ var NONE = {
+@@ -217,7 +220,11 @@ function useTranscriptFind(root, enabled, source) {
+ 		let timer;
+ 		const again = () => {
+ 			if (timer) return;
+-			timer = setTimeout(() => {
++			timer = setTimeout(function find() {
++				if (!onScreen(target)) {
++					timer = setTimeout(find, HIDDEN_WAIT_MS);
++					return;
++				}
+ 				timer = void 0;
+ 				const prev = foundRef.current;
+ 				const transcript = transcriptOf(target);
 diff --git a/dist/ai/core/ChatProvider.js b/dist/ai/core/ChatProvider.js
 index 2f794995d0d112d929d8f069959a8720e3a27768..a901beafa4c0e3bc4ea3a7e72632782a2a1b38a3 100644
 --- a/dist/ai/core/ChatProvider.js
