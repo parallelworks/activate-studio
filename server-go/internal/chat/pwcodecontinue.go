@@ -524,16 +524,21 @@ func (m *Module) continueRelayed(w http.ResponseWriter, r *http.Request, mach *c
 	}
 	workspace := jsonv.String(jsonv.Path(d, "workspace"))
 	status, liveHost := jsonv.String(jsonv.Path(d, "status")), jsonv.String(jsonv.Path(d, "liveHost"))
+	set, has := m.relayedTools(r, mach.ID, d)
 	if !confirmed {
-		return reqbody.OK(w, reqbody.O("confirm", relayConfirm(mach.Name, workspace, status, liveHost, m.A.Cfg.AuthEnabled()), "status", status, "title", v.Title, "relay", true,
+		return reqbody.OK(w, reqbody.O("confirm", relayConfirm(mach.Name, workspace, status, liveHost, m.A.Cfg.AuthEnabled(), set), "status", status, "title", v.Title, "relay", true,
 			"studioTools", m.bridgeOffer(r, bridgeMach{ID: mach.ID, Kind: mach.Kind, Name: mach.Name, Owner: mach.Owner, Status: mach.Status})))
 	}
 	model := jsonv.String(jsonv.Path(d, "model"))
 	link := &conversations.PWCodeLink{Site: pwcode.RelaySite(mach.ID), Relay: true, Session: session, Workspace: workspace,
 		URL: v.URL, Model: model, CreatedAt: m.Conv.Now(), Continued: true, Machine: mach.ID, MachineName: mach.Name}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
+	// Where pw code there has this Studio's tools, the session is given the
+	// Studio's instructions with the chat's first message, as one started
+	// from here is: nothing has told it of them.
+	link.HasTools, link.Untold = has, set
 	hist, dropped := continuedHistory(jsonv.Arr(jsonv.Path(d, "history")), model, now)
-	note := conversations.Message{ID: fmt.Sprintf("note-continued-%d", time.Now().UnixMilli()), Role: "assistant", Content: sp(continueNote(v, dropped, relayNote(mach.Name))), Timestamp: now}
+	note := conversations.Message{ID: fmt.Sprintf("note-continued-%d", time.Now().UnixMilli()), Role: "assistant", Content: sp(continueNote(v, dropped, relayNote(mach.Name, set))), Timestamp: now}
 	if len(hist) > 0 {
 		hist[0].ParentID = &note.ID
 	}
@@ -547,6 +552,35 @@ func (m *Module) continueRelayed(w http.ResponseWriter, r *http.Request, mach *c
 	c := m.Conv.CreateWith(&title, owner, msgs, link)
 	m.sessionNamed(c, d)
 	m.A.Log.Info("pw code chat: continued a session on another machine through the platform", "session", session, "conversation", c.ID, "status", status)
+	toolsNote := "This session runs on " + mach.Name + " and keeps its own tools there, not the Studio's library tools."
+	switch {
+	case has:
+		toolsNote = "This session runs on " + mach.Name + ", where pw code has this Studio's tools."
+	case set:
+		toolsNote = "This session runs on " + mach.Name + ". pw code there has this Studio's tools now; one that opened before they were added keeps its own."
+	}
 	return reqbody.OK(w, reqbody.O("conversationId", c.ID, "relay", true,
-		"tools", reqbody.O("connected", false, "count", 0, "note", "This session runs on "+mach.Name+" and keeps its own tools there, not the Studio's library tools.")))
+		"tools", reqbody.O("connected", has, "count", 0, "note", toolsNote)))
+}
+
+// relayedTools is whether pw code on machine has this Studio's tools for r's
+// viewer, as the Studio last set it up (set), and whether the session d there
+// is known to have them: it was made since, or has used one. pw code gives
+// them to a session as it opens, so another of them may or may not.
+func (m *Module) relayedTools(r *http.Request, machine string, d any) (set, has bool) {
+	url, why := m.bridgeReach(r)
+	p := m.bridgePrefs().get(userID(r), machine)
+	if why != "" || p.URL == "" || p.URL != url {
+		return false, false
+	}
+	at, err := time.Parse(time.RFC3339, p.At)
+	if made, merr := time.Parse(time.RFC3339Nano, jsonv.String(jsonv.Path(d, "createdAt"))); err == nil && merr == nil && made.After(at) {
+		return true, true
+	}
+	for _, x := range jsonv.Arr(jsonv.Path(d, "history")) {
+		if jsonv.String(jsonv.Path(x, "kind")) == "tool_call" && strings.HasPrefix(jsonv.String(jsonv.Path(x, "toolName")), studioToolPrefix) {
+			return true, true
+		}
+	}
+	return true, false
 }

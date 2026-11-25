@@ -156,7 +156,7 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 			"serverInfo", reqbody.O("name", "activate-studio", "version", "0.1.0"))
 		// Which tool to use when, for a client that puts a server's
 		// instructions in its model's context.
-		if in := m.mcpInstructions(m.mcpSpecs(r, person, chat), chatGrant); in != "" {
+		if in := m.mcpInstructions(m.mcpSpecs(r, person, chat), chatGrant, person || chatGrant); in != "" {
 			res.SetValue("instructions", in)
 		}
 		return reqbody.OK(w, rpcResult(id, res))
@@ -212,7 +212,11 @@ func (m *Module) mcpPost(w http.ResponseWriter, r *http.Request) error {
 			// A tool's failure is a result for the calling model to read.
 			return reqbody.OK(w, rpcResult(id, reqbody.O("content", []any{reqbody.O("type", "text", "text", err.Error())}, "isError", true)))
 		}
-		return reqbody.OK(w, rpcResult(id, reqbody.O("content", []any{reqbody.O("type", "text", "text", out.Result)}, "isError", false)))
+		text := out.Result
+		if person || chatGrant {
+			text = withCiteLinks(name, out)
+		}
+		return reqbody.OK(w, rpcResult(id, reqbody.O("content", []any{reqbody.O("type", "text", "text", text)}, "isError", false)))
 	}
 	shown := "(none)"
 	if !jsonobj.IsNullish(rawMethod) {

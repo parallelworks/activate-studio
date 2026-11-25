@@ -52,7 +52,11 @@ func (m *Module) StudioSession(ctx context.Context, c pwcode.Client, owner *auth
 	if mode == "" {
 		mode = e.PWCodePermissionMode
 	}
-	prompt := m.pwcodePrompt(tools)
+	kind := folderUnknown
+	if _, ok := under(m.A.Cfg.KBRoot, workspace); ok {
+		kind = folderInLibrary
+	}
+	prompt := m.pwcodePrompt(tools, kind, true)
 	var tried []string
 	// c is this host's daemon: the Studio is reached as a daemon here reaches it.
 	for _, url := range m.mcpURLs(false) {

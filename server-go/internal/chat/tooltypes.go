@@ -76,6 +76,9 @@ type Outcome struct {
 	Failed  bool                 `json:"failed,omitempty"`
 	Gufi    json.RawMessage      `json:"gufi,omitempty"`
 	Files   []conversations.File `json:"files,omitempty"`
+	// cite is the files a pw code session may cite of the result, where they
+	// are not Files.
+	cite []conversations.File
 }
 
 // ToolCtx is executeTool's ctx.

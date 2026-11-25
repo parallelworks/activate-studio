@@ -48,13 +48,19 @@ func (m *Module) relayTarget(r *http.Request, link *conversations.PWCodeLink) (*
 }
 
 // relayConfirm is what the person is asked before a chat drives a session
-// on another machine: where it runs, and that it stays there.
-func relayConfirm(machine, workspace, status, liveHost string, signIn bool) string {
+// on another machine: where it runs, that it stays there, and its tools
+// (studio: pw code there has this Studio's).
+func relayConfirm(machine, workspace, status, liveHost string, signIn, studio bool) string {
 	where := machine
 	if workspace != "" {
 		where += ", in " + shortWorkspace(workspace)
 	}
-	s := "This session runs on " + where + ", and stays there: this chat sends your messages, answers and Stop to it through ACTIVATE, as you, and its commands run on " + machine + ". It keeps its own tools, not the Studio's library tools."
+	s := "This session runs on " + where + ", and stays there: this chat sends your messages, answers and Stop to it through ACTIVATE, as you, and its commands run on " + machine + ". "
+	if studio {
+		s += "pw code there has this Studio's tools; a session that opened before they were added may lack them."
+	} else {
+		s += "It keeps its own tools, not the Studio's library tools."
+	}
 	switch status {
 	case "running":
 		s += " It is working on a reply now; the chat follows from your next message."
@@ -74,9 +80,14 @@ func relayConfirm(machine, workspace, status, liveHost string, signIn bool) stri
 	return s
 }
 
-// relayNote is what a relayed chat's opening note adds.
-func relayNote(machine string) string {
-	return " It keeps running on " + machine + ", where its commands run: this chat reaches it through ACTIVATE, and it has its own tools, not the Studio's library tools."
+// relayNote is what a relayed chat's opening note adds; studio is as for
+// relayConfirm.
+func relayNote(machine string, studio bool) string {
+	s := " It keeps running on " + machine + ", where its commands run: this chat reaches it through ACTIVATE, and "
+	if studio {
+		return s + "pw code there has this Studio's tools."
+	}
+	return s + "it has its own tools, not the Studio's library tools."
 }
 
 // relayMachine is a relayed link's machine as the person knows it, or nil

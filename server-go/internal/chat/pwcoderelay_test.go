@@ -225,10 +225,10 @@ func TestARelayedChatIsOnlyItsOwners(t *testing.T) {
 		t.Errorf("bob reached ada's chats or session: %d messages, %v, %d calls", n, plat.relayed, remote.calls)
 	}
 	// The question before continuing says so, where people sign in.
-	if q := relayConfirm("other-box", "", "idle", "", true); !strings.Contains(q, "Only you can see the chat in this Studio, even where chats are shared") {
+	if q := relayConfirm("other-box", "", "idle", "", true, false); !strings.Contains(q, "Only you can see the chat in this Studio, even where chats are shared") {
 		t.Errorf("confirm: %s", q)
 	}
-	if q := relayConfirm("other-box", "", "idle", "", false); strings.Contains(q, "Only you") {
+	if q := relayConfirm("other-box", "", "idle", "", false, false); strings.Contains(q, "Only you") {
 		t.Errorf("confirm without sign-in: %s", q)
 	}
 }

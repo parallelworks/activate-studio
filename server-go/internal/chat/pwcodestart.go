@@ -234,8 +234,8 @@ const relayInstructionsHead = "\n\nFrom ACTIVATE Studio, for this session (the p
 // one the Studio makes. The platform's create takes no instructions, and
 // pw code gives the model none that an MCP server sends.
 func (m *Module) relayInstructions(r *http.Request) string {
-	return relayInstructionsHead + m.pwcodePrompt(m.personTools(r, m.personCtx(r))) +
-		"\n\nIf pw code says a studio tool is not available in this mode, stop trying it and tell the person so: a wider permission mode for this session asks them before it."
+	return relayInstructionsHead + m.pwcodePrompt(m.personTools(r, m.personCtx(r)), folderElsewhere, false) +
+		"\n\nIf this session has no " + studioToolPrefix + " tools, it opened before they were added here: leave this aside and use your own tools. If pw code says a studio tool is not available in this mode, stop trying it and tell the person so: a wider permission mode for this session asks them before it."
 }
 
 // startFromCode is codesessions.StartInChat: a Code page session starts as

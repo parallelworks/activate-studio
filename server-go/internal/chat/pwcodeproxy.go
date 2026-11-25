@@ -579,7 +579,9 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			l := *c.PWCode
 			l.Untold = false
 			m.Conv.SetPWCode(c.ID, &l)
-			m.nameTold(r, c, t, sentText)
+			if l.LastMessage == "" {
+				m.nameTold(r, c, t, sentText)
+			}
 		}
 		m.recordSent(r, c, t, sentText, lastSeq)
 	}
