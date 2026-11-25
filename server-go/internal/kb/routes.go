@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
+	"github.com/parallelworks/activate-studio/server-go/internal/links"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
@@ -36,6 +37,10 @@ type Module struct {
 	Jobs     *Jobs
 	// Fetch is the client /api/kb/upload-url fetches with.
 	Fetch *http.Client
+
+	// Links is the IDs Copy link gives, and Audit who made and opened them.
+	Links *links.Store
+	Audit *links.Audit
 
 	stats statsCache
 	up    uploads
@@ -83,7 +88,9 @@ func New(a *app.App) *Module {
 	m.Libs = &Libraries{Roots: roots, Pinned: os.Getenv("STUDIO_LIBRARIES"), AuthEnabled: a.Cfg.AuthEnabled(),
 		Label: func() string { return a.Settings.Effective().KbLabel }}
 	m.Previews = &Previews{Roots: roots}
-	m.Files = &Files{Roots: roots, Previews: m.Previews, Indexer: ix}
+	m.Links, m.Audit = links.New(roots.IndexBase), links.NewAudit(roots.IndexBase)
+	m.Links.Warn = func(msg string, args ...any) { a.Log.Warn(msg, args...) }
+	m.Files = &Files{Roots: roots, Previews: m.Previews, Indexer: ix, Links: m.Links}
 	runner := a.Gufi
 	if runner == nil {
 		runner = gufi.NewRunner(gufi.NewLocal(a.Cfg.GufiBin), a.Log, gufi.OptionsFrom(a.Cfg.Gufi))
@@ -166,6 +173,8 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	h("POST /api/kb/tags", m.postTags)
 	h("POST /api/kb/tags/recover", m.recoverTags)
 	h("GET /api/jobs/{id}", m.job)
+	h("POST /api/links", m.makeLink)
+	h("GET /api/links/{id}", m.openLink)
 }
 
 /* ---- requests ---- */

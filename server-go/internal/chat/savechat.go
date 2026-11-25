@@ -118,7 +118,10 @@ func (m *Module) saveChatHere(ctx context.Context, c *conversations.Conversation
 		werr = os.Chmod(tmp.Name(), 0o644)
 	}
 	if werr == nil {
-		werr = os.Rename(tmp.Name(), abs)
+		rewrote := kb.RewritingMain(rel, abs)
+		if werr = os.Rename(tmp.Name(), abs); werr == nil {
+			rewrote()
+		}
 	}
 	if werr != nil {
 		os.Remove(tmp.Name())

@@ -77,6 +77,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	users.OnRemoved(func(root string) { kb.ForgetRemoteStats(a.Cfg.IndexBase, root) })
 	kb.LoadRemoteStats(a.Cfg.IndexBase)
+	s.Reg.OnRemoved(func(id string) { kb.LinkStore().DropLibrary("", id) })
 	a.Providers.Libraries = func(r *http.Request, kbLabel, viewer string) ([]json.RawMessage, error) {
 		v := libraries.ViewerOf(viewer)
 		var out []json.RawMessage

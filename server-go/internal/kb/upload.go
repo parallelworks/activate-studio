@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -149,9 +150,11 @@ func (f *Files) Upload(r *http.Request, dir string) (saved []string, cleaned str
 		if err := os.MkdirAll(filepath.Dir(dest), 0o777); err != nil {
 			return saved, cleaned, err
 		}
+		rewrote := f.rewriting(path.Join(cleaned, rel), dest)
 		if err := saveLimited(dest, part, maxUploadBytes); err != nil {
 			return saved, cleaned, err
 		}
+		rewrote()
 		if cleaned != "" {
 			saved = append(saved, cleaned+"/"+rel)
 		} else {

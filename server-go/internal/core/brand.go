@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/helpdoc"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
+	"github.com/parallelworks/activate-studio/server-go/internal/links"
 	"github.com/parallelworks/activate-studio/server-go/internal/version"
 )
 
@@ -410,6 +411,8 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	// Whether people sign in: it decides what the main library is called
 	// (theirs, or the one they share) and what My library means.
 	set("signIn", c.a.Cfg.AuthEnabled())
+	// The address links to items start with, where it is fixed.
+	set("linkBase", links.Base(os.Getenv("STUDIO_SELF_URL"), c.a.Cfg.OIDC.RedirectURI, auth.CallbackPath))
 	// Whether the Studio's settings are its administrators' and not this
 	// person's: the app then keeps a preference such as the sidebar's
 	// width in the browser instead.
