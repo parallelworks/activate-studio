@@ -370,6 +370,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("GET /api/mcp", m.mcpGet)
 	h("GET /api/mcp/bridge", m.bridgeRoute)
 	h("POST /api/mcp/bridge/setup", m.bridgeSetup)
+	h("POST /api/mcp/bridge/remove", m.bridgeRemove)
 	h("POST /api/mcp/bridge/prefs", m.bridgeDecline)
 	h("GET /api/mcp/bridge/machines", m.bridgeMachinesRoute)
 	m.attachmentRoutes(h)

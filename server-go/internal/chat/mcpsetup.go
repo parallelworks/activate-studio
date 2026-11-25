@@ -356,6 +356,8 @@ type bridgeOfferT struct {
 	Why       string `json:"why,omitempty"`
 	// Available is whether the Studio can set it up there (the card).
 	Available bool `json:"available"`
+	// Allows is the tools pw code there would run without asking.
+	Allows []string `json:"allows,omitempty"`
 }
 
 func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
@@ -374,7 +376,7 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 	if p.URL != "" && p.URL == url {
 		// Set up already: so it stays while the machine is off, though it
 		// is not checked again until it is on.
-		o.State, o.Available = "set", bridgeOnline(mach) == nil
+		o.State, o.Available, o.Allows = "set", bridgeOnline(mach) == nil, m.bridgeAllows(r)
 		return o
 	}
 	// Offered, declined or not, only on a machine that is on with its pw
@@ -383,7 +385,7 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 		o.State, o.Why = "unavailable", apiMessage(err)
 		return o
 	}
-	o.Available = true
+	o.Available, o.Allows = true, m.bridgeAllows(r)
 	switch {
 	case p.Declined:
 		o.State = "declined"
@@ -498,17 +500,11 @@ func (m *Module) bridgeSetup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	who := userID(r)
-	m.bridgeMu.Lock()
-	if m.bridgeBusy == nil {
-		m.bridgeBusy = map[string]bool{}
+	release, err := m.bridgeClaim(r)
+	if err != nil {
+		return err
 	}
-	if m.bridgeBusy[who] {
-		m.bridgeMu.Unlock()
-		return pwErr(409, "The Studio is already setting up pw code for you; wait for it to finish.")
-	}
-	m.bridgeBusy[who] = true
-	m.bridgeMu.Unlock()
-	defer func() { m.bridgeMu.Lock(); delete(m.bridgeBusy, who); m.bridgeMu.Unlock() }()
+	defer release()
 
 	// A machine the Studio set up, or found set up, for this Studio is not
 	// opened again unless the person asks to check it.
@@ -545,6 +541,35 @@ func (m *Module) bridgeSetup(w http.ResponseWriter, r *http.Request) error {
 	return reqbody.OK(w, out)
 }
 
+// bridgeClaim is the one setup or removal a person runs at a time; the
+// answer ends it.
+func (m *Module) bridgeClaim(r *http.Request) (func(), error) {
+	who := userID(r)
+	m.bridgeMu.Lock()
+	defer m.bridgeMu.Unlock()
+	if m.bridgeBusy == nil {
+		m.bridgeBusy = map[string]bool{}
+	}
+	if m.bridgeBusy[who] {
+		return nil, pwErr(409, "The Studio is already setting up pw code for you; wait for it to finish.")
+	}
+	m.bridgeBusy[who] = true
+	return func() { m.bridgeMu.Lock(); delete(m.bridgeBusy, who); m.bridgeMu.Unlock() }, nil
+}
+
+func bridgeUnreached(machine, site string, err error) error {
+	return pwErr(502, "The Studio could not reach "+machine+" with pw ssh as you, at "+site+" ("+firstLine(apiMessage(err), 300)+"). Do it yourself in a terminal there.")
+}
+
+// bridgeLookAt is bridgeLook's answer from the machine.
+func (m *Module) bridgeLookAt(r *http.Request, site, key, machine string) (bridgeLooked, error) {
+	res, err := m.bridgeRun()(r.Context(), site, key, []string{"sh", "-c", bridgeLook, "studio-look", studioMCPName}, 90*time.Second)
+	if err != nil {
+		return bridgeLooked{}, bridgeUnreached(machine, site, err)
+	}
+	return parseBridgeLook(res.Stdout), nil
+}
+
 // bridgeInstall looks at pw code on the machine, adds the entry where it is
 // missing or out of date, and tries it.
 func (m *Module) bridgeInstall(r *http.Request, site, key string, mach bridgeMach, url string, replace bool) (map[string]any, error) {
@@ -552,14 +577,10 @@ func (m *Module) bridgeInstall(r *http.Request, site, key string, mach bridgeMac
 	ctx := r.Context()
 	machine := firstNonEmpty(mach.Name, mach.ID)
 	who := userID(r)
-	reached := func(err error) error {
-		return pwErr(502, "The Studio could not reach "+machine+" with pw ssh as you, at "+site+" ("+firstLine(apiMessage(err), 300)+"). Do it yourself in a terminal there.")
-	}
-	res, err := run(ctx, site, key, []string{"sh", "-c", bridgeLook, "studio-look", studioMCPName}, 90*time.Second)
+	look, err := m.bridgeLookAt(r, site, key, machine)
 	if err != nil {
-		return nil, reached(err)
+		return nil, err
 	}
-	look := parseBridgeLook(res.Stdout)
 	me := user(r).Username
 	switch {
 	case look.pw == "":
@@ -594,12 +615,19 @@ func (m *Module) bridgeInstall(r *http.Request, site, key string, mach bridgeMac
 		add := []string{look.pw, "code", "mcp", "add", "--scope", "user", "--force", studioMCPName, "--", "sh", "-c", bridgeShim, bridgeShimName, url, look.pw}
 		res, err := run(ctx, site, key, add, 90*time.Second)
 		if err != nil {
-			return nil, reached(err)
+			return nil, bridgeUnreached(machine, site, err)
 		}
 		if res.Code != 0 {
 			return nil, pwErr(502, "pw code on "+machine+" did not take the entry: "+firstLine(strings.TrimSpace(res.Stderr+" "+res.Stdout), 300))
 		}
 		m.A.Log.Info("mcp setup: the Studio's tools added to pw code", "user", who, "machine", machine, "replaced", replaced != "")
+	}
+	// The tools that only read run there without asking (mcpallow.go). A
+	// machine whose settings cannot take that still gets the entry.
+	allows := m.bridgeAllows(r)
+	added, allowWhy := bridgeRulesRun(ctx, run, site, key, "add", machineRules(allows))
+	if added > 0 {
+		m.A.Log.Info("mcp setup: the Studio's tools that read are allowed in pw code", "user", who, "machine", machine, "rules", added)
 	}
 	// Try it as a session there would: one tools/list through the shim,
 	// which the Studio records as this person's when it arrives.
@@ -631,7 +659,7 @@ func (m *Module) bridgeInstall(r *http.Request, site, key string, mach bridgeMac
 		}
 	}
 	return map[string]any{"done": true, "changed": changed, "replaced": replaced != "", "machine": machine,
-		"tools": tools, "worked": why == "", "why": why}, nil
+		"tools": tools, "worked": why == "", "why": why, "allows": allows, "allowed": added, "allowWhy": allowWhy}, nil
 }
 
 // bridgeAttach is the live attach: POST /api/code/machines/{machine}/
