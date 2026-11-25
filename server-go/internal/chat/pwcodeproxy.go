@@ -850,10 +850,10 @@ func (m *Module) recordSent(r *http.Request, c *conversations.Conversation, t *p
 		})
 		close(events)
 	}()
-	go func() {
+	m.pw.bg.Go(func() {
 		defer cancel()
 		turn.run(events, followErr)
-	}()
+	})
 }
 
 // codeMachine is the chat's machine as the view reads it (an

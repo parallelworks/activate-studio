@@ -216,7 +216,7 @@ func (m *Module) learnAtStart(r *http.Request, c pwcode.Client, l *conversations
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), time.Minute)
 	// A request of its own: resolving the viewer writes to the request.
 	own := r.WithContext(ctx)
-	go func() {
+	m.pw.bg.Go(func() {
 		defer cancel()
 		if machine == directMachine {
 			_, _ = m.pwcodeHereCached(ctx, own)
@@ -228,7 +228,7 @@ func (m *Module) learnAtStart(r *http.Request, c pwcode.Client, l *conversations
 		if v, err := c.Call(ctx, http.MethodGet, route, nil, paletteWait); err == nil {
 			m.pwCommands().learn(version, v)
 		}
-	}()
+	})
 }
 
 // releaseOn is the pw code release on a machine, as last seen there: ""
