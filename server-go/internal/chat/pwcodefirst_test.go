@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 )
 
@@ -70,16 +71,65 @@ func TestOtherFirstMessagesAreSent(t *testing.T) {
 	}
 }
 
-// A session that answers a chat from its first message is told what the
-// Studio assistant said before, a command or not.
-func TestACommandAfterOtherTurnsIsSentWithThem(t *testing.T) {
+// A command after turns the session has not seen runs in it all the same,
+// and the turns go with the first message sent there.
+func TestACommandAfterOtherTurnsLeavesThemOwed(t *testing.T) {
 	f := &fakePW{script: helloTurn}
 	m, base := pwModule(t, f, nil)
 	c := m.Conv.Create(nil, "")
 	m.Conv.RecordUserTurn(c.ID, "u0", "What is the budget?", nil, "")
-	out := post(t, base, first(c.ID, "/plan spend it", true, "parentMessageId", "u0"))
-	if len(f.messages) != 1 || !strings.Contains(f.messages[0], "What is the budget?") || strings.Contains(out, "pwcode_first") {
+	m.Conv.RecordAssistantTurn(c.ID, conversations.Message{ID: "a0", Role: "assistant", Content: sp("Nine."), ParentID: sp("u0")})
+	out := post(t, base, first(c.ID, "/plan spend it", true, "parentMessageId", "a0", "engine", "pwcode"))
+	now := m.Conv.Get(c.ID)
+	if len(f.messages) != 0 || !strings.Contains(out, "pwcode_first") || len(now.Messages) != 2 || now.PWCode.Owed == nil || *now.PWCode.Owed != (conversations.PWCodeOwed{Upto: "a0"}) {
+		t.Fatalf("sent %q, kept %+v: %s", f.messages, now.PWCode, out)
+	}
+	for _, text := range []string{"/diagnose-run 7", "spend it", "and more"} {
+		b, _ := json.Marshal(map[string]any{"text": text})
+		res, err := http.Post(base+"/api/code/machines/studio/sessions/s1/messages", "application/json", strings.NewReader(string(b)))
+		if err != nil || res.StatusCode != 200 {
+			t.Fatal(res, err)
+		}
+		res.Body.Close()
+	}
+	want := "Earlier in this conversation, before you joined it:\n\nThe person: What is the budget?\n\nThe Studio assistant: Nine.\n\nThe person's new message:\n\nspend it"
+	if len(f.messages) != 3 || f.messages[0] != "/diagnose-run 7" || f.messages[1] != want || f.messages[2] != "and more" || m.Conv.Get(c.ID).PWCode.Owed != nil {
+		t.Errorf("sent %q", f.messages)
+	}
+	// A page that does not run commands has it sent with them, as before.
+	d := m.Conv.Create(nil, "")
+	m.Conv.RecordUserTurn(d.ID, "u0", "What is the budget?", nil, "")
+	if out = post(t, base, first(d.ID, "/plan spend it", false, "parentMessageId", "u0")); !strings.Contains(f.messages[len(f.messages)-1], "What is the budget?") || strings.Contains(out, "pwcode_first") {
 		t.Errorf("sent %q: %s", f.messages, out)
+	}
+}
+
+// A session that answered here before is owed the turns since, whatever
+// it does with the command, and has them where the Studio sends the next.
+func TestTurnsSinceTheSessionsReplyAreOwed(t *testing.T) {
+	f := &fakePW{script: helloTurn}
+	m, base := pwModule(t, f, nil)
+	c := m.Conv.Create(nil, "")
+	post(t, base, first(c.ID, "hello", true))
+	l := m.Conv.Get(c.ID).PWCode
+	if l.LastMessage == "" {
+		t.Fatal("no reply kept")
+	}
+	m.Conv.RecordUserTurn(c.ID, "u2", "What is the budget?", sp(l.LastMessage), "")
+	m.Conv.RecordAssistantTurn(c.ID, conversations.Message{ID: "a2", Role: "assistant", Content: sp("Nine."), ParentID: sp("u2")})
+	b := first(c.ID, "/goal spend it", true, "parentMessageId", "a2", "userMessageId", "u3")
+	post(t, base, b)
+	if o := m.Conv.Get(c.ID).PWCode.Owed; o == nil || *o != (conversations.PWCodeOwed{After: l.LastMessage, Upto: "a2"}) {
+		t.Fatalf("owed %+v", o)
+	}
+	// The goal's own reply is not a turn it missed.
+	m.Conv.RecordAssistantTurn(c.ID, conversations.Message{ID: "pwc-9", Role: "assistant", Content: sp("On it."), ParentID: sp("a2")})
+	if got := owedContext(m.Conv.Get(c.ID), "more"); got != "In this conversation since your last reply:\n\nThe person: What is the budget?\n\nThe Studio assistant: Nine.\n\nThe person's new message:\n\n" {
+		t.Errorf("owed %q", got)
+	}
+	post(t, base, first(c.ID, "more", true, "parentMessageId", "pwc-9", "userMessageId", "u4"))
+	if last := f.messages[len(f.messages)-1]; !strings.Contains(last, "What is the budget?") || m.Conv.Get(c.ID).PWCode.Owed != nil {
+		t.Errorf("sent %q, owed %+v", last, m.Conv.Get(c.ID).PWCode.Owed)
 	}
 }
 

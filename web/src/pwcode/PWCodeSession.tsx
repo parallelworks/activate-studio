@@ -34,7 +34,8 @@ import type { Translate } from '../code/parts'
 import { followCleared, pwCode } from './api'
 import { describeError } from './describeError'
 import { STUDIO_MACHINE } from './newChatStart'
-import { withEarlier, withoutCarried } from './carried'
+import { type Owed, withEarlier, withoutCarried } from './carried'
+import { notListed } from './chatCommands'
 import { AccountChip, AccountPanelModal } from './session/AccountPanel'
 import { SessionActivity, SessionStatusRow, type StatusActivity, useSessionAgents, useSwitcherState } from './session/AgentSwitcher'
 import { BackgroundCommandsContext, useBackgroundShortcut } from './session/BackgroundCommandHint'
@@ -182,7 +183,7 @@ function storedMessages(list: unknown[] | undefined): ChatMessage[] | undefined 
 
 /** The chat's record's messages (chatRecord.ts): kept from the chat's
  *  open, which reads it, or read here when it was not. */
-function useChatMessages(conversationId: string | undefined): ChatMessage[] | undefined {
+function useChatMessages(conversationId: string | undefined): { record: ChatMessage[] | undefined; owed: Owed | undefined } {
   const [record, setRecord] = useState(() => cachedChat(conversationId))
   useEffect(() => {
     const kept = cachedChat(conversationId)
@@ -192,7 +193,7 @@ function useChatMessages(conversationId: string | undefined): ChatMessage[] | un
     readChat(conversationId).then(c => { if (!gone) setRecord(c) }, () => {})
     return () => { gone = true }
   }, [conversationId])
-  return useMemo(() => storedMessages(record?.messages), [record])
+  return useMemo(() => ({ record: storedMessages(record?.messages), owed: (record?.pwcode as { owed?: Owed } | null | undefined)?.owed }), [record])
 }
 
 function SessionPane({ conversationId, machine, sessionId, username, notes, settingsExtra, first, onMoved }: PWCodeSessionProps) {
@@ -300,6 +301,14 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
     describeError,
   })
 
+  // Less the commands the Studio does not send, and the terminal's, which
+  // its palette names.
+  const commands = useMemo(() => {
+    if (!page.palette) return []
+    const out = notListed(page.palette)
+    return screen.commands.filter(c => !out.includes(c.name))
+  }, [screen.commands, page.palette])
+
   // A newer pw for the session's machine, which /upgrade installs from here.
   const pwUpdate = usePwUpdate({
     upgrade: pwCode.upgradePw,
@@ -318,7 +327,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   // Until the session's transcript first arrives, the chat's own record of
   // it (read as this person, chatRecord.ts) is drawn, as before the session
   // view: a first open over a slow relay shows the conversation at once.
-  const record = useChatMessages(conversationId)
+  const { record, owed } = useChatMessages(conversationId)
   const stored = useMemo(() => {
     if (detail) return undefined
     const said = first ?? pending
@@ -327,7 +336,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   // The session's transcript holds what the Studio sent it, the turns it
   // missed before the person's message: the chat draws those turns from
   // its record, where they came, and the message as the person typed it.
-  const shownMessages = useMemo(() => withoutCarried(stored ?? withEarlier(messages, record)), [stored, messages, record])
+  const shownMessages = useMemo(() => withoutCarried(stored ?? withEarlier(messages, record, owed)), [stored, messages, record, owed])
 
   // The library files its replies name open in the Library: its paths are
   // from its folder, on its machine.
@@ -468,7 +477,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
                 inputLabel: 'Message to this session',
                 sendLabel: 'Send',
                 pastes,
-                slash: { commands: screen.commands, label: 'Commands', onOpen: page.openPalette, loading: page.paletteLoading },
+                slash: { commands, label: 'Commands', onOpen: page.openPalette, loading: page.paletteLoading },
                 activity: status(activityLine(screen.activity), {
                   goal: screen.goal && conversation.goal ? (
                     <GoalControl key={`${machine}/${sessionId}`} machine={machine} sessionId={sessionId}

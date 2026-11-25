@@ -435,6 +435,16 @@ type PWCodeLink struct {
 	// Studio's instructions yet, which its first message brings.
 	HasTools bool `json:"hasTools,omitempty"`
 	Untold   bool `json:"untold,omitempty"`
+	// Owed: the chat's turns the session has not seen, which a command run
+	// in it did not bring and the next message there does.
+	Owed *PWCodeOwed `json:"owed,omitempty"`
+}
+
+// PWCodeOwed is a chat's turns after one message ("" for its start), up to
+// another.
+type PWCodeOwed struct {
+	After string `json:"after,omitempty"`
+	Upto  string `json:"upto"`
 }
 
 type conversationFields Conversation

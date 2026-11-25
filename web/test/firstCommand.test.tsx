@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatProvider, useChat, type ChatAdapter } from '@parallelworks/ui/ai'
 import { createStudioAdapter } from '../src/adapter'
@@ -41,7 +41,7 @@ function studio() {
       case '/api/code/sessions': return json({ machines: [{ id: 'studio', name: 'box', kind: 'existing', status: 'connected', remoteStart: true, hostname: 'box.example', daemonId: 'd1' }], sessions: [{ ...at, history: undefined, messageCount: 0 }] })
       case '/api/code/machines/studio/sessions/s1': await ready; return json(at)
       case '/api/code/machines/studio/sessions/s1/transcript': await ready; return json({ tail: at, from: 0, total: 0 })
-      case '/api/code/machines/studio/sessions/s1/palette': return json({ commands: [{ name: 'help' }, { name: 'plan' }, { name: 'compact' }], prompts: ['code-review'] })
+      case '/api/code/machines/studio/sessions/s1/palette': return json({ commands: [{ name: 'help' }, { name: 'plan' }, { name: 'compact' }, { name: 'rename' }, { name: 'rewind' }], prompts: ['code-review'], notListed: ['archive', 'rename', 'rewind'] })
       case '/api/code/machines/studio/sessions/s1/commands': return json({ output: 'Available commands: many' })
       case '/api/code/machines/studio/sessions/s1/plan': return json({ action: 'turn' })
       case '/api/code/machines/studio/sessions/s1/messages': return String(body.text).startsWith('/nosuch') ? json({ type: '/problems/pwcode/command_unknown', status: 422, detail: UNKNOWN, code: 'command_unknown' }, 422) : json({ turnId: 't1' })
@@ -143,6 +143,13 @@ describe('the chat’s stream', () => {
 
 // The chat package has the message as sent, with a reply of nothing: the
 // Studio assistant, chosen next, would show both.
+it('the session’s own list has none the Studio does not send', async () => {
+  const { container } = show()
+  await until(() => expect(box()).toBeEnabled())
+  await act(async () => { fireEvent.change(box(), { target: { value: '/' } }) })
+  await until(() => expect([...container.querySelectorAll('[role="option"]')].map(o => /^\/[\w-]+/.exec(o.textContent!)![0])).toEqual(['/help', '/plan', '/compact']))
+})
+
 it('the chat lets go of a message its session was handed', async () => {
   let current: unknown
   const Current = () => { current = useChat().currentConversation?.id ?? null; return null }

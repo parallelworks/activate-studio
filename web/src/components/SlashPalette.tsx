@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { StatusBadge, type BadgeVariant } from '@parallelworks/ui'
+import { useAnsweredByPWCode } from '../pwcode/NewChatModel'
+import { useChatCommands } from '../pwcode/chatCommands'
 
 /**
  * A command palette for the composer: type "/" and the slash-invocable
- * things appear (meta commands, skills, agents, tools), filtered as you
+ * things appear (with the Studio assistant, meta commands, skills, agents
+ * and tools; with pw code, what its session takes), filtered as you
  * type, chosen with the arrow keys and Enter or Tab. The composer is the
  * chat package's, so this attaches to its textarea from outside: a native
  * listener in the capture phase sees the keystroke before the package's
@@ -12,9 +15,9 @@ import { StatusBadge, type BadgeVariant } from '@parallelworks/ui'
  * the native setter and dispatches an input event, which is how a
  * controlled React textarea learns about text it did not type itself.
  */
-interface Item { name: string; kind: 'command' | 'skill' | 'agent' | 'tool'; description: string }
+interface Item { name: string; kind: 'command' | 'skill' | 'agent' | 'tool' | 'prompt'; description: string; hint?: string }
 
-const KIND_TONE: Record<Item['kind'], BadgeVariant> = { command: 'muted', tool: 'muted', skill: 'accent', agent: 'info' }
+const KIND_TONE: Record<Item['kind'], BadgeVariant> = { command: 'muted', tool: 'muted', skill: 'accent', agent: 'info', prompt: 'info' }
 
 const META: Item[] = [
   { name: 'help', kind: 'command', description: 'List every slash command, skill, agent, and tool' },
@@ -23,14 +26,24 @@ const META: Item[] = [
   { name: 'agents', kind: 'command', description: 'List the agents available here' },
 ]
 
-export function SlashPalette({ canvas }: { canvas: React.RefObject<HTMLDivElement | null> }) {
-  const [items, setItems] = useState<Item[]>(META)
+export function SlashPalette({ canvas, conversationId = null, persona = null, machine, session }: {
+  canvas: React.RefObject<HTMLDivElement | null>
+  conversationId?: string | null
+  persona?: string | null
+  /** The chat's pw code session, where it has one that is not shown. */
+  machine?: string
+  session?: string
+}) {
+  const pwcode = useAnsweredByPWCode()
+  const ofSession = useChatCommands({ conversationId, persona, machine, session })
+  const [studioItems, setItems] = useState<Item[]>(META)
+  const items: Item[] = pwcode ? ofSession.commands : studioItems
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
   const [pos, setPos] = useState<{ left: number; bottom: number; width: number } | null>(null)
   const taRef = useRef<HTMLTextAreaElement | null>(null)
-  const stateRef = useRef({ open: false, index: 0, shown: [] as Item[] })
+  const stateRef = useRef({ open: false, index: 0, shown: [] as Item[], whole: false })
 
   useEffect(() => {
     Promise.all([
@@ -46,11 +59,21 @@ export function SlashPalette({ canvas }: { canvas: React.RefObject<HTMLDivElemen
 
   const shown = (() => {
     const q = query.toLowerCase()
+    // As the session's own menu, which takes the box over: by name.
+    if (pwcode) return items.filter(i => i.name.toLowerCase().startsWith(q))
     const starts = items.filter(i => i.name.toLowerCase().startsWith(q))
     const contains = items.filter(i => !i.name.toLowerCase().startsWith(q) && (i.name.toLowerCase().includes(q) || i.description.toLowerCase().includes(q)))
     return [...starts, ...contains].slice(0, 12)
   })()
-  stateRef.current = { open, index: Math.min(index, Math.max(0, shown.length - 1)), shown }
+  // A whole command stays listed, and Enter sends it.
+  const whole = pwcode && shown.length === 1 && shown[0].name === query
+  stateRef.current = { open, index: Math.min(index, Math.max(0, shown.length - 1)), shown, whole }
+  const { load } = ofSession
+  useEffect(() => { if (open && pwcode) load() }, [open, pwcode, load])
+  const listRef = useRef<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    if (open) listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, index])
 
   const accept = (item: Item) => {
     const ta = taRef.current
@@ -78,7 +101,7 @@ export function SlashPalette({ canvas }: { canvas: React.RefObject<HTMLDivElemen
       detach?.()
       taRef.current = ta
       const onInput = () => {
-        const m = /^\/([A-Za-z0-9_-]*)$/.exec(ta.value)
+        const m = /^\/([A-Za-z0-9_:-]*)$/.exec(ta.value)
         if (m) { setQuery(m[1]); setIndex(0); setOpen(true); place(ta) } else setOpen(false)
       }
       const onKey = (e: KeyboardEvent) => {
@@ -88,6 +111,7 @@ export function SlashPalette({ canvas }: { canvas: React.RefObject<HTMLDivElemen
         if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setIndex(i => Math.max(i - 1, 0)); return }
         if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
           const item = st.shown[st.index]
+          if (st.whole && e.key === 'Enter') return
           if (item) { e.preventDefault(); e.stopPropagation(); accept(item) }
           return
         }
@@ -109,7 +133,7 @@ export function SlashPalette({ canvas }: { canvas: React.RefObject<HTMLDivElemen
   if (!open || !pos || !shown.length) return null
   const cur = Math.min(index, shown.length - 1)
   return (
-    <div className="slash-palette" style={{ left: pos.left, bottom: pos.bottom, width: pos.width }} role="listbox" aria-label="Slash commands">
+    <div ref={listRef} className="slash-palette" style={{ left: pos.left, bottom: pos.bottom, width: pos.width }} role="listbox" aria-label="Slash commands">
       {shown.map((it, i) => (
         <div
           key={`${it.kind}:${it.name}`}
@@ -119,7 +143,7 @@ export function SlashPalette({ canvas }: { canvas: React.RefObject<HTMLDivElemen
           onMouseDown={e => { e.preventDefault(); accept(it) }}
           onMouseEnter={() => setIndex(i)}
         >
-          <span className="slash-name">/{it.name}</span>
+          <span className="slash-name">/{it.name}{it.hint && <span className="slash-hint"> {it.hint}</span>}</span>
           <StatusBadge variant={KIND_TONE[it.kind]}>{it.kind}</StatusBadge>
           <span className="slash-desc">{it.description}</span>
         </div>
