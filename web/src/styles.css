@@ -1617,6 +1617,10 @@ a.identity-btn { text-decoration: none; }
 .next-up-open > span:first-of-type { overflow: hidden; text-overflow: ellipsis; }
 .next-up-also { flex: none; color: var(--pw-muted); font-size: 11px; }
 
+/* A chat being opened over another: the other's thread is not drawn. */
+.chat-own { display: contents; }
+.chat-own[data-opening] [data-transcript] { visibility: hidden; }
+
 /* Slash-command palette above the composer. */
 .slash-palette {
   position: absolute; z-index: 30;

@@ -1,4 +1,4 @@
-import React, { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Activity, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { accountsHref } from '../accounts'
 import {
   Button, Callout, Checkbox, EmptyState, Popover, PopoverClose, SearchInput, SegmentedControl,
@@ -7,6 +7,7 @@ import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
 import { EffortPicker } from '../components/EffortPicker'
 import { NewChatModelSlot } from '../pwcode/NewChatModel'
+import { PwCodeOwnModel } from '../pwcode/ownModel'
 import { NewChatTargetSlot } from '../pwcode/NewChatTarget'
 import { MentionPalette } from '../components/MentionPalette'
 import { MentionLinks } from '../components/MentionLinks'
@@ -115,6 +116,21 @@ export function RetryWithModel() {
     setPending(null)
     void sendMessage(pending.content, pending.attachmentIds, pending.parentId)
   }, [pending, isStreaming, selectedProvider, sendMessage])
+  return null
+}
+
+/**
+ * A pw code session draws itself, so the chat's provider is not told of the
+ * chat that shows one: it went on holding the chat open before it, and the
+ * parts that read it (the copied reply, the suggestions, the engine's state,
+ * a reply still being written) went on being that chat's. It lets go of
+ * that chat before the session is painted; the reply runs on, and its chat
+ * shows it when it is opened again.
+ */
+export function LeaveOtherChat({ conversationId, sessionShown }: { conversationId: string | null; sessionShown: boolean }) {
+  const { currentConversation, clearCurrentConversation } = useChat()
+  const other = sessionShown && !!currentConversation && currentConversation.id !== conversationId
+  useLayoutEffect(() => { if (other) clearCurrentConversation() }, [other, clearCurrentConversation])
   return null
 }
 
@@ -626,6 +642,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           <TransferNoteWatcher />
           <EngineNoteReader />
           {!pw.shown && <PWCodeWatcher />}
+          <LeaveOtherChat conversationId={activeId} sessionShown={pw.shown} />
+          <PwCodeOwnModel conversationId={activeId} />
           <RetryWithModel />
           <ModelShare />
           <StudioChatLayout
@@ -822,7 +840,9 @@ function StudioCited({ conversationId, scope, children }: { conversationId: stri
   const open = currentConversation?.id === conversationId
   return (
     <CitedPaths key={conversationId} where={open ? { libraries: scope === 'all' ? [] : scope } : null} busy={isStreaming} messages={open ? currentConversation?.messages : undefined}>
-      {children}
+      {/* Until this chat is read, the thread holds the one open before it,
+          which is not drawn here (styles.css). */}
+      <div className="chat-own" data-opening={currentConversation && !open ? '' : undefined}>{children}</div>
     </CitedPaths>
   )
 }
