@@ -165,6 +165,9 @@ type pwTarget struct {
 	workspace string
 	// inSpace: workspace is the top of the person's own library.
 	inSpace bool
+	// folderPicked: workspace is a folder the person chose, which the
+	// Studio writes no instructions into (PWCodeLink.Picked).
+	folderPicked bool
 	// persona is the agent instructions the session's folder carries.
 	persona string
 	// chatModel is the model chosen under the message box, which a
@@ -177,6 +180,8 @@ type pwTarget struct {
 	picked      string
 	pickedAlloc *string
 	modelMoved  bool
+	// start is what a session started on the Code page was asked for.
+	start startPick
 	// modelStuck says the session should have moved and could not.
 	modelStuck bool
 	// relay: the session is on another machine, reached through the
@@ -463,6 +468,13 @@ func (m *Module) localPWCodeRefused() error {
 // site and folder it already has, else the person's own (My library's
 // folder when it is on the Studio's cluster, else ~/studio-chat).
 func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conversations.PWCodeLink) (*pwTarget, error) {
+	return m.pwcodeTargetIn(ctx, r, link, "")
+}
+
+// pwcodeTargetIn is pwcodeTarget for a session made in folder, one the
+// person chose on the machine the Studio drives for them, or "" for where
+// it works otherwise.
+func (m *Module) pwcodeTargetIn(ctx context.Context, r *http.Request, link *conversations.PWCodeLink, folder string) (*pwTarget, error) {
 	if link != nil && link.Relay {
 		return m.relayTarget(r, link)
 	}
@@ -475,7 +487,10 @@ func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conver
 			return nil, err
 		}
 		if link != nil && link.Site == agentsites.Local && link.Workspace != "" {
-			return &pwTarget{client: s.Daemon.Local(), site: agentsites.Local, workspace: link.Workspace}, nil
+			return &pwTarget{client: s.Daemon.Local(), site: agentsites.Local, workspace: link.Workspace, folderPicked: link.Picked}, nil
+		}
+		if folder != "" {
+			return &pwTarget{client: s.Daemon.Local(), site: agentsites.Local, workspace: folder, folderPicked: true}, nil
 		}
 		return &pwTarget{client: s.Daemon.Local(), site: agentsites.Local, workspace: m.A.Cfg.KBRoot}, nil
 	}
@@ -492,21 +507,35 @@ func (m *Module) pwcodeTarget(ctx context.Context, r *http.Request, link *conver
 		return nil, pwErr(409, "This Studio does not know the cluster it runs on (STUDIO_HOME_CLUSTER), so it cannot reach your pw code.")
 	}
 	if link != nil && link.Site == site && link.Workspace != "" {
-		return &pwTarget{client: s.Daemon.Remote(site, key), site: site, workspace: link.Workspace}, nil
+		return &pwTarget{client: s.Daemon.Remote(site, key), site: site, workspace: link.Workspace, folderPicked: link.Picked}, nil
 	}
-	ws, inSpace := "", false
-	if f := m.A.Providers.SpaceFolder; f != nil {
-		if ssite, folder := f(u.Username); folder != "" && sameCluster(ssite, site) {
-			ws, inSpace = folder, true
-		}
+	if folder != "" {
+		return &pwTarget{client: s.Daemon.Remote(site, key), site: site, workspace: folder, folderPicked: true}, nil
 	}
+	ws := m.spaceFolderOn(u.Username, site)
+	inSpace := ws != ""
 	if ws == "" {
 		var err error
-		if ws, err = s.MakeWorkspace(ctx, site, key, "~/studio-chat"); err != nil {
+		if ws, err = s.MakeWorkspace(ctx, site, key, studioChatFolder); err != nil {
 			return nil, err
 		}
 	}
 	return &pwTarget{client: s.Daemon.Remote(site, key), site: site, workspace: ws, inSpace: inSpace}, nil
+}
+
+// studioChatFolder is where a person's pw code chat works on the Studio's
+// cluster when they have no library of their own there.
+const studioChatFolder = "~/studio-chat"
+
+// spaceFolderOn is the folder of username's own library when it is on the
+// cluster site, else "".
+func (m *Module) spaceFolderOn(username, site string) string {
+	if f := m.A.Providers.SpaceFolder; f != nil {
+		if ssite, folder := f(username); folder != "" && sameCluster(ssite, site) {
+			return folder
+		}
+	}
+	return ""
 }
 
 // sameCluster: a and b name one cluster (pw://user/name or name).
@@ -590,7 +619,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 			allowed = append(allowed, studioToolPrefix+s.Name)
 		}
 	}
-	prompt := m.pwcodePrompt(tools)
+	prompt := m.pwcodePrompt(tools) + m.pickedPersonaPrompt(t)
 	var tried []string
 	for _, url := range m.mcpURLs(t.site != agentsites.Local) {
 		agents := jsonv.NewObject("studio", jsonv.NewObject(
@@ -607,6 +636,15 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 		req := jsonv.NewObject("workspace", t.workspace, "remoteControl", true, "agent", "studio", "agentsJson", string(agentsJSON), "allowedTools", allowed)
 		if e.PWCodePermissionMode != "" {
 			req.Set("permissionMode", e.PWCodePermissionMode)
+		}
+		if t.start.mode != "" {
+			req.Set("permissionMode", t.start.mode)
+		}
+		if t.start.effort != "" {
+			req.Set("effort", t.start.effort)
+		}
+		if t.start.account != "" {
+			req.Set("claudeAccount", t.start.account)
 		}
 		if e.PWCodeModel != "" {
 			req.Set("model", e.PWCodeModel)
@@ -633,7 +671,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 			_, _ = pwcode.ArchiveSession(ctx, t.client, id)
 			continue
 		}
-		link := &conversations.PWCodeLink{Site: t.site, Session: id, Workspace: t.workspace, CreatedAt: m.Conv.Now(), MCPURL: url, Persona: t.persona}
+		link := &conversations.PWCodeLink{Site: t.site, Session: id, Workspace: t.workspace, CreatedAt: m.Conv.Now(), MCPURL: url, Persona: t.persona, Picked: t.folderPicked}
 		if st, err := pwcode.SessionState(ctx, t.client, id); err == nil {
 			link.URL = jsonv.String(jsonv.Path(st, "remoteUrl"))
 			link.Model = jsonv.String(jsonv.Path(st, "model"))
@@ -750,7 +788,22 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if prior != nil && !prior.Continued && prior.Persona != persona {
 		prior = nil
 	}
-	t, err := m.pwcodeTarget(ctx, r, prior)
+	// Where the person chose to start it counts for the session a first
+	// message makes; a later one works in the folder they chose then.
+	start, err := m.startFor(r, body, c, prior)
+	if err != nil {
+		return fail(err)
+	}
+	if start.machine != "" {
+		if prior, err = m.startElsewhere(ctx, r, body, start, persona); err != nil {
+			return fail(err)
+		}
+		m.Conv.SetPWCode(convID, prior)
+		if c = m.Conv.Get(convID); c == nil {
+			return fail(errors.New("the conversation is gone"))
+		}
+	}
+	t, err := m.pwcodeTargetIn(ctx, r, prior, start.folder)
 	if err != nil {
 		return fail(err)
 	}
@@ -787,6 +840,12 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		link.ScopeNote = note
 		scopeNote = "Scope from the Studio's chat bar: " + firstNonEmpty(note, "the person's default libraries.") + "\n\n"
 	}
+	// A session on another machine is given the Studio's instructions with
+	// its first message: nothing else takes them there.
+	told := ""
+	if link.Untold {
+		told = m.relayInstructions(r)
+	}
 	m.Conv.SetPWCode(convID, link)
 	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model, "modelNote", link.ModelNote, "modelFrom", link.ModelFrom, "modelMoved", t.modelMoved, "modelStuck", t.modelStuck))
 	d, err := pwcode.GetSession(ctx, t.client, link.Session)
@@ -797,7 +856,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if n, ok := jsonv.Num(jsonv.Path(d, "lastSeq")); ok {
 		after = int64(n)
 	}
-	text := scopeNote + pwcodeContext(c, fresh, msgID) + content
+	text := scopeNote + pwcodeContext(c, fresh, msgID) + content + told
 
 	// The turn runs on past the request, so its reply is recorded when the
 	// person has left; the request writes its events while it lasts.
@@ -820,6 +879,10 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if err != nil {
 		cancel()
 		return fail(err)
+	}
+	if told != "" {
+		link.Untold = false
+		m.Conv.SetPWCode(convID, link)
 	}
 	turn.id = jsonv.String(jsonv.Path(sent, "turnId"))
 	m.follow(turn)
@@ -1189,7 +1252,7 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 			// The platform does not pass a session's MCP state on, so the
 			// menu says what is known: whether pw code on that machine has
 			// this Studio, which sessions started there since have.
-			tools = reqbody.O("connected", false, "count", 0, "relay", true, "machineHas", m.bridgePrefs().get(userID(r), c.PWCode.Machine).URL != "")
+			tools = reqbody.O("connected", false, "count", 0, "relay", true, "has", c.PWCode.HasTools, "machineHas", m.bridgePrefs().get(userID(r), c.PWCode.Machine).URL != "")
 		} else if s, err := studioMCPState(r.Context(), t.client, c.PWCode.Session); err == nil && s != nil {
 			v, _ := s.Get("connected")
 			_, n := serverTools(s)
@@ -1218,7 +1281,7 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		if m.Conv.Answering(c.ID) || m.following(c.ID) {
 			return pwErr(409, "A reply is being written in this chat; start a new session when it ends.")
 		}
-		link := m.newRelaySession(r.Context(), t, c.PWCode)
+		link := m.newRelaySession(r.Context(), t, c.PWCode, m.bridgePrefs().get(userID(r), c.PWCode.Machine).URL != "")
 		if link.err != nil {
 			return link.err
 		}

@@ -451,6 +451,7 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	var lastSeq int64
+	sentText := ""
 	switch key {
 	case "PATCH /settings":
 		if err := m.checkSettings(r, c, t, body); err != nil {
@@ -469,6 +470,10 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			return writeErr(w, err)
 		}
 	case "POST /messages":
+		sentText = jsonv.String(jsonv.Path(body, "text"))
+		if o := jsonv.Obj(body); o != nil && c.PWCode.Untold && strings.TrimSpace(sentText) != "" {
+			o.Set("text", sentText+m.relayInstructions(r))
+		}
 		m.studioToolsFor(ctx, r, c, t)
 		if d, err := pwcode.GetSession(ctx, t.client, id); err == nil {
 			if n, ok := jsonv.Num(jsonv.Path(d, "lastSeq")); ok {
@@ -523,7 +528,12 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	case "POST /messages":
-		m.recordSent(r, c, t, jsonv.String(jsonv.Path(body, "text")), lastSeq)
+		if c.PWCode.Untold {
+			l := *c.PWCode
+			l.Untold = false
+			m.Conv.SetPWCode(c.ID, &l)
+		}
+		m.recordSent(r, c, t, sentText, lastSeq)
 	}
 	if v == nil {
 		w.WriteHeader(http.StatusNoContent)
@@ -592,19 +602,14 @@ func (m *Module) checkMode(r *http.Request, c *conversations.Conversation, t *pw
 	if !t.relay {
 		return nil
 	}
-	ceiling, name, why := defaultRemoteCeiling, firstNonEmpty(c.PWCode.MachineName, c.PWCode.Machine), ""
+	name := firstNonEmpty(c.PWCode.MachineName, c.PWCode.Machine)
 	mach, err := codesessions.PlatformMachine(r, m.pf, c.PWCode.Machine)
-	if err != nil || mach == nil {
-		ceiling, why = "read-only", " (the Studio could not read the machine's limit from ACTIVATE, so it allows read-only)"
+	if err != nil {
+		mach = nil
 	} else {
-		if s := jsonv.String(jsonv.Path(mach, "remoteMaxPermissionMode")); s != "" {
-			ceiling = s
-		}
 		name = firstNonEmpty(jsonv.String(jsonv.Path(mach, "name")), name)
 	}
-	if _, ok := modeRank[ceiling]; !ok {
-		ceiling, why = "read-only", " (ACTIVATE names a limit the Studio does not know, "+ceiling+", so it allows read-only)"
-	}
+	ceiling, why := remoteCeiling(mach)
 	if modeRank[mode] > modeRank[ceiling] {
 		return pwErr(403, name+" takes at most "+ceiling+" from ACTIVATE"+why+". A wider mode is set on the machine itself, in pw code there.")
 	}
@@ -671,6 +676,10 @@ func (m *Module) studioToolsFor(ctx context.Context, r *http.Request, c *convers
 	}
 	s, err := studioMCPState(ctx, t.client, l.Session)
 	if err == nil && s == nil {
+		// One the Studio started without its tools keeps saying why.
+		if l.Continued && l.Picked {
+			return
+		}
 		if l.Continued {
 			m.setToolsNote(c, "")
 			return
@@ -785,6 +794,12 @@ func (m *Module) writeMachine(w http.ResponseWriter, r *http.Request, l *convers
 	if name == "" {
 		name, _ = os.Hostname()
 	}
+	return reqbody.OK(w, m.ownMachine(r, name, st))
+}
+
+// ownMachine is the machine record of the pw code the Studio drives for
+// the viewer, from what its daemon reported (st, nil when it did not).
+func (m *Module) ownMachine(r *http.Request, name string, st any) *jsonv.Object {
 	owner := ""
 	if u := user(r); u != nil {
 		owner = u.Username
@@ -799,7 +814,7 @@ func (m *Module) writeMachine(w http.ResponseWriter, r *http.Request, l *convers
 			rec.Set(k, v)
 		}
 	}
-	return reqbody.OK(w, codesessions.ClaudeCodeShown(r, rec))
+	return codesessions.ClaudeCodeShown(r, rec)
 }
 
 // directFacts are the daemon's status fields the machine record passes on.

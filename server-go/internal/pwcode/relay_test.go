@@ -41,6 +41,10 @@ func TestTheRelayMapsOnlyTheRoutesThePlatformRelays(t *testing.T) {
 		"POST /v1/sessions/s1/subagents/a1/messages": "/api/code/machines/m%202/sessions/s1/subagents/a1/messages",
 		"POST /v1/sessions/s1/subagents/stop-all":    "/api/code/machines/m%202/sessions/s1/subagents/stop-all",
 		"GET /v1/sessions/s1/claude-code/accounts":   "/api/code/machines/m%202/sessions/s1/claude-code/accounts",
+		// The folders a new session could work in.
+		"GET /v1/directories?path=%2Fhome&filter=": "/api/code/machines/m%202/directories?path=%2Fhome&filter=",
+		"POST /v1/directories?path=%2Fhome":        "",
+		"GET /v1/directories":                      "",
 		// The platform relays these; the Studio does not send them.
 		"DELETE /v1/sessions/s1":              "",
 		"PATCH /v1/sessions/s1":               "",

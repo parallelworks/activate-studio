@@ -8,7 +8,7 @@ import { liveModel, onModel } from '../pwcode/liveModel'
 import { cachedChat, readChat, takeReadAhead, type ChatRecord } from '../chatRecord'
 
 /** How the Studio's tools stand in the conversation's pw code session. */
-interface ToolsState { connected: boolean; count: number; error?: string; relay?: boolean; machineHas?: boolean }
+interface ToolsState { connected: boolean; count: number; error?: string; relay?: boolean; has?: boolean; machineHas?: boolean }
 
 /** continued: the chat continues a session from the Code page, on the
  *  platform's machine `machine`. */

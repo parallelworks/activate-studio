@@ -7,6 +7,7 @@ import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
 import { EffortPicker } from '../components/EffortPicker'
 import { NewChatModelSlot } from '../pwcode/NewChatModel'
+import { NewChatTargetSlot } from '../pwcode/NewChatTarget'
 import { MentionPalette } from '../components/MentionPalette'
 import { MentionLinks } from '../components/MentionLinks'
 import { breakable } from '../components/breakable'
@@ -611,6 +612,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           {!showAttachments && !showManage && !pw.shown && <PWCodeApprovals conversationId={activeId} />}
           {!showAttachments && !showManage && <PWCodeNotice conversationId={activeId} />}
           {!showAttachments && !showManage && <PWCodeModelNotice conversationId={activeId} />}
+          {!showAttachments && !showManage && <NewChatTargetSlot conversationId={activeId} hasSession={!!pw.link?.session} persona={persona} canvas={canvasRef} />}
           <FilterReloader />
           <TransferNoteWatcher />
           <EngineNoteReader />

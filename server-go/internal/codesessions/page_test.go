@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode/pwcodetest"
@@ -352,5 +353,45 @@ func TestWithNoPlatformTheCodePageAsksToSignIn(t *testing.T) {
 	}
 	if code, _ := send(t, "GET", base+"/sessions", "", nil); code != 409 {
 		t.Fatalf("sessions: %d", code)
+	}
+}
+
+// A start goes to the chat, which gives the session the Studio's tools,
+// with the mode already held to the machine's ceiling; where the chat makes
+// none, the page's own start goes on.
+func TestACodePageStartGoesToTheChat(t *testing.T) {
+	got := &asked{}
+	ceiling := "accept-edits"
+	plat := pagePlatform(t, got, &ceiling)
+	v := &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id", Username: "alex"}, Cred: &platform.Cred{Key: "alex-own-key"}}
+	url := signedInServer(t, map[string]string{"PW_GATEWAY_URL": plat.URL + "/api/openai/v1"}, false, func() *platform.Viewer { return v }, nil).URL + pagePrefix + "/machines/m1/sessions"
+	prev := StartInChat
+	t.Cleanup(func() { StartInChat = prev })
+	calls, offered := 0, true
+	var refuse error
+	StartInChat = func(r *http.Request, machine string, mach, body *jsonv.Object) (*jsonv.Object, bool, error) {
+		calls++
+		if machine != "m1" || jsonv.String(jsonv.Path(mach, "name")) != "box" || jsonv.String(jsonv.Path(body, "workspace")) != "/w" {
+			t.Errorf("%s %v %v", machine, mach, body)
+		}
+		return jsonv.NewObject("id", "in-chat"), offered, refuse
+	}
+	if code, out := send(t, "POST", url, `{"workspace":"/w","permissionMode":"accept-edits"}`, nil); code != 201 || out["id"] != "in-chat" || calls != 1 {
+		t.Fatalf("%d %v", code, out)
+	}
+	if sent, _ := got.last(); sent != "GET /api/code/sessions" {
+		t.Errorf("sent %q", sent)
+	}
+	// Above the ceiling: refused before the chat is asked.
+	if code, _ := send(t, "POST", url, `{"workspace":"/w","permissionMode":"bypass-permissions"}`, nil); code != 403 || calls != 1 {
+		t.Errorf("%d, %d calls", code, calls)
+	}
+	refuse = platform.KbError(409, "not now")
+	if code, _ := send(t, "POST", url, `{"workspace":"/w"}`, nil); code != 409 {
+		t.Errorf("refused: %d", code)
+	}
+	refuse, offered = nil, false
+	if code, out := send(t, "POST", url, `{"workspace":"/w"}`, nil); code != 200 || out["id"] != "new-session" {
+		t.Errorf("not offered: %d %v", code, out)
 	}
 }

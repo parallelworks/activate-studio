@@ -12,7 +12,7 @@ import { type PageSession, pwCodePage } from './api'
 import { CodeSidebar } from './CodeSidebar'
 import { CodeStart } from './CodeStart'
 import { LinkedSession, type Delegated } from './LinkedSession'
-import { sessionInHash, useOpenInStudio } from './openInStudio'
+import { sessionInHash, useOpenInStudio, sameMachine } from './openInStudio'
 import { MachineToolsOffer } from './MachineToolsOffer'
 import { HowSessionsAppear } from './parts'
 
@@ -112,6 +112,9 @@ function CodeScreen() {
   const [startKey, setStartKey] = useState(0)
   // The machine chosen to start a session on: the tools are offered there only.
   const [startMachine, setStartMachine] = useState<string | undefined>()
+  const [startMode, setStartMode] = useState<string | undefined>()
+  const startOn = machines.find(m => m.id === startMachine)
+  const startsElsewhere = !!startOn && !!studio.here && !sameMachine(startOn, studio.here)
 
   const open = useCallback((s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => {
     setOpened({ machine: s.machineId, sessionId: s.id })
@@ -167,8 +170,12 @@ function CodeScreen() {
             <HowSessionsAppear compact />
           </Popover>
         </div>
-        <MachineToolsOffer machines={machines} selected={startMachine} />
-        <CodeStart key={startKey} onOpen={open} onStarted={onStarted} onMachine={setStartMachine} top={link ? answer => (
+        {/* A session on the Studio's own machine starts with its tools; on
+            another, the start says when it would not. */}
+        {startsElsewhere
+          ? <MachineToolsOffer key={startMachine} machines={machines} selected={startMachine} always mode={startMode} />
+          : <MachineToolsOffer machines={machines} selected={startMachine} />}
+        <CodeStart key={startKey} onOpen={open} onStarted={onStarted} onMachine={setStartMachine} onMode={setStartMode} top={link ? answer => (
           <LinkedSession
             session={linked}
             machine={linked ? machines.find(m => m.id === linked.machineId) : undefined}

@@ -11,6 +11,10 @@ export interface ChatLink {
   machineName?: string
   continued?: boolean
   toolsError?: string
+  /** On another machine: the session started with the Studio's tools. */
+  hasTools?: boolean
+  /** The Studio started it where the person chose. */
+  picked?: boolean
   url?: string
 }
 

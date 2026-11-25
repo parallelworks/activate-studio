@@ -97,6 +97,10 @@ func (c *RelayClient) relayPath(method, route string) string {
 	if method == http.MethodPost && route == "/v1/sessions" {
 		return "/api/code/machines/" + platform.EncodeURIComponent(c.machine) + "/sessions"
 	}
+	// The folders a new session there could work in.
+	if query, ok := strings.CutPrefix(route, "/v1/directories?"); ok && method == http.MethodGet {
+		return "/api/code/machines/" + platform.EncodeURIComponent(c.machine) + "/directories?" + query
+	}
 	rest, ok := strings.CutPrefix(route, "/v1/sessions/")
 	if !ok {
 		return ""

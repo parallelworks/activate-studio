@@ -382,6 +382,12 @@ func readJSONObject(r *http.Request) (*jsonv.Object, error) {
 // allows read-only.
 func (s *routes) machineCeiling(r *http.Request, machine string) (string, string) {
 	m, err := PlatformMachine(r, s.p, machine)
+	return ceilingOf(m, err)
+}
+
+// ceilingOf is machineCeiling for the machine as the platform listed it,
+// or the error reading it.
+func ceilingOf(m *jsonv.Object, err error) (string, string) {
 	if err != nil {
 		return "read-only", "the Studio could not read the machine's ceiling"
 	}
@@ -398,11 +404,15 @@ func (s *routes) machineCeiling(r *http.Request, machine string) (string, string
 // checkMode refuses a mode above the machine's ceiling, or one the Studio
 // does not know.
 func (s *routes) checkMode(r *http.Request, machine, mode string) error {
+	return checkModeOn(mode, func() (string, string) { return s.machineCeiling(r, machine) })
+}
+
+func checkModeOn(mode string, machineCeiling func() (string, string)) error {
 	want, ok := modeRank[mode]
 	if !ok {
 		return platform.KbError(400, "The Studio does not start a session in "+mode+" mode.")
 	}
-	ceiling, why := s.machineCeiling(r, machine)
+	ceiling, why := machineCeiling()
 	if want > modeRank[ceiling] {
 		msg := "This machine lets sessions be given at most " + ceiling + " from elsewhere"
 		if why != "" {
@@ -475,17 +485,51 @@ func (s *routes) pageCreate(w http.ResponseWriter, r *http.Request) {
 			writeProblem(w, http.StatusBadRequest, "The Studio does not start a session in "+mode+" mode.")
 			return
 		}
+		if s.startInChat(w, r, machine, nil, body, mode) {
+			return
+		}
 		s.a.Log.Info("code page: started a session", "machine", machine, "mode", mode, "via", "this computer")
 		callLocal(w, r, t.local, http.MethodPost, "/v1/sessions", body)
 		return
 	}
-	if err := s.checkMode(r, machine, mode); err != nil {
+	mach, machErr := PlatformMachine(r, s.p, machine)
+	if err := checkModeOn(mode, func() (string, string) { return ceilingOf(mach, machErr) }); err != nil {
 		writeErr(w, err)
+		return
+	}
+	if machErr == nil && s.startInChat(w, r, machine, mach, body, mode) {
 		return
 	}
 	raw, _ := jsonv.Marshal(body)
 	s.a.Log.Info("code page: started a session", "user", s.viewerName(r), "machine", machine, "mode", mode, "via", "platform")
 	s.forward(w, r, t, http.MethodPost, "/api/code/machines/"+platform.EncodeURIComponent(machine)+"/sessions", raw)
+}
+
+// StartInChat, set by the chat, starts a Code page session as a chat's is
+// started, with the Studio's tools and instructions, and makes its chat:
+// mach is the machine as the platform lists it to the viewer (nil for this
+// computer on a Studio with no platform), and body the request, its mode
+// already held to the machine's ceiling. It answers the session, or false
+// where a chat is not offered here, and the page's own start goes on.
+var StartInChat func(r *http.Request, machine string, mach, body *jsonv.Object) (*jsonv.Object, bool, error)
+
+// startInChat answers the request with StartInChat's session; false where
+// it made none.
+func (s *routes) startInChat(w http.ResponseWriter, r *http.Request, machine string, mach, body *jsonv.Object, mode string) bool {
+	if StartInChat == nil {
+		return false
+	}
+	v, ok, err := StartInChat(r, machine, mach, body)
+	if err != nil {
+		writeErr(w, err)
+		return true
+	}
+	if !ok {
+		return false
+	}
+	s.a.Log.Info("code page: started a session", "user", s.viewerName(r), "machine", machine, "mode", mode, "via", "chat")
+	writeJSON(w, http.StatusCreated, v)
+	return true
 }
 
 // pageSession is one of pwcode.PageRoute's requests about a session.

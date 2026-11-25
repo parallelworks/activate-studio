@@ -3029,6 +3029,16 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-chip-icon, .code-chip-caret { width: 12px; height: 12px; flex: none; }
 .code-machine-icon { width: 14px; height: 14px; flex: none; object-fit: contain; }
+/* Where a new pw code chat starts, over its composer. */
+.pwcode-start-host { flex: 1 1 100%; min-width: 0; }
+.chat-composer-dock div:not(.min-h-7) > .pwcode-start-host { margin-bottom: 6px; }
+.pwcode-start { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.pwcode-start:disabled .code-chip { opacity: .6; cursor: default; }
+.pwcode-start .code-chip { max-width: min(16rem, 100%); }
+.pwcode-start-note { flex: 1 1 100%; margin: 2px 7px; font-size: 12px; overflow-wrap: anywhere; }
+.code-main > .pwcode-start-note { flex: none; margin: 4px auto 0; max-width: 46rem; padding: 0 16px; text-align: center; }
+.pwcode-start-note.warn { color: var(--theme-warning, #b54708); }
+.pwcode-start-tools { flex: 1 1 100%; min-width: 0; }
 .code-path-popover { width: min(32rem, calc(100vw - 32px)); overflow: hidden; }
 .code-path { display: flex; flex-direction: column; max-height: inherit; font-size: 13px; }
 .code-path-field { display: flex; gap: 8px; padding: 8px; flex: none; }
