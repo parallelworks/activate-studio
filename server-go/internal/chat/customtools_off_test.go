@@ -66,11 +66,12 @@ func TestCustomToolFilesRunWhenOn(t *testing.T) {
 // model key, platform token, client secret or cloud credential.
 func TestCustomToolsRunWithoutTheStudiosSecrets(t *testing.T) {
 	secrets := map[string]string{
-		"OPENAI_API_KEY": "sk-one", "PW_API_KEY": "pw-two", "SIDECAR_MODEL_KEY": "three", "OIDC_CLIENT_SECRET": "four",
-		"STUDIO_BRIDGE_SECRET": "five", "STUDIO_GUFI_VT_SECRET": "six", "GH_TOKEN": "seven", "GITHUB_TOKEN": "eight",
-		"AWS_SECRET_ACCESS_KEY": "nine", "AWS_ACCESS_KEY_ID": "ten", "AWS_SESSION_TOKEN": "eleven",
-		"GOOGLE_APPLICATION_CREDENTIALS": "/x/twelve.json", "AZURE_CLIENT_SECRET": "thirteen", "PW_CREDENTIALS_DIR": "/x/fourteen",
-		"ANTHROPIC_API_KEY": "fifteen", "DB_PASSWORD": "sixteen", "STUDIO_KEEP_ME": "kept",
+		"OPENAI_API_KEY": "zq-secret-00-xv", "PW_API_KEY": "zq-secret-01-xv", "SIDECAR_MODEL_KEY": "zq-secret-02-xv",
+		"OIDC_CLIENT_SECRET": "zq-secret-03-xv", "STUDIO_BRIDGE_SECRET": "zq-secret-04-xv", "STUDIO_GUFI_VT_SECRET": "zq-secret-05-xv",
+		"GH_TOKEN": "zq-secret-06-xv", "GITHUB_TOKEN": "zq-secret-07-xv", "AWS_SECRET_ACCESS_KEY": "zq-secret-08-xv",
+		"AWS_ACCESS_KEY_ID": "zq-secret-09-xv", "AWS_SESSION_TOKEN": "zq-secret-10-xv", "GOOGLE_APPLICATION_CREDENTIALS": "zq-secret-11-xv",
+		"AZURE_CLIENT_SECRET": "zq-secret-12-xv", "PW_CREDENTIALS_DIR": "zq-secret-13-xv", "ANTHROPIC_API_KEY": "zq-secret-14-xv",
+		"DB_PASSWORD": "zq-secret-15-xv", "STUDIO_KEEP_ME": "kept",
 	}
 	m, _, _, _ := newTestModule(t, secrets)
 	m.A.Settings.Update(map[string]any{"customTools": []any{map[string]any{"name": "show_env", "description": "", "command": "env"}}})
