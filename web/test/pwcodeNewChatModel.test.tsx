@@ -6,9 +6,11 @@ import { type BoundSetting, EffortPicker } from '@parallelworks/ui/ai'
 // pw code's picker itself is the package's (AgentModelControls); here it
 // shows the model it is given and picks Sonnet when pressed.
 vi.mock('../src/code/AgentModelControls', () => ({
-  AgentModelControls: ({ model, effort, claudeReady }: { model: BoundSetting; effort?: BoundSetting; claudeReady: boolean }) => (
+  AgentModelControls: ({ model, effort, allocation, claudeReady }: { model: BoundSetting; effort?: BoundSetting; allocation: BoundSetting; claudeReady: boolean }) => (
     <>
       <button type="button" data-ready={String(claudeReady)} onClick={() => model.onChange('claude-code/sonnet')}>{model.value ?? 'none'}</button>
+      <button type="button" onClick={() => { model.onChange('org:openai/gpt-5'); allocation.onChange('alloc-2') }}>both</button>
+      <button type="button" onClick={() => allocation.onChange('alloc-3')}>{`billed to ${allocation.value ?? 'none'}`}</button>
       {effort && <EffortPicker effort={effort.value} onPick={effort.onChange} disabled={effort.disabled} />}
     </>
   ),
@@ -18,7 +20,7 @@ vi.mock('../src/pwcode/session/usePlatformModels', () => ({ usePlatformModels: (
 
 import { setEffort } from '../src/labelScope'
 import { ComposerEngineSlot } from '../src/pwcode/NewChatModel'
-import { firstMessagePick, pickModel, pickedModel } from '../src/pwcode/newChatPick'
+import { clearModelPick, firstMessagePick, pickModel, pickedModel } from '../src/pwcode/newChatPick'
 import { setStart } from '../src/pwcode/newChatStart'
 import { createStudioAdapter } from '../src/adapter'
 import { forgetEngines, readEngine } from '../src/chatEngine'
@@ -81,6 +83,50 @@ describe('a new pw code chat, before its first message', () => {
     act(() => setStart('c8', { machine: { id: 'm3', claudeInstalled: true, claudeCodeAllowed: true } }))
     expect(await screen.findByRole('button', { name: 'claude-code/haiku' })).toHaveAttribute('data-ready', 'true')
     act(() => setStart('c8', {}))
+  })
+  describe('with no model in Settings', () => {
+    let engine: Record<string, unknown>
+    beforeEach(() => {
+      engine = { model: '', lastModel: 'me:openai/gpt-5', lastAllocation: 'alloc-1' }
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.startsWith('/api/chat/engine')
+        ? engine : { machines: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    })
+    afterEach(() => { for (const id of ['c10', 'c11', 'c12']) { clearModelPick(id); setStart(id, {}) } })
+    const show = (id: string) => render(<ComposerEngineSlot conversationId={id} hasSession={false} />, { container: canvas.appendChild(document.createElement('div')) })
+
+    it('starts from the model the person chose last, with its allocation, which the Studio keeps', async () => {
+      show('c10')
+      expect(await screen.findByRole('button', { name: 'me:openai/gpt-5' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'billed to alloc-1' })).toBeInTheDocument()
+      // The Studio knows it: the first message says nothing of it.
+      expect(firstMessagePick('c10')).toEqual({})
+      fireEvent.click(screen.getByRole('button', { name: 'billed to alloc-1' }))
+      expect(firstMessagePick('c10')).toEqual({ pwcodeModel: 'me:openai/gpt-5', pwcodeAllocation: 'alloc-3' })
+    })
+    it('takes another with its allocation', async () => {
+      show('c11')
+      await screen.findByRole('button', { name: 'me:openai/gpt-5' })
+      fireEvent.click(screen.getByRole('button', { name: 'both' }))
+      expect(firstMessagePick('c11')).toEqual({ pwcodeModel: 'org:openai/gpt-5', pwcodeAllocation: 'alloc-2' })
+      expect(await screen.findByRole('button', { name: 'billed to alloc-2' })).toBeInTheDocument()
+    })
+    it('has it on another machine only where that machine runs it', async () => {
+      show('c12')
+      await screen.findByRole('button', { name: 'me:openai/gpt-5' })
+      act(() => setStart('c12', { machine: { id: 'm2' } }))
+      expect(await screen.findByRole('button', { name: 'me:openai/gpt-5' })).toBeInTheDocument()
+      // The Studio's machine's own, an inference server set up there.
+      engine = { model: '', lastModel: 'inference-server/lab/m1', lastAllocation: '' }
+      await act(async () => { await readEngine('c12') })
+      expect(await screen.findByRole('button', { name: 'none' })).toBeInTheDocument()
+      act(() => setStart('c12', {}))
+      expect(await screen.findByRole('button', { name: 'inference-server/lab/m1' })).toBeInTheDocument()
+    })
+    it('is the one Settings names where it names one', async () => {
+      engine = { model: 'claude-code/haiku', lastModel: '', lastAllocation: '' }
+      show('c10')
+      expect(await screen.findByRole('button', { name: 'claude-code/haiku' })).toBeInTheDocument()
+    })
   })
   it('offers pw code\'s own effort slider until there is a session, and the Studio\'s menu only to the Studio assistant', async () => {
     const { rerender } = render(<ComposerEngineSlot conversationId="c9" hasSession={false} />, { container: canvas.appendChild(document.createElement('div')) })

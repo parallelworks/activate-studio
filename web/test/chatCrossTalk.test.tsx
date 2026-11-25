@@ -38,6 +38,7 @@ let slow: number
 let idle: boolean
 let models: unknown[] | 'fails'
 let settingsModel: string
+let lastModel: string
 let needed: boolean
 const ID = (n: number) => `${n}${n}${n}${n}${n}${n}${n}${n}-0000-4000-8000-000000000000`
 
@@ -55,7 +56,7 @@ function studio() {
     if (path === '/api/chat/engine') {
       const c = chats.get(url.searchParams.get('conversation') ?? '')
       const now = (url.searchParams.get('last') as Engine | null) ?? engine
-      return json({ setting: 'auto', default: now, current: c?.engine ?? now, answered: !!c?.engine, pwcode: engine === 'pwcode', reason: null, model: settingsModel })
+      return json({ setting: 'auto', default: now, current: c?.engine ?? now, answered: !!c?.engine, pwcode: engine === 'pwcode', reason: null, model: settingsModel, lastModel })
     }
     if (path === '/api/chat/pwcode/model') return json({ needed })
     if (path === '/api/chat/conversations' && method === 'GET') return json([...chats.values()].map(c => ({ id: c.id, title: c.title, createdAt: now, updatedAt: now, isOwner: true })))
@@ -142,7 +143,7 @@ const open = async (n: number) => { await act(async () => { location.hash = `#ch
 const show = async () => { render(<ChatView />); await waitFor(() => expect(screen.getAllByText('New chat').length).toBeGreaterThan(0), { timeout: 5000 }) }
 
 beforeEach(() => {
-  chats = new Map(); streams = new Map(); posts = []; reads = []; held = null; slow = 0; idle = false; engine = 'studio'; settingsModel = 'inference-server/stub/m'; needed = false
+  chats = new Map(); streams = new Map(); posts = []; reads = []; held = null; slow = 0; idle = false; engine = 'studio'; settingsModel = 'inference-server/stub/m'; lastModel = ''; needed = false
   models = [{ id: 'm', object: 'model', name: 'm', provider: 'p', provider_type: 'local', provider_name: 'local' }]
   localStorage.clear(); forgetEngines(); forgetModels(); clearChatRecords()
   location.hash = ''
@@ -467,7 +468,7 @@ describe('a new chat pw code answers, with no model for pw code', () => {
     expect(heldModels()).toBeNull()
   })
 
-  it.each([['a model of its own', () => { needed = false }], ['the one Settings names', () => { settingsModel = 'm' }]] as const)('is open where pw code has %s', async (_what, has) => {
+  it.each([['a model of its own', () => { needed = false }], ['the one Settings names', () => { settingsModel = 'm' }], ['the one the person chose last', () => { lastModel = 'm' }]] as const)('is open where pw code has %s', async (_what, has) => {
     has()
     await show()
     await opened()
