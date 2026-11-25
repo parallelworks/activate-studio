@@ -60,8 +60,32 @@ func (rt *Routes) FindVisible(id, username string) (*Conversation, error) {
 	return c, nil
 }
 
-// Summary is summary(c).
-func Summary(c *Conversation) *jsonobj.Object {
+// OnlyOwner is the refusal of a change to a chat the person may read and
+// whose it is not.
+const OnlyOwner = "Only the person whose chat this is can change it."
+
+// MayChange says whether username may change c. With sign-in that is its
+// owner alone, shared history or not and whoever administers the Studio:
+// others read it. A chat with no owner is its readers', as before sign-in.
+func (rt *Routes) MayChange(c *Conversation, username string) bool {
+	return !rt.AuthEnabled() || c.OwnerName() == "" || c.OwnerName() == username
+}
+
+// FindOwn is conversation id to be changed by username: not found where
+// they may not see it, refused where they may only read it.
+func (rt *Routes) FindOwn(id, username string) (*Conversation, error) {
+	c, err := rt.FindVisible(id, username)
+	if err != nil {
+		return nil, err
+	}
+	if !rt.MayChange(c, username) {
+		return nil, apierr.New(403, OnlyOwner)
+	}
+	return c, nil
+}
+
+// Summary is summary(c); own says whether the person it is for may change it.
+func Summary(c *Conversation, own bool) *jsonobj.Object {
 	o := reqbody.O("id", c.ID)
 	if c.Title != nil {
 		reqbody.Put(o, "title", *c.Title)
@@ -74,8 +98,8 @@ func Summary(c *Conversation) *jsonobj.Object {
 	reqbody.Put(o, "messageCount", len(c.Messages))
 	reqbody.Put(o, "createdAt", c.CreatedAt)
 	reqbody.Put(o, "updatedAt", c.UpdatedAt)
-	reqbody.Put(o, "isOwner", true)
-	reqbody.Put(o, "canCollaborate", true)
+	reqbody.Put(o, "isOwner", own)
+	reqbody.Put(o, "canCollaborate", own)
 	return o
 }
 
@@ -106,7 +130,7 @@ func (rt *Routes) list(w http.ResponseWriter, r *http.Request) error {
 	out := []*jsonobj.Object{}
 	for _, c := range Sorted(rt.Store.List()) {
 		if rt.VisibleTo(c, who.Username) {
-			out = append(out, Summary(c))
+			out = append(out, Summary(c, rt.MayChange(c, who.Username)))
 		}
 	}
 	return reqbody.OK(w, out)
@@ -125,14 +149,15 @@ func (rt *Routes) get(w http.ResponseWriter, r *http.Request) error {
 	if rt.Held != nil {
 		held = rt.Held(r, c.ID)
 	}
+	own := rt.MayChange(c, who.Username)
 	c = WithOwnCommands(WithHolders(rt.Store.WithUnanswered(c), held, who.ViewerID), who.ViewerID, rt.AuthEnabled())
 	o := reqbody.Parse(c)
 	// What answers it, for one stored before that was kept too.
 	if e := c.AnsweredBy(); e != "" {
 		reqbody.Put(o, "engine", e)
 	}
-	reqbody.Put(o, "isOwner", true)
-	reqbody.Put(o, "canCollaborate", true)
+	reqbody.Put(o, "isOwner", own)
+	reqbody.Put(o, "canCollaborate", own)
 	return reqbody.OK(w, o)
 }
 
@@ -156,7 +181,7 @@ func (rt *Routes) create(w http.ResponseWriter, r *http.Request) error {
 			title = &s
 		}
 	}
-	return reqbody.OK(w, Summary(rt.Store.Create(title, who.Username)))
+	return reqbody.OK(w, Summary(rt.Store.Create(title, who.Username), true))
 }
 
 func (rt *Routes) patch(w http.ResponseWriter, r *http.Request) error {
@@ -164,7 +189,7 @@ func (rt *Routes) patch(w http.ResponseWriter, r *http.Request) error {
 	if !ok {
 		return nil
 	}
-	if _, err := rt.FindVisible(r.PathValue("id"), who.Username); err != nil {
+	if _, err := rt.FindOwn(r.PathValue("id"), who.Username); err != nil {
 		return err
 	}
 	b, err := reqbody.Read(r)
@@ -179,7 +204,7 @@ func (rt *Routes) patch(w http.ResponseWriter, r *http.Request) error {
 	if c == nil {
 		return apierr.New(404, "conversation not found")
 	}
-	o := Summary(c)
+	o := Summary(c, true)
 	if rt.Renamed != nil && title != nil {
 		if why := rt.Renamed(r, c); why != "" {
 			reqbody.Put(o, "sessionKeeps", why)
@@ -204,7 +229,7 @@ func (rt *Routes) steer(w http.ResponseWriter, r *http.Request) error {
 		return apierr.New(400, "conversationId, id, and text are required")
 	}
 	cid := reqbody.JSString(conv)
-	if _, err := rt.FindVisible(cid, who.Username); err != nil {
+	if _, err := rt.FindOwn(cid, who.Username); err != nil {
 		return err
 	}
 	return reqbody.OK(w, reqbody.O("queued", rt.Store.QueueSteer(cid, id, sliceRunes(text, 4000))))
@@ -240,7 +265,7 @@ func (rt *Routes) bulkDelete(w http.ResponseWriter, r *http.Request) error {
 	}
 	me := who.Username
 	gone := rt.Store.Delete(ids, func(c *Conversation) bool {
-		return rt.VisibleTo(c, me) && (!rt.AuthEnabled() || c.OwnerName() == "" || c.OwnerName() == me)
+		return rt.VisibleTo(c, me) && rt.MayChange(c, me)
 	})
 	goneSet := map[string]bool{}
 	for _, id := range gone {
@@ -265,10 +290,10 @@ func (rt *Routes) deleteOne(w http.ResponseWriter, r *http.Request) error {
 	}
 	id := r.PathValue("id")
 	// With sign-in, one that is not there is answered as another person's.
-	if _, err := rt.FindVisible(id, who.Username); err != nil && (rt.AuthEnabled() || rt.Store.Get(id) != nil) {
+	if _, err := rt.FindOwn(id, who.Username); err != nil && (rt.AuthEnabled() || rt.Store.Get(id) != nil) {
 		return err
 	}
-	rt.Store.Delete(map[string]bool{id: true}, func(*Conversation) bool { return true })
+	rt.Store.Delete(map[string]bool{id: true}, func(c *Conversation) bool { return rt.MayChange(c, who.Username) })
 	return reqbody.OK(w, reqbody.O("deleted", id))
 }
 

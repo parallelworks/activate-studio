@@ -122,9 +122,64 @@ func TestAnotherPersonsChatIsAnsweredAsNone(t *testing.T) {
 	if err := m.A.Settings.Update(map[string]any{"chatSharedHistory": true, "chatSharedHistoryChosen": true}); err != nil {
 		t.Fatal(err)
 	}
-	for _, who := range []string{"bob", "cy"} {
-		if code, out := do(who, "GET", "/api/chat/conversations/"+there, ""); code != http.StatusOK || !strings.Contains(out, "QUOTED") {
-			t.Errorf("shared, %s: %d %s", who, code, out)
+	// They read it and do nothing else, an administrator too.
+	unowned := m.Conv.CreateWith(&title, "", nil, nil).ID
+	for _, who := range []string{"bob", "cy", ""} {
+		if code, out := do(who, "GET", "/api/chat/conversations/"+there, ""); code != http.StatusOK || !strings.Contains(out, "QUOTED") || !strings.Contains(out, `"isOwner":false,"canCollaborate":false`) {
+			t.Errorf("shared, %q: %d %s", who, code, out)
+		}
+		if _, out := do(who, "GET", "/api/chat/conversations", ""); strings.Count(out, `"isOwner":false,"canCollaborate":false`) != 2 || strings.Count(out, `"isOwner":true,"canCollaborate":true`) != 1 {
+			t.Errorf("shared, %q lists %s", who, out)
+		}
+		for _, id := range []string{there, pw} {
+			for _, c := range routes {
+				body := strings.ReplaceAll(c.body, "ID", id)
+				if body == "STREAM" {
+					body = stream(id)
+				}
+				code, out := do(who, c.method, strings.ReplaceAll(c.path, "ID", id), body)
+				read := c.method == "GET" && !strings.HasSuffix(c.path, "/save")
+				switch {
+				case strings.HasSuffix(c.path, "conversations/delete"):
+					if code != 200 || !strings.Contains(out, `"deleted":[]`) {
+						t.Errorf("shared, %q deletes with others: %d %s", who, code, out)
+					}
+				case strings.Contains(c.path, "/suggestions"):
+					if code != 200 || out != `{"after":null,"suggestions":[]}` {
+						t.Errorf("shared, %q suggestions: %d %s", who, code, out)
+					}
+				case read || strings.Contains(c.path, "/pwcode/"):
+					if code == 200 && !read {
+						t.Errorf("shared, %q %s %s: %d %s", who, c.method, c.path, code, out)
+					}
+				case code != http.StatusForbidden || !strings.Contains(out, conversations.OnlyOwner):
+					t.Errorf("shared, %q %s %s: %d %s", who, c.method, c.path, code, out)
+				}
+			}
+		}
+		// What has no owner is its readers', as before.
+		if code, out := do(who, "PATCH", "/api/chat/conversations/"+unowned, `{"title":"Ours"}`); code != 200 || !strings.Contains(out, `"isOwner":true`) {
+			t.Errorf("unowned, %q: %d %s", who, code, out)
+		}
+	}
+	if len(gw.requests) != 0 {
+		t.Errorf("shared: the model was asked %d times", len(gw.requests))
+	}
+	if c := m.Conv.Get(there); c == nil || len(c.Messages) != 2 || deref(c.Title) != title || c.OwnerName() != "ada" || c.Engine != "" {
+		t.Errorf("shared: ada's chat is now %+v", c)
+	}
+	if c := m.Conv.Get(pw); c == nil || len(c.Messages) != 0 || deref(c.Title) != title || c.Engine != "" {
+		t.Errorf("shared: ada's pw code chat is now %+v", c)
+	}
+	// Hers to change.
+	for _, c := range []struct{ method, path, body string }{
+		{"PATCH", "/api/chat/conversations/ID", `{"title":"Budget"}`},
+		{"POST", "/api/chat/steer", `{"conversationId":"ID","id":"s","text":"x"}`},
+		{"POST", "/api/chat/conversations/ID/stop", ""},
+		{"PUT", "/api/chat/conversations/ID/engine", `{"engine":"studio"}`},
+	} {
+		if code, out := do("ada", c.method, strings.ReplaceAll(c.path, "ID", there), strings.ReplaceAll(c.body, "ID", there)); code != 200 {
+			t.Errorf("ada %s %s: %d %s", c.method, c.path, code, out)
 		}
 	}
 	if code, _ := do("ada", "DELETE", "/api/chat/conversations/"+there, ""); code != http.StatusOK || m.Conv.Get(there) != nil {

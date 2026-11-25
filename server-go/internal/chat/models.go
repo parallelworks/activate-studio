@@ -843,8 +843,9 @@ func (m *Module) suggestions(w http.ResponseWriter, r *http.Request) error {
 	id := r.URL.Query().Get("conversation")
 	var c *conversations.Conversation
 	if id != "" {
-		// Another person's chat is answered as one that is not there.
-		c, _ = m.visibleChat(r, id)
+		// What to say next is for the one who may: another person's chat is
+		// answered as one that is not there.
+		c, _ = m.ownChat(r, id)
 	}
 	if c == nil {
 		return reqbody.OK(w, reqbody.O("after", nil, "suggestions", []any{}))

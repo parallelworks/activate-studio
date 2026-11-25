@@ -645,6 +645,10 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           },
           sidebar: {
             manageProviders: 'Model access',
+            sharedWithYou: "Someone else's chat",
+          },
+          thread: {
+            viewOnly: 'Only the person whose chat this is can add to it',
           },
           input: {
             placeholderNoProviders: held ? 'Choose or add a model to start chatting' : 'Add a model under Settings, Accounts to start chatting',
@@ -854,9 +858,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
               </div>
             </Popover>
             )}
-            {!showAttachments && <PWCodeEngine conversationId={activeId} />}
+            {!showAttachments && <OwnChat conversationId={activeId}><PWCodeEngine conversationId={activeId} /></OwnChat>}
             <EngineMarks />
-            {activeId && !showAttachments && <SaveChatButton conversationId={activeId} />}
+            {activeId && !showAttachments && <OwnChat conversationId={activeId}><SaveChatButton conversationId={activeId} /></OwnChat>}
             <PanelToggle className="chat-panel-toggle" />
           </div>
           {/* Managing chats hides the controls above; the panel toggle stays. */}
@@ -866,6 +870,14 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
       </div>
     </ChatProvider>
   )
+}
+
+/** What changes the open chat, for the one who may: another person's is
+ *  read, where chats are shared, and nothing else. */
+export function OwnChat({ conversationId, children }: { conversationId: string | null; children: React.ReactNode }) {
+  const { currentConversation, conversations } = useChat()
+  const c = currentConversation?.id === conversationId ? currentConversation : conversations.find(x => x.id === conversationId)
+  return c?.isOwner === false ? null : <>{children}</>
 }
 
 /** The library files a Studio assistant chat's replies name, as links: in

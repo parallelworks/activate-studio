@@ -95,6 +95,11 @@ export function chatRowState(n: ChatNotice | undefined, session: PwCodeSession |
   return null
 }
 
+/** A row's menu for who may only read its chat: no rename, no delete. */
+export function readerItems(c: { isOwner?: boolean }, items: MenuEntry[]): MenuEntry[] {
+  return c.isOwner === false ? items.filter(i => 'label' in i && i.label === 'Download') : items
+}
+
 function ChatRow({ conv, state, marks, current, menuItems, openMenu, onOpen }: {
   conv: Conversation
   state: ChatRowState | null
@@ -179,7 +184,9 @@ function ChatSidebar({ top }: { top: (state: { collapsed: boolean }) => ReactNod
     adapter, navigation, activeConversationId, conversations, sidebar, sidebarPresentation, drawerOpen, setSidebar, setDrawerOpen,
     toggleSidebar, isLoading, loadConversations, clearCurrentConversation,
   } = useChat()
-  const { menuItems, openMenu, overlays } = useConversationActions()
+  const { menuItems: allItems, openMenu, overlays } = useConversationActions()
+  // Another person's chat is read and downloaded, and nothing else.
+  const menuItems = (c: Conversation, row: HTMLLIElement) => readerItems(c, allItems(c, row))
   const drawer = sidebarPresentation === 'drawer'
   const collapsed = !drawer && sidebar !== 'expanded'
   const closeDrawer = () => setDrawerOpen(false)

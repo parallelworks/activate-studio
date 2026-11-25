@@ -1288,7 +1288,7 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 	})
 	// The person switches what answers a conversation, between turns.
 	h("PUT /api/chat/conversations/{id}/engine", func(w http.ResponseWriter, r *http.Request) error {
-		c, err := m.visibleChat(r, r.PathValue("id"))
+		c, err := m.ownChat(r, r.PathValue("id"))
 		if err != nil {
 			return err
 		}

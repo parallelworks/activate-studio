@@ -152,10 +152,17 @@ func (m *Module) visibleChat(r *http.Request, id string) (*conversations.Convers
 	return m.Convs.FindVisible(id, who.Username)
 }
 
+// ownChat is conversation id to be changed by the person r is from: not
+// found where they may not see it, refused where they may only read it.
+func (m *Module) ownChat(r *http.Request, id string) (*conversations.Conversation, error) {
+	who, _ := m.Convs.Who(r)
+	return m.Convs.FindOwn(id, who.Username)
+}
+
 // chatSaveRoutes: GET says where the chat would go, POST saves it.
 func (m *Module) chatSaveRoutes(h func(pattern string, fn func(http.ResponseWriter, *http.Request) error)) {
 	h("GET /api/chat/conversations/{id}/save", func(w http.ResponseWriter, r *http.Request) error {
-		c, err := m.visibleChat(r, r.PathValue("id"))
+		c, err := m.ownChat(r, r.PathValue("id"))
 		if err != nil {
 			return err
 		}
@@ -166,7 +173,7 @@ func (m *Module) chatSaveRoutes(h func(pattern string, fn func(http.ResponseWrit
 		return reqbody.OK(w, d)
 	})
 	h("POST /api/chat/conversations/{id}/save", func(w http.ResponseWriter, r *http.Request) error {
-		c, err := m.visibleChat(r, r.PathValue("id"))
+		c, err := m.ownChat(r, r.PathValue("id"))
 		if err != nil {
 			return err
 		}
@@ -183,7 +190,7 @@ func (m *Module) toolSaveChat(r *http.Request, _ map[string]any, ctx ToolCtx) (*
 	if ctx.ConversationID == nil || *ctx.ConversationID == "" {
 		return &Outcome{Result: "This chat is not stored in the Studio, so there is no conversation to save.", Summary: "no conversation"}, nil
 	}
-	c, err := m.visibleChat(r, *ctx.ConversationID)
+	c, err := m.ownChat(r, *ctx.ConversationID)
 	if err != nil {
 		return &Outcome{Result: "Not saved: " + err.Error(), Summary: "not saved"}, nil
 	}

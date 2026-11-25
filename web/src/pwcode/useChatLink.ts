@@ -44,8 +44,10 @@ function behindOf(c: ChatRecord | null | undefined): boolean {
   return !(id.startsWith('pwc-') || id.startsWith('pwh-') || String(last.model ?? '').startsWith('pw code'))
 }
 
-/** The chat's session as its record has it, or null. */
+/** The chat's session as its record has it, or null: another person's is
+ *  theirs alone, and their chat is read as a thread. */
 function linkOf(c: ChatRecord | null | undefined): ChatLink | null {
+  if (c?.isOwner === false) return null
   return c?.pwcode?.session ? c.pwcode as ChatLink : null
 }
 

@@ -223,12 +223,12 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	// stored in it or reaches the session.
 	if id := deref(body.ConversationID); id != "" {
 		c := m.Conv.Get(id)
-		// A chat the person may not see takes no message of theirs and is
-		// not answered from. With sign-in one that is not there gets the
+		// Only its owner adds to a chat, changes what answers it or answers
+		// a call it holds; one the person may not see is not there. With sign-in one that is not there gets the
 		// same answer, so nothing is made under an id the page did not get
 		// from the Studio.
 		if c != nil || m.Convs.AuthEnabled() {
-			if _, err := m.visibleChat(r, id); err != nil {
+			if _, err := m.ownChat(r, id); err != nil {
 				return err
 			}
 		}
