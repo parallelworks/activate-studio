@@ -38,6 +38,9 @@ var copyKinds = []string{transfers.KindSaved, transfers.KindHost, transfers.Kind
 // copyTick is how often the background loop sees which copies are due.
 var copyTick = time.Minute
 
+// copyLook is the look Update now asks for (a variable for the tests).
+var copyLook = (*builds).update
+
 // copies is what runs for copy libraries: one look at a time per library,
 // the looks asked for or running, and the transfer of a look that has one.
 type copies struct {
@@ -362,7 +365,7 @@ func (s *Service) copyUpdate(w http.ResponseWriter, r *http.Request) error {
 	s.builds.copies.look(id, 1)
 	go func() {
 		defer s.builds.copies.look(id, -1)
-		s.builds.update(s.builds.ctx, id)
+		copyLook(s.builds, s.builds.ctx, id)
 	}()
 	lib, err := s.settingsLibrary(id)
 	if err != nil {

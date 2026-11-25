@@ -111,10 +111,18 @@ func TestCopyLibrary(t *testing.T) {
 	if code, b := f.call("PUT", "/api/libraries/"+id+"/copy", map[string]any{"every": 0}); code != 200 || b["library"].(map[string]any)["copyOf"].(map[string]any)["every"] != float64(0) {
 		t.Fatalf("every: %d %v", code, b)
 	}
-	// Its answer, and each read until the look ends, say a look is on.
+	// Its answer, and each read until the look ends, say a look is on. The
+	// look waits here: one at a folder this small can end before the answer.
+	begin := make(chan struct{})
+	copyLook = func(b *builds, ctx context.Context, id string) { <-begin; b.update(ctx, id) }
+	t.Cleanup(func() { copyLook = (*builds).update })
 	if code, b := f.call("POST", "/api/libraries/"+id+"/update", nil); code != 200 || b["started"] != true || b["library"].(map[string]any)["copyOf"].(map[string]any)["looking"] != true {
 		t.Fatalf("update now: %d %v", code, b)
 	}
+	if f.library(id)["copyOf"].(map[string]any)["looking"] != true {
+		t.Fatal("a read while the look is on does not say so")
+	}
+	close(begin)
 	for end := time.Now().Add(20 * time.Second); f.library(id)["copyOf"].(map[string]any)["looking"] == true; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(end) {
 			t.Fatal("the look never ended")
