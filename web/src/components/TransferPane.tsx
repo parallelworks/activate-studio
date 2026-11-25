@@ -7,6 +7,9 @@ import {
   KIND_ORDER, TransferError, bytesText, joinPath, rangeSelect, sortEntries, transferApi,
   type BrowseEntry, type BrowseResult, type TransferLocation,
 } from '../transferApi'
+import type { PublicLibrary } from '../api'
+import { useAppConfig } from '../config'
+import { locationMachine, MachineGlyph, TransferEnd } from './MachineLabel'
 
 /** One side of the transfer page: where it is, and what in it is selected. */
 export interface PaneState {
@@ -52,13 +55,18 @@ export const SAVE_LOCATION = '\u0000save-location'
 /** The location chooser's groups, in the page's order, each location with
  *  its detail line, and unavailable ones disabled with their reason. With
  *  `canSave`, a last group offers to save a new location. */
-function locationItems(locations: TransferLocation[], canSave: boolean): ComboboxGroup<string>[] {
+function locationItems(locations: TransferLocation[], canSave: boolean, libraries: readonly PublicLibrary[]): ComboboxGroup<string>[] {
+  const icon = (id: string) => {
+    const machine = locationMachine(id, libraries)
+    return machine ? <MachineGlyph machine={machine} /> : undefined
+  }
   const groups: ComboboxGroup<string>[] = KIND_ORDER.map(({ kind, label }) => ({
     label,
     icon: kind === 'rclone' ? <CloudGlyph /> : undefined,
     items: locations.filter(l => l.kind === kind).map(l => ({
       value: l.id,
       label: l.label,
+      icon: icon(l.id),
       description: l.available ? l.detail : `${l.detail ? `${l.detail}. ` : ''}Unavailable: ${l.why ?? 'not reachable now'}`,
       hint: [l.indexed ? 'Indexed' : '', l.writable ? '' : 'Read only'].filter(Boolean).join(', ') || undefined,
       // A library Studio cannot reach can still be chosen when the pane
@@ -116,6 +124,7 @@ export function TransferPane({
   selectable?: boolean
 }) {
   const location = locations.find(l => l.id === state.locationId) ?? null
+  const libraries = useAppConfig().libraries ?? []
   const [listing, setListing] = useState<BrowseResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<{ status: number; text: string } | null>(null)
@@ -192,7 +201,7 @@ export function TransferPane({
           <Combobox<string>
             aria-label={`${name}: location`}
             placeholder="Choose a location"
-            items={locationItems(locations, !!onSaveLocation)}
+            items={locationItems(locations, !!onSaveLocation, libraries)}
             value={state.locationId}
             onValueChange={v => {
               if (v === SAVE_LOCATION) onSaveLocation?.()
@@ -206,7 +215,7 @@ export function TransferPane({
         <a className="xfer-add-location" href="#view=settings:transfers">Add a location</a>
         {location && (
           <div className="xfer-pane-facts">
-            <span className="xfer-pane-detail" title={location.detail}>{location.detail}</span>
+            <span className="xfer-pane-detail" title={location.detail}><TransferEnd location={location.id}>{location.detail}</TransferEnd></span>
             {location.indexed && <StatusBadge size="sm" variant="muted">Indexed</StatusBadge>}
             {!location.writable && <StatusBadge size="sm" variant="muted">Read only</StatusBadge>}
           </div>

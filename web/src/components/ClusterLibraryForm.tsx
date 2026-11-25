@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout, Checkbox, Field, Input, Select } from '@parallelworks/ui'
 import { api, type UserLibrary } from '../api'
+import { MachineGlyph } from './MachineLabel'
 
 /**
  * Builds a GUFI index of a directory on one of the user's clusters, with
@@ -47,7 +48,7 @@ export function ClusterLibraryForm({ onStarted, compact = false }: {
       )}
       <div className="settings-grid">
         <Field label="Cluster">
-          <Select items={(sites ?? []).map(s => ({ value: s, label: s }))} value={form.site || null}
+          <Select items={(sites ?? []).map(s => ({ value: s, label: s, icon: <MachineGlyph machine={{ name: s }} /> }))} value={form.site || null}
             placeholder={sites === null ? 'Loading…' : 'No active clusters'} disabled={!sites?.length}
             onValueChange={v => v && setForm({ ...form, site: v })} />
         </Field>

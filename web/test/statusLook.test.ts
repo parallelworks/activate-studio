@@ -5,6 +5,8 @@ describe('statusLook', () => {
   it('gives each state one meaning', () => {
     expect(statusLook('working')).toEqual({ variant: 'info', pulse: true })
     expect(statusLook('running')).toEqual({ variant: 'info', pulse: true })
+    for (const s of ['starting', 'started', 'provisioning', 'canceling']) expect(statusLook(s)).toEqual({ variant: 'info', pulse: true })
+    for (const s of ['pending', 'queued', 'submitted']) expect(statusLook(s)).toEqual({ variant: 'info' })
     expect(statusLook('completed')).toEqual({ variant: 'success' })
     expect(statusLook('failed')).toEqual({ variant: 'error' })
     expect(statusLook('input-required')).toEqual({ variant: 'warning' })

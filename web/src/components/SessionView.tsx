@@ -3,6 +3,8 @@ import { shownTimeout } from '../live'
 import { Button, Callout, StatusDot } from '@parallelworks/ui'
 import { openBeside, openFullView } from '../sideBySide'
 import { DesktopView, isDesktop } from './DesktopView'
+import { statusLook } from '../statusLook'
+import { Dotted, MachineLabel } from './MachineLabel'
 
 /**
  * One platform session as a card: its state, the run that opened it, and
@@ -152,10 +154,10 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
   return (
     <div className="session-view" ref={rootRef}>
       <div className="session-bar">
-        <StatusDot variant={unsure ? 'warning' : running ? 'success' : gone ? 'muted' : 'warning'} size={7} />
+        <StatusDot {...(unsure ? { variant: 'warning' as const } : gone ? { variant: 'muted' as const } : { variant: 'warning' as const, ...statusLook(s?.status ?? '') })} size={7} />
         <span className="session-name">{s?.name ?? (name || (run ? `Session of ${run}` : host))}</span>
         <span className="muted session-meta">
-          {[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource ? `on ${s.resource}` : '', gone ? 'no longer listed' : unsure ? 'state unknown' : s && !running ? (s.status || 'not running') : ''].filter(Boolean).join(' · ')}
+          <Dotted parts={[s?.run ? `${s.run.workflow} · ${s.run.slug}` : s?.type, s?.resource && <>on <MachineLabel machine={{ name: s.resource }} /></>, gone ? 'no longer listed' : unsure ? 'state unknown' : s && !running ? (s.status || 'not running') : '']} />
         </span>
         {running && s?.url && (
           <span className="session-bar-actions">

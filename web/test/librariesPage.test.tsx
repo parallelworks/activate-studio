@@ -510,7 +510,7 @@ describe('Settings, Indexing, Libraries', () => {
 
     const ssh = rowOf('index on box')
     expect(within(ssh).getByText('GUFI index over ssh, connected as it is')).toBeInTheDocument()
-    expect(within(ssh).getByText(/· Read only \(on me@box\)$/)).toBeInTheDocument()
+    expect(ssh.querySelector('.lib-name')).toHaveTextContent(/· Read only \(on me@box\)$/)
     expect(within(ssh).getByTitle('me@box:/data/index')).toHaveTextContent('me@box:/data/index')
     expect(within(ssh).getByText('2222')).toBeInTheDocument()
     expect(within(ssh).getByText('Names and metadata')).toBeInTheDocument()
@@ -662,7 +662,7 @@ describe('Settings, Indexing, Libraries', () => {
     const row = await waitFor(() => rowOf('data on box'))
     expect(posted(s, '/api/user-libraries/space')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data', depth: 'meaning-documents', create: true })
     expect(within(row).getByText('Index built there over ssh')).toBeInTheDocument()
-    expect(within(row).getByText(/· Read only \(on me@box\)$/)).toBeInTheDocument()
+    expect(row.querySelector('.lib-name')).toHaveTextContent(/· Read only \(on me@box\)$/)
     expect(within(row).getByTitle('me@box:/home/me/data')).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: /Extracting text/ })).toBeInTheDocument()
   })

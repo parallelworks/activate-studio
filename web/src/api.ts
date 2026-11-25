@@ -243,6 +243,8 @@ export interface BuildProgress { phase: string; done: number; total: number; cur
 /** A system on the platform, as pw ssh names it. */
 export interface PwSystem {
   name: string; label: string; status: string; running: boolean; type: string | null
+  /** Whose it is, where the platform says. */
+  owner?: string
   /** What picks its icon (code/machineIcon.ts), where the platform says. */
   imageUrl?: string; csp?: string; schedulerType?: string; os?: string
 }

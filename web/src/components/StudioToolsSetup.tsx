@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
 import { AllowsNote, RemoveTools } from './MachineToolsAllow'
 import { KEEPS_TOOLS, type MachineTools, type SetupResult, machineHasSaid, runSetup, setupSaid, takeAutoSetup } from './studioTools'
+import { MachineLabel } from './MachineLabel'
 
 /** GET /api/mcp/bridge: how this Studio's tools reach a pw code session of
  *  the viewer's on another machine. */
@@ -69,6 +70,7 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
   const read = useCallback(async () => { setReach(await readReach(conversationId)) }, [conversationId])
   useEffect(() => { void read() }, [read])
   const where = reach?.setup?.machine || machineName || 'the other machine'
+  const there = where === 'the other machine' ? where : <MachineLabel machine={{ name: where }} />
 
   const setUp = useCallback(async (opts: { replace?: boolean; check?: boolean } = {}) => {
     if (!conversationId) return
@@ -169,8 +171,8 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
     <Callout tone={failed || result ? 'warning' : 'info'} size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
       <p>
         {running
-          ? <>Adding this Studio's tools to pw code on {where}, as you…</>
-          : <>pw code on {where} does not have this Studio's tools (library search, queries, reading files and the rest) yet.</>}
+          ? <>Adding this Studio's tools to pw code on {there}, as you…</>
+          : <>pw code on {there} does not have this Studio's tools (library search, queries, reading files and the rest) yet.</>}
       </p>
       {canRun && !running && !result?.ask && <AllowsNote allows={reach.setup?.allows} />}
       {failed && <p data-testid="studio-tools-failed">{failed}</p>}

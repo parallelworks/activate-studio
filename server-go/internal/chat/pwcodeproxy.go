@@ -910,6 +910,16 @@ func (m *Module) ownMachine(r *http.Request, name string, st any) *jsonv.Object 
 			rec.Set(k, v)
 		}
 	}
+	// Which of the viewer's machines it is, for its resource's name and icon:
+	// its daemon's id, unless the name is of another host it was on before.
+	if host := jsonv.String(jsonv.Path(st, "hostname")); name == "" || strings.EqualFold(name, host) {
+		if id := jsonv.String(jsonv.Path(st, "machineId")); id != "" {
+			rec.Set("daemonId", id)
+		}
+		if host != "" {
+			rec.Set("hostname", host)
+		}
+	}
 	return codesessions.ClaudeCodeShown(r, rec)
 }
 

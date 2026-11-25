@@ -296,7 +296,7 @@ func TestAChatWaitsWithoutAPlatformListing(t *testing.T) {
 	// and a session only this computer's daemon knows.
 	c1.Session, c1.Asks = "s1", []chat.ChatAsk{{ID: "ap1", At: iso(at(-1)), Approval: approval("ap1", "ask")}}
 	c2.Asks = []chat.ChatAsk{{ID: "call1", At: iso(at(-2)), Tool: "write_kb_file"}}
-	c3.Session, c3.Local = "s3", true
+	c3.Session, c3.Local, c3.Machine, c3.MachineName = "s3", true, "d3", "this-host"
 	s.people[""] = &person{listErr: errors.New("no sign-in"), chats: []chat.ChatState{c1, c2, c3},
 		local: map[string]*jsonv.Object{"s3": session("s3", "awaiting_approval", approval("ap3", "confirm"))}}
 	a := s.read("")
@@ -305,6 +305,10 @@ func TestAChatWaitsWithoutAPlatformListing(t *testing.T) {
 	}
 	if a.Chats["c3"].Row == nil || len(s.asked) != 1 || !s.asked[0]["s3"] || len(s.asked[0]) != 1 {
 		t.Errorf("local rows: %+v, asked %v", a.Chats["c3"], s.asked)
+	}
+	// A row says which machine its session is on, as the chat knows it.
+	if c := a.Chats["c3"]; !c.Local || c.Machine != "d3" || c.MachineName != "this-host" || a.Chats["c2"].MachineName != "" {
+		t.Errorf("machines: %+v", c)
 	}
 	// Where the listing is from before the ask, its session says so too.
 	p := s.people[""]

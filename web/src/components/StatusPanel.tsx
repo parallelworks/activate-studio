@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { accountsHref } from '../accounts'
 import { Button, DisclosurePanel, IconButton, StatusDot, type BadgeVariant } from '@parallelworks/ui'
+import { statusLook } from '../statusLook'
 import { ChevronRightIcon } from '@parallelworks/ui/icons'
 import { currentLibrary, type IndexStatus, type PublicLibrary, type UserLibrary } from '../api'
 import { reloadAppConfig, type AppConfig } from '../config'
@@ -14,6 +15,8 @@ import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
 import { plural } from '../plural'
 import { readNow, useWatch } from '../live'
 import { keepMissing } from '../steady'
+import type { MachineRef } from '../machines'
+import { libraryMachine, MachineLabel } from './MachineLabel'
 
 /**
  * The status panel at the right of every page: what is running, the
@@ -88,10 +91,8 @@ const go = (hash: string) => { location.hash = hash }
 
 function runTone(state: string): { tone: BadgeVariant; pulse: boolean } {
   const s = String(state).toLowerCase()
-  if (s === 'running' || s === 'starting' || s === 'started' || s === 'submitted') return { tone: 'info', pulse: true }
-  if (s === 'completed') return { tone: 'success', pulse: false }
-  if (s === 'error' || s === 'failed' || s === 'faulted') return { tone: 'error', pulse: false }
-  return { tone: 'muted', pulse: false }
+  const look = statusLook(s === 'faulted' ? 'error' : s)
+  return { tone: look.variant ?? 'muted', pulse: !!look.pulse }
 }
 
 /** Opens a run the way the page it is clicked on does: beside the chat on
@@ -133,7 +134,9 @@ export function activitySummary(d: Pick<StatusData, 'tasks' | 'fleet' | 'runs' |
   return { text: parts.join(' · ') || 'idle', tone: waiting ? 'warning' : running ? 'info' : null, pulse: !waiting && running > 0 }
 }
 
-export interface LibLine { id: string; label: string; kind: string; state: string; tone: BadgeVariant; pulse: boolean; count: string | null; note: string | null }
+export interface LibLine { id: string; label: string; kind: string; state: string; tone: BadgeVariant; pulse: boolean; count: string | null; note: string | null
+  /** The machine kind says it is on. */
+  machine?: MachineRef }
 
 /** Every library the viewer has: the configured ones, and their own on
  *  their clusters, including any still building or failed. `mainIndexed` is
@@ -165,6 +168,7 @@ export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | nu
     lines.push({
       id: l.id, label: l.label,
       kind: l.primary ? (signIn ? 'shared' : 'on this computer') : l.site ? `on ${l.site}` : l.writable ? 'writable' : 'read only',
+      ...(!l.primary && l.site ? { machine: libraryMachine(l) ?? undefined } : {}),
       state: st && !st.available ? 'unavailable' : indexed ? 'indexed' : 'not indexed',
       tone: st && !st.available ? 'warning' : indexed ? 'success' : 'muted', pulse: false,
       count: n != null ? plural(n, 'file') : null,
@@ -174,7 +178,7 @@ export function libraryLines(libs: PublicLibrary[], userLibs: UserLibrary[] | nu
   for (const u of userLibs ?? []) {
     const n = u.files ?? counted(u.id)
     lines.push({
-      id: u.id, label: u.label, kind: `on ${u.site}`, state: u.state,
+      id: u.id, label: u.label, kind: `on ${u.site}`, state: u.state, machine: u.transport === 'ssh' ? { name: u.site, kind: 'ssh' } : { name: u.site },
       tone: u.state === 'failed' ? 'error' : u.state === 'ready' ? 'success' : 'info',
       pulse: u.state === 'building' || u.state === 'updating',
       count: n != null ? plural(n, 'file') : null,
@@ -206,7 +210,9 @@ export function modelSummary(ai: AiHealth | null, model: string | null): Summary
 /** What a connection is: the ACTIVATE platform, an attached MCP server, or
  *  a machine that holds remote libraries. */
 export type ConnKind = 'platform' | 'mcp' | 'site'
-export interface ConnLine { key: string; kind: ConnKind; name: string; meta: string; tone: BadgeVariant; title?: string; onClick?: () => void }
+export interface ConnLine { key: string; kind: ConnKind; name: string; meta: string; tone: BadgeVariant; title?: string; onClick?: () => void
+  /** The machine it is, for a site. */
+  machine?: MachineRef }
 
 export const CONN_GROUPS: { kind: ConnKind; label: string }[] = [
   { kind: 'platform', label: 'ACTIVATE platform' },
@@ -237,6 +243,8 @@ export function connectionLines(o: {
   // The clusters the viewer's libraries live on, as their libraries last
   // found them; the panel does not reach out to check.
   const sites = new Map<string, Map<string, string>>()
+  const ssh = new Set((o.userLibs ?? []).filter(u => u.transport === 'ssh').map(u => u.site))
+  for (const l of o.libs) if (l.site && l.access?.where === 'system' && l.access.via === 'ssh') ssh.add(l.site)
   const note = (site: string, id: string, state: string) => sites.set(site, (sites.get(site) ?? new Map()).set(id, state))
   for (const l of o.libs) if (l.site) note(l.site, l.id, 'ready')
   for (const u of o.userLibs ?? []) note(u.site, u.id, u.state)
@@ -244,7 +252,7 @@ export function connectionLines(o: {
     const states = [...byId.values()]
     const failed = states.includes('failed')
     rows.push({
-      key: `site:${site}`, kind: 'site', name: site,
+      key: `site:${site}`, kind: 'site', name: site, machine: ssh.has(site) ? { name: site, kind: 'ssh' } : { name: site },
       meta: failed ? 'a library build failed' : plural(states.length, 'library', 'libraries'),
       tone: failed ? 'warning' : 'success',
     })
@@ -485,7 +493,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
       {libs.length > 0 && (
         <Card id="libraries" title="Libraries" summary={librariesSummary(libs, idx)}>
           {libs.map(l => (
-            <Row key={l.id} tone={l.tone} pulse={l.pulse} name={l.label} sub={l.kind} title={l.note ?? undefined}
+            <Row key={l.id} tone={l.tone} pulse={l.pulse} name={l.label} sub={l.machine ? <>on <MachineLabel machine={l.machine} /></> : l.kind} title={l.note ?? undefined}
               meta={(l.state === 'indexed' || l.state === 'ready') && l.count ? l.count : l.state} />
           ))}
           <div className="status-sync">
@@ -521,7 +529,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
             const rows = conns.filter(c => c.kind === g.kind)
             return rows.length > 0 && (
               <Group key={g.kind} label={g.label}>
-                {rows.map(c => <Row key={c.key} tone={c.tone} name={c.name} meta={c.meta} title={c.title} onClick={c.onClick} />)}
+                {rows.map(c => <Row key={c.key} tone={c.tone} name={c.machine ? <MachineLabel machine={c.machine} /> : c.name} meta={c.meta} title={c.title} onClick={c.onClick} />)}
               </Group>
             )
           })}

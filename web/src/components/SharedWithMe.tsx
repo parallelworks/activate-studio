@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout, Loader, Table } from '@parallelworks/ui'
 import { api, type FolderShare, type UserLibrary } from '../api'
+import { MachineLabel } from './MachineLabel'
 
 /**
  * Folders other accounts shared with the viewer's account, or a group it
@@ -44,7 +45,7 @@ export function SharedWithMe({ onAdded, system, compact = false, title }: {
   return (
     <div className="shared-with-me">
       {why && <Callout tone="info">{why}</Callout>}
-      {missed.map(u => <Callout key={u.site} tone="warning">Folders shared with you on {u.name} could not be checked: {u.why}</Callout>)}
+      {missed.map(u => <Callout key={u.site} tone="warning">Folders shared with you on <MachineLabel machine={{ name: u.site || u.name }} /> could not be checked: {u.why}</Callout>)}
       {shares && !why && !here.length && !missed.length && <p className="muted">Nothing is shared with your account yet. When someone shares a folder of their space with you, or with a group you are in, it shows here.</p>}
       {title && here.length > 0 && <h4 className="lib-add-shared-title">{title}</h4>}
       {here.length > 0 && (

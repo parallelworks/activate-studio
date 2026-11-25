@@ -126,7 +126,7 @@ describe('a remote library\'s whole index', () => {
     setLibrary('u-box')
     render(<StatusPanel view="library" cfg={{ ...cfg, libraries: [lib, remote] }} />)
     expect(await within(card()).findByText('Box · 1,500,000 files')).toBeInTheDocument()
-    expect(within(card()).getByText(/As of its connection test\. Size and types need a pass over the whole index on me@box/)).toBeInTheDocument()
+    expect(card()).toHaveTextContent(/As of its connection test\. Size and types need a pass over the whole index on me@box/)
     expect(detailsAsked()).toEqual(['/api/kb/details?path=&library=u-box'])
     act(() => { within(card()).getByRole('button', { name: 'Count size and types' }).click() })
     expect(await within(card()).findByText(`Box · ${formatBytes(9_000_000)}`)).toBeInTheDocument()

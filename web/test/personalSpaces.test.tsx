@@ -190,7 +190,7 @@ describe('a space of one\'s own', () => {
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={vi.fn()} />)
     await chooseHome()
-    expect(await screen.findByText(/Folders shared with you on cluster-a could not be checked: cluster-a did not answer within 20 seconds\./)).toBeInTheDocument()
+    await waitFor(() => expect(document.body).toHaveTextContent(/Folders shared with you on cluster-a could not be checked: cluster-a did not answer within 20 seconds\./))
     expect(screen.queryByText(/Nothing is shared with your account yet/)).not.toBeInTheDocument()
   })
 

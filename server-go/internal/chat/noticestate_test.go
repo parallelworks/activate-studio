@@ -2,6 +2,7 @@ package chat
 
 import (
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -67,6 +68,36 @@ func TestChatStates(t *testing.T) {
 	m.held.now = func() time.Time { return now.Add(time.Hour) }
 	if s := one(); len(s.Asks) != 0 {
 		t.Errorf("expired: %+v", s)
+	}
+}
+
+// A chat's row says which machine its session is on, as the platform named
+// it, or by its site (its owner with it) or this host where the Studio drives the session itself.
+func TestAChatsMachineIsNamed(t *testing.T) {
+	m, _, _, _ := newTestModule(t, nil)
+	host, _ := os.Hostname()
+	c := m.Conv.Create(nil, "")
+	r := httptest.NewRequest("GET", "/", nil)
+	for _, k := range []struct {
+		link  conversations.PWCodeLink
+		name  string
+		local bool
+	}{
+		{conversations.PWCodeLink{Site: "relay:m2", Relay: true, Machine: "m2", MachineName: "labcluster"}, "labcluster", false},
+		{conversations.PWCodeLink{Site: "relay:m2", Relay: true, Machine: "m2"}, "", false},
+		{conversations.PWCodeLink{Site: "pw://alex/examplecluster"}, "pw://alex/examplecluster", false},
+		{conversations.PWCodeLink{Site: "local"}, host, true},
+	} {
+		k.link.Session = "s1"
+		m.Conv.SetPWCode(c.ID, &k.link)
+		s := m.ChatStates(r)[0]
+		if s.MachineName != k.name || s.Local != k.local || s.Machine != k.link.Machine {
+			t.Errorf("%s: %q local %v machine %q", k.link.Site, s.MachineName, s.Local, s.Machine)
+		}
+	}
+	m.Conv.SetPWCode(c.ID, nil)
+	if s := m.ChatStates(r)[0]; s.MachineName != "" {
+		t.Errorf("of the Studio assistant: %q", s.MachineName)
 	}
 }
 

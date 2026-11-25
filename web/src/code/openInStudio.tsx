@@ -4,6 +4,7 @@ import { readNow, useWatch } from '../live'
 import { AllowsNote } from '../components/MachineToolsAllow'
 import { type MachineTools, markAutoSetup, setMachineTools } from '../components/studioTools'
 import { startedSession } from './api'
+import { MachineLabel } from '../components/MachineLabel'
 
 /** A machine as the Code page's listing gives it. */
 export interface MachineRef { id: string; name: string; hostname?: string; daemonId?: string }
@@ -135,7 +136,7 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
             <>
               <label className="studio-tools-tick">
                 <input type="checkbox" defaultChecked={add.on} data-testid="studio-tools-tick" onChange={e => { add.on = e.currentTarget.checked }} />
-                {' '}Add this Studio's tools to pw code on {tools.machine}
+                {' '}Add this Studio's tools to pw code on <MachineLabel machine={{ id: tools.machineId, name: tools.machine }} />
                 <span className="muted"> (the Studio sets it up there over pw ssh as you, with that machine's own ACTIVATE sign-in)</span>
               </label>
               <AllowsNote allows={tools.allows} />

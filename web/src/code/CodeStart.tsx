@@ -45,6 +45,8 @@ import {
 } from '@parallelworks/ui/ai'
 import { ChevronDownIcon, ChevronRightIcon, TagIcon } from '@parallelworks/ui/icons'
 import { useTranslations } from 'use-intl'
+import { useMachineLook } from '../machines'
+import { MachineLabel } from '../components/MachineLabel'
 import { SystemChip } from '../components/SystemChip'
 import { describeError } from '../pwcode/PWCodeSession'
 import { ComposerImages } from '../pwcode/session/ComposerImages'
@@ -201,7 +203,7 @@ function ShortlistLoading({ t }: { t: Translate }) {
 
 /** A machine's name after its icon. */
 function MachineName({ machine, muted = false }: { machine: PwCodeMachine; muted?: boolean }) {
-  return <span className={`code-machine-name code-mono${muted ? ' muted' : ''}`}><MachineIcon machine={machine} />{machine.name}</span>
+  return <MachineLabel machine={machine} className={`code-mono${muted ? ' muted' : ''}`} />
 }
 
 /** The machine menu: each with its icon and the mark of the Studio's tools,
@@ -239,9 +241,10 @@ export function MachineChip({ finding, machine, pending, items, t }: {
   t: Translate
 }) {
   const chip = machineChip(machine, t, finding, !!pending)
+  const look = useMachineLook(machine ?? {})
   const icon = machine ? <MachineIcon machine={machine} /> : chip.waiting && <Loader inline decorative size={12} />
   return (
-    <SystemChip finding={finding} label={chip.label} text={chip.text} icon={icon} items={items}
+    <SystemChip finding={finding} label={chip.label} text={chip.text} title={machine && look.known ? look.title : undefined} icon={icon} items={items}
       testId="agents-machine-chip" findingTestId="agents-finding-machines" />
   )
 }

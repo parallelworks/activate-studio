@@ -12,6 +12,8 @@ import { NeedsActivate } from '../components/NeedsActivate'
 import { needsActivate } from '../accounts'
 import { useAppConfig } from '../config'
 import { readNow, useWatch } from '../live'
+import { runLook, statusLook } from '../statusLook'
+import { Dotted, MachineLabel } from '../components/MachineLabel'
 
 /**
  * The Workflows tab: this Studio's curated set of ACTIVATE workflows, as
@@ -135,10 +137,10 @@ function WorkflowsPage() {
           <div className="session-list">
             {sessions.map(x => (
               <div key={`${x.user}/${x.name}`} className="session-row">
-                <StatusDot variant="success" size={7} />
+                <StatusDot {...statusLook(x.status || 'running')} size={7} />
                 <Button variant="ghost" size="sm" className="session-row-name" onClick={() => showSession(x)} title={showsInStudio(x) ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>
                 <span className="muted session-meta">
-                  {[x.run ? `${x.run.workflow} · ${x.run.slug}` : x.type, x.resource ? `on ${x.resource}` : '', x.user].filter(Boolean).join(' · ')}
+                  <Dotted parts={[x.run ? `${x.run.workflow} · ${x.run.slug}` : x.type, x.resource && <>on <MachineLabel machine={{ name: x.resource }} /></>, x.user]} />
                 </span>
                 {showsInStudio(x) && x.url && <Button variant="ghost" size="sm" title="Open in a window beside the Studio" onClick={() => openSessionWindow(x)}>Window</Button>}
                 {x.url && <Button variant="ghost" size="sm" href={x.url} target="_blank" rel="noopener noreferrer">New tab</Button>}
@@ -164,7 +166,7 @@ function WorkflowsPage() {
                     <Table.Item>{tiles?.find(t => t.name === r.workflow)?.displayName ?? r.workflow}</Table.Item>
                     <Table.Item>{new Date(r.launchedAt).toLocaleString()}</Table.Item>
                     <Table.Item>
-                      <RunStatusLabel status={r.state === 'cancelled' ? 'canceled' : r.state} />
+                      <RunStatusLabel status={runLook(r.state)} />
                     </Table.Item>
                     <Table.Item>{sessions.filter(x => sessionOfRun(x, r.slug)).map(x => (
                       <Button key={x.name} variant="ghost" size="sm" onClick={() => showSession(x)} title={showsInStudio(x) ? 'Show it in the side view' : 'Open in a window of its own'}>{x.name}</Button>

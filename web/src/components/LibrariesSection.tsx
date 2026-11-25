@@ -8,7 +8,7 @@ import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, endpointItems, l
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { reloadWhenLibrariesBuilt } from '../libraryWatch'
-import { libraryAccess } from './LibraryScope'
+import { AccessText, libraryAccess } from './LibraryScope'
 import { AddLibrary } from './AddLibrary'
 import { LibraryExport } from './LibraryExport'
 import { LibraryImport } from './LibraryImport'
@@ -20,6 +20,8 @@ import { FOCUS_LIBRARY_EVENT, FOCUS_LIBRARY_KEY } from './OmittedLine'
 import { ReadThroughControl } from './ReadThroughControl'
 import { bytesText } from '../transferApi'
 import { plural } from '../plural'
+import type { MachineRef } from '../machines'
+import { libraryMachine, MachineGlyph } from './MachineLabel'
 
 /** A user library as listed, with how it is reached. */
 type UserLib = UserLibrary
@@ -113,6 +115,8 @@ interface Row {
   /** Its access as the Library switcher names it, for a library the app's
    *  list does not carry yet. */
   access: string
+  /** The machine it is on, for one the app's list does not carry yet. */
+  machine?: MachineRef | null
   /** Its state, with its counts and when it was last indexed (`facts`, on
    *  the state's line) and anything else to know (`notes`, under it). */
   state: { tone: Tone; text: string; pulse?: boolean; facts: ReactNode[]; notes: ReactNode[] }
@@ -641,6 +645,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
     const remove = [removeEntry(l.label, busy !== null, false, () => askRemove(l.label, <>{cfg.appName} stops searching it. The index stays where it is, on {where}.</>, false,
       () => act(l.id, async () => { await api.removeUserLibrary(l.id); await loadUser(); reloadAppConfig() })))]
     const access = libraryAccess({ label: l.label, site: where, writable: !!(l.mine || l.space || l.shared?.access === 'write'), sharedFrom: l.shared?.from, access: l.access })
+    const machine = l.transport === 'ssh' ? { name: where, kind: 'ssh' } : { name: l.site }
     const contents = counts(l.directories, l.files)
     const sshDetails: Detail[] = [
       ...(l.port ? [{ label: 'Port', value: String(l.port), mono: true }] : []),
@@ -656,7 +661,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
           onRebuild={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)} />
       )
       rows.push({
-        key: l.id, name: l.label, access,
+        key: l.id, name: l.label, access, machine,
         // Its access and its system are beside its name; this says what it is and whose account reads it.
         kind: l.space ? `${cfg.signIn ? 'My library' : 'Your folder'}, as ${l.space.account}, read and written as you`
           : l.shared ? `Shared by ${l.shared.from}, ${l.shared.access === 'write' ? 'read and written' : 'read'} as you`
@@ -691,7 +696,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       const facts: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`].filter(Boolean)
       const notes: ReactNode[] = [l.error].filter(Boolean)
       rows.push({
-        key: l.id, name: l.label, kind: 'GUFI index over ssh, connected as it is', access,
+        key: l.id, name: l.label, kind: 'GUFI index over ssh, connected as it is', access, machine,
         details: [
           { label: 'Index', host: dest, path: l.indexRoot ?? '' },
           l.sourceRoot ? { label: 'Files', host: dest, path: l.sourceRoot } : { label: 'Holds', value: holds(!!caps?.fullText, !!caps?.vectors) },
@@ -712,7 +717,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
       const facts: ReactNode[] = [contents, l.builtAt && `index written ${when(l.builtAt)}`].filter(Boolean)
       const notes: ReactNode[] = [l.error].filter(Boolean)
       rows.push({
-        key: l.id, name: l.label, kind: 'GUFI index over pw ssh, connected as it is', access,
+        key: l.id, name: l.label, kind: 'GUFI index over pw ssh, connected as it is', access, machine,
         details: [
           { label: 'Index', host: l.site, path: l.indexRoot ?? '' },
           l.sourceRoot ? { label: 'Files', host: l.site, path: l.sourceRoot } : { label: 'Holds', value: holds(!!caps?.fullText, !!caps?.vectors) },
@@ -732,7 +737,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
     const facts: ReactNode[] = [building && l.run ? `run ${l.run.slug}` : null, contents, l.builtAt && `indexed ${when(l.builtAt)}`].filter(Boolean)
     const notes: ReactNode[] = [l.error].filter(Boolean)
     rows.push({
-      key: l.id, name: l.label, kind: 'Index built on a cluster by a workflow job, yours alone', access,
+      key: l.id, name: l.label, kind: 'Index built on a cluster by a workflow job, yours alone', access, machine,
       details: [
         l.indexRoot ? { label: 'Index', host: l.site, path: l.indexRoot } : { label: 'Index', value: <span className="muted">being built</span> },
         { label: 'Files', host: l.site, path: l.sourceRoot ?? l.sourceDir },
@@ -784,6 +789,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
             // Its access, as the Library switcher names it.
             const listed = cfg.libraries?.find(x => x.id === r.key)
             const access = listed ? libraryAccess(listed) : r.access
+            const machine = r.machine ?? (listed ? libraryMachine(listed) : null)
             const details = r.details.filter((d): d is Detail => !!d)
             return (
               <Card key={r.key} size="fill" padding="none" interactive={false}
@@ -791,7 +797,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                 render={<section aria-label={r.name} data-library={r.key} />}>
                 <div className="lib-card-head">
                   <div className="lib-card-title">
-                    <h2 className="lib-name">{r.name}<span className="lib-access"> · {access}</span></h2>
+                    <h2 className="lib-name">{r.name}<span className="lib-access"> · <AccessText text={access} machine={machine} /></span></h2>
                     <div className="lib-kind">{r.kind}</div>
                     <div className="lib-state">
                       <StatusBadge variant={r.state.tone} dot={!r.state.pulse} pulse={r.state.pulse} size="sm">{r.state.text}</StatusBadge>
@@ -817,7 +823,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                     <div key={d.label} className={d.path !== undefined ? 'lib-field lib-field-path' : 'lib-field'}>
                       <dt>{d.label}</dt>
                       <dd>{d.path !== undefined
-                        ? (d.path ? <PathLine host={d.host} path={d.path} what={d.what ?? `${d.label.toLowerCase()} path of ${r.name}`} /> : <span className="muted">none</span>)
+                        ? (d.path ? <PathLine host={d.host} machine={machine} path={d.path} what={d.what ?? `${d.label.toLowerCase()} path of ${r.name}`} /> : <span className="muted">none</span>)
                         : d.mono ? <code>{d.value}</code> : d.value}</dd>
                     </div>
                   ))}
@@ -917,9 +923,10 @@ function holds(fullText: boolean, vectors: boolean): string {
 /**
  * A path on one line: cut in the middle where it is too long, so its start
  * and its last folders both show, whole on hover and to a screen reader,
- * with Copy beside it. `host` prefixes host: for a path on another system.
+ * with Copy beside it. `host` prefixes host: for a path on another system, whose icon stands
+ * before it.
  */
-function PathLine({ host, path, what }: { host?: string; path: string; what: string }) {
+function PathLine({ host, machine, path, what }: { host?: string; machine?: MachineRef | null; path: string; what: string }) {
   const full = host ? `${host}:${path}` : path
   // The tail kept whole: the last two names where they are short, or the last one.
   const parts = full.split('/')
@@ -928,6 +935,7 @@ function PathLine({ host, path, what }: { host?: string; path: string; what: str
   const head = parts.length > 1 ? parts.slice(0, -keep).join('/') : full
   return (
     <span className="lib-path">
+      {host && machine && <MachineGlyph machine={machine} />}
       <code className="lib-path-text" title={full} aria-label={full}>
         <span className="lib-path-head" aria-hidden="true">{head}</span>
         <span className="lib-path-tail" aria-hidden="true">{tail}</span>

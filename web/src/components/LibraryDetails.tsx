@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Button, CopyButton, Loader, Meter, RelativeTime, TagList, formatBytes } from '@parallelworks/ui'
 import { api, currentLibrary, onLibraryChange, type EntryDetails } from '../api'
+import { type MachineRef, shortMachine } from '../machines'
+import { MachineLabel } from './MachineLabel'
 
 /**
  * The folder or file selected in the Library view's tree, and what the
@@ -158,7 +160,7 @@ export function DetailsBody({ state }: { state: DetailsState }) {
       )}
       <div className="details-section details-source">
         <div className="details-label">Library</div>
-        <div>{d.library.label} <span className="details-muted">· {d.library.kind}{d.library.writable ? ', read and write' : ', read only'}</span></div>
+        <div>{d.library.label} <span className="details-muted">· <LibraryKind library={d.library} />{d.library.writable ? ', read and write' : ', read only'}</span></div>
         {d.index && (
           <div className="details-index">
             <code title={d.index}>{breakAtSlashes(d.index)}</code>
@@ -171,11 +173,17 @@ export function DetailsBody({ state }: { state: DetailsState }) {
   )
 }
 
-/** A site as a person reads it: a cluster named by its platform address
- *  (pw://owner/name) by its name. */
-export function shortSite(site: string | null): string {
-  const m = /^pw:\/\/[^/]+\/(.+)$/.exec(site ?? '')
-  return m ? m[1] : site ?? ''
+/** The machine a library is on. */
+const libraryOn = ({ site, kind }: EntryDetails['library']): MachineRef => ({ name: site, kind: / over ssh$/.test(kind) ? 'ssh' : undefined })
+
+/** What a library is, as the server says it, with its machine as a label. */
+function LibraryKind({ library }: { library: EntryDetails['library'] }) {
+  const { site, kind } = library
+  const said = [site, shortMachine(site)].map(n => ` on ${n}`).find(n => site && kind.includes(n))
+  if (!said) return <>{kind}</>
+  const at = kind.indexOf(said)
+  const after = kind.slice(at + said.length)
+  return <>{kind.slice(0, at)} on <MachineLabel machine={libraryOn(library)} />{after}</>
 }
 
 /** A remote library's whole index before it is counted: the counts from
@@ -189,13 +197,13 @@ function Uncounted({ state, d }: { state: DetailsState; d: EntryDetails }) {
         <div><dt>Folders</dt><dd>{d.dirs.toLocaleString()}</dd></div>
       </dl>
       <p className="details-note">
-        As of its connection test. Size and types need a pass over the whole index on {shortSite(d.library.site)}, which can take minutes on a large one.
+        As of its connection test. Size and types need a pass over the whole index on <MachineLabel machine={libraryOn(d.library)} />, which can take minutes on a large one.
       </p>
       {state.error && <p className="details-note">{state.error}</p>}
       <Button size="sm" loading={state.loading} onClick={() => state.count?.()}>{state.loading ? 'Counting…' : 'Count size and types'}</Button>
       <div className="details-section details-source">
         <div className="details-label">Library</div>
-        <div>{d.library.label} <span className="details-muted">· {d.library.kind}{d.library.writable ? ', read and write' : ', read only'}</span></div>
+        <div>{d.library.label} <span className="details-muted">· <LibraryKind library={d.library} />{d.library.writable ? ', read and write' : ', read only'}</span></div>
         {d.index && (
           <div className="details-index">
             <code title={d.index}>{breakAtSlashes(d.index)}</code>

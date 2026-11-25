@@ -33,6 +33,11 @@ export interface Notice {
 /** The state of one of the person's chats, for its row in the list. */
 export interface ChatNotice {
   session?: string
+  /** That session's machine, as the chat knows it. */
+  machine?: string
+  machineName?: string
+  /** The session is on the Studio's own computer. */
+  local?: boolean
   /** Its session where the listing does not have it. */
   row?: PwCodeSession
   working?: boolean
@@ -287,6 +292,14 @@ const subscribe = (f: () => void) => { listeners.add(f); return () => { listener
 
 export function useNotices(): Notices {
   return useSyncExternalStore(subscribe, () => shown)
+}
+
+/** The machines of the Code page's listing, for what names one (machines.ts);
+ *  null while the listing cannot be read. */
+export function useNoticeMachines(): { machines: PwCodeMachine[] | null; loaded: boolean } {
+  const machines = useSyncExternalStore(subscribe, () => (shown.listed ? shown.machines : null))
+  const loaded = useSyncExternalStore(subscribe, () => shown.loaded)
+  return { machines, loaded }
 }
 
 /** How many notices a menu entry counts. */

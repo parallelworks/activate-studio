@@ -256,19 +256,23 @@ func (m *Module) resourceOf(ctx context.Context, site, key string) (string, erro
 		if get(r, "name") != site {
 			continue
 		}
-		user := ""
-		switch u := get(r, "user").(type) {
-		case string:
-			user = u
-		case *jsonv.Object:
-			user = jsonv.String(get(u, "username"))
-		}
-		if user != "" {
+		if user := clusterOwner(r); user != "" {
 			return "pw://" + user + "/" + site, nil
 		}
 		return site, nil
 	}
 	return "", apierr.New(404, "%s is not one of your active clusters", site)
+}
+
+// clusterOwner is whose a cluster is, in a row of the pw CLI's list, or "".
+func clusterOwner(r *jsonv.Object) string {
+	switch u := get(r, "user").(type) {
+	case string:
+		return u
+	case *jsonv.Object:
+		return jsonv.String(get(u, "username"))
+	}
+	return ""
 }
 
 // listPwSystems is the viewer's systems on the platform, with their own
@@ -291,9 +295,9 @@ func (m *Module) listPwSystems(ctx context.Context, w who) ([]any, error) {
 		rows = jsonv.Arr(get(jsonv.Obj(doc), "clusters"))
 	}
 	type system struct {
-		name, label, status, typ string
-		running                  bool
-		looks                    *jsonv.Object
+		name, label, status, typ, owner string
+		running                         bool
+		looks                           *jsonv.Object
 	}
 	list := []system{}
 	for _, row := range rows {
@@ -321,7 +325,7 @@ func (m *Module) listPwSystems(ctx context.Context, w who) ([]any, error) {
 				looks.Set(k, v)
 			}
 		}
-		list = append(list, system{name, lbl, status, typ, status == "active", looks})
+		list = append(list, system{name, lbl, status, typ, clusterOwner(r), status == "active", looks})
 	}
 	sort.SliceStable(list, func(i, j int) bool {
 		if list[i].running != list[j].running {
@@ -332,6 +336,9 @@ func (m *Module) listPwSystems(ctx context.Context, w who) ([]any, error) {
 	outList := make([]any, len(list))
 	for i, s := range list {
 		o := jsonv.NewObject("name", s.name, "label", s.label, "status", s.status, "running", s.running, "type", nullable(s.typ))
+		if s.owner != "" {
+			o.Set("owner", s.owner)
+		}
 		for _, k := range s.looks.Keys() {
 			o.Set(k, get(s.looks, k))
 		}
