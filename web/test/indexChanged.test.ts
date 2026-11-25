@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, type IndexStatus } from '../src/api'
+import type { IndexStatus } from '../src/api'
 import { refreshIndexStatus, resetIndexStatusForTests } from '../src/indexActivity'
 
 // A re-index after a transfer can start and end between two idle reads, so
@@ -11,7 +11,7 @@ const status = (changes: number | undefined, over: Partial<IndexStatus> = {}): I
   job: null, queued: [], last: null, lastBuild: null, runs: [], indexed: true, incomplete: false, threads: 8, changes, ...over,
 })
 
-afterEach(() => { vi.restoreAllMocks(); resetIndexStatusForTests() })
+afterEach(() => { vi.unstubAllGlobals(); resetIndexStatusForTests() })
 
 describe('the index changing between two reads', () => {
   it('tells the views when the change count moves, not on the first read or when it holds', async () => {
@@ -19,7 +19,7 @@ describe('the index changing between two reads', () => {
     const told = vi.fn()
     window.addEventListener('ade-kb-changed', told)
     const reads = [status(3), status(3), status(5), status(0), status(undefined)]
-    vi.spyOn(api, 'indexStatus').mockImplementation(() => Promise.resolve(reads.shift()!))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(reads.shift()), { status: 200 })))
     await refreshIndexStatus()
     expect(told).not.toHaveBeenCalled()
     await refreshIndexStatus()

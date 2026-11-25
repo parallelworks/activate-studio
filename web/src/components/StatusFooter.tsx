@@ -3,7 +3,8 @@ import {
   Button, CopyCodeBlock, DescriptionList, DescriptionListItem, Popover, PopoverClose, Skeleton, StatusDot, type BadgeVariant,
 } from '@parallelworks/ui'
 import { api, IndexStatus } from '../api'
-import { currentLibrary, onLibraryChange } from '../api'
+import { currentLibrary, onLibraryChange, withLibrary } from '../api'
+import { readNow, useWatch } from '../live'
 import { elapsed, fmtDuration, indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
 import { IndexJobView, IndexLogButton, IndexLogHost, jobOutcome } from './IndexActivity'
 import type { LibraryStats } from '../api'
@@ -13,7 +14,7 @@ import { useAfterUpdate } from '../afterUpdate'
 import { ReopenApp } from './ReopenApp'
 import { changeCount, UpdateDetails } from './UpdateDetails'
 import { UpdateProgress } from './UpdatesSection'
-import { share, syncIndex, type AiHealth } from '../statusShare'
+import { share, syncIndex, type AiHealth, type KbStats } from '../statusShare'
 import { aiOn, useAppConfig } from '../config'
 import { reloadOntoNewest, useShellUpdate } from '../shellWorker'
 import { plural } from '../plural'
@@ -410,35 +411,42 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // whole and the footer appears once, complete; later refreshes update in
   // place, where a line changing is meaningful rather than noise.
   const [ready, setReady] = useState(false)
+  const settled = useRef(new Set<string>())
+  const done = (what: string) => {
+    settled.current.add(what)
+    if (settled.current.size === 4) setReady(true)
+  }
   // What it reads is shared with the status panel, which shows the same
   // health and counts without asking the server again.
-  const refresh = () => Promise.allSettled([
-    (lib => api.stats().then(s => {
-      // An answer for a library no longer selected is dropped.
-      if (lib !== currentLibrary()) return
-      setStats({ ...(s as object), lib } as typeof stats); share({ stats: s })
-    }))(currentLibrary()),
-    fetch('/api/whoami').then(r => r.json()).then((w: WhoAmI) => {
-      setWho(w); share({ authEnabled: !!w.authEnabled })
-      // A sign-in that ended while the page was open, on a Studio that
-      // requires one: go through sign-in again and come back here.
-      if (w.signIn?.required && w.signIn.loginUrl && !w.verified && !embedded()) location.assign(signInHref(w.signIn.loginUrl))
-    }),
-    api.health().then(h => setGufi(h.gufi)).catch(() => setGufi(null)),
-    fetch('/api/ai/health').then(r => r.json()).then((h: AiHealth) => { h = steadyModels(h); setAi(h); share({ ai: h }) }).catch(() => { setAi(null); share({ ai: null }) }),
-  ])
+  const [lib, setLib] = useState(currentLibrary)
+  const statsPath = withLibrary('/api/kb/stats')
+  useWatch<KbStats>(statsPath, 60_000, true, s => {
+    // An answer for a library no longer selected is dropped.
+    if (lib === currentLibrary()) { setStats({ ...s, lib }); share({ stats: s }) }
+    done('stats')
+  }, () => done('stats'))
+  const takeWho = (w: WhoAmI) => {
+    setWho(w); share({ authEnabled: !!w.authEnabled })
+    // A sign-in that ended while the page was open, on a Studio that
+    // requires one: go through sign-in again and come back here.
+    if (w.signIn?.required && w.signIn.loginUrl && !w.verified && !embedded()) location.assign(signInHref(w.signIn.loginUrl))
+    done('whoami')
+  }
+  useWatch<WhoAmI>('/api/whoami', 60_000, true, takeWho, e => { if (e.body) takeWho(e.body as WhoAmI); else done('whoami') })
+  useWatch<{ gufi: boolean }>('/healthz', 60_000, true, h => { setGufi(h.gufi); done('health') }, () => { setGufi(null); done('health') })
+  useWatch<AiHealth>('/api/ai/health', 60_000, true, h => { h = steadyModels(h); setAi(h); share({ ai: h }); done('ai') }, () => { setAi(null); share({ ai: null }); done('ai') })
+  const reread = useRef(() => {})
+  reread.current = () => { for (const p of [statsPath, '/api/whoami', '/healthz', '/api/ai/health']) readNow(p).catch(() => {}) }
+  const refresh = () => reread.current()
   useEffect(() => {
-    void refresh().then(() => setReady(true))
-    const t = setInterval(() => { void refresh() }, 60_000)
     // The count follows the library selected and any change to the index.
-    const now = () => { void refresh() }
     // Another library selected: its count is not known until its stats come
     // back, so the last library's is not shown under the new name meanwhile.
-    const off = onLibraryChange(() => { setStats(null); void refresh() })
-    window.addEventListener('ade-kb-changed', now)
+    const off = onLibraryChange(() => { setStats(null); setLib(currentLibrary()) })
+    window.addEventListener('ade-kb-changed', refresh)
     // A change in Settings, Model access changes the model line.
-    window.addEventListener('ade:model-access-changed', now)
-    return () => { clearInterval(t); off(); window.removeEventListener('ade-kb-changed', now); window.removeEventListener('ade:model-access-changed', now) }
+    window.addEventListener('ade:model-access-changed', refresh)
+    return () => { off(); window.removeEventListener('ade-kb-changed', refresh); window.removeEventListener('ade:model-access-changed', refresh) }
   }, [])
   // Switching AI features on or off changes the model line at once: the
   // configuration is read again after the switch is saved, and a change of
@@ -448,7 +456,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   const seenAi = useRef<boolean | null>(null)
   useEffect(() => {
     if (aiFlag === null) return
-    if (seenAi.current !== null && seenAi.current !== aiFlag) void refresh()
+    if (seenAi.current !== null && seenAi.current !== aiFlag) refresh()
     seenAi.current = aiFlag
   }, [aiFlag]) // eslint-disable-line react-hooks/exhaustive-deps
   // Polled: a change means a new version was rolled out under this page.
@@ -459,18 +467,11 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   // A newer build of the page waits on this device: the page opened from
   // the copy kept there (web/shell/sw.js) after the server moved on.
   const shellNewer = useShellUpdate()
-  useEffect(() => {
-    let first: string | null = null
-    const check = () => fetch('/api/version').then(r => r.json()).then((b: Build) => {
-      if (first === null) { first = b.commit; setBuild(b); return }
-      if (b.commit !== first) setUpdated(b)
-    }).catch(() => { if (first === null) setBuild(null) })
-    check()
-    const t = setInterval(check, 60_000)
-    const onVis = () => { if (document.visibilityState === 'visible') check() }
-    document.addEventListener('visibilitychange', onVis)
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
-  }, [])
+  const first = useRef<string | null>(null)
+  useWatch<Build>('/api/version', 60_000, true, b => {
+    if (first.current === null) { first.current = b.commit; setBuild(b); return }
+    if (b.commit !== first.current) setUpdated(b)
+  }, () => { if (first.current === null) setBuild(null) })
 
   // A newer release the Studio can tell about. The version line says so,
   // and the Build panel it opens has Update now; with none known, the line

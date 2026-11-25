@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { shownInterval } from '../live'
 import { Button, Callout, ConfirmModal, CopyButton, Modal, ProgressBar, StatusDot, Table, toast, type BadgeVariant } from '@parallelworks/ui'
 import { api, type IndexJob, type IndexPhase, type IndexStatus } from '../api'
 import { elapsed, fmtDuration, jobPercent, kickIndexStatus, phaseTimes, useIndexStatus } from '../indexActivity'
@@ -112,8 +113,8 @@ export function IndexLogDialog({ open, onClose }: { open: boolean; onClose: () =
     let live = true
     const load = () => api.indexLog(500).then(t => { if (live) { setText(t); setError('') } }).catch(e => { if (live) setError(errText(e)) })
     void load()
-    const t = running ? window.setInterval(load, 2000) : undefined
-    return () => { live = false; if (t) window.clearInterval(t) }
+    const stop = running ? shownInterval(() => void load(), 2000) : undefined
+    return () => { live = false; stop?.() }
   }, [open, running])
   const reveal = async () => {
     try { await api.revealIndexLog() } catch (e) { toast.error(errText(e)) }

@@ -11,6 +11,7 @@ import { openInSideView, PageSideViewHost } from '../components/RunPane'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { needsActivate } from '../accounts'
 import { useAppConfig } from '../config'
+import { readNow, useWatch } from '../live'
 
 /**
  * The Workflows tab: this Studio's curated set of ACTIVATE workflows, as
@@ -93,10 +94,12 @@ function WorkflowsPage() {
       .catch(e => setError(String((e as Error).message)))
   }
   const loadRuns = () => {
-    fetch('/api/workflows/runs').then(r => json<{ runs: RunRow[] }>(r)).then(d => setRuns(d.runs)).catch(() => {})
-    fetch('/api/sessions').then(r => json<{ sessions: SessionInfo[] }>(r)).then(d => setSessions(d.sessions.filter(x => x.status === 'running'))).catch(() => {})
+    readNow('/api/workflows/runs').catch(() => {})
+    readNow('/api/sessions').catch(() => {})
   }
-  useEffect(() => { loadTiles(); loadRuns(); const id = window.setInterval(loadRuns, 15_000); return () => window.clearInterval(id) }, [])
+  useWatch<{ runs: RunRow[] }>('/api/workflows/runs', 15_000, true, d => setRuns(d.runs))
+  useWatch<{ sessions: SessionInfo[] }>('/api/sessions', 15_000, true, d => setSessions(d.sessions.filter(x => x.status === 'running')))
+  useEffect(() => { loadTiles() }, [])
   // The sidebar's Workflows item always leads back to this page.
   useEffect(() => {
     const home = () => setOpen(null)

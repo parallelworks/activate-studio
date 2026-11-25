@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { shownTimeout } from '../live'
 import { Button, Callout, EmptyState, IconButton, Loader, StatusDot, Tabs, type BadgeVariant } from '@parallelworks/ui'
 import { CloseIcon } from '@parallelworks/ui/icons'
 import { useChat, useChatStream } from '@parallelworks/ui/ai'
@@ -94,28 +95,28 @@ export function RunPane({ slug, onClose }: { slug: string; onClose: () => void }
 
   // The run, every few seconds until it ends.
   useEffect(() => {
-    let live = true, timer: ReturnType<typeof setTimeout> | undefined
+    let live = true, stop = () => {}
     picked.current = false; setRun(null); setSession(null); setDoc(null); setError(''); setTab('form')
     const tick = () => fetch(`/api/runs/item?slug=${encodeURIComponent(slug)}`).then(r => json<PaneRun>(r))
-      .then(r => { if (!live) return; setRun(r); if (!r.terminal) timer = setTimeout(tick, 4000) })
-      .catch(e => { if (live) { setError(String((e as Error).message)); timer = setTimeout(tick, 10000) } })
+      .then(r => { if (!live) return; setRun(r); if (!r.terminal) stop = shownTimeout(tick, 4000) })
+      .catch(e => { if (live) { setError(String((e as Error).message)); stop = shownTimeout(tick, 10000) } })
     tick()
-    return () => { live = false; clearTimeout(timer) }
+    return () => { live = false; stop() }
   }, [slug])
 
   // The session the run opened, once it is up.
   useEffect(() => {
-    let live = true, timer: ReturnType<typeof setTimeout> | undefined
+    let live = true, stop = () => {}
     const tick = () => fetch(`/api/sessions?run=${encodeURIComponent(slug)}`).then(r => json<{ sessions: PaneSession[] }>(r))
       .then(r => {
         if (!live) return
         const s = r.sessions.find(x => /running|active|ready/i.test(x.status)) ?? null
         setSession(s)
-        if (!s) timer = setTimeout(tick, 8000)
+        if (!s) stop = shownTimeout(tick, 8000)
       })
-      .catch(() => { if (live) timer = setTimeout(tick, 15000) })
+      .catch(() => { if (live) stop = shownTimeout(tick, 15000) })
     tick()
-    return () => { live = false; clearTimeout(timer) }
+    return () => { live = false; stop() }
   }, [slug])
 
   // The workflow's form, for the inputs the run was given.

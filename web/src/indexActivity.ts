@@ -1,23 +1,25 @@
 import { useSyncExternalStore } from 'react'
-import { api, type IndexJob, type IndexPhase, type IndexStatus } from './api'
+import { type IndexJob, type IndexPhase, type IndexStatus } from './api'
+import { readNow, watch, type Watch } from './live'
 import { plural } from './plural'
 
 /**
  * The index's status, read once for every view that shows it: the footer's
  * index line, the status panel, Settings, Indexing, Libraries and Statistics all
  * subscribe here, so they agree. While a job runs it is read every second;
- * otherwise every 15 seconds, and not while the tab is hidden. When a job
- * ends, a first build makes the names searchable, or the index changed
- * since the last read (its change count grew: a re-index after a transfer
- * or an upload, or a sync that found changes made outside Studio), the
- * views that read the index are told (ade-kb-changed), whatever page is
+ * otherwise every 15 seconds, and not while the tab is hidden (live.ts).
+ * When a job ends, a first build makes the names searchable, or the index
+ * changed since the last read (its change count grew: a re-index after a
+ * transfer or an upload, or a sync that found changes made outside Studio),
+ * the views that read the index are told (ade-kb-changed), whatever page is
  * open.
  */
 
+const PATH = '/api/index/status'
+
 let state: IndexStatus | null = null
 const subs = new Set<() => void>()
-let inflight: Promise<void> | null = null
-let loop = 0
+let watching: Watch | null = null
 let seen: { running: boolean; searchable: string | null; changes: number | null } = { running: false, searchable: null, changes: null }
 
 let FAST_MS = 1000
@@ -30,51 +32,42 @@ export function resetIndexStatusForTests(): void { state = null; seen = { runnin
 
 function notify(): void { for (const fn of subs) fn() }
 
+function take(s: IndexStatus): void {
+  const searchable = s.job?.searchableAt ?? null
+  const changes = typeof s.changes === 'number' ? s.changes : null
+  // A count that differs from the last one read, either way: a server
+  // that restarted counts from 0 again.
+  const counted = changes !== null && seen.changes !== null && changes !== seen.changes
+  const changed = (seen.running && !s.running) || (!!searchable && searchable !== seen.searchable) || counted
+  seen = { running: s.running, searchable, changes }
+  state = s
+  watching?.every(s.running ? FAST_MS : SLOW_MS)
+  if (changed) window.dispatchEvent(new Event('ade-kb-changed'))
+  notify()
+}
+
 /** Read the status now; resolves to it (or the last one, on a failure). */
-export function refreshIndexStatus(): Promise<IndexStatus | null> {
-  if (!inflight) {
-    inflight = api.indexStatus().then(s => {
-      const searchable = s.job?.searchableAt ?? null
-      const changes = typeof s.changes === 'number' ? s.changes : null
-      // A count that differs from the last one read, either way: a server
-      // that restarted counts from 0 again.
-      const counted = changes !== null && seen.changes !== null && changes !== seen.changes
-      const changed = (seen.running && !s.running) || (!!searchable && searchable !== seen.searchable) || counted
-      seen = { running: s.running, searchable, changes }
-      state = s
-      if (changed) window.dispatchEvent(new Event('ade-kb-changed'))
-    }).catch(() => { /* the next read */ }).finally(() => { inflight = null; notify() })
-  }
-  return inflight.then(() => state)
+export async function refreshIndexStatus(): Promise<IndexStatus | null> {
+  try {
+    const s = await readNow<IndexStatus>(PATH)
+    // With nobody watching, the reading goes nowhere else.
+    if (!watching) take(s)
+  } catch { notify() /* the next read */ }
+  return state
 }
 
-function startLoop(): void {
-  const mine = ++loop
-  const tick = async (): Promise<void> => {
-    if (mine !== loop || !subs.size) return
-    if (document.visibilityState !== 'hidden' || state?.running) await refreshIndexStatus()
-    if (mine !== loop || !subs.size) return
-    setTimeout(() => { void tick() }, state?.running ? FAST_MS : SLOW_MS)
-  }
-  void tick()
-}
-
-/** After starting or stopping something: read now, and at the fast pace. */
-export function kickIndexStatus(): void { if (subs.size) startLoop(); else void refreshIndexStatus() }
+/** After starting or stopping something: read now, and at the pace of what
+ *  it says. */
+export function kickIndexStatus(): void { void refreshIndexStatus() }
 
 function subscribe(fn: () => void): () => void {
   subs.add(fn)
-  if (subs.size === 1) {
-    startLoop()
-    document.addEventListener('visibilitychange', onVisible)
-  }
+  watching ??= watch<IndexStatus>(PATH, state?.running ? FAST_MS : SLOW_MS, take, notify)
   return () => {
     subs.delete(fn)
-    if (!subs.size) { loop++; document.removeEventListener('visibilitychange', onVisible) }
+    if (!subs.size) { watching?.stop(); watching = null }
   }
 }
-
-function onVisible(): void { if (document.visibilityState === 'visible') startLoop() }
 
 export function useIndexStatus(): IndexStatus | null {
   return useSyncExternalStore(subscribe, () => state)

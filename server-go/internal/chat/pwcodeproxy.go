@@ -162,11 +162,12 @@ func (m *Module) pwcodeProxyRoutes(h func(pattern string, fn func(http.ResponseW
 		h(method+" /api/code/machines/{machine}/sessions/{id}/{rest...}", m.codeProxy)
 	}
 	h("GET /api/pwcode-feed/machines/{machine}/sessions/{id}/events", m.codeFeed)
-	h("GET /api/pwcode-feed/sessions", m.codeListFeed)
 	h("GET /api/chat/pwcode/{id}/machine", m.codeMachine)
 	h("GET /api/code/sessions", m.codeListing)
 	h("POST /api/chat/pwcode/{id}/follow", m.codeFollow)
 	h("POST /api/chat/pwcode/names", m.codeNames)
+	// Followed by an open page (internal/live), which reads with GET.
+	h("GET /api/chat/pwcode/names", m.codeNames)
 	for _, method := range []string{"GET", "POST", "DELETE"} {
 		h(method+" /api/code/machines/{machine}/claude-code/{rest...}", m.codeAccounts)
 	}
@@ -1154,49 +1155,3 @@ func (b *bodyRecorder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 func (b *bodyRecorder) WriteHeader(s int) { b.status = s }
-
-// codeListFeed stands for the platform's feed of changes to the sessions
-// list (/ws/code/sessions): it sends only its heartbeat, so the view reads
-// the list by polling /api/code/sessions, which carries the viewer's own
-// pw code chats only.
-func (m *Module) codeListFeed(w http.ResponseWriter, r *http.Request) error {
-	if !sessions.SameOrigin(r) {
-		return writeProblem(w, http.StatusForbidden, "Only this Studio's pages open the sessions feed.")
-	}
-	beat, err := strconv.Atoi(firstNonEmpty(r.URL.Query().Get("heartbeat"), "10"))
-	if err != nil || beat < 1 || beat > 60 {
-		return writeProblem(w, http.StatusBadRequest, "Invalid heartbeat interval")
-	}
-	srv := websocket.Server{
-		Handshake: func(*websocket.Config, *http.Request) error { return nil },
-		Handler: func(ws *websocket.Conn) {
-			ws.PayloadType = websocket.TextFrame
-			ws.MaxPayloadBytes = 4 << 10
-			gone := make(chan struct{})
-			go func() {
-				defer close(gone)
-				var s string
-				for websocket.Message.Receive(ws, &s) == nil {
-				}
-			}()
-			t := time.NewTicker(time.Duration(beat) * time.Second)
-			defer t.Stop()
-			defer ws.Close()
-			for {
-				select {
-				case <-gone:
-					return
-				case <-r.Context().Done():
-					return
-				case <-t.C:
-					_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-					if websocket.Message.Send(ws, feedHeartbeat) != nil {
-						return
-					}
-				}
-			}
-		},
-	}
-	srv.ServeHTTP(hijacker{w}, r)
-	return nil
-}

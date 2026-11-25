@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { RunFileResult } from '@parallelworks/ui'
+import { shownInterval } from './live'
 
 /**
  * The UI package's run file hook, bound in main.tsx: the step dialogs of the
@@ -26,8 +27,8 @@ export function useRunFile(slug: string, path: string | null, options?: { refres
       })
       .catch(error => { if (live && !ctrl.signal.aborted) setState(s => ({ data: s.data, isLoading: false, error })) })
     void load()
-    const timer = every ? setInterval(load, every) : undefined
-    return () => { live = false; ctrl.abort(); if (timer) clearInterval(timer) }
+    const stop = every ? shownInterval(() => void load(), every) : undefined
+    return () => { live = false; ctrl.abort(); stop?.() }
   }, [slug, path, every])
   return state
 }

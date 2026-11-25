@@ -7,17 +7,40 @@ import { createPwCodeApi, type PwCodePaths } from '@parallelworks/code'
  * viewer's own pw code chats (server-go/internal/chat/pwcodeproxy.go) and
  * sends each on: through ACTIVATE as the viewer for a session on another
  * machine, or to the daemon the Studio reaches for one it drives directly.
- * The event feed the package opens at /ws/code/... is the Studio's
- * /api/pwcode-feed/..., where the viewer's sign-in identifies them.
+ * The event feeds the package opens at /ws/code/..., a session's and the
+ * listing's, are the Studio's /api/pwcode-feed/..., where the viewer's
+ * sign-in identifies them.
  */
 export const pwClient = createClient<PwCodePaths>({ baseUrl: typeof location === 'undefined' ? '' : location.origin })
 
 // The session the Code page has open in its own pane, which the listing
 // then has too, in a chat or not.
 let openPane = ''
-export function setOpenPane(machine: string, session: string): void { openPane = machine && session ? `${machine}/${session}` : '' }
+export function setOpenPane(machine: string, session: string): void { openedPane(machine && session ? `${machine}/${session}` : '') }
 /** Forgets it, unless another has been opened since. */
-export function clearOpenPane(machine: string, session: string): void { if (openPane === `${machine}/${session}`) openPane = '' }
+export function clearOpenPane(machine: string, session: string): void { if (openPane === `${machine}/${session}`) openedPane('') }
+function openedPane(v: string): void {
+  if (openPane === v) return
+  openPane = v
+  tellPane()
+}
+
+// The listing's feed, and the pane it was told is open.
+let feed: WebSocket | null = null
+let told = ''
+function tellPane(): void {
+  if (feed?.readyState !== WebSocket.OPEN || told === openPane) return
+  told = openPane
+  feed.send(JSON.stringify({ open: openPane }))
+}
+function openSocket(path: string): WebSocket {
+  if (!path.startsWith('/ws/code/sessions')) return new WebSocket(feedURL(path))
+  told = openPane
+  const ws = new WebSocket(feedURL(path) + (openPane ? `&open=${encodeURIComponent(openPane)}` : ''))
+  feed = ws
+  ws.addEventListener('open', () => { if (feed === ws) tellPane() })
+  return ws
+}
 pwClient.use({
   onRequest({ request }) {
     const url = new URL(request.url)
@@ -50,7 +73,7 @@ export function feedURL(path: string, origin = location.origin): string {
 // its images by ref, each loaded as it is drawn (the Studio passes the
 // session's images on, pictures only).
 export const pwCode = createPwCodeApi(pwClient, {
-  openSocket: path => new WebSocket(feedURL(path)),
+  openSocket,
   hidden: () => document.hidden,
   previewsByRef: true,
   transcriptEndFirst: true,

@@ -1,5 +1,6 @@
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useState } from 'react'
 import { toast, useConfirm } from '@parallelworks/ui'
+import { readNow, useWatch } from '../live'
 import { AllowsNote } from '../components/MachineToolsAllow'
 import { type MachineTools, markAutoSetup, setMachineTools } from '../components/studioTools'
 import { startedSession } from './api'
@@ -76,6 +77,8 @@ export function paneFor(s: SessionRef, machines: readonly MachineRef[], here: He
   return { machine: can.ok ? (can.relay ? s.machineId : 'studio') : '', why: can.why }
 }
 
+const HERE = '/api/chat/pwcode/here'
+
 /**
  * Continuing a session in a Studio chat, an action of its own: a session
  * with a chat opens that chat. Otherwise the Studio checks it is the
@@ -88,30 +91,18 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
   open: (s: SessionRef) => Promise<boolean>
   why: (s: SessionRef) => string
   /** Reads here again. */
-  reload: () => Promise<void>
+  reload: () => void
   dialog: ReactNode
 } {
   const { confirm, dialog } = useConfirm()
   const [here, setHere] = useState<Here | null>(null)
-  const loadHere = useCallback(async () => {
-    try {
-      const res = await fetch('/api/chat/pwcode/here')
-      const d = await res.json()
-      setHere(res.ok ? d as Here : { available: false, reason: (d as { error?: string }).error, chats: [] })
-    } catch (e) {
-      setHere({ available: false, reason: (e as Error).message, chats: [] })
-    }
-  }, [])
-  useEffect(() => {
-    void loadHere()
-    const t = setInterval(() => { if (document.visibilityState === 'visible') void loadHere() }, 20_000)
-    return () => clearInterval(t)
-  }, [loadHere])
+  const loadHere = useCallback(() => { readNow(HERE).catch(() => {}) }, [])
+  useWatch<Here>(HERE, 20_000, true, setHere, e => setHere({ available: false, reason: e.message, chats: [] }))
 
   const opened = useCallback((id: string) => {
     // The chat answers in its session: the Studio keeps that for it.
     window.dispatchEvent(new CustomEvent('ade:chats-changed'))
-    void loadHere()
+    loadHere()
     openChat(id)
   }, [loadHere])
 

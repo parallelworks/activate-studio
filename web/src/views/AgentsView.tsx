@@ -7,6 +7,7 @@ import {
 import { LogViewer } from '@parallelworks/ui/logviewer'
 import { PersonaIcon } from '../components/PersonaIcon'
 import { ApplyToFolder, changeFolder, type AgentFolder } from '../components/ApplyToFolder'
+import { useWatch } from '../live'
 import { FleetPage, topicVariant } from './FleetPage'
 import { libraryNames } from '../libraryNames'
 import { useAppConfig } from '../config'
@@ -71,7 +72,7 @@ function TakeOffLabel({ off }: { off: boolean }) {
   )
 }
 
-export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
+export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen: (path: string) => void }) {
   const cfg = useAppConfig()
   const [personas, setPersonas] = useState<Persona[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
@@ -108,13 +109,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
   // Workflow runs the assistant launched, followed by the server across
   // restarts; listed here so long-running work has a place to be seen.
   const [runs, setRuns] = useState<PlatformRun[]>([])
-  useEffect(() => {
-    let stop = false
-    const tick = () => fetch('/api/runs').then(r => r.json()).then(d => { if (!stop) setRuns(d.runs ?? []) }).catch(() => {})
-    tick()
-    const t = setInterval(tick, 15_000)
-    return () => { stop = true; clearInterval(t) }
-  }, [])
+  useWatch<{ runs?: PlatformRun[] }>('/api/runs', 15_000, active, d => setRuns(d.runs ?? []))
   const [page, setPageState] = useState<'fleet' | 'tasks' | 'library'>(() =>
     (localStorage.getItem('ade-agents-page') as 'fleet' | 'tasks' | 'library') || 'fleet')
   const setPage = (v: 'fleet' | 'tasks' | 'library') => { setPageState(v); localStorage.setItem('ade-agents-page', v) }
@@ -298,7 +293,7 @@ export function AgentsView({ onOpen }: { onOpen: (path: string) => void }) {
         ]} />
       </div>
 
-      {page === 'fleet' && <FleetPage personas={personas} onOpenTask={id => { setOpenTask(id); setPage('tasks') }} />}
+      {page === 'fleet' && <FleetPage active={active} personas={personas} onOpenTask={id => { setOpenTask(id); setPage('tasks') }} />}
 
       {page === 'tasks' && (
         <section className="card task-board-card">

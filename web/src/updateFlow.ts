@@ -226,7 +226,7 @@ const idle = () => !flow.none && !flow.busy && !follow && !flow.waiting
 
 function start(): void {
   read(true)
-  refresh = window.setInterval(() => { if (idle()) read(false) }, options.refreshMs)
+  refresh = window.setInterval(() => { if (idle() && document.visibilityState !== 'hidden') read(false) }, options.refreshMs)
   // Shown again (unhidden, woken, switched back to): read now.
   const onShow = () => {
     if (document.visibilityState !== 'hidden' && idle() && Date.now() - lastRead >= options.focusGapMs) read(false)

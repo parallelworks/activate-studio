@@ -85,13 +85,19 @@ describe('the notices read', () => {
     expect(sent.map(s => s.path)).toEqual(['/api/notices'])
     await tick(NOTICES_EVERY_MS * 4)
     expect(sent.map(s => s.path)).toEqual(Array(5).fill('/api/notices'))
-    // With a chat open, the same request says it is seen.
+    // With a chat open too: it is said to be seen as it opens, then only when
+    // there is a reply in it.
     act(() => setFrontChat('bbbbbbbb'))
     await tick(1000)
+    expect(sent.at(-1)).toMatchObject({ path: '/api/notices/seen', body: { conversations: ['bbbbbbbb'] } })
     sent.length = 0
     await tick(NOTICES_EVERY_MS * 4)
-    expect(sent).toHaveLength(4)
-    expect(sent.every(s => s.path === '/api/notices/seen' && JSON.stringify(s.body) === '{"conversations":["bbbbbbbb"]}')).toBe(true)
+    expect(sent.map(s => s.path)).toEqual(Array(4).fill('/api/notices'))
+    answer = { ...answer, chats: { bbbbbbbb: { unread: 'reply' } } }
+    sent.length = 0
+    await tick(NOTICES_EVERY_MS)
+    expect(sent.map(s => s.path)).toEqual(['/api/notices', '/api/notices/seen'])
+    answer = { ...answer, chats: {} }
     // Nothing is read in a tab that does not show.
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
     sent.length = 0
@@ -158,8 +164,10 @@ describe('the notices read', () => {
     await tick(10_000)
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
     act(() => { document.dispatchEvent(new Event('visibilitychange')) })
-    expect(asked('/api/notices/seen')).toHaveLength(1)
+    expect(asked('/api/notices')).toHaveLength(1)
     expect(shown()!.startsWith('1')).toBe(true)
+    await tick(0)
+    expect(asked('/api/notices/seen')).toHaveLength(1)
   })
 
   it('shows what the Code page lists, which reads more often', async () => {
@@ -232,7 +240,7 @@ describe('the menu', () => {
     expect(await screen.findByText('Draft the report')).toBeInTheDocument()
   })
 
-  it('has the Transfers mark from the same read, and asks for its summary less', async () => {
+  it('has the Transfers mark from the same read, and follows its summary', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     answer = { ...answer, transfers: { active: 2, awaitingApproval: 0, failedLast24h: 0 } }
     const { container } = render(<App />)
@@ -241,9 +249,8 @@ describe('the menu', () => {
     sent.length = 0
     await tick(120_000)
     expect(asked('/api/notices')).toHaveLength(4)
-    // One in 30 seconds, beside the notices' one, where it was two.
-    expect(asked('/api/transfers/summary').length).toBeGreaterThanOrEqual(3)
-    expect(asked('/api/transfers/summary').length).toBeLessThanOrEqual(5)
+    // Every 15 seconds until the socket is open (live.test.ts).
+    expect(asked('/api/transfers/summary')).toHaveLength(8)
   })
 
   it('has Notices where pages are switched off, and no mark where nothing needs them', async () => {

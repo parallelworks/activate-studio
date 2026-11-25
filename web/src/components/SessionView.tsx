@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { shownTimeout } from '../live'
 import { Button, Callout, StatusDot } from '@parallelworks/ui'
 import { openBeside, openFullView } from '../sideBySide'
 import { DesktopView, isDesktop } from './DesktopView'
@@ -104,10 +105,10 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
 
   useEffect(() => {
     let stop = false
-    let timer = 0
+    let cancel = () => {}
     let had = !!initial
     const load = () => {
-      window.clearTimeout(timer)
+      cancel()
       fetch(`/api/sessions/item?user=${encodeURIComponent(user)}&name=${encodeURIComponent(name)}${host ? `&host=${encodeURIComponent(host)}` : ''}${run ? `&run=${encodeURIComponent(run)}` : ''}`)
         .then(async r => {
           const d = await r.json().catch(() => ({}))
@@ -118,16 +119,16 @@ export function SessionView({ user, name, host = '', run = '', initial }: { user
         .then(d => {
           if (stop) return
           setError('')
-          if (!d) { setGone(true); timer = window.setTimeout(load, 30_000); return }
+          if (!d) { setGone(true); cancel = shownTimeout(load, 30_000); return }
           had = true
           setS(d); setGone(false)
-          timer = window.setTimeout(load, d.status === 'running' ? 30_000 : 10_000)
+          cancel = shownTimeout(load, d.status === 'running' ? 30_000 : 10_000)
         })
-        .catch(e => { if (!stop) { setError(String((e as Error).message)); timer = window.setTimeout(load, 15_000) } })
+        .catch(e => { if (!stop) { setError(String((e as Error).message)); cancel = shownTimeout(load, 15_000) } })
     }
     recheck.current = load
     load()
-    return () => { stop = true; window.clearTimeout(timer); recheck.current = () => {} }
+    return () => { stop = true; cancel(); recheck.current = () => {} }
   }, [user, name, host, run])
 
   const running = s?.status === 'running' && !gone

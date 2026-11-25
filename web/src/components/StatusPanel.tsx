@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { accountsHref } from '../accounts'
 import { Button, DisclosurePanel, IconButton, StatusDot, type BadgeVariant } from '@parallelworks/ui'
 import { ChevronRightIcon } from '@parallelworks/ui/icons'
-import { api, currentLibrary, type IndexStatus, type PublicLibrary, type UserLibrary } from '../api'
+import { currentLibrary, type IndexStatus, type PublicLibrary, type UserLibrary } from '../api'
 import { reloadAppConfig, type AppConfig } from '../config'
 import { setPanelOpen, usePanel } from '../panelState'
 import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '../statusShare'
@@ -12,6 +12,7 @@ import { openInSideView } from './RunPane'
 import { openSessionWindow, showsInStudio, type SessionInfo } from './SessionView'
 import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
 import { plural } from '../plural'
+import { readNow, useWatch } from '../live'
 import { keepMissing } from '../steady'
 
 /**
@@ -61,7 +62,6 @@ const SLOW_MS = 60_000
 // Kept across a close and reopen, so the cards come back drawn and a
 // toggle does not refetch the platform's list.
 let lastData: StatusData = EMPTY
-let lastSlowAt = 0
 // Attached servers are checked once a page load; polls read the last state.
 let mcpChecked = false
 // A deployment with delegation off refuses the fleet route; ask once.
@@ -70,7 +70,7 @@ let fleetRefused = false
 /** Tests start from nothing. */
 // Sessions one read alone left out (steady.ts).
 const sessionsMissed = new Set<string>()
-export function resetStatusPanelForTests(): void { lastData = EMPTY; lastSlowAt = 0; mcpChecked = false; fleetRefused = false; sessionsMissed.clear() }
+export function resetStatusPanelForTests(): void { lastData = EMPTY; mcpChecked = false; fleetRefused = false; sessionsMissed.clear() }
 
 const LIVE_TASK = new Set(['submitted', 'working', 'input-required', 'failed'])
 const TERMINAL_RUN = new Set(['completed', 'error', 'failed', 'canceled', 'cancelled', 'skipped'])
@@ -258,66 +258,43 @@ export function connectionsSummary(rows: ConnLine[]): Summary {
   return { text: `${rows.filter(r => r.tone === 'success').length} connected`, tone: null }
 }
 
-// ---- polling ----
-
-async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url)
-  if (!r.ok) throw Object.assign(new Error(`${url}: ${r.status}`), { status: r.status })
-  return r.json() as Promise<T>
-}
+// ---- what it reads ----
 
 function useStatusData(agents: boolean, runs: boolean, mcp = true): [StatusData, (p: Partial<StatusData>) => void] {
   const [data, setData] = useState<StatusData>(lastData)
   const patch = (p: Partial<StatusData>) => setData(d => (lastData = { ...d, ...p }))
+  useWatch<{ sessions: DelegatedRow[] }>('/api/delegated', FAST_MS, agents, d => patch({ tasks: (d.sessions ?? []).map(s => ({ id: s.session, objective: s.objective, state: delegatedState(s) })) }))
+  const [refused, setRefused] = useState(fleetRefused)
+  useWatch<{ agents: FleetAgent[] }>('/api/fleet', FAST_MS, agents && !refused, d => patch({ fleet: d.agents ?? [] }), e => {
+    if (e.status === 403) { fleetRefused = true; setRefused(true); patch({ fleet: [] }) }
+  })
+  useWatch<{ runs: RunRow[] }>('/api/runs', FAST_MS, runs, d => patch({ runs: d.runs ?? [] }))
+  // Checked once, then the last state is read.
+  const [checked, setChecked] = useState(mcpChecked)
   useEffect(() => {
-    let live = true
-    const put = (p: Partial<StatusData>) => { if (live) patch(p) }
-    const fast = () => {
-      if (agents) {
-        getJson<{ sessions: DelegatedRow[] }>('/api/delegated')
-          .then(d => put({ tasks: (d.sessions ?? []).map(s => ({ id: s.session, objective: s.objective, state: delegatedState(s) })) }))
-          .catch(() => {})
-        if (!fleetRefused) {
-          getJson<{ agents: FleetAgent[] }>('/api/fleet').then(d => put({ fleet: d.agents ?? [] }))
-            .catch(e => { if ((e as { status?: number }).status === 403) { fleetRefused = true; put({ fleet: [] }) } })
-        }
-      }
-      if (runs) getJson<{ runs: RunRow[] }>('/api/runs').then(d => put({ runs: d.runs ?? [] })).catch(() => {})
-      if (mcp) {
-        const url = mcpChecked ? '/api/settings/mcp-servers?cached=1' : '/api/settings/mcp-servers'
-        mcpChecked = true
-        getJson<{ servers: McpRow[] }>(url).then(d => put({ mcp: d.servers ?? [] })).catch(() => {})
-      }
-    }
-    // A platform request and a cluster check behind the viewer's own
-    // libraries, so once a minute, the footer's pace.
-    const slow = () => {
-      lastSlowAt = Date.now()
-      // A refusal leaves the list as it was, and waits its minute too.
-      // A session one read alone leaves out stays a read longer: the
-      // platform flaps (steady.ts).
-      if (runs) getJson<{ sessions: SessionInfo[] }>('/api/sessions')
-        .then(d => put({ sessions: keepMissing(lastData.sessions, (d.sessions ?? []).filter(s => s.status === 'running'), s => s.name, sessionsMissed) }))
-        .catch(() => put({ sessions: lastData.sessions ?? [] }))
-      api.userLibraries().then(d => put({ userLibs: d.libraries ?? [] })).catch(() => {})
-      api.libraries().then(d => put({ libs: d.libraries ?? [] })).catch(() => {})
-    }
-    const tick = () => {
-      if (document.visibilityState === 'hidden') return
-      fast()
-      // Due once a minute, and at once when sessions become wanted.
-      if (Date.now() - lastSlowAt >= SLOW_MS || (runs && lastData.sessions === null)) slow()
-    }
-    tick()
-    const t = window.setInterval(tick, FAST_MS)
-    const onVisible = () => { if (document.visibilityState === 'visible') tick() }
-    document.addEventListener('visibilitychange', onVisible)
-    // The Fleet page changed an agent (retired, paused, woken): read the
-    // fleet now rather than at the next poll (FleetPage's FLEET_CHANGED).
-    const onFleet = () => { if (agents && !fleetRefused) getJson<{ agents: FleetAgent[] }>('/api/fleet').then(d => put({ fleet: d.agents ?? [] })).catch(() => {}) }
+    if (!mcp || mcpChecked) return
+    mcpChecked = true
+    readNow<{ servers: McpRow[] }>('/api/settings/mcp-servers').then(d => patch({ mcp: d.servers ?? [] })).catch(() => {}).finally(() => setChecked(true))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mcp])
+  useWatch<{ servers: McpRow[] }>('/api/settings/mcp-servers?cached=1', FAST_MS, mcp && checked, d => patch({ mcp: d.servers ?? [] }))
+  // A platform request and a cluster check behind the viewer's own
+  // libraries, so once a minute, the footer's pace. A refusal leaves the
+  // list as it was. A session one read alone leaves out stays a read
+  // longer: the platform flaps (steady.ts).
+  useWatch<{ sessions: SessionInfo[] }>('/api/sessions', SLOW_MS, runs,
+    d => patch({ sessions: keepMissing(lastData.sessions, (d.sessions ?? []).filter(s => s.status === 'running'), s => s.name, sessionsMissed) }),
+    () => patch({ sessions: lastData.sessions ?? [] }), true)
+  useWatch<{ libraries: UserLibrary[] }>('/api/user-libraries', SLOW_MS, true, d => patch({ userLibs: d.libraries ?? [] }), undefined, true)
+  useWatch<{ libraries: PublicLibrary[] }>('/api/libraries', SLOW_MS, true, d => patch({ libs: d.libraries ?? [] }), undefined, true)
+  // The Fleet page changed an agent (retired, paused, woken): read the
+  // fleet now rather than at the next reading (FleetPage's FLEET_CHANGED).
+  useEffect(() => {
+    if (!agents || refused) return
+    const onFleet = () => { readNow('/api/fleet').catch(() => {}) }
     window.addEventListener('ade:fleet-changed', onFleet)
-    return () => { live = false; window.clearInterval(t); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('ade:fleet-changed', onFleet) }
-  }, [agents, runs, mcp])
+    return () => window.removeEventListener('ade:fleet-changed', onFleet)
+  }, [agents, refused])
   return [data, patch]
 }
 
