@@ -1,6 +1,7 @@
 package kb
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -53,6 +54,11 @@ func identity(abs string) (key, btime string, dir bool, ok bool) {
 	}
 	key = strconv.FormatUint(uint64(fi.VolumeSerialNumber), 10) + "." + strconv.FormatUint(fileIndex(fi), 10)
 	return key, strconv.FormatInt(fi.CreationTime.Nanoseconds(), 10), fi.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0, true
+}
+
+// noSpaceLeft reports an error for want of space.
+func noSpaceLeft(err error) bool {
+	return errors.Is(err, windows.ERROR_DISK_FULL) || errors.Is(err, windows.ERROR_HANDLE_DISK_FULL) || errors.Is(err, windows.ERROR_DISK_QUOTA_EXCEEDED)
 }
 
 // umask: Windows has none, so a new file keeps the mode it is given.

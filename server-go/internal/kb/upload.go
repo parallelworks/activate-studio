@@ -18,6 +18,8 @@ import (
 	"unicode/utf16"
 )
 
+// maxUploadBytes is the most one file may hold in a request that carries
+// whole files; a larger one goes up in parts (uploadparts.go).
 const (
 	maxUploadBytes = 200 * 1024 * 1024
 	maxUploadFiles = 200
@@ -67,9 +69,17 @@ func SanitizeRelPath(name string) (string, error) {
 	return strings.Join(segs, "/"), nil
 }
 
-// TargetDir resolves and creates an upload's directory, refusing machinery
-// and hidden trees.
+// TargetDir resolves and creates an upload's directory.
 func (f *Files) TargetDir(rel string) (abs, cleaned string, err error) {
+	if abs, cleaned, err = f.uploadDir(rel); err != nil {
+		return "", "", err
+	}
+	return abs, cleaned, os.MkdirAll(abs, 0o777)
+}
+
+// uploadDir resolves an upload's directory, refusing machinery and hidden
+// trees.
+func (f *Files) uploadDir(rel string) (abs, cleaned string, err error) {
 	cleaned = trimSlashes(rel)
 	if abs, err = f.abs(cleaned); err != nil {
 		return "", "", err
@@ -79,7 +89,7 @@ func (f *Files) TargetDir(rel string) (abs, cleaned string, err error) {
 			return "", "", Error(400, "cannot upload into %s", part)
 		}
 	}
-	return abs, cleaned, os.MkdirAll(abs, 0o777)
+	return abs, cleaned, nil
 }
 
 // errInternal is an error the route answers with a 500 and a reference,

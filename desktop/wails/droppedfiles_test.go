@@ -103,3 +103,57 @@ func TestSendStreamsListedFilesToTheUploadOnce(t *testing.T) {
 		t.Fatalf("second send: %d", w.Code)
 	}
 }
+
+func TestSendPartStreamsOnePartToItsUploadOnly(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "run.tar")
+	if err := os.WriteFile(root, []byte("0123456789"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var method, path, content, length, cookie string
+	studio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		method, path, content, length, cookie = r.Method, r.URL.Path, string(b), strconv.FormatInt(r.ContentLength, 10), r.Header.Get("Cookie")
+		_, _ = w.Write([]byte(`{"left":1}`))
+	}))
+	defer studio.Close()
+	port, err := strconv.Atoi(studio.URL[strings.LastIndex(studio.URL, ":")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := NewProxy(&App{})
+	p.SetServer(port, true)
+	got, err := p.dropped.list([]string{root})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("listed %v, %v", got, err)
+	}
+	one, two := strings.Repeat("a", 32), strings.Repeat("b", 32)
+	send := func(upload, id string, off, n int) int {
+		body := fmt.Sprintf(`{"upload":%q,"part":1,"file":%q,"offset":%d,"length":%d}`, upload, id, off, n)
+		r := httptest.NewRequest(http.MethodPost, droppedPart, strings.NewReader(body))
+		r.Header.Set("Cookie", "session=1")
+		w := httptest.NewRecorder()
+		p.sendDroppedPart(w, r)
+		return w.Code
+	}
+	if c := send("../../api/kb/delete", got[0].ID, 0, 4); c != 400 {
+		t.Fatalf("another route: %d", c)
+	}
+	if c := send(one, "not-an-id", 0, 4); c != 404 {
+		t.Fatalf("unknown id: %d", c)
+	}
+	if c := send(one, got[0].ID, 8, 4); c != 409 {
+		t.Fatalf("past the end: %d", c)
+	}
+	// A part again, when the first try was lost.
+	for range 2 {
+		if c := send(one, got[0].ID, 4, 4); c != 200 {
+			t.Fatalf("part: %d", c)
+		}
+	}
+	if method != "PUT" || path != "/api/kb/upload-parts/"+one+"/1" || content != "4567" || length != "4" || cookie != "session=1" {
+		t.Fatalf("server saw %s %s %q length %s cookie %q", method, path, content, length, cookie)
+	}
+	if c := send(two, got[0].ID, 0, 4); c != 404 {
+		t.Fatalf("another upload: %d", c)
+	}
+}

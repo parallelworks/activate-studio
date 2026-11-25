@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 // spaceStub is a person's space whose writes are recorded.
 type spaceStub struct {
 	remoteStub
+	mu    sync.Mutex
 	calls []string
 	files map[string]string
 	// gate, when set, holds a move until it is closed; a move whose
@@ -45,7 +47,35 @@ func (s *spaceStub) All(r *http.Request) ([]Library, error) {
 	return []Library{a}, nil
 }
 
-func (s *spaceStub) note(c string) { s.calls = append(s.calls, c) }
+func (s *spaceStub) note(c string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, c)
+}
+
+func (s *spaceStub) noted() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string{}, s.calls...)
+}
+
+func (s *spaceStub) StartParts(_ *http.Request, _ Library, rel string, size, need int64) (string, error) {
+	s.note(fmt.Sprintf("start %s %d %d", rel, size, need))
+	return ".studio-upload-abc", nil
+}
+func (s *spaceStub) WritePart(_ *http.Request, _ Library, _ string, off, n int64, src io.Reader) error {
+	got, err := io.Copy(io.Discard, io.LimitReader(src, n))
+	s.note(fmt.Sprintf("part %d %d", off, got))
+	return err
+}
+func (s *spaceStub) LandParts(_ *http.Request, _ Library, _, rel string, size int64) error {
+	s.note(fmt.Sprintf("land %s %d", rel, size))
+	return nil
+}
+func (s *spaceStub) DropParts(*http.Request, Library, string) error {
+	s.note("drop")
+	return nil
+}
 
 func (s *spaceStub) List(_ *http.Request, _ Library, rel string) ([]Entry, error) {
 	s.note("list " + rel)

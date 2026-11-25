@@ -1,5 +1,5 @@
-import { api } from './api'
-import type { DroppedFile } from './nativeShell'
+import { api, type UploadTarget } from './api'
+import { shellSendsParts, type DroppedFile } from './nativeShell'
 
 export interface UploadItem {
   file: File
@@ -47,9 +47,13 @@ export interface UploadProgress {
  */
 const CONCURRENCY = 3
 const SMALL_FILE = 1024 * 1024
-/** What the server takes in one file (MAX_UPLOAD_BYTES). Told apart here, as
- *  the server fails the whole request over one such file. */
-const MAX_FILE = 200 * 1024 * 1024
+/** A file over this goes up in parts, each a request of its own. The parts
+ *  are the size the server says (UploadPart, the same). */
+export const PART_FILE = 16 * 1024 * 1024
+/** What the server takes of one file in a request that carries it whole. */
+const WHOLE_FILE = 200 * 1024 * 1024
+/** Waits before a request that failed is sent again. */
+export const RETRY_MS = [1000, 2000, 5000, 10_000, 20_000]
 
 function batchSize(items: UploadItem[]): number {
   const avg = items.reduce((n, i) => n + sizeOf(i), 0) / Math.max(items.length, 1)
@@ -96,6 +100,81 @@ export async function collectDropped(items: DataTransferItemList): Promise<Uploa
   return out
 }
 
+/** Not worth sending again: cancelled, refused, or out of space. */
+function final(e: unknown): boolean {
+  const status = (e as { status?: number }).status
+  if ((e as Error).name === 'AbortError' || status === 507) return true
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429
+}
+
+async function again<T>(call: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  for (let tries = 0; ; tries++) {
+    try {
+      return await call()
+    } catch (e) {
+      if (tries >= RETRY_MS.length || final(e)) throw e
+      await new Promise<void>((resolve, reject) => {
+        const cancel = () => { clearTimeout(wait); reject(new DOMException('cancelled', 'AbortError')) }
+        const wait = setTimeout(() => { signal?.removeEventListener('abort', cancel); resolve() }, RETRY_MS[tries])
+        if (signal?.aborted) cancel()
+        else signal?.addEventListener('abort', cancel, { once: true })
+      })
+    }
+  }
+}
+
+/** One large file, a part at a time. One that fails or is cancelled is taken
+ *  back, so nothing of it stays in the library. */
+async function sendInParts(
+  item: UploadItem, to: UploadTarget, signal: AbortSignal | undefined,
+  onPart: (part: number, sent: number, landed: boolean) => void,
+) {
+  const size = sizeOf(item)
+  const u = await again(() => api.startParts(item.rel, size, to, signal), signal)
+  // The page goes: so does what it sent.
+  const gone = () => { void api.dropParts(u.id) }
+  window.addEventListener('pagehide', gone)
+  // The first part to fail stops the others.
+  const stop = new AbortController()
+  const cancel = () => stop.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
+  if (signal?.aborted) stop.abort()
+  try {
+    let next = 0
+    let failure: unknown
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const n = next++
+        if (n >= u.parts || stop.signal.aborted) return
+        const from = n * u.part
+        const length = Math.min(u.part, size - from)
+        try {
+          await again(() => item.linked
+            ? api.sendListedPart(u.id, n, item.linked, from, length, stop.signal)
+            : api.sendPart(u.id, n, item.file.slice(from, from + length), {
+              signal: stop.signal, onBytes: sent => onPart(n, Math.min(sent, length), false),
+            }), stop.signal)
+          onPart(n, length, true)
+        } catch (e) {
+          failure ??= e
+          stop.abort()
+          return
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, u.parts) }, worker))
+    if (signal?.aborted) throw new DOMException('cancelled', 'AbortError')
+    if (failure) throw failure
+    return await again(() => api.finishParts(u.id, to, signal), signal)
+  } catch (e) {
+    void api.dropParts(u.id)
+    throw e
+  } finally {
+    window.removeEventListener('pagehide', gone)
+    signal?.removeEventListener('abort', cancel)
+  }
+}
+
 /**
  * Bulk upload with progress the whole way through.
  *
@@ -116,26 +195,33 @@ export async function uploadBatched(
     onLanded?: () => void
   } = {},
 ): Promise<UploadProgress> {
-  const sendable = items.filter(i => sizeOf(i) <= MAX_FILE)
-  const totalBytes = sendable.reduce((n, i) => n + sizeOf(i), 0)
+  const inParts = (i: UploadItem) => sizeOf(i) > PART_FILE
+  // A window from before it could send a part sends the file whole, and the
+  // server fails a whole request over one file it does not take.
+  const listed = (i: UploadItem) => Boolean(i.linked) && !shellSendsParts()
+  const over = items.filter(i => listed(i) && sizeOf(i) > WHOLE_FILE)
+  const whole = items.filter(i => (!inParts(i) || listed(i)) && !over.includes(i))
+  const large = items.filter(i => inParts(i) && !listed(i))
+  const to = api.uploadTarget(dir)
+  const totalBytes = [...whole, ...large].reduce((n, i) => n + sizeOf(i), 0)
   const p: UploadProgress = {
     kind: 'upload', phase: turn ? 'queued' : 'uploading', total: items.length, done: 0, bytes: 0, totalBytes,
-    current: sendable[0]?.rel ?? '', indexMs: 0, finished: false, dir,
-    failed: items.filter(i => sizeOf(i) > MAX_FILE).map(i => ({ name: i.rel, error: 'over the 200 MB limit for one file' })),
+    current: (whole[0] ?? large[0])?.rel ?? '', indexMs: 0, finished: false, dir,
+    failed: over.map(i => ({ name: i.rel, error: 'over 200 MB, which takes a newer version of this app' })),
   }
   onProgress({ ...p })
   const endTurn = await turn?.()
   p.phase = 'uploading'
   onProgress({ ...p })
 
-  const size = batchSize(sendable)
+  const size = batchSize(whole)
   const batches: UploadItem[][] = []
-  for (let i = 0; i < sendable.length; i += size) batches.push(sendable.slice(i, i + size))
+  for (let i = 0; i < whole.length; i += size) batches.push(whole.slice(i, i + size))
 
   // Bytes are counted per batch and summed, since several are in the air at
   // once and each reports its own progress.
-  const settled = new Map<number, number>()
-  const inFlight = new Map<number, number>()
+  const settled = new Map<string, number>()
+  const inFlight = new Map<string, number>()
   const publish = () => {
     let n = 0
     for (const v of settled.values()) n += v
@@ -152,13 +238,15 @@ export async function uploadBatched(
       const batch = batches[idx]
       p.current = batch[0].rel
       const bytes = batch.reduce((n, b) => n + sizeOf(b), 0)
+      const key = `${idx}`
       try {
         const r = batch[0].linked
-          ? await api.sendListed(batch, dir, signal)
+          ? await api.sendListed(batch, dir, signal, to)
           : await api.uploadFiles(batch, dir, {
             deferIndex: true,
             signal,
-            onBytes: sent => { inFlight.set(idx, sent); publish() },
+            to,
+            onBytes: sent => { inFlight.set(key, sent); publish() },
           })
         p.done += r.saved.length
         if (r.reindexing) p.reindexing = true
@@ -166,13 +254,35 @@ export async function uploadBatched(
         if ((e as Error).name === 'AbortError') { p.cancelled = true; return }
         for (const it of batch) p.failed.push({ name: it.rel, error: String((e as Error).message ?? e) })
       } finally {
-        inFlight.delete(idx)
-        settled.set(idx, bytes)
+        inFlight.delete(key)
+        settled.set(key, bytes)
         publish()
       }
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker))
+  // Then the large files, one at a time, the parts of one side by side.
+  for (const [i, item] of large.entries()) {
+    if (signal?.aborted) break
+    p.current = item.rel
+    try {
+      const r = await sendInParts(item, to, signal, (part, sent, landed) => {
+        const key = `${i}/${part}`
+        if (landed) { inFlight.delete(key); settled.set(key, sent) } else inFlight.set(key, sent)
+        publish()
+      })
+      p.done += 1
+      if (r.reindexing) p.reindexing = true
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') { p.cancelled = true; break }
+      p.failed.push({ name: item.rel, error: String((e as Error).message ?? e) })
+    }
+    for (const key of [...settled.keys(), ...inFlight.keys()]) {
+      if (key.startsWith(`${i}/`)) { settled.delete(key); inFlight.delete(key) }
+    }
+    settled.set(`${i}/`, sizeOf(item))
+    publish()
+  }
   endTurn?.()
   if (signal?.aborted) p.cancelled = true
 
@@ -186,7 +296,7 @@ export async function uploadBatched(
     p.current = ''
     onProgress({ ...p })
     try {
-      const job = await api.startIndexJob(dir)
+      const job = await api.startIndexJob(dir, to)
       const t0 = Date.now()
       for (;;) {
         await new Promise(r => setTimeout(r, 1000))

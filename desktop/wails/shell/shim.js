@@ -269,6 +269,7 @@
 
   window.__studioShell = {
     cfg: cfg,
+    sendsParts: true, // droppedfiles.go: one part of a listed file
     call: call,
     how: how,
     handlers: kept,
