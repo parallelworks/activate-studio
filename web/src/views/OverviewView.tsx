@@ -276,7 +276,7 @@ export function OverviewView({ active = true, onOpen }: { active?: boolean; onOp
         {aiEnabled && <section className="card ov-list">
           <h3>Studio activity</h3>
           <div className="ov-row ov-click" onClick={() => { location.hash = '' }}>
-            <span className="ov-row-path">Chat conversations{activity?.latest ? `, latest: ${activity.latest.slice(0, 48)}` : ''}</span>
+            <span className="ov-row-path">Assistant conversations{activity?.latest ? `, latest: ${activity.latest.slice(0, 48)}` : ''}</span>
             <span className="ov-row-meta">{activity?.conversations ?? '…'}</span>
           </div>
           <div className="ov-row ov-click" onClick={() => jumpToQuery([{ field: 'label', op: 'eq', value: 'chat-session' }], 'modified')}>

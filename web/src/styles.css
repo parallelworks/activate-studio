@@ -463,7 +463,7 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .view { flex: 1; min-height: 0; display: flex; flex-direction: column; height: 100%; }
 .view.hidden { display: none; }
-/* Chat is hidden differently. Its thread measures the container it scrolls
+/* Assistant is hidden differently. Its thread measures the container it scrolls
    in, and display:none zeroes that measurement; the package does not
    recover it when the element is shown again, so navigating away and back
    left the thread blank with only the composer drawn. Keeping it in the
@@ -1077,13 +1077,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
      icons, then the engine button too (ChatView measures). */
   .chat-controls.tight .scope-btn:not(.engine-btn) > .persona-label,
   .chat-controls.tighter .scope-btn > .persona-label { display: none; }
+  /* Without its words it reads as the engine button; the menus have it. */
+  .chat-controls:is(.tight, .tighter) .open-in-code { display: none; }
   .chat-controls.tight .scope-btn:not(.engine-btn), .chat-controls.tighter .scope-btn { padding: 5px 8px; }
   /* With the find bar open the thread starts below it and the controls. */
   .chat-canvas main:has(search) .chat-thread::before { display: none; }
 }
 /* While pw code answers a chat it runs on its own model, which the chat
    bar's engine button names; the composer's model picker sets only the
-   Studio assistant's, so it is hidden then (PWCodeEngine marks the canvas).
+   Studio's, so it is hidden then (PWCodeEngine marks the canvas).
    The selector reaches into the package's composer: its picker is the
    button there that opens a dialog. A chat shown as its pw code session
    (.pwcode-session) has the session's own composer, whose effort picker is
@@ -1115,6 +1117,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .chat-canvas main .chat-thread { padding-top: var(--chat-notice-pad, 0px); }
   .chat-controls .scope-btn { padding: 4px 7px; }
   .chat-controls .scope-btn span { display: none; }
+  .chat-controls .open-in-code { display: none; }
   .chat-canvas main [class*="border-b"] button[class*="min-w-"]:where(:not(.pwcode-session *, .code-page *)) {
     min-width: 0 !important;
     max-width: calc(100vw - 190px);
@@ -2024,6 +2027,7 @@ a.identity-btn { text-decoration: none; }
 .engine-menu { width: min(360px, calc(100vw - 32px)); }
 .engine-menu .persona-row:disabled { opacity: .6; cursor: not-allowed; }
 .engine-web { margin: 6px 10px 4px; font-size: 13px; }
+.engine-web a { text-decoration: underline; text-underline-offset: 2px; }
 /* An approval comes while a reply runs, so it sits above the composer,
    clear of the newest message. */
 .cred-banner.pwcode-approval { top: auto; bottom: 124px; width: min(680px, calc(100% - 32px)); }
@@ -2241,8 +2245,8 @@ a.identity-btn { text-decoration: none; }
   .filter-row .query-pick, .filter-row .query-pick-wide { min-width: 0; flex: 1 1 40%; }
   .filter-row .grow { flex: 1 1 calc(100% - 52px); }
 
-  /* Chat. The conversations list is the package's drawer at this width
-     (ChatView switches it at this breakpoint); the bottom-bar Chat item
+  /* Assistant. The conversations list is the package's drawer at this width
+     (ChatView switches it at this breakpoint); the bottom-bar Assistant item
      opens it, and the show-all filter comes with it, at its top. */
 }
 
@@ -3109,14 +3113,17 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-sidebar-search > button { align-self: flex-start; }
 .code-sidebar-loading { display: flex; flex-direction: column; gap: 14px; padding: 12px; }
 .code-sidebar-sketch { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.code-session-row { all: unset; box-sizing: border-box; display: flex; flex: 1; min-width: 0; padding: 4px 0; cursor: pointer; text-align: left; }
-.code-session-row:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; border-radius: 6px; }
+.code-row-open { all: unset; position: absolute; inset: 0; border-radius: 8px; cursor: pointer; }
+.code-session-row { position: relative; display: flex; flex: 1; min-width: 0; padding: 4px 0; cursor: pointer; text-align: left; }
 .code-row-leading { display: flex; align-items: center; gap: 4px; }
 .code-row-dot { display: flex; }
 .code-row-detail { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--pw-muted); }
 .code-row-detail > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .code-row-machine { font-family: ui-monospace, monospace; flex-shrink: 1000; }
 .code-row-chat, .code-row-delegated { flex: none; }
+a.code-row-chat { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+a.code-row-chat:hover { color: var(--pw-link); }
+a.code-row-chat:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; border-radius: 3px; }
 .code-row-detail > .code-row-sep { flex: none; margin: 0 5px; overflow: visible; }
 .code-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .code-mark-row { width: 12px; height: 12px; }
@@ -3650,7 +3657,7 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 /* A continued chat's opening note is not a reply: no Regenerate on it
    (markNotes, adapter.ts, marks its Code page link). */
 .group:has(a[href*="note=continued"]):not(:has(.group)) button[aria-label="Regenerate response"] { display: none; }
-/* The note under a reply the Studio assistant gave in pw code's place
+/* The note under a reply the Studio gave in pw code's place
    (EngineNoteReader, PWCodeEngine.tsx; its links carry note=engine) is a
    quiet line, not a reply: smaller, muted, close under the reply, and with
    nothing to copy or regenerate. */
@@ -3781,13 +3788,13 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
    model (pw code's already reads "pw code · model"), and the details stay
    in view so the switch reads clearly. */
 .chat-canvas[data-engines-mixed] .chat-meta { opacity: 1; }
-.chat-canvas[data-engines-mixed] .chat-meta [data-engine-label='Studio']::before { content: 'Studio assistant · '; }
+.chat-canvas[data-engines-mixed] .chat-meta [data-engine-label='Studio']::before { content: 'Studio · '; }
 /* In a pw code session's view, the chat's turns the session was given as
    carried over (withEarlier, pwcode/carried.ts) are drawn from the chat's
    record, each block headed as earlier in the chat, in the same quiet
    type as the engine labels, with its replies' details in view. */
 .pwcode-session [data-row^='earlier-'] .chat-meta { opacity: 1; }
-.pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio assistant · '; }
+.pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio · '; }
 .pwcode-session [data-row^='earlier-']:is(:first-child, :not([data-row^='earlier-']) + [data-row^='earlier-'])::before {
   content: 'Earlier in this chat'; display: block; padding-top: 8px; font-size: 12px; color: var(--pw-muted);
 }

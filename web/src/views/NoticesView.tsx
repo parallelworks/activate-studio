@@ -6,7 +6,7 @@ import { dismissNotices, type Notice, type Notices, useNotices } from '../notice
 
 /** What each notice is of, in a word. */
 const KINDS: Record<Notice['kind'], string> = {
-  chat: 'Chat', code: 'Code session', fleet: 'Fleet agent', delegated: 'Delegated work', transfer: 'Transfer', library: 'Library index',
+  chat: 'Assistant chat', code: 'Code session', fleet: 'Fleet agent', delegated: 'Delegated work', transfer: 'Transfer', library: 'Library index',
 }
 
 /** A notice that goes once it is read, rather than once it is answered. */

@@ -59,7 +59,7 @@ func TestStudioAssistantAnswersWhenPWCodeCannotReachTheTools(t *testing.T) {
 	c := m.Conv.Create(nil, "")
 	sse := post(t, base, map[string]any{"conversationId": c.ID, "userMessageId": "u1", "model": "m",
 		"messages": []any{map[string]any{"role": "user", "content": "What is the budget?"}}})
-	short := "pw code could not reach this Studio's tools at http://127.0.0.1:" + strconv.Itoa(m.A.Cfg.Port) + "/api/mcp (connection refused), so the Studio assistant answered this message"
+	short := "pw code could not reach this Studio's tools at http://127.0.0.1:" + strconv.Itoa(m.A.Cfg.Port) + "/api/mcp (connection refused), so the Studio answered this message"
 	if !strings.Contains(sse, "event: pwcode_fallback") || !strings.Contains(sse, short) {
 		t.Errorf("no fallback:\n%s", sse)
 	}

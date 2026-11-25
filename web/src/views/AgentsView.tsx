@@ -17,8 +17,8 @@ import { MachineLabel } from '../components/MachineLabel'
  * Agent instructions and skills: the markdown files that shape how agents
  * work, in one place a user can find. Instructions (persona files) are
  * applied to folders, where the Studio writes them into AGENTS.md for pw
- * code, and set a Studio chat's stance; skills are applied the same way
- * and loaded by the Studio assistant mid-conversation.
+ * code, and set a chat's stance; skills are applied the same way
+ * and loaded by the Studio mid-conversation.
  *
  * They are separated here because they do different jobs and the
  * difference decides which one somebody should write. A persona is a
@@ -229,7 +229,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
       if (!res.ok) throw new Error(d.error ?? `${res.status}`)
       toast.success(kind === 'persona'
         ? `Saved ${d.name}. Apply it to a folder again to bring a folder's AGENTS.md up to date.`
-        : `Saved ${d.name}. It is available in chat now.`)
+        : `Saved ${d.name}. It is available in Assistant now.`)
       setName(''); setDescription(''); setBody(''); setIcon(''); setEditing(null)
       await load()
     } catch (e) {
@@ -427,7 +427,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
           <p className="muted view-sub">
             How an agent should work, written once and applied to the folders agents work in. <b>Apply to a folder</b> writes them
             into the folder's <code>AGENTS.md</code>, which pw code reads in every session there; your own text in that file stays as it is.
-            In Chat, the <b>Persona</b> button chooses one for a conversation: the Studio assistant takes it as its stance, and a pw code
+            In Assistant, the <b>Persona</b> button chooses one for a conversation: the Studio takes it as its stance, and a pw code
             chat works in <code>agents/&lt;name&gt;</code> with it in that folder's <code>AGENTS.md</code>. They are stored
             in the knowledge base{dir ? <> at <code>{dir}</code></> : null}, browsable under <code>.agents</code> in the Library, and labeled <code>agent-persona</code>.
           </p>
@@ -464,7 +464,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
         <section className="card ov-list">
           <h3>Skills ({shownSkills.length}{filter ? ` of ${skills.length}` : ''})</h3>
           <p className="muted view-sub">
-            Task instructions loaded when the work matches the description. The Studio assistant loads them mid-conversation:
+            Task instructions loaded when the work matches the description. The Studio loads them mid-conversation:
             ask for the work, or name the skill. <b>Apply to a folder</b> also writes one to <code>.agents/skills</code> there for pw code,
             which uses a folder's skills once you have opened that folder in pw code and approved it. Write the
             description so it can tell when the skill applies.

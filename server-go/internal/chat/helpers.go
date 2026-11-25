@@ -871,7 +871,7 @@ func (m *Module) toolCheckModel(ids []string, preferred *string) string {
 // toolCheckMessage is toolCheckMessage(model, p).
 func toolCheckMessage(model string, p *llm.ToolProbe) string {
 	if p == nil {
-		return "Chat gives " + model + " its tools in the prompt and searches the libraries for it before it answers, because the model is named in CHAT_SYSTEM_IN_USER, so its own tool calling was not checked."
+		return "Assistant gives " + model + " its tools in the prompt and searches the libraries for it before it answers, because the model is named in CHAT_SYSTEM_IN_USER, so its own tool calling was not checked."
 	}
 	switch p.Kind {
 	case "calls":
@@ -883,7 +883,7 @@ func toolCheckMessage(model string, p *llm.ToolProbe) string {
 		}
 		return model + " answered without calling the test tool" + d + ", so chat cannot search the libraries with this model. Choose a model that supports tool calling (function calling), or turn tool calling on where the model is served."
 	case "refused":
-		return "The endpoint refused a request that offers " + model + " a tool: " + p.Detail + ". Chat offers the model tools, so chat with it fails. Choose a model that supports tool calling, or turn tool calling on where the model is served."
+		return "The endpoint refused a request that offers " + model + " a tool: " + p.Detail + ". Assistant offers the model tools, so chatting with it fails. Choose a model that supports tool calling, or turn tool calling on where the model is served."
 	}
 	return "Tool calling with " + model + " was not checked: " + p.Detail + "."
 }

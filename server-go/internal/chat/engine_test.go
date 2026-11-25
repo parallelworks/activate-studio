@@ -161,7 +161,7 @@ func TestPWCodeIsToldWhatCameSinceItsLastReply(t *testing.T) {
 		{ID: "a2", Role: "assistant", Content: &b},
 	}, PWCode: &conversations.PWCodeLink{Session: "s1", LastMessage: "pwc-1"}}
 	got := pwcodeContext(c, false, "u3")
-	if !strings.HasPrefix(got, "In this conversation since your last reply:") || strings.Contains(got, "pw code said") || !strings.Contains(got, "The Studio assistant: the Studio assistant said") {
+	if !strings.HasPrefix(got, "In this conversation since your last reply:") || strings.Contains(got, "pw code said") || !strings.Contains(got, "The Studio: the Studio assistant said") {
 		t.Errorf("since:\n%s", got)
 	}
 	if got := pwcodeContext(c, true, "u3"); !strings.HasPrefix(got, "Earlier in this conversation, before you joined it:") {

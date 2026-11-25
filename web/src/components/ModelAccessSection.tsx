@@ -151,7 +151,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
     <div className="model-access">
       <h1>Model access</h1>
       <p className="muted view-sub">
-        Where the Studio's models come from, for chat and the assistant. The accounts behind them are under{' '}
+        Where the Studio's models come from, for Assistant and the other AI features. The accounts behind them are under{' '}
         <a href={ACCOUNTS_HREF}>Accounts</a>.
       </p>
 

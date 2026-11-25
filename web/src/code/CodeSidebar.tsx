@@ -1,4 +1,4 @@
-import { type ReactElement, useMemo, useState } from 'react'
+import { type ReactElement, useId, useMemo, useState } from 'react'
 import {
   foldedGroupsPreference,
   isStarting,
@@ -27,7 +27,7 @@ import {
   type SidebarRowShortcut,
   useRowDialogs,
 } from '@parallelworks/ui/ai'
-import { Button, LoadingRegion, type MenuEntry, menuDivider, SearchInput, Skeleton, statusTextClass, toast, useContextMenu, usePersistedState } from '@parallelworks/ui'
+import { Button, isPlainClick, LoadingRegion, type MenuEntry, menuDivider, SearchInput, Skeleton, statusTextClass, toast, useContextMenu, usePersistedState } from '@parallelworks/ui'
 import { useTranslations } from 'use-intl'
 import { describeError } from '../pwcode/PWCodeSession'
 import { type PageSession, pwCodePage } from './api'
@@ -48,18 +48,20 @@ type SidebarGroup = ConversationSidebarGroup<PageSession> & { label: string }
 
 const SIDEBAR_KEY = 'studio.code.sidebar'
 
-export function CodeSidebar({ open, onOpen, onNewSession, delegated, onlyDelegated, onOnlyDelegated, inChat, extraMenu, collapsed, onToggle, drawer }: {
+export function CodeSidebar({ open, onOpen, onNewSession, delegated, onlyDelegated, onOnlyDelegated, inChat, onChat, extraMenu, collapsed, onToggle, drawer }: {
   /** The session that is open, which the list marks. */
   open: { machine?: string; sessionId?: string }
   onOpen: (s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => void
   onNewSession: () => void
-  /** Sessions a Studio chat delegated work to, by id: their rows say so. */
+  /** Sessions a chat delegated work to, by id: their rows say so. */
   delegated: ReadonlySet<string>
   /** Lists only those. */
   onlyDelegated: boolean
   onOnlyDelegated: (only: boolean) => void
-  /** Sessions a Studio chat continues, by id. */
-  inChat: ReadonlySet<string>
+  /** The chat that continues each session that is in one, by session id. */
+  inChat: ReadonlyMap<string, string>
+  /** Opens the chat a session is in; unset where the Studio shows no Assistant. */
+  onChat?: (s: PageSession) => void
   /** The Studio's own entries, first in a row's menu. */
   extraMenu: (s: PageSession) => MenuEntry[]
   collapsed: boolean
@@ -164,7 +166,8 @@ export function CodeSidebar({ open, onOpen, onNewSession, delegated, onlyDelegat
             selected={s === list.openSession}
             updated={sessionClock(s, compact)}
             delegated={delegated.has(s.id)}
-            inChat={inChat.has(s.id)}
+            chat={inChat.get(s.id)}
+            onChat={onChat && (() => onChat(s))}
             menuItems={row => [...extraMenu(s), menuDivider, ...toMenu(list.menu(s, row))]}
             shortcuts={list.shortcuts(s).map(rowShortcut)}
             openMenu={openMenu}
@@ -205,34 +208,43 @@ function SessionsLoading({ t }: { t: Translate }) {
   )
 }
 
-function SessionRow({ session, machine, showMachine, selected, updated, delegated, inChat, menuItems, shortcuts, openMenu, onOpen, resumeClock, t }: {
+function SessionRow({ session, machine, showMachine, selected, updated, delegated, chat, menuItems, shortcuts, openMenu, onOpen, onChat, resumeClock, t }: {
   session: PageSession
   machine: PwCodeMachine | undefined
   showMachine: boolean
   selected: boolean
   updated: string
   delegated: boolean
-  inChat: boolean
+  /** The chat that continues it, if one does. */
+  chat: string | undefined
   menuItems: (row: HTMLLIElement) => MenuEntry[]
   shortcuts: SidebarRowShortcut[]
   openMenu: ReturnType<typeof useContextMenu>['openMenu']
   onOpen: () => void
+  onChat?: () => void
   resumeClock: (at: string) => string
   t: Translate
 }) {
+  const said = useId()
   const { stateText, tone, showSecondLine, live } = sessionRowState(session, machine, t, resumeClock)
   const marked = showsPinMark(session)
   const prs = (session.pullRequests ?? []).filter(Boolean)
   const parts = [
     showMachine && machine && <MachineLabel key="machine" machine={machine} className="code-row-machine" />,
     showSecondLine && <span key="state" className={statusTextClass(isStarting(machine) ? 'info' : tone)}>{stateText}</span>,
-    inChat && <span key="chat" className="code-row-chat" title="A Studio chat continues this session">in a chat</span>,
-    delegated && <span key="delegated" className="code-row-delegated" title="A Studio chat delegated work to this session">delegated</span>,
+    !!chat && (onChat
+      ? <a key="chat" className="code-row-chat" href={`#chat=${chat}`} title="Open in Assistant" data-testid="code-row-chat"
+          onClick={e => { e.stopPropagation(); if (isPlainClick(e)) { e.preventDefault(); onChat() } }}>in a chat</a>
+      : <span key="chat" className="code-row-chat" title="A chat continues this session">in a chat</span>),
+    delegated && <span key="delegated" className="code-row-delegated" title="A chat delegated work to this session">delegated</span>,
     prs.length > 0 && <span key="prs" className="code-row-prs">{prs.map((u: string) => u.replace(/^https?:\/\/(www\.)?github\.com\/[^/]+\//, '').replace('/pull/', '#')).join(', ')}</span>,
   ]
   return (
     <SidebarRow selected={selected} menuItems={menuItems} shortcuts={shortcuts} openMenu={openMenu}>
-      <button type="button" data-testid="agent-session-row" aria-current={selected ? 'page' : undefined} className="code-session-row" onClick={onOpen}>
+      {/* The row opens its session. Its button lies under the row's words, so
+          the link among them is not inside it. */}
+      <button type="button" aria-current={selected ? 'page' : undefined} aria-label={sessionLabel(session, t)} aria-describedby={said} className="code-row-open" onClick={onOpen} />
+      <div data-testid="agent-session-row" id={said} className="code-session-row" onClick={onOpen}>
         <SidebarRowBody
           leading={(live || marked) && (
             <span className="code-row-leading">
@@ -244,7 +256,7 @@ function SessionRow({ session, machine, showMachine, selected, updated, delegate
           time={updated}
           detail={parts.some(Boolean) && <RowDetail parts={parts} />}
         />
-      </button>
+      </div>
     </SidebarRow>
   )
 }

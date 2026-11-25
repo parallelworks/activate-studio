@@ -25,7 +25,7 @@ describe("A continued chat's opening note", () => {
     render(<p><ChatMarkdownLink href={link![1]}>Messages you send here go to that session.</ChatMarkdownLink></p>)
     expect(screen.getByText('Messages you send here go to that session.')).toBeInTheDocument()
     act(() => knowEngine('c4', 'studio'))
-    expect(screen.getByText('The Studio assistant answers this chat now, so messages you send here do not go to that session.')).toBeInTheDocument()
+    expect(screen.getByText('The Studio answers this chat now, so messages you send here do not go to that session.')).toBeInTheDocument()
     act(() => knowEngine('c4', 'pwcode'))
     expect(screen.getByText('Messages you send here go to that session.')).toBeInTheDocument()
     expect(screen.queryByRole('link')).toBeNull()

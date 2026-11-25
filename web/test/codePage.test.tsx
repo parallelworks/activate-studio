@@ -87,8 +87,8 @@ const listed = async (name: string) => {
   return row
 }
 
-/** Continues a session in a Studio chat, from its row's menu. */
-const continueFrom = async (name: string, item = 'Continue in a Studio chat') => {
+/** Continues a session in Assistant, from its row's menu. */
+const continueFrom = async (name: string, item = 'Continue in Assistant') => {
   fireEvent.contextMenu(await listed(name))
   fireEvent.click(await screen.findByRole('menuitem', { name: item }))
 }
@@ -153,10 +153,10 @@ describe('the Code page', () => {
       here: { relay: true, chats: [{ session: 's5', conversationId: 'c5', machine: 'studio' }] } })
     render(<CodePage />)
     fireEvent.click(await listed('far one'))
-    expect(within(await pane()).getByTestId('code-continue')).toHaveTextContent('Continue in a Studio chat')
+    expect(within(await pane()).getByTestId('code-continue')).toHaveTextContent('Continue in Assistant')
     await waitFor(() => expect(sent.some(s => s.path.startsWith('/api/code/machines/m2/sessions/s4'))).toBe(true))
     fireEvent.click(await listed('far chat'))
-    await waitFor(() => expect(screen.getByTestId('code-continue')).toHaveTextContent('Open in its Studio chat'))
+    await waitFor(() => expect(screen.getByTestId('code-continue')).toHaveTextContent('Open in Assistant'))
     await waitFor(() => expect(sent.some(s => s.path.startsWith('/api/code/machines/studio/sessions/s5'))).toBe(true))
   })
 
@@ -169,7 +169,7 @@ describe('the Code page', () => {
     expect(within(open).getByTestId('code-continue')).toBeDisabled()
   })
 
-  it('lists the sessions as PW Code on the web lists them and continues one in a Studio chat, asking first', async () => {
+  it('lists the sessions as PW Code on the web lists them and continues one in Assistant, asking first', async () => {
     const sent = studio()
     render(<CodePage />)
     await listed('pump curves')
@@ -179,7 +179,7 @@ describe('the Code page', () => {
     expect(dialog).toHaveTextContent('Your messages go to mesh refinement on box.')
     // Asked, not yet made.
     expect(sent.filter(s => s.path === '/api/chat/pwcode/continue').map(s => s.body)).toEqual([{ machine: 'm1', session: 's1' }])
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Assistant' }))
     await waitFor(() => expect(location.hash).toBe('#chat=c1'))
     expect(sent.filter(s => s.path === '/api/chat/pwcode/continue').at(-1)?.body).toEqual({ machine: 'm1', session: 's1', confirmed: true })
   })
@@ -193,7 +193,7 @@ describe('the Code page', () => {
     const tick = within(dialog).getByTestId('studio-tools-tick') as HTMLInputElement
     expect(tick.checked).toBe(true)
     expect(dialog).toHaveTextContent("Add this Studio's tools to pw code on gpu")
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Assistant' }))
     await waitFor(() => expect(location.hash).toBe('#chat=c1'))
     // The chat's card runs the setup as it opens; nothing else is recorded.
     expect(sessionStorage.getItem('ade-studio-tools-auto:c1')).toBe('1')
@@ -208,7 +208,7 @@ describe('the Code page', () => {
     await continueFrom('mesh refinement')
     dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByTestId('studio-tools-tick'))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Assistant' }))
     await waitFor(() => expect(location.hash).toBe('#chat=c2'))
     await waitFor(() => expect(sent.find(s => s.path === '/api/mcp/bridge/prefs')?.body).toEqual({ machineId: 'm2', add: false }))
     expect(sessionStorage.getItem('ade-studio-tools-auto:c2')).toBeNull()
@@ -220,7 +220,7 @@ describe('the Code page', () => {
     await continueFrom('mesh refinement')
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).queryByTestId('studio-tools-tick')).toBeNull()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Studio' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue in Assistant' }))
     await waitFor(() => expect(location.hash).toBe('#chat=c3'))
     expect(sessionStorage.getItem('ade-studio-tools-auto:c3')).toBe('1')
     sessionStorage.clear()
@@ -394,15 +394,54 @@ describe('the Code page', () => {
     await waitFor(() => expect(sent.some(x => x.method === 'POST' && x.path === '/api/code-page/machines/m1/sessions/s2/archive')).toBe(true))
     // The Studio's own entries lead the menu.
     fireEvent.contextMenu(await listed('pump curves'))
-    expect((await screen.findAllByRole('menuitem')).map(m => m.textContent)).toEqual(expect.arrayContaining(['Open', 'Continue in a Studio chat', 'Open in ACTIVATE']))
+    expect((await screen.findAllByRole('menuitem')).map(m => m.textContent)).toEqual(expect.arrayContaining(['Open', 'Continue in Assistant', 'Open in ACTIVATE']))
   })
 
   it('opens the chat that already continues a session without asking', async () => {
     studio({ here: { chats: [{ session: 's2', conversationId: 'c9' }] } })
     render(<CodePage />)
     expect(await screen.findByText('in a chat')).toBeInTheDocument()
-    await continueFrom('pump curves', 'Open in its Studio chat')
+    await continueFrom('pump curves', 'Open in Assistant')
     await waitFor(() => expect(location.hash).toBe('#chat=c9'))
+  })
+
+  it('opens a session\'s chat from "in a chat" on its row, and the session from the rest of the row', async () => {
+    const sent = studio({ here: { chats: [{ session: 's2', conversationId: 'c9' }] } })
+    render(<CodePage />)
+    const link = await screen.findByRole('link', { name: 'in a chat' })
+    expect(link).toHaveAttribute('href', '#chat=c9')
+    // Only the session that has a chat says so, and the link is in no button.
+    expect(screen.getAllByTestId('code-row-chat')).toHaveLength(1)
+    expect(link.closest('button')).toBeNull()
+    fireEvent.click(link)
+    await waitFor(() => expect(location.hash).toBe('#chat=c9'))
+    expect(screen.queryByTestId('code-session')).toBeNull()
+    expect(sent.some(s => s.path === '/api/chat/pwcode/continue')).toBe(false)
+
+    location.hash = '#view=code'
+    fireEvent.click(screen.getByRole('button', { name: 'pump curves' }))
+    await waitFor(() => expect(location.hash).toBe('#view=code?machine=m1&session=s2'))
+    expect(within(await pane()).getByRole('button', { name: 'Open in Assistant' })).toBeEnabled()
+  })
+
+  it('offers no way to Assistant where the Studio does not show it', async () => {
+    studio({ here: { chats: [{ session: 's2', conversationId: 'c9' }] } })
+    const base = globalThis.fetch
+    let config: Record<string, unknown> = { platform: true, aiEnabled: false }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === '/api/config' ? new Response(JSON.stringify(config), { status: 200, headers: { 'Content-Type': 'application/json' } }) : base(input, init)))
+    render(<CodePage />)
+    const row = await listed('pump curves')
+    act(() => { window.dispatchEvent(new Event('ade:config-changed')) })
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'in a chat' })).toBeNull())
+    expect(row).toHaveTextContent('in a chat')
+    fireEvent.contextMenu(row)
+    expect((await screen.findAllByRole('menuitem')).map(m => m.textContent)).not.toContain('Open in Assistant')
+    fireEvent.click(row)
+    expect(within(await pane()).queryByTestId('code-continue')).toBeNull()
+    config = { platform: true }
+    act(() => { window.dispatchEvent(new Event('ade:config-changed')) })
+    expect(within(await pane()).getByTestId('code-continue')).toHaveTextContent('Open in Assistant')
   })
 
   it('shows why a session cannot be continued here, with what still works, rather than asking', async () => {
@@ -411,7 +450,7 @@ describe('the Code page', () => {
     fireEvent.click(await listed('far away'))
     const card = await screen.findByTestId('code-linked-session')
     expect(card).toHaveTextContent(/runs on gpu.*no relay for you/)
-    expect(within(card).getByRole('button', { name: 'Continue in a Studio chat' })).toBeDisabled()
+    expect(within(card).getByRole('button', { name: 'Continue in Assistant' })).toBeDisabled()
     expect(sent.some(s => s.path === '/api/chat/pwcode/continue')).toBe(false)
   })
 
@@ -511,7 +550,7 @@ describe('the Code page', () => {
     expect(location.hash).toBe('#view=code?machine=m1&session=new1')
     await waitFor(() => expect(sent.some(s => s.path.startsWith('/api/code/machines/studio/sessions/new1'))).toBe(true))
     expect(sent.some(s => s.path === '/api/chat/pwcode/continue')).toBe(false)
-    fireEvent.click(within(open).getByRole('button', { name: 'Open in its Studio chat' }))
+    fireEvent.click(within(open).getByRole('button', { name: 'Open in Assistant' }))
     await waitFor(() => expect(location.hash).toBe('#chat=c1'))
   })
 

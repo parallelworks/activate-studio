@@ -354,7 +354,7 @@ func TestPWCodeSessionHearsWhatItMissed(t *testing.T) {
 		{ID: "u3", Role: "user", Content: sp("third")},
 	}, PWCode: &conversations.PWCodeLink{LastMessage: "a1"}}
 	got := pwcodeContext(c, false, "u3")
-	if !strings.Contains(got, "The person: second question") || !strings.Contains(got, "The Studio assistant: the Studio assistant's answer") || strings.Contains(got, "first question") || strings.Contains(got, "third") {
+	if !strings.Contains(got, "The person: second question") || !strings.Contains(got, "The Studio: the Studio assistant's answer") || strings.Contains(got, "first question") || strings.Contains(got, "third") {
 		t.Errorf("%q", got)
 	}
 	if all := pwcodeContext(c, true, "u3"); !strings.Contains(all, "first question") {

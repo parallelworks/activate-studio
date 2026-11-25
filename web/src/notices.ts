@@ -180,7 +180,7 @@ export function refreshNotices({ tell = true, after = NOTICES_SOON_MS }: { tell?
   }, after)
 }
 
-/** The chat the Chat page shows, or null for none or another page. */
+/** The chat Assistant shows, or null for none or another page. */
 export function setFrontChat(id: string | null): void {
   if (front === id) return
   if (front && enabled && visible()) left.push(front)

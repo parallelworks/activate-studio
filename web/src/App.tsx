@@ -56,7 +56,7 @@ export type Display = { kind: 'file'; target: string; q?: string; lib?: string }
 const MOBILE_PRIMARY = new Set<string>(['chat', 'library', 'search', 'overview', 'notices'])
 
 // The list-style views share one header bar: the section's name and a
-// short note on what it covers. Chat, the library, settings, and help lay
+// short note on what it covers. Assistant, the library, settings, and help lay
 // out their own tops.
 const PAGE_NOTES: Partial<Record<ViewId, string>> = {
   // Search's note says what the libraries searched can match (searchReach.ts).
@@ -74,8 +74,8 @@ const PAGE_NOTES: Partial<Record<ViewId, string>> = {
 const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
   {
     id: 'chat',
-    label: 'Chat',
-    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M14 10.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v7z"/></svg>,
+    label: 'Assistant',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M6.5 3 7.7 6.3 11 7.5 7.7 8.7 6.5 12 5.3 8.7 2 7.5 5.3 6.3 6.5 3z"/><path d="M12.5 1.8v3.4M10.8 3.5h3.4M12.5 10.8v3M11 12.3h3"/></svg>,
   },
   {
     id: 'library',
@@ -664,7 +664,7 @@ export default function App() {
                   onClick={() => {
                     if (item.id === 'library' && view === 'library') showDisplay(null)
                     // On a phone the conversations rail is a slide-over, and
-                    // re-tapping the Chat item in the bottom bar is its toggle.
+                    // re-tapping Assistant in the bottom bar is its toggle.
                     if (item.id === 'chat' && view === 'chat') window.dispatchEvent(new Event('ade:toggle-chat-rail'))
                     // Workflows and Transfers always open on their main page,
                     // not on the form that was last open there.
@@ -778,10 +778,10 @@ export default function App() {
             <PanelToggle className="page-head-toggle" />
           </header>
         )}
-        {/* Chat puts the status panel's toggle beside its own controls; the
+        {/* Assistant puts the status panel's toggle beside its own controls; the
             library, settings, and help have no header, so it floats at
             their top right. */}
-        {/* With AI features off, Chat and Agents are not mounted at all, so
+        {/* With AI features off, Assistant and Agents are not mounted at all, so
             nothing of theirs polls the server or reads a model. */}
         {aiPagesMounted(cfg) && <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView active={view === 'chat'} /></div>}
         <div className={view === 'library' ? 'view with-toggle' : 'view hidden'}>

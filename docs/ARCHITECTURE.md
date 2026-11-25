@@ -74,7 +74,7 @@ A label on a directory applies to everything beneath it, so a corpus can be orga
 
 `server/src/labeling.ts` proposes labels for material that has none. It reads the opening text of each unlabelled file, reuses the existing vocabulary wherever it fits, and proposes new labels only where nothing existing describes the material. Nothing is applied: proposals return for review in the Library, or to the assistant through the `suggest_labels` tool, which is told to apply them with `apply_labels` once the user agrees. It reads with whichever model is answering the conversation, so it needs no configuration of its own.
 
-## 6. Chat: retrieval as tools
+## 6. Assistant: retrieval as tools
 
 The chat backend (`server/src/chat/`) is a server-side tool-calling loop against an OpenAI-compatible model endpoint, selected by `OPENAI_BASE_URL`/`PW_GATEWAY_URL` and defaulting to the ACTIVATE gateway. The browser never holds a credential.
 
@@ -188,7 +188,7 @@ server/src/
 web/src/
   App.tsx          left nav shell, view switching, hash navigation
   lastLocation.ts  per-tab restore of the open view
-  views/           Chat, Library, Search, Query, Stats, Settings, Help
+  views/           Assistant (ChatView), Library, Search, Query, Stats, Settings, Help
   components/      Explorer, Viewer, ClassificationBanner, DagViewer, TagMenu
   upload.ts        batched upload with progress and cancellation
   accents.ts       theme tokens derived from the platform's palette

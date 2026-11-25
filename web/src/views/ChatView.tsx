@@ -65,7 +65,7 @@ const PWCODE_TOOL_FOOTERS = { [BACKGROUND_TOOL]: BackgroundCommandHint }
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
 /** Re-lists the conversation rail when the scope toggle changes, or a chat
- *  was made elsewhere (Continue in Studio on the Code page), without
+ *  was made elsewhere (Continue in Assistant on the Code page), without
  *  remounting the provider and tearing down an open stream. */
 function FilterReloader() {
   const { loadConversations } = useChat()
@@ -184,7 +184,7 @@ interface KeptSession { conversationId: string; machine: string; sessionId: stri
 /**
  * The pw code chats to draw: the open one, when it shows its session, and
  * the ones opened just before it, which stay drawn but hidden (Activity),
- * so a return to one is immediate. A chat set to the Studio assistant
+ * so a return to one is immediate. A chat set to the Studio
  * leaves the list, and the list empties when the viewer's caches do
  * (viewerCache.ts).
  */
@@ -262,7 +262,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   const [showManage, setShowManage] = useState(false)
   // In a narrow window (a phone, or a desktop window under the phone
   // breakpoint) the conversations list is the package's drawer, opened by
-  // the package's own button above the thread, and by the bottom-bar Chat
+  // the package's own button above the thread, and by the bottom-bar Assistant
   // item; the package closes it on a pick, a tap outside or Escape.
   const phone = usePhoneLayout()
   const [railOpen, setRailOpen] = useState(false)
@@ -868,7 +868,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   )
 }
 
-/** The library files a Studio assistant chat's replies name, as links: in
+/** The library files the replies of a chat the Studio answers name, as links: in
  *  the libraries it searches first. */
 function StudioCited({ conversationId, scope, children }: { conversationId: string; scope: Scope; children: React.ReactNode }) {
   const { currentConversation, isStreaming } = useChat()

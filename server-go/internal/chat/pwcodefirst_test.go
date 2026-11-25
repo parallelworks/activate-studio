@@ -92,7 +92,7 @@ func TestACommandAfterOtherTurnsLeavesThemOwed(t *testing.T) {
 		}
 		res.Body.Close()
 	}
-	want := "Earlier in this conversation, before you joined it:\n\nThe person: What is the budget?\n\nThe Studio assistant: Nine.\n\nThe person's new message:\n\nspend it"
+	want := "Earlier in this conversation, before you joined it:\n\nThe person: What is the budget?\n\nThe Studio: Nine.\n\nThe person's new message:\n\nspend it"
 	if len(f.messages) != 3 || f.messages[0] != "/diagnose-run 7" || f.messages[1] != want || f.messages[2] != "and more" || m.Conv.Get(c.ID).PWCode.Owed != nil {
 		t.Errorf("sent %q", f.messages)
 	}
@@ -124,7 +124,7 @@ func TestTurnsSinceTheSessionsReplyAreOwed(t *testing.T) {
 	}
 	// The goal's own reply is not a turn it missed.
 	m.Conv.RecordAssistantTurn(c.ID, conversations.Message{ID: "pwc-9", Role: "assistant", Content: sp("On it."), ParentID: sp("a2")})
-	if got := owedContext(m.Conv.Get(c.ID), "more"); got != "In this conversation since your last reply:\n\nThe person: What is the budget?\n\nThe Studio assistant: Nine.\n\nThe person's new message:\n\n" {
+	if got := owedContext(m.Conv.Get(c.ID), "more"); got != "In this conversation since your last reply:\n\nThe person: What is the budget?\n\nThe Studio: Nine.\n\nThe person's new message:\n\n" {
 		t.Errorf("owed %q", got)
 	}
 	post(t, base, first(c.ID, "more", true, "parentMessageId", "pwc-9", "userMessageId", "u4"))
