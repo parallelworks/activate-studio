@@ -40,8 +40,9 @@ func HomeCluster() string { return libraries.HomeCluster() }
 // spaceCheckSh reads, as the person, what a folder to index at $1 is: the
 // account, the folder (made, closed to every other account, when $3 is 1),
 // how another account could write in it or move it (transfers.LooseSh,
-// with $4 the grants its owner made from the Studio), whether its file
-// system takes ACLs, and where GUFI ($2 the Studio's copy) can run from.
+// with $4 the grants its owner made from the Studio; with $5 1 the way its
+// path is written as well), whether its file system takes ACLs, and where
+// GUFI ($2 the Studio's copy) can run from.
 const spaceCheckSh = `umask 077
 LOOSE_OK=$4
 ` + transfers.LooseSh + `
@@ -68,6 +69,8 @@ echo "real=$r"
 echo "owner=$(lz_stat %u %u "$r")"
 echo "mode=$(lz_stat %a %Lp "$r")"
 echo "fgroup=$(lz_stat %G %Sg "$r")"
+echo "pin=$(lz_stat %i %i "$r"):$(lz_stat %u %u "$r")"
+case ",$(findmnt -n -o OPTIONS -T "$home" 2>/dev/null | head -n 1)," in *,noexec,*) echo noexec=1 ;; esac
 # The mount's own type: stat -f reports ext4 as ext2/ext3.
 fs=$(findmnt -n -o FSTYPE -T "$r" 2>/dev/null | head -n 1)
 [ -n "$fs" ] || fs=$(stat -f -c %T -- "$r" 2>/dev/null)
@@ -79,15 +82,25 @@ while [ -z "$w" ] && [ "$d" != / ]; do
   d=${d%/*}; [ -n "$d" ] || d=/
   w=$(loose "$d")
 done
+# A library's folder is reached by its path again each time.
+if [ -z "$w" ] && [ "$5" = 1 ]; then w=$(looseroute "$p"); d=${w#* }; w=${w%% *}; fi
 if [ -n "$w" ]; then echo "unsafe=$w $d"; fi
 if [ "$(lz_stat %u %u "$r")" = "$lz_uid" ] && [ -w "$r" ]; then
-  if t=$(mktemp -- "$r/.studio-acl-XXXXXX" 2>/dev/null); then
-    if command -v setfacl >/dev/null 2>&1 && setfacl -m "u:$lz_uid:r" -- "$t" 2>/dev/null; then echo acl=1; else echo acl=0; fi
+  # A new file, held open, so that the ACL goes to it and to no other.
+  t="$r/.studio-acl-$$-$RANDOM$RANDOM"
+  set -C
+  if { exec 9> "$t"; } 2>/dev/null; then
+    if command -v setfacl >/dev/null 2>&1 && setfacl -m "u:$lz_uid:r" -- /proc/self/fd/9 2>/dev/null; then echo acl=1; else echo acl=0; fi
+    exec 9>&-
     rm -f -- "$t"
   fi
+  set +C
 fi
 a="$home/.activate-studio"
 if [ -e "$a" ] || [ -L "$a" ]; then echo "studio=$(lz_stat %u %u "$a")"; fi
+# Where the write helper runs from (writeProbeSh).
+LOOSE_OK=
+if r=$(cd -P -- "$a" 2>/dev/null && pwd -P); then echo "helperhome=$(looseway "$r")"; else echo "helperhome=$(looseway "$home")"; fi
 [ -x "$a/gufi/$2/bin/gufi_query" ] && echo gufi=ok
 for b in /usr/local/bin /usr/bin /opt/gufi/bin; do
   [ -x "$b/gufi_query" ] && [ -x "$b/gufi_dir2index" ] || continue
@@ -98,6 +111,14 @@ exit 0`
 
 // looseBinSh says how another account could change GUFI's tools in $1.
 const looseBinSh = transfers.LooseSh + `for p in "$1" "$1/gufi_query" "$1/gufi_dir2index"; do w=$(loose "$p"); [ -n "$w" ] && { printf '%s\n' "$w"; break; }; done; exit 0`
+
+// helperHomeWhy is why the write helper does not run from a person's
+// ~/.activate-studio on name: another account could change what is run,
+// as looseway says it.
+func helperHomeWhy(name, loose string) string {
+	how, dir, _ := strings.Cut(loose, " ")
+	return "The Studio's write helper runs from your ~/.activate-studio on " + name + ", and " + dir + " " + transfers.LooseSaid(how) + "."
+}
 
 // spacePrepareSh keeps ~/.activate-studio to the person alone.
 const spacePrepareSh = `umask 077; a="$HOME/.activate-studio"; mkdir -p "$a" && chmod 700 "$a" && echo ready`
@@ -144,10 +165,16 @@ type spaceFound struct {
 	Made bool
 	// Closed: no other account can open the folder.
 	Closed bool
-	// ReadOnly is why the Library does not write in the folder: another
-	// account could write in it, owns it, or could move it, and so could
-	// send a write elsewhere. "" where none can.
+	// Loose is who else can change what is in the folder, or put another
+	// in its place, "" where nobody can.
+	Loose string
+	// ReadOnly is why the Library does not write in the folder: Loose, and
+	// the write helper, which nobody can send elsewhere, cannot run there.
 	ReadOnly string
+	// Pin is the folder as it is now (libraries.UserDef.Pin), and steady
+	// whether no other account could have put it there.
+	Pin    string
+	steady bool
 }
 
 // shareWhy is why the folder cannot be shared from here, "" when it can.
@@ -169,7 +196,7 @@ func (f *spaceFound) json() *jsonv.Object {
 		create = append(create, f.Target)
 	}
 	return jsonv.NewObject("ok", f.OK, "steps", stepsJSON(f.Steps), "sourceRoot", f.Target, "create", create,
-		"account", f.Info.Account, "acl", f.Info.ACL, "fs", f.Info.FS, "owned", f.Owned, "readOnly", orNil(f.ReadOnly))
+		"account", f.Info.Account, "acl", f.Info.ACL, "fs", f.Info.FS, "owned", f.Owned, "othersWrite", orNil(f.Loose), "readOnly", orNil(f.ReadOnly))
 }
 
 func orNil(s string) any {
@@ -253,9 +280,10 @@ func grantsLine(grants []string) string { return strings.Join(grants, " ") }
 // checkSpace runs the check over the person's session and reads it. What it
 // refuses is what makes a library unusable: a folder that cannot be opened,
 // made or is not one, the home folder or one that holds it, the Studio's
-// own, and no GUFI. A folder another account could write in or move is
-// indexed and read as the person, and the Library does not write in it
-// (spaceFound.ReadOnly).
+// own, and no GUFI. A folder another account can write in or move is
+// indexed, read and written as the person, with a warning that says who
+// (spaceFound.Loose); where the write helper cannot run, the Library does
+// not write in it (spaceFound.ReadOnly).
 func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spaceFound, error) {
 	bundle, version := m.gufiBundle()
 	v := version
@@ -266,7 +294,11 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 	if q.create {
 		flag = "1"
 	}
-	res, err := m.Pool.Run(ctx, h.Site, h.Key, []string{"bash", "-c", spaceCheckSh, "_", q.folder, v, flag, grantsLine(q.grants)}, 90*time.Second)
+	route := ""
+	if q.folderOnly {
+		route = "1"
+	}
+	res, err := m.Pool.Run(ctx, h.Site, h.Key, []string{"bash", "-c", spaceCheckSh, "_", q.folder, v, flag, grantsLine(q.grants), route}, 90*time.Second)
 	if err != nil {
 		return nil, m.sessionErr(remote.ShortName(h.Site), h.Key, err)
 	}
@@ -331,16 +363,41 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 		add(step{Name: "folder", Detail: f.Real + " was made by another account meanwhile. Choose another folder."})
 		return done(), nil
 	}
-	// readOnly is a finding that leaves the folder read and not written:
-	// what another account could do, and what to change.
-	const redirect = "another account could send what the Studio writes there elsewhere"
-	readOnly := func(name, found, fix string) {
-		if f.ReadOnly == "" {
-			f.ReadOnly = found + ", so it is read only here: " + redirect + ". " + fix
-		}
-		add(step{Name: name, OK: true, Warn: true, Detail: found + ". It is indexed and read as you, and the Library does not write in it, since " + redirect + ". " + fix})
+	if f.Pin, f.steady = kv["pin"], kv["unsafe"] == ""; f.Missing {
+		f.Pin = ""
 	}
-	const again = " and refresh the library, or check again before adding it."
+	// others is a finding about who else can change the folder: what they
+	// can do, and what to change so that they cannot. The write helper
+	// cannot be sent elsewhere by it; without one, the folder is read only.
+	noHelper := m.canWrite(kv["platform"])
+	if noHelper == "" && kv["noexec"] == "1" {
+		noHelper = "The Studio's write helper cannot run from your home folder there, which is mounted noexec."
+	}
+	if u := kv["helperhome"]; noHelper == "" && u != "" {
+		noHelper = helperHomeWhy(h.Name, u)
+	}
+	lib := "The Library writes in it as you, and a write cannot be sent outside it."
+	if !f.writable && !f.Missing {
+		lib = "Your account cannot write in the folder itself, so the Library writes only in what it holds that your account can change."
+	}
+	others := func(name, found, can, fix string) {
+		if f.Loose != "" {
+			f.Loose += " "
+		}
+		f.Loose += found + "."
+		detail := found + ". " + can + " " + lib + " " + fix
+		if noHelper != "" {
+			if f.ReadOnly == "" {
+				f.ReadOnly = found + ", so it is read only here: another account could send what the Studio writes there elsewhere. " + noHelper + " " + fix
+			}
+			detail = found + ". It is indexed and read as you, and the Library does not write in it, since another account could send what the Studio writes there elsewhere. " + noHelper + " " + fix
+		}
+		add(step{Name: name, OK: true, Warn: true, Detail: strings.TrimSpace(detail)})
+	}
+	const (
+		they  = "They can add, change and remove what is in it."
+		again = " and refresh the library, or check again before adding it."
+	)
 	self := ""
 	if !f.Missing {
 		self = kv["self"]
@@ -349,15 +406,24 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 	case f.Missing:
 		add(step{Name: "folder", OK: true, Detail: f.Target + " does not exist yet. It is made, closed to other accounts, when you confirm."})
 	case !f.Owned:
-		readOnly("folder", fmt.Sprintf("%s belongs to another account (uid %s)", f.Real, kv["owner"]), "To write in it here, use a folder you own.")
+		found, can := fmt.Sprintf("%s belongs to another account (uid %s)", f.Real, kv["owner"]), "That account can add, change and remove what is in it."
+		switch {
+		case mode&0o002 != 0:
+			found += fmt.Sprintf(", and every account there can write in it (mode %s)", kv["mode"])
+			can = they
+		case mode&0o020 != 0:
+			found += fmt.Sprintf(", and members of the group %s can write in it (mode %s)", kv["fgroup"], kv["mode"])
+			can = they
+		}
+		others("folder", found, can, "")
 	case self == "other":
-		readOnly("folder", fmt.Sprintf("Every account there can write in %s (mode %s)", f.Real, kv["mode"]), "To write in it here, run chmod go-w on it"+again)
+		others("folder", fmt.Sprintf("Every account there can write in %s (mode %s)", f.Real, kv["mode"]), they, "To keep it to yourself, run chmod go-w on it"+again)
 	case self == "group":
-		readOnly("folder", fmt.Sprintf("Members of the group %s can write in %s (mode %s)", kv["fgroup"], f.Real, kv["mode"]), "To write in it here, run chmod g-w on it"+again)
+		others("folder", fmt.Sprintf("Members of the group %s can write in %s (mode %s)", kv["fgroup"], f.Real, kv["mode"]), they, "To keep it to yourself, run chmod g-w on it"+again)
 	case self == "acl":
-		readOnly("folder", fmt.Sprintf("The ACL on %s lets another account or group write in it", f.Real), "To write in it here, take that entry off with setfacl"+again)
+		others("folder", fmt.Sprintf("The ACL on %s lets another account or group write in it", f.Real), they, "To keep it to yourself, take that entry off with setfacl"+again)
 	case self != "":
-		readOnly("folder", "Who can write in "+f.Real+" could not be read", "Check it there, then"+strings.TrimPrefix(again, " and"))
+		others("folder", "Who can write in "+f.Real+" could not be read", "Another account may be able to.", "Check it there, then"+strings.TrimPrefix(again, " and"))
 	case mode&0o055 != 0:
 		add(step{Name: "folder", OK: true, Warn: true, Detail: fmt.Sprintf("Other accounts can open %s now (mode %s). The index stays in your ~/.activate-studio, which only you can open; to keep the files to yourself too, run chmod 700 on the folder.", f.Real, kv["mode"])})
 	default:
@@ -365,7 +431,8 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 	}
 	if u := kv["unsafe"]; u != "" {
 		why, dir, _ := strings.Cut(u, " ")
-		readOnly("path", fmt.Sprintf("%s %s, so another account could move or replace a folder under it", dir, transfers.LooseSaid(why)), "To write in it here, use a folder under your home folder.")
+		others("path", fmt.Sprintf("%s %s, so another account could move or replace a folder under it", dir, transfers.LooseSaid(why)),
+			"If this folder is replaced, the Library stops writing until you add it again.", "To avoid that, use a folder under your home folder.")
 	} else {
 		add(step{Name: "path", OK: true, Detail: "No other account can move or replace the folders on the way to it."})
 	}
@@ -657,8 +724,8 @@ func spaceRequest(b *jsonv.Object) (spaceAsk, *string, error) {
 // it. "" when it can be.
 func myLibraryWhy(f *spaceFound, idx *string) string {
 	switch {
-	case f.ReadOnly != "":
-		return "My library is where your chats are saved, so it has to be a folder the Library writes in."
+	case f.Loose != "":
+		return "My library is where your chats are saved, so it has to be a folder no other account can change."
 	case f.GufiLoose:
 		return "My library is indexed only with a GUFI no other account can change, which runs as you."
 	case deref(idx) != "":
@@ -717,7 +784,7 @@ func (m *Module) wantsMyLibrary(b *jsonv.Object, f *spaceFound, idx *string) (bo
 	if !m.Users.AuthEnabled {
 		// On a Studio one person uses, the main library is theirs. A folder
 		// closed to every other account is written so that it stays closed.
-		return f.ReadOnly == "" && f.Owned && f.Closed, nil
+		return f.Loose == "" && f.Owned && f.Closed, nil
 	}
 	if given && !v {
 		return false, nil
@@ -831,17 +898,38 @@ func (m *Module) foundAt(ctx context.Context, h probeHost, folder string, grants
 }
 
 // keep records on a library what the check found of its folder: whether
-// its owner can share it, and whether the Library writes in it. Each write
-// checks again (transfers.RemoteFS.Guard), so a folder that could not be
-// read is left as it was recorded.
+// its owner can share it, who else can change it, whether the Library
+// writes in it, and which folder it is. Where the write helper cannot run,
+// each write checks again, so a folder that could not be read is left as it
+// was recorded.
 func (f *spaceFound) keep(d *libraries.UserDef) {
+	if f != nil {
+		// What another account's session finds says nothing of this one's.
+		if _, uid, ok := d.Account(); ok && uid != f.Info.UID {
+			return
+		}
+		// A folder another account may have put in its place is not the
+		// library's: what was found of it says nothing.
+		if d.Pin != "" && f.Pin != "" && d.Pin != f.Pin {
+			if !f.steady || d.Pin[strings.Index(d.Pin, ":"):] != f.Pin[strings.Index(f.Pin, ":"):] {
+				return
+			}
+			d.Pin = f.Pin
+		}
+	}
 	d.Guard = true
 	if f == nil {
 		return
 	}
-	d.ReadOnly = nil
+	d.ReadOnly, d.Loose = nil, nil
 	if f.ReadOnly != "" {
 		d.ReadOnly = ptr(f.ReadOnly)
+	}
+	if f.Loose != "" {
+		d.Loose = ptr(f.Loose)
+	}
+	if d.Pin == "" {
+		d.Pin = f.Pin
 	}
 	if d.Space != nil {
 		return

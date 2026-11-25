@@ -108,6 +108,8 @@ if [ "$SERVER" = go-only ]; then
   # platform (internal/userlibs): Linux x64 and arm64 and macOS arm64, and any
   # further platform holding the same file.
   check "studio-remote for linux-amd64, linux-arm64, darwin-arm64 and any platform added beside them" sh -c 'd="$1/app/bin/remote"; for p in linux-amd64 linux-arm64 darwin-arm64; do [ -x "$d/$p/studio-remote" ] || exit 1; done; for p in "$d"/*; do [ -x "$p/studio-remote" ] || exit 1; done' sh "$R"
+  # The helper every write in a library on a Linux system runs through.
+  check "studio-write for linux-amd64 and linux-arm64" sh -c 'for p in linux-amd64 linux-arm64; do [ -x "$1/app/bin/remote/$p/studio-write" ] || exit 1; done' sh "$R"
 fi
 if [ -d "$O" ]; then
   for f in Resources/ocr/bin/tesseract Resources/ocr/lib/libleptonica.6.dylib \

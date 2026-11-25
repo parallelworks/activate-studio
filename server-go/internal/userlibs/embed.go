@@ -51,10 +51,13 @@ func helperPlatform(uname string) string { return helperPlatforms[strings.TrimSp
 
 const helperName = "studio-remote"
 
-// helperPath is the helper for a platform here: in the folder
+// helperPath is the helper for a platform here.
+func (m *Module) helperPath(platform string) string { return m.helperFile(platform, helperName) }
+
+// helperFile is a helper for a platform here, by name: in the folder
 // STUDIO_REMOTE_HELPERS names, beside the server (the packages' bin/remote),
 // or in a checkout's server-go/bin/remote; "" for none.
-func (m *Module) helperPath(platform string) string {
+func (m *Module) helperFile(platform, name string) string {
 	if platform == "" {
 		return ""
 	}
@@ -73,7 +76,7 @@ func (m *Module) helperPath(platform string) string {
 		dirs = append(dirs, filepath.Join(m.ProjectRoot, "server-go", "bin", "remote"))
 	}
 	for _, d := range dirs {
-		p := filepath.Join(d, platform, helperName)
+		p := filepath.Join(d, platform, name)
 		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
 			return p
 		}

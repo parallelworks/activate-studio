@@ -167,7 +167,7 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 			case t.Def.Shell != nil && !*t.Def.Shell:
 				x.Why = remote.NoShell(t.Site)
 			default:
-				x.FS = userFS(run, t, l, a.Providers.WriteShares)
+				x.FS = userFS(run, t, l, a.Providers)
 				if l.Space || l.Mine {
 					x.Space = l.IndexRoot
 				}
@@ -234,12 +234,16 @@ func libraryLocs(a *app.App, run Runner, v Viewer) []LibraryLoc {
 // Library: in a space, what lands is closed to other accounts unless its
 // folder is open to them, and no write goes through a link. A library the
 // viewer built is written as them the same way, without the space's
-// closing. One whose folder was checked when it was added is checked again
-// at each write, apart from those its owner shared it with.
-func userFS(run Runner, t *libraries.Target, l libraries.Library, shares func(indexRoot string) []string) *RemoteFS {
-	fs := &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site), Private: l.Space, NoLinks: l.Mine, Own: l.Own, Guard: t.Def.Guard}
-	if fs.Guard && shares != nil {
-		fs.Shared = shares(l.IndexRoot)
+// closing. Every write runs through the write helper there; where it cannot
+// run, the folder is checked at each write, apart from those its owner
+// shared it with.
+func userFS(run Runner, t *libraries.Target, l libraries.Library, p app.Providers) *RemoteFS {
+	fs := &RemoteFS{R: run, SiteID: t.Site, KeyText: t.Key, Dir: t.SourceRoot, Name: remote.SiteName(t.Site), Private: l.Space, NoLinks: l.Mine, Own: l.Own}
+	if t.Def.Writes() && p.LibraryWriter != nil {
+		fs.Writer = func(ctx context.Context) WriteTool { return p.LibraryWriter(ctx, l.IndexRoot, t.Site, t.Key) }
+		if p.WriteShares != nil {
+			fs.Shared = p.WriteShares(l.IndexRoot)
+		}
 	}
 	return fs
 }

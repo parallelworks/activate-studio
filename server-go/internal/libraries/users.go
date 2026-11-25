@@ -69,15 +69,37 @@ type UserDef struct {
 	// whose folder their account owns, so they can share it; nil where
 	// another account owns the folder, and for every other library.
 	Own *SpaceInfo `json:"own,omitempty"`
-	// Guard: each write checks again that no other account can write in the
-	// folder or move it (transfers.LooseSh), and is refused otherwise. Set
-	// for every library added since the check was made.
+	// Guard: the folder was checked when the library was added or since.
 	Guard bool `json:"guard,omitempty"`
+	// Loose is who else can change what is in its folder, or the folder
+	// itself, in words for its owner; nil where nobody can. The check sets
+	// it when the library is added and each time it is refreshed. Writes go
+	// through the write helper (transfers.WriteTool), which nobody can send
+	// elsewhere.
+	Loose *string `json:"loose,omitempty"`
 	// ReadOnly is why the Library does not write in a library that its
-	// owner otherwise could: another account can write in its folder, owns
-	// it, or can move it, so it could send a write elsewhere. The check sets
-	// it when the library is added and each time it is refreshed.
-	ReadOnly *string `json:"readOnly,omitempty"`
+	// owner otherwise could: Loose holds, and the write helper cannot run on
+	// its system.
+	ReadOnly *string `json:"writesOff,omitempty"`
+	// Pin is the folder the library was added for, as INODE:UID, which the
+	// write helper compares with the one it opens. The inode is 0 for a
+	// folder someone shared, which they may make again.
+	Pin string `json:"pin,omitempty"`
+	// Before is the reason a library was read only before the write helper
+	// (v1.203.35); Load turns it into Loose.
+	Before *string `json:"readOnly,omitempty"`
+}
+
+// migrate reads a definition an earlier version kept.
+func (d *UserDef) migrate() {
+	if d.Before == nil {
+		return
+	}
+	if found, _, _ := strings.Cut(*d.Before, ", so it is read only here"); d.Loose == nil && found != "" {
+		found += "."
+		d.Loose = &found
+	}
+	d.Before = nil
 }
 
 // WriterInfo is the account and uid on the system a library is written as.
@@ -123,9 +145,12 @@ func (d *UserDef) WritableBy(owner string, authEnabled bool) bool {
 // WrittenAsOwner: the Library writes in it as its owner (a space, a
 // folder shared with them for writing, or a library of theirs, Mine).
 func (d *UserDef) WrittenAsOwner() bool {
-	if d.ReadOnly != nil {
-		return false
-	}
+	return d.ReadOnly == nil && d.Writes()
+}
+
+// Writes: the Library writes in it as its owner, wherever a write there
+// cannot be sent elsewhere.
+func (d *UserDef) Writes() bool {
 	return d.Space != nil || (d.Shared != nil && d.Shared.Access == "write") || d.Mine()
 }
 
@@ -249,6 +274,7 @@ func (u *Users) Load(owner string) []UserDef {
 	for _, r := range raw {
 		var d UserDef
 		if json.Unmarshal(r, &d) == nil && userIDRe.MatchString(d.ID) {
+			d.migrate()
 			out = append(out, d)
 		}
 	}

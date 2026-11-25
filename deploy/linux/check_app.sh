@@ -100,6 +100,9 @@ if [ "$STATIC" = 1 ]; then
     # further platform holding the same file.
     check "studio-remote for linux-amd64, linux-arm64, darwin-arm64 and any platform added beside them" sh -c 'd="$1/app/bin/remote"; for p in linux-amd64 linux-arm64 darwin-arm64; do [ -x "$d/$p/studio-remote" ] || exit 1; done; for p in "$d"/*; do [ -x "$p/studio-remote" ] || exit 1; done' sh "$APP"
     check "the linux-amd64 helper is x86-64 and needs no glibc newer than $MAX_GLIBC" "$PY" -I "$HERE/elf_check.py" --root "$APP" --no-libs --max-glibc "$MAX_GLIBC" "$APP/app/bin/remote/linux-amd64/studio-remote"
+    # The helper every write in a library on another system runs through.
+    check "studio-write for linux-amd64 and linux-arm64" sh -c 'for p in linux-amd64 linux-arm64; do [ -x "$1/app/bin/remote/$p/studio-write" ] || exit 1; done' sh "$APP"
+    check "the linux-amd64 write helper needs no library and runs" sh -c '! readelf -d "$1" 2>/dev/null | grep -q "Shared library" && { [ "$(uname -sm)" != "Linux x86_64" ] || [ "$("$1" version)" = "studio-write linux-amd64" ]; }' sh "$APP/app/bin/remote/linux-amd64/studio-write"
   fi
   check "update-signing.pub is an Ed25519 public key" "$PY" -I - "$APP/update-signing.pub" <<'PY'
 import base64, sys

@@ -85,10 +85,14 @@ func tree(t *testing.T) (root, outside string) {
 }
 
 func bothFS(t *testing.T, root string) map[string]FS {
-	return map[string]FS{
+	out := map[string]FS{
 		"local":  &LocalFS{Dir: root},
 		"remote": &RemoteFS{R: &localRunner{}, SiteID: "ssh://host-a", Dir: root, Name: "host-a"},
 	}
+	if w := testWriter(t); w != nil {
+		out["helper"] = &RemoteFS{R: &localRunner{}, SiteID: "ssh://host-a", Dir: root, Name: "host-a", NoLinks: true, Writer: w}
+	}
+	return out
 }
 
 func TestWalkSkipsHiddenAndLinks(t *testing.T) {

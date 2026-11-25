@@ -35,8 +35,15 @@ func TestMain(m *testing.M) {
 	if os.Getenv("STUDIO_FAKE_RCLONE") == "1" {
 		os.Exit(fakeRclone(os.Args[1:]))
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if testWriterDir != "" {
+		os.RemoveAll(testWriterDir)
+	}
+	os.Exit(code)
 }
+
+// testWriterDir is where the tests' write helper was built.
+var testWriterDir string
 
 // fakeRcloneOn writes the rclone script into a new folder and returns the
 // folder (for PATH), the remotes' folder and the log. remotes is

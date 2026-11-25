@@ -50,6 +50,32 @@ looseway() {
   [ -n "$w" ] && printf '%s %s\n' "$w" "$d"
   return 0
 }
+# looseroute: the first folder or link on the way to $1, as it is written,
+# that another account could change, as looseway says it: the folders above
+# it, and the way to where each link on it leads.
+looseroute() {
+  local p=$1 n=${2:-0} d t w
+  case "$p" in /*) ;; *) printf 'unknown %s\n' "$p"; return 0 ;; esac
+  if [ "$n" -gt 20 ]; then printf 'unknown %s\n' "$p"; return 0; fi
+  d=${p%/}
+  while [ -n "$d" ]; do
+    if [ -L "$d" ]; then
+      w=$(lz_stat %u %u "$d")
+      if [ "$w" != "$lz_uid" ] && [ "$w" != 0 ]; then printf 'owner %s\n' "$d"; return 0; fi
+      t=$(readlink -- "$d" 2>/dev/null) || { printf 'unknown %s\n' "$d"; return 0; }
+      case "$t" in /*) ;; *) t=${d%/*}/$t ;; esac
+      w=$(looseroute "$t" $((n+1)))
+      if [ -n "$w" ]; then printf '%s\n' "$w"; return 0; fi
+    elif [ "$d" != "${p%/}" ]; then
+      w=$(loose "$d")
+      if [ -n "$w" ]; then printf '%s %s\n' "$w" "$d"; return 0; fi
+    fi
+    d=${d%/*}
+  done
+  w=$(loose /)
+  [ -n "$w" ] && printf '%s /\n' "$w"
+  return 0
+}
 `
 
 // LooseSaid is what loose found, in words that follow the folder's name.
@@ -82,10 +108,16 @@ func LooseOK(grants []string) string {
 }
 
 // guardSh refuses a write where another account could change the folder it
-// goes to or one above it (RemoteFS.Guard).
+// goes to, one above it, or one on the way its path is written, and where
+// the folder is not the one PIN names, when it is set.
 const guardSh = LooseSh + `guard() {
   local w how
-  w=$(looseway "$R"); [ -n "$w" ] || return 0
+  if [ -n "${PIN:-}" ]; then
+    w=$(lz_stat %i %i "$R"):$(lz_stat %u %u "$R")
+    case "$PIN" in 0:*) w=0:${w#*:} ;; esac
+    [ "$w" = "$PIN" ] || fail 16 "$root is not the folder this library was added for: it was moved or replaced, so nothing was changed."
+  fi
+  w=$(looseway "$R"); [ -n "$w" ] || w=$(looseroute "$root"); [ -n "$w" ] || return 0
   how=${w%% *}
   case "$how" in
   owner) how="belongs to another account" ;;

@@ -85,7 +85,7 @@ plain() {
 # mine: in a private location, the folder this is in is this account's and
 # closed to every other, so nothing in it is another's doing.
 mine() { [ -n "${PRIV:-}" ] || return 0; [ -O . ] || return 1; case "$(ls -ld . | cut -c5-10)" in ------|--S---) return 0;; esac; return 1; }
-if [ "${GUARD:-}" = 1 ]; then case "$cmd" in write|mkdir|land|remove|rmstage|rmtree|pstart|part|text|swap) guard ;; esac; fi
+if [ "${GUARD:-}" = 1 ]; then case "$cmd" in list|list2|walk|stat|free|sha|read) ;; *) guard ;; esac; fi
 G=0; find . -maxdepth 0 -printf '' >/dev/null 2>&1 && G=1
 F='%y\t%s\t%T@\t%m\t%p\0'
 SF='%HT%t%z%t%m%t%Lp%t%N'
@@ -143,6 +143,7 @@ stat)
     one "$p"
   done ;;
 free) df -Pk -- "${1:-.}" 2>/dev/null | awk 'NR==2 {print $4}' ;;
+guard) exit 0 ;;
 sha)
   if command -v sha256sum >/dev/null 2>&1; then H="sha256sum"; elif command -v shasum >/dev/null 2>&1; then H="shasum -a 256"; else H="openssl dgst -sha256 -r"; fi
   while IFS= read -r -d '' p; do
@@ -316,10 +317,12 @@ type RemoteFS struct {
 	// with their umask, except that a folder closed to other accounts stays
 	// closed to them.
 	Own bool
-	// Guard: each write checks first that no other account can write in the
-	// folder or move it (LooseSh), other than those in Shared, as ACL
-	// entries name them, and is refused otherwise.
-	Guard  bool
+	// Writer finds the write helper on the location's host, sending it when
+	// it is not there (WriteTool): set for a person's library, whose writes
+	// run through it. Where it cannot run, each write checks first that no
+	// other account can write in the folder or move it (LooseSh), other than
+	// those in Shared, as ACL entries name them, and is refused otherwise.
+	Writer func(ctx context.Context) WriteTool
 	Shared []string
 	// Kept: commands other than reading and writing a file go over the
 	// session kept open to the host (Kept), as the Library's searches do,
@@ -361,10 +364,11 @@ func toolArgvOf(script, mark, cmd, root string, args ...string) []string {
 	return append([]string{"bash", "-c", script, "studio", mark, cmd, root}, args...)
 }
 
-// script is the helper the location's commands run.
-func (r *RemoteFS) script() string {
+// script is the shell helper the location's commands run, which refuses a
+// write another account could redirect when guarded.
+func (r *RemoteFS) script(guarded bool) string {
 	guard := ""
-	if r.Guard {
+	if guarded {
 		guard = "GUARD=1\n" + LooseOK(r.Shared) + guardSh
 	}
 	switch {
@@ -527,7 +531,20 @@ func (r *RemoteFS) runWith(ctx context.Context, mark string, input io.Reader, cm
 	if t <= 0 {
 		t = 10 * time.Minute
 	}
-	res, _, err := runToolWith(ctx, mark, r.Kept, r.script(), r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
+	script, w := r.scriptFor(ctx, cmd)
+	res, _, err := runToolWith(ctx, mark, r.Kept, script, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
+	if err == nil && again(res.Code) && w != nil {
+		// The helper is sent again, or the folder read again, and the command
+		// with it.
+		lost(w)
+		if rewind(input) {
+			script, w = r.scriptFor(ctx, cmd)
+			res, _, err = runToolWith(ctx, mark, r.Kept, script, r.R, r.SiteID, r.KeyText, t, input, cmd, r.Dir, args...)
+		}
+		if err == nil && res.Code == ToolGone && w != nil {
+			return res, errToolGone(r.Name)
+		}
+	}
 	if err != nil {
 		return res, r.named(502, messageOf(err))
 	}
@@ -545,16 +562,23 @@ func (r *RemoteFS) runWith(ctx context.Context, mark string, input io.Reader, cm
 	if msg == "" {
 		msg = fmt.Sprintf("the command ended with status %d", res.Code)
 	}
-	status := 502
-	switch res.Code {
-	case 4:
-		status = 404
-	case 5, 6, 7, 11:
-		status = 400
-	case 10, 13:
-		status = 409
+	if res.Code == codeGuard && w == nil {
+		msg = r.refused(ctx, msg)
 	}
-	return res, r.named(status, msg)
+	return res, r.named(statusOfCode(res.Code), msg)
+}
+
+// rewind has a command's input start over; false when it cannot.
+func rewind(input io.Reader) bool {
+	if input == nil {
+		return true
+	}
+	s, ok := input.(io.Seeker)
+	if !ok {
+		return false
+	}
+	_, err := s.Seek(0, io.SeekStart)
+	return err == nil
 }
 
 // named puts the location's name before a message once. The remote
@@ -840,8 +864,9 @@ func (r *RemoteFS) Read(ctx context.Context, rel string) (io.ReadCloser, error) 
 	if r.SFTPOnly(ctx) {
 		return r.sftpRead(ctx, rel)
 	}
+	script, w := r.scriptFor(ctx, "read")
 	mark := marker()
-	cmd, err := r.command(toolArgv(mark, "read", r.Dir, rel))
+	cmd, err := r.command(toolArgvOf(script, mark, "read", r.Dir, rel))
 	if err != nil {
 		return nil, err
 	}
@@ -867,7 +892,10 @@ func (r *RemoteFS) Read(ctx context.Context, rel string) (io.ReadCloser, error) 
 		}
 		if rerr != nil || len(head) > maxPreamble {
 			cmd.Kill()
-			cmd.Wait()
+			if werr := cmd.Wait(); w != nil && exitOf(werr) == ToolGone {
+				lost(w)
+				return nil, errToolGone(r.Name)
+			}
 			msg := lastLine(remote.QuietStderr(stderr.String()))
 			if msg == "" {
 				msg = "the host did not start sending the file"
@@ -907,7 +935,8 @@ func (r *RemoteFS) Write(ctx context.Context, rel string, src io.Reader, mtime i
 		}
 		src = io.MultiReader(bytes.NewReader(head), src)
 	}
-	cmd, err := r.command(toolArgvOf(r.script(), marker(), "write", r.Dir, rel, touchTime(mtime), x))
+	script, w := r.scriptFor(ctx, "write")
+	cmd, err := r.command(toolArgvOf(script, marker(), "write", r.Dir, rel, touchTime(mtime), x))
 	if err != nil {
 		return 0, err
 	}
@@ -924,17 +953,45 @@ func (r *RemoteFS) Write(ctx context.Context, rel string, src io.Reader, mtime i
 	in.Close()
 	if cerr != nil {
 		cmd.Kill()
-		cmd.Wait()
+		err := cmd.Wait()
+		// A helper that refused stopped reading: what it said is why.
+		msg := lastLine(remote.QuietStderr(stderr.String()))
+		code := exitOf(err)
+		if again(code) {
+			lost(w)
+		}
+		if w != nil && code > 0 && msg != "" {
+			return n, r.named(statusOfCode(code), msg)
+		}
 		return n, cerr
 	}
 	if err := cmd.Wait(); err != nil {
+		code := exitOf(err)
+		if again(code) {
+			lost(w)
+		}
+		if w != nil && code == ToolGone {
+			return n, errToolGone(r.Name)
+		}
 		msg := lastLine(remote.QuietStderr(stderr.String()))
 		if msg == "" {
 			msg = err.Error()
 		}
-		return n, r.named(502, msg)
+		if code == codeGuard && w == nil {
+			msg = r.refused(ctx, msg)
+		}
+		return n, r.named(statusOfCode(code), msg)
 	}
 	return n, nil
+}
+
+// exitOf is how a command ended: its exit status, 0 for none.
+func exitOf(err error) int {
+	var e interface{ ExitCode() int }
+	if errors.As(err, &e) {
+		return e.ExitCode()
+	}
+	return 0
 }
 
 func (r *RemoteFS) Mkdir(ctx context.Context, rel string) error {

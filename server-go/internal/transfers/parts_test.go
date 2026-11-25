@@ -25,8 +25,11 @@ func partStatus(err error) int {
 }
 
 func partsFS(root string, private bool) *RemoteFS {
-	return &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: private}
+	return &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: private, Writer: partsWriter}
 }
+
+// partsWriter is the write helper, while the tests run with it.
+var partsWriter func(context.Context) WriteTool
 
 const mb = 1 << 20
 
@@ -141,6 +144,9 @@ func TestPartsThatDoNotFitOrHaveNoPlaceAreRefused(t *testing.T) {
 	// A disk that fills while a part is written says so.
 	if err := fs.StartParts(ctx, ".studio-upload-2", "z", mb, mb); err != nil {
 		t.Fatal(err)
+	}
+	if fs.Writer != nil {
+		return
 	}
 	bin := t.TempDir()
 	write(t, filepath.Join(bin, "dd"), "#!/bin/sh\necho \"dd: writing to './data': $SAYS\" >&2\nexit 1\n")

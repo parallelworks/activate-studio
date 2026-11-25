@@ -637,7 +637,8 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
     if (l.built) {
       const host = where
       const facts: ReactNode[] = [contents, l.builtAt && `indexed ${when(l.builtAt)}`].filter(Boolean)
-      const notes: ReactNode[] = [l.error, l.readOnlyWhy, depthNote(l), ...(l.gaps ?? [])].filter(Boolean)
+      const others = l.othersWrite && `${l.othersWrite} The Library writes in it as you, and a write cannot be sent outside it.`
+      const notes: ReactNode[] = [l.error, l.readOnlyWhy, others, depthNote(l), ...(l.gaps ?? [])].filter(Boolean)
       const choice = asked?.id === l.id && (
         <DepthRebuild l={l} host={host} from={asked.from} busy={busy === l.id} onClose={() => setAsked(null)}
           onRebuild={() => void act(l.id, async () => { await api.refreshUserLibrary(l.id); await loadUser(); setAsked(null) }, `Rebuilding the index on ${host}.`)} />

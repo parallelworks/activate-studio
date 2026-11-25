@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/writehelper"
 )
 
 // Providers are the values the core routes (/api/config, /api/settings,
@@ -85,6 +87,10 @@ type Providers struct {
 	// WriteShares is who the library at an index root is shared with for
 	// writing, as ACL entries name them (user:bob, group:team).
 	WriteShares func(indexRoot string) []string
+	// LibraryWriter is the write helper for the library at an index root,
+	// on the system site over a session of key's, sent there when it is not
+	// yet (userlibs.writeTool).
+	LibraryWriter func(ctx context.Context, indexRoot, site, key string) writehelper.Tool
 	// SpaceChanged queues the index build of a person's space (a library
 	// written as them, named by its index root) after a transfer changed
 	// its files, as a write from the Library does. viewer is the signed-in

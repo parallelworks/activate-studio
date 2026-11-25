@@ -680,8 +680,8 @@ check runs as the person and refuses only what makes the library
 unusable: a folder that cannot be opened or made, a file, the home folder
 or one that holds it, one in `~/.activate-studio`, a `~/.activate-studio`
 of another account, and no GUFI. A folder that does not exist yet is made
-with mode 700. It answers `owned`, `readOnly`, `canShare`, `shareWhy` and
-`myLibraryWhy` beside its steps. GUFI is the one named, the person's own
+with mode 700. It answers `owned`, `othersWrite`, `readOnly`, `canShare`,
+`shareWhy` and `myLibraryWhy` beside its steps. GUFI is the one named, the person's own
 copy (sent from the Studio's where that runs there), one only root can
 change, or one found where the connection test looks; one another account
 could change is used with a warning, and never for My library. A `share`
@@ -695,24 +695,65 @@ form asked.
 A folder that belongs to another account, that its group, every account or
 an ACL lets others write in, or that is under a folder another account
 could move (owned by another account other than root, or writable by others
-without the sticky bit), is indexed and read as the person, and the Studio
-writes nothing in it: no upload, new folder, rename, move, delete, share or
-transfer. The Studio's writers find a path and then use it by name, so
-another account able to rename a folder on the way could send the write to
-another of the person's folders between the two. Nothing rechecks at the
-write itself, so such a folder is read only rather than checked more often.
-`readOnlyWhy` on the library says which folder, and the `chmod` that closes
-it; a rebuild reads it again (`spaceFound.keep`).
+without the sticky bit), is indexed, read and written as the person, with a
+warning that says who else can change it (`othersWrite`, `spaceFound.Loose`,
+kept on the library as `loose`). Project folders on clusters are usually
+like this.
 
-Each write to a library added this way checks the folder and the ones above
-it again, in the helper that makes the change (`RemoteFS.Guard`,
-`transfers.LooseSh`), and is refused where the answer changed, so a `chmod
-g+w` stops writes at once and `chmod g-w` lets them go on. A group that has
-the account's own name is the account's own. Accounts and groups the owner
-shared the folder with for writing from the Studio are let through
-(`RemoteFS.Shared`), as a share for writing always was: no write follows a
-link, whoever made it. Libraries added before this have no `guard` in their
-record and are written as they were.
+Another account that can write in such a folder can rename what is in it, or
+put a link in its place, at any moment. A program that looks at a path and
+then uses it by name could be sent to another of the person's folders between
+the two. So every write in a library on another system runs through the write
+helper (`cmd/studio-write`, `internal/writehelper`): upload, parts of a large
+file, new folder, rename, move, delete, text files made and edited,
+transfers, sharing, and what the assistant and chats save. The Studio sends it, about 2 MB for linux-amd64 or
+linux-arm64, to `~/.activate-studio/write/<version>` the first time it writes
+there (`userlibs.writeTool`), checks its digest, and runs it as the person.
+
+- It opens the library's folder once and works from that descriptor. The
+  folder must be the one the library was added for, by inode and owner
+  (`pin`); another in its place, or a link, is refused. A folder the person
+  made again is taken when no other account could have put it there. For a
+  folder someone shared, which they may make again, only the owner is
+  compared.
+- It reaches everything else from there one folder at a time, with `openat2`
+  (`RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS`), or with `openat` and
+  `O_NOFOLLOW` on a kernel without it (RHEL 8). It creates, renames, removes
+  and changes modes and ACLs on descriptors. It follows no link and never
+  leaves the folder; a component swapped meanwhile is refused and nothing is
+  changed.
+- A transfer is staged in a folder of its own in the library, made by the
+  helper, closed to every other account and compared with its owner when it
+  lands. It is on the library's own file system, not in `~/.activate-studio`,
+  so a large transfer needs no room in the home folder, lands by one rename,
+  and takes the folder's group and default ACL. studio-copy writes through
+  the helper. rsync is started by it (`studio-write in`) and given the
+  staging folder as an open descriptor (`/proc/self/fd/9/`), so a name
+  swapped while it runs leads nowhere. Between file systems the helper copies
+  beside the name, then renames. CONDUIT writes by path, as a service of its
+  own, so it does not carry a transfer into a folder others can change.
+  rclone never writes on another system.
+- Sharing is applied by the helper on descriptors (`studio-write share`),
+  after a shell has turned the account or group into its number. Where
+  others can write in the folder, a file with more than one name is left as
+  it is, since another account may have put that name there.
+
+Read only is what is left where the helper cannot run: a system other than
+Linux on x86_64 or aarch64, a home folder mounted noexec, or a
+`~/.activate-studio` another account could change. There the shell helper
+makes the writes and checks the folder, the ones above it, the links on the
+way to it and its `pin` before each one (`transfers.LooseSh`, `guardSh`), and
+a folder another account could change is read only, with the reason in
+`readOnlyWhy`. Accounts and groups the owner shared the folder with for
+writing from the Studio are let through (`RemoteFS.Shared`). A group that has
+the account's own name is the account's own.
+
+This holds for every library written as a person, whenever it was added: one
+kept read only by v1.203.35 is written again, and one added before that has
+its folder checked at its first write (`Module.settle`). A rebuild reads the
+folder again (`spaceFound.keep`). Saved locations in Transfers that are no
+library are written as before, and so is the main library, which is on the
+Studio's own computer.
 
 ### The check before a build
 

@@ -105,7 +105,14 @@ func TestOwnLibraryIsWrittenAsItsOwner(t *testing.T) {
 	}
 
 	// A session that reaches another account than the one kept is refused.
-	h.m.Users.Update("single", id, func(d *libraries.UserDef) { d.Writer.UID++ })
+	// (What the check found in the background since is put aside.)
+	for range 200 {
+		if d := find(h.m.load("single"), id); d.Guard {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	h.m.Users.Update("single", id, func(d *libraries.UserDef) { d.Own, d.Writer.UID = nil, d.Writer.UID+1 })
 	h.m.mu.Lock()
 	h.m.accounts = nil
 	h.m.mu.Unlock()

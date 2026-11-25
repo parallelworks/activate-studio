@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
+	"github.com/parallelworks/activate-studio/server-go/internal/writehelper"
 )
 
 // rsyncMover runs rsync: on this computer between two folders here or to
@@ -517,6 +518,9 @@ type rsyncCmd struct {
 	listFile string // the file list here; "" reads it from standard input
 	rsh      string // the remote shell script (push, pull)
 	farRsync string // the far end's rsync program
+	// in is what runs the destination's rsync with the staging folder held
+	// open (RemoteFS.programIn); to is then writehelper.InDir.
+	in       []string
 	dstHost  *remote.SSHHost
 	from, to string
 	largest  int64
@@ -574,6 +578,9 @@ func (c rsyncCmd) argv() []string {
 	if c.kind == "onhost" || c.kind == "hostToHost" {
 		a = append(a, "env", "-u", "RSYNC_OLD_ARGS", "-u", "RSYNC_PROTECT_ARGS")
 	}
+	if c.kind == "onhost" {
+		a = append(a, c.in...)
+	}
 	a = append(a, c.program)
 	if c.o.protect {
 		a = append(a, "-s")
@@ -603,7 +610,15 @@ func (c rsyncCmd) argv() []string {
 	if c.rsh != "" {
 		a = append(a, "--rsh="+c.rsh)
 	}
-	if c.farRsync != "" && c.farRsync != "rsync" {
+	switch {
+	case len(c.in) > 0 && c.kind != "onhost":
+		// rsync leaves the program's words to the far end's shell.
+		var words []string
+		for _, w := range append(slices.Clone(c.in), c.farRsync) {
+			words = append(words, shQuote(w))
+		}
+		a = append(a, "--rsync-path="+strings.Join(words, " "))
+	case c.farRsync != "" && c.farRsync != "rsync":
 		a = append(a, "--rsync-path="+c.farRsync)
 	}
 	switch c.kind {
@@ -653,6 +668,11 @@ func (m *rsyncMover) runGroup(ctx context.Context, j *MoveJob, r rsyncRoute, g r
 		largest:  largest,
 		preserve: j.Preserve,
 	}
+	if dst, ok := j.Dst.(*RemoteFS); ok {
+		if in, ok := dst.programIn(ctx, j.Stage); ok {
+			c.in, c.to = in, writehelper.InDir
+		}
+	}
 	base := struct{ files, bytes int64 }{pj.files.Load(), pj.bytes.Load()}
 	switch r.kind {
 	case "onhost", "hostToHost":
@@ -662,6 +682,10 @@ func (m *rsyncMover) runGroup(ctx context.Context, j *MoveJob, r rsyncRoute, g r
 		res, err := m.s.d.Runner.RunOnce(ctx, r.srcSite, r.key, c.argv(), 24*time.Hour, &list)
 		if err != nil {
 			return err
+		}
+		if res.Code == writehelper.ExitOpen && len(c.in) > 0 && base.files == 0 {
+			// rsync did not start: another mover may carry the transfer.
+			return nothingMoved{rsyncFailed(res.Stderr, res.Code)}
 		}
 		if res.Code != 0 {
 			return rsyncFailed(res.Stderr, res.Code)

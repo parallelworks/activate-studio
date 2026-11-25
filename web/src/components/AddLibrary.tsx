@@ -23,8 +23,7 @@ import { IndexFolderForm } from './IndexFolderForm'
  *   bucket, the account the Studio runs as. The form says which.
  * - What: a folder to index, or an index that is there already,
  *   connected as it is and read only. A folder on a system is written as
- *   the viewer where their account may write and no other account could
- *   send a write elsewhere; a folder here is read only.
+ *   the viewer where their account may write; a folder here is read only.
  * - Who sees it: a folder on a system is the viewer's alone, or shared as
  *   it is added where they own it (IndexFolderForm). What is here is seen
  *   by whoever uses the Studio.
@@ -105,7 +104,7 @@ function describe(where: Where, how: How | undefined, overSSH: boolean, builder:
   }
   if (how === 'connect') return 'A GUFI index already on that remote computer, read as you. Read only: nothing is written there.'
   if (builder === 'workflow') return 'A folder on that cluster, indexed there by the platform\'s index workflow with your own key, on the login node or as a Slurm job. Read as you, read only, and seen only by you.'
-  return `A folder there, new or one you already have, indexed with GUFI ${overSSH ? 'over ssh' : 'over pw ssh'} as you. The build reads the text of its files where it can and leaves the folder as it is. Read and written as you where your account may write in it; the check says when it will be read only.`
+  return `A folder there, new or one you already have, indexed with GUFI ${overSSH ? 'over ssh' : 'over pw ssh'} as you. The build reads the text of its files where it can and leaves the folder as it is. Read and written as you where your account may write in it; the check says who else can change it.`
 }
 
 export function AddLibrary({ options, browse = false, onAdded, onStarted, onImported }: {
