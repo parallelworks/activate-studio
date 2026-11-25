@@ -282,7 +282,7 @@ describe('Settings, Accounts on a Studio several people use', () => {
     stub(srv({ access: accessOf({ single: false, authEnabled: true, models: none, platform: none, deployment: none, cli: null, signInOffered: true }) }))
     sharedViewer({ mode: 'none' })
     render(<AccountsSection />)
-    expect(await screen.findByText(/^Not signed in\. The Studio works without ACTIVATE/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Not signed in\. Browsing and search work without ACTIVATE/)).toBeInTheDocument()
     expect(parts()).toEqual({
       'pw code and the Code page': 'Sign in to use',
       'Libraries on ACTIVATE systems (pw ssh)': 'Sign in to use',

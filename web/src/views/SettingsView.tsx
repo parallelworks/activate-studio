@@ -887,7 +887,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
             </>
           )}
 
-          {section === 'accounts' && <AccountsSection requirePersonalKey={form.requirePersonalKey} aiEnabled={aiEnabled} />}
+          {section === 'accounts' && <AccountsSection aiEnabled={aiEnabled} />}
           {section === 'access' && <ModelAccessSection requirePersonalKey={form.requirePersonalKey} />}
 
           {section === 'tools' && (

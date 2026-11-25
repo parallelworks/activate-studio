@@ -15,7 +15,7 @@ import { ReopenApp } from './ReopenApp'
 import { changeCount, UpdateDetails } from './UpdateDetails'
 import { UpdateProgress } from './UpdatesSection'
 import { share, syncIndex, type AiHealth, type KbStats } from '../statusShare'
-import { aiOn, useAppConfig } from '../config'
+import { aiOn, mainWritable, useAppConfig } from '../config'
 import { reloadOntoNewest, useShellUpdate } from '../shellWorker'
 import { plural } from '../plural'
 import { steadyCount } from '../steady'
@@ -59,13 +59,15 @@ function CloseButton() {
   return <PopoverClose render={<Button variant="secondary" size="sm" />}>Close</PopoverClose>
 }
 
-function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
+function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing, canSync }: {
   trigger: ReactElement
   idx: IndexStatus | null
   gufi: boolean | null
   stats: { files?: number; dirs?: number; totalBytes?: number; libraries?: LibraryStats[]; lib?: string } | null
   onSync: () => void
   syncing: boolean
+  /** The viewer may sync the main library, and stop its jobs. */
+  canSync: boolean
 }) {
   const gb = stats?.totalBytes ? `${(stats.totalBytes / 1e9).toFixed(2)} GB` : ''
   const job = idx?.job ?? null
@@ -90,7 +92,7 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
   const busy = syncing || !!idx?.running
   return (
     <FooterPanel trigger={trigger} title="Index health">
-      {job && <IndexJobView job={job} onStop={() => void stop()} stopping={stopping} />}
+      {job && <IndexJobView job={job} onStop={canSync ? () => void stop() : undefined} stopping={stopping} />}
       <DescriptionList variant="divided" className="identity-list">
         {rows.map(([k, v, dot, sub, label]) => (
           <DescriptionListItem key={k} label={label ?? k} className={sub ? 'identity-sub' : undefined}>
@@ -108,7 +110,7 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
         <span className="muted identity-src">GET /api/index/status</span>
         <span className="identity-actions">
           {!job && <IndexLogButton variant="secondary" />}
-          <Button variant="secondary" size="sm" onClick={onSync} loading={syncing} disabled={busy}>{busy ? (job ? 'indexing…' : 'syncing…') : 'Sync now'}</Button>
+          {canSync && <Button variant="secondary" size="sm" onClick={onSync} loading={syncing} disabled={busy}>{busy ? (job ? 'indexing…' : 'syncing…') : 'Sync now'}</Button>}
           <CloseButton />
         </span>
       </div>
@@ -148,7 +150,7 @@ export const AI_LABEL: Record<AiHealth['status'], string> = {
   unreachable: 'models unreachable',
   offline: 'models offline',
   unconfigured: 'models not configured',
-  'key-required': 'add your model key',
+  'key-required': 'sign in with ACTIVATE',
   off: 'AI features off',
 }
 
@@ -508,6 +510,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
   }
 
   const busy = syncing || !!idx?.running
+  // Where people sign in the main library is synced on its schedule and by
+  // those who may change it; the server refuses the others.
+  const canSync = cfg.loaded && mainWritable(cfg)
   const summary = indexSummary(idx, stats?.files, countedIn(cfg.libraries ?? [], stats?.lib))
   // The row itself is short enough for the narrowest sidebar; which
   // libraries the count covers is in its tooltip.
@@ -636,6 +641,7 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
           stats={stats}
           onSync={() => { void sync() }}
           syncing={syncing}
+          canSync={canSync}
           trigger={
             <button className="identity-btn" title={summary.detail ?? summary.text}>
               <StatusDot variant={row.tone} pulse={row.pulse} size={7} />
@@ -648,9 +654,9 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
         {idx?.job
           ? <span className="identity-text">Running for {fmtDuration(elapsed(idx.job))}</span>
           : <span className="identity-text">{syncedLine(idx?.lastSweepAt ?? null)}</span>}
-        <Button variant="ghost" size="xs" className="footer-sync" onClick={sync} loading={syncing} disabled={busy}>
+        {canSync && <Button variant="ghost" size="xs" className="footer-sync" onClick={sync} loading={syncing} disabled={busy}>
           {idx?.job ? 'Indexing…' : busy ? 'Syncing…' : 'Sync now'}
-        </Button>
+        </Button>}
       </div>
     </div>
   )

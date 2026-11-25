@@ -806,12 +806,12 @@ export default function App() {
           <HelpView />
           {view === 'help' && <PanelToggle className="panel-toggle-float" />}
         </div>
+        <FirstVisitCard />
       </main>
       <StatusPanel view={view} cfg={cfg} />
       <FullViewHost />
       </div>
       {setupOpen && <SetupWizard onClose={changed => { setSetupOpen(false); if (changed) location.reload() }} />}
-      <FirstVisitCard />
     </div>
   )
 }

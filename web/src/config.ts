@@ -30,6 +30,9 @@ export interface AppConfig {
    *  person's own (My library); with it, the main library is the one they
    *  share, and My library is each person's folder on a system. */
   signIn?: boolean
+  /** Models answer a person only with an account of their own
+   *  (REQUIRE_PERSONAL_KEY), so signing in with ACTIVATE comes first. */
+  signInFirst?: boolean
   /** The Studio's settings are its administrators' (a Studio with sign-in,
    *  and this person is not one): preferences stay in this browser. */
   settingsLocked?: boolean
@@ -155,6 +158,7 @@ export function useAppConfig(): AppConfig {
           sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
           platform: !!d.platform,
           signIn: !!d.signIn,
+          signInFirst: !!d.signInFirst,
           settingsLocked: !!d.settingsLocked,
           localCode: !!d.localCode,
           accounts: !!d.accounts,
@@ -181,6 +185,14 @@ export function useAppConfig(): AppConfig {
     }
   }, [])
   return cfg
+}
+
+/** Whether the viewer may change the main library, as the server's index
+ *  actions on it (Sync now, Stop) ask: where people sign in it may be read
+ *  only for them. */
+export function mainWritable(cfg: Pick<AppConfig, 'libraries'>): boolean {
+  const main = cfg.libraries?.find(l => l.primary)
+  return !main || (main.writable !== false && !main.readOnlyWhy)
 }
 
 /** The left navigation's widths: the Width choice's three, and the range a
