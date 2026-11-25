@@ -642,7 +642,13 @@ func (m *Module) finishParts(w http.ResponseWriter, r *http.Request) error {
 	if u.space {
 		err = SpaceFiles.LandParts(r, u.lib, u.dir, u.rel, u.size)
 	} else {
-		err = u.land()
+		rewrote := func() {}
+		if u.lib.Primary {
+			rewrote = m.Files.rewriting(u.rel, u.dest)
+		}
+		if err = u.land(); err == nil {
+			rewrote()
+		}
 	}
 	u.mu.Lock()
 	if err != nil {

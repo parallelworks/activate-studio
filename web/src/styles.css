@@ -1557,6 +1557,9 @@ a.identity-btn { text-decoration: none; }
 
 /* The tree's New folder and Rename dialog */
 .name-dialog-error { margin-top: 10px; }
+.link-notice-text { margin: 0; }
+.link-to-copy { display: flex; align-items: center; gap: 8px; }
+.link-to-copy > :first-child { flex: 1; min-width: 0; }
 
 
 /* Your model access card */

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Checkbox, IconButton } from '@parallelworks/ui'
 import { api, KbEntry } from '../api'
 
@@ -88,6 +88,8 @@ interface NodeProps {
   /** Bumping re-fetches every open directory without collapsing the tree. */
   refreshTick: number
   tags?: string[]
+  /** A folder to open to, with the folders above it, and bring into view. */
+  reveal?: { path: string } | null
 }
 
 /** Corpus paths carried by an internal drag. A drag from the desktop has
@@ -158,7 +160,7 @@ export function visibleRowPaths(): string[] {
 }
 
 function DirNode(props: NodeProps) {
-  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, tags, dragKind, dropKind, dragging, onDragging } = props
+  const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, tags, dragKind, dropKind, dragging, onDragging, reveal } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
   // Why the folder could not be listed, said at the top of the tree: an
@@ -181,6 +183,19 @@ function DirNode(props: NodeProps) {
     if (selected && path && (selected === path || selected.startsWith(path + '/'))) setOpen(true)
   }, [selected, path])
 
+  // The same for a folder a link leads to, which opens itself as well.
+  const row = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!reveal || !path || !(reveal.path === path || reveal.path.startsWith(path + '/'))) return
+    setOpen(true)
+    if (reveal.path === path) row.current?.scrollIntoView({ block: 'center' })
+  }, [reveal, path])
+
+  // Where the list does not hold it (a folder newer than the index, or one
+  // the Library leaves out), that is said where it would be.
+  const leads = reveal && reveal.path !== path && (path === '' ? reveal.path !== '' : reveal.path.startsWith(path + '/'))
+  const missing = leads && open && entries && !failed
+    && !entries.some(e => e.type === 'dir' && (reveal.path === e.path || reveal.path.startsWith(e.path + '/')))
   // While a row is dragged, each folder says whether it takes the drop:
   // a copy into another library, a move within this one, or neither.
   const takes = dragging && depth > 0 ? dropKind(path, dragging) : null
@@ -189,9 +204,10 @@ function DirNode(props: NodeProps) {
     <div>
       {depth > 0 && (
         <div
+          ref={row}
           data-path={path}
           data-drop={takes ?? undefined}
-          className={`tree-row dir ${multiSelected.has(path) ? 'multi' : ''} ${dropOver ? 'drop-target' : ''} ${takes === 'none' ? 'drop-refused' : takes ? 'drop-ok' : ''}`}
+          className={`tree-row dir ${reveal?.path === path ? 'selected' : ''} ${multiSelected.has(path) ? 'multi' : ''} ${dropOver ? 'drop-target' : ''} ${takes === 'none' ? 'drop-refused' : takes ? 'drop-ok' : ''}`}
           style={{ paddingLeft: 8 + depth * 14 }}
           draggable={kind !== null}
           onDragStart={e => { e.stopPropagation(); if (kind) startRowDrag(e, path, multiSelected, kind, onDragging); else e.preventDefault() }}
@@ -237,6 +253,11 @@ function DirNode(props: NodeProps) {
           ? <p className="tree-empty" role="alert">This library could not be listed: {failed}</p>
           : <p className="tree-empty">{props.emptyHint ?? 'This library is empty.'}</p>
       )}
+      {missing && (
+        <p className="tree-empty tree-missing" role="status" ref={el => el?.scrollIntoView({ block: 'nearest' })} style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
+          The folder the link leads to is not listed here. It may not be in the library's index yet.
+        </p>
+      )}
       {open && entries?.map(e =>
         e.type === 'dir' ? (
           <DirNode key={e.path} {...props} path={e.path} name={e.name} depth={depth + 1} tags={e.tags} />
@@ -279,7 +300,7 @@ function DirNode(props: NodeProps) {
   )
 }
 
-export function Explorer({ emptyHint, onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, dragKind, dropKind }: {
+export function Explorer({ emptyHint, onOpen, onDirFocus, selected, rootLabel, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, dragKind, dropKind, reveal }: {
   onOpen: (path: string) => void
   onDirFocus: (path: string) => void
   selected: string | null
@@ -301,6 +322,7 @@ export function Explorer({ emptyHint, onOpen, onDirFocus, selected, rootLabel, m
   refreshTick: number
   dragKind: (path: string) => DragKind
   dropKind: (dir: string, paths: string[]) => DropKind
+  reveal?: { path: string } | null
 }) {
   const [dragging, setDragging] = useState<string[] | null>(null)
   return (
@@ -321,7 +343,7 @@ export function Explorer({ emptyHint, onOpen, onDirFocus, selected, rootLabel, m
         onDropInto={onDropInto} onSelectRange={onSelectRange} onMoveInto={onMoveInto} onCopyInto={onCopyInto}
         dragKind={dragKind} dropKind={dropKind} dragging={dragging} onDragging={setDragging}
         onLabel={onLabel} onContext={onContext} selectMode={selectMode}
-        showLabels={showLabels} showHidden={showHidden} tagsTick={tagsTick} refreshTick={refreshTick}
+        showLabels={showLabels} showHidden={showHidden} tagsTick={tagsTick} refreshTick={refreshTick} reveal={reveal}
       />
     </div>
   )

@@ -3,13 +3,15 @@ import { CountBadge, IconButton, SearchInput, StatusDot } from '@parallelworks/u
 import { buildOpenHash, parseOpenHash } from './nav'
 import { currentLibrary, linkTarget, setLibrary, settleLibraries } from './api'
 import { rememberHash } from './lastLocation'
+import { dropItem, itemInAddress, openItem, replacedText } from './itemLinks'
+import { LinkNotice, LinkToCopy, type LinkState } from './components/LinkNotice'
 import { leaveUnsaved, unsavedPath } from './unsaved'
 import { ChatView } from './views/ChatView'
 import { LibraryPageFrame } from './components/LibraryImage'
 import { DagViewer } from './components/DagViewer'
 import { SessionView } from './components/SessionView'
 const ModelViewer = lazy(() => import('./components/ModelViewer').then(m => ({ default: m.ModelViewer })))
-import { LibraryView } from './views/LibraryView'
+import { LibraryView, type Reveal } from './views/LibraryView'
 import { SearchView } from './views/SearchView'
 import { QueryView } from './views/QueryView'
 import { OverviewView } from './views/OverviewView'
@@ -28,6 +30,7 @@ import { TRANSFERS_SEEN, transferApi, transfersPresent, type TransferSummary } f
 import { SetupWizard } from './views/SetupWizard'
 import { FirstVisitCard } from './components/FirstVisitCard'
 import { StatusFooter } from './components/StatusFooter'
+import { embedded, signInHref } from './signIn'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
 import { aiPagesMounted, applyNavWidth, sectionAllowed, shownView, useAppConfig } from './config'
 import { NavResize } from './components/NavResize'
@@ -339,6 +342,49 @@ export default function App() {
   // several, once the configuration says which exist.
   const libIds = (cfg.libraries ?? []).map(l => l.id).join(',')
   useEffect(() => { if (cfg.loaded) settleLibraries(libIds ? libIds.split(',') : []) }, [cfg.loaded, libIds])
+  // A link to a file or folder (itemLinks.ts), in the address the page was
+  // opened at or a later one in it. It is followed once the libraries are
+  // known and settled above, and stays in the address until then, where a
+  // sign-in on the way finds it.
+  const [link, setLink] = useState<LinkState | null>(() => {
+    const id = itemInAddress(location)
+    return id ? { id, state: 'opening' } : null
+  })
+  const [reveal, setReveal] = useState<Reveal | null>(null)
+  const [replaced, setReplaced] = useState<{ path: string; text: string } | null>(null)
+  const opening = link?.state === 'opening' ? link : null
+  useEffect(() => {
+    if (!opening || !cfg.loaded) return
+    let live = true
+    void openItem(opening.id).then(o => {
+      if (!live) return
+      if (o.state !== 'opened') {
+        if (o.state === 'signed-out') {
+          if (o.signIn && !embedded()) { location.assign(signInHref(o.signIn)); return }
+        } else {
+          dropItem()
+          setView('library')
+        }
+        setLink({ id: opening.id, ...o })
+        return
+      }
+      dropItem()
+      setLink(null)
+      leaveUnsaved(() => {
+        const to = inOpenLibrary({ kind: 'file', target: o.path, lib: o.library }) as { target: string; lib?: string }
+        // All libraries names the library first, with nothing after it for
+        // the library itself.
+        const at = to.target.replace(/\/$/, '')
+        setReplaced(o.replaced ? { path: at, text: replacedText(o.type) } : null)
+        if (o.type === 'dir') {
+          setDisplay(null)
+          setReveal({ path: at })
+        } else setDisplay({ kind: 'file', ...to })
+        setView('library')
+      })
+    })
+    return () => { live = false }
+  }, [opening, cfg.loaded])
   const effectiveTheme = theme ?? (sysDark ? 'dark' : cfg.theme)
   // A mark drawn in dark ink disappears on a dark background, so a
   // deployment may configure a second image; fall back to the one image
@@ -415,6 +461,9 @@ export default function App() {
   // back/forward (hash-only history moves fire hashchange).
   useEffect(() => {
     const applyHash = (e?: HashChangeEvent) => {
+      // At the first load the link is already being followed.
+      const item = e ? itemInAddress({ search: '', hash: location.hash }) : null
+      if (item) { setLink({ id: item, state: 'opening' }); return }
       const wanted = parseOpenHash(location.hash)
       // Where it would put away an edit that is not saved, the page stays at
       // the address it had while that is asked, and goes once it is settled.
@@ -569,6 +618,8 @@ export default function App() {
   return (
     <div className="app">
       <ClassificationBanner />
+      <LinkNotice link={link} onClose={() => { dropItem(); setLink(null) }} onRetry={id => setLink({ id, state: 'opening' })} />
+      <LinkToCopy />
       {/* The setup panel covers the app; the app behind it takes no focus or clicks. */}
       <div className="app-body" inert={setupOpen}>
       <nav className={`sidenav ${navCollapsed ? 'collapsed' : ''}`}>
@@ -734,7 +785,7 @@ export default function App() {
             nothing of theirs polls the server or reads a model. */}
         {aiPagesMounted(cfg) && <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView active={view === 'chat'} /></div>}
         <div className={view === 'library' ? 'view with-toggle' : 'view hidden'}>
-          <LibraryView display={display} onDisplay={showDisplay} />
+          <LibraryView display={display} onDisplay={showDisplay} reveal={reveal} replaced={replaced} onReplacedRead={() => setReplaced(null)} />
           {view === 'library' && <PanelToggle className="panel-toggle-float" />}
         </div>
         {view === 'transfers' && hasTransfers && <div className="view"><TransfersView /></div>}

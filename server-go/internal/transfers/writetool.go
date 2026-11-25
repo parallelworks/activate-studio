@@ -31,7 +31,7 @@ func again(code int) bool { return code == ToolGone || code == writehelper.ExitM
 // shellCmds are the commands that only read, which the shell helper
 // answers everywhere. Any other goes to the write helper of a library: one
 // it does not know is refused, and never run by path in the shell instead.
-var shellCmds = map[string]bool{"list": true, "list2": true, "walk": true, "stat": true, "free": true, "sha": true, "guard": true}
+var shellCmds = map[string]bool{"list": true, "list2": true, "walk": true, "stat": true, "ident": true, "free": true, "sha": true, "guard": true}
 
 // options are the helper's, for the location and its pin.
 func (r *RemoteFS) options(w WriteTool) []string {
