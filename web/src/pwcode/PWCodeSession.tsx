@@ -26,10 +26,12 @@ import {
   useStaleFor,
 } from '@parallelworks/code'
 import { createTranslator, IntlProvider } from 'use-intl'
+import { CitedPaths } from '../citedPaths'
 import { refreshNotices, setReplying } from '../notices'
 import type { Translate } from '../code/parts'
 import { followCleared, pwCode } from './api'
 import { describeError } from './describeError'
+import { STUDIO_MACHINE } from './newChatStart'
 import { withEarlier, withoutCarried } from './carried'
 import { AccountChip, AccountPanelModal } from './session/AccountPanel'
 import { SessionActivity, SessionStatusRow, type StatusActivity, useSessionAgents, useSwitcherState } from './session/AgentSwitcher'
@@ -295,6 +297,14 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   // its record, where they came, and the message as the person typed it.
   const shownMessages = useMemo(() => withoutCarried(stored ?? withEarlier(messages, record)), [stored, messages, record])
 
+  // The library files its replies name open in the Library: its paths are
+  // from its folder, on its machine.
+  const listedMachine = sessions.data?.machines?.find(m => m.id === machine)
+  const cited = useMemo(() => (detail && (machine === STUDIO_MACHINE || sessions.data) ? {
+    machine: { id: machine, ...(machine !== STUDIO_MACHINE && listedMachine ? { name: listedMachine.name, hostname: listedMachine.hostname } : {}) },
+    cwd: detail.workspace,
+  } : null), [detail?.workspace, machine, !!sessions.data, listedMachine?.name, listedMachine?.hostname]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const noticeText = notice?.text ?? note
   // A refusal for want of an ACTIVATE sign-in gets the one prompt every
   // feature shows, with Open Accounts.
@@ -365,114 +375,116 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   return (
     <div className="pwcode-session" ref={pane} onPasteCapture={composerImages.onPaste}>
       <p className="sr-only" role="status">{screen.statusText}</p>
-      <BackgroundCommandsContext value={background}>
-        {agent && (
-          <SubagentView key={agent} machine={machine} sessionId={sessionId} subId={agent}
-            listed={viewing} usage={liveState?.subagentUsage?.[agent]}
-            subscribe={conversation.subscribe} loadPalette={page.loadPalette} sessionLock={page.sessionLock}
-            sessionBanner={banner} notice={noticeCard} status={(line, { tasks }) => status(line, { tasks })} context={contextRow}
-            modelNames={liveState?.modelNames} pastes={pastes} username={username}
-            onSent={conversation.refreshSubagents} onBack={() => setAgent(undefined)} />
-        )}
-        <div className="pwcode-main" hidden={!!agent}>
-          <SessionView
-            sessionKey={draftKey}
-            foldEveryRun
-            messages={shownMessages}
-            streamingMessage={transcript?.streaming ?? null}
-            queuedMessages={queued}
-            canRemoveQueued={conversation.canRemoveQueued}
-            queueDelivery={conversation.queueDelivery}
-            turn={{ running: page.turn.running, onStop: () => void page.turn.stop(), stopping: page.turn.stopping }}
-            onSend={(text) => page.send(text)}
-            addsToTranscript={addsToTranscript}
-            onApprovalAnswer={conversation.answerApproval}
-            showAuthor={screen.showAuthor}
-            currentUsername={username}
-            loading={screen.loading && !stored}
-            error={screen.failed ? (
-              <div className="pwcode-session-failed">
-                <p role="alert">{screen.failed.message}</p>
-                <button type="button" className="code-approval-more" onClick={screen.retry}>Try again</button>
-              </div>
-            ) : undefined}
-            banners={banner}
-            label="pw code session"
-            flush
-            find
-            workingIndicator={false}
-            footer={<>
-              {page.outputs.map(o => (
-                <OutputCard key={o.id} title={o.command} text={o.text} onDismiss={() => page.dismissOutput(o.id)} dismissLabel="Dismiss" />
-              ))}
-              {page.endNote && <NoticeCard><span className="pwcode-end-note">{page.endNote}</span></NoticeCard>}
-              {plan && <PlanAnswer key={plan.id} approvalId={plan.id}
-                approvals={conversationId ? `/api/chat/pwcode/${encodeURIComponent(conversationId)}/approvals` : `/api/chat/pwcode/page/${encodeURIComponent(machine)}/${encodeURIComponent(sessionId)}/approvals`} />}
-            </>}
-            composer={{
-              attachments: false,
-              tools: false,
-              allowEmpty: screen.allowEmpty,
-              requireModel: false,
-              history,
-              recall: page.recall,
-              disabled: state.disabled,
-              placeholder: state.placeholder,
-              inputLabel: 'Message to this session',
-              sendLabel: 'Send',
-              pastes,
-              slash: { commands: screen.commands, label: 'Commands', onOpen: page.openPalette, loading: page.paletteLoading },
-              activity: status(activityLine(screen.activity), {
-                goal: screen.goal && conversation.goal ? (
-                  <GoalControl key={`${machine}/${sessionId}`} machine={machine} sessionId={sessionId}
-                    label={screen.goal} status={conversation.goal} locked={state.locked} />
-                ) : null,
-                tasks: transcript?.todos,
-              }),
-              notices: <>
-                {screen.untrusted && <NoticeCard tone="warning">{screen.untrusted}</NoticeCard>}
-                {noticeCard}
-                <ComposerImages images={composerImages.images} onRemove={composerImages.remove} />
-                {notes}
-              </>,
-              context: contextRow,
-              settingsLeft: <>
-                <PermissionPicker
-                  mode={screen.permission.mode}
-                  ceiling={screen.permission.ceiling}
-                  accepted={screen.permission.accepted}
-                  onPick={settings.setMode}
-                  disabled={screen.permission.disabled}
-                />
-                <AccountChip model={settings.model.value} account={settings.account.value} onOpen={openAccounts} />
-                {settingsExtra}
-                {settings.saving && <span className="muted pwcode-saving">Saving…</span>}
-              </>,
-              settingsRight: <>
-                <AgentModelControls
-                  key={`${machine}/${sessionId}`}
-                  api={pwCode}
-                  platform={platformModels}
-                  machine={machine}
-                  sessionId={sessionId}
-                  claudeReady={screen.claude.available}
-                  canStart={screen.canStart}
-                  model={settings.model}
-                  modelNames={liveState?.modelNames}
-                  effort={settings.effort}
-                  allocation={settings.allocation}
-                  account={settings.account.value ?? undefined}
-                  panel={picker}
-                  onPanelChange={setPicker}
-                  onAccounts={openAccounts}
-                />
-                <TerminalHandoff machine={machine} sessionId={sessionId} username={username} />
-              </>,
-              hint: state.hint || undefined,
-            }}
-          />
-        </div>
-      </BackgroundCommandsContext>
+      <CitedPaths where={cited} busy={running} messages={transcript?.messages}>
+        <BackgroundCommandsContext value={background}>
+          {agent && (
+            <SubagentView key={agent} machine={machine} sessionId={sessionId} subId={agent}
+              listed={viewing} usage={liveState?.subagentUsage?.[agent]}
+              subscribe={conversation.subscribe} loadPalette={page.loadPalette} sessionLock={page.sessionLock}
+              sessionBanner={banner} notice={noticeCard} status={(line, { tasks }) => status(line, { tasks })} context={contextRow}
+              modelNames={liveState?.modelNames} pastes={pastes} username={username}
+              onSent={conversation.refreshSubagents} onBack={() => setAgent(undefined)} />
+          )}
+          <div className="pwcode-main" hidden={!!agent}>
+            <SessionView
+              sessionKey={draftKey}
+              foldEveryRun
+              messages={shownMessages}
+              streamingMessage={transcript?.streaming ?? null}
+              queuedMessages={queued}
+              canRemoveQueued={conversation.canRemoveQueued}
+              queueDelivery={conversation.queueDelivery}
+              turn={{ running: page.turn.running, onStop: () => void page.turn.stop(), stopping: page.turn.stopping }}
+              onSend={(text) => page.send(text)}
+              addsToTranscript={addsToTranscript}
+              onApprovalAnswer={conversation.answerApproval}
+              showAuthor={screen.showAuthor}
+              currentUsername={username}
+              loading={screen.loading && !stored}
+              error={screen.failed ? (
+                <div className="pwcode-session-failed">
+                  <p role="alert">{screen.failed.message}</p>
+                  <button type="button" className="code-approval-more" onClick={screen.retry}>Try again</button>
+                </div>
+              ) : undefined}
+              banners={banner}
+              label="pw code session"
+              flush
+              find
+              workingIndicator={false}
+              footer={<>
+                {page.outputs.map(o => (
+                  <OutputCard key={o.id} title={o.command} text={o.text} onDismiss={() => page.dismissOutput(o.id)} dismissLabel="Dismiss" />
+                ))}
+                {page.endNote && <NoticeCard><span className="pwcode-end-note">{page.endNote}</span></NoticeCard>}
+                {plan && <PlanAnswer key={plan.id} approvalId={plan.id}
+                  approvals={conversationId ? `/api/chat/pwcode/${encodeURIComponent(conversationId)}/approvals` : `/api/chat/pwcode/page/${encodeURIComponent(machine)}/${encodeURIComponent(sessionId)}/approvals`} />}
+              </>}
+              composer={{
+                attachments: false,
+                tools: false,
+                allowEmpty: screen.allowEmpty,
+                requireModel: false,
+                history,
+                recall: page.recall,
+                disabled: state.disabled,
+                placeholder: state.placeholder,
+                inputLabel: 'Message to this session',
+                sendLabel: 'Send',
+                pastes,
+                slash: { commands: screen.commands, label: 'Commands', onOpen: page.openPalette, loading: page.paletteLoading },
+                activity: status(activityLine(screen.activity), {
+                  goal: screen.goal && conversation.goal ? (
+                    <GoalControl key={`${machine}/${sessionId}`} machine={machine} sessionId={sessionId}
+                      label={screen.goal} status={conversation.goal} locked={state.locked} />
+                  ) : null,
+                  tasks: transcript?.todos,
+                }),
+                notices: <>
+                  {screen.untrusted && <NoticeCard tone="warning">{screen.untrusted}</NoticeCard>}
+                  {noticeCard}
+                  <ComposerImages images={composerImages.images} onRemove={composerImages.remove} />
+                  {notes}
+                </>,
+                context: contextRow,
+                settingsLeft: <>
+                  <PermissionPicker
+                    mode={screen.permission.mode}
+                    ceiling={screen.permission.ceiling}
+                    accepted={screen.permission.accepted}
+                    onPick={settings.setMode}
+                    disabled={screen.permission.disabled}
+                  />
+                  <AccountChip model={settings.model.value} account={settings.account.value} onOpen={openAccounts} />
+                  {settingsExtra}
+                  {settings.saving && <span className="muted pwcode-saving">Saving…</span>}
+                </>,
+                settingsRight: <>
+                  <AgentModelControls
+                    key={`${machine}/${sessionId}`}
+                    api={pwCode}
+                    platform={platformModels}
+                    machine={machine}
+                    sessionId={sessionId}
+                    claudeReady={screen.claude.available}
+                    canStart={screen.canStart}
+                    model={settings.model}
+                    modelNames={liveState?.modelNames}
+                    effort={settings.effort}
+                    allocation={settings.allocation}
+                    account={settings.account.value ?? undefined}
+                    panel={picker}
+                    onPanelChange={setPicker}
+                    onAccounts={openAccounts}
+                  />
+                  <TerminalHandoff machine={machine} sessionId={sessionId} username={username} />
+                </>,
+                hint: state.hint || undefined,
+              }}
+            />
+          </div>
+        </BackgroundCommandsContext>
+      </CitedPaths>
       {picker === 'claude' && (
         <AccountPanelModal key={`accounts:${machine}/${sessionId}`} machine={machine} machineName={page.machineName}
           sessionId={sessionId} machineFacts={screen.claude} waitingAtLimit={screen.waitingAtLimit}

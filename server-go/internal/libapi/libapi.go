@@ -94,6 +94,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	}
 	mux.HandleFunc("GET /api/search", h(s.search))
 	mux.HandleFunc("GET /api/libraries", h(s.list))
+	mux.HandleFunc("POST /api/libraries/cited", h(s.citedPaths))
 	mux.HandleFunc("GET /api/kb/details", h(s.details))
 	mux.HandleFunc("GET /api/kb/topology", h(s.topology))
 	mux.HandleFunc("GET /api/libraries/{id}/topology", h(s.topology))
