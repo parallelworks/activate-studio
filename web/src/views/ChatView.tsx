@@ -1,5 +1,6 @@
 import React, { Activity, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { accountsHref } from '../accounts'
+import { embedded, SIGN_IN_TO_CHAT, signInPlace } from '../signIn'
 import {
   Button, Callout, Checkbox, EmptyState, Popover, PopoverClose, SearchInput, SegmentedControl,
 } from '@parallelworks/ui'
@@ -269,6 +270,28 @@ function CredBanner({ note, row, saidBelow, onDismiss }: { note: string; row?: '
   )
 }
 
+/** What a visitor sees at the chat, and the way to sign in: a chat needs
+ *  the person it belongs to. saidBelow: a new chat with no models says it in
+ *  its own page, with the same button. */
+function SignInToChat({ place, saidBelow }: { place: string; saidBelow: boolean }) {
+  const { models } = useChat()
+  if (saidBelow && !models.length) return null
+  return (
+    <div className="cred-banner" data-testid="sign-in-to-chat">
+      <Callout
+        variant="bar"
+        tone="info"
+        live
+        action={place ? <Button variant="primary" size="sm" href={place} reloadDocument {...(embedded() ? { target: '_blank' as const, rel: 'noopener' } : {})}>Sign in</Button> : undefined}
+      >
+        {place ? SIGN_IN_BODY : `${SIGN_IN_BODY} ${SIGN_IN_ELSEWHERE}`}
+      </Callout>
+    </div>
+  )
+}
+const SIGN_IN_BODY = 'Sign in to chat. Each chat belongs to the person who started it.'
+const SIGN_IN_ELSEWHERE = 'Open this Studio from ACTIVATE to sign in.'
+
 /** active: the chat is the view on screen. Find in the transcript listens
  *  for ⌘F / Ctrl+F on the whole page, so a hidden chat leaves the key to
  *  the view that is showing. */
@@ -315,6 +338,12 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   // No model is listed since there is no account to list with (null until
   // known): a new chat's own page says so, with the way there.
   const [noCredential, setNoCredential] = useState<boolean | null>(null)
+  const [signInAsked, setSignInAsked] = useState(false)
+  useEffect(() => {
+    const on = () => setSignInAsked(true)
+    window.addEventListener(SIGN_IN_TO_CHAT, on)
+    return () => window.removeEventListener(SIGN_IN_TO_CHAT, on)
+  }, [])
   // The note on screen, readable from handlers defined before render.
   const credNoteRef = useRef<string | null>(null)
   credNoteRef.current = credNote
@@ -521,6 +550,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
     window.addEventListener(CHAT_HERE_EVENT, on)
     return () => window.removeEventListener(CHAT_HERE_EVENT, on)
   }, [openNewChat])
+  const signInHere = useRef('')
   const LinkComponent = useCallback(function StudioChatLink({ target, className, title, onClick, children }: ChatLinkProps) {
     return (
       <a
@@ -538,6 +568,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           else if (target.kind === 'newChat') startNewChat()
           else if (target.kind === 'attachments') { setShowAttachments(true); setShowManage(false) }
           else if (target.kind === 'external' && target.href.startsWith('#')) location.hash = target.href
+          // The sign-in comes back to this place, so it takes this tab.
+          else if (target.kind === 'external' && target.href === signInHere.current && !embedded()) location.assign(target.href)
           else if (target.kind === 'external') window.open(target.href, '_blank', 'noopener')
         }}
       >{breakable(children)}</a>
@@ -608,6 +640,18 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
 
   setViewerUsername(cfg.user?.username ?? '')
   const signInFirst = !!cfg.signInFirst && noCredential !== false
+  // A visitor, or one whose sign-in ended while the page was open.
+  const signedOut = !!cfg.signedOut || signInAsked
+  const place = signedOut ? signInPlace(cfg) : ''
+  signInHere.current = place
+  // What a visitor wrote stays in the box, and through the sign-in: sending
+  // it goes to the button instead.
+  const keepUnsent = (e: React.SyntheticEvent) => {
+    if (!signedOut || activeId) return
+    e.preventDefault()
+    e.stopPropagation()
+    canvasRef.current?.querySelector<HTMLElement>('[data-testid="sign-in-to-chat"] a')?.focus()
+  }
 
   const changeChatFilter = (next: 'all' | 'mine') => {
     setChatListFilter(next)
@@ -634,7 +678,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
         // The model picker's Manage link and the no-model empty state's button.
-        extraLinks: { manageProviders: '#view=settings:access', addProvider: accountsHref(held ? undefined : signInFirst ? 'activate' : 'endpoint') },
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: signedOut ? place || undefined : accountsHref(held ? undefined : signInFirst ? 'activate' : 'endpoint') },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
@@ -676,9 +720,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             feedbackPlaceholder: 'Tell the assistant what to do instead…',
           },
           emptyState: {
-            noProvidersTitle: signInFirst && !held ? 'Sign in with ACTIVATE first' : 'A model is needed',
-            noProvidersBody: held ? 'pw code has no model set. Choose one in the message box, or add one under Settings, Accounts.' : noModelsBody(cfg, noCredential !== false),
-            addProvider: 'Open Accounts',
+            noProvidersTitle: signedOut ? 'Sign in to chat' : signInFirst && !held ? 'Sign in with ACTIVATE first' : 'A model is needed',
+            noProvidersBody: signedOut ? (place ? 'Each chat belongs to the person who started it.' : SIGN_IN_ELSEWHERE) : held ? 'pw code has no model set. Choose one in the message box, or add one under Settings, Accounts.' : noModelsBody(cfg, noCredential !== false),
+            addProvider: signedOut ? 'Sign in' : 'Open Accounts',
           },
           sidebar: {
             manageProviders: 'Model access',
@@ -688,14 +732,18 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             viewOnly: 'You can read this chat but not add to it',
           },
           input: {
-            placeholderNoProviders: held ? 'Choose or add a model to start chatting' : signInFirst ? 'Sign in with ACTIVATE to start chatting' : 'Add a model under Settings, Accounts to start chatting',
+            ...(signedOut ? { placeholder: 'Sign in to chat' } : {}),
+            placeholderNoProviders: signedOut ? 'Sign in to chat' : held ? 'Choose or add a model to start chatting' : signInFirst ? 'Sign in with ACTIVATE to start chatting' : 'Add a model under Settings, Accounts to start chatting',
           },
         },
       }}
     >
       <div className="chat-wrap">
-        <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`}>
-          {credNote && (
+        <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`}
+          onKeyDownCapture={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.target instanceof HTMLTextAreaElement) keepUnsent(e) }}
+          onClickCapture={e => { if ((e.target as Element).closest?.('button')?.getAttribute('aria-label')?.startsWith('Send message')) keepUnsent(e) }}>
+          {signedOut && !showAttachments && !showManage && <SignInToChat place={place} saidBelow={!activeId} />}
+          {credNote && !signedOut && (
             <CredBanner note={credNote} onDismiss={dismissNote} row={signInFirst ? 'activate' : undefined}
               saidBelow={!!noCredential && !held && !activeId && !showAttachments && !showManage} />
           )}

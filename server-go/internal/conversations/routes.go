@@ -68,7 +68,7 @@ const OnlyAdmins = "Only an administrator of this Studio can change a chat that 
 
 // SignInToChat is the refusal of a chat to a visitor who has not signed in:
 // it would have no owner, so the visitor could not see it.
-const SignInToChat = "Sign in to chat. On a Studio with sign-in, each chat belongs to the person who started it."
+const SignInToChat = "Sign in to chat. Each chat belongs to the person who started it."
 
 // MayChange says whether who may change c. With sign-in that is its owner
 // alone, shared history or not and whoever administers the Studio: others

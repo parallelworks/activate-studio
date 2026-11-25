@@ -1,6 +1,7 @@
 import { refreshNotices, setReplying } from './notices'
 import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { toast } from '@parallelworks/ui'
+import { SIGN_IN_TO_CHAT } from './signIn'
 import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getLabelScope, getLastEngine, getPersona, hasEffort, knowEngine, setEffort } from './labelScope'
@@ -378,8 +379,11 @@ export function createStudioAdapter(): ChatAdapter {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
       }).then(async r => {
-        // A visitor is asked to sign in, in the server's words.
-        if (r.status === 401) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Sign in to chat.')
+        // The chat page asks a visitor to sign in, with the way there.
+        if (r.status === 401) {
+          window.dispatchEvent(new Event(SIGN_IN_TO_CHAT))
+          throw new Error('Sign in to chat.')
+        }
         return json<Awaited<ReturnType<ChatAdapter['conversations']['create']>>>(r)
       }).then(c => {
         if (c?.id) newConversation(c.id)
