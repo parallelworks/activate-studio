@@ -384,7 +384,7 @@ export function createStudioAdapter(): ChatAdapter {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
       }).then(r => json<{ sessionKeeps?: string }>(r)).then(a => { if (a.sessionKeeps) toast.warning(a.sessionKeeps) }) },
-      remove: async id => { forgetChat(id); await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => json(r)) },
+      remove: async id => { forgetChat(id); await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' }).then(r => r.status === 404 ? undefined : json(r)) },
     },
     models: { list: listModels },
     // The composer's Tools menu: one switch per kind of tool the server

@@ -70,7 +70,7 @@ func TestTheCodePagesPaneReachesTheViewersOwnSession(t *testing.T) {
 }
 
 // With sign-in on, the pane is the person's own sign-in or nothing, and a
-// session another person's chat runs in is not theirs.
+// session another person's chat runs in is not theirs, and is answered as any.
 func TestTheCodePagesPaneIsNeverTheStudiosAccount(t *testing.T) {
 	local, remote := &fakePW{}, &fakePW{}
 	m, _, _, _ := relayModule(t, local, remote)
@@ -83,7 +83,7 @@ func TestTheCodePagesPaneIsNeverTheStudiosAccount(t *testing.T) {
 	for _, c := range []struct {
 		machine, id string
 		want        int
-	}{{"studio", "s9", 404}, {"m2", "s9", 404}, {"studio", "s1", 409}, {"m2", "s1", 409}} {
+	}{{"studio", "s9", 409}, {"m2", "s9", 409}, {"studio", "s1", 409}, {"m2", "s1", 409}} {
 		r := asUser("bob")
 		r.SetPathValue("machine", c.machine)
 		r.SetPathValue("id", c.id)

@@ -148,7 +148,7 @@ func TestOnlyTheOwnerChangesAChatsSession(t *testing.T) {
 	// made as the Studio's account.
 	for _, c := range []struct{ machine, id string }{{"m2", "s1"}, {"studio", "s9"}} {
 		for _, req := range [][3]string{{"GET", "", ""}, {"PATCH", "settings", `{"permissionMode":"accept-edits"}`}, {"POST", "messages", `{"text":"rm -rf results"}`}, {"POST", "interrupt", `{}`}} {
-			if code := as("bob", req[0], c.machine, c.id, req[1], req[2]); code != 404 && code != 403 {
+			if code := as("bob", req[0], c.machine, c.id, req[1], req[2]); code != 404 && code != 403 && code != 409 {
 				t.Errorf("bob %s %s/%s %s: %d", req[0], c.machine, c.id, req[1], code)
 			}
 		}

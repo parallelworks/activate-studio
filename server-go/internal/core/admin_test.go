@@ -170,3 +170,63 @@ func TestOnlyAdministratorsAddSkillsAndPersonas(t *testing.T) {
 		t.Fatalf("%d %s", r.status, r.raw)
 	}
 }
+
+// Saving Settings sends the whole form back: only a change of the shared
+// history switch is kept, as an administrator's choice.
+func TestOnlyAChangeOfSharedHistoryIsKept(t *testing.T) {
+	e := signedIn(t)
+	file := filepath.Join(e.ix, "settings.json")
+	saved := func() map[string]any {
+		var m map[string]any
+		b, _ := os.ReadFile(file)
+		json.Unmarshal(b, &m)
+		return m
+	}
+	shared := func() any {
+		return e.doAs("sam", "GET", "/api/settings", nil).body["effective"].(map[string]any)["chatSharedHistory"]
+	}
+	save := func(change map[string]any) {
+		t.Helper()
+		form := e.doAs("boss", "GET", "/api/settings", nil).body["effective"].(map[string]any)
+		for k, v := range change {
+			form[k] = v
+		}
+		if r := e.doAs("boss", "PUT", "/api/settings", form); r.status != 200 {
+			t.Fatalf("%d %s", r.status, r.raw)
+		}
+	}
+	if shared() != false {
+		t.Fatal("on with sign-in and nothing set")
+	}
+	save(map[string]any{"appName": "Lab"})
+	if m := saved(); m["appName"] != "Lab" || m["chatSharedHistory"] != nil || m["chatSharedHistoryChosen"] != nil {
+		t.Errorf("saving another setting kept: %v %v", m["chatSharedHistory"], m["chatSharedHistoryChosen"])
+	}
+	if r := e.doAs("sam", "PUT", "/api/settings", map[string]any{"chatSharedHistory": true}); r.status != 403 || shared() != false {
+		t.Errorf("sam: %d", r.status)
+	}
+	save(map[string]any{"chatSharedHistory": true})
+	save(map[string]any{"appName": "Lab two"})
+	if m := saved(); shared() != true || m["chatSharedHistory"] != true || m["chatSharedHistoryChosen"] != true {
+		t.Errorf("turned on: %v %v", shared(), m)
+	}
+	save(map[string]any{"chatSharedHistory": false})
+	if shared() != false || saved()["chatSharedHistory"] != false {
+		t.Error("turned off again")
+	}
+
+	// A file v1.203.39 wrote: the form saved, the switch as it was.
+	form := `{"appName":"Lab","ragAdvertiseRagModel":false,"ragEndpointAutoStart":false,"requirePersonalKey":false,"chatSharedHistory":true}`
+	os.WriteFile(file, []byte(form), 0o644)
+	if shared() != false {
+		t.Error("an untouched default stayed on")
+	}
+	save(map[string]any{"appName": "Lab three"})
+	if shared() != false {
+		t.Error("a save of another setting turned it on")
+	}
+	save(map[string]any{"chatSharedHistory": true})
+	if shared() != true {
+		t.Error("could not be turned on")
+	}
+}

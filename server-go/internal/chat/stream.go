@@ -221,9 +221,21 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	// A chat that drives a pw code session takes messages only from its
 	// owner, as its Stop and approvals do: nothing another person sends is
 	// stored in it or reaches the session.
-	if c := m.Conv.Get(deref(body.ConversationID)); c != nil && c.PWCode != nil && c.PWCode.Session != "" {
-		if _, err := m.ownPWChat(r, c.ID); err != nil {
-			return err
+	if id := deref(body.ConversationID); id != "" {
+		c := m.Conv.Get(id)
+		// A chat the person may not see takes no message of theirs and is
+		// not answered from. With sign-in one that is not there gets the
+		// same answer, so nothing is made under an id the page did not get
+		// from the Studio.
+		if c != nil || m.Convs.AuthEnabled() {
+			if _, err := m.visibleChat(r, id); err != nil {
+				return err
+			}
+		}
+		if c != nil && c.PWCode != nil && c.PWCode.Session != "" {
+			if _, err := m.ownPWChat(r, c.ID); err != nil {
+				return err
+			}
 		}
 	}
 	model := StripAvailabilityMark(jsString(body.Model))

@@ -411,9 +411,17 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 		}
 		set("ragTopK", n)
 	}
-	for _, f := range []string{"ragAdvertiseRagModel", "ragAdvertiseAgentModel", "chatSharedHistory", "ragEndpointAutoStart", "requirePersonalKey"} {
+	for _, f := range []string{"ragAdvertiseRagModel", "ragAdvertiseAgentModel", "ragEndpointAutoStart", "requirePersonalKey"} {
 		if v, ok := in(f); ok {
 			set(f, jsval.Truthy(v))
+		}
+	}
+	// The form sends back what it shows: only a change of it is a choice,
+	// so a save of other settings does not pin the default.
+	if v, ok := in("chatSharedHistory"); ok {
+		if on := jsval.Truthy(v); on != c.a.Settings.Effective().ChatSharedHistory {
+			set("chatSharedHistory", on)
+			set(settings.SharedHistoryChosenKey, true)
 		}
 	}
 	if _, ok := in("bannerText"); ok {

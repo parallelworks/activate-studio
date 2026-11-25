@@ -264,8 +264,9 @@ func (rt *Routes) deleteOne(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	id := r.PathValue("id")
-	if c := rt.Store.Get(id); c != nil && !rt.VisibleTo(c, who.Username) {
-		return apierr.New(404, "conversation not found")
+	// With sign-in, one that is not there is answered as another person's.
+	if _, err := rt.FindVisible(id, who.Username); err != nil && (rt.AuthEnabled() || rt.Store.Get(id) != nil) {
+		return err
 	}
 	rt.Store.Delete(map[string]bool{id: true}, func(*Conversation) bool { return true })
 	return reqbody.OK(w, reqbody.O("deleted", id))

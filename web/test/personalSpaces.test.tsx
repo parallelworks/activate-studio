@@ -187,7 +187,9 @@ describe('a space of one\'s own', () => {
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={onAdded} />)
     // Picking a system as oneself also lists what others shared there.
     await chooseHome()
-    expect(await screen.findByRole('heading', { name: 'Shared with you on cluster-a' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Shared with me on cluster-a' })).toBeInTheDocument()
+    expect(screen.getByTestId('shared-on')).toHaveTextContent('on cluster-a')
+    expect(document.body).not.toHaveTextContent('Shared with you')
     const table = await screen.findByRole('table', { name: 'Shared with me' })
     expect(within(table).getByText('ada, for team')).toBeInTheDocument()
     expect(within(table).getByText('Read and write')).toBeInTheDocument()
