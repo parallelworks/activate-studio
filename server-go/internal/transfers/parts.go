@@ -13,6 +13,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // A large file reaches a location in parts. They are written into one file
@@ -21,7 +22,7 @@ import (
 // anything staged does (Land).
 
 // PartsPrefix starts the name of the folder a file's parts are written in.
-const PartsPrefix = ".studio-upload-"
+const PartsPrefix = staging.Upload
 
 // PartUnit is what a part's offset is a multiple of.
 const PartUnit = 1 << 20

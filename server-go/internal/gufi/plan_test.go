@@ -112,3 +112,14 @@ func TestRowsShaping(t *testing.T) {
 		t.Fatal(len(r.Rows), r.Truncated)
 	}
 }
+
+// What is still arriving is no search result, whoever built the index.
+func TestWalkRowsLeaveOutWhatIsArriving(t *testing.T) {
+	row := func(p, name string) string {
+		return strings.Join([]string{"n", "1", "/ix/kb/" + p, name, "1", "2", ""}, Delim) + "\n"
+	}
+	got := WalkRows(row("a/data.tar", "data.tar")+row("a/.studio-upload-1/data", "data")+row(".studio-transfer-1/b.txt", "b.txt"), []string{"/ix/kb"}, []string{"kb"})
+	if len(got) != 1 || got[0].Path != "a/data.tar" {
+		t.Errorf("rows %+v", got)
+	}
+}

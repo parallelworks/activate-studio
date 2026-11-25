@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +24,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/embed"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/posixaccess"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // ---- running the tools ----
@@ -338,8 +341,29 @@ func countDbs(root string) int {
 
 // ---- the phases ----
 
-// names is gufi_dir2index into staging; it returns the tree it wrote.
-func (c *jobCtx) names(src, staging string, maxLevel0 bool) (string, error) {
+// pruneStaging takes the folders of files still arriving out of a tree just
+// built, before anything reads it. gufi_dir2index passes over names it is
+// given whole, and these end in something random.
+func pruneStaging(built string) error {
+	return filepath.WalkDir(built, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if d != nil && d.IsDir() && p != built {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if p == built || !d.IsDir() || !staging.Name(d.Name()) {
+			return nil
+		}
+		if err := rmTree(p); err != nil {
+			return err
+		}
+		return fs.SkipDir
+	})
+}
+
+// names is gufi_dir2index into dest; it returns the tree it wrote.
+func (c *jobCtx) names(src, dest string, maxLevel0 bool) (string, error) {
 	ix := c.ix
 	ph := c.phase("names")
 	if err := ph.start(0); err != nil {
@@ -347,13 +371,13 @@ func (c *jobCtx) names(src, staging string, maxLevel0 bool) (string, error) {
 	}
 	total, locked := surveyDirs(src, maxLevel0)
 	ph.progress(0, total, nil)
-	if err := rmTree(staging); err != nil {
+	if err := rmTree(dest); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(staging, 0o755); err != nil {
+	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return "", err
 	}
-	built := filepath.Join(staging, filepath.Base(src))
+	built := filepath.Join(dest, filepath.Base(src))
 	if err := prepareIndex(built, locked); err != nil {
 		return "", err
 	}
@@ -376,10 +400,14 @@ func (c *jobCtx) names(src, staging string, maxLevel0 bool) (string, error) {
 	if maxLevel0 {
 		args = append(args, "--max-level", "0")
 	}
-	args = append(args, "--skip-file", ix.ensureSkipFile(), src, staging)
+	args = append(args, "--skip-file", ix.ensureSkipFile(), src, dest)
 	_, err := c.runTool(nil, tool{
 		name: "gufi_dir2index", cmd: filepath.Join(ix.P.GufiBin, "gufi_dir2index"), args: args, env: ix.gufiEnv(nil, false),
 		onDenied: func(paths []string) {
+			paths = slices.DeleteFunc(paths, staging.In)
+			if len(paths) == 0 {
+				return
+			}
 			c.log(fmt.Sprintf("%d folder(s) could not be read and are left out: %s", len(paths), strings.Join(first(paths, 5), ", ")))
 			if ix.deniedTo != nil {
 				ix.deniedTo(paths)
@@ -389,7 +417,7 @@ func (c *jobCtx) names(src, staging string, maxLevel0 bool) (string, error) {
 		},
 		onErr: func(line string) {
 			for _, d := range unmadeIndexDirs(line) {
-				if p := sourceOf(d, built, src); p != "" {
+				if p := sourceOf(d, built, src); p != "" && !staging.In(p) {
 					umu.Lock()
 					unmade = append(unmade, p)
 					umu.Unlock()
@@ -402,6 +430,9 @@ func (c *jobCtx) names(src, staging string, maxLevel0 bool) (string, error) {
 		return "", err
 	}
 	openIndex(built, locked)
+	if err := pruneStaging(built); err != nil {
+		return "", err
+	}
 	if len(unmade) > 0 {
 		c.log(fmt.Sprintf("%d folder(s) could not be indexed and are left out: %s", len(unmade), strings.Join(first(unmade, 5), ", ")))
 		if ix.deniedTo != nil {

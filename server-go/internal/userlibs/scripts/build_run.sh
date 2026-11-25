@@ -44,6 +44,10 @@ fi
 # and the tree can be moved; their group and other bits stay the source's.
 [ "$(id -u)" = 0 ] || find "$stage/$base" -type d ! -perm -700 -exec chmod u+rwx {} + 2>/dev/null
 new="$stage/$base"
+# The folders of files still arriving, which the Studio names once they are
+# whole. gufi_dir2index passes over whole names, and these end in something
+# random.
+find "$new" -mindepth 1 -type d \( -name '.studio-upload-*' -o -name '.studio-transfer-*' \) -prune -exec rm -rf {} + 2>> "$s/dir2index.log"
 # The Studio's helper, which runs the text pass and the embedder, kept in
 # ~/.activate-studio/go/<version>, and ONNX Runtime with the embedding
 # model, kept in ~/.activate-studio/embed/<version>: each taken into use

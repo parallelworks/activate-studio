@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // A large file goes up in parts, each a request of its own, so no one
@@ -45,7 +46,7 @@ const (
 )
 
 // partsPrefix starts the name of the folder a file's parts are written in.
-const partsPrefix = ".studio-upload-"
+const partsPrefix = staging.Upload
 
 // partUpload is one large file under way.
 type partUpload struct {

@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufitrace"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 func marshalJS(v any) ([]byte, error) {
@@ -167,6 +168,9 @@ func (e *Engine) SearchWordsAndNames(ctx context.Context, text string, ftsLimit,
 		rank := num(r[1])
 		row := r[2:]
 		h := gufi.SearchHit{Path: e.toKbRel(row[0], indexRoot), Name: row[1], Size: num(row[2]), Mtime: num(row[3]), Rank: &rank}
+		if staging.In(h.Path) {
+			continue
+		}
 		if r[0] == "f" {
 			h.Snippet, h.Score, h.Mode = gufi.WithoutProvenance(row[4]), 1, gufi.KindFTS
 			fts = append(fts, h)
@@ -433,6 +437,9 @@ func (e *Engine) SearchVector(ctx context.Context, text string, limit int, index
 		pth := p[2]
 		if p[1] != "." && p[1] != "" {
 			pth = p[1] + "/" + p[2]
+		}
+		if staging.In(pth) {
+			continue
 		}
 		hits = append(hits, gufi.SearchHit{Path: pth, Name: p[2], Snippet: gufi.WithoutProvenance(gufi.PassageSnippet(strings.Join(p[4:], " "))), Score: dist, Mode: gufi.KindVector})
 	}

@@ -173,6 +173,8 @@ func TestBucketLibrary(t *testing.T) {
 	put(t, filepath.Join(bucket, "projects", "alpha", "summary.txt"), "alpha results summary")
 	put(t, filepath.Join(bucket, "projects", "beta", "plan.md"), "# Beta plan\n"+strings.Repeat("wind tunnel runs\n", 50000))
 	put(t, filepath.Join(bucket, "projects", "beta", "raw", "zephyr-run1.bin"), strings.Repeat("x", 4096))
+	// What a transfer is still putting there is not indexed.
+	put(t, filepath.Join(bucket, "projects", ".studio-transfer-1", "raw", "zephyr-run2.bin"), "x")
 	exe, _ := os.Executable()
 	bin := filepath.Join(f.dir, "rclone-bin")
 	put(t, filepath.Join(bin, "rclone"), "#!/bin/sh\nLIBAPI_TEST_CHILD=rclone exec '"+exe+"' \"$@\"\n")

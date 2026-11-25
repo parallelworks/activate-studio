@@ -436,7 +436,7 @@ func TestExternalConfig(t *testing.T) {
 func TestPlan(t *testing.T) {
 	kb := t.TempDir()
 	for _, rel := range []string{"a.docx", "b.md", "c.unknown", "sub/d.pdf", "sub/deeper/e.odt", ".git/f.docx", "node_modules/g.pdf",
-		".hidden/h.xls", "sub/.github/i.pdf", "img.png"} {
+		".hidden/h.xls", "sub/.github/i.pdf", "img.png", ".studio-upload-1/j.pdf", "sub/.studio-transfer-1/k.pdf"} {
 		put(t, filepath.Join(kb, filepath.FromSlash(rel)), []byte("x"))
 	}
 	if runtime.GOOS != "windows" {
@@ -458,6 +458,9 @@ func TestPlan(t *testing.T) {
 	got, _ = x.Plan(PassOptions{KBRoot: kb, Subdir: "sub", NoRecurse: true})
 	if strings.Join(got, ",") != "sub/d.pdf" {
 		t.Fatalf("no-recurse plan %v", got)
+	}
+	if got, _ = x.Plan(PassOptions{KBRoot: kb, Subdir: "sub/.studio-transfer-1"}); len(got) != 0 {
+		t.Fatalf("plan of a staging folder %v", got)
 	}
 	if _, err := x.Plan(PassOptions{KBRoot: kb, Subdir: "../x"}); err == nil {
 		t.Fatal("subdir escaped")

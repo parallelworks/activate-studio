@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 // localRunner runs a "remote" command on this computer, as the ssh pool
 // would on a host: the argv quoted into one command line for bash.
 type localRunner struct {
-	calls int
+	calls atomic.Int32
 	// home is HOME for the commands, "" for this process's.
 	home string
 }
@@ -30,7 +31,7 @@ func (l *localRunner) env(cmd *exec.Cmd) {
 }
 
 func (l *localRunner) RunOnce(ctx context.Context, site, key string, argv []string, timeout time.Duration, input io.Reader) (remote.Result, error) {
-	l.calls++
+	l.calls.Add(1)
 	cmd := exec.CommandContext(ctx, "bash", "-c", remote.DirectCommand(argv))
 	l.env(cmd)
 	var out, errb bytes.Buffer

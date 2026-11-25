@@ -191,8 +191,8 @@ export const EXCLUDE_DIRS = new Set([
   '.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build',
   '.cache', '.pytest_cache', 'screenshots', '.ipynb_checkpoints',
 ])
-// File suffixes treated as opaque binaries (no preview, no extraction).
-export const EXCLUDE_FILE_SUFFIXES = ['.sif', '.pyc', '.so', '.o', '.zip', '.tar', '.gz', '.tgz']
+// What compilers leave beside the sources, not listed.
+export const EXCLUDE_FILE_SUFFIXES = ['.pyc', '.so', '.o']
 
 export const TEXT_SUFFIXES = new Set([
   '.md', '.txt', '.py', '.sh', '.yaml', '.yml', '.json', '.csv', '.tsv', '.xml',

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // Resolver is the libraries track's view of what a request can read
@@ -291,7 +293,7 @@ func (m *Module) remoteTree(r *http.Request, lib Library, rel string, showHidden
 	}
 	out := []Entry{}
 	for _, e := range list {
-		if showHidden || !HiddenName(e.Name) {
+		if (showHidden || !HiddenName(e.Name)) && !staging.Name(e.Name) {
 			out = append(out, e)
 		}
 	}
