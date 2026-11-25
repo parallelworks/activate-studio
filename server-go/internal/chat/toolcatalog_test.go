@@ -166,7 +166,7 @@ func TestToolCatalogMatchesNode(t *testing.T) {
 
 	var slash []any
 	for _, s := range cases["slash"].([]string) {
-		text, listing := m.expandSlashCommand(s)
+		text, listing := m.expandSlashCommand(httptest.NewRequest("GET", "/", nil), s)
 		switch {
 		case listing != nil:
 			slash = append(slash, reqbody.O("listing", *listing))

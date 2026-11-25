@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -447,9 +448,18 @@ func describe(d string) string {
 
 var slashRe = regexp.MustCompile(`^/([A-Za-z0-9_-]+)((?s:.*))$`)
 
+// pwCodeFor says whether the tools that reach pw code are for the person r
+// is from: those of the platform with a credential of theirs, or of this
+// host where it is offered as a site. They are not listed, or run by name,
+// for a person with neither.
+func (m *Module) pwCodeFor(r *http.Request) bool {
+	f := m.A.Providers.PlatformAvailable
+	return f != nil && f(r, userID(r)) || m.localAgents()
+}
+
 // expandSlashCommand resolves a leading /command: the replacement text,
 // or a listing answered without a model call, or neither.
-func (m *Module) expandSlashCommand(content string) (text string, listing *string) {
+func (m *Module) expandSlashCommand(r *http.Request, content string) (text string, listing *string) {
 	mm := slashRe.FindStringSubmatch(jsTrim(content))
 	if mm == nil {
 		return "", nil
@@ -473,7 +483,7 @@ func (m *Module) expandSlashCommand(content string) (text string, listing *strin
 		}
 		return "Adopt these standing instructions for this request.\n\n" + agent + "\n\nRequest: " + rest, nil
 	}
-	if isBuiltin(name) || slices.ContainsFunc(customToolSpecs(m.eff(), m.Ext), func(t ToolSpec) bool { return t.Name == name }) {
+	if isBuiltin(name) && (toolGroupOf(name) != "agents" || m.pwCodeFor(r)) || slices.ContainsFunc(customToolSpecs(m.eff(), m.Ext), func(t ToolSpec) bool { return t.Name == name }) {
 		with := ""
 		if rest != "" {
 			with = " with arguments derived from: " + rest

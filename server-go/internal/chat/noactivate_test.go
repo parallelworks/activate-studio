@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -118,5 +120,44 @@ func TestStrictStudioAsksForTheSignInFirst(t *testing.T) {
 				t.Fatal(out)
 			}
 		})
+	}
+}
+
+// Without ACTIVATE the slash list and /name leave out the tools that reach
+// pw code; Settings lists them all. They are there again with a sign-in.
+func TestSlashListLeavesOutPWCodeWithoutActivate(t *testing.T) {
+	m, srv, _, _ := newTestModule(t, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks"})
+	has := false
+	m.A.Providers.PlatformAvailable = func(*http.Request, string) bool { return has }
+	listed := func(q string) (agents, search bool) {
+		for _, x := range get(t, srv.URL+"/api/chat/tools"+q)["tools"].([]any) {
+			n := x.(map[string]any)["name"].(string)
+			agents = agents || toolGroupOf(n) == "agents"
+			search = search || n == "search_kb"
+		}
+		return
+	}
+	r := httptest.NewRequest("GET", "/", nil)
+	if a, s := listed("?mine=1"); a || !s {
+		t.Fatal("pw code tools are listed, or others are not", a, s)
+	}
+	if a, _ := listed(""); !a {
+		t.Fatal("Settings lists every tool")
+	}
+	if text, l := m.expandSlashCommand(r, "/start_agent"); text != "" || l == nil || !strings.Contains(*l, "There is no /start_agent command.") {
+		t.Fatal(text, l)
+	}
+	if text, l := m.expandSlashCommand(r, "/delegate the sweep"); text != "" || l != nil {
+		t.Fatal(text, l)
+	}
+	if text, _ := m.expandSlashCommand(r, "/search_kb drag"); !strings.Contains(text, "search_kb") {
+		t.Fatal(text)
+	}
+	has = true
+	if a, _ := listed("?mine=1"); !a {
+		t.Fatal("not listed with ACTIVATE")
+	}
+	if text, _ := m.expandSlashCommand(r, "/delegate the sweep"); !strings.Contains(text, "Call the delegate tool") {
+		t.Fatal(text)
 	}
 }

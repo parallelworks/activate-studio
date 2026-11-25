@@ -198,12 +198,20 @@ describe('the cards', () => {
     expect(asked).not.toContain('/api/fleet')
     unmount()
     resetStatusPanelForTests(); asked = []
-    render(<StatusPanel view="search" cfg={cfg({ platform: false })} />)
+    const next = render(<StatusPanel view="search" cfg={cfg({ platform: false, localCode: true })} />)
     await waitFor(() => expect(screen.getByText('Review the results')).toBeInTheDocument())
     expect(screen.queryByText('bench')).toBeNull()
     expect(screen.queryByText('explorer')).toBeNull()
     expect(asked).not.toContain('/api/runs')
     expect(asked).not.toContain('/api/sessions')
+    next.unmount()
+    // Delegated work opens on the Code page, which needs ACTIVATE.
+    resetStatusPanelForTests(); asked = []
+    render(<StatusPanel view="search" cfg={cfg({ platform: false })} />)
+    await waitFor(() => expect(asked).toContain('/api/fleet'))
+    await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+    expect(screen.queryByText('Review the results')).toBeNull()
+    expect(asked).not.toContain('/api/delegated')
   })
 
   it('polls only while open, and reads attached servers without contacting them after the first check', async () => {

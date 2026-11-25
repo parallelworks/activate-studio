@@ -127,6 +127,9 @@ export function applyRememberedFavicon(): void {
   } catch { /* storage unavailable */ }
 }
 
+/** Reads of the configuration under way. */
+let reading = 0
+
 export function useAppConfig(): AppConfig {
   const [cfg, setCfg] = useState<AppConfig>(() => {
     if (cached) return cached
@@ -134,7 +137,7 @@ export function useAppConfig(): AppConfig {
     return { ...DEFAULTS, ...brand, brandRemembered: !!brand.appName }
   })
   useEffect(() => {
-    const load = () => fetch('/api/config')
+    const load = () => { reading++; return fetch('/api/config')
       .then(r => r.json())
       .then((d: Partial<AppConfig>) => {
         cached = {
@@ -171,7 +174,10 @@ export function useAppConfig(): AppConfig {
         setCfg(cached)
       })
       .catch(() => setCfg({ ...DEFAULTS, loaded: true }))
-    if (!cached) void load()
+      .finally(() => { reading-- }) }
+    // A part that mounts while it is read again (the chat page does, as a
+    // sign-in changes) was not there for the event, and what is kept is old.
+    if (!cached || reading > 0) void load()
     // A change the server knows about (a library that finished building)
     // asks every view for the configuration again. So does a change of model
     // access: whether the Workflows page shows depends on a platform

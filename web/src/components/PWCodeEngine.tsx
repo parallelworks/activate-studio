@@ -136,9 +136,10 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
   // Accounts.
   const cfg = useAppConfig()
   const none = !!info && !info.pwcode && (needsActivate(info.reason) || (cfg.loaded && !hasActivate(cfg)))
-  // A sign-in made outside the Studio, learned here first: the Code page
-  // shows with it.
-  const late = !!info?.pwcode && cfg.loaded && !hasActivate(cfg)
+  // A sign-in made outside the Studio, learned here first: Code and the
+  // Library's New pw code chat here show with it. One after which pw code
+  // still cannot answer says another reason than the sign-in.
+  const late = !!info && (info.pwcode || (!!info.reason && !needsActivate(info.reason))) && cfg.loaded && !hasActivate(cfg)
   useEffect(() => { if (late) reloadAppConfig() }, [late])
   const shown = !!info && !none && (info.pwcode || info.setting === 'pwcode' || !!session.url || info.current === 'pwcode')
   const current: 'pwcode' | 'studio' = engine.current || (info?.current ?? info?.default ?? 'studio')

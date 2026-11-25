@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { StatusBadge, type BadgeVariant } from '@parallelworks/ui'
 import { useAnsweredByPWCode } from '../pwcode/NewChatModel'
+import { hasActivate, useAppConfig } from '../config'
 import { useChatCommands } from '../pwcode/chatCommands'
 
 /**
@@ -36,6 +37,9 @@ export function SlashPalette({ canvas, conversationId = null, persona = null, ma
 }) {
   const pwcode = useAnsweredByPWCode()
   const ofSession = useChatCommands({ conversationId, persona, machine, session })
+  // Without ACTIVATE the tools that reach pw code are not listed: read again
+  // once the person signs in.
+  const activate = hasActivate(useAppConfig())
   const [studioItems, setItems] = useState<Item[]>(META)
   const items: Item[] = pwcode ? ofSession.commands : studioItems
   const [open, setOpen] = useState(false)
@@ -48,14 +52,14 @@ export function SlashPalette({ canvas, conversationId = null, persona = null, ma
   useEffect(() => {
     Promise.all([
       fetch('/api/extensions').then(r => r.json()).catch(() => ({})),
-      fetch('/api/chat/tools').then(r => r.json()).catch(() => ({})),
+      fetch('/api/chat/tools?mine=1').then(r => r.json()).catch(() => ({})),
     ]).then(([ext, tl]) => {
       const skills = ((ext.skills ?? []) as { name: string; description?: string }[]).map(s => ({ name: s.name, kind: 'skill' as const, description: s.description ?? '' }))
       const agents = ((ext.agents ?? []) as { name: string; description?: string }[]).map(a => ({ name: a.name, kind: 'agent' as const, description: a.description ?? '' }))
       const tools = ((tl.tools ?? []) as { name: string; description?: string }[]).map(t => ({ name: t.name, kind: 'tool' as const, description: (t.description ?? '').split(/(?<=\.)\s/)[0].slice(0, 110) }))
       setItems([...META, ...skills, ...agents, ...tools])
     })
-  }, [])
+  }, [activate])
 
   const shown = (() => {
     const q = query.toLowerCase()

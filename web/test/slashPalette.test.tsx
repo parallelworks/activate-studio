@@ -44,6 +44,24 @@ describe('SlashPalette', () => {
     expect(bubbled.mock.calls.some(([e]) => (e as KeyboardEvent).key === 'Enter')).toBe(false)
     document.removeEventListener('keydown', bubbled)
   })
+  it('lists the tools the Studio offers the person, read again when they sign in', async () => {
+    let signedIn = false
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+      json: async () => url.includes('/api/config') ? { platform: signedIn }
+        : url.includes('/api/extensions') ? {}
+        : { tools: [{ name: 'search_kb', description: 'Search.' }, ...(signedIn || !url.includes('mine=1') ? [{ name: 'start_agent', description: 'Start a pw code agent.' }] : [])] },
+    })))
+    const user = userEvent.setup()
+    render(<Harness />)
+    const ta = screen.getByLabelText('composer') as HTMLTextAreaElement
+    await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+    await user.type(ta, '/s')
+    expect((await screen.findAllByRole('option')).map(o => o.textContent).join()).toContain('/search_kb')
+    expect(screen.queryByText(/start_agent/)).toBeNull()
+    signedIn = true
+    await act(async () => { window.dispatchEvent(new CustomEvent('ade:model-access-changed')); await new Promise(r => setTimeout(r, 20)) })
+    expect(await screen.findByText(/start_agent/)).toBeInTheDocument()
+  })
   it('closes on Escape and stays closed for ordinary text', async () => {
     const user = userEvent.setup()
     render(<Harness />)

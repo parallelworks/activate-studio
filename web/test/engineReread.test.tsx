@@ -7,6 +7,7 @@ vi.mock('@parallelworks/ui/ai', () => ({
 
 import { PWCodeEngine } from '../src/components/PWCodeEngine'
 import { forgetEngines } from '../src/chatEngine'
+import { reloadAppConfig } from '../src/config'
 
 let visibility: DocumentVisibilityState = 'visible'
 beforeEach(() => {
@@ -66,5 +67,27 @@ describe('A sign-in made outside the Studio', () => {
     await waitFor(() => expect(reads()).toBe(4))
     await new Promise(r => setTimeout(r, 300))
     expect(reads()).toBe(4)
+  })
+
+  it('reads the configuration again where pw code then cannot answer for another reason', async () => {
+    let reason = NEEDS
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push(url)
+      const body = url.startsWith('/api/chat/engine') ? { setting: 'auto', default: 'studio', current: 'studio', answered: false, pwcode: false, reason }
+        : url === '/api/config' ? { platform: reason !== NEEDS } : { id: 'c8', messages: [] }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const reads = () => calls.filter(u => u === '/api/config').length
+    render(<PWCodeEngine conversationId="c8" />)
+    await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 20)) })
+    const before = reads()
+    reason = 'This Studio does not know the cluster it runs on (STUDIO_HOME_CLUSTER), so it cannot reach your pw code.'
+    await act(async () => { window.dispatchEvent(new Event('focus')); await new Promise(r => setTimeout(r, 30)) })
+    await waitFor(() => expect(reads()).toBeGreaterThan(before))
+    // Once, and not again as the person comes and goes.
+    const after = reads()
+    await act(async () => { window.dispatchEvent(new Event('focus')); await new Promise(r => setTimeout(r, 30)) })
+    expect(reads()).toBe(after)
   })
 })

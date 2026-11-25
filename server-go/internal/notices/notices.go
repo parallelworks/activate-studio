@@ -102,10 +102,12 @@ type Answer struct {
 // Sources is where the notices come from, each for the person a request
 // is from.
 type Sources struct {
-	Listing   func(r *http.Request) (machines, sessions []any, err error)
-	Chats     func(r *http.Request) []chat.ChatState
-	Local     func(r *http.Request, ids map[string]bool) map[string]*jsonv.Object
-	Fleet     func(r *http.Request) []fleet.Agent
+	Listing func(r *http.Request) (machines, sessions []any, err error)
+	Chats   func(r *http.Request) []chat.ChatState
+	Local   func(r *http.Request, ids map[string]bool) map[string]*jsonv.Object
+	Fleet   func(r *http.Request) []fleet.Agent
+	// Delegated is the person's delegated work, none for one without
+	// ACTIVATE: it opens on the Code page, which shows with it.
 	Delegated func(r *http.Request) []delegation.Record
 	Transfers func(r *http.Request) []transfers.Transfer
 	// Summary is the Transfers entry's, or nil.

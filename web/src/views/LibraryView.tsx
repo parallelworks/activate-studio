@@ -15,7 +15,7 @@ import { LibraryAddMenu } from '../components/UploadMenu'
 import { AddLibraryDialog, ImportLibrariesDialog, useLibraryAddOffer, type DroppedList } from '../components/LibraryAddDialogs'
 import { checkList, LIST_FORMAT } from '../libraryLists'
 import { TagMenu } from '../components/TagMenu'
-import { sectionAllowed, useAppConfig } from '../config'
+import { hasActivate, sectionAllowed, useAppConfig } from '../config'
 import { shownPath } from '../libraryPath'
 import { copyItemLink, copyLinkLabel } from '../itemLinks'
 import { askPlace, CHAT_HERE, chatHere, knownPlace } from '../pwcode/chatHere'
@@ -503,7 +503,8 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     const here = (why?: string): MenuEntry => ({ label: CHAT_HERE, disabled: !!why, description: why, onClick: () => void chatHere(itemAt(path), primaryId) })
     const held = cfg.libraries?.find(l => l.id === libraryAt(path))
     const noChat = held?.fromBucket || held?.access?.where === 'bucket' ? 'A bucket has no folder a pw code session can work in.' : labelsLocked ? 'This library is read only for you, so a pw code session cannot work here.' : undefined
-    if (!allTop && sectionAllowed('chat', cfg)) hereAt = items.push(here(noChat ?? knownPlace(itemAt(path))?.why)) - 1
+    // Only for a person with ACTIVATE, as Code and the chat bar's engine button.
+    if (!allTop && sectionAllowed('chat', cfg) && hasActivate(cfg)) hereAt = items.push(here(noChat ?? knownPlace(itemAt(path))?.why)) - 1
     if (path && !libraryTop && canCopyOut) {
       const rows = targets().filter(p => !inAll || p.includes('/'))
       items.push({

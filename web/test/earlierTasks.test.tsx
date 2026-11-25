@@ -23,6 +23,7 @@ describe('the Earlier tasks page', () => {
       asked.push(url)
       const body = url === '/api/tasks' ? { tasks: [{ id: task.id, objective: task.objective, state: 'canceled', agents: 2, running: 0, waiting: 0, done: 1, stopped: 1 }, { id: '2026-11-01-bad-ef56', objective: 'Failed work', state: 'completed', agents: 1, running: 0, waiting: 0, done: 0, failed: 1 }] }
         : url === `/api/tasks/${task.id}` ? task
+        : url === '/api/config' ? { platform: true }
         : url.endsWith('/output') ? { tail: 'the agent log' }
         : {}
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })

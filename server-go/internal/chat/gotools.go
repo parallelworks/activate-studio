@@ -122,7 +122,7 @@ func (t goTools) Begin(r *http.Request, in map[string]any) (*Begin, error) {
 		}
 		content := msg.Text()
 		if i == last && strings.HasPrefix(jsTrim(content), "/") {
-			text, listing := m.expandSlashCommand(content)
+			text, listing := m.expandSlashCommand(r, content)
 			if listing != nil {
 				out.Listing = listing
 			} else if text != "" {
