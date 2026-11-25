@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/parallelworks/activate-studio/server-go/internal/extract"
 	"io"
 	"io/fs"
 	"os"
@@ -465,16 +466,49 @@ type scope struct {
 
 // visionModel is the captioning model images are described with, or "":
 // only where the depth reads images, AI features are on and descriptions
-// are on.
+// are on, and, for a library built for one person, with a key of theirs.
 func (c *jobCtx) visionModel() string {
+	m, _ := c.vision()
+	return m
+}
+
+// vision is visionModel and the key the extraction child describes images
+// with: "" for the Studio's own (extract.GatewayKey), else the person's
+// (LibraryWorkOptions.VisionKey).
+func (c *jobCtx) vision() (model, key string) {
 	if c.ix.App == nil || c.ix.App.Settings == nil {
-		return ""
+		return "", ""
 	}
 	eff := c.ix.App.Settings.Effective()
-	if eff.AiEnabled && c.settings.OCR && c.settings.ImageDescriptions {
-		return eff.VisionModel
+	if !eff.AiEnabled || !c.settings.OCR || !c.settings.ImageDescriptions || eff.VisionModel == "" {
+		return "", ""
 	}
-	return ""
+	if c.visionKey == nil {
+		return eff.VisionModel, ""
+	}
+	k, why, ok := c.visionKey()
+	if !ok || k == "" {
+		if why != "" {
+			c.log("images are not described: " + why)
+		}
+		return "", ""
+	}
+	return eff.VisionModel, k
+}
+
+// visionEnv is the extraction child's environment env with images
+// described by model with key: the Studio's own key for "", never one the
+// Studio's own environment names for a person's.
+func visionEnv(env []string, model, key string) []string {
+	env = without(without(env, "ADE_VISION_MODEL"), extract.VisionKeyEnv)
+	if model == "" {
+		return env
+	}
+	env = append(env, "ADE_VISION_MODEL="+model)
+	if key != "" {
+		env = append(env, extract.VisionKeyEnv+"="+key)
+	}
+	return env
 }
 
 func (ix *Indexer) extractorsFile() string { return filepath.Join(ix.P.IndexBase, "extractors.json") }
@@ -516,14 +550,8 @@ func (c *jobCtx) documents(s scope) error {
 		args = append(args, "--extractors", ix.extractorsFile())
 	}
 	extra := map[string]string{"OMP_THREAD_LIMIT": "1"}
-	vm := c.visionModel()
-	if vm != "" {
-		extra["ADE_VISION_MODEL"] = vm
-	}
-	env := ix.gufiEnv(extra, true)
-	if vm == "" {
-		env = without(env, "ADE_VISION_MODEL")
-	}
+	vm, vkey := c.vision()
+	env := visionEnv(ix.gufiEnv(extra, true), vm, vkey)
 	out, err := c.runTool(ph, tool{name: "extract", cmd: cmd, args: args, env: env})
 	if err != nil {
 		return err

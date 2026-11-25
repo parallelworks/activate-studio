@@ -66,7 +66,7 @@ func listed(id string, enabled []string) bool {
 // false when the list cannot be read, and then nothing is changed.
 func (m *Module) enabledModels(r *http.Request) (enabled []string, failing map[string]bool, ok bool) {
 	cred := m.cred(r)
-	if m.deploymentModelsKey() == "" && cred == nil && !m.LLM.SidecarConfigured() {
+	if m.deploymentModelsKey() == "" && cred == nil && !m.LLM.SidecarConfigured() || m.personalRequired(cred) {
 		return nil, nil, false
 	}
 	viewer := ""

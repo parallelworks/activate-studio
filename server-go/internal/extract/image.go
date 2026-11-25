@@ -45,8 +45,17 @@ func (v Vision) enabled() bool { return v.Model != "" && v.Key != "" }
 // PW_GATEWAY_URL, and the key from PW_API_KEY or, failing that, the pw
 // CLI's credentials for the gateway's host.
 func VisionFromEnv() Vision {
-	return Vision{Model: os.Getenv("ADE_VISION_MODEL"), Key: GatewayKey(), BaseURL: os.Getenv("PW_GATEWAY_URL")}
+	key := GatewayKey()
+	// The index job's own: the key of the person the library is built for.
+	if k := os.Getenv(VisionKeyEnv); k != "" {
+		key = k
+	}
+	return Vision{Model: os.Getenv("ADE_VISION_MODEL"), Key: key, BaseURL: os.Getenv("PW_GATEWAY_URL")}
 }
+
+// VisionKeyEnv names the key images are described with in place of the
+// Studio's: the owner's, for a library built for one person.
+const VisionKeyEnv = "STUDIO_VISION_KEY"
 
 // GatewayKey is enrich.py's gateway_key(); "" after Stop using the pw CLI
 // (pwstop).

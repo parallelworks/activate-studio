@@ -72,7 +72,7 @@ A request that carries a valid proxy JWT is that JWT's user; otherwise the sign-
 | `OIDC_END_SESSION` | `1`: sign-out also ends the provider's session (its `end_session_endpoint`). By default sign-out ends the Studio's session only |
 | `OIDC_SESSION_MAX_AGE_SEC` | how long a sign-in lasts, default 43200 (12 hours) |
 | `STUDIO_ADMINS` | who changes the main library and the Studio's settings on a Studio with sign-in, besides the deployment's owner (`PW_USER`): user names, ids, e-mail addresses or `group:NAME`, separated by commas or spaces. Everyone else reads it only |
-| `REQUIRE_PERSONAL_KEY` | `1`: chat and models refuse the administrator's endpoint and the model served beside the Studio, so each person uses their own sign-in or key. `DISABLE_PERSONAL_KEYS=1` is its opposite, and wins when both are set |
+| `REQUIRE_PERSONAL_KEY` | `1`: chat, models and **Suggest labels…** refuse the administrator's endpoint and the model served beside the Studio, so each person uses their own sign-in or key; a person's own bucket library describes its images with theirs. `DISABLE_PERSONAL_KEYS=1` is its opposite, and wins when both are set |
 | `CHAT_SHARED_HISTORY` | `1`: everyone signed in can open and read everyone's chats, under **All chats**. Off by default with sign-in, and an administrator's choice in Settings, General, AI features comes first. Answers can quote files from people's own libraries |
 | `OIDC_REQUIRED` or `AUTH_REQUIRED` | `1`: API requests need a signed-in user, and a page load without one goes to sign-in. `/healthz`, the app's script, style and icon files, the brand image (`APP_ICON`, `APP_FAVICON`), and a mission worker's token on `/api/mcp` stay open |
 
