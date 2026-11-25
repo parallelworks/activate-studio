@@ -351,4 +351,127 @@ describe('a chat in the list', () => {
     expect(screen.getAllByTestId('chat-row-mark').map(m => m.dataset.state)).toEqual(['waiting', 'working', 'reply'])
     expect(screen.getByText('Waiting one').tagName).toBe('B')
   })
+
+  describe('folded to its rail', () => {
+    const day = 86_400_000
+    const conv = (id: string, title: string, age: number) => ({ id, title, createdAt: new Date(Date.now() - age).toISOString(), updatedAt: new Date(Date.now() - age).toISOString(), isOwner: true })
+    const list = [
+      conv('c-live', 'Live one', 1000), conv('c-plain', 'Plain one', 1500), conv('c-work', 'Working one', 2000), conv('c-rest', 'Resting one', 2500),
+      conv('c-read', 'Unread one', day * 2), conv('c-wait', 'Waiting one', day * 3), conv('c-ended', 'Ended one', day * 4), conv('c-live2', 'Older live one', day * 40),
+    ]
+    const marks = () => screen.queryAllByTestId('chat-rail-mark')
+    const names = () => marks().map(m => m.getAttribute('aria-label'))
+    const opened: string[] = []
+    let modes: string[] = []
+
+    function Page({ start = null, phone = false }: { start?: string | null; phone?: boolean }) {
+      const [id, setId] = useState<string | null>(start)
+      const [side, setSide] = useState<'expanded' | 'collapsed' | 'hidden'>('collapsed')
+      const adapter = useState(() => ({ conversations: { list: async () => list, get: async () => null, create: async () => list[0], rename: async () => {}, delete: async () => {} }, models: { list: async () => ({ models: [], unreachableSessions: [], providerIssues: [] }) } }) as unknown as ChatAdapter)[0]
+      return (
+        <ChatProvider adapter={adapter} currentUser={{ id: 'u', username: 'alex' } as never} activeConversationId={id}
+          sidebar={side} onSidebarChange={s => { modes.push(s); setSide(s) }}
+          navigation={{ toConversation: (c: string) => { opened.push(c); setId(c) }, toNewChat: () => setId(null) } as never}>
+          <StudioChatLayout sidebarMode={phone ? 'drawer' : 'inline'} sidebarTop={() => null}><p>thread</p></StudioChatLayout>
+        </ChatProvider>
+      )
+    }
+
+    beforeEach(() => {
+      opened.length = 0
+      modes = []
+      answer = {
+        ...answer,
+        sessions: [
+          session({ id: 's-live', liveHost: 'example-box' }), session({ id: 's-work', status: 'running', liveHost: 'example-box' }), session({ id: 's-rest' }),
+          session({ id: 's-ended', archivedAt: at }), session({ id: 's-live2', liveHost: 'example-box' }),
+        ],
+        chats: {
+          'c-live': { session: 's-live' }, 'c-work': { session: 's-work' }, 'c-rest': { session: 's-rest' }, 'c-read': { unread: 'reply' },
+          'c-wait': { waiting: true }, 'c-ended': { session: 's-ended' }, 'c-live2': { session: 's-live2' },
+        },
+      }
+    })
+
+    it('has a mark for each chat that works, waits, is live or has a new reply, in the list’s order', async () => {
+      const { container } = render(<><Reader /><Page /></>)
+      await waitFor(() => expect(marks()).toHaveLength(5))
+      await waitFor(() => expect(container.querySelector('[data-testid="agent-session-working"]')).not.toBeNull())
+      expect(names()).toEqual(['Waiting one, Waiting on you', 'Working one, running', 'Live one, idle', 'Unread one, New reply', 'Older live one, idle'].map(x => expect.stringMatching(new RegExp(`^${x}$`, 'i'))))
+      expect(marks().map(m => m.querySelector('[data-state]')!.getAttribute('data-state'))).toEqual(['waiting', 'working', 'idle', 'reply', 'idle'])
+      // What it shows is what the notices read said: nothing else is read.
+      expect(asked('/api/notices')).toHaveLength(1)
+      expect(sent.map(s => s.path).filter(p => /session|pwcode|code/.test(p))).toEqual([])
+      // The rows themselves are not behind it, to be reached by Tab unseen.
+      expect(container.querySelectorAll('[data-sidebar-row]')).toHaveLength(0)
+    })
+
+    it('opens a chat in place, and keeps the mark of the open one', async () => {
+      render(<><Reader /><Page /></>)
+      await waitFor(() => expect(marks()).toHaveLength(5))
+      const unread = marks()[3]
+      unread.focus()
+      fireEvent.click(unread)
+      expect(opened).toEqual(['c-read'])
+      expect(modes).toEqual([])
+      // Read now, it stays where it was, marked as the one open, with the focus.
+      answer = { ...answer, chats: { ...answer.chats, 'c-read': {} } }
+      act(() => setFrontChat('c-read'))
+      await waitFor(() => expect(names()[3]).toBe('Unread one'))
+      expect(marks()[3]).toBe(unread)
+      expect(unread).toHaveAttribute('aria-current', 'page')
+      expect(document.activeElement).toBe(unread)
+      fireEvent.click(marks()[0])
+      await waitFor(() => expect(marks()).toHaveLength(4))
+      expect(opened).toEqual(['c-read', 'c-wait'])
+    })
+
+    it('marks the open chat where it has no state of its own', async () => {
+      render(<><Reader /><Page start="c-plain" /></>)
+      await waitFor(() => expect(marks()).toHaveLength(6))
+      expect(names()[3]).toBe('Plain one')
+      expect(marks()[3]).toHaveAttribute('aria-current', 'page')
+      expect(marks()[3].querySelector('[data-lamp="off"]')).not.toBeNull()
+    })
+
+    it('moves between its marks with the arrow keys, Home and End', async () => {
+      render(<><Reader /><Page /></>)
+      await waitFor(() => expect(marks()).toHaveLength(5))
+      const key = (k: string, o = {}) => fireEvent.keyDown(document.activeElement!, { key: k, ...o })
+      marks()[0].focus()
+      key('ArrowDown')
+      expect(document.activeElement).toBe(marks()[1])
+      key('End')
+      expect(document.activeElement).toBe(marks()[4])
+      key('ArrowDown')
+      expect(document.activeElement).toBe(marks()[4])
+      key('ArrowUp')
+      expect(document.activeElement).toBe(marks()[3])
+      key('ArrowUp', { altKey: true })
+      expect(document.activeElement).toBe(marks()[3])
+      key('Home')
+      expect(document.activeElement).toBe(marks()[0])
+    })
+
+    it('has Search, which opens the list with the cursor in it, and what was searched for does not hide a mark', async () => {
+      render(<><Reader /><Page /></>)
+      await waitFor(() => expect(marks()).toHaveLength(5))
+      fireEvent.click(screen.getByRole('button', { name: /^Search conversations/ }))
+      expect(modes).toEqual(['expanded'])
+      const box = await screen.findByRole('searchbox')
+      await waitFor(() => expect(document.activeElement).toBe(box))
+      fireEvent.change(box, { target: { value: 'Plain' } })
+      await waitFor(() => expect(document.querySelectorAll('[data-sidebar-row]')).toHaveLength(1))
+      fireEvent.click(screen.getByRole('button', { name: 'Close sidebar' }))
+      await waitFor(() => expect(marks()).toHaveLength(5))
+    })
+
+    it('is not on a phone, where the list is a drawer', async () => {
+      render(<><Reader /><Page phone /></>)
+      await waitFor(() => expect(asked('/api/notices')).toHaveLength(1))
+      await act(async () => {})
+      expect(marks()).toEqual([])
+      expect(screen.queryByRole('button', { name: /^Search conversations/ })).toBeNull()
+    })
+  })
 })
