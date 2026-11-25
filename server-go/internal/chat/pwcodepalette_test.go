@@ -193,7 +193,7 @@ func TestAChatsSessionSaysWhatPWCodeHas(t *testing.T) {
 	has = palette([]string{"help", "second", "rename"}, "moor")
 	f.mu.Unlock()
 	code, out, _ := send(t, http.MethodGet, base+"/api/code/machines/studio/sessions/s1/palette", "")
-	if code != 200 || len(out["commands"].([]any)) != 4 || mustJSON(out["notListed"]) != `["agents","approve","archive","auth","fork","remote-control","rename","resume","rewind","settings"]` {
+	if code != 200 || len(out["commands"].([]any)) != 4 || mustJSON(out["notListed"]) != `["agents","approve","archive","auth","fork","rc","remote-control","rename","resume","rewind","settings"]` {
 		t.Errorf("%d %v", code, out)
 	}
 	if got, _ := slashListed(t, base, "studio", "own=1"); got != "help second" {
