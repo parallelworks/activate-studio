@@ -1346,6 +1346,8 @@ export interface ModelsResponse {
   impaired?: { id: string; locked: boolean; reason?: string; unlock_url: string | null }[]
   unreachableSessions?: unknown[]
   error?: string
+  /** 'credential': nothing is listed since there is no account to list with. */
+  kind?: string
   credential?: string
 }
 const MODELS_REUSE_MS = 15_000

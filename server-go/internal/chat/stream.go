@@ -312,11 +312,11 @@ func (m *Module) answer(r *http.Request, res *sseWriter, body streamBody, convID
 		m.refreshAccess(r, 15000)
 	}
 	if m.personalRequired(userCred) {
-		res.event("error", reqbody.O("message", "This deployment requires your own model credential. Add your API key or platform token in Settings, Accounts, then retry. Browsing, search, and adding material work without one.", "kind", "credential"))
+		res.event("error", reqbody.O("message", signInFirst, "kind", "credential"))
 		return nil
 	}
 	if m.deploymentModelsKey() == "" && userCred == nil && !m.LLM.SidecarConfigured() {
-		res.event("error", reqbody.O("message", noModelCredential(m.A.Cfg.AuthEnabled()), "kind", "credential"))
+		res.event("error", reqbody.O("message", m.noCredential(), "kind", "credential"))
 		return nil
 	}
 

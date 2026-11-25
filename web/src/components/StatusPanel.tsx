@@ -4,7 +4,7 @@ import { Button, DisclosurePanel, IconButton, StatusDot, type BadgeVariant } fro
 import { statusLook } from '../statusLook'
 import { ChevronRightIcon } from '@parallelworks/ui/icons'
 import { currentLibrary, type IndexStatus, type PublicLibrary, type UserLibrary } from '../api'
-import { reloadAppConfig, type AppConfig } from '../config'
+import { mainWritable, reloadAppConfig, type AppConfig } from '../config'
 import { setPanelOpen, usePanel } from '../panelState'
 import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '../statusShare'
 import { indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
@@ -502,7 +502,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
             <span className="status-row-name" title={idx?.lastError ?? undefined}>
               {idx?.running ? ix.text : syncing ? 'Syncing now' : idx?.lastError ? `Sync failed: ${idx.lastError}` : idx?.lastSweepAt ? `Synced ${ago(idx.lastSweepAt)}` : 'Not synced yet'}
             </span>
-            <Button variant="ghost" size="xs" onClick={() => void sync()} disabled={syncing || !!idx?.running}>Sync now</Button>
+            {mainWritable(cfg) && <Button variant="ghost" size="xs" onClick={() => void sync()} disabled={syncing || !!idx?.running}>Sync now</Button>}
           </div>
           <button type="button" className="status-link" onClick={() => go('#view=settings:libraries')}>Library settings</button>
         </Card>

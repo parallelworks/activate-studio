@@ -170,3 +170,24 @@ func TestOnlyAdministratorsAddSkillsAndPersonas(t *testing.T) {
 		t.Fatalf("%d %s", r.status, r.raw)
 	}
 }
+
+// The app is told when an ACTIVATE sign-in of each person's own comes
+// first: with sign-in on, REQUIRE_PERSONAL_KEY set, and personal keys on.
+func TestConfigSignInFirst(t *testing.T) {
+	jwks := "http://127.0.0.1:9/keys"
+	for _, c := range []struct {
+		env  map[string]string
+		want any
+	}{
+		{map[string]string{"AUTH_JWKS_URL": jwks, "REQUIRE_PERSONAL_KEY": "1"}, true},
+		{map[string]string{"AUTH_JWKS_URL": jwks}, nil},
+		{map[string]string{"AUTH_JWKS_URL": jwks, "REQUIRE_PERSONAL_KEY": "1", "DISABLE_PERSONAL_KEYS": "1"}, nil},
+		{map[string]string{"REQUIRE_PERSONAL_KEY": "1"}, nil},
+	} {
+		t.Setenv("REQUIRE_PERSONAL_KEY", c.env["REQUIRE_PERSONAL_KEY"])
+		e := newEnv(t, c.env)
+		if got := e.doAs("ada", "GET", "/api/config", nil).body["signInFirst"]; got != c.want {
+			t.Fatalf("%v: %v", c.env, got)
+		}
+	}
+}

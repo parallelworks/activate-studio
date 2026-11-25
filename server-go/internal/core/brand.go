@@ -530,6 +530,12 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	// Whether people sign in: it decides what the main library is called
 	// (theirs, or the one they share) and what My library means.
 	set("signIn", c.a.Cfg.AuthEnabled())
+	// Whether each person uses an ACTIVATE sign-in of their own here before
+	// models answer them (REQUIRE_PERSONAL_KEY): the app then says so,
+	// rather than that the Studio works without one.
+	if eff.RequirePersonalKey && c.a.Cfg.AuthEnabled() && !c.a.Cfg.DisablePersonalKeys {
+		set("signInFirst", true)
+	}
 	// The address links to items start with, where it is fixed.
 	set("linkBase", links.Base(os.Getenv("STUDIO_SELF_URL"), c.a.Cfg.OIDC.RedirectURI, auth.CallbackPath))
 	// Whether the Studio's settings are its administrators' and not this
