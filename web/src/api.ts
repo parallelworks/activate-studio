@@ -210,7 +210,11 @@ export interface ReadThroughInput { destination: string; sshOptions?: string; ro
 export interface BuildProgress { phase: string; done: number; total: number; current: string | null }
 /** A user's own library on one of their clusters, or on another machine over ssh. */
 /** A system on the platform, as pw ssh names it. */
-export interface PwSystem { name: string; label: string; status: string; running: boolean; type: string | null }
+export interface PwSystem {
+  name: string; label: string; status: string; running: boolean; type: string | null
+  /** What picks its icon (code/machineIcon.ts), where the platform says. */
+  imageUrl?: string; csp?: string; schedulerType?: string; os?: string
+}
 export interface PwSystems { usable: boolean; why: string | null; systems: PwSystem[]; error: string | null }
 
 export interface UserLibrary {
@@ -299,7 +303,7 @@ export interface SpaceStatus {
 }
 /** The space check: its steps, the folder, and what it would create. */
 export interface SpaceCheck {
-  ok: boolean; steps: { name: string; ok: boolean; detail: string; warn?: boolean }[]
+  ok: boolean; steps: { name: string; ok: boolean; detail: string; warn?: boolean; short?: string }[]
   sourceRoot: string; create: string[]; account: string; acl: boolean; fs: string
   /** The viewer owns the folder, or will once it is made. */
   owned?: boolean
@@ -311,7 +315,14 @@ export interface SpaceCheck {
   canShare?: boolean; shareWhy?: string | null
   /** Why it cannot be My library; null where it can. */
   myLibraryWhy?: string | null
+  /** The viewer's account can write in the folder itself. */
+  writable?: boolean
+  /** What search by meaning needs there: about how many megabytes the first
+   *  build sends, or why there is none; neither where it is there. */
+  embedMB?: number; embedWhy?: string
 }
+/** What a folder holds, as far as was looked (`partial`: at least this). */
+export interface FolderCount { files: number; bytes: number; kinds: { name: string; files: number }[]; partial?: boolean }
 /** A folder to index on one of the viewer's systems. */
 export interface SpaceAsk { sourceRoot: string; cluster?: string; destination?: string; sshOptions?: string; indexRoot?: string; gufiBin?: string }
 /** A folder of a space shared with an account, a group or every account. */
@@ -991,8 +1002,8 @@ export const api = {
   /** The systems pw ssh reaches, running first; or why it cannot be used,
    *  or why the list could not be had. */
   pwSystems: () => getJson<PwSystems>('/api/user-libraries/pw/systems'),
+  sshHosts: () => getJson<{ hosts: string[] }>('/api/user-libraries/ssh/hosts'),
   spaceStatus: () => getJson<SpaceStatus>('/api/user-libraries/space'),
-  testSpace: (body: SpaceAsk) => sendJson<SpaceCheck>('POST', '/api/user-libraries/space/test', body),
   addSpace: (body: SpaceAsk & { label?: string; depth?: IndexDepth; create?: boolean; myLibrary?: boolean; share?: { kind: FolderShare['kind']; name?: string; access: FolderShare['access'] } }) =>
     sendJson<UserLibrary>('POST', '/api/user-libraries/space', body),
   spaceShares: (id: string) =>

@@ -259,11 +259,17 @@ func (m *Module) probeFoldersInto(p *probe, h probeHost, run runFn, c *connected
 		}
 		add(step{Name: "extract", OK: true, Detail: fmt.Sprintf("Text is extracted there by the Studio's own reader, %s, so search covers what the files say. %s",
 			how, m.meaningThere(plat, kv["embeds"], model))})
+		switch v := m.embedVersion(plat); {
+		case v == "":
+			p.EmbedWhy = ptr(m.meaningThere(plat, kv["embeds"], model))
+		case !fieldsHave(kv["embeds"], v):
+			p.EmbedMB = ptr(m.embedMegabytes(plat))
+		}
 	} else if plat != "" {
-		add(step{Name: "extract", OK: true, Warn: true, Detail: fmt.Sprintf("This installation of the Studio has no helper for %s (%s, which server-go/scripts/build_remote.sh builds), so the index has names and metadata only.",
+		add(step{Name: "extract", OK: true, Warn: true, Short: "Names only: no reader for that system", Detail: fmt.Sprintf("This installation of the Studio has no helper for %s (%s, which server-go/scripts/build_remote.sh builds), so the index has names and metadata only.",
 			dest, plat)})
 	} else {
-		add(step{Name: "extract", OK: true, Warn: true, Detail: fmt.Sprintf("The Studio has no reader for %s (%s; it has them for Linux x86_64 and aarch64, and macOS arm64), so the index has names and metadata only.",
+		add(step{Name: "extract", OK: true, Warn: true, Short: "Names only: no reader for that system", Detail: fmt.Sprintf("The Studio has no reader for %s (%s; it has them for Linux x86_64 and aarch64, and macOS arm64), so the index has names and metadata only.",
 			dest, or(strings.TrimSpace(kv["platform"]), "an unknown system"))})
 	}
 	p.OS = &c.OS

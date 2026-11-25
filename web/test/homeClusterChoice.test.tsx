@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AddLibrary } from '../src/components/AddLibrary'
+import { closeMenu, computers } from './addLibraryHelpers'
 
 // On a Studio a cluster hosts, Add a library listed that cluster under
 // Remote computer, chosen already, hinted "the Studio's cluster". This
@@ -23,36 +24,33 @@ function stub() {
     return json({ error: `no route for ${url}` }, 404)
   }))
 }
-const where = (name: string) => screen.queryByRole('button', { name })
 
 describe('the cluster a Studio runs on, in Add a library', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('on a hosted Studio, says what each choice reads as, lists its cluster first, and chooses none', async () => {
+  it('on a hosted Studio, says whose account reads, lists its cluster first, and chooses none', async () => {
     stub()
-    render(<AddLibrary options={{ buildHere: true, ssh: false, pw: true, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    // This computer is the Studio's account; the clusters are the person's.
-    expect(where('This computer')).toBeInTheDocument()
-    expect(where('Remote computer')).toBeNull()
-    expect(screen.getByText(/read with the Studio's account, not yours/)).toBeInTheDocument()
-    expect(screen.getByText(/To read it as your own account instead, choose Your clusters, then cluster-a, where this Studio runs\./)).toBeInTheDocument()
-    fireEvent.click(where('Your clusters')!)
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('Choose a cluster'))
-    expect(screen.getByTestId('read-as')).toHaveTextContent("Read as you, with your ACTIVATE sign-in, never the Studio's own account.")
-    fireEvent.click(screen.getByRole('combobox'))
-    const options = (await screen.findAllByRole('option')).map(o => o.textContent ?? '')
-    expect(options[0]).toContain('cluster-a, where this Studio runs')
-    expect(options[1]).toContain('cluster-b')
-    expect(options.join('|')).not.toMatch(/the Studio's cluster|remote computer/i)
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: true, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
+    await waitFor(() => expect(screen.getByTestId('add-library-computer')).toHaveTextContent('Choose a cluster'))
+    const rows = (await computers()).map(r => r.textContent ?? '')
+    expect(rows[0]).toBe('cluster-aWhere this Studio runs')
+    expect(rows[1]).toBe('cluster-b')
+    expect(rows.join('|')).not.toMatch(/the Studio's cluster|remote computer/i)
+    closeMenu()
+    fireEvent.click(screen.getByRole('button', { name: 'About adding a library' }))
+    expect(await screen.findByText(/is read as you, with your ACTIVATE sign-in/)).toBeInTheDocument()
   })
 
-  it('in the apps, where every cluster is remote, is as before: Remote computer, the first running one chosen', async () => {
+  it('beside this computer, says it is read with the Studio\'s account, and what to choose instead', async () => {
     stub()
-    render(<AddLibrary options={{ buildHere: true, ssh: true, pw: true, workflow: false, space: true }} onAdded={() => {}} />)
-    expect(where('Your clusters')).toBeNull()
-    expect(screen.getByText(/read with the Studio's account/)).not.toHaveTextContent(/choose Your clusters/)
-    fireEvent.click(where('Remote computer')!)
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('cluster-b'))
-    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-b, with your ACTIVATE sign-in')
+    render(<AddLibrary options={{ buildHere: true, ssh: false, pw: true, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'About adding a library' }))
+    expect(await screen.findByText(/is read with the account the Studio runs as.* To read it as your own account instead, choose cluster-a\./)).toBeInTheDocument()
+  })
+
+  it('in the apps, where every cluster is remote, the first running one is chosen', async () => {
+    stub()
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: true, workflow: false, space: true }} onAdded={() => {}} />)
+    await waitFor(() => expect(screen.getByTestId('add-library-computer')).toHaveTextContent('cluster-b'))
   })
 })

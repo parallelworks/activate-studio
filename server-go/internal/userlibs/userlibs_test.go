@@ -832,4 +832,17 @@ esac
 	}
 	upd := h.post("/api/user-libraries/u-cluster-a-workdir/refresh", nil)
 	eq(t, []any{upd.Status, upd.Body["state"], upd.Body["run"].(map[string]any)["mode"]}, []any{200, "updating", "update"}, "update")
+
+	// Add a library offers no workflow beside pw ssh; what it built before is
+	// still refreshed, read and removed.
+	defs = h.m.Users.Load("single")
+	defs[0].Run.CheckedAt = ""
+	h.m.Users.Save("single", defs)
+	got = h.library("u-cluster-a-workdir")
+	eq(t, []any{got["state"], got["sourceDir"], got["files"]}, []any{"ready", "$WORKDIR", 9}, "ready after its update")
+	del := h.do(http.MethodDelete, "/api/user-libraries/u-cluster-a-workdir", nil)
+	eq(t, del.Status, 200, "removed")
+	if left := h.m.Users.Load("single"); len(left) != 0 {
+		t.Errorf("still listed: %v", left)
+	}
 }

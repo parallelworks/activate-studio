@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/extensions"
+	"github.com/parallelworks/activate-studio/server-go/internal/folders"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
@@ -614,139 +614,32 @@ func (m *Module) startDirectories(w http.ResponseWriter, r *http.Request) error 
 	return reqbody.OK(w, v)
 }
 
-// folderLimit is the most folders one listing answers with.
-const folderLimit = 1000
-
-// folderEntry is one folder of a listing.
-type folderEntry struct {
-	Name       string `json:"name"`
-	Repository bool   `json:"repository,omitempty"`
-}
-
-// folderListing is a machine's folders as pw code lists them
-// (AgentDirectories).
-type folderListing struct {
-	Path      string        `json:"path"`
-	Home      string        `json:"home,omitempty"`
-	Entries   []folderEntry `json:"entries"`
-	Truncated bool          `json:"truncated,omitempty"`
-}
-
 // listFolder lists dir's folders on the machine the Studio drives for the
 // viewer, where pw code does not list folders itself: on a Studio of one,
 // this computer's, read by the Studio, which runs as the person; under
 // sign-in, the cluster's, over pw ssh with the person's own credential and
 // as their account there.
-func (m *Module) listFolder(r *http.Request, dir, filter string) (*folderListing, error) {
-	var l *folderListing
+func (m *Module) listFolder(r *http.Request, dir, filter string) (*folders.Listing, error) {
+	var l *folders.Listing
 	if !m.A.Cfg.AuthEnabled() {
-		l = localFolders(dir)
+		l = folders.Local(dir)
 	} else {
 		key, site := m.viewerPlatformKey(r), m.pwSite()
 		if key == "" || site == "" {
 			return nil, pwErr(409, "pw code runs as you: sign in with ACTIVATE under Settings, Accounts.")
 		}
-		res, err := m.bridgeRun()(r.Context(), site, key, []string{"sh", "-c", foldersScript, "studio-folders", dir}, 30*time.Second)
+		res, err := m.bridgeRun()(r.Context(), site, key, []string{"sh", "-c", folders.Script, "studio-folders", dir}, 30*time.Second)
 		if err != nil {
 			return nil, pwErr(502, "The Studio could not reach "+agentSiteName(site)+" as you: "+firstLine(apiMessage(err), 300))
 		}
-		l = parseFolders(res.Stdout)
+		l = folders.Parse(res.Stdout)
 	}
 	if l == nil {
 		return nil, errNotListed(dir)
 	}
-	filter = strings.ToLower(filter)
-	kept := []folderEntry{}
-	for _, e := range l.Entries {
-		if strings.Contains(strings.ToLower(e.Name), filter) {
-			kept = append(kept, e)
-		}
-	}
-	sort.Slice(kept, func(i, j int) bool { return strings.ToLower(kept[i].Name) < strings.ToLower(kept[j].Name) })
-	if len(kept) > folderLimit {
-		kept, l.Truncated = kept[:folderLimit], true
-	}
-	l.Entries = kept
-	return l, nil
+	return l.Filter(filter), nil
 }
 
 func errNotListed(dir string) error {
 	return pwErr(http.StatusBadRequest, dir+" is not a folder your account there can read.")
-}
-
-// localFolders lists a directory of this computer; nil when it cannot be.
-func localFolders(dir string) *folderListing {
-	home, _ := os.UserHomeDir()
-	switch {
-	case dir == "" || dir == "~":
-		dir = home
-	case strings.HasPrefix(dir, "~/"):
-		dir = filepath.Join(home, dir[2:])
-	}
-	if !filepath.IsAbs(dir) {
-		return nil
-	}
-	dir = filepath.Clean(dir)
-	es, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	l := &folderListing{Path: dir, Home: home, Entries: []folderEntry{}}
-	for _, e := range es {
-		p := filepath.Join(dir, e.Name())
-		isDir := e.IsDir()
-		if !isDir && e.Type()&os.ModeSymlink != 0 {
-			st, err := os.Stat(p)
-			isDir = err == nil && st.IsDir()
-		}
-		if isDir {
-			_, err := os.Lstat(filepath.Join(p, ".git"))
-			l.Entries = append(l.Entries, folderEntry{Name: e.Name(), Repository: err == nil})
-		}
-	}
-	return l
-}
-
-// foldersScript lists a directory's folders, one a line, as parseFolders
-// reads them.
-const foldersScript = `p=$1
-case "$p" in
-'' | '~') p=$HOME ;;
-'~/'*) p=$HOME/${p#??} ;;
-/*) ;;
-*) exit 0 ;;
-esac
-cd -- "$p" 2>/dev/null && [ -r . ] || exit 0
-printf 'home=%s\npath=%s\n' "$HOME" "$(pwd)"
-n=0
-for d in .* *; do
-  case "$d" in . | ..) continue ;; esac
-  [ -d "$d" ] || continue
-  n=$((n+1))
-  [ $n -gt 5000 ] && { echo more=1; break; }
-  if [ -e "$d/.git" ]; then printf 'repo=%s\n' "$d"; else printf 'dir=%s\n' "$d"; fi
-done
-`
-
-// parseFolders is foldersScript's answer; nil when it listed nothing.
-func parseFolders(out string) *folderListing {
-	l := &folderListing{Entries: []folderEntry{}}
-	for _, line := range strings.Split(out, "\n") {
-		k, v, _ := strings.Cut(strings.TrimRight(line, "\r"), "=")
-		switch {
-		case v == "":
-		case k == "home":
-			l.Home = v
-		case k == "path":
-			l.Path = v
-		case k == "more":
-			l.Truncated = true
-		case k == "dir" || k == "repo":
-			l.Entries = append(l.Entries, folderEntry{Name: v, Repository: k == "repo"})
-		}
-	}
-	if l.Path == "" {
-		return nil
-	}
-	return l
 }

@@ -5,15 +5,12 @@ import { api, type UserLibrary } from '../api'
 /**
  * Builds a GUFI index of a directory on one of the user's clusters, with
  * their own key, through the platform's index workflow (POST
- * /api/user-libraries). Offered only where the Studio reaches a platform.
+ * /api/user-libraries). Offered where that is the one way to build (Add a library).
  * The library is ready, for this user alone, when the run finishes.
  */
-export function ClusterLibraryForm({ onStarted, compact = false, site }: {
+export function ClusterLibraryForm({ onStarted, compact = false }: {
   onStarted?: (lib: UserLibrary) => void
   compact?: boolean
-  /** The cluster, chosen by the form around this one (Add a library); the
-   *  form then shows no Cluster field of its own. */
-  site?: string
 }) {
   const [sites, setSites] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -33,7 +30,7 @@ export function ClusterLibraryForm({ onStarted, compact = false, site }: {
     setError(null)
     try {
       const lib = await api.addUserLibrary({
-        site: site ?? form.site, sourceDir: form.sourceDir.trim() || '$WORKDIR', label: form.label.trim() || undefined,
+        site: form.site, sourceDir: form.sourceDir.trim() || '$WORKDIR', label: form.label.trim() || undefined,
         scheduler: form.slurm && form.partition.trim() ? { partition: form.partition.trim(), account: form.account.trim() || undefined } : null,
       })
       setForm(f => ({ ...f, label: '' }))
@@ -49,13 +46,13 @@ export function ClusterLibraryForm({ onStarted, compact = false, site }: {
         </p>
       )}
       <div className="settings-grid">
-        {site === undefined && <Field label="Cluster">
+        <Field label="Cluster">
           <Select items={(sites ?? []).map(s => ({ value: s, label: s }))} value={form.site || null}
             placeholder={sites === null ? 'Loading…' : 'No active clusters'} disabled={!sites?.length}
             onValueChange={v => v && setForm({ ...form, site: v })} />
-        </Field>}
+        </Field>
         <Input label="Directory" placeholder="$WORKDIR" value={form.sourceDir} onChange={e => setForm({ ...form, sourceDir: e.target.value })} />
-        <Input label="Label" placeholder={`${site ?? (form.site || 'cluster')} ${form.sourceDir || '$WORKDIR'}`} value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} />
+        <Input label="Label" placeholder={`${form.site || 'cluster'} ${form.sourceDir || '$WORKDIR'}`} value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} />
         <div>
           <Field controlFirst label="Build as a Slurm job (otherwise on the login node)">
             <Checkbox checked={form.slurm} onCheckedChange={v => setForm({ ...form, slurm: v })} />
@@ -70,7 +67,7 @@ export function ClusterLibraryForm({ onStarted, compact = false, site }: {
       </div>
       {error && <Callout tone="error" live>{error}</Callout>}
       <div className="query-actions">
-        <Button variant="primary" loading={busy} disabled={!(site ?? form.site) || (form.slurm && !form.partition.trim()) || busy} onClick={() => void add()}>
+        <Button variant="primary" loading={busy} disabled={!form.site || (form.slurm && !form.partition.trim()) || busy} onClick={() => void add()}>
           {busy ? 'Starting…' : 'Build the index'}
         </Button>
       </div>

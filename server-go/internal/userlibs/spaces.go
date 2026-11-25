@@ -196,7 +196,7 @@ func (f *spaceFound) json() *jsonv.Object {
 		create = append(create, f.Target)
 	}
 	return jsonv.NewObject("ok", f.OK, "steps", stepsJSON(f.Steps), "sourceRoot", f.Target, "create", create,
-		"account", f.Info.Account, "acl", f.Info.ACL, "fs", f.Info.FS, "owned", f.Owned, "othersWrite", orNil(f.Loose), "readOnly", orNil(f.ReadOnly))
+		"account", f.Info.Account, "acl", f.Info.ACL, "fs", f.Info.FS, "owned", f.Owned, "writable", f.writable || f.Missing, "othersWrite", orNil(f.Loose), "readOnly", orNil(f.ReadOnly))
 }
 
 func orNil(s string) any {
@@ -299,6 +299,9 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 		route = "1"
 	}
 	res, err := m.Pool.Run(ctx, h.Site, h.Key, []string{"bash", "-c", spaceCheckSh, "_", q.folder, v, flag, grantsLine(q.grants), route}, 90*time.Second)
+	if err != nil && remote.IsSSH(h.Site) && ctx.Err() == nil {
+		return nil, apierr.New(502, "%s", h.Advice(err.Error()))
+	}
 	if err != nil {
 		return nil, m.sessionErr(remote.ShortName(h.Site), h.Key, err)
 	}
@@ -380,7 +383,7 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 	if !f.writable && !f.Missing {
 		lib = "Your account cannot write in the folder itself, so the Library writes only in what it holds that your account can change."
 	}
-	others := func(name, found, can, fix string) {
+	others := func(name, short, found, can, fix string) {
 		if f.Loose != "" {
 			f.Loose += " "
 		}
@@ -392,11 +395,13 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 			}
 			detail = found + ". It is indexed and read as you, and the Library does not write in it, since another account could send what the Studio writes there elsewhere. " + noHelper + " " + fix
 		}
-		add(step{Name: name, OK: true, Warn: true, Detail: strings.TrimSpace(detail)})
+		add(step{Name: name, OK: true, Warn: true, Short: short, Detail: strings.TrimSpace(detail)})
 	}
 	const (
 		they  = "They can add, change and remove what is in it."
 		again = " and refresh the library, or check again before adding it."
+
+		write = "Others can write it"
 	)
 	self := ""
 	if !f.Missing {
@@ -407,31 +412,32 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 		add(step{Name: "folder", OK: true, Detail: f.Target + " does not exist yet. It is made, closed to other accounts, when you confirm."})
 	case !f.Owned:
 		found, can := fmt.Sprintf("%s belongs to another account (uid %s)", f.Real, kv["owner"]), "That account can add, change and remove what is in it."
+		short := "Another account owns it"
 		switch {
 		case mode&0o002 != 0:
 			found += fmt.Sprintf(", and every account there can write in it (mode %s)", kv["mode"])
-			can = they
+			can, short = they, write
 		case mode&0o020 != 0:
 			found += fmt.Sprintf(", and members of the group %s can write in it (mode %s)", kv["fgroup"], kv["mode"])
-			can = they
+			can, short = they, write
 		}
-		others("folder", found, can, "")
+		others("folder", short, found, can, "")
 	case self == "other":
-		others("folder", fmt.Sprintf("Every account there can write in %s (mode %s)", f.Real, kv["mode"]), they, "To keep it to yourself, run chmod go-w on it"+again)
+		others("folder", write, fmt.Sprintf("Every account there can write in %s (mode %s)", f.Real, kv["mode"]), they, "To keep it to yourself, run chmod go-w on it"+again)
 	case self == "group":
-		others("folder", fmt.Sprintf("Members of the group %s can write in %s (mode %s)", kv["fgroup"], f.Real, kv["mode"]), they, "To keep it to yourself, run chmod g-w on it"+again)
+		others("folder", write, fmt.Sprintf("Members of the group %s can write in %s (mode %s)", kv["fgroup"], f.Real, kv["mode"]), they, "To keep it to yourself, run chmod g-w on it"+again)
 	case self == "acl":
-		others("folder", fmt.Sprintf("The ACL on %s lets another account or group write in it", f.Real), they, "To keep it to yourself, take that entry off with setfacl"+again)
+		others("folder", write, fmt.Sprintf("The ACL on %s lets another account or group write in it", f.Real), they, "To keep it to yourself, take that entry off with setfacl"+again)
 	case self != "":
-		others("folder", "Who can write in "+f.Real+" could not be read", "Another account may be able to.", "Check it there, then"+strings.TrimPrefix(again, " and"))
+		others("folder", "Who can write it is not known", "Who can write in "+f.Real+" could not be read", "Another account may be able to.", "Check it there, then"+strings.TrimPrefix(again, " and"))
 	case mode&0o055 != 0:
-		add(step{Name: "folder", OK: true, Warn: true, Detail: fmt.Sprintf("Other accounts can open %s now (mode %s). The index stays in your ~/.activate-studio, which only you can open; to keep the files to yourself too, run chmod 700 on the folder.", f.Real, kv["mode"])})
+		add(step{Name: "folder", OK: true, Warn: true, Short: "Others can read it", Detail: fmt.Sprintf("Other accounts can open %s now (mode %s). The index stays in your ~/.activate-studio, which only you can open; to keep the files to yourself too, run chmod 700 on the folder.", f.Real, kv["mode"])})
 	default:
 		add(step{Name: "folder", OK: true, Detail: "Only you can open " + f.Real + "."})
 	}
 	if u := kv["unsafe"]; u != "" {
 		why, dir, _ := strings.Cut(u, " ")
-		others("path", fmt.Sprintf("%s %s, so another account could move or replace a folder under it", dir, transfers.LooseSaid(why)),
+		others("path", "Others can move a folder above it", fmt.Sprintf("%s %s, so another account could move or replace a folder under it", dir, transfers.LooseSaid(why)),
 			"If this folder is replaced, the Library stops writing until you add it again.", "To avoid that, use a folder under your home folder.")
 	} else {
 		add(step{Name: "path", OK: true, Detail: "No other account can move or replace the folders on the way to it."})
@@ -444,7 +450,7 @@ func (m *Module) checkSpace(ctx context.Context, h probeHost, q spaceAsk) (*spac
 	case kv["acl"] == "1":
 		add(step{Name: "sharing", OK: true, Detail: fmt.Sprintf("Its file system (%s) takes POSIX ACLs, so it can be shared with named people and groups.", f.Info.FS)})
 	case kv["acl"] == "0":
-		add(step{Name: "sharing", OK: true, Warn: true, Detail: fmt.Sprintf("Its file system (%s) does not take POSIX ACLs here, so it can be shared with every account for reading only.", f.Info.FS)})
+		add(step{Name: "sharing", OK: true, Warn: true, Short: "Can be shared with everyone only", Detail: fmt.Sprintf("Its file system (%s) does not take POSIX ACLs here, so it can be shared with every account for reading only.", f.Info.FS)})
 	}
 	own := studio + "/gufi/" + version + "/bin"
 	switch {
@@ -482,7 +488,7 @@ func (m *Module) foundGufi(ctx context.Context, h probeHost, f *spaceFound, give
 	if r, err := m.Pool.Run(ctx, h.Site, h.Key, []string{"bash", "-c", looseBinSh, "_", g.Bin}, 60*time.Second); err == nil {
 		if how := lastLine(r.Stdout); how != "" {
 			last := &f.Steps[len(f.Steps)-1]
-			last.Warn, f.GufiLoose = true, true
+			last.Warn, last.Short, f.GufiLoose = true, "Others can change GUFI there", true
 			last.Detail += " It " + transfers.LooseSaid(how) + ", and it runs as you."
 		}
 	}
@@ -762,7 +768,7 @@ func (m *Module) testSpace(ctx context.Context, w who, b *jsonv.Object) (*jsonv.
 			}
 		}
 		f.OK = allOK(f.Steps)
-		o = f.json()
+		o = f.json().Set("embedMB", undef(p.EmbedMB)).Set("embedWhy", undef(p.EmbedWhy))
 		create := []any{}
 		for _, c := range p.Create {
 			create = append(create, c)
