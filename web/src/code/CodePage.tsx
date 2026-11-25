@@ -8,6 +8,7 @@ import { createOpenAIChatAdapter } from '@parallelworks/ui/ai/openai'
 import { AddIcon, ExternalLinkIcon, HelpIcon, SidebarOpenIcon } from '@parallelworks/ui/icons'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { useAppConfig } from '../config'
+import { useWatch } from '../live'
 import { publishListing, sessionSeen, setFrontChat } from '../notices'
 import { knowSession, type PageSession, pwCodePage, startedSession } from './api'
 import { CodeSidebar } from './CodeSidebar'
@@ -73,15 +74,14 @@ function useNarrow(): boolean {
 
 interface Where { local: boolean; codeUrl: string; signIn?: boolean }
 
-function useJSON<T>(url: string, every = 0): T | null {
+function useJSON<T>(url: string): T | null {
   const [value, setValue] = useState<T | null>(null)
   useEffect(() => {
     let gone = false
     const load = () => fetch(url).then(r => (r.ok ? r.json() : null)).then(v => { if (!gone && v) setValue(v as T) }, () => {})
     void load()
-    const t = every ? setInterval(() => { if (document.visibilityState === 'visible') void load() }, every) : undefined
-    return () => { gone = true; if (t) clearInterval(t) }
-  }, [url, every])
+    return () => { gone = true }
+  }, [url])
   return value
 }
 
@@ -93,7 +93,8 @@ function CodeScreen() {
   const machines = useMemo(() => data?.machines ?? [], [data])
   const studio = useOpenInStudio(machines)
   const where = useJSON<Where>('/api/code-page/where')
-  const delegatedList = useJSON<{ sessions?: Delegated[] }>('/api/delegated', 30_000)
+  const [delegatedList, setDelegated] = useState<{ sessions?: Delegated[] } | null>(null)
+  useWatch<{ sessions?: Delegated[] }>('/api/delegated', 30_000, true, setDelegated)
   const delegatedById = useMemo(() => new Map((delegatedList?.sessions ?? []).map(d => [d.session, d])), [delegatedList])
   const delegated = useMemo(() => new Set(delegatedById.keys()), [delegatedById])
   const [onlyDelegated, setOnlyDelegated] = useState(false)
@@ -158,7 +159,7 @@ function CodeScreen() {
       if (s) setStartedAt(all => ({ ...all, [id]: s }))
       return null
     })
-    void studio.reload()
+    studio.reload()
     if (!left.current) show(machine, id)
     else toast.success('The session started. It is in the list.')
   }, [show, studio.reload])

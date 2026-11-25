@@ -21,17 +21,23 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('one name for a pw code chat and its session', () => {
   it('reads the names now and then, and the chats again only when one changed', async () => {
-    const { readNames } = await import('../src/pwcode/chatNames')
+    const { readNames, useNames } = await import('../src/pwcode/chatNames')
     let reads = 0
     const on = () => { reads++ }
     window.addEventListener('ade:chats-changed', on)
     await readNames()
-    await readNames()
     expect(asked).toEqual(['POST /api/chat/pwcode/names'])
     expect(reads).toBe(0)
     answer = { changed: 1 }
-    await readNames(0)
+    await readNames()
     expect(reads).toBe(1)
+    // Followed by the page.
+    asked = []
+    const { renderHook, waitFor } = await import('@testing-library/react')
+    const { unmount } = renderHook(() => useNames())
+    await waitFor(() => expect(asked).toEqual(['GET /api/chat/pwcode/names']))
+    await waitFor(() => expect(reads).toBe(2))
+    unmount()
     window.removeEventListener('ade:chats-changed', on)
   })
 

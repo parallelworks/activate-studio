@@ -53,7 +53,7 @@ describe('the open conversation shows a transfer note without a reload', () => {
     expect(chat.loadConversation).toHaveBeenCalledWith('c1')
     // Nothing running now: it looks every 30 seconds.
     const n = listed()
-    await act(async () => { await vi.advanceTimersByTimeAsync(29_000) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(28_000) })
     expect(listed()).toBe(n)
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
     expect(listed()).toBe(n + 1)

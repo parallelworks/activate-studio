@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { shownInterval } from '../live'
 import { Callout, Loader, RefreshButton, StatTile, StatTileGroup, Table } from '@parallelworks/ui'
 import { api, type FormatReadiness } from '../api'
 import { useLabelVocabulary } from '../labelVocabulary'
@@ -61,7 +62,7 @@ function jumpToQuery(filters: { field: string; op: string; value: string }[], so
   location.hash = '#view=query'
 }
 
-export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
+export function OverviewView({ active = true, onOpen }: { active?: boolean; onOpen: (path: string) => void }) {
   const [stats, setStats] = useState<{ files?: number; dirs?: number; totalBytes?: number; byExt?: ExtRow[]; libraries?: LibraryStats[] } | null>(null)
   const cfg = useAppConfig()
   // The index status every view shows; the page follows a running job.
@@ -147,12 +148,11 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
   // page grows with the index; the whole page reloads when the job ends.
   const running = !!idx?.running
   useEffect(() => {
-    if (!running) return
-    const t = window.setInterval(() => {
+    if (!running || !active) return
+    return shownInterval(() => {
       api.stats().then(s => { setStats(s); setUpdatedAt(Date.now()) }).catch(() => {})
     }, 5000)
-    return () => window.clearInterval(t)
-  }, [running])
+  }, [running, active])
   // Resolves once the counts are back, so the button spins until then.
   const refresh = () => new Promise<void>(resolve => { waiters.current.push(resolve); setEpoch(e => e + 1) })
   const ix = indexSummary(idx, stats?.files)
@@ -316,7 +316,7 @@ export function OverviewView({ onOpen }: { onOpen: (path: string) => void }) {
 
       <div className="ov-grid ov-maps">
         <TopologyMap libraries={cfg.libraries ?? []} follow={pageLib} />
-        <SemanticMap onOpen={onOpen} libraries={cfg.libraries ?? []} follow={pageLib} />
+        <SemanticMap active={active} onOpen={onOpen} libraries={cfg.libraries ?? []} follow={pageLib} />
       </div>
     </div>
   )
