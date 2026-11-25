@@ -1,8 +1,9 @@
-import { ReactElement, Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { ReactElement, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { CountBadge, IconButton, SearchInput, StatusDot } from '@parallelworks/ui'
 import { buildOpenHash, parseOpenHash } from './nav'
 import { currentLibrary, linkTarget, setLibrary, settleLibraries } from './api'
 import { rememberHash } from './lastLocation'
+import { leaveUnsaved, unsavedPath } from './unsaved'
 import { ChatView } from './views/ChatView'
 import { LibraryPageFrame } from './components/LibraryImage'
 import { DagViewer } from './components/DagViewer'
@@ -167,6 +168,20 @@ function inOpenLibrary(d: Display | null): Display | null {
 export default function App() {
   const [view, setView] = useState<ViewId>('chat')
   const [display, setDisplay] = useState<Display | null>(null)
+  // What is open in the Library is put away only once an edit of it that is
+  // not saved is settled.
+  const showing = useRef<Display | null>(null)
+  showing.current = display
+  const showsOpen = useCallback((d: Display) => {
+    const cur = showing.current
+    if (d.kind !== 'file' || cur?.kind !== 'file') return false
+    const to = d.lib === 'all' || currentLibrary() !== 'all' ? d.target : linkTarget(d.target, d.lib)
+    return cur.target === to && (!d.lib || d.lib === 'all' || currentLibrary() === 'all' || d.lib === currentLibrary())
+  }, [])
+  const showDisplay = useCallback((d: Display | null) => {
+    if (d && showsOpen(d)) setDisplay(d)
+    else leaveUnsaved(() => setDisplay(d))
+  }, [showsOpen])
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem('ade-nav-collapsed') === '1')
   // The sidebar's search box, as on the platform: Enter searches the
   // knowledge base in the Search view, and Cmd+K or Ctrl+K reaches it from
@@ -395,8 +410,19 @@ export default function App() {
   // applyHash covers initial load, chat links, manual edits, and browser
   // back/forward (hash-only history moves fire hashchange).
   useEffect(() => {
-    const applyHash = () => {
-      const opened = inOpenLibrary(parseOpenHash(location.hash))
+    const applyHash = (e?: HashChangeEvent) => {
+      const wanted = parseOpenHash(location.hash)
+      // Where it would put away an edit that is not saved, the page stays at
+      // the address it had while that is asked, and goes once it is settled.
+      const away = wanted ? !showsOpen(wanted) : /^#view=library(?:\?|:|$)/.test(location.hash)
+      if (away && unsavedPath() !== null) {
+        const to = location.hash
+        const from = e?.oldURL ? new URL(e.oldURL).hash : ''
+        if (from !== to) history.pushState(null, '', location.pathname + location.search + from)
+        leaveUnsaved(() => { if (location.hash === to) applyHash(); else location.hash = to })
+        return
+      }
+      const opened = inOpenLibrary(wanted)
       if (opened) {
         setDisplay(opened)
         setView('library')
@@ -420,12 +446,12 @@ export default function App() {
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest?.('a[href*="#open="], a[href*="#view="]') as HTMLAnchorElement | null
       const href = a?.getAttribute('href') ?? ''
-      const opened = inOpenLibrary(parseOpenHash(href.slice(href.indexOf('#open='))))
-      if (opened) {
+      const linked = parseOpenHash(href.slice(href.indexOf('#open=')))
+      if (linked) {
         e.preventDefault()
         e.stopPropagation()
-        setDisplay(opened)
-        setView('library')
+        const go = () => { setDisplay(inOpenLibrary(linked)); setView('library') }
+        if (showsOpen(linked)) go(); else leaveUnsaved(go)
         return
       }
       // A chat reply can hand the user a view link ("watch the agents
@@ -475,8 +501,8 @@ export default function App() {
     const d: Display = { kind: 'file', target: path }
     if (q) d.q = q
     if (lib !== 'kb') d.lib = lib
-    setDisplay(d)
-    setView('library')
+    const go = () => { setDisplay(d); setView('library') }
+    if (showsOpen(d)) go(); else leaveUnsaved(go)
   }
 
   // Embed mode: /?embed=dag&workflow=<name> or /?embed=model&path=<rel>
@@ -581,7 +607,7 @@ export default function App() {
                   className={`sidenav-item ${view === item.id ? 'active' : ''}${MOBILE_PRIMARY.has(item.id) ? '' : ' mob-hide'}${inGroup ? ' in-group' : ''}`}
                   title={item.label}
                   onClick={() => {
-                    if (item.id === 'library' && view === 'library') setDisplay(null)
+                    if (item.id === 'library' && view === 'library') showDisplay(null)
                     // On a phone the conversations rail is a slide-over, and
                     // re-tapping the Chat item in the bottom bar is its toggle.
                     if (item.id === 'chat' && view === 'chat') window.dispatchEvent(new Event('ade:toggle-chat-rail'))
@@ -703,7 +729,7 @@ export default function App() {
             nothing of theirs polls the server or reads a model. */}
         {aiPagesMounted(cfg) && <div className={`view view-chat${view === 'chat' ? '' : ' hidden'}`}><ChatView active={view === 'chat'} /></div>}
         <div className={view === 'library' ? 'view with-toggle' : 'view hidden'}>
-          <LibraryView display={display} onDisplay={setDisplay} />
+          <LibraryView display={display} onDisplay={showDisplay} />
           {view === 'library' && <PanelToggle className="panel-toggle-float" />}
         </div>
         {view === 'transfers' && hasTransfers && <div className="view"><TransfersView /></div>}

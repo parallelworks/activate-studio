@@ -1,5 +1,5 @@
 import { Button, Callout, ProgressBar } from '@parallelworks/ui'
-import { dismissTransfer, type Transfer, useTransfers } from '../transfers'
+import { dismissTransfer, textTitle, type Transfer, useTransfers } from '../transfers'
 import { useShownPath } from '../libraryPath'
 
 function fmtBytes(n: number): string {
@@ -14,12 +14,14 @@ const VERB = {
   move: { doing: 'Moving into', did: 'moved to', label: 'Move progress' },
   copy: { doing: 'Copying into', did: 'copied to', label: 'Copy progress' },
   delete: { doing: 'Deleting', did: 'deleted', label: 'Delete progress' },
+  text: { doing: 'Saving', did: 'saved', label: 'Index progress' },
 }
 
 /** `shown` reads a folder's path as a person does: in All libraries, its
  *  library's name in place of the id ("My library/uploads", not "kb/uploads"). */
 function title(t: Transfer, shown: (p: string) => string = p => p): string {
   const kind = t.kind ?? 'upload'
+  if (kind === 'text') return `${shown(t.dir)}: ${textTitle(t)}`
   const where = kind === 'delete' ? '' : ` ${t.dir ? shown(t.dir) : 'root'}`
   const count = `${t.done} / ${t.total}`
   if (t.phase === 'queued') return `Waiting to upload ${t.total} ${t.total === 1 ? 'item' : 'items'} to${where}`
@@ -43,8 +45,12 @@ function amount(t: Transfer): number | null {
   return (t.totalBytes ? t.bytes / t.totalBytes : t.done / Math.max(t.total, 1)) * 100
 }
 
-export function TransferPanel() {
-  const transfers = useTransfers()
+export function TransferPanel({ openFile }: {
+  /** The file open beside the tree, whose own saves it says itself. */
+  openFile?: string | null
+}) {
+  const all = useTransfers()
+  const transfers = all.filter(t => t.kind !== 'text' || t.dir !== openFile)
   const shown = useShownPath()
   if (!transfers.length) return null
   return (
@@ -60,7 +66,7 @@ export function TransferPanel() {
             </div>
             <ProgressBar className="upload-progress" aria-label={VERB[t.kind ?? 'upload'].label} value={amount(t)} />
             {t.phase !== 'done' && t.current && <div className="upload-current">{t.current}</div>}
-            {t.indexError && (
+            {t.indexError && t.kind !== 'text' && (
               <Callout tone="error" size="sm" className="upload-failed">
                 {t.kind === 'upload' ? `Uploaded, but indexing failed, so these files are not searchable yet: ${t.indexError}` : t.indexError}
               </Callout>

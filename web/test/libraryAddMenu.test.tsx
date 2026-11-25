@@ -106,15 +106,16 @@ describe('who may add libraries', () => {
 })
 
 describe('the Library\'s + Add menu', () => {
-  it('offers Add files, Add a library and Import a library list', async () => {
+  it('offers Add files, New file, Add a library and Import a library list', async () => {
     studio()
     render(<LibraryView display={null} onDisplay={() => {}} />)
     const menu = await openMenu()
     const items = within(menu).getAllByRole('menuitem').map(i => i.textContent)
-    expect(items).toHaveLength(3)
+    expect(items).toHaveLength(4)
     expect(items[0]).toMatch(/^Add files…/)
-    expect(items[1]).toMatch(/^Add a library…/)
-    expect(items[2]).toMatch(/^Import a library list…/)
+    expect(items[1]).toMatch(/^New file…/)
+    expect(items[2]).toMatch(/^Add a library…/)
+    expect(items[3]).toMatch(/^Import a library list…/)
   })
 
   it('is + Add alone for a viewer who may not add libraries, with no Add a library in its panel', async () => {

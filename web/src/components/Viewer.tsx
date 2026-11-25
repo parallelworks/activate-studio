@@ -13,6 +13,10 @@ import { pageWidth, stepZoom, useSettled, ZOOM_MAX, ZOOM_MIN, ZoomView, type Zoo
 import { CsvTable, DELIMITED_SUFFIXES } from './CsvTable'
 import { GRID_SUFFIXES, SheetWorkbook } from './SheetWorkbook'
 import { LockedButton } from './LockedButton'
+import { TextEditor, type OpenText } from './TextEditor'
+import { TextNote } from './TextNote'
+import { indexText } from '../transfers'
+import { TEXT_MAX, TEXT_TOO_LARGE, toEdit } from '../textFiles'
 import { useShownPath } from '../libraryPath'
 
 const OFFICE_SUFFIXES = ['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.odp', '.ods']
@@ -438,11 +442,15 @@ function ZoomImage({ src, alt, fit, zoom, onError }: { src: string; alt: string;
   )
 }
 
-export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
+export function Viewer({ path, find, onDeleted, onOpen, startEditing, readOnly, labelsLocked }: {
   path: string | null
   /** Text to land on and highlight, typically the search query that led here. */
   find?: string
   onDeleted: (path: string) => void
+  /** Opens another file here; text files are edited where it is given. */
+  onOpen?: (path: string) => void
+  /** A file just made, which opens in the editor, once for each value. */
+  startEditing?: { path: string } | null
   /** Why the file cannot be deleted here, for a file in a read-only
    *  library; Delete is then disabled and says so. */
   readOnly?: string | null
@@ -561,7 +569,36 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
     return () => window.removeEventListener('ade-tags-changed', load)
   }, [path])
 
+  // The file's text in the editor, and why it could not be opened there.
+  const [editing, setEditing] = useState<OpenText | null>(null)
+  const [opening, setOpening] = useState(false)
+  const [editError, setEditError] = useState('')
+  const edit = useCallback(async (p: string) => {
+    setOpening(true)
+    setEditError('')
+    try {
+      const t = await api.textFile(p)
+      if (open.current.path !== p) return
+      const as = toEdit(t.content)
+      if (as) setEditing({ path: p, version: t.version, ...as })
+      else setEditError('The lines of this file end in more than one way (CRLF and LF), which the editor could not keep. Download it to change it.')
+    } catch (e) {
+      if (open.current.path === p) setEditError(String((e as Error).message ?? e))
+    } finally {
+      if (open.current.path === p) setOpening(false)
+    }
+  }, [])
+  const started = useRef<{ path: string } | null>(null)
   useEffect(() => {
+    if (!startEditing || started.current === startEditing || startEditing.path !== path || file?.path !== path) return
+    started.current = startEditing
+    if (file.kind === 'text' && file.source === 'raw') void edit(path)
+  }, [startEditing, path, file, edit])
+
+  useEffect(() => {
+    setEditing(null)
+    setOpening(false)
+    setEditError('')
     setFile(null)
     setError(null)
     setConfirming(false)
@@ -592,18 +629,23 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
   // Looks at the open file again, on a sign that it may have changed: the
   // library changed, the window came back, or part of the preview failed
   // to load. A file that is gone is said to be, once, and nothing asks
-  // for it again; a rewritten one is shown as it is now.
+  // for it again; a rewritten one is shown as it is now. `anew` shows it as
+  // it is whatever its size and time say (the time is in whole seconds).
+  const inEditor = useRef(false)
+  inEditor.current = editing !== null
   const open = useRef<{ path: string | null; file: FileContent | null; gone: boolean }>({ path, file, gone })
   open.current = { path, file, gone }
   const checking = useRef<{ path: string; result: Promise<FileCheck> } | null>(null)
-  const recheck = useCallback((): Promise<FileCheck> => {
+  const recheck = useCallback((anew = false): Promise<FileCheck> => {
     const { path: p, file: was, gone: isGone } = open.current
+    // Not under an edit, whose save looks for itself.
+    if (inEditor.current) return Promise.resolve('same')
     if (isGone) return Promise.resolve('missing')
     if (!p || !was || was.path !== p) return Promise.resolve('same')
-    if (checking.current?.path === p) return checking.current.result
+    if (!anew && checking.current?.path === p) return checking.current.result
     const result = api.file(p).then((f): FileCheck => {
       if (open.current.path !== p) return 'same'
-      if (f.mtime === was.mtime && f.size === was.size) return 'same'
+      if (!anew && f.mtime === was.mtime && f.size === was.size) return 'same'
       setFile(f)
       setPreviewGone(null)
       return 'changed'
@@ -638,6 +680,22 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
           description="Pick a file from the tree, drop new material on the Add button, or find something in Search."
         />
       </div>
+    )
+  }
+  if (editing && editing.path === path) {
+    return (
+      <TextEditor
+        key={path}
+        open={editing}
+        onClose={() => { inEditor.current = false; setEditing(null); void recheck(true) }}
+        onSaved={async r => {
+          void indexText(path, { reindexing: r.reindexing })
+          // The view the editor gives way to is of the file as saved.
+          const f = await api.file(path).catch(() => null)
+          if (f && open.current.path === path) setFile(f)
+        }}
+        onCopied={r => { void indexText(r.path, { created: true, reindexing: r.reindexing }); onOpen?.(r.path) }}
+      />
     )
   }
   // A folder opened by link (the chat's "Open the N files written") is
@@ -699,6 +757,8 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
   // Markdown turns its columns into code blocks and reflows its rows.
   const extractedMarkdown = file.source === 'extracted' && file.format === 'markdown'
 
+  const editLocked = readOnly ?? (file.size > TEXT_MAX ? `${TEXT_TOO_LARGE} Download it to change it.` : null)
+
   // A failed delete replaces the view with the error, as a failed open does.
   const doDelete = async () => {
     try {
@@ -720,7 +780,7 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
         {stale && <p className="muted index-stale" role="status">{stale}</p>}
         <Callout tone="warning" size="sm" className="index-note">This is the text representation stored in the search index, not the original file.</Callout>
         {(isMarkdown || extractedMarkdown) && file.content.length <= MARKDOWN_FORMAT_MAX
-          ? <div className="md-body"><Streamdown>{file.content}</Streamdown></div>
+          ? <div className="md-body"><Streamdown key={file.content}>{file.content}</Streamdown></div>
           : <pre className="text-body">{file.content}</pre>}
         {file.truncated && <p className="muted">Preview truncated; use Download for the full file.</p>}
       </div>
@@ -793,8 +853,9 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
     </>
   ) : isText ? (
     <div className="viewer-body">
+      {/* Streamdown keeps a heading whose place in the text is as it was, whatever it says now. */}
       {isMarkdown
-        ? <div className="md-body"><Streamdown>{file.content ?? ''}</Streamdown></div>
+        ? <div className="md-body"><Streamdown key={file.content}>{file.content ?? ''}</Streamdown></div>
         : <pre className="text-body">{file.content ?? ''}</pre>}
       {file.truncated && <p className="muted">Preview truncated; use Download for the full file.</p>}
     </div>
@@ -840,6 +901,9 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
               <IconButton variant="secondary" size="sm" icon={<ZoomInIcon />} label="Zoom in" disabled={zoom >= ZOOM_MAX - 0.001} onClick={() => zoomControl.current?.zoomTo(stepZoom(zoom, 1))} />
             </span>
           )}
+          {onOpen && isText && file.source === 'raw' && (editLocked
+            ? <LockedButton reason={editLocked}>Edit</LockedButton>
+            : <Button variant="secondary" size="sm" loading={opening} onClick={() => void edit(path)} title="Edit this file's text">Edit</Button>)}
           <Button variant="secondary" size="sm" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</Button>
           {labelsLocked
             ? <LockedButton reason={labelsLocked}>Labels</LockedButton>
@@ -872,6 +936,8 @@ export function Viewer({ path, find, onDeleted, readOnly, labelsLocked }: {
           />
         </span>
       </div>
+      <TextNote path={path} />
+      {editError && <Callout tone="error" size="sm" title="This file cannot be edited here" className="text-editor-error" onDismiss={() => setEditError('')}>{editError}</Callout>}
       {/* The find bar and the body sit inside the tabs, so the shown view is
           the tab's panel. A file with one view shows no tab row. */}
       <Tabs

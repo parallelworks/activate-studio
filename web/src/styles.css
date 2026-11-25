@@ -686,6 +686,27 @@ textarea.field { line-height: 1.5; }
    the header's height as measured (Viewer), one line or two. */
 .file-tabs { padding: 8px 20px 0; background: var(--pw-panel); position: sticky; top: var(--viewer-head-h, 49px); z-index: 4; }
 .index-note { margin: 0 0 14px; }
+
+/* A text file being edited: the field takes the pane below the header, and
+   scrolls itself. */
+.library-main:has(> .text-editor) { overflow: hidden; }
+.text-editor { height: 100%; min-height: 0; }
+.text-editor .viewer-head { flex-shrink: 0; }
+.text-editor-state { min-width: 52px; text-align: right; }
+.text-editor-area {
+  flex: 1; min-height: 120px; margin: 0; padding: 14px 20px; resize: none; border: 0;
+  background: var(--pw-panel); color: var(--pw-text); caret-color: currentColor;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.55; tab-size: 4;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.text-editor-area:focus { outline: none; }
+.text-editor-area:focus-visible { outline: 2px solid color-mix(in srgb, var(--pw-link) 45%, transparent); outline-offset: -2px; }
+.text-editor-choices { display: flex; flex: 1; justify-content: flex-end; gap: 8px; }
+.text-editor-error { margin: 10px 20px; flex-shrink: 0; }
+.text-editor-ask { margin: 0; font-size: 14px; }
+.text-editor-ask + * { margin-top: 10px; }
+.text-note { margin: 0; padding: 6px 20px; font-size: 12px; color: var(--pw-muted); border-bottom: 1px solid var(--pw-border); flex-shrink: 0; }
+.text-note.failed { color: var(--theme-error-text); }
 .index-stale { margin: 0 0 8px; font-size: 0.85rem; }
 .confirm-group { display: inline-flex; gap: 6px; }
 
@@ -2128,6 +2149,11 @@ a.identity-btn { text-decoration: none; }
   .ov-bar-value { grid-column: 1 / -1; text-align: right; }
   .hist-view { grid-template-columns: 1fr; grid-template-areas: "note" "tiles" "main" "rail"; }
   .viewer-body { padding: 12px 14px; }
+  /* 16px, so a phone does not zoom the page in on the field. */
+  .text-editor-area { font-size: 16px; padding: 12px 14px; }
+  .text-editor-state:empty { display: none; }
+  .text-editor-choices { display: grid; grid-template-columns: 1fr 1fr; }
+  .text-note { padding: 6px 14px; }
   /* Settings and Help are a 220px section rail beside a scrolling
      article. On a phone that rail eats most of the width and, with the
      page no longer scrolling, the article had nowhere to go: the page

@@ -3,6 +3,7 @@ import { Select, cx, fieldBox } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { currentLibrary, onLibraryChange, setLibrary, type PublicLibrary } from '../api'
 import { libraryAccess } from './LibraryScope'
+import { leaveUnsaved } from '../unsaved'
 
 /**
  * The library picker in the Library rail header. Only rendered when more
@@ -29,7 +30,7 @@ export function LibrarySwitch({ libraries }: { libraries: PublicLibrary[] }) {
     <Select
       items={items}
       value={known}
-      onValueChange={v => { if (v != null) setLibrary(v) }}
+      onValueChange={v => { if (v != null && v !== known) leaveUnsaved(() => setLibrary(v)) }}
       aria-label="Library"
       size="sm"
       triggerTooltip="Which library to browse and search"

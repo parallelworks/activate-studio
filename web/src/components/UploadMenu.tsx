@@ -14,7 +14,7 @@ export const ADD_LIBRARY_HASH = '#view=settings:libraries?add=1'
 
 /** Add files: the + Add button and the panel it opens, to choose or drop
  *  files and folders, make a folder, or fetch a page by URL. */
-export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onOpenChange, onAddLibrary }: {
+export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onOpenChange, onAddLibrary, onNewFile, newFileWhy }: {
   /** Why nothing can be added here (a read-only library): the button is
    *  disabled and says so. */
   readOnly?: string | null
@@ -27,6 +27,10 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onO
   onOpenChange?: (open: boolean) => void
   /** Offers Add a library at the foot of the panel. */
   onAddLibrary?: () => void
+  /** Makes a text file in the destination folder. */
+  onNewFile?: () => void
+  /** Why the destination folder takes no new file, or null. */
+  newFileWhy?: string | null
 }) {
   const [url, setUrl] = useState('')
   const [newDir, setNewDir] = useState('')
@@ -157,6 +161,14 @@ export function UploadMenu({ targetDir, onTargetDir, onDone, readOnly, open, onO
         />
         <Button variant="primary" size="sm" onClick={makeDir} disabled={busy || !newDir.trim()}>Create</Button>
       </div>
+      {onNewFile && (
+        <>
+          <div className="field-label">Or write a text file in the destination folder</div>
+          {newFileWhy
+            ? <LockedButton reason={newFileWhy} variant="outline">New file…</LockedButton>
+            : <Button variant="outline" size="sm" onClick={() => { onOpenChange?.(false); window.setTimeout(onNewFile, 0) }}>New file…</Button>}
+        </>
+      )}
       <label className="field-label" htmlFor={urlId}>Or add a web page / PDF by URL</label>
       <div className="url-row">
         <Input
@@ -204,6 +216,9 @@ export function LibraryAddMenu({ onAddLibrary, onImport, readOnly, ...files }: O
     readOnly
       ? { label: 'Add files…', onClick: () => {}, disabled: true, disabledReason: readOnly }
       : { label: 'Add files…', description: 'Files, folders, or a page by URL', onClick: later(() => setFilesOpen(true)) },
+    ...(files.onNewFile ? [readOnly || files.newFileWhy
+      ? { label: 'New file…', onClick: () => {}, disabled: true, disabledReason: (readOnly || files.newFileWhy)! }
+      : { label: 'New file…', description: 'A text file, such as .md or .txt', onClick: later(files.onNewFile) }] : []),
     ...(onAddLibrary ? [{ label: 'Add a library…', description: 'An index or folder here or on another system', onClick: later(onAddLibrary) }] : []),
     ...(onImport ? [{ label: 'Import a library list…', description: 'A file exported from another Studio', onClick: later(onImport) }] : []),
   ]

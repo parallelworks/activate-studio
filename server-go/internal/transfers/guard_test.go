@@ -5,6 +5,7 @@ package transfers
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,6 +80,16 @@ func writes(ctx context.Context, fs *RemoteFS) map[string]error {
 	out := map[string]error{}
 	_, out["write"] = fs.Write(ctx, "new.txt", bytes.NewReader([]byte("x")), 0, 0o644)
 	out["mkdir"] = fs.Mkdir(ctx, "new")
+	_, out["open a text to edit"] = fs.Text(ctx, "keep/a.txt", 100)
+	st, err := fs.Swap(ctx, "keep/a.txt", []byte("edited"), shaOf("a"))
+	if err == nil && !st.Done {
+		err = fmt.Errorf("answered %+v", st)
+	}
+	out["save a text"] = err
+	// Changed since is not what a guarded folder answers.
+	if st, err := fs.Swap(ctx, "keep/a.txt", []byte("edited"), shaOf("other")); err != nil && !strings.Contains(err.Error(), "nothing was changed") || err == nil && st.Version == "" {
+		out["save over a change"] = fmt.Errorf("answered %+v %v", st, err)
+	}
 	_, out["land"] = fs.Land(ctx, []LandPair{{Staged: "keep/a.txt", Final: "landed.txt"}})
 	_, out["remove a tree"] = fs.RemoveTrees(ctx, []string{"keep"})
 	out["start a file in parts"] = fs.StartParts(ctx, ".studio-upload-1", "large", mb, mb)

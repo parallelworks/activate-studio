@@ -20,7 +20,9 @@ import { shownPath } from '../libraryPath'
 import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
 import { chooseUpload, onShellDrop, shellListsFolders } from '../nativeShell'
 import { downloadPath } from '../libraryDownload'
-import { startPathJob, startUpload } from '../transfers'
+import { indexText, startPathJob, startUpload } from '../transfers'
+import { NO_BASE, TextConflict } from '../textFiles'
+import { leaveUnsaved } from '../unsaved'
 import { TransferPanel } from '../components/TransferPanel'
 import { forgetSelectionUnder, renameSelection, selectLibraryEntry } from '../components/LibraryDetails'
 import { libraryWritten } from '../libraryCatchUp'
@@ -68,7 +70,7 @@ export function LibraryView({ display, onDisplay }: {
   // name in a dialog, and its Delete asks first.
   const { openMenu, contextMenu } = useContextMenu()
   const [nameDialog, setNameDialog] = useState<{
-    mode: 'mkdir' | 'rename'
+    mode: 'mkdir' | 'newfile' | 'rename'
     path: string
     isDir: boolean
     value: string
@@ -119,7 +121,10 @@ export function LibraryView({ display, onDisplay }: {
     }
   }
 
-  /** New folder or Rename, from the name typed in the dialog. */
+  /** A file just made, which the viewer opens ready to type in. */
+  const [startEditing, setStartEditing] = useState<{ path: string } | null>(null)
+
+  /** New folder, New file or Rename, from the name typed in the dialog. */
   const submitName = async () => {
     const d = nameDialog
     if (!d || d.busy || !d.value.trim()) return
@@ -135,6 +140,13 @@ export function LibraryView({ display, onDisplay }: {
         // The Details card follows the new name.
         if (r.renamed) renameSelection(r.renamed.from, r.renamed.to)
         libraryWritten(lib)
+      } else if (d.mode === 'newfile') {
+        const name = d.value.trim().replace(/^\/+|\/+$/g, '')
+        const r = await api.saveText(d.path ? `${d.path}/${name}` : name, '', NO_BASE)
+        void indexText(r.path, { created: true, reindexing: r.reindexing })
+        setRefreshKey(k => k + 1)
+        setStartEditing({ path: r.path })
+        onDisplay({ kind: 'file', target: r.path })
       } else {
         const name = d.value.trim().replace(/^\/+|\/+$/g, '')
         const r = await api.mkdir(d.path ? `${d.path}/${name}` : name)
@@ -144,7 +156,9 @@ export function LibraryView({ display, onDisplay }: {
       }
       setNameDialog(null)
     } catch (e) {
-      const error = String((e as Error).message ?? e)
+      const error = e instanceof TextConflict && e.state === 'exists'
+        ? `There is already something named ${d.value.trim()} in this folder. Choose another name.`
+        : String((e as Error).message ?? e)
       setNameDialog(cur => cur && { ...cur, busy: false, error })
     }
   }
@@ -408,8 +422,10 @@ export function LibraryView({ display, onDisplay }: {
   const moveInto = async (dir: string, paths: string[]) => {
     const clean = paths.filter(p => p && p !== dir && !dir.startsWith(`${p}/`))
     if (!clean.length) return
-    await startPathJob('move', clean, dir, paths => api.moveJob(paths, dir))
-    setMultiSel(new Set())
+    leaveUnsaved(() => {
+      void startPathJob('move', clean, dir, paths => api.moveJob(paths, dir))
+      setMultiSel(new Set())
+    }, clean)
   }
 
   /** Pick a destination for the selection from every folder in the library. */
@@ -425,6 +441,9 @@ export function LibraryView({ display, onDisplay }: {
     })
   }
 
+  /** Names a text file to make in a folder, once an unsaved edit is settled. */
+  const newFile = (dir: string) => leaveUnsaved(() => setNameDialog({ mode: 'newfile', path: dir, isDir: true, value: 'Untitled.md', busy: false, error: '' }))
+
   const openContextMenu = (path: string, isDir: boolean, x: number, y: number) => {
     const later = (run: () => void) => () => { afterMenu.current = run }
     // Cut and copy take the whole selection when the row is part of it.
@@ -436,6 +455,8 @@ export function LibraryView({ display, onDisplay }: {
     const libraryTop = inAll && !path.includes('/')
     if (isDir) {
       items.push({ label: 'New folder', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setNameDialog({ mode: 'mkdir', path, isDir, value: '', busy: false, error: '' })) })
+      // The top of All libraries is no folder: a file needs a library.
+      if (!inAll || path) items.push({ label: 'New file…', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => newFile(path)) })
     }
     // With All libraries the top of the tree is no folder: it holds the
     // libraries, so nothing is uploaded to it or downloaded from it.
@@ -457,7 +478,7 @@ export function LibraryView({ display, onDisplay }: {
     }
     if (!allTop) items.push({ label: isDir ? 'Download as zip' : 'Download', onClick: () => void downloadPath(path, isDir) })
     if (path && !libraryTop) {
-      items.push({ label: 'Rename…', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' })) })
+      items.push({ label: 'Rename…', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => leaveUnsaved(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' }), [path])) })
     }
     const space = isDir ? spaceAt(path) : null
     if (space) items.push({ label: 'Share…', onClick: later(() => setShareTarget(space)) })
@@ -487,7 +508,7 @@ export function LibraryView({ display, onDisplay }: {
       items.push({ label: 'Labels…', disabled: !!labelsLocked, disabledReason: labelsLocked ?? undefined, onClick: later(() => { setMultiSel(new Set([path])); setTagMenuOpen(true); setSelectMode(true) }) })
     }
     if (path && !libraryTop) {
-      items.push({ label: isDir ? 'Delete folder…' : 'Delete…', destructive: true, disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => setDeleteTarget({ path, isDir, error: '' })) })
+      items.push({ label: isDir ? 'Delete folder…' : 'Delete…', destructive: true, disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => leaveUnsaved(() => setDeleteTarget({ path, isDir, error: '' }), [path])) })
     }
     openMenu({ clientX: x, clientY: y }, items, {
       onClose: () => {
@@ -661,6 +682,8 @@ export function LibraryView({ display, onDisplay }: {
                     readOnly={inAll ? null : readOnlyAt('')}
                     targetDir={targetDir}
                     onTargetDir={setTargetDir}
+                    onNewFile={() => newFile(targetDir)}
+                    newFileWhy={readOnlyAt(targetDir)}
                     onDone={paths => {
                       setRefreshKey(k => k + 1)
                       if (paths[0]) onDisplay({ kind: 'file', target: paths[0] })
@@ -693,7 +716,7 @@ export function LibraryView({ display, onDisplay }: {
                     : (
                       <>
                         <Button variant="secondary" size="sm" disabled={!multiSel.size} onClick={e => void openMoveMenu(e.currentTarget)}>Move to…</Button>
-                        <Button variant="outline" size="sm" disabled={!multiSel.size} onClick={() => setConfirmDelete(true)}>Delete…</Button>
+                        <Button variant="outline" size="sm" disabled={!multiSel.size} onClick={() => leaveUnsaved(() => setConfirmDelete(true), selPaths)}>Delete…</Button>
                       </>
                     )}
                   <Button variant="ghost" size="sm" className="multi-clear" onClick={() => setMultiSel(new Set())}>clear</Button>
@@ -781,7 +804,7 @@ export function LibraryView({ display, onDisplay }: {
                   )}
                 </div>
               )}
-              <TransferPanel />
+              <TransferPanel openFile={selectedFile} />
             </aside>
             {!collapsed && <div className="divider" onMouseDown={onDividerDown} title="Drag to resize" />}
           </>
@@ -802,6 +825,8 @@ export function LibraryView({ display, onDisplay }: {
               path={selectedFile}
               find={display?.kind === 'file' ? display.q : undefined}
               onDeleted={() => { onDisplay(null); setRefreshKey(k => k + 1) }}
+              onOpen={p => onDisplay({ kind: 'file', target: p })}
+              startEditing={startEditing}
               readOnly={selectedFile ? readOnlyAt(selectedFile) : null}
               labelsLocked={selectedFile ? labelsLockedAt(selectedFile) : null}
             />
@@ -831,8 +856,8 @@ export function LibraryView({ display, onDisplay }: {
           open
           onClose={() => setNameDialog(null)}
           size="sm"
-          title={nameDialog.mode === 'rename' ? 'Rename' : 'New folder'}
-          description={nameDialog.path || cfg.kbLabel}
+          title={nameDialog.mode === 'rename' ? 'Rename' : nameDialog.mode === 'newfile' ? 'New file' : 'New folder'}
+          description={nameDialog.mode === 'newfile' ? `In ${nameDialog.path ? shownPath(nameDialog.path, cfg.libraries) : cfg.kbLabel}` : nameDialog.path || cfg.kbLabel}
           footer={
             <>
               <Button variant="ghost" size="sm" onClick={() => setNameDialog(null)}>Cancel</Button>
@@ -843,13 +868,13 @@ export function LibraryView({ display, onDisplay }: {
           }
         >
           <Input
-            aria-label={nameDialog.mode === 'rename' ? 'New name' : 'Folder name'}
+            aria-label={nameDialog.mode === 'rename' ? 'New name' : nameDialog.mode === 'newfile' ? 'File name' : 'Folder name'}
             value={nameDialog.value}
-            placeholder={nameDialog.mode === 'rename' ? 'new name' : 'folder name'}
+            placeholder={nameDialog.mode === 'rename' ? 'new name' : nameDialog.mode === 'newfile' ? 'file name' : 'folder name'}
             onChange={e => { const value = e.target.value; setNameDialog(d => d && { ...d, value }) }}
-            onFocus={nameDialog.mode === 'rename' ? e => {
+            onFocus={nameDialog.mode !== 'mkdir' ? e => {
               // Select the stem, leaving the extension alone, which is
-              // what a rename usually changes.
+              // what a rename usually changes and a new file's name needs.
               const dot = e.target.value.lastIndexOf('.')
               e.target.setSelectionRange(0, dot > 0 ? dot : e.target.value.length)
             } : undefined}

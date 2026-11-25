@@ -13,8 +13,13 @@ import { libraryWritten } from './libraryCatchUp'
  * folder from starving the one queued behind it; one upload's indexing runs
  * while the next one sends.
  */
-export interface Transfer extends UploadProgress {
+export interface Transfer extends Omit<UploadProgress, 'kind'> {
   id: number
+  /** 'text': a text file made or saved here, at `dir`, and its library's
+   *  index catching up with it. */
+  kind?: UploadProgress['kind'] | 'text'
+  /** A text file just made. */
+  created?: boolean
   /** Stops an upload; the files already sent stay. */
   cancel?: () => void
 }
@@ -42,7 +47,7 @@ export function dismissTransfer(id: number): void {
   publish(transfers.filter(t => t.id !== id))
 }
 
-function finish(id: number, p: UploadProgress): void {
+function finish(id: number, p: Partial<Transfer> & Pick<Transfer, 'failed' | 'indexError'>): void {
   update(id, { ...p, phase: 'done', finished: true, cancel: undefined })
   if (!p.failed.length && !p.indexError) setTimeout(() => dismissTransfer(id), STAYS_MS)
 }
@@ -151,4 +156,44 @@ export async function startPathJob(
   finish(id, p)
   treeChanged()
   return p
+}
+
+/** A text file was made or saved: its library is told, its index catches up
+ *  as after an upload, and a row says so, one for a file however often it is
+ *  saved. */
+export async function indexText(path: string, { created, reindexing }: { created?: boolean; reindexing?: boolean }): Promise<void> {
+  const id = ++lastId
+  const treeChanged = changedIn(libraryOf(path))
+  const row: Transfer = {
+    id, kind: 'text', phase: 'indexing', total: 1, done: 1, bytes: 0, totalBytes: 0, current: '', failed: [],
+    indexMs: 0, finished: false, dir: path, created, reindexing,
+  }
+  publish([...transfers.filter(t => t.kind !== 'text' || t.dir !== path), row])
+  treeChanged()
+  if (reindexing) { finish(id, row); return }
+  const dir = path.split('/').slice(0, -1).join('/')
+  try {
+    const job = await api.startIndexJob(dir)
+    const t0 = Date.now()
+    for (;;) {
+      await new Promise(r => setTimeout(r, 500))
+      const s = await api.indexJob(job.id)
+      if (s.state === 'done') { row.indexMs = s.ms ?? Date.now() - t0; break }
+      if (s.state === 'error') { row.indexError = s.error ?? 'indexing failed'; break }
+      if (s.state === 'cancelled') { row.indexError = 'indexing was stopped; the next sync picks it up'; break }
+    }
+  } catch (e) {
+    row.indexError = String((e as Error).message ?? e)
+  }
+  finish(id, row)
+  treeChanged()
+}
+
+/** A text file's row in words. */
+export function textTitle(t: Transfer): string {
+  const did = t.created ? 'Made' : 'Saved'
+  if (t.indexError) return `${did}, but indexing failed, so search does not have it as it is now: ${t.indexError}`
+  if (t.phase !== 'done') return `${did}. Indexing…`
+  if (t.reindexing) return `${did}; search finds it once the library's index catches up`
+  return `${did}, indexed in ${(t.indexMs / 1000).toFixed(1)}s`
 }
