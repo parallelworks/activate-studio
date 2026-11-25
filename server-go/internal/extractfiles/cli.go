@@ -26,7 +26,7 @@ commands:
   shards   write each folder's permission shards of an index from a spread tree
   schema   print the SQL of the tables the artifact and the index's external databases hold
 
-index-extract files --list FILE|- --out ARTIFACT.db [--root DIR | --rclone REMOTE:PATH] [--strip PREFIX] [--delim D]
+index-extract files --list FILE|- --out ARTIFACT.db [--root DIR | --rclone REMOTE:PATH | --socket PATH] [--strip PREFIX] [--delim D]
   [--extra-info S] [--shard K/N] [--retry] [--max-size BYTES] [--extract-cache DIR] [--jobs N] [--progress]
   [--no-ocr] [--no-documents] [--pdf-reader auto|pdftotext|pypdf] [--soffice PATH]
   [--extractors FILE] [--report FILE]
@@ -72,6 +72,7 @@ func filesMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	rcloneRoot := fs.String("rclone", "", "read the files from this rclone remote and path (store:bucket/prefix) instead of a folder: one request for each object")
 	rcloneBin := fs.String("rclone-bin", "rclone", "with --rclone: the rclone program")
 	rcloneConf := fs.String("rclone-config", "", "with --rclone: an rclone configuration file (default: rclone's own)")
+	socket := fs.String("socket", "", "read the files from the program that listens on this unix socket instead of a folder: one request for each object")
 	maxSize := fs.Int64("max-size", 0, "leave unread, as skipped, a file listed as larger than this many bytes (0: no limit)")
 	ef := cli.AddExtractorFlags(fs)
 	progress := fs.Bool("progress", false, "print @progress lines on stdout")
@@ -120,6 +121,13 @@ func filesMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 2
 		}
 		src = Rclone{Bin: *rcloneBin, Root: r, Config: *rcloneConf, Strip: *strip, Tmp: filepath.Dir(*out)}
+	}
+	if *socket != "" {
+		if *root != "" || *rcloneRoot != "" {
+			fmt.Fprintln(stderr, "index-extract: --socket, --root and --rclone each name a place to read from; give one")
+			return 2
+		}
+		src = NewSocket(*socket, *strip, filepath.Dir(*out))
 	}
 	x, rc := ef.Extractor(stderr)
 	if x == nil {

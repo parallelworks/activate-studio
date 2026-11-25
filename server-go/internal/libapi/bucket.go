@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwbucket"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
 	"github.com/parallelworks/activate-studio/server-go/internal/staging"
@@ -27,11 +28,11 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
 )
 
-// Bucket libraries (docs/LIBRARIES.md, Buckets): a folder of an rclone
-// remote (a bucket of any S3 compatible store, AWS or on premises, or any
-// other remote rclone lists) is indexed from its listing alone. One fast
-// list (`rclone lsjson -R --fast-list`) gives every object's name, size
-// and time; Studio writes it as a GUFI trace and builds the index with
+// Bucket libraries (docs/LIBRARIES.md, Buckets): an ACTIVATE bucket
+// (pwbucket.go here), or a folder of an rclone remote (a bucket of any S3
+// compatible store, AWS or on premises, or any other remote rclone lists),
+// is indexed from its listing alone. One flat listing (of an rclone remote,
+// `rclone lsjson -R --fast-list`) gives every object's name, size and time; Studio writes it as a GUFI trace and builds the index with
 // gufi_trace2index, beside the old one, swapped in when whole, as a
 // folder's build is. No object is read to index it. The Library lists
 // the bucket's folders from that index, and opening a file reads that
@@ -115,9 +116,13 @@ func bucketWhere(b *libraries.BucketOf) string {
 	return where
 }
 
-// bucketOf is the rclone remote a bucket library lists, as the Studio's
-// single owner reaches it.
-func (s *Service) bucketOf(ctx context.Context, b *libraries.BucketOf) (*transfers.Bucket, error) {
+// bucketOf is where a bucket library's objects are: an ACTIVATE bucket as
+// its owner reaches it, or an rclone remote as the Studio's single owner
+// does. fresh is a run with a credential of its own (pwStoreOf).
+func (s *Service) bucketOf(ctx context.Context, owner string, b *libraries.BucketOf, fresh bool) (bucketStore, error) {
+	if b.PW() {
+		return s.pwStoreOf(owner, b, fresh)
+	}
 	xs := transfers.Of(s.a)
 	v, ok := xs.OwnerViewer()
 	if !ok {
@@ -131,7 +136,7 @@ func (s *Service) bucketOf(ctx context.Context, b *libraries.BucketOf) (*transfe
 		}
 		return nil, err
 	}
-	return bk, nil
+	return rcloneStore{bk}, nil
 }
 
 // objectPath is a library path as the object's path in the remote.
@@ -160,7 +165,7 @@ func listRequests(n int64) int64 {
 // keeps answering from the last listing while a new one runs.
 func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 	t0 := time.Now()
-	d := b.s.Reg.AddedDef(id)
+	d := b.s.Reg.BuiltDef(id)
 	if d == nil || d.Build == nil || d.Bucket == nil {
 		return 0, errors.New("no such library")
 	}
@@ -175,7 +180,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 	own.Set(func(j *index.IndexJob) { jobID = j.ID })
 	s := b.ix().Settings.Built(id)
 	if index.RecoverSwap(tree, []string{filepath.Join(bd.IndexDir, ".old")}) != "" {
-		b.log(fmt.Sprintf("library %s: its index was put aside by a swap a stop cut off; restored it", id))
+		b.libLog(id, "its index was put aside by a swap a stop cut off; restored it", nil)
 	}
 	state := "building"
 	if exists(filepath.Join(tree, "db.db")) {
@@ -185,7 +190,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 	b.buckets.setListing(id, true)
 	defer b.buckets.setListing(id, false)
 	st := b.s.Reg.BucketState(id)
-	var bk *transfers.Bucket
+	var bk bucketStore
 	err := func() error {
 		bin := b.s.a.Cfg.GufiBin
 		if !exists(filepath.Join(bin, "gufi_trace2index")) {
@@ -198,7 +203,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		if err != nil {
 			return err
 		}
-		bk, err = b.s.bucketOf(b.ctx, bc)
+		bk, err = b.s.bucketOf(b.ctx, d.Owner, bc, true)
 		if err != nil {
 			return err
 		}
@@ -270,7 +275,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		if bc.Text || bc.Fsid != "" {
 			progress("Adding the text read before", 0, nil)
 			if _, err := b.refillShards(id, bc, built); err != nil {
-				b.log(fmt.Sprintf("library %s: the text read before could not be added to its new index: %s", id, err))
+				b.libLog(id, "the text read before could not be added to its new index", err)
 			}
 		}
 		old := filepath.Join(bd.IndexDir, ".old")
@@ -289,7 +294,8 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		index.RmTree(old)
 		index.RmTree(stage)
 		progress("Counting", 0, nil)
-		c, err := b.settle(d)
+		c, err := b.settle(d, &bucketSource{URI: sourceOf(d), Provider: bk.Provider(b.ctx), Endpoint: bk.Endpoint(b.ctx), Region: bc.Region, Bucket: bc.Store, Path: bc.Path,
+			ListedAt: listed.UTC().Format("2006-01-02T15:04:05.000Z"), Objects: stats.Objects, Bytes: stats.Bytes})
 		if err != nil {
 			return err
 		}
@@ -299,8 +305,18 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		now := isoNow()
 		st = libraries.BucketState{ListedAt: &now, Objects: stats.Objects, Bytes: stats.Bytes, Folders: stats.Dirs, Skipped: stats.Skipped,
 			Requests: listRequests(stats.Objects), Provider: bk.Provider(b.ctx), Seconds: float64(int(listSecs*10)) / 10, TextPass: st.TextPass}
+		if p, ok := bk.(pwStore); ok {
+			why := error(nil)
+			st.Requests = p.s.Requests.Load()
+			if st.Route, why = p.s.Route(); st.Route == pwbucket.ThroughCLI {
+				st.Requests = p.s.CLI.Runs.Load()
+			}
+			if why != nil {
+				st.RouteWhy = truncRunes(why.Error(), 300)
+			}
+		}
 		if stats.Skipped > 0 {
-			b.log(fmt.Sprintf("library %s: %d entries of %s could not be indexed (a path longer than GUFI holds, a name \".\" or \"..\", or a name listed twice)", id, stats.Skipped, where))
+			b.libLog(id, fmt.Sprintf("%d entries could not be indexed (a path longer than GUFI holds, a name \".\" or \"..\", or a name listed twice)", stats.Skipped), nil)
 		}
 		b.s.Reg.UpdateBuild(id, func(lb *libraries.LocalBuild) {
 			lb.State, lb.Error, lb.BuiltAt, lb.Files, lb.Dirs = "ready", nil, &c.builtAt, &c.files, &c.dirs
@@ -309,9 +325,11 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 	}()
 	if err != nil {
 		msg := truncRunes(libraries.PlainBuildError(err.Error()), 400)
-		st.Error = &msg
+		st.Error, st.Waits = &msg, errors.Is(err, pwbucket.ErrNoSignIn) || d.Owner != "" && b.s.bucketKey(d.Owner) == ""
+		tried := isoNow()
+		st.TriedAt = &tried
 		if werr := b.s.Reg.WriteBucketState(id, st); werr != nil {
-			b.log(fmt.Sprintf("library %s: recording its listing: %s", id, werr))
+			b.libLog(id, "recording its listing failed", werr)
 		}
 		if b.stopping.Load() {
 			return 0, err
@@ -324,20 +342,29 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		return 0, err
 	}
 	if werr := b.s.Reg.WriteBucketState(id, st); werr != nil {
-		b.log(fmt.Sprintf("library %s: recording its listing: %s", id, werr))
+		b.libLog(id, "recording its listing failed", werr)
 	}
 	// The index is searchable now; the objects' text is read after it.
-	if d := b.s.Reg.AddedDef(id); d != nil && d.Bucket != nil && d.Bucket.Text && !b.stopping.Load() {
+	if d := b.s.Reg.BuiltDef(id); d != nil && d.Bucket != nil && d.Bucket.Text && !b.stopping.Load() {
 		b.buckets.setListing(id, false)
 		b.bucketText(id, d.Bucket, bk, tree, progress)
 	}
 	return time.Since(t0).Milliseconds(), nil
 }
 
+// bucketRetry is how long a listing that failed waits for its next try.
+const bucketRetry = 15 * time.Minute
+
 // bucketDue is whether a bucket library's next listing is due at now.
 func bucketDue(bc *libraries.BucketOf, st libraries.BucketState, now time.Time) bool {
 	if bc.Every <= 0 {
 		return false
+	}
+	// One that failed is not asked again at once.
+	if st.TriedAt != nil {
+		if at, err := time.Parse(time.RFC3339Nano, *st.TriedAt); err == nil && now.Before(at.Add(min(time.Duration(bc.Every)*time.Minute, bucketRetry))) {
+			return false
+		}
 	}
 	if st.ListedAt == nil {
 		return true
@@ -359,15 +386,12 @@ func (b *builds) startBuckets(ctx context.Context) {
 		}
 		now := time.Now()
 		for _, id := range b.builtIDs() {
-			d := b.s.Reg.AddedDef(id)
-			if d == nil || d.Bucket == nil || d.Build == nil || d.Build.State != "ready" || b.jobOf(id) != nil {
-				continue
+			if d := b.s.Reg.AddedDef(id); d != nil {
+				b.startDue(*d, now)
 			}
-			if bucketDue(d.Bucket, b.s.Reg.BucketState(id), now) {
-				if _, err := b.start(id); err != nil {
-					b.log(fmt.Sprintf("library %s: listing it again: %s", id, err))
-				}
-			}
+		}
+		for _, d := range b.s.Reg.EveryOwned() {
+			b.startDue(d, now)
 		}
 	}
 }
@@ -382,7 +406,7 @@ func (s *Service) bucketFile(ctx context.Context, l libraries.Library, rel strin
 	if err != nil {
 		return nil, err
 	}
-	bk, err := s.bucketOf(ctx, l.Bucket)
+	bk, err := s.bucketOf(ctx, l.Owner, l.Bucket, false)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +437,7 @@ func (s *Service) bucketDownload(ctx context.Context, l libraries.Library, rel s
 	if err != nil {
 		return "", nil, err
 	}
-	bk, err := s.bucketOf(ctx, l.Bucket)
+	bk, err := s.bucketOf(ctx, l.Owner, l.Bucket, false)
 	if err != nil {
 		return "", nil, err
 	}
@@ -436,25 +460,28 @@ func (s *Service) bucketDownload(ctx context.Context, l libraries.Library, rel s
 
 // ---- routes ----
 
-// bucketAdd adds a bucket library and starts its first listing.
+// bucketAdd adds a bucket library and starts its first listing: of an
+// ACTIVATE bucket ("bucket", its URI), the person's own where people sign
+// in, or of an rclone remote ("location") where nobody does.
 func (s *Service) bucketAdd(w http.ResponseWriter, r *http.Request) error {
-	if !s.localBuildOffered(r) {
-		return apierr.New(403, singleUserBucket)
-	}
 	body, err := reqbody.Read(r)
 	if err != nil {
 		return err
 	}
+	uri := jsTrim(body.Str("bucket"))
+	owner := ""
+	if uri != "" {
+		ok := false
+		if owner, ok, err = s.pwViewer(r, true); err != nil {
+			return err
+		} else if !ok {
+			return pwBucketErr(pwbucket.ErrNoSignIn)
+		}
+	} else if !s.localBuildOffered(r) {
+		return apierr.New(403, singleUserBucket)
+	}
 	if !exists(filepath.Join(s.a.Cfg.GufiBin, "gufi_trace2index")) {
 		return apierr.New(400, "GUFI here has no gufi_trace2index (in %s), which builds a bucket's index.", s.a.Cfg.GufiBin)
-	}
-	locID := jsTrim(body.Str("location"))
-	if kind, _, _ := strings.Cut(locID, ":"); kind != transfers.KindRclone {
-		return apierr.New(400, "location: an rclone remote from Transfers")
-	}
-	p, err := transfers.CleanRel(body.Str("path"))
-	if err != nil {
-		return err
 	}
 	every := libraries.DefaultBucketEvery
 	if body.Has("every") {
@@ -464,54 +491,88 @@ func (s *Service) bucketAdd(w http.ResponseWriter, r *http.Request) error {
 		}
 		every = int(n)
 	}
-	xs := transfers.Of(s.a)
-	v, ok := xs.OwnerViewer()
-	if !ok {
-		return apierr.New(403, singleUserBucket)
+	var bc *libraries.BucketOf
+	if uri != "" {
+		bc, err = s.pwBucketDef(r.Context(), owner, uri, body.Str("path"), body.Str("endpoint"), every)
+	} else {
+		bc, err = s.rcloneDef(r.Context(), body, every)
 	}
-	bk, err := xs.Bucket(r.Context(), v, locID)
 	if err != nil {
-		return err
-	}
-	// The folder must be there and listable before anything is kept: one
-	// request for its first page.
-	if _, err := xs.Browse(r.Context(), v, locID, &p); err != nil {
 		return err
 	}
 	label := jsTrim(body.Str("label"))
 	if label == "" {
-		label = bk.Label
-		if p != "" {
-			label = path.Base(p)
+		label = bc.Label
+		if bc.Path != "" {
+			label = path.Base(bc.Path)
 		}
 	}
+	def := func(id, own string) libraries.Def {
+		indexDir := filepath.Join(own, "index")
+		return libraries.Def{ID: id, Label: label, IndexRoot: filepath.Join(indexDir, bucketRoot), Bucket: bc,
+			Build: &libraries.LocalBuild{IndexDir: indexDir, CacheRoot: filepath.Join(own, "extract"), Managed: true, State: "building"}}
+	}
 	id := strings.ToLower(jsTrim(body.Str("id")))
-	if id == "" {
-		id = s.Reg.IDFor(label, bk.Label+"/"+p)
+	if owner != "" {
+		l, err := s.Reg.AddOwned(owner, def)
+		if err != nil {
+			return err
+		}
+		id = l.ID
+	} else {
+		if id == "" {
+			id = s.Reg.IDFor(label, bc.Label+"/"+bc.Path)
+		}
+		if err := s.Reg.CheckNewID(id); err != nil {
+			return err
+		}
+		if _, err := s.Reg.AddBuilt(def(id, s.Reg.BuiltLibraryDir(id))); err != nil {
+			return err
+		}
 	}
-	if err := s.Reg.CheckNewID(id); err != nil {
-		return err
-	}
-	own := s.Reg.BuiltLibraryDir(id)
-	indexDir := filepath.Join(own, "index")
-	if err := os.MkdirAll(indexDir, 0o755); err != nil {
-		return err
-	}
-	if _, err := s.Reg.AddBuilt(libraries.Def{
-		ID: id, Label: label, IndexRoot: filepath.Join(indexDir, bucketRoot),
-		Build:  &libraries.LocalBuild{IndexDir: indexDir, CacheRoot: filepath.Join(own, "extract"), Managed: true, State: "building"},
-		Bucket: &libraries.BucketOf{Location: locID, Path: p, Label: bk.Label, Every: every},
-	}); err != nil {
+	if err := os.MkdirAll(s.Reg.BuiltDef(id).Build.IndexDir, 0o755); err != nil {
 		return err
 	}
 	if _, err := s.ix().Settings.Save(id, map[string]any{"depth": string(index.DepthNames)}); err != nil {
 		return err
 	}
+	return s.bucketStart(w, r, id)
+}
+
+// rcloneDef is a bucket library of an rclone remote as a request asks for it.
+func (s *Service) rcloneDef(ctx context.Context, body reqbody.Body, every int) (*libraries.BucketOf, error) {
+	locID := jsTrim(body.Str("location"))
+	if kind, _, _ := strings.Cut(locID, ":"); kind != transfers.KindRclone {
+		return nil, apierr.New(400, "location: an rclone remote from Transfers")
+	}
+	p, err := transfers.CleanRel(body.Str("path"))
+	if err != nil {
+		return nil, err
+	}
+	xs := transfers.Of(s.a)
+	v, ok := xs.OwnerViewer()
+	if !ok {
+		return nil, apierr.New(403, singleUserBucket)
+	}
+	bk, err := xs.Bucket(ctx, v, locID)
+	if err != nil {
+		return nil, err
+	}
+	// The folder must be there and listable before anything is kept: one
+	// request for its first page.
+	if _, err := xs.Browse(ctx, v, locID, &p); err != nil {
+		return nil, err
+	}
+	return &libraries.BucketOf{Location: locID, Path: p, Label: bk.Label, Every: every}, nil
+}
+
+// bucketStart starts a listing and answers with the library and its job.
+func (s *Service) bucketStart(w http.ResponseWriter, r *http.Request, id string) error {
 	job, err := s.builds.start(id)
 	if err != nil {
 		return err
 	}
-	lib, err := s.settingsLibrary(id)
+	lib, err := s.bucketView(r, id)
 	if err != nil {
 		return err
 	}
@@ -519,25 +580,46 @@ func (s *Service) bucketAdd(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// bucketView is a bucket library as Settings shows it to the request's
+// person.
+func (s *Service) bucketView(r *http.Request, id string) (libraries.SettingsLibrary, error) {
+	v, err := s.viewer(r)
+	if err != nil {
+		return libraries.SettingsLibrary{}, err
+	}
+	l, err := s.Reg.Get(id, s.kbLabel(), v)
+	if err != nil {
+		return libraries.SettingsLibrary{}, err
+	}
+	return s.Reg.SettingsView(l), nil
+}
+
 // bucketSettings changes how often Studio lists a bucket library again,
 // and whether it reads the objects' text. Turning text on lists the
 // bucket and reads it now; turning it off stops a pass that is running,
 // and the text read so far stays searchable.
 func (s *Service) bucketSettings(w http.ResponseWriter, r *http.Request) error {
-	if !s.localBuildOffered(r) {
-		return apierr.New(403, singleUserBucket)
+	d, err := s.ownBucket(r)
+	if err != nil {
+		return err
 	}
-	id := r.PathValue("id")
-	d := s.Reg.AddedDef(id)
-	if d == nil || d.Bucket == nil {
-		return apierr.New(404, "%s is not a bucket library", id)
-	}
+	id := d.ID
 	body, err := reqbody.Read(r)
 	if err != nil {
 		return err
 	}
-	if !body.Has("every") && !body.Has("text") {
-		return apierr.New(400, "every or text")
+	if !body.Has("every") && !body.Has("text") && !body.Has("endpoint") {
+		return apierr.New(400, "every, text or endpoint")
+	}
+	if body.Has("endpoint") {
+		if !d.Bucket.PW() {
+			return apierr.New(400, "endpoint: an rclone remote has its own, in its settings")
+		}
+		at, err := pwbucket.CheckEndpoint(body.Str("endpoint"), s.a.Cfg.AuthEnabled())
+		if err != nil {
+			return apierr.New(400, "Endpoint: %s", err.Error())
+		}
+		s.Reg.SetBucketEndpoint(id, at)
 	}
 	if body.Has("every") {
 		n, ok := body.Get("every").(float64)
@@ -565,7 +647,7 @@ func (s *Service) bucketSettings(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
-	lib, err := s.settingsLibrary(id)
+	lib, err := s.bucketView(r, id)
 	if err != nil {
 		return err
 	}

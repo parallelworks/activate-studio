@@ -54,6 +54,7 @@ type builds struct {
 	copies   copies
 	buckets  buckets
 	texts    bucketTexts
+	pwb      pwBuckets
 }
 
 func newBuilds(s *Service) *builds {
@@ -499,7 +500,11 @@ func (s *Service) buildAdd(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) rebuild(w http.ResponseWriter, r *http.Request) error {
+	// A person's own bucket library, where people sign in.
 	if !s.localBuildOffered(r) {
+		if d, err := s.ownBucket(r); err == nil {
+			return s.bucketStart(w, r, d.ID)
+		}
 		return apierr.New(403, singleUserBuild)
 	}
 	id := r.PathValue("id")
@@ -529,7 +534,7 @@ func (b *builds) start(id string) (index.IndexJob, error) {
 	job, err := b.ix().StartOwnJob("library:"+id, func(own *index.OwnJob) (int64, error) {
 		unlock := b.lock(id)
 		defer unlock()
-		if d := b.s.Reg.AddedDef(id); d != nil && d.Bucket != nil {
+		if d := b.s.Reg.BuiltDef(id); d != nil && d.Bucket != nil {
 			return b.bucketBuild(id, own)
 		}
 		return b.fullBuild(id, own)
@@ -696,7 +701,25 @@ func sourceOf(d *libraries.Def) string {
 	return deref(d.SourceRoot)
 }
 
-func (b *builds) settle(d *libraries.Def) (counts, error) {
+// bucketSource is where a bucket library's index came from, kept with it in
+// its manifest: what an index made from it, or shared, says of its source.
+type bucketSource struct {
+	// URI is the ACTIVATE bucket or the rclone remote, with the folder in
+	// it; Bucket, Region and Endpoint the store's own, where known.
+	URI      string `json:"uri"`
+	Provider string `json:"provider,omitempty"`
+	Endpoint string `json:"endpoint,omitempty"`
+	Region   string `json:"region,omitempty"`
+	Bucket   string `json:"bucket,omitempty"`
+	Path     string `json:"path,omitempty"`
+	// ListedAt is when the listing began: the index holds what the store
+	// held from then on.
+	ListedAt string `json:"listedAt"`
+	Objects  int64  `json:"objects"`
+	Bytes    int64  `json:"bytes"`
+}
+
+func (b *builds) settle(d *libraries.Def, from *bucketSource) (counts, error) {
 	// Probed again at once. Until it answers, the library keeps the
 	// capabilities last found, never "none".
 	b.s.Reg.StaleProbe(d.IndexRoot)
@@ -709,15 +732,16 @@ func (b *builds) settle(d *libraries.Def) (counts, error) {
 	}
 	c.builtAt = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 	m := struct {
-		Version     int    `json:"version"`
-		Source      string `json:"source"`
-		Index       string `json:"index"`
-		IndexDir    string `json:"indexDir"`
-		BuiltAt     string `json:"builtAt"`
-		GufiBin     string `json:"gufiBin"`
-		Directories int64  `json:"directories"`
-		Files       int64  `json:"files"`
-	}{1, sourceOf(d), d.IndexRoot, d.Build.IndexDir, c.builtAt, b.s.a.Cfg.GufiBin, c.dirs, c.files}
+		Version     int           `json:"version"`
+		Source      string        `json:"source"`
+		Index       string        `json:"index"`
+		IndexDir    string        `json:"indexDir"`
+		BuiltAt     string        `json:"builtAt"`
+		GufiBin     string        `json:"gufiBin"`
+		Directories int64         `json:"directories"`
+		Files       int64         `json:"files"`
+		Bucket      *bucketSource `json:"bucket,omitempty"`
+	}{1, sourceOf(d), d.IndexRoot, d.Build.IndexDir, c.builtAt, b.s.a.Cfg.GufiBin, c.dirs, c.files, from}
 	raw, err := marshalIndent(m, "  ")
 	if err != nil {
 		return c, err
@@ -982,7 +1006,7 @@ func (b *builds) fullBuild(id string, own *index.OwnJob) (int64, error) {
 			return err
 		}
 		progress("Counting", 0, nil)
-		c, err := b.settle(d)
+		c, err := b.settle(d, nil)
 		if err != nil {
 			return err
 		}
@@ -1281,7 +1305,7 @@ func (b *builds) sync(id string) ([]string, error) {
 			}
 		}
 	}
-	c, _ := b.settle(d)
+	c, _ := b.settle(d, nil)
 	b.settleDenied(id)
 	var errMsg *string
 	if len(failed) > 0 {
@@ -1399,6 +1423,25 @@ func (b *builds) startSync(ctx context.Context) {
 			b.start(id)
 		}
 	}
+	// A person's bucket library needs its owner's sign-in to go on.
+	for _, d := range b.s.Reg.EveryOwned() {
+		if d.Build == nil || d.Build.State != "building" && d.Build.State != "updating" {
+			continue
+		}
+		index.RecoverSwap(d.IndexRoot, []string{filepath.Join(d.Build.IndexDir, ".old")})
+		if b.s.storedKey(d.Owner) != "" {
+			b.start(d.ID)
+			continue
+		}
+		st := b.s.Reg.BucketState(d.ID)
+		st.Waits = true
+		b.s.Reg.WriteBucketState(d.ID, st)
+		state := "failed"
+		if exists(filepath.Join(d.IndexRoot, "db.db")) {
+			state = "ready"
+		}
+		b.s.Reg.UpdateBuild(d.ID, func(lb *libraries.LocalBuild) { lb.State = state })
+	}
 	wait := func() time.Duration { return time.Duration(max(b.sweepSec(), 60) * float64(time.Second)) }
 	t := time.NewTimer(wait())
 	defer t.Stop()
@@ -1442,6 +1485,11 @@ func (b *builds) stop() int {
 	n := 0
 	for _, id := range b.builtIDs() {
 		if b.jobOf(id) != nil {
+			n++
+		}
+	}
+	for _, d := range b.s.Reg.EveryOwned() {
+		if b.jobOf(d.ID) != nil {
 			n++
 		}
 	}

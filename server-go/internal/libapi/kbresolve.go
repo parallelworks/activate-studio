@@ -77,6 +77,7 @@ func (k kbResolver) File(r *http.Request, lib kb.Library, rel string) (*kb.Obj, 
 		return nil, err
 	}
 	if l.Bucket != nil {
+		k.s.keepVisit(r, l)
 		return k.s.bucketFile(r.Context(), l, rel)
 	}
 	if l.ReadThrough != nil {
@@ -98,6 +99,7 @@ func (k kbResolver) Download(r *http.Request, lib kb.Library, rel string) (strin
 		return "", nil, err
 	}
 	if l.Bucket != nil {
+		k.s.keepVisit(r, l)
 		return k.s.bucketDownload(r.Context(), l, rel)
 	}
 	if l.ReadThrough != nil {

@@ -587,6 +587,10 @@ func Export(src Source, o Options) (File, []Skipped) {
 			continue
 		}
 		// A bucket's remote is in this computer's rclone configuration.
+		if l.Bucket.PW() {
+			skipped = append(skipped, Skipped{l.ID, l.Label, "It is an index of an ACTIVATE bucket, read with the sign-in of the person who added it; in another Studio, add the bucket in Add a library."})
+			continue
+		}
 		if l.Bucket != nil {
 			skipped = append(skipped, Skipped{l.ID, l.Label, "It is an index of a bucket listed with this computer's rclone configuration; in another Studio, set up that remote in rclone and add the bucket from it."})
 			continue

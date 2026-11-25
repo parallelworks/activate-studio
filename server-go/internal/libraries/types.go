@@ -12,6 +12,8 @@
 package libraries
 
 import (
+	"strings"
+
 	"encoding/json"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
@@ -133,17 +135,31 @@ type CopyState struct {
 	Error *string `json:"error"`
 }
 
-// BucketOf is where a bucket library's listing comes from: a folder (a
-// bucket, or a prefix in one) of an rclone remote in Transfers. Studio
-// indexes the listing alone and reads an object only when it is opened
-// (docs/LIBRARIES.md, Buckets). The library has no folder on this host.
+// BucketOf is where a bucket library's listing comes from: an ACTIVATE
+// bucket or a folder in one, read with its owner's own pw sign-in, or a
+// folder (a bucket, or a prefix in one) of an rclone remote in Transfers.
+// Studio indexes the listing alone and reads an object only when it is
+// opened (docs/LIBRARIES.md, Buckets). The library has no folder on this
+// host.
 type BucketOf struct {
-	// Location is the Transfers location id (rclone:<remote>); Path the
-	// bucket and prefix in it.
+	// Location is the ACTIVATE bucket's URI (pw://<namespace>/<bucket>), or
+	// the Transfers location id (rclone:<remote>). Path is the prefix in
+	// that bucket, or the bucket and prefix in that remote.
 	Location string `json:"location"`
 	Path     string `json:"path"`
 	// Label is the location's label when the library was added.
 	Label string `json:"label,omitempty"`
+	// CSP, Region, Store and Account are where an ACTIVATE bucket is kept,
+	// as the platform said when it was added: its cloud, the region there,
+	// the bucket's own name there, and an Azure container's storage
+	// account. No credential is ever kept with them.
+	CSP     string `json:"csp,omitempty"`
+	Region  string `json:"region,omitempty"`
+	Store   string `json:"store,omitempty"`
+	Account string `json:"account,omitempty"`
+	// Endpoint is another address to ask the store at (a VPC endpoint), as
+	// the person gave it; "" for the store's own.
+	Endpoint string `json:"endpoint,omitempty"`
 	// Every is how often Studio lists it again, in minutes; 0 only when
 	// asked.
 	Every int `json:"every"`
@@ -156,6 +172,9 @@ type BucketOf struct {
 	// text pass (libapi.BucketFsid).
 	Fsid string `json:"fsid,omitempty"`
 }
+
+// PW reports whether it is an ACTIVATE bucket.
+func (b *BucketOf) PW() bool { return b != nil && strings.HasPrefix(b.Location, "pw://") }
 
 // BucketTextMax is the largest object a bucket library's text pass reads;
 // a larger one is left unread.
@@ -204,12 +223,25 @@ type BucketState struct {
 	Bytes   int64 `json:"bytes"`
 	Folders int64 `json:"folders"`
 	Skipped int64 `json:"skipped"`
-	// Requests estimates the list requests the listing took: an object
-	// store answers up to 1,000 keys a request.
+	// Requests is the list requests the listing took. Of an rclone remote
+	// it is an estimate (an object store answers up to 1,000 keys a
+	// request); of an ACTIVATE bucket read directly, the count, and of one
+	// listed by the pw CLI, its runs, one a folder.
 	Requests int64 `json:"requests"`
 	// Provider is the s3 provider rclone's configuration names (AWS,
-	// Minio, Ceph, ...), "" when it names none.
+	// Minio, Ceph, ...), or an ACTIVATE bucket's cloud; "" when not known.
 	Provider string `json:"provider"`
+	// Route is how an ACTIVATE bucket was listed: "direct" (its store, with
+	// the bucket's short-term token) or "pw" (the pw CLI), and RouteWhy why
+	// it was not direct.
+	Route    string `json:"route,omitempty"`
+	RouteWhy string `json:"routeWhy,omitempty"`
+	// TriedAt is when the last listing that failed ended; nil once one
+	// succeeds.
+	TriedAt *string `json:"triedAt,omitempty"`
+	// Waits is set when a listing is due and waits for its owner, who has
+	// no sign-in kept here, to open the Studio.
+	Waits bool `json:"waits,omitempty"`
 	// Seconds is how long the listing took.
 	Seconds float64 `json:"seconds"`
 	// Error is why the last listing failed; nil when it did not.
@@ -228,6 +260,10 @@ type Def struct {
 	ReadThrough *ReadThrough `json:"readThrough,omitempty"`
 	CopyOf      *CopyOf      `json:"copyOf,omitempty"`
 	Bucket      *BucketOf    `json:"bucket,omitempty"`
+	// Owner is the person whose bucket library it is, on a Studio where
+	// people sign in (owned.go); "" for the Studio's own. It comes from the
+	// folder the definition is in, never from the definition.
+	Owner string `json:"-"`
 }
 
 // Library is a mounted library, as every module sees it.
@@ -261,6 +297,8 @@ type Library struct {
 	// Bucket is set for a bucket library: its index is here, its objects
 	// are read from the remote one at a time.
 	Bucket *BucketOf
+	// Owner is the person whose own bucket library it is (Def.Owner).
+	Owner string
 	// Space: written as the viewer (their own space, or a folder shared
 	// with them for writing).
 	Space bool

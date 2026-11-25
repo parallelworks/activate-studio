@@ -57,11 +57,15 @@ func UserAccess(d UserDef, writable bool) Access {
 }
 
 // localAccess is the access of a library on this computer or in a bucket:
-// read with the Studio's own account.
+// read with the Studio's own account, an ACTIVATE bucket with its owner's
+// pw sign-in.
 func localAccess(l Library) Access {
 	a := Access{Where: "here", ReadAs: "studio", Write: l.Writable, Index: "connected"}
 	if l.Bucket != nil {
 		a.Where = "bucket"
+		if l.Bucket.PW() {
+			a.ReadAs = "you"
+		}
 	}
 	if l.Primary || l.Build != nil || l.CopyOf != nil || l.Bucket != nil {
 		a.Index = "built"

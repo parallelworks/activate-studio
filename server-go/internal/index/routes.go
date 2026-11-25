@@ -305,6 +305,10 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 		return int(f)
 	}
 
+	allowed := func(r *http.Request, j IndexJob) bool {
+		return ix.Hooks.JobAllowed == nil || ix.Hooks.JobAllowed(r, j.Dir)
+	}
+
 	mux.HandleFunc("GET /api/index/status", wrap(func(w http.ResponseWriter, r *http.Request) error {
 		st := ix.Status()
 		o := st["\x00ordered"].(ordered)
@@ -379,6 +383,9 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 	}
 	getJob := wrap(func(w http.ResponseWriter, r *http.Request) error {
 		j, ok := ix.Job(jobID(r))
+		if ok && !allowed(r, j) {
+			return notFound(w)
+		}
 		if !ok {
 			if nodeJob(w, r) {
 				return nil
@@ -390,6 +397,9 @@ func (ix *Indexer) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/index/job/{id}", getJob)
 
 	mux.HandleFunc("POST /api/index/job/{id}/cancel", writable(func(w http.ResponseWriter, r *http.Request, _ map[string]any) error {
+		if j, ok := ix.Job(jobID(r)); ok && !allowed(r, j) {
+			return notFound(w)
+		}
 		j, ok := ix.Cancel(jobID(r))
 		if !ok {
 			if nodeJob(w, r) {

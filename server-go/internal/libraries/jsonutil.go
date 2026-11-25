@@ -105,9 +105,11 @@ func fileStamp(file string) string {
 
 // writeAtomic writes through a temporary file renamed over the old one, so
 // a reader (Node's included) never sees half a file.
-func writeAtomic(file string, b []byte) error {
+func writeAtomic(file string, b []byte) error { return writeAtomicMode(file, b, 0o644) }
+
+func writeAtomicMode(file string, b []byte, mode os.FileMode) error {
 	tmp := fmt.Sprintf("%s.%d.go.tmp", file, os.Getpid())
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := os.WriteFile(tmp, b, mode); err != nil {
 		return err
 	}
 	return os.Rename(tmp, file)

@@ -26,15 +26,15 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/extractfiles"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
-	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
 )
 
 // Reading text from a bucket (docs/LIBRARIES.md): with BucketOf.Text on,
 // each listing of a bucket library is followed by a text pass. The objects
 // whose text can be read and that no pass has read at this mtime are
 // written to a file list and read by index-extract, a program of its own
-// beside studio-server, one request for each object through the remote
-// (`index-extract files --rclone`). Its artifact, text.db in the
+// beside studio-server, one request for each object: through the remote
+// (`index-extract files --rclone`), or of an ACTIVATE bucket from this
+// process (`--socket`), which holds the bucket's credential. Its artifact, text.db in the
 // library's folder, keeps every object's outcome, so a pass goes on from
 // the last and an object is read again only when it changed. What a pass
 // added goes into the library's spread tree, keyed by inode (stable for an
@@ -121,7 +121,7 @@ func (s *Service) bucketTextPaths(id string) (artifact, spreadTop string) {
 
 // bucketSpread is a bucket library's spread tree, naming its fsid when
 // it has none yet.
-func (b *builds) bucketSpread(id string, bc *libraries.BucketOf, bk *transfers.Bucket) extdb.Spread {
+func (b *builds) bucketSpread(id string, bc *libraries.BucketOf, bk bucketStore) extdb.Spread {
 	_, top := b.s.bucketTextPaths(id)
 	fsid := bc.Fsid
 	if fsid == "" {
@@ -199,7 +199,7 @@ func indexExtractBin() (string, error) {
 }
 
 // bucketText runs a text pass of a bucket library over its index tree.
-func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk *transfers.Bucket, tree string, progress func(phase string, done int, current *string)) {
+func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk bucketStore, tree string, progress func(phase string, done int, current *string)) {
 	ctx, done := b.texts.start(b.ctx, id)
 	defer done()
 	t0 := time.Now()
@@ -215,12 +215,12 @@ func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk *transfers.Buc
 		if err != nil {
 			msg := truncRunes(err.Error(), 400)
 			text.Error = &msg
-			b.log(fmt.Sprintf("library %s: reading its text: %s", id, msg))
+			b.libLog(id, "reading its text", err)
 		}
 		st := b.s.Reg.BucketState(id)
 		st.TextPass = text
 		if werr := b.s.Reg.WriteBucketState(id, st); werr != nil {
-			b.log(fmt.Sprintf("library %s: recording its text pass: %s", id, werr))
+			b.libLog(id, "recording its text pass", werr)
 		}
 	}
 	if st.TextPass != nil {
@@ -296,21 +296,27 @@ func (b *builds) bucketText(id string, bc *libraries.BucketOf, bk *transfers.Buc
 	b.s.Reg.Probe(b.ctx, tree)
 	search.InvalidateDbList()
 	if sh.Unchowned > 0 {
-		b.log(fmt.Sprintf("library %s: %d text shards are owned by this account", id, sh.Unchowned))
+		b.libLog(id, fmt.Sprintf("%d text shards are owned by this account", sh.Unchowned), nil)
 	}
 	record(nil)
 }
 
 // runIndexExtract reads the listed objects into the artifact with
 // index-extract, its @progress lines moving the job's progress.
-func (b *builds) runIndexExtract(ctx context.Context, id string, bc *libraries.BucketOf, bk *transfers.Bucket, list, artifact string, total int, progress func(phase string, done int, current *string)) (extractfiles.Summary, error) {
+func (b *builds) runIndexExtract(ctx context.Context, id string, bc *libraries.BucketOf, bk bucketStore, list, artifact string, total int, progress func(phase string, done int, current *string)) (extractfiles.Summary, error) {
 	var sum extractfiles.Summary
 	bin, err := indexExtractBin()
 	if err != nil {
 		return sum, err
 	}
-	args := []string{"files", "--list", list, "--out", artifact, "--rclone", bk.Spec(bc.Path), "--rclone-bin", bk.Bin(),
-		"--max-size", strconv.Itoa(libraries.BucketTextMax), "--jobs", strconv.Itoa(bucketTextJobs), "--no-ocr", "--progress"}
+	source, done, err := bk.textSource(ctx, bc)
+	if err != nil {
+		return sum, err
+	}
+	defer done()
+	args := append([]string{"files", "--list", list, "--out", artifact}, source...)
+	args = append(args,
+		"--max-size", strconv.Itoa(libraries.BucketTextMax), "--jobs", strconv.Itoa(bucketTextJobs), "--no-ocr", "--progress")
 	if s := b.ix().Settings.Built(id); s.LegacyOffice {
 		if so := b.ix().Hooks.SofficeFound(); so != "" {
 			args = append(args, "--soffice", so)
@@ -351,7 +357,7 @@ func (b *builds) runIndexExtract(ctx context.Context, id string, bc *libraries.B
 				errLines = errLines[1:]
 			}
 			if logged++; logged <= 50 {
-				b.log(fmt.Sprintf("library %s: %s", id, line))
+				b.libLog(id, "index-extract", errors.New(line))
 			}
 		}
 	}()
@@ -430,14 +436,11 @@ type textEstimate struct {
 // bucketTextEstimate says what turning a bucket library's text on would
 // read: GET /api/libraries/{id}/bucket/text.
 func (s *Service) bucketTextEstimate(w http.ResponseWriter, r *http.Request) error {
-	if !s.localBuildOffered(r) {
-		return apierr.New(403, singleUserBucket)
+	d, err := s.ownBucket(r)
+	if err != nil {
+		return err
 	}
-	id := r.PathValue("id")
-	d := s.Reg.AddedDef(id)
-	if d == nil || d.Bucket == nil {
-		return apierr.New(404, "%s is not a bucket library", id)
-	}
+	id := d.ID
 	if !exists(filepath.Join(d.IndexRoot, "db.db")) {
 		return apierr.New(409, "%s has no index yet; its first listing makes one", d.Label)
 	}
@@ -482,9 +485,10 @@ func (s *Service) bucketTextEstimate(w http.ResponseWriter, r *http.Request) err
 // bucketTextStop stops a running text pass; the next goes on from where
 // it stopped: POST /api/libraries/{id}/bucket/text/stop.
 func (s *Service) bucketTextStop(w http.ResponseWriter, r *http.Request) error {
-	if !s.localBuildOffered(r) {
-		return apierr.New(403, singleUserBucket)
+	d, err := s.ownBucket(r)
+	if err != nil {
+		return err
 	}
-	apierr.JSON(w, 200, map[string]bool{"stopped": s.builds.texts.stop(r.PathValue("id"))})
+	apierr.JSON(w, 200, map[string]bool{"stopped": s.builds.texts.stop(d.ID)})
 	return nil
 }
