@@ -23,7 +23,7 @@ export function AgentModelControls({ api, platform, machine, sessionId, claudeRe
   /** The client whose claude-code/models route the picker reads. */
   api: Pick<PwCodeApi, 'useClaudeModels'>
   /** The platform models pw code can run, in place of the surrounding
-   *  ChatProvider's: a Studio chat's are the Studio assistant's, which may
+   *  ChatProvider's: a chat's are the Studio's, which may
    *  be an OpenAI-compatible endpoint's that pw code cannot use. */
   platform?: PwCodePlatformModelList | undefined
   machine: string

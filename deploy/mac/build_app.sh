@@ -491,7 +491,7 @@ info = {
     'NSHighResolutionCapable': True,
     # The window loads the Studio from its own server on 127.0.0.1.
     'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True},
-    'NSMicrophoneUsageDescription': 'Voice input in the Studio chat.',
+    'NSMicrophoneUsageDescription': 'Voice input in Assistant.',
     'ActivateStudioBuild': e['BUILD'],
 }
 if e['ICON']:

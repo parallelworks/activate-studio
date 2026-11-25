@@ -217,7 +217,7 @@ describe('the notices read', () => {
 })
 
 describe('the menu', () => {
-  it('counts what needs the person on Chat, Code, Agents and Notices, from one read', async () => {
+  it('counts what needs the person on Assistant, Code, Agents and Notices, from one read', async () => {
     answer = { ...answer, items: [WAITING, REPLY, FLEET, DONE], sessions: [session({ status: 'awaiting_approval' })] }
     const { container } = render(<App />)
     const nav = container.querySelector('.sidenav') as HTMLElement
@@ -356,6 +356,21 @@ describe('a chat in the list', () => {
     expect(within(container.querySelectorAll<HTMLElement>('[data-sidebar-row]')[4]).getByTitle(/shared/i)).toBeInTheDocument()
     expect(screen.getAllByTestId('chat-row-mark').map(m => m.dataset.state)).toEqual(['waiting', 'working', 'reply'])
     expect(screen.getByText('Waiting one').tagName).toBe('B')
+
+    // A chat whose session the notices list opens it in Code from its menu;
+    // one with no session, or none listed, has nothing to open.
+    const menuOf = async (title: string) => {
+      fireEvent.contextMenu(screen.getByText(title))
+      const items = await screen.findAllByRole('menuitem')
+      return { items: items.map(m => m.textContent), pick: (name: string) => fireEvent.click(items.find(m => m.textContent === name)!) }
+    }
+    const waiting = await menuOf('Waiting one')
+    expect(waiting.items).not.toContain('Open in Code')
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    const working = await menuOf('Working one')
+    expect(working.items[0]).toBe('Open in Code')
+    working.pick('Open in Code')
+    expect(location.hash).toBe('#view=code?machine=m1&session=s2')
   })
 
   describe('folded to its rail', () => {

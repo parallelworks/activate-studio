@@ -92,16 +92,16 @@ describe('Settings with AI features off', () => {
     expect(sw).toHaveAttribute('aria-checked', 'false')
     expect(rail()).toEqual(['General', 'Indexing', 'Workflows', 'Accounts', 'External access'])
     const panel = screen.getByRole('tabpanel')
-    expect(within(panel).getByText(/^Off\. On adds Chat and Agents/)).toBeInTheDocument()
+    expect(within(panel).getByText(/^Off\. On adds Assistant and Agents/)).toBeInTheDocument()
     for (const label of ['Mission and context', 'Suggested questions (one per line)', 'Vision model for image captioning']) {
       expect(within(panel).queryByText(label)).toBeNull()
     }
     expect(within(panel).queryByRole('button', { name: 'Save settings' })).toBeNull()
 
-    // The sidebar offers no switch for Chat or Agents.
+    // The sidebar offers no switch for Assistant or Agents.
     fireEvent.click(screen.getByRole('tab', { name: 'Sidebar' }))
     expect(await screen.findByRole('switch', { name: 'Library' })).toBeInTheDocument()
-    expect(screen.queryByRole('switch', { name: 'Chat' })).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Assistant' })).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Agents' })).toBeNull()
 
     // External access keeps MCP and nothing that runs the assistant.
@@ -135,7 +135,7 @@ describe('Settings with AI features off', () => {
     const sw = await screen.findByRole('switch', { name: 'AI features' })
     fireEvent.click(sw)
     await waitFor(() => expect(s.puts.at(-1)).toMatchObject({ aiEnabled: true }))
-    // Chat and Agents go back into the sidebar's pages with it.
+    // Assistant and Agents go back into the sidebar's pages with it.
     expect(s.puts.at(-1)!.sections).toEqual(expect.arrayContaining(['chat', 'agents', 'library']))
 
     // The Assistant group is back, closed as groups are when they do not
@@ -159,29 +159,29 @@ describe('Settings with AI features off', () => {
   })
 })
 
-describe('Settings, External access, What answers in chat', () => {
+describe('Settings, External access, What answers in Assistant', () => {
   it('shows the pw code settings only on a Studio under ACTIVATE, or one set to pw code', async () => {
-    // A Studio run on its own: the Studio assistant answers, and nothing of pw code shows.
+    // A Studio run on its own: the Studio answers, and nothing of pw code shows.
     stub({ aiEnabled: true })
     at('#view=settings:rag')
     const { unmount } = render(<SettingsView />)
     expect(await screen.findByRole('switch', { name: 'Serve MCP' })).toBeInTheDocument()
-    expect(screen.queryByText('What answers in chat')).toBeNull()
-    expect(screen.queryByText('Chat engine')).toBeNull()
+    expect(screen.queryByText('What answers in Assistant')).toBeNull()
+    expect(screen.queryByText('Engine')).toBeNull()
     unmount()
 
     // Under ACTIVATE. The app's config is read once and again on this event.
     stub({ aiEnabled: true, platform: true })
     render(<SettingsView />)
     window.dispatchEvent(new Event('ade:config-changed'))
-    expect(await screen.findByText('What answers in chat')).toBeInTheDocument()
-    expect(screen.getByText('Chat engine')).toBeInTheDocument()
-    expect(screen.getByText(/is what answers on a Studio without ACTIVATE/)).toBeInTheDocument()
+    expect(await screen.findByText('What answers in Assistant')).toBeInTheDocument()
+    expect(screen.getByText('Engine')).toBeInTheDocument()
+    expect(screen.getByText(/is what answers without ACTIVATE/)).toBeInTheDocument()
 
     // Leave the shared config as the other tests expect it.
     stub()
     window.dispatchEvent(new Event('ade:config-changed'))
-    await waitFor(() => expect(screen.queryByText('What answers in chat')).toBeNull())
+    await waitFor(() => expect(screen.queryByText('What answers in Assistant')).toBeNull())
   })
 })
 

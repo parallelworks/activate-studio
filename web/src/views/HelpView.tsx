@@ -52,7 +52,7 @@ export function parseHelp(md: string): { intro: string; sections: Section[] } {
   return { intro: intro.join('\n').trim(), sections }
 }
 
-/** The guide marks text about Chat and the assistant as
+/** The guide marks text about Assistant as
  *  `<!-- ai -->…<!-- /ai -->` (an HTML comment, so it reads as plain text on
  *  GitHub). With AI features on the marks go; with them off the marked text
  *  goes too, and a list item left empty by that goes with it. */
@@ -83,10 +83,15 @@ const ABOUT = 'About'
 const ABOUT_SLUG = 'about'
 const ABOUT_ICON = <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r="0.3" fill="currentColor"/></svg>
 
-const slugOf = (t: string) => (t === WHATS_NEW ? WHATS_NEW_SLUG : t === ABOUT ? ABOUT_SLUG : t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''))
+/** Assistant's page was Chat, and its address stays: notes in kept chats and
+ *  people's own links name it. */
+const ASSISTANT = 'Assistant'
+const ASSISTANT_SLUG = 'chat'
+
+const slugOf = (t: string) => (t === WHATS_NEW ? WHATS_NEW_SLUG : t === ABOUT ? ABOUT_SLUG : t === ASSISTANT ? ASSISTANT_SLUG : t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''))
 
 /** The guide's pages about pages AI features off removes. */
-export const AI_HELP_PAGES = ['Chat', 'Agents']
+export const AI_HELP_PAGES = [ASSISTANT, 'Agents']
 /** The guide's page about the Transfers page, shown where the server has it. */
 export const TRANSFERS_HELP_PAGE = 'Transfers'
 
@@ -109,7 +114,7 @@ export function HelpView() {
     api.indexStatus().then(setIdx).catch(() => {})
   }, [])
 
-  // With AI features off, the guide's Chat and Agents pages describe pages
+  // With AI features off, the guide's Assistant and Agents pages describe pages
   // that are not there, so they leave the rail with them.
   const aiEnabled = aiOn(cfg)
   const parsed = parseHelp(aiGuideText(md, aiEnabled))
@@ -140,7 +145,7 @@ export function HelpView() {
     if (pendingSlug === ABOUT_SLUG) { setActive(ABOUT); setPendingSlug(null); return }
     if (!sections.length) return
     if (pendingSlug === 'overview') { setActive('Overview'); setPendingSlug(null); return }
-    const hit = sections.find(s => slugOf(s.title) === pendingSlug)
+    const hit = sections.find(s => slugOf(s.title) === (pendingSlug === 'assistant' ? ASSISTANT_SLUG : pendingSlug))
     if (hit) setActive(hit.title)
     setPendingSlug(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,7 +200,7 @@ export function HelpView() {
             <>
               <h1>{cfg.appName}</h1>
               <div className="md-body"><Streamdown>{intro}</Streamdown></div>
-              <p className="muted help-hint">Each section in the left rail covers one part of the application.{aiEnabled && ' The chat assistant reads this same guide, so asking it "how do I…" works too.'}</p>
+              <p className="muted help-hint">Each section in the left rail covers one part of the application.{aiEnabled && ' The assistant reads this same guide, so asking it "how do I…" works too.'}</p>
             </>
           ) : (
             <>

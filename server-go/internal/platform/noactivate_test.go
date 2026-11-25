@@ -149,4 +149,16 @@ func TestHasActivate(t *testing.T) {
 	if !key.HasActivate() {
 		t.Fatal("PW_API_KEY")
 	}
+	// OPENAI_API_KEY is an ACTIVATE credential only with a platform's
+	// gateway; beside another endpoint it is that endpoint's key.
+	for base, want := range map[string]bool{
+		"https://models.example.com/v1":              false,
+		"https://activate.example.com/api/openai/v1": true,
+	} {
+		env := map[string]string{"OPENAI_BASE_URL": base, "OPENAI_API_KEY": "k", "PW_CREDENTIALS_DIR": "/nonexistent"}
+		p := New(Options{IndexBase: t.TempDir(), Home: t.TempDir(), LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }})
+		if got := p.HasActivate(); got != want {
+			t.Errorf("OPENAI_API_KEY with %s: %v", base, got)
+		}
+	}
 }

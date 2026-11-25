@@ -15,7 +15,7 @@ func TestChatStates(t *testing.T) {
 	m, _, _, _ := newTestModule(t, nil)
 	c := m.Conv.Create(nil, "")
 	m.Conv.RecordAssistantTurn(c.ID, conversations.Message{ID: "r1", Role: "assistant", Content: sp("Hello"), Timestamp: "2026-11-24T12:00:00.000Z"})
-	m.Conv.AppendNoteKind(c.ID, "engine", "The Studio assistant answers here.")
+	m.Conv.AppendNoteKind(c.ID, "engine", "The Studio answers here.")
 	r := httptest.NewRequest("GET", "/", nil)
 	one := func() ChatState {
 		t.Helper()

@@ -288,12 +288,12 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 			}
 			// pw code could not reach the Studio's tools: the Studio
 			// assistant answers this message with them, and says why.
-			m.A.Log.Warn("pw code chat: the Studio assistant answers in pw code's place", "conversation", convID, "detail", down.detail)
+			m.A.Log.Warn("pw code chat: the Studio answers in pw code's place", "conversation", convID, "detail", down.detail)
 			// The chat goes on with the engine that answered it, until the
 			// person switches it back.
 			m.Conv.SetEngine(convID, engineStudio)
 			res.event("pwcode_fallback", reqbody.O("conversationId", convID,
-				"reason", down.Error()+", so the Studio assistant answered this message with the Studio's own tools."))
+				"reason", down.Error()+", so the Studio answered this message with its own tools."))
 		}
 	}
 

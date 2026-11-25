@@ -39,7 +39,7 @@ describe('sidebar switches', () => {
     const { container } = render(<App />)
     await waitFor(() => expect(location.hash).toBe('#view=library'))
     const nav = container.querySelector('.sidenav') as HTMLElement
-    expect(within(nav).queryByTitle('Chat')).toBeNull()
+    expect(within(nav).queryByTitle('Assistant')).toBeNull()
     expect(within(nav).queryByTitle('Agents')).toBeNull()
     expect(within(nav).queryByTitle('Query')).toBeNull()
     expect(within(nav).getByTitle('Library')).toBeInTheDocument()
@@ -66,7 +66,7 @@ describe('sidebar switches', () => {
     expect(container.querySelector('.sidenav-brand .brand-badge')).toBeNull()
   })
 
-  it('with AI features off, leaves out Chat and Agents even when every page is on', async () => {
+  it('with AI features off, leaves out Assistant and Agents even when every page is on', async () => {
     aiEnabled = false
     sections = undefined
     history.replaceState(null, '', `${location.pathname}#view=agents`)
@@ -76,7 +76,7 @@ describe('sidebar switches', () => {
     await waitFor(() => expect(location.hash).toBe('#view=library'))
     await waitFor(() => expect(within(container.querySelector('.sidenav') as HTMLElement).getByTitle('Query')).toBeInTheDocument())
     const nav = container.querySelector('.sidenav') as HTMLElement
-    expect(within(nav).queryByTitle('Chat')).toBeNull()
+    expect(within(nav).queryByTitle('Assistant')).toBeNull()
     expect(within(nav).queryByTitle('Agents')).toBeNull()
     expect(within(nav).getByTitle('Query')).toBeInTheDocument()
     expect(within(nav).getByTitle('Library')).toBeInTheDocument()

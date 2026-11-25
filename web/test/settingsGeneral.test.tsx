@@ -95,7 +95,7 @@ describe('Settings, General tabs', () => {
     // Appearance last, since a click on the tab already open changes nothing.
     const where: Record<string, (string | RegExp)[]> = {
       Sidebar: ['Library', 'Search', 'Query'],
-      'AI features': ['Chat, Agents, and other features that call a model', 'Mission and context', 'Suggested questions (one per line)', 'Vision model for image captioning'],
+      'AI features': ['Assistant, Agents, and other features that call a model', 'Mission and context', 'Suggested questions (one per line)', 'Vision model for image captioning'],
       Server: ['Port'],
       Appearance: ['Theme', 'Surface tone', 'Accent color', 'Branding', 'Product name', 'Icon', 'Classification banner (empty for none)'],
     }

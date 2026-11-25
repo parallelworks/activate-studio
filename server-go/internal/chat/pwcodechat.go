@@ -362,7 +362,7 @@ type engineView struct {
 // fallback). It is stored as a note after the reply, in markdown, its
 // links marked with engineNoteMark so the chat draws it as a quiet line.
 func fallbackNote(why string, c *conversations.Conversation) string {
-	s := "pw code is not available to you here, so the Studio assistant answered. "
+	s := "pw code is not available to you here, so the Studio answered. "
 	if strings.Contains(why, "Settings, Accounts") {
 		// Each such reason comes down to an ACTIVATE sign-in of the
 		// viewer's own.
@@ -408,7 +408,7 @@ func (m *Module) engineState(r *http.Request, c *conversations.Conversation, hin
 	default:
 		v.newChat = enginePWCode
 		if down := m.toolsDown(m.pwSite()); down != "" {
-			v.toolsDown = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio assistant answers new chats by default for now."
+			v.toolsDown = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio answers new chats by default for now."
 			v.newChat = engineStudio
 		}
 	}
@@ -757,7 +757,7 @@ func contextBetween(c *conversations.Conversation, after, upto, current string) 
 		}
 		who := "The person"
 		if mm.Role == "assistant" {
-			who = "The Studio assistant"
+			who = "The Studio"
 			if mm.Model != nil && strings.HasPrefix(*mm.Model, "pw code") {
 				who = "You, in an earlier session"
 			}

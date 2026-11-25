@@ -51,7 +51,11 @@ export function continuable(s: SessionRef, machines: readonly MachineRef[], here
   return { ok: false, why: `This session runs on ${name}, and this Studio cannot carry a chat's messages to it for you${why ? ` (${why.replace(/\.$/, '')})` : ''}. ${STILL_HERE}` }
 }
 
-/** Opens a Studio chat by its id. */
+/** What the action that opens a session in Assistant is called, by whether
+ *  a chat there has it already. */
+export const assistantLabel = (inChat: boolean) => (inChat ? 'Open in Assistant' : 'Continue in Assistant')
+
+/** Opens a chat by its id. */
 export function openChat(id: string) { location.hash = `#chat=${id}` }
 
 interface ContinueAnswer {
@@ -83,7 +87,7 @@ export function paneFor(s: SessionRef, machines: readonly MachineRef[], here: He
 const HERE = '/api/chat/pwcode/here'
 
 /**
- * Continuing a session in a Studio chat, an action of its own: a session
+ * Continuing a session in Assistant, an action of its own: a session
  * with a chat opens that chat. Otherwise the Studio checks it is the
  * viewer's and says what to ask, the person confirms, and the Studio makes
  * a chat linked to the session, which opens.
@@ -129,7 +133,7 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
     const offered = tools?.state === 'offer' || tools?.state === 'declined'
     const add = { on: tools?.state !== 'declined' }
     void confirm({
-      title: 'Continue this session in a Studio chat?',
+      title: 'Continue this session in Assistant?',
       description: first.confirm ?? 'Your messages from this chat go to the same session.',
       children: offered && tools
         ? (
@@ -143,7 +147,7 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
             </>
           )
         : undefined,
-      confirmLabel: 'Continue in Studio',
+      confirmLabel: 'Continue in Assistant',
       errorMessage: e => (e as Error).message || 'The Studio could not continue this session.',
       onConfirm: async () => {
         const a = await postContinue({ ...body, confirmed: true })

@@ -55,7 +55,7 @@ const readReply: StreamCompletion = async (req, handlers, signal) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      // pw code standing in for a model is none of the Studio assistant's.
+      // pw code standing in for a model is none of the Studio's.
       model: req.model === PWCODE_MODEL.id ? '' : req.model,
       messages: req.messages,
       conversationId: req.conversationId,
@@ -176,14 +176,14 @@ const readReply: StreamCompletion = async (req, handlers, signal) => {
         window.dispatchEvent(new CustomEvent(event === 'pwcode_approval' ? 'ade-pwcode-approval' : 'ade-pwcode-approval-resolved', { detail: payload }))
         break
       case 'pwcode_fallback':
-        // The Studio assistant answered, and the chat goes on with it.
+        // The Studio answered, and the chat goes on with it.
         if (req.conversationId) knowEngine(req.conversationId, 'studio')
-        // pw code could not reach the Studio's tools, so the Studio assistant
+        // pw code could not reach the Studio's tools, so the Studio
         // answers this message; the chat says why.
         window.dispatchEvent(new CustomEvent('ade-pwcode-fallback', { detail: payload }))
         break
       case 'engine_fallback':
-        // pw code is not for this person here: the Studio assistant answers,
+        // pw code is not for this person here: the Studio answers,
         // and the chat is its own from this reply on. The server stores a
         // note after the reply, which the chat reads once the reply ends.
         if (req.conversationId) knowEngine(req.conversationId, 'studio')
@@ -195,7 +195,7 @@ const readReply: StreamCompletion = async (req, handlers, signal) => {
         break
       case 'done':
         finishReason = payload.finishReason ?? 'stop'
-        // A reply pw code did not give is the Studio assistant's.
+        // A reply pw code did not give is the Studio's.
         if (req.conversationId && !pwcodeSession && !errorMessage) knowEngine(req.conversationId, 'studio')
         if (req.conversationId) window.dispatchEvent(new CustomEvent('ade:chat-answered', { detail: { conversationId: req.conversationId } }))
         model = payload.model ?? null
@@ -339,7 +339,7 @@ export function markNotes<T extends { id?: string; messages?: NoteMessage[] }>(c
   return c
 }
 
-/** The Studio assistant's reply running in a conversation, as far as it
+/** The Studio's reply running in a conversation, as far as it
  *  has got: a reply runs on when its page goes (a closed tab, a reload),
  *  and the chat follows it from here until it ends. null when none runs. */
 export async function replyRunning(id: string): Promise<GeneratingReply | null> {

@@ -1,8 +1,11 @@
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { SIGN_IN_TO_USE, accountsHref, needsActivate } from '../accounts'
+import { needsActivate } from '../accounts'
 import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
+import { CodeIcon } from '@parallelworks/ui/icons'
 import { ApprovalBlock, type ApprovalPart, type ApprovalQuestion, useChat } from '@parallelworks/ui/ai'
 import { type EngineInfo, readEngine, switchEngine, useEngine } from '../chatEngine'
+import { useChatSessionHref } from '../code/chatSession'
+import { hasActivate, reloadAppConfig, useAppConfig } from '../config'
 import { sessionToolsSaid } from './studioTools'
 import { liveModel, onModel } from '../pwcode/liveModel'
 import { cachedChat, readChat, takeReadAhead, type ChatRecord } from '../chatRecord'
@@ -20,14 +23,9 @@ export function shortModel(id?: string): string {
   return id ? id.slice(id.lastIndexOf('/') + 1) : ''
 }
 
-/** The address of a pw code session on the Code page. */
-export function codePageLink(machine: string, session: string): string {
-  return `#view=code?${new URLSearchParams({ machine, session })}`
-}
-
 const ENGINES: { value: 'pwcode' | 'studio'; label: string; hint: string }[] = [
   { value: 'pwcode', label: 'pw code', hint: 'The ACTIVATE agent harness: works in files, runs commands you approve, searches these libraries, and shows in PW Code on the web.' },
-  { value: 'studio', label: 'Studio assistant', hint: "Answers from the libraries with this Studio's own tools and the model chosen below." },
+  { value: 'studio', label: 'Studio', hint: "Answers from the libraries with this Studio's own tools and the model chosen below." },
 ]
 
 function sessionInfo(c: ChatRecord | undefined): SessionInfo {
@@ -74,9 +72,10 @@ function useSession(conversationId: string | null): SessionInfo {
 
 /**
  * The chat bar's choice of what answers this conversation: pw code or the
- * Studio assistant. Shown where pw code is offered (or chosen for the
- * Studio and unavailable, to say why); the conversation's PW Code on the
- * web link sits in its menu once pw code has answered.
+ * Studio. Shown where pw code is offered (or chosen for the Studio and
+ * unavailable, to say why), and never to someone without ACTIVATE, who has
+ * one answer and nothing to choose. The links to the conversation's session
+ * sit in its menu, and Open in Code beside it, once pw code has answered.
  */
 export function PWCodeEngine({ conversationId }: { conversationId: string | null }) {
   // What answers, from the one place the chat's parts learn it
@@ -111,6 +110,15 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
   // Read again each time the menu opens and when a reply ends: cheap, and
   // never stale.
   useEffect(() => { if (open) read() }, [open, read])
+  // Its links go to other pages, and the chat stays mounted behind them: the
+  // menu goes as the address changes. (App routes those clicks itself, so
+  // they never reach the links.)
+  useEffect(() => {
+    if (!open) return
+    const gone = () => setOpen(false)
+    window.addEventListener('hashchange', gone)
+    return () => window.removeEventListener('hashchange', gone)
+  }, [open])
   useEffect(() => { if (!isStreaming) read() }, [isStreaming, read])
   const [tools, setTools] = useState<ToolsState | null>(null)
   useEffect(() => {
@@ -124,29 +132,47 @@ export function PWCodeEngine({ conversationId }: { conversationId: string | null
     return () => { gone = true }
   }, [open, conversationId, session.session])
 
-  // pw code waiting only for an ACTIVATE sign-in shows too, saying so.
-  const shown = !!info && (info.pwcode || info.setting === 'pwcode' || !!session.url || needsActivate(info.reason) || info.current === 'pwcode')
+  // Without ACTIVATE there is no pw code; signing in is under Settings,
+  // Accounts.
+  const cfg = useAppConfig()
+  const none = !!info && !info.pwcode && (needsActivate(info.reason) || (cfg.loaded && !hasActivate(cfg)))
+  // A sign-in made outside the Studio, learned here first: the Code page
+  // shows with it.
+  const late = !!info?.pwcode && cfg.loaded && !hasActivate(cfg)
+  useEffect(() => { if (late) reloadAppConfig() }, [late])
+  const shown = !!info && !none && (info.pwcode || info.setting === 'pwcode' || !!session.url || info.current === 'pwcode')
   const current: 'pwcode' | 'studio' = engine.current || (info?.current ?? info?.default ?? 'studio')
-  return shown && info ? <EngineMenu {...{ info, current, session, tools, open, setOpen, conversationId, running: isStreaming, reread: read }} /> : null
+  const codeHref = useChatSessionHref()(conversationId, session)
+  if (!shown || !info) return null
+  return (
+    <>
+      {codeHref && current === 'pwcode' && (
+        <a className="scope-btn open-in-code" href={codeHref} title="Open this conversation's session in Code">
+          <CodeIcon width={13} height={13} aria-hidden /><span className="persona-label">Open in Code</span>
+        </a>
+      )}
+      <EngineMenu {...{ info, current, session, codeHref, tools, open, setOpen, conversationId, running: isStreaming, reread: read }} />
+    </>
+  )
 }
 
 /** The note on which model pw code runs a chat on, its setting a link and
  *  the models' full ids on hover. */
-function ModelNote({ session, close }: { session: SessionInfo; close: () => void }) {
+function ModelNote({ session }: { session: SessionInfo }) {
   const note = session.modelNote ?? ''
   const at = note.indexOf('Settings, External access')
   const ids = [session.modelFrom, session.model].filter(Boolean).join(' → ')
-  const text = at < 0 ? <>{note}</> : <>{note.slice(0, at)}<a href="#view=settings:rag" onClick={close}>Settings, External access</a>{note.slice(at + 'Settings, External access'.length)}</>
+  const text = at < 0 ? <>{note}</> : <>{note.slice(0, at)}<a href="#view=settings:rag">Settings, External access</a>{note.slice(at + 'Settings, External access'.length)}</>
   return <span title={ids || undefined}>{text}</span>
 }
 
 /** The chat bar's engine button and its menu. */
-function EngineMenu({ info, current, session, tools, open, setOpen, conversationId, running, reread }: {
-  info: EngineInfo; current: 'pwcode' | 'studio'; session: SessionInfo; tools: ToolsState | null; open: boolean
+function EngineMenu({ info, current, session, codeHref, tools, open, setOpen, conversationId, running, reread }: {
+  info: EngineInfo; current: 'pwcode' | 'studio'; session: SessionInfo; codeHref?: string; tools: ToolsState | null; open: boolean
   setOpen: (v: boolean) => void; conversationId: string | null; running: boolean; reread: () => void
 }) {
   // The canvas says what answers, so the composer's model picker, which
-  // sets the Studio assistant's model only, is hidden while pw code does.
+  // sets the Studio's model only, is hidden while pw code does.
   useEffect(() => {
     const canvas = document.querySelector('.chat-canvas')
     canvas?.setAttribute('data-engine', current)
@@ -158,7 +184,7 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
   // pw code answers with its own model, which the composer's picker does
   // not set; the picker is hidden while pw code answers (styles.css).
   const pwModel = session.modelNote
-    ? <ModelNote session={session} close={close} />
+    ? <ModelNote session={session} />
     : session.model ? <span title={session.model}>This chat runs on {shortModel(session.model)}.</span> : <>It runs on pw code&apos;s own model, or the one Settings names.</>
   // A relayed chat moves to a new session on its machine, which has the
   // tools pw code there has now; its next message carries the chat over.
@@ -186,7 +212,7 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
       align="end"
       className="scope-menu persona-menu engine-menu"
       trigger={
-        <button className={`scope-btn engine-btn ${current === 'pwcode' ? 'active' : ''}`} title="What answers this conversation: pw code or the Studio assistant">
+        <button className={`scope-btn engine-btn ${current === 'pwcode' ? 'active' : ''}`} title="What answers this conversation: pw code or the Studio">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M5 4.5 1.5 8 5 11.5M11 4.5 14.5 8 11 11.5M9.2 3 6.8 13"/></svg>
           <span className="persona-label">{current === 'pwcode' ? (session.model ? `pw code · ${shortModel(session.model)}` : 'pw code') : 'Studio'}</span>
         </button>
@@ -198,17 +224,12 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
         return (
           <button key={e.value} className={`persona-row ${current === e.value ? 'on' : ''}`} disabled={off || busy} aria-pressed={current === e.value} onClick={() => pick(e.value)}>
             <span className="persona-name">{e.label}{e.value === info.default && <span className="persona-shared" title="What a new chat starts with">default</span>}</span>
-            <span className="muted">{off && info.reason ? (needsActivate(info.reason) ? `${SIGN_IN_TO_USE}.` : info.reason) : e.value === 'pwcode' ? <>{e.hint} {pwModel}</> : e.hint}</span>
+            <span className="muted">{off && info.reason ? info.reason : e.value === 'pwcode' ? <>{e.hint} {pwModel}</> : e.hint}</span>
           </button>
         )
       })}
       {running && <p className="engine-tools engine-tools-off">A reply is being written; switch what answers when it ends.</p>}
       {error && <p className="engine-tools engine-tools-off" role="alert">{error}</p>}
-      {!info.pwcode && needsActivate(info.reason) && (
-        <p className="engine-tools engine-tools-off">
-          {info.reason} <a href={accountsHref('activate')} onClick={close}>Open Accounts</a>
-        </p>
-      )}
       {(tools || session.continued) && current === 'pwcode' && (() => {
         const said = sessionToolsSaid({ tools, continued: !!session.continued, relay: !!session.relay || !!tools?.relay, machine: session.machineName || session.machine })
         return (
@@ -219,9 +240,9 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
         )
       })()}
       {!tools && !session.continued && info.toolsDown && <p className="engine-tools engine-tools-off">{info.toolsDown}</p>}
-      {session.continued && session.machine && session.session && (
+      {codeHref && (
         <p className="engine-web">
-          This chat continues a pw code session. <a href={codePageLink(session.machine, session.session)} onClick={close}>See it on the Code page</a>
+          {session.continued && 'This chat continues a pw code session. '}<a href={codeHref}>Open in Code</a>
         </p>
       )}
       {session.url && (
@@ -234,7 +255,7 @@ function EngineMenu({ info, current, session, tools, open, setOpen, conversation
 }
 
 /**
- * In a chat both engines have answered, each Studio assistant reply says
+ * In a chat both engines have answered, each reply of the Studio's says
  * so beside its model (pw code's already read "pw code · model"), and the
  * replies' details stay in view, so a chat that switched reads clearly.
  */
@@ -265,7 +286,7 @@ export function EngineMarks() {
 }
 
 /**
- * When the Studio assistant answers a pw code chat for a person pw code is
+ * When the Studio answers a pw code chat for a person pw code is
  * not for here (no ACTIVATE sign-in of theirs, say), the server stores a
  * note after its reply saying why (engine_fallback). This reads the chat
  * again once that reply ends, so the note shows at once; the styles draw
@@ -476,7 +497,7 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
 }
 
 /**
- * Says why the Studio assistant answered a message pw code was to answer:
+ * Says why the Studio answered a message pw code was to answer:
  * pw code could not reach the Studio's tools. Shown in that conversation
  * until it is dismissed or pw code answers there again.
  */
@@ -503,7 +524,7 @@ export function PWCodeNotice({ conversationId }: { conversationId: string | null
   const close = () => setNotes(n => { const { [conversationId]: _, ...rest } = n; return rest })
   return (
     <div className="cred-banner pwcode-notice">
-      <Callout variant="bar" tone="info" title="The Studio assistant answered this message"
+      <Callout variant="bar" tone="info" title="The Studio answered this message"
         action={<Button variant="ghost" size="sm" onClick={close}>Dismiss</Button>}>
         <p>{note}</p>
       </Callout>

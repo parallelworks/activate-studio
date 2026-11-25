@@ -22,7 +22,7 @@ export interface CitedFile { path: string; lib?: string }
 interface Also { path: string; lib?: string }
 
 /** Where a chat's paths are: its session's machine and folder, or the
- *  libraries the Studio assistant searches. */
+ *  libraries the Studio searches. */
 export interface CitedWhere {
   machine?: { id: string; name?: string; hostname?: string }
   cwd?: string

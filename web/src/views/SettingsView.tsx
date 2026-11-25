@@ -140,9 +140,9 @@ export function searchTimeLimits(current: number | undefined): SelectItem<number
 }
 
 const CHAT_ENGINES: SelectItem<Effective['chatEngine']>[] = [
-  { value: 'auto', label: 'Automatic: pw code under ACTIVATE, else the Studio assistant' },
+  { value: 'auto', label: 'Automatic: pw code under ACTIVATE, else the Studio' },
   { value: 'pwcode', label: 'pw code' },
-  { value: 'studio', label: 'The Studio assistant' },
+  { value: 'studio', label: 'The Studio' },
 ]
 
 const PWCODE_MODES: SelectItem<Effective['pwcodePermissionMode']>[] = [
@@ -725,14 +725,14 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   <Locked why={locked}>
                   {aiEnabled ? (
                     <p className="muted view-sub">
-                      Off takes Chat and Agents out of the sidebar, hides the settings only the assistant uses, and sends nothing
+                      Off takes Assistant and Agents out of the sidebar, hides the settings only the assistant uses, and sends nothing
                       to a model; search, the library, query and statistics work as before. They can be switched back on here at
                       any time. Saved as you switch.
                       {(me?.single || me?.authEnabled) && <> Where models come from is under <a href="#view=settings:access">Model access</a>, and the accounts behind them under <a href="#view=settings:accounts">Accounts</a>.</>}
                     </p>
                   ) : (
                     <p className="muted view-sub">
-                      Off. On adds Chat and Agents, the assistant&apos;s settings, label suggestions and image descriptions.
+                      Off. On adds Assistant and Agents, the assistant&apos;s settings, label suggestions and image descriptions.
                     </p>
                   )}
                   <div className="access-switch">
@@ -743,7 +743,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                           .then(sections => setForm(f => f && { ...f, aiEnabled: v, sections }))
                           .catch(e => setSectionsNote(String((e as Error).message ?? e)))
                       }} />
-                    <span>Chat, Agents, and other features that call a model</span>
+                    <span>Assistant, Agents, and other features that call a model</span>
                   </div>
                   {sectionsNote && <Callout tone="error" live>{sectionsNote}</Callout>}
                   {aiEnabled && (<>
@@ -830,7 +830,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       <Select items={SEARCH_ENGINES} value={form.searchEngine ?? 'parallel'} onValueChange={v => v && setForm({ ...form, searchEngine: v })} />
                     </Field>
                     <Field label="Search time limit"
-                      description="How long each library's search runs before it is stopped and left out of the results. Very large indexes may need longer. Chat and the Search page both use it, and each can also be stopped by hand.">
+                      description="How long each library's search runs before it is stopped and left out of the results. Very large indexes may need longer. Assistant and the Search page both use it, and each can also be stopped by hand.">
                       <Select items={searchTimeLimits(form.searchTimeLimitSec)} value={form.searchTimeLimitSec ?? 20}
                         onValueChange={v => typeof v === 'number' && setForm({ ...form, searchTimeLimitSec: v })} />
                     </Field>
@@ -895,7 +895,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
             <Locked why={locked}>
               <h1>Assistant tools</h1>
               <p className="muted view-sub">
-                Everything the chat assistant can call. Built-in tools are part of the server; unchecking one hides it from the model, and clicking a name shows what it actually calls plus its exact specification, so you can copy the shape into a custom tool or extension file with your own changes. Custom tools are commands you define here (saved with these settings, not as files); each appears to the assistant as a callable tool and runs on this server with its output returned to the conversation.
+                Everything the assistant can call. Built-in tools are part of the server; unchecking one hides it from the model, and clicking a name shows what it actually calls plus its exact specification, so you can copy the shape into a custom tool or extension file with your own changes. Custom tools are commands you define here (saved with these settings, not as files); each appears to the assistant as a callable tool and runs on this server with its output returned to the conversation.
               </p>
               <div className="settings-grid">
                 <Field label="Most tool rounds per reply"
@@ -1016,20 +1016,20 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               <p className="muted key-note">pw code signs its platform requests with your existing CLI login, so no token goes in the command.</p>
               {aiEnabled && <>
               {/* pw code needs ACTIVATE: a Studio run on its own answers with the
-                  Studio assistant and shows nothing of it, unless set otherwise. */}
+                  Studio's own and shows nothing of it, unless set otherwise. */}
               {(cfg.platform || (form.chatEngine ?? 'auto') !== 'auto') && <>
-              <div className="tool-group">What answers in chat</div>
+              <div className="tool-group">What answers in Assistant</div>
               <p className="muted view-sub">
-                pw code is the ACTIVATE agent harness, and answers chat by default under ACTIVATE. A chat it answers
+                pw code is the ACTIVATE agent harness, and answers by default under ACTIVATE. A chat it answers
                 runs in a pw code session of the person chatting, which uses this Studio's tools through its MCP
                 server (search and statistics from the index, library files, workflows), works in files, runs
                 commands they approve, and shows in PW Code on the web. On a Studio several people use, each session
-                runs as its person through their own ACTIVATE sign-in. The Studio assistant answers with this
-                Studio's own tools and models, and is what answers on a Studio without ACTIVATE. People can switch
-                either way in the chat bar.
+                runs as its person through their own ACTIVATE sign-in. The Studio answers with its own
+                tools and models, and is what answers without ACTIVATE. People with ACTIVATE can switch either way in
+                the chat bar.
               </p>
               <div className="settings-grid">
-                <Field label="Chat engine">
+                <Field label="Engine">
                   <Select items={CHAT_ENGINES} value={form.chatEngine ?? 'auto'} onValueChange={v => v && setForm({ ...form, chatEngine: v })} />
                 </Field>
                 <Field label="pw code model" description="The model new pw code chats start with. Empty uses the pw code default.">

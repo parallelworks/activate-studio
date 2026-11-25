@@ -4,6 +4,7 @@ import { ApprovalBlock, NoticeCard } from '@parallelworks/ui/ai'
 import { useTranslations } from 'use-intl'
 import type { PageSession } from './api'
 import { MachineLabel } from '../components/MachineLabel'
+import { assistantLabel } from './openInStudio'
 import { SessionMark } from './parts'
 
 /** Work a chat delegated to pw code: the session, the library folder it
@@ -37,7 +38,8 @@ export function LinkedSession({ session, machine, missing, delegated, why, inCha
   inChat: boolean
   url: string
   onAnswer: PwCodeStartScreen['answer']
-  onOpen: () => void
+  /** Unset where the Studio shows no Assistant. */
+  onOpen?: () => void
   onClose: () => void
 }) {
   const t = useTranslations('agents')
@@ -70,7 +72,7 @@ export function LinkedSession({ session, machine, missing, delegated, why, inCha
       ))}
       {inSession !== null && <p className="muted">{inSession}</p>}
       <div className="code-linked-actions">
-        <Button variant="primary" size="sm" onClick={onOpen} disabled={!!why} title={why || undefined}>{inChat ? 'Open in its Studio chat' : 'Continue in a Studio chat'}</Button>
+        {onOpen && <Button variant="primary" size="sm" onClick={onOpen} disabled={!!why} title={why || undefined}>{assistantLabel(inChat)}</Button>}
         {url && <Button variant="secondary" size="sm" href={url} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>}
       </div>
       {why && <p className="muted code-linked-why">{why}</p>}

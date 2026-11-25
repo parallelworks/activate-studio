@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher, shortModel } from '../src/components/PWCodeEngine'
 import { getLastEngine, knownEngine } from '../src/labelScope'
+import { reloadAppConfig } from '../src/config'
 import { forgetEngines } from '../src/chatEngine'
 import { announceModel } from '../src/pwcode/liveModel'
 
@@ -21,13 +22,21 @@ function serve(engine: Engine, conversation: Record<string, unknown> = {}, pwSta
       : url.endsWith('/engine') ? { engine: JSON.parse(String(init?.body)).engine }
       : url.startsWith('/api/chat/conversations/') ? conversation
       : url.startsWith('/api/chat/pwcode/') ? pwState
+      : url === '/api/config' ? config
       : { ok: true }
     return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }))
   return calls
 }
 
-beforeEach(() => { localStorage.clear(); forgetEngines(); chat.streaming = false })
+/** What /api/config says of the person, read as each page opens. */
+let config: Record<string, unknown> = {}
+beforeEach(() => {
+  localStorage.clear(); forgetEngines(); chat.streaming = false
+  config = { platform: true }
+})
+/** Has what is on the page read the configuration as it is now. */
+const reconfigure = () => act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 20)) })
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('What answers a conversation', () => {
@@ -39,7 +48,7 @@ describe('What answers a conversation', () => {
     expect(await screen.findByRole('link', { name: /Open this chat in PW Code on the web/ })).toHaveAttribute('href', 'https://platform.example/code?session=s1')
     expect(await screen.findByText(/has the Studio's tools: 31 of them, the index included/)).toBeInTheDocument()
     expect(screen.getByText('default')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Studio assistant/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Studio/ }))
     // The switch is the conversation's, kept by the server, and the last
     // choice here, which new chats start with.
     await waitFor(() => expect(calls).toContain('PUT /api/chat/conversations/c1/engine {"engine":"studio"}'))
@@ -58,7 +67,7 @@ describe('What answers a conversation', () => {
     await waitFor(() => expect(calls.filter(c => c.startsWith('GET /api/chat/engine')).length).toBeGreaterThan(before))
     const pw = await screen.findByRole('button', { name: /^pw code/, pressed: true })
     expect(pw).toHaveClass('on')
-    const studio = screen.getByRole('button', { name: /Studio assistant/ })
+    const studio = screen.getByRole('button', { name: /^Studio/ })
     expect(studio).not.toHaveClass('on')
     expect(studio).toHaveTextContent('default')
     expect(pw).not.toHaveTextContent('default')
@@ -70,7 +79,7 @@ describe('What answers a conversation', () => {
     render(<PWCodeEngine conversationId="c1" />)
     fireEvent.click(await screen.findByRole('button', { name: /pw code/ }))
     expect(await screen.findByText(/A reply is being written; switch what answers when it ends/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Studio assistant/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Studio/ })).toBeDisabled()
     expect(calls.some(c => c.startsWith('PUT'))).toBe(false)
   })
 
@@ -87,34 +96,66 @@ describe('What answers a conversation', () => {
   })
 
   it('links a chat that continues a session back to it on the Code page', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const body = url.startsWith('/api/chat/engine') ? { setting: 'auto', default: 'studio', current: 'pwcode', pwcode: true, reason: null }
-        : url.startsWith('/api/chat/conversations/') ? { pwcode: { url: 'https://platform.example/code/m1/s1', session: 's1', continued: true, machine: 'm1' } }
-        : url.startsWith('/api/chat/pwcode/') ? { session: 's1', status: 'idle', tools: null, continued: true }
-        : {}
-      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    }))
+    serve({ setting: 'auto', default: 'studio', current: 'pwcode', pwcode: true, reason: null },
+      { pwcode: { url: 'https://platform.example/code/m1/s1', session: 's1', continued: true, machine: 'm1' } },
+      { session: 's1', status: 'idle', tools: null, continued: true })
     render(<PWCodeEngine conversationId="c1" />)
-    fireEvent.click(await screen.findByRole('button', { name: /pw code/ }))
-    expect(await screen.findByRole('link', { name: 'See it on the Code page' })).toHaveAttribute('href', '#view=code?machine=m1&session=s1')
+    // In the bar, and in the menu, where a phone has it.
+    const bar = await screen.findByRole('link', { name: 'Open in Code' })
+    expect(bar).toHaveAttribute('href', '#view=code?machine=m1&session=s1')
+    fireEvent.click(screen.getByRole('button', { name: /pw code/ }))
+    const menu = await screen.findByRole('dialog')
+    expect(within(menu).getByRole('link', { name: 'Open in Code' })).toHaveAttribute('href', '#view=code?machine=m1&session=s1')
+    expect(menu).toHaveTextContent('This chat continues a pw code session.')
     expect(await screen.findByText(/began outside the Studio, so it works with its own tools/)).toBeInTheDocument()
+    // Going to the session leaves no menu over the page.
+    act(() => { window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('says why pw code is not offered when the Studio is set to it', async () => {
-    serve({ setting: 'pwcode', default: 'studio', pwcode: false, reason: 'pw code runs as you: sign in with ACTIVATE under Settings, Accounts.' })
+  it('opens no session in Code while the Studio answers, or where the person has no Code page', async () => {
+    const linked = { pwcode: { session: 's1', continued: true, machine: 'm1' } }
+    serve({ setting: 'auto', default: 'pwcode', current: 'studio', pwcode: true, reason: null }, linked)
+    const { unmount } = render(<PWCodeEngine conversationId="c1" />)
+    expect(await screen.findByRole('button', { name: /Studio/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Open in Code' })).toBeNull()
+    unmount()
+    config = { platform: true, sections: ['chat', 'library'] }
+    forgetEngines()
+    serve({ setting: 'auto', default: 'pwcode', current: 'pwcode', pwcode: true, reason: null }, linked)
+    render(<PWCodeEngine conversationId="c1" />)
+    await reconfigure()
+    fireEvent.click(await screen.findByRole('button', { name: /pw code/ }))
+    await screen.findByRole('dialog')
+    expect(screen.queryByRole('link', { name: 'Open in Code' })).toBeNull()
+  })
+
+  it('says why pw code is not offered to a person with ACTIVATE when the Studio is set to it', async () => {
+    serve({ setting: 'pwcode', default: 'studio', pwcode: false, reason: 'The pw code daemon did not answer.' })
     render(<PWCodeEngine conversationId="c1" />)
     fireEvent.click(await screen.findByRole('button', { name: /Studio/ }))
-    expect(await screen.findByText(/sign in with ACTIVATE/)).toBeInTheDocument()
+    expect(await screen.findByText('The pw code daemon did not answer.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /pw code/ })).toBeDisabled()
   })
 
-  it('where pw code waits only for an ACTIVATE sign-in, says so and links to Accounts', async () => {
-    serve({ setting: 'auto', default: 'studio', pwcode: false, reason: 'pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Accounts.' })
-    render(<PWCodeEngine conversationId={null} />)
-    fireEvent.click(await screen.findByRole('button', { name: /Studio/ }))
-    expect(await screen.findByText('Sign in with ACTIVATE to use this.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /pw code/ })).toBeDisabled()
-    expect(screen.getByRole('link', { name: 'Open Accounts' })).toHaveAttribute('href', '#view=settings:accounts?open=activate')
+  it('is not shown to a person without ACTIVATE, whatever the Studio is set to or the chat ran in', async () => {
+    const needs = 'pw code needs ACTIVATE: sign the pw CLI in, or add your ACTIVATE API key under Settings, Accounts.'
+    const linked = { pwcode: { url: 'https://platform.example/code/m1/s1', session: 's1', continued: true, machine: 'm1' } }
+    for (const [engine, conf] of [
+      [{ setting: 'auto', default: 'studio', pwcode: false, reason: needs }, { platform: true }],
+      [{ setting: 'pwcode', default: 'studio', pwcode: false, reason: needs }, { platform: false, accounts: true }],
+      [{ setting: 'auto', default: 'studio', current: 'pwcode', pwcode: false, reason: 'This Studio does not run under ACTIVATE.' }, { platform: false }],
+    ] as [Engine, Record<string, unknown>][]) {
+      forgetEngines()
+      config = conf
+      const calls = serve(engine, linked)
+      const { container, unmount } = render(<PWCodeEngine conversationId="c1" />)
+      await waitFor(() => expect(calls.some(c => c.startsWith('GET /api/chat/engine'))).toBe(true))
+      await waitFor(() => expect(calls.some(c => c.startsWith('GET /api/chat/conversations/c1'))).toBe(true))
+      await reconfigure()
+      expect(container).toBeEmptyDOMElement()
+      unmount()
+    }
   })
 
   it('stays out of the way where pw code is not offered', async () => {

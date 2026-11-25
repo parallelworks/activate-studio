@@ -11,7 +11,7 @@ import { useEngine } from './chatEngine'
  */
 export const GOES_TO = '#note-goes-to='
 export const GOES_TO_SESSION = 'Messages you send here go to that session.'
-export const GOES_TO_STUDIO = 'The Studio assistant answers this chat now, so messages you send here do not go to that session.'
+export const GOES_TO_STUDIO = 'The Studio answers this chat now, so messages you send here do not go to that session.'
 
 function GoesTo({ conversationId }: { conversationId: string }) {
   const { current } = useEngine(conversationId)
