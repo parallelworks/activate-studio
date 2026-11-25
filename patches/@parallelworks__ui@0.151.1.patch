@@ -1,8 +1,28 @@
 diff --git a/dist/ai/components/ChatMessageList.js b/dist/ai/components/ChatMessageList.js
-index 2323790a9fbf4669f21a20add2837b3e3c626056..87c2e3bf3a28f4f249865cf5e6af4dc7fe6796fe 100644
+index 2323790a9fbf4669f21a20add2837b3e3c626056..91640722e94fdfcaa338bf9ce0c507c168430722 100644
 --- a/dist/ai/components/ChatMessageList.js
 +++ b/dist/ai/components/ChatMessageList.js
-@@ -278,6 +278,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -85,10 +85,18 @@ function unread(messages, start, end, index) {
+ 	}
+ 	return picked.sort((a, b) => a - b).flatMap((i) => messages[i] ?? []);
+ }
++var NO_STREAM = {
++	isThinking: false,
++	streamingContent: "",
++	streamingReasoning: "",
++	streamingParts: [],
++	thinkingStartTime: null
++};
+ var jumpClasses = "chat-composer chat-jump rounded-full px-3 py-1.5 text-xs font-medium theme-text transition-colors";
+ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMessageProp, queuedMessages, onRemoveQueued, canRemoveQueued, onEditQueued, queueDelivery = "afterReply", editingMessageId, showAuthor, currentUsername, onNavigateBranch, onEditMessage, onSaveEdit, onCancelEdit, onRegenerateMessage, onRetryMessage, onOpenReasoning, onApprovalAnswer, inputElement, isStreaming: isStreamingProp, flush, foldEveryRun, label, footer, workingIndicator = true, pinPrompt, whole = false, textIndex, indexing = false, ref }) {
+ 	const { adapter, isStreaming: providerStreaming } = useChat();
+-	const { isThinking, streamingContent, streamingReasoning, streamingParts, thinkingStartTime } = useChatStream();
++	const providerStream = useChatStream();
++	const { isThinking, streamingContent, streamingReasoning, streamingParts, thinkingStartTime } = streamingMessageProp === void 0 ? providerStream : NO_STREAM;
+ 	const isStreaming = isStreamingProp ?? providerStreaming;
+ 	const conversationId = messages[0]?.conversationId;
+ 	const textInParts = streamingParts.some((part) => part.kind === "text");
+@@ -278,6 +286,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	}, []);
  	const isNearBottomRef = useRef(true);
  	const lastScrollTopRef = useRef(0);
@@ -10,7 +30,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..87c2e3bf3a28f4f249865cf5e6af4dc7
  	const [pinned, setPinned] = useState(true);
  	const touchedAtRef = useRef(Number.NEGATIVE_INFINITY);
  	const releaseReaderHold = useCallback(() => {
-@@ -286,7 +287,11 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -286,7 +295,11 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	const handleScroll = useCallback(() => {
  		if (!containerRef.current) return;
  		const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
@@ -23,7 +43,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..87c2e3bf3a28f4f249865cf5e6af4dc7
  		lastScrollTopRef.current = scrollTop;
  		const { messages: all, end: last } = windowRef.current;
  		if (scrollHeight - scrollTop - clientHeight < 24) {
-@@ -295,15 +300,21 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -295,15 +308,21 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  		setPinned(isNearBottomRef.current);
  		fitWindow();
  	}, [fitWindow]);
@@ -46,7 +66,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..87c2e3bf3a28f4f249865cf5e6af4dc7
  	const jumpToLatest = useCallback(() => {
  		const el = containerRef.current;
  		if (el) {
-@@ -452,6 +463,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -452,6 +471,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  		} else if (el && kept?.row.isConnected) {
  			const moved = kept.row.getBoundingClientRect().top - kept.top;
  			if (Math.abs(moved) >= 1) {
@@ -54,7 +74,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..87c2e3bf3a28f4f249865cf5e6af4dc7
  				el.scrollTop += moved;
  				lastScrollTopRef.current = el.scrollTop;
  			}
-@@ -461,7 +473,8 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -461,7 +481,8 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	}, [
  		start,
  		end,
@@ -64,3 +84,570 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..87c2e3bf3a28f4f249865cf5e6af4dc7
  	]);
  	useEffect(() => {
  		if (messageCount === 0) {
+diff --git a/dist/ai/core/ChatProvider.js b/dist/ai/core/ChatProvider.js
+index 2f794995d0d112d929d8f069959a8720e3a27768..a901beafa4c0e3bc4ea3a7e72632782a2a1b38a3 100644
+--- a/dist/ai/core/ChatProvider.js
++++ b/dist/ai/core/ChatProvider.js
+@@ -70,6 +70,7 @@ function historyMessages(messages, selectedProvider) {
+ 	});
+ }
+ var NO_TOOLS = [];
++var NEW_CONVERSATION = "new";
+ var WATCH_POLL_MS = 1e3;
+ var ChatContext = createContext(void 0);
+ var ChatStreamContext = createContext(void 0);
+@@ -108,7 +109,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 	const [streamOwner] = useState(() => ({}));
+ 	const followingRef = useRef(null);
+ 	const watchingRef = useRef(null);
+-	const { onStreamingChunk, startStreaming, stopAnimationLoop, drainReveal, afterReveal, resetAnimationRefs, targetStreamContentRef, streamActiveRef, streamingConversationIdRef, backgroundStreamsRef, abortControllerRef } = useSSEStream(dispatch);
++	const { onStreamingChunk, startStreaming, stopAnimationLoop, drainReveal, afterReveal, resetAnimationRefs, targetStreamContentRef, revealedLengthRef, streamActiveRef, streamingConversationIdRef, backgroundStreamsRef, abortControllerRef } = useSSEStream(dispatch);
+ 	const currentConversationIdRef = useRef(null);
+ 	const inputFocusPendingRef = useRef(null);
+ 	const consumeInputFocus = useCallback((conversationId) => {
+@@ -148,8 +149,9 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 		selectedProviderRef.current = state.selectedProvider;
+ 	}, [state.selectedProvider]);
+ 	const isSelectedModelAvailable = !!state.selectedProvider && (!state.hasLoadedModels || state.models.some((m) => m.id === state.selectedProvider));
+-	const isSendingRef = useRef(false);
+-	const pendingQueueRef = useRef([]);
++	const sendingRef = useRef(/* @__PURE__ */ new Set());
++	const queuesRef = useRef(/* @__PURE__ */ new Map());
++	const queueDueRef = useRef(/* @__PURE__ */ new Set());
+ 	const sendMessageRef = useRef(null);
+ 	const loadConversations = useCallback(async () => {
+ 		if (!hasLoadedConversationsRef.current) dispatch({
+@@ -172,36 +174,56 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			});
+ 		}
+ 	}, [adapter]);
++	const queuedMessage = useCallback((held) => ({
++		id: held.id,
++		role: "user",
++		content: held.content,
++		timestamp: held.timestamp,
++		author: currentUser,
++		attachments: attachmentRefs(held.attachmentIds, held.attachmentMeta)
++	}), [currentUser]);
+ 	const streamingToConversationRef = useRef(null);
+ 	const loadSequenceRef = useRef(0);
+-	const releaseSends = useCallback((sent) => {
+-		const next = sent ? heldSendArgs(pendingQueueRef.current) : null;
+-		if (next) {
+-			pendingQueueRef.current = [];
+-			dispatch({ type: "CLEAR_QUEUED_MESSAGES" });
++	const takeQueue = useCallback((id) => {
++		const held = queuesRef.current.get(id) ?? [];
++		queuesRef.current.delete(id);
++		queueDueRef.current.delete(id);
++		if (held.length && currentConversationIdRef.current === id) dispatch({ type: "CLEAR_QUEUED_MESSAGES" });
++		return held;
++	}, []);
++	const sendQueue = useCallback((id) => {
++		if (sendingRef.current.has(id)) return;
++		if (currentConversationIdRef.current !== id) {
++			if (queuesRef.current.get(id)?.length) queueDueRef.current.add(id);
++			return;
+ 		}
++		const next = heldSendArgs(takeQueue(id));
++		if (next) sendMessageRef.current?.(...next);
++	}, [takeQueue]);
++	const releaseSends = useCallback((id, sent) => {
+ 		setTimeout(() => {
+-			isSendingRef.current = false;
+-			if (next) sendMessageRef.current?.(...next);
++			sendingRef.current.delete(id);
++			if (sent) sendQueue(id);
+ 		}, 0);
+-	}, []);
++	}, [sendQueue]);
+ 	const followReply = useCallback((id, live) => {
+ 		followingRef.current = live;
+-		isSendingRef.current = true;
++		sendingRef.current.add(id);
+ 		abortControllerRef.current = live.controller;
++		const drawn = () => streamingConversationIdRef.current === id;
+ 		live.follower = {
+-			onContent: onStreamingChunk,
+-			onReasoning: (reasoning) => dispatch({
++			onContent: (chunk) => onStreamingChunk(id, chunk),
++			onReasoning: (reasoning) => drawn() && dispatch({
+ 				type: "APPEND_STREAMING_REASONING",
+ 				reasoning,
+ 				conversationId: id
+ 			}),
+-			onPart: (delta) => afterReveal(() => dispatch({
++			onPart: (delta) => drawn() && afterReveal(() => dispatch({
+ 				type: "APPLY_STREAMING_PART",
+ 				delta,
+ 				conversationId: id
+ 			})),
+-			onUsage: (usage) => dispatch({
++			onUsage: (usage) => drawn() && dispatch({
+ 				type: "SET_STREAMING_USAGE",
+ 				usage,
+ 				conversationId: id
+@@ -227,9 +249,8 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 					type: "CLEAR_STREAMING_CONTENT",
+ 					conversationId: id
+ 				});
+-				if (followingRef.current !== live) return;
+-				followingRef.current = null;
+-				releaseSends(!!message);
++				if (followingRef.current === live) followingRef.current = null;
++				releaseSends(id, !!message);
+ 			}
+ 		};
+ 	}, [
+@@ -247,7 +268,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			reply
+ 		};
+ 		watchingRef.current = watch;
+-		isSendingRef.current = true;
++		sendingRef.current.add(id);
+ 		streamingConversationIdRef.current = id;
+ 		targetStreamContentRef.current = reply.content;
+ 		streamActiveRef.current = true;
+@@ -267,7 +288,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			if (next === void 0 || next?.messageId === watch.reply.messageId) {
+ 				if (next) {
+ 					const text = next.content.slice(watch.reply.content.length);
+-					if (text) onStreamingChunk(text);
++					if (text) onStreamingChunk(id, text);
+ 					const reasoning = next.reasoning.slice(watch.reply.reasoning.length);
+ 					if (reasoning) dispatch({
+ 						type: "APPEND_STREAMING_REASONING",
+@@ -303,7 +324,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 				type: "SET_CURRENT_CONVERSATION",
+ 				conversation
+ 			});
+-			releaseSends(true);
++			releaseSends(id, true);
+ 		};
+ 		setTimeout(poll, WATCH_POLL_MS);
+ 	}, [
+@@ -321,21 +342,41 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 		watchingRef.current = null;
+ 	}, []);
+ 	const loadConversation = useCallback(async (id) => {
+-		if (streamingToConversationRef.current === id && currentConversationIdRef.current === id) return;
++		const sequence = ++loadSequenceRef.current;
++		if (streamingToConversationRef.current === id && currentConversationIdRef.current === id && (streamingConversationIdRef.current === id || !backgroundStreamsRef.current.get(id)?.isActive)) {
++			dispatch({
++				type: "SET_LOADING_CONVERSATION",
++				isLoadingConversation: false
++			});
++			return;
++		}
+ 		if (watchingRef.current && watchingRef.current.id !== id) {
++			sendingRef.current.delete(watchingRef.current.id);
+ 			watchingRef.current = null;
+-			isSendingRef.current = false;
+ 		}
+-		if (streamingConversationIdRef.current && streamingConversationIdRef.current !== id) resetAnimationRefs();
+-		const bgStream = backgroundStreamsRef.current.get(id);
++		if (streamingConversationIdRef.current && streamingConversationIdRef.current !== id) {
++			const left = streamingConversationIdRef.current;
++			resetAnimationRefs();
++			streamingConversationIdRef.current = null;
++			dispatch({
++				type: "SET_STREAMING",
++				isStreaming: false,
++				conversationId: left
++			});
++			dispatch({
++				type: "CLEAR_STREAMING_CONTENT",
++				conversationId: left
++			});
++		}
+ 		dispatch({
+ 			type: "SET_LOADING_CONVERSATION",
+ 			isLoadingConversation: true
+ 		});
+-		const sequence = ++loadSequenceRef.current;
++		const wasLive = !!backgroundStreamsRef.current.get(id)?.isActive;
+ 		let conversation;
+ 		try {
+ 			conversation = await adapter.conversations.get(id);
++			if (wasLive && !conversation.generating && !backgroundStreamsRef.current.has(id)) conversation = await adapter.conversations.get(id);
+ 		} catch (error) {
+ 			if (loadSequenceRef.current !== sequence) return;
+ 			dispatch({
+@@ -343,6 +384,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 				isLoadingConversation: false
+ 			});
+ 			toast.error(errorText(error));
++			streamingConversationIdRef.current = null;
+ 			currentConversationIdRef.current = null;
+ 			dispatch({
+ 				type: "SET_CURRENT_CONVERSATION",
+@@ -355,26 +397,43 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			type: "SET_LOADING_CONVERSATION",
+ 			isLoadingConversation: false
+ 		});
++		const returned = currentConversationIdRef.current !== id;
+ 		currentConversationIdRef.current = id;
+ 		dispatch({
+ 			type: "SET_CURRENT_CONVERSATION",
+ 			conversation
+ 		});
++		if (returned) {
++			for (const held of queuesRef.current.get(id) ?? []) dispatch({
++				type: "ADD_QUEUED_MESSAGE",
++				message: queuedMessage(held),
++				conversationId: id
++			});
++			if (queueDueRef.current.has(id)) setTimeout(() => sendQueue(id), 0);
++		}
++		const bgStream = backgroundStreamsRef.current.get(id);
+ 		if (bgStream?.isActive) {
++			resetAnimationRefs();
+ 			streamingConversationIdRef.current = id;
+ 			targetStreamContentRef.current = bgStream.content;
++			revealedLengthRef.current = bgStream.content.length;
+ 			streamActiveRef.current = true;
++			const inParts = bgStream.parts.reduce((n, part) => part.kind === "text" ? n + part.text.length : n, 0);
+ 			dispatch({
+ 				type: "RESTORE_BACKGROUND_STREAM",
+-				content: "",
++				content: bgStream.content,
+ 				reasoning: bgStream.reasoning,
+-				parts: bgStream.parts
++				parts: bgStream.parts.length && inParts < bgStream.content.length ? applyPartDelta(bgStream.parts, {
++					type: "text",
++					text: bgStream.content.slice(inParts)
++				}) : bgStream.parts
+ 			});
+ 			startStreaming(id);
+ 			if (bgStream.owner !== streamOwner) followReply(id, bgStream);
+ 		} else if (conversation.generating) watchReply(id, conversation.generating);
+ 	}, [
+ 		adapter,
++		sendQueue,
+ 		streamOwner,
+ 		followReply,
+ 		watchReply,
+@@ -477,6 +536,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			toast.error(errorText(error));
+ 			return false;
+ 		}
++		queuesRef.current.delete(id);
+ 		dispatch({
+ 			type: "REMOVE_CONVERSATION",
+ 			conversationId: id
+@@ -508,6 +568,11 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			follower: null
+ 		};
+ 		backgroundStreamsRef.current.set(targetConversationId, live);
++		const drawn = () => streamingConversationIdRef.current === targetConversationId;
++		const superseded = () => {
++			const now = backgroundStreamsRef.current.get(targetConversationId);
++			return !!now && now !== live;
++		};
+ 		let finished = null;
+ 		dispatch({
+ 			type: "SET_STREAMING",
+@@ -538,13 +603,13 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 						text: chunk
+ 					});
+ 					live.content += chunk;
+-					onStreamingChunk(chunk);
++					onStreamingChunk(targetConversationId, chunk);
+ 					live.follower?.onContent(chunk);
+ 				},
+ 				onReasoning: (reasoning) => {
+ 					markStreamStart();
+ 					thinkingEnd = Date.now();
+-					dispatch({
++					if (drawn()) dispatch({
+ 						type: "APPEND_STREAMING_REASONING",
+ 						reasoning,
+ 						conversationId: targetConversationId
+@@ -553,7 +618,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 					live.follower?.onReasoning(reasoning);
+ 				},
+ 				onUsage: (usage) => {
+-					dispatch({
++					if (drawn()) dispatch({
+ 						type: "SET_STREAMING_USAGE",
+ 						usage,
+ 						conversationId: targetConversationId
+@@ -571,7 +636,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 						kind: "text",
+ 						text: liveText
+ 					}], delta);
+-					afterReveal(() => dispatch({
++					if (drawn()) afterReveal(() => dispatch({
+ 						type: "APPLY_STREAMING_PART",
+ 						delta,
+ 						conversationId: targetConversationId
+@@ -580,7 +645,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 					live.follower?.onPart(delta);
+ 				}
+ 			}, controller.signal);
+-			await drainReveal();
++			if (drawn()) await drainReveal();
+ 			const thinkingDuration = assistantReasoning && thinkingStart !== null ? (thinkingEnd ?? Date.now()) - thinkingStart : null;
+ 			const assistantMessage = {
+ 				id: assistantMessageId || crypto.randomUUID(),
+@@ -609,28 +674,32 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			onFailure(replyFailure(error));
+ 			return "failed";
+ 		} finally {
+-			abortControllerRef.current = null;
+-			const { unrevealed } = stopAnimationLoop();
+-			if (unrevealed) dispatch({
+-				type: "APPEND_STREAMING_CONTENT",
+-				content: unrevealed,
+-				conversationId: targetConversationId
+-			});
+-			streamingConversationIdRef.current = null;
+-			if (backgroundStreamsRef.current.get(targetConversationId) === live) backgroundStreamsRef.current.delete(targetConversationId);
++			if (abortControllerRef.current === controller) abortControllerRef.current = null;
++			if (!superseded()) {
++				if (drawn()) {
++					const { unrevealed } = stopAnimationLoop();
++					if (unrevealed) dispatch({
++						type: "APPEND_STREAMING_CONTENT",
++						content: unrevealed,
++						conversationId: targetConversationId
++					});
++					streamingConversationIdRef.current = null;
++				}
++				backgroundStreamsRef.current.delete(targetConversationId);
++				setTimeout(() => {
++					if (streamingToConversationRef.current === targetConversationId && !backgroundStreamsRef.current.has(targetConversationId)) streamingToConversationRef.current = null;
++				}, 500);
++				dispatch({
++					type: "SET_STREAMING",
++					isStreaming: false,
++					conversationId: targetConversationId
++				});
++				dispatch({
++					type: "CLEAR_STREAMING_CONTENT",
++					conversationId: targetConversationId
++				});
++			}
+ 			live.follower?.onFinish(finished);
+-			setTimeout(() => {
+-				streamingToConversationRef.current = null;
+-			}, 500);
+-			dispatch({
+-				type: "SET_STREAMING",
+-				isStreaming: false,
+-				conversationId: targetConversationId
+-			});
+-			dispatch({
+-				type: "CLEAR_STREAMING_CONTENT",
+-				conversationId: targetConversationId
+-			});
+ 		}
+ 	}, [
+ 		adapter,
+@@ -645,31 +714,26 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 		streamOwner
+ 	]);
+ 	const sendMessage = useCallback(async (content, attachmentIds, parentId, attachmentMeta, precedingMessages) => {
+-		if (isSendingRef.current) {
++		if (sendingRef.current.has(currentConversationIdRef.current ?? NEW_CONVERSATION)) {
+ 			const convId = currentConversationIdRef.current;
+ 			if (!convId) return false;
+ 			const MAX_QUEUED_MESSAGES = 10;
+-			if (pendingQueueRef.current.length >= MAX_QUEUED_MESSAGES) {
++			const queue = queuesRef.current.get(convId) ?? [];
++			if (queue.length >= MAX_QUEUED_MESSAGES) {
+ 				toast.error(`You can queue up to ${MAX_QUEUED_MESSAGES} messages while waiting for a response`);
+ 				return false;
+ 			}
+-			const queuedId = crypto.randomUUID();
+-			pendingQueueRef.current.push({
+-				id: queuedId,
++			const held = {
++				id: crypto.randomUUID(),
+ 				content,
+ 				attachmentIds: attachmentIds ? [...attachmentIds] : [],
+-				attachmentMeta: attachmentMeta ? { ...attachmentMeta } : {}
+-			});
++				attachmentMeta: attachmentMeta ? { ...attachmentMeta } : {},
++				timestamp: DateTime.now().toISO()
++			};
++			queuesRef.current.set(convId, [...queue, held]);
+ 			dispatch({
+ 				type: "ADD_QUEUED_MESSAGE",
+-				message: {
+-					id: queuedId,
+-					role: "user",
+-					content,
+-					timestamp: DateTime.now().toISO(),
+-					author: currentUser,
+-					attachments: attachmentRefs(attachmentIds, attachmentMeta)
+-				},
++				message: queuedMessage(held),
+ 				conversationId: convId
+ 			});
+ 			return true;
+@@ -679,21 +743,16 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			toast.error(resolvedConfig.strings.modelPicker.selectFirst);
+ 			return false;
+ 		}
+-		isSendingRef.current = true;
+-		if (pendingQueueRef.current.length > 0) {
+-			const held = pendingQueueRef.current;
+-			pendingQueueRef.current = [];
+-			dispatch({ type: "CLEAR_QUEUED_MESSAGES" });
+-			precedingMessages = [...held.map(({ id: _id, ...rest }) => rest), ...precedingMessages ?? []];
+-		}
+ 		let conversationId = currentConversationIdRef.current;
++		sendingRef.current.add(conversationId ?? NEW_CONVERSATION);
++		const held = conversationId ? takeQueue(conversationId) : [];
++		if (held.length > 0) precedingMessages = [...held.map(({ id: _id, ...rest }) => rest), ...precedingMessages ?? []];
+ 		let isNewConversation = false;
+ 		if (!conversationId) {
+ 			const newId = await createConversation();
+-			if (!newId) {
+-				isSendingRef.current = false;
+-				return false;
+-			}
++			sendingRef.current.delete(NEW_CONVERSATION);
++			if (!newId) return false;
++			sendingRef.current.add(newId);
+ 			conversationId = newId;
+ 			isNewConversation = true;
+ 			currentConversationIdRef.current = newId;
+@@ -792,16 +851,8 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 			if (outcome === "sent" && isNewConversation) loadConversations();
+ 			return outcome === "sent";
+ 		} finally {
+-			if (outcome === "sent") {
+-				const next = heldSendArgs(pendingQueueRef.current);
+-				pendingQueueRef.current = [];
+-				dispatch({ type: "CLEAR_QUEUED_MESSAGES" });
+-				if (next) setTimeout(() => {
+-					isSendingRef.current = false;
+-					sendMessageRef.current?.(...next);
+-				}, 0);
+-				else isSendingRef.current = false;
+-			} else isSendingRef.current = false;
++			if (outcome === "sent") releaseSends(targetConversationId, true);
++			else sendingRef.current.delete(targetConversationId);
+ 		}
+ 	}, [
+ 		adapter,
+@@ -817,8 +868,11 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 		createConversation,
+ 		loadConversations,
+ 		navigation,
++		queuedMessage,
++		releaseSends,
+ 		startStreaming,
+-		streamReply
++		streamReply,
++		takeQueue
+ 	]);
+ 	useEffect(() => {
+ 		sendMessageRef.current = sendMessage;
+@@ -826,12 +880,12 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 	const answerToolApproval = useCallback(async (approvalId, answer) => {
+ 		const conversation = state.currentConversation;
+ 		const modelString = state.selectedProvider;
+-		if (answer.kind !== "confirm" || !conversation || !modelString || isSendingRef.current) return;
++		if (answer.kind !== "confirm" || !conversation || !modelString || sendingRef.current.has(conversation.id)) return;
+ 		const pausedAt = conversation.messages.findIndex((m) => m.role === "assistant" && m.parts?.some((p) => p.kind === "approval" && p.id === approvalId && !p.resolved));
+ 		const paused = conversation.messages[pausedAt];
+ 		if (!paused) return;
+-		isSendingRef.current = true;
+ 		const targetConversationId = conversation.id;
++		sendingRef.current.add(targetConversationId);
+ 		const t = resolvedConfig.strings.agentTranscript;
+ 		const askedParts = paused.parts ?? [];
+ 		let pausedParts = askedParts;
+@@ -904,7 +958,7 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 				updatePaused({ parts: askedParts });
+ 			}
+ 		} finally {
+-			isSendingRef.current = false;
++			sendingRef.current.delete(targetConversationId);
+ 		}
+ 	}, [
+ 		resolvedConfig,
+@@ -995,17 +1049,17 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 		if (bgStream) bgStream.follower = null;
+ 		if (bgStream && followingRef.current === bgStream) {
+ 			followingRef.current = null;
+-			isSendingRef.current = false;
++			sendingRef.current.delete(conversationId);
+ 		}
+ 		const watched = watchingRef.current?.id === conversationId ? watchingRef.current : null;
+ 		if (watched) {
+ 			watchingRef.current = null;
+-			isSendingRef.current = false;
++			sendingRef.current.delete(conversationId);
+ 		}
+ 		const stopped = conversationId ? adapter.conversations.stop?.(conversationId) : void 0;
+-		if (abortControllerRef.current) {
+-			abortControllerRef.current.abort();
+-			abortControllerRef.current = null;
++		if (bgStream) {
++			bgStream.controller.abort();
++			if (abortControllerRef.current === bgStream.controller) abortControllerRef.current = null;
+ 		}
+ 		const stoppedContent = bgStream?.content || watched?.reply.content || "";
+ 		const stoppedReasoning = bgStream?.reasoning || watched?.reply.reasoning || "";
+@@ -1089,28 +1143,24 @@ function ChatProvider({ adapter, currentUser, navigation, activeConversationId =
+ 		});
+ 	}, [state.currentConversation]);
+ 	const removeQueuedMessage = useCallback((id) => {
+-		pendingQueueRef.current = pendingQueueRef.current.filter((m) => m.id !== id);
++		for (const [conversationId, queue] of queuesRef.current) queuesRef.current.set(conversationId, queue.filter((m) => m.id !== id));
+ 		dispatch({
+ 			type: "REMOVE_QUEUED_MESSAGE",
+ 			id
+ 		});
+ 	}, []);
+ 	const flushQueuedMessages = useCallback(() => {
+-		if (isSendingRef.current) return;
+-		const next = heldSendArgs(pendingQueueRef.current);
+-		if (!next) return;
+-		pendingQueueRef.current = [];
+-		dispatch({ type: "CLEAR_QUEUED_MESSAGES" });
+-		sendMessageRef.current?.(...next);
+-	}, []);
++		const id = currentConversationIdRef.current;
++		if (id) sendQueue(id);
++	}, [sendQueue]);
+ 	const clearCurrentConversation = useCallback(() => {
+ 		currentConversationIdRef.current = null;
+ 		loadSequenceRef.current++;
+ 		streamingConversationIdRef.current = null;
+ 		resetAnimationRefs();
+-		pendingQueueRef.current = [];
+-		isSendingRef.current = false;
++		sendingRef.current.delete(NEW_CONVERSATION);
+ 		followingRef.current = null;
++		if (watchingRef.current) sendingRef.current.delete(watchingRef.current.id);
+ 		watchingRef.current = null;
+ 		inputFocusPendingRef.current = null;
+ 		dispatch({
+diff --git a/dist/ai/core/useSSEStream.js b/dist/ai/core/useSSEStream.js
+index d53aa5cca238d66203867a0711dafe73003c9d43..0c5710fcf67a7864d91c59bbee0f0ee20f115178 100644
+--- a/dist/ai/core/useSSEStream.js
++++ b/dist/ai/core/useSSEStream.js
+@@ -70,8 +70,8 @@ function useSSEStream(dispatch) {
+ 		settleDrain,
+ 		runPending
+ 	]);
+-	const onStreamingChunk = useCallback((chunk) => {
+-		if (!streamActiveRef.current) return;
++	const onStreamingChunk = useCallback((conversationId, chunk) => {
++		if (!streamActiveRef.current || streamingConversationIdRef.current !== conversationId) return;
+ 		targetStreamContentRef.current += chunk;
+ 		if (streamRafRef.current === null) streamRafRef.current = requestAnimationFrame(animateStreamContent);
+ 	}, [animateStreamContent]);
+@@ -127,6 +127,7 @@ function useSSEStream(dispatch) {
+ 		afterReveal,
+ 		resetAnimationRefs,
+ 		targetStreamContentRef,
++		revealedLengthRef,
+ 		streamActiveRef,
+ 		streamingConversationIdRef,
+ 		backgroundStreamsRef,

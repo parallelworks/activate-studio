@@ -7,13 +7,22 @@ import { getChatLibrary, getEffort, getLabelScope, getLastEngine, getPersona, ha
 import { GOES_TO, GOES_TO_SESSION } from './chatLinks'
 import { fetchModels } from './api'
 import { firstMessagePick } from './pwcode/newChatPick'
+import { PWCODE_MODEL, pwCodeStandsIn } from './pwcode/ownModel'
 import { firstMessageStart } from './pwcode/newChatStart'
 import { foldRecovered, recoveryTracker } from './recoveredSteps'
 import { rememberToolCommands } from './components/GufiCommands'
 
+// pw code stood in for the models last listed.
+let stoodIn = false
+
 async function listModels(): Promise<ModelsList> {
   // The shared request is typed loosely; the package's own types apply here.
-  const data = (await fetchModels()) as unknown as Partial<ModelsList>
+  const data = await fetchModels().catch(e => {
+    if (pwCodeStandsIn() || stoodIn) return {}
+    throw e
+  }) as unknown as Partial<ModelsList>
+  stoodIn = !data.models?.length && pwCodeStandsIn()
+  if (stoodIn) return { models: [PWCODE_MODEL] as ModelsList['models'], unreachableSessions: [], providerIssues: [] }
   // The server marks models whose most recent call failed (an expired
   // provider key fails at call time while listing fine). The picker
   // component is upstream, so the signal rides the display name; it
@@ -41,7 +50,8 @@ const readReply: StreamCompletion = async (req, handlers, signal) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: req.model,
+      // pw code standing in for a model is none of the Studio assistant's.
+      model: req.model === PWCODE_MODEL.id ? '' : req.model,
       messages: req.messages,
       conversationId: req.conversationId,
       userMessageId: req.userMessageId,
