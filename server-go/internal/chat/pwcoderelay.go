@@ -104,24 +104,27 @@ func relayMachine(l *conversations.PWCodeLink) any {
 }
 
 // askAnswer answers one of a question's parts, as pw code takes it
-// (serverapi.AskQuestionAnswer): the options picked by label, and what the
-// person typed.
+// (serverapi.AskQuestionAnswer): the options picked by label, what the
+// person typed, and their notes on a pick.
 type askAnswer struct {
 	Question string   `json:"question"`
 	Picked   []string `json:"picked"`
 	Text     string   `json:"text"`
+	Notes    string   `json:"notes"`
 }
 
 // askAnswerBody is the approval answer to an ask: the answers, in the
-// question's order, or chat to talk the questions through instead.
+// question's order, or chat to talk the questions through instead. Of
+// several questions some may be left blank, as pw code takes them.
 func askAnswerBody(in []askAnswer, chat bool) (*jsonv.Object, error) {
 	if chat {
 		return jsonv.NewObject("chat", true), nil
 	}
 	if len(in) == 0 || len(in) > 20 {
-		return nil, pwErr(400, "Answer each question, or choose to talk them through.")
+		return nil, pwErr(400, "Answer a question, or choose to talk them through.")
 	}
 	out := []any{}
+	answered := false
 	for _, a := range in {
 		picked := []any{}
 		for _, p := range a.Picked {
@@ -130,14 +133,19 @@ func askAnswerBody(in []askAnswer, chat bool) (*jsonv.Object, error) {
 			}
 		}
 		text := sliceRunes(strings.TrimSpace(a.Text), 4000)
-		if len(picked) == 0 && text == "" {
-			return nil, pwErr(400, "Answer each question, or choose to talk them through.")
-		}
+		answered = answered || len(picked) > 0 || text != ""
 		o := jsonv.NewObject("question", sliceRunes(a.Question, 2000), "picked", picked)
 		if text != "" {
 			o.Set("text", text)
 		}
+		// Notes go with a pick only.
+		if notes := sliceRunes(strings.TrimSpace(a.Notes), 4000); notes != "" && len(picked) > 0 {
+			o.Set("notes", notes)
+		}
 		out = append(out, o)
+	}
+	if !answered {
+		return nil, pwErr(400, "Answer a question, or choose to talk them through.")
 	}
 	return jsonv.NewObject("answers", out), nil
 }

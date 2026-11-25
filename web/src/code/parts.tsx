@@ -6,18 +6,20 @@ import {
   type PwCodeMachine,
   type PwCodePreference,
   type PwCodeSession,
+  sessionGroupsPreference,
   sessionMark,
   startEffortPreference,
   startMachinePreference,
   startModePreference,
   startAccountPreference,
+  useSessionGroups,
   useStartAccountPreference,
   useStartEffortPreference,
   useStartMachinePreference,
   useStartModePreference,
 } from '@parallelworks/code'
 import { useTranslations } from 'use-intl'
-import { type MachineLooks, machineImage } from './machineIcon'
+import { type IconMachine, machineImage } from './machineIcon'
 
 /**
  * The small parts of PW Code on the web's Code page that are its app's own
@@ -46,6 +48,12 @@ export function useStartMachine() {
 }
 export function useStartAccount(machine: string | undefined) {
   return useStartAccountPreference(useSavedPreference(startAccountPreference), machine)
+}
+
+/** The person's session groups. */
+export function useCodeGroups() {
+  const { key, fallback } = sessionGroupsPreference('studio')
+  return useSessionGroups(usePersistedState(`studio.code.${key}`, fallback), () => crypto.randomUUID())
 }
 
 /** A session at work turns, in the mark a running workflow run has. */
@@ -85,7 +93,7 @@ const broken = new Set<string>()
 /** A machine's icon, as PW Code on the web picks it (machineIcon.ts): both
  *  themes' images are drawn and the theme shows one. A computer's or a
  *  server's glyph where the platform has none, or it did not load. */
-export function MachineIcon({ machine }: { machine: Pick<PwCodeMachine, 'kind'> & MachineLooks }) {
+export function MachineIcon({ machine }: { machine: IconMachine }) {
   const [, setFailed] = useState(0)
   const image = machineImage(machine)
   if (!image || broken.has(image.light)) {

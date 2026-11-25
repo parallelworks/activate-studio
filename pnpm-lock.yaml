@@ -14,6 +14,9 @@ overrides:
   '@fastify/busboy@3': ^3.2.2
   katex@<0.18.2: ^0.18.2
 
+patchedDependencies:
+  '@parallelworks/ui@0.151.1': f6463b3f4b90f5d5f6c743581032f1a42aa1aa8f331e1d18dae8b3330a35343b
+
 importers:
 
   .: {}
@@ -64,14 +67,14 @@ importers:
         specifier: 1.7.0
         version: 1.7.0
       '@parallelworks/code':
-        specifier: 0.5.0
-        version: 0.5.0(@parallelworks/problem@0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8)))(@parallelworks/ui@0.146.2(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(openapi-fetch@0.17.0)(react@19.2.8)(swr@2.5.1(react@19.2.8))(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))
+        specifier: 0.6.0
+        version: 0.6.0(@parallelworks/problem@0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8)))(@parallelworks/ui@0.151.1(patch_hash=f6463b3f4b90f5d5f6c743581032f1a42aa1aa8f331e1d18dae8b3330a35343b)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(openapi-fetch@0.17.0)(react@19.2.8)(swr@2.5.1(react@19.2.8))(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))
       '@parallelworks/problem':
         specifier: ^0.6.1
         version: 0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))
       '@parallelworks/ui':
-        specifier: ^0.146.2
-        version: 0.146.2(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
+        specifier: 0.151.1
+        version: 0.151.1(patch_hash=f6463b3f4b90f5d5f6c743581032f1a42aa1aa8f331e1d18dae8b3330a35343b)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       '@parallelworks/workflow-parser':
         specifier: ^0.8.0
         version: 0.8.0
@@ -856,11 +859,11 @@ packages:
   '@novnc/novnc@1.7.0':
     resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
 
-  '@parallelworks/code@0.5.0':
-    resolution: {integrity: sha512-170tAtWRFcXko+DPDv/DVx1LyZCWgB1nfACvV+VBZsUrquMS0G8zD0TAWD38dgFjYT4VUgtgZPcCgo0TPopl6w==}
+  '@parallelworks/code@0.6.0':
+    resolution: {integrity: sha512-uMQT/CwkJP0QmIZUXm1EV7o0N+GrnIapn8ncGKj+ONkTSgVVH/iBmFIl0BZ6+fRI6mDsBVoGgDDUxbW9ZwjtbA==}
     peerDependencies:
       '@parallelworks/problem': '>=0.6.1 <1'
-      '@parallelworks/ui': '>=0.136.0 <1'
+      '@parallelworks/ui': '>=0.148.0 <1'
       openapi-fetch: ^0.17.0
       react: ^19.0.0
       swr: ^2.0.0
@@ -877,10 +880,10 @@ packages:
       use-intl:
         optional: true
 
-  '@parallelworks/ui@0.146.2':
-    resolution: {integrity: sha512-9O4YWkGXtjc/foXXdDYeE9OqHQnJ+6Vat4oM3f2xC1omxNc27LGv0+oYU6EuoQIize96kaE+FVzLZ1Za+cFrrQ==}
+  '@parallelworks/ui@0.151.1':
+    resolution: {integrity: sha512-x33Xao7Ide1fAlB3xmjqpNpnGQQRSThVBSFI7FcHYzKM7emDyWmPycRvbZrE8enKXUTXEoT3/gEpFNEkUjRiBw==}
     peerDependencies:
-      monaco-editor: ^0.57.0
+      monaco-editor: ^0.57.0 || ^0.58.0
       react: ^19.0.0
       react-dom: ^19.0.0
       react-hook-form: ^7.90.0
@@ -1038,56 +1041,28 @@ packages:
   '@schummar/icu-type-parser@1.21.5':
     resolution: {integrity: sha512-bXHSaW5jRTmke9Vd0h5P7BtWZG9Znqb8gSDxZnxaGSJnGwPLDPfS+3g0BKzeWqzgZPsIVZkM7m2tbo18cm5HBw==}
 
-  '@shikijs/core@4.5.0':
-    resolution: {integrity: sha512-6CIgwq+bt2JZ3OSjb/nBkkwEf/CfpHcbam+Mg5Pllco7HAGRQ2/EFhZrrJtbyNTgKwknfVS+llsXGygiDGwJWw==}
-    engines: {node: '>=20'}
-
   '@shikijs/core@4.6.0':
     resolution: {integrity: sha512-bfd4OKgvoyXYiYmMRuleA656P4V7M/Du9lcTl38Ngm6KszMj7bq4J1IGZwSYR4c95Tv5UQALtYNWUwaI9UT3xw==}
-    engines: {node: '>=20'}
-
-  '@shikijs/engine-javascript@4.5.0':
-    resolution: {integrity: sha512-Ed6UdEj84LyYkwnxM5CvSMWAD+id9ExTYri0/+x41U9zrgNifPSS9lZm0JqBP0VfYI8yr8tY5nbNq9+p9R0kFA==}
     engines: {node: '>=20'}
 
   '@shikijs/engine-javascript@4.6.0':
     resolution: {integrity: sha512-K0oqxFoL+kEMdz89mHLFO15Tsbv3kFZ6WR1cXZKMvLSc+oqaM00A6pyga1qSeXB22dP0tTiSApRcGBaKWsEccg==}
     engines: {node: '>=20'}
 
-  '@shikijs/engine-oniguruma@4.5.0':
-    resolution: {integrity: sha512-dKVmbJecVdB9recl8a/CU4jdpNXyjJQrIcesIkpS70s5HS02ohpnCSpMUbotPnEUzbAcLQ+S4hwZYbkBBiTcJw==}
-    engines: {node: '>=20'}
-
   '@shikijs/engine-oniguruma@4.6.0':
     resolution: {integrity: sha512-aggd6Q7SuJOXNnsUbfG2XesxBJKBMAw/PDTUo9PyRjMaaJJ2dNrI+q0C+25ARXAK9yLHAlwxc9oRT2u68YKZ7w==}
-    engines: {node: '>=20'}
-
-  '@shikijs/langs@4.5.0':
-    resolution: {integrity: sha512-wwBTqwduXSz0X4v9Qa2EWeFaYJEw1clCncWjoRNQRbVDu3SPRTRWucnouYapKj3b8Q+sk/41Vbc4B5c8nuYzLA==}
     engines: {node: '>=20'}
 
   '@shikijs/langs@4.6.0':
     resolution: {integrity: sha512-1yMEX3oCVV54LUq/ovfpRkDQoYDkcvjSWFFa/YLUDMiSoRzMi2uxLJYbv41ahT8Lu9lFMaa7hecd3Q39trqUyg==}
     engines: {node: '>=20'}
 
-  '@shikijs/primitive@4.5.0':
-    resolution: {integrity: sha512-UM7ShlA8oz0OWxLLO8BmO9Ip6fVqdkt8yF0EH7nOCqHfrx1eEAzF0ZUVK7L+I8NEgeu1PEWSRlxaiPPeCb4iDg==}
-    engines: {node: '>=20'}
-
   '@shikijs/primitive@4.6.0':
     resolution: {integrity: sha512-c54+TQEo9ToqgfL/AU8FpjnV09+GA9Oa7M5ROkkXteZfp5XzpAJGXjjvZQFQioJOwm/w/6Z3lIzQstAkl8coag==}
     engines: {node: '>=20'}
 
-  '@shikijs/themes@4.5.0':
-    resolution: {integrity: sha512-zGb87H3UBbpuI4yoh5UguB1XbU+2BDU3kflM7UfZ+Cy2hWo9lBtqjSVK20gmLY6ukYl040hAypGXMgud9vul8Q==}
-    engines: {node: '>=20'}
-
   '@shikijs/themes@4.6.0':
     resolution: {integrity: sha512-qHAVAs80RiGD+IRuH9G+JPDOEc9A/kHsng4EzCUCwB9bLzW6Z0y9WETh2YyCcADJBmfrIaJ1Jp7KBNP6FHkgtQ==}
-    engines: {node: '>=20'}
-
-  '@shikijs/types@4.5.0':
-    resolution: {integrity: sha512-drtPrtD8N0DENyD2cyt6Ajy+IWsiCLgMxODwLTpvH1UsN6a9jf90tNTPjqwHvA+0Lzu9e0txk8DjfqH1p9UJRw==}
     engines: {node: '>=20'}
 
   '@shikijs/types@4.6.0':
@@ -1100,30 +1075,30 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@streamdown/code@2.0.0':
-    resolution: {integrity: sha512-sSyX/9gOOcivbP7204+sfAam+gotxjUNV+T4EuN3aa6i5x1LaqtB6Ln/Mxzd1XGvm0vNApO4oKLZs+7gzFI1kQ==}
+  '@streamdown/code@2.0.1':
+    resolution: {integrity: sha512-7CVujSN7++vwC7ipvWYpMf8WFZjaNtDHd6RGnC0yNsbRQ11nOkfpr+fZOhJmI+kxWk+K9F5Bcjm4b5jLEbsnDQ==}
     engines: {node: '>=20'}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@streamdown/math@1.0.3':
-    resolution: {integrity: sha512-TOTRlPYs4LBNT8GaIWNCEVrcGVQsVcfc8WZ/x/0IyO+Rvsu6W+nF+YCS4Pl3JTVWQK8QX7LbWUChSilwlyzPZw==}
+  '@streamdown/math@1.0.4':
+    resolution: {integrity: sha512-+gdewMT9ZewPsGlIaS7EKCMkLe2UZXaYgXbGpofwoHl3wDVR0KIrF1BxX0mcC/pyU7sYXi1S9NxP/tawhV6XwA==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@streamdown/mermaid@1.0.3':
-    resolution: {integrity: sha512-TgdL9Evm4CiaBaADjQVCaXe5eEZpJpTZ7JYw/OY1OO2JCmlc/6DN2DISXj+KUYAzRw+GgJioCoorpuCN/OIXyA==}
+  '@streamdown/mermaid@1.0.4':
+    resolution: {integrity: sha512-27Ggo/h/onTDal4hhspNpNVQHdCcbykd31not+7YcFur7ImdY8y56N2GZzj1OdnRzG9eu6SUqRwFd3BKsMu25Q==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@tanstack/react-virtual@3.14.26':
-    resolution: {integrity: sha512-HUDlfsrYH6ko5xH56L62Mcl/uzT+AGVNMHFuDNqDJMdZWc1AQa2oeVKNUvZ/RWBZQ4TYtyQerFrNvLnp39h65A==}
+  '@tanstack/react-virtual@3.14.28':
+    resolution: {integrity: sha512-zoM4eddIVUsOsunOe26ur+h6YJQbvdzU10a2tKzIovThu5P4SvEyQ+cRx0mbeKfgnR0Mz7KR/NwrZ3GzVnUF/g==}
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  '@tanstack/virtual-core@3.19.11':
-    resolution: {integrity: sha512-/5iHb0RHBvj8Di59FDs4ESNm45jls33aZAi4zccVXZjc/6ZvwQP6nzEYeT6weXjTf9E6/vrp2JhYWRyO+ZP13A==}
+  '@tanstack/virtual-core@3.19.13':
+    resolution: {integrity: sha512-CyCvMm7m5JuvPW6eMPZkZBZk6diySrlUQNNRpQPiEnh2vakyghx82Hw3wW2THFUsl6xJ6uM4lSUaiA2T0oYW8w==}
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -1857,14 +1832,14 @@ packages:
   hast-util-sanitize@5.0.2:
     resolution: {integrity: sha512-3yTWghByc50aGS7JlGhk61SPenfE/p1oaFeNwkOOyrscaOkMGrcW9+Cy/QAIOBpZxP1yqDIzFMR0+Np0i0+usg==}
 
-  hast-util-to-html@9.0.5:
-    resolution: {integrity: sha512-OguPdidb+fbHQSU4Q4ZiLKnzWo8Wwsf5bZfbvu7//a9oTYoqD/fWpe96NuHkoS9h0ccGOTe0C4NGXdtS0iObOw==}
-
   hast-util-to-html@9.0.7:
     resolution: {integrity: sha512-HYNDA3qdnzUPitY/LcQm1nWs8z0cWFNH1Nz09jdI/tXifAqF7h3+jrLl4S/b9Mi4VSjn0Dsn54ctuTV6zhBthA==}
 
   hast-util-to-jsx-runtime@2.3.6:
     resolution: {integrity: sha512-zl6s8LwNyo1P9uw+XJGvZtdFF1GdAkOg8ujOw+4Pyb76874fLps4ueHXDhXWdk6YHQ6OgUtinliG7RsYvCbbBg==}
+
+  hast-util-to-jsx-runtime@2.3.7:
+    resolution: {integrity: sha512-F7DNV2NMcTxA4GqPVHnXzX+mpoPHAIY9rJAVH3CZ1FdBZOcBUEjUuvMkMpHVs/sicEtznh9tMGj5WUR9S4E2rg==}
 
   hast-util-to-parse5@8.0.1:
     resolution: {integrity: sha512-MlWT6Pjt4CG9lFCjiz4BH7l9wmrMkfkJYCxFwKQic8+RTZgWPuWxwAfjJElsXkex7DJjfSJsQIt931ilUgmwdA==}
@@ -1919,6 +1894,9 @@ packages:
 
   inline-style-parser@0.2.7:
     resolution: {integrity: sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA==}
+
+  inline-style-parser@0.2.9:
+    resolution: {integrity: sha512-IttN8BqKLxzUrnTqHI+/hwAJQItBAUjdoHERCDv+oOuX48VP6bzW8+QjOXSfoevzq3YrYAwX1uLHp8TqO9yIeg==}
 
   internmap@1.0.1:
     resolution: {integrity: sha512-lDB5YccMydFBtasVtxnZ3MRBHuaoE8GKsppq+EchKL2U4nK/DmEpPHNH8MZe5HkMtpSiTSOZwfN0tzYjO/lJEw==}
@@ -2054,8 +2032,8 @@ packages:
     engines: {node: '>= 20'}
     hasBin: true
 
-  marked@18.1.1:
-    resolution: {integrity: sha512-zEGgrtUG8crk+TrMacJSVABU4DYDDkS8uqgU3ohrn/2fW9C2AEfUrO3m6IhpIpQpl7YcVpiXXC9cSMWDANT3dg==}
+  marked@18.2.0:
+    resolution: {integrity: sha512-KaeL+tAbtvI930q7HE2PN5lYXYdT8EiSmxHlN6F3rsfb57wd5mp5W5TLazpdj4inTQBJdgjYwbs40W/0VUGU+Q==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -2390,8 +2368,8 @@ packages:
     resolution: {integrity: sha512-z6F7K9bV85EfseRCp2bzrpyQ0Gkw1uLoCel9XBVWPg/TjRj94SkJzUTGfOa4bs7iJvBWtQG0Wq7wnI0syw3EBQ==}
     engines: {node: '>=0.10.0'}
 
-  react-zoom-pan-pinch@4.2.0:
-    resolution: {integrity: sha512-QSw1dvr6QGv5zHCUY7SEIY7EWRDbx1y6plylrWf2Nko9KOMW1MEoPC6oJ+Y/qOSeQjhvbkMV0m5bFF7pBxCH4A==}
+  react-zoom-pan-pinch@4.4.0:
+    resolution: {integrity: sha512-7lMrVmFopsR3KeUNesScTUcc9pNxfEPaqsJfwEH2rkuzLEMqEvwJlPaqEY8gCZ9q2AEpxplZMAZTwr/m7nY05g==}
     engines: {node: '>=8', npm: '>=5'}
     peerDependencies:
       react: '*'
@@ -2424,6 +2402,9 @@ packages:
   rehype-harden@1.1.8:
     resolution: {integrity: sha512-Qn7vR1xrf6fZCrkm9TDWi/AB4ylrHy+jqsNm1EHOAmbARYA6gsnVJBq/sdBh6kmT4NEZxH5vgIjrscefJAOXcw==}
 
+  rehype-harden@1.1.9:
+    resolution: {integrity: sha512-MdIR9vx9nPo7dTRC2DLb8Ywdx2oDcIuLAFKGA5CmTidkuxli55iRjfMvXL/Lqw7cRG4qMQj441AXxJ5Yw9nC9w==}
+
   rehype-katex@7.0.1:
     resolution: {integrity: sha512-OiM2wrZ/wuhKkigASodFoo8wimG3H12LWQaH8qSPVJn9apWKFSH3YOCtbKpBorTVw/eI7cuT21XBbvwEswbIOA==}
 
@@ -2451,8 +2432,8 @@ packages:
   remend@1.3.0:
     resolution: {integrity: sha512-iIhggPkhW3hFImKtB10w0dz4EZbs28mV/dmbcYVonWEJ6UGHHpP+bFZnTh6GNWJONg5m+U56JrL+8IxZRdgWjw==}
 
-  remend@1.4.0:
-    resolution: {integrity: sha512-mHiYhhwphs1IgIZmkToKLwJn0U99IjPXuutkA2acrNcG0vlEq2G4TGnd2eT0saIHwh2KjaCpvleHcsd5SAz96A==}
+  remend@1.5.0:
+    resolution: {integrity: sha512-A65+1l1jPGiZZsLD6QqL7foG8KBK2xMIjlr5Vm8R3kGAnVinjxFhdhHf3/zU5wPHrrsC87KqHztG7p1TD5i1HQ==}
 
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
@@ -2525,10 +2506,6 @@ packages:
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
 
-  shiki@4.5.0:
-    resolution: {integrity: sha512-OcRW72ngQvc+MSVWBRIovC/BTW589iUE/Vxav7VeM4RcY9MUjqB+IR6ILG1k9nuW6LiG/nct9uma4/MBtnZbmQ==}
-    engines: {node: '>=20'}
-
   shiki@4.6.0:
     resolution: {integrity: sha512-imjLsVHgPuWhvpU3P+zOekvMYqnel7QmKsFC4Sn0fCuAvaaalBsxwKEsrU8Ko5BdFnZA6Go/8a0RzahS634UgA==}
     engines: {node: '>=20'}
@@ -2566,8 +2543,8 @@ packages:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  streamdown@2.7.1:
-    resolution: {integrity: sha512-pIz4XOB+e7iyqSJABXC9PoyHifBZVQx/7U0Qo/vdOIERqGXfgEhJxkXENsuWMO8TGXkaQ5ewV9jnliK7q47T8w==}
+  streamdown@2.8.0:
+    resolution: {integrity: sha512-ZO5YW0GNYJQGUXpypc3dOpYttvMH5TpRz0lK3kHT78/AqCf3b5qct77V+Ku2qMWHMW7zgvaGW3med+wuKoqPVg==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -2588,6 +2565,9 @@ packages:
   style-to-object@1.0.14:
     resolution: {integrity: sha512-LIN7rULI0jBscWQYaSswptyderlarFkjQ+t79nzty8tcIAceVomEVlLzH5VP4Cmsv6MtKhs7qaAiwlcp+Mgaxw==}
 
+  style-to-object@2.0.2:
+    resolution: {integrity: sha512-QmbXPUylqU80HAgTOJeEOdbA40W9KtxmjMhQy+tq+b8F2aoh3aQLuy82hh2jm2qsC9hR9eI0+eQidTMydKcqRA==}
+
   stylis@4.4.0:
     resolution: {integrity: sha512-5Z9ZpRzfuH6l/UAvCPAPUo3665Nk2wLaZU3x+TLHKVzIz33+sbJqbtrYoC3KD4/uVOr2Zp+L0LySezP9OHV9yA==}
 
@@ -2602,8 +2582,8 @@ packages:
   tailwind-merge@3.6.0:
     resolution: {integrity: sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w==}
 
-  tailwind-merge@3.7.0:
-    resolution: {integrity: sha512-XPPUyAc+cvspz3lHTcR/QgPfW2A0lv/xQNIjX3HGhLR+Nq2lHaLq5MtTesHn8GUr3W3DguT2KT5x3NVgRtYwmA==}
+  tailwind-merge@3.7.1:
+    resolution: {integrity: sha512-v7y4BV4FUlO8exj/4M5UXKeoowDiuugVUg3tkMNIyOUCOHy5xp8+5aWQeXCtZ2491sUV1YPsVeM9EveZ6/xuZQ==}
 
   thread-stream@4.2.0:
     resolution: {integrity: sha512-e2zZ96wSChazBsbENf/Pcm/4swHt2cEKQ92rhUjkL9GCKiTDJIaTBenjE/m9DXi0QBmTMDkFDdOomUy20A1tDQ==}
@@ -2694,8 +2674,14 @@ packages:
   unist-util-visit-parents@6.0.2:
     resolution: {integrity: sha512-goh1s1TBrqSqukSc8wrjwWhL0hiJxgA8m4kFxGlQ+8FYQ3C/m11FcTs4YYem7V664AhHVvgoQLk890Ssdsr2IQ==}
 
+  unist-util-visit-parents@6.1.0:
+    resolution: {integrity: sha512-vKXxz6O38sKDj1mtx/k2cWvkkFBuYGx6uGrlzBkVeWCRF/F8sdI0j3Wbkz/5rVNRRuVc8UrgRdbCxNhmYXgP3w==}
+
   unist-util-visit@5.1.0:
     resolution: {integrity: sha512-m+vIdyeCOpdr/QeQCu2EzxX/ohgS8KbnPDgFni4dQsfSCtpz8UqDyY5GjRru8PDKuYn7Fq19j1CQ+nJSsGKOzg==}
+
+  unist-util-visit@5.2.0:
+    resolution: {integrity: sha512-fpsYs/VVoZxfGY9/j3FQpZmN8wdLJaV1Pt38AaJNZu9uKIHcFU3halCdBveEq1HGKO1OEfJY65w1zvoFV1b3qQ==}
 
   update-browserslist-db@1.3.1:
     resolution: {integrity: sha512-ZZ61DsRsOnakl74HAmp3oSN4aXUmEWXf+i/yv0h7tIBfICc3VdrFErQKUUKPgu3AMsTUMbcongALEN4l6GSUrQ==}
@@ -3431,10 +3417,10 @@ snapshots:
 
   '@novnc/novnc@1.7.0': {}
 
-  '@parallelworks/code@0.5.0(@parallelworks/problem@0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8)))(@parallelworks/ui@0.146.2(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(openapi-fetch@0.17.0)(react@19.2.8)(swr@2.5.1(react@19.2.8))(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))':
+  '@parallelworks/code@0.6.0(@parallelworks/problem@0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8)))(@parallelworks/ui@0.151.1(patch_hash=f6463b3f4b90f5d5f6c743581032f1a42aa1aa8f331e1d18dae8b3330a35343b)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(openapi-fetch@0.17.0)(react@19.2.8)(swr@2.5.1(react@19.2.8))(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))':
     dependencies:
       '@parallelworks/problem': 0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))
-      '@parallelworks/ui': 0.146.2(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
+      '@parallelworks/ui': 0.151.1(patch_hash=f6463b3f4b90f5d5f6c743581032f1a42aa1aa8f331e1d18dae8b3330a35343b)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       gemoji: 8.1.0
       luxon: 3.7.2
       openapi-fetch: 0.17.0
@@ -3447,14 +3433,14 @@ snapshots:
       react: 19.2.8
       use-intl: 4.15.1(@types/react@19.2.18)(react@19.2.8)
 
-  '@parallelworks/ui@0.146.2(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ui@0.151.1(patch_hash=f6463b3f4b90f5d5f6c743581032f1a42aa1aa8f331e1d18dae8b3330a35343b)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@daypicker/react': 10.0.2(@types/react@19.2.18)(react@19.2.8)
-      '@streamdown/code': 2.0.0(react@19.2.8)
-      '@streamdown/math': 1.0.3(react@19.2.8)
-      '@streamdown/mermaid': 1.0.3(react@19.2.8)
-      '@tanstack/react-virtual': 3.14.26(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@streamdown/code': 2.0.1(react@19.2.8)
+      '@streamdown/math': 1.0.4(react@19.2.8)
+      '@streamdown/mermaid': 1.0.4(react@19.2.8)
+      '@tanstack/react-virtual': 3.14.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@types/luxon': 3.7.6
       anser: 2.3.5
       clsx: 2.1.1
@@ -3466,11 +3452,11 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
       react-hook-form: 7.90.0(@types/react@19.2.18)(react@19.2.8)
-      react-zoom-pan-pinch: 4.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react-zoom-pan-pinch: 4.4.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       shiki: 4.6.0
-      streamdown: 2.7.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      streamdown: 2.8.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       swr: 2.5.1(react@19.2.8)
-      tailwind-merge: 3.7.0
+      tailwind-merge: 3.7.1
     optionalDependencies:
       monaco-editor: 0.57.0
     transitivePeerDependencies:
@@ -3566,14 +3552,6 @@ snapshots:
 
   '@schummar/icu-type-parser@1.21.5': {}
 
-  '@shikijs/core@4.5.0':
-    dependencies:
-      '@shikijs/primitive': 4.5.0
-      '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.1.0
-      '@types/hast': 3.0.5
-      hast-util-to-html: 9.0.5
-
   '@shikijs/core@4.6.0':
     dependencies:
       '@shikijs/primitive': 4.6.0
@@ -3582,41 +3560,20 @@ snapshots:
       '@types/hast': 3.0.5
       hast-util-to-html: 9.0.7
 
-  '@shikijs/engine-javascript@4.5.0':
-    dependencies:
-      '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.1.0
-      oniguruma-to-es: 4.3.6
-
   '@shikijs/engine-javascript@4.6.0':
     dependencies:
       '@shikijs/types': 4.6.0
       '@shikijs/vscode-textmate': 10.1.0
       oniguruma-to-es: 4.3.6
 
-  '@shikijs/engine-oniguruma@4.5.0':
-    dependencies:
-      '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.1.0
-
   '@shikijs/engine-oniguruma@4.6.0':
     dependencies:
       '@shikijs/types': 4.6.0
       '@shikijs/vscode-textmate': 10.1.0
 
-  '@shikijs/langs@4.5.0':
-    dependencies:
-      '@shikijs/types': 4.5.0
-
   '@shikijs/langs@4.6.0':
     dependencies:
       '@shikijs/types': 4.6.0
-
-  '@shikijs/primitive@4.5.0':
-    dependencies:
-      '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.1.0
-      '@types/hast': 3.0.5
 
   '@shikijs/primitive@4.6.0':
     dependencies:
@@ -3624,18 +3581,9 @@ snapshots:
       '@shikijs/vscode-textmate': 10.1.0
       '@types/hast': 3.0.5
 
-  '@shikijs/themes@4.5.0':
-    dependencies:
-      '@shikijs/types': 4.5.0
-
   '@shikijs/themes@4.6.0':
     dependencies:
       '@shikijs/types': 4.6.0
-
-  '@shikijs/types@4.5.0':
-    dependencies:
-      '@shikijs/vscode-textmate': 10.1.0
-      '@types/hast': 3.0.5
 
   '@shikijs/types@4.6.0':
     dependencies:
@@ -3646,12 +3594,12 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@streamdown/code@2.0.0(react@19.2.8)':
+  '@streamdown/code@2.0.1(react@19.2.8)':
     dependencies:
       react: 19.2.8
-      shiki: 4.5.0
+      shiki: 4.6.0
 
-  '@streamdown/math@1.0.3(react@19.2.8)':
+  '@streamdown/math@1.0.4(react@19.2.8)':
     dependencies:
       katex: 0.18.11
       react: 19.2.8
@@ -3660,18 +3608,18 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@streamdown/mermaid@1.0.3(react@19.2.8)':
+  '@streamdown/mermaid@1.0.4(react@19.2.8)':
     dependencies:
       mermaid: 11.17.2
       react: 19.2.8
 
-  '@tanstack/react-virtual@3.14.26(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@tanstack/react-virtual@3.14.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@tanstack/virtual-core': 3.19.11
+      '@tanstack/virtual-core': 3.19.13
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
-  '@tanstack/virtual-core@3.19.11': {}
+  '@tanstack/virtual-core@3.19.13': {}
 
   '@testing-library/dom@10.4.1':
     dependencies:
@@ -4529,7 +4477,7 @@ snapshots:
       mdast-util-to-hast: 13.2.1
       parse5: 7.3.0
       unist-util-position: 5.0.0
-      unist-util-visit: 5.1.0
+      unist-util-visit: 5.2.0
       vfile: 6.0.3
       web-namespaces: 2.0.1
       zwitch: 2.0.4
@@ -4539,20 +4487,6 @@ snapshots:
       '@types/hast': 3.0.5
       '@ungap/structured-clone': 1.3.3
       unist-util-position: 5.0.0
-
-  hast-util-to-html@9.0.5:
-    dependencies:
-      '@types/hast': 3.0.5
-      '@types/unist': 3.0.3
-      ccount: 2.0.1
-      comma-separated-tokens: 2.0.3
-      hast-util-whitespace: 3.0.0
-      html-void-elements: 3.0.0
-      mdast-util-to-hast: 13.2.1
-      property-information: 7.2.0
-      space-separated-tokens: 2.0.2
-      stringify-entities: 4.0.4
-      zwitch: 2.0.4
 
   hast-util-to-html@9.0.7:
     dependencies:
@@ -4583,6 +4517,26 @@ snapshots:
       property-information: 7.2.0
       space-separated-tokens: 2.0.2
       style-to-js: 1.1.21
+      unist-util-position: 5.0.0
+      vfile-message: 4.0.3
+    transitivePeerDependencies:
+      - supports-color
+
+  hast-util-to-jsx-runtime@2.3.7:
+    dependencies:
+      '@types/estree': 1.0.9
+      '@types/hast': 3.0.5
+      '@types/unist': 3.0.3
+      comma-separated-tokens: 2.0.3
+      devlop: 1.1.0
+      estree-util-is-identifier-name: 3.0.0
+      hast-util-whitespace: 3.0.0
+      mdast-util-mdx-expression: 2.0.1
+      mdast-util-mdx-jsx: 3.2.0
+      mdast-util-mdxjs-esm: 2.0.1
+      property-information: 7.2.0
+      space-separated-tokens: 2.0.2
+      style-to-object: 2.0.2
       unist-util-position: 5.0.0
       vfile-message: 4.0.3
     transitivePeerDependencies:
@@ -4662,6 +4616,8 @@ snapshots:
   inherits@2.0.4: {}
 
   inline-style-parser@0.2.7: {}
+
+  inline-style-parser@0.2.9: {}
 
   internmap@1.0.1: {}
 
@@ -4782,14 +4738,14 @@ snapshots:
 
   marked@17.0.6: {}
 
-  marked@18.1.1: {}
+  marked@18.2.0: {}
 
   mdast-util-find-and-replace@3.0.2:
     dependencies:
       '@types/mdast': 4.0.4
       escape-string-regexp: 5.0.0
       unist-util-is: 6.0.1
-      unist-util-visit-parents: 6.0.2
+      unist-util-visit-parents: 6.1.0
 
   mdast-util-from-markdown@2.0.3:
     dependencies:
@@ -4947,7 +4903,7 @@ snapshots:
       micromark-util-sanitize-uri: 2.0.1
       trim-lines: 3.0.1
       unist-util-position: 5.0.0
-      unist-util-visit: 5.1.0
+      unist-util-visit: 5.2.0
       vfile: 6.0.3
 
   mdast-util-to-markdown@2.1.2:
@@ -4959,7 +4915,7 @@ snapshots:
       mdast-util-to-string: 4.0.0
       micromark-util-classify-character: 2.0.1
       micromark-util-decode-string: 2.0.1
-      unist-util-visit: 5.1.0
+      unist-util-visit: 5.2.0
       zwitch: 2.0.4
 
   mdast-util-to-markdown@2.2.0:
@@ -4973,7 +4929,7 @@ snapshots:
       micromark-util-classify-character: 2.0.1
       micromark-util-decode-string: 2.0.1
       micromark-util-html-tag-name: 2.0.1
-      unist-util-visit: 5.1.0
+      unist-util-visit: 5.2.0
       zwitch: 2.0.4
 
   mdast-util-to-string@4.0.0:
@@ -5438,7 +5394,7 @@ snapshots:
 
   react-refresh@0.17.0: {}
 
-  react-zoom-pan-pinch@4.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+  react-zoom-pan-pinch@4.4.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
@@ -5468,6 +5424,10 @@ snapshots:
     dependencies:
       unist-util-visit: 5.1.0
 
+  rehype-harden@1.1.9:
+    dependencies:
+      unist-util-visit: 5.2.0
+
   rehype-katex@7.0.1:
     dependencies:
       '@types/hast': 3.0.5
@@ -5475,7 +5435,7 @@ snapshots:
       hast-util-from-html-isomorphic: 2.0.0
       hast-util-to-text: 4.0.2
       katex: 0.18.11
-      unist-util-visit-parents: 6.0.2
+      unist-util-visit-parents: 6.1.0
       vfile: 6.0.3
 
   rehype-raw@7.0.0:
@@ -5534,7 +5494,7 @@ snapshots:
 
   remend@1.3.0: {}
 
-  remend@1.4.0: {}
+  remend@1.5.0: {}
 
   require-from-string@2.0.2: {}
 
@@ -5615,17 +5575,6 @@ snapshots:
 
   setprototypeof@1.2.0: {}
 
-  shiki@4.5.0:
-    dependencies:
-      '@shikijs/core': 4.5.0
-      '@shikijs/engine-javascript': 4.5.0
-      '@shikijs/engine-oniguruma': 4.5.0
-      '@shikijs/langs': 4.5.0
-      '@shikijs/themes': 4.5.0
-      '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.1.0
-      '@types/hast': 3.0.5
-
   shiki@4.6.0:
     dependencies:
       '@shikijs/core': 4.6.0
@@ -5678,25 +5627,25 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  streamdown@2.7.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+  streamdown@2.8.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       clsx: 2.1.1
-      hast-util-to-jsx-runtime: 2.3.6
+      hast-util-to-jsx-runtime: 2.3.7
       html-url-attributes: 3.0.1
-      marked: 18.1.1
+      marked: 18.2.0
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
-      rehype-harden: 1.1.8
+      rehype-harden: 1.1.9
       rehype-raw: 7.0.0
       rehype-sanitize: 6.0.0
       remark-gfm: 4.0.1
       remark-parse: 11.0.0
       remark-rehype: 11.1.2
-      remend: 1.4.0
-      tailwind-merge: 3.7.0
+      remend: 1.5.0
+      tailwind-merge: 3.7.1
       unified: 11.0.5
-      unist-util-visit: 5.1.0
-      unist-util-visit-parents: 6.0.2
+      unist-util-visit: 5.2.0
+      unist-util-visit-parents: 6.1.0
     transitivePeerDependencies:
       - supports-color
 
@@ -5719,6 +5668,10 @@ snapshots:
     dependencies:
       inline-style-parser: 0.2.7
 
+  style-to-object@2.0.2:
+    dependencies:
+      inline-style-parser: 0.2.9
+
   stylis@4.4.0: {}
 
   swr@2.5.1(react@19.2.8):
@@ -5731,7 +5684,7 @@ snapshots:
 
   tailwind-merge@3.6.0: {}
 
-  tailwind-merge@3.7.0: {}
+  tailwind-merge@3.7.1: {}
 
   thread-stream@4.2.0:
     dependencies:
@@ -5810,7 +5763,7 @@ snapshots:
   unist-util-remove-position@5.0.0:
     dependencies:
       '@types/unist': 3.0.3
-      unist-util-visit: 5.1.0
+      unist-util-visit: 5.2.0
 
   unist-util-stringify-position@4.0.0:
     dependencies:
@@ -5821,11 +5774,22 @@ snapshots:
       '@types/unist': 3.0.3
       unist-util-is: 6.0.1
 
+  unist-util-visit-parents@6.1.0:
+    dependencies:
+      '@types/unist': 3.0.3
+      unist-util-is: 6.0.1
+
   unist-util-visit@5.1.0:
     dependencies:
       '@types/unist': 3.0.3
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
+
+  unist-util-visit@5.2.0:
+    dependencies:
+      '@types/unist': 3.0.3
+      unist-util-is: 6.0.1
+      unist-util-visit-parents: 6.1.0
 
   update-browserslist-db@1.3.1(browserslist@4.28.8):
     dependencies:

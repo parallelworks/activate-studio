@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher, shortModel } from '../src/components/PWCodeEngine'
 import { getLastEngine, knownEngine } from '../src/labelScope'
@@ -6,7 +6,8 @@ import { forgetEngines } from '../src/chatEngine'
 import { announceModel } from '../src/pwcode/liveModel'
 
 const chat = vi.hoisted(() => ({ loadConversation: vi.fn(async () => {}), streaming: false }))
-vi.mock('@parallelworks/ui/ai', () => ({
+vi.mock('@parallelworks/ui/ai', async original => ({
+  ...(await original<typeof import('@parallelworks/ui/ai')>()),
   useChat: () => ({ currentConversation: { id: 'c9' }, isStreaming: chat.streaming, loadConversation: chat.loadConversation }),
 }))
 
@@ -149,17 +150,19 @@ describe("pw code's approvals", () => {
     ]
     act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-approval', { detail: { conversationId: 'c1', approval: { id: 'ap-q', kind: 'ask', questions } } })) })
     expect(await screen.findByText('pw code asks you some questions')).toBeInTheDocument()
-    const sendBtn = screen.getByRole('button', { name: 'Send' })
-    expect(sendBtn).toBeDisabled()
-    fireEvent.click(screen.getByRole('radio', { name: /Fine/ }))
-    expect(sendBtn).toBeDisabled()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Your own answer to: Anything else?' }), { target: { value: ' keep the old output ' } })
-    fireEvent.click(sendBtn)
+    fireEvent.click(screen.getByRole('button', { name: /Fine/ }))
+    // The pick moves to the next question; notes on it go with it.
+    fireEvent.click(screen.getByRole('tab', { name: /Mesh/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Add notes/ }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Notes' }), { target: { value: 'only near the inlet' } })
+    fireEvent.click(screen.getByRole('tab', { name: /2/ }))
+    fireEvent.change(within(screen.getByRole('tabpanel')).getByRole('textbox'), { target: { value: ' keep the old output ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit answers' }))
     await waitFor(() => expect(screen.queryByText('pw code asks you some questions')).not.toBeInTheDocument())
-    expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-q {"allowed":true,"kind":"ask","answers":[{"question":"Which mesh?","picked":["Fine"],"text":""},{"question":"Anything else?","picked":[],"text":"keep the old output"}]}')
+    expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-q {"allowed":true,"kind":"ask","answers":[{"question":"Which mesh?","picked":["Fine"],"notes":"only near the inlet"},{"question":"Anything else?","text":"keep the old output"}]}')
 
     act(() => { window.dispatchEvent(new CustomEvent('ade-pwcode-approval', { detail: { conversationId: 'c1', approval: { id: 'ap-r', kind: 'ask', questions: [questions[1]] } } })) })
-    fireEvent.click(await screen.findByRole('button', { name: 'Talk it through' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Chat about this' }))
     await waitFor(() => expect(calls).toContain('POST /api/chat/pwcode/c1/approvals/ap-r {"allowed":false,"kind":"ask","chat":true}'))
   })
 

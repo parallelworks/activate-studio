@@ -10,6 +10,7 @@ import { applyRememberedFavicon, applyRememberedNavWidth } from './config'
 import { keepShellInPlace, settleAfterKeyboard } from './shellScroll'
 import { installClipboardFallback } from './clipboard'
 import { installDownloadNotices } from './downloadNotice'
+import { guardDrops } from './dropGuard'
 import { registerShellWorker } from './shellWorker'
 // Geist Sans and Geist Mono, the platform's typefaces, from the shared package.
 import '@parallelworks/ui/fonts.css'
@@ -41,9 +42,7 @@ applyRememberedNavWidth()
 const loadWorkflowEngine = () =>
   import('@parallelworks/workflow-parser').then(m => m.createWorkflowEngine())
 
-// A file dropped where no drop zone took it would otherwise replace the page:
-// a browser, or the desktop window, opens what it is given.
-for (const type of ['dragover', 'drop']) window.addEventListener(type, e => e.preventDefault())
+guardDrops()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

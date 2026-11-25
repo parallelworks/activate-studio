@@ -22,3 +22,8 @@ overrides:
   # The one exception to "within the major": dependents ask for ^0.16 and
   # no 0.16.x carries the prototype-pollution fix (GHSA-238p-pmpm-9mq7).
   katex@<0.18.2: ^0.18.2
+# parallelworks/foundation#842: in WebKit a transcript at its latest turn keeps
+# following through a send and an answered approval. It is in @parallelworks/ui
+# after 0.151.1; drop this patch on the release that has it.
+patchedDependencies:
+  '@parallelworks/ui@0.151.1': patches/@parallelworks__ui@0.151.1.patch

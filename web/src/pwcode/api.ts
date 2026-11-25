@@ -76,6 +76,13 @@ export function feedURL(path: string, origin = location.origin): string {
 export const pwCode = createPwCodeApi(pwClient, {
   openSocket,
   hidden: () => document.hidden,
+  // What streamed into a hidden page, applied about once a second there, is
+  // drawn at once as the page is seen again.
+  whenShown: shown => {
+    const seen = () => { if (!document.hidden) shown() }
+    document.addEventListener('visibilitychange', seen)
+    return () => document.removeEventListener('visibilitychange', seen)
+  },
   previewsByRef: true,
   transcriptEndFirst: true,
 })

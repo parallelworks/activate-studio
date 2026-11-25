@@ -20,7 +20,9 @@ export function pagePath(path: string): string {
 /** The sessions started on this page, by id: the chat the Studio made for
  *  each, the machine id its view is under, and its first message. */
 export interface StartedSession { conversationId?: string; shownOn?: string; first?: string }
-const startedHere = new Map<string, StartedSession>()
+/** Its start is not over: it was made empty, and its first images or command are yet to go. */
+type KeptStart = StartedSession & { filling?: boolean }
+const startedHere = new Map<string, KeptStart>()
 export const startedSession = (id: string): StartedSession | undefined => startedHere.get(id)
 
 /** A session that is the person's before the listing has it: one their open
@@ -35,7 +37,34 @@ async function keepStarted(request: Request, body: ArrayBuffer | undefined, res:
   if (!d?.id) return
   let first: string | undefined
   try { first = (JSON.parse(new TextDecoder().decode(body)) as { prompt?: string }).prompt } catch { /* no message */ }
-  startedHere.set(d.id, { conversationId: d.conversationId, shownOn: d.shownOn, first })
+  startedHere.set(d.id, { conversationId: d.conversationId, shownOn: d.shownOn, first, filling: !first })
+}
+
+/** The session's start is over: what is done to it from here is the person's. */
+export function startedWell(id: string): void {
+  const s = startedHere.get(id)
+  if (s) s.filling = false
+}
+
+const SESSION_PATH = /^\/api\/code\/machines\/([^/]+)\/sessions\/([^/]+)(\/(?:goal|plan|images|messages))?$/
+
+/** Where a start's own first requests to the session it made go (an image,
+ *  /goal or /plan, the first message): to its chat's session, as its
+ *  composer's would, where the Studio's rules for them are. */
+export function startPath(method: string, path: string): string | null {
+  const m = SESSION_PATH.exec(path)
+  const s = m && startedHere.get(m[2])
+  return m && s?.filling && method === 'POST' && m[3] ? `/api/code/machines/${encodeURIComponent(s.shownOn ?? m[1])}/sessions/${m[2]}${m[3]}` : null
+}
+
+/** A session made for a start that then failed is deleted by the package,
+ *  and its chat, which holds nothing, with it. */
+async function forgetFailed(request: Request, res: Response): Promise<void> {
+  const m = SESSION_PATH.exec(new URL(request.url).pathname)
+  const s = m && startedHere.get(m[2])
+  if (!m || m[3] || !s?.filling || request.method !== 'DELETE' || !res.ok) return
+  startedHere.delete(m[2])
+  if (s.conversationId) await fetch(`/api/chat/conversations/${encodeURIComponent(s.conversationId)}`, { method: 'DELETE' }).catch(() => {})
 }
 
 /** Whether the next start on a machine adds the Studio's tools there first,
@@ -58,10 +87,11 @@ function withToolsChoice(request: Request, path: string, body: ArrayBuffer | und
  *  passed as one it loses its body, or throws on a streamed one. */
 const pageFetch = async (request: Request): Promise<Response> => {
   const url = new URL(request.url)
-  url.pathname = pagePath(url.pathname)
+  url.pathname = startPath(request.method, url.pathname) ?? pagePath(url.pathname)
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
   const res = await fetch(url, { method: request.method, headers: request.headers, body: withToolsChoice(request, url.pathname, body), signal: request.signal, credentials: 'same-origin' })
   await keepStarted(request, body, res)
+  await forgetFailed(request, res)
   return res
 }
 

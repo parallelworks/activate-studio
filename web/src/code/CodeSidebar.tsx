@@ -7,7 +7,6 @@ import {
   type SessionSection,
   searchedSessions,
   sessionClock,
-  sessionGroupsPreference,
   sessionKey,
   sessionLabel,
   sessionRailLabel,
@@ -15,7 +14,6 @@ import {
   showsPinMark,
   useCompactAgo,
   useResumeClock,
-  useSessionGroups,
   useSessionList,
 } from '@parallelworks/code'
 import {
@@ -32,7 +30,7 @@ import { Button, LoadingRegion, type MenuEntry, menuDivider, SearchInput, Skelet
 import { useTranslations } from 'use-intl'
 import { describeError } from '../pwcode/PWCodeSession'
 import { type PageSession, pwCodePage } from './api'
-import { MachineIcon, PinnedMark, SessionMark, type Translate } from './parts'
+import { MachineIcon, PinnedMark, SessionMark, type Translate, useCodeGroups } from './parts'
 import { rowShortcut, useCodeSessionActions } from './sessionMenu'
 
 /**
@@ -73,9 +71,7 @@ export function CodeSidebar({ open, onOpen, onNewSession, delegated, onlyDelegat
   const machines = useMemo(() => data?.machines ?? [], [data])
   const machineById = useMemo(() => machinesById(machines), [machines])
   const { actions, toMenu, dialogs } = useCodeSessionActions({ machineById, open, onOpen, showStart: onNewSession })
-  const viewer = 'studio'
-  const { key, fallback } = sessionGroupsPreference(viewer)
-  const custom = useSessionGroups(usePersistedState(`studio.code.${key}`, fallback), () => crypto.randomUUID())
+  const custom = useCodeGroups()
   const folded = usePersistedState<string[]>(`studio.code.${foldedGroupsPreference.key}`, foldedGroupsPreference.fallback)
   const resumeClock = useResumeClock()
   const { compact } = useCompactAgo()
