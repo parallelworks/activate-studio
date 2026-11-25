@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
@@ -471,6 +472,9 @@ func (s *Service) bucketAdd(w http.ResponseWriter, r *http.Request) error {
 	uri := jsTrim(body.Str("bucket"))
 	owner := ""
 	if uri != "" {
+		if s.authEnabled(r) && codesessions.CrossSite(r) {
+			return crossSiteRefused()
+		}
 		ok := false
 		if owner, ok, err = s.pwViewer(r, true); err != nil {
 			return err

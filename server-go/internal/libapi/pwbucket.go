@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/extractfiles"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
@@ -425,6 +426,12 @@ func (s *Service) pwShown(r *http.Request) bool {
 	return err == nil && owner != "" && s.pwHere()
 }
 
+// crossSiteRefused answers a change a page of another site asked for: what
+// is read with a person's own sign-in changes from the Studio's pages only.
+func crossSiteRefused() error {
+	return apierr.New(403, "A page of another site cannot change your bucket libraries.")
+}
+
 // ownBucket is the bucket library of the route's id that the request's
 // person may change: with sign-in off any, else their own alone. 404 says
 // the same of another person's as of none.
@@ -435,6 +442,9 @@ func (s *Service) ownBucket(r *http.Request) (*libraries.Def, error) {
 			return d, nil
 		}
 		return nil, apierr.New(404, "%s is not a bucket library", id)
+	}
+	if codesessions.CrossSite(r) {
+		return nil, crossSiteRefused()
 	}
 	owner, _, err := s.pwViewer(r, true)
 	if err != nil {
@@ -580,8 +590,11 @@ func (s *Service) pwBucketDef(ctx context.Context, owner, uri, dir, endpoint str
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := st.s.Browse(ctx, dir, 1); err != nil {
+	// A store has no folders: one nothing is in looks as one misspelt does.
+	if list, more, err := st.s.Browse(ctx, dir, 2); err != nil {
 		return nil, pwBucketErr(err)
+	} else if dir != "" && len(list) == 0 && !more {
+		return nil, apierr.New(404, "There is nothing in %s/%s.", uri, dir)
 	}
 	return bc, nil
 }

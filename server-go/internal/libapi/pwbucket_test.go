@@ -391,6 +391,8 @@ func TestPWBucketLibrary(t *testing.T) {
 // signInFixture is a Studio where people sign in: calls are made as a
 // person, whose credential is in the key store (keys).
 type signInFixture struct {
+	// origin is the page a request comes from (as).
+	origin string
 	*buildFixture
 	keys map[string]string
 	logs *strings.Builder
@@ -455,6 +457,9 @@ func (f *signInFixture) as(who, browser, method, u string, body any) (int, map[s
 		}
 	}
 	r = platform.WithViewer(r, v)
+	if f.origin != "" {
+		r.Header.Set("Origin", f.origin)
+	}
 	w := httptest.NewRecorder()
 	f.mux.ServeHTTP(w, r)
 	var m map[string]any
@@ -551,7 +556,22 @@ func TestPWBucketsOfTwoPeople(t *testing.T) {
 		t.Fatal("no text")
 		return ""
 	}
+	if code, b := f.as("ada", "", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers", "path": "palns"}); code != 404 {
+		t.Errorf("a folder that is not there: %d %v", code, b)
+	}
 	idA, idB := add("ada"), add("bob")
+	// A page of another site changes nothing of hers.
+	f.origin = "https://elsewhere.example"
+	for _, c := range []struct {
+		m, u string
+		body any
+	}{{"POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers", "path": "plans"}}, {"PUT", "/api/libraries/" + idA + "/bucket", map[string]any{"every": 0}},
+		{"POST", "/api/libraries/" + idA + "/bucket/text/stop", nil}, {"POST", "/api/libraries/" + idA + "/rebuild", nil}, {"DELETE", "/api/libraries/" + idA, nil}} {
+		if code, b := f.as("ada", "", c.m, c.u, c.body); code != 403 {
+			t.Errorf("another site's %s %s: %d %v", c.m, c.u, code, b)
+		}
+	}
+	f.origin = ""
 	bk := f.row("ada", idA)["bucket"].(map[string]any)
 	if bk["route"] != "direct" || bk["objects"] != float64(1) || bk["textPass"].(map[string]any)["files"] != float64(1) {
 		t.Fatalf("ada's: %v", bk)
