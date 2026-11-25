@@ -546,6 +546,12 @@ func TestHosts(t *testing.T) {
 		{"examplebucket", "us-east-1", "false", "https://examplebucket.s3.us-east-1.amazonaws.com/a%20b/c"},
 		{"example.bucket", "us-east-1", "", "https://s3.us-east-1.amazonaws.com/example.bucket/a%20b/c"},
 		{"example.bucket", "us-gov-west-1", "", "https://s3.us-gov-west-1.amazonaws.com/example.bucket/a%20b/c"},
+		// Names only a path can hold.
+		{"Example_Bucket", "us-east-1", "false", "https://s3.us-east-1.amazonaws.com/Example_Bucket/a%20b/c"},
+		{"EXAMPLE", "us-east-1", "", "https://s3.us-east-1.amazonaws.com/EXAMPLE/a%20b/c"},
+		{"example_bucket", "us-east-1", "", "https://s3.us-east-1.amazonaws.com/example_bucket/a%20b/c"},
+		{strings.Repeat("a", 64), "us-east-1", "", "https://s3.us-east-1.amazonaws.com/" + strings.Repeat("a", 64) + "/a%20b/c"},
+		{strings.Repeat("a", 63), "us-east-1", "", "https://" + strings.Repeat("a", 63) + ".s3-fips.us-east-1.amazonaws.com/a%20b/c"},
 		{"examplebucket", "us-gov-east-1", "", "https://examplebucket.s3-fips.us-gov-east-1.amazonaws.com/a%20b/c"},
 		{"examplebucket", "us-gov-west-1", "false", "https://examplebucket.s3.us-gov-west-1.amazonaws.com/a%20b/c"},
 		{"examplebucket", "us-iso-east-1", "", "https://examplebucket.s3.us-iso-east-1.c2s.ic.gov/a%20b/c"},
@@ -664,6 +670,13 @@ func TestCheckEndpoint(t *testing.T) {
 		{"https://S3.gateway.example.com", AWS, true, "https://s3.gateway.example.com"},
 		{"https://store.example.com:9443", Google, true, "https://store.example.com:9443"},
 		{"https://store.example.com", "", true, "!"},
+		// Its port is the one listed, 443 where none is.
+		{"https://s3.gateway.example.com:443", AWS, true, "https://s3.gateway.example.com:443"},
+		{"https://s3.gateway.example.com:444", AWS, true, "!"},
+		{"https://s3.gateway.example.com:444", AWS, false, "!"},
+		{"https://store.example.com:443", "", true, "!"},
+		{"https://store.example.com:9444", "", false, "!"},
+		{"http://127.0.0.1", "", false, "!"},
 		{vpce, AWS, true, "!"},
 		{"https://storage-example.p.googleapis.com", Google, true, "!"},
 		{"https://169.254.169.254", "", true, "!"},
@@ -749,7 +762,25 @@ func TestPlatformNames(t *testing.T) {
 	if err := checkNames(Bucket{CSP: Google, Region: "US", Store: "example_bucket"}); err != nil {
 		t.Error(err)
 	}
-	for _, b := range []Bucket{{Region: "evil.example/"}, {Region: "us-east-1.evil.example"}, {Region: "us-east-1\n"}, {Store: "evil.example/x"}, {Store: "a@evil"}, {Store: "evil.example#"}, {Store: "x..y"}, {Store: "Ex ample"}} {
+	for _, legacy := range []string{"ExampleBucket", "Example_Bucket.Data", "EXAMPLE", strings.Repeat("A", 255)} {
+		b := Bucket{URI: "pw://demo/b", CSP: AWS, Region: "us-east-1", Store: legacy}
+		if err := checkNames(b); err != nil {
+			t.Errorf("%s: %v", legacy, err)
+		}
+		f := newStore("a.txt")
+		f.valid["tok1"] = -1
+		s, _ := setup(t, AWS, f)
+		s.B = b
+		walk(t, s, "")
+		if route, why := s.Route(); route != Direct || why != nil {
+			t.Errorf("%s: %s %v", legacy, route, why)
+		}
+		b.CSP = Google
+		if checkNames(b) == nil {
+			t.Errorf("%s: Google has no such names", legacy)
+		}
+	}
+	for _, b := range []Bucket{{Region: "evil.example/"}, {Region: "us-east-1.evil.example"}, {Region: "us-east-1\n"}, {Store: "evil.example/x"}, {Store: "a@evil"}, {Store: "evil.example#"}, {Store: "x..y"}, {Store: "Ex ample"}, {Store: "Ex/ample"}, {Store: "Ex..ample"}, {Store: ".."}, {Store: "Example?x"}, {Store: "A@evil"}, {Store: "Evil.example#"}, {Store: "Ex%2fample"}, {Store: "Example:1"}, {Store: "Example\n"}, {Store: strings.Repeat("A", 256)}} {
 		b.CSP = AWS
 		if b.Store == "" {
 			b.Store = "examplebucket"

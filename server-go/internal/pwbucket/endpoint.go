@@ -21,7 +21,8 @@ var (
 	pscRe  = regexp.MustCompile(`^storage-[a-z0-9-]+\.p\.googleapis\.com$`)
 )
 
-// Endpoints is the hosts an administrator lists (STUDIO_BUCKET_ENDPOINTS):
+// Endpoints is the hosts an administrator lists (STUDIO_BUCKET_ENDPOINTS),
+// each with its port unless that is 443:
 // the only ones a person may choose where people sign in, and taken besides
 // the stores' own private endpoints where nobody does.
 func Endpoints() []string {
@@ -48,8 +49,7 @@ func CheckEndpoint(s, csp string, shared bool) (string, error) {
 		return "", fmt.Errorf("an endpoint is an address like https://bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com")
 	}
 	host := strings.ToLower(u.Hostname())
-	list := Endpoints()
-	listed := slices.Contains(list, host) || slices.Contains(list, strings.ToLower(u.Host))
+	listed := slices.ContainsFunc(Endpoints(), func(e string) bool { return atPort(e) == atPort(u.Host) })
 	if u.Scheme != "https" && !(u.Scheme == "http" && !shared && listed && loopback(host)) {
 		return "", fmt.Errorf("an endpoint is asked over https")
 	}
@@ -61,6 +61,20 @@ func CheckEndpoint(s, csp string, shared bool) (string, error) {
 		return "", fmt.Errorf("%s is not a private endpoint of the bucket's store (a VPC endpoint of S3, or Google's Private Service Connect); another host has to be in STUDIO_BUCKET_ENDPOINTS, in the Studio's environment", host)
 	}
 	return u.Scheme + "://" + strings.ToLower(u.Host), nil
+}
+
+// atPort is a host with the port asked, https's where it names none: a listed
+// host is that port of it alone, since another may be anyone's.
+func atPort(host string) string {
+	u, err := url.Parse("//" + strings.ToLower(host))
+	if err != nil {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+	return net.JoinHostPort(u.Hostname(), port)
 }
 
 func loopback(host string) bool {
@@ -108,11 +122,21 @@ var (
 	regionRe = regexp.MustCompile(`^[a-z]{2,4}(-[a-z]+)+-[0-9]{1,2}$`)
 	// storeRe is a bucket's name in its store.
 	storeRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9_-]|\.[a-z0-9]){1,220}$`)
+	// legacyRe is a name S3 took in us-east-1 until 2018 as well, which has
+	// no ".." in it either. It goes into a path, never into a host (hostRe).
+	legacyRe = regexp.MustCompile(`^[A-Za-z0-9._-]{3,255}$`)
+	// hostRe is a bucket's name that a host can start with, under the store's
+	// certificate.
+	hostRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 )
+
+func storeName(csp, name string) bool {
+	return storeRe.MatchString(name) || csp == AWS && legacyRe.MatchString(name) && !strings.Contains(name, "..")
+}
 
 // checkNames refuses a region or a bucket's name that is not one.
 func checkNames(b Bucket) error {
-	if (b.CSP == AWS || b.CSP == Google) && b.Store != "" && !storeRe.MatchString(b.Store) {
+	if (b.CSP == AWS || b.CSP == Google) && b.Store != "" && !storeName(b.CSP, b.Store) {
 		return errors.New("the platform gives a name for the bucket in its store that is not one")
 	}
 	if b.CSP == AWS && b.Region != "" && !regionRe.MatchString(b.Region) {

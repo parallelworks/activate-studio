@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -900,7 +901,7 @@ func TestPWBucketKeysNoPathNames(t *testing.T) {
 	f.keys["ada"] = "key-ada"
 	var mu sync.Mutex
 	var gets []string
-	hostile := []string{"notes\n.txt", "nl\n99\x1e1\x1e40\x1edocs/ok.txt", "cut\x1eoff.txt", "cr\rtab\t.txt", "del\x7f.txt", "bell\a/in.txt",
+	hostile := []string{"notes\n.txt", "nl\n99\x1e1\x1e40\x1edocs/ok.txt", "cut\x1eoff.txt", "cr\r.txt", "del\x7f.txt", "bell\a/in.txt",
 		"/report.txt", "//double//slash.txt", "docs//ok.txt", "docs//", "/"}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, key, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/"); key != "" {
@@ -1117,5 +1118,123 @@ func TestPWBucketLinks(t *testing.T) {
 	}
 	if kept, _ := os.ReadFile(filepath.Join(f.base, "links.json")); bytes.Contains(kept, []byte("otter")) {
 		t.Error("the link is kept")
+	}
+}
+
+// A tab in a key: kept in the trace, the index, the list, names and words
+// found, and it opens its own object.
+func TestPWBucketTabs(t *testing.T) {
+	p := newFakePlatform(t)
+	f := newSignInFixture(t, p)
+	f.extractBins()
+	f.keys["ada"] = "key-ada"
+	keys := []string{"tab\tdir/run\tone.txt", "two\ttabs\there.txt", "\tfirst.txt"}
+	for _, k := range keys {
+		p.object("ada", k, "zebrafinch in "+k)
+	}
+	p.object("ada", "run one.txt", "another")
+	_, b := f.as("ada", "", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers"})
+	id := b["library"].(map[string]any)["id"].(string)
+	l := f.wait("ada", id)
+	if bk := l["bucket"].(map[string]any); bk["error"] != nil || bk["objects"] != float64(len(keys)+1) || bk["skipped"] != float64(0) {
+		t.Fatalf("%v", l)
+	}
+	if code, b := f.as("ada", "", "PUT", "/api/libraries/"+id+"/bucket", map[string]any{"text": true}); code != 200 {
+		t.Fatal(code, b)
+	}
+	for range 600 {
+		if bk, _ := f.row("ada", id)["bucket"].(map[string]any); bk["textPass"] != nil && f.s.builds.jobOf(id) == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for _, k := range keys {
+		code, b := f.as("ada", "", "GET", "/api/kb/file?library="+id+"&path="+url.QueryEscape(k), nil)
+		if code != 200 || b["content"] != "zebrafinch in "+k || b["path"] != k {
+			t.Errorf("%q opens %d %v", k, code, b)
+		}
+		dir := path.Dir(k)
+		if dir == "." {
+			dir = ""
+		}
+		_, b = f.as("ada", "", "GET", "/api/kb/tree?library="+id+"&path="+url.QueryEscape(dir), nil)
+		if !strings.Contains(fmt.Sprintf("%q", b), strings.Trim(fmt.Sprintf("%q", k), `"`)) {
+			t.Errorf("%q is not listed: %q", k, b)
+		}
+		name := path.Base(k)
+		for _, q := range []string{name, strings.Split(strings.TrimSpace(name), "\t")[0], "zebrafinch"} {
+			code, b = f.as("ada", "", "GET", "/api/search?q="+url.QueryEscape(q)+"&library="+id, nil)
+			if code != 200 || !strings.Contains(fmt.Sprintf("%q", b), strings.Trim(fmt.Sprintf("%q", k), `"`)) {
+				t.Errorf("%q does not find %q: %d %q", q, k, code, b)
+			}
+		}
+	}
+}
+
+// Behind a proxy that rewrites the host and does not say which it was, a
+// browser that says no more than the page's origin is told by the Studio's
+// own address, and by nothing near it.
+func TestPWBucketOwnAddress(t *testing.T) {
+	needTrace(t)
+	p := newFakePlatform(t)
+	t.Setenv("PW_API_KEY", "key-me")
+	f := newBuildFixture(t)
+	f.s.builds.pwb.base = p.base
+	p.object("me", "a.txt", "a")
+	_, b := f.call("POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://me/papers"})
+	id := b["library"].(map[string]any)["id"].(string)
+	f.waitReady(id)
+	ask := func(method, path string, h map[string]string) int {
+		r := httptest.NewRequest(method, path, strings.NewReader(`{"every":0}`))
+		r.Host = "10.0.0.5:4180"
+		r.Header.Set("Content-Type", "application/json")
+		for k, v := range h {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		f.mux.ServeHTTP(w, r)
+		return w.Code
+	}
+	own := func(origin string) (int, int) {
+		return ask("PUT", "/api/libraries/"+id+"/bucket", map[string]string{"Origin": origin}), ask("GET", "/api/libraries/buckets", map[string]string{"Referer": origin + "/library"})
+	}
+	oidc := &f.a.Cfg.OIDC
+	for _, c := range []struct{ self, redirect, origin string }{
+		{"http://studio.example.com", "", "http://studio.example.com"},
+		{"http://Studio.example.com:80/", "", "http://studio.example.com"},
+		{"https://studio.example.com:8443/studio", "", "https://studio.example.com:8443"},
+		{"", "https://studio.example.com/api/auth/callback", "https://studio.example.com"},
+		{"http://127.0.0.1:4180", "https://studio.example.com/api/auth/callback", "https://studio.example.com"},
+	} {
+		t.Setenv("STUDIO_SELF_URL", "")
+		oidc.RedirectURI = ""
+		if put, get := own(c.origin); put != 403 || get != 403 {
+			t.Errorf("%+v without it: %d %d", c, put, get)
+		}
+		t.Setenv("STUDIO_SELF_URL", c.self)
+		oidc.RedirectURI = c.redirect
+		if put, get := own(c.origin); put != 200 || get != 200 {
+			t.Errorf("%+v: %d %d", c, put, get)
+		}
+	}
+	t.Setenv("STUDIO_SELF_URL", "http://studio.example.com")
+	oidc.RedirectURI = "https://signin.example.com/api/auth/callback"
+	for _, other := range []string{"https://studio.example.com", "http://studio.example.com:8080", "http://studio.example.com.elsewhere.example", "http://x.studio.example.com",
+		"http://studio.example.com@elsewhere.example", "http://elsewhere.example", "https://signin.example.com:444", "file://studio.example.com"} {
+		if put, get := own(other); put != 403 || get != 403 {
+			t.Errorf("%s: %d %d", other, put, get)
+		}
+	}
+	for _, h := range []map[string]string{{"Origin": "null"}, {"Origin": "http://studio.example.com", "Sec-Fetch-Site": "cross-site"}, {"Origin": "http://studio.example.com", "Sec-Fetch-Site": "same-site"},
+		{"Origin": "http://elsewhere.example", "Referer": "http://studio.example.com/"}} {
+		if st := ask("PUT", "/api/libraries/"+id+"/bucket", h); st != 403 {
+			t.Errorf("%v: %d", h, st)
+		}
+	}
+	// A Studio with neither has no address to be taken for.
+	t.Setenv("STUDIO_SELF_URL", "")
+	oidc.RedirectURI = ""
+	if st := ask("PUT", "/api/libraries/"+id+"/bucket", map[string]string{"Origin": "null"}); st != 403 {
+		t.Error(st)
 	}
 }

@@ -62,8 +62,8 @@ type Stats struct {
 	// Dirs counts the folders written, the top one included.
 	Dirs int64
 	// Skipped counts entries left out: a path GUFI cannot hold, a name
-	// that is empty, "." or "..", one with a control character, or a second
-	// entry of the same name.
+	// that is empty, "." or "..", one with a control character other than a
+	// tab, or a second entry of the same name.
 	Skipped int64
 }
 
@@ -150,7 +150,9 @@ func fnvInode(rel string, isDir bool, try int) uint64 {
 }
 
 // clean is a listing path split into its names, or false when it cannot
-// be kept. A control character would end a line or a column of the trace.
+// be kept. A control character would end a line or a column of the trace, or
+// of what is read from the index; a tab, the one such names have in earnest,
+// ends neither.
 // An empty name (a slash at the start, or two together) has no place in an
 // index, and without it the path would be another object's.
 func clean(p string) ([]string, bool) {
@@ -158,7 +160,7 @@ func clean(p string) ([]string, bool) {
 		return nil, false
 	}
 	for i := 0; i < len(p); i++ {
-		if p[i] < 0x20 || p[i] == 0x7f {
+		if p[i] < 0x20 && p[i] != '\t' || p[i] == 0x7f {
 			return nil, false
 		}
 	}

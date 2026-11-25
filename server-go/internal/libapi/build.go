@@ -500,7 +500,7 @@ func (s *Service) buildAdd(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Service) rebuild(w http.ResponseWriter, r *http.Request) error {
-	if otherSite(r) {
+	if s.otherSite(r) {
 		return apierr.New(403, "A page of another site cannot rebuild your libraries.")
 	}
 	// A person's own bucket library, where people sign in.

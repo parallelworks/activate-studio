@@ -187,9 +187,9 @@ func (c *s3Client) move(region string) {
 // route names the same store.
 func (c *s3Client) endpoint() string { return s3Host(c.region(), false) }
 
-// url is the bucket's address, with key below it. A bucket whose name has a
-// dot is asked by path: the store's certificate does not cover it as a
-// host. S3's FIPS endpoints answer no path, so it is asked at the plain one,
+// url is the bucket's address, with key below it. A bucket whose name no host
+// can start with (a dot, which the store's certificate does not cover, or a
+// legacy name's upper case, underscore or length) is asked by path. S3's FIPS endpoints answer no path, so it is asked at the plain one,
 // as the pw CLI asks it.
 func (c *s3Client) url(key string) *url.URL {
 	region := c.region()
@@ -199,7 +199,7 @@ func (c *s3Client) url(key string) *url.URL {
 	case c.base != nil:
 		u.Scheme, u.Host = c.base.Scheme, c.base.Host
 		p = strings.TrimSuffix(c.base.Path, "/") + "/" + c.bucket + p
-	case strings.Contains(c.bucket, "."):
+	case !hostRe.MatchString(c.bucket):
 		u.Host = s3Host(region, false)
 		p = "/" + c.bucket + p
 	default:

@@ -463,23 +463,45 @@ func (s *Service) bucketEndpoints(r *http.Request) []string {
 // what is read with a person's own sign-in is asked for by the Studio's
 // pages only, with sign-in off as with it on. A browser says so itself
 // (Sec-Fetch-Site) where it trusts the address; where it does not, over plain
-// http, it names the page's origin on anything but a GET.
-func otherSite(r *http.Request) bool {
+// http, it names the page's origin on anything but a GET. That is the host
+// the request was sent to or, behind a proxy that rewrites the host, the
+// Studio's own address as its environment has it.
+func (s *Service) otherSite(r *http.Request) bool {
 	switch r.Header.Get("Sec-Fetch-Site") {
 	case "cross-site", "same-site":
 		return true
 	case "same-origin":
 		return false
 	}
-	if r.Header.Get("Origin") != "" {
-		return !sessions.SameOrigin(r)
+	at := r.Header.Get("Origin")
+	if at == "" {
+		u, err := url.Parse(r.Header.Get("Referer"))
+		if err != nil || u.Host == "" {
+			return false
+		}
+		at = u.Scheme + "://" + u.Host
 	}
-	if u, err := url.Parse(r.Header.Get("Referer")); err == nil && u.Host != "" {
-		at := r.Clone(r.Context())
-		at.Header.Set("Origin", u.Scheme+"://"+u.Host)
-		return !sessions.SameOrigin(at)
+	for _, own := range []string{os.Getenv("STUDIO_SELF_URL"), s.a.Cfg.OIDC.RedirectURI} {
+		if o := originOf(own); o != "" && o == originOf(at) {
+			return false
+		}
 	}
-	return false
+	named := r.Clone(r.Context())
+	named.Header.Set("Origin", at)
+	return !sessions.SameOrigin(named)
+}
+
+// originOf is an address's origin, "" for one of no web page.
+func originOf(s string) string {
+	u, err := url.Parse(strings.TrimSpace(s))
+	if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443"}[u.Scheme]
+	}
+	return u.Scheme + "://" + net.JoinHostPort(strings.ToLower(u.Hostname()), port)
 }
 
 // otherSiteRefused answers what a page of another site asked for.
@@ -492,7 +514,7 @@ func otherSiteRefused() error {
 // the same of another person's as of none.
 func (s *Service) ownBucket(r *http.Request) (*libraries.Def, error) {
 	id := r.PathValue("id")
-	if otherSite(r) {
+	if s.otherSite(r) {
 		return nil, otherSiteRefused()
 	}
 	if s.localBuildOffered(r) {
@@ -522,7 +544,7 @@ type pwBucketList struct {
 
 // pwBucketsList is the person's ACTIVATE buckets: GET /api/libraries/buckets.
 func (s *Service) pwBucketsList(w http.ResponseWriter, r *http.Request) error {
-	if otherSite(r) {
+	if s.otherSite(r) {
 		return otherSiteRefused()
 	}
 	out := pwBucketList{Buckets: []pwbucket.Bucket{}}
@@ -562,7 +584,7 @@ type pwBucketFolder struct {
 // It asks the store with the bucket's credential, at an address the request
 // may name, so it is no GET: those any page can have a browser send.
 func (s *Service) pwBucketFolders(w http.ResponseWriter, r *http.Request) error {
-	if otherSite(r) {
+	if s.otherSite(r) {
 		return otherSiteRefused()
 	}
 	body, err := reqbody.Read(r)
@@ -675,7 +697,7 @@ func bucketOfPW(b pwbucket.Bucket, dir, endpoint string, every int) *libraries.B
 // bucketVisit starts the listings of a person's bucket libraries that wait
 // for them, where the Studio keeps no sign-in of theirs.
 func (s *Service) bucketVisit(r *http.Request) {
-	if !s.authEnabled(r) || otherSite(r) {
+	if !s.authEnabled(r) || s.otherSite(r) {
 		return
 	}
 	owner, ok, err := s.pwViewer(r, false)
@@ -694,7 +716,7 @@ func (s *Service) bucketVisit(r *http.Request) {
 // openVisit refuses another site's request for a file of an ACTIVATE bucket,
 // and keeps the credential the owner's own carries (pwViewer).
 func (s *Service) openVisit(r *http.Request, l libraries.Library) error {
-	if l.Bucket.PW() && otherSite(r) {
+	if l.Bucket.PW() && s.otherSite(r) {
 		return otherSiteRefused()
 	}
 	if l.Owner != "" {

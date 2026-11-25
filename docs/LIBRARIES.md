@@ -631,7 +631,8 @@ next bucket in that region is offered the same. `PUT
 asked over https. The bucket's credential goes there, so it is one of the
 private endpoints of the bucket's own store (an S3 VPC endpoint, Google
 Private Service Connect) or a host in `STUDIO_BUCKET_ENDPOINTS`, an
-administrator's list. On a Studio people sign in to only the list is
+administrator's list, at the port it has there (443 where none is given).
+On a Studio people sign in to only the list is
 taken, and the form has it to choose from: the name of a VPC endpoint is
 anyone's to make, at any address of the Studio's network.
 `AWS_ENDPOINT_URL_S3` or `AWS_ENDPOINT_URL` in the Studio's environment is
@@ -646,7 +647,10 @@ that the store could not be reached.
 object or its text, rebuilds, or stops a pass answers the Studio's own
 pages only, with sign-in off as with it on: a request a browser says
 another site's page made (`Sec-Fetch-Site`, `Origin`, `Referer`) is
-refused (403). An endpoint is taken from the library or the body of a
+refused (403). A browser sends `Sec-Fetch-Site` over https and on
+localhost; over plain http the page's origin is compared with the host the
+request was sent to (`Host`, `X-Forwarded-Host`) and with the Studio's own
+address (`STUDIO_SELF_URL`, `OIDC_REDIRECT_URI`). An endpoint is taken from the library or the body of a
 POST, never from an address.
 
 *Where people sign in.* The library is the person's alone. Its index is on
@@ -707,9 +711,11 @@ hashing again, in path order. `gufi_trace2index` builds the
 trace into a staging folder, which is checked and then swapped in, so
 search answers from the last listing while a new one runs. Paths longer
 than GUFI holds, names that are empty (a key with a slash at its start, or
-two together), "." or "..", names with a control character (a line break,
-say), and a name listed twice are left out and counted, for rclone remotes
-and ACTIVATE buckets alike: no key is opened under another's name. What the last listing found is kept in
+two together), "." or "..", names with a control character other than a
+tab (a line break, say), and a name listed twice are left out and counted:
+no key is opened under another's name. rclone gives control characters as
+its own signs for them (`␉`), and what it lists so is indexed and opened by
+that name. What the last listing found is kept in
 `INDEX_BASE/libraries/<id>/bucket.json`: when it ran, objects, bytes,
 folders, entries left out, the requests it took, the provider rclone's
 configuration names, its seconds, and why it failed.

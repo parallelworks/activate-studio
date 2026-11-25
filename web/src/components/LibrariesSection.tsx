@@ -477,7 +477,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
         k.listedAt && listingCost(k),
         k.waits && `waits for you: it is listed when you open the Studio signed in to ACTIVATE, as the Studio keeps no sign-in of yours to list it with while you are away`,
         pw && k.route === 'pw' && k.routeWhy && `read through the pw CLI, a run for each folder: ${k.routeWhy}`,
-        k.skipped > 0 && `${k.skipped.toLocaleString()} ${k.skipped === 1 ? 'entry' : 'entries'} could not be indexed (a path longer than GUFI holds, a name that is empty, "." or "..", or one with a control character)`,
+        k.skipped > 0 && `${k.skipped.toLocaleString()} ${k.skipped === 1 ? 'entry' : 'entries'} could not be indexed (a path longer than GUFI holds, a name that is empty, "." or "..", or one with a control character other than a tab)`,
         k.error && !k.waits && `the last listing failed: ${k.error}`,
         b.error && b.error !== k.error && b.error,
         ...textNotes(k.text, k.textPass),

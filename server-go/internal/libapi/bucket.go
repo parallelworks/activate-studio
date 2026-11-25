@@ -324,7 +324,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 			}
 		}
 		if stats.Skipped > 0 {
-			b.libLog(id, fmt.Sprintf("%d entries could not be indexed (a path longer than GUFI holds, a name that is empty, \".\" or \"..\" or has a control character, or a name listed twice)", stats.Skipped), nil)
+			b.libLog(id, fmt.Sprintf("%d entries could not be indexed (a path longer than GUFI holds, a name that is empty, \".\" or \"..\" or has a control character other than a tab, or a name listed twice)", stats.Skipped), nil)
 		}
 		b.s.Reg.UpdateBuild(id, func(lb *libraries.LocalBuild) {
 			lb.State, lb.Error, lb.BuiltAt, lb.Files, lb.Dirs = "ready", nil, &c.builtAt, &c.files, &c.dirs
@@ -472,7 +472,7 @@ func (s *Service) bucketDownload(ctx context.Context, l libraries.Library, rel s
 // ACTIVATE bucket ("bucket", its URI), the person's own where people sign
 // in, or of an rclone remote ("location") where nobody does.
 func (s *Service) bucketAdd(w http.ResponseWriter, r *http.Request) error {
-	if otherSite(r) {
+	if s.otherSite(r) {
 		return otherSiteRefused()
 	}
 	body, err := reqbody.Read(r)
