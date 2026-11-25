@@ -1,6 +1,7 @@
 import { refreshNotices, setReplying } from './notices'
 import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { toast } from '@parallelworks/ui'
+import { SIGN_IN_TO_CHAT } from './signIn'
 import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
 import { getChatLibrary, getEffort, getLabelScope, getLastEngine, getPersona, hasEffort, knowEngine, setEffort } from './labelScope'
@@ -270,11 +271,11 @@ async function json<T>(res: Response): Promise<T> {
 
 /** Chat-rail ownership filter. In a shared deployment every user sees the
  *  same server-side history; the rail can show all of it or only the
- *  viewer's own (legacy chats with no owner always show). Module state so
+ *  viewer's own (and one with no owner that is theirs to change). Module state so
  *  the adapter's list() can consult it without prop plumbing. */
-// Defaults to 'mine': the rail is personal working space, and unowned
-// (legacy, standalone) chats always show, so the default only hides other
-// users' conversations; the pill widens the view.
+// Defaults to 'mine': the rail is personal working space, so the default
+// hides the chats that are not the viewer's to change; the pill widens the
+// view.
 let chatFilter: 'all' | 'mine' = (localStorage.getItem('ade-chat-filter') as 'all' | 'mine') || 'mine'
 let viewerUsername = ''
 export function setChatListFilter(f: 'all' | 'mine'): void {
@@ -287,19 +288,21 @@ export function setViewerUsername(u: string): void {
   setCacheViewer(u)
 }
 
-interface OwnedSummary { id: string; title?: string; owner?: string | null }
+interface OwnedSummary { id: string; title?: string; owner?: string | null; isOwner?: boolean }
 function decorateConversations<T extends OwnedSummary>(rows: T[]): T[] {
   return rows
-    .filter(c => chatFilter === 'all' || !c.owner || !viewerUsername || c.owner === viewerUsername)
+    .filter(c => chatFilter === 'all' || isOwnConversation(c))
     .map(c => c.owner && viewerUsername && c.owner !== viewerUsername
       ? { ...c, title: `${c.title ?? 'Untitled'} (${c.owner})` }
       : c)
 }
 
-/** Whether the viewer may delete a conversation: their own, or one with
- *  no owner. The server applies the same rule. */
-export function isOwnConversation(c: { owner?: string | null }): boolean {
-  return !c.owner || !viewerUsername || c.owner === viewerUsername
+/** Whether the viewer may delete a conversation: their own, or one with no
+ *  owner that the server says is theirs to change (an administrator's, with
+ *  sign-in). The server applies the same rule. */
+export function isOwnConversation(c: { owner?: string | null; isOwner?: boolean }): boolean {
+  if (!c.owner) return c.isOwner !== false
+  return !viewerUsername || c.owner === viewerUsername
 }
 
 /** Deletes many conversations in one request; ids the viewer may not
@@ -375,7 +378,14 @@ export function createStudioAdapter(): ChatAdapter {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
-      }).then(r => json<Awaited<ReturnType<ChatAdapter['conversations']['create']>>>(r)).then(c => {
+      }).then(async r => {
+        // The chat page asks a visitor to sign in, with the way there.
+        if (r.status === 401) {
+          window.dispatchEvent(new Event(SIGN_IN_TO_CHAT))
+          throw new Error('Sign in to chat.')
+        }
+        return json<Awaited<ReturnType<ChatAdapter['conversations']['create']>>>(r)
+      }).then(c => {
         if (c?.id) newConversation(c.id)
         return c
       }),

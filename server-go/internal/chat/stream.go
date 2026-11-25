@@ -227,9 +227,10 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	if id := deref(body.ConversationID); id != "" {
 		c := m.Conv.Get(id)
 		// Only its owner adds to a chat, changes what answers it or answers
-		// a call it holds; one the person may not see is not there. With sign-in one that is not there gets the
-		// same answer, so nothing is made under an id the page did not get
-		// from the Studio.
+		// a call it holds (an administrator, where it has no owner, whose it
+		// is from then on); one the person may not see is not there. With
+		// sign-in one that is not there gets the same answer, so nothing is
+		// made under an id the page did not get from the Studio.
 		if c != nil || m.Convs.AuthEnabled() {
 			if _, err := m.ownChat(r, id); err != nil {
 				return err

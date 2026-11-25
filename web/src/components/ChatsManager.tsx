@@ -9,7 +9,7 @@ import { deleteConversations, isOwnConversation } from '../adapter'
  * stands in, in the main pane like the package's own Attachments page.
  */
 
-type Row = { id: string; title?: string; preview?: string; updatedAt?: string; createdAt: string; messageCount: number; owner?: string | null }
+type Row = { id: string; title?: string; preview?: string; updatedAt?: string; createdAt: string; messageCount: number; owner?: string | null; isOwner?: boolean }
 
 const when = (iso?: string) => {
   if (!iso) return ''

@@ -530,6 +530,14 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	// Whether people sign in: it decides what the main library is called
 	// (theirs, or the one they share) and what My library means.
 	set("signIn", c.a.Cfg.AuthEnabled())
+	// Whether the one who asks has not signed in, on a Studio where that is
+	// not required, and the Studio's own sign-in page where it has one.
+	if c.a.Cfg.AuthEnabled() && c.a.Cfg.FrontAuth && auth.UserOf(r) == nil {
+		set("signedOut", true)
+	}
+	if c.a.Cfg.OIDC.Enabled() {
+		set("signInUrl", auth.LoginPath)
+	}
 	// Whether each person uses an ACTIVATE sign-in of their own here before
 	// models answer them (REQUIRE_PERSONAL_KEY): the app then says so,
 	// rather than that the Studio works without one.

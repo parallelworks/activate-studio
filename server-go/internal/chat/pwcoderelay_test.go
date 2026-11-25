@@ -224,10 +224,10 @@ func TestARelayedChatIsOnlyItsOwners(t *testing.T) {
 		shared = on
 		direct2(id, http.StatusNotFound)
 		message(id, http.StatusNotFound)
-		if _, err := m.Convs.FindVisible(id, "bob"); err == nil {
+		if _, err := m.Convs.FindVisible(id, conversations.Who{Username: "bob"}); err == nil {
 			t.Errorf("bob sees the relayed chat (shared %v)", on)
 		}
-		if _, err := m.Convs.FindVisible(id, "ada"); err != nil {
+		if _, err := m.Convs.FindVisible(id, conversations.Who{Username: "ada"}); err != nil {
 			t.Errorf("ada does not see her relayed chat: %v", err)
 		}
 	}

@@ -16,6 +16,8 @@ type Who struct {
 	UserID, Username string
 	// ViewerID is viewerOf(req)?.id: 'local' with sign-in off.
 	ViewerID string
+	// Admin: they administer this Studio, with sign-in on.
+	Admin bool
 }
 
 // Routes are the conversation routes over a store.
@@ -34,27 +36,24 @@ type Routes struct {
 	ToNode func(w http.ResponseWriter, r *http.Request, why string)
 }
 
-// VisibleTo is visibleTo(c, username).
-func (rt *Routes) VisibleTo(c *Conversation, username string) bool {
+// VisibleTo says whether who may read c. One with no owner, made before
+// sign-in was turned on or by a visitor who had not signed in, is its
+// administrators' where chats are not shared.
+func (rt *Routes) VisibleTo(c *Conversation, who Who) bool {
 	// A chat that drives a pw code session on another of its owner's
 	// machines holds that session's turns, copied from their machine: it
 	// is theirs alone, even where chat history is shared.
-	if rt.AuthEnabled() && c.PWCode != nil && c.PWCode.Relay && c.OwnerName() != "" {
-		return username != "" && c.OwnerName() == username
-	}
-	if rt.SharedHistory() || !rt.AuthEnabled() {
+	relayed := c.PWCode != nil && c.PWCode.Relay
+	if !rt.AuthEnabled() || rt.SharedHistory() && !relayed {
 		return true
 	}
-	if c.OwnerName() == "" {
-		return true
-	}
-	return username != "" && c.OwnerName() == username
+	return rt.MayChange(c, who)
 }
 
-// FindVisible is findVisible(id, username).
-func (rt *Routes) FindVisible(id, username string) (*Conversation, error) {
+// FindVisible is conversation id as who may read it.
+func (rt *Routes) FindVisible(id string, who Who) (*Conversation, error) {
 	c := rt.Store.Get(id)
-	if c == nil || !rt.VisibleTo(c, username) {
+	if c == nil || !rt.VisibleTo(c, who) {
 		return nil, apierr.New(404, "conversation not found")
 	}
 	return c, nil
@@ -64,21 +63,37 @@ func (rt *Routes) FindVisible(id, username string) (*Conversation, error) {
 // whose it is not.
 const OnlyOwner = "Only the person whose chat this is can change it."
 
-// MayChange says whether username may change c. With sign-in that is its
-// owner alone, shared history or not and whoever administers the Studio:
-// others read it. A chat with no owner is its readers', as before sign-in.
-func (rt *Routes) MayChange(c *Conversation, username string) bool {
-	return !rt.AuthEnabled() || c.OwnerName() == "" || c.OwnerName() == username
+// OnlyAdmins is the refusal of a change to a chat with no owner.
+const OnlyAdmins = "Only an administrator of this Studio can change a chat that has no owner."
+
+// SignInToChat is the refusal of a chat to a visitor who has not signed in:
+// it would have no owner, so the visitor could not see it.
+const SignInToChat = "Sign in to chat. Each chat belongs to the person who started it."
+
+// MayChange says whether who may change c. With sign-in that is its owner
+// alone, shared history or not and whoever administers the Studio: others
+// read it. One with no owner is its administrators'.
+func (rt *Routes) MayChange(c *Conversation, who Who) bool {
+	if !rt.AuthEnabled() {
+		return true
+	}
+	if c.OwnerName() == "" {
+		return who.Admin
+	}
+	return who.Username == c.OwnerName()
 }
 
-// FindOwn is conversation id to be changed by username: not found where
-// they may not see it, refused where they may only read it.
-func (rt *Routes) FindOwn(id, username string) (*Conversation, error) {
-	c, err := rt.FindVisible(id, username)
+// FindOwn is conversation id to be changed by who: not found where they may
+// not see it, refused where they may only read it.
+func (rt *Routes) FindOwn(id string, who Who) (*Conversation, error) {
+	c, err := rt.FindVisible(id, who)
 	if err != nil {
 		return nil, err
 	}
-	if !rt.MayChange(c, username) {
+	if !rt.MayChange(c, who) {
+		if c.OwnerName() == "" {
+			return nil, apierr.New(403, OnlyAdmins)
+		}
 		return nil, apierr.New(403, OnlyOwner)
 	}
 	return c, nil
@@ -129,8 +144,8 @@ func (rt *Routes) list(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := []*jsonobj.Object{}
 	for _, c := range Sorted(rt.Store.List()) {
-		if rt.VisibleTo(c, who.Username) {
-			out = append(out, Summary(c, rt.MayChange(c, who.Username)))
+		if rt.VisibleTo(c, who) {
+			out = append(out, Summary(c, rt.MayChange(c, who)))
 		}
 	}
 	return reqbody.OK(w, out)
@@ -141,7 +156,7 @@ func (rt *Routes) get(w http.ResponseWriter, r *http.Request) error {
 	if !ok {
 		return nil
 	}
-	c, err := rt.FindVisible(r.PathValue("id"), who.Username)
+	c, err := rt.FindVisible(r.PathValue("id"), who)
 	if err != nil {
 		return err
 	}
@@ -149,7 +164,7 @@ func (rt *Routes) get(w http.ResponseWriter, r *http.Request) error {
 	if rt.Held != nil {
 		held = rt.Held(r, c.ID)
 	}
-	own := rt.MayChange(c, who.Username)
+	own := rt.MayChange(c, who)
 	c = WithOwnCommands(WithHolders(rt.Store.WithUnanswered(c), held, who.ViewerID), who.ViewerID, rt.AuthEnabled())
 	o := reqbody.Parse(c)
 	// What answers it, for one stored before that was kept too.
@@ -170,6 +185,9 @@ func (rt *Routes) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if rt.AuthEnabled() && who.Username == "" {
+		return apierr.New(401, SignInToChat)
+	}
 	var title *string
 	if t, has := b.M()["title"]; has && t != nil {
 		// title ?? null: a non-string title is stored as given by Node; a
@@ -189,7 +207,7 @@ func (rt *Routes) patch(w http.ResponseWriter, r *http.Request) error {
 	if !ok {
 		return nil
 	}
-	if _, err := rt.FindOwn(r.PathValue("id"), who.Username); err != nil {
+	if _, err := rt.FindOwn(r.PathValue("id"), who); err != nil {
 		return err
 	}
 	b, err := reqbody.Read(r)
@@ -229,7 +247,7 @@ func (rt *Routes) steer(w http.ResponseWriter, r *http.Request) error {
 		return apierr.New(400, "conversationId, id, and text are required")
 	}
 	cid := reqbody.JSString(conv)
-	if _, err := rt.FindOwn(cid, who.Username); err != nil {
+	if _, err := rt.FindOwn(cid, who); err != nil {
 		return err
 	}
 	return reqbody.OK(w, reqbody.O("queued", rt.Store.QueueSteer(cid, id, sliceRunes(text, 4000))))
@@ -263,9 +281,8 @@ func (rt *Routes) bulkDelete(w http.ResponseWriter, r *http.Request) error {
 			order = append(order, s)
 		}
 	}
-	me := who.Username
 	gone := rt.Store.Delete(ids, func(c *Conversation) bool {
-		return rt.VisibleTo(c, me) && rt.MayChange(c, me)
+		return rt.VisibleTo(c, who) && rt.MayChange(c, who)
 	})
 	goneSet := map[string]bool{}
 	for _, id := range gone {
@@ -290,10 +307,10 @@ func (rt *Routes) deleteOne(w http.ResponseWriter, r *http.Request) error {
 	}
 	id := r.PathValue("id")
 	// With sign-in, one that is not there is answered as another person's.
-	if _, err := rt.FindOwn(id, who.Username); err != nil && (rt.AuthEnabled() || rt.Store.Get(id) != nil) {
+	if _, err := rt.FindOwn(id, who); err != nil && (rt.AuthEnabled() || rt.Store.Get(id) != nil) {
 		return err
 	}
-	rt.Store.Delete(map[string]bool{id: true}, func(c *Conversation) bool { return rt.MayChange(c, who.Username) })
+	rt.Store.Delete(map[string]bool{id: true}, func(c *Conversation) bool { return rt.MayChange(c, who) })
 	return reqbody.OK(w, reqbody.O("deleted", id))
 }
 

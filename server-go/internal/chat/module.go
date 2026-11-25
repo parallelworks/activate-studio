@@ -21,6 +21,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/extensions"
 	"github.com/parallelworks/activate-studio/server-go/internal/libapi"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"github.com/parallelworks/activate-studio/server-go/internal/mcpclient"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
@@ -344,6 +345,9 @@ func Register(mux *http.ServeMux, a *app.App) {
 			}
 			if v := m.viewerOf(r); v != nil {
 				w.ViewerID = v.ID
+			}
+			if a.Cfg.AuthEnabled() {
+				w.Admin = mainlib.Admin(mainlib.Of(a, r))
 			}
 			return w, true
 		},

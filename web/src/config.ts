@@ -30,6 +30,10 @@ export interface AppConfig {
    *  person's own (My library); with it, the main library is the one they
    *  share, and My library is each person's folder on a system. */
   signIn?: boolean
+  /** The person here has not signed in, on a Studio with sign-in. */
+  signedOut?: boolean
+  /** The Studio's own sign-in page, where it has one. */
+  signInUrl?: string
   /** Models answer a person only with an account of their own
    *  (REQUIRE_PERSONAL_KEY), so signing in with ACTIVATE comes first. */
   signInFirst?: boolean
@@ -161,6 +165,8 @@ export function useAppConfig(): AppConfig {
           sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
           platform: !!d.platform,
           signIn: !!d.signIn,
+          signedOut: !!d.signedOut,
+          signInUrl: typeof d.signInUrl === 'string' ? d.signInUrl : '',
           signInFirst: !!d.signInFirst,
           settingsLocked: !!d.settingsLocked,
           localCode: !!d.localCode,

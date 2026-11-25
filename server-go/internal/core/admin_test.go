@@ -251,3 +251,30 @@ func TestConfigSignInFirst(t *testing.T) {
 		}
 	}
 }
+
+// The app is told of someone who has not signed in, and of the Studio's own
+// sign-in page.
+func TestConfigSignedOut(t *testing.T) {
+	jwks := map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/keys"}
+	oidc := map[string]string{"OIDC_ISSUER": "http://127.0.0.1:9", "OIDC_CLIENT_ID": "studio"}
+	for _, c := range []struct {
+		env       map[string]string
+		who       string
+		out, page any
+	}{
+		{jwks, "", true, nil},
+		{jwks, "ada", nil, nil},
+		{oidc, "", true, "/api/auth/login"},
+		{oidc, "ada", nil, "/api/auth/login"},
+		{nil, "", nil, nil},
+	} {
+		e := newEnv(t, c.env)
+		b := e.do("GET", "/api/config", nil).body
+		if c.who != "" {
+			b = e.doAs(c.who, "GET", "/api/config", nil).body
+		}
+		if b["signedOut"] != c.out || b["signInUrl"] != c.page {
+			t.Errorf("%v %q: %v %v", c.env, c.who, b["signedOut"], b["signInUrl"])
+		}
+	}
+}

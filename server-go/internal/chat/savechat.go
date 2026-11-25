@@ -149,14 +149,14 @@ func (m *Module) saveChatHere(ctx context.Context, c *conversations.Conversation
 // visibleChat is conversation id as the person r is from may see it.
 func (m *Module) visibleChat(r *http.Request, id string) (*conversations.Conversation, error) {
 	who, _ := m.Convs.Who(r)
-	return m.Convs.FindVisible(id, who.Username)
+	return m.Convs.FindVisible(id, who)
 }
 
 // ownChat is conversation id to be changed by the person r is from: not
 // found where they may not see it, refused where they may only read it.
 func (m *Module) ownChat(r *http.Request, id string) (*conversations.Conversation, error) {
 	who, _ := m.Convs.Who(r)
-	return m.Convs.FindOwn(id, who.Username)
+	return m.Convs.FindOwn(id, who)
 }
 
 // chatSaveRoutes: GET says where the chat would go, POST saves it.
