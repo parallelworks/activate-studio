@@ -3556,8 +3556,6 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
    for the Studio's own thread, so each ends in
    :where(:not(.pwcode-session *, .code-page *)), which adds no specificity.
    test/sessionScope.test.ts keeps new ones to that. */
-.pwcode-expand { font: inherit; font-size: 12px; background: transparent; color: var(--pw-text-muted, inherit); border: 0; cursor: pointer; padding: 2px 4px; }
-.pwcode-expand:hover { color: inherit; text-decoration: underline; }
 
 /* The spreadsheet grid (SheetGrid.tsx): a workbook's sheet, or a CSV or
    TSV file. It scrolls in a box of its own, sized to the window, with its
