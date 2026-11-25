@@ -306,6 +306,8 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
    *  /api/settings): on a Studio with sign-in, all but its administrators. */
   const [locked, setLocked] = useState<string | undefined>()
   const [toolsApproved, setToolsApproved] = useState(true)
+  // STUDIO_CUSTOM_TOOLS=0: no custom tool runs, and none can be added or changed.
+  const [toolsOff, setToolsOff] = useState(false)
   // Where the GUFI command log is written (server/src/gufiLog.ts).
   const [gufiLogFile, setGufiLogFile] = useState<{ path: string; bytes: number } | null>(null)
   const [note, setNote] = useState('')
@@ -442,7 +444,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const loadForm = () => {
     setTheme(null)
     fetch('/api/settings').then(r => r.json())
-      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null); setClaudeCode(d.claudeCode ?? null); setLocked(d.locked || undefined); setToolsApproved(d.customToolsApproved !== false) })
+      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null); setClaudeCode(d.claudeCode ?? null); setLocked(d.locked || undefined); setToolsApproved(d.customToolsApproved !== false); setToolsOff(d.customToolsOff === true) })
       .catch(() => setNote('Could not load settings.'))
     fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) })
       .catch(() => {}).finally(() => setSetupKnown(true))
@@ -958,6 +960,12 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               </div>
               <Locked why={locked} quiet>
               <div className="tool-group">Custom tools</div>
+              {toolsOff ? (
+                <p className="muted">
+                  Custom tools are off on this Studio (STUDIO_CUSTOM_TOOLS=0). None is offered to the assistant or run, and
+                  any saved here are kept as they are.
+                </p>
+              ) : <>
               {!toolsApproved && form.customTools.length > 0 && (
                 <Callout tone="warning">
                   These custom tools do not run yet: they were not saved by one of this Studio's administrators. They run
@@ -978,6 +986,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 ))}
                 <Button variant="secondary" onClick={() => setForm({ ...form, customTools: [...form.customTools, { name: '', description: '', command: '' }] })}>Add custom tool</Button>
               </div>
+              </>}
               {saveRow('tools')}
             </Locked>
             </>
@@ -1293,6 +1302,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               <div className="ext-cols">
                 <div>
                   <div className="tool-group">Tool files ({ext?.tools.length ?? 0})</div>
+                  {toolsOff && <p className="muted">Tool files do not run on this Studio: custom tools are off (STUDIO_CUSTOM_TOOLS=0).</p>}
                   {ext?.tools.length
                     ? <DescriptionList>{ext.tools.map(t => (
                       <DescriptionListItem key={t.file} label={<code>{t.name}</code>}>

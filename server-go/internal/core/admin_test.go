@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
@@ -276,5 +277,43 @@ func TestConfigSignedOut(t *testing.T) {
 		if b["signedOut"] != c.out || b["signInUrl"] != c.page {
 			t.Errorf("%v %q: %v %v", c.env, c.who, b["signedOut"], b["signInUrl"])
 		}
+	}
+}
+
+// STUDIO_CUSTOM_TOOLS=0: Settings says so, keeps the saved tools, and
+// takes no change to them; the rest of a save goes through.
+func TestCustomToolsOffInSettings(t *testing.T) {
+	t.Setenv("STUDIO_CUSTOM_TOOLS", "0")
+	e := signedIn(t)
+	os.MkdirAll(e.ix, 0o755)
+	os.WriteFile(filepath.Join(e.ix, "settings.json"), []byte(`{"customTools":[{"name":"greet","description":"","command":"echo hi"}]}`), 0o644)
+	got := e.doAs("boss", "GET", "/api/settings", nil)
+	if got.body["customToolsOff"] != true {
+		t.Fatalf("customToolsOff: %v", got.body["customToolsOff"])
+	}
+	add := map[string]any{"customTools": []any{map[string]any{"name": "greet", "description": "", "command": "echo hi"}, map[string]any{"name": "cat_all", "description": "", "command": "cat"}}}
+	if r := e.doAs("boss", "PUT", "/api/settings", add); r.status != 403 || !strings.Contains(string(r.raw), "STUDIO_CUSTOM_TOOLS=0") {
+		t.Fatalf("a change to custom tools: %d %s", r.status, r.raw)
+	}
+	// The form sends them back unchanged with another change: saved, and
+	// the list an administrator cannot see is not approved by it.
+	eff := got.body["effective"].(map[string]any)
+	eff["kbMission"] = "Support the design team."
+	if r := e.doAs("boss", "PUT", "/api/settings", eff); r.status != 200 {
+		t.Fatalf("%d %s", r.status, r.raw)
+	}
+	after := e.doAs("boss", "GET", "/api/settings", nil)
+	if after.body["customToolsApproved"] != false {
+		t.Error("a save with custom tools off approved the hidden list")
+	}
+	if tools := after.body["effective"].(map[string]any)["customTools"].([]any); len(tools) != 1 {
+		t.Errorf("the saved tools were not kept: %v", tools)
+	}
+}
+
+func TestCustomToolsOnBySettingsDefault(t *testing.T) {
+	e := signedIn(t)
+	if r := e.doAs("boss", "GET", "/api/settings", nil); r.body["customToolsOff"] != nil {
+		t.Fatalf("customToolsOff: %v", r.body["customToolsOff"])
 	}
 }

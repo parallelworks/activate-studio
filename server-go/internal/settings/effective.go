@@ -100,6 +100,9 @@ type Effective struct {
 	// where several people sign in or the platform deployed it, except for
 	// a person already using them). See ClaudeCodeModes.
 	ClaudeCodeAccounts string `json:"claudeCodeAccounts"`
+	// CustomToolsOff is STUDIO_CUSTOM_TOOLS=0 (Store.CustomToolsOff); not
+	// a setting, so not in the JSON.
+	CustomToolsOff bool `json:"-"`
 }
 
 // ChatEngines are chatEngine's values; PWCodeModes are
@@ -331,6 +334,7 @@ func (s *Store) EffectiveOf(m map[string]json.RawMessage) Effective {
 	e.RagProxyEnabled = or(b("ragProxyEnabled"), env("RAG_PROXY_ENABLED") != "0")
 	e.HistoryIntervalSec = or(num("historyIntervalSec"), envNum("HISTORY_INTERVAL_SEC", "86400"))
 	e.McpServers = or(raws("mcpServers"), []json.RawMessage{})
+	e.CustomToolsOff = s.CustomToolsOff()
 	e.DelegationEnabled = or(b("delegationEnabled"), env("DELEGATION_ENABLED") != "0")
 	e.DelegationMaxAgents = or(num("delegationMaxAgents"), envNum("DELEGATION_MAX_AGENTS", "6"))
 	rounds := JSNumber(env("STUDIO_MAX_TOOL_ROUNDS"))
@@ -480,6 +484,11 @@ func CustomToolsDigest(tools []json.RawMessage) string {
 	sum := sha256.Sum256(b.Bytes())
 	return hex.EncodeToString(sum[:])
 }
+
+// CustomToolsOff is STUDIO_CUSTOM_TOOLS=0: no custom tool, from Settings
+// or a tool file, is offered or run, and Settings takes no change to the
+// saved ones, which are kept as they are.
+func (s *Store) CustomToolsOff() bool { return s.env("STUDIO_CUSTOM_TOOLS") == "0" }
 
 // CustomToolsApproved says whether e's custom tools may run. Each runs a
 // command as the Studio's own account, so on a Studio with sign-in they

@@ -122,8 +122,12 @@ func isBuiltin(name string) bool {
 type customTool struct{ Name, Description, Command string }
 
 // allCustomTools is tools.ts's: the extension tools, then the Settings
-// ones, a Settings tool taking an extension tool's place by name.
+// ones, a Settings tool taking an extension tool's place by name. None
+// with STUDIO_CUSTOM_TOOLS=0.
 func allCustomTools(eff settings.Effective, ext *extensions.Set) []customTool {
+	if eff.CustomToolsOff {
+		return nil
+	}
 	var order []string
 	byName := map[string]customTool{}
 	set := func(t customTool) {

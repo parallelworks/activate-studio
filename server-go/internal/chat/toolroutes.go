@@ -292,13 +292,15 @@ const customTimeout = 90 * time.Second
 const customMaxBuffer = 8 * 1024 * 1024
 
 // runCustomTool runs a configured command with the model's words as its
-// positional parameters, as execFile('bash', ['-lc', ...]) does.
+// positional parameters, as execFile('bash', ['-lc', ...]) does, in the
+// Studio's environment less its secrets (toolEnv).
 func (m *Module) runCustomTool(ctx context.Context, t customTool, args map[string]any) (*Outcome, error) {
 	extra := jsval.Slice(argString(args, "args"), 400)
 	argv := append([]string{"-lc", t.Command + ` "$@"`, t.Name}, splitToolArgs(extra)...)
 	ctx, cancel := context.WithTimeout(ctx, customTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bash", argv...)
+	cmd.Env = toolEnv(os.Environ())
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &limitBuf{&stdout, customMaxBuffer}, &limitBuf{&stderr, customMaxBuffer}
 	if err := cmd.Run(); err != nil {
