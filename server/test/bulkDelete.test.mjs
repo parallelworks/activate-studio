@@ -11,6 +11,8 @@ process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'bulk-kb-'))
 process.env.INDEX_BASE = IX
 // Auth on, so ownership applies; nothing is fetched from this URL.
 process.env.AUTH_JWKS_URL = 'https://keys.example.invalid/jwks'
+// People see each other's chats here; with sign-in that is off by default.
+process.env.CHAT_SHARED_HISTORY = '1'
 const conv = (id, owner) => ({ id, title: id, owner, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', activeBranchId: null, messages: [] })
 fs.writeFileSync(path.join(IX, 'conversations.json'), JSON.stringify([
   conv('a', 'me'), conv('b', 'me'), conv('c', 'me'), conv('theirs', 'someone-else'), conv('legacy', null),
@@ -31,8 +33,8 @@ test('deletes the listed own and unowned conversations in one request, skipping 
   const body = res.json()
   assert.deepEqual(body.deleted.sort(), ['a', 'b', 'legacy'])
   assert.deepEqual(body.skipped.sort(), ['nope', 'theirs'])
-  // Shared history is on by default, so the other person's conversation was
-  // visible to this caller, and still not deleted.
+  // Shared history is on, so the other person's conversation was visible to
+  // this caller, and still not deleted.
   const left = (await app.inject({ method: 'GET', url: '/api/chat/conversations' })).json().map(c => c.id).sort()
   assert.deepEqual(left, ['c', 'theirs'])
   // The save is asynchronous; the file always holds a whole snapshot, old or new.
