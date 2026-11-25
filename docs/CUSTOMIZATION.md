@@ -8,7 +8,7 @@ Every deployment-specific choice lives in environment variables, conventionally 
 
 ## Name and brand
 
-`APP_NAME` is the product name in the header and the browser tab. `APP_ICON` points at an image (PNG or SVG works) shown beside it, either an `https://` URL or a path on the resource; without one, a letter badge from the first character of the name appears instead, and the empty chat shows the Studio's own mark above its greeting. `APP_FAVICON` points at an image used as the browser tab icon; it falls back to `APP_ICON`, and with neither set the tab shows the generic bundled favicon. `THEME` picks the default of light or dark (light follows a device set to dark); every user can toggle from the sidebar footer or choose Light, Dark or System in Settings, General, Appearance, and their choice persists in the browser.
+`APP_NAME` is the product name in the header and the browser tab. `APP_ICON` points at an image (PNG or SVG works) shown beside it, either an `https://` URL or a path on the resource; without one, the Studio's own mark appears instead. An installed app (Install app, Add to Dock) takes it too when it is a square PNG, JPEG, GIF or WebP at least 144 pixels wide (512 looks best); otherwise, and where the image cannot be loaded, the mark is used. It answers without sign-in, as the Studio's own icons do. `APP_FAVICON` points at an image used as the browser tab icon; it falls back to `APP_ICON`, and with neither set the tab shows the generic bundled favicon. `THEME` picks the default of light or dark (light follows a device set to dark); every user can toggle from the sidebar footer or choose Light, Dark or System in Settings, General, Appearance, and their choice persists in the browser.
 
 ## Chat
 

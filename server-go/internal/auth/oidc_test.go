@@ -765,6 +765,16 @@ func TestSignInRequired(t *testing.T) {
 	if s.do("GET", "/assets/index-abcdef12.js", nil).status != 200 || s.do("GET", "/healthz", nil).status == 401 || s.do("GET", LoginPath, nil).status != 302 {
 		t.Fatal("asset, health or login gated")
 	}
+	// The app's icon, the mark or the deployment's own, answers a browser
+	// that asks without cookies as it installs the Studio.
+	for _, u := range []string{"/icon-512.png?v=0", "/manifest.webmanifest", "/api/brand-icon?v=0", "/api/favicon?variant=dark&v=0"} {
+		if st := s.do("GET", u, nil).status; st == 401 || st == 302 {
+			t.Errorf("%s: %d", u, st)
+		}
+	}
+	if s.do("POST", "/api/brand-icon", nil).status != 401 || s.do("GET", "/api/brand-icon/x", nil).status != 401 {
+		t.Error("more than the brand images is open")
+	}
 	if s.do("POST", "/v1/chat/completions", nil).status == 401 {
 		t.Fatal("the RAG endpoint keeps its own key check")
 	}
