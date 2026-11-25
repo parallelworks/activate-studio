@@ -91,12 +91,12 @@ Each person signs in to ACTIVATE under Settings, Accounts (the device code, or a
 | Variable | Meaning |
 |---|---|
 | `AWS_USE_FIPS_ENDPOINT` | `false`: ask the regular S3 endpoints. By default FIPS endpoints are asked in GovCloud and in the US and Canada regions, as the pw CLI asks them |
-| `AWS_ENDPOINT_URL_S3`, `AWS_ENDPOINT_URL` | an address every S3 bucket is asked at, such as one VPC endpoint |
-| `STUDIO_BUCKET_ENDPOINTS` | hosts, separated by commas, that people may name as a bucket's endpoint besides S3 VPC endpoints and Google Private Service Connect, such as `s3.storage.example.com` |
+| `AWS_ENDPOINT_URL_S3`, `AWS_ENDPOINT_URL` | an address every S3 bucket is asked at, such as one VPC endpoint. One that is not an address is an error in the log as the Studio starts, and AWS buckets are not read until it is corrected |
+| `STUDIO_BUCKET_ENDPOINTS` | the only hosts, separated by commas, that people may choose as a bucket's endpoint, such as `bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com` or `s3.storage.example.com`. Without it nobody chooses one. Where sign-in is off, the store's own private endpoints (S3 VPC endpoints, Google Private Service Connect) are taken besides |
 | `HTTPS_PROXY`, `NO_PROXY` | as for the Studio's other outbound requests; the pw CLI is run with them too. Put the stores' hosts in `NO_PROXY` (`.amazonaws.com`) if they are reached without it |
 | `SSL_CERT_FILE` | a bundle with the network's own certificate authority, for the Studio and the pw CLI |
 
-The host asks the platform and the store itself, so both have to be reachable from it: directly, through the proxy, or through a VPC endpoint. The indexes are in `INDEX_BASE/users`, about what the same number of files would take.
+The host asks the platform and the store itself, so both have to be reachable from it: directly, through the proxy, or through a VPC endpoint. When one cannot be, the person is told so and the Studio's log says why. The pw CLI is run without the host's own cloud credentials (`AWS_*`, `GOOGLE_*`, `AZURE_*`, `CLOUDSDK_*`, and instance metadata on AWS). The indexes are in `INDEX_BASE/users`, about what the same number of files would take.
 
 ### Registering the Studio with ACTIVATE
 

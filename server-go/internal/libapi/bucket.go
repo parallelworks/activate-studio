@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
-	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
@@ -192,7 +192,14 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 	defer b.buckets.setListing(id, false)
 	st := b.s.Reg.BucketState(id)
 	var bk bucketStore
-	err := func() error {
+	err := func() (err error) {
+		// One listing's failure of its own is that listing's alone.
+		defer func() {
+			if p := recover(); p != nil {
+				b.s.a.Log.Error("listing a bucket library panicked; the server stays up", "library", id, "panic", p, "stack", string(debug.Stack()))
+				err = fmt.Errorf("internal error: %v", p)
+			}
+		}()
 		bin := b.s.a.Cfg.GufiBin
 		if !exists(filepath.Join(bin, "gufi_trace2index")) {
 			return fmt.Errorf("this GUFI has no gufi_trace2index (in %s), which builds a bucket's index", bin)
@@ -317,7 +324,7 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 			}
 		}
 		if stats.Skipped > 0 {
-			b.libLog(id, fmt.Sprintf("%d entries could not be indexed (a path longer than GUFI holds, a name \".\" or \"..\", or a name listed twice)", stats.Skipped), nil)
+			b.libLog(id, fmt.Sprintf("%d entries could not be indexed (a path longer than GUFI holds, a name that is empty, \".\" or \"..\" or has a control character, or a name listed twice)", stats.Skipped), nil)
 		}
 		b.s.Reg.UpdateBuild(id, func(lb *libraries.LocalBuild) {
 			lb.State, lb.Error, lb.BuiltAt, lb.Files, lb.Dirs = "ready", nil, &c.builtAt, &c.files, &c.dirs
@@ -465,6 +472,9 @@ func (s *Service) bucketDownload(ctx context.Context, l libraries.Library, rel s
 // ACTIVATE bucket ("bucket", its URI), the person's own where people sign
 // in, or of an rclone remote ("location") where nobody does.
 func (s *Service) bucketAdd(w http.ResponseWriter, r *http.Request) error {
+	if otherSite(r) {
+		return otherSiteRefused()
+	}
 	body, err := reqbody.Read(r)
 	if err != nil {
 		return err
@@ -472,9 +482,6 @@ func (s *Service) bucketAdd(w http.ResponseWriter, r *http.Request) error {
 	uri := jsTrim(body.Str("bucket"))
 	owner := ""
 	if uri != "" {
-		if s.authEnabled(r) && codesessions.CrossSite(r) {
-			return crossSiteRefused()
-		}
 		ok := false
 		if owner, ok, err = s.pwViewer(r, true); err != nil {
 			return err
@@ -619,7 +626,7 @@ func (s *Service) bucketSettings(w http.ResponseWriter, r *http.Request) error {
 		if !d.Bucket.PW() {
 			return apierr.New(400, "endpoint: an rclone remote has its own, in its settings")
 		}
-		at, err := pwbucket.CheckEndpoint(body.Str("endpoint"), s.a.Cfg.AuthEnabled())
+		at, err := pwbucket.CheckEndpoint(body.Str("endpoint"), d.Bucket.CSP, s.a.Cfg.AuthEnabled())
 		if err != nil {
 			return apierr.New(400, "Endpoint: %s", err.Error())
 		}

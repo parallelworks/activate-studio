@@ -109,12 +109,12 @@ type s3Client struct {
 	mu     sync.Mutex
 	in     string
 	// base is another place to ask than the region's own (Store.Base).
-	base   string
+	base   *url.URL
 	signer *v4.Signer
 	now    func() time.Time
 }
 
-func newS3(hc *http.Client, bucket, region, base string) *s3Client {
+func newS3(hc *http.Client, bucket, region string, base *url.URL) *s3Client {
 	return &s3Client{hc: hc, bucket: bucket, in: region, base: base, now: time.Now,
 		signer: v4.NewSigner(func(o *v4.SignerOptions) { o.DisableURIPathEscaping = true })}
 }
@@ -196,10 +196,9 @@ func (c *s3Client) url(key string) *url.URL {
 	u := &url.URL{Scheme: "https", Host: s3Host(region, useFIPS(region))}
 	p := "/" + key
 	switch {
-	case c.base != "":
-		b, _ := url.Parse(c.base)
-		u.Scheme, u.Host = b.Scheme, b.Host
-		p = strings.TrimSuffix(b.Path, "/") + "/" + c.bucket + p
+	case c.base != nil:
+		u.Scheme, u.Host = c.base.Scheme, c.base.Host
+		p = strings.TrimSuffix(c.base.Path, "/") + "/" + c.bucket + p
 	case strings.Contains(c.bucket, "."):
 		u.Host = s3Host(region, false)
 		p = "/" + c.bucket + p

@@ -180,6 +180,11 @@ export interface PwBucket {
   why?: string
 }
 const CLOUD: Record<string, string> = { aws: 'AWS', google: 'Google Cloud', azure: 'Azure', oracle: 'Oracle Cloud' }
+/** A bucket's endpoint as a choice: the store's own, those the administrator
+ *  lists, and the one it has when that is listed no more. */
+export const endpointItems = (listed: string[], now: string) =>
+  [{ value: '', label: 'The store\'s own' }, ...[...new Set([...listed, ...(now ? [now] : [])])].map(e => ({ value: e, label: e.replace(/^https:\/\//, '') }))]
+
 /** Where an ACTIVATE bucket is kept, in words. */
 export const pwBucketPlace = (b: Pick<PwBucket, 'csp' | 'region'>): string => [CLOUD[b.csp] ?? b.csp, b.region].filter(Boolean).join(' ')
 /** What is in a folder of one of them. */
@@ -1000,7 +1005,9 @@ export const api = {
   },
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
   /** `canBuild`: libraries can be built from folders on this computer. */
-  libraries: () => getJson<{ libraries: SettingsLibrary[]; canBuild?: boolean; buckets?: boolean }>('/api/libraries'),
+  /** `bucketEndpoints`: what a bucket's endpoint is chosen from, where people
+   *  sign in and the administrator lists any. */
+  libraries: () => getJson<{ libraries: SettingsLibrary[]; canBuild?: boolean; buckets?: boolean; bucketEndpoints?: string[] }>('/api/libraries'),
   /** `ssh`: libraries over ssh are offered; `pw`: over pw ssh, usable now;
    *  `pwOffered`: pw ssh is shown as a choice, with `pwWhy` saying why it
    *  cannot be used yet; `workflow`: building on a cluster through the
@@ -1087,7 +1094,7 @@ export const api = {
   /** The viewer's ACTIVATE buckets, or why there are none to choose from. */
   pwBuckets: () => getJson<{ available: boolean; why?: string; buckets: PwBucket[] }>('/api/libraries/buckets'),
   pwBucketFolder: (uri: string, path: string, endpoint = '') =>
-    getJson<PwBucketFolder>(`/api/libraries/buckets/folders?${new URLSearchParams({ uri, path, ...(endpoint ? { endpoint } : {}) })}`),
+    postJson<PwBucketFolder>('/api/libraries/buckets/folders', { uri, path, ...(endpoint ? { endpoint } : {}) }, true),
   setBucketText: async (id: string, text: boolean) => {
     const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
     const data = await res.json().catch(() => ({}))

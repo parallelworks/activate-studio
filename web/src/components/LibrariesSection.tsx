@@ -4,7 +4,7 @@ import {
   ActionMenu, Button, Callout, Card, CopyButton, IconButton, Input, Loader, type MenuEntry, Modal, ProgressBar, Select, StatusBadge, toast, useConfirm,
 } from '@parallelworks/ui'
 import { AddIcon, CloseIcon, MoreIcon } from '@parallelworks/ui/icons'
-import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, listingCost, textCost, type BucketTextEstimate, type BucketTextPass, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
+import { BUCKET_EVERY, COPY_EVERY, api, bucketWhere, copyWhere, endpointItems, listingCost, textCost, type BucketTextEstimate, type BucketTextPass, type BuildProgress, type IndexDepth, type ReadThrough, type SettingsLibrary, type UserLibrary } from '../api'
 import { IndexDepthSelect, UNSTORED_LIBRARY_DEPTH, deeper, depthLabel } from './IndexDepth'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { reloadWhenLibrariesBuilt } from '../libraryWatch'
@@ -211,6 +211,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   const [loadError, setLoadError] = useState('')
   const [user, setUser] = useState<UserList>({ libraries: [], available: false, ssh: false, pw: false, pwOffered: false, workflow: false })
   const [canBuild, setCanBuild] = useState(false)
+  const [endpoints, setEndpoints] = useState<string[]>([])
   // The viewer's ACTIVATE buckets can be added.
   const [buckets, setBuckets] = useState(false)
   const [status, setStatus] = useState<SetupStatus | null>(null)
@@ -263,7 +264,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   const readyHere = useRef<Set<string> | null>(null)
 
   const loadLibs = () => api.libraries().then(r => {
-    setLibs(r.libraries); setCanBuild(!!r.canBuild); setBuckets(!!r.buckets); setLoadError('')
+    setLibs(r.libraries); setCanBuild(!!r.canBuild); setBuckets(!!r.buckets); setEndpoints(r.bucketEndpoints ?? []); setLoadError('')
     // A library built here that just finished joins the switcher.
     const now = new Set(r.libraries.filter(l => l.build && !isBuilding(l.build.state) && l.caps.index).map(l => l.id))
     if (readyHere.current && [...now].some(id => !readyHere.current!.has(id))) reloadAppConfig()
@@ -476,7 +477,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
         k.listedAt && listingCost(k),
         k.waits && `waits for you: it is listed when you open the Studio signed in to ACTIVATE, as the Studio keeps no sign-in of yours to list it with while you are away`,
         pw && k.route === 'pw' && k.routeWhy && `read through the pw CLI, a run for each folder: ${k.routeWhy}`,
-        k.skipped > 0 && `${k.skipped.toLocaleString()} ${k.skipped === 1 ? 'entry' : 'entries'} could not be indexed (a path longer than GUFI holds, or a name "." or "..")`,
+        k.skipped > 0 && `${k.skipped.toLocaleString()} ${k.skipped === 1 ? 'entry' : 'entries'} could not be indexed (a path longer than GUFI holds, a name that is empty, "." or "..", or one with a control character)`,
         k.error && !k.waits && `the last listing failed: ${k.error}`,
         b.error && b.error !== k.error && b.error,
         ...textNotes(k.text, k.textPass),
@@ -499,8 +500,8 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
                 ? askText(l.id, l.label)
                 : void act(l.id, async () => { await api.setBucketText(l.id, false); await loadLibs() }, `No more text is read from ${from}; what was read stays searchable.`)} />
           ) },
-          pw && (k.csp === 'aws' || k.csp === 'google') ? { label: 'Endpoint', value: (
-            <EndpointInput label={l.label} value={k.endpoint ?? ''} disabled={busy !== null}
+          pw && (k.csp === 'aws' || k.csp === 'google') && (canBuild || k.endpoint || endpoints.length > 0) ? { label: 'Endpoint', value: (
+            <EndpointInput label={l.label} value={k.endpoint ?? ''} listed={canBuild ? undefined : endpoints} disabled={busy !== null}
               onSave={v => act(l.id, async () => { try { await api.setBucketEndpoint(l.id, v) } finally { await loadLibs() } }, v ? `${l.label} is read at ${v} from now on.` : `${l.label} is read at the store's own address again.`)} />
           ) } : null,
         ],
@@ -936,9 +937,13 @@ function PathLine({ host, path, what }: { host?: string; path: string; what: str
   )
 }
 
-/** Another address an ACTIVATE bucket's store is asked at, saved when left. */
-function EndpointInput({ label, value, disabled, onSave }: { label: string; value: string; disabled: boolean; onSave: (v: string) => Promise<unknown> }) {
+/** Another address an ACTIVATE bucket's store is asked at: typed, and saved
+ *  when left, or chosen from the administrator's list (listed). */
+function EndpointInput({ label, value, listed, disabled, onSave }: { label: string; value: string; listed?: string[]; disabled: boolean; onSave: (v: string) => Promise<unknown> }) {
   const [typed, setTyped] = useState<string | null>(null)
+  if (listed) {
+    return <Select<string> aria-label={`Endpoint of ${label}`} size="sm" items={endpointItems(listed, value)} value={value} disabled={disabled} onValueChange={v => { if ((v ?? '') !== value) void onSave(v ?? '') }} />
+  }
   const save = () => {
     const v = (typed ?? value).trim()
     setTyped(null)

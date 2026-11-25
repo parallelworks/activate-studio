@@ -581,9 +581,9 @@ never the deployment's or another person's. The platform decides which
 buckets a person has.
 
 `GET /api/libraries/buckets` lists them (`pw buckets ls -o json`) with
-each one's cloud, region and, when it cannot be read, `why`. `GET
-/api/libraries/buckets/folders?uri=&path=` is what is directly in a folder
-of one, for choosing it. `POST /api/libraries/bucket` takes `bucket` (the
+each one's cloud, region and, when it cannot be read, `why`. `POST
+/api/libraries/buckets/folders` with `{ uri, path, endpoint }` is what is
+directly in a folder of one, for choosing it. `POST /api/libraries/bucket` takes `bucket` (the
 URI, `pw://<namespace>/<name>`) with optional `path`, `label`, `every` and
 `endpoint`. The form ticks several and adds each as a library of its own,
 with the same interval; a bucket and folder that are already a library of
@@ -607,7 +607,12 @@ for it and never writes it to a file, logs it, or puts it in
 run with a private one (mode 0700) that is removed as the run ends: in
 memory on Linux (`/dev/shm`), a temporary folder on macOS. The text pass
 reads objects through the Studio over a socket in a folder only the
-Studio's account opens, so the extractor is given no credential.
+Studio's account opens, so the extractor is given no credential. pw is not
+given the Studio's own cloud credentials (the `AWS_*`, `GOOGLE_*`,
+`AZURE_*` and `CLOUDSDK_*` variables, and the files and metadata service
+they are otherwise found in): a bucket is read with what the platform gives
+for the person, or not at all. A home that a Studio cut off left behind is
+removed at the next start; those in use are locked and stay.
 
 *Region, partition and FIPS.* The region is what the platform says and is
 never guessed; the partition follows from it (`us-gov-*` is GovCloud, at
@@ -622,13 +627,27 @@ pw CLI. Where the store is reached only through a VPC endpoint, **More
 options**, **Endpoint** takes its address
 (`https://bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com`); the
 next bucket in that region is offered the same. `PUT
-/api/libraries/<id>/bucket` with `{ endpoint }` changes it, and
+/api/libraries/<id>/bucket` with `{ endpoint }` changes it. An endpoint is
+asked over https. The bucket's credential goes there, so it is one of the
+private endpoints of the bucket's own store (an S3 VPC endpoint, Google
+Private Service Connect) or a host in `STUDIO_BUCKET_ENDPOINTS`, an
+administrator's list. On a Studio people sign in to only the list is
+taken, and the form has it to choose from: the name of a VPC endpoint is
+anyone's to make, at any address of the Studio's network.
 `AWS_ENDPOINT_URL_S3` or `AWS_ENDPOINT_URL` in the Studio's environment is
-the default for every S3 bucket. An endpoint is asked over https. On a
-Studio people sign in to, only the stores' own private endpoints (S3 VPC
-endpoints, Google Private Service Connect) and the hosts in
-`STUDIO_BUCKET_ENDPOINTS` (an administrator's list) are taken, so what the
-Studio asks on its own network is not for one person to say.
+the default for every S3 bucket; one that is not an address is said in the
+log as the Studio starts, and buckets in AWS are not read until it is
+corrected, rather than read somewhere else. The Studio starts all the
+same. On a Studio people sign in to, what a failed connection says
+(certificates, addresses) is in the Studio's log, and the person is told
+that the store could not be reached.
+
+*Other sites.* Every route that has a token fetched, lists, reads an
+object or its text, rebuilds, or stops a pass answers the Studio's own
+pages only, with sign-in off as with it on: a request a browser says
+another site's page made (`Sec-Fetch-Site`, `Origin`, `Referer`) is
+refused (403). An endpoint is taken from the library or the body of a
+POST, never from an address.
 
 *Where people sign in.* The library is the person's alone. Its index is on
 the Studio's host under `INDEX_BASE/users/<hash>/buckets/<id>` (mode 0700,
@@ -687,8 +706,10 @@ changes. Two paths in one folder that hash alike are told apart by
 hashing again, in path order. `gufi_trace2index` builds the
 trace into a staging folder, which is checked and then swapped in, so
 search answers from the last listing while a new one runs. Paths longer
-than GUFI holds, names "." or "..", and a name listed twice are left out
-and counted. What the last listing found is kept in
+than GUFI holds, names that are empty (a key with a slash at its start, or
+two together), "." or "..", names with a control character (a line break,
+say), and a name listed twice are left out and counted, for rclone remotes
+and ACTIVATE buckets alike: no key is opened under another's name. What the last listing found is kept in
 `INDEX_BASE/libraries/<id>/bucket.json`: when it ran, objects, bytes,
 folders, entries left out, the requests it took, the provider rclone's
 configuration names, its seconds, and why it failed.

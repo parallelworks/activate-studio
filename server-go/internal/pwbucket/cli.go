@@ -22,11 +22,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -110,33 +108,14 @@ type CLI struct {
 	// Runs counts the pw processes started.
 	Runs atomic.Int64
 
-	mu   sync.Mutex
-	home string
-	uses int
-}
+	// Report is told what a failed connection said, which the person then is
+	// not (quiet.go); nil tells the person.
+	Report func(what string)
 
-// tmpBase is where a run's HOME is made: a folder kept in memory where
-// there is one (Linux's /dev/shm), else the system's own for temporary
-// files ("").
-var tmpBase = func() string {
-	if runtime.GOOS == "linux" {
-		if st, err := os.Stat("/dev/shm"); err == nil && st.IsDir() {
-			return "/dev/shm"
-		}
-	}
-	return ""
-}
-
-// privateHome makes a HOME for pw, open to this account alone.
-func privateHome() (string, error) {
-	for _, base := range []string{tmpBase(), ""} {
-		if dir, err := os.MkdirTemp(base, "studio-pw-"); err == nil {
-			return dir, nil
-		} else if base == "" {
-			return "", err
-		}
-	}
-	return "", errors.New("no folder for temporary files")
+	mu     sync.Mutex
+	home   string
+	remove func()
+	uses   int
 }
 
 // hold gives the HOME runs share while any of them is at work, and what to
@@ -145,11 +124,11 @@ func (c *CLI) hold() (string, func(), error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.home == "" {
-		h, err := privateHome()
+		h, remove, err := privateHome()
 		if err != nil {
 			return "", nil, err
 		}
-		c.home = h
+		c.home, c.remove = h, remove
 	}
 	c.uses++
 	h := c.home
@@ -159,7 +138,7 @@ func (c *CLI) hold() (string, func(), error) {
 			c.mu.Lock()
 			defer c.mu.Unlock()
 			if c.uses--; c.uses == 0 {
-				os.RemoveAll(c.home)
+				c.remove()
 				c.home = ""
 			}
 		})
@@ -182,10 +161,7 @@ func (c *CLI) command(ctx context.Context, home string, args []string) (cmd *exe
 		"HOME": home, "PW_API_KEY": key,
 		"PW_CREDENTIALS_DIR": "", "PW_CONTEXT": "", "PW_PLATFORM_HOST": c.Host,
 		"XDG_CONFIG_HOME": "", "XDG_CACHE_HOME": "", "XDG_DATA_HOME": "",
-		"DBUS_SESSION_BUS_ADDRESS": "",
-	}
-	if c.Endpoint != "" {
-		set["AWS_ENDPOINT_URL"] = c.Endpoint
+		"DBUS_SESSION_BUS_ADDRESS": "", "OPENAI_API_KEY": "",
 	}
 	var global []string
 	if c.Context != "" {
@@ -195,7 +171,7 @@ func (c *CLI) command(ctx context.Context, home string, args []string) (cmd *exe
 		global = append(global, "--platform-host", c.Host)
 	}
 	cmd = exec.CommandContext(ctx, c.Bin, append(append(global, "buckets"), args...)...)
-	cmd.Env = c.Environ(set)
+	cmd.Env = uncloud(c.Environ(set), c.Endpoint)
 	cmd.Dir = home
 	cmd.Cancel = func() error {
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
@@ -257,7 +233,8 @@ func (c *CLI) runIn(ctx context.Context, home string, timeout time.Duration, max
 		if strings.TrimSpace(said) == "" {
 			said = problem(out.Bytes())
 		}
-		return nil, &RunError{Command: "pw buckets " + args[0], Message: plain(said, err, key)}
+		command := "pw buckets " + args[0]
+		return nil, &RunError{Command: command, Message: c.quietRun(command, plain(said, err, key))}
 	}
 	return out.Bytes(), nil
 }
@@ -378,6 +355,15 @@ func (c *CLI) Buckets(ctx context.Context) ([]Bucket, error) {
 		if b.Why == "" && !b.Ready {
 			b.Why = "It is not provisioned yet."
 		}
+		if err := checkNames(b); b.Why == "" && err != nil {
+			b.Why = "It cannot be read: " + err.Error() + "."
+			b.Region, b.Store = "", ""
+		}
+		if b.CSP == AWS && b.Why == "" {
+			if err := CheckSite(); err != nil {
+				b.Why = "It cannot be read: " + err.Error() + "."
+			}
+		}
 		list = append(list, b)
 	}
 	return list, nil
@@ -437,10 +423,12 @@ func (c *CLI) lsAt(ctx context.Context, home, uri, at string, limit int) ([]Entr
 		}
 		mod, _ := time.Parse(time.RFC3339Nano, r.Modified) // a folder has none
 		e := Entry{Path: key, Size: r.Size, ModTime: mod, IsDir: r.Directory || strings.HasSuffix(key, "/")}
-		e.Path = strings.TrimSuffix(e.Path, "/")
 		// A folder's own marker is in its own listing.
-		if e.Path == "" || (e.IsDir && uri+"/"+key == at) {
+		if key == "" || (e.IsDir && uri+"/"+key == at) {
 			continue
+		}
+		if e.IsDir {
+			e.Path = strings.TrimSuffix(key, "/")
 		}
 		list = append(list, e)
 	}
@@ -461,7 +449,7 @@ func (c *CLI) cat(ctx context.Context, uri, key string) (io.ReadCloser, error) {
 		release()
 		return nil, err
 	}
-	p := &catReader{cmd: cmd, cancel: cancel, release: release, secret: secret, ctx: ctx}
+	p := &catReader{c: c, cmd: cmd, cancel: cancel, release: release, secret: secret, ctx: ctx}
 	cmd.Stderr = &p.errb
 	if p.out, err = cmd.StdoutPipe(); err == nil {
 		err = cmd.Start()
@@ -475,6 +463,7 @@ func (c *CLI) cat(ctx context.Context, uri, key string) (io.ReadCloser, error) {
 }
 
 type catReader struct {
+	c       *CLI
 	cmd     *exec.Cmd
 	out     io.ReadCloser
 	errb    tail
@@ -507,7 +496,7 @@ func (p *catReader) wait() error {
 		} else if msg := plain(p.errb.String(), err, p.secret); msg == "no such object" {
 			p.err = &NotFound{"there is no such object"}
 		} else {
-			p.err = &RunError{Command: "pw buckets cat", Message: msg}
+			p.err = &RunError{Command: "pw buckets cat", Message: p.c.quietRun("pw buckets cat", msg)}
 		}
 	}
 	p.cancel()
@@ -540,11 +529,11 @@ func (c Cred) secrets() []string { return []string{c.KeyID, c.Secret, c.Session,
 // Token is a new credential for the bucket (`pw buckets get-token`). Each
 // call has a HOME of its own, so pw never answers one it kept.
 func (c *CLI) Token(ctx context.Context, uri string) (Cred, error) {
-	home, err := privateHome()
+	home, remove, err := privateHome()
 	if err != nil {
 		return Cred{}, err
 	}
-	defer os.RemoveAll(home)
+	defer remove()
 	out, err := c.runIn(ctx, home, 90*time.Second, 1<<20, "get-token", "--", uri)
 	if err != nil {
 		return Cred{}, err

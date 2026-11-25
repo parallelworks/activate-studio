@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { expect } from 'vitest'
 
 /** Steps of Add a library, as a person takes them. */
@@ -60,4 +61,24 @@ export async function chooseFolder(path: string) {
 export async function checked() {
   await act(async () => { await new Promise(r => setTimeout(r, 400)) })
   await waitFor(() => expect(screen.getByTestId('folder-check')).toHaveAttribute('aria-busy', 'false'))
+}
+
+/** Opens a picker and chooses an option. Its list draws only the rows that
+ *  fit its height, which jsdom measures as zero, so layout is given a size
+ *  while it is open; `absent` are options that must not be offered. */
+export async function pickOption(name: string, label: string, absent: string[] = []) {
+  const rect = Element.prototype.getBoundingClientRect
+  const sizes = ['offsetHeight', 'clientHeight', 'offsetWidth', 'clientWidth'] as const
+  for (const k of sizes) Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => 400 })
+  Element.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, width: 400, height: 400, right: 400, bottom: 400, toJSON() {} }) as DOMRect
+  try {
+    const u = userEvent.setup()
+    await u.click(screen.getByRole('combobox', { name }))
+    const option = await screen.findByRole('option', { name: new RegExp(`^${label}`) })
+    for (const a of absent) expect(screen.queryByRole('option', { name: new RegExp(`^${a}`) })).toBeNull()
+    await u.click(option)
+  } finally {
+    Element.prototype.getBoundingClientRect = rect
+    for (const k of sizes) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k]
+  }
 }

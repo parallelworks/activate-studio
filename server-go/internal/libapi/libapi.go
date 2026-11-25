@@ -132,7 +132,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 		mux.HandleFunc("PUT /api/libraries/{id}/copy", h(s.copySettings))
 		mux.HandleFunc("POST /api/libraries/bucket", h(s.bucketAdd))
 		mux.HandleFunc("GET /api/libraries/buckets", h(s.pwBucketsList))
-		mux.HandleFunc("GET /api/libraries/buckets/folders", h(s.pwBucketFolders))
+		mux.HandleFunc("POST /api/libraries/buckets/folders", h(s.pwBucketFolders))
 		mux.HandleFunc("PUT /api/libraries/{id}/bucket", h(s.bucketSettings))
 		mux.HandleFunc("GET /api/libraries/{id}/bucket/text", h(s.bucketTextEstimate))
 		mux.HandleFunc("POST /api/libraries/{id}/bucket/text/stop", h(s.bucketTextStop))
@@ -147,6 +147,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 				changed(owner)
 			}
 		}
+		a.OnStart("libraries: ACTIVATE buckets", s.pwStart)
 		a.OnIndexWork("libraries: sync", s.builds.startSync)
 		a.OnIndexWork("libraries: copies", s.builds.startCopies)
 		a.OnIndexWork("libraries: buckets", s.builds.startBuckets)
@@ -346,7 +347,10 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 		CanBuild  bool                        `json:"canBuild"`
 		// Buckets: Add a library speaks of ACTIVATE buckets (pwShown).
 		Buckets bool `json:"buckets"`
-	}{out, !s.authEnabled(r), s.pwShown(r)})
+		// BucketEndpoints: the endpoints a bucket can be given, where people
+		// sign in (STUDIO_BUCKET_ENDPOINTS).
+		BucketEndpoints []string `json:"bucketEndpoints,omitempty"`
+	}{out, !s.authEnabled(r), s.pwShown(r), s.bucketEndpoints(r)})
 	return nil
 }
 

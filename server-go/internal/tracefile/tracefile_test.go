@@ -30,7 +30,17 @@ var listing = []entry{
 	{"empty", -1, 1800000000, true},
 	{"projects/alpha/summary.txt", 22, 1700000200, false},
 	{"../escape.txt", 1, 1, false},
-	{"a//b.txt", 7, 1700000400, false},
+	{"a/b.txt", 7, 1700000400, false},
+	{"a//b.txt", 70, 1700000400, false},
+	{"/readme.txt", 70, 1700000400, false},
+	{"notes\n.txt", 70, 1700000400, false},
+	{"tab\there/x.txt", 70, 1700000400, false},
+	{"cut\x1eoff.txt", 70, 1700000400, false},
+	{"del\x7f.txt", 70, 1700000400, false},
+	{"nul\x00.txt", 70, 1700000400, false},
+	{"line\nbreak", -1, 1800000000, true},
+	{"/", -1, 1800000000, true},
+	{"a//", -1, 1800000000, true},
 	{strings.Repeat("x", 300) + "/f.txt", 1, 1, false},
 }
 
@@ -103,8 +113,8 @@ func TestStanzasOncePerFolder(t *testing.T) {
 	if st.Objects != 6 || st.Bytes != 200000+4+22+3+29+7 {
 		t.Errorf("objects %d bytes %d", st.Objects, st.Bytes)
 	}
-	if st.Skipped != 3 {
-		t.Errorf("want 3 skipped (escape, duplicate, long name), got %d", st.Skipped)
+	if st.Skipped != 13 {
+		t.Errorf("want 13 skipped (escape, duplicate, long name, 4 with an empty name, 6 with a control character), got %d", st.Skipped)
 	}
 	seen := map[string]bool{}
 	inos := map[string]string{}

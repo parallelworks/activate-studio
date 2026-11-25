@@ -552,7 +552,7 @@ func TestHosts(t *testing.T) {
 		{"examplebucket", "cn-north-1", "", "https://examplebucket.s3.cn-north-1.amazonaws.com.cn/a%20b/c"},
 	} {
 		t.Setenv("AWS_USE_FIPS_ENDPOINT", c.env)
-		if got := newS3(nil, c.bucket, c.region, "").url("a b/c").String(); got != c.want {
+		if got := newS3(nil, c.bucket, c.region, nil).url("a b/c").String(); got != c.want {
 			t.Errorf("%+v: %s", c, got)
 		}
 	}
@@ -652,39 +652,376 @@ func TestUnreachableStore(t *testing.T) {
 }
 
 func TestCheckEndpoint(t *testing.T) {
-	t.Setenv("STUDIO_BUCKET_ENDPOINTS", "s3.gateway.example.com, store.example.com:9443")
+	t.Setenv("STUDIO_BUCKET_ENDPOINTS", "s3.gateway.example.com, store.example.com:9443, 127.0.0.1:9000")
+	const vpce = "https://vpce-0example.s3.us-east-1.vpce.amazonaws.com"
 	for _, c := range []struct {
-		in     string
-		shared bool
-		want   string
+		in, csp string
+		shared  bool
+		want    string
 	}{
-		{"", true, ""},
-		{"bucket.vpce-0example-abcd.s3.us-gov-west-1.vpce.amazonaws.com", true, "https://bucket.vpce-0example-abcd.s3.us-gov-west-1.vpce.amazonaws.com"},
-		{"https://vpce-0example.s3.us-east-1.vpce.amazonaws.com/", true, "https://vpce-0example.s3.us-east-1.vpce.amazonaws.com"},
-		{"https://S3.gateway.example.com", true, "https://s3.gateway.example.com"},
-		{"https://store.example.com:9443", true, "https://store.example.com:9443"},
-		{"https://store.example.com", true, "!"},
-		{"https://169.254.169.254", true, "!"},
-		{"http://169.254.169.254", false, "!"},
-		{"https://10.0.0.5:8443", true, "!"},
-		{"https://10.0.0.5:8443", false, "https://10.0.0.5:8443"},
-		{"http://127.0.0.1:9000", true, "!"},
-		{"http://127.0.0.1:9000", false, "http://127.0.0.1:9000"},
-		{"http://s3.gateway.example.com", true, "!"},
-		{"https://vpce-0example.s3.us-east-1.vpce.amazonaws.com.evil.example", true, "!"},
-		{"https://vpce-0example.s3.us-east-1.vpce.amazonaws.com:22", true, "!"},
-		{"https://user:pass@vpce-0example.s3.us-east-1.vpce.amazonaws.com", true, "!"},
-		{"https://vpce-0example.s3.us-east-1.vpce.amazonaws.com/x?y", true, "!"},
-		{"https://vpce-0example.s3.us-east-1.vpce.amazonaws.com/x", true, "!"},
-		{"file:///etc/passwd", false, "!"},
+		{"", "", true, ""},
+		// Where people sign in: the administrator's list alone.
+		{"https://S3.gateway.example.com", AWS, true, "https://s3.gateway.example.com"},
+		{"https://store.example.com:9443", Google, true, "https://store.example.com:9443"},
+		{"https://store.example.com", "", true, "!"},
+		{vpce, AWS, true, "!"},
+		{"https://storage-example.p.googleapis.com", Google, true, "!"},
+		{"https://169.254.169.254", "", true, "!"},
+		{"https://10.0.0.5:8443", "", true, "!"},
+		{"http://127.0.0.1:9000", "", true, "!"},
+		{"http://s3.gateway.example.com", "", true, "!"},
+		// Where nobody does: the store's private endpoints too, and no other.
+		{"bucket.vpce-0example-abcd.s3.us-gov-west-1.vpce.amazonaws.com", AWS, false, "https://bucket.vpce-0example-abcd.s3.us-gov-west-1.vpce.amazonaws.com"},
+		{vpce + "/", "", false, vpce},
+		{vpce, Google, false, "!"},
+		{"https://storage-example.p.googleapis.com", Google, false, "https://storage-example.p.googleapis.com"},
+		{"https://storage-example.p.googleapis.com", AWS, false, "!"},
+		{"https://s3.gateway.example.com", Google, false, "https://s3.gateway.example.com"},
+		{"https://collector.example", "", false, "!"},
+		{"https://10.0.0.5:8443", "", false, "!"},
+		{"http://127.0.0.1:9000", "", false, "http://127.0.0.1:9000"},
+		{"http://127.0.0.1:9001", "", false, "!"},
+		{"http://169.254.169.254", "", false, "!"},
+		{"http://s3.gateway.example.com", "", false, "!"},
+		{vpce + ".evil.example", "", false, "!"},
+		{vpce + ":22", "", false, "!"},
+		{"https://user:pass@vpce-0example.s3.us-east-1.vpce.amazonaws.com", "", false, "!"},
+		{vpce + "/x?y", "", false, "!"},
+		{vpce + "/x", "", false, "!"},
+		{"file:///etc/passwd", "", false, "!"},
 	} {
-		got, err := CheckEndpoint(c.in, c.shared)
+		got, err := CheckEndpoint(c.in, c.csp, c.shared)
 		if err != nil {
 			got = "!"
 		}
 		if got != c.want {
 			t.Errorf("%+v: %q %v", c, got, err)
 		}
+	}
+}
+
+// An address for S3 in the environment that is none stops the reading of AWS
+// buckets, in words, and nothing else: they are not read somewhere else.
+func TestSiteEndpoint(t *testing.T) {
+	for _, bad := range []string{"%zz", "http://[::1", "s3.internal:9000", "internal-s3", "https://", "ftp://s3.example.com", "https://u:p@s3.example.com"} {
+		t.Setenv("AWS_ENDPOINT_URL", bad)
+		if err := CheckSite(); err == nil || !strings.Contains(err.Error(), "AWS_ENDPOINT_URL") || strings.Contains(err.Error(), "u:p@") {
+			t.Errorf("%q: %v", bad, err)
+		}
+		f := newStore("a.txt")
+		f.valid["tok1"] = -1
+		s, dir := setup(t, AWS, f)
+		s.Base = ""
+		if err := s.Walk(context.Background(), "", func(Entry) error { return nil }); err == nil || !strings.Contains(err.Error(), "AWS_ENDPOINT_URL") {
+			t.Errorf("%q: listed, %v", bad, err)
+		}
+		if _, err := s.Stat(context.Background(), "a.txt"); err == nil {
+			t.Errorf("%q: opened", bad)
+		}
+		if runs, _ := os.ReadFile(filepath.Join(dir, "runs")); len(runs) > 0 {
+			t.Errorf("%q: pw ran: %s", bad, runs)
+		}
+		put(t, dir, "buckets.json", `[{"name":"b","namespace":"demo","csp":"aws","region":"us-east-1","bucketName":"examplebucket"},{"name":"g","namespace":"demo","csp":"google","bucketName":"examplebucket"}]`)
+		if list, err := s.CLI.Buckets(context.Background()); err != nil || list[0].Why == "" || list[1].Why != "" {
+			t.Errorf("%q: %+v %v", bad, list, err)
+		}
+	}
+	for _, good := range []string{"https://s3.example.com", "http://127.0.0.1:9000/", "https://s3.example.com/base"} {
+		t.Setenv("AWS_ENDPOINT_URL", good)
+		if u, err := siteEndpoint(); err != nil || u == nil || newS3(nil, "examplebucket", "us-east-1", u).url("k").String() != strings.TrimSuffix(good, "/")+"/examplebucket/k" {
+			t.Errorf("%q: %v %v", good, u, err)
+		}
+	}
+	t.Setenv("AWS_ENDPOINT_URL", "")
+	if u, err := siteEndpoint(); u != nil || err != nil {
+		t.Errorf("none: %v %v", u, err)
+	}
+}
+
+// What the platform says of a bucket goes into the host asked only when it
+// is a region's or a bucket's name.
+func TestPlatformNames(t *testing.T) {
+	for _, r := range []string{"us-east-1", "us-gov-west-1", "us-isob-east-1", "eusc-de-east-1", "ap-southeast-4"} {
+		if err := checkNames(Bucket{CSP: AWS, Region: r, Store: "example-bucket.1"}); err != nil {
+			t.Errorf("%s: %v", r, err)
+		}
+	}
+	if err := checkNames(Bucket{CSP: Google, Region: "US", Store: "example_bucket"}); err != nil {
+		t.Error(err)
+	}
+	for _, b := range []Bucket{{Region: "evil.example/"}, {Region: "us-east-1.evil.example"}, {Region: "us-east-1\n"}, {Store: "evil.example/x"}, {Store: "a@evil"}, {Store: "evil.example#"}, {Store: "x..y"}, {Store: "Ex ample"}} {
+		b.CSP = AWS
+		if b.Store == "" {
+			b.Store = "examplebucket"
+		}
+		if err := checkNames(b); err == nil {
+			t.Errorf("%+v was taken", b)
+		}
+		f := newStore("a.txt")
+		f.valid["tok1"] = -1
+		s, dir := setup(t, AWS, f)
+		b.URI = "pw://demo/b"
+		s.B = b
+		walk(t, s, "")
+		if route, why := s.Route(); route != ThroughCLI || why == nil || f.requests() != 0 {
+			t.Errorf("%+v: %s %v, %d requests", b, route, why, f.requests())
+		}
+		j, _ := json.Marshal([]map[string]string{{"name": "b", "namespace": "demo", "csp": "aws", "region": b.Region, "bucketName": b.Store}})
+		put(t, dir, "buckets.json", string(j))
+		if list, err := s.CLI.Buckets(context.Background()); err != nil || list[0].Why == "" || list[0].Region+list[0].Store != "" {
+			t.Errorf("%+v is offered: %+v %v", b, list, err)
+		}
+	}
+}
+
+// pw is given none of the Studio's own cloud credentials, in its environment
+// or where its cloud libraries look for them.
+func TestNoCloudCredentials(t *testing.T) {
+	f := newStore("a.txt")
+	f.valid["tok1"] = -1
+	s, dir := setup(t, AWS, f)
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".aws"), 0o700)
+	put(t, filepath.Join(home, ".aws"), "credentials", "[default]\naws_access_key_id = studio-secret\n")
+	own := map[string]string{"HOME": home}
+	for _, k := range strings.Fields(`AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
+		AWS_WEB_IDENTITY_TOKEN_FILE AWS_ROLE_ARN AWS_CONTAINER_CREDENTIALS_FULL_URI AWS_CONTAINER_AUTHORIZATION_TOKEN AWS_BEARER_TOKEN_BEDROCK
+		GOOGLE_APPLICATION_CREDENTIALS GOOGLE_OAUTH_ACCESS_TOKEN GOOGLE_API_KEY CLOUDSDK_AUTH_ACCESS_TOKEN CLOUDSDK_CONFIG GCE_METADATA_HOST
+		AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_STORAGE_KEY AZURE_STORAGE_CONNECTION_STRING AZURE_CONFIG_DIR OPENAI_API_KEY`) {
+		own[k] = "studio-secret"
+	}
+	for k, v := range own {
+		t.Setenv(k, v)
+	}
+	t.Setenv("AWS_USE_FIPS_ENDPOINT", "false")
+	t.Setenv("AWS_ENDPOINT_URL_S3", "https://s3.example.com")
+	t.Setenv("AWS_CA_BUNDLE", "/etc/example.pem")
+	s.CLI.Environ = func(set map[string]string) []string {
+		var env []string
+		for _, kv := range os.Environ() {
+			if k, _, _ := strings.Cut(kv, "="); set[k] == "" {
+				if _, ok := set[k]; !ok {
+					env = append(env, kv)
+				}
+			}
+		}
+		for k, v := range set {
+			if v != "" {
+				env = append(env, k+"="+v)
+			}
+		}
+		return env
+	}
+	walk(t, s, "")
+	env, _ := os.ReadFile(filepath.Join(dir, "env"))
+	if strings.Contains(string(env), "studio-secret") || strings.Contains(string(env), home) {
+		t.Errorf("pw was given them: %s", env)
+	}
+	for _, want := range []string{"AWS_EC2_METADATA_DISABLED=true\n", "AWS_SHARED_CREDENTIALS_FILE=/dev/null\n", "AWS_CONFIG_FILE=/dev/null\n", "AWS_USE_FIPS_ENDPOINT=false\n", "AWS_ENDPOINT_URL_S3=https://s3.example.com\n", "AWS_CA_BUNDLE=/etc/example.pem\n", "PW_API_KEY=pwt_person\n"} {
+		if !strings.Contains("\n"+string(env), "\n"+want) {
+			t.Errorf("no %q in %s", want, env)
+		}
+	}
+	// A bucket's own endpoint is the only one.
+	s.CLI.Endpoint = "https://other.example.com"
+	if _, err := s.CLI.Token(context.Background(), "pw://demo/b"); err != nil {
+		t.Fatal(err)
+	}
+	env, _ = os.ReadFile(filepath.Join(dir, "env"))
+	if strings.Contains(string(env), "s3.example.com") || !strings.Contains(string(env), "AWS_ENDPOINT_URL=https://other.example.com\n") {
+		t.Errorf("%s", env)
+	}
+}
+
+// What a Studio that was cut off left is removed; what is in use, another
+// account's, or only named alike is not.
+func TestSweep(t *testing.T) {
+	base := t.TempDir()
+	was := tmpBase
+	tmpBase = func() string { return base }
+	defer func() { tmpBase = was }()
+	t.Setenv("TMPDIR", t.TempDir())
+	left := []string{filepath.Join(base, "studio-pw-run-123"), filepath.Join(os.TempDir(), "studio-pw-run-456")}
+	for _, d := range left {
+		os.MkdirAll(filepath.Join(d, ".pw"), 0o700)
+		put(t, filepath.Join(d, ".pw"), "credentials", "a credential")
+	}
+	inUse, remove, err := privateHome()
+	if err != nil || filepath.Dir(inUse) != base {
+		t.Fatal(inUse, err)
+	}
+	if st, err := os.Stat(inUse); err != nil || st.Mode().Perm() != 0o700 {
+		t.Errorf("%v %v", st, err)
+	}
+	elsewhere := t.TempDir()
+	put(t, elsewhere, "mine", "x")
+	stays := []string{filepath.Join(base, "studio-pw-no-sign-in-1000"), filepath.Join(base, "studio-pw-run-link"), filepath.Join(base, "studio-pw-run-file"), inUse, filepath.Join(elsewhere, "mine")}
+	os.Mkdir(stays[0], 0o700)
+	os.Symlink(elsewhere, stays[1])
+	put(t, base, "studio-pw-run-file", "")
+	if n := Sweep(); n != 2 {
+		t.Errorf("%d removed", n)
+	}
+	for _, d := range left {
+		if _, err := os.Lstat(d); !os.IsNotExist(err) {
+			t.Errorf("%s is still there", d)
+		}
+	}
+	for _, d := range stays {
+		if _, err := os.Lstat(d); err != nil {
+			t.Errorf("%s was removed", d)
+		}
+	}
+	remove()
+	if _, err := os.Lstat(inUse); !os.IsNotExist(err) {
+		t.Error("its own was not removed")
+	}
+	// Made and swept at once, each run still has a folder of its own.
+	var wg sync.WaitGroup
+	var bad atomic.Int32
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 50 {
+				dir, remove, err := privateHome()
+				if err != nil || os.WriteFile(filepath.Join(dir, "x"), nil, 0o600) != nil {
+					bad.Add(1)
+					continue
+				}
+				Sweep()
+				if _, err := os.Stat(filepath.Join(dir, "x")); err != nil {
+					bad.Add(1)
+				}
+				remove()
+			}
+		}()
+	}
+	wg.Wait()
+	if bad.Load() > 0 {
+		t.Errorf("%d runs lost their folder", bad.Load())
+	}
+}
+
+// Where several people use the Studio a connection's failure is told to the
+// administrator, and the person only that there was one.
+func TestConnectionsAreNotDescribed(t *testing.T) {
+	ts := httptest.NewTLSServer(newStore("a.txt"))
+	defer ts.Close()
+	f := newStore("a.txt")
+	s, dir := setup(t, AWS, f)
+	s.Base = ts.URL
+	put(t, dir, "fail-ls", "2026-11-25T14:10:08Z [ERROR] Get https://10.0.0.5: tls: failed to verify certificate: x509: certificate is valid for intranet.example, not other.example\n")
+	var told []string
+	s.CLI.Report = func(what string) { told = append(told, what) }
+	said := ""
+	err := s.Walk(context.Background(), "", func(Entry) error { return nil })
+	_, why := s.Route()
+	for _, e := range []error{err, why} {
+		if e == nil {
+			t.Fatal("no error")
+		}
+		said += e.Error() + "\n"
+	}
+	s2 := &Store{CLI: s.CLI, Base: "http://127.0.0.1:1", B: s.B}
+	put(t, dir, "fail-ls", "x [ERROR] dial tcp 10.0.0.5:443: connect: connection refused\n")
+	_, err = s2.Read(context.Background(), "a.txt", -1)
+	said += err.Error() + "\n"
+	_, _, err = (&Store{CLI: s.CLI, Base: ts.URL, B: s.B}).Browse(context.Background(), "", 10)
+	said += err.Error()
+	for _, w := range []string{"x509", "certificate", "intranet", "10.0.0.5", "dial", "refused", "tls:"} {
+		if strings.Contains(said, w) {
+			t.Errorf("a person is told %q: %s", w, said)
+		}
+	}
+	if !strings.Contains(said, "could not be reached") {
+		t.Error(said)
+	}
+	log := strings.Join(told, "\n")
+	for _, w := range []string{"x509", "intranet.example", "connection refused"} {
+		if !strings.Contains(log, w) {
+			t.Errorf("the administrator is not told %q: %s", w, log)
+		}
+	}
+	// A reading that stops part way.
+	body := &quietBody{io.NopCloser(brokenReader{}), s.CLI, context.Background(), "https://s3.example.com"}
+	if _, err := io.ReadAll(body); err == nil || strings.Contains(err.Error(), "10.0.0.5") {
+		t.Errorf("%v", err)
+	}
+	// Alone, the person is the administrator.
+	s3 := &Store{CLI: testCLI(s.CLI.Bin), Base: ts.URL, B: s.B}
+	if err := s3.Walk(context.Background(), "", func(Entry) error { return nil }); err == nil || !strings.Contains(err.Error(), "certificate") {
+		t.Errorf("%v", err)
+	}
+}
+
+type brokenReader struct{}
+
+func (brokenReader) Read([]byte) (int, error) {
+	return 0, errors.New("read tcp 127.0.0.1:2->10.0.0.5:443: connection reset by peer")
+}
+
+// A failure of the caller's own while a listing runs on several threads is
+// that listing's error, not the server's end.
+func TestPanicInAListing(t *testing.T) {
+	f := newStore("a.txt")
+	s, dir := setup(t, Azure, f)
+	put(t, dir, "ls,", `[{"uri":"pw://demo/b/a.txt","size":1}]`)
+	err := s.Walk(context.Background(), "", func(Entry) error { panic("of its own") })
+	if err == nil || !strings.Contains(err.Error(), "of its own") {
+		t.Errorf("%v", err)
+	}
+	homes, _ := os.ReadFile(filepath.Join(dir, "homes"))
+	for _, h := range strings.Fields(string(homes)) {
+		if _, err := os.Stat(h); !os.IsNotExist(err) {
+			t.Errorf("%s was left behind", h)
+		}
+	}
+}
+
+// A key with an empty name in it is never given as another's, by either way
+// of listing, nor is its folder looked into or offered.
+func TestKeysWithEmptyNames(t *testing.T) {
+	keys := []string{"/lead.txt", "a//twice.txt", "a/b.txt", "a//", "c/", "/", "top.txt"}
+	f := newStore(keys...)
+	f.valid["tok1"] = -1
+	s, _ := setup(t, AWS, f)
+	var got []string
+	if err := s.Walk(context.Background(), "", func(e Entry) error {
+		got = append(got, fmt.Sprintf("%s %v", e.Path, e.IsDir))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(got)
+	if want := "/ true|/lead.txt false|a// true|a//twice.txt false|a/b.txt false|c true|top.txt false"; strings.Join(got, "|") != want {
+		t.Errorf("%q", got)
+	}
+	list, _, err := s.Browse(context.Background(), "a", 10)
+	if err != nil || len(list) != 1 || list[0].Path != "b.txt" {
+		t.Errorf("%+v %v", list, err)
+	}
+
+	z, dir := setup(t, Azure, newStore())
+	put(t, dir, "ls,", `[{"uri":"pw://demo/b//","directory":true},{"uri":"pw://demo/b/a/","directory":true},{"uri":"pw://demo/b/top.txt","size":1}]`)
+	put(t, dir, "ls,a,", `[{"uri":"pw://demo/b/a//","directory":true},{"uri":"pw://demo/b/a/b.txt","size":1}]`)
+	got = nil
+	if err := z.Walk(context.Background(), "", func(e Entry) error {
+		got = append(got, fmt.Sprintf("%s %v", e.Path, e.IsDir))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(got)
+	if want := "/ true|a true|a// true|a/b.txt false|top.txt false"; strings.Join(got, "|") != want {
+		t.Errorf("through pw: %q", got)
+	}
+	runs, _ := os.ReadFile(filepath.Join(dir, "runs"))
+	if strings.Contains(string(runs), "b//") || strings.Contains(string(runs), "a//") {
+		t.Errorf("looked into: %s", runs)
+	}
+	if list, _, err := z.Browse(context.Background(), "a", 10); err != nil || len(list) != 1 || list[0].Path != "b.txt" {
+		t.Errorf("through pw: %+v %v", list, err)
 	}
 }
 

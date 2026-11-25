@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,7 +62,7 @@ func (s *Store) Endpoint() string {
 		if b.Region == "" {
 			return "s3/" + b.Store
 		}
-		return newS3(nil, b.Store, b.Region, "").endpoint() + "/" + b.Store
+		return newS3(nil, b.Store, b.Region, nil).endpoint() + "/" + b.Store
 	case Google:
 		return gcsHost + "/" + b.Store
 	case Azure:
@@ -80,18 +80,24 @@ func (s *Store) Endpoint() string {
 func (s *Store) direct(ctx context.Context) (client, Cred, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var base *url.URL
+	if s.B.CSP == AWS {
+		var err error
+		if base, err = s.s3Base(); err != nil {
+			return nil, Cred{}, err
+		}
+	}
 	if s.why != nil {
 		return nil, Cred{}, nil
 	}
 	if s.client == nil {
+		named := checkNames(s.B)
 		switch {
 		case s.B.Store == "":
 			s.why = errors.New("the platform does not say the bucket's name in its store")
+		case named != nil:
+			s.why = named
 		case s.B.CSP == AWS:
-			base := s.Base
-			if base == "" {
-				base = siteEndpoint()
-			}
 			s.client = newS3(sharedHTTP, s.B.Store, s.B.Region, base)
 		case s.B.CSP == Google:
 			s.client = &gcsClient{hc: sharedHTTP, bucket: s.B.Store, base: s.Base}
@@ -128,6 +134,19 @@ func (s *Store) direct(ctx context.Context) (client, Cred, error) {
 	return s.client, *s.cred, nil
 }
 
+// s3Base is where S3 is asked: at the bucket's own endpoint, else the
+// site's; nil for AWS's.
+func (s *Store) s3Base() (*url.URL, error) {
+	if s.Base == "" {
+		return siteEndpoint()
+	}
+	u, err := url.Parse(s.Base)
+	if err != nil || u.Host == "" {
+		return nil, errors.New("the bucket's endpoint is not an address")
+	}
+	return u, nil
+}
+
 // renew takes a new credential in place of old; another caller may have
 // done so already.
 func (s *Store) renew(ctx context.Context, old Cred) (Cred, error) {
@@ -156,9 +175,6 @@ func (s *Store) fallBack(why error) {
 const tries = 5
 
 var pause = 400 * time.Millisecond
-
-// regionRe is a region's name: what a store says goes into the host asked.
-var regionRe = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$`)
 
 // ask makes one request of the store until it is answered: again after a
 // wait while the store is busy, with a new credential when the one it has
@@ -203,7 +219,7 @@ func (s *Store) ask(ctx context.Context, c client, cr *Cred, do func(Cred) error
 		// A store that has not answered yet may not be reached from here at
 		// all: that is worth one more try, not five.
 		if !passing(err) || n >= tries || n >= 2 && !s.answered.Load() {
-			return err
+			return s.CLI.quiet(err)
 		}
 		select {
 		case <-ctx.Done():
@@ -286,9 +302,14 @@ func (s *Store) walkDirect(ctx context.Context, c client, cr Cred, dir string, f
 			}
 			last = e.Path
 			rel := strings.TrimPrefix(e.Path, prefix)
-			if strings.HasSuffix(rel, "/") || rel == "" {
-				if rel = strings.Trim(rel, "/"); rel == "" {
-					continue
+			if rel == "" {
+				continue
+			}
+			if strings.HasSuffix(rel, "/") {
+				// A key with an empty name in it is given as it is, which
+				// nothing is indexed or opened by.
+				if name := strings.TrimSuffix(rel, "/"); Plain(name) {
+					rel = name
 				}
 				e.IsDir, e.Size = true, 0
 			}
@@ -306,6 +327,23 @@ func (s *Store) walkDirect(ctx context.Context, c client, cr Cred, dir string, f
 		}
 		token = p.next
 	}
+}
+
+// Plain is whether a key has no empty name in it: a slash at its start or
+// end, or two together. One that has is no path: cleaned, it would name
+// another object.
+func Plain(key string) bool {
+	return key != "" && key[0] != '/' && key[len(key)-1] != '/' && !strings.Contains(key, "//")
+}
+
+// guarded runs fn, a failure of its own (a panic) given as an error.
+func guarded(fn func() error) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("internal error: %v", p)
+		}
+	}()
+	return fn()
 }
 
 // notFound makes a store's own words for a missing object NotFound.
@@ -338,7 +376,7 @@ func (s *Store) object(ctx context.Context, key string, n int64) (io.ReadCloser,
 				}
 			}
 			e.ModTime, _ = http.ParseTime(res.Header.Get("Last-Modified"))
-			return res.Body, e, nil
+			return &quietBody{res.Body, s.CLI, ctx, res.Request.URL.Scheme + "://" + res.Request.URL.Host}, e, nil
 		case errors.As(err, &se) && se.Status == http.StatusRequestedRangeNotSatisfiable:
 			return nil, e, nil
 		case ctx.Err() != nil || !refused(err):
@@ -463,7 +501,8 @@ func (s *Store) walkCLI(ctx context.Context, dir string, fn func(Entry) error) e
 				queue = queue[:len(queue)-1]
 				busy++
 				mu.Unlock()
-				list, err := s.CLI.ls(ctx, home, s.B.URI, d, 0)
+				var list []Entry
+				err := guarded(func() (err error) { list, err = s.CLI.ls(ctx, home, s.B.URI, d, 0); return err })
 				mu.Lock()
 				busy--
 				for _, e := range list {
@@ -473,14 +512,16 @@ func (s *Store) walkCLI(ctx context.Context, dir string, fn func(Entry) error) e
 					if !strings.HasPrefix(e.Path, prefix) {
 						continue
 					}
-					if e.IsDir && !seen[e.Path] {
+					if e.IsDir && !seen[e.Path] && Plain(e.Path) {
 						seen[e.Path] = true
 						queue = append(queue, e.Path)
 					}
-					e.Path = strings.TrimPrefix(e.Path, prefix)
+					if e.Path = strings.TrimPrefix(e.Path, prefix); e.IsDir && !Plain(e.Path) {
+						e.Path += "/"
+					}
 					// Under the lock: fn is one caller's, and takes one
 					// entry at a time.
-					err = fn(e)
+					err = guarded(func() error { return fn(e) })
 				}
 				if err != nil && first == nil {
 					first = err
@@ -533,8 +574,8 @@ func (s *Store) Browse(ctx context.Context, dir string, max int) (list []Entry, 
 		direct = s.ask(ctx, c, &cr, func(cr Cred) (err error) { p, err = c.folder(ctx, cr, prefix, max); return err }, nil)
 		if direct == nil {
 			for _, e := range p.entries {
-				// The folder's own marker.
-				if e.Path = strings.Trim(strings.TrimPrefix(e.Path, prefix), "/"); e.Path != "" {
+				// Not the folder's own marker, nor a key no path names.
+				if e.Path = strings.TrimSuffix(strings.TrimPrefix(e.Path, prefix), "/"); Plain(e.Path) {
 					list = append(list, e)
 				}
 			}
@@ -557,8 +598,12 @@ func (s *Store) Browse(ctx context.Context, dir string, max int) (list []Entry, 
 		}
 		return nil, false, err
 	}
-	for i := range list {
-		list[i].Path = strings.TrimPrefix(strings.TrimPrefix(list[i].Path, dir), "/")
+	more = len(list) >= max
+	found := list[:0]
+	for _, e := range list {
+		if e.Path = strings.TrimPrefix(e.Path, prefix); Plain(e.Path) {
+			found = append(found, e)
+		}
 	}
-	return list, len(list) >= max, nil
+	return found, more, nil
 }

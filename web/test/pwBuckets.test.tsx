@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bucketWhere, listingCost } from '../src/api'
+import { bucketWhere, endpointItems, listingCost } from '../src/api'
 import { AddLibrary } from '../src/components/AddLibrary'
 import { addChoices, type AddOptions } from '../src/components/addLibraryTarget'
 import { addOptions, addedMessage, mayAddLibraries } from '../src/components/LibraryAddDialogs'
-import { chooseComputer, closeMenu, computers } from './addLibraryHelpers'
+import { reloadAppConfig } from '../src/config'
+import { chooseComputer, closeMenu, computers, pickOption } from './addLibraryHelpers'
 
 // A checkbox forwards its press to its hidden input as a PointerEvent,
 // which jsdom does not have.
@@ -26,7 +27,7 @@ const BUCKETS = [b('papers'), b('gov-data', { region: 'us-gov-west-1' }), b('ima
 const library = (uri: string, path = '', more: object = {}) => ({ id: `lib-${uri.split('/').pop()}`, label: uri.split('/').pop(), bucket: { location: uri, path, every: 1440, csp: 'aws', region: 'us-gov-west-1', ...more } })
 
 interface Calls { method: string; url: string; body?: Record<string, unknown> }
-function stub(over: { buckets?: object; libs?: object[]; refuse?: Record<string, string> } = {}) {
+function stub(over: { buckets?: object; libs?: object[]; refuse?: Record<string, string>; signIn?: boolean; endpoints?: string[] } = {}) {
   const calls: Calls[] = []
   vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }))
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
@@ -35,10 +36,12 @@ function stub(over: { buckets?: object; libs?: object[]; refuse?: Record<string,
     calls.push({ method: init?.method ?? 'GET', url, body })
     if (url === '/api/libraries/buckets') return json(over.buckets ?? { available: true, buckets: BUCKETS })
     if (url.startsWith('/api/libraries/buckets/folders')) {
-      const path = new URLSearchParams(url.split('?')[1]).get('path')
+      if (init?.method !== 'POST') return json({ error: 'not found' }, 404)
+      const path = body?.path
       return json(path ? { path, parent: '', dirs: [], objects: 12, more: false } : { path: '', parent: null, dirs: ['plans', 'raw'], objects: 2, more: false })
     }
-    if (url === '/api/libraries') return json({ libraries: over.libs ?? [], canBuild: true, buckets: true })
+    if (url === '/api/libraries') return json({ libraries: over.libs ?? [], canBuild: !over.signIn, buckets: true, ...(over.endpoints ? { bucketEndpoints: over.endpoints } : {}) })
+    if (url === '/api/config') return json({ signIn: !!over.signIn })
     if (url === '/api/libraries/bucket') {
       const uri = String(body?.bucket)
       if (over.refuse?.[uri]) return json({ error: over.refuse[uri] }, 409)
@@ -149,6 +152,36 @@ describe('ACTIVATE buckets in Add a library', () => {
     fireEvent.click(screen.getByRole('button', { name: 'List and index 2 buckets' }))
     await waitFor(() => expect(onAdded).toHaveBeenCalled())
     expect(s.posted()).toEqual([{ bucket: 'pw://ada/gov-data', every: 360, endpoint: at }, { bucket: 'pw://ada/images', every: 360 }])
+  })
+
+  it('chooses an endpoint from the administrator\'s list where people sign in, and types one where nobody does', async () => {
+    const at = 'https://s3.gateway.example.com'
+    const s = stub({ signIn: true, endpoints: [at] })
+    const r = render(<AddLibrary options={SIGNED} onAdded={() => {}} />)
+    await waitFor(async () => { const t = (await computers()).map(x => x.textContent).join('|'); closeMenu(); expect(t).toContain('papers') })
+    await chooseComputer('papers')
+    await act(async () => { reloadAppConfig() })
+    await screen.findByText(/only you see it here/)
+    fireEvent.click(await screen.findByRole('button', { name: 'More options' }))
+    expect(screen.queryByRole('textbox', { name: /Endpoint/ })).toBeNull()
+    await pickOption('Endpoint', 's3.gateway.example.com')
+    // The endpoint goes in a body, never in an address another page can name.
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a folder' }))
+    expect(await screen.findByRole('button', { name: 'plans/' })).toBeInTheDocument()
+    expect(s.calls.filter(c => c.url.includes('/buckets/folders'))).toEqual([{ method: 'POST', url: '/api/libraries/buckets/folders', body: { uri: 'pw://ada/papers', path: '', endpoint: at } }])
+    fireEvent.click(screen.getByRole('button', { name: 'List and index' }))
+    await waitFor(() => expect(s.posted()).toEqual([{ bucket: 'pw://ada/papers', every: 1440, endpoint: at, path: '' }]))
+    r.unmount()
+    stub({ signIn: true })
+    const r2 = render(<AddLibrary options={SIGNED} onAdded={() => {}} />)
+    await waitFor(async () => { const t = (await computers()).map(x => x.textContent).join('|'); closeMenu(); expect(t).toContain('papers') })
+    await chooseComputer('papers')
+    expect(await screen.findByRole('button', { name: 'List and index' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More options' })).toBeNull()
+    r2.unmount()
+    stub()
+    await act(async () => { reloadAppConfig() })
+    expect(endpointItems([at], 'https://gone.example.com').map(i => i.label)).toEqual(['The store\'s own', 's3.gateway.example.com', 'gone.example.com'])
   })
 
   it('refuses the same bucket twice before it is asked', async () => {

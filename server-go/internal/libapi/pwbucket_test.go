@@ -1,6 +1,7 @@
 package libapi
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
 	"github.com/parallelworks/activate-studio/server-go/internal/index"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
+	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 )
 
@@ -53,7 +55,7 @@ while [ $# -gt 0 ]; do case "$1" in --context|--platform-host) shift 2;; *) brea
 shift; cmd=$1; for a; do last=$a; done
 case "$PW_API_KEY" in key-*) who=${PW_API_KEY#key-};; *) echo "$cmd as '$PW_API_KEY'" >> "$D/strangers"; echo "x [ERROR] unauthorized" >&2; exit 1;; esac
 echo "$who $cmd $last" >> "$D/runs"
-echo "$HOME" >> "$D/homes"; echo cached-token > "$HOME/credentials"
+env >> "$D/envs"; echo "$HOME" >> "$D/homes"; echo cached-token > "$HOME/credentials"
 own() { case "$1" in pw://$who/*) ;; *) echo "x [ERROR] storage not found: ${1##*/}" >&2; exit 1;; esac; }
 case "$cmd" in
 get-token) own "$last"; [ -f "$D/no-token" ] && { echo "x [ERROR] no token for you" >&2; exit 1; }
@@ -288,7 +290,7 @@ func TestPWBucketLibrary(t *testing.T) {
 	if code != 200 || b["available"] != true || len(list) != 2 || list[0].(map[string]any)["label"] != "Papers of me" || list[1].(map[string]any)["why"] == nil {
 		t.Fatalf("buckets: %d %v", code, b)
 	}
-	code, b = f.call("GET", "/api/libraries/buckets/folders?uri=pw://me/papers&path=projects", nil)
+	code, b = f.call("POST", "/api/libraries/buckets/folders", map[string]any{"uri": "pw://me/papers", "path": "projects"})
 	if code != 200 || fmt.Sprint(b["dirs"]) != "[alpha beta]" || b["parent"] != "" || b["objects"] != float64(0) {
 		t.Fatalf("folders: %d %v", code, b)
 	}
@@ -404,18 +406,25 @@ type signInFixture struct {
 	origin string
 	*buildFixture
 	keys map[string]string
-	logs *strings.Builder
+	logs *lockedLog
 }
 
-type lockedWriter struct {
-	mu *sync.Mutex
-	w  io.Writer
+// lockedLog is a log that is read while it is written.
+type lockedLog struct {
+	mu sync.Mutex
+	b  strings.Builder
 }
 
-func (l lockedWriter) Write(b []byte) (int, error) {
+func (l *lockedLog) Write(b []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.w.Write(b)
+	return l.b.Write(b)
+}
+
+func (l *lockedLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 func newSignInFixture(t *testing.T, p *fakePlatform) *signInFixture {
@@ -424,7 +433,7 @@ func newSignInFixture(t *testing.T, p *fakePlatform) *signInFixture {
 	// The deployment's own sign-in, which nothing here may use.
 	t.Setenv("PW_API_KEY", "deployment")
 	dir := t.TempDir()
-	f := &signInFixture{buildFixture: &buildFixture{t: t, dir: dir, kb: filepath.Join(dir, "kb"), base: filepath.Join(dir, "ix")}, keys: map[string]string{}, logs: &strings.Builder{}}
+	f := &signInFixture{buildFixture: &buildFixture{t: t, dir: dir, kb: filepath.Join(dir, "kb"), base: filepath.Join(dir, "ix")}, keys: map[string]string{}, logs: &lockedLog{}}
 	put(t, filepath.Join(f.kb, "main.md"), "# main\n")
 	t.Setenv("HOME", dir)
 	env := map[string]string{"KB_ROOT": f.kb, "INDEX_BASE": f.base, "GUFI_BIN": testGufi, "STUDIO_NODE": "off", "SWEEP_INTERVAL_SEC": "0", "AUTH_JWKS_URL": "http://127.0.0.1:1/jwks", "AUTH_REQUIRED": "1"}
@@ -434,7 +443,7 @@ func newSignInFixture(t *testing.T, p *fakePlatform) *signInFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.a = app.New(cfg, slog.New(slog.NewTextHandler(lockedWriter{&sync.Mutex{}, f.logs}, nil)), nil, nil)
+	f.a = app.New(cfg, slog.New(slog.NewTextHandler(f.logs, nil)), nil, nil)
 	f.mux = http.NewServeMux()
 	index.Register(f.mux, f.a)
 	Register(f.mux, f.a)
@@ -517,7 +526,7 @@ func TestPWBucketsOfTwoPeople(t *testing.T) {
 	if code, _ := f.as("ada", "", "POST", "/api/libraries/bucket", map[string]any{"location": "rclone:store"}); code != 403 {
 		t.Errorf("an rclone remote with sign-in on: %d", code)
 	}
-	for _, c := range [][2]string{{"GET", "/api/libraries/buckets"}, {"GET", "/api/libraries/buckets/folders?uri=pw://ada/papers"}, {"POST", "/api/libraries/bucket"}} {
+	for _, c := range [][2]string{{"GET", "/api/libraries/buckets"}, {"POST", "/api/libraries/buckets/folders"}, {"POST", "/api/libraries/bucket"}} {
 		if code, b := f.as("", "", c[0], c[1], map[string]any{"bucket": "pw://ada/papers"}); code != 401 {
 			t.Errorf("%s %s not signed in: %d %v", c[0], c[1], code, b)
 		}
@@ -537,11 +546,11 @@ func TestPWBucketsOfTwoPeople(t *testing.T) {
 		t.Errorf("bob adds ada's: %d %v", code, b)
 	}
 
-	for _, e := range []string{"https://169.254.169.254", "https://127.0.0.1:8443", "http://store.example"} {
+	for _, e := range []string{"https://169.254.169.254", "https://127.0.0.1:8443", "http://store.example", "https://vpce-0example.s3.us-east-1.vpce.amazonaws.com", "https://storage-example.p.googleapis.com"} {
 		if code, b := f.as("ada", "", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers", "endpoint": e}); code != 400 {
 			t.Errorf("endpoint %s: %d %v", e, code, b)
 		}
-		if code, b := f.as("ada", "", "GET", "/api/libraries/buckets/folders?uri=pw://ada/papers&endpoint="+url.QueryEscape(e), nil); code != 400 {
+		if code, b := f.as("ada", "", "POST", "/api/libraries/buckets/folders", map[string]any{"uri": "pw://ada/papers", "endpoint": e}); code != 400 {
 			t.Errorf("looking at endpoint %s: %d %v", e, code, b)
 		}
 	}
@@ -581,6 +590,9 @@ func TestPWBucketsOfTwoPeople(t *testing.T) {
 		}
 	}
 	f.origin = ""
+	if code, _ := f.as("ada", "", "PUT", "/api/libraries/"+idA+"/bucket", map[string]any{"endpoint": "https://vpce-0example.s3.us-east-1.vpce.amazonaws.com"}); code != 400 {
+		t.Errorf("an endpoint the administrator does not list: %d", code)
+	}
 	bk := f.row("ada", idA)["bucket"].(map[string]any)
 	if bk["route"] != "direct" || bk["objects"] != float64(1) || bk["textPass"].(map[string]any)["files"] != float64(1) {
 		t.Fatalf("ada's: %v", bk)
@@ -757,4 +769,302 @@ func TestPWBucketFromBeforeSignIn(t *testing.T) {
 	if s := p.file("runs") + p.file("strangers"); s != "" {
 		t.Errorf("pw ran: %s", s)
 	}
+}
+
+// With sign-in off, no page of another site can use the person's buckets: no
+// route that has a token fetched, lists, reads, rebuilds or stops answers it,
+// pw is not run for it, and an address it names is asked nothing.
+func TestPWBucketOtherSites(t *testing.T) {
+	needTrace(t)
+	for _, csp := range []string{"aws", "google"} {
+		t.Run(csp, func(t *testing.T) {
+			p := newFakePlatform(t)
+			t.Setenv("PW_API_KEY", "key-me")
+			f := newBuildFixture(t)
+			kb.Register(f.mux, f.a)
+			f.s.builds.pwb.base = p.base
+			p.object("me", "readme.txt", "top")
+			code, b := f.call("POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://me/papers"})
+			if code != 200 {
+				t.Fatalf("add: %d %v", code, b)
+			}
+			id := b["library"].(map[string]any)["id"].(string)
+			f.waitReady(id)
+			put(t, filepath.Join(p.dir, "csp"), csp)
+			f.s.builds.pwb.forget("")
+			f.s.builds.pwb.base = ""
+			var asked []string
+			named := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				asked = append(asked, r.URL.Path+" "+r.Header.Get("Authorization"))
+				w.WriteHeader(403)
+			}))
+			defer named.Close()
+			at := url.QueryEscape(named.URL)
+			runs, requests := p.file("runs"), len(p.requests())
+			for _, c := range [][3]string{
+				{"GET", "/api/libraries/buckets", ""},
+				{"GET", "/api/libraries/buckets/folders?uri=pw://me/papers&endpoint=" + at, ""},
+				{"POST", "/api/libraries/buckets/folders", `{"uri":"pw://me/papers"}`},
+				{"POST", "/api/libraries/buckets/folders?uri=pw://me/papers&endpoint=" + at, `{"uri":"pw://me/papers","endpoint":"` + named.URL + `"}`},
+				{"POST", "/api/libraries/bucket", `{"bucket":"pw://me/papers","path":"x","endpoint":"` + named.URL + `"}`},
+				{"PUT", "/api/libraries/" + id + "/bucket", `{"endpoint":"` + named.URL + `"}`},
+				{"GET", "/api/libraries/" + id + "/bucket/text", ""},
+				{"POST", "/api/libraries/" + id + "/bucket/text/stop", ""},
+				{"POST", "/api/libraries/" + id + "/rebuild", ""},
+				{"GET", "/api/kb/file?library=" + id + "&path=readme.txt", ""},
+				{"GET", "/api/kb/download?library=" + id + "&path=readme.txt", ""},
+				{"DELETE", "/api/libraries/" + id, ""},
+			} {
+				for _, from := range []map[string]string{
+					{"Origin": "https://elsewhere.example", "Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"},
+					{"Origin": "https://elsewhere.example"}, {"Origin": "null"}, {"Referer": "http://elsewhere.example/page"},
+				} {
+					for _, kind := range []string{"application/json", "text/plain"} {
+						r := httptest.NewRequest(c[0], c[1], strings.NewReader(c[2]))
+						r.Header.Set("Content-Type", kind)
+						for k, v := range from {
+							r.Header.Set(k, v)
+						}
+						w := httptest.NewRecorder()
+						f.mux.ServeHTTP(w, r)
+						if w.Code != 403 && w.Code != 404 && w.Code != 405 || strings.Contains(w.Body.String(), "top") {
+							t.Errorf("%s %s from %v: %d %s", c[0], c[1], from, w.Code, w.Body)
+						}
+					}
+				}
+			}
+			// The old way to look at folders names nothing, from here either.
+			if code, b := f.call("GET", "/api/libraries/buckets/folders?uri=pw://me/papers&endpoint="+at, nil); code == 200 {
+				t.Errorf("by GET: %v", b)
+			}
+			// Nor does the Studio's own page send the credential to any host.
+			for _, body := range []map[string]any{{"uri": "pw://me/papers", "endpoint": named.URL}, {"uri": "pw://me/papers", "endpoint": "https://collector.example"}} {
+				if code, b := f.call("POST", "/api/libraries/buckets/folders", body); code != 400 {
+					t.Errorf("%v: %d %v", body, code, b)
+				}
+			}
+			if code, b := f.call("PUT", "/api/libraries/"+id+"/bucket", map[string]any{"endpoint": "https://collector.example"}); code != 400 {
+				t.Errorf("its endpoint: %d %v", code, b)
+			}
+			if len(asked) > 0 || p.file("runs") != runs || len(p.requests()) != requests || f.s.builds.jobOf(id) != nil {
+				t.Errorf("asked %v; runs %q", asked, strings.TrimPrefix(p.file("runs"), runs))
+			}
+			// The Studio's own pages are answered, whatever names them.
+			f.s.builds.pwb.base = p.base
+			for _, from := range []map[string]string{{"Sec-Fetch-Site": "same-origin"}, {"Sec-Fetch-Site": "none"}, {"Origin": "http://example.com"}, {"Referer": "http://example.com/library"}, {}} {
+				r := httptest.NewRequest("GET", "/api/libraries/buckets", nil)
+				for k, v := range from {
+					r.Header.Set(k, v)
+				}
+				w := httptest.NewRecorder()
+				f.mux.ServeHTTP(w, r)
+				if w.Code != 200 {
+					t.Errorf("from %v: %d %s", from, w.Code, w.Body)
+				}
+			}
+		})
+	}
+}
+
+// Another site's request for the list of libraries does not start listings
+// that waited for their owner.
+func TestPWBucketVisitIsHers(t *testing.T) {
+	p := newFakePlatform(t)
+	f := newSignInFixture(t, p)
+	p.object("ada", "a.txt", "a")
+	_, b := f.as("ada", "key-ada", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers", "every": 60})
+	id := b["library"].(map[string]any)["id"].(string)
+	f.wait("ada", id)
+	f.s.builds.pwb.forget("ada")
+	f.s.Reg.WriteBucketState(id, libraries.BucketState{Waits: true})
+	f.origin = "https://elsewhere.example"
+	f.as("ada", "key-ada", "GET", "/api/libraries", nil)
+	if f.s.builds.jobOf(id) != nil || !f.s.Reg.BucketState(id).Waits {
+		t.Error("another site had it listed")
+	}
+	f.origin = ""
+	f.as("ada", "key-ada", "GET", "/api/libraries", nil)
+	if f.wait("ada", id); f.s.Reg.BucketState(id).Waits {
+		t.Error("she came, and it waits")
+	}
+}
+
+// Keys no path can name: the listing goes on without them and counts them,
+// and no one of them opens, or gives its text to, another object.
+func TestPWBucketKeysNoPathNames(t *testing.T) {
+	p := newFakePlatform(t)
+	f := newSignInFixture(t, p)
+	f.extractBins()
+	f.keys["ada"] = "key-ada"
+	var mu sync.Mutex
+	var gets []string
+	hostile := []string{"notes\n.txt", "nl\n99\x1e1\x1e40\x1edocs/ok.txt", "cut\x1eoff.txt", "cr\rtab\t.txt", "del\x7f.txt", "bell\a/in.txt",
+		"/report.txt", "//double//slash.txt", "docs//ok.txt", "docs//", "/"}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, key, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/"); key != "" {
+			mu.Lock()
+			gets = append(gets, key)
+			mu.Unlock()
+			if key == "gone.txt" {
+				w.WriteHeader(404)
+				return
+			}
+			fmt.Fprintf(w, "zebrafinch %s", key)
+			return
+		}
+		fmt.Fprint(w, "<ListBucketResult><EncodingType>url</EncodingType>")
+		for _, k := range append([]string{"docs/ok.txt", "plain.txt", "report.txt"}, hostile...) {
+			fmt.Fprintf(w, "<Contents><Key>%s</Key><Size>40</Size><LastModified>2026-11-01T00:00:00Z</LastModified></Contents>", url.QueryEscape(k))
+		}
+		fmt.Fprint(w, "</ListBucketResult>")
+	}))
+	defer ts.Close()
+	f.s.builds.pwb.base = ts.URL
+	code, b := f.as("ada", "", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers"})
+	if code != 200 {
+		t.Fatalf("add: %d %v", code, b)
+	}
+	id := b["library"].(map[string]any)["id"].(string)
+	l := f.wait("ada", id)
+	bk := l["bucket"].(map[string]any)
+	if l["build"].(map[string]any)["state"] != "ready" || bk["error"] != nil || bk["objects"] != float64(3) || bk["skipped"] != float64(len(hostile)) {
+		t.Fatalf("%v", l)
+	}
+	if code, b := f.as("ada", "", "PUT", "/api/libraries/"+id+"/bucket", map[string]any{"text": true}); code != 200 {
+		t.Fatalf("text: %d %v", code, b)
+	}
+	for range 600 {
+		if bk, _ := f.row("ada", id)["bucket"].(map[string]any); bk["textPass"] != nil && f.s.builds.jobOf(id) == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if code, b := f.as("ada", "", "GET", "/api/kb/file?library="+id+"&path=report.txt", nil); code != 200 || b["content"] != "zebrafinch report.txt" {
+		t.Errorf("%d %v", code, b)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	slices.Sort(gets)
+	if got := slices.Compact(slices.Clone(gets)); !slices.Equal(got, []string{"docs/ok.txt", "plain.txt", "report.txt"}) {
+		t.Errorf("asked for %q", got)
+	}
+}
+
+// A listing that fails of its own (a panic) is a failed listing: the server
+// stays up, the library says so, and the next listing works.
+func TestPWBucketListingPanics(t *testing.T) {
+	p := newFakePlatform(t)
+	f := newSignInFixture(t, p)
+	f.keys["ada"] = "key-ada"
+	p.object("ada", "a.txt", "a")
+	_, b := f.as("ada", "", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers"})
+	id := b["library"].(map[string]any)["id"].(string)
+	f.wait("ada", id)
+	var once sync.Once
+	f.a.Providers.SignInKey = func(sub string) string {
+		once.Do(func() { panic("of the listing's own") })
+		return f.keys[sub]
+	}
+	if _, err := f.s.builds.start(id); err != nil {
+		t.Fatal(err)
+	}
+	l := f.wait("ada", id)
+	if e := fmt.Sprint(l["bucket"].(map[string]any)["error"]); l["build"].(map[string]any)["state"] != "ready" || !strings.Contains(e, "internal error") {
+		t.Fatalf("%v", l)
+	}
+	if !strings.Contains(f.logs.String(), "panicked") {
+		t.Error("the log does not say so")
+	}
+	f.s.builds.start(id)
+	if l = f.wait("ada", id); l["bucket"].(map[string]any)["error"] != nil {
+		t.Errorf("%v", l)
+	}
+}
+
+// Where people sign in, an endpoint is one the administrator lists, the form
+// is given the list, and what its connection fails of is in the log alone.
+func TestPWBucketListedEndpoint(t *testing.T) {
+	ts := httptest.NewTLSServer(http.NotFoundHandler())
+	defer ts.Close()
+	listed := strings.TrimPrefix(ts.URL, "https://")
+	t.Setenv("STUDIO_BUCKET_ENDPOINTS", listed+", s3.gateway.example.com")
+	p := newFakePlatform(t)
+	f := newSignInFixture(t, p)
+	f.s.builds.pwb.base = ""
+	f.keys["ada"] = "key-ada"
+	p.object("ada", "a.txt", "a")
+	if _, b := f.as("ada", "", "GET", "/api/libraries", nil); fmt.Sprint(b["bucketEndpoints"]) != "["+ts.URL+" https://s3.gateway.example.com]" {
+		t.Errorf("%v", b["bucketEndpoints"])
+	}
+	code, b := f.as("ada", "", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers", "endpoint": ts.URL})
+	if code != 200 {
+		t.Fatalf("%d %v", code, b)
+	}
+	l := f.wait("ada", b["library"].(map[string]any)["id"].(string))
+	if bk := l["bucket"].(map[string]any); bk["route"] != "pw" || !strings.Contains(fmt.Sprint(bk["routeWhy"]), "could not be reached") {
+		t.Errorf("%v", bk)
+	}
+	if s := fmt.Sprint(l); strings.Contains(s, "x509") || strings.Contains(s, "certificate") {
+		t.Errorf("she is told: %s", s)
+	}
+	if !strings.Contains(f.logs.String(), "certificate") {
+		t.Errorf("the administrator is not: %s", f.logs)
+	}
+}
+
+// pw runs for a bucket are given none of the Studio's own cloud credentials.
+func TestPWBucketNoCloudCredentials(t *testing.T) {
+	needTrace(t)
+	p := newFakePlatform(t)
+	t.Setenv("PW_API_KEY", "key-me")
+	for _, k := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_PROFILE", "AWS_WEB_IDENTITY_TOKEN_FILE", "GOOGLE_APPLICATION_CREDENTIALS", "CLOUDSDK_AUTH_ACCESS_TOKEN", "AZURE_CLIENT_SECRET", "AZURE_STORAGE_KEY"} {
+		t.Setenv(k, "studio-secret")
+	}
+	f := newBuildFixture(t)
+	f.s.builds.pwb.base = p.base
+	p.object("me", "a.txt", "a")
+	code, b := f.call("POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://me/papers"})
+	if code != 200 {
+		t.Fatalf("%d %v", code, b)
+	}
+	f.waitReady(b["library"].(map[string]any)["id"].(string))
+	if e := p.file("envs"); e == "" || strings.Contains(e, "studio-secret") || !strings.Contains(e, "AWS_EC2_METADATA_DISABLED=true") {
+		t.Errorf("%s", e)
+	}
+}
+
+// What the Studio does for buckets as it starts.
+func TestPWBucketStart(t *testing.T) {
+	t.Setenv("AWS_ENDPOINT_URL", "http://[::1")
+	t.Setenv("TMPDIR", t.TempDir())
+	left := filepath.Join(os.TempDir(), "studio-pw-run-1234")
+	put(t, filepath.Join(left, "credentials"), "a credential")
+	p := newFakePlatform(t)
+	f := newSignInFixture(t, p)
+	// The empty HOME of pw runs without a sign-in, which the Studios of an
+	// account share.
+	none := ""
+	for _, kv := range platform.Of(f.a).EnvironFor(nil, false) {
+		if v, ok := strings.CutPrefix(kv, "HOME="); ok {
+			none = v
+		}
+	}
+	defer func() {
+		if st, err := os.Stat(none); err != nil || !st.IsDir() || filepath.Dir(none) != os.TempDir() {
+			t.Errorf("%s: %v", none, err)
+		}
+	}()
+	ctx, stop := context.WithCancel(context.Background())
+	defer func() {
+		stop()
+		f.a.Wait(10 * time.Second)
+	}()
+	f.a.Start(ctx)
+	for range 100 {
+		if _, err := os.Stat(left); os.IsNotExist(err) && strings.Contains(f.logs.String(), "AWS_ENDPOINT_URL") {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("%v; %s", os.IsNotExist(func() error { _, err := os.Stat(left); return err }()), f.logs)
 }

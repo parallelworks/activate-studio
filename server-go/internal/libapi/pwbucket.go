@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,12 +14,13 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
-	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/extractfiles"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwbucket"
+	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
+	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
 )
 
@@ -277,9 +279,13 @@ func (s *Service) bucketKey(owner string) string {
 func (s *Service) pwCLI(owner string) *pwbucket.CLI {
 	p := platform.Of(s.a)
 	host := p.Host()
-	return &pwbucket.CLI{Bin: p.CLI(), Host: host, Context: "studio",
+	c := &pwbucket.CLI{Bin: p.CLI(), Host: host, Context: "studio",
 		Key:     func(context.Context) (string, error) { return s.bucketKey(owner), nil },
 		Environ: func(set map[string]string) []string { return p.EnvironFor(set, false) }}
+	if s.a.Cfg.AuthEnabled() {
+		c.Report = func(what string) { s.a.Log.Warn("ACTIVATE buckets: a connection failed", "said", what) }
+	}
+	return c
 }
 
 // pwStoreOf is an ACTIVATE bucket library's bucket, read as its owner. A run
@@ -295,7 +301,7 @@ func (s *Service) pwStoreOf(owner string, bc *libraries.BucketOf, fresh bool) (p
 		return pwStore{}, pwBucketErr(pwbucket.ErrNoSignIn)
 	}
 	// An endpoint is asked only while it is one that may be.
-	if _, err := pwbucket.CheckEndpoint(bc.Endpoint, s.a.Cfg.AuthEnabled()); err != nil {
+	if _, err := pwbucket.CheckEndpoint(bc.Endpoint, bc.CSP, s.a.Cfg.AuthEnabled()); err != nil {
 		return pwStore{}, apierr.New(400, "Endpoint: %s", err.Error())
 	}
 	cli := s.pwCLI(owner)
@@ -399,6 +405,18 @@ func (s *Service) pwViewer(r *http.Request, keep bool) (owner string, ok bool, e
 	return owner, true, nil
 }
 
+// pwStart is what is done for ACTIVATE buckets as the server starts: what a
+// run that was cut off left is removed, and an address the environment gives
+// for S3 that is none is said.
+func (s *Service) pwStart(context.Context) {
+	if n := pwbucket.Sweep(); n > 0 {
+		s.a.Log.Info("ACTIVATE buckets: removed what runs that were cut off left", "folders", n)
+	}
+	if err := pwbucket.CheckSite(); err != nil {
+		s.a.Log.Error("ACTIVATE buckets: " + err.Error())
+	}
+}
+
 // pwHere is whether this Studio can read ACTIVATE buckets: its gateway is a
 // platform's, the pw CLI is here, and GUFI can build an index from a listing.
 func (s *Service) pwHere() bool {
@@ -426,10 +444,47 @@ func (s *Service) pwShown(r *http.Request) bool {
 	return err == nil && owner != "" && s.pwHere()
 }
 
-// crossSiteRefused answers a change a page of another site asked for: what
-// is read with a person's own sign-in changes from the Studio's pages only.
-func crossSiteRefused() error {
-	return apierr.New(403, "A page of another site cannot change your bucket libraries.")
+// bucketEndpoints is what a person chooses a bucket's endpoint from, where
+// people sign in and the administrator lists any.
+func (s *Service) bucketEndpoints(r *http.Request) []string {
+	if !s.authEnabled(r) || !s.pwShown(r) {
+		return nil
+	}
+	var out []string
+	for _, e := range pwbucket.Endpoints() {
+		if at, err := pwbucket.CheckEndpoint(e, "", true); err == nil {
+			out = append(out, at)
+		}
+	}
+	return out
+}
+
+// otherSite is whether a page of another site sent a request, a GET's too:
+// what is read with a person's own sign-in is asked for by the Studio's
+// pages only, with sign-in off as with it on. A browser says so itself
+// (Sec-Fetch-Site) where it trusts the address; where it does not, over plain
+// http, it names the page's origin on anything but a GET.
+func otherSite(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "cross-site", "same-site":
+		return true
+	case "same-origin":
+		return false
+	}
+	if r.Header.Get("Origin") != "" {
+		return !sessions.SameOrigin(r)
+	}
+	if u, err := url.Parse(r.Header.Get("Referer")); err == nil && u.Host != "" {
+		at := r.Clone(r.Context())
+		at.Header.Set("Origin", u.Scheme+"://"+u.Host)
+		return !sessions.SameOrigin(at)
+	}
+	return false
+}
+
+// otherSiteRefused answers what a page of another site asked for.
+func otherSiteRefused() error {
+	return apierr.New(403, "A page of another site cannot use or change your bucket libraries.")
 }
 
 // ownBucket is the bucket library of the route's id that the request's
@@ -437,14 +492,14 @@ func crossSiteRefused() error {
 // the same of another person's as of none.
 func (s *Service) ownBucket(r *http.Request) (*libraries.Def, error) {
 	id := r.PathValue("id")
+	if otherSite(r) {
+		return nil, otherSiteRefused()
+	}
 	if s.localBuildOffered(r) {
 		if d := s.Reg.AddedDef(id); d != nil && d.Bucket != nil {
 			return d, nil
 		}
 		return nil, apierr.New(404, "%s is not a bucket library", id)
-	}
-	if codesessions.CrossSite(r) {
-		return nil, crossSiteRefused()
 	}
 	owner, _, err := s.pwViewer(r, true)
 	if err != nil {
@@ -467,6 +522,9 @@ type pwBucketList struct {
 
 // pwBucketsList is the person's ACTIVATE buckets: GET /api/libraries/buckets.
 func (s *Service) pwBucketsList(w http.ResponseWriter, r *http.Request) error {
+	if otherSite(r) {
+		return otherSiteRefused()
+	}
 	out := pwBucketList{Buckets: []pwbucket.Bucket{}}
 	owner, ok, err := s.pwViewer(r, true)
 	if err != nil {
@@ -500,8 +558,17 @@ type pwBucketFolder struct {
 }
 
 // pwBucketFolders is what is in a folder of one of the person's buckets, for
-// choosing one: GET /api/libraries/buckets/folders?uri=&path=.
+// choosing one: POST /api/libraries/buckets/folders { uri, path, endpoint }.
+// It asks the store with the bucket's credential, at an address the request
+// may name, so it is no GET: those any page can have a browser send.
 func (s *Service) pwBucketFolders(w http.ResponseWriter, r *http.Request) error {
+	if otherSite(r) {
+		return otherSiteRefused()
+	}
+	body, err := reqbody.Read(r)
+	if err != nil {
+		return err
+	}
 	owner, ok, err := s.pwViewer(r, true)
 	if err != nil {
 		return err
@@ -509,11 +576,11 @@ func (s *Service) pwBucketFolders(w http.ResponseWriter, r *http.Request) error 
 	if !ok {
 		return pwBucketErr(pwbucket.ErrNoSignIn)
 	}
-	uri, dir, err := bucketPlace(r.URL.Query().Get("uri"), r.URL.Query().Get("path"))
+	uri, dir, err := bucketPlace(body.Str("uri"), body.Str("path"))
 	if err != nil {
 		return err
 	}
-	endpoint, err := pwbucket.CheckEndpoint(r.URL.Query().Get("endpoint"), s.a.Cfg.AuthEnabled())
+	endpoint, err := pwbucket.CheckEndpoint(body.Str("endpoint"), "", s.a.Cfg.AuthEnabled())
 	if err != nil {
 		return apierr.New(400, "Endpoint: %s", err.Error())
 	}
@@ -569,7 +636,7 @@ func (s *Service) pwBucketDef(ctx context.Context, owner, uri, dir, endpoint str
 	if err != nil {
 		return nil, err
 	}
-	if endpoint, err = pwbucket.CheckEndpoint(endpoint, s.a.Cfg.AuthEnabled()); err != nil {
+	if endpoint, err = pwbucket.CheckEndpoint(endpoint, "", s.a.Cfg.AuthEnabled()); err != nil {
 		return nil, apierr.New(400, "Endpoint: %s", err.Error())
 	}
 	have := s.Reg.Owned(owner)
@@ -608,7 +675,7 @@ func bucketOfPW(b pwbucket.Bucket, dir, endpoint string, every int) *libraries.B
 // bucketVisit starts the listings of a person's bucket libraries that wait
 // for them, where the Studio keeps no sign-in of theirs.
 func (s *Service) bucketVisit(r *http.Request) {
-	if !s.authEnabled(r) {
+	if !s.authEnabled(r) || otherSite(r) {
 		return
 	}
 	owner, ok, err := s.pwViewer(r, false)
@@ -624,12 +691,16 @@ func (s *Service) bucketVisit(r *http.Request) {
 	}
 }
 
-// keepVisit keeps the credential a request for a file of a person's own
-// bucket library carries (pwViewer).
-func (s *Service) keepVisit(r *http.Request, l libraries.Library) {
+// openVisit refuses another site's request for a file of an ACTIVATE bucket,
+// and keeps the credential the owner's own carries (pwViewer).
+func (s *Service) openVisit(r *http.Request, l libraries.Library) error {
+	if l.Bucket.PW() && otherSite(r) {
+		return otherSiteRefused()
+	}
 	if l.Owner != "" {
 		s.pwViewer(r, true)
 	}
+	return nil
 }
 
 // startDue lists a bucket library that is due, or waited, when its owner's

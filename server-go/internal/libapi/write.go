@@ -63,6 +63,9 @@ func (s *Service) removeLibrary(w http.ResponseWriter, r *http.Request) error {
 		}
 		return apierr.New(403, "%s", deploymentLibraries)
 	}
+	if d := s.Reg.AddedDef(id); d != nil && d.Bucket != nil && otherSite(r) {
+		return otherSiteRefused()
+	}
 	if err := s.Reg.Remove(id); err != nil {
 		return err
 	}

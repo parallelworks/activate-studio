@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Callout, Checkbox, Field, Input, Loader, Select, toast } from '@parallelworks/ui'
-import { BUCKET_EVERY, api, pwBucketPlace, type PwBucket, type PwBucketFolder, type SettingsLibrary } from '../api'
+import { BUCKET_EVERY, api, endpointItems, pwBucketPlace, type PwBucket, type PwBucketFolder, type SettingsLibrary } from '../api'
 import { reloadAppConfig, useAppConfig } from '../config'
 import { reloadWhenLibrariesBuilt } from '../libraryWatch'
 import { plural } from '../plural'
@@ -27,6 +27,7 @@ export function PwBucketForm({ uri, buckets, holdHeight, onAdded }: {
   const signIn = !!useAppConfig().signIn
   const bucket = buckets.find(b => b.uri === uri)
   const [libs, setLibs] = useState<SettingsLibrary[]>([])
+  const [listed, setListed] = useState<string[]>([])
   const [dir, setDir] = useState('')
   const [folder, setFolder] = useState<PwBucketFolder | null>(null)
   const [looking, setLooking] = useState(false)
@@ -41,7 +42,7 @@ export function PwBucketForm({ uri, buckets, holdHeight, onAdded }: {
 
   useEffect(() => {
     let live = true
-    api.libraries().then(r => { if (live) setLibs(r.libraries ?? []) }, () => {})
+    api.libraries().then(r => { if (live) { setLibs(r.libraries ?? []); setListed(r.bucketEndpoints ?? []) } }, () => {})
     return () => { live = false }
   }, [])
   // What was chosen for the buckets added before.
@@ -153,16 +154,24 @@ export function PwBucketForm({ uri, buckets, holdHeight, onAdded }: {
         <Field label="List again" layout="inline" size="sm">
           <Select<number> aria-label="List again" size="sm" width="content" items={BUCKET_EVERY} value={everyNow} onValueChange={v => setEvery(v ?? 1440)} />
         </Field>
-        <div className="lib-more">
+        {(!signIn || listed.length > 0) && <div className="lib-more">
           <Button variant="ghost" size="sm" aria-expanded={options} onClick={() => { holdHeight(); setOptions(o => !o) }}>{options ? 'Fewer options' : 'More options'}</Button>
           {options && (
             <div className="lib-more-body"><div className="lib-more-fields">
-              <Input label="Endpoint" hint="optional" size="sm" mono spellCheck={false} autoComplete="off" placeholder="the store's own" value={endpointNow}
-                description={`Another address to ask the store at, where this Studio reaches it only through one: a VPC endpoint, such as https://bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com.${several ? ` For the buckets in ${pwBucketPlace(bucket)}.` : ''}`}
-                onChange={e => setEndpoint(e.target.value)} />
+              {signIn
+                ? (
+                  <Field label="Endpoint" size="sm" description={`Another address to ask the store at, from those this Studio's administrator lists.${several ? ` For the buckets in ${pwBucketPlace(bucket)}.` : ''}`}>
+                    <Select<string> aria-label="Endpoint" size="sm" items={endpointItems(listed, endpointNow)} value={endpointNow} onValueChange={v => setEndpoint(v ?? '')} />
+                  </Field>
+                )
+                : (
+                  <Input label="Endpoint" hint="optional" size="sm" mono spellCheck={false} autoComplete="off" placeholder="the store's own" value={endpointNow}
+                    description={`Another address to ask the store at, where this Studio reaches it only through one: a VPC endpoint, such as https://bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com.${several ? ` For the buckets in ${pwBucketPlace(bucket)}.` : ''}`}
+                    onChange={e => setEndpoint(e.target.value)} />
+                )}
             </div></div>
           )}
-        </div>
+        </div>}
       </div>
       <p className="muted copy-library-note">
         {several ? 'Each is' : 'It is'} listed and read with your own ACTIVATE sign-in{signIn ? ', and only you see it here' : ''}. {several ? 'A listing' : 'The listing'} takes
