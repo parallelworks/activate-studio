@@ -68,7 +68,7 @@ func (m *Module) platformKey(ctx ToolCtx) string {
 func capText(s string) string { return jsval.Slice(s, toolOutputCap) }
 
 var (
-	notHelpChar = regexp.MustCompile(`(?i)[^a-z0-9-]`)
+	helpWord    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
 	notRunID    = regexp.MustCompile(`[^A-Za-z0-9_.:/-]`)
 	notCluster  = regexp.MustCompile(`[^\w./:@-]`)
 	notWordDot  = regexp.MustCompile(`[^\w.-]`)
@@ -76,18 +76,31 @@ var (
 	ownerPrefix = regexp.MustCompile(`^pw://[^/]+/`)
 )
 
-func (m *Module) toolPwHelp(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
+// helpTopic is what pw's help command is asked about: the command's words
+// up to the first that is not a command name, and no further than ssh,
+// whose words after it are a machine and a command for it.
+func helpTopic(command string) []string {
 	parts := []string{}
-	for _, p := range strings.FieldsFunc(tmplOr(arg(args, "command"), ""), isJSSpace) {
-		if p = notHelpChar.ReplaceAllString(p, ""); p != "" && len(parts) < 4 {
-			parts = append(parts, p)
+	for _, p := range strings.FieldsFunc(command, isJSSpace) {
+		if len(parts) == 4 || !helpWord.MatchString(p) {
+			break
+		}
+		parts = append(parts, strings.ToLower(p))
+		if parts[len(parts)-1] == "ssh" {
+			break
 		}
 	}
-	out, err := m.cli(r, ctx, append(append([]string{}, parts...), "--help"), cliDefault)
+	return parts
+}
+
+// toolPwHelp reads pw's help (pw help <topic>, which runs no command).
+func (m *Module) toolPwHelp(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
+	cli := append([]string{"help"}, helpTopic(tmplOr(arg(args, "command"), ""))...)
+	out, err := m.cli(r, ctx, cli, cliDefault)
 	if err != nil {
 		return nil, err
 	}
-	return &Outcome{Result: capText(jsTrim(out)), Summary: "pw " + strings.Join(parts, " ") + " --help"}, nil
+	return &Outcome{Result: capText(jsTrim(out)), Summary: "pw " + strings.Join(cli, " ")}, nil
 }
 
 // tmplOr is String(v ?? d).
@@ -1152,30 +1165,16 @@ var monitorViews = []struct{ name, path string }{
 
 func (m *Module) toolHpcStatus(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {
 	eff := m.eff()
-	if arg(args, "launch") == true {
-		cliArgs := []string{"workflows", "run"}
-		if truthy(arg(args, "inputs")) {
-			v, err := parseArgJSON(arg(args, "inputs"))
-			if err != nil {
-				return nil, err
-			}
-			cliArgs = append(cliArgs, "-i", stringify(v))
-		}
-		cliArgs = append(cliArgs, eff.HpcStatusWorkflow)
-		out, err := m.cli(r, ctx, cliArgs, 180*time.Second)
-		if err != nil {
-			return nil, err
-		}
-		return &Outcome{Result: "Status Monitor launch submitted via workflow " + eff.HpcStatusWorkflow + ".\n" + jsval.Slice(jsTrim(out), 1500) +
-			"\nWatch it with workflow_runs; once it serves, set its URL as the Status Monitor URL in Settings so this tool can read it.", Summary: "monitor launch submitted"}, nil
+	if truthy(arg(args, "launch")) {
+		return &Outcome{Result: "hpc_status only reads, so nothing was launched. " + launchMonitorTool + " asks the user in the Studio's chat and launches one.", Summary: "not launched"}, nil
 	}
 	base := eff.HpcStatusURL
 	if base == "" {
 		base = m.discoverStatusMonitor(r, ctx)
 	}
 	if base == "" {
-		return &Outcome{Result: "No Status Monitor is configured on this deployment, and no running session on this account answers as one. Set the Status Monitor URL in Settings (or HPC_STATUS_URL), or deploy one with launch=true, which runs the " +
-			eff.HpcStatusWorkflow + " workflow; only do that if the user asked for it.", Summary: "not configured"}, nil
+		return &Outcome{Result: "No Status Monitor is configured on this deployment, and no running session on this account answers as one. Set the Status Monitor URL in Settings (or HPC_STATUS_URL), or launch one with " + launchMonitorTool + ", which runs the " +
+			eff.HpcStatusWorkflow + " workflow once the user approves; only do that if the user asked for it.", Summary: "not configured"}, nil
 	}
 	view := tmplOr(arg(args, "view"), "summary")
 	cluster := notWordDot.ReplaceAllString(tmplOr(arg(args, "cluster"), ""), "")

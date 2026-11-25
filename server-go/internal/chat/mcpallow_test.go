@@ -18,22 +18,16 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
-// What is allowed on a machine is chatReadTools by name, less those that
-// can do more than read.
+// What is allowed on a machine is chatReadTools by name, and nothing else.
 func TestMachineRulesOnlyRead(t *testing.T) {
 	got := machineRules([]string{"search_kb", "delegate", "apply_labels", "hpc_status", "pw_help", "agent_sites", "query_corpus", "search_kb"})
-	if want := []string{"mcp__studio__query_corpus", "mcp__studio__search_kb"}; !slices.Equal(got, want) {
+	if want := []string{"mcp__studio__agent_sites", "mcp__studio__hpc_status", "mcp__studio__pw_help", "mcp__studio__query_corpus", "mcp__studio__search_kb"}; !slices.Equal(got, want) {
 		t.Errorf("rules %v, want %v", got, want)
 	}
 	for _, r := range machineRulesAll() {
 		n := strings.TrimPrefix(r, studioToolPrefix)
-		if !chatReadTools[n] || machineAsks[n] || chatNoAsk[n] || strings.ContainsAny(r, "*( ") {
+		if !chatReadTools[n] || asksFirst(n) || chatNoAsk[n] || strings.ContainsAny(r, "*( ") {
 			t.Errorf("%s is allowed", r)
-		}
-	}
-	for n := range machineAsks {
-		if !chatReadTools[n] {
-			t.Errorf("%s is not one of chatReadTools any more", n)
 		}
 	}
 }
@@ -226,7 +220,7 @@ func TestSetUpAllowsTheToolsThatRead(t *testing.T) {
 	listed := specNames(m.personTools(setupReq(bobProxy), m.personCtx(setupReq(bobProxy))))
 	for _, x := range f.rules {
 		n := strings.TrimPrefix(x, studioToolPrefix)
-		if !chatReadTools[n] || machineAsks[n] || !slices.Contains(listed, n) {
+		if !chatReadTools[n] || asksFirst(n) || !slices.Contains(listed, n) {
 			t.Errorf("%s is allowed", x)
 		}
 	}

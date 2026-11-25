@@ -14,7 +14,11 @@ process.env.KB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'ta-kb-'))
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'ta-ix-'))
 process.env.PW_GATEWAY_URL = 'https://platform.test/api/openai/v1'
 process.env.PW_API_KEY = 'deploy-key'
-process.env.PW_CLI = '/nonexistent/pw'
+// A pw that logs its arguments; a tool that reads runs nothing else.
+const pwDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ta-pw-'))
+const pwLog = path.join(pwDir, 'calls')
+process.env.PW_CLI = path.join(pwDir, 'pw')
+fs.writeFileSync(process.env.PW_CLI, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${pwLog}'\necho '[]'\n`, { mode: 0o755 })
 // Platform identity on, so a viewer is a verified user; nothing is fetched from this URL.
 process.env.AUTH_JWKS_URL = 'https://keys.example.invalid/jwks'
 
@@ -335,4 +339,24 @@ test('with a platform connected, a question about storage gets the platform tool
     const ids = (await app.inject({ method: 'GET', url: '/api/chat/tool-options', headers: headers('alex') })).json().tools.map(t => t.id)
     for (const id of ['workflows', 'changes', 'agents']) assert.ok(ids.includes(id), id)
   } finally { script = defaultScript }
+})
+
+test('the tools that read run only reads, whatever their arguments', async () => {
+  const cases = [
+    ['pw_help', { command: 'ssh cluster-a hostname' }, ['help ssh']],
+    ['pw_help', { command: '-o ssh cluster-a' }, ['help']],
+    ['pw_help', { command: 'workflows run; hostname' }, ['help workflows']],
+    ['hpc_status', { view: 'summary', launch: true, inputs: '{}' }, []],
+  ]
+  for (const [name, args, want] of cases) {
+    fs.rmSync(pwLog, { force: true })
+    const { executeTool } = await import('../dist/chat/tools.js')
+    await executeTool(name, JSON.stringify(args))
+    const ran = fs.existsSync(pwLog) ? fs.readFileSync(pwLog, 'utf8').trim().split('\n') : []
+    assert.deepEqual(ran, want, `${name} ${JSON.stringify(args)}`)
+  }
+  const { executeTool } = await import('../dist/chat/tools.js')
+  fs.rmSync(pwLog, { force: true })
+  await executeTool('agent_sites', JSON.stringify({ probe: 'cluster-a' }))
+  assert.doesNotMatch(fs.existsSync(pwLog) ? fs.readFileSync(pwLog, 'utf8') : '', /ssh|daemon/)
 })

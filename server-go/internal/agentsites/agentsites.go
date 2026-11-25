@@ -128,6 +128,24 @@ func (s *Sites) ClientFor(site, key string, authEnabled bool) (pwcode.Client, er
 	return s.Daemon.Remote(v, key), nil
 }
 
+type withoutStartKey struct{}
+
+// WithoutStart is ctx for a read: Sessions and Status reach a cluster's pw
+// code only where it runs already.
+func WithoutStart(ctx context.Context) context.Context {
+	return context.WithValue(ctx, withoutStartKey{}, true)
+}
+
+// clientToRead is ClientFor for what only reads: it starts no daemon where
+// ctx says so.
+func (s *Sites) clientToRead(ctx context.Context, site, key string, authEnabled bool) (pwcode.Client, error) {
+	c, err := s.ClientFor(site, key, authEnabled)
+	if err != nil || s.Daemon.IsLocal(c) || ctx.Value(withoutStartKey{}) == nil {
+		return c, err
+	}
+	return s.Daemon.RemoteIfRunning(c.Site(), key), nil
+}
+
 func (s *Sites) platformHost() string {
 	g := s.P.GatewayBase()
 	if i := strings.Index(g, "://"); i >= 0 {
@@ -581,7 +599,7 @@ func str(o *jsonv.Object, k string) string {
 
 // Status is agentStatus: where a session stands.
 func (s *Sites) Status(ctx context.Context, site, key, id string, lines float64, authEnabled bool) (*jsonv.Object, error) {
-	c, err := s.ClientFor(site, key, authEnabled)
+	c, err := s.clientToRead(ctx, site, key, authEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -653,7 +671,7 @@ func (s *Sites) Status(ctx context.Context, site, key, id string, lines float64,
 
 // Sessions is agentSessions.
 func (s *Sites) Sessions(ctx context.Context, site, key string, authEnabled bool) ([]any, error) {
-	c, err := s.ClientFor(site, key, authEnabled)
+	c, err := s.clientToRead(ctx, site, key, authEnabled)
 	if err != nil {
 		return nil, err
 	}

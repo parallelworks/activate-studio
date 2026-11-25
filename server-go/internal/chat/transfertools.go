@@ -59,7 +59,11 @@ func isTransferAsksFirst(name string) bool { return transferAsksFirst[name] }
 // localAsksFirst are the held tools that act in the Studio itself, so
 // they need no platform and no platform key: the library delete and the
 // transfers.
-func localAsksFirst(name string) bool { return isKBAsksFirst(name) || isTransferAsksFirst(name) }
+// Starting pw code on a site is among them, since on this host it needs
+// neither; on a cluster it fails without the person's own key.
+func localAsksFirst(name string) bool {
+	return isKBAsksFirst(name) || isTransferAsksFirst(name) || name == startDaemonTool
+}
 
 const (
 	// browseShown is how many entries of a folder browse_location returns.

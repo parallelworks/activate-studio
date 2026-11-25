@@ -40,6 +40,8 @@ type bridges struct {
 	m  map[string]*bridge
 	// spawn makes the command whose stdio is the pipe (a test seam).
 	spawn func(resource, key string) *exec.Cmd
+	// spawnRead is spawn without starting the daemon where none runs.
+	spawnRead func(resource, key string) *exec.Cmd
 }
 
 type bridge struct {
@@ -60,17 +62,24 @@ type bridge struct {
 
 func newBridges(s *Service) *bridges {
 	b := &bridges{s: s, m: map[string]*bridge{}}
-	b.spawn = func(resource, key string) *exec.Cmd {
+	b.spawn = b.proxy("pw code daemon proxy --ensure")
+	b.spawnRead = b.proxy("pw code daemon proxy")
+	return b
+}
+
+// proxy is the command that bridges to a resource's daemon with remote.
+func (b *bridges) proxy(remote string) func(resource, key string) *exec.Cmd {
+	s := b.s
+	return func(resource, key string) *exec.Cmd {
 		args := []string{"ssh"}
 		if host := s.platformHost(); host != "" {
 			args = append(args, "--platform-host", host)
 		}
-		args = append(args, resource, "pw code daemon proxy --ensure")
+		args = append(args, resource, remote)
 		cmd := exec.Command(s.p.CLI(), args...)
 		cmd.Env = s.p.Environ(map[string]string{"PW_API_KEY": key})
 		return cmd
 	}
-	return b
 }
 
 // platformHost is new URL(GATEWAY_BASE).hostname, or "".
@@ -86,7 +95,7 @@ func (s *Service) platformHost() string {
 // (tests).
 func (s *Service) SetBridgeSpawn(fn func(resource, key string) *exec.Cmd) {
 	s.bridges.mu.Lock()
-	s.bridges.spawn = fn
+	s.bridges.spawn, s.bridges.spawnRead = fn, fn
 	s.bridges.mu.Unlock()
 }
 
@@ -96,9 +105,16 @@ func (s *Service) Remote(resource, key string) Client {
 	return &remoteClient{s: s, id: remote.KeyID(key) + "|" + resource, resource: resource, key: key}
 }
 
+// RemoteIfRunning is Remote for reading: a daemon that is not running there
+// is not started, and the call says so.
+func (s *Service) RemoteIfRunning(resource, key string) Client {
+	return &remoteClient{s: s, id: remote.KeyID(key) + "|" + resource + "|read", resource: resource, key: key, read: true}
+}
+
 type remoteClient struct {
 	s                 *Service
 	id, resource, key string
+	read              bool
 }
 
 func (r *remoteClient) Site() string { return r.resource }
@@ -111,6 +127,9 @@ func (r *remoteClient) bridge() *bridge {
 		return b
 	}
 	spawn := bs.spawn
+	if r.read {
+		spawn = bs.spawnRead
+	}
 	resource, key := r.resource, r.key
 	b := &bridge{id: r.id, resource: r.resource, last: time.Now(), spawn: func() *exec.Cmd { return spawn(resource, key) }}
 	bs.m[r.id] = b
@@ -148,6 +167,7 @@ func (r *remoteClient) Call(ctx context.Context, method, route string, body any,
 	}
 	b.mu.Lock()
 	said := ""
+	notRunning := r.read && strings.Contains(b.stderr, "dial daemon socket")
 	for _, l := range strings.Split(trimJS(b.stderr), "\n") {
 		if l != "" {
 			said = l
@@ -156,6 +176,9 @@ func (r *remoteClient) Call(ctx context.Context, method, route string, body any,
 	b.mu.Unlock()
 	if said == "" {
 		said = err.Error()
+	}
+	if notRunning {
+		return nil, &DaemonError{Message: "pw code is not running on " + r.resource + ", and reading does not start it."}
 	}
 	return nil, &DaemonError{Message: r.resource + ": " + said}
 }

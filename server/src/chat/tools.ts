@@ -54,7 +54,7 @@ export const TOOL_CALLS: Record<string, string> = {
   watch_run: 'pw workflows runs view <id>, polled until the run changes or exposes a session',
   workflow_runs: 'pw workflows runs ls',
   list_sessions: 'GET /api/sessions on the platform with the user\'s key',
-  agent_sites: 'pw clusters ls, and each site\'s pw code daemon status over pw ssh',
+  agent_sites: 'pw clusters ls',
   agent_sessions: 'GET /v1/sessions on the site\'s pw code daemon',
   start_agent: 'pw ssh to the site, then POST /v1/sessions, a message, and /goal on its pw code daemon',
   agent_status: 'GET /v1/sessions/<id> and its state on the site\'s pw code daemon',
@@ -65,9 +65,9 @@ export const TOOL_CALLS: Record<string, string> = {
   workflow_run_detail: 'pw workflows runs get <id>',
   compose_workflow: 'reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps',
   validate_workflow: 'parses the YAML (inline or a knowledge base file) and validates it against the platform\'s /workflow.schema.json',
-  pw_help: 'pw --help / pw <command> --help',
+  pw_help: 'pw help <command>, which runs no command',
   list_clusters: 'pw cluster ls -o json',
-  hpc_status: 'GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events); launch=true instead runs the deployment-configured monitor workflow via the pw CLI',
+  hpc_status: 'GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events)',
   cluster_command: 'pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)',
   show_in_viewer: 'no external call; returns viewer deep-link or inline-embed markdown',
   studio_docs: 'reads one of the documents under docs/ in the app installation',
@@ -354,8 +354,8 @@ export const TOOL_SPECS: ToolSpec[] = [
     type: 'function',
     function: {
       name: 'agent_sites',
-      description: 'List where pw code agents can run: the user\'s active clusters, plus this Studio\'s host when it is offered. With probe, also check each named site\'s pw code daemon (starting it there if none runs) and report its version and host.',
-      parameters: { type: 'object', properties: { probe: { type: 'string', description: 'Comma-separated site names to check' } }, required: [] },
+      description: 'List where pw code agents can run: the user\'s active clusters, plus this Studio\'s host when it is offered. Lists only.',
+      parameters: { type: 'object', properties: {}, required: [] },
     },
   },
   {
@@ -599,8 +599,6 @@ export const TOOL_SPECS: ToolSpec[] = [
         properties: {
           view: { type: 'string', description: "One of: summary (fleet at a glance), fleet (every system), queues (queue health; add cluster for one system), placement (where to submit), insights (open findings), storage (quotas and purge), events (recent changes)" },
           cluster: { type: 'string', description: 'System name, for queues' },
-          launch: { type: 'boolean', description: 'Deploy a Status Monitor for this user via the configured workflow, when none is running. Only when the user asked for one.' },
-          inputs: { type: 'string', description: 'JSON workflow inputs for the launch, when the workflow needs any' },
         },
         required: ['view'],
       },
@@ -1110,6 +1108,19 @@ export function summarizeRunDetail(viewText: string, errorsText: string, logsTex
   let text = lines.join('\n')
   if (text.length > cap) text = text.slice(0, cap) + '\n… (truncated)'
   return { text, status }
+}
+
+/** What pw's help command is asked about: the command's words up to the
+ *  first that is not a command name, and no further than ssh, whose words
+ *  after it are a machine and a command for it. */
+function helpTopic(command: string): string[] {
+  const parts: string[] = []
+  for (const p of command.split(/\s+/).filter(Boolean)) {
+    if (parts.length === 4 || !/^[a-z][a-z0-9-]*$/i.test(p)) break
+    parts.push(p.toLowerCase())
+    if (parts.at(-1) === 'ssh') break
+  }
+  return parts
 }
 
 function pwCli(args: string[], timeoutMs = 30_000): Promise<string> {
@@ -1706,10 +1717,9 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         return { result: JSON.stringify(catalog, null, 1), summary: `${catalog.length} workflows${offered.length ? `, ${offered.length} offered here` : ''}` }
       }
       case 'pw_help': {
-        const parts = String(args.command ?? '').split(/\s+/).filter(Boolean)
-          .map(p => p.replace(/[^a-z0-9-]/gi, '')).filter(Boolean).slice(0, 4)
-        const out = await pwCli([...parts, '--help'])
-        return { result: out.trim().slice(0, TOOL_OUTPUT_CAP), summary: `pw ${parts.join(' ')} --help` }
+        const cli = ['help', ...helpTopic(String(args.command ?? ''))]
+        const out = await pwCli(cli)
+        return { result: out.trim().slice(0, TOOL_OUTPUT_CAP), summary: `pw ${cli.join(' ')}` }
       }
       case 'serve_model': {
         const { effectiveSettings } = await import('../settings.js')
@@ -2121,13 +2131,8 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
         const A = await import('../agentSites.js')
         const key = A.agentKey(toolContext.getStore()?.userKey)
         const sites = await A.listSites(key)
-        const probe = String(args.probe ?? '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 5)
-        const checked = await Promise.all(probe.map(async site => {
-          try { const st = await A.probeSite(site, key); return `${site}: ${st.usable ? `pw code ${st.version} on ${st.hostname}, ${st.sessions} session${st.sessions === 1 ? '' : 's'}` : `not usable, ${st.why}`}` }
-          catch (e) { return `${site}: ${String((e as Error).message ?? e).slice(0, 200)}` }
-        }))
         const list = sites.map(x => `${x.name}${x.kind === 'local' ? ' (this Studio\'s host)' : x.type ? ` (${x.type})` : ''}`).join('\n') || 'No sites: the user has no active clusters.'
-        return { result: [list, ...checked].join('\n').slice(0, TOOL_OUTPUT_CAP), summary: `${sites.length} site${sites.length === 1 ? '' : 's'}` }
+        return { result: list.slice(0, TOOL_OUTPUT_CAP), summary: `${sites.length} site${sites.length === 1 ? '' : 's'}` }
       }
       case 'agent_sessions': {
         const A = await import('../agentSites.js')
@@ -2434,20 +2439,10 @@ async function executeToolImpl(name: string, argsJson: string, ctx?: { labelScop
       case 'hpc_status': {
         const { effectiveSettings } = await import('../settings.js')
         const eff2 = effectiveSettings()
-        if (args.launch === true) {
-          const wf = eff2.hpcStatusWorkflow
-          const cliArgs = ['workflows', 'run']
-          if (args.inputs) cliArgs.push('-i', JSON.stringify(JSON.parse(String(args.inputs))))
-          cliArgs.push(wf)
-          const out = await pwCli(cliArgs, 180_000)
-          return {
-            result: `Status Monitor launch submitted via workflow ${wf}.\n${out.trim().slice(0, 1500)}\nWatch it with workflow_runs; once it serves, set its URL as the Status Monitor URL in Settings so this tool can read it.`,
-            summary: 'monitor launch submitted',
-          }
-        }
+        if (args.launch) return { result: 'hpc_status only reads, so nothing was launched.', summary: 'not launched' }
         const base = eff2.hpcStatusUrl || await discoverStatusMonitor()
         if (!base) {
-          return { result: `No Status Monitor is configured on this deployment, and no running session on this account answers as one. Set the Status Monitor URL in Settings (or HPC_STATUS_URL), or deploy one with launch=true, which runs the ${eff2.hpcStatusWorkflow} workflow; only do that if the user asked for it.`, summary: 'not configured' }
+          return { result: `No Status Monitor is configured on this deployment, and no running session on this account answers as one. Set the Status Monitor URL in Settings (or HPC_STATUS_URL).`, summary: 'not configured' }
         }
         const view = String(args.view ?? 'summary')
         const cluster = String(args.cluster ?? '').replace(/[^\w.-]/g, '')

@@ -360,16 +360,27 @@
   },
   {
    "name": "agent_sites",
-   "description": "List where pw code agents can run: the user's active clusters, plus this Studio's host when it is offered. With probe, also check each named site's pw code daemon (starting it there if none runs) and report its version and host.",
+   "description": "List where pw code agents can run: the user's active clusters, plus this Studio's host when it is offered. Lists only.",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+   }
+  },
+  {
+   "name": "start_agent_daemon",
+   "description": "Start pw code on a site where it is not running, and say its version and how many sessions it has. The user approves the call. start_agent starts it by itself, so use this only when the user asks whether pw code works on a site, or to start it there.",
    "parameters": {
     "type": "object",
     "properties": {
-     "probe": {
+     "site": {
       "type": "string",
-      "description": "Comma-separated site names to check"
+      "description": "One of the user's clusters by name (from agent_sites), or local for this Studio's host when offered"
      }
     },
-    "required": []
+    "required": [
+     "site"
+    ]
    }
   },
   {
@@ -1197,19 +1208,25 @@
      "cluster": {
       "type": "string",
       "description": "System name, for queues"
-     },
-     "launch": {
-      "type": "boolean",
-      "description": "Deploy a Status Monitor for this user via the configured workflow, when none is running. Only when the user asked for one."
-     },
-     "inputs": {
-      "type": "string",
-      "description": "JSON workflow inputs for the launch, when the workflow needs any"
      }
     },
     "required": [
      "view"
     ]
+   }
+  },
+  {
+   "name": "launch_status_monitor",
+   "description": "Launch a Status Monitor for this user via the configured workflow, when hpc_status finds none running. The user approves the call. Only when the user asked for one.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "inputs": {
+      "type": "string",
+      "description": "JSON workflow inputs for the launch, when the workflow needs any"
+     }
+    },
+    "required": []
    }
   },
   {
@@ -1469,7 +1486,8 @@
   "watch_run": "pw workflows runs view <id>, polled until the run changes or exposes a session",
   "workflow_runs": "pw workflows runs ls",
   "list_sessions": "GET /api/sessions on the platform with the user's key",
-  "agent_sites": "pw clusters ls, and each site's pw code daemon status over pw ssh",
+  "agent_sites": "pw clusters ls",
+  "start_agent_daemon": "after the user approves the call in the chat: pw ssh to the site, or pw code daemon start on this host, then GET /v1/status on its pw code daemon",
   "agent_sessions": "GET /v1/sessions on the site's pw code daemon",
   "start_agent": "pw ssh to the site, then POST /v1/sessions, a message, and /goal on its pw code daemon",
   "agent_status": "GET /v1/sessions/<id> and its state on the site's pw code daemon",
@@ -1480,9 +1498,10 @@
   "workflow_run_detail": "pw workflows runs get <id>",
   "compose_workflow": "reads each source workflow with pw workflows get, then emits a workflow that runs them as `uses:` subworkflow steps",
   "validate_workflow": "parses the YAML (inline or a knowledge base file) and validates it against the platform's /workflow.schema.json",
-  "pw_help": "pw --help / pw <command> --help",
+  "pw_help": "pw help <command>, which runs no command",
   "list_clusters": "pw cluster ls -o json",
-  "hpc_status": "GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events); launch=true instead runs the deployment-configured monitor workflow via the pw CLI",
+  "hpc_status": "GET against the configured Status Monitor REST API (fleet, cluster-usage, placement, insights, storage, events)",
+  "launch_status_monitor": "pw workflows run <the configured monitor workflow>, with the user's key, after the user approves the call in the chat",
   "cluster_command": "pw ssh <resource> <command> (read-only scheduler guidance; state changes only on explicit request)",
   "show_in_viewer": "no external call; returns viewer deep-link or inline-embed markdown",
   "studio_docs": "reads one of the documents under docs/ in the app installation",
@@ -1527,6 +1546,7 @@
     "list_clusters",
     "list_storage",
     "hpc_status",
+    "launch_status_monitor",
     "cluster_command"
    ],
    "cue": "\\b(workflows?|runs?|running|launch|submit|jobs?|clusters?|hpc|slurm|pbs|partition|qos|queue|sessions?|explorer|endpoints?|serve|deploy|dry.?run|allocation|compute|nodes?|study|studies|sweep|doe|optimi[sz]|activate|account|apps?|applications?|catalog|marketplace|platform|gpus?|models? (server|endpoint)|storage|buckets?|disks?|file ?systems?|lustre|nfs)"
@@ -1546,6 +1566,7 @@
    "summary": "pw code agents on connected systems, and work delegated to pw code",
    "names": [
     "agent_sites",
+    "start_agent_daemon",
     "agent_sessions",
     "start_agent",
     "agent_status",

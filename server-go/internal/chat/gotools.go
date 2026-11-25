@@ -226,6 +226,9 @@ func offered(n string, platform, changesOK, localAgents bool) bool {
 	if !platform && needsPlatform(n) {
 		return false
 	}
+	if n == launchMonitorTool {
+		return changesOK
+	}
 	if !isPlatformTool(n) {
 		return true
 	}

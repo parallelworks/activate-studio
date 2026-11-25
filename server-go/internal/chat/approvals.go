@@ -308,6 +308,7 @@ func (m *Module) takeAnswer(a answer, viewer *Viewer, now time.Time) (*HeldCall,
 
 var doneVerb = map[string]string{
 	"start_cluster": "started", "resume_cluster": "resumed", "stop_cluster": "stopped", "destroy_cluster": "destroyed", "cancel_workflow_run": "cancelled",
+	launchMonitorTool: "launched", startDaemonTool: "started pw code on",
 }
 
 // answerHeld settles an answer: refuses it, records a denial, or runs the
@@ -357,11 +358,13 @@ func (m *Module) answerHeld(r *http.Request, a answer, viewer *Viewer, key *stri
 	var failed bool
 	if isKBAsksFirst(tool) {
 		out, failed = m.runKBTool(r, tool, args)
+	} else if isActionAsksFirst(tool) {
+		out, failed = m.runAction(r, tool, args, deref(key))
 	} else {
 		out, failed = m.runPlatformTool(ctx, tool, args, deref(key))
 	}
 	target := ""
-	for _, k := range []string{"clusterName", "slug"} {
+	for _, k := range []string{"clusterName", "slug", "site"} {
 		if args.Has(k) && !jsonobj.IsNullish(args.Get(k)) {
 			target = jsText(args.Get(k))
 			break
