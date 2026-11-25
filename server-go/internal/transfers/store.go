@@ -511,24 +511,7 @@ func (s *store) summary(owner string, now time.Time) Summary {
 			out.AwaitingApproval++
 		}
 	}
-	// Newest first, so each success is met before the failures it clears.
-	succeeded := map[string]bool{}
-	for _, d := range s.done {
-		if now.Sub(d.end) > FailedFor {
-			break
-		}
-		if d.owner != owner {
-			continue
-		}
-		switch d.t.State {
-		case StateSucceeded:
-			succeeded[sameKey(d.t)] = true
-		case StateFailed:
-			if !succeeded[sameKey(d.t)] && s.unseen(owner, d) {
-				out.FailedLast24h++
-			}
-		}
-	}
+	out.FailedLast24h = len(s.failuresLocked(owner, now))
 	return out
 }
 

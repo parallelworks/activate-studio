@@ -8,6 +8,7 @@ import { createOpenAIChatAdapter } from '@parallelworks/ui/ai/openai'
 import { AddIcon, ExternalLinkIcon, HelpIcon, SidebarOpenIcon } from '@parallelworks/ui/icons'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { useAppConfig } from '../config'
+import { publishListing, sessionSeen } from '../notices'
 import { type PageSession, pwCodePage } from './api'
 import { CodeSidebar } from './CodeSidebar'
 import { CodeStart } from './CodeStart'
@@ -84,6 +85,8 @@ function useJSON<T>(url: string, every = 0): T | null {
 
 function CodeScreen() {
   const { data } = pwCodePage.useSessions()
+  // The menu's marks and the Notices page show what this list shows.
+  useEffect(() => { publishListing(data) }, [data])
   const machines = useMemo(() => data?.machines ?? [], [data])
   const studio = useOpenInStudio(machines)
   const where = useJSON<Where>('/api/code-page/where')
@@ -118,6 +121,7 @@ function CodeScreen() {
 
   const open = useCallback((s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => {
     setOpened({ machine: s.machineId, sessionId: s.id })
+    sessionSeen(s.id)
     setDrawerOpen(false)
     // One that cannot be continued here shows why, with what still works.
     void studio.open(s).then(ok => { if (!ok) setLink({ machine: s.machineId, session: s.id }) })

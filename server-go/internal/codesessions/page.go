@@ -265,25 +265,63 @@ func (s *routes) pageListing(w http.ResponseWriter, r *http.Request) {
 		s.forward(w, r, t, http.MethodGet, "/api/code/sessions", nil)
 		return
 	}
+	machines, sessions, err := t.localListing(r)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, jsonv.NewObject("machines", machines, "sessions", sessions))
+}
+
+// localListing is this computer and its sessions the viewer may see.
+func (t *pageTarget) localListing(r *http.Request) (machines, sessions []any, err error) {
 	list, err := pwcode.ListSessions(r.Context(), t.local)
 	if err != nil {
-		writeErr(w, platform.KbError(502, "pw code on this computer did not answer: "+err.Error()))
-		return
+		return nil, nil, platform.KbError(502, "pw code on this computer did not answer: "+err.Error())
 	}
 	rows := jsonv.Arr(list)
 	if rows == nil {
 		rows = jsonv.Arr(jsonv.Path(list, "sessions"))
 	}
-	out := []any{}
+	sessions = []any{}
 	for _, x := range rows {
 		o := jsonv.Obj(x)
 		if o == nil || (t.only && !t.own[jsonv.String(jsonv.Path(o, "id"))]) {
 			continue
 		}
 		o.Set("machineId", t.machine.ID)
-		out = append(out, o)
+		sessions = append(sessions, o)
 	}
-	writeJSON(w, http.StatusOK, jsonv.NewObject("machines", []any{t.localMachineView()}, "sessions", out))
+	return []any{t.localMachineView()}, sessions, nil
+}
+
+// Listing is the machines and sessions the Code page lists for the person
+// r is from (GET /api/code-page/sessions), for the Studio's own use: what
+// waits on them is read from the same listing the page draws.
+func Listing(r *http.Request) (machines, sessions []any, err error) {
+	s := registered.Load()
+	if s == nil {
+		return nil, nil, platform.KbError(409, "pw code sessions are not listed here.")
+	}
+	t, err := s.pageTarget(r, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	if t.local != nil {
+		return t.localListing(r)
+	}
+	ms, ss, err := PlatformListing(r, s.p)
+	if err != nil {
+		return nil, nil, err
+	}
+	machines, sessions = []any{}, []any{}
+	for _, m := range ms {
+		machines = append(machines, ClaudeCodeShown(r, m))
+	}
+	for _, x := range ss {
+		sessions = append(sessions, x)
+	}
+	return machines, sessions, nil
 }
 
 // pageDirectories lists the folders of one directory on the machine, for

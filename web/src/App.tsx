@@ -17,6 +17,8 @@ import { useInstall } from './install'
 import { WorkflowsView } from './views/WorkflowsView'
 import { CodePage } from './code/CodePage'
 import { useCodeWaiting } from './code/waiting'
+import { countFor, setTransfersShown, transfersReadAt, useNotices, useNoticesRead } from './notices'
+import { NoticesView } from './views/NoticesView'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
 import { SettingsView } from './views/SettingsView'
@@ -36,16 +38,16 @@ import { setPanelView } from './panelState'
 import { studioMark } from './studioMark'
 import { SEARCH_NOTE, searchReach, useSearchScope } from './searchReach'
 
-type ViewId = 'chat' | 'library' | 'transfers' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'code' | 'settings' | 'help'
+type ViewId = 'chat' | 'library' | 'transfers' | 'search' | 'query' | 'overview' | 'history' | 'agents' | 'workflows' | 'code' | 'notices' | 'settings' | 'help'
 /** Pages whose sidebar item always leads to their main page: Workflows from a
  *  workflow's form, Transfers from New transfer or a transfer's details. */
 const HOME_EVENT: Partial<Record<ViewId, string>> = { workflows: 'ade:workflows-home', transfers: 'ade:transfers-home' }
 const goHome = (id: ViewId) => { const e = HOME_EVENT[id]; if (e) window.dispatchEvent(new Event(e)) }
 export type Display = { kind: 'file'; target: string; q?: string; lib?: string } | { kind: 'workflow_dag'; target: string }
 
-// The destinations that keep a spot in the phone bottom bar; the rest
-// move into the More sheet.
-const MOBILE_PRIMARY = new Set<string>(['chat', 'library', 'search', 'overview'])
+// The destinations that keep a spot in the phone bottom bar (Notices with
+// them, for its count); the rest move into the More sheet.
+const MOBILE_PRIMARY = new Set<string>(['chat', 'library', 'search', 'overview', 'notices'])
 
 // The list-style views share one header bar: the section's name and a
 // short note on what it covers. Chat, the library, settings, and help lay
@@ -55,6 +57,7 @@ const PAGE_NOTES: Partial<Record<ViewId, string>> = {
   query: 'Sizes, ages, types, labels, and locations, from the index',
   overview: 'What the knowledge base holds and how the index is doing',
   agents: '',
+  notices: 'What needs you across the Studio',
   workflows: 'Each runs under your own account',
   code: 'Your pw code sessions on the platform\'s machines',
   history: 'The corpus at each index pass',
@@ -111,6 +114,11 @@ const NAV: { id: ViewId; label: string; icon: ReactElement }[] = [
     id: 'history',
     label: 'History',
     icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.4V8l2.6 1.6"/></svg>,
+  },
+  {
+    id: 'notices',
+    label: 'Notices',
+    icon: <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M12.5 11V7a4.5 4.5 0 0 0-9 0v4L2.2 12.5h11.6L12.5 11z"/><path d="M6.6 14.2a1.6 1.6 0 0 0 2.8 0"/></svg>,
   },
   {
     id: 'settings',
@@ -204,22 +212,29 @@ export default function App() {
   useEffect(() => { void transfersPresent().then(setHasTransfers) }, [])
   // The menu entry's mark: how many transfers are under way, or a warning
   // when one failed in the last day and has not been seen. Read every 15
-  // seconds while shown. While the Transfers page is open its failures are
+  // seconds while shown, unless the notices have just brought it. While the Transfers page is open its failures are
   // seen, so the read marks them seen first; a transfer's details mark
   // theirs and send the summary.
   const [xferSummary, setXferSummary] = useState<TransferSummary | null>(null)
-  // Sessions waiting on the person, as PW Code on the web's menu counts them.
+  // Sessions waiting on the person, as PW Code on the web's menu counts
+  // them, and what else needs them: one read for every mark (notices.ts).
   const codeWaiting = useCodeWaiting(cfg.loaded && sectionAllowed('code', cfg))
+  useNoticesRead(cfg.loaded)
+  const notices = useNotices()
   const onTransfers = view === 'transfers'
+  useEffect(() => { setTransfersShown(onTransfers) }, [onTransfers])
+  useEffect(() => {
+    if (notices.transfers && !onTransfers) setXferSummary(notices.transfers)
+  }, [notices.transfers, onTransfers])
   useEffect(() => {
     if (!hasTransfers) return
     const read = () => {
-      if (document.visibilityState === 'hidden') return
+      if (document.visibilityState === 'hidden' || (!onTransfers && Date.now() - transfersReadAt() < XFER_EVERY_MS)) return
       const ask = onTransfers ? transferApi.seen() : transferApi.summary()
       ask.then(setXferSummary, () => {})
     }
     read()
-    const t = setInterval(read, 15_000)
+    const t = setInterval(read, XFER_EVERY_MS)
     const seen = (e: Event) => {
       const sum = (e as CustomEvent<TransferSummary | undefined>).detail
       if (sum) setXferSummary(sum)
@@ -512,6 +527,15 @@ export default function App() {
   const framedBySelf = (() => { try { return window.parent !== window && window.parent.location.origin === window.location.origin } catch { return false } })()
   if (embedKind || framedBySelf) return <UnknownEmbed kind={embedKind ?? 'page'} />
 
+  // A menu entry's mark: what there needs the person (notices.ts).
+  const navMark = (id: ViewId): ReactElement | null => {
+    if (id === 'transfers') return <TransferMark summary={xferSummary} />
+    const of = id === 'code' ? codeWaiting : id === 'notices' ? notices.items.length : id === 'chat' || id === 'agents' ? countFor(notices, id) : 0
+    if (!of) return null
+    const waits = notices.items.some(i => i.what === 'waiting' && (id === 'notices' || i.nav.includes(id)))
+    return <CountMark id={id} count={of} waiting={waits} said={id === 'code' || id === 'agents' ? `${of} waiting for you` : `${of} ${of === 1 ? 'needs' : 'need'} you`} />
+  }
+
   return (
     <div className="app">
       <ClassificationBanner />
@@ -569,13 +593,7 @@ export default function App() {
                 >
                   {item.icon}
                   <span>{item.label}</span>
-                  {item.id === 'transfers' && <TransferMark summary={xferSummary} />}
-                  {item.id === 'code' && !!codeWaiting && (
-                    <span className="nav-xfer-mark" title={`${codeWaiting} waiting for you`} data-testid="nav-code-waiting">
-                      <CountBadge count={codeWaiting} max={99} size="sm" variant="warning" />
-                      <span className="sr-only">{codeWaiting} waiting for you</span>
-                    </span>
-                  )}
+                  {navMark(item.id)}
                 </button>
               )
             }
@@ -603,6 +621,12 @@ export default function App() {
               </div>,
             ]
           })}
+          {/* In the phone's bar; the sidebar has it at its foot. */}
+          <button className={`sidenav-item nav-notices-phone ${view === 'notices' ? 'active' : ''}`} title="Notices" onClick={() => setView('notices')}>
+            {navItem('notices').icon}
+            <span>Notices</span>
+            {navMark('notices')}
+          </button>
           <button
             className={`sidenav-item nav-more ${moreOpen || !MOBILE_PRIMARY.has(view) ? 'active' : ''}`}
             title="More"
@@ -624,6 +648,7 @@ export default function App() {
                 >
                   {item.icon}
                   <span>{item.label}</span>
+                  {navMark(item.id)}
                 </button>
               ))}
               <StatusFooter />
@@ -631,7 +656,7 @@ export default function App() {
           </>
         )}
         <div className="sidenav-items sidenav-secondary">
-          {NAV.filter(i => i.id === 'settings' || i.id === 'help').map(item => (
+          {NAV.filter(i => i.id === 'notices' || i.id === 'settings' || i.id === 'help').map(item => (
             <button
               key={item.id}
               className={`sidenav-item ${view === item.id ? 'active' : ''}`}
@@ -640,6 +665,7 @@ export default function App() {
             >
               {item.icon}
               <span>{item.label}</span>
+              {navMark(item.id)}
             </button>
           ))}
           {canInstall && (
@@ -689,6 +715,7 @@ export default function App() {
         {/* Without ACTIVATE, where Accounts can sign in to it, these ask to sign in. */}
         {allowed('workflows') && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
         {allowed('code') && view === 'code' && <div className="view"><CodePage /></div>}
+        {view === 'notices' && <div className="view"><NoticesView /></div>}
         <div className={view === 'settings' ? 'view with-toggle' : 'view hidden'}>
           <SettingsView active={view === 'settings'} />
           {view === 'settings' && <PanelToggle className="panel-toggle-float" />}
@@ -704,6 +731,20 @@ export default function App() {
       {setupOpen && <SetupWizard onClose={changed => { setSetupOpen(false); if (changed) location.reload() }} />}
       <FirstVisitCard />
     </div>
+  )
+}
+
+/** How often the Transfers entry's summary is read. */
+const XFER_EVERY_MS = 15_000
+
+/** A menu entry's count of what needs the person: in the warning color when
+ *  something there waits on them, else in blue (a reply to read). */
+function CountMark({ id, count, waiting, said }: { id: string; count: number; waiting: boolean; said: string }) {
+  return (
+    <span className="nav-xfer-mark" title={said} data-testid={`nav-${id}-waiting`}>
+      <CountBadge count={count} max={99} size="sm" variant={waiting ? 'warning' : 'info'} />
+      <span className="sr-only">{said}</span>
+    </span>
   )
 }
 

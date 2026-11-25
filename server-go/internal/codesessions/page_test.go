@@ -327,6 +327,10 @@ func TestOnASharedStudioThisComputerIsNotOffered(t *testing.T) {
 	if code, out := send(t, "GET", base+"/sessions", "", nil); code == 200 && len(out["sessions"].([]any)) != 0 {
 		t.Fatalf("listing: %d %v", code, out)
 	}
+	// Nor in the listing the Studio reads for the person's notices.
+	if ms, ss, err := Listing(platform.WithViewer(httptest.NewRequest("GET", "/api/notices", nil), v)); err == nil && len(ms)+len(ss) != 0 {
+		t.Fatalf("Listing: %v %v", ms, ss)
+	}
 	for _, x := range [][3]string{
 		{"POST", "/machines/mach1/sessions/" + theirs + "/archive", ""},
 		{"DELETE", "/machines/mach1/sessions/" + theirs, ""},
