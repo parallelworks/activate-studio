@@ -398,16 +398,31 @@ func (s *Service) pwViewer(r *http.Request, keep bool) (owner string, ok bool, e
 	return owner, true, nil
 }
 
-// pwOffered is whether ACTIVATE buckets can be read for a request's person:
-// the Studio's gateway is a platform's, the pw CLI is here, GUFI can build
-// an index from a listing, and the person has a credential of their own.
-func (s *Service) pwOffered(r *http.Request) bool {
+// pwHere is whether this Studio can read ACTIVATE buckets: its gateway is a
+// platform's, the pw CLI is here, and GUFI can build an index from a listing.
+func (s *Service) pwHere() bool {
 	p := platform.Of(s.a)
-	if !s.a.NodeFree() || !p.PlatformGateway() || p.CLISource() == platform.SourceNone || !exists(filepath.Join(s.a.Cfg.GufiBin, "gufi_trace2index")) {
+	return s.a.NodeFree() && p.PlatformGateway() && p.CLISource() != platform.SourceNone && exists(filepath.Join(s.a.Cfg.GufiBin, "gufi_trace2index"))
+}
+
+// pwOffered is whether ACTIVATE buckets can be read for a request's person:
+// they can here, and the person has a credential of their own.
+func (s *Service) pwOffered(r *http.Request) bool {
+	if !s.pwHere() {
 		return false
 	}
 	_, ok, err := s.pwViewer(r, false)
 	return err == nil && ok
+}
+
+// pwShown is whether Add a library speaks of ACTIVATE buckets: where they
+// are offered, and to a signed-in person who has only to sign in to ACTIVATE.
+func (s *Service) pwShown(r *http.Request) bool {
+	if s.pwOffered(r) {
+		return true
+	}
+	owner, _, err := s.pwViewer(r, false)
+	return err == nil && owner != "" && s.pwHere()
 }
 
 // ownBucket is the bucket library of the route's id that the request's
@@ -448,12 +463,15 @@ func (s *Service) pwBucketsList(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !ok || !s.pwOffered(r) {
+		if owner != "" && s.pwHere() {
+			out.Why = "Sign in with ACTIVATE under Settings, Accounts to choose from your buckets"
+		}
 		apierr.JSON(w, 200, out)
 		return nil
 	}
 	out.Available = true
 	if out.Buckets, err = s.bucketsOf(r.Context(), owner, true); err != nil {
-		out.Buckets, out.Why = []pwbucket.Bucket{}, "Your buckets could not be listed: "+err.Error()
+		out.Buckets, out.Why = []pwbucket.Bucket{}, err.Error()
 	}
 	apierr.JSON(w, 200, out)
 	return nil

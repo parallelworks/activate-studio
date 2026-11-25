@@ -16,7 +16,7 @@ export type Target =
   | { kind: 'bucket' }
 
 /** The viewer's ACTIVATE buckets, once asked for. */
-export interface PwBuckets { buckets: PwBucket[]; why?: string; loading: boolean }
+export interface PwBuckets { buckets: PwBucket[]; available?: boolean; why?: string; loading: boolean }
 
 export interface AddOptions {
   /** Libraries can be built from folders on this computer (sign-in off). */
@@ -147,7 +147,7 @@ export function targetMenu({ options, systems, buckets, hosts, target, onPick, o
   const found = buckets?.buckets ?? []
   const pw: MenuEntry[] = !offered.buckets ? [] : found.length
     ? found.map(b => row({ kind: 'pwbucket', uri: b.uri }, b.why ? { description: b.why, disabled: true } : { description: `${b.namespace} · ${pwBucketPlace(b)}` }))
-    : [buckets?.why ? note('Your buckets could not be listed', buckets.why) : buckets && !buckets.loading ? note('No buckets yet', 'Make one on ACTIVATE, under Storage') : note('Finding your buckets…')]
+    : [buckets?.why ? note(buckets.available === false ? 'Your buckets' : 'Your buckets could not be listed', buckets.why) : buckets && !buckets.loading ? note('No buckets yet', 'Make one on ACTIVATE, under Storage') : note('Finding your buckets…')]
   return [
     ...(offered.here ? [row({ kind: 'here' })] : []),
     ...(clusters.length ? [{ group: 'Clusters', items: clusters }] : []),

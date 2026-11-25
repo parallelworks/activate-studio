@@ -1084,7 +1084,7 @@ export const api = {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status} ${res.statusText}`)
   },
-  /** The viewer's ACTIVATE buckets. */
+  /** The viewer's ACTIVATE buckets, or why there are none to choose from. */
   pwBuckets: () => getJson<{ available: boolean; why?: string; buckets: PwBucket[] }>('/api/libraries/buckets'),
   pwBucketFolder: (uri: string, path: string, endpoint = '') =>
     getJson<PwBucketFolder>(`/api/libraries/buckets/folders?${new URLSearchParams({ uri, path, ...(endpoint ? { endpoint } : {}) })}`),

@@ -106,7 +106,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
     if (!options.buckets) return
     let live = true
     api.pwBuckets().then(
-      r => { if (live) setBuckets({ buckets: r.buckets ?? [], why: r.why, loading: false }) },
+      r => { if (live) setBuckets({ buckets: r.buckets ?? [], available: r.available, why: r.why, loading: false }) },
       e => { if (live) setBuckets({ buckets: [], why: say(e), loading: false }) })
     return () => { live = false }
   }, [options.buckets, round])

@@ -47,7 +47,10 @@ export function PwBucketForm({ uri, buckets, holdHeight, onAdded }: {
   // What was chosen for the buckets added before.
   const before = useMemo(() => libs.filter(l => l.bucket?.location.startsWith('pw://')).map(l => l.bucket!), [libs])
   const everyNow = every ?? before[before.length - 1]?.every ?? 1440
-  const endpointNow = endpoint ?? before.filter(b => b.csp === bucket?.csp && b.region === bucket?.region && b.endpoint).pop()?.endpoint ?? ''
+  // An endpoint is one region's: what was said for this one, else what the
+  // last bucket there was given.
+  const endpointOf = (b?: PwBucket) => before.filter(x => x.csp === b?.csp && x.region === b?.region && x.endpoint).pop()?.endpoint ?? ''
+  const endpointNow = endpoint ?? endpointOf(bucket)
   const several = more.length > 0
   const others = buckets.filter(b => b.uri !== uri)
   const added = !several && libraryAt(libs, uri, dir)
@@ -67,14 +70,16 @@ export function PwBucketForm({ uri, buckets, holdHeight, onAdded }: {
     const asked = [uri, ...more]
     // One after another: the platform is asked for one credential at a time.
     for (const u of asked) {
+      const b = buckets.find(x => x.uri === u)
+      const at = b?.csp === bucket?.csp && b?.region === bucket?.region ? endpointNow.trim() : endpointOf(b)
       try {
         const r = await postJson<{ library: SettingsLibrary }>('/api/libraries/bucket', {
-          bucket: u, every: everyNow, endpoint: endpointNow.trim() || undefined,
+          bucket: u, every: everyNow, endpoint: at || undefined,
           ...(several ? {} : { path: dir, label: label.trim() || undefined }),
         })
         done.push({ uri: u, lib: r.library })
       } catch (e) {
-        failed.push({ uri: u, name: buckets.find(b => b.uri === u)?.label ?? u, message: say(e) })
+        failed.push({ uri: u, name: b?.label ?? u, message: say(e) })
       }
     }
     setBusy(false)
@@ -103,7 +108,7 @@ export function PwBucketForm({ uri, buckets, holdHeight, onAdded }: {
           <Field label="Folder" layout="inline" size="sm" group>
             <div className="copy-library-folder">
               <div className="copy-library-path">
-                <code>{dir || 'The whole bucket'}</code>
+                {dir ? <code>{dir}</code> : <span>The whole bucket</span>}
                 {!folder && <Button size="sm" variant="ghost" loading={looking} onClick={() => void look('')}>Choose a folder</Button>}
                 {folder && folder.parent !== null && <Button size="sm" variant="ghost" disabled={looking} onClick={() => void look(folder.parent ?? '')}>Up</Button>}
                 {folder && <Button size="sm" variant="ghost" onClick={() => { holdHeight(); setFolder(null); setDir('') }}>Use the whole bucket</Button>}
@@ -153,7 +158,7 @@ export function PwBucketForm({ uri, buckets, holdHeight, onAdded }: {
           {options && (
             <div className="lib-more-body"><div className="lib-more-fields">
               <Input label="Endpoint" hint="optional" size="sm" mono spellCheck={false} autoComplete="off" placeholder="the store's own" value={endpointNow}
-                description="Another address to ask the store at, where this Studio reaches it only through one: a VPC endpoint, such as https://bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com."
+                description={`Another address to ask the store at, where this Studio reaches it only through one: a VPC endpoint, such as https://bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com.${several ? ` For the buckets in ${pwBucketPlace(bucket)}.` : ''}`}
                 onChange={e => setEndpoint(e.target.value)} />
             </div></div>
           )}

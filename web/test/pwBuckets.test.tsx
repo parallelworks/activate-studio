@@ -22,7 +22,7 @@ if (!('PointerEvent' in window)) {
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 const b = (name: string, more: object = {}) => ({ uri: `pw://ada/${name}`, name, namespace: 'ada', label: name, csp: 'aws', region: 'us-east-1', store: `store-${name}`, ready: true, ...more })
 const BUCKETS = [b('papers'), b('gov-data', { region: 'us-gov-west-1' }), b('images', { csp: 'google', region: 'us-central1' }),
-  b('old', { csp: 'oracle', region: 'us-ashburn-1', why: 'The pw CLI does not give a token for a bucket in Oracle Cloud.' })]
+  b('old', { csp: 'oracle', region: 'us-ashburn-1', why: 'In Oracle Cloud, which the pw CLI gives no token for (unsupported CSP)' })]
 const library = (uri: string, path = '', more: object = {}) => ({ id: `lib-${uri.split('/').pop()}`, label: uri.split('/').pop(), bucket: { location: uri, path, every: 1440, csp: 'aws', region: 'us-gov-west-1', ...more } })
 
 interface Calls { method: string; url: string; body?: Record<string, unknown> }
@@ -62,15 +62,19 @@ describe('ACTIVATE buckets in Add a library', () => {
     expect(rows.map(r => r.textContent)).toEqual(expect.arrayContaining(['This computer', 'papersada · AWS us-east-1', 'gov-dataada · AWS us-gov-west-1',
       'imagesada · Google Cloud us-central1', 'Another bucket (rclone remote)']))
     const old = rows.find(r => r.textContent?.startsWith('old'))!
-    expect(old).toHaveTextContent('does not give a token')
+    expect(old).toHaveTextContent('gives no token')
     expect(old).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('says why they could not be listed, and when there are none', async () => {
-    stub({ buckets: { available: true, buckets: [], why: 'Your buckets could not be listed: not now' } })
+    stub({ buckets: { available: true, buckets: [], why: 'the platform answered 503: not now' } })
     const r = render(<AddLibrary options={ONE} onAdded={() => {}} />)
     await waitFor(async () => { const t = (await computers()).map(x => x.textContent).join('|'); closeMenu(); expect(t).toContain('not now') })
     r.unmount()
+    stub({ buckets: { available: false, buckets: [], why: 'Sign in with ACTIVATE under Settings, Accounts to choose from your buckets' } })
+    const r2 = render(<AddLibrary options={SIGNED} onAdded={() => {}} />)
+    await waitFor(async () => { const t = (await computers()).map(x => x.textContent).join('|'); closeMenu(); expect(t).toContain('Your bucketsSign in with ACTIVATE') })
+    r2.unmount()
     stub({ buckets: { available: true, buckets: [] } })
     render(<AddLibrary options={ONE} onAdded={() => {}} />)
     await waitFor(async () => { const t = (await computers()).map(x => x.textContent).join('|'); closeMenu(); expect(t).toContain('No buckets yet') })
@@ -138,11 +142,13 @@ describe('ACTIVATE buckets in Add a library', () => {
     await chooseComputer('gov-data')
     expect(await screen.findByRole('checkbox', { name: 'Add papers' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Added already')).toBeInTheDocument())
+    // An endpoint is one region's: a bucket elsewhere is not asked there.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Add images' }))
     fireEvent.click(screen.getByRole('button', { name: 'More options' }))
     expect(screen.getByRole('textbox', { name: /Endpoint/ })).toHaveValue(at)
-    fireEvent.click(screen.getByRole('button', { name: 'List and index' }))
+    fireEvent.click(screen.getByRole('button', { name: 'List and index 2 buckets' }))
     await waitFor(() => expect(onAdded).toHaveBeenCalled())
-    expect(s.posted()[0]).toEqual({ bucket: 'pw://ada/gov-data', every: 360, endpoint: at, path: '' })
+    expect(s.posted()).toEqual([{ bucket: 'pw://ada/gov-data', every: 360, endpoint: at }, { bucket: 'pw://ada/images', every: 360 }])
   })
 
   it('refuses the same bucket twice before it is asked', async () => {

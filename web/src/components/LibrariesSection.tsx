@@ -775,7 +775,7 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
           : <>{cfg.kbLabel}, your folder on this computer, is written here. The libraries you index on your remote
             computers are written as your account there, where it may write.</>}
         {' '}The others are read only: folders indexed on this computer, indexes connected as they
-        are, and kept copies.
+        are, buckets, and kept copies.
       </p>
       {!libs ? <Loader inline size={16} label="Loading…" /> : (
         <div className="lib-cards">

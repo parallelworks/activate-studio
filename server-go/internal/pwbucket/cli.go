@@ -87,7 +87,7 @@ func ParseURI(s string) (namespace, name string, err error) {
 // can be.
 func Unsupported(csp string) string {
 	if csp == Oracle {
-		return "The pw CLI does not give a token for a bucket in Oracle Cloud (it answers \"unsupported CSP\"), so Studio cannot index it."
+		return "In Oracle Cloud, which the pw CLI gives no token for (unsupported CSP)"
 	}
 	return ""
 }

@@ -344,9 +344,9 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	apierr.JSON(w, 200, struct {
 		Libraries []libraries.SettingsLibrary `json:"libraries"`
 		CanBuild  bool                        `json:"canBuild"`
-		// Buckets: the viewer's ACTIVATE buckets can be added (pwOffered).
+		// Buckets: Add a library speaks of ACTIVATE buckets (pwShown).
 		Buckets bool `json:"buckets"`
-	}{out, !s.authEnabled(r), s.pwOffered(r)})
+	}{out, !s.authEnabled(r), s.pwShown(r)})
 	return nil
 }
 

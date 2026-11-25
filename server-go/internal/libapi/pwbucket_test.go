@@ -510,8 +510,11 @@ func TestPWBucketsOfTwoPeople(t *testing.T) {
 	}
 	// Without a platform sign-in of their own a person has no buckets: the
 	// deployment's is not lent.
-	if code, b := f.as("cy", "", "GET", "/api/libraries/buckets", nil); code != 200 || b["available"] != false {
+	if code, b := f.as("cy", "", "GET", "/api/libraries/buckets", nil); code != 200 || b["available"] != false || !strings.Contains(b["why"].(string), "Sign in with ACTIVATE") {
 		t.Errorf("cy: %d %v", code, b)
+	}
+	if code, b := f.as("cy", "", "GET", "/api/libraries", nil); code != 200 || b["buckets"] != true {
+		t.Errorf("cy is not told of buckets: %d %v", code, b["buckets"])
 	}
 	if code, b := f.as("cy", "", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://ada/papers"}); code != 409 {
 		t.Errorf("cy adds: %d %v", code, b)
