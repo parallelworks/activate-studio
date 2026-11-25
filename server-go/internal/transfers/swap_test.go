@@ -20,6 +20,13 @@ import (
 
 func shaOf(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
 
+// eachWriter runs a test through the shell helper and through the write
+// helper.
+func eachWriter(t *testing.T, f func(*testing.T, func(context.Context) WriteTool)) {
+	t.Run("shell", func(t *testing.T) { f(t, nil) })
+	t.Run("helper", func(t *testing.T) { f(t, testWriter(t)) })
+}
+
 func left(t *testing.T, dir string) {
 	t.Helper()
 	if l, _ := filepath.Glob(filepath.Join(dir, ".studio-*")); len(l) > 0 {
@@ -27,10 +34,12 @@ func left(t *testing.T, dir string) {
 	}
 }
 
-func TestSwapTakesAFilesPlaceOnlyAsItWas(t *testing.T) {
+func TestSwapTakesAFilesPlaceOnlyAsItWas(t *testing.T) { eachWriter(t, swapTakesAFilesPlaceOnlyAsItWas) }
+
+func swapTakesAFilesPlaceOnlyAsItWas(t *testing.T, writer func(context.Context) WriteTool) {
 	ctx := context.Background()
 	root := t.TempDir()
-	fs := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: true}
+	fs := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: true, Writer: writer}
 	d := filepath.Join(root, "d")
 	f := filepath.Join(d, "-run me.sh")
 	write(t, f, "one")
@@ -100,10 +109,12 @@ func (c *cutRunner) RunOnce(ctx context.Context, site, key string, argv []string
 	return c.localRunner.RunOnce(ctx, site, key, argv, timeout, io.LimitReader(stdin, 3))
 }
 
-func TestSwapKeepsTheFileWhenTheChangeDoesNotArriveWhole(t *testing.T) {
+func TestSwapKeepsTheFileWhenTheChangeDoesNotArriveWhole(t *testing.T) { eachWriter(t, swapKeepsTheFileWhenTheChangeDoesNotArriveWhole) }
+
+func swapKeepsTheFileWhenTheChangeDoesNotArriveWhole(t *testing.T, writer func(context.Context) WriteTool) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "a.md"), "one")
-	fs := &RemoteFS{R: &cutRunner{}, SiteID: "h", Dir: root, Name: "space", Private: true}
+	fs := &RemoteFS{R: &cutRunner{}, SiteID: "h", Dir: root, Name: "space", Private: true, Writer: writer}
 	if st, err := fs.Swap(context.Background(), "a.md", []byte("a longer text"), shaOf("one")); err == nil || st.Done {
 		t.Fatalf("%+v", st)
 	}
@@ -113,14 +124,16 @@ func TestSwapKeepsTheFileWhenTheChangeDoesNotArriveWhole(t *testing.T) {
 	left(t, root)
 }
 
-func TestSwapFollowsNoLink(t *testing.T) {
+func TestSwapFollowsNoLink(t *testing.T) { eachWriter(t, swapFollowsNoLink) }
+
+func swapFollowsNoLink(t *testing.T, writer func(context.Context) WriteTool) {
 	ctx := context.Background()
 	for name, mk := range map[string]func(root string) *RemoteFS{
 		"private": func(root string) *RemoteFS {
-			return &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: true}
+			return &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", Private: true, Writer: writer}
 		},
 		"own": func(root string) *RemoteFS {
-			return &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", NoLinks: true}
+			return &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "space", NoLinks: true, Writer: writer}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

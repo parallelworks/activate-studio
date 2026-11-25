@@ -336,10 +336,27 @@ describe('who sees a folder that is indexed', () => {
     await waitFor(() => expect(f.added()?.share).toEqual({ kind: 'everyone', access: 'read' }))
   })
 
+  it('a folder others can write in is written and shared, with a warning, and is not My library', async () => {
+    const detail = 'Members of the group rc can write in /data (mode 2775). They can add, change and remove what is in it. The Library writes in it as you, and a write cannot be sent outside it.'
+    const f = await indexForm({
+      othersWrite: 'Members of the group rc can write in /data (mode 2775).', readOnly: null, canShare: true,
+      myLibraryWhy: 'My library is where your chats are saved, so it has to be a folder no other account can change.',
+      steps: [{ name: 'folder', ok: true, warn: true, detail }],
+    })
+    await chooseHome()
+    await f.test()
+    expect(screen.getByText(detail)).toBeInTheDocument()
+    expect(screen.queryByTestId('no-share')).toBeNull()
+    fireEvent.click(button('Shared'))
+    fireEvent.click(button('Everyone'))
+    fireEvent.click(button('Index the folder'))
+    await waitFor(() => expect(f.added()).toMatchObject({ myLibrary: false, share: { kind: 'everyone', access: 'read' } }))
+  })
+
   it('a warning does not stop it: the folder is indexed read only, and the form says why it is not shared', async () => {
     const why = 'Another account owns the folder, and only its owner can share it.'
     const f = await indexForm({
-      owned: false, readOnly: 'x', canShare: false, shareWhy: why, myLibraryWhy: 'My library is where your chats are saved, so it has to be a folder the Library writes in.',
+      owned: false, readOnly: 'x', canShare: false, shareWhy: why, myLibraryWhy: 'My library is where your chats are saved, so it has to be a folder no other account can change.',
       steps: [{ name: 'folder', ok: true, warn: true, detail: '/data belongs to another account (uid 0). It is indexed and read as you, and the Library does not write in it.' }],
     })
     await chooseHome()

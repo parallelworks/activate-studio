@@ -13,12 +13,18 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 )
 
-// A guarded location takes no write of any kind where another account
-// could change its folder or one above it, and so send the write
-// elsewhere; nothing is changed, reading goes on, and closing the folder
+// noHelper is a system the write helper cannot run on.
+func noHelper(context.Context) WriteTool {
+	return WriteTool{Why: "The Studio's write helper is not built for Plan9."}
+}
+
+// Where the write helper cannot run, a library takes no write of any kind
+// that another account could send elsewhere, as it can change the folder or
+// one above it; nothing is changed, reading goes on, and closing the folder
 // turns writing back on.
 func TestAGuardedLocationTakesNoWriteAnotherAccountCouldRedirect(t *testing.T) {
 	ctx := context.Background()
@@ -46,12 +52,12 @@ func TestAGuardedLocationTakesNoWriteAnotherAccountCouldRedirect(t *testing.T) {
 			os.Chmod(root, 0o700)
 			undo := c.open(parent, root)
 			for _, fs := range []*RemoteFS{
-				{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Guard: true, NoLinks: true},
-				{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Guard: true, Own: true},
-				{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Guard: true, Private: true},
+				{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Writer: noHelper, NoLinks: true},
+				{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Writer: noHelper, Own: true},
+				{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Writer: noHelper, Private: true},
 			} {
 				for op, err := range writes(ctx, fs) {
-					if err == nil || !strings.Contains(err.Error(), c.said) || !strings.Contains(err.Error(), "nothing was changed") {
+					if err == nil || !strings.Contains(err.Error(), c.said) || !strings.Contains(err.Error(), "nothing was changed") || !strings.Contains(err.Error(), "not built for Plan9") {
 						t.Errorf("%s: %v", op, err)
 					}
 				}
@@ -65,7 +71,7 @@ func TestAGuardedLocationTakesNoWriteAnotherAccountCouldRedirect(t *testing.T) {
 				}
 			}
 			undo()
-			fs := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Guard: true, Own: true}
+			fs := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Writer: noHelper, Own: true}
 			for op, err := range writes(ctx, fs) {
 				if err != nil {
 					t.Errorf("closed again, %s: %v", op, err)
@@ -105,7 +111,7 @@ func TestAGuardedLocationUnderAStickyFolder(t *testing.T) {
 	root := filepath.Join(parent, "lib")
 	os.MkdirAll(root, 0o700)
 	os.Chmod(parent, 0o777|os.ModeSticky)
-	fs := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Guard: true, Own: true}
+	fs := &RemoteFS{R: &localRunner{}, SiteID: "h", Dir: root, Name: "lib", Writer: noHelper, Own: true}
 	if err := fs.Mkdir(context.Background(), "a"); err != nil {
 		t.Fatal(err)
 	}
@@ -222,8 +228,8 @@ func TestWritesInAFolderOfOnesOwnFollowTheFolder(t *testing.T) {
 }
 
 // A library where another account could send a write elsewhere takes no
-// transfer, though it is reached with the viewer's own key; one of their own
-// is written through the guarded helper, never SFTP.
+// transfer, though it is reached with the viewer's own key; one written as
+// its owner is written through the write helper, never SFTP.
 func TestLibraryLocationsFollowTheFoldersCheck(t *testing.T) {
 	why := "Every account there can write in /data/open, so it is read only here."
 	open := libraries.Library{ID: "open", IndexRoot: "remote:open", ReadOnlyWhy: why}
@@ -238,14 +244,26 @@ func TestLibraryLocationsFollowTheFoldersCheck(t *testing.T) {
 		t.Errorf("own: %q", got)
 	}
 	asked := ""
-	fs := userFS(&localRunner{}, &libraries.Target{Site: "cluster-a", Key: "k", SourceRoot: "/data/own", Def: libraries.UserDef{Guard: true}}, own,
-		func(root string) []string { asked = root; return []string{"user:bob"} })
-	if !fs.Own || !fs.Guard || len(fs.Shared) != 1 || asked != "remote:own" || fs.SFTPOnly(context.Background()) {
+	p := app.Providers{WriteShares: func(root string) []string { asked = root; return []string{"user:bob"} },
+		LibraryWriter: func(_ context.Context, root, site, key string) WriteTool {
+			return WriteTool{Path: root + " " + site + " " + key}
+		}}
+	build := &libraries.RemoteBuild{SourceRoot: "/data/own"}
+	fs := userFS(&localRunner{}, &libraries.Target{Site: "cluster-a", Key: "k", SourceRoot: "/data/own", Def: libraries.UserDef{Guard: true, Build: build}}, own, p)
+	if !fs.Own || fs.Writer == nil || len(fs.Shared) != 1 || asked != "remote:own" || fs.SFTPOnly(context.Background()) {
 		t.Errorf("own: %+v, asked %q", fs, asked)
 	}
-	// One added before the check is as it was.
-	fs = userFS(&localRunner{}, &libraries.Target{Site: "cluster-a", Key: "k", SourceRoot: "/data/old"}, libraries.Library{Mine: true}, nil)
-	if fs.Guard || fs.Own || !fs.NoLinks {
-		t.Errorf("as it was: %+v", fs)
+	if got := fs.Writer(context.Background()).Path; got != "remote:own cluster-a k" {
+		t.Errorf("its helper: %q", got)
+	}
+	// One added before the check is written the same way.
+	fs = userFS(&localRunner{}, &libraries.Target{Site: "cluster-a", Key: "k", SourceRoot: "/data/old", Def: libraries.UserDef{Build: build}}, libraries.Library{Mine: true}, p)
+	if fs.Writer == nil || fs.Own || !fs.NoLinks {
+		t.Errorf("an older one: %+v", fs)
+	}
+	// One that is not written as its owner has no helper.
+	fs = userFS(&localRunner{}, &libraries.Target{Site: "cluster-a", Key: "k", SourceRoot: "/data/x"}, libraries.Library{}, p)
+	if fs.Writer != nil {
+		t.Errorf("not written: %+v", fs)
 	}
 }

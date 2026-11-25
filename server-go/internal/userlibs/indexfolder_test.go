@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
@@ -26,14 +27,15 @@ func warned(r answer, name string) string {
 	return ""
 }
 
-// A folder another account could write in, owns or could move is indexed
-// and read as the person, with a warning that says the consequence and the
-// fix, and is not written in: the check, the library, the Library's file
-// work, sharing and a transfer all say so. Closing the folder and
-// refreshing turns writing on; opening it again is caught by the write
-// itself, before any refresh.
-func TestAFolderOthersCouldChangeIsIndexedReadOnly(t *testing.T) {
+// Where the write helper cannot run, a folder another account could write
+// in, owns or could move is indexed and read as the person, with a warning
+// that says the consequence, why and the fix, and is not written in: the
+// check, the library, the Library's file work, sharing and a transfer all
+// say so. Closing the folder and refreshing turns writing on; opening it
+// again is caught by the write itself, before any refresh.
+func TestAFolderOthersCouldChangeIsReadOnlyWithoutTheHelper(t *testing.T) {
 	h, homes := buildHarness(t)
+	h.m.noWriteTool = "The Studio's write helper is not built for Plan9."
 	t.Setenv("STUDIO_HOME_CLUSTER", "cluster-a")
 	h.m.GufiBin = fakeBundle(t, gufiBinDir())
 	home := homes["cluster-a"]
@@ -45,10 +47,10 @@ func TestAFolderOthersCouldChangeIsIndexedReadOnly(t *testing.T) {
 	if r.Body["ok"] != true {
 		t.Fatalf("%v", r.Body)
 	}
-	match(t, warned(r, "folder"), `^Every account there can write in .*/open \(mode 777\)\. It is indexed and read as you, and the Library does not write in it, .*run chmod go-w`, "warned")
+	match(t, warned(r, "folder"), `^Every account there can write in .*/open \(mode 777\)\. It is indexed and read as you, and the Library does not write in it, .*The Studio's write helper is not built for Plan9\. .*run chmod go-w`, "warned")
 	eq(t, []any{r.Body["owned"], r.Body["canShare"]}, []any{true, false}, "owned, not shared while open")
 	match(t, r.Body["shareWhy"], `not shared until the warning above`, "why not shared")
-	match(t, r.Body["myLibraryWhy"], `has to be a folder the Library writes in`, "not My library")
+	match(t, r.Body["myLibraryWhy"], `has to be a folder no other account can change`, "not My library")
 
 	// Under it, someone else could rename a folder of the person's away.
 	p := h.post("/api/user-libraries/space/test", map[string]any{"sourceRoot": "~/open/mine"})
@@ -87,7 +89,7 @@ func TestAFolderOthersCouldChangeIsIndexedReadOnly(t *testing.T) {
 		id := b.Body["id"].(string)
 		got := h.waitFor(id)
 		eq(t, []any{got["state"], got["mine"], got["space"]}, []any{"ready", nil, nil}, name+": indexed, not written")
-		match(t, got["readOnlyWhy"], `^Every account there can write in .*, so it is read only here: .*run chmod go-w`, name)
+		match(t, got["readOnlyWhy"], `^Every account there can write in .*, so it is read only here: .*not built for Plan9.*run chmod go-w`, name)
 		if a := got["access"].(map[string]any); a["write"] != false || a["readAs"] != "you" {
 			t.Fatalf("%s: %v", name, a)
 		}
@@ -111,7 +113,7 @@ func TestAFolderOthersCouldChangeIsIndexedReadOnly(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 		os.Chmod(open, 0o777)
-		if err := s.Put(req, lib, "y.txt", strings.NewReader("y"), 10); err == nil || !strings.Contains(err.Error(), "nothing was changed") {
+		if err := s.Put(req, lib, "y.txt", strings.NewReader("y"), 10); err == nil || !strings.Contains(err.Error(), "nothing was changed") || !strings.Contains(err.Error(), "not built for Plan9") {
 			t.Fatalf("%s: opened again: %v", name, err)
 		}
 		if _, _, err := s.Delete(req, lib, []string{"mine"}); err == nil {
@@ -236,9 +238,11 @@ func TestAddingAFolderShared(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(home, "loose"), 0o755)
 	os.Chmod(filepath.Join(home, "loose"), 0o777)
+	h.m.noWriteTool = "none here"
 	if r := add("~/loose", map[string]any{"kind": "everyone"}); r.Status != 409 {
 		t.Fatalf("a folder others can write in was shared: %v", r.Body)
 	}
+	h.m.noWriteTool = ""
 	if r := h.post("/api/user-libraries/space", map[string]any{"destination": "me@linux-box", "sourceRoot": "~/mine", "create": true, "share": map[string]any{"kind": "everyone"}}); r.Status != 409 || !strings.Contains(r.Body["error"].(string), "nobody here to share it with") {
 		t.Fatalf("over ssh: %v", r.Body)
 	}
@@ -267,10 +271,24 @@ func TestAddingAFolderShared(t *testing.T) {
 	if got := h.waitFor(id); got["readOnlyWhy"] != nil {
 		t.Fatalf("read only for its own share: %v", got["readOnlyWhy"])
 	}
-	// Someone else's entry is.
+	// Someone else's entry is, and is said; the write goes through the
+	// helper, and where there is none it is refused.
 	exec.Command("setfacl", "-m", "u:nobody:rwx", filepath.Join(home, "team")).Run()
-	if err := s.Put(req, lib, "b.txt", strings.NewReader("b"), 10); err == nil || !strings.Contains(err.Error(), "by its ACL") {
+	if err := s.Put(req, lib, "b.txt", strings.NewReader("b"), 10); err != nil {
 		t.Fatalf("another account's entry: %v", err)
+	}
+	h.post("/api/user-libraries/"+id+"/refresh", nil)
+	match(t, h.waitFor(id)["othersWrite"], `lets another account or group write in it\.$`, "another account's entry")
+	h.m.noWriteTool, h.m.tools = "none here", nil
+	if err := s.Put(req, lib, "b.txt", strings.NewReader("b"), 10); err == nil || !strings.Contains(err.Error(), "by its ACL") {
+		t.Fatalf("another account's entry, with no helper: %v", err)
+	}
+	h.m.noWriteTool, h.m.tools = "", nil
+	for range 100 {
+		if d := find(h.m.load("single"), id); d.ReadOnly != nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	exec.Command("setfacl", "-x", "u:nobody", filepath.Join(home, "team")).Run()
 	if rm := h.do(http.MethodDelete, "/api/user-libraries/"+id, nil); rm.Status != 200 {

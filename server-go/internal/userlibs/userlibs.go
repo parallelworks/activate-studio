@@ -37,6 +37,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
+	"github.com/parallelworks/activate-studio/server-go/internal/writehelper"
 )
 
 // Module is the user libraries of one server.
@@ -80,7 +81,8 @@ type Module struct {
 	// offline, in tests, stands in for the downloads here.
 	offline func(platform string) string
 	// Helpers is a folder of the helpers by platform
-	// (<platform>/studio-remote), looked in first (STUDIO_REMOTE_HELPERS).
+	// (<platform>/studio-remote and studio-write), looked in first
+	// (STUDIO_REMOTE_HELPERS).
 	Helpers string
 	// GufiBin is the Studio's own GUFI (GUFI_BIN); a space gets a copy of
 	// the bundle above it (spaces.go).
@@ -88,6 +90,7 @@ type Module struct {
 	spaceState
 	spaceWrites
 	shareStore
+	writeTools
 }
 
 type follower struct {
@@ -474,6 +477,13 @@ func Register(mux *http.ServeMux, a *app.App) {
 		}
 		return m.writeShares(owner, d.ID)
 	}
+	a.Providers.LibraryWriter = func(ctx context.Context, root, site, key string) writehelper.Tool {
+		owner, d, err := m.Users.FindRoot(root)
+		if err != nil || d == nil {
+			return writehelper.Tool{Why: "The library is not there any more."}
+		}
+		return m.writeTool(ctx, owner, d, site, key)
+	}
 	if !a.Cfg.FrontAuth {
 		registerWhoami(mux, a)
 	}
@@ -771,6 +781,8 @@ func (m *Module) public(owner string, d *libraries.UserDef, job int) *jsonv.Obje
 	}
 	if d.ReadOnly != nil {
 		o.Set("readOnlyWhy", *d.ReadOnly)
+	} else if d.Loose != nil && writable {
+		o.Set("othersWrite", *d.Loose)
 	}
 	if d.Shared != nil {
 		o.Set("shared", jsonv.NewObject("from", d.Shared.From, "access", d.Shared.Access, "share", d.Shared.ShareID))

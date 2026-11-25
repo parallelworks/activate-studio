@@ -13,8 +13,9 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
-// The Studio's helper, built once for this computer's platform, as the
-// packages carry it (bin/remote/<platform>/studio-remote).
+// The Studio's helpers, built once for this computer's platform, as the
+// packages carry them (bin/remote/<platform>/studio-remote and
+// studio-write).
 
 var (
 	helpersOnce sync.Once
@@ -39,14 +40,16 @@ func testHelpers(t *testing.T) string {
 			return
 		}
 		helpersDir = dir
-		out := filepath.Join(dir, runtime.GOOS+"-"+runtime.GOARCH, helperName)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags", "-s -w", "-o", out, "../../cmd/studio-remote")
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if b, err := cmd.CombinedOutput(); err != nil {
-			helpersErr = err
-			t.Logf("%s", b)
+		for _, name := range []string{helperName, writeHelperName} {
+			out := filepath.Join(dir, runtime.GOOS+"-"+runtime.GOARCH, name)
+			cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags", "-s -w", "-o", out, "../../cmd/"+name)
+			cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+			if b, err := cmd.CombinedOutput(); err != nil {
+				helpersErr = err
+				t.Logf("%s", b)
+			}
 		}
 	})
 	if helpersErr != nil {

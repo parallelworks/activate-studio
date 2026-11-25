@@ -89,9 +89,8 @@ func (s spaceFiles) target(r *http.Request, lib kb.Library) (*transfers.RemoteFS
 	// writes through a link.
 	fs := &transfers.RemoteFS{R: transfers.PoolRunner{P: m.Pool}, SiteID: site, KeyText: key, Dir: root, Name: d.ShownLabel(m.Users.AuthEnabled),
 		Timeout: 10 * time.Minute, Private: !d.Mine(), NoLinks: d.Mine(), Own: d.Mine() && d.Own != nil, Kept: true}
-	if d.Guard {
-		fs.Guard, fs.Shared = true, m.writeShares(owner, d.ID)
-	}
+	fs.Shared = m.writeShares(owner, d.ID)
+	fs.Writer = func(ctx context.Context) transfers.WriteTool { return m.writeTool(ctx, owner, d, site, key) }
 	return fs, w, owner, d, nil
 }
 

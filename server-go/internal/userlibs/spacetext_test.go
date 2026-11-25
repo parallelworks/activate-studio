@@ -118,11 +118,13 @@ func TestTextMadeAndSavedAsThePerson(t *testing.T) {
 	}
 }
 
-// Where another account could change the folder, text is neither opened to
-// edit, made nor saved, as the Library's other writes are not, and is
-// answered as that rather than as a name taken or a file changed.
-func TestTextIsNotWrittenInAFolderOthersCouldChange(t *testing.T) {
+// Where another account could change the folder and the write helper cannot
+// run, text is neither opened to edit, made nor saved, as the Library's
+// other writes are not, and is answered as that rather than as a name taken
+// or a file changed.
+func TestTextIsNotWrittenInAFolderOthersCouldChangeWithoutTheHelper(t *testing.T) {
 	h, homes := buildHarness(t)
+	h.m.noWriteTool = "The Studio's write helper is not built for Plan9."
 	t.Setenv("STUDIO_HOME_CLUSTER", "cluster-a")
 	h.m.GufiBin = fakeBundle(t, gufiBinDir())
 	open := filepath.Join(homes["cluster-a"], "open")

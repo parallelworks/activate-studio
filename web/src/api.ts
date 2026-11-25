@@ -260,8 +260,11 @@ export interface UserLibrary {
   /** One whose folder the viewer owns, so they can share it. */
   own?: { account: string; acl: boolean; fs: string } | null
   /** Why the Library does not write in its folder: another account could
-   *  change where a write goes. */
+   *  change where a write goes, and the Studio's write helper, which nobody
+   *  can send elsewhere, cannot run there. */
   readOnlyWhy?: string | null
+  /** Who else can change what is in a folder the Library writes in. */
+  othersWrite?: string | null
   /** Added with a share that could not be set: why. */
   shareError?: string
   access?: LibraryAccess
@@ -300,6 +303,8 @@ export interface SpaceCheck {
   sourceRoot: string; create: string[]; account: string; acl: boolean; fs: string
   /** The viewer owns the folder, or will once it is made. */
   owned?: boolean
+  /** Who else can change what is in it; null where nobody can. */
+  othersWrite?: string | null
   /** Why the Library would not write in it; null where it would. */
   readOnly?: string | null
   /** Whether the viewer can share it, and why not. */

@@ -141,6 +141,11 @@ func (c *conduitMover) CanReach(ctx context.Context, p *planRec) (bool, string) 
 	if p.Action == ActionSync {
 		return false, "it copies whole folders and cannot send only what changed"
 	}
+	if dst, ok := p.dst.fs.(*RemoteFS); ok {
+		if why := dst.Loose(ctx); why != "" {
+			return false, "it writes by path, which another account could send elsewhere: " + why
+		}
+	}
 	if ok, why := c.s.d.Conduit.Ready(ctx, cs.Server); !ok {
 		return false, why
 	}

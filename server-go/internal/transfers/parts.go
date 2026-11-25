@@ -3,9 +3,7 @@ package transfers
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
-	"os/exec"
 	"path"
 	"strconv"
 	"strings"
@@ -56,7 +54,8 @@ func (r *RemoteFS) WritePart(ctx context.Context, dir string, off, n int64, src 
 	if off%PartUnit != 0 {
 		return apierr.New(400, "a part starts on a whole megabyte")
 	}
-	cmd, err := r.command(toolArgvOf(r.script(), marker(), "part", r.Dir, dir, strconv.FormatInt(off/PartUnit, 10), strconv.FormatInt(n, 10)))
+	script, w := r.scriptFor(ctx, "part")
+	cmd, err := r.command(toolArgvOf(script, marker(), "part", r.Dir, dir, strconv.FormatInt(off/PartUnit, 10), strconv.FormatInt(n, 10)))
 	if err != nil {
 		return err
 	}
@@ -93,7 +92,17 @@ func (r *RemoteFS) WritePart(ctx context.Context, dir string, off, n int64, src 
 	case err == nil:
 		return cerr
 	}
+	code := exitOf(err)
+	if again(code) {
+		lost(w)
+	}
+	if code == ToolGone && w != nil {
+		return errToolGone(r.Name)
+	}
 	msg := lastLine(remote.QuietStderr(stderr.String()))
+	if code == codeGuard && w == nil {
+		msg = r.refused(ctx, msg)
+	}
 	switch {
 	case strings.Contains(msg, partNoRoom):
 		return r.named(507, partNoRoom)
@@ -101,19 +110,7 @@ func (r *RemoteFS) WritePart(ctx context.Context, dir string, off, n int64, src 
 		msg = err.Error()
 	}
 	// What sending it again would not change is not a 502.
-	status := 502
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		switch ee.ExitCode() {
-		case 4:
-			status = 404
-		case 5, 6:
-			status = 400
-		case 13:
-			status = 409
-		}
-	}
-	return r.named(status, msg)
+	return r.named(statusOfCode(code), msg)
 }
 
 // failing notes the error its reader gave.

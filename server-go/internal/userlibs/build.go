@@ -533,8 +533,9 @@ func (m *Module) rebuildRemote(ctx context.Context, w who, owner string, d *libr
 	// Who can write in the folder is read again: a chmod there turns the
 	// Library's writes on or off.
 	var found *spaceFound
-	if d.Guard && d.Shared == nil {
+	if d.Shared == nil {
 		found = m.foundAt(ctx, probeHost{Site: site, Key: key, Name: remote.SiteName(site)}, spaceRoot(d), m.writeShares(owner, d.ID))
+		m.lookAgain(owner, d.ID)
 	}
 	state := "building"
 	if deref(d.IndexRoot) != "" {

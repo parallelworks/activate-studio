@@ -781,6 +781,20 @@ describe('Settings, Indexing, Libraries', () => {
     expect(note.tagName).toBe('DIV')
   })
 
+  it('says who else can change a folder the Library writes in, and why one is read only', async () => {
+    const others = 'Members of the group rc can write in /home/me/data (mode 2775).'
+    await renderPage(server({ user: [{ ...BUILT_REMOTE, mine: true, othersWrite: others }] }))
+    let row = await waitFor(() => rowOf(BUILT_REMOTE.label))
+    expect(within(row).getByText(`${others} The Library writes in it as you, and a write cannot be sent outside it.`)).toBeInTheDocument()
+    expect(row.textContent).toContain('read and written as you')
+    cleanup()
+    const why = `${others.slice(0, -1)}, so it is read only here: another account could send what the Studio writes there elsewhere.`
+    await renderPage(server({ user: [{ ...BUILT_REMOTE, readOnlyWhy: why }] }))
+    row = await waitFor(() => rowOf(BUILT_REMOTE.label))
+    expect(within(row).getByText(why)).toBeInTheDocument()
+    expect(row.textContent).not.toContain('written as you')
+  })
+
   it('a copy library whose last look failed says why and stays Ready', async () => {
     const s = server({ libs: [PRIMARY, { ...COPY, build: { ...COPY.build, dirs: 1, files: 1 }, copyOf: { ...COPY.copyOf, error: 'its location, Drop, upload, is no longer in Transfers' } }] })
     await renderPage(s)

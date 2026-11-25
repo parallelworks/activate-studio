@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
+	"github.com/parallelworks/activate-studio/server-go/internal/writehelper"
 )
 
 // Folder sharing (docs/MULTI-USER.md, Folder sharing): the owner of a space
@@ -157,7 +159,7 @@ F=$(cd -P -- "$f" 2>/dev/null && pwd -P) || fail 4 "$f cannot be opened."
 R=$(cd -P -- "$root" 2>/dev/null && pwd -P) || fail 4 "$root cannot be opened."
 case "$F/" in "${R%/}"/*) ;; *) fail 6 "$f is not in your library.";; esac
 if [ "$7" = 1 ] && [ "$op" = apply ]; then
-  w=$(looseway "$R")
+  w=$(looseway "$R"); [ -n "$w" ] || w=$(looseroute "$root")
   case "${w%% *}" in
   '') ;;
   owner) fail 13 "${w#* } belongs to another account, which could change what a share opens." ;;
@@ -334,19 +336,62 @@ func (m *Module) listShares(w who, id string) (*jsonv.Object, error) {
 	return jsonv.NewObject("shares", list, "acl", d.Shareable().ACL, "fs", d.Shareable().FS, "account", d.Shareable().Account), nil
 }
 
-// runShare runs shareSh; close is a revoke's folders to close again. It
-// returns the folders an apply opened.
+// shareToolSh runs the write helper $1, whose options are $2 (a line
+// each), to apply or take back a share, as shareSh does: $3 share or
+// unshare, $4 the library's folder, $5 the folder in it, $6 user, group or
+// everyone, $7 the account or group, $8 r or w, $9 1 where another account
+// can write in the folder. It turns the names into numbers, which a
+// program built without the system's libraries cannot.
+const shareToolSh = `set -f
+h=$1; opts=$2; op=$3; root=$4; rel=$5; kind=$6; name=$7; perm=$8; loose=$9
+fail() { printf '%s\n' "$2" >&2; exit "$1"; }
+[ -x "$h" ] || exit 40
+id=; groups=
+case "$kind" in
+user) id=$(id -u -- "$name" 2>/dev/null) || fail 8 "There is no account $name there."; groups=$(id -G -- "$name" 2>/dev/null) ;;
+group) id=$(getent group -- "$name" 2>/dev/null | cut -d: -f3); [ -n "$id" ] || fail 8 "There is no group $name there."
+  id -Gn | tr ' ' '\n' | grep -qxF -- "$name" || fail 9 "You are not in the group $name, so you cannot share with it." ;;
+esac
+IFS='
+'
+exec "$h" $opts - "$op" "$root" "$kind" "$id" "$name" "$perm" "$rel" "$groups" "$loose"`
+
+// runShare sets or takes back a share, through the write helper where it
+// runs (shareToolSh), else with shareSh; close is a revoke's folders to
+// close again. It returns the folders an apply opened.
 func (m *Module) runShare(ctx context.Context, site, key string, s Share, op string, close []string) ([]string, error) {
 	perm := "r"
 	if s.Access == "write" {
 		perm = "w"
 	}
-	guard := ""
-	if d := find(m.load(s.Owner), s.Space); d != nil && d.Guard {
-		guard = "1"
-	}
 	input := strings.NewReader(strings.Join(append(close, ""), "\n"))
-	r, err := m.Pool.RunOnce(ctx, site, key, []string{"bash", "-c", shareSh, "_", op, s.Folder, s.Kind, s.Name, perm, s.Root, guard, grantsLine(m.writeShares(s.Owner, s.Space))}, 30*time.Minute, input)
+	run := func() (remote.Result, writehelper.Tool, error) {
+		input.Seek(0, io.SeekStart)
+		argv := []string{"bash", "-c", shareSh, "_", op, s.Folder, s.Kind, s.Name, perm, s.Root, "1", grantsLine(m.writeShares(s.Owner, s.Space))}
+		var t writehelper.Tool
+		if d := find(m.load(s.Owner), s.Space); d != nil {
+			if t = m.writeTool(ctx, s.Owner, d, site, key); t.Path != "" {
+				cmd, loose, opts := "share", "", ""
+				if op == "revoke" {
+					cmd = "unshare"
+				}
+				if d.Loose != nil {
+					loose = "1"
+				}
+				if t.Pin != "" {
+					opts = "--pin=" + t.Pin
+				}
+				argv = []string{"bash", "-c", shareToolSh, "_", t.Path, opts, cmd, s.Root, s.Rel, s.Kind, s.Name, perm, loose}
+			}
+		}
+		r, err := m.Pool.RunOnce(ctx, site, key, argv, 30*time.Minute, input)
+		return r, t, err
+	}
+	r, t, err := run()
+	if err == nil && t.Path != "" && (r.Code == transfers.ToolGone || r.Code == writehelper.ExitMoved) {
+		t.Missing()
+		r, _, err = run()
+	}
 	if err != nil {
 		return nil, m.sessionErr(remote.ShortName(site), key, err)
 	}
