@@ -908,7 +908,7 @@ export function Viewer({ path, find, onDeleted, onOpen, startEditing, readOnly, 
             ? <LockedButton reason={editLocked}>Edit</LockedButton>
             : <Button variant="secondary" size="sm" loading={opening} onClick={() => void edit(path)} title="Edit this file's text">Edit</Button>)}
           <Button variant="secondary" size="sm" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</Button>
-          <Button variant="secondary" size="sm" title="Copy a link to this file. It opens only for people who can open the file." onClick={() => void copyItemLink(itemOf(file.path), linkBase)}>{copyLinkLabel(linkBase)}</Button>
+          <Button variant="secondary" size="sm" title={`${copyLinkLabel(linkBase)}. It opens only for people who can open the file.`} onClick={() => void copyItemLink(itemOf(file.path), linkBase)}>Copy link</Button>
           {labelsLocked
             ? <LockedButton reason={labelsLocked}>Labels</LockedButton>
             : (
