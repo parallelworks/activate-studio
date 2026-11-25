@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button, Callout, Combobox, Field, Input, Loader, Select, type ComboboxGroup } from '@parallelworks/ui'
 import { BUCKET_EVERY, type SettingsLibrary } from '../api'
 import { transferApi, type BrowseResult, type TransferLocation } from '../transferApi'
-import { postJson } from './LibraryFormParts'
+import { intoView, postJson } from './LibraryFormParts'
 
 /** The remotes a bucket library can list: rclone's, each with its type. */
 export function bucketLocationItems(locations: TransferLocation[]): ComboboxGroup<string>[] {
@@ -134,7 +134,7 @@ export function BucketLibraryForm({ onAdded }: { onAdded?: (lib: SettingsLibrary
         a store on premises charges nothing. Opening a file reads that object alone: its first 512 KB for a text preview, the whole
         object up to 50 MB for a download or a document preview. Text inside the objects is not indexed yet.
       </p>
-      {error && <Callout tone="error" live>{error}</Callout>}
+      {error && <div className="lib-form-errors" ref={intoView}><Callout tone="error" live>{error}</Callout></div>}
       <div className="query-actions">
         <Button variant="primary" loading={busy} disabled={!chosen || !listing || busy} onClick={() => void add()}>List and index</Button>
       </div>

@@ -1238,3 +1238,118 @@ func TestPWBucketOwnAddress(t *testing.T) {
 		t.Error(st)
 	}
 }
+
+// Over plain http on a host name, behind a proxy that rewrites the host and
+// does not say which it was, the Studio's own page is known by the header it
+// sends; a form of another site, which cannot send it, is refused, and the
+// refusal says what to set where the page was the Studio's after all.
+func TestOwnRequestBehindProxy(t *testing.T) {
+	needTrace(t)
+	f := newBuildFixture(t)
+	remotes := filepath.Join(f.dir, "remotes")
+	put(t, filepath.Join(remotes, "store", "research", "readme.txt"), "top")
+	exe, _ := os.Executable()
+	bin := filepath.Join(f.dir, "rclone-bin")
+	put(t, filepath.Join(bin, "rclone"), "#!/bin/sh\nLIBAPI_TEST_CHILD=rclone exec '"+exe+"' \"$@\"\n")
+	os.Chmod(filepath.Join(bin, "rclone"), 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_RCLONE_DIR", remotes)
+	t.Setenv("FAKE_RCLONE_LOG", filepath.Join(f.dir, "rclone.log"))
+	t.Setenv("STUDIO_SELF_URL", "")
+	src := filepath.Join(f.dir, "notes")
+	put(t, filepath.Join(src, "a.txt"), "aardvark")
+	if code, b := f.call("POST", "/api/libraries/build", map[string]any{"sourceRoot": src, "label": "Notes"}); code != 200 {
+		t.Fatalf("folder library: %d %v", code, b)
+	}
+	f.waitReady("notes")
+	ask := func(method, path, kind, body string, h map[string]string) (int, string) {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Host = "10.0.0.5:4180"
+		if kind != "" {
+			r.Header.Set("Content-Type", kind)
+		}
+		for k, v := range h {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		f.mux.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	const js, form = "application/json", "application/x-www-form-urlencoded"
+	add := `{"location":"rclone:store","path":"research"}`
+	refused := func(what string, code int, body string) {
+		t.Helper()
+		if code != 403 || !strings.Contains(body, "STUDIO_SELF_URL") || !strings.Contains(body, "X-Forwarded-Host") {
+			t.Errorf("%s: %d %s", what, code, body)
+		}
+	}
+	calls := func(id string) [][4]string {
+		return [][4]string{
+			{"GET", "/api/libraries/buckets", "", ""},
+			{"PUT", "/api/libraries/" + id + "/bucket", js, `{"every":360}`},
+			{"GET", "/api/libraries/" + id + "/bucket/text", "", ""},
+			{"POST", "/api/libraries/" + id + "/bucket/text/stop", "", ""},
+			{"POST", "/api/libraries/" + id + "/rebuild", js, `{}`},
+			{"POST", "/api/libraries/notes/rebuild", js, `{}`},
+			{"DELETE", "/api/libraries/" + id, "", ""},
+		}
+	}
+	page := map[string]string{"Origin": "http://studio.example.com", "Referer": "http://studio.example.com/"}
+	withHeader := map[string]string{"X-Studio-Request": "1", "Origin": "http://studio.example.com", "Referer": "http://studio.example.com/"}
+
+	code, b := ask("POST", "/api/libraries/bucket", js, add, page)
+	refused("add without the header", code, b)
+	if code, b = ask("POST", "/api/libraries/bucket", js, add, withHeader); code != 200 {
+		t.Fatalf("add: %d %s", code, b)
+	}
+	f.waitReady("research")
+	other := func(h map[string]string, more ...string) map[string]string {
+		out := map[string]string{"Origin": "https://elsewhere.example", "Referer": "https://elsewhere.example/page"}
+		for k, v := range h {
+			out[k] = v
+		}
+		for i := 0; i+1 < len(more); i += 2 {
+			out[more[i]] = more[i+1]
+		}
+		return out
+	}
+	own := map[string]string{"X-Studio-Request": "1"}
+	for _, c := range calls("research") {
+		what := c[0] + " " + c[1]
+		code, b := ask(c[0], c[1], c[2], c[3], page)
+		refused(what+" without the header", code, b)
+		// A form of another site.
+		code, b = ask(c[0], c[1], form, "every=360", other(nil))
+		refused(what+" from a form of another site", code, b)
+		code, b = ask(c[0], c[1], form, "every=360", other(nil, "Sec-Fetch-Site", "cross-site"))
+		refused(what+" from a form of another site, as the browser says", code, b)
+		// No form sends the header; whatever did, the browser's word stands.
+		for _, site := range []string{"cross-site", "same-site"} {
+			code, b = ask(c[0], c[1], c[2], c[3], other(own, "Sec-Fetch-Site", site))
+			refused(what+" with the header, "+site, code, b)
+		}
+		// The header has one value.
+		for _, v := range []string{"", "0", "true", "1, 1"} {
+			code, b = ask(c[0], c[1], c[2], c[3], other(nil, "X-Studio-Request", v))
+			refused(what+" with the header "+v, code, b)
+		}
+		// A preflight is granted nothing.
+		r := httptest.NewRequest("OPTIONS", c[1], nil)
+		r.Header.Set("Origin", "https://elsewhere.example")
+		r.Header.Set("Access-Control-Request-Method", c[0])
+		r.Header.Set("Access-Control-Request-Headers", "x-studio-request")
+		w := httptest.NewRecorder()
+		f.mux.ServeHTTP(w, r)
+		for k := range w.Header() {
+			if strings.HasPrefix(k, "Access-Control-") {
+				t.Errorf("%s: a preflight has %s", what, k)
+			}
+		}
+		if code, b = ask(c[0], c[1], c[2], c[3], withHeader); code != 200 {
+			t.Errorf("%s with the header: %d %s", what, code, b)
+		}
+		if strings.HasSuffix(c[1], "/rebuild") {
+			f.waitReady(strings.Split(c[1], "/")[3])
+		}
+	}
+}

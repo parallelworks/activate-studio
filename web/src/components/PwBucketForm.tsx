@@ -4,7 +4,7 @@ import { BUCKET_EVERY, api, endpointItems, pwBucketPlace, type PwBucket, type Pw
 import { reloadAppConfig, useAppConfig } from '../config'
 import { reloadWhenLibrariesBuilt } from '../libraryWatch'
 import { plural } from '../plural'
-import { postJson } from './LibraryFormParts'
+import { intoView, postJson } from './LibraryFormParts'
 
 /** The bucket and the folder in it a library is made of. */
 const libraryAt = (libs: SettingsLibrary[], uri: string, path = '') => libs.find(l => l.bucket?.location === uri && l.bucket.path === path)
@@ -180,7 +180,11 @@ export function PwBucketForm({ uri, buckets, holdHeight, onAdded }: {
         {' '}Opening a file reads that object alone: its first 512 KB for a text preview, the whole object up to 50 MB for a download or a document preview.
       </p>
       {added && <Callout tone="info" size="sm">That is already a library of yours, {added.label}. Choose a folder in it, or another bucket.</Callout>}
-      {errors.map(e => <Callout key={e.name} tone="error" live>{several || errors.length > 1 ? `${e.name}: ` : ''}{e.message}</Callout>)}
+      {errors.length > 0 && (
+        <div className="lib-form-errors" ref={intoView}>
+          {errors.map(e => <Callout key={e.name} tone="error" live>{several || errors.length > 1 ? `${e.name}: ` : ''}{e.message}</Callout>)}
+        </div>
+      )}
       <div className="query-actions">
         <Button variant="primary" loading={busy} disabled={busy || !!added} onClick={() => void add()}>{several ? `List and index ${count} buckets` : 'List and index'}</Button>
       </div>
