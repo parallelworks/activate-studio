@@ -84,7 +84,7 @@ export function AgentModelControls({ api, platform, machine, sessionId, claudeRe
           </button>
         }
       />
-      {effort && <EffortPicker effort={effort.value} onPick={effort.onChange} disabled={effort.disabled} className="code-setting-chip" />}
+      {effort && <EffortPicker effort={effort.value} onPick={effort.onChange} disabled={effort.disabled} className="code-setting-chip code-effort-chip" />}
       {picker.allocation && <AllocationSelector model={model.value} allocation={picker.allocation} />}
     </>
   )

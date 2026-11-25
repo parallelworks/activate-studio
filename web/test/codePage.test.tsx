@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { sessionGroupsPreference } from '@parallelworks/code'
+import { sessionGroupsPreference, startEffortPreference } from '@parallelworks/code'
 import { pagePath } from '../src/code/api'
 import { CodePage } from '../src/code/CodePage'
 import { PageHeadSlot } from '../src/pageHead'
@@ -243,6 +243,13 @@ describe('the Code page', () => {
     fireEvent.click(screen.getByTestId('agents-start-button'))
   }
   const toolsMark = () => screen.findByTestId('machine-tools-button')
+
+  it('names the effort slider\'s levels as the Studio\'s menu does', async () => {
+    localStorage.setItem(`studio.code.${startEffortPreference.key}`, '"xhigh"')
+    studio()
+    render(<CodePage />)
+    expect(await screen.findByRole('button', { name: 'Effort: Extra high' })).toBeInTheDocument()
+  })
 
   it('has no line of text or row of buttons over the start: they are in the header and on the machine', async () => {
     for (const tools of [{ state: 'set', available: true }, { state: 'command', command: 'pw code mcp add x', why: 'the Studio cannot open a terminal on it.' }, { state: 'unavailable', why: 'pw ssh does not reach gpu.' }]) {

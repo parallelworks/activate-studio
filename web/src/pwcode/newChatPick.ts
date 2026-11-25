@@ -1,3 +1,6 @@
+import { startEffortPreference } from '@parallelworks/code'
+import { EFFORT_WORDS } from '../labelScope'
+
 // The model a new pw code chat runs on, picked in its composer before the
 // first message (NewChatModel.tsx). The first message carries it, and the
 // Studio makes the chat's session with it (server-go chat, pwcodeSession);
@@ -29,16 +32,27 @@ export function clearModelPick(conversationId: string | null | undefined): void 
   window.dispatchEvent(new CustomEvent(EVENT))
 }
 
+/** The effort new pw code sessions start at, kept by the slider
+ *  (code/parts.tsx); '' is pw code's own. */
+function startEffort(): string {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(`studio.code.${startEffortPreference.key}`) ?? '""')
+    return typeof v === 'string' && Object.hasOwn(EFFORT_WORDS, v) ? v : ''
+  } catch { return '' }
+}
+
 /** What a message to the Studio carries for the session it makes: the
  *  pick of a chat with no conversation yet moves to the one it gets. */
-export function firstMessagePick(conversationId: string | null | undefined): { pwcodeModel?: string; pwcodeAllocation?: string | null } {
+export function firstMessagePick(conversationId: string | null | undefined): { pwcodeModel?: string; pwcodeAllocation?: string | null; pwcodeEffort?: string } {
+  const level = startEffort()
+  const effort = level ? { pwcodeEffort: level } : {}
   const p = pickedModel(conversationId)
-  if (!p?.model) return {}
+  if (!p?.model) return effort
   if (conversationId && !picks.has(conversationId)) {
     picks.set(conversationId, p)
     picks.delete(NEW_CHAT)
   }
-  return { pwcodeModel: p.model, ...(p.allocation !== undefined ? { pwcodeAllocation: p.allocation } : {}) }
+  return { pwcodeModel: p.model, ...(p.allocation !== undefined ? { pwcodeAllocation: p.allocation } : {}), ...effort }
 }
 
 export function onPick(cb: () => void): () => void {

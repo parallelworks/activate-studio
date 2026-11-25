@@ -44,6 +44,9 @@ func TestWithEffort(t *testing.T) {
 	}{
 		{"", "", "", ""},
 		{"", "high", "", "high"},
+		{"", "xhigh", "", "xhigh"},
+		{`{"reasoning_effort":"low"}`, "xhigh", `{"reasoning_effort":"high"}`, ""},
+		{`{"enable_thinking":false}`, "xhigh", `{"enable_thinking":true}`, ""},
 		{`{"reasoning_effort":"low"}`, "max", `{"reasoning_effort":"high"}`, ""},
 		{`{"reasoning_effort":"low"}`, "medium", `{"reasoning_effort":"medium"}`, ""},
 		{`{"reasoning_effort":"low"}`, "", `{"reasoning_effort":"low"}`, ""},
@@ -59,6 +62,33 @@ func TestWithEffort(t *testing.T) {
 		gotKw, gotTop := withEffort(kw, c.effort)
 		if string(gotKw) != c.wantKw || gotTop != c.wantTop {
 			t.Errorf("withEffort(%s, %q) = %s, %q; want %s, %q", c.kwargs, c.effort, gotKw, gotTop, c.wantKw, c.wantTop)
+		}
+	}
+}
+
+// What a turn's effort is in the request the provider gets: as it is, and
+// for a model whose template sets its reasoning, as that template takes it.
+func TestEffortReachesTheProvider(t *testing.T) {
+	for _, c := range []struct {
+		model, effort string
+		top, kwargs   any
+	}{
+		{"test-model", "xhigh", "xhigh", nil},
+		{"gpt-oss-120b", "xhigh", nil, map[string]any{"reasoning_effort": "high"}},
+		{"Qwen3-32B", "xhigh", nil, map[string]any{"enable_thinking": true}},
+		{"Qwen3-32B", "low", nil, map[string]any{"enable_thinking": false}},
+		{"test-model", "", nil, nil},
+	} {
+		_, srv, gw, _ := newTestModule(t, nil)
+		gw.load([]reply{text("Hi.")})
+		post(t, srv.URL, map[string]any{"model": c.model, "effort": c.effort, "conversationId": "c1", "userMessageId": "u1",
+			"messages": []any{map[string]any{"role": "user", "content": "hello"}}})
+		var body map[string]any
+		if len(gw.requests) == 0 || json.Unmarshal(gw.requests[0], &body) != nil {
+			t.Fatalf("%s: no request", c.model)
+		}
+		if body["reasoning_effort"] != c.top || !reflect.DeepEqual(body["chat_template_kwargs"], c.kwargs) {
+			t.Errorf("%s at %q: reasoning_effort %v, chat_template_kwargs %v", c.model, c.effort, body["reasoning_effort"], body["chat_template_kwargs"])
 		}
 	}
 }

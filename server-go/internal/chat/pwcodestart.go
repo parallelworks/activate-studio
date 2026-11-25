@@ -38,8 +38,9 @@ import (
 
 // startPick is where the person chose to start a chat: a machine ("" for
 // the one the Studio drives), a folder ("" for the default), and the
-// permission mode on another machine. A session started on the Code page
-// also says its effort, its Claude account and its first message.
+// permission mode on another machine, with the effort its session starts
+// at. A session started on the Code page also says its Claude account and
+// its first message.
 type startPick struct {
 	machine, folder, mode, model string
 	allocation                   *string
@@ -143,6 +144,7 @@ func (m *Module) startElsewhere(ctx context.Context, r *http.Request, body *stre
 	if p.mode, err = m.startMode(mach, name, p.mode); err != nil {
 		return nil, err
 	}
+	p.effort = pwcodeEffort(body.PWCodeEffort)
 	p.model = strings.TrimSpace(deref(body.PWCodeModel))
 	if p.model == "" {
 		if set := m.eff().PWCodeModel; !pwcode.IsClaudeModel(set) || (jsonv.Path(mach, "claudeInstalled") == true && jsonv.Path(mach, "claudeCodeAllowed") == true) {

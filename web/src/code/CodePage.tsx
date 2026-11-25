@@ -7,6 +7,7 @@ import { ChatProvider } from '@parallelworks/ui/ai'
 import { createOpenAIChatAdapter } from '@parallelworks/ui/ai/openai'
 import { AddIcon, ExternalLinkIcon, HelpIcon, SidebarOpenIcon } from '@parallelworks/ui/icons'
 import { ChatMarkdownLink } from '../chatLinks'
+import { EFFORT_WORDS } from '../labelScope'
 import { citedMarkdown } from '../citedPaths'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { sectionAllowed, useAppConfig } from '../config'
@@ -51,7 +52,7 @@ export function CodePage() {
 
 // A session's replies are drawn as a chat's: the library files they name
 // open here, in this tab.
-const chatConfig = { markdownComponents: { ...citedMarkdown, a: ChatMarkdownLink } }
+const chatConfig = { markdownComponents: { ...citedMarkdown, a: ChatMarkdownLink }, strings: { effort: EFFORT_WORDS } }
 
 /** The model picker reads the platform's models from a chat's context. */
 function CodeChat() {

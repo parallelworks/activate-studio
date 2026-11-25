@@ -35,8 +35,12 @@ export const EFFORTS = [
   { value: 'low', label: 'Low', hint: 'Quick answers, little reasoning' },
   { value: 'medium', label: 'Medium', hint: 'Balanced' },
   { value: 'high', label: 'High', hint: 'Reasons longer before answering' },
+  { value: 'xhigh', label: 'Extra high', hint: 'Reasons for most of what the model allows' },
   { value: 'max', label: 'Max', hint: 'The most reasoning the model allows' },
 ] as const
+/** The same names on pw code's effort slider, which has its own as they are
+ *  sent ("xhigh"). */
+export const EFFORT_WORDS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
 const EFFORT_LAST = 'ade-chat-effort'
 const EFFORT_BY_CHAT = 'ade-chat-effort-by-chat'
 const valid = (v: unknown): string => (typeof v === 'string' && EFFORTS.some(e => e.value === v) ? v : '')

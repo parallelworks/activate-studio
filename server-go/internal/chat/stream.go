@@ -114,6 +114,9 @@ type streamBody struct {
 	// bills it: its session is made with them.
 	PWCodeModel      *string `json:"pwcodeModel"`
 	PWCodeAllocation *string `json:"pwcodeAllocation"`
+	// PWCodeEffort is the reasoning effort that session starts at, one of
+	// pw code's levels; pw code's own without it.
+	PWCodeEffort *string `json:"pwcodeEffort"`
 	// PWCodeMachine, PWCodeFolder and PWCodeMode are where the composer
 	// chose to start it: another of the person's machines (its platform
 	// id), the folder, and, on another machine, the permission mode
