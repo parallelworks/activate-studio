@@ -916,6 +916,9 @@ type pwTurn struct {
 	// stopped: the person stopped the turn (Stop), so its ending in an
 	// error is what they asked for (under m.pw.mu).
 	stopped bool
+	// asks is the approvals the session has asked for in this turn and
+	// not had answered (under m.pw.mu).
+	asks []*jsonv.Object
 	// spaceChanged queues the build of the person's space when the
 	// session works in it; nil when it does not. wrote: the turn ran a
 	// tool of pw code's own that may change files (its Studio tools tell
@@ -1038,9 +1041,11 @@ func (t *pwTurn) handle(ev *jsonv.Object) bool {
 					a.Set(k, strings.TrimPrefix(v, studioToolPrefix))
 				}
 			}
+			t.ask(a)
 			t.emit("pwcode_approval", reqbody.O("conversationId", t.convID, "session", t.link.Session, "url", t.link.URL, "approval", a))
 		}
 	case "approval_resolved":
+		t.answered(str("approvalId"))
 		t.emit("pwcode_approval_resolved", reqbody.O("conversationId", t.convID, "approvalId", str("approvalId")))
 	case "warning":
 		if s := str("content"); strings.HasPrefix(s, "mcp studio:") {

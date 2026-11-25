@@ -15,8 +15,9 @@ import { NextUp } from '../components/NextUp'
 import { VoiceOverlay } from '../components/VoiceOverlay'
 import { rememberHash } from '../lastLocation'
 import {
-  ChatProvider, ChatLayout, ChatThread, ChatEmptyState, AttachmentManager, useChat, type ChatLinkProps,
+  ChatProvider, ChatThread, ChatEmptyState, AttachmentManager, useChat, type ChatLinkProps,
 } from '@parallelworks/ui/ai'
+import { StudioChatLayout } from '../components/ChatList'
 import { ChatsManager } from '../components/ChatsManager'
 import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
@@ -48,6 +49,7 @@ import { type ChatLink, useChatLink } from '../pwcode/useChatLink'
 import { ChatMarkdownLink } from '../chatLinks'
 import { VIEWER_CACHES_CLEARED } from '../viewerCache'
 import { prefetchChat } from '../chatRecord'
+import { setFrontChat } from '../notices'
 import { PWCodeToolsNote } from '../pwcode/ToolsNote'
 
 const PWCODE_TOOL_FOOTERS = { [BACKGROUND_TOOL]: BackgroundCommandHint }
@@ -220,6 +222,12 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
     return () => window.removeEventListener('ade:toggle-chat-rail', t)
   }, [])
   useEffect(() => { setRailOpen(false) }, [activeId])
+  // The chat in front of the person: its notices are dealt with.
+  const front = active && !showAttachments && !showManage ? activeId : null
+  useEffect(() => {
+    setFrontChat(front)
+    return () => setFrontChat(null)
+  }, [front])
 
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
@@ -619,7 +627,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           {!pw.shown && <PWCodeWatcher />}
           <RetryWithModel />
           <ModelShare />
-          <ChatLayout
+          <StudioChatLayout
             sidebarMode={phone ? 'drawer' : 'inline'}
             sidebarTop={({ collapsed }) => (
               <>
@@ -668,7 +676,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
                 <ChatEmptyState />
               </EmptyChatBrand>
             )}
-          </ChatLayout>
+          </StudioChatLayout>
           {activeId && !showAttachments && !showManage && <ConversationScrubber />}
           <SteerBridge />
           {/* A pw code session's composer has its own command menu, which

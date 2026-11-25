@@ -103,3 +103,34 @@ func sameKey(t Transfer) string {
 	}
 	return strings.Join(append([]string{t.Source.Location, t.Destination.Location, dst}, paths...), "\x00")
 }
+
+// Failures is the viewer's failed transfers that Summary counts: of the
+// last 24 hours, not seen, and not run again with success since.
+func (s *Service) Failures(v Viewer) []Transfer {
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	return s.store.failuresLocked(v.owner(), s.now())
+}
+
+func (s *store) failuresLocked(owner string, now time.Time) []Transfer {
+	out := []Transfer{}
+	// Newest first, so each success is met before the failures it clears.
+	succeeded := map[string]bool{}
+	for _, d := range s.done {
+		if now.Sub(d.end) > FailedFor {
+			break
+		}
+		if d.owner != owner {
+			continue
+		}
+		switch d.t.State {
+		case StateSucceeded:
+			succeeded[sameKey(d.t)] = true
+		case StateFailed:
+			if !succeeded[sameKey(d.t)] && s.unseen(owner, d) {
+				out = append(out, d.t)
+			}
+		}
+	}
+	return out
+}

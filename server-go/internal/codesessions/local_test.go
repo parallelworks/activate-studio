@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
@@ -54,6 +55,22 @@ func TestLocalSessions(t *testing.T) {
 	}
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
+
+	// What the notices read is what the Code page is sent.
+	got, err := http.Get(srv.URL + "/api/code-page/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent map[string]any
+	json.NewDecoder(got.Body).Decode(&sent)
+	got.Body.Close()
+	ms, ss, err := Listing(httptest.NewRequest("GET", "/api/notices", nil))
+	b, _ := json.Marshal(map[string]any{"machines": ms, "sessions": ss})
+	var mine map[string]any
+	json.Unmarshal(b, &mine)
+	if err != nil || len(ss) != 1 || !reflect.DeepEqual(sent, mine) {
+		t.Errorf("Listing %v (%v), the Code page %v", mine, err, sent)
+	}
 
 	res, _ := http.Get(srv.URL + "/api/code-sessions")
 	var list struct {

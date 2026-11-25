@@ -51,6 +51,10 @@ func TestSeenFailures(t *testing.T) {
 	if n := failedNow(t, s, single); n != 2 {
 		t.Fatalf("failed after the page: %d", n)
 	}
+	// Failures is the transfers that number counts, newest first.
+	if fs := s.Failures(single); len(fs) != 2 || fs[0].ID != "f3" || fs[1].ID != "f2" {
+		t.Fatalf("failures: %+v", fs)
+	}
 	if sum, err := s.Seen(single, "f2"); err != nil || sum.FailedLast24h != 1 {
 		t.Fatalf("seen f2: %+v %v", sum, err)
 	}

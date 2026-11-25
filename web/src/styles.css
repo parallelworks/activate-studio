@@ -3269,6 +3269,39 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 }
 .xfer-group { display: flex; flex-direction: column; }
 .nav-xfer-mark { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+/* Where an entry is its icon alone (the folded sidebar, the phone's bar),
+   its mark sits on the icon's corner. */
+.sidenav.collapsed .sidenav-item, .sidenav-item { position: relative; }
+.sidenav.collapsed .sidenav-item .nav-xfer-mark { display: inline-flex; position: absolute; top: 2px; left: 50%; margin: 0 0 0 3px; transform: scale(.82); transform-origin: left top; }
+.sidenav.collapsed .sidenav-item .nav-xfer-mark span:not(.sr-only) { display: inline-flex; }
+.nav-notices-phone { display: none; }
+@media (max-width: 760px) {
+  .nav-notices-phone { display: flex; }
+  .sidenav-item .nav-xfer-mark { display: inline-flex; position: absolute; top: 2px; left: 50%; margin: 0 0 0 3px; transform: scale(.82); transform-origin: left top; }
+  .sidenav-item .nav-xfer-mark span:not(.sr-only) { display: inline-flex; }
+  .nav-more-sheet .sidenav-item .nav-xfer-mark { position: static; margin-left: auto; transform: none; }
+}
+/* The chat list: a chat with a reply not seen, or waiting on the person. */
+.chat-row-new { font-weight: 600; }
+/* Notices: one line each on a wide page, a stack on a phone. */
+.notices-page { max-width: 900px; width: 100%; margin: 0 auto; padding: 16px 20px 32px; box-sizing: border-box; }
+.notices-head { display: flex; justify-content: flex-end; }
+.notices-group h2 { font-size: 13px; font-weight: 600; margin: 8px 0; }
+.notices-group ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--pw-border); border-radius: 8px; overflow: hidden; background: var(--pw-card, transparent); }
+.notice-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 4px 12px; padding: 10px 12px; }
+.notice-row + .notice-row { border-top: 1px solid var(--pw-border); }
+.notice-open { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--pw-text); text-decoration: none; }
+.notice-open:hover .notice-title { text-decoration: underline; }
+.notice-open:focus-visible { outline: 2px solid var(--pw-link); outline-offset: 2px; border-radius: 3px; }
+.notice-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notice-text { font-size: 12.5px; color: var(--pw-muted); overflow-wrap: anywhere; }
+.notice-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; white-space: nowrap; }
+@media (max-width: 760px) {
+  .notices-page { padding: 12px 14px 24px; }
+  .notice-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .notice-meta { grid-column: 2; grid-row: 2; flex-direction: row; align-items: center; gap: 8px; }
+  .notice-dismiss { grid-column: 3; grid-row: 1 / span 2; }
+}
 .xfer-pane-head { position: relative; }
 .xfer-add-location { position: absolute; right: 12px; top: 40px; font-size: 12px; color: var(--pw-link); }
 .xfer-pane-facts { padding-right: 96px; }

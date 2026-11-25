@@ -272,6 +272,8 @@ type Gate = { sections?: string[]; platform?: boolean; localCode?: boolean; aiEn
  *  need it, or Accounts to sign in from: without a credential they show
  *  "Sign in with ACTIVATE to use this". Chat and Agents need AI features on. */
 export function sectionAllowed(id: string, cfg: Gate): boolean {
+  // Notices is of whatever pages show, and is not a page to switch off.
+  if (id === 'notices') return true
   if (id === 'workflows' && !cfg.platform && !cfg.accounts) return false
   // Code lists the platform's sessions, or this computer's own where the
   // Studio offers it to pw code with no platform.

@@ -26,7 +26,9 @@ import {
   useSessionPicker,
   useStaleFor,
 } from '@parallelworks/code'
-import { IntlProvider } from 'use-intl'
+import { createTranslator, IntlProvider } from 'use-intl'
+import { refreshNotices, setReplying } from '../notices'
+import type { Translate } from '../code/parts'
 import { followCleared, pwCode } from './api'
 import { describeError } from './describeError'
 import { withEarlier, withoutCarried } from './carried'
@@ -90,6 +92,18 @@ export function PwCodeWords({ children, loading = null }: { children: ReactNode;
   )
 }
 
+/** pw code's words for a part drawn before they are loaded: null until then. */
+export function usePwCodeWords(): Translate | null {
+  const [messages, setMessages] = useState<PwCodeMessages | null>(loadedMessages)
+  useEffect(() => {
+    if (messages) return
+    let gone = false
+    void loadMessages().then(m => { if (!gone) setMessages(m) }, () => {})
+    return () => { gone = true }
+  }, [messages])
+  return useMemo(() => (messages ? createTranslator({ locale: 'en', messages, namespace: 'agents' }) as unknown as Translate : null), [messages])
+}
+
 // pw code's words, loaded once for the page: a chat switched to after the
 // first draws its session in the same frame, not one load later.
 let loadedMessages: PwCodeMessages | null = null
@@ -112,6 +126,22 @@ export interface PWCodeSessionProps {
 }
 
 const noop = () => {}
+
+/** How long after a turn ends the Studio has stored its reply. */
+const STORED_MS = 1500
+
+/** Tells the notices when the session's turn starts or ends, and when it
+ *  asks or is answered, rather than leaving them to their next read. */
+function useNoticeState(conversationId: string, running: boolean, waiting: number) {
+  const was = useRef({ running, waiting })
+  useEffect(() => {
+    setReplying(conversationId, running && waiting === 0)
+    const ended = was.current.running && !running
+    if (ended || was.current.waiting !== waiting) refreshNotices({ after: ended ? STORED_MS : undefined })
+    was.current = { running, waiting }
+  }, [conversationId, running, waiting])
+  useEffect(() => () => setReplying(conversationId, false), [conversationId])
+}
 
 // The platform's model list sets when a paste is saved as a file rather than
 // sent as text, before the session reports its own limit; the Studio's chat
@@ -235,6 +265,11 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
     images: composerImages.images,
     describeError,
   })
+
+  // The chat list and the menu mark the chat as the session is now, and a
+  // reply that ends in front of the person is seen.
+  const running = page.turn.running
+  useNoticeState(conversationId, running, transcript ? pendingApprovals(transcript).length : 0)
 
   // Until the session's transcript first arrives, the chat's own record of
   // it (read as this person, chatRecord.ts) is drawn, as before the session

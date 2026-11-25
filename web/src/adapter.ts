@@ -1,3 +1,4 @@
+import { refreshNotices, setReplying } from './notices'
 import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { forgetChat, readChat, takeReadAhead } from './chatRecord'
 import { setCacheViewer } from './viewerCache'
@@ -34,7 +35,7 @@ function effortFor(conversationId: string | undefined): string {
   return e
 }
 
-const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
+const readReply: StreamCompletion = async (req, handlers, signal) => {
   const res = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -223,6 +224,18 @@ const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
     model,
     reasoning,
     responsesOutput: [],
+  }
+}
+
+/** A reply, with its chat marked as being answered until it ends. */
+const streamFromServer: StreamCompletion = async (req, handlers, signal) => {
+  const id = req.conversationId
+  if (id) setReplying(id, true)
+  try {
+    return await readReply(req, handlers, signal)
+  } finally {
+    if (id) setReplying(id, false)
+    refreshNotices()
   }
 }
 
