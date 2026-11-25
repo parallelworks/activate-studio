@@ -54,14 +54,17 @@ function useSession(conversationId: string | null): SessionInfo {
     // The kept record first (chatRecord.ts), then the read the chat's other
     // parts share.
     setS(sessionInfo(cachedChat(conversationId)))
+    let told = false
     readChat(conversationId)
-      .then(c => { if (!gone && c.pwcode) setS(sessionInfo(c)) })
+      .then(c => { if (!gone && !told && c.pwcode) setS(sessionInfo(c)) })
       .catch(() => {})
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail as SessionInfo & { conversationId?: string }
       // The note is the session's as the server has it now: a new session
       // has none, so an old session's note does not stay.
-      if (d.conversationId === conversationId) setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model, modelNote: d.modelNote, modelFrom: d.modelFrom }))
+      if (d.conversationId !== conversationId) return
+      told = told || !!d.session
+      setS(prev => ({ ...prev, url: d.url, session: d.session, model: d.model, modelNote: d.modelNote, modelFrom: d.modelFrom }))
     }
     window.addEventListener('ade-pwcode-session', on)
     return () => { gone = true; window.removeEventListener('ade-pwcode-session', on) }

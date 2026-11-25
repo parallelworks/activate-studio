@@ -1,3 +1,4 @@
+import { OWN_REQUEST } from './ownRequest'
 import { TextConflict } from './textFiles'
 import type { GufiCommand } from './components/GufiCommands'
 import type { Omission } from './components/OmittedLine'
@@ -377,7 +378,7 @@ export interface PlatformSignIn {
 async function sendJson<T>(method: string, url: string, body?: unknown): Promise<T> {
   // A request with no body carries no JSON content type, which the server
   // refuses with an empty body.
-  const res = await fetch(url, body === undefined ? { method } : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const res = await fetch(url, body === undefined ? { method, headers: OWN_REQUEST } : { method, headers: { ...OWN_REQUEST, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw Object.assign(new Error((data as { error?: string }).error ?? `${url}: ${res.status}`), { status: res.status })
   return data as T
@@ -686,7 +687,7 @@ export interface IndexSettingsInfo {
 export type WorkbookSheet = GridSheetData & { sheets: { name: string; hidden?: boolean }[]; index: number }
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(withLibrary(url), signal ? { signal } : undefined)
+  const res = await fetch(withLibrary(url), { headers: OWN_REQUEST, ...(signal ? { signal } : {}) })
   if (!res.ok) {
     // The server's own sentence where it gave one, such as why a search's
     // text cannot be read.
@@ -699,7 +700,7 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 async function postJson<T>(url: string, body: unknown, routed = false): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...OWN_REQUEST, 'Content-Type': 'application/json' },
     body: JSON.stringify(body && typeof body === 'object' && !routed ? withLib(body as object) : body),
   })
   const data = await res.json().catch(() => ({}))
@@ -1075,7 +1076,7 @@ export const api = {
   updateCopy: (id: string) => postJson<{ library: SettingsLibrary; started: boolean }>(`/api/libraries/${encodeURIComponent(id)}/update`, {}),
   /** How often a bucket library is listed again, in minutes (0: only when asked). */
   setBucketEvery: async (id: string, every: number) => {
-    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ every }) })
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { ...OWN_REQUEST, 'Content-Type': 'application/json' }, body: JSON.stringify({ every }) })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
     return data as { library: SettingsLibrary }
@@ -1090,13 +1091,13 @@ export const api = {
   addLibrary: (def: { id: string; label?: string; indexRoot: string; sourceRoot?: string }) =>
     postJson<{ library: SettingsLibrary }>('/api/libraries', def),
   bucketTextEstimate: async (id: string): Promise<BucketTextEstimate> => {
-    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket/text`)
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket/text`, { headers: OWN_REQUEST })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
     return data as BucketTextEstimate
   },
   setBucketEndpoint: async (id: string, endpoint: string) => {
-    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint }) })
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { ...OWN_REQUEST, 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint }) })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status} ${res.statusText}`)
   },
@@ -1105,17 +1106,17 @@ export const api = {
   pwBucketFolder: (uri: string, path: string, endpoint = '') =>
     postJson<PwBucketFolder>('/api/libraries/buckets/folders', { uri, path, ...(endpoint ? { endpoint } : {}) }, true),
   setBucketText: async (id: string, text: boolean) => {
-    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { ...OWN_REQUEST, 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
     return data as { library: SettingsLibrary }
   },
   stopBucketText: async (id: string) => {
-    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket/text/stop`, { method: 'POST' })
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket/text/stop`, { method: 'POST', headers: OWN_REQUEST })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${res.status}`)
   },
   removeLibrary: async (id: string) => {
-    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}`, { method: 'DELETE', headers: OWN_REQUEST })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `remove: ${res.status}`)
   },
 }

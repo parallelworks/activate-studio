@@ -459,18 +459,31 @@ func (s *Service) bucketEndpoints(r *http.Request) []string {
 	return out
 }
 
+// ownRequest is the header the Studio's own page sends with its requests
+// (web/src/ownRequest.ts).
+const ownRequest = "X-Studio-Request"
+
+// otherSiteRemedy ends a refusal: what to set where the page was the
+// Studio's own after all (docs/DEPLOY.md).
+const otherSiteRemedy = " If this is the Studio's own page, behind a proxy, set STUDIO_SELF_URL to the address people open, or have the proxy send that host in X-Forwarded-Host."
+
 // otherSite is whether a page of another site sent a request, a GET's too:
 // what is read with a person's own sign-in is asked for by the Studio's
 // pages only, with sign-in off as with it on. A browser says so itself
-// (Sec-Fetch-Site) where it trusts the address; where it does not, over plain
-// http, it names the page's origin on anything but a GET. That is the host
-// the request was sent to or, behind a proxy that rewrites the host, the
-// Studio's own address as its environment has it.
+// (Sec-Fetch-Site) where it trusts the address. Where it does not, over plain
+// http, the Studio's page has the header ownRequest, which a page of another
+// site cannot send: it would need a CORS preflight the Studio never grants. A
+// request without it has the origin of its page on anything but a GET, and
+// that is the host the request was sent to or, behind a proxy that rewrites
+// the host, the Studio's own address as its environment has it.
 func (s *Service) otherSite(r *http.Request) bool {
 	switch r.Header.Get("Sec-Fetch-Site") {
 	case "cross-site", "same-site":
 		return true
 	case "same-origin":
+		return false
+	}
+	if r.Header.Get(ownRequest) == "1" {
 		return false
 	}
 	at := r.Header.Get("Origin")
@@ -506,7 +519,7 @@ func originOf(s string) string {
 
 // otherSiteRefused answers what a page of another site asked for.
 func otherSiteRefused() error {
-	return apierr.New(403, "A page of another site cannot use or change your bucket libraries.")
+	return apierr.New(403, "A page of another site cannot use or change your bucket libraries."+otherSiteRemedy)
 }
 
 // ownBucket is the bucket library of the route's id that the request's

@@ -51,6 +51,9 @@ function linkOf(c: ChatRecord | null | undefined): ChatLink | null {
   return c?.pwcode?.session ? c.pwcode as ChatLink : null
 }
 
+/** How long a read for a change that failed waits before it is tried again. */
+const RETRY_MS = 1000
+
 /**
  * The open chat's pw code session, when it is shown with the session view:
  * the chat has a session and is not set to the Studio assistant. A first
@@ -77,10 +80,24 @@ export function useChatLink(conversationId: string | null): { link: ChatLink | n
     if (!conversationId) return
     let gone = false
     void readEngine(conversationId)
-    const reread = () => readChat(conversationId)
-      .then(c => { if (!gone) setRead({ id: conversationId, link: linkOf(c), engine: storedEngine(c), behind: behindOf(c), known: true }) })
-      .catch(() => { if (!gone) setRead({ id: conversationId, link: null, engine: '', behind: false, known: true }) })
-    void reread()
+    // Reads may end out of order: one that began before what is shown was
+    // read says nothing new. One that fails leaves what is known, and is
+    // tried again, since a chat's new session shows with it alone.
+    let begun = 0, shownFrom = 0, timer = 0
+    const reread = (again = 2) => {
+      const n = ++begun
+      window.clearTimeout(timer)
+      return readChat(conversationId).then(c => {
+        if (gone || n < shownFrom) return
+        shownFrom = n
+        setRead({ id: conversationId, link: linkOf(c), engine: storedEngine(c), behind: behindOf(c), known: true })
+      }, () => {
+        if (gone || n < begun) return
+        setRead(prev => (prev.id === conversationId ? { ...prev, known: true } : { id: conversationId, link: null, engine: '', behind: false, known: true }))
+        if (again) timer = window.setTimeout(() => void reread(again - 1), RETRY_MS)
+      })
+    }
+    void reread(0)
     // A new session, or a finished reply, changes what the record says of
     // the chat's session and its last reply. What answers it is not read
     // from the record, so a change of that leads to no read here.
@@ -92,6 +109,7 @@ export function useChatLink(conversationId: string | null): { link: ChatLink | n
     window.addEventListener('ade:chat-answered', onChange)
     return () => {
       gone = true
+      window.clearTimeout(timer)
       window.removeEventListener('ade-pwcode-session', onChange)
       window.removeEventListener('ade:chat-answered', onChange)
     }

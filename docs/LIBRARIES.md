@@ -648,9 +648,13 @@ object or its text, rebuilds, or stops a pass answers the Studio's own
 pages only, with sign-in off as with it on: a request a browser says
 another site's page made (`Sec-Fetch-Site`, `Origin`, `Referer`) is
 refused (403). A browser sends `Sec-Fetch-Site` over https and on
-localhost; over plain http the page's origin is compared with the host the
-request was sent to (`Host`, `X-Forwarded-Host`) and with the Studio's own
-address (`STUDIO_SELF_URL`, `OIDC_REDIRECT_URI`). An endpoint is taken from the library or the body of a
+localhost. Elsewhere the Studio's page is known by a header it sends with
+its requests (`X-Studio-Request: 1`), which a page of another site cannot
+send without a CORS preflight, and the Studio grants none. A request with
+neither has its page's origin compared with the host the request was sent to
+(`Host`, `X-Forwarded-Host`) and with the Studio's own address
+(`STUDIO_SELF_URL`, `OIDC_REDIRECT_URI`); a file opened by its address, such
+as a download, is one. An endpoint is taken from the library or the body of a
 POST, never from an address.
 
 *Where people sign in.* The library is the person's alone. Its index is on
