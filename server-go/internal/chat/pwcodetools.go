@@ -347,7 +347,7 @@ func shortMCPError(s string) string {
 // pwScope is what a pw code chat's tool calls take from the conversation:
 // its libraries and labels as of the latest message, and the kinds of
 // tools the person left on (nil for all).
-func (m *Module) pwScope(r *http.Request, body *streamBody, link *conversations.PWCodeLink) (note string) {
+func (m *Module) pwScope(r *http.Request, body *streamBody, link *conversations.PWCodeLink) string {
 	labels := labelScopeOf(body.LabelScope)
 	library := m.chatLibraries(body.Library, libraries.ViewerOf(userID(r)))
 	link.Library, link.LabelScope = library, labels
@@ -360,6 +360,12 @@ func (m *Module) pwScope(r *http.Request, body *streamBody, link *conversations.
 		slices.Sort(on)
 		link.Tools = &on
 	}
+	return scopeSaid(library, labels)
+}
+
+// scopeSaid is what a session is told of the chat's scope, or "".
+func scopeSaid(library, labels []string) string {
+	note := ""
 	if len(labels) > 0 {
 		note = "The person has scoped this conversation to material labeled: " + strings.Join(labels, ", ") + ". search_kb is restricted to those labels."
 	}

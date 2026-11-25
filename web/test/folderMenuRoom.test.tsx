@@ -70,9 +70,10 @@ describe('the folder menu', () => {
     await waitFor(() => expect(document.querySelectorAll('[role="option"]').length).toBeGreaterThan(0))
     expect(menu.dataset.side).toBe('top')
   })
-  it('keeps its height opened up and on a phone, so the field does not move as the list narrows', () => {
+  it('is as tall as its rows opened up, with the field under them, and of one height on a phone, so the field does not move as the list narrows', () => {
     const css = readFileSync('src/styles.css', 'utf8')
-    expect(css).toMatch(/\.code-path-popover\[data-side="top"\] \.code-path-list \{ height: 20rem; \}/)
+    expect(css).toMatch(/@media \(min-width: 640px\) \{\s*\.code-path-popover\[data-side="top"\] \.code-path-list \{ order: -1;/)
+    expect(css).not.toMatch(/\[data-side="top"\] \.code-path-list \{[^}]*height/)
     expect(css).toMatch(/@media \(max-width: 639\.98px\) \{ \.code-path-popover \.code-path-list \{ height: 20rem; \}/)
   })
 })

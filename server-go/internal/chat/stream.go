@@ -124,6 +124,10 @@ type streamBody struct {
 	// PWCodeTools is whether to add the Studio's tools to pw code on that
 	// machine first, as the person chose with the message.
 	PWCodeTools *bool `json:"pwcodeTools"`
+	// OpensSession: the page runs a pw code command a chat starts with
+	// itself, in the session's view, and takes back a first message the
+	// session refused (pwcodefirst.go).
+	OpensSession bool `json:"opensSession"`
 
 	// engineNote is the note stored after the reply when the Studio
 	// assistant answers in pw code's place (engineFor); never read from

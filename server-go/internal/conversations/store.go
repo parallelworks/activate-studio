@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -208,6 +209,26 @@ func (s *Store) RecordUserTurn(conversationID, userMessageID, content string, pa
 		c.ActiveBranchID = strp(userMessageID)
 	}
 	c.UpdatedAt = now
+	s.persist()
+}
+
+// DropUserTurn takes back a turn of the person's whose message reached
+// nothing: the page keeps what they typed. One something follows stays.
+func (s *Store) DropUserTurn(conversationID, messageID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.find(conversationID)
+	if c == nil || messageID == "" {
+		return
+	}
+	at := slices.IndexFunc(c.Messages, func(m Message) bool { return m.ID == messageID && m.Role == "user" })
+	if at < 0 || slices.ContainsFunc(c.Messages, func(m Message) bool { return m.ParentID != nil && *m.ParentID == messageID }) {
+		return
+	}
+	if c.ActiveBranchID != nil && *c.ActiveBranchID == messageID {
+		c.ActiveBranchID = c.Messages[at].ParentID
+	}
+	c.Messages = slices.Delete(c.Messages, at, at+1)
 	s.persist()
 }
 

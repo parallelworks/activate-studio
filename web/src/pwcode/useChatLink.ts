@@ -48,10 +48,11 @@ function linkOf(c: ChatRecord | null | undefined): ChatLink | null {
  * reply's stream names the session as soon as pw code has one, so the view
  * takes over from its first events. A chat opened before starts from its
  * kept record (chatRecord.ts), so its session shows at once, and its
- * record is read again behind it; a chat never opened waits for that read.
+ * record is read again behind it; a chat never opened waits for that read
+ * (`known` once it has come).
  */
-export function useChatLink(conversationId: string | null): { link: ChatLink | null; machine: string; shown: boolean } {
-  const fromCache = (id: string | null) => ({ id, link: linkOf(cachedChat(id)), engine: storedEngine(cachedChat(id)), behind: behindOf(cachedChat(id)) })
+export function useChatLink(conversationId: string | null): { link: ChatLink | null; machine: string; shown: boolean; known: boolean } {
+  const fromCache = (id: string | null) => ({ id, link: linkOf(cachedChat(id)), engine: storedEngine(cachedChat(id)), behind: behindOf(cachedChat(id)), known: !id || !!cachedChat(id) })
   const [read, setRead] = useState(() => fromCache(conversationId))
   // On a switch, what is known of the new chat counts from the same render.
   const cur = read.id === conversationId ? read : fromCache(conversationId)
@@ -68,8 +69,8 @@ export function useChatLink(conversationId: string | null): { link: ChatLink | n
     let gone = false
     void readEngine(conversationId)
     const reread = () => readChat(conversationId)
-      .then(c => { if (!gone) setRead({ id: conversationId, link: linkOf(c), engine: storedEngine(c), behind: behindOf(c) }) })
-      .catch(() => { if (!gone) setRead({ id: conversationId, link: null, engine: '', behind: false }) })
+      .then(c => { if (!gone) setRead({ id: conversationId, link: linkOf(c), engine: storedEngine(c), behind: behindOf(c), known: true }) })
+      .catch(() => { if (!gone) setRead({ id: conversationId, link: null, engine: '', behind: false, known: true }) })
     void reread()
     // A new session, or a finished reply, changes what the record says of
     // the chat's session and its last reply. What answers it is not read
@@ -87,5 +88,5 @@ export function useChatLink(conversationId: string | null): { link: ChatLink | n
     }
   }, [conversationId])
   const shown = !!link?.session && chosen !== 'studio' && !cur.behind
-  return { link, machine: link ? sessionMachine(link) : '', shown }
+  return { link, machine: link ? sessionMachine(link) : '', shown, known: cur.known }
 }

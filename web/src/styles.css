@@ -1087,8 +1087,14 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
    The selector reaches into the package's composer: its picker is the
    button there that opens a dialog. A chat shown as its pw code session
    (.pwcode-session) has the session's own composer, whose effort picker is
-   such a button too, so it is left alone. */
-.chat-canvas[data-engine='pwcode'] .chat-composer:not(.pwcode-session *) [class*='justify-end'] > button[aria-haspopup='dialog'] { display: none; }
+   such a button too, so it is left alone. Its words for no model listed
+   (a span) go too. */
+.chat-canvas[data-engine='pwcode'] .chat-composer:not(.pwcode-session *) [class*='justify-end'] > :is(button[aria-haspopup='dialog'], span.cursor-default) { display: none; }
+/* The package hides its usage slot where the composer is narrow. A new pw
+   code chat's model is chosen there, and one with none set takes no message
+   until it is, so on a phone the model stays and the effort goes. */
+.chat-composer:not(.pwcode-session *) [class*='shrink-[10]']:has(> .pwcode-new-model) { display: block; }
+@container (max-width: 27.99rem) { .pwcode-new-model + .composer-effort { display: none; } }
 /* The package's find bar (Ctrl+F in a conversation) spans the top of the
    thread, under these controls. It stops short of them, or sits below them
    where the thread is too narrow, so its count and buttons stay in view;
@@ -3183,8 +3189,11 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-path-field { display: flex; gap: 8px; padding: 8px; flex: none; }
 .code-path-field > * { flex: 1; min-width: 0; }
 .code-path-list { min-height: 0; max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--pw-border); padding: 4px; }
-/* Opened up (or the phone's sheet), it hangs from its foot: one height, so the field stays put as the list narrows. */
-.code-path-popover[data-side="top"] .code-path-list { height: 20rem; }
+/* Opened up, it hangs from its foot: it is as tall as its rows, with the field under them, which stays put as they narrow. */
+@media (min-width: 640px) {
+  .code-path-popover[data-side="top"] .code-path-list { order: -1; border-top: 0; }
+  .code-path-popover[data-side="top"] .code-path-field { border-top: 1px solid var(--pw-border); }
+}
 .code-path-loading { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 12px; }
 .code-path-new {
   all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px;
@@ -3203,6 +3212,7 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-path-open { all: unset; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: -6px -8px -6px 0; border-radius: 6px; color: var(--pw-muted); cursor: pointer; }
 .code-path-open:hover { background: var(--theme-hover); color: var(--pw-text); }
 .code-path-open svg { width: 14px; height: 14px; }
+/* The phone's sheet does too, but its field stays over the keyboard: one height. */
 @media (max-width: 639.98px) { .code-path-popover .code-path-list { height: 20rem; } .code-path-keys { display: none; } }
 .code-needs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .code-needs-head { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; cursor: pointer; }

@@ -48,7 +48,8 @@ const ALLOWED = new Set([
   "[data-theme='dark'] .chat-canvas li.group[class*=\" bg-[color-mix\"] span",
   "[data-streamdown='code-block']",
   "[data-streamdown='inline-code']",
-  ".chat-canvas[data-engine='pwcode'] .chat-composer:not(.pwcode-session *) [class*='justify-end'] > button[aria-haspopup='dialog']",
+  ".chat-canvas[data-engine='pwcode'] .chat-composer:not(.pwcode-session *) [class*='justify-end'] > :is(button[aria-haspopup='dialog'], span.cursor-default)",
+  ".chat-composer:not(.pwcode-session *) [class*='shrink-[10]']:has(> .pwcode-new-model)",
   '.xfer-list > [class*="callout"]',
 ])
 

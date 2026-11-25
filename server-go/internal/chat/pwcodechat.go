@@ -70,6 +70,8 @@ type pwState struct {
 	// here is, by viewer, the daemon their pw code chat reached a moment
 	// ago, for the Code page's reads.
 	here map[string]pwHereAt
+	// needs is whether the viewer's pw code has no model of its own.
+	needs map[string]pwNeedsAt
 	// sections: what the Studio's section of AGENTS.md was last written as, by
 	// person, machine and folder.
 	sections map[string]string
@@ -846,10 +848,14 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if c = m.Conv.Get(convID); c == nil {
 		return fail(errors.New("the conversation is gone"))
 	}
+	carried := pwcodeContext(c, fresh, msgID)
+	// The page takes the message from here, once the session is there.
+	takes := body.OpensSession && carried == ""
+	opens := takes && slashLine.MatchString(strings.TrimSpace(content))
 	// The session's tool calls run in the scope of this message; the
 	// session is told of a scope it has not seen.
 	scopeNote := ""
-	if note := m.pwScope(r, body, link); !t.relay && (note != link.ScopeNote || (fresh && note != "")) {
+	if note := m.pwScope(r, body, link); !t.relay && !opens && (note != link.ScopeNote || (fresh && note != "")) {
 		link.ScopeNote = note
 		scopeNote = "Scope from the Studio's chat bar: " + firstNonEmpty(note, "the person's default libraries.") + "\n\n"
 	}
@@ -861,6 +867,16 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	}
 	m.Conv.SetPWCode(convID, link)
 	res.event("pwcode", reqbody.O("session", link.Session, "url", link.URL, "site", link.Site, "workspace", link.Workspace, "model", link.Model, "modelNote", link.ModelNote, "modelFrom", link.ModelFrom, "modelMoved", t.modelMoved, "modelStuck", t.modelStuck))
+	if opens {
+		m.handFirst(res, convID, msgID, content, nil)
+		return nil
+	}
+	if takes {
+		fail = func(err error) error {
+			m.handFirst(res, convID, msgID, content, err)
+			return nil
+		}
+	}
 	d, err := pwcode.GetSession(ctx, t.client, link.Session)
 	if err != nil {
 		return fail(err)
@@ -869,7 +885,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if n, ok := jsonv.Num(jsonv.Path(d, "lastSeq")); ok {
 		after = int64(n)
 	}
-	text := scopeNote + pwcodeContext(c, fresh, msgID) + content + told
+	text := scopeNote + carried + content + told
 
 	// The turn runs on past the request, so its reply is recorded when the
 	// person has left; the request writes its events while it lasts.
@@ -1221,6 +1237,10 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		// pw code's own).
 		return reqbody.OK(w, reqbody.O("setting", m.eff().ChatEngine, "default", def, "current", current, "answered", conversationEngine(c) != "",
 			"pwcode", why == "", "reason", reason, "toolsDown", tools, "model", m.eff().PWCodeModel))
+	})
+	// Whether a new pw code chat needs a model chosen first.
+	h("GET /api/chat/pwcode/model", func(w http.ResponseWriter, r *http.Request) error {
+		return reqbody.OK(w, reqbody.O("needed", m.pwcodeNeedsModel(r)))
 	})
 	// The person switches what answers a conversation, between turns.
 	h("PUT /api/chat/conversations/{id}/engine", func(w http.ResponseWriter, r *http.Request) error {
