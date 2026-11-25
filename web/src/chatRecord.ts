@@ -25,7 +25,6 @@ const KEPT = 30
 const records = new Map<string, ChatRecord>()
 const reads = new Map<string, Promise<ChatRecord>>()
 let viewer: string | null = null
-let generation = 0
 
 /** Says whose records these are: a different person than before clears
  *  what was kept for the one before. */
@@ -39,7 +38,6 @@ export function clearChatRecords(): void {
   records.clear()
   reads.clear()
   ahead.clear()
-  generation++
 }
 
 /** The chat's record as last read for this person, if it is kept. */
@@ -61,22 +59,33 @@ export function forgetChat(id: string): void {
   ahead.delete(id)
 }
 
+// The chat changed on the server: a read on its way may be from before, so
+// what is read for the change asks again. This listens first (the module
+// loads before any part of the page that reads a chat).
+function outdated(e: Event): void {
+  const id = ((e as CustomEvent).detail as { conversationId?: string } | null)?.conversationId
+  if (!id) return
+  reads.delete(id)
+  ahead.delete(id)
+}
+if (typeof window !== 'undefined') for (const name of ['ade-pwcode-session', 'ade:chat-answered']) window.addEventListener(name, outdated)
+
 /**
  * Reads the chat's record: one read for every caller that asks while it is
- * on its way. It rejects as the chat list's own reads do, with the status
+ * on its way, unless the chat has changed since it began. It rejects as the chat list's own reads do, with the status
  * and what the server said.
  */
 export function readChat(id: string): Promise<ChatRecord> {
   const going = reads.get(id)
   if (going) return going
-  const started = generation
-  const read = fetch(`/api/chat/conversations/${encodeURIComponent(id)}`)
+  const read: Promise<ChatRecord> = fetch(`/api/chat/conversations/${encodeURIComponent(id)}`)
     .then(async r => {
       if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
       return r.json() as Promise<ChatRecord>
     })
     .then(rec => {
-      if (generation === started) {
+      // Only the newest read of it is kept, and for this person.
+      if (reads.get(id) === read) {
         records.delete(id)
         records.set(id, rec)
         while (records.size > KEPT) records.delete(records.keys().next().value as string)
