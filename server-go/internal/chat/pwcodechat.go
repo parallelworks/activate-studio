@@ -1301,7 +1301,7 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 	})
 	// The person switches what answers a conversation, between turns.
 	h("PUT /api/chat/conversations/{id}/engine", func(w http.ResponseWriter, r *http.Request) error {
-		c, err := m.visibleChat(r, r.PathValue("id"))
+		c, err := m.ownChat(r, r.PathValue("id"))
 		if err != nil {
 			return err
 		}
@@ -1461,7 +1461,7 @@ func (m *Module) answerApproval(w http.ResponseWriter, r *http.Request, c *conve
 			return err
 		}
 		if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
-			return err
+			return asPage(c, err)
 		}
 		return reqbody.OK(w, reqbody.O("ok", true))
 	}
@@ -1482,7 +1482,7 @@ func (m *Module) answerApproval(w http.ResponseWriter, r *http.Request, c *conve
 		answer.Set("denyMessage", msg)
 	}
 	if _, err := pwcode.AnswerApproval(r.Context(), t.client, c.PWCode.Session, approval, answer); err != nil {
-		return err
+		return asPage(c, err)
 	}
 	if mode != "" {
 		m.logModeChange(r, c, t, mode, "chat plan answer")

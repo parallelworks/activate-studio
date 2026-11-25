@@ -21,6 +21,8 @@ process.env.PW_CLI = path.join(pwDir, 'pw')
 fs.writeFileSync(process.env.PW_CLI, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${pwLog}'\necho '[]'\n`, { mode: 0o755 })
 // Platform identity on, so a viewer is a verified user; nothing is fetched from this URL.
 process.env.AUTH_JWKS_URL = 'https://keys.example.invalid/jwks'
+// People see each other's chats here; with sign-in that is off by default.
+process.env.CHAT_SHARED_HISTORY = '1'
 
 const ACCOUNTS = { 'alex-key': 'alex', 'sam-key': 'sam', 'deploy-key': 'deployer' }
 const posts = []

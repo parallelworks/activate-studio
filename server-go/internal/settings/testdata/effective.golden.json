@@ -196,7 +196,7 @@
    "ragTopK": 6,
    "ragAdvertiseRagModel": false,
    "ragAdvertiseAgentModel": true,
-   "chatSharedHistory": true,
+   "chatSharedHistory": false,
    "ragEndpointAutoStart": false,
    "ragEndpointName": "",
    "requirePersonalKey": false,

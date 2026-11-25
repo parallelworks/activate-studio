@@ -10,10 +10,12 @@ import { MachineLabel } from './MachineLabel'
  * library of the viewer's own, indexed and read as them, so it holds what
  * their account can read.
  */
-export function SharedWithMe({ onAdded, system, compact = false, title }: {
+export function SharedWithMe({ onAdded, system, compact = false, title, where }: {
   onAdded: (lib: UserLibrary) => void
   /** A heading over the list, shown only when it lists something. */
   title?: string
+  /** The system the list is of, beside the heading. */
+  where?: string
   /** Only the folders on this system (Add a library, A system). */
   system?: string
   /** Say nothing when nothing is shared, as a part of another form. */
@@ -49,7 +51,7 @@ export function SharedWithMe({ onAdded, system, compact = false, title }: {
       {why && <Callout tone="info">{why}</Callout>}
       {missed.map(u => <Callout key={u.site} tone="warning">Folders shared with you on <MachineLabel machine={{ name: u.site || u.name }} /> could not be checked: {u.why}</Callout>)}
       {shares && !why && !here.length && !missed.length && <p className="muted">Nothing is shared with your account yet. When someone shares a folder of their space with you, or with a group you are in, it shows here.</p>}
-      {title && here.length > 0 && <h4 className="lib-add-shared-title">{title}</h4>}
+      {title && here.length > 0 && <h4 className="lib-add-shared-title">{title}{where && <span className="muted" data-testid="shared-on"> on <MachineLabel machine={{ name: where }} /></span>}</h4>}
       {here.length > 0 && (
         <Table density="compact" tableProps={{ 'aria-label': 'Shared with me' }}>
           <Table.Header>Folder</Table.Header>

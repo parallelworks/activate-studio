@@ -6,6 +6,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
 )
 
@@ -59,8 +60,20 @@ func (s *Service) details(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.asMayWrite(r, lib, &d)
 	apierr.JSON(w, 200, d)
 	return nil
+}
+
+// asMayWrite says in d what the person in r may do: the main library is
+// read only for one who does not administer the Studio.
+func (s *Service) asMayWrite(r *http.Request, lib libraries.Library, d *search.Details) {
+	if !lib.Primary || !d.Library.Writable {
+		return
+	}
+	if ok, _ := mainlib.Request(s.a, r); !ok {
+		d.Library.Writable = false
+	}
 }
 
 // topology is GET /api/kb/topology and GET /api/libraries/:id/topology.

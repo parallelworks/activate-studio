@@ -529,7 +529,7 @@ function FolderForm({ target, place, connect, options, browse, systems, buckets,
                 </Field>
                 <Field label="They can" layout="inline" size="sm" group description={noACL
                   ? `This file system (${found!.fs}) does not take POSIX ACLs, so it is shared with everyone, for reading.`
-                  : shownKind === 'everyone' ? `Every account on ${place} can read it, under Shared with you.` : 'They find it under Shared with you.'}>
+                  : shownKind === 'everyone' ? `Every account on ${place} can read it, under Shared with me.` : 'They find it under Shared with me.'}>
                   <div className="lib-review-row">
                     <SegmentedControl size="sm" label="They can" value={shownAccess} onValueChange={setAccess}
                       options={[{ value: 'read', label: 'Read only' }, ...(shownKind === 'everyone' ? [] : [{ value: 'write' as Access, label: 'Read and write' }])]} />
@@ -577,8 +577,8 @@ function FolderForm({ target, place, connect, options, browse, systems, buckets,
       )}
       {error && <Callout tone="error" live>{error}</Callout>}
       {cluster && !connect && options.space && (
-        <section className="lib-add-shared" aria-label={`Shared with you on ${place}`}>
-          <SharedWithMe compact system={cluster} title={`Shared with you on ${place}`} onAdded={lib => onAdded(lib, true)} />
+        <section className="lib-add-shared" aria-label={`Shared with me on ${place}`}>
+          <SharedWithMe compact system={cluster} where={place} title="Shared with me" onAdded={lib => onAdded(lib, true)} />
         </section>
       )}
       <div className="query-actions">

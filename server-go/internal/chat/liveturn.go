@@ -140,7 +140,7 @@ func (m *Module) liveRoutes(h func(pattern string, fn func(http.ResponseWriter, 
 		return reqbody.OK(w, nil)
 	})
 	h("POST /api/chat/conversations/{id}/stop", func(w http.ResponseWriter, r *http.Request) error {
-		c, err := m.visibleChat(r, r.PathValue("id"))
+		c, err := m.ownChat(r, r.PathValue("id"))
 		if err != nil {
 			return err
 		}

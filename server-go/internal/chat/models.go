@@ -843,15 +843,12 @@ func (m *Module) suggestions(w http.ResponseWriter, r *http.Request) error {
 	id := r.URL.Query().Get("conversation")
 	var c *conversations.Conversation
 	if id != "" {
-		c = m.Conv.Get(id)
+		// What to say next is for the one who may: another person's chat is
+		// answered as one that is not there.
+		c, _ = m.ownChat(r, id)
 	}
 	if c == nil {
 		return reqbody.OK(w, reqbody.O("after", nil, "suggestions", []any{}))
-	}
-	// A conversation is owned by username, as the stream records it; the
-	// viewer's id is another form of it on a platform sign-in.
-	if u := user(r); c.OwnerName() != "" && u != nil && u.Username != "" && c.OwnerName() != u.Username && (!m.eff().ChatSharedHistory || c.PWCode != nil && c.PWCode.Relay) {
-		return apierr.New(403, "not your conversation")
 	}
 	return reqbody.OK(w, SuggestNext(c))
 }

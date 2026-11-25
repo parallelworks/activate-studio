@@ -76,6 +76,9 @@ export interface StudioSettings {
   ragAdvertiseRagModel?: boolean
   ragAdvertiseAgentModel?: boolean
   chatSharedHistory?: boolean
+  // Marks chatSharedHistory as an administrator's choice: saving the form
+  // used to write the default too.
+  chatSharedHistoryChosen?: boolean
   ragEndpointAutoStart?: boolean
   ragEndpointName?: string
   requirePersonalKey?: boolean
@@ -218,7 +221,20 @@ function freshPersonal(s: StudioSettings): boolean {
 }
 
 /** Effective values: saved settings override environment defaults. */
-export function effectiveSettings(): Required<StudioSettings> {
+// Whether people see each other's chats, as the Go server decides it
+// (server-go/internal/settings/sharedhistory.go): with sign-in, off unless
+// it was turned on.
+function sharedHistory(s: StudioSettings): boolean {
+  const env = process.env.CHAT_SHARED_HISTORY ?? ''
+  const saved = s.chatSharedHistory
+  if (!authEnabled()) return saved ?? env !== '0'
+  const chosen = s.chatSharedHistoryChosen
+    ?? (env === '0' || (['ragAdvertiseRagModel', 'ragEndpointAutoStart', 'requirePersonalKey'] as const).some(k => s[k] === undefined))
+  if (saved === false || (saved && chosen)) return saved
+  return ['1', 'true', 'yes', 'on'].includes(env.trim().toLowerCase())
+}
+
+export function effectiveSettings(): Required<Omit<StudioSettings, 'chatSharedHistoryChosen'>> {
   const s = loadSettings()
   return {
     appName: s.appName ?? process.env.APP_NAME ?? 'Studio',
@@ -272,7 +288,7 @@ export function effectiveSettings(): Required<StudioSettings> {
     ragAllowDeploymentKey: s.ragAllowDeploymentKey ?? process.env.RAG_PROXY_ALLOW_DEPLOYMENT_KEY === '1',
     ragAdvertiseRagModel: s.ragAdvertiseRagModel ?? process.env.RAG_ADVERTISE_RAG_MODEL === '1',
     ragAdvertiseAgentModel: s.ragAdvertiseAgentModel ?? process.env.RAG_ADVERTISE_AGENT_MODEL !== '0',
-    chatSharedHistory: s.chatSharedHistory ?? process.env.CHAT_SHARED_HISTORY !== '0',
+    chatSharedHistory: sharedHistory(s),
     ragEndpointAutoStart: s.ragEndpointAutoStart ?? process.env.RAG_ENDPOINT_AUTOSTART === '1',
     ragEndpointName: s.ragEndpointName ?? process.env.RAG_ENDPOINT_NAME ?? '',
     requirePersonalKey: s.requirePersonalKey ?? process.env.REQUIRE_PERSONAL_KEY === '1',
@@ -471,7 +487,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     if (body.ragAllowDeploymentKey !== undefined) next.ragAllowDeploymentKey = Boolean(body.ragAllowDeploymentKey)
     if (body.ragAdvertiseRagModel !== undefined) next.ragAdvertiseRagModel = Boolean(body.ragAdvertiseRagModel)
     if (body.ragAdvertiseAgentModel !== undefined) next.ragAdvertiseAgentModel = Boolean(body.ragAdvertiseAgentModel)
-    if (body.chatSharedHistory !== undefined) next.chatSharedHistory = Boolean(body.chatSharedHistory)
+    // Saving Settings sends the whole form: only a change is a choice.
+    if (body.chatSharedHistory !== undefined && Boolean(body.chatSharedHistory) !== effectiveSettings().chatSharedHistory) {
+      next.chatSharedHistory = Boolean(body.chatSharedHistory)
+      next.chatSharedHistoryChosen = true
+    }
     if (body.ragEndpointAutoStart !== undefined) next.ragEndpointAutoStart = Boolean(body.ragEndpointAutoStart)
     if (body.requirePersonalKey !== undefined) next.requirePersonalKey = Boolean(body.requirePersonalKey)
     if (body.bannerText !== undefined) next.bannerText = String(body.bannerText).slice(0, 200)

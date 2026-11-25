@@ -365,7 +365,7 @@ func (s *Store) EffectiveOf(m map[string]json.RawMessage) Effective {
 	e.RagTopK = or(num("ragTopK"), Number(min(max(topK, 1), 20)))
 	e.RagAdvertiseRagModel = or(b("ragAdvertiseRagModel"), env("RAG_ADVERTISE_RAG_MODEL") == "1")
 	e.RagAdvertiseAgentModel = or(b("ragAdvertiseAgentModel"), env("RAG_ADVERTISE_AGENT_MODEL") != "0")
-	e.ChatSharedHistory = or(b("chatSharedHistory"), env("CHAT_SHARED_HISTORY") != "0")
+	e.ChatSharedHistory = s.sharedHistory(m)
 	e.RagEndpointAutoStart = or(b("ragEndpointAutoStart"), env("RAG_ENDPOINT_AUTOSTART") == "1")
 	e.RagEndpointName = or(str("ragEndpointName"), env("RAG_ENDPOINT_NAME"))
 	e.RequirePersonalKey = or(b("requirePersonalKey"), env("REQUIRE_PERSONAL_KEY") == "1")

@@ -78,6 +78,22 @@ func writeProblem(w http.ResponseWriter, status int, msg string) error {
 	return nil
 }
 
+// noPageSession is the answer for a session of the Code page's that is not
+// the viewer's to see here: there is none, or another person's chat holds
+// it.
+const noPageSession = "This Studio has no pw code session of yours with that id."
+
+// asPage is err as the Code page's session c answers it: a session the
+// daemon does not have is answered as one in another person's chat is.
+func asPage(c *conversations.Conversation, err error) error {
+	if c.ID == "" {
+		if status, _ := problemOf(err); status == http.StatusNotFound {
+			return pwErr(404, noPageSession)
+		}
+	}
+	return err
+}
+
 // problemOf is an error's status and words for the reader.
 func problemOf(err error) (int, string) {
 	var de *pwcode.DaemonError
@@ -132,12 +148,6 @@ func (m *Module) pageSession(r *http.Request) (*conversations.Conversation, *pwT
 	if codesessions.CrossSite(r) {
 		return nil, nil, pwErr(403, "Sessions are directed from the Studio's own pages.")
 	}
-	// Another person's chat here runs in it.
-	for _, o := range m.Conv.List() {
-		if o.PWCode != nil && o.PWCode.Session == id {
-			return nil, nil, pwErr(404, "This Studio has no pw code session of yours with that id.")
-		}
-	}
 	link := &conversations.PWCodeLink{Session: id, Machine: machine, Continued: true}
 	c := &conversations.Conversation{PWCode: link}
 	if machine == directMachine {
@@ -149,11 +159,26 @@ func (m *Module) pageSession(r *http.Request) (*conversations.Conversation, *pwT
 			return nil, nil, err
 		}
 		link.Site = site
-		return c, &pwTarget{client: client, site: site}, nil
+		return c, &pwTarget{client: client, site: site}, m.inAnothersChat(id)
 	}
 	link.Relay, link.Site = true, pwcode.RelaySite(machine)
 	t, err := m.relayTarget(r, link)
-	return c, t, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, t, m.inAnothersChat(id)
+}
+
+// inAnothersChat refuses a session that a chat here runs in, for a viewer
+// none of whose chats does. It is asked last, so the viewer who could not
+// reach the session's machine is told so as of any session there.
+func (m *Module) inAnothersChat(session string) error {
+	for _, o := range m.Conv.List() {
+		if o.PWCode != nil && o.PWCode.Session == session {
+			return pwErr(404, noPageSession)
+		}
+	}
+	return nil
 }
 
 func (m *Module) pwcodeProxyRoutes(h func(pattern string, fn func(http.ResponseWriter, *http.Request) error)) {
@@ -248,14 +273,14 @@ const maxImage = 25 << 20
 
 // codeImage passes one of the session's images on as the session's
 // machine serves it.
-func (m *Module) codeImage(w http.ResponseWriter, r *http.Request, t *pwTarget, route string) error {
+func (m *Module) codeImage(w http.ResponseWriter, r *http.Request, c *conversations.Conversation, t *pwTarget, route string) error {
 	g, ok := t.client.(pwcode.ByteGetter)
 	if !ok {
 		return writeProblem(w, http.StatusNotImplemented, "The Studio cannot read this session's images.")
 	}
 	b, err := g.GetBytes(r.Context(), route, maxImage)
 	if err != nil {
-		return writeErr(w, err)
+		return writeErr(w, asPage(c, err))
 	}
 	typ, _, _ := strings.Cut(b.Type, ";")
 	typ = strings.ToLower(strings.TrimSpace(typ))
@@ -277,14 +302,14 @@ func (m *Module) codeImage(w http.ResponseWriter, r *http.Request, t *pwTarget, 
 // a refusal is the route's usual error. A daemon without the route (an
 // older pw code) is read once whole here and answered in the same form,
 // so the page does not ask twice, one after the other.
-func (m *Module) codeStream(w http.ResponseWriter, r *http.Request, t *pwTarget, g pwcode.StreamGetter, id, route string) error {
+func (m *Module) codeStream(w http.ResponseWriter, r *http.Request, c *conversations.Conversation, t *pwTarget, g pwcode.StreamGetter, route string) error {
 	s, err := g.GetStream(r.Context(), route)
 	if err != nil {
 		var de *pwcode.DaemonError
 		if errors.As(err, &de) && (de.Status == http.StatusNotFound || de.Status == http.StatusMethodNotAllowed) {
-			return m.transcriptFromDetail(w, r, t, id)
+			return m.transcriptFromDetail(w, r, c, t)
 		}
-		return writeErr(w, err)
+		return writeErr(w, asPage(c, err))
 	}
 	defer s.Body.Close()
 	typ, _, _ := strings.Cut(s.Type, ";")
@@ -318,14 +343,14 @@ const transcriptTail = 200
 // transcriptFromDetail answers a transcript read from the session's whole
 // detail, as a daemon with the route does: its end first, the earlier
 // history after it.
-func (m *Module) transcriptFromDetail(w http.ResponseWriter, r *http.Request, t *pwTarget, id string) error {
-	route := "/v1/sessions/" + url.PathEscape(id)
+func (m *Module) transcriptFromDetail(w http.ResponseWriter, r *http.Request, c *conversations.Conversation, t *pwTarget) error {
+	route := "/v1/sessions/" + url.PathEscape(c.PWCode.Session)
 	if p := r.URL.Query().Get("previews"); p != "" {
 		route += "?" + url.Values{"previews": {p}}.Encode()
 	}
 	v, err := t.client.Call(r.Context(), http.MethodGet, route, nil, 0)
 	if err != nil {
-		return writeErr(w, err)
+		return writeErr(w, asPage(c, err))
 	}
 	o := jsonv.Obj(v)
 	if o == nil {
@@ -452,12 +477,6 @@ func (m *Module) codeFollow(w http.ResponseWriter, r *http.Request) error {
 
 // codeProxy sends one of the view's requests on to the session.
 func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
-	c, t, err := m.proxiedSession(r)
-	if err != nil {
-		return writeErr(w, err)
-	}
-	ctx := r.Context()
-	id := c.PWCode.Session
 	suffix := ""
 	if rest := r.PathValue("rest"); rest != "" {
 		suffix = "/" + rest
@@ -466,6 +485,12 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 	if key == "" {
 		return writeProblem(w, http.StatusNotFound, "The Studio does not send this to a pw code session; do it in PW Code on the web or where the session runs.")
 	}
+	c, t, err := m.proxiedSession(r)
+	if err != nil {
+		return writeErr(w, err)
+	}
+	ctx := r.Context()
+	id := c.PWCode.Session
 	if key == "GET /claude-code/accounts" {
 		if why := pwcode.ClaudeCodeOff(ctx); why != "" {
 			return writeProblem(w, http.StatusForbidden, why)
@@ -493,7 +518,7 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		if q := r.URL.RawQuery; q != "" {
 			route += "?" + q
 		}
-		return m.codeImage(w, r, t, route)
+		return m.codeImage(w, r, c, t, route)
 	}
 	if key == "GET /transcript" {
 		if g, ok := t.client.(pwcode.StreamGetter); ok {
@@ -501,7 +526,7 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			if q := r.URL.RawQuery; q != "" {
 				route += "?" + q
 			}
-			return m.codeStream(w, r, t, g, id, route)
+			return m.codeStream(w, r, c, t, g, route)
 		}
 	}
 	var lastSeq int64
@@ -572,7 +597,7 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if err != nil {
-		return writeErr(w, err)
+		return writeErr(w, asPage(c, err))
 	}
 	switch key {
 	case "GET ":
@@ -963,7 +988,7 @@ func (m *Module) codeFeed(w http.ResponseWriter, r *http.Request) error {
 	defer cancel()
 	up, err := pwcode.OpenEvents(ctx, t.client, c.PWCode.Session, after)
 	if err != nil {
-		return writeErr(w, err)
+		return writeErr(w, asPage(c, err))
 	}
 	defer up.Close()
 	timed := pwcode.Heartbeats(t.client)

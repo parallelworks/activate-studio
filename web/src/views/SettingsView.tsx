@@ -758,8 +758,11 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                     <label className="key-persist">
                       <Checkbox disabled={!!locked} checked={form.chatSharedHistory}
                         onCheckedChange={v => setForm({ ...form, chatSharedHistory: v })} />
-                      Allow users to see each other's chat sessions in the chat interface (the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; chats someone saved to the main library stay there either way)
+                      Allow users to see each other's chat sessions in the chat interface (off unless turned on here or by the deployment; the rail still defaults each user to their own, with a toggle to show all; off removes that option entirely; chats someone saved to the main library stay there either way)
                     </label>
+                  )}
+                  {me?.authEnabled && (
+                    <p className="muted" data-testid="shared-history-note">Answers can quote files from people's own libraries, so turning this on shares those quotes with everyone who signs in.</p>
                   )}
                   <Field className="settings-field" label="Mission and context"
                     description="The assistant treats this as authoritative about what this Studio is for, and it never invents expansions for acronyms the mission and corpus leave undefined.">
