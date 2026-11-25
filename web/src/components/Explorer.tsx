@@ -191,6 +191,11 @@ function DirNode(props: NodeProps) {
     if (reveal.path === path) row.current?.scrollIntoView({ block: 'center' })
   }, [reveal, path])
 
+  // Where the list does not hold it (a folder newer than the index, or one
+  // the Library leaves out), that is said where it would be.
+  const leads = reveal && reveal.path !== path && (path === '' ? reveal.path !== '' : reveal.path.startsWith(path + '/'))
+  const missing = leads && open && entries && !failed
+    && !entries.some(e => e.type === 'dir' && (reveal.path === e.path || reveal.path.startsWith(e.path + '/')))
   // While a row is dragged, each folder says whether it takes the drop:
   // a copy into another library, a move within this one, or neither.
   const takes = dragging && depth > 0 ? dropKind(path, dragging) : null
@@ -247,6 +252,11 @@ function DirNode(props: NodeProps) {
         failed
           ? <p className="tree-empty" role="alert">This library could not be listed: {failed}</p>
           : <p className="tree-empty">{props.emptyHint ?? 'This library is empty.'}</p>
+      )}
+      {missing && (
+        <p className="tree-empty tree-missing" role="status" ref={el => el?.scrollIntoView({ block: 'nearest' })} style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
+          The folder the link leads to is not listed here. It may not be in the library's index yet.
+        </p>
       )}
       {open && entries?.map(e =>
         e.type === 'dir' ? (

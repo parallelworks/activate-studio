@@ -77,6 +77,14 @@ describe('following a link to an item', () => {
     expect(container.querySelector('.tree-row.dir.selected')).toBeNull()
   })
 
+  it('says where a folder that is not listed would be', async () => {
+    opens({ library: 'kb', path: 'reports/brand-new/deep', type: 'dir' })
+    at(`/?item=${ID}`)
+    render(<App />)
+    await screen.findByText(/The folder the link leads to is not listed here/)
+    expect(screen.getByText('2026')).toBeInTheDocument()
+  })
+
   it('says that a file was replaced since the link was made', async () => {
     opens({ library: 'kb', path: 'reports/2026/plan.md', type: 'file', replaced: true })
     at(`/#item=${ID}`)
