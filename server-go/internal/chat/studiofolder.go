@@ -138,5 +138,5 @@ func (m *Module) studioSectionText(tools []ToolSpec, kind folderKind) string {
 	return "## Finding files: the Studio's index first\n\n" +
 		"This is for a session that has the studio MCP server's tools (" + studioToolPrefix + "…), the index and tools of " + m.eff().AppName + ", an ACTIVATE Studio; one without them uses its own. " +
 		guideLead + g.words() + g.find() +
-		"\n\nThis comes before any advice to use GlobSearch, GrepSearch or the shell to look for files. They are for files the index does not have, such as code or files made in this session."
+		"\n\nThis comes before any advice to use GlobSearch, GrepSearch or the shell to look for files. They are for files the index does not have, such as code or files made in this session.\n\n" + citeRule
 }

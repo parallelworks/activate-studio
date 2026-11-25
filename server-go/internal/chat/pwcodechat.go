@@ -561,7 +561,7 @@ func (m *Module) pwcodePrompt(tools []ToolSpec, folder folderKind, chat bool) st
 	e := m.eff()
 	t := func(n string) string { return studioToolPrefix + n }
 	g := newToolGuide(specNames(tools), t, chat)
-	g.folder = folder
+	g.folder, g.links = folder, true
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are answering in %s, an ACTIVATE Studio, through the person's chat.", e.AppName)
 	b.WriteString(" The studio MCP server is this Studio's index and tools. " + guideLead)

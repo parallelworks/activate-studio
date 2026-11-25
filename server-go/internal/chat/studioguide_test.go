@@ -53,11 +53,11 @@ func TestTheMCPServerSaysWhichToolToUse(t *testing.T) {
 		hasNot  []string
 	}{
 		{"a chat's session", bobProxy, map[string]string{"Authorization": "Bearer " + tok},
-			[]string{"list_libraries", "write_kb_file", "the libraries the person chose for this chat"}, []string{"main library"}},
+			[]string{"list_libraries", "write_kb_file", "the libraries the person chose for this chat", "(#open=file:"}, []string{"main library"}},
 		{"a person's own session", bobProxy, nil,
-			[]string{"list_libraries", "write_kb_file", "the Studio's main library"}, []string{"this chat", "show_in_viewer", "run_workflow"}},
+			[]string{"list_libraries", "write_kb_file", "the Studio's main library", "(#open=file:", "never as bare text or inline code"}, []string{"this chat", "show_in_viewer", "run_workflow"}},
 		{"another MCP client", bobOIDC, nil,
-			[]string{"read_original", "the Studio's main library"}, []string{"this chat", "list_libraries", "write_kb_file", "edit_kb_file", "show_in_viewer"}},
+			[]string{"read_original", "the Studio's main library"}, []string{"this chat", "list_libraries", "write_kb_file", "edit_kb_file", "show_in_viewer", "#open=file:"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in, listed := mcpGuide(t, m, tc.u, tc.headers)
@@ -94,7 +94,7 @@ func TestTheInstructionsLeaveOutAToolTurnedOff(t *testing.T) {
 	if !strings.Contains(in, "search_kb") {
 		t.Errorf("%s", in)
 	}
-	if in := m.mcpInstructions(nil, false); in != "" {
+	if in := m.mcpInstructions(nil, false, true); in != "" {
 		t.Errorf("with no tools: %s", in)
 	}
 }
@@ -106,7 +106,7 @@ func TestThePromptAndTheInstructionsAreOneGuide(t *testing.T) {
 	tools := m.chatTools(httptest.NewRequest(http.MethodGet, "/", nil), true)
 	// The instructions do not know the folder a session works in.
 	prompt := m.pwcodePrompt(tools, folderUnknown, true)
-	lines := strings.Split(m.mcpInstructions(tools, true), "\n")
+	lines := strings.Split(m.mcpInstructions(tools, true, true), "\n")
 	if len(lines) < 5 || !strings.HasSuffix(lines[0], guideLead) || !strings.Contains(prompt, guideLead) {
 		t.Fatalf("%q", lines)
 	}

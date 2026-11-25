@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -454,8 +455,44 @@ func (m *Module) toolQueryCorpus(r *http.Request, args map[string]any, ctx ToolC
 			lines = append(lines, strings.Join(row, " | "))
 		}
 		return &Outcome{Result: jsval.Slice(strings.Join(lines, "\n"), toolOutputCap),
-			Summary: strconv.Itoa(len(res.Rows)) + " rows in " + strconv.FormatInt(res.ElapsedMS, 10) + " ms"}, nil
+			Summary: strconv.Itoa(len(res.Rows)) + " rows in " + strconv.FormatInt(res.ElapsedMS, 10) + " ms",
+			cite:    m.queryFiles(res, scopeParam(args["library"], ctx), viewerOfCtx(ctx))}, nil
 	})
+}
+
+// queryFiles is the files of a query's rows, where its rows are files: in
+// the library each row names, else the one it was asked of.
+func (m *Module) queryFiles(res *search.QueryResult, scope []string, v libraries.Viewer) []conversations.File {
+	at := slices.Index(res.Columns, "path")
+	if at < 0 || (len(res.RowLibraries) > 0 && len(res.RowLibraries) != len(res.Rows)) {
+		return nil
+	}
+	lib := libraries.PrimaryID
+	if len(res.RowLibraries) == 0 {
+		switch len(scope) {
+		case 0:
+		case 1:
+			l, err := m.Corpus.Reg.Get(scope[0], m.primaryLabel(), v)
+			if err != nil {
+				return nil
+			}
+			lib = l.ID
+		default:
+			return nil
+		}
+	}
+	var out []conversations.File
+	for i, row := range res.Rows {
+		if at >= len(row) || row[at] == "" {
+			continue
+		}
+		id := lib
+		if len(res.RowLibraries) > 0 {
+			id = res.RowLibraries[i]
+		}
+		out = append(out, fileIn(row[at], id))
+	}
+	return citedFiles(out)
 }
 
 /* ---- the RAG proxy's retrieval (ragProxy.ts buildContext) ---- */

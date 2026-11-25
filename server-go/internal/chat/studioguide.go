@@ -35,6 +35,8 @@ type toolGuide struct {
 	tool func(string) string
 	// chat: a chat of the Studio's, whose person chose its libraries.
 	chat bool
+	// links: the reader cites files as the Studio's links.
+	links bool
 	// folder is what the session's working folder is.
 	folder folderKind
 }
@@ -135,11 +137,11 @@ func (g toolGuide) platform() string {
 
 // rest is what the shell is for, and how to name a file.
 func (g toolGuide) rest() string {
-	s := "\nUse the shell for work these tools do not cover, such as running code. Name each file you used by its library path"
-	if g.has["show_in_viewer"] {
-		s += "; " + g.tool("show_in_viewer") + " gives a link that opens it in the Studio"
+	s := "\nUse the shell for work these tools do not cover, such as running code."
+	if g.links {
+		return s + "\n" + citeRule
 	}
-	return s + "."
+	return s + " Name each file you used by its library path."
 }
 
 // mcpSpecs is the tools an MCP caller is listed, and may call: a pw code
@@ -158,8 +160,11 @@ func (m *Module) mcpSpecs(r *http.Request, person bool, chat *chatToken) []ToolS
 // the guide, by the tools' own names, since each client gives them a prefix
 // of its own. It is in every session's context, so it leaves out what each
 // tool's description says.
-func (m *Module) mcpInstructions(specs []ToolSpec, chat bool) string {
+// links: the caller is a pw code session, whose reply may be read in the
+// Studio.
+func (m *Module) mcpInstructions(specs []ToolSpec, chat, links bool) string {
 	g := newToolGuide(specNames(specs), func(n string) string { return n }, chat)
+	g.links = links
 	read := g.read()
 	if read == "" {
 		return ""
