@@ -2322,25 +2322,85 @@ a.identity-btn { text-decoration: none; }
 .ix-where { display: flex; flex-direction: column; gap: 4px; }
 .ix-path { display: flex; align-items: center; gap: 4px; margin: 0; }
 @container indexing (max-width: 560px) { .ix-card-head { flex-direction: column; } .ix-card-actions { justify-content: flex-start; } }
-/* Add a library: where and how, then the form for that pair. */
+/* Add a library: a computer and a folder on one row, the card of what the
+   check found, then a short review. */
 .lib-add-form { margin-top: 12px; }
-.lib-add-flow { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.lib-add-flow { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; max-width: var(--settings-measure); }
 /* The Add a library dialog keeps one height; its body scrolls. */
-.lib-add-modal { height: min(720px, 100%); }
+.lib-add-modal { height: min(600px, 100%); }
+.lib-add-modal .lib-add-flow { min-height: 100%; margin: 0; }
 /* A form's own buttons stay in view at the foot of the scrolling body. */
 .lib-add-modal .lib-add-flow .query-actions {
   position: sticky; bottom: -16px; z-index: 1;
-  margin: 4px 0 -16px; padding: 12px 0 16px;
-  background: var(--theme-panel-bg); border-top: 1px solid var(--theme-border);
+  margin: auto 0 -16px; padding: 12px 0 16px;
+  background: var(--theme-panel-bg); border-top: 1px solid var(--theme-border); justify-content: flex-end;
 }
-.lib-add-choices { display: flex; flex-wrap: wrap; gap: 12px 24px; }
-.lib-add-choices > * { min-width: 0; max-width: 100%; }
 .lib-add-about { margin: 0; max-width: var(--settings-measure); }
-.lib-add-who { margin: 0; }
-.lib-add-where { grid-column: 1 / -1; margin: 0; font-size: 14px; line-height: 20px; color: inherit; }
-.lib-add-sees { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.lib-where-step { display: flex; flex-direction: column; gap: 6px; }
+.lib-where { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--pw-border); border-radius: 10px; background: var(--theme-panel-bg); }
+.lib-where > .code-chip { flex: none; max-width: 45%; padding: 0 12px; min-height: 40px; border-radius: 9px 0 0 9px; font-size: 13px; color: var(--pw-text); }
+.lib-where > .code-chip.muted { color: var(--pw-muted); }
+.lib-where > .code-chip + * { border-left: 1px solid var(--pw-border); }
+.lib-where .code-machine-icon { width: 16px; height: 16px; }
+.lib-where-folder {
+  all: unset; box-sizing: border-box; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 0 12px; border-radius: 0 9px 9px 0; font-size: 13px; cursor: pointer;
+}
+.lib-where-folder:hover { background: var(--theme-hover); }
+.lib-where-folder:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; }
+.lib-where-folder .code-chip-icon { width: 14px; height: 14px; color: var(--pw-muted); }
+.lib-where-folder .code-chip-caret { margin-left: auto; color: var(--pw-muted); }
+.lib-where-none { flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 12px; min-height: 40px; font-size: 13px; opacity: .7; }
+.lib-where-none .code-chip-icon { width: 14px; height: 14px; }
+/* A long path is cut at its start, where it says least. */
+.lib-where-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-where-path.code-mono { direction: rtl; text-align: left; }
+.lib-where > :not(.code-chip, .lib-where-folder, .lib-where-none) { flex: 1; min-width: 0; align-self: center; border-left: 1px solid var(--pw-border); padding: 4px 8px; }
+.lib-where-below { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
+.lib-help-at { margin-left: auto; }
+.lib-help { width: min(26rem, calc(100vw - 32px)); font-size: 13px; line-height: 1.45; }
+.lib-help p { margin: 0 0 8px; }
+.lib-help p:last-child { margin: 0; }
+.lib-check { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--pw-border); border-radius: 10px; background: var(--pw-surface, var(--theme-panel-bg)); }
+.lib-check.blocked { border-color: var(--theme-error); }
+.lib-check-head { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.lib-check-icon { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--pw-muted); }
+.lib-check-what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lib-check-path { font-size: 13px; overflow-wrap: anywhere; }
+.lib-check-line { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; min-height: 18px; }
+.lib-check-blocked { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; font-size: 13px; }
+.lib-check-blocked > :first-child { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.lib-check-warnings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--theme-warning-text); }
+
+.lib-check-warnings summary, .lib-check-plain { display: inline-flex; align-items: center; gap: 8px; padding: 2px 4px 2px 0; border-radius: 4px; }
+.lib-check-warnings summary { cursor: pointer; list-style: none; }
+.lib-check-warnings summary::-webkit-details-marker { display: none; }
+.lib-check-warnings summary::after { content: ''; width: 5px; height: 5px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg) translate(-1px, -1px); opacity: .8; }
+.lib-check-warnings details[open] summary::after { transform: rotate(225deg) translate(-1px, -1px); }
+.lib-check-warnings summary:focus-visible { outline: 2px solid var(--pw-link); outline-offset: 1px; }
+.lib-check-warnings p { margin: 2px 0 6px 24px; color: var(--pw-text); overflow-wrap: anywhere; }
+.lib-check-dot { flex: none; width: 8px; height: 8px; margin: 0 4px; border-radius: 50%; background: currentColor; }
+.lib-check-steps { border-top: 1px solid var(--pw-border); padding-top: 8px; font-size: 13px; }
+.lib-review { display: flex; flex-direction: column; gap: 10px; }
+.lib-review-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+/* The labels' column, narrower than a page's form. */
+.lib-review .w-52 { width: 7.5rem; }
+.lib-review-row > :last-child:not(:first-child) { flex: 1 1 160px; min-width: 0; }
+.lib-review .lib-where-folder { border: 1px solid var(--pw-border); border-radius: 6px; min-height: 28px; width: 100%; }
+.lib-more { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.lib-more-body { width: 100%; scroll-margin-bottom: 80px; }
+.lib-more-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; width: 100%; }
+.lib-more-fields > .lib-add-my { grid-column: 1 / -1; }
+.lib-path-option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.lib-path-option > :first-child { width: 100%; }
 .lib-add-my { display: flex; flex-direction: column; gap: 4px; }
 .lib-add-my-line { display: flex; align-items: flex-start; gap: 8px; max-width: var(--settings-measure); cursor: pointer; }
+@media (max-width: 520px) {
+  .lib-add-modal { height: min(760px, 100%); }
+  .lib-where { flex-direction: column; }
+  .lib-where > .code-chip { max-width: none; border-radius: 9px 9px 0 0; }
+  .lib-where > .code-chip + *, .lib-where > :not(.code-chip, .lib-where-folder, .lib-where-none) { border-left: 0; border-top: 1px solid var(--pw-border); border-radius: 0 0 9px 9px; align-self: stretch; }
+}
 .lib-create-list { margin: 0; padding-left: 18px; }
 .lib-create-list code { word-break: break-all; }
 .local-library-browse { margin-bottom: 14px; max-width: var(--settings-measure); }
@@ -3113,6 +3173,12 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-path-field > * { flex: 1; min-width: 0; }
 .code-path-list { min-height: 0; max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--pw-border); padding: 4px; }
 .code-path-loading { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 12px; }
+.code-path-new {
+  all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px;
+  font-size: 12.5px; cursor: pointer; overflow-wrap: anywhere;
+}
+.code-path-new:hover { background: var(--theme-hover); }
+.code-path-new:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; }
 .code-path-note { margin: 0; padding: 8px 10px; font-size: 12px; color: var(--pw-muted); }
 .code-path-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 6px 12px; border-top: 1px solid var(--pw-border); font-size: 12px; color: var(--pw-muted); }
 .code-path-keys > span { display: inline-flex; align-items: center; gap: 6px; }

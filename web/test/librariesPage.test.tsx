@@ -1,7 +1,8 @@
+import { checked, chooseComputer, chooseFolder, closeMenu, computers, folderRoute, nameComputer } from './addLibraryHelpers'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { addChoices } from '../src/components/AddLibrary'
+import { addChoices } from '../src/components/addLibraryTarget'
 import { addedMessage } from '../src/components/LibraryAddDialogs'
 
 const caps = (fullText: boolean, vectors = false) => ({ index: true, fullText, vectors })
@@ -130,6 +131,11 @@ function stubServer(s: Server) {
       s.user = s.user.map(set)
       return reply({ readThrough: rt })
     }
+    const folder = folderRoute(url)
+    if (folder) return folder
+    if (path === '/api/user-libraries/ssh/hosts') return reply({ hosts: [] })
+    if (path.endsWith('/count')) return reply({ count: null })
+    if (path === '/api/libraries/check') return reply({ ok: true, steps: [] })
     if (path === '/api/libraries/build/check') {
       const b = body as { sourceRoot: string; indexRoot?: string }
       return reply({ ok: true, create: [b.sourceRoot, ...(b.indexRoot ? [b.indexRoot] : [])], steps: [
@@ -292,34 +298,28 @@ async function moreAction(name: string, action: string) {
 const posted = (s: Server, url: string) => s.calls.filter(c => c.method === 'POST' && c.url.split('?')[0] === url)
 
 describe('what Add a library offers', () => {
-  it('where, what, and how a folder on a system is built, from what this Studio offers', () => {
+  it('where a library can be added from, and where an index can be connected, from what this Studio offers', () => {
+    const systems = { usable: true, why: null, error: null, systems: [] }
+    const here = { kind: 'here' } as const, cluster = { kind: 'cluster', name: 'c1' } as const, ssh = { kind: 'ssh', destination: 'me@lab' } as const
     // With sign-in on (no building here), the libraries on this computer
-    // are the deployment's, so nothing is offered without a system.
+    // are the deployment's, so nothing is offered without a cluster.
     const none = addChoices({ buildHere: false, ssh: false, pw: false, workflow: false })
-    expect(none.where).toEqual([])
-    // A computer of its own: this computer, and a system over ssh or pw ssh, never the workflow.
-    const mine = addChoices({ buildHere: true, ssh: true, pw: true, workflow: false })
-    expect(mine.where).toEqual(['here', 'system'])
-    expect(mine.how('here')).toEqual(['build', 'connect'])
-    expect(mine.how('system')).toEqual(['build', 'connect'])
-    expect(mine.how('system', true)).toEqual(['build', 'connect'])
-    expect(mine.builders()).toEqual(['pw'])
-    // A hosted Studio: no ssh, and the workflow builds on a cluster too.
-    const hosted = addChoices({ buildHere: false, ssh: false, pw: true, workflow: true })
-    expect(hosted.where).toEqual(['system'])
-    expect(hosted.how('system')).toEqual(['build', 'connect'])
-    expect(hosted.builders()).toEqual(['pw', 'workflow'])
-    const workflowOnly = addChoices({ buildHere: false, ssh: false, pw: false, workflow: true })
-    expect(workflowOnly.how('system')).toEqual(['build'])
-    // A folder to index is one choice, on whatever system it is.
-    expect(addChoices({ buildHere: false, ssh: false, pw: true, workflow: false, space: true }).how('system')).toEqual(['build', 'connect'])
-    // A copy of a folder in a Transfers location is made from Transfers.
-    const copyOnly = addChoices({ buildHere: true, ssh: false, pw: false, workflow: false, copy: true })
-    expect(copyOnly.where).toEqual(['here'])
-    // A bucket is its own place, with nothing more to choose.
-    const buckets = addChoices({ buildHere: true, ssh: false, pw: false, workflow: false, copy: true, bucket: true })
-    expect(buckets.where).toEqual(['here', 'bucket'])
-    expect(buckets.how('bucket')).toEqual([])
+    expect([none.here, none.clusters, none.ssh, none.bucket]).toEqual([false, false, false, false])
+    // A computer of its own: this computer, clusters and hosts over ssh.
+    const mine = addChoices({ buildHere: true, ssh: true, pw: true, workflow: false }, systems)
+    expect([mine.here, mine.clusters, mine.ssh]).toEqual([true, true, true])
+    for (const t of [here, cluster, ssh]) expect(mine.connect(t)).toBe(true)
+    expect(mine.connect({ kind: 'bucket' })).toBe(false)
+    // Clusters are read over pw ssh, and the workflow is not a choice
+    // beside it.
+    const hosted = addChoices({ buildHere: false, ssh: false, pw: true, workflow: true }, systems)
+    expect([hosted.here, hosted.clusters, hosted.ssh, hosted.workflowOnly]).toEqual([false, true, false, false])
+    expect(addChoices({ buildHere: false, ssh: false, pw: false, workflow: true }).workflowOnly).toBe(true)
+    // Nothing is said of clusters on a Studio of one that reaches none.
+    const off = addChoices({ buildHere: true, ssh: true, pw: true, workflow: false }, { ...systems, usable: false, why: 'x' })
+    expect([off.clusters, off.blocked]).toEqual([false, false])
+    expect(addChoices({ buildHere: false, ssh: false, pw: true, workflow: false }, { ...systems, usable: false, why: 'x' }).blocked).toBe(true)
+    expect(addChoices({ buildHere: true, ssh: false, pw: false, workflow: false, bucket: true }).bucket).toBe(true)
     expect(addedMessage({ label: 'research', bucket: {} }, true, true)).toBe('Listing research. Its progress shows in the list. It is searchable by name once the listing is indexed.')
     expect(addedMessage({ label: 'Papers' }, true, true)).toMatch(/^Building Papers\./)
   })
@@ -476,6 +476,23 @@ describe('Settings, Indexing, Libraries', () => {
     expect(screen.getAllByText(note)).toHaveLength(2)
   })
 
+  it('a library the workflow built before is still refreshed and removed', async () => {
+    const built = { ...CLUSTER, state: 'ready', run: null, indexRoot: '/home/u/idx', sourceRoot: '/home/u/work', directories: 4, files: 9, builtAt: '2026-10-01T00:00:00Z' }
+    const s = server({ platform: true, standalone: false, ssh: false, pw: true, workflow: true, user: [built] })
+    await renderPage(s)
+    const row = await waitFor(() => rowOf('c1 $WORKDIR'))
+    expect(within(row).getByText('Index built on a cluster by a workflow job, yours alone')).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(posted(s, `/api/user-libraries/${CLUSTER.id}/refresh`)).toHaveLength(1))
+    await moreAction('c1 $WORKDIR', 'Remove')
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remove c1 $WORKDIR?' })).getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(s.calls.some(c => c.method === 'DELETE' && c.url === `/api/user-libraries/${CLUSTER.id}`)).toBe(true))
+    // A new one is not offered beside pw ssh.
+    fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
+    await screen.findByTestId('add-library-computer')
+    expect(document.body.textContent).not.toMatch(/Workflow job|Build with/)
+  })
+
   it('lists every library in one table: kind, where it is, state, what it searches, and its actions', async () => {
     const s = server({ platform: true, libs: [PRIMARY, SITE, PINNED], user: [SSH, CLUSTER] })
     await renderPage(s)
@@ -557,7 +574,7 @@ describe('Settings, Indexing, Libraries', () => {
     try {
       const s = server({ platform: true, ssh: true, canBuild: true })
       await renderPage(s)
-      expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
+      await waitFor(() => expect(screen.getByTestId('add-library-computer')).toHaveTextContent('This computer'))
       expect(screen.queryByRole('button', { name: 'Add a library' })).toBeNull()
     } finally { location.hash = '' }
   })
@@ -566,67 +583,50 @@ describe('Settings, Indexing, Libraries', () => {
     const s = server({ platform: true, ssh: true, canBuild: true })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
-    expect(screen.queryByRole('button', { name: 'This computer' })).toBeNull()
+    expect(screen.queryByTestId('add-library-computer')).toBeNull()
     try {
       location.hash = '#view=settings:libraries?add=1'
       window.dispatchEvent(new HashChangeEvent('hashchange'))
-      expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
+      expect(await screen.findByTestId('add-library-computer')).toBeInTheDocument()
     } finally { location.hash = '' }
   })
 
-  it('a standalone install chooses where and how, and connects an index over ssh', async () => {
+  it('a standalone install chooses a computer and a folder, and connects an index over ssh', async () => {
     const s = server({ platform: true, ssh: true, canBuild: true })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    expect(await screen.findByRole('button', { name: 'This computer' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Index a folder' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Folder to index')).toBeInTheDocument()
-    expect(screen.getByText(/^A folder on this computer, read with the Studio's account, .* Read only\.$/)).toBeInTheDocument()
-    // The optional fields wait under More options.
+    expect(await screen.findByTestId('add-library-computer')).toHaveTextContent('This computer')
+    expect(screen.getByRole('button', { name: 'Connect an existing index' })).toBeInTheDocument()
+    // The optional fields wait for a folder, under More options.
     expect(screen.queryByLabelText('Identifier')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Remote computer' }))
-    // Read as the person, never the Studio's account.
-    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you, with your own ssh keys, agent and ~/.ssh/config')
     // No workflow or scheduler on a computer of its own, even with a platform.
-    expect(screen.queryByRole('button', { name: 'Workflow job' })).toBeNull()
-    expect(document.body.textContent).not.toMatch(/Slurm|\$WORKDIR/)
+    expect(document.body.textContent).not.toMatch(/Workflow job|Slurm|\$WORKDIR/)
 
-    // Connect an existing index over ssh: the shared form, and the new library joins the list.
-    fireEvent.click(screen.getByRole('button', { name: 'Connect an index' }))
-    fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@lab' } })
-    fireEvent.change(screen.getByLabelText('Index directory'), { target: { value: '/data/index' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
-    await screen.findByText('Connected to me@lab, a Linux host.')
-    fireEvent.click(screen.getByRole('button', { name: 'Add library' }))
+    // Connect an existing index over ssh: the same form, and the new library joins the list.
+    await nameComputer('host', 'me@lab')
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect an existing index' }))
+    await chooseFolder('/data/index')
+    await checked()
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+    expect(screen.getByText('Connected to me@lab, a Linux host.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
     expect(await screen.findByText('index on lab', { selector: '.lib-name' })).toBeInTheDocument()
-    expect(posted(s, '/api/user-libraries/ssh')[0].body).toEqual({ destination: 'me@lab', indexRoot: '/data/index', gufiBin: '/usr/local/bin' })
+    expect(posted(s, '/api/user-libraries/ssh')[0].body).toEqual({ destination: 'me@lab', indexRoot: '/data/index' })
     // The form closes once the library is added.
-    expect(screen.queryByLabelText('Host')).toBeNull()
+    expect(screen.queryByTestId('add-library-computer')).toBeNull()
   })
 
-  it('offers pw ssh beside ssh on a computer of its own, and says why it cannot be used yet', async () => {
+  it('says nothing of clusters on a computer of its own that reaches none, and offers hosts over ssh', async () => {
     const why = 'The Studio does not find the pw CLI on this computer. Install it, or choose where it is under Settings, Accounts, pw CLI.'
     const s = server({ platform: true, ssh: true, canBuild: true, pw: false, pwOffered: true, pwWhy: why })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Remote computer' }))
-    // The systems over pw ssh come first, and say why they cannot be used yet.
-    expect(await screen.findByText(why)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Accounts' })).toBeInTheDocument()
-    // A missing pw CLI is said as it is, not as a sign-in.
-    expect(screen.getByText('pw ssh cannot be used yet')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Test connection' })).toBeNull()
-    // A host over ssh is beside them.
-    fireEvent.click(screen.getByRole('combobox', { name: 'Remote computer' }))
-    const host = await screen.findByRole('option', { name: /^A host over ssh…/ })
-    fireEvent.pointerDown(host)
-    fireEvent.click(host)
-    expect(await screen.findByLabelText('Host')).toBeInTheDocument()
+    const rows = (await computers()).map(r => r.textContent)
+    expect(rows.join('|')).toMatch(/This computer\|Another host…/)
+    expect(rows.join('|')).not.toMatch(/cluster/i)
     expect(screen.queryByText(why)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Connect an index' }))
-    expect(screen.getByRole('button', { name: 'Test connection' })).toBeInTheDocument()
   })
 
   it('builds a folder on this computer: check, confirm the folders it makes, then progress in the list', async () => {
@@ -635,22 +635,18 @@ describe('Settings, Indexing, Libraries', () => {
     const success = vi.spyOn((await import('@parallelworks/ui')).toast, 'success')
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    // Building here comes first. Without ssh or pw ssh there is no system,
-    // and a copy of a Transfers location is made from Transfers.
-    expect(screen.queryByRole('button', { name: 'Remote computer' })).toBeNull()
-    fireEvent.change(await screen.findByLabelText('Folder to index'), { target: { value: '~/papers' } })
-    // The depth starts at Meaning on documents, with what it costs, the
-    // order the phases run in, and the faster stop for a very large folder.
-    expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(/^Search by meaning is the slowest part of indexing, so it runs last, in the background: names are searchable first, then words\./)).toBeInTheDocument()
-    expect(screen.getByText(/For a folder of more than about 500,000 files, Text \+ OCR is faster; meaning can be added later in Settings, Indexing, Libraries\.$/)).toBeInTheDocument()
-    // This folder is taken to Text, where the note does not apply.
-    fireEvent.click(screen.getByRole('button', { name: 'Text' }))
-    expect(screen.queryByText(/slowest part of indexing/)).toBeNull()
-    expect(screen.getByRole('button', { name: 'Build the index' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Check' }))
-    expect(await screen.findByText('~/papers does not exist yet; it is created, empty, when the build starts.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Build the index' }))
+    // Without ssh or pw ssh there is only this computer.
+    expect((await computers()).map(r => r.textContent).join('|')).toMatch(/^This computer\|A bucket[^|]*$/)
+    closeMenu()
+    await chooseFolder('~/papers')
+    await checked()
+    // The depth starts at Meaning on documents; this folder is taken to Text.
+    expect(screen.getByRole('combobox', { name: 'Index depth' })).toHaveTextContent('Meaning on documents')
+    await pickOption('Index depth', 'Text$')
+    expect(screen.getByText('Search finds names and the words in files.')).toBeInTheDocument()
+    expect(screen.getByTestId('folder-check-line')).toHaveTextContent('New, made when you index it')
+    await checked()
+    fireEvent.click(screen.getByRole('button', { name: 'Index' }))
     const dialog = await screen.findByRole('dialog', { name: 'Create this folder?' })
     expect(within(dialog).getByText('~/papers')).toBeInTheDocument()
     expect(posted(s, '/api/libraries/build')).toHaveLength(0)
@@ -671,21 +667,14 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Remote computer' }))
-    fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@box:2222' } })
-    fireEvent.change(await screen.findByLabelText('Folder'), { target: { value: '~/data' } })
-    // Built there, the depth starts at Meaning on documents, made with the
-    // Studio's model, and the form says what the first build sends.
-    expect(screen.getByRole('button', { name: 'Meaning on documents' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(/^Search by meaning there uses the Studio's embedding model\. The first build on a remote computer sends the model and its packages/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Text + OCR' }))
-    expect(screen.queryByText(/^Search by meaning there uses/)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Meaning on documents' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Check the folder' }))
-    expect(await screen.findByText(/no Python 3\.10 or later/i)).toBeInTheDocument()
-    expect(screen.getByText('Text extraction')).toBeInTheDocument()
+    await nameComputer('host', 'me@box:2222')
+    await chooseFolder('~/data')
+    await checked()
+    // Built there, the depth starts at Meaning on documents.
+    expect(screen.getByRole('combobox', { name: 'Index depth' })).toHaveTextContent('Meaning on documents')
+    expect(screen.getByText('No Python 3.10 or later with SQLite\'s full-text module on me@box, so the index has names and metadata only', { selector: 'summary' })).toBeInTheDocument()
     expect(posted(s, '/api/user-libraries/space/test')[0].body).toEqual({ destination: 'me@box:2222', sourceRoot: '~/data' })
-    fireEvent.click(screen.getByRole('button', { name: 'Index the folder' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Index' }))
     const dialog = await screen.findByRole('dialog', { name: 'Create this folder?' })
     expect(dialog).toHaveTextContent('/home/me/data')
     expect(dialog).toHaveTextContent('on me@box:2222, as me')
@@ -703,7 +692,8 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Remote computer' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'About adding a library' }))
+    await screen.findByText(/takes SFTP only/)
     // Add a library points to Transfers, where the copy is made.
     expect(screen.getByRole('link', { name: 'Transfers' })).toHaveAttribute('href', '#view=transfers')
     expect(screen.queryByRole('button', { name: 'Copy here and index it' })).toBeNull()
@@ -809,8 +799,10 @@ describe('Settings, Indexing, Libraries', () => {
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Bucket' }))
-    expect(screen.getByText(/any S3 compatible store, AWS or on premises/)).toBeInTheDocument()
+    await chooseComputer('A bucket')
+    fireEvent.click(await screen.findByRole('button', { name: 'About adding a library' }))
+    expect(await screen.findByText(/any S3 compatible store, AWS or on premises/)).toBeInTheDocument()
+    closeMenu()
     // Only rclone remotes are offered: not an SFTP host, not a library.
     await waitFor(() => expect(s.calls.some(c => c.url === '/api/transfers/locations')).toBe(true))
     await pickOption('Remote', 'store', ['Drop', 'Notes'])
@@ -1033,22 +1025,22 @@ describe('Settings, Indexing, Libraries', () => {
   })
 
   it('adds a GUFI index on this machine, and shows what the server refused', async () => {
-    const s = server({ ssh: false, fail: { 'POST /api/libraries': '/nope does not look like a GUFI index (no db.db at its root)' } })
+    const s = server({ ssh: false, canBuild: true, fail: { 'POST /api/libraries': '/nope does not look like a GUFI index (no db.db at its root)' } })
     await renderPage(s)
     await waitFor(() => rowOf('Notes'))
-    // One kind only: the button opens its form directly.
     fireEvent.click(screen.getByRole('button', { name: 'Add a library' }))
-    const add = screen.getByRole('button', { name: 'Add library' })
-    expect(add).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('Index directory'), { target: { value: '/nope' } })
-    fireEvent.click(add)
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect an existing index' }))
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled()
+    await chooseFolder('/nope')
+    await checked()
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
     expect(await screen.findByText('/nope does not look like a GUFI index (no db.db at its root)')).toBeInTheDocument()
 
     s.fail = {}
-    fireEvent.change(screen.getByLabelText('Index directory'), { target: { value: '/data/lab' } })
-    fireEvent.click(screen.getByRole('button', { name: 'More options' }))
-    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Lab' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add library' }))
+    await chooseFolder('/data/lab')
+    await checked()
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lab' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
     expect(await screen.findByText('Lab', { selector: '.lib-name' })).toBeInTheDocument()
     expect(posted(s, '/api/libraries').at(-1)?.body).toEqual({ id: '', label: 'Lab', indexRoot: '/data/lab' })
   })

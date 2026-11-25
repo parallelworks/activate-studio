@@ -87,6 +87,9 @@ type Module struct {
 	// GufiBin is the Studio's own GUFI (GUFI_BIN); a space gets a copy of
 	// the bundle above it (spaces.go).
 	GufiBin string
+	// Home, in tests, stands in for the home folder of the account the
+	// Studio runs as.
+	Home string
 	spaceState
 	spaceWrites
 	shareStore
@@ -575,6 +578,15 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 			return m.public(w.owner(), d, job), nil
 		}))
 	}
+	mux.HandleFunc("GET "+base+"/ssh/hosts", h(false, func(_ *http.Request, w who, _ *jsonv.Object) (any, error) {
+		return m.sshHosts(w)
+	}))
+	mux.HandleFunc("GET "+base+"/folders", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
+		return m.remoteFolders(r, w)
+	}))
+	mux.HandleFunc("POST "+base+"/space/count", h(true, func(r *http.Request, w who, b *jsonv.Object) (any, error) {
+		return m.countSpace(r.Context(), w, b)
+	}))
 	mux.HandleFunc("GET "+base+"/space", h(false, func(r *http.Request, w who, _ *jsonv.Object) (any, error) {
 		return m.spaceStatus(w), nil
 	}))

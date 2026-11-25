@@ -13,18 +13,23 @@ import { api, type IndexDepth } from '../api'
  * documents, which covers documents only.
  */
 
-export interface DepthStop { value: IndexDepth; label: string; help: string }
+export interface DepthStop { value: IndexDepth; label: string; help: string; line: string }
 
 export const DEPTHS: DepthStop[] = [
   { value: 'names', label: 'Names',
+    line: 'Search finds names. Nothing is read inside files.',
     help: 'Names, sizes, dates and owners of every file and folder. Search finds names; nothing is read from inside the files. The fastest.' },
   { value: 'text', label: 'Text',
+    line: 'Search finds names and the words in files.',
     help: 'Adds the words inside files: text, code, PDFs and Office documents. Search finds names and words.' },
   { value: 'ocr', label: 'Text + OCR',
+    line: 'Adds the text in images and scanned pages.',
     help: 'Adds text in images and scanned PDF pages, read by tesseract, and image descriptions where AI features make them.' },
   { value: 'meaning-documents', label: 'Meaning on documents',
+    line: 'Adds search by meaning over documents and images.',
     help: 'Adds search by meaning: a plain question also finds passages that say it in other words. Covers the first few passages of PDF, Office, text, Markdown and image files.' },
   { value: 'meaning-full', label: 'Meaning on all files',
+    line: 'Adds search by meaning over every file with text. The slowest.',
     help: 'Search by meaning covers up to twelve passages of every file with text, code and data included. Indexing takes about three times as long as Meaning on documents.' },
 ]
 
@@ -49,11 +54,13 @@ export const remoteMeaningNote = (depth: IndexDepth) => (depth.startsWith('meani
 
 const stopOf = (depth: IndexDepth) => Math.max(0, DEPTHS.findIndex(d => d.value === depth))
 export const depthLabel = (depth: IndexDepth) => DEPTHS[stopOf(depth)].label
+/** What a stop adds, in a line. */
+export const depthHelp = (depth: IndexDepth) => DEPTHS[stopOf(depth)].line
 /** Whether a depth goes further than another. */
 export const deeper = (depth: IndexDepth, than: IndexDepth) => stopOf(depth) > stopOf(than)
 
 /** Whether a depth reads images and scans, where tesseract is installed. */
-const readsImages = (depth: IndexDepth) => stopOf(depth) >= stopOf('ocr')
+export const readsImages = (depth: IndexDepth) => stopOf(depth) >= stopOf('ocr')
 
 /**
  * The scale, notched at the stops between its ends and each stop named

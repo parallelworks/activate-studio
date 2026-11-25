@@ -17,16 +17,16 @@ The names follow whether people sign in, so each mode has one My library.
 - Sign-in off (the Mac and Linux apps, a Studio one person uses): the main
   library is the person's own folder, read and written as them, and its
   default name is **My library** (`settings.MainLabelPersonal`). A folder of
-  their own on a remote computer (Add a library, Remote computer, **Index a
-  folder**) is another library, named by its folder and shown with "(on <system>)". A
+  their own on a remote computer (Add a library, the computer, the
+  folder) is another library, named by its folder and shown with "(on <system>)". A
   folder made that way before this rule, stored under the name My library,
   keeps its record and files and is shown by its folder's name
   (`libraries.UserDef.ShownLabel`); nothing stored changes.
 - Sign-in on: the main library is the one people share, read only for all
   but its administrators, and its default name is **Shared library**
   (`settings.MainLabelShared`). **My library** is each person's own folder
-  on a remote computer (Add a library, Remote computer, **Index a folder**,
-  with **My library** chosen), where their chats are saved. Any other folder
+  on a remote computer (Add a library, a cluster, the folder, with **Use as
+  My library** on), where their chats are saved. Any other folder
   they index is named by its folder.
 
 A name set in Settings, General (`kbLabel`) or by `KB_LABEL` is used in
@@ -187,33 +187,52 @@ the host its originals are read through when its own location cannot give a
 file (see "Reading originals through another host").
 
 **Add a library** (`web/src/components/AddLibrary.tsx`) is one form, used
-in Settings and in the Library's Add menu, in the terms of `access` above.
-*Where it is:* this computer (sign-in off), a system, or a bucket. *System:* one
-of the viewer's clusters over pw ssh (`PwSystemField`, the Studio's own
-cluster first), or a host over plain ssh where sign-in is off; it is
-picked once and the forms below take it. The form then says the library
-is read as the viewer there. *What:* a folder to index, or an index that is
-there already, connected read only. *Who sees it*, for a folder on a system
-(`web/src/components/IndexFolderForm.tsx`): only the viewer, or shared as
-it is added with a person, a group or everyone, for reading or for reading
-and writing (everyone for reading), through the same code as **Share…**.
-It is offered where the viewer owns the folder; otherwise the form says
-why. With sign-in on, a folder only the viewer sees can be My library. A
-folder here is seen by whoever uses the Studio. A folder on a cluster can be built over the pw ssh
-session or, on a Studio the platform hosts, by the platform's index
-workflow (**Build with**). On a cluster, the folders others shared with
-the viewer there are listed under the form (`SharedWithMe`, by the
-share's `site`). A copy of a Transfers location is not here: it is made
-from Transfers (Copies of a location, below), and the form points there.
+in Settings and in the Library's Add menu, in two steps.
+
+*Where:* one row, a computer (`SystemChip`, the Code page's machine chip;
+the menu is `addLibraryTarget.tsx`) and a folder on it, chosen as the Code
+page chooses one (`DirectoryPicker`, over `GET
+/api/user-libraries/folders?cluster=|destination=` or `GET
+/api/libraries/folders`, listed as the viewer). The computers are this one
+(sign-in off), the viewer's clusters over pw ssh (the Studio's own first),
+the hosts of `~/.ssh/config` and any other over plain ssh (sign-in off),
+and a bucket. `GET /api/user-libraries/ssh/hosts` answers the config's
+`Host` names only (`remote.ConfigHosts`): patterns and `Match` blocks are
+left out, `Include` is followed, and a Studio people sign in to is refused
+it. **Connect an existing index**, under the row, takes an index's path
+through the same steps. A Studio of one that reaches no cluster lists and
+says nothing of clusters.
+
+*The check* runs by itself when a folder is chosen (`useCheck`: it waits a
+moment, and is aborted when the choice changes): `POST
+/api/user-libraries/space/test`, `/api/libraries/build/check`,
+`/api/user-libraries/{pw,ssh}/test` or `/api/libraries/check`. Beside it,
+`POST .../count` counts the files, their bytes and main kinds for at most
+five seconds (`internal/folders`). `FolderCheckCard` shows the two as one
+card; a step that warns carries a few words (`short`) and its detail.
+
+*Review:* a name, who sees it, and the index depth, each with a default.
+Who sees it is asked of a folder on a cluster: only the viewer, or shared as it is added with a person, a group or
+everyone, for reading or for reading and writing (everyone for reading),
+through the same code as **Share…**. Otherwise the form says why not. With
+sign-in on, a folder only the viewer sees can be My library (**More
+options**). A folder here is seen by whoever uses the Studio. On a
+cluster, the folders others shared with the viewer there are listed under
+the form (`SharedWithMe`, by the share's `site`). A copy of a Transfers
+location is not here: it is made from Transfers (Copies of a location,
+below), and the form's **?** points there.
+
+A folder is built over the session: pw ssh, or plain ssh. The platform's
+index workflow is shown only where it is the one way to build
+(`workflowOnly`), under **More options**, with why.
+
 Only what this install supports is offered: building here and anything
 over ssh where sign-in is off (`canBuild` in `GET /api/libraries`, `ssh`
 in `GET /api/user-libraries`); pw ssh where the pw CLI is on this machine
-with a key to act with (`pw`), and on a Studio with sign-in off always
-(`pwOffered`), where the form says why it cannot be used yet (`pwWhy`:
-the Studio does not find the pw CLI, or the CLI is not signed in) with a
-way to Settings, Accounts; the workflow where the platform hosts the
-Studio, which is sign-in on or `PW_PLATFORM_HOST` set (`workflow`), and
-the client config's `platform`. A choice with one option is not shown. A
+with a key to act with (`pw`; `pwOffered` and `pwWhy` where it is not yet,
+which where people sign in the form says with a way to sign in); the
+workflow where the platform hosts the Studio, which is sign-in on or
+`PW_PLATFORM_HOST` set (`workflow`), and the client config's `platform`. A
 Studio on someone's own computer therefore never shows workflow or
 scheduler fields: it builds on a remote computer over the session instead.
 A build shows its phase and the folders indexed so far in its card
@@ -372,8 +391,8 @@ or Skipped.
 
 ## Libraries built from a folder on this computer
 
-On a Studio with sign-in off, **Add a library**, "This computer", "Build
-an index of a folder" indexes a folder here as the main folder is
+On a Studio with sign-in off, **Add a library**, "This computer" indexes
+a folder here as the main folder is
 indexed (`server/src/libraryBuild.ts`): `gufi_dir2index -x`, then text
 extraction (`preextract` and `indexer/enrich.py`), then embeddings
 (`indexer/embed.py`) where the model is installed, so full-text and
@@ -390,11 +409,11 @@ finds the library's names while the rest runs. Once the text is read the
 library is probed again, so search reads its words while meaning is
 computed, and a search by meaning names it with `not searched by meaning
 yet: meaning is still being computed`. Its semantic map is made once it
-is embedded. At a Meaning stop the form notes that search by meaning is
-the slowest phase and that a folder of more than about 500,000 files
-indexes faster at Text + OCR. Nothing counts the files before a build
-(counting them takes a walk of the whole tree), so the note does not
-depend on the folder's size and the default does not change with it.
+is embedded. In setup, a Meaning stop notes that search by meaning is the slowest
+phase and that a folder of more than about 500,000 files indexes faster
+at Text + OCR. The default does not depend on the folder's size: the
+check counts its files for a few seconds only, to say what it holds
+("at least" when it stopped short).
 
 **Suggested folders** (`GET /api/libraries/suggestions`, a single-user
 install only) are offered above the folder to index, in Add a library
@@ -538,7 +557,7 @@ offered only with sign-in off.
 
 ## Buckets
 
-Preview. On a Studio with sign-in off, **Add a library**, "Bucket"
+Preview. On a Studio with sign-in off, **Add a library**, "A bucket"
 indexes a bucket, or a folder in one, of an rclone remote from its
 listing alone (`server-go/internal/libapi/bucket.go`). Any S3 compatible
 store works, AWS or on premises (MinIO, Ceph and the like), since rclone
@@ -665,7 +684,7 @@ text is read.
 
 ## Indexes built on a remote computer
 
-**Add a library**, "Remote computer", "Index a folder" builds
+**Add a library**, with a cluster or a host over ssh chosen, builds
 the index on the remote system itself, over the same session the Studio
 uses to read it: plain ssh (`user@host` or `user@host:port`, with your
 keys, agent, and `~/.ssh/config`, on a Studio with sign-in off) or
@@ -988,11 +1007,12 @@ run rebuilds instead. An index takes about 50 KB per directory.
 
 ## Indexes built on a cluster
 
-On a Studio the platform hosts, a user can also build through the
-platform's index workflow: Settings, Indexing, Libraries, **Add a library**, "A
-system", "Index a folder", **Build with** "Workflow job": a cluster from their active clusters, a directory
+Where a Studio the platform hosts cannot reach the viewer's clusters over
+pw ssh, Add a library builds through the platform's index workflow (under
+**More options**): a cluster from their active clusters, a directory
 (`$WORKDIR` by default), a label, and optionally a Slurm partition and
-account. A Studio on someone's own computer does not offer this; it
+account. Elsewhere it is not offered, and a library it built before is
+still refreshed, read and removed. A Studio on someone's own computer
 builds on the remote system over ssh or pw ssh instead (above). The
 Studio then:
 
@@ -1041,8 +1061,9 @@ live in `INDEX_BASE/users/<owner hash>/libraries.json`. Routes:
 
 A library can also be an existing GUFI index on another machine that the
 Studio's host reaches with plain ssh: Settings, Indexing, Libraries, **Add a
-library**, "Remote computer", "A host over ssh…", "Connect an index", or the
-setup wizard. The host is written `user@host`, an
+library**, a host, **Connect an existing index**, or the setup wizard. The
+form lists the hosts `~/.ssh/config` names (below) and takes another by
+name. The host is written `user@host`, an
 alias from `~/.ssh/config`, or either with `:port`. A Host entry in
 `~/.ssh/config` applies as it does in a terminal, ProxyJump, ProxyCommand,
 Port, User and IdentityFile included, so a host behind a jump host or a
@@ -1324,7 +1345,7 @@ offered to MCP clients (`/api/mcp`), where it opens files the same way.
 
 An existing GUFI index on one of the user's running clusters is connected
 the same way, with `pw ssh <cluster>` in place of ssh: Settings,
-Libraries, **Add a library**, "Remote computer", "Connect an index", or the
+Libraries, **Add a library**, the cluster, **Connect an existing index**, or the
 setup wizard's Other libraries step. The system is picked from the user's systems on the platform
 (`GET /api/user-libraries/pw/systems`, which runs `pw clusters ls` with
 the same key): running ones first, one that is off marked so (it has to

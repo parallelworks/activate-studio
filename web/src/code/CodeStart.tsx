@@ -42,6 +42,7 @@ import {
 } from '@parallelworks/ui/ai'
 import { ChevronDownIcon, ChevronRightIcon } from '@parallelworks/ui/icons'
 import { useTranslations } from 'use-intl'
+import { SystemChip } from '../components/SystemChip'
 import { describeError } from '../pwcode/PWCodeSession'
 import { type PageSession, pwCodePage, setToolsChoice } from './api'
 import { AgentModelControls, useLastAgentModel } from './AgentModelControls'
@@ -226,22 +227,9 @@ export function machineMenuEntries(location: PwCodeStartLocation<Machine>, t: Tr
 
 export function MachineChip({ finding, machine, items, t }: { finding: boolean; machine: Machine | undefined; items: MenuEntry[]; t: Translate }) {
   const chip = machineChip(machine, t, finding)
-  if (finding) {
-    return <span data-testid="agents-finding-machines" className="code-chip muted"><Loader inline decorative size={12} />{chip.text}</span>
-  }
   return (
-    <ActionMenu
-      label={chip.label}
-      items={items}
-      align="start"
-      trigger={
-        <button type="button" aria-label={chip.label} data-testid="agents-machine-chip" className="code-chip">
-          {machine && <MachineIcon machine={machine} />}
-          <span className="code-chip-label">{chip.text}</span>
-          <ChevronDownIcon className="code-chip-caret" aria-hidden />
-        </button>
-      }
-    />
+    <SystemChip finding={finding} label={chip.label} text={chip.text} icon={machine && <MachineIcon machine={machine} />} items={items}
+      testId="agents-machine-chip" findingTestId="agents-finding-machines" />
   )
 }
 

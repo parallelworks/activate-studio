@@ -1,4 +1,4 @@
-import { Fragment, type KeyboardEvent, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, type KeyboardEvent, type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { directoryChip, listedText, pickedOnClose, type PwCodeApi, type PwCodePathRow, type RecentDirectory } from '@parallelworks/code'
 import { Input, Kbd, ListboxGroup, ListboxOption, LoadingRegion, Popover, Skeleton, useListboxNavigation } from '@parallelworks/ui'
 import { ArrowUpIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, FolderOpenIcon, HistoryIcon, RepositoryIcon } from '@parallelworks/ui/icons'
@@ -17,13 +17,20 @@ import type { Translate } from './parts'
 type Draft = { typed: string; home: string | undefined; edited: boolean }
 type Machine = Parameters<typeof pwCodePage.usePathCompletion>[0]['machine'] & {}
 
-export function DirectoryPicker({ api = pwCodePage, machine, directory, recents, onPick }: {
+export function DirectoryPicker({ api = pwCodePage, machine, directory, recents, onPick, trigger, label, placeholder, anew = false }: {
   /** The client whose directories route lists the machine's folders. */
   api?: Pick<PwCodeApi, 'usePathCompletion'>
   machine: Machine
   directory: string
   recents: readonly RecentDirectory[]
   onPick: (path: string) => void
+  /** What opens it in place of the chip, and what names it. */
+  trigger?: ReactElement
+  label?: string
+  /** An example, in place of a code folder's. */
+  placeholder?: string
+  /** A folder that is not there yet can be named, for one that is made later. */
+  anew?: boolean
 }) {
   const t = useTranslations('agents')
   const [open, setOpen] = useState(false)
@@ -67,22 +74,24 @@ export function DirectoryPicker({ api = pwCodePage, machine, directory, recents,
       keepSide
       flush
       initialFocus={narrow ? 'popup' : 'first-control'}
-      aria-label={t('start.chooseDirectory')}
+      aria-label={label ?? t('start.chooseDirectory')}
       className="code-path-popover"
-      trigger={
+      trigger={trigger ?? (
         <button type="button" aria-label={chip.label} data-testid="agents-directory-chip" className="code-chip">
           <FolderIcon aria-hidden className="code-chip-icon" />
           <span className="code-chip-label">{chip.text}</span>
           <ChevronDownIcon className="code-chip-caret" aria-hidden />
         </button>
-      }
+      )}
     >
-      <PathField api={api} machine={machine} directory={directory} recents={recents} typing={!narrow} onDraft={keepDraft} onUse={use} />
+      <PathField placeholder={placeholder} anew={anew} api={api} machine={machine} directory={directory} recents={recents} typing={!narrow} onDraft={keepDraft} onUse={use} />
     </Popover>
   )
 }
 
-function PathField({ api, machine, directory, recents, typing, onDraft, onUse }: {
+function PathField({ placeholder, anew, api, machine, directory, recents, typing, onDraft, onUse }: {
+  placeholder?: string
+  anew: boolean
   api: Pick<PwCodeApi, 'usePathCompletion'>
   machine: Machine
   directory: string
@@ -110,6 +119,9 @@ function PathField({ api, machine, directory, recents, typing, onDraft, onUse }:
     chooseKeys: [],
     onChoose: row => (row.opens ? list(row.path) : onUse(row.path)),
   })
+  const named = typed.trim().replace(/(.)\/+$/, '$1')
+  const full = home && /^~(?=\/|$)/.test(named) ? home + named.slice(1) : named
+  const newFolder = anew && !untouched && !loading && /^[/~]/.test(named) && !rows.some(r => r.path === full || r.path === named) ? named : ''
   const edit = (text: string) => {
     setTyped(text)
     setUntouched(false)
@@ -127,6 +139,11 @@ function PathField({ api, machine, directory, recents, typing, onDraft, onUse }:
         event.preventDefault()
         list(row.path)
       }
+      return
+    }
+    if (event.key === 'Enter' && plain && newFolder && !rows.length) {
+      event.preventDefault()
+      onUse(newFolder)
       return
     }
     nav.handleKey(event)
@@ -154,7 +171,7 @@ function PathField({ api, machine, directory, recents, typing, onDraft, onUse }:
           value={typed}
           onChange={event => edit(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={t('start.workspacePlaceholder')}
+          placeholder={placeholder ?? t('start.workspacePlaceholder')}
           {...nav.hostProps}
         />
       </div>
@@ -172,7 +189,12 @@ function PathField({ api, machine, directory, recents, typing, onDraft, onUse }:
             <Skeleton width="30%" height={12} />
           </LoadingRegion>
         )}
-        {note !== null && <p role="status" data-testid="agents-directory-note" className="code-path-note">{note}</p>}
+        {newFolder && (
+          <button type="button" className="code-path-new" data-testid="directory-new" onClick={() => onUse(newFolder)}>
+            <FolderIcon aria-hidden className="code-path-icon" /><span>New folder <span className="code-mono">{newFolder}</span></span>
+          </button>
+        )}
+        {note !== null && !(newFolder && !rows.length) && <p role="status" data-testid="agents-directory-note" className="code-path-note">{note}</p>}
       </div>
       <p id={keysHint} className="code-path-keys">
         <KeyHint keys={['↑', '↓']} does={t('start.pathKeys.move')} />

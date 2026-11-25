@@ -3,7 +3,7 @@ import { ConfirmModal, DescriptionList, DescriptionListItem, StatusLabel } from 
 /** The parts the Add a library forms share: the steps of a check, and the
  *  confirmation before folders are made. */
 
-export interface CheckStep { name: string; ok: boolean; detail: string; warn?: boolean }
+export interface CheckStep { name: string; ok: boolean; detail: string; warn?: boolean; short?: string }
 
 export const STEP_LABEL: Record<string, string> = {
   ssh: 'Connection', gufi: 'GUFI', index: 'Index', source: 'Source folder', extract: 'Text extraction',
@@ -44,8 +44,8 @@ export function CreateConfirm({ paths, where, open, onClose, onConfirm }: {
   )
 }
 
-export async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+export async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), ...(signal ? { signal } : {}) })
   const data = (await res.json().catch(() => ({}))) as { error?: string }
   if (!res.ok) throw new Error(data.error ?? `${url}: ${res.status}`)
   return data as T

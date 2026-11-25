@@ -142,11 +142,10 @@ describe('the Library\'s + Add menu', () => {
     render(<LibraryView display={null} onDisplay={() => {}} />)
     fireEvent.click(within(await openMenu()).getByRole('menuitem', { name: /Add a library/ }))
     const dialog = await screen.findByRole('dialog', { name: 'Add a library' })
-    // The form Settings shows: where, how, and the form for the pair.
-    expect(await within(dialog).findByRole('button', { name: 'This computer' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Remote computer' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Index a folder' })).toBeInTheDocument()
-    expect(within(dialog).getByLabelText('Folder to index')).toBeInTheDocument()
+    // The form Settings shows, with its first step and nothing else.
+    expect(await within(dialog).findByTestId('add-library-computer')).toHaveTextContent('This computer')
+    expect(within(dialog).getByTestId('add-library-folder')).toHaveTextContent('Choose a folder')
+    expect(within(dialog).queryByText(/index or a folder, on this computer/)).toBeNull()
   })
 
   it('imports a pasted list, closes, and the new library joins the switcher', async () => {

@@ -124,9 +124,7 @@ export function AddLibraryDialog({ open, onClose, offer, onAdded }: {
     // One size whatever the choice shows, so switching Where or How, or a
     // check's results appearing, never resizes the dialog: the form
     // scrolls inside it.
-    <Modal open={open} onClose={onClose} size="xl" align="center" className="lib-add-modal" title="Add a library"
-      description="An index or a folder, on this computer, on a remote computer, or in a bucket. On a remote computer it is read as you, and written as you where your account may write."
-      footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
+    <Modal open={open} onClose={onClose} size="lg" align="center" className="lib-add-modal" title="Add a library" closeButton>
       {open && (
         <AddLibrary options={offer.options} browse={offer.browse}
           onAdded={(lib, started, here) => done(addedMessage(lib, started, here))}

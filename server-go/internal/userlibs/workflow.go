@@ -293,6 +293,7 @@ func (m *Module) listPwSystems(ctx context.Context, w who) ([]any, error) {
 	type system struct {
 		name, label, status, typ string
 		running                  bool
+		looks                    *jsonv.Object
 	}
 	list := []system{}
 	for _, row := range rows {
@@ -313,7 +314,14 @@ func (m *Module) listPwSystems(ctx context.Context, w who) ([]any, error) {
 		if v := get(r, "type"); jsonv.Truthy(v) {
 			typ = jsonv.String(v)
 		}
-		list = append(list, system{name, lbl, status, typ, status == "active"})
+		// What the platform says that picks its icon.
+		looks := jsonv.NewObject()
+		for _, k := range []string{"imageUrl", "csp", "schedulerType", "os"} {
+			if v, ok := get(r, k).(string); ok && v != "" {
+				looks.Set(k, v)
+			}
+		}
+		list = append(list, system{name, lbl, status, typ, status == "active", looks})
 	}
 	sort.SliceStable(list, func(i, j int) bool {
 		if list[i].running != list[j].running {
@@ -323,7 +331,11 @@ func (m *Module) listPwSystems(ctx context.Context, w who) ([]any, error) {
 	})
 	outList := make([]any, len(list))
 	for i, s := range list {
-		outList[i] = jsonv.NewObject("name", s.name, "label", s.label, "status", s.status, "running", s.running, "type", nullable(s.typ))
+		o := jsonv.NewObject("name", s.name, "label", s.label, "status", s.status, "running", s.running, "type", nullable(s.typ))
+		for _, k := range s.looks.Keys() {
+			o.Set(k, get(s.looks, k))
+		}
+		outList[i] = o
 	}
 	return outList, nil
 }

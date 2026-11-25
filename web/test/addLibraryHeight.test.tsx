@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AddLibrary } from '../src/components/AddLibrary'
+import { chooseComputer } from './addLibraryHelpers'
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 
@@ -19,7 +20,7 @@ describe('Add a library keeps its height across choices', () => {
     })
     try {
       const { container } = render(<AddLibrary options={{ buildHere: true, ssh: false, pw: false, workflow: false, bucket: true }} onAdded={() => {}} />)
-      fireEvent.click(await screen.findByRole('button', { name: 'Bucket' }))
+      await chooseComputer('A bucket')
       expect(container.querySelector<HTMLElement>('.lib-add-flow')!.style.minHeight).toBe('900px')
     } finally { tall.mockRestore() }
   })

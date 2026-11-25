@@ -26,12 +26,17 @@ type step struct {
 	OK     bool
 	Warn   bool // passed, with something the user should know
 	Detail string
+	// Short is a warning in a few words; Detail says the rest.
+	Short string
 }
 
 func (s step) json() *jsonv.Object {
 	o := jsonv.NewObject("name", s.Name, "ok", s.OK)
 	if s.Warn {
 		o.Set("warn", true)
+	}
+	if s.Short != "" {
+		o.Set("short", s.Short)
 	}
 	return o.Set("detail", s.Detail)
 }
@@ -58,6 +63,10 @@ type probe struct {
 	Create   []string
 	Model    *string
 	Platform *string
+	// What search by meaning needs there: about how many megabytes the
+	// first build sends, or why there is none.
+	EmbedMB  *float64
+	EmbedWhy *string
 }
 
 func stepsJSON(steps []step) []any {
@@ -78,7 +87,7 @@ func undef[T any](p *T) any {
 // testJSON is what the connection test routes answer.
 func (p *probe) testJSON() *jsonv.Object {
 	return jsonv.NewObject("ok", p.OK, "steps", stepsJSON(p.Steps), "gufiBin", undef(p.GufiBin), "gufiVersion", undef(p.GufiVersion),
-		"directories", undef(p.Directories), "shell", undef(p.Shell), "vectors", undef(p.Vectors))
+		"directories", undef(p.Directories), "files", undef(p.Files), "shell", undef(p.Shell), "vectors", undef(p.Vectors))
 }
 
 // buildJSON is publicBuildProbe.
@@ -458,7 +467,7 @@ func (m *Module) probeQueryOnly(ctx context.Context, h probeHost, spec indexSpec
 	p := &probe{Shell: ptr(false)}
 	add := func(s step) { p.Steps = append(p.Steps, s) }
 	done := func() *probe { p.OK = allOK(p.Steps); return p }
-	add(step{Name: "ssh", OK: true, Warn: true, Detail: fmt.Sprintf("Connected to %s. %s", h.Reached, onlyGufiQuery)})
+	add(step{Name: "ssh", OK: true, Warn: true, Short: "Runs only gufi_query", Detail: fmt.Sprintf("Connected to %s. %s", h.Reached, onlyGufiQuery)})
 	if spec.GufiBin != nil && hasTilde(*spec.GufiBin) {
 		add(step{Name: "gufi", Detail: fmt.Sprintf("The login on %s runs no shell, so ~ cannot be resolved there: give the GUFI bin directory as an absolute path, or leave it empty for gufi_query on the login's PATH.", dest)})
 		return done()
@@ -515,7 +524,7 @@ func (m *Module) probeQueryOnly(ctx context.Context, h probeHost, spec indexSpec
 		add(step{Name: "index", Detail: detail})
 	}
 	if spec.SourceRoot != nil && *spec.SourceRoot != "" {
-		add(step{Name: "source", OK: true, Warn: true, Detail: fmt.Sprintf("The login on %s runs only gufi_query, so files cannot be opened from the Studio; browsing and search work from the index.", dest)})
+		add(step{Name: "source", OK: true, Warn: true, Short: "Files cannot be opened", Detail: fmt.Sprintf("The login on %s runs only gufi_query, so files cannot be opened from the Studio; browsing and search work from the index.", dest)})
 	}
 	p.Directories, p.Files, p.Vectors = n.Directories, n.Files, n.Vectors
 	p.IndexRoot = &indexRoot

@@ -1,115 +1,74 @@
-import { useRef, useState } from 'react'
-import { Button, Callout, Field, Input, SegmentedControl } from '@parallelworks/ui'
-import type { PwSystems, UserLibrary } from '../api'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { Button, Callout, Checkbox, Field, IconButton, Input, Popover, SegmentedControl, Select, toast } from '@parallelworks/ui'
+import { ChevronDownIcon, FolderIcon, HelpIcon } from '@parallelworks/ui/icons'
+import { SIGN_IN_TO_USE, needsActivate } from '../accounts'
+import {
+  api, type FolderCount, type FolderShare, type IndexDepth, type PwSystems, type SettingsLibrary, type SpaceAsk, type SpaceCheck, type SpaceStatus, type UserLibrary,
+} from '../api'
+import { useAppConfig } from '../config'
+import { plural } from '../plural'
+import { sshOptionsProblem } from '../sshOptions'
 import { BucketLibraryForm } from './BucketLibraryForm'
 import { ClusterLibraryForm } from './ClusterLibraryForm'
+import { FolderCheckCard, countLine, stepWarnings, type CheckWarning } from './FolderCheckCard'
+import { DEFAULT_LIBRARY_DEPTH, DEFAULT_REMOTE_LIBRARY_DEPTH, DEPTHS, depthHelp, readsImages, useOcrHere } from './IndexDepth'
+import { CreateConfirm, postJson, type CheckStep } from './LibraryFormParts'
 import { LibraryImport } from './LibraryImport'
-import { LocalLibraryForm } from './LocalLibraryForm'
-import { PwSystemField } from './PwSystemField'
-import { PwBlocked, SshLibraryForm } from './SshLibraryForm'
+import { useFolderSuggestions, type FolderSuggestion } from './LocalLibraryForm'
+import { NeedsActivate } from './NeedsActivate'
+import { PlatformSignInPanel } from './PlatformSignInPanel'
 import { SharedWithMe } from './SharedWithMe'
-import { IndexFolderForm } from './IndexFolderForm'
+import { PwBlocked } from './SshLibraryForm'
+import { SystemChip } from './SystemChip'
+import { TargetIcon, addChoices, firstTarget, targetKey, targetMenu, targetName, type AddOptions, type Target } from './addLibraryTarget'
+import { useCheck } from './useCheck'
+
+export type { AddOptions } from './addLibraryTarget'
 
 /**
- * Add a library, in one model: where it is, whose account reads it, and
- * how it is indexed (docs/LIBRARIES.md, What a library carries, access).
+ * Add a library, in two steps: where (a computer and a folder on it), and
+ * a short review with defaults (docs/LIBRARIES.md, What a library carries,
+ * access).
  *
- * - Where: this computer (sign-in off: with sign-in on, the libraries here
- *   are the deployment's), a system (a cluster reached over pw ssh, a host
- *   over plain ssh on a Studio one person uses, or a cluster through the
- *   platform's index workflow), or a bucket of an rclone remote.
- * - Read as: on a system, always the viewer, with their own sign-in or ssh
- *   keys, so it holds what their account can read there; here and in a
- *   bucket, the account the Studio runs as. The form says which.
- * - What: a folder to index, or an index that is there already,
- *   connected as it is and read only. A folder on a system is written as
- *   the viewer where their account may write; a folder here is read only.
- * - Who sees it: a folder on a system is the viewer's alone, or shared as
- *   it is added where they own it (IndexFolderForm). What is here is seen
- *   by whoever uses the Studio.
+ * - The computer: this one (sign-in off: with sign-in on, the libraries here
+ *   are the deployment's), one of the viewer's clusters over pw ssh, a host
+ *   over plain ssh on a Studio one person uses, or a bucket of an rclone
+ *   remote. A folder on a remote computer is always listed, checked, indexed
+ *   and read as the viewer, with their own sign-in or ssh keys; here and in
+ *   a bucket, with the account the Studio runs as.
+ * - The folder is checked by itself once chosen, and the check is cancelled
+ *   when the choice changes. What it found is one card (FolderCheckCard).
+ * - The review: a name, who sees it, and the index depth, each with a
+ *   default; the rest is under More options.
  *
- * The system is chosen once, at the top, and the forms below take it. On a
- * cluster the viewer reaches as themselves, the folders others shared with
- * them there are listed too. A copy of a folder in a Transfers location is
- * made from Transfers ("Keep a local copy and index it"), where those
- * locations are browsed; the form points there where copies are offered.
+ * An index that is there already is connected through the same two steps,
+ * read only. The platform's index workflow is offered only where it is the
+ * one way to build (addChoices, workflowOnly); libraries it built before are
+ * refreshed and removed as always.
  */
 
-export type Where = 'here' | 'system' | 'bucket'
-export type How = 'build' | 'connect'
-export type Via = 'pw' | 'ssh' | 'workflow'
+const FolderChoice = lazy(() => import('./addLibraryFolder'))
 
-export interface AddOptions {
-  /** Libraries can be built from folders on this computer (sign-in off). */
-  buildHere: boolean
-  /** Hosts over plain ssh (sign-in off). */
-  ssh: boolean
-  /** Over pw ssh: offered here, though the form may say it cannot be used
-   *  yet (no pw CLI found, or not signed in). */
-  pw: boolean
-  /** The platform's index workflow: a hosted Studio that reaches a platform. */
-  workflow: boolean
-  /** A copy of a folder in a Transfers location (sign-in off), made from
-   *  Transfers; the form points there. */
-  copy?: boolean
-  /** A bucket of an rclone remote, indexed here from its listing (sign-in off). */
-  bucket?: boolean
-  /** A folder on one of the viewer's systems, indexed as them, can be
-   *  added, shared, and be their My library where people sign in, and the
-   *  folders shared with them there are listed. */
-  space?: boolean
-  /** The cluster this Studio runs on, where a cluster hosts it: listed
-   *  first among the viewer's clusters as the one this Studio runs on, read
-   *  as the viewer there, and never chosen for them. */
-  home?: string
+/** A library's name from its folder, as the server names one not named. */
+export const folderName = (dir: string): string => {
+  const name = dir.replace(/\/+$/, '').split('/').pop() ?? ''
+  return !name || name === '~' || name === '.' ? 'Home folder' : name
 }
 
-/** What can be chosen, given what this Studio offers. `how` takes whether
- *  the system chosen is a host over plain ssh. */
-export function addChoices(o: AddOptions) {
-  const onSystem = o.ssh || o.pw || o.workflow || !!o.space
-  const where: Where[] = [...(o.buildHere ? ['here' as const] : []), ...(onSystem ? ['system' as const] : []), ...(o.bucket ? ['bucket' as const] : [])]
-  const how = (w: Where, overSSH = false): How[] => {
-    if (w === 'bucket') return []
-    if (w === 'here') return [...(o.buildHere ? ['build' as const] : []), 'connect']
-    if (overSSH) return ['build', 'connect']
-    return [...(o.space || o.pw || o.workflow ? ['build' as const] : []), ...(o.pw ? ['connect' as const] : [])]
-  }
-  /** How a folder on a cluster is built: over the pw ssh session, or as a
-   *  job of the platform's index workflow. */
-  const builders = (): Via[] => [...(o.pw || o.space ? ['pw' as const] : []), ...(o.workflow ? ['workflow' as const] : [])]
-  return { where, how, builders }
-}
+type Kind = FolderShare['kind']
+type Access = FolderShare['access']
+const KIND_LABEL: Record<Kind, string> = { user: 'A person', group: 'A group', everyone: 'Everyone' }
 
-const WHERE_LABEL: Record<Where, string> = { here: 'This computer', system: 'Remote computer', bucket: 'Bucket' }
-/** On a Studio a cluster hosts, its own cluster is among the viewer's
- *  clusters, so they are not all remote. */
-const WHERE_LABEL_HOSTED: Record<Where, string> = { ...WHERE_LABEL, system: 'Your clusters' }
-export const whereLabel = (w: Where, home?: string) => (home ? WHERE_LABEL_HOSTED : WHERE_LABEL)[w]
-const HOW_LABEL: Record<How, string> = { build: 'Index a folder', connect: 'Connect an index' }
-const BUILDER_LABEL: Record<'pw' | 'workflow', string> = { pw: 'pw ssh', workflow: 'Workflow job' }
+interface IndexCheck { ok: boolean; steps: CheckStep[]; directories?: number; files?: number; fullText?: boolean; vectors?: boolean }
+interface BuildCheck { ok: boolean; steps: CheckStep[]; create: string[] }
+type AnyCheck = Partial<SpaceCheck> & Partial<IndexCheck> & { ok: boolean; steps: CheckStep[] }
 
-/** The choice in the Remote computer list for a host over plain ssh. */
-const SSH_HOST = '\u0000ssh'
-
-function describe(where: Where, how: How | undefined, overSSH: boolean, builder: Via | undefined, home?: string): string {
-  if (where === 'bucket') return 'A bucket, or a folder in one, of an rclone remote: any S3 compatible store, AWS or on premises (MinIO, Ceph and the like), or another store rclone lists. Read with the Studio\'s account, from its listing, for finding and searching by name, size and time; an object is read only when you open it. Read only.'
-  if (where === 'here') {
-    // On a Studio a cluster hosts, this computer is that cluster, which the
-    // viewer can also reach as themselves.
-    const asYou = home ? ` To read it as your own account instead, choose Your clusters, then ${home}, where this Studio runs.` : ''
-    return how === 'build'
-      ? `A folder on this computer, read with the Studio's account, not yours, indexed with GUFI and kept in step with the folder as it changes. Read only.${asYou}`
-      : `A GUFI index already built on this computer, read with the Studio's account, not yours. Read only: the Studio searches it and never writes to it.${asYou}`
-  }
-  if (how === 'connect') return 'A GUFI index already on that remote computer, read as you. Read only: nothing is written there.'
-  if (builder === 'workflow') return 'A folder on that cluster, indexed there by the platform\'s index workflow with your own key, on the login node or as a Slurm job. Read as you, read only, and seen only by you.'
-  return `A folder there, new or one you already have, indexed with GUFI ${overSSH ? 'over ssh' : 'over pw ssh'} as you. The build reads the text of its files where it can and leaves the folder as it is. Read and written as you where your account may write in it; the check says who else can change it.`
-}
+const EMPTY = { indexRoot: '', sourceRoot: '', gufiBin: '', sshOptions: '', id: '' }
+const say = (e: unknown) => String((e as Error)?.message ?? e)
 
 export function AddLibrary({ options, browse = false, onAdded, onStarted, onImported }: {
   options: AddOptions
-  /** Folders on this computer can be picked from a list (a single-user install). */
+  /** Suggested folders on this computer are offered (a single-user install). */
   browse?: boolean
   /** A library was added, or its build started (`started`); `here` is a
    *  build on this computer, searchable by name while its text and meaning
@@ -122,35 +81,39 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   onImported?: (added: number) => void
 }) {
   const [importing, setImporting] = useState(false)
+  const flow = useRef<HTMLDivElement>(null)
   // A choice that shows a shorter form would shorten the page, and where
   // the form ends the page the browser scrolls up to fit, moving the
   // choices under the pointer: the form keeps the tallest height it had.
-  const flow = useRef<HTMLDivElement>(null)
   const holdHeight = () => {
     const el = flow.current
     if (el) el.style.minHeight = `${Math.max(el.offsetHeight, parseFloat(el.style.minHeight) || 0)}px`
   }
-  const choices = addChoices(options)
-  const [wherePicked, setWhere] = useState<Where | null>(null)
-  const where: Where = wherePicked && choices.where.includes(wherePicked) ? wherePicked : (choices.where[0] ?? 'here')
 
-  // The system: one of the viewer's clusters, or a host over plain ssh.
-  const [cluster, setCluster] = useState('')
-  const [host, setHost] = useState('')
-  const pickSystems = options.pw || !!options.space
-  const [overSSHPicked, setOverSSH] = useState(false)
-  const overSSH = options.ssh && (overSSHPicked || !pickSystems)
+  const asksSystems = options.pw || !!options.space
   const [systems, setSystems] = useState<PwSystems | null>(null)
-  const system = overSSH ? host.trim() : cluster
+  const [round, setRound] = useState(0)
+  useEffect(() => {
+    if (!asksSystems) return
+    let live = true
+    api.pwSystems().then(r => { if (live) setSystems(r) }, e => { if (live) setSystems({ usable: true, why: null, systems: [], error: say(e) }) })
+    return () => { live = false }
+  }, [asksSystems, round])
+  const [hosts, setHosts] = useState<string[]>([])
+  useEffect(() => {
+    if (!options.ssh) return
+    let live = true
+    api.sshHosts().then(r => { if (live) setHosts(r.hosts ?? []) }, () => {})
+    return () => { live = false }
+  }, [options.ssh])
 
-  const hows = choices.how(where, overSSH)
-  // Until a How is picked it follows the first offered: building here is
-  // offered once the libraries answer, after the form first shows.
-  const [howPicked, setHow] = useState<How | null>(null)
-  const how = howPicked && hows.includes(howPicked) ? howPicked : hows[0]
-  const builders = overSSH || how !== 'build' ? [] : choices.builders()
-  const [builderPicked, setBuilder] = useState<Via | null>(null)
-  const builder = overSSH ? 'ssh' : builderPicked && builders.includes(builderPicked) ? builderPicked : builders[0]
+  const offered = addChoices(options, systems)
+  const [picked, setPicked] = useState<Target | null>(null)
+  const target = picked ?? firstTarget(options, systems)
+  const [mode, setMode] = useState<'build' | 'connect'>('build')
+  const connect = mode === 'connect' && offered.connect(target)
+  const [naming, setNaming] = useState<'ssh' | 'cluster' | null>(null)
+  const pick = (t: Target) => { holdHeight(); setNaming(null); setPicked(t) }
 
   if (importing) {
     return (
@@ -161,94 +124,459 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
       </div>
     )
   }
+  const importLink = onImported && <Button variant="ghost" size="sm" onClick={() => setImporting(true)}>Import a library list from a file…</Button>
 
-  // The workflow alone reaches the clusters, and lists them itself.
-  const workflowOnly = where === 'system' && !pickSystems && !options.ssh
-  const pwBlocked = !overSSH && options.pw && systems && !systems.usable
-  const asYou = overSSH ? 'your own ssh keys, agent and ~/.ssh/config' : 'your ACTIVATE sign-in'
-  const systemChoice = where === 'system' && !workflowOnly && (
-    <div className="settings-grid lib-add-system">
-      {choices.where.length === 1 && <div className="field-label lib-add-where">Where it is</div>}
-      {pickSystems && (
-        <PwSystemField value={cluster} home={options.home} onChange={c => { setCluster(c); setOverSSH(false) }} onSystems={setSystems}
-          extra={options.ssh ? [{ value: SSH_HOST, label: 'A host over ssh…', description: 'user@host, with your own keys' }] : []}
-          extraValue={overSSH ? SSH_HOST : null} onExtra={() => setOverSSH(true)} />
-      )}
-      {!overSSH && systems?.error && (
-        <Callout tone="warning">Your clusters could not be listed: {systems.error.replace(/[.\s]*$/, '.')} Type the name of a running cluster instead.</Callout>
-      )}
-      {overSSH && (
-        <Input label="Host" placeholder="user@host or user@host:port" autoComplete="off" spellCheck={false} value={host}
-          description="As you would type it after ssh, with :port for a port other than 22. A Host from your ~/.ssh/config works, including ProxyJump."
-          onChange={e => setHost(e.target.value)} />
-      )}
-    </div>
-  )
+  if (offered.workflowOnly) {
+    return <div className="lib-add-flow" ref={flow}><WorkflowOnly onStarted={onStarted} />{importLink && <div className="lib-where-below">{importLink}</div>}</div>
+  }
 
+  const chosen = targetName(target, systems)
+  const chip = chosen || (naming === 'ssh' ? 'Another host…' : options.ssh || options.buildHere ? 'Choose a computer' : 'Choose a cluster')
+  const items = targetMenu({ options, systems, hosts, target, onPick: pick, onName: k => { holdHeight(); setNaming(k) } })
   return (
     <div className="lib-add-flow" ref={flow}>
-      {onImported && <div><Button variant="ghost" size="sm" onClick={() => setImporting(true)}>Import a library list from a file…</Button></div>}
-      <div className="lib-add-choices">
-        {choices.where.length > 1 && (
-          <Field label="Where it is">
-            <SegmentedControl label="Where it is" value={where} onValueChange={v => { holdHeight(); setWhere(v) }} options={choices.where.map(w => ({ value: w, label: whereLabel(w, options.home) }))} />
-          </Field>
+      <FolderForm key={`${targetKey(target)}/${connect ? 'connect' : 'build'}`} target={naming ? null : target} place={chosen} connect={connect}
+        options={options} browse={browse} systems={systems} holdHeight={holdHeight}
+        onSignedIn={() => setRound(n => n + 1)}
+        chip={(
+          <SystemChip label={chosen && !naming ? `Computer: ${chosen}` : 'Choose a computer'}
+            text={naming ? (naming === 'ssh' ? 'Another host…' : 'Another cluster…') : offered.finding && !target ? 'Finding your clusters…' : chip}
+            icon={target && !naming ? <TargetIcon target={target} systems={systems} /> : undefined}
+            items={items} finding={offered.finding && !target && !naming} search={hosts.length + (systems?.systems?.length ?? 0) > 10}
+            testId="add-library-computer" findingTestId="add-library-finding" />
         )}
-      </div>
-      {systemChoice}
-      {where === 'system' && !workflowOnly && (
-        <p className="muted lib-add-as" data-testid="read-as">
-          Read as you{system ? ` on ${system}` : ''}{system && system === options.home ? ', where this Studio runs' : ''}, with {asYou}, never the Studio&apos;s own account.
-        </p>
-      )}
-      {pwBlocked ? (
-        <PwBlocked why={systems?.why} />
-      ) : (
-        <>
-          <div className="lib-add-choices">
-            {hows.length > 1 && (
-              <Field label="What">
-                <SegmentedControl label="What" value={how} onValueChange={v => { holdHeight(); setHow(v) }} options={hows.map(h => ({ value: h, label: HOW_LABEL[h] }))} />
-              </Field>
+        naming={naming && (
+          <NameField key={naming} kind={naming} onCancel={() => setNaming(null)}
+            onName={name => pick(naming === 'ssh' ? { kind: 'ssh', destination: name } : { kind: 'cluster', name })} />
+        )}
+        below={(
+          <>
+            {offered.connect(target) && !naming && (
+              <Button variant="ghost" size="sm" onClick={() => { holdHeight(); setMode(connect ? 'build' : 'connect') }}>
+                {connect ? 'Index a folder instead' : 'Connect an existing index'}
+              </Button>
             )}
-            {builders.length > 1 && (
-              <Field label="Build with">
-                <SegmentedControl label="Build with" value={builder} onValueChange={v => { holdHeight(); setBuilder(v) }}
-                  options={builders.map(b => ({ value: b, label: BUILDER_LABEL[b as 'pw' | 'workflow'] }))} />
-              </Field>
-            )}
+            {importLink}
+            <span className="lib-help-at"><AddHelp options={options} clusters={offered.clusters || offered.blocked} /></span>
+          </>
+        )}
+        onAdded={onAdded} />
+    </div>
+  )
+}
+
+/** The host or cluster typed by name, taken on Enter or when it is left. */
+function NameField({ kind, onName, onCancel }: { kind: 'ssh' | 'cluster'; onName: (name: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState('')
+  const use = () => (name.trim() ? onName(name.trim()) : onCancel())
+  return (
+    <Input size="sm" mono autoFocus autoComplete="off" autoCapitalize="off" spellCheck={false} value={name}
+      aria-label={kind === 'ssh' ? 'Host' : 'Cluster'} placeholder={kind === 'ssh' ? 'user@host or user@host:port' : 'my-cluster'}
+      onChange={e => setName(e.target.value)} onBlur={use}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); use() } else if (e.key === 'Escape') { e.stopPropagation(); onCancel() } }} />
+  )
+}
+
+/** What the form does not say: whose account reads, what is left where, and
+ *  the other ways in. */
+function AddHelp({ options, clusters }: { options: AddOptions; clusters: boolean }) {
+  const remote = clusters || options.ssh
+  return (
+    <Popover align="end" className="lib-help" aria-label="About adding a library"
+      trigger={<IconButton icon={<HelpIcon />} label="About adding a library" size="sm" variant="ghost" />}>
+      {options.buildHere && <p><b>This computer</b> is read with the account the Studio runs as. The index follows the folder as it changes, and the folder is read only here.{options.home ? ` To read it as your own account instead, choose ${options.home}.` : ''}</p>}
+      {remote && <p><b>A remote computer</b> is read as you, with {[...(clusters ? ['your ACTIVATE sign-in (or the API key you added under Settings, Accounts)'] : []), ...(options.ssh ? ['your own ssh keys, agent and ~/.ssh/config'] : [])].join(', or ')}. The index stays there, in your ~/.activate-studio. The Library writes there as you where your account may.</p>}
+      <p><b>Index depth</b> says what search covers. Search by meaning is the slowest part and runs last: names are searchable first, then words.</p>
+      {offeredConnect(options) && <p><b>An existing index</b> is one GUFI made already. It is searched as it is, and never written to.</p>}
+      {options.bucket && <p><b>A bucket</b> is of an rclone remote set up on this computer: any S3 compatible store, AWS or on premises. It is searched by name, size and time, from its listing, and an object is read only when you open it.</p>}
+      {options.copy && <p>A host that takes SFTP only, or a cloud drive: <a href="#view=transfers">Transfers</a> keeps a local copy of a folder there and indexes it.</p>}
+    </Popover>
+  )
+}
+const offeredConnect = (o: AddOptions) => o.buildHere || o.ssh || o.pw
+
+/** Where the platform's index workflow is the only way to build. */
+function WorkflowOnly({ onStarted }: { onStarted?: (lib: UserLibrary) => void }) {
+  const [more, setMore] = useState(true)
+  return (
+    <>
+      <p className="muted lib-add-about">This Studio cannot reach your clusters over pw ssh, so a folder on one is indexed by a job of the platform&apos;s index workflow, with your own key.</p>
+      <MoreOptions open={more} onToggle={() => setMore(m => !m)}>
+        <ClusterLibraryForm compact onStarted={lib => onStarted?.(lib)} />
+      </MoreOptions>
+    </>
+  )
+}
+
+// What opened is below the fold of a short dialog.
+const intoView = (el: HTMLDivElement | null) => { el?.scrollIntoView?.({ block: 'nearest' }) }
+
+function MoreOptions({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactElement | ReactElement[] }) {
+  return (
+    <div className="lib-more">
+      <Button variant="ghost" size="sm" aria-expanded={open} onClick={onToggle}>{open ? 'Fewer options' : 'More options'}</Button>
+      {open && <div className="lib-more-body" ref={intoView}>{children}</div>}
+    </div>
+  )
+}
+
+/** The field that opens a computer's folders, with the whole path chosen. */
+function FolderField({ place, sshOptions, value, empty, label, anew, onPick }: {
+  place: Target
+  sshOptions?: string
+  value: string
+  empty: string
+  label: string
+  anew?: boolean
+  onPick: (path: string) => void
+}) {
+  const trigger = (
+    <button type="button" className="lib-where-folder" aria-label={value ? `${label}: ${value}` : label} title={value || undefined} data-testid="add-library-folder">
+      <FolderIcon aria-hidden className="code-chip-icon" />
+      <span className={`lib-where-path${value ? ' code-mono' : ' muted'}`}>{value ? <bdi>{value}</bdi> : empty}</span>
+      <ChevronDownIcon aria-hidden className="code-chip-caret" />
+    </button>
+  )
+  return (
+    <Suspense fallback={trigger}>
+      <FolderChoice place={place} sshOptions={sshOptions} value={value} label={label} trigger={trigger} anew={anew} onPick={onPick} />
+    </Suspense>
+  )
+}
+
+/** An optional path under More options, typed or chosen from the folders. */
+function PathOption({ label, description, placeholder, place, value, onChange }: {
+  label: string; description: string; placeholder: string; place: Target; value: string; onChange: (v: string) => void
+}) {
+  return (
+    <div className="lib-path-option">
+      <Input label={label} hint="optional" size="sm" mono spellCheck={false} placeholder={placeholder} description={description} value={value} onChange={e => onChange(e.target.value)} />
+      <Suspense fallback={null}>
+        <FolderChoice place={place} value={value} label={`Choose the ${label.toLowerCase()}`} anew onPick={onChange}
+          trigger={<button type="button" className="code-chip" aria-label={`Browse for the ${label.toLowerCase()}`}><FolderIcon aria-hidden className="code-chip-icon" />Browse</button>} />
+      </Suspense>
+    </div>
+  )
+}
+
+/**
+ * The folder on the computer chosen, its check, and the review under it. One
+ * per computer and per way of adding, so nothing chosen for one is carried
+ * to another.
+ */
+function FolderForm({ target, place, connect, options, browse, systems, holdHeight, chip, naming, below, onSignedIn, onAdded }: {
+  target: Target | null
+  place: string
+  connect: boolean
+  options: AddOptions
+  browse: boolean
+  systems: PwSystems | null
+  holdHeight: () => void
+  chip: ReactElement
+  naming: ReactElement | null
+  below: ReactElement
+  /** The person signed in here: what their sign-in reaches is read again. */
+  onSignedIn: () => void
+  onAdded: (lib: { id: string; label: string }, started: boolean, here?: boolean) => void
+}) {
+  const signIn = !!useAppConfig().signIn
+  const here = target?.kind === 'here'
+  const cluster = target?.kind === 'cluster' ? target.name : ''
+  const ssh = target?.kind === 'ssh' ? target.destination : ''
+  const remote = !!cluster || !!ssh
+  const offered = addChoices(options, systems)
+
+  // A cluster is reached with the viewer's sign-in: whether they have one,
+  // and the folder offered first for their My library.
+  const [status, setStatus] = useState<SpaceStatus | null>(null)
+  const [statusError, setStatusError] = useState('')
+  const [statusRound, setStatusRound] = useState(0)
+  const asksStatus = (!!cluster && !connect) || offered.blocked
+  useEffect(() => {
+    if (!asksStatus) return
+    let live = true
+    api.spaceStatus().then(s => { if (live) { setStatus(s); setStatusError('') } }, e => { if (live) setStatusError(say(e)) })
+    return () => { live = false }
+  }, [asksStatus, statusRound])
+  const signedIn = () => { setError(''); setStatusRound(n => n + 1); onSignedIn() }
+
+  const [typedFolder, setFolder] = useState<string | null>(null)
+  const [form, setForm] = useState(EMPTY)
+  const set = (patch: Partial<typeof EMPTY>) => { setForm(f => ({ ...f, ...patch })); setError('') }
+  const [typedName, setName] = useState<string | null>(null)
+  const [depth, setDepth] = useState<IndexDepth>(here ? DEFAULT_LIBRARY_DEPTH : DEFAULT_REMOTE_LIBRARY_DEPTH)
+  const [who, setWho] = useState<'me' | 'shared'>('me')
+  const [kind, setKind] = useState<Kind>('user')
+  const [account, setAccount] = useState('')
+  const [access, setAccess] = useState<Access>('read')
+  const [myPicked, setMy] = useState<boolean | null>(null)
+  const [more, setMore] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [confirming, setConfirming] = useState(false)
+  const ocr = useOcrHere(here && !connect)
+  const [suggestions, reloadSuggestions] = useFolderSuggestions(here && !connect && browse)
+  const [suggested, setSuggested] = useState<FolderSuggestion | null>(null)
+
+  // My library is offered for a folder only the viewer sees, where people
+  // sign in, and is chosen to begin with for someone who has none.
+  const mine = signIn && !!cluster && !connect && (myPicked ?? (!!status?.available && !status.spaces.length))
+  const folder = (typedFolder ?? (mine && who === 'me' ? status?.suggested ?? '' : '')).trim()
+  const sshOptions = ssh ? form.sshOptions.trim() : ''
+  const sshProblem = sshOptions ? sshOptionsProblem(sshOptions) : null
+  const trimmed = { indexRoot: form.indexRoot.trim(), sourceRoot: form.sourceRoot.trim(), gufiBin: form.gufiBin.trim(), id: form.id.trim() }
+  const reach = cluster ? { cluster } : { destination: ssh, ...(sshOptions ? { sshOptions } : {}) }
+
+  // What is asked, for each way of adding; the check runs whenever it changes.
+  const asked = useMemo(() => {
+    const given = (o: Record<string, string>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v))
+    if (here) {
+      return connect
+        ? { url: '/api/libraries/check', body: { indexRoot: folder, ...given({ sourceRoot: trimmed.sourceRoot }) } }
+        : { url: '/api/libraries/build/check', body: { sourceRoot: folder, ...given({ indexRoot: trimmed.indexRoot, id: trimmed.id }) } }
+    }
+    return connect
+      ? { url: `/api/user-libraries/${cluster ? 'pw' : 'ssh'}/test`, body: { ...reach, indexRoot: folder, ...given({ sourceRoot: trimmed.sourceRoot, gufiBin: trimmed.gufiBin }) } }
+      : { url: '/api/user-libraries/space/test', body: { ...reach, sourceRoot: folder, ...given({ indexRoot: trimmed.indexRoot, gufiBin: trimmed.gufiBin }) } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [here, connect, cluster, ssh, sshOptions, folder, trimmed.indexRoot, trimmed.sourceRoot, trimmed.gufiBin, trimmed.id])
+  const gone = !!cluster && !connect && !!status && !status.available
+  const checks = (here || remote) && !!folder && !sshProblem && !gone && !naming
+  const check = useCheck<AnyCheck>(checks ? JSON.stringify(asked) : null, signal => postJson<AnyCheck>(asked.url, { ...asked.body, ...(here && !connect ? { depth } : {}) }, signal))
+  const counted = useCheck<{ count: FolderCount | null }>(checks && !connect ? JSON.stringify([here, reach, folder]) : null, signal =>
+    postJson(here ? '/api/libraries/build/count' : '/api/user-libraries/space/count', here ? { sourceRoot: folder } : { ...reach, sourceRoot: folder }, signal))
+
+  if (target?.kind === 'bucket') {
+    return <><Where chip={chip} naming={naming} below={below} /><BucketLibraryForm onAdded={lib => onAdded(lib, true, true)} /></>
+  }
+
+  // Clusters that cannot be reached yet: the sign-in, or what is missing.
+  if (!target && offered.blocked && (!status || status.available || !status.cluster)) {
+    return <><Where chip={null} naming={null} below={below} /><PwBlocked why={systems?.why} /></>
+  }
+  if (status && !status.available && (gone || (!target && offered.blocked))) {
+    return (
+      <>
+        <Where chip={gone ? chip : null} naming={naming} below={below} />
+        {status.cluster && status.signInOffered && !status.credential ? (
+          <div className="space-sign-in">
+            <Callout tone="info" title={SIGN_IN_TO_USE}>
+              A folder on {status.cluster} is indexed and read as your own account. Sign in with ACTIVATE here and approve
+              the code on the platform, then choose the folder. The sign-in is kept under Settings, Accounts.
+            </Callout>
+            <PlatformSignInPanel onChanged={signedIn} />
           </div>
-          {where === 'here' && how === 'build' && (
-            <Field label="Who sees it"><p className="muted lib-add-who">Whoever uses this Studio.</p></Field>
-          )}
-          <p className="muted lib-add-about">{describe(where, how, overSSH, builder, options.home)}</p>
-          {where === 'bucket' && <BucketLibraryForm onAdded={lib => onAdded(lib, true, true)} />}
-          {where === 'here' && (how === 'build'
-            ? <LocalLibraryForm key="here-build" mode="build" compact browse={browse} onAdded={lib => onAdded(lib, true, true)} />
-            : <LocalLibraryForm key="here-connect" compact browse={browse} onAdded={lib => onAdded(lib, false)} />)}
-          {where === 'system' && how === 'build' && builder === 'workflow' && (
-            <ClusterLibraryForm compact {...(workflowOnly ? {} : { site: system })} onStarted={lib => onStarted?.(lib)} />
-          )}
-          {where === 'system' && how === 'build' && builder !== 'workflow' && (
-            <IndexFolderForm key={overSSH ? 'ssh' : 'pw'} {...(overSSH ? { destination: system } : { cluster: system })} holdHeight={holdHeight}
-              onAdded={lib => onAdded(lib, true)} />
-          )}
-          {where === 'system' && how === 'connect' && (
-            <SshLibraryForm key={overSSH ? 'ssh' : 'pw'} compact transport={overSSH ? 'ssh' : 'pw'} {...(overSSH ? { destination: system } : { cluster: system })}
-              onAdded={lib => onAdded(lib, false)} />
-          )}
-          {where === 'system' && !overSSH && options.space && system && (
-            <section className="lib-add-shared" aria-label={`Shared with you on ${system}`}>
-              <SharedWithMe compact system={system} title={`Shared with you on ${system}`} onAdded={lib => onAdded(lib, true)} />
-            </section>
-          )}
-          {where === 'system' && options.copy && (
-            <p className="muted lib-add-about">
-              A host that takes SFTP only, or a cloud drive: <a href="#view=transfers">Transfers</a> keeps a local copy of a folder there and indexes it.
-            </p>
-          )}
-        </>
+        ) : needsActivate(status.why)
+          ? <NeedsActivate>{status.why}</NeedsActivate>
+          : <Callout tone="info" title="A folder on a remote computer is not available">{status.why}</Callout>}
+      </>
+    )
+  }
+
+  const found = check.result
+  const passed = !!found?.ok
+  const failing = found && !found.ok ? found.steps.find(s => !s.ok)?.detail ?? 'The check did not pass.' : ''
+  const blocked = check.error || failing
+  const refused = check.error.startsWith('The platform refused') || error.startsWith('The platform refused')
+  const create = found?.create ?? []
+  const isNew = !connect && create.some(c => c === found?.sourceRoot || c === folder)
+  const meaning = depth.startsWith('meaning')
+
+  const warnings: CheckWarning[] = !passed ? [] : [
+    ...stepWarnings(found.steps),
+    ...(remote && !connect && (found.readOnly || found.writable === false)
+      ? [{ short: 'Read only for you', detail: found.readOnly ?? 'Your account cannot write in the folder itself, so the Library writes only in what it holds that your account can change.' }] : []),
+    ...(!connect && remote && meaning && found.embedMB ? [{ short: `Search by meaning sends its model there (about ${found.embedMB} MB, once)`, detail: 'The first build sends the Studio\'s embedding model and its packages to ~/.activate-studio/embed there, as you. Names and words are searchable first.' }] : []),
+    ...(!connect && remote && meaning && !found.embedMB && found.embedWhy ? [{ short: 'No search by meaning there', detail: found.embedWhy }] : []),
+    ...(!connect && here && ocr === false && readsImages(depth) ? [{ short: 'No text from images: tesseract is not installed here', detail: 'Images and scanned pages are found by name until it is.' }] : []),
+  ]
+  const facts = connect
+    ? (passed ? [found.directories !== undefined ? plural(found.directories, 'folder') : '', found.files !== undefined ? plural(found.files, 'file') : '',
+        found.vectors ? 'searched by words and meaning' : found.fullText ? 'searched by words' : here ? 'searched by name' : ''].filter(Boolean).join(' · ') : undefined)
+    : counted.result?.count ? countLine(counted.result.count) : counted.result || counted.error ? 'Not counted' : undefined
+
+  const noShare = !cluster ? '' : passed && !found.canShare ? found.shareWhy ?? '' : ''
+  const shared = who === 'shared' && !!cluster && !noShare
+  const noACL = passed && !!found.owned && found.acl === false
+  const kinds: Kind[] = noACL ? ['everyone'] : ['user', 'group', 'everyone']
+  const shownKind: Kind = kinds.includes(kind) ? kind : kinds[0]
+  const shownAccess: Access = shownKind === 'everyone' ? 'read' : access
+  const noMy = passed ? found.myLibraryWhy ?? null : null
+  const myLibrary = mine && !shared && !noMy
+  const ready = passed && !sshProblem && (!shared || shownKind === 'everyone' || !!account.trim())
+  const prefilled = myLibrary ? 'My library' : folder ? suggested && suggested.path === folder ? suggested.label : folderName(folder) : ''
+  const name = typedName ?? prefilled
+  // Not typed, the server names it as the form shows.
+  const label = typedName?.trim() || (suggested && suggested.path === folder && !myLibrary ? suggested.label : undefined)
+
+  const choose = (path: string) => { holdHeight(); setError(''); setFolder(path) }
+  const add = async (made: boolean) => {
+    setBusy(true); setError('')
+    try {
+      if (here && connect) {
+        const r = await api.addLibrary({ id: trimmed.id, label, indexRoot: folder, sourceRoot: trimmed.sourceRoot || undefined })
+        onAdded(r.library, false)
+      } else if (here) {
+        const r = await postJson<{ library: SettingsLibrary }>('/api/libraries/build', { ...asked.body, label, depth, create: made })
+        reloadSuggestions()
+        onAdded(r.library, true, true)
+      } else if (connect) {
+        onAdded(await postJson<{ id: string; label: string }>(`/api/user-libraries/${cluster ? 'pw' : 'ssh'}`, { ...asked.body, label }), false)
+      } else {
+        const lib = await api.addSpace({
+          ...(asked.body as unknown as SpaceAsk), label, depth,
+          ...(signIn ? { myLibrary } : {}),
+          ...(shared ? { share: { kind: shownKind, ...(shownKind === 'everyone' ? {} : { name: account.trim() }), access: shownAccess } } : {}),
+          ...(made ? { create: true } : {}),
+        })
+        if (lib.shareError) toast.error(`${lib.label} is added, and not shared: ${lib.shareError}`)
+        onAdded(lib, true)
+      }
+    } catch (e) { setError(say(e)) } finally { setBusy(false) }
+  }
+
+  return (
+    <>
+      <Where chip={chip} naming={naming} below={below}
+        folder={target && !naming && (
+          <FolderField place={target} sshOptions={sshOptions} value={folder} empty={connect ? 'Choose the index' : 'Choose a folder'}
+            label={connect ? `Index on ${place}` : `Folder on ${place}`} anew={!connect} onPick={choose} />
+        )} />
+      {systems?.error && (
+        <Callout tone="warning">Your clusters could not be listed: {systems.error.replace(/[.\s]*$/, '.')} Choose Another cluster… to name one that is running.</Callout>
       )}
+      {statusError && <Callout tone="error">{statusError}</Callout>}
+      {suggestions.length > 0 && (
+        <div className="lib-suggest" role="group" aria-label="Suggested folders">
+          <span className="muted lib-suggest-label">Suggested:</span>
+          {suggestions.map(sg => (
+            <Button key={sg.id} size="sm" variant={suggested?.id === sg.id && folder === sg.path ? 'secondary' : 'outline'} title={sg.path}
+              onClick={() => { setSuggested(sg); choose(sg.path) }}>{sg.label}</Button>
+          ))}
+        </div>
+      )}
+      {suggested && folder === suggested.path && suggested.note && <p className="muted lib-suggest-note">{suggested.note}</p>}
+      {suggested && folder === suggested.path && suggested.access === 'full-disk-access' && (
+        <Callout tone="warning" title="Needs Full Disk Access">
+          macOS lets ACTIVATE Studio read {suggested.label} only with Full Disk Access. Turn it on for ACTIVATE Studio in System Settings,
+          Privacy &amp; Security, Full Disk Access, then press Check again.{' '}
+          <Button size="sm" variant="outline" onClick={() => {
+            fetch('/api/libraries/suggestions/full-disk-access', { method: 'POST' })
+              .then(r => (r.ok ? null : r.json().then((d: { error?: string }) => setError(d.error ?? `${r.status}`))))
+              .catch(e => setError(say(e)))
+          }}>Open System Settings</Button>
+          {' '}<Button size="sm" variant="ghost" onClick={check.again}>Check again</Button>
+        </Callout>
+      )}
+      {checks && (
+        <FolderCheckCard path={folder} place={place} facts={facts} counting={counted.busy} isNew={isNew} busy={check.busy} blocked={blocked}
+          warnings={warnings} steps={found?.steps ?? []} onAgain={check.again} />
+      )}
+      {refused && status?.signInOffered && <PlatformSignInPanel onChanged={() => { check.again(); signedIn() }} />}
+      {target && !naming && !gone && (folder || ssh) && (
+        <div className="lib-review" aria-label="Review" role="group">
+          {folder && !blocked && <>
+            <Field label="Name" layout="inline" size="sm"><Input size="sm" value={name} onChange={e => setName(e.target.value)} /></Field>
+            {connect && (
+              <Field label="Files" layout="inline" size="sm" description="The files it was made from, to open them. Without them, names and details only.">
+                <FolderField place={target!} sshOptions={sshOptions} value={form.sourceRoot} empty="Not given" label="Files folder" onPick={p => set({ sourceRoot: p })} />
+              </Field>
+            )}
+            {cluster && !connect && (
+              <Field label="Who sees it" layout="inline" size="sm" group description={noShare ? <span data-testid="no-share">Shared is not offered here. {noShare}</span> : undefined}>
+                <div className="lib-review-row">
+                  <SegmentedControl size="sm" label="Who sees it" value={shared ? 'shared' : 'me'} onValueChange={v => { holdHeight(); setWho(v) }}
+                    options={[{ value: 'me', label: 'Only me' }, ...(noShare ? [] : [{ value: 'shared' as const, label: 'Shared' }])]} />
+                </div>
+              </Field>
+            )}
+            {shared && (
+              <>
+                <Field label="Shared with" layout="inline" size="sm" group>
+                  <div className="lib-review-row">
+                    <SegmentedControl size="sm" label="Shared with" value={shownKind} onValueChange={setKind} options={kinds.map(k => ({ value: k, label: KIND_LABEL[k] }))} />
+                    {shownKind !== 'everyone' && (
+                      <Input size="sm" mono spellCheck={false} autoComplete="off" aria-label={shownKind === 'user' ? `Account on ${place}` : 'Group'} value={account}
+                        placeholder={shownKind === 'user' ? 'their account' : 'a group you are in'} onChange={e => setAccount(e.target.value)} />
+                    )}
+                  </div>
+                </Field>
+                <Field label="They can" layout="inline" size="sm" group description={noACL
+                  ? `This file system (${found!.fs}) does not take POSIX ACLs, so it is shared with everyone, for reading.`
+                  : shownKind === 'everyone' ? `Every account on ${place} can read it, under Shared with you.` : 'They find it under Shared with you.'}>
+                  <div className="lib-review-row">
+                    <SegmentedControl size="sm" label="They can" value={shownAccess} onValueChange={setAccess}
+                      options={[{ value: 'read', label: 'Read only' }, ...(shownKind === 'everyone' ? [] : [{ value: 'write' as Access, label: 'Read and write' }])]} />
+                  </div>
+                </Field>
+              </>
+            )}
+            {!connect && (
+              <Field label="Index depth" layout="inline" size="sm" description={depthHelp(depth)}>
+                <Select size="sm" width="content" items={DEPTHS.map(d => ({ value: d.value, label: d.label }))} value={depth} disabled={busy} onValueChange={v => { if (v) setDepth(v) }} />
+              </Field>
+            )}
+            {mine && !shared && <p className="muted lib-add-about" data-testid="my-library-line">{noMy ?? 'It becomes My library, where your chats and the assistant\'s files are saved.'}</p>}
+          </>}
+          <MoreOptions open={more} onToggle={() => { holdHeight(); setMore(m => !m) }}>
+            <div className="lib-more-fields">
+              {signIn && cluster && !connect && !shared ? (
+                <div className="lib-add-my">
+                  <label className="lib-add-my-line">
+                    <Checkbox checked={myLibrary} disabled={!!noMy || busy} onCheckedChange={v => { holdHeight(); setMy(v) }} aria-label="Use as My library" />
+                    <span>Use as My library: my chats and the assistant&apos;s files are saved here</span>
+                  </label>
+                  {noMy && !mine && <p className="muted lib-add-about">{noMy}</p>}
+                </div>
+              ) : <></>}
+              {ssh ? (
+                <Input label="SSH options" hint="optional" size="sm" mono placeholder="-J user@jumphost -o ConnectTimeout=20" autoComplete="off" spellCheck={false} value={form.sshOptions}
+                  error={sshProblem ?? undefined}
+                  description="For a jump host or other settings: -J, -p, -i, -l, -F, and -o Keyword=value. Used on every ssh to this host." onChange={e => set({ sshOptions: e.target.value })} />
+              ) : <></>}
+              {!connect ? (
+                <PathOption label="Index folder" place={target!} placeholder={here ? 'in the Studio\'s own data folder' : '~/.activate-studio/indexes/…'} value={form.indexRoot}
+                  description="Where the index is written: an empty or new folder, outside the folder to index." onChange={indexRoot => set({ indexRoot })} />
+              ) : <></>}
+              {remote ? (
+                <Input label="GUFI bin directory" hint="optional" size="sm" mono placeholder="found by the check" spellCheck={false} value={form.gufiBin}
+                  description="Where GUFI's tools are there. Without it, the Studio uses its own copy, or looks for one installed there." onChange={e => set({ gufiBin: e.target.value })} />
+              ) : (
+                <Input label="Identifier" hint="optional" size="sm" placeholder="made from the name" spellCheck={false} value={form.id}
+                  description="Lowercase letters, digits, dashes. Names the library's folder under All libraries." onChange={e => set({ id: e.target.value })} />
+              )}
+            </div>
+          </MoreOptions>
+        </div>
+      )}
+      {error && <Callout tone="error" live>{error}</Callout>}
+      {cluster && !connect && options.space && (
+        <section className="lib-add-shared" aria-label={`Shared with you on ${place}`}>
+          <SharedWithMe compact system={cluster} title={`Shared with you on ${place}`} onAdded={lib => onAdded(lib, true)} />
+        </section>
+      )}
+      <div className="query-actions">
+        <Button variant="primary" loading={busy} disabled={!ready || busy || check.busy}
+          onClick={() => (create.length ? setConfirming(true) : void add(false))}>{connect ? 'Connect' : 'Index'}</Button>
+      </div>
+      <CreateConfirm open={confirming} paths={create} where={here ? 'on this computer' : `on ${place}, as ${found?.account ?? 'you'}`}
+        onClose={() => setConfirming(false)} onConfirm={() => { setConfirming(false); return add(true) }} />
+    </>
+  )
+}
+
+/** Step one: the computer and the folder on one row, with what else can be
+ *  done under it. */
+function Where({ chip, naming, folder, below }: { chip: ReactElement | null; naming: ReactElement | null; folder?: ReactElement | null | false; below: ReactElement }) {
+  return (
+    <div className="lib-where-step">
+      {chip && (
+        <div className="lib-where" role="group" aria-label="Where">
+          {chip}
+          {naming ?? (folder || <span className="lib-where-none muted"><FolderIcon aria-hidden className="code-chip-icon" />Choose a folder</span>)}
+        </div>
+      )}
+      <div className="lib-where-below">{below}</div>
     </div>
   )
 }

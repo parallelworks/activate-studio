@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AddLibrary, addChoices } from '../src/components/AddLibrary'
+import { AddLibrary } from '../src/components/AddLibrary'
+import { addChoices } from '../src/components/addLibraryTarget'
 import { libraryNames } from '../src/libraryNames'
 import { reloadAppConfig } from '../src/config'
 import { addOptions, mayAddLibraries } from '../src/components/LibraryAddDialogs'
 import { ShareDialog } from '../src/components/ShareDialog'
+import { checked, chooseComputer, chooseFolder, closeMenu, computers, folderRoute, nameComputer } from './addLibraryHelpers'
 import { PlatformSignInPanel } from '../src/components/PlatformSignInPanel'
 
 // A checkbox forwards its press to its hidden input as a PointerEvent,
@@ -28,7 +30,7 @@ function stub(route: Route) {
     const method = init?.method ?? 'GET'
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
     calls.push({ method, url, body })
-    return route(method, url, body) ?? (url === '/api/user-libraries/pw/systems' ? json(HOME_SYSTEMS) : json({ error: `no route for ${method} ${url}` }, 404))
+    return route(method, url, body) ?? folderRoute(url) ?? (url.endsWith('/count') ? json({ count: null }) : url === '/api/user-libraries/ssh/hosts' ? json({ hosts: [] }) : url === '/api/user-libraries/pw/systems' ? json(HOME_SYSTEMS) : json({ error: `no route for ${method} ${url}` }, 404))
   }))
   return calls
 }
@@ -37,14 +39,8 @@ function stub(route: Route) {
 const HOME_SYSTEMS = { usable: true, why: null, error: null, systems: [
   { name: 'cluster-a', label: 'cluster-a', status: 'active', running: true, type: null },
 ] }
-const choose = async (name: string) => {
-  fireEvent.click(await screen.findByRole('combobox'))
-  const o = await screen.findByRole('option', { name })
-  fireEvent.pointerDown(o)
-  fireEvent.click(o)
-}
 /** The Studio's own cluster is never chosen for the person: they choose it. */
-const chooseHome = () => choose('cluster-a, where this Studio runs running')
+const chooseHome = () => chooseComputer('cluster-a')
 
 const button = (name: string) => screen.getByRole('button', { name })
 const STATUS = { available: true, why: '', cluster: 'cluster-a', suggested: '~/studio', spaces: [] }
@@ -62,13 +58,13 @@ describe('a space of one\'s own', () => {
 
   it('is offered beside the cluster the Studio runs on, and lets a signed-in person add libraries', () => {
     const user = { available: true, ssh: false, pwOffered: false, workflow: false }
-    expect(addChoices(addOptions(false, user, false)).where).toEqual([])
+    expect(addChoices(addOptions(false, user, false), HOME_SYSTEMS).clusters).toBe(false)
     expect(mayAddLibraries(false, user, false)).toBe(false)
     const withSpace = { ...user, space: true }
-    // A folder of one's own is on a system; with sign-in on, this computer
+    // A folder of one's own is on a cluster; with sign-in on, this computer
     // is the deployment's.
-    expect(addChoices(addOptions(false, withSpace, false)).where).toEqual(['system'])
-    expect(addChoices(addOptions(false, withSpace, false)).how('system')).toEqual(['build'])
+    const offered = addChoices(addOptions(false, withSpace, false), HOME_SYSTEMS)
+    expect([offered.here, offered.clusters, offered.ssh]).toEqual([false, true, false])
     expect(mayAddLibraries(false, withSpace, false)).toBe(true)
   })
 
@@ -79,24 +75,24 @@ describe('a space of one\'s own', () => {
         return json(signedIn ? { ...STATUS, credential: 'sign-in', signInOffered: true }
           : { ...STATUS, available: false, why: 'My library reaches the cluster with your ACTIVATE sign-in.', credential: '', signInOffered: true })
       }
+      if (u === '/api/user-libraries/pw/systems') return json(signedIn ? HOME_SYSTEMS : { usable: false, why: 'Sign in with ACTIVATE.', systems: [], error: null })
       if (u === '/api/me/platform-sign-in' && m === 'GET') return json(signedIn ? { state: 'signed-in', account: 'ada', host: 'platform.example.com' } : { state: 'none', host: 'platform.example.com' })
       if (u === '/api/me/platform-sign-in' && m === 'POST') { signedIn = true; return json({ state: 'signed-in', account: 'ada', host: 'platform.example.com' }) }
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
     expect(await screen.findByText('Sign in with ACTIVATE to use this')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Index the folder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Index' })).toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
-    expect(await screen.findByLabelText('Folder')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('add-library-computer')).toHaveTextContent('Choose a cluster'))
     await chooseHome()
-    // Said once, by the form around it, not again in the folder's form
-    // (phase 4, K).
-    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-a, where this Studio runs, with your ACTIVATE sign-in')
+    expect(await screen.findByTestId('add-library-folder')).toBeInTheDocument()
     expect(screen.queryByText(/^Reached on/)).toBeNull()
   })
 
   it('says why My library is not available for another reason', async () => {
     stub((m, u) => (u === '/api/user-libraries/space' ? json({ ...STATUS, cluster: '', available: false, why: 'This Studio does not know the cluster it runs beside.', signInOffered: true }) : undefined))
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
+    await chooseHome()
     expect(await screen.findByText('A folder on a remote computer is not available')).toBeInTheDocument()
     expect(screen.getByText(/does not know the cluster/)).toBeInTheDocument()
   })
@@ -108,10 +104,8 @@ describe('a space of one\'s own', () => {
       if (u === '/api/me/platform-sign-in') return json({ state: 'none', host: 'platform.example.com' })
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    expect(await screen.findByText(/with the API key you added under Settings, Accounts/)).toBeInTheDocument()
     await chooseHome()
-    fireEvent.change(screen.getByLabelText('Folder'), { target: { value: '~/studio' } })
-    fireEvent.click(button('Check the folder'))
+    await chooseFolder('/data')
     expect(await screen.findByText(/refused the credential/)).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' })).toBeInTheDocument()
   })
@@ -124,20 +118,18 @@ describe('a space of one\'s own', () => {
     })
     const onAdded = vi.fn()
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={onAdded} />)
-    const folder = await screen.findByLabelText('Folder')
-    fireEvent.change(folder, { target: { value: '~/studio' } })
-    expect(button('Index the folder')).toBeDisabled()
     await chooseHome()
-    fireEvent.click(button('Check the folder'))
-    expect(await screen.findByText('Reached cluster-a as ada.')).toBeInTheDocument()
-    fireEvent.click(button('Index the folder'))
+    await chooseFolder('~/studio')
+    expect(button('Index')).toBeDisabled()
+    await checked()
+    fireEvent.click(button('Index'))
     fireEvent.click(await screen.findByRole('button', { name: 'Create it and build' }))
     await waitFor(() => expect(onAdded).toHaveBeenCalled())
     const made = calls.find(c => c.method === 'POST' && c.url === '/api/user-libraries/space')
     expect(made?.body).toMatchObject({ sourceRoot: '~/studio', create: true })
     // A folder changed after the check is checked again before it is made.
-    fireEvent.change(folder, { target: { value: '~/other' } })
-    expect(button('Index the folder')).toBeDisabled()
+    await chooseFolder('~/other')
+    expect(button('Index')).toBeDisabled()
   })
 
   it('is made on the system chosen: the Studio\'s cluster listed first but not chosen for them, another cluster, or a host over ssh where allowed', async () => {
@@ -153,30 +145,22 @@ describe('a space of one\'s own', () => {
     render(<AddLibrary options={{ buildHere: false, ssh: true, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
     // Nothing is chosen until the person chooses: the Studio's own cluster
     // is not a default, and is not called a remote computer.
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('Choose a cluster'))
-    expect(button('Check the folder')).toBeDisabled()
-    expect(screen.queryByText(/Remote computer/)).toBeNull()
-    fireEvent.click(screen.getByRole('combobox'))
-    const names = (await screen.findAllByRole('option')).map(o => o.textContent)
-    expect(names[0]).toContain('cluster-a, where this Studio runs')
+    await waitFor(() => expect(screen.getByTestId('add-library-computer')).toHaveTextContent('Choose a computer'))
+    expect(screen.queryByTestId('add-library-folder')).toBeNull()
+    const names = (await computers()).map(o => o.textContent)
+    expect(names[0]).toBe('cluster-aWhere this Studio runs')
     expect(names.join('|')).not.toContain("the Studio's cluster")
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
-    const pick = choose
-    await pick('cluster-a, where this Studio runs running')
-    fireEvent.change(await screen.findByLabelText('Folder'), { target: { value: '~/studio' } })
-    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-a, where this Studio runs, with your ACTIVATE sign-in')
-    fireEvent.click(button('Check the folder'))
-    await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ cluster: 'cluster-a', sourceRoot: '~/studio' }))
-    await pick('cluster-b running')
-    expect(button('Index the folder')).toBeDisabled()
-    fireEvent.click(button('Check the folder'))
-    await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ cluster: 'cluster-b', sourceRoot: '~/studio' }))
-    expect(screen.getByTestId('read-as')).toHaveTextContent('Read as you on cluster-b, with your ACTIVATE sign-in')
-    await pick('A host over ssh…')
-    fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'ada@box' } })
-    fireEvent.change(await screen.findByLabelText('Folder'), { target: { value: '~/studio' } })
-    fireEvent.click(button('Check the folder'))
-    await waitFor(() => expect(calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ destination: 'ada@box', sourceRoot: '~/studio' }))
+    closeMenu()
+    const last = () => calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body
+    await chooseComputer('cluster-a')
+    await chooseFolder('/data')
+    await waitFor(() => expect(last()).toEqual({ cluster: 'cluster-a', sourceRoot: '/data' }))
+    await chooseComputer('cluster-b')
+    await chooseFolder('/data')
+    await waitFor(() => expect(last()).toEqual({ cluster: 'cluster-b', sourceRoot: '/data' }))
+    await nameComputer('host', 'ada@box')
+    await chooseFolder('/data')
+    await waitFor(() => expect(last()).toEqual({ destination: 'ada@box', sourceRoot: '/data' }))
   })
 
   it('names a system whose shares could not be checked, rather than saying nothing is shared there', async () => {
@@ -227,15 +211,13 @@ describe('what a folder of one\'s own is called', () => {
       if (u === '/api/user-libraries/space' && m === 'POST') return json({ id: 'space-runs', label: 'runs', state: 'building' })
     })
     render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
-    const folder = await screen.findByLabelText('Folder')
-    expect(folder).toHaveValue('')
-    fireEvent.change(folder, { target: { value: '~/runs' } })
-    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'runs')
-    expect(screen.queryByText(/My library/)).toBeNull()
     await chooseHome()
-    fireEvent.click(button('Check the folder'))
-    await waitFor(() => expect(button('Index the folder')).toBeEnabled())
-    fireEvent.click(button('Index the folder'))
+    expect(await screen.findByTestId('add-library-folder')).toHaveTextContent('Choose a folder')
+    await chooseFolder('~/runs')
+    await checked()
+    expect(screen.getByLabelText('Name')).toHaveValue('runs')
+    expect(screen.queryByText(/My library/)).toBeNull()
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(calls.find(c => c.method === 'POST' && c.url === '/api/user-libraries/space')?.body).toEqual({ cluster: 'cluster-a', sourceRoot: '~/runs', depth: 'meaning-documents' }))
   })
 
@@ -252,37 +234,37 @@ describe('what a folder of one\'s own is called', () => {
     const { unmount } = render(form)
     // The page's config is read once and kept: read it again, as this Studio's.
     await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 20)) })
-    const my = await screen.findByRole('checkbox', { name: 'My library' })
-    expect(my).toBeChecked()
-    expect(screen.getByLabelText('Folder')).toHaveValue('~/studio')
-    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'My library')
-    expect(screen.getByText(/my chats and the assistant's files are saved here/)).toBeInTheDocument()
     await chooseHome()
-    fireEvent.click(button('Check the folder'))
-    await waitFor(() => expect(button('Index the folder')).toBeEnabled())
-    fireEvent.click(button('Index the folder'))
+    await waitFor(() => expect(screen.getByTestId('add-library-folder')).toHaveTextContent('~/studio'))
+    await checked()
+    expect(screen.getByLabelText('Name')).toHaveValue('My library')
+    expect(screen.getByTestId('my-library-line')).toHaveTextContent('your chats and the assistant\'s files are saved')
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(calls.find(c => c.method === 'POST' && c.url === '/api/user-libraries/space')?.body).toMatchObject({ sourceRoot: '~/studio', myLibrary: true }))
     // Unticked, it is a folder like any other, and the one suggested goes.
-    fireEvent.click(my)
-    expect(screen.getByLabelText('Folder')).toHaveValue('')
-    fireEvent.change(screen.getByLabelText('Folder'), { target: { value: '~/runs' } })
-    expect(screen.getByLabelText('Label')).toHaveAttribute('placeholder', 'runs')
-    fireEvent.click(button('Check the folder'))
-    await waitFor(() => expect(button('Index the folder')).toBeEnabled())
-    fireEvent.click(button('Index the folder'))
+    fireEvent.click(button('More options'))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Use as My library' }))
+    expect(screen.getByTestId('add-library-folder')).toHaveTextContent('Choose a folder')
+    await chooseFolder('~/runs')
+    await checked()
+    expect(screen.getByLabelText('Name')).toHaveValue('runs')
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(calls.filter(c => c.method === 'POST' && c.url === '/api/user-libraries/space').at(-1)?.body).toMatchObject({ sourceRoot: '~/runs', myLibrary: false }))
     unmount()
     // Someone who has one is not asked to make another.
     spaces = ['space-studio']
     render(form)
-    expect(await screen.findByRole('checkbox', { name: 'My library' })).not.toBeChecked()
-    expect(screen.getByLabelText('Folder')).toHaveValue('')
+    await chooseHome()
+    expect(await screen.findByTestId('add-library-folder')).toHaveTextContent('Choose a folder')
+    await chooseFolder('~/runs')
+    await checked()
+    expect(screen.queryByTestId('my-library-line')).toBeNull()
   })
 })
 
 /** Index a folder as a person signed in on a Studio several people use:
  *  the check answers `check`, and adding answers `added`. */
-async function indexForm(check: Record<string, unknown>, added: Record<string, unknown> = {}, options: { ssh?: boolean } = {}) {
+async function indexForm(check: Record<string, unknown>, added: Record<string, unknown> = {}, options: { ssh?: string } = {}) {
   const calls = stub((m, u) => {
     if (u.startsWith('/api/config')) return json({ appName: 'Studio', kbLabel: 'Shared library', signIn: !options.ssh, libraries: [] })
     if (u === '/api/user-libraries/space' && m === 'GET') return json({ ...STATUS, spaces: ['space-studio'] })
@@ -292,11 +274,11 @@ async function indexForm(check: Record<string, unknown>, added: Record<string, u
   const onAdded = vi.fn()
   render(<AddLibrary options={{ buildHere: false, ssh: !!options.ssh, pw: false, workflow: false, space: true, home: options.ssh ? undefined : 'cluster-a' }} onAdded={onAdded} />)
   await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 20)) })
-  fireEvent.change(await screen.findByLabelText('Folder'), { target: { value: '/data' } })
   const test = async () => {
-    fireEvent.click(button('Check the folder'))
-    await waitFor(() => expect(button('Check the folder')).toBeEnabled())
-    await screen.findByLabelText('Folder check')
+    if (options.ssh) await nameComputer('host', options.ssh)
+    else await chooseHome()
+    await chooseFolder('/data')
+    await checked()
   }
   const added_ = () => calls.filter(c => c.method === 'POST' && c.url === '/api/user-libraries/space').at(-1)?.body
   return { calls, onAdded, test, added: added_ }
@@ -305,34 +287,33 @@ async function indexForm(check: Record<string, unknown>, added: Record<string, u
 describe('who sees a folder that is indexed', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('is two plain choices: where it is with what it is, and who sees it', async () => {
-    await indexForm({})
-    for (const h of ['Where it is', 'Who sees it']) expect(screen.getByText(h)).toBeInTheDocument()
-    for (const n of ['Only me', 'Shared']) expect(button(n)).toBeInTheDocument()
+  it('is one plain choice, with nothing about sharing until it is chosen', async () => {
+    const f = await indexForm({})
+    await f.test()
+    expect(screen.getByText('Who sees it')).toBeInTheDocument()
     expect(button('Only me')).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('button', { name: /own folder|new folder/i })).toBeNull()
-    // Nothing about sharing until it is chosen.
+    expect(button('Shared')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'A person' })).toBeNull()
   })
 
   it('shares with a person, a group or everyone; everyone only reads', async () => {
     const f = await indexForm({})
-    await chooseHome()
+    await f.test()
     fireEvent.click(button('Shared'))
     // A shared folder is not where one's own chats are saved.
-    expect(screen.queryByRole('checkbox', { name: 'My library' })).toBeNull()
-    await f.test()
-    expect(button('Index the folder')).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('Account'), { target: { value: ' bob ' } })
+    fireEvent.click(button('More options'))
+    expect(screen.queryByRole('checkbox', { name: 'Use as My library' })).toBeNull()
+    expect(button('Index')).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Account on cluster-a'), { target: { value: ' bob ' } })
     fireEvent.click(button('Read and write'))
-    fireEvent.click(button('Index the folder'))
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(f.added()).toMatchObject({ sourceRoot: '/data', myLibrary: false, share: { kind: 'user', name: 'bob', access: 'write' } }))
     await waitFor(() => expect(button('A group')).toBeEnabled())
     fireEvent.click(button('A group'))
     expect(screen.getByLabelText('Group')).toBeInTheDocument()
     fireEvent.click(button('Everyone'))
     expect(screen.queryByRole('button', { name: 'Read and write' })).toBeNull()
-    fireEvent.click(button('Index the folder'))
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(f.added()?.share).toEqual({ kind: 'everyone', access: 'read' }))
   })
 
@@ -343,13 +324,12 @@ describe('who sees a folder that is indexed', () => {
       myLibraryWhy: 'My library is where your chats are saved, so it has to be a folder no other account can change.',
       steps: [{ name: 'folder', ok: true, warn: true, detail }],
     })
-    await chooseHome()
     await f.test()
     expect(screen.getByText(detail)).toBeInTheDocument()
     expect(screen.queryByTestId('no-share')).toBeNull()
     fireEvent.click(button('Shared'))
     fireEvent.click(button('Everyone'))
-    fireEvent.click(button('Index the folder'))
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(f.added()).toMatchObject({ myLibrary: false, share: { kind: 'everyone', access: 'read' } }))
   })
 
@@ -359,72 +339,60 @@ describe('who sees a folder that is indexed', () => {
       owned: false, readOnly: 'x', canShare: false, shareWhy: why, myLibraryWhy: 'My library is where your chats are saved, so it has to be a folder no other account can change.',
       steps: [{ name: 'folder', ok: true, warn: true, detail: '/data belongs to another account (uid 0). It is indexed and read as you, and the Library does not write in it.' }],
     })
-    await chooseHome()
-    fireEvent.click(button('Shared'))
-    fireEvent.click(screen.getByRole('button', { name: 'Only me' }))
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'My library' }))
-    fireEvent.click(button('Shared'))
     await f.test()
-    expect(screen.getByText(/belongs to another account/)).toBeInTheDocument()
-    // Shared, as it was chosen, falls back to Only me, and says why.
+    expect(screen.getByText(/belongs to another account \(uid 0\)\. It is indexed/)).toBeInTheDocument()
+    // It is not shared, and the form says why.
     expect(screen.queryByRole('button', { name: 'Shared' })).toBeNull()
     expect(screen.getByTestId('no-share')).toHaveTextContent(`Shared is not offered here. ${why}`)
-    expect(screen.getByRole('checkbox', { name: 'My library' })).not.toBeChecked()
-    expect(screen.getByRole('checkbox', { name: 'My library' })).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(button('More options'))
+    expect(screen.getByRole('checkbox', { name: 'Use as My library' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Use as My library' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByText(/^My library is where your chats are saved/)).toBeInTheDocument()
-    fireEvent.click(button('Index the folder'))
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(f.added()).toMatchObject({ myLibrary: false }))
     expect(f.added()).not.toHaveProperty('share')
   })
 
   it('a refusal stops it', async () => {
     const f = await indexForm({ ok: false, canShare: false, steps: [{ name: 'folder', ok: false, detail: 'Your account cannot open /data.' }] })
-    await chooseHome()
     await f.test()
     expect(screen.getByText('Your account cannot open /data.')).toBeInTheDocument()
-    expect(button('Index the folder')).toBeDisabled()
-    expect(screen.getByText('Fix the failing step and check again.')).toBeInTheDocument()
+    expect(button('Index')).toBeDisabled()
+    expect(button('Check again')).toBeInTheDocument()
   })
 
   it('without ACLs there, offers everyone, for reading', async () => {
     const f = await indexForm({ acl: false, fs: 'nfs4' })
-    await chooseHome()
     await f.test()
     fireEvent.click(button('Shared'))
     expect(screen.queryByRole('button', { name: 'A person' })).toBeNull()
     expect(screen.getByText(/\(nfs4\) does not take POSIX ACLs/)).toBeInTheDocument()
-    fireEvent.click(button('Index the folder'))
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(f.added()?.share).toEqual({ kind: 'everyone', access: 'read' }))
   })
 
   it('says so when it was added and the share could not be set', async () => {
     const said = vi.spyOn((await import('@parallelworks/ui')).toast, 'error')
     const f = await indexForm({}, { shareError: 'There is no account bob there.' })
-    await chooseHome()
-    fireEvent.click(button('Shared'))
-    fireEvent.change(screen.getByLabelText('Account'), { target: { value: 'bob' } })
     await f.test()
-    fireEvent.click(button('Index the folder'))
+    fireEvent.click(button('Shared'))
+    fireEvent.change(screen.getByLabelText('Account on cluster-a'), { target: { value: 'bob' } })
+    fireEvent.click(button('Index'))
     await waitFor(() => expect(f.onAdded).toHaveBeenCalled())
     expect(said).toHaveBeenCalledWith('data is added, and not shared: There is no account bob there.')
   })
 
-  it('a host over ssh is Only me, and says why; its options wait under More options', async () => {
-    const f = await indexForm({}, {}, { ssh: true })
-    fireEvent.click(screen.getByRole('combobox'))
-    const o = await screen.findByRole('option', { name: /^A host over ssh/ })
-    fireEvent.pointerDown(o)
-    fireEvent.click(o)
-    fireEvent.change(await screen.findByLabelText('Host'), { target: { value: 'me@box:2222' } })
-    fireEvent.change(await screen.findByLabelText('Folder'), { target: { value: '~/data' } })
-    expect(screen.getByTestId('no-share')).toHaveTextContent('nobody here to share it with')
+  it('a host over ssh is yours alone, with nothing to choose; its options wait under More options', async () => {
+    const f = await indexForm({}, {}, { ssh: 'me@box:2222' })
+    await f.test()
+    expect(screen.queryByText('Who sees it')).toBeNull()
     expect(screen.queryByLabelText('SSH options')).toBeNull()
     fireEvent.click(button('More options'))
     fireEvent.change(screen.getByLabelText('SSH options'), { target: { value: '-J jump' } })
     fireEvent.change(screen.getByLabelText('Index folder'), { target: { value: '~/idx' } })
     fireEvent.change(screen.getByLabelText('GUFI bin directory'), { target: { value: '/opt/g/bin' } })
-    await f.test()
-    expect(f.calls.find(c => c.url === '/api/user-libraries/space/test')?.body).toEqual({ destination: 'me@box:2222', sshOptions: '-J jump', sourceRoot: '~/data', indexRoot: '~/idx', gufiBin: '/opt/g/bin' })
+    await checked()
+    expect(f.calls.filter(c => c.url === '/api/user-libraries/space/test').at(-1)?.body).toEqual({ destination: 'me@box:2222', sshOptions: '-J jump', sourceRoot: '/data', indexRoot: '~/idx', gufiBin: '/opt/g/bin' })
   })
 })
 
