@@ -384,6 +384,32 @@ describe('a socket that ends', () => {
   })
 })
 
+describe('a server that was away', () => {
+  it('is tried again as soon as a read reaches it', async () => {
+    const stop = startLive(opener)
+    watch('/api/fleet', 10_000, () => {})
+    watch('/api/delegated', 10_000, () => {})
+    await tick(0)
+    sock().open()
+    await beat(sock(), 20_000)
+    answer = () => { throw new TypeError('Failed to fetch') }
+    sock().close()
+    // Every try fails: the next is a minute away.
+    for (let t = 0; t < 150_000; t += 500) { await tick(500); if (sock().readyState === 0) sock().close() }
+    const n = Sock.all.length
+    answer = path => new Response(JSON.stringify(path.startsWith('/api/live/read') ? { reads: [] } : {}), { status: 200 })
+    let late = 0
+    while (Sock.all.length === n && late < 60_000) { await tick(250); late += 250 }
+    expect(late).toBeLessThanOrEqual(11_000)
+    // One that is cut at once is not tried at every read.
+    sock().close()
+    const m = Sock.all.length
+    for (let t = 0; t < 60_000; t += 500) { await tick(500); if (sock().readyState === 0) sock().close() }
+    expect(Sock.all.length - m).toBeLessThanOrEqual(6)
+    stop()
+  })
+})
+
 describe('a hidden tab', () => {
   it('reads nothing, lets its socket go, and reads everything when it shows', async () => {
     const stop = startLive(opener)

@@ -82,6 +82,8 @@ let lostAt = 0
 let open = false
 let everOpen = false
 let fails = 0
+/** The last read by request did not reach the server. */
+let away = false
 let retry: ReturnType<typeof setTimeout> | null = null
 let silent: ReturnType<typeof setInterval> | null = null
 let heardAt = 0
@@ -135,14 +137,27 @@ function request(e: Entry): Promise<Reading> {
   const run = (async () => {
     const res = await fetch(e.path)
     const r = { status: res.status, text: await res.text() }
+    if (res.ok || res.status >= 502) reached(res.ok)
     take(e, n, r)
     return r
   })().finally(() => { e.reading--; schedule(e) })
   run.catch(err => {
+    if (err instanceof TypeError) reached(false)
     const said = Object.assign(err instanceof Error ? err : new Error(String(err)), { status: 0 }) as LiveError
     for (const s of [...e.subs]) s.error?.(said)
   })
   return run
+}
+
+/** A read by request reached the server, or did not. The first that does
+ *  after one that did not: the server is back, and so is its socket. */
+function reached(yes: boolean): void {
+  const back = yes && away
+  away = !yes
+  if (!back || !everOpen || socket || !retry) return
+  clearTimeout(retry)
+  fails = 1
+  retry = setTimeout(connect, RETRY_SOON_MS * (1 + Math.random()))
 }
 
 /** Those due together, in one request. */
@@ -156,7 +171,8 @@ async function requestTogether(list: Entry[]): Promise<void> {
     // A server without it: each by itself from now on. One that had a
     // socket open has it, and is away.
     if (!reads && !everOpen && (res.ok || res.status === 404 || res.status === 400)) together = false
-  } catch { /* the next one */ }
+    if (together) reached(!!reads)
+  } catch { reached(false) /* the next one */ }
   for (const e of list) {
     const r = reads?.find(x => x.path === e.path)
     if (r) take(e, ns.get(e)!, { status: r.status, text: JSON.stringify(r.body) })
@@ -518,6 +534,7 @@ export function resetLiveForTests(): void {
   everOpen = false
   fails = 0
   lostAt = asks = 0
+  away = false
   together = true
   wanted = ''
 }
