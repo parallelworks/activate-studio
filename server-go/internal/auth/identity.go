@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
@@ -30,6 +31,20 @@ type User struct {
 	GID     *uint32  `json:"gid,omitempty"`
 	Groups  []string `json:"groups,omitempty"`
 	Claims  Claims   `json:"claims"`
+}
+
+// TokenEnds is when the session proxy's token that names the person ends;
+// the proxy sends a new one with a later request. Zero when the person is
+// signed in another way.
+func (u *User) TokenEnds() time.Time {
+	if u.Source != "proxy" {
+		return time.Time{}
+	}
+	exp, ok, err := numClaim(u.Claims, "exp")
+	if err != nil || !ok {
+		return time.Time{}
+	}
+	return time.UnixMilli(int64(exp * 1000))
 }
 
 // claim reads a claim by name; a dotted name like ext.uidNumber is read

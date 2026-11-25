@@ -71,11 +71,23 @@ func TestThePagesSocketReadsAsTheSignedInPerson(t *testing.T) {
 		err := websocket.JSON.Receive(ws, &m)
 		return m, err
 	}
+	// What is first said of a socket: how long it has, its life or what is
+	// left of the sign-in it was opened with.
+	has := func(ws *websocket.Conn) time.Duration {
+		f, err := next(ws)
+		if err != nil || f["until"] == nil {
+			t.Fatalf("%v %v", f, err)
+		}
+		return time.Duration(f["until"].(float64)) * time.Millisecond
+	}
 	ws, err := dial(sign("grace", time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ws.Close()
+	if d := has(ws); d < 590*time.Second || d > 10*time.Minute {
+		t.Fatalf("a socket has %v", d)
+	}
 	websocket.JSON.Send(ws, map[string]any{"want": map[string][2]int{"/api/whoami": {1000, 0}}})
 	f, err := next(ws)
 	if err != nil {
@@ -115,6 +127,9 @@ func TestThePagesSocketReadsAsTheSignedInPerson(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.Close()
+	if d := has(ws); d > 2*time.Second {
+		t.Fatalf("a socket whose sign-in ends in 2 s has %v", d)
+	}
 	websocket.JSON.Send(ws, map[string]any{"want": map[string][2]int{"/api/whoami": {1000, 0}}})
 	for deadline := time.Now().Add(120 * time.Second); err == nil; {
 		if time.Now().After(deadline) {

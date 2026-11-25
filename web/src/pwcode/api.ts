@@ -1,5 +1,6 @@
 import createClient from 'openapi-fetch'
 import { createPwCodeApi, type PwCodePaths } from '@parallelworks/code'
+import { feedSocket } from '../live'
 
 /**
  * pw code sessions over @parallelworks/code, the client PW Code on the web
@@ -36,7 +37,7 @@ function tellPane(): void {
 function openSocket(path: string): WebSocket {
   if (!path.startsWith('/ws/code/sessions')) return new WebSocket(feedURL(path))
   told = openPane
-  const ws = new WebSocket(feedURL(path) + (openPane ? `&open=${encodeURIComponent(openPane)}` : ''))
+  const ws = feedSocket(feedURL(path) + (openPane ? `&open=${encodeURIComponent(openPane)}` : ''))
   feed = ws
   ws.addEventListener('open', () => { if (feed === ws) tellPane() })
   return ws

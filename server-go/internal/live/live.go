@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -71,8 +72,10 @@ type Service struct {
 	// read answers r as the Studio answers the same request made on its
 	// own, the sign-in gate included.
 	read func(w http.ResponseWriter, r *http.Request) *http.Request
-	// beat is how often an open socket says it is there; life is how long
-	// one lasts: the page opens another, with its sign-in as it is then.
+	// beat is how often an open socket says it is there when it says
+	// nothing else, so the page notices one that went silent; life is how
+	// long one lasts: the page opens another before, with its sign-in as it
+	// is then.
 	beat, life time.Duration
 	// listEvery is how often a listing feed reads.
 	listEvery time.Duration
@@ -84,7 +87,7 @@ type Service struct {
 // New is the service over read, which answers a request and returns it as
 // the sign-in gate passed it (nil when the gate refused it).
 func New(read func(w http.ResponseWriter, r *http.Request) *http.Request) *Service {
-	return &Service{read: read, beat: 15 * time.Second, life: 10 * time.Minute, listEvery: 5 * time.Second, conns: map[string]map[*conn]bool{}}
+	return &Service{read: read, beat: 4 * time.Second, life: 10 * time.Minute, listEvery: 5 * time.Second, conns: map[string]map[*conn]bool{}}
 }
 
 // Routes registers the socket, the combined read, and the feeds of the two
@@ -368,10 +371,14 @@ func (c *conn) flush() {
 	c.write(b)
 }
 
-// heartbeat sends frame when nothing has been sent for a beat, or every
+// heartbeat sends frame before nothing has been sent for a beat, or every
 // beat with always, until the socket ends.
 func (c *conn) heartbeat(every time.Duration, frame string, always bool) {
-	t := time.NewTicker(every)
+	look := every
+	if !always {
+		look = every / 4
+	}
+	t := time.NewTicker(look)
 	defer t.Stop()
 	for {
 		select {
@@ -379,12 +386,24 @@ func (c *conn) heartbeat(every time.Duration, frame string, always bool) {
 			return
 		case <-t.C:
 			c.wmu.Lock()
-			if always || time.Since(c.said) >= every/2 {
+			if always || time.Since(c.said) >= every-look {
 				c.write([]byte(frame))
 			}
 			c.wmu.Unlock()
 		}
 	}
+}
+
+// until tells the page how long the socket has: until its life is over, or
+// before that the sign-in it was opened with.
+func (c *conn) until() {
+	end, _ := c.ctx.Deadline()
+	if u := auth.UserOf(c.r); u != nil {
+		if t := u.TokenEnds(); !t.IsZero() && t.Before(end) {
+			end = t
+		}
+	}
+	c.send(fmt.Appendf(nil, `{"until":%d}`, max(0, time.Until(end).Milliseconds())))
 }
 
 // get reads path as the socket's person; false when it is no longer them
@@ -430,6 +449,7 @@ type frame struct {
 // Socket is GET /api/live.
 func (s *Service) Socket(w http.ResponseWriter, r *http.Request) {
 	s.open(w, r, func(c *conn) {
+		c.until()
 		go c.heartbeat(s.beat, `{"beat":true}`, false)
 		for {
 			var raw string
