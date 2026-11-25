@@ -7,9 +7,10 @@ import { ChatProvider } from '@parallelworks/ui/ai'
 import { createOpenAIChatAdapter } from '@parallelworks/ui/ai/openai'
 import { AddIcon, ExternalLinkIcon, HelpIcon, SidebarOpenIcon } from '@parallelworks/ui/icons'
 import { ChatMarkdownLink } from '../chatLinks'
+import { EFFORT_WORDS } from '../labelScope'
 import { citedMarkdown } from '../citedPaths'
 import { NeedsActivate } from '../components/NeedsActivate'
-import { useAppConfig } from '../config'
+import { sectionAllowed, useAppConfig } from '../config'
 import { useWatch } from '../live'
 import { PageHeadActions } from '../pageHead'
 import { publishListing, sessionSeen, setFrontChat } from '../notices'
@@ -18,7 +19,7 @@ import { CodeSidebar } from './CodeSidebar'
 import { CodeSession, StartingSession } from './CodeSession'
 import { CodeStart, type Starting } from './CodeStart'
 import { LinkedSession, type Delegated } from './LinkedSession'
-import { type MachineRef, paneFor, type SessionRef, sessionHash, sessionInHash, useOpenInStudio, sameMachine } from './openInStudio'
+import { assistantLabel, type MachineRef, paneFor, type SessionRef, sessionHash, sessionInHash, useOpenInStudio, sameMachine } from './openInStudio'
 import { useMachineTools } from './machineTools'
 import { HowSessionsAppear } from './parts'
 
@@ -29,7 +30,7 @@ import { HowSessionsAppear } from './parts'
  * The list of sessions by machine sits beside the start of a new one, or
  * the session that is open, drawn as a pw code chat draws it and live
  * (CodeSession). Opening or starting one stays on the page; continuing it in
- * a Studio chat is an action of its own.
+ * Assistant is an action of its own.
  */
 export function CodePage() {
   const [messages, setMessages] = useState<PwCodeMessages | null>(null)
@@ -51,7 +52,7 @@ export function CodePage() {
 
 // A session's replies are drawn as a chat's: the library files they name
 // open here, in this tab.
-const chatConfig = { markdownComponents: { ...citedMarkdown, a: ChatMarkdownLink } }
+const chatConfig = { markdownComponents: { ...citedMarkdown, a: ChatMarkdownLink }, strings: { effort: EFFORT_WORDS } }
 
 /** The model picker reads the platform's models from a chat's context. */
 function CodeChat() {
@@ -122,7 +123,9 @@ function CodeScreen() {
     setLink(null)
     if (sessionInHash(location.hash)) location.hash = '#view=code'
   }, [])
-  const inChat = useMemo(() => new Set((studio.here?.chats ?? []).map(c => c.session)), [studio.here])
+  const inChat = useMemo(() => new Map((studio.here?.chats ?? []).map(c => [c.session, c.conversationId])), [studio.here])
+  // With AI features off, or Assistant off, there is nowhere to open a chat.
+  const toAssistant = sectionAllowed('chat', cfg)
   const opened = useMemo((): { machine?: string; sessionId?: string } => {
     const machine = linked?.machineId || link?.machine
     return link ? { ...(machine ? { machine } : {}), sessionId: link.session } : {}
@@ -197,7 +200,7 @@ function CodeScreen() {
     const url = sessionUrl(s)
     return [
       { label: 'Open', onClick: () => open(s) },
-      { label: inChat.has(s.id) ? 'Open in its Studio chat' : 'Continue in a Studio chat', onClick: () => continueIn(s), ...(why ? { disabledReason: why } : {}) },
+      ...(toAssistant ? [{ label: assistantLabel(inChat.has(s.id)), onClick: () => continueIn(s), ...(why ? { disabledReason: why } : {}) }] : []),
       ...(url ? [{ label: 'Open in ACTIVATE', icon: <ExternalLinkIcon />, onClick: () => { window.open(url, '_blank', 'noopener,noreferrer') } }] : []),
     ]
   }
@@ -215,6 +218,7 @@ function CodeScreen() {
         onlyDelegated={onlyDelegated}
         onOnlyDelegated={setOnlyDelegated}
         inChat={inChat}
+        onChat={toAssistant ? continueIn : undefined}
         extraMenu={extraMenu}
         collapsed={narrow ? false : collapsed}
         onToggle={() => (narrow ? setDrawerOpen(o => !o) : setCollapsed(c => !c))}
@@ -247,11 +251,11 @@ function CodeScreen() {
             where={startedAt[link.session]}
             username={cfg.user?.username ?? ''}
             delegated={delegatedById.get(link.session)}
-            inChat={!!shownAt.conversationId}
+            inChat={!!shownAt.conversationId || inChat.has(link.session)}
             elsewhere={shownOn ? isOwn(shownOn) === false : false}
             why={linked ? studio.why(linked) : shownAt.conversationId ? '' : 'This session is not listed yet.'}
             url={linked ? sessionUrl(linked) : ''}
-            onContinue={() => continueIn(linked ?? { machineId: opened.machine ?? '', id: link.session })}
+            onContinue={toAssistant ? () => continueIn(linked ?? { machineId: opened.machine ?? '', id: link.session }) : undefined}
             onClose={newSession}
             onMoved={id => { knowSession(id, { shownOn: shownAt.machine, conversationId: shownAt.conversationId }); show(opened.machine ?? '', id) }}
           />
@@ -269,7 +273,7 @@ function CodeScreen() {
               inChat={!!linked && inChat.has(linked.id)}
               url={linked ? sessionUrl(linked) : ''}
               onAnswer={answer}
-              onOpen={() => linked && continueIn(linked)}
+              onOpen={toAssistant ? () => { if (linked) continueIn(linked) } : undefined}
               onClose={closeLink}
             />
           ) : undefined} />

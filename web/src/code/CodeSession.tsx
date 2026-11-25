@@ -12,12 +12,13 @@ import { type Delegated, DelegatedNote } from './LinkedSession'
 import { useMachineLook } from '../machines'
 import { MachineLabel } from '../components/MachineLabel'
 import { SessionMark } from './parts'
+import { assistantLabel } from './openInStudio'
 import { PWCodeToolsNote } from '../pwcode/ToolsNote'
 import { useChatLink } from '../pwcode/useChatLink'
 
 /**
  * A session open in the Code page's own pane, beside the list: what it is
- * and where, the way to a Studio chat, and the session as a pw code chat
+ * and where, the way to its chat in Assistant, and the session as a pw code chat
  * shows it (PWCodeSession). A session being started shows here at once,
  * with its first message, until pw code has made it.
  */
@@ -52,7 +53,8 @@ export function CodeSession({ session, machine, pane, sessionId, first, where, u
   /** Why it cannot be continued in a chat; empty when it can. */
   why: string
   url: string
-  onContinue: () => void
+  /** Unset where the Studio shows no Assistant. */
+  onContinue?: () => void
   onClose: () => void
   onMoved: (session: string) => void
 }) {
@@ -74,9 +76,7 @@ export function CodeSession({ session, machine, pane, sessionId, first, where, u
         place={session ? { machine: machine?.name ?? '', folder: session.workspace ?? '', on: machine } : where ?? null}
         onClose={onClose}
       >
-        <Button variant="secondary" size="sm" data-testid="code-continue" onClick={onContinue} disabled={!!why} title={why || undefined}>
-          {inChat ? 'Open in its Studio chat' : 'Continue in a Studio chat'}
-        </Button>
+        {onContinue && <Button variant="secondary" size="sm" data-testid="code-continue" onClick={onContinue} disabled={!!why} title={why || undefined}>{assistantLabel(inChat)}</Button>}
         {url && <Button variant="ghost" size="sm" href={url} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>}
       </SessionHead>
       {session?.archivedAt && <p className="muted code-session-note">This session is archived. Restore it from its menu in the list to go on with it.</p>}

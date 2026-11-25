@@ -20,6 +20,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
 	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
+	"github.com/parallelworks/activate-studio/server-go/internal/userlibs"
 )
 
 const single = "single"
@@ -140,6 +141,11 @@ func read(r *http.Request, src Sources) Sources {
 		}
 	}
 	local, sum := src.Local(r, unlisted), src.Summary(r)
+	var shares []userlibs.SharedNew
+	looking := false
+	if src.Shares != nil {
+		shares, looking = src.Shares(r)
+	}
 	return Sources{
 		Listing:   func(*http.Request) ([]any, []any, error) { return machines, sessions, err },
 		Chats:     func(*http.Request) []chat.ChatState { return chats },
@@ -149,6 +155,7 @@ func read(r *http.Request, src Sources) Sources {
 		Transfers: func(*http.Request) []transfers.Transfer { return fails },
 		Summary:   func(*http.Request) *transfers.Summary { return sum },
 		Libraries: func(*http.Request) []Library { return libs },
+		Shares:    func(*http.Request) ([]userlibs.SharedNew, bool) { return shares, looking },
 	}
 }
 
@@ -259,6 +266,7 @@ func sources(a *app.App) Sources {
 			}
 		},
 		Libraries: func(r *http.Request) []Library { return failedLibraries(a, r) },
+		Shares:    func(r *http.Request) ([]userlibs.SharedNew, bool) { return userlibs.Of(a).SharedNew(r) },
 	}
 }
 

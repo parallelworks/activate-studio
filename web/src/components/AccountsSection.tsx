@@ -30,6 +30,9 @@ import { type AccountRowId, OPEN_ACCOUNT, accountInHash } from '../accounts'
  * accounts pw code uses. What needs nothing else comes first, and what
  * builds on another after it: the endpoint stands alone, ACTIVATE adds the
  * platform, and Claude Code accounts are for pw code, which ACTIVATE runs.
+ * Where everyone uses an account of their own (REQUIRE_PERSONAL_KEY),
+ * signing in with ACTIVATE comes first: the page says so, and its row
+ * starts open until then.
  *
  * A row in use (ACTIVATE signed in, an endpoint saved, a Claude Code
  * account added) starts open and the others closed, so with none in use
@@ -96,8 +99,9 @@ const PART_STATE: Record<ActivatePart['state'], ReactNode> = {
 
 /** With AI features off (`aiEnabled` false) only ACTIVATE is here: no
  *  endpoint, no subscriptions, and models are not listed among its parts. */
-export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }: { requirePersonalKey?: boolean; aiEnabled?: boolean }) {
+export function AccountsSection({ aiEnabled = true }: { aiEnabled?: boolean }) {
   const cfg = useAppConfig()
+  const signInFirst = !!cfg.signInFirst
   const [access, setAccess] = useState<AccessStatus | null>(null)
   const [me, setMe] = useState<KeyStatus | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
@@ -171,7 +175,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
       setLogin(l => a.login ?? l)
       // ACTIVATE opens when signed in, or when it is the only account
       // here (AI features off); the endpoint when one is saved.
-      startRow('activate', a.platform.source !== 'none' || !aiEnabled)
+      startRow('activate', a.platform.source !== 'none' || !aiEnabled || signInFirst)
       if (aiEnabled) startRow('endpoint', a.models.source === 'endpoint')
       // The way in use; on a shared Studio with none of the person's own
       // yet, signing in with ACTIVATE.
@@ -194,7 +198,7 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
       setLoadError(errText(e))
     }
   }
-  useEffect(() => { void load() }, [aiEnabled]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (cfg.loaded) void load() }, [aiEnabled, cfg.loaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A device sign-in under way: ask how it stands until it settles.
   useEffect(() => {
@@ -417,27 +421,34 @@ export function AccountsSection({ requirePersonalKey = false, aiEnabled = true }
 
   // Who the Studio is signed in to ACTIVATE as, said first in its row.
   const who = access.cli?.stopped && !own ? 'Not using the pw CLI. The Studio works as for someone without ACTIVATE; sign in to use the parts below.'
-    : !connected ? 'Not signed in. The Studio works without ACTIVATE; sign in to use the parts below.'
+    : !connected ? `Not signed in. ${signInFirst ? 'Sign in with ACTIVATE first: the parts below run with your own sign-in.'
+      : single ? 'The Studio works without ACTIVATE; sign in to use the parts below.'
+      : 'Browsing and search work without ACTIVATE; sign in to use the parts below.'}`
     : `Signed in: ${describeSource(access.platform, single)}.`
 
   return (
     <div className="model-access accounts">
       <h1>Accounts</h1>
       <p className="muted view-sub">
-        The accounts this Studio uses for you, set up once. The Studio works without any of them: chat with a model of
-        your own{aiEnabled ? '' : ' (with AI features on)'}, libraries on this computer, and remote computers over ssh.
+        The accounts this Studio uses for you, set up once.{' '}
+        {single ? <>The Studio works without any of them: chat with a model of
+          your own{aiEnabled ? '' : ' (with AI features on)'}, libraries on this computer, and remote computers over ssh.</>
+          : signInFirst ? <>{!connected && 'Sign in with ACTIVATE first. '}My library, buckets, pw code, workflows and desktops run
+            with your own ACTIVATE sign-in or key{aiEnabled && ', and so do models, unless you save an endpoint of your own'}.
+            Browsing and searching {cfg.kbLabel} work without one.</>
+          : <>Browsing and searching {cfg.kbLabel} need none of them.</>}
         {aiEnabled && <> Which of them your models come from is under <a href="#view=settings:access">Model access</a>.</>}
       </p>
 
       <div className="ix-cards accounts-rows">
         {aiEnabled && (
           <AccountRow id="endpoint" title="OpenAI-compatible endpoint" open={!!opened.endpoint} onOpenChange={x => openRow('endpoint', x)}
-            description="Models from any service that speaks the OpenAI API: a site AI portal, a provider, or a model server on this computer."
+            description={`Models from any service that speaks the OpenAI API: a site AI portal${single ? ', a provider, or a model server on this computer' : ' or a provider'}.`}
             state={endpointStored ? <StatusLabel variant="success">Saved</StatusLabel> : <StatusLabel variant="muted">Not saved</StatusLabel>}>
             <div>
               <p className="muted view-sub">
-                The base URL usually ends in /v1. It covers models only; the platform parts keep using ACTIVATE. A model
-              server on this computer keeps working with no network.
+                The base URL usually ends in /v1. It covers models only; the platform parts keep using ACTIVATE.
+                {single && ' A model server on this computer keeps working with no network.'}
                 {!apart && keyStored && ' Saving one replaces your ACTIVATE API key, which is kept in the same place.'}
               </p>
               <div className="key-row">

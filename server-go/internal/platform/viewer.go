@@ -381,15 +381,16 @@ func (p *Platform) GatewayKey() string {
 }
 
 // HasActivate says whether this computer gives the Studio an ACTIVATE
-// credential: PW_API_KEY, or a pw CLI context that holds a sign-in, a token
-// or a key (the one for the gateway's platform, else the CLI's current
-// one). False after Stop using the pw CLI. It reads no token and renews
-// nothing, so it is cheap to ask on every request.
+// credential: PW_API_KEY, OPENAI_API_KEY where the gateway is a platform's
+// (elsewhere it is some other endpoint's key), or a pw CLI context that
+// holds a sign-in, a token or a key (the one for the gateway's platform,
+// else the CLI's current one). False after Stop using the pw CLI. It reads
+// no token and renews nothing, so it is cheap to ask on every request.
 func (p *Platform) HasActivate() bool {
 	if p.Stopped() {
 		return false
 	}
-	if p.apiKey != "" {
+	if p.apiKey != "" && (p.Getenv("PW_API_KEY") != "" || p.PlatformGateway()) {
 		return true
 	}
 	s := p.ReadStore()

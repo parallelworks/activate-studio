@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { isArchived, isMachineDown, isStarting, machinesById, type PwCodeMachine, type PwCodeSession, sessionRowState } from '@parallelworks/code'
 import { type BadgeVariant, isPlainClick, RelativeTime, RunStatusIcon, SearchInput, StatusDot, statusTextClass, Tooltip, type MenuEntry, type useContextMenu } from '@parallelworks/ui'
-import { ImageIcon, NewChatIcon, SearchIcon, UsersIcon } from '@parallelworks/ui/icons'
+import { CodeIcon, ImageIcon, NewChatIcon, SearchIcon, UsersIcon } from '@parallelworks/ui/icons'
 import {
   ConversationLayout, ConversationSidebar, FOCUS_SIDEBAR_SEARCH_EVENT, groupConversationsByDate, KeyboardShortcutsProvider, ManageProvidersLink,
   SidebarEmpty, SidebarRailItem, SidebarRow, SidebarRowBody, type SidebarMode, useChat, useChatConfig, useConversationActions,
 } from '@parallelworks/ui/ai'
 import { prefetchChat } from '../chatRecord'
+import { useChatSessionHref } from '../code/chatSession'
 import { RowDetail, SessionMark, type Translate } from '../code/parts'
 import type { MachineRef } from '../machines'
 import { type ChatNotice, useNotices } from '../notices'
@@ -53,7 +54,7 @@ function dot(variant: BadgeVariant, label: string, pulse = false) {
 
 /**
  * The state of a chat's row: of a pw code chat, its session's, in the mark
- * and words the Code page gives it; of a Studio assistant chat, whether a
+ * and words the Code page gives it; of a chat the Studio answers, whether a
  * reply is being written, or a call waits for the person. Either way a
  * reply they have not seen is said once nothing else is going on.
  */
@@ -106,7 +107,7 @@ export function readerItems(c: { isOwner?: boolean }, items: MenuEntry[]): MenuE
 }
 
 /** The machine a pw code chat's session is on: the listing's, or the one the
- *  chat knows; undefined for a Studio assistant chat. */
+ *  chat knows; undefined for one the Studio answers. */
 export function chatMachine(n: ChatNotice | undefined, session: PwCodeSession | undefined): MachineRef | undefined {
   if (!n?.session) return undefined
   const id = session?.machineId || n.machine
@@ -227,6 +228,11 @@ function ChatSidebar({ top }: { top: (state: { collapsed: boolean }) => ReactNod
 
   const t = usePwCodeWords()
   const notices = useNotices()
+  const sessionHref = useChatSessionHref()
+  const toCode = (c: Conversation): MenuEntry[] => {
+    const href = sessionHref(c.id)
+    return href ? [{ label: 'Open in Code', icon: <CodeIcon />, onClick: () => { closeDrawer(); location.hash = href } }] : []
+  }
   const { states, places } = useMemo(() => {
     const machines = machinesById(notices.machines)
     const sessions = new Map(notices.sessions.map(s => [s.id, s]))
@@ -278,7 +284,7 @@ function ChatSidebar({ top }: { top: (state: { collapsed: boolean }) => ReactNod
           getKey={c => c.id}
           renderRow={c => (
             <ChatRow conv={c} state={states.get(c.id) ?? null} machine={places.get(c.id)} marks={states.size > 0} current={activeConversationId === c.id}
-              menuItems={row => menuItems(c, row)} openMenu={openMenu} onOpen={closeDrawer} />
+              menuItems={row => [...toCode(c), ...menuItems(c, row)]} openMenu={openMenu} onOpen={closeDrawer} />
           )}
           loading={isLoading}
           placeholder={<SidebarEmpty title={conversations.length === 0 ? words.noConversations : strings.chrome.noMatches} />}

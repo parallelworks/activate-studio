@@ -28,16 +28,16 @@ describe('the user guide rail', () => {
     expect(sections.every(s => s.group)).toBe(true)
   })
 
-  it('drops the Overview\'s Chat and assistant text with AI features off, and keeps it, unmarked, with them on', () => {
+  it('drops the Overview\'s Assistant text with AI features off, and keeps it, unmarked, with them on', () => {
     const md = readFileSync(path.resolve(process.cwd(), '../docs/HELP.md'), 'utf8')
     const off = parseHelp(aiGuideText(md, false)).intro
     const on = parseHelp(aiGuideText(md, true)).intro
-    expect(off).not.toMatch(/Chat|assistant/)
+    expect(off).not.toMatch(/Chat|assistant/i)
     expect(off).toMatch(/\*\*Query\*\* answers questions about the files themselves/)
     expect(off).toMatch(/need no network connection\. The same index/)
     expect(off).toMatch(/2\. \*\*Search\.\*\*.*\n4\. \*\*Query\.\*\*/)
-    expect(on).toMatch(/\*\*Chat\*\* answers questions from the files/)
-    expect(on).toMatch(/3\. \*\*Ask\.\*\* Open \*\*Chat\*\*/)
+    expect(on).toMatch(/\*\*Assistant\*\* answers questions from the files/)
+    expect(on).toMatch(/3\. \*\*Ask\.\*\* Open \*\*Assistant\*\*/)
     expect(`${on}${off}`).not.toMatch(/<!--/)
   })
 })

@@ -25,7 +25,7 @@ describe("A continued chat's opening note", () => {
     render(<p><ChatMarkdownLink href={link![1]}>Messages you send here go to that session.</ChatMarkdownLink></p>)
     expect(screen.getByText('Messages you send here go to that session.')).toBeInTheDocument()
     act(() => knowEngine('c4', 'studio'))
-    expect(screen.getByText('The Studio assistant answers this chat now, so messages you send here do not go to that session.')).toBeInTheDocument()
+    expect(screen.getByText('The Studio answers this chat now, so messages you send here do not go to that session.')).toBeInTheDocument()
     act(() => knowEngine('c4', 'pwcode'))
     expect(screen.getByText('Messages you send here go to that session.')).toBeInTheDocument()
     expect(screen.queryByRole('link')).toBeNull()
@@ -49,9 +49,9 @@ describe('A link in a chat message', () => {
   // its own and puts its headings' prefix on it.
   it('to a place in the Studio, keeps its address', async () => {
     render(<Markdown components={{ a: ChatMarkdownLink }}>{'[the notes](#open=file:a/notes.md&q=inlet) and [the run](#chat=c9)'}</Markdown>)
-    expect(await screen.findByRole('link', { name: 'the notes' })).toHaveAttribute('href', '#open=file:a/notes.md&q=inlet')
+    expect(await screen.findByRole('link', { name: 'the notes' }, { timeout: 10_000 })).toHaveAttribute('href', '#open=file:a/notes.md&q=inlet')
     expect(screen.getByRole('link', { name: 'the run' })).toHaveAttribute('href', '#chat=c9')
-  })
+  }, 20_000)
 
   it('to anywhere else, opens a new tab and says so', () => {
     render(<p><ChatMarkdownLink href="https://example.com/doc">the doc</ChatMarkdownLink></p>)

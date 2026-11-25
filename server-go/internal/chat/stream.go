@@ -114,6 +114,9 @@ type streamBody struct {
 	// bills it: its session is made with them.
 	PWCodeModel      *string `json:"pwcodeModel"`
 	PWCodeAllocation *string `json:"pwcodeAllocation"`
+	// PWCodeEffort is the reasoning effort that session starts at, one of
+	// pw code's levels; pw code's own without it.
+	PWCodeEffort *string `json:"pwcodeEffort"`
 	// PWCodeMachine, PWCodeFolder and PWCodeMode are where the composer
 	// chose to start it: another of the person's machines (its platform
 	// id), the folder, and, on another machine, the permission mode
@@ -300,12 +303,12 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 			}
 			// pw code could not reach the Studio's tools: the Studio
 			// assistant answers this message with them, and says why.
-			m.A.Log.Warn("pw code chat: the Studio assistant answers in pw code's place", "conversation", convID, "detail", down.detail)
+			m.A.Log.Warn("pw code chat: the Studio answers in pw code's place", "conversation", convID, "detail", down.detail)
 			// The chat goes on with the engine that answered it, until the
 			// person switches it back.
 			m.Conv.SetEngine(convID, engineStudio)
 			res.event("pwcode_fallback", reqbody.O("conversationId", convID,
-				"reason", down.Error()+", so the Studio assistant answered this message with the Studio's own tools."))
+				"reason", down.Error()+", so the Studio answered this message with its own tools."))
 		}
 	}
 
@@ -321,11 +324,11 @@ func (m *Module) answer(r *http.Request, res *sseWriter, body streamBody, convID
 		m.refreshAccess(r, 15000)
 	}
 	if m.personalRequired(userCred) {
-		res.event("error", reqbody.O("message", "This deployment requires your own model credential. Add your API key or platform token in Settings, Accounts, then retry. Browsing, search, and adding material work without one.", "kind", "credential"))
+		res.event("error", reqbody.O("message", signInFirst, "kind", "credential"))
 		return nil
 	}
 	if m.deploymentModelsKey() == "" && userCred == nil && !m.LLM.SidecarConfigured() {
-		res.event("error", reqbody.O("message", noModelCredential(m.A.Cfg.AuthEnabled()), "kind", "credential"))
+		res.event("error", reqbody.O("message", m.noCredential(), "kind", "credential"))
 		return nil
 	}
 

@@ -80,3 +80,43 @@ func TestStoppedStudioOfOneMakesNoActivateCall(t *testing.T) {
 		t.Fatalf("the gateway was called %d times and listed %d times", n, atomic.LoadInt32(listings))
 	}
 }
+
+// Where everyone uses an account of their own (REQUIRE_PERSONAL_KEY), each
+// answer without one says the same: sign in with ACTIVATE first. It marks
+// itself as that, so the app says it in one place. Without the requirement,
+// and where personal keys are off, the text is as it was.
+func TestStrictStudioAsksForTheSignInFirst(t *testing.T) {
+	const first = "Sign in with ACTIVATE first, under Settings, Accounts."
+	for name, strict := range map[string]map[string]string{
+		"strict":                            {"AUTH_REQUIRED": "1", "REQUIRE_PERSONAL_KEY": "1", "PW_PLATFORM_HOST": "platform.example.com"},
+		"with the administrator's endpoint": {"REQUIRE_PERSONAL_KEY": "1", "OPENAI_BASE_URL": "https://models.example.org/v1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			strict["AUTH_JWKS_URL"] = "http://127.0.0.1:9/jwks"
+			_, srv, _, _ := newTestModule(t, strict)
+			out := get(t, srv.URL+"/api/chat/models")
+			if s, _ := out["error"].(string); !strings.HasPrefix(s, first) || out["kind"] != "credential" {
+				t.Fatal(out)
+			}
+			if h := get(t, srv.URL+"/api/ai/health"); h["status"] != "key-required" || !strings.HasPrefix(h["message"].(string), first) {
+				t.Fatal(h)
+			}
+			if sse := post(t, srv.URL, map[string]any{"model": "test-model", "messages": []any{map[string]any{"role": "user", "content": "hello"}}}); !strings.Contains(sse, first) {
+				t.Fatalf("%q", sse)
+			}
+		})
+	}
+	for name, env := range map[string]map[string]string{
+		"not required":      {},
+		"personal keys off": {"REQUIRE_PERSONAL_KEY": "1", "DISABLE_PERSONAL_KEYS": "1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env["AUTH_JWKS_URL"], env["PW_PLATFORM_HOST"] = "http://127.0.0.1:9/jwks", "platform.example.com"
+			_, srv, _, _ := newTestModule(t, env)
+			out := get(t, srv.URL+"/api/chat/models")
+			if s, _ := out["error"].(string); !strings.HasPrefix(s, "No model credential of your own.") || out["kind"] != "credential" {
+				t.Fatal(out)
+			}
+		})
+	}
+}

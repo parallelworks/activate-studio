@@ -13,7 +13,7 @@ import { pageWidth, stepZoom, useSettled, ZOOM_MAX, ZOOM_MIN, ZoomView, type Zoo
 import { CsvTable, DELIMITED_SUFFIXES } from './CsvTable'
 import { GRID_SUFFIXES, SheetWorkbook } from './SheetWorkbook'
 import { LockedButton } from './LockedButton'
-import { useAppConfig } from '../config'
+import { mainWritable, useAppConfig } from '../config'
 import { copyItemLink, copyLinkLabel } from '../itemLinks'
 import { TextEditor, type OpenText } from './TextEditor'
 import { TextNote } from './TextNote'
@@ -382,34 +382,38 @@ function syncEvery(sec: number): string {
   return h < 48 ? `${h} hours` : `${Math.round(h / 24)} days`
 }
 
-const catchUpNow = (c: 'sync' | 'rebuild') => c === 'sync' ? 'Sync now at the bottom of the navigation' : 'Rebuild in Settings, Indexing, Libraries'
+/** What brings the index up to date at once; null where it is Sync now and
+ *  the viewer may not (the main library is read only for them). */
+const catchUpNow = (c: 'sync' | 'rebuild', canSync: boolean) => c === 'rebuild' ? 'Rebuild in Settings, Indexing, Libraries'
+  : canSync ? 'Sync now at the bottom of the navigation' : null
 
 const shortDate = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 /** The line above indexed text that is older than the file, or null. */
-function staleIndexedText(file: FileContent): string | null {
+function staleIndexedText(file: FileContent, canSync: boolean): string | null {
   const ix = file.index
   if (!ix || ix.state === 'unindexed') return null
   const changed = `This text is from before the file changed on ${shortDate(new Date(file.mtime * 1000))}.`
   if (ix.state === 'indexing') return `${changed} The library is indexing now; the new text appears here when that ends.`
   if ('catchUp' in ix) {
-    if (!(ix.syncEvery > 0)) return `${changed} The background sync is paused, so ${catchUpNow(ix.catchUp)} updates it.`
-    return `${changed} It updates at the next background sync (every ${syncEvery(ix.syncEvery)}), or at once with ${catchUpNow(ix.catchUp)}.`
+    const now = catchUpNow(ix.catchUp, canSync)
+    if (!(ix.syncEvery > 0)) return `${changed} The background sync is paused, so ${now ?? 'an administrator\'s sync'} updates it.`
+    return `${changed} It updates at the next background sync (every ${syncEvery(ix.syncEvery)})${now ? `, or at once with ${now}` : ''}.`
   }
   const at = new Date(ix.indexedAt)
   return `${changed} The library's last index pass was${Number.isNaN(at.getTime()) ? ' before that' : ` on ${shortDate(at)}`}; rebuild the library to update it.`
 }
 
-function noIndexedText(file: FileContent, isImage: boolean): string {
+function noIndexedText(file: FileContent, isImage: boolean, canSync: boolean): string {
   const ix = file.index
   if (ix?.state === 'indexing') return 'Not indexed yet. The library is indexing now; its text appears here when that ends.'
   if (ix?.state === 'unindexed') {
-    return `This library has no index yet. ${ix.catchUp === 'sync' ? 'Build index in Settings, Indexing, Building' : catchUpNow(ix.catchUp)} adds its text.`
+    return `This library has no index yet. ${ix.catchUp === 'sync' ? (canSync ? 'Build index in Settings, Indexing, Building' : 'An administrator\'s build of it') : catchUpNow(ix.catchUp, canSync)} adds its text.`
   }
   if (ix?.state === 'newer' && 'catchUp' in ix) {
-    const now = catchUpNow(ix.catchUp)
-    if (!(ix.syncEvery > 0)) return `Added or changed since the library's last index pass. The background sync is paused, so ${now} adds its text.`
-    return `Added or changed since the library's last index pass. The background sync, every ${syncEvery(ix.syncEvery)}, adds its text; ${now} adds it at once.`
+    const now = catchUpNow(ix.catchUp, canSync)
+    if (!(ix.syncEvery > 0)) return `Added or changed since the library's last index pass. The background sync is paused, so ${now ?? 'an administrator\'s sync'} adds its text.`
+    return `Added or changed since the library's last index pass. The background sync, every ${syncEvery(ix.syncEvery)}, adds its text${now ? `; ${now} adds it at once` : ''}.`
   }
   if (ix?.state === 'newer') {
     const at = new Date(ix.indexedAt)
@@ -469,7 +473,9 @@ export function Viewer({ path, find, onDeleted, onOpen, startEditing, readOnly, 
   // The file was open and is no longer there: moved, renamed or deleted
   // by something else (the assistant, another window, the file system).
   const [gone, setGone] = useState(false)
-  const { linkBase } = useAppConfig()
+  const cfg = useAppConfig()
+  const { linkBase } = cfg
+  const canSync = mainWritable(cfg)
   const [tab, setTab] = useState<Tab>('preview')
   // Zoom for a PDF's or Office file's pages, or an image (ZoomView). The
   // buttons show while such a preview is on screen.
@@ -772,9 +778,9 @@ export function Viewer({ path, find, onDeleted, onOpen, startEditing, readOnly, 
     }
   }
 
-  const stale = file.content == null ? null : staleIndexedText(file)
+  const stale = file.content == null ? null : staleIndexedText(file, canSync)
   const indexedView = file.content == null
-    ? <p className="muted pad">{noIndexedText(file, isImage)}</p>
+    ? <p className="muted pad">{noIndexedText(file, isImage, canSync)}</p>
     : (
       <div className="viewer-body">
         {previewGone !== null && isOffice && (

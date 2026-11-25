@@ -24,6 +24,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
+	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/wslpath"
 )
 
@@ -501,7 +502,7 @@ func (s *Service) buildAdd(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Service) rebuild(w http.ResponseWriter, r *http.Request) error {
 	if s.otherSite(r) {
-		return apierr.New(403, "A page of another site cannot rebuild your libraries."+otherSiteRemedy)
+		return apierr.New(403, "A page of another site cannot rebuild your libraries."+sessions.OtherSiteRemedy)
 	}
 	// A person's own bucket library, where people sign in.
 	if !s.localBuildOffered(r) {

@@ -5,7 +5,7 @@ import { useChatCommands } from '../pwcode/chatCommands'
 
 /**
  * A command palette for the composer: type "/" and the slash-invocable
- * things appear (with the Studio assistant, meta commands, skills, agents
+ * things appear (with the Studio, meta commands, skills, agents
  * and tools; with pw code, what its session takes), filtered as you
  * type, chosen with the arrow keys and Enter or Tab. The composer is the
  * chat package's, so this attaches to its textarea from outside: a native

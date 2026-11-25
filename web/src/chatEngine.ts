@@ -7,7 +7,7 @@ import { bindLibraryStart, startOf } from './pwcode/newChatStart'
  * /api/chat/engine, and what a reply's stream or a switch said since, both
  * the server's word. Nothing here reads a chat's record: the record names
  * the engine stored for the chat, which is not what answers it for a
- * person pw code is not for here (the Studio assistant does), so taking
+ * person pw code is not for here (the Studio does), so taking
  * both made the chat's parts set it back and forth, each change asking
  * the server again.
  *
@@ -34,6 +34,10 @@ export interface EngineInfo {
   toolsDown?: string | null
   /** The model Settings names for pw code. */
   model?: string
+  /** Where it names none, the one the person chose last, in any browser,
+   *  and the allocation that billed it. */
+  lastModel?: string
+  lastAllocation?: string
 }
 
 const ENGINE_LAST = 'ade-chat-engine'

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Callout, Loader, Table } from '@parallelworks/ui'
 import { api, type FolderShare, type UserLibrary } from '../api'
+import { refreshNotices } from '../notices'
 import { MachineLabel } from './MachineLabel'
 
 /**
@@ -34,6 +35,7 @@ export function SharedWithMe({ onAdded, system, compact = false, title, where }:
     try {
       const lib = await api.addShared(s.id, {})
       onAdded(lib)
+      refreshNotices({ after: 0 })
       void load()
     } catch (e) { setError(String((e as Error).message ?? e)) } finally { setBusy('') }
   }

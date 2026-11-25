@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
-import { useAppConfig } from '../config'
+import { mainWritable, useAppConfig } from '../config'
 import { accountsHref } from '../accounts'
 
 /**
@@ -9,7 +9,9 @@ import { accountsHref } from '../accounts'
  * visit says what the two libraries they meet are: the one everyone shares,
  * and My library, their own folder on a remote computer, and where they
  * sign in with ACTIVATE (Settings, Accounts). It shows once per
- * person in each browser, and changes nothing.
+ * person in each browser, and changes nothing. It is a part of the page, at
+ * its foot: floating, it would lie over the message box or a form's buttons.
+ * On a phone or in a low window it is two lines, so the page keeps its room.
  */
 const seenKey = (user: string) => `ade-first-visit:${user}`
 
@@ -23,8 +25,7 @@ export function FirstVisitCard() {
   const [closed, setClosed] = useState(false)
   const framed = typeof window !== 'undefined' && (window.parent !== window || new URLSearchParams(location.search).has('embed'))
   if (!cfg.signIn || !user || user === 'user' || framed || closed || seen(user)) return null
-  const main = cfg.libraries?.find(l => l.primary)
-  const readOnly = !!main && (main.writable === false || !!main.readOnlyWhy)
+  const readOnly = !mainWritable(cfg)
   const close = () => {
     try { localStorage.setItem(seenKey(user), '1') } catch { /* shown again next time */ }
     setClosed(true)
@@ -32,11 +33,15 @@ export function FirstVisitCard() {
   return (
     <div className="first-visit" role="region" aria-label={`Welcome to ${cfg.appName}`}>
       <Callout title={`Welcome to ${cfg.appName}`} action={<Button size="sm" variant="secondary" onClick={close}>Got it</Button>}>
-        <p><strong>{cfg.kbLabel}</strong> is the library everyone here searches.{' '}
+        <p className="first-visit-short">
+          Sign in with ACTIVATE under <a href={accountsHref('activate')} onClick={close}>Settings, Accounts</a>.{' '}
+          <a href="#view=help">Help</a> says what {cfg.kbLabel} and My library are.
+        </p>
+        <p className="first-visit-long"><strong>{cfg.kbLabel}</strong> is the library everyone here searches.{' '}
           {readOnly ? 'It is read only for you; its administrators change it.' : 'You may change it.'}</p>
-        <p><strong>My library</strong> is your own folder on one of your remote computers, read and written as you. Where it is
-          offered, add it in the Library from the arrow beside <strong>+ Add</strong>: <strong>Add a library…</strong>.</p>
-        <p><strong>Settings, Accounts</strong> is where you sign in with ACTIVATE, as yourself: My library, pw code, workflows and
+        <p className="first-visit-long"><strong>My library</strong> is your own folder on one of your remote computers, read and written as you. Where it is
+          offered, <strong>Add a library…</strong> under the arrow beside <strong>+ Add</strong> in the Library adds it.</p>
+        <p className="first-visit-long"><strong>Settings, Accounts</strong> is where you sign in with ACTIVATE, as yourself: My library, pw code, workflows and
           desktops run with that sign-in, never with the Studio's own account. <a href={accountsHref('activate')} onClick={close}>Open Accounts</a></p>
       </Callout>
     </div>

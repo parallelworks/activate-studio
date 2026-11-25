@@ -153,12 +153,12 @@ func TestANewChatStartsOnAnotherMachineThroughActivate(t *testing.T) {
 	m, base, plat, origin := relayModule(t, local, remote)
 	canStart(plat, nil)
 	c := m.Conv.Create(nil, "")
-	sse := startMessage(t, base, c.ID, "u1", map[string]any{"pwcodeMachine": "m2", "pwcodeFolder": "/home/me/solver", "pwcodeMode": "accept-edits", "pwcodeModel": "me:openai/gpt-5", "pwcodeAllocation": "a1"})
+	sse := startMessage(t, base, c.ID, "u1", map[string]any{"pwcodeMachine": "m2", "pwcodeFolder": "/home/me/solver", "pwcodeMode": "accept-edits", "pwcodeModel": "me:openai/gpt-5", "pwcodeAllocation": "a1", "pwcodeEffort": "xhigh"})
 	if len(local.created) != 0 || len(remote.created) != 1 || !strings.Contains(sse, `"content":"Hello"`) {
 		t.Fatalf("made %d here, %d there\n%s", len(local.created), len(remote.created), sse)
 	}
 	req := remote.created[0]
-	if req["workspace"] != "/home/me/solver" || req["permissionMode"] != "accept-edits" || req["model"] != "me:openai/gpt-5" || req["allocation"] != "a1" || req["agentsJson"] != nil || req["agent"] != nil {
+	if req["workspace"] != "/home/me/solver" || req["permissionMode"] != "accept-edits" || req["model"] != "me:openai/gpt-5" || req["allocation"] != "a1" || req["effort"] != "xhigh" || req["agentsJson"] != nil || req["agent"] != nil {
 		t.Errorf("request %v", req)
 	}
 	if len(remote.messages) != 1 || remote.messages[0] != "Start here." || len(local.messages) != 0 {

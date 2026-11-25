@@ -28,6 +28,15 @@ func effortOf(v *string) string {
 	return ""
 }
 
+// pwcodeEffort is the request's effort for a pw code session when it is a
+// level pw code has, else "".
+func pwcodeEffort(v *string) string {
+	if e := effortOf(v); e != "minimal" {
+		return e
+	}
+	return ""
+}
+
 // withEffort is the chat_template_kwargs to send and the top-level
 // reasoning_effort, given the model's kwargs entry and the turn's effort.
 func withEffort(kwargs json.RawMessage, effort string) (json.RawMessage, string) {

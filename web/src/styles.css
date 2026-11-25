@@ -354,6 +354,7 @@ main.content { min-height: 0; min-width: 0; background: var(--pw-content-bg); }
 .sidenav-resize:hover::before, .sidenav-resize.dragging::before, .sidenav-resize:focus-visible:not(.pressed)::before {
   background: linear-gradient(to right, transparent 2px, var(--pw-border-strong) 2px, var(--pw-border-strong) 5px, transparent 5px);
 }
+/* Also while the Library's tree is resized. */
 html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-select: none; }
 @media (max-width: 760px) { .sidenav-resize { display: none; } }
 .sidenav-brand { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
@@ -463,7 +464,7 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .view { flex: 1; min-height: 0; display: flex; flex-direction: column; height: 100%; }
 .view.hidden { display: none; }
-/* Chat is hidden differently. Its thread measures the container it scrolls
+/* Assistant is hidden differently. Its thread measures the container it scrolls
    in, and display:none zeroes that measurement; the package does not
    recover it when the element is shown again, so navigating away and back
    left the thread blank with only the composer drawn. Keeping it in the
@@ -522,12 +523,23 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
   border-right: 1px solid var(--theme-border, var(--pw-border));
 }
 .library .divider {
+  position: relative; z-index: 2; touch-action: none; outline: none;
   width: 5px; flex-shrink: 0; cursor: col-resize;
   /* The same token the chat rail divides with, and the strip carries the
      rail's own color so no page background shows through beside the line. */
   border-right: 1px solid var(--theme-border, var(--pw-border)); background: var(--pw-rail-bg);
 }
-.library .divider:hover, .resizing .library .divider { background: var(--theme-hover, #e3ebf3); }
+/* A target wider than the line. It reaches over the file's margin, not the
+   tree's scrollbar. */
+.library .divider::before { content: ''; position: absolute; top: 0; bottom: 0; left: -1px; right: -9px; cursor: col-resize; }
+/* The grip: faint until the edge is hovered, dragged or focused. */
+.library .divider::after {
+  content: ''; position: absolute; top: 50%; right: -3px; width: 5px; height: 40px; margin-top: -20px; border-radius: 3px;
+  background: var(--pw-border-strong); box-shadow: 0 0 0 1px var(--pw-panel); pointer-events: none;
+}
+.library .divider:hover, .library .divider.dragging, .library .divider:focus-visible:not(.pressed) { border-right-color: var(--pw-link); }
+.library .divider:hover::after, .library .divider.dragging::after, .library .divider:focus-visible:not(.pressed)::after { background: var(--pw-link); height: 56px; margin-top: -28px; }
+.library .divider:focus-visible:not(.pressed)::after { box-shadow: 0 0 0 3px var(--theme-focus-ring); }
 .rail-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   height: 52px; padding: 0 12px; border-bottom: 1px solid var(--pw-border); flex-shrink: 0;
@@ -548,7 +560,7 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 /* An empty library, or one that could not be listed, says so at the top. */
 .explorer .tree-empty { margin: 8px 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .explorer .tree-row {
-  display: flex; align-items: center; gap: 5px;
+  position: relative; display: flex; align-items: center; gap: 5px;
   min-height: 24px; padding: 2px 8px; line-height: 20px; cursor: pointer; border-radius: 4px;
   white-space: nowrap; overflow: hidden;
   font-family: var(--font-sans); font-size: 13px;
@@ -563,6 +575,9 @@ html.nav-resizing, html.nav-resizing * { cursor: col-resize !important; user-sel
 .explorer .tree-row.dir { color: var(--pw-text); font-weight: 500; }
 .explorer .tree-row.file { color: color-mix(in srgb, var(--pw-text) 80%, var(--pw-muted)); }
 .tree-label { overflow: hidden; text-overflow: ellipsis; }
+.explorer .tree-text { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; }
+.explorer .tree-label { min-width: 0; }
+.explorer .tree-row:focus-visible, .explorer[data-keys] .tree-row:focus { outline: 2px solid var(--theme-accent); outline-offset: -2px; }
 .tree-tags { display: inline-flex; gap: 3px; margin-left: 2px; flex-shrink: 0; }
 .tree-tag {
   font-size: 11px; line-height: 15px; padding: 0 6px; border-radius: 999px;
@@ -883,7 +898,15 @@ textarea.field { line-height: 1.5; }
 /* With a pointer, a row's label button shows when the row is hovered or
    selected; on touch screens it stays visible, since there is no hover. */
 @media (hover: hover) {
-  .explorer .row-tag { opacity: 0; }
+  /* Over the row's end, where the name fades out under it, so the name is
+     cut where it was before. */
+  .explorer .row-tag { position: absolute; right: 4px; top: 50%; margin-top: -10px; opacity: 0; }
+  .explorer .tree-row:hover .tree-text, .explorer .tree-row.selected .tree-text {
+    -webkit-mask-image: linear-gradient(to left, transparent 18px, #000 34px); mask-image: linear-gradient(to left, transparent 18px, #000 34px);
+  }
+  .explorer .tree-row:has(.row-tag:focus-visible) .tree-text {
+    -webkit-mask-image: linear-gradient(to left, transparent 18px, #000 34px); mask-image: linear-gradient(to left, transparent 18px, #000 34px);
+  }
   .explorer .tree-row:hover .row-tag, .explorer .tree-row.selected .row-tag, .explorer .row-tag:focus-visible { opacity: 1; }
 }
 .search-label-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
@@ -1077,13 +1100,15 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
      icons, then the engine button too (ChatView measures). */
   .chat-controls.tight .scope-btn:not(.engine-btn) > .persona-label,
   .chat-controls.tighter .scope-btn > .persona-label { display: none; }
+  /* Without its words it reads as the engine button; the menus have it. */
+  .chat-controls:is(.tight, .tighter) .open-in-code { display: none; }
   .chat-controls.tight .scope-btn:not(.engine-btn), .chat-controls.tighter .scope-btn { padding: 5px 8px; }
   /* With the find bar open the thread starts below it and the controls. */
   .chat-canvas main:has(search) .chat-thread::before { display: none; }
 }
 /* While pw code answers a chat it runs on its own model, which the chat
    bar's engine button names; the composer's model picker sets only the
-   Studio assistant's, so it is hidden then (PWCodeEngine marks the canvas).
+   Studio's, so it is hidden then (PWCodeEngine marks the canvas).
    The selector reaches into the package's composer: its picker is the
    button there that opens a dialog. A chat shown as its pw code session
    (.pwcode-session) has the session's own composer, whose effort picker is
@@ -1092,9 +1117,11 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
 .chat-canvas[data-engine='pwcode'] .chat-composer:not(.pwcode-session *) [class*='justify-end'] > :is(button[aria-haspopup='dialog'], span.cursor-default) { display: none; }
 /* The package hides its usage slot where the composer is narrow. A new pw
    code chat's model is chosen there, and one with none set takes no message
-   until it is, so on a phone the model stays and the effort goes. */
+   until it is, so on a phone the slot stays, with the effort beside it. */
 .chat-composer:not(.pwcode-session *) [class*='shrink-[10]']:has(> .pwcode-new-model) { display: block; }
-@container (max-width: 27.99rem) { .pwcode-new-model + .composer-effort { display: none; } }
+/* A long model name is cut short before the effort is. */
+.pwcode-new-model { display: flex; min-width: 0; }
+.pwcode-new-model > .code-effort-chip { flex: none; }
 /* The package's find bar (Ctrl+F in a conversation) spans the top of the
    thread, under these controls. It stops short of them, or sits below them
    where the thread is too narrow, so its count and buttons stay in view;
@@ -1115,6 +1142,7 @@ code, pre, kbd, .text-body, .viewer-path, .sql-box, [data-streamdown='code-block
   .chat-canvas main .chat-thread { padding-top: var(--chat-notice-pad, 0px); }
   .chat-controls .scope-btn { padding: 4px 7px; }
   .chat-controls .scope-btn span { display: none; }
+  .chat-controls .open-in-code { display: none; }
   .chat-canvas main [class*="border-b"] button[class*="min-w-"]:where(:not(.pwcode-session *, .code-page *)) {
     min-width: 0 !important;
     max-width: calc(100vw - 190px);
@@ -1656,6 +1684,15 @@ a.identity-btn { text-decoration: none; }
 .mention-head { font-size: 11px; padding: 4px 10px 6px; }
 .mention-item { grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
 .mention-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The whole of a name a list cuts (components/NameTip.tsx): the UI package's
+   tooltip, wide enough for a long name. */
+.name-tip {
+  position: fixed; z-index: var(--layer-popover, 1400); max-width: min(460px, calc(100vw - 16px)); box-sizing: border-box; pointer-events: none;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--theme-border); background: var(--theme-panel-bg); color: var(--theme-app); box-shadow: var(--theme-shadow-lg);
+  font-size: 12px; line-height: 16px; white-space: normal; overflow-wrap: anywhere;
+}
+.name-tip-detail { color: var(--theme-muted-text-color); }
 .mention-empty { padding: 8px 10px; font-size: 13px; }
 /* @[path] in a sent message: a link to the file, drawn without touching
    the message's DOM (components/MentionLinks.tsx). */
@@ -2024,6 +2061,7 @@ a.identity-btn { text-decoration: none; }
 .engine-menu { width: min(360px, calc(100vw - 32px)); }
 .engine-menu .persona-row:disabled { opacity: .6; cursor: not-allowed; }
 .engine-web { margin: 6px 10px 4px; font-size: 13px; }
+.engine-web a { text-decoration: underline; text-underline-offset: 2px; }
 /* An approval comes while a reply runs, so it sits above the composer,
    clear of the newest message. */
 .cred-banner.pwcode-approval { top: auto; bottom: 124px; width: min(680px, calc(100% - 32px)); }
@@ -2241,8 +2279,8 @@ a.identity-btn { text-decoration: none; }
   .filter-row .query-pick, .filter-row .query-pick-wide { min-width: 0; flex: 1 1 40%; }
   .filter-row .grow { flex: 1 1 calc(100% - 52px); }
 
-  /* Chat. The conversations list is the package's drawer at this width
-     (ChatView switches it at this breakpoint); the bottom-bar Chat item
+  /* Assistant. The conversations list is the package's drawer at this width
+     (ChatView switches it at this breakpoint); the bottom-bar Assistant item
      opens it, and the show-all filter comes with it, at its top. */
 }
 
@@ -3111,14 +3149,17 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-sidebar-search > button { align-self: flex-start; }
 .code-sidebar-loading { display: flex; flex-direction: column; gap: 14px; padding: 12px; }
 .code-sidebar-sketch { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.code-session-row { all: unset; box-sizing: border-box; display: flex; flex: 1; min-width: 0; padding: 4px 0; cursor: pointer; text-align: left; }
-.code-session-row:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; border-radius: 6px; }
+.code-row-open { all: unset; position: absolute; inset: 0; border-radius: 8px; cursor: pointer; }
+.code-session-row { position: relative; display: flex; flex: 1; min-width: 0; padding: 4px 0; cursor: pointer; text-align: left; }
 .code-row-leading { display: flex; align-items: center; gap: 4px; }
 .code-row-dot { display: flex; }
 .code-row-detail { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--pw-muted); }
 .code-row-detail > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .code-row-machine { font-family: ui-monospace, monospace; flex-shrink: 1000; }
 .code-row-chat, .code-row-delegated { flex: none; }
+a.code-row-chat { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+a.code-row-chat:hover { color: var(--pw-link); }
+a.code-row-chat:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; border-radius: 3px; }
 .code-row-detail > .code-row-sep { flex: none; margin: 0 5px; overflow: visible; }
 .code-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .code-mark-row { width: 12px; height: 12px; }
@@ -3479,12 +3520,20 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .notice-text { font-size: 12.5px; color: var(--pw-muted); overflow-wrap: anywhere; }
 .notice-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; white-space: nowrap; }
 .notice-of { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.notice-share .notice-title { white-space: normal; overflow-wrap: anywhere; }
+.notice-share .notice-title strong { font-weight: 600; }
+.notice-share .notice-open:hover .notice-title { text-decoration: none; }
+.notice-actions { display: flex; align-items: center; gap: 4px; }
+.notice-error { grid-column: 2 / -1; margin: 2px 0 0; font-size: 12.5px; color: var(--theme-error-text); overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .notices-page { padding: 12px 14px 24px; }
   .notice-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .notice-meta { grid-column: 2; grid-row: 2; flex-direction: row; align-items: center; gap: 8px; min-width: 0; }
   .notice-meta > :not(.notice-of) { flex: none; }
   .notice-dismiss { grid-column: 3; grid-row: 1 / span 2; }
+  .notice-share .notice-open { grid-column: 2 / -1; }
+  .notice-share .notice-meta { grid-column: 2 / -1; }
+  .notice-actions { grid-column: 2 / -1; grid-row: 3; flex-wrap: wrap; margin-top: 4px; }
 }
 .xfer-pane-head { position: relative; }
 .xfer-add-location { position: absolute; right: 12px; top: 40px; font-size: 12px; color: var(--pw-link); }
@@ -3645,14 +3694,21 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .fleet-approval-actions { display: flex; gap: 8px; }
 .fleet-approval-cut, .fleet-approval-reason { display: block; margin: 4px 0; }
 
-/* A person's first visit on a Studio with sign-in (FirstVisitCard): over
-   the page's lower right corner, so no page moves for it. */
-.first-visit { position: fixed; right: 16px; bottom: 16px; z-index: 30; width: min(380px, calc(100vw - 32px)); box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); border-radius: 8px; background: var(--pw-panel); }
-.first-visit p { margin: 0 0 6px; }
+/* A person's first visit on a Studio with sign-in (FirstVisitCard): the
+   foot of the page, above which the page ends, so it lies over nothing. On
+   a phone or in a low window it is its two lines alone. */
+.first-visit { flex: none; max-height: 45%; overflow-y: auto; padding: 8px 16px 12px; border-top: 1px solid var(--pw-border); background: var(--pw-panel); }
+.first-visit p { margin: 0 0 4px; }
+.first-visit p:last-child { margin-bottom: 0; }
+.first-visit .first-visit-short { display: none; }
+@media (max-width: 639.98px), (max-height: 639.98px) {
+  .first-visit .first-visit-long { display: none; }
+  .first-visit .first-visit-short { display: block; margin: 0; }
+}
 /* A continued chat's opening note is not a reply: no Regenerate on it
    (markNotes, adapter.ts, marks its Code page link). */
 .group:has(a[href*="note=continued"]):not(:has(.group)) button[aria-label="Regenerate response"] { display: none; }
-/* The note under a reply the Studio assistant gave in pw code's place
+/* The note under a reply the Studio gave in pw code's place
    (EngineNoteReader, PWCodeEngine.tsx; its links carry note=engine) is a
    quiet line, not a reply: smaller, muted, close under the reply, and with
    nothing to copy or regenerate. */
@@ -3783,13 +3839,13 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
    model (pw code's already reads "pw code · model"), and the details stay
    in view so the switch reads clearly. */
 .chat-canvas[data-engines-mixed] .chat-meta { opacity: 1; }
-.chat-canvas[data-engines-mixed] .chat-meta [data-engine-label='Studio']::before { content: 'Studio assistant · '; }
+.chat-canvas[data-engines-mixed] .chat-meta [data-engine-label='Studio']::before { content: 'Studio · '; }
 /* In a pw code session's view, the chat's turns the session was given as
    carried over (withEarlier, pwcode/carried.ts) are drawn from the chat's
    record, each block headed as earlier in the chat, in the same quiet
    type as the engine labels, with its replies' details in view. */
 .pwcode-session [data-row^='earlier-'] .chat-meta { opacity: 1; }
-.pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio assistant · '; }
+.pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio · '; }
 .pwcode-session [data-row^='earlier-']:is(:first-child, :not([data-row^='earlier-']) + [data-row^='earlier-'])::before {
   content: 'Earlier in this chat'; display: block; padding-top: 8px; font-size: 12px; color: var(--pw-muted);
 }

@@ -103,7 +103,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   const keyRequired = health?.status === 'key-required'
   const title = from === 'none'
     ? 'No model access yet'
-    : keyRequired ? 'This deployment requires your own model credential'
+    : keyRequired ? 'Sign in with ACTIVATE first: the models here need an account of your own'
     : `Models: ${describeSource(access.models, single)}`
   const tone: CalloutTone = from === 'none' || keyRequired
     ? (requirePersonalKey || single ? 'warning' : 'default')
@@ -124,7 +124,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
       value: 'endpoint', label: 'OpenAI-compatible endpoint',
       description: from === 'endpoint'
         ? `${access.models.baseUrl ?? 'Your endpoint'}, set up under Accounts.`
-        : 'A site AI portal, a provider, or a model server on this computer. Add one under Accounts first.',
+        : `A site AI portal${single ? ', a provider, or a model server on this computer' : ' or a provider'}. Add one under Accounts first.`,
     },
     ...(from === 'sidecar' ? [{ value: 'sidecar' as From, label: 'The model served beside this Studio', description: 'Set by the deployment, for anyone without an account of their own.' }] : []),
     ...(from === 'admin-endpoint' ? [{ value: 'admin-endpoint' as From, label: 'The administrator\'s endpoint', description: `${access.models.baseUrl ?? 'An OpenAI-compatible endpoint'}, set by the administrator for anyone without an account of their own.` }] : []),
@@ -151,7 +151,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
     <div className="model-access">
       <h1>Model access</h1>
       <p className="muted view-sub">
-        Where the Studio's models come from, for chat and the assistant. The accounts behind them are under{' '}
+        Where the Studio's models come from, for Assistant and the other AI features. The accounts behind them are under{' '}
         <a href={ACCOUNTS_HREF}>Accounts</a>.
       </p>
 

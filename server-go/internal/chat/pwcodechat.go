@@ -76,6 +76,8 @@ type pwState struct {
 	// commands is pw code's own commands, by release; releases is the one
 	// on each of the viewer's machines, as the platform last listed it.
 	commands *pwCommandStore
+	// last is the model each person chose last.
+	last     *lastModelStore
 	releases map[string]string
 	// sections: what the Studio's section of AGENTS.md was last written as, by
 	// person, machine and folder.
@@ -194,6 +196,8 @@ type pwTarget struct {
 	modelMoved  bool
 	// start is what a session started on the Code page was asked for.
 	start startPick
+	// last is the model a new chat starts with where none is picked.
+	last lastModel
 	// modelStuck says the session should have moved and could not.
 	modelStuck bool
 	// relay: the session is on another machine, reached through the
@@ -362,7 +366,7 @@ type engineView struct {
 // fallback). It is stored as a note after the reply, in markdown, its
 // links marked with engineNoteMark so the chat draws it as a quiet line.
 func fallbackNote(why string, c *conversations.Conversation) string {
-	s := "pw code is not available to you here, so the Studio assistant answered. "
+	s := "pw code is not available to you here, so the Studio answered. "
 	if strings.Contains(why, "Settings, Accounts") {
 		// Each such reason comes down to an ACTIVATE sign-in of the
 		// viewer's own.
@@ -408,7 +412,7 @@ func (m *Module) engineState(r *http.Request, c *conversations.Conversation, hin
 	default:
 		v.newChat = enginePWCode
 		if down := m.toolsDown(m.pwSite()); down != "" {
-			v.toolsDown = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio assistant answers new chats by default for now."
+			v.toolsDown = "pw code could not reach this Studio's tools at " + down + " a few minutes ago, so the Studio answers new chats by default for now."
 			v.newChat = engineStudio
 		}
 	}
@@ -679,7 +683,11 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 				req.Set("allocation", *t.pickedAlloc)
 			}
 		}
-		s, err := pwcode.CreateSession(auth.ContextWithUser(ctx, user(r)), t.client, req)
+		last := t.last
+		if t.picked != "" {
+			last = lastModel{}
+		}
+		s, err := m.createWithLast(auth.ContextWithUser(ctx, user(r)), r, t.client, req, last)
 		if err != nil {
 			return nil, false, err
 		}
@@ -700,6 +708,7 @@ func (m *Module) pwcodeSession(ctx context.Context, r *http.Request, t *pwTarget
 		}
 		m.pwcodeModel(ctx, r, t, link)
 		m.Conv.SetPWCode(c.ID, link)
+		m.choseModel(r, t.picked, t.pickedAlloc, t.relay)
 		m.setToolsDown(t.site, "")
 		return link, true, nil
 	}
@@ -757,7 +766,7 @@ func contextBetween(c *conversations.Conversation, after, upto, current string) 
 		}
 		who := "The person"
 		if mm.Role == "assistant" {
-			who = "The Studio assistant"
+			who = "The Studio"
 			if mm.Model != nil && strings.HasPrefix(*mm.Model, "pw code") {
 				who = "You, in an earlier session"
 			}
@@ -855,6 +864,8 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	// already keeps its own model.
 	if prior == nil || prior.Session == "" {
 		t.picked, t.pickedAlloc = strings.TrimSpace(deref(body.PWCodeModel)), body.PWCodeAllocation
+		t.start.effort = pwcodeEffort(body.PWCodeEffort)
+		t.last = m.startModel(r)
 	}
 	if old := c.PWCode; old != nil && prior == nil && !old.Continued && old.Session != "" && old.Site == t.site {
 		_, _ = pwcode.ArchiveSession(ctx, t.client, old.Session)
@@ -1278,9 +1289,11 @@ func (m *Module) pwcodeRoutes(h func(pattern string, fn func(http.ResponseWriter
 		}
 		// model is the one Settings names for pw code, which a new chat's
 		// session runs on unless the person picks another first ("" for
-		// pw code's own).
+		// pw code's own); lastModel, where it names none, the one the
+		// person chose last, with the allocation that billed it.
+		last := m.startModel(r)
 		return reqbody.OK(w, reqbody.O("setting", m.eff().ChatEngine, "default", def, "current", current, "answered", conversationEngine(c) != "",
-			"pwcode", why == "", "reason", reason, "toolsDown", tools, "model", m.eff().PWCodeModel))
+			"pwcode", why == "", "reason", reason, "toolsDown", tools, "model", m.eff().PWCodeModel, "lastModel", last.Model, "lastAllocation", last.Allocation))
 	})
 	// Whether a new pw code chat needs a model chosen first.
 	h("GET /api/chat/pwcode/model", func(w http.ResponseWriter, r *http.Request) error {

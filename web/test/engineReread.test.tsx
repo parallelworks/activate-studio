@@ -35,10 +35,12 @@ describe('A sign-in made outside the Studio', () => {
     }))
     const reads = () => calls.filter(u => u.startsWith('/api/chat/engine')).length
     render(<PWCodeEngine conversationId="c8" />)
-    await waitFor(() => expect(document.querySelector('.engine-btn')).toHaveTextContent('Studio'))
+    // Without ACTIVATE the Studio answers and there is nothing to choose.
+    await waitFor(() => expect(reads()).toBe(1))
     // Open, it reads once and does not read again by itself.
     await new Promise(r => setTimeout(r, 400))
     expect(reads()).toBe(1)
+    expect(document.querySelector('.engine-btn')).toBeNull()
 
     // The person goes to a terminal and signs the pw CLI in.
     signedIn = true

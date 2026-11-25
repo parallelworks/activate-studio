@@ -32,7 +32,7 @@ describe('When the Studio assistant answers in pw code\'s place', () => {
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)))
       return new Response(sse([
-        ['engine_fallback', { conversationId: 'c1', note: 'pw code is not available to you here, so the Studio assistant answered.' }],
+        ['engine_fallback', { conversationId: 'c1', note: 'pw code is not available to you here, so the Studio answered.' }],
         ['content', { text: 'Hello' }],
         ['done', { finishReason: 'stop', model: 'm', messageId: 'srv-1' }],
       ]), { status: 200 })
@@ -47,7 +47,7 @@ describe('When the Studio assistant answers in pw code\'s place', () => {
     // last choice for a chat nothing answered yet; a pick is a switch.
     expect(bodies[0]).not.toHaveProperty('engine')
     expect(bodies[0].newChatEngine).toBe('pwcode')
-    expect(told).toEqual([{ conversationId: 'c1', note: 'pw code is not available to you here, so the Studio assistant answered.' }])
+    expect(told).toEqual([{ conversationId: 'c1', note: 'pw code is not available to you here, so the Studio answered.' }])
     expect(knownEngine('c1')).toBe('studio')
   }, 30_000)
 
@@ -91,8 +91,8 @@ describe('A pw code chat opened by a person pw code is not for', () => {
 // A chat switched to pw code sends its session the turns it missed before
 // the person's message; the chat's session view shows what they typed.
 describe("A pw code session's transcript in the chat", () => {
-  const earlier = "Earlier in this conversation, before you joined it:\n\nThe person: Tell me about tides.\n\nThe Studio assistant: Tides rise and fall twice a day [cut]\n\nThe person's new message:\n\nWhat did I first ask?"
-  const since = "In this conversation since your last reply:\n\nThe Studio assistant: Two.\n\nThe person's new message:\n\nAnd now?"
+  const earlier = "Earlier in this conversation, before you joined it:\n\nThe person: Tell me about tides.\n\nThe Studio: Tides rise and fall twice a day [cut]\n\nThe person's new message:\n\nWhat did I first ask?"
+  const since = "In this conversation since your last reply:\n\nThe Studio: Two.\n\nThe person's new message:\n\nAnd now?"
 
   it('shows the message the person typed, not the turns carried over', () => {
     expect(typedPart(earlier)).toBe('What did I first ask?')
@@ -136,9 +136,9 @@ describe("A pw code session's view of a chat switched to it", () => {
     { id: 'pwc-4', role: 'assistant', content: 'Now.', model: 'pw code · haiku' } as ChatMessage,
   ]
   const session: ChatMessage[] = [
-    { id: 's1', role: 'user', content: "Earlier in this conversation, before you joined it:\n\nThe person: Tell me about tides.\n\nThe Studio assistant: Tides rise [cut]\n\nThe person's new message:\n\nWhat did I first ask?" },
+    { id: 's1', role: 'user', content: "Earlier in this conversation, before you joined it:\n\nThe person: Tell me about tides.\n\nThe Studio: Tides rise [cut]\n\nThe person's new message:\n\nWhat did I first ask?" },
     { id: 's2', role: 'assistant', content: 'You asked about tides.' },
-    { id: 's3', role: 'user', content: "In this conversation since your last reply:\n\nThe person: Two more?\n\nThe Studio assistant: Two.\n\nThe person's new message:\n\nAnd now?" },
+    { id: 's3', role: 'user', content: "In this conversation since your last reply:\n\nThe person: Two more?\n\nThe Studio: Two.\n\nThe person's new message:\n\nAnd now?" },
     { id: 's4', role: 'assistant', content: 'Now.' },
   ]
 
@@ -165,6 +165,6 @@ describe("A pw code session's view of a chat switched to it", () => {
     const css = readFileSync('src/styles.css', 'utf8')
     expect(css).toMatch(/\.pwcode-session \[data-row\^='earlier-'\][^{]*::before \{\s*content: 'Earlier in this chat'/)
     // Its Studio assistant's replies say so, as in the chat's own thread.
-    expect(css).toContain(".pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio assistant · '; }")
+    expect(css).toContain(".pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio · '; }")
   })
 })

@@ -30,6 +30,9 @@ export interface AppConfig {
    *  person's own (My library); with it, the main library is the one they
    *  share, and My library is each person's folder on a system. */
   signIn?: boolean
+  /** Models answer a person only with an account of their own
+   *  (REQUIRE_PERSONAL_KEY), so signing in with ACTIVATE comes first. */
+  signInFirst?: boolean
   /** The Studio's settings are its administrators' (a Studio with sign-in,
    *  and this person is not one): preferences stay in this browser. */
   settingsLocked?: boolean
@@ -40,7 +43,7 @@ export interface AppConfig {
    *  they have; without it such a page is left out, as on a deployment that
    *  keeps no personal credentials. */
   accounts?: boolean
-  /** False when AI features are off: no Chat, no Agents, no model line. */
+  /** False when AI features are off: no Assistant, no Agents, no model line. */
   aiEnabled?: boolean
   /** How many workflows this Studio offers on its Workflows tab. */
   workflowCount?: number
@@ -155,6 +158,7 @@ export function useAppConfig(): AppConfig {
           sections: Array.isArray(d.sections) && d.sections.length ? d.sections : undefined,
           platform: !!d.platform,
           signIn: !!d.signIn,
+          signInFirst: !!d.signInFirst,
           settingsLocked: !!d.settingsLocked,
           localCode: !!d.localCode,
           accounts: !!d.accounts,
@@ -181,6 +185,14 @@ export function useAppConfig(): AppConfig {
     }
   }, [])
   return cfg
+}
+
+/** Whether the viewer may change the main library, as the server's index
+ *  actions on it (Sync now, Stop) ask: where people sign in it may be read
+ *  only for them. */
+export function mainWritable(cfg: Pick<AppConfig, 'libraries'>): boolean {
+  const main = cfg.libraries?.find(l => l.primary)
+  return !main || (main.writable !== false && !main.readOnlyWhy)
 }
 
 /** The left navigation's widths: the Width choice's three, and the range a
@@ -241,7 +253,7 @@ export function reloadAppConfig(): void { window.dispatchEvent(new Event('ade:co
 
 /** Sidebar pages that can be switched off, in sidebar order. */
 export const SECTION_SWITCHES: { id: string; label: string }[] = [
-  { id: 'chat', label: 'Chat' },
+  { id: 'chat', label: 'Assistant' },
   { id: 'library', label: 'Library' },
   { id: 'transfers', label: 'Transfers' },
   { id: 'search', label: 'Search' },
@@ -264,24 +276,29 @@ export function aiOn(cfg: { aiEnabled?: boolean }): boolean { return cfg.aiEnabl
 /** Whether the AI pages may be mounted now: on as the configuration says,
  *  or, before it arrives, as the previous visit remembered it. A first
  *  visit waits for the configuration, so a Studio with AI features off
- *  never starts Chat or Agents and their requests. */
+ *  never starts Assistant or Agents and their requests. */
 export function aiPagesMounted(cfg: { aiEnabled?: boolean; loaded: boolean }): boolean {
   return cfg.loaded ? aiOn(cfg) : cfg.aiEnabled === true
 }
 
 type Gate = { sections?: string[]; platform?: boolean; localCode?: boolean; aiEnabled?: boolean; accounts?: boolean }
 
+/** Whether the person has ACTIVATE here: the platform answers them with a
+ *  credential of their own, or this computer's pw code has one. */
+export const hasActivate = (cfg: Gate): boolean => !!cfg.platform || !!cfg.localCode
+
 /** Whether a page shows: in the saved sections (none saved means all), or
- *  always shown. Workflows and Code list what is on the platform, so they
- *  need it, or Accounts to sign in from: without a credential they show
- *  "Sign in with ACTIVATE to use this". Chat and Agents need AI features on. */
+ *  always shown. Workflows needs the platform, or Accounts to sign in from:
+ *  without a credential it shows "Sign in with ACTIVATE to use this". Code is
+ *  for people who have ACTIVATE, so without it there is no Code at all.
+ *  Assistant and Agents need AI features on. */
 export function sectionAllowed(id: string, cfg: Gate): boolean {
   // Notices is of whatever pages show, and is not a page to switch off.
   if (id === 'notices') return true
   if (id === 'workflows' && !cfg.platform && !cfg.accounts) return false
   // Code lists the platform's sessions, or this computer's own where the
   // Studio offers it to pw code with no platform.
-  if (id === 'code' && !cfg.platform && !cfg.localCode && !cfg.accounts) return false
+  if (id === 'code' && !hasActivate(cfg)) return false
   if (AI_SECTIONS.includes(id) && cfg.aiEnabled === false) return false
   return !cfg.sections?.length || cfg.sections.includes(id) || ALWAYS_SHOWN.includes(id)
 }
@@ -316,7 +333,7 @@ export async function saveSections(sections: string[]): Promise<void> {
   await saveSettings({ sections })
 }
 
-/** Turn AI features on or off. Chat and Agents leave the sidebar's saved
+/** Turn AI features on or off. Assistant and Agents leave the sidebar's saved
  *  pages with it, and come back with it. */
 export async function saveAiEnabled(on: boolean, sections: string[] | undefined): Promise<string[]> {
   const shown = SECTION_SWITCHES.map(s => s.id).filter(id => !AI_SECTIONS.includes(id) && (!sections?.length || sections.includes(id)))

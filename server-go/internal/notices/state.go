@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,7 +67,8 @@ func (r *record) dismiss(id string, now time.Time) {
 	r.Dismissed[id] = iso(now)
 	r.changed = true
 	for k, at := range r.Dismissed {
-		if now.Sub(parse(at)) > keepDismissed {
+		// A share is there until it is taken back, so it stays dismissed.
+		if now.Sub(parse(at)) > keepDismissed && !strings.HasPrefix(k, "share:") {
 			delete(r.Dismissed, k)
 		}
 	}

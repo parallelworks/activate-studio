@@ -1,12 +1,15 @@
-import { Button, EmptyState, RelativeTime, StatusDot } from '@parallelworks/ui'
+import { useState } from 'react'
+import { Button, EmptyState, RelativeTime, StatusDot, toast } from '@parallelworks/ui'
 import { NotificationIcon } from '@parallelworks/ui/icons'
+import { api } from '../api'
 import { MachineLabel } from '../components/MachineLabel'
+import { reloadAppConfig } from '../config'
 import type { MachineRef } from '../machines'
-import { dismissNotices, type Notice, type Notices, useNotices } from '../notices'
+import { dismissNotices, type Notice, type Notices, type NoticeShare, refreshNotices, useNotices } from '../notices'
 
 /** What each notice is of, in a word. */
 const KINDS: Record<Notice['kind'], string> = {
-  chat: 'Chat', code: 'Code session', fleet: 'Fleet agent', delegated: 'Delegated work', transfer: 'Transfer', library: 'Library index',
+  chat: 'Assistant chat', code: 'Code session', fleet: 'Fleet agent', delegated: 'Delegated work', transfer: 'Transfer', library: 'Library index', share: 'Shared folder',
 }
 
 /** A notice that goes once it is read, rather than once it is answered. */
@@ -25,7 +28,7 @@ export function NoticesView() {
     return (
       <div className="notices-page">
         <EmptyState icon={<NotificationIcon />} title="Nothing needs you" headingLevel={2}
-          description="Chats, sessions and agents waiting on you are listed here, with replies you have not seen, delegated work that ended, and transfers and library indexes that failed." />
+          description="Chats, sessions and agents waiting on you are listed here, with replies you have not seen, delegated work that ended, transfers and library indexes that failed, and folders shared with you." />
       </div>
     )
   }
@@ -44,7 +47,7 @@ function NoticeGroup({ title, items }: { title: string; items: Notice[] }) {
   return (
     <section className="notices-group">
       <h2>{title} <span className="muted">{items.length}</span></h2>
-      <ul>{items.map(n => <NoticeRow key={n.id} notice={n} />)}</ul>
+      <ul>{items.map(n => n.share ? <ShareRow key={n.id} notice={n} share={n.share} /> : <NoticeRow key={n.id} notice={n} />)}</ul>
     </section>
   )
 }
@@ -73,6 +76,43 @@ function NoticeRow({ notice: n }: { notice: Notice }) {
       </a>
       <span className="notice-meta muted"><span className="notice-of">{machine && <><MachineLabel machine={machine} /> · </>}{KINDS[n.kind]}</span><RelativeTime value={n.at} /></span>
       <Button variant="ghost" size="sm" className="notice-dismiss" aria-label={`Dismiss ${n.title}`} onClick={() => void dismissNotices([n.id])}>Dismiss</Button>
+    </li>
+  )
+}
+
+/** A folder someone shared with the person, which they can add as a library
+ *  here as Add a library, Shared with me does. */
+function ShareRow({ notice: n, share: s }: { notice: Notice; share: NoticeShare }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const add = async () => {
+    setBusy(true); setError('')
+    try {
+      const lib = await api.addShared(s.id, {})
+      toast.success(`Added ${lib.label} to your libraries. It is being indexed.`)
+      reloadAppConfig()
+    } catch (e) {
+      // Taken back, or added elsewhere, since: the notice goes with the next read.
+      const gone = (e as { status?: number }).status === 404
+      const words = gone ? `${s.label} is no longer shared with you.` : String((e as Error).message ?? e)
+      if (gone) toast.error(words)
+      else setError(words)
+    } finally { setBusy(false) }
+    refreshNotices({ after: 0 })
+  }
+  return (
+    <li className="notice-row notice-share" data-testid="notice" data-kind={n.kind}>
+      <StatusDot variant="info" />
+      <div className="notice-open">
+        <span className="notice-title">{s.from} shared <strong title={s.folder}>{s.label}</strong> with {s.group ? <>your group {s.group}</> : 'you'}</span>
+        <span className="notice-text">{s.access === 'write' ? 'Read and write' : 'Read'} · <MachineLabel machine={{ name: s.site || s.system }} /> · <code>{s.folder}</code></span>
+      </div>
+      <span className="notice-meta muted"><span>{KINDS[n.kind]}</span><RelativeTime value={n.at} /></span>
+      <span className="notice-actions">
+        <Button variant="secondary" size="sm" loading={busy} aria-label={`Add to my libraries: ${s.label}`} onClick={() => void add()}>Add to my libraries</Button>
+        <Button variant="ghost" size="sm" className="notice-dismiss" disabled={busy} aria-label={`Dismiss ${n.title}`} onClick={() => void dismissNotices([n.id])}>Dismiss</Button>
+      </span>
+      {error && <p className="notice-error" role="alert">{error}</p>}
     </li>
   )
 }

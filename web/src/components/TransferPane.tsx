@@ -10,6 +10,7 @@ import {
 import type { PublicLibrary } from '../api'
 import { useAppConfig } from '../config'
 import { locationMachine, MachineGlyph, TransferEnd } from './MachineLabel'
+import { nameTip } from './NameTip'
 
 /** One side of the transfer page: where it is, and what in it is selected. */
 export interface PaneState {
@@ -295,7 +296,7 @@ export function TransferPane({
                   {visible.map(e => {
                     const on = selectable && selectedSet.has(e.name)
                     return (
-                      <tr key={e.name} className={on ? 'on' : undefined} aria-selected={selectable ? on : undefined}
+                      <tr key={e.name} {...nameTip(e.name, e.type === 'dir' ? '' : e.type === 'link' ? 'Link' : bytesText(e.size))} className={on ? 'on' : undefined} aria-selected={selectable ? on : undefined}
                         onClick={ev => rowClick(ev, e.name)}
                         onDoubleClick={() => { if (e.type === 'dir') go(joinPath(state.path, e.name)) }}>
                         {selectable && <td className="xfer-col-check">
@@ -305,8 +306,8 @@ export function TransferPane({
                         <td className="xfer-col-name"><span className="xfer-name">
                           <span className={`xfer-glyph ${e.type}`}>{e.type === 'dir' ? <FolderGlyph /> : e.type === 'link' ? <LinkGlyph /> : <FileGlyph />}</span>
                           {e.type === 'dir'
-                            ? <button type="button" className="xfer-dir" onClick={() => go(joinPath(state.path, e.name))} title={`Open ${e.name}`}>{e.name}</button>
-                            : <span className="xfer-file" title={e.type === 'link' ? `${e.name} (link)` : e.name}>{e.name}</span>}
+                            ? <button type="button" className="xfer-dir" data-tip-text="" onClick={() => go(joinPath(state.path, e.name))}>{e.name}</button>
+                            : <span className="xfer-file" data-tip-text="">{e.name}</span>}
                         </span></td>
                         <td className="xfer-col-size">{e.type === 'dir' ? '' : bytesText(e.size)}</td>
                         <td className="xfer-col-mtime">{modifiedText(e.mtime)}</td>

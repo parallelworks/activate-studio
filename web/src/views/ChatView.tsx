@@ -5,8 +5,7 @@ import {
 } from '@parallelworks/ui'
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
-import { EffortPicker } from '../components/EffortPicker'
-import { NewChatModelSlot } from '../pwcode/NewChatModel'
+import { ComposerEngineSlot } from '../pwcode/NewChatModel'
 import { PwCodeOwnModel, useModelHeld } from '../pwcode/ownModel'
 import { takeHanded, onFirstMessage } from '../pwcode/firstMessage'
 import { NewChatTargetSlot } from '../pwcode/NewChatTarget'
@@ -26,9 +25,9 @@ import { StudioChatLayout } from '../components/ChatList'
 import { ChatsManager } from '../components/ChatsManager'
 import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
-import { useAppConfig } from '../config'
+import { type AppConfig, useAppConfig } from '../config'
 import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
-import { setLabelScope, setPersona } from '../labelScope'
+import { EFFORT_WORDS, setLabelScope, setPersona } from '../labelScope'
 import { LibraryTicks, scopeLabel } from '../components/LibraryScope'
 import { useChatScope } from '../chatScope'
 import type { Scope } from '../scope'
@@ -65,7 +64,7 @@ const PWCODE_TOOL_FOOTERS = { [BACKGROUND_TOOL]: BackgroundCommandHint }
 const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
 
 /** Re-lists the conversation rail when the scope toggle changes, or a chat
- *  was made elsewhere (Continue in Studio on the Code page), without
+ *  was made elsewhere (Continue in Assistant on the Code page), without
  *  remounting the provider and tearing down an open stream. */
 function FilterReloader() {
   const { loadConversations } = useChat()
@@ -184,7 +183,7 @@ interface KeptSession { conversationId: string; machine: string; sessionId: stri
 /**
  * The pw code chats to draw: the open one, when it shows its session, and
  * the ones opened just before it, which stay drawn but hidden (Activity),
- * so a return to one is immediate. A chat set to the Studio assistant
+ * so a return to one is immediate. A chat set to the Studio
  * leaves the list, and the list empties when the viewer's caches do
  * (viewerCache.ts).
  */
@@ -238,6 +237,38 @@ function insertInBox(text: string): void {
   put(20)
 }
 
+/** What a new chat says with no model listed. Where people sign in the
+ *  Studio runs on a server, so a model on "this computer" is not theirs. */
+function noModelsBody(cfg: AppConfig, noCredential: boolean): string {
+  if (!cfg.signIn) return 'Sign in with ACTIVATE, or add an OpenAI-compatible endpoint such as a model server on this computer, under Settings, Accounts. Browsing, search, and adding material work without one.'
+  if (!cfg.signInFirst) return 'Sign in with ACTIVATE, or add an OpenAI-compatible endpoint of your own, under Settings, Accounts. Browsing and search work without one.'
+  return noCredential
+    ? 'The models here need an account of your own. Sign in under Settings, Accounts. Browsing and search work without it.'
+    : 'No model is listed for your account. Settings, Model access says more. Browsing and search work without one.'
+}
+
+/** The notice over the thread. A new chat that lists no model for want of
+ *  an account says so itself (`saidBelow`), so the notice is not said twice. */
+function CredBanner({ note, row, saidBelow, onDismiss }: { note: string; row?: 'activate'; saidBelow: boolean; onDismiss: () => void }) {
+  const { models } = useChat()
+  if (saidBelow && !models.length) return null
+  return (
+    <div className="cred-banner">
+      <Callout
+        variant="bar"
+        tone="warning"
+        live
+        action={/Model access/.test(note)
+          ? <Button variant="primary" size="sm" onClick={() => { location.hash = '#view=settings:access' }}>Open Model access</Button>
+          : <Button variant="primary" size="sm" onClick={() => { location.hash = accountsHref(row) }}>Open Accounts</Button>}
+        onDismiss={onDismiss}
+      >
+        {note}
+      </Callout>
+    </div>
+  )
+}
+
 /** active: the chat is the view on screen. Find in the transcript listens
  *  for ⌘F / Ctrl+F on the whole page, so a hidden chat leaves the key to
  *  the view that is showing. */
@@ -262,7 +293,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   const [showManage, setShowManage] = useState(false)
   // In a narrow window (a phone, or a desktop window under the phone
   // breakpoint) the conversations list is the package's drawer, opened by
-  // the package's own button above the thread, and by the bottom-bar Chat
+  // the package's own button above the thread, and by the bottom-bar Assistant
   // item; the package closes it on a pick, a tap outside or Escape.
   const phone = usePhoneLayout()
   const [railOpen, setRailOpen] = useState(false)
@@ -281,6 +312,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
 
   const adapter = useMemo(() => createStudioAdapter(), [])
   const [credNote, setCredNote] = useState<string | null>(null)
+  // No model is listed since there is no account to list with (null until
+  // known): a new chat's own page says so, with the way there.
+  const [noCredential, setNoCredential] = useState<boolean | null>(null)
   // The note on screen, readable from handlers defined before render.
   const credNoteRef = useRef<string | null>(null)
   credNoteRef.current = credNote
@@ -357,6 +391,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
     setCredNote(null)
   }
   const applyModels = (d: ModelsResponse) => {
+    setNoCredential(d.kind === 'credential')
     if (d.error && !(d.models ?? []).length) { setCredNote(String(d.error)); return }
     const impaired = (d.impaired ?? []) as { id: string; locked: boolean; reason?: string }[]
     const marks = impaired.map(m => `${m.id}:${m.locked ? 'L' : 'U'}`).sort().join(',')
@@ -572,6 +607,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   if (!cfg.loaded) return <div className="chat-wrap"><div className="chat-canvas card" /></div>
 
   setViewerUsername(cfg.user?.username ?? '')
+  const signInFirst = !!cfg.signInFirst && noCredential !== false
 
   const changeChatFilter = (next: 'all' | 'mine') => {
     setChatListFilter(next)
@@ -598,7 +634,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
         // The model picker's Manage link and the no-model empty state's button.
-        extraLinks: { manageProviders: '#view=settings:access', addProvider: accountsHref(held ? undefined : 'endpoint') },
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: accountsHref(held ? undefined : signInFirst ? 'activate' : 'endpoint') },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
@@ -625,8 +661,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         // and fold with the other finished calls.
         // A pw code session's running Bash step offers moving it to the
         // background (Ctrl+B); the hint draws nothing in other chats.
-        slots: { composerUsage: <><NewChatModelSlot conversationId={activeId} hasSession={!!pw.link?.session} /><EffortPicker conversationId={activeId} /></>, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolFooters: PWCODE_TOOL_FOOTERS, toolPresentation: gufiToolPresentation },
+        slots: { composerUsage: <ComposerEngineSlot conversationId={activeId} hasSession={!!pw.link?.session} />, partRenderers: { approval: ToolApproval }, toolRenderers: GUFI_TOOL_RENDERERS, toolFooters: PWCODE_TOOL_FOOTERS, toolPresentation: gufiToolPresentation },
         strings: {
+          effort: EFFORT_WORDS,
           thinking: {
             thoughtFor: (duration: string) => `Worked for ${duration}`,
           },
@@ -639,8 +676,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             feedbackPlaceholder: 'Tell the assistant what to do instead…',
           },
           emptyState: {
-            noProvidersTitle: 'A model is needed',
-            noProvidersBody: held ? 'pw code has no model set. Choose one in the message box, or add one under Settings, Accounts.' : 'Sign in with ACTIVATE, or add an OpenAI-compatible endpoint such as a model server on this computer, under Settings, Accounts. Browsing, search, and adding material work without one.',
+            noProvidersTitle: signInFirst && !held ? 'Sign in with ACTIVATE first' : 'A model is needed',
+            noProvidersBody: held ? 'pw code has no model set. Choose one in the message box, or add one under Settings, Accounts.' : noModelsBody(cfg, noCredential !== false),
             addProvider: 'Open Accounts',
           },
           sidebar: {
@@ -651,7 +688,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             viewOnly: 'Only the person whose chat this is can add to it',
           },
           input: {
-            placeholderNoProviders: held ? 'Choose or add a model to start chatting' : 'Add a model under Settings, Accounts to start chatting',
+            placeholderNoProviders: held ? 'Choose or add a model to start chatting' : signInFirst ? 'Sign in with ACTIVATE to start chatting' : 'Add a model under Settings, Accounts to start chatting',
           },
         },
       }}
@@ -659,19 +696,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
       <div className="chat-wrap">
         <div ref={canvasRef} className={`chat-canvas card${railOpen ? ' rail-open' : ''}`}>
           {credNote && (
-            <div className="cred-banner">
-              <Callout
-                variant="bar"
-                tone="warning"
-                live
-                action={/Model access/.test(credNote)
-                  ? <Button variant="primary" size="sm" onClick={() => { location.hash = '#view=settings:access' }}>Open Model access</Button>
-                  : <Button variant="primary" size="sm" onClick={() => { location.hash = '#view=settings:accounts' }}>Open Accounts</Button>}
-                onDismiss={dismissNote}
-              >
-                {credNote}
-              </Callout>
-            </div>
+            <CredBanner note={credNote} onDismiss={dismissNote} row={signInFirst ? 'activate' : undefined}
+              saidBelow={!!noCredential && !held && !activeId && !showAttachments && !showManage} />
           )}
           {!showAttachments && !showManage && !pw.shown && <PWCodeApprovals conversationId={activeId} />}
           {!showAttachments && !showManage && <PWCodeNotice conversationId={activeId} />}
@@ -880,7 +906,7 @@ export function OwnChat({ conversationId, children }: { conversationId: string |
   return c?.isOwner === false ? null : <>{children}</>
 }
 
-/** The library files a Studio assistant chat's replies name, as links: in
+/** The library files the replies of a chat the Studio answers name, as links: in
  *  the libraries it searches first. */
 function StudioCited({ conversationId, scope, children }: { conversationId: string; scope: Scope; children: React.ReactNode }) {
   const { currentConversation, isStreaming } = useChat()

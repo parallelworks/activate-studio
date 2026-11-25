@@ -154,7 +154,7 @@ func TestAPersonPWCodeIsNotForGetsTheStudioAssistant(t *testing.T) {
 		t.Errorf("the note is not right after the Studio assistant's reply: %+v", got.Messages)
 	}
 	text := note.Text()
-	if want := "pw code is not available to you here, so the Studio assistant answered. Sign in with ACTIVATE under [Settings, Accounts](#view=settings:accounts?open=activate&note=engine) to switch back."; text != want {
+	if want := "pw code is not available to you here, so the Studio answered. Sign in with ACTIVATE under [Settings, Accounts](#view=settings:accounts?open=activate&note=engine) to switch back."; text != want {
 		t.Errorf("note:\n got %q\nwant %q", text, want)
 	}
 	if got.Engine != engineStudio || got.AnsweredBy() != engineStudio {
@@ -276,7 +276,7 @@ func TestASingleUserStudioWithoutActivateFallsBackButNotWhenPWCodeIsDown(t *test
 
 // pw code is not told of a fallback note: it is about pw code, not for it.
 func TestPWCodeIsNotToldTheFallbackNote(t *testing.T) {
-	ask, said, note := "a question", "Studio's answer", "pw code is not available to you here, so the Studio assistant answered."
+	ask, said, note := "a question", "Studio's answer", "pw code is not available to you here, so the Studio answered."
 	c := &conversations.Conversation{Messages: []conversations.Message{
 		{ID: "u1", Role: "user", Content: &ask},
 		{ID: "a1", Role: "assistant", Content: &said},

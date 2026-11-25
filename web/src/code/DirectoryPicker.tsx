@@ -6,6 +6,7 @@ import { useTranslations } from 'use-intl'
 import { describeError } from '../pwcode/PWCodeSession'
 import { pwCodePage } from './api'
 import type { Translate } from './parts'
+import { nameTip } from '../components/NameTip'
 
 /**
  * The folder a session starts in, as PW Code on the web chooses it (its
@@ -241,13 +242,14 @@ function PathRow({ row, option, current, onOpen, t }: {
   t: Translate
 }) {
   const checked = current ? true : undefined
+  const tipped = (name: string, detail?: string) => ({ ...option, ...nameTip(name, detail) })
   switch (row.kind) {
     case 'use':
-      return <ListboxOption option={option} icon={<FolderOpenIcon aria-hidden className="code-path-icon" />} label={<span className="code-mono">{row.path}</span>} description={row.detail} checked={checked} />
+      return <ListboxOption option={tipped(row.path)} icon={<FolderOpenIcon aria-hidden className="code-path-icon" />} label={<span className="code-mono" data-tip-text="">{row.path}</span>} description={row.detail} checked={checked} />
     case 'recent':
       return (
-        <ListboxOption option={option} icon={<HistoryIcon aria-hidden className="code-path-icon" />} checked={checked}
-          label={<span className="code-path-recent code-mono"><span>{row.name}</span><span className="muted">{row.detail}</span></span>} />
+        <ListboxOption option={tipped(row.name, row.detail)} icon={<HistoryIcon aria-hidden className="code-path-icon" />} checked={checked}
+          label={<span className="code-path-recent code-mono"><span data-tip-text="">{row.name}</span><span className="muted">{row.detail}</span></span>} />
       )
     case 'up':
       return (
@@ -258,11 +260,11 @@ function PathRow({ row, option, current, onOpen, t }: {
     case 'folder':
       return (
         <ListboxOption
-          option={option}
+          option={tipped(row.name)}
           icon={row.repository
             ? <span title={t('start.repository')} className="code-path-icon-wrap"><RepositoryIcon role="img" aria-label={t('start.repository')} className="code-path-icon" /></span>
             : <FolderIcon aria-hidden className="code-path-icon" />}
-          label={<span className="code-mono">{row.name}</span>}
+          label={<span className="code-mono" data-tip-text="">{row.name}</span>}
           checked={checked}
           hint={
             <button type="button" tabIndex={-1} aria-hidden="true" title={t('start.openDirectory', { name: row.name })} data-testid="agents-directory-open" className="code-path-open"

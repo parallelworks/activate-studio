@@ -40,7 +40,7 @@ const STEPS = ['Welcome', 'Your Studio', 'Appearance', 'AI features', 'Sidebar',
 const STEP = { welcome: 0, studio: 1, appearance: 2, ai: 3, sidebar: 4, folder: 5, libraries: 6, done: 7 }
 
 /** Switches for the sidebar's pages, saved as the sections setting. With
- *  AI features off, Chat and Agents are not offered: they cannot show. */
+ *  AI features off, Assistant and Agents are not offered: they cannot show. */
 export function SidebarSwitches({ value, platform, aiEnabled = true, onChange, disabled }: {
   value: string[] | undefined
   /** Read only: the person may not change the Studio's pages. */
@@ -185,11 +185,11 @@ function AiStep({ enabled, sections, me, connected, onSaved, onOpenAccess }: {
       </p>
       <label className="key-persist" style={{ margin: 0, color: 'var(--pw-text)' }}>
         <Switch checked={enabled} disabled={busy === 'switch'} onCheckedChange={v => void toggle(v)} aria-label="AI features" onLabel="On" offLabel="Off" />
-        <span>Chat, Agents, and other features that call a model</span>
+        <span>Assistant, Agents, and other features that call a model</span>
       </label>
       {!enabled && (
         <p className="muted" style={{ margin: 0 }}>
-          Off: Chat and Agents leave the sidebar and nothing is sent to a model. Search, the library, query and statistics work as before.
+          Off: Assistant and Agents leave the sidebar and nothing is sent to a model. Search, the library, query and statistics work as before.
           AI features can be turned back on at any time in Settings, General, AI features.
         </p>
       )}
@@ -206,7 +206,7 @@ function AiStep({ enabled, sections, me, connected, onSaved, onOpenAccess }: {
           </p>
           {connected && !saved && (
             <Callout tone="success">
-              {`Connected: ${connectedText(connected)}. Chat can use them now; set up an endpoint below only to use it instead.`}
+              {`Connected: ${connectedText(connected)}. Assistant can use them now; set up an endpoint below only to use it instead.`}
             </Callout>
           )}
           {me && me.mode !== 'none' && me.baseUrl && !saved && (
@@ -532,8 +532,8 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             <p className="muted" style={{ margin: 0 }}>Pages to show in the sidebar. Settings and Help always show.</p>
             <SidebarSwitches value={cfg.sections} platform={!!cfg.platform} aiEnabled={aiOn} onChange={changeSections} />
             <p className="muted" style={{ margin: 0 }}>
-              Workflows and Code need ACTIVATE: until you sign in under <a href={accountsHref('activate')} onClick={e => { e.preventDefault(); void openAccess('activate') }}>Settings, Accounts</a>,
-              they say so and point there. For workflow
+              Workflows and Code need ACTIVATE. Until you sign in under <a href={accountsHref('activate')} onClick={e => { e.preventDefault(); void openAccess('activate') }}>Settings, Accounts</a>,
+              Code is not shown, and Workflows says so and points there. For workflow
               YAML files of your own, without ACTIVATE, use <ExternalLink href={MERIDIAN_URL}>Meridian</ExternalLink>, the
               open-source workflow engine.
             </p>
@@ -649,7 +649,7 @@ export function SetupWizard({ onClose, pollMs = 1000 }: {
             </ul>
             {aiOn && !endpoint && !connected && (
               <p className="muted" style={{ margin: 0 }}>
-                Chat needs a model: sign in with ACTIVATE, or add an OpenAI-compatible endpoint, in <a href="#view=settings:accounts" onClick={e => { e.preventDefault(); void openAccess() }}>Settings, Accounts</a>.
+                Assistant needs a model: sign in with ACTIVATE, or add an OpenAI-compatible endpoint, in <a href="#view=settings:accounts" onClick={e => { e.preventDefault(); void openAccess() }}>Settings, Accounts</a>.
               </p>
             )}
           </>

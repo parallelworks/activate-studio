@@ -33,9 +33,8 @@ import { ResultsTransferDialog, useTransfersShown, type ResultItem } from '../co
 import { destinationWhy, libraryLocation, transferApi } from '../transferApi'
 import { LockedButton } from '../components/LockedButton'
 import { MID_QUERY, useMediaQuery, usePhoneLayout } from '../phoneLayout'
+import { TreeResize, clampTree, treeMax } from '../components/TreeResize'
 
-const RAIL_MIN = 220
-const RAIL_MAX = 520
 /** The narrowest an open file reads well beside the tree, in pixels. */
 const FILE_MIN = 480
 /** The divider between the tree and the file. */
@@ -555,26 +554,6 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
 
   const railRef = useRef<HTMLElement>(null)
 
-  const onDividerDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = railWidth
-    let w = startW
-    const onMove = (ev: MouseEvent) => {
-      w = Math.min(RAIL_MAX, Math.max(RAIL_MIN, startW + (ev.clientX - startX)))
-      if (railRef.current) railRef.current.style.width = `${w}px`
-    }
-    const onUp = () => {
-      document.body.classList.remove('resizing')
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      setRailWidth(w)
-    }
-    document.body.classList.add('resizing')
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [railWidth])
-
   const uploadItems = useCallback(async (dir: string, files: UploadItem[]) => {
     if (!files.length) return
     const result = await startUpload(files, dir)
@@ -661,21 +640,24 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
   const [cardWidth, setCardWidth] = useState(0)
   useLayoutEffect(() => {
     const card = cardRef.current
-    if (!card || !mid) return
+    if (!card || phone) return
     const measure = () => setCardWidth(card.clientWidth)
     measure()
     if (typeof ResizeObserver !== 'function') return
     const ro = new ResizeObserver(measure)
     ro.observe(card)
     return () => ro.disconnect()
-  }, [mid])
+  }, [phone])
+  // The width kept for this browser, as far as this window has room for it.
+  const treeWidest = treeMax(cardWidth)
+  const treeWidth = clampTree(railWidth, treeWidest)
   const openKey = display ? JSON.stringify([display.kind, display.target, display.kind === 'file' ? display.lib : undefined]) : null
   // What » asked for holds for the file it was asked beside, not for a later
   // visit to it.
   const [asked, setAsked] = useState({ key: openKey, tree: false })
   if (asked.key !== openKey) setAsked({ key: openKey, tree: false })
   const askTree = (tree: boolean) => setAsked({ key: openKey, tree })
-  const crowded = mid && openKey !== null && cardWidth > 0 && cardWidth - railWidth - DIVIDER < FILE_MIN
+  const crowded = mid && openKey !== null && cardWidth > 0 && cardWidth - treeWidth - DIVIDER < FILE_MIN
   const folded = crowded && !(asked.key === openKey && asked.tree)
   const collapsed = !phone && (crowded ? folded : railCollapsed)
   const treeMounted = !collapsed || (folded && !railCollapsed)
@@ -700,7 +682,7 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
         )}
         {treeMounted && (
           <>
-            <aside ref={railRef} className="library-rail" style={{ width: railWidth, display: collapsed ? 'none' : undefined }}>
+            <aside ref={railRef} className="library-rail" style={{ width: treeWidth, display: collapsed ? 'none' : undefined }}>
               <div className={`rail-head${cfg.libraries && cfg.libraries.length > 1 ? ' rail-head-switch' : ''}`}>
                 {cfg.libraries && cfg.libraries.length > 1
                   ? <LibrarySwitch libraries={cfg.libraries} />
@@ -857,7 +839,7 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
               )}
               <TransferPanel openFile={selectedFile} />
             </aside>
-            {!collapsed && <div className="divider" onMouseDown={onDividerDown} title="Drag to resize" />}
+            {!collapsed && <TreeResize width={treeWidth} max={treeWidest} rail={() => railRef.current} onWidth={setRailWidth} />}
           </>
         )}
         {phone && display && (

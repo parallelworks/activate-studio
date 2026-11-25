@@ -4,7 +4,8 @@ import { mentionQuery, mentionToken } from '../src/components/MentionPalette'
 import { parseMention } from '../src/components/MentionLinks'
 import { breakable } from '../src/components/breakable'
 import { copyWithTextarea, installClipboardFallback } from '../src/clipboard'
-import { EFFORTS, getEffort, hasEffort, setEffort } from '../src/labelScope'
+import { EFFORT_LEVELS } from '@parallelworks/ui/ai'
+import { EFFORT_WORDS, EFFORTS, getEffort, hasEffort, setEffort } from '../src/labelScope'
 
 describe('@ file picker', () => {
   it('reads the query the caret is in', () => {
@@ -44,8 +45,14 @@ describe('paths in table cells', () => {
 
 describe('reasoning effort', () => {
   afterEach(() => localStorage.clear())
-  it('offers the model default and four levels', () => {
-    expect(EFFORTS.map(e => e.value)).toEqual(['', 'low', 'medium', 'high', 'max'])
+  it('offers the model default and pw code\'s levels', () => {
+    expect(EFFORTS.map(e => e.value)).toEqual(['', ...EFFORT_LEVELS])
+    expect(EFFORTS.find(e => e.value === 'xhigh')?.label).toBe('Extra high')
+    // pw code's slider has the same names.
+    expect(EFFORT_WORDS).toEqual(Object.fromEntries(EFFORTS.slice(1).map(e => [e.value, e.label])))
+    setEffort('xhigh', 'c1')
+    expect(getEffort('c1')).toBe('xhigh')
+    localStorage.clear()
   })
   it('keeps one per conversation, and a new chat starts from the last chosen', () => {
     expect(getEffort('c1')).toBe('')

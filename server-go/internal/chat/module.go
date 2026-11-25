@@ -517,3 +517,15 @@ func noModelCredential(shared bool) string {
 	}
 	return "No model credential. Sign in with ACTIVATE, or add an OpenAI-compatible endpoint, under Settings, Accounts."
 }
+
+// signInFirst is what it says where everyone uses models of their own
+// (REQUIRE_PERSONAL_KEY).
+const signInFirst = "Sign in with ACTIVATE first, under Settings, Accounts. The models here need an account of your own."
+
+// noCredential is the one of them that holds for this Studio.
+func (m *Module) noCredential() string {
+	if m.personalRequired(nil) {
+		return signInFirst
+	}
+	return noModelCredential(m.A.Cfg.AuthEnabled())
+}

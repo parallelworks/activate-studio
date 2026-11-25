@@ -609,6 +609,10 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		if mode := jsonv.String(jsonv.Path(body, "permissionMode")); mode != "" {
 			m.logModeChange(r, c, t, mode, "settings")
 		}
+		if o := jsonv.Obj(body); o != nil && o.Has("model") {
+			alloc := jsonv.String(jsonv.Path(o, "allocation"))
+			m.choseModel(r, jsonv.String(jsonv.Path(o, "model")), &alloc, t.relay)
+		}
 	case "POST /approvals/{approval}":
 		if mode := jsonv.String(jsonv.Path(body, "mode")); mode != "" {
 			m.logModeChange(r, c, t, mode, "plan answer")

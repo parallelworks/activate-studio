@@ -357,7 +357,7 @@ func (s *routes) pageDirectories(w http.ResponseWriter, r *http.Request) {
 	q := url.Values{"path": {r.URL.Query().Get("path")}, "filter": {r.URL.Query().Get("filter")}}.Encode()
 	if t.local != nil {
 		if t.only {
-			writeProblem(w, http.StatusForbidden, "Sessions on this computer start from a Studio chat here, which works in your own folder.")
+			writeProblem(w, http.StatusForbidden, "Sessions on this computer start from a chat in Assistant, which works in your own folder.")
 			return
 		}
 		callLocal(w, r, t.local, http.MethodGet, "/v1/directories?"+q, nil)
@@ -539,7 +539,7 @@ func (s *routes) pageCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if t.local != nil {
 		if t.only {
-			writeProblem(w, http.StatusForbidden, "Sessions on this computer start from a Studio chat here, which works in your own folder.")
+			writeProblem(w, http.StatusForbidden, "Sessions on this computer start from a chat in Assistant, which works in your own folder.")
 			return
 		}
 		if _, ok := modeRank[mode]; !ok {
