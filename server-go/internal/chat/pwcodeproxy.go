@@ -524,6 +524,8 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		sentText = jsonv.String(jsonv.Path(body, "text"))
 		if o := jsonv.Obj(body); o != nil && c.PWCode.Untold && strings.TrimSpace(sentText) != "" {
 			o.Set("text", sentText+m.relayInstructions(r))
+		} else if note := untoldScope(c, t, sentText); o != nil && note != "" {
+			o.Set("text", sentText+relayInstructionsHead+note)
 		}
 		m.studioToolsFor(ctx, r, c, t)
 		if d, err := pwcode.GetSession(ctx, t.client, id); err == nil {
@@ -580,6 +582,11 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	case "POST /messages":
+		if note := untoldScope(c, t, sentText); note != "" {
+			c.PWCode.ScopeNote = note
+			l := *c.PWCode
+			m.Conv.SetPWCode(c.ID, &l)
+		}
 		if c.PWCode.Untold {
 			l := *c.PWCode
 			l.Untold = false

@@ -1,6 +1,7 @@
 import type { PwCodePlatformModelList } from '@parallelworks/code'
 import { useChat } from '@parallelworks/ui/ai'
 import { useEffect, useMemo, useState } from 'react'
+import { heldModels } from '../ownModel'
 
 /** Model sources that are not ACTIVATE: their models are not ones pw code can run. */
 const NOT_ACTIVATE = new Set(['endpoint', 'sidecar', 'none'])
@@ -48,7 +49,7 @@ export function usePlatformModels(): PwCodePlatformModelList {
   }, [])
   const offList = source !== null && NOT_ACTIVATE.has(source)
   return useMemo(() => ({
-    models: offList ? EMPTY : models,
+    models: offList ? EMPTY : heldModels() ?? models,
     providerIssues: offList ? [] : providerIssues,
     isLoading: isLoadingModels,
     error: offList ? null : modelsError,

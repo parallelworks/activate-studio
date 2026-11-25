@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -195,7 +196,19 @@ func statusError(status int, parsed any, text []byte) error {
 	if detail == "" {
 		detail = strconv.Itoa(status)
 	}
+	if WantsModel(detail) {
+		return &DaemonError{Message: NoModel, Status: status}
+	}
 	return &DaemonError{Message: "pw code daemon: " + detail, Status: status}
+}
+
+// NoModel is what the Studio says where pw code has no model to run on: pw
+// code's own words send the person to its terminal.
+const NoModel = "No model is set. Choose one beside the message box, or add one under Settings, Accounts."
+
+// WantsModel is whether a refusal is pw code's for want of a model.
+func WantsModel(said string) bool {
+	return strings.Contains(said, "model is required") && strings.Contains(said, "interactive TUI")
 }
 
 // Bytes is an answer whose body is not JSON, such as an image, as it came.

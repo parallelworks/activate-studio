@@ -18,6 +18,8 @@ import { PWCodeSession } from '../src/pwcode/PWCodeSession'
 import { forgetModels } from '../src/api'
 import { forgetEngines } from '../src/chatEngine'
 import { clearChatRecords } from '../src/chatRecord'
+import { clearModelPick, pickModel } from '../src/pwcode/newChatPick'
+import { heldModels } from '../src/pwcode/ownModel'
 
 type Engine = 'studio' | 'pwcode'
 interface Message { id: string; role: string; content: string; parentId?: string | null; model?: string }
@@ -32,6 +34,8 @@ let posts: { id: string; text: string }[]
 let reads: string[]
 let held: Promise<void> | null
 let models: unknown[] | 'fails'
+let settingsModel: string
+let needed: boolean
 const ID = (n: number) => `${n}${n}${n}${n}${n}${n}${n}${n}-0000-4000-8000-000000000000`
 
 /** A Studio whose chats answer as each test says. */
@@ -48,8 +52,9 @@ function studio() {
     if (path === '/api/chat/engine') {
       const c = chats.get(url.searchParams.get('conversation') ?? '')
       const now = (url.searchParams.get('last') as Engine | null) ?? engine
-      return json({ setting: 'auto', default: now, current: c?.engine ?? now, answered: !!c?.engine, pwcode: engine === 'pwcode', reason: null, model: 'inference-server/stub/m' })
+      return json({ setting: 'auto', default: now, current: c?.engine ?? now, answered: !!c?.engine, pwcode: engine === 'pwcode', reason: null, model: settingsModel })
     }
+    if (path === '/api/chat/pwcode/model') return json({ needed })
     if (path === '/api/chat/conversations' && method === 'GET') return json([...chats.values()].map(c => ({ id: c.id, title: c.title, createdAt: now, updatedAt: now, isOwner: true })))
     if (path === '/api/chat/conversations' && method === 'POST') {
       const id = ID(chats.size + 1)
@@ -132,7 +137,7 @@ const open = async (n: number) => { await act(async () => { location.hash = `#ch
 const show = async () => { render(<ChatView />); await waitFor(() => expect(screen.getAllByText('New chat').length).toBeGreaterThan(0), { timeout: 5000 }) }
 
 beforeEach(() => {
-  chats = new Map(); streams = new Map(); posts = []; reads = []; held = null; engine = 'studio'
+  chats = new Map(); streams = new Map(); posts = []; reads = []; held = null; engine = 'studio'; settingsModel = 'inference-server/stub/m'; needed = false
   models = [{ id: 'm', object: 'model', name: 'm', provider: 'p', provider_type: 'local', provider_name: 'local' }]
   localStorage.clear(); forgetEngines(); forgetModels(); clearChatRecords()
   location.hash = ''
@@ -408,5 +413,49 @@ describe('a new chat pw code answers, with no Studio assistant model', () => {
     localStorage.setItem('ade-chat-engine', 'studio')
     await show()
     await waitFor(() => expect(screen.getByPlaceholderText('Add a model under Settings, Accounts to start chatting')).toBeDisabled(), { timeout: 5000 })
+  })
+})
+
+// With no model set and none on the account the box still sent, and the
+// error named pw code's terminal.
+describe('a new chat pw code answers, with no model for pw code', () => {
+  beforeEach(() => { engine = 'pwcode'; settingsModel = ''; needed = true })
+  afterEach(() => clearModelPick(null))
+  const closed = () => waitFor(() => expect(screen.getByPlaceholderText('Choose or add a model to start chatting')).toBeDisabled(), { timeout: 5000 })
+  const opened = () => waitFor(() => expect(screen.getByPlaceholderText('Ask anything')).toBeEnabled(), { timeout: 5000 })
+
+  it.each([['some to choose', 1], ['none listed', 0]] as const)('is closed and says what to do, %s', async (_what, n) => {
+    if (!n) models = []
+    await show()
+    await closed()
+    expect(screen.getByText('pw code has no model set. Choose one in the message box, or add one under Settings, Accounts.')).toBeInTheDocument()
+    // pw code's own picker lists what there is.
+    expect(heldModels()).toHaveLength(n)
+    fireEvent.click(screen.getByRole('link', { name: /Open Accounts/ }))
+    expect(location.hash).toBe('#view=settings:accounts')
+  })
+
+  it('opens once one is chosen, and the message carries it', async () => {
+    await show()
+    await closed()
+    await act(async () => pickModel(null, { model: 'm' }))
+    await opened()
+    await start(1, 'hello')
+    expect(streams.get(ID(1))!.body).toMatchObject({ pwcodeModel: 'm' })
+  })
+
+  it('opens where the Studio assistant is chosen instead', async () => {
+    localStorage.setItem('ade-chat-engine', 'studio')
+    await show()
+    await opened()
+    expect(heldModels()).toBeNull()
+  })
+
+  it.each([['a model of its own', () => { needed = false }], ['the one Settings names', () => { settingsModel = 'm' }]] as const)('is open where pw code has %s', async (_what, has) => {
+    has()
+    await show()
+    await opened()
+    await start(1, 'hello')
+    expect(posts).toEqual([{ id: ID(1), text: 'hello' }])
   })
 })

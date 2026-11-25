@@ -7,7 +7,8 @@ import { getChatLibrary, getEffort, getLabelScope, getLastEngine, getPersona, ha
 import { GOES_TO, GOES_TO_SESSION } from './chatLinks'
 import { fetchModels } from './api'
 import { firstMessagePick } from './pwcode/newChatPick'
-import { PWCODE_MODEL, pwCodeStandsIn } from './pwcode/ownModel'
+import { handFirstMessage } from './pwcode/firstMessage'
+import { holdModels, modelHeld, PWCODE_MODEL, pwCodeStandsIn } from './pwcode/ownModel'
 import { firstMessageStart } from './pwcode/newChatStart'
 import { foldRecovered, recoveryTracker } from './recoveredSteps'
 import { rememberToolCommands } from './components/GufiCommands'
@@ -18,10 +19,13 @@ let stoodIn = false
 async function listModels(): Promise<ModelsList> {
   // The shared request is typed loosely; the package's own types apply here.
   const data = await fetchModels().catch(e => {
-    if (pwCodeStandsIn() || stoodIn) return {}
+    if (pwCodeStandsIn() || stoodIn || modelHeld()) return {}
     throw e
   }) as unknown as Partial<ModelsList>
   stoodIn = !data.models?.length && pwCodeStandsIn()
+  // A new pw code chat with no model takes no message: the package keeps its
+  // box closed while none is listed. pw code's own picker lists them still.
+  if (holdModels((data.models ?? []) as ModelsList['models'])) return { models: [], unreachableSessions: [], providerIssues: [] }
   if (stoodIn) return { models: [PWCODE_MODEL] as ModelsList['models'], unreachableSessions: [], providerIssues: [] }
   // The server marks models whose most recent call failed (an expired
   // provider key fails at call time while listing fine). The picker
@@ -69,6 +73,8 @@ const readReply: StreamCompletion = async (req, handlers, signal) => {
       ...firstMessagePick(req.conversationId),
       // Where it was set to start, the same way.
       ...firstMessageStart(req.conversationId),
+      // The session's view runs the command a chat starts with.
+      opensSession: true,
       tools: req.tools,
       // The user's answer to a call held for approval; the server runs what
       // it held for that call, never what the request says to run.
@@ -156,6 +162,10 @@ const readReply: StreamCompletion = async (req, handlers, signal) => {
         pwcodeSession = String(payload.session ?? '')
         if (req.conversationId) knowEngine(req.conversationId, 'pwcode')
         window.dispatchEvent(new CustomEvent('ade-pwcode-session', { detail: { conversationId: req.conversationId, ...payload } }))
+        break
+      case 'pwcode_first':
+        // The session is there, and the message is its view's to run.
+        if (req.conversationId) handFirstMessage(req.conversationId, { text: String(payload.text ?? ''), refused: String(payload.refused ?? '') })
         break
       case 'pwcode_approval':
       case 'pwcode_approval_resolved':

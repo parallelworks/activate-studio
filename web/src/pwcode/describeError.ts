@@ -11,8 +11,17 @@ const CODE_WORDS: Record<string, string> = {
   network: 'The Studio did not answer.',
 }
 
+/** pw code's refusal for want of a model names its terminal, which a Studio
+ *  user does not have (server-go pwcode.NoModel). */
+const NO_MODEL = 'No model is set. Choose one beside the message box, or add one under Settings, Accounts.'
+const inStudioWords = (said: string): string => (/model is required.*interactive TUI/s.test(said) ? NO_MODEL : said)
+
 /** Words a refusal or failure the way the platform's problems carry them. */
 export function describeError(error: unknown): string {
+  return inStudioWords(said(error))
+}
+
+function said(error: unknown): string {
   if (!error) return ''
   if (typeof error === 'string') return error
   const e = error as { detail?: unknown; title?: unknown; message?: unknown; error?: unknown; code?: unknown }

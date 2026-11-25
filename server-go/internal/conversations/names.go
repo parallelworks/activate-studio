@@ -26,12 +26,18 @@ var (
 	titleMarks = strings.NewReplacer("#", "", "*", "", "_", "", "~", "", "[", "", "]", "", "(", "", ")", "", "`", "")
 )
 
+// commandTitle is a title made of a pw code command, such as "/plan".
+var commandTitle = regexp.MustCompile(`^/[A-Za-z0-9_:-]+(\s|\.\.\.$|…$|$)`)
+
 func plainTitle(s string) string { return strings.Join(strings.Fields(titleMarks.Replace(s)), " ") }
 
 // IsDefaultTitle is whether title is one a chat is given without anyone
-// naming it: none, the start of its first message (first), or the folder
-// of a session started with no message.
+// naming it: none, the start of its first message (first), a command it
+// started with, or the folder of a session started with no message.
 func IsDefaultTitle(title, first string) bool {
+	if commandTitle.MatchString(strings.TrimSpace(title)) {
+		return true
+	}
 	t := plainTitle(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(title), "..."), "…"))
 	if t == "" || t == "Untitled session" || strings.HasPrefix(t, "pw code in ") {
 		return true

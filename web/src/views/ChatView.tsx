@@ -7,7 +7,8 @@ import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
 import { EffortPicker } from '../components/EffortPicker'
 import { NewChatModelSlot } from '../pwcode/NewChatModel'
-import { PwCodeOwnModel } from '../pwcode/ownModel'
+import { PwCodeOwnModel, useModelHeld } from '../pwcode/ownModel'
+import { takeHanded, onFirstMessage } from '../pwcode/firstMessage'
 import { NewChatTargetSlot } from '../pwcode/NewChatTarget'
 import { MentionPalette } from '../components/MentionPalette'
 import { MentionLinks } from '../components/MentionLinks'
@@ -125,12 +126,21 @@ export function RetryWithModel() {
  * parts that read it (the copied reply, the suggestions, the engine's state,
  * a reply still being written) went on being that chat's. It lets go of
  * that chat before the session is painted; the reply runs on, and its chat
- * shows it when it is opened again.
+ * shows it when it is opened again. It lets go, too, of a chat whose first
+ * message is the session's to run: the provider has it as sent, with a
+ * reply of nothing.
  */
 export function LeaveOtherChat({ conversationId, sessionShown }: { conversationId: string | null; sessionShown: boolean }) {
-  const { currentConversation, clearCurrentConversation } = useChat()
+  const { currentConversation, clearCurrentConversation, isStreaming } = useChat()
   const other = sessionShown && !!currentConversation && currentConversation.id !== conversationId
   useLayoutEffect(() => { if (other) clearCurrentConversation() }, [other, clearCurrentConversation])
+  const own = sessionShown && !isStreaming && !!currentConversation && currentConversation.id === conversationId ? conversationId : null
+  useEffect(() => {
+    if (!own) return
+    const leave = () => { if (takeHanded(own)) clearCurrentConversation() }
+    leave()
+    return onFirstMessage(leave)
+  }, [own, clearCurrentConversation])
   return null
 }
 
@@ -477,6 +487,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   const cfg = useAppConfig()
   // A chat with a pw code session shows the session itself (pwcode/).
   const pw = useChatLink(activeId)
+  const held = useModelHeld()
   const keptSessions = useKeptSessions(activeId, pw)
   // The libraries the chat searches are part of its scope, ticked in the
   // same menu as the labels: every library until the user narrows it. The
@@ -563,7 +574,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
         // The model picker's Manage link and the no-model empty state's button.
-        extraLinks: { manageProviders: '#view=settings:access', addProvider: accountsHref('endpoint') },
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: accountsHref(held ? undefined : 'endpoint') },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
@@ -605,14 +616,14 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           },
           emptyState: {
             noProvidersTitle: 'A model is needed',
-            noProvidersBody: 'Sign in with ACTIVATE, or add an OpenAI-compatible endpoint such as a model server on this computer, under Settings, Accounts. Browsing, search, and adding material work without one.',
+            noProvidersBody: held ? 'pw code has no model set. Choose one in the message box, or add one under Settings, Accounts.' : 'Sign in with ACTIVATE, or add an OpenAI-compatible endpoint such as a model server on this computer, under Settings, Accounts. Browsing, search, and adding material work without one.',
             addProvider: 'Open Accounts',
           },
           sidebar: {
             manageProviders: 'Model access',
           },
           input: {
-            placeholderNoProviders: 'Add a model under Settings, Accounts to start chatting',
+            placeholderNoProviders: held ? 'Choose or add a model to start chatting' : 'Add a model under Settings, Accounts to start chatting',
           },
         },
       }}
@@ -643,7 +654,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           <EngineNoteReader />
           {!pw.shown && <PWCodeWatcher />}
           <LeaveOtherChat conversationId={activeId} sessionShown={pw.shown} />
-          <PwCodeOwnModel conversationId={activeId} />
+          <PwCodeOwnModel conversationId={activeId} fresh={pw.known && !pw.link?.session} />
           <RetryWithModel />
           <ModelShare />
           <StudioChatLayout

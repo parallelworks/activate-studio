@@ -48,6 +48,7 @@ import { TerminalHandoff } from './session/TerminalHandoff'
 import { UsageLimitWait } from './session/UsageLimitWait'
 import { useAwayRecap } from './session/useAwayRecap'
 import { type KeptImages, useComposerImages } from './session/useComposerImages'
+import { useFirstMessage } from './session/useFirstMessage'
 import { useTakeHandedBack } from './session/useTakeHandedBack'
 import { usePlatformModels } from './session/usePlatformModels'
 import { AgentModelControls } from '../code/AgentModelControls'
@@ -257,6 +258,16 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   const sessionView = useRef<SessionViewHandle>(null)
   // While a subagent shows, what came back waits for the main composer's return.
   useTakeHandedBack(sessionView, page, { shown: !agent, holdsImages: composerImages.images.length > 0 })
+  // The message the chat started with, where it is the session's to run.
+  const { pending, recall } = useFirstMessage({
+    conversationId,
+    view: sessionView,
+    read: !!detail || !!read.error,
+    open: !!detail && fresh && !!transcript && !state.disabled,
+    send: page.send,
+    recall: page.recall,
+    notify,
+  })
   const switcher = useSwitcherState()
   const agents = useSessionAgents(conversation)
   const [tasksOpen, setTasksOpen] = useState(tasksStartOpen)
@@ -310,8 +321,9 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   const record = useChatMessages(conversationId)
   const stored = useMemo(() => {
     if (detail) return undefined
-    return record?.length ? record : (first ? [{ id: 'pw-first', role: 'user' as const, content: first }] as ChatMessage[] : undefined)
-  }, [detail, record, first])
+    const said = first ?? pending
+    return record?.length ? record : (said ? [{ id: 'pw-first', role: 'user' as const, content: said }] as ChatMessage[] : undefined)
+  }, [detail, record, first, pending])
   // The session's transcript holds what the Studio sent it, the turns it
   // missed before the person's message: the chat draws those turns from
   // its record, where they came, and the message as the person typed it.
@@ -450,7 +462,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
                 allowEmpty: screen.allowEmpty,
                 requireModel: false,
                 history,
-                recall: page.recall,
+                recall,
                 disabled: state.disabled,
                 placeholder: state.placeholder,
                 inputLabel: 'Message to this session',
