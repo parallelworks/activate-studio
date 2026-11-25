@@ -6,6 +6,7 @@ import {
   OutputCard,
   PermissionPicker,
   SessionView,
+  type SessionViewHandle,
   type ChatMessage,
 } from '@parallelworks/ui/ai'
 import {
@@ -22,6 +23,7 @@ import {
   usePwCodeComposer,
   usePwCodeConversation,
   usePwCodeSessionScreen,
+  usePwUpdate,
   useSessionPicker,
   useStaleFor,
 } from '@parallelworks/code'
@@ -37,6 +39,7 @@ import { AccountChip, AccountPanelModal } from './session/AccountPanel'
 import { SessionActivity, SessionStatusRow, type StatusActivity, useSessionAgents, useSwitcherState } from './session/AgentSwitcher'
 import { BackgroundCommandsContext, useBackgroundShortcut } from './session/BackgroundCommandHint'
 import { ComposerImages } from './session/ComposerImages'
+import { PwUpdateNotice } from './session/PwUpdateNotice'
 import { SessionContextRow } from './session/ContextRow'
 import { GoalControl } from './session/GoalControl'
 import { SessionTasks } from './session/SessionTasks'
@@ -44,7 +47,8 @@ import { SubagentView, type SubagentTasks } from './session/SubagentView'
 import { TerminalHandoff } from './session/TerminalHandoff'
 import { UsageLimitWait } from './session/UsageLimitWait'
 import { useAwayRecap } from './session/useAwayRecap'
-import { useComposerImages } from './session/useComposerImages'
+import { type KeptImages, useComposerImages } from './session/useComposerImages'
+import { useTakeHandedBack } from './session/useTakeHandedBack'
 import { usePlatformModels } from './session/usePlatformModels'
 import { AgentModelControls } from '../code/AgentModelControls'
 import { cachedChat, readChat } from '../chatRecord'
@@ -221,9 +225,12 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
     onMoved: noop,
     goalNotice,
   })
-  const { liveState, transcript, messages, queued, notice, dismissNotice, showError, addDirs, allowedDirs } = conversation
+  const { liveState, transcript, messages, streaming, queued, notice, dismissNotice, showError, addDirs, allowedDirs } = conversation
 
-  const composerImages = useComposerImages({ machine, sessionId, messages: transcript?.messages, onError: notify })
+  const imageNumbers = useRef(0)
+  // A subagent's composer closes whenever another conversation is in view.
+  const [keptImages] = useState<KeptImages>(() => new Map())
+  const composerImages = useComposerImages({ machine, sessionId, messages: transcript?.messages, numbering: imageNumbers, onError: notify })
   const { connected, disconnected } = pwCode.useSessionEvents(machine, sessionId, fresh ? conversation.cursor : undefined, conversation.onEvent)
   const staleFor = useStaleFor(detail, connected)
   const page = usePwCodeComposer({
@@ -247,6 +254,9 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   const [agent, setAgent] = useState<string | undefined>(undefined)
   useEffect(() => { setAgent(undefined) }, [sessionId])
   useBackgroundShortcut(background, !agent)
+  const sessionView = useRef<SessionViewHandle>(null)
+  // While a subagent shows, what came back waits for the main composer's return.
+  useTakeHandedBack(sessionView, page, { shown: !agent, holdsImages: composerImages.images.length > 0 })
   const switcher = useSwitcherState()
   const agents = useSessionAgents(conversation)
   const [tasksOpen, setTasksOpen] = useState(tasksStartOpen)
@@ -277,6 +287,16 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
     settings,
     images: composerImages.images,
     describeError,
+  })
+
+  // A newer pw for the session's machine, which /upgrade installs from here.
+  const pwUpdate = usePwUpdate({
+    upgrade: pwCode.upgradePw,
+    machine: machineRead,
+    sessionId,
+    archived: !!listed?.archivedAt,
+    notify,
+    onError: showError,
   })
 
   // The chat list and the menu mark the chat as the session is now, and a
@@ -373,7 +393,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
   const plan = useMemo(() => openPlan(transcript ? pendingApprovals(transcript) : null), [transcript])
 
   return (
-    <div className="pwcode-session" ref={pane} onPasteCapture={composerImages.onPaste}>
+    <div className="pwcode-session" ref={pane}>
       <p className="sr-only" role="status">{screen.statusText}</p>
       <CitedPaths where={cited} busy={running} messages={transcript?.messages}>
         <BackgroundCommandsContext value={background}>
@@ -382,15 +402,16 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
               listed={viewing} usage={liveState?.subagentUsage?.[agent]}
               subscribe={conversation.subscribe} loadPalette={page.loadPalette} sessionLock={page.sessionLock}
               sessionBanner={banner} notice={noticeCard} status={(line, { tasks }) => status(line, { tasks })} context={contextRow}
-              modelNames={liveState?.modelNames} pastes={pastes} username={username}
+              modelNames={liveState?.modelNames} pastes={pastes} imageNumbers={imageNumbers} keptImages={keptImages} username={username}
               onSent={conversation.refreshSubagents} onBack={() => setAgent(undefined)} />
           )}
           <div className="pwcode-main" hidden={!!agent}>
             <SessionView
+              ref={sessionView}
               sessionKey={draftKey}
               foldEveryRun
               messages={shownMessages}
-              streamingMessage={transcript?.streaming ?? null}
+              streamingMessage={stored ? null : streaming}
               queuedMessages={queued}
               canRemoveQueued={conversation.canRemoveQueued}
               queueDelivery={conversation.queueDelivery}
@@ -412,6 +433,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
               flush
               find
               workingIndicator={false}
+              dropFiles
               footer={<>
                 {page.outputs.map(o => (
                   <OutputCard key={o.id} title={o.command} text={o.text} onDismiss={() => page.dismissOutput(o.id)} dismissLabel="Dismiss" />
@@ -422,6 +444,8 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
               </>}
               composer={{
                 attachments: false,
+                files: composerImages.files,
+                shell: true,
                 tools: false,
                 allowEmpty: screen.allowEmpty,
                 requireModel: false,
@@ -442,6 +466,9 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
                 }),
                 notices: <>
                   {screen.untrusted && <NoticeCard tone="warning">{screen.untrusted}</NoticeCard>}
+                  {pwUpdate.notice && (
+                    <PwUpdateNotice notice={pwUpdate.notice} starting={pwUpdate.starting} onUpdate={pwUpdate.update} onDismiss={pwUpdate.dismiss} />
+                  )}
                   {noticeCard}
                   <ComposerImages images={composerImages.images} onRemove={composerImages.remove} />
                   {notes}

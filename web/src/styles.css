@@ -1609,6 +1609,8 @@ a.identity-btn { text-decoration: none; }
   box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
 }
 .next-up-chip:hover { border-color: var(--pw-navy); }
+/* Scrolled up, the same place has Jump to latest, which the chips covered. */
+.chat-canvas:has([data-composer-dock] .chat-jump) > .next-up { display: none; }
 /* A written file: opens in the viewer, so it reads as a link, not a message. */
 .next-up-open { display: inline-flex; align-items: center; gap: 5px; color: var(--pw-navy); }
 .next-up-open > svg { flex: none; }
@@ -2018,9 +2020,9 @@ a.identity-btn { text-decoration: none; }
 .pwcode-approval .pwcode-plan { margin: 4px 0 0; white-space: pre-wrap; }
 .pwcode-approval .pwcode-plan-whole { max-height: 40vh; overflow-y: auto; }
 .pwcode-approval .pwcode-plan-change { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; }
-.pwcode-approval .pwcode-question { border: 0; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.pwcode-approval .pwcode-question legend { padding: 0; margin-bottom: 2px; }
-.pwcode-approval .pwcode-option { display: flex; gap: 6px; align-items: baseline; }
+/* A question can hold several options, each with a preview: it scrolls
+   rather than run over the top of the thread. */
+.pwcode-approval .pwcode-ask { margin-top: 6px; max-height: 50vh; overflow-y: auto; }
 .pwcode-approval .pwcode-answer { font: inherit; padding: 4px 8px; border: 1px solid var(--pw-border, currentColor); border-radius: 6px; background: transparent; color: inherit; }
 .agents-kind { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 /* A file input laid over a label drawn as a button. */
@@ -2635,6 +2637,9 @@ a.identity-btn { text-decoration: none; }
    draw them: a 2px accent outline, no motion for those who ask for none,
    and thin scrollbars that recede until used. */
 :focus-visible { outline: 2px solid var(--pw-link); outline-offset: 2px; }
+/* The composer draws its own ring. Beside the ! of a shell command the box no
+   longer fills it, and its outline showed as a line down the left. */
+.chat-composer textarea:focus-visible { outline: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
 }
@@ -3137,6 +3142,8 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-chip:focus-visible, .code-setting-chip:focus-visible { outline: 2px solid var(--pw-link); outline-offset: 1px; }
 .code-chip[disabled], .code-setting-chip[disabled] { opacity: .5; cursor: not-allowed; }
 .code-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-chip-group { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-group-blocked { padding: 6px 8px; font-size: 12px; max-width: 20rem; }
 .code-chip-icon, .code-chip-caret { width: 12px; height: 12px; flex: none; }
 .code-machine-icon { display: inline-block; width: 14px; height: 14px; flex: none; object-fit: contain; }
 .code-machine-icon.on-dark, [data-theme='dark'] .code-machine-icon.on-light { display: none; }

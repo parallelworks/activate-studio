@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   machineChip,
   machineMenu,
@@ -9,6 +9,7 @@ import {
   type PwCodeStartMachine,
   type PwCodeStartPermission,
   type PwCodeStartScreen,
+  type PwCodeStartSession,
   sessionClock,
   sessionKey,
   sessionLabel,
@@ -32,7 +33,9 @@ import {
   type ApprovalAnswerValue,
   ApprovalBlock,
   ChatInput,
+  type ChatInputHandle,
   ChatStage,
+  type ComposerRecall,
   NoticeCard,
   PermissionPicker,
   StageList,
@@ -40,16 +43,17 @@ import {
   stageListRowClassName,
   useChat,
 } from '@parallelworks/ui/ai'
-import { ChevronDownIcon, ChevronRightIcon } from '@parallelworks/ui/icons'
+import { ChevronDownIcon, ChevronRightIcon, TagIcon } from '@parallelworks/ui/icons'
 import { useTranslations } from 'use-intl'
 import { SystemChip } from '../components/SystemChip'
 import { describeError } from '../pwcode/PWCodeSession'
-import { type PageSession, pwCodePage, setToolsChoice } from './api'
+import { ComposerImages } from '../pwcode/session/ComposerImages'
+import { useComposerImages } from '../pwcode/session/useComposerImages'
+import { type PageSession, pwCodePage, setToolsChoice, startedWell } from './api'
 import { AgentModelControls, useLastAgentModel } from './AgentModelControls'
 import { DirectoryPicker } from './DirectoryPicker'
 import { addsTools, asksTools, type MachineToolsControl, ToolsChoice, ToolsMark, ToolsMarkButton } from './machineTools'
-import type { MachineLooks } from './machineIcon'
-import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useStartAccount, useStartEffort, useStartMachine, useStartMode } from './parts'
+import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useCodeGroups, useStartAccount, useStartEffort, useStartMachine, useStartMode } from './parts'
 
 /**
  * A new session, as PW Code on the web starts one (its AgentsStart): the
@@ -59,7 +63,7 @@ import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useStartAc
  * session started here opens in the page's pane.
  */
 
-export type Machine = PwCodeStartMachine & PwCodeMachine & MachineLooks
+export type Machine = PwCodeStartMachine & PwCodeMachine
 
 /** A session being started: where, and its first message. */
 export interface Starting {
@@ -225,12 +229,76 @@ export function machineMenuEntries(location: PwCodeStartLocation<Machine>, t: Tr
   return [...up, menuDivider, { label: menu.downLabel, items: unavailable }, ...rest]
 }
 
-export function MachineChip({ finding, machine, items, t }: { finding: boolean; machine: Machine | undefined; items: MenuEntry[]; t: Translate }) {
-  const chip = machineChip(machine, t, finding)
+export function MachineChip({ finding, machine, pending, items, t }: {
+  finding: boolean
+  machine: Machine | undefined
+  /** The workspace the start waits for while it starts. */
+  pending?: Machine | undefined
+  items: MenuEntry[]
+  t: Translate
+}) {
+  const chip = machineChip(machine, t, finding, !!pending)
+  const icon = machine ? <MachineIcon machine={machine} /> : chip.waiting && <Loader inline decorative size={12} />
   return (
-    <SystemChip finding={finding} label={chip.label} text={chip.text} icon={machine && <MachineIcon machine={machine} />} items={items}
+    <SystemChip finding={finding} label={chip.label} text={chip.text} icon={icon} items={items}
       testId="agents-machine-chip" findingTestId="agents-finding-machines" />
   )
+}
+
+interface StartGroup {
+  groups: { id: string; name: string }[]
+  /** None until one is picked, and none on a machine whose pw predates groups. */
+  group: { id: string; name: string } | undefined
+  /** Why the machine takes no group. */
+  blocked: string | undefined
+  pick: (id: string | null) => void
+}
+
+function useStartGroup(machine: Machine | undefined, t: Translate): StartGroup {
+  const { groups } = useCodeGroups()
+  const [picked, setPicked] = useState<string | null>(null)
+  const blocked = machine && !machine.sessionGroups ? t('sidebar.groupsNeedUpdate', { machine: machine.name }) : undefined
+  return { groups, group: blocked ? undefined : groups.find(g => g.id === picked), blocked, pick: setPicked }
+}
+
+/** Names the group the session starts in, and opens the person's groups, once
+ *  they have one. */
+function GroupChip({ start: { groups, group, blocked, pick }, t }: { start: StartGroup; t: Translate }) {
+  if (groups.length === 0) return null
+  const label = t('start.chooseGroup')
+  const none = t('start.noGroup')
+  const items: MenuEntry[] = [
+    { label: none, checked: !group, onClick: () => pick(null) },
+    menuDivider,
+    ...groups.map(g => ({ label: g.name, checked: g === group, disabled: !!blocked, onClick: () => pick(g.id) })),
+  ]
+  return (
+    <ActionMenu
+      label={label}
+      items={items}
+      align="start"
+      header={blocked && <p className="code-group-blocked muted">{blocked}</p>}
+      trigger={
+        <button type="button" aria-label={label} data-testid="agents-group-chip" className="code-chip">
+          <TagIcon aria-hidden className="code-chip-caret" />
+          <span className="code-chip-group">{group?.name ?? none}</span>
+          <ChevronDownIcon className="code-chip-caret" aria-hidden />
+        </button>
+      }
+    />
+  )
+}
+
+/** Takes a prompt held for the workspace back into the box, while there is one. */
+function heldRecall(starter: PwCodeStartSession): ComposerRecall | undefined {
+  if (starter.held === null && !starter.heldFailed) return undefined
+  return {
+    available: true,
+    take: async () => {
+      const text = starter.takeHeld()
+      return text === null ? [] : [{ text }]
+    },
+  }
 }
 
 function Composer({ location, finding, permission, tools, onStarting, onStarted, t }: {
@@ -255,6 +323,11 @@ function Composer({ location, finding, permission, tools, onStarting, onStarted,
   })
   const { model, allocation, account } = settings
   const { saved: effort, remember: rememberEffort } = useStartEffort()
+  const [imageError, setImageError] = useState('')
+  const onImageError = useCallback((text: string) => setImageError(text), [])
+  const images = useComposerImages({ api: pwCodePage, messages: undefined, onError: onImageError })
+  const input = useRef<ChatInputHandle>(null)
+  const startGroup = useStartGroup(machine, t)
   const starter = useStartSession(pwCodePage, {
     machine,
     directory,
@@ -263,10 +336,16 @@ function Composer({ location, finding, permission, tools, onStarting, onStarted,
     effort,
     allocation,
     account,
-    onStarted,
+    images: { count: images.images.length, saveTo: images.saveTo },
+    pending: location.pending?.id,
+    group: startGroup.group?.id,
+    onGroupRefused: refusal => toast.error(describeError(refusal)),
+    onStarted: (on, id) => { startedWell(id); onStarted(on, id) },
   })
   const toolsThere = tools.view(machine)
-  const asks = asksTools(toolsThere, machine)
+  // A prompt held for a workspace starts as it answers, before the choice was
+  // ever seen: nothing is added there for it.
+  const asks = starter.held === null && asksTools(toolsThere, machine)
   const [unticked, setUnticked] = useState<Record<string, boolean>>({})
   const ticked = !!machine && !unticked[machine.id]
   useEffect(() => {
@@ -275,15 +354,28 @@ function Composer({ location, finding, permission, tools, onStarting, onStarted,
     setToolsChoice(id, asks ? ticked : undefined)
     return () => setToolsChoice(id, undefined)
   }, [machine?.id, asks, ticked])
+  const { heldFailed } = starter
+  // A held prompt whose start failed goes back in the box, as one that fails at once does.
+  useEffect(() => {
+    if (heldFailed) void input.current?.recall({ focus: false })
+  }, [heldFailed])
+  // A held prompt leaves the box open, so it can be taken back as a queued message is.
+  const valid = starter.ready || starter.canHold || (starter.held !== null && !starter.starting)
   const { disabled, canStart } = startControls(machine, starter.starting)
   const claudeReady = !!machine?.claudeCodeAllowed && !!machine?.claudeInstalled
   return <>
     <ChatInput
+      ref={input}
       allowEmpty
       attachments={false}
+      files={images.files}
       tools={false}
       requireModel={false}
+      recall={heldRecall(starter)}
       onSend={async prompt => {
+        setImageError('')
+        // Held until the workspace answers: nothing is starting yet.
+        if (!starter.ready) return starter.start(prompt)
         // The page says where it is starting from the first moment; a start
         // that fails comes back here, with the message and the reason.
         onStarting?.({ machine: machine?.name ?? '', folder: directory, prompt, on: machine, tools: asks ? ticked : addsTools(toolsThere) })
@@ -295,19 +387,27 @@ function Composer({ location, finding, permission, tools, onStarting, onStarted,
         }
         return took
       }}
-      disabled={!starter.ready}
+      disabled={!valid}
       placeholder={t('start.composerPlaceholder')}
       inputLabel={t('start.composerPlaceholder')}
       sendLabel={t('start.startButton')}
       sendTestId="agents-start-button"
-      notices={starter.error !== null && starter.error !== undefined && (
-        <NoticeCard tone="danger" testId="agents-start-error">{describeError(starter.error)}</NoticeCard>
-      )}
+      notices={
+        <>
+          {starter.held !== null && <NoticeCard testId="agents-start-held" onDismiss={() => void input.current?.recall()}>{t('start.heldCard')}</NoticeCard>}
+          {(starter.blocked !== null || (starter.error !== null && starter.error !== undefined)) && (
+            <NoticeCard tone="danger" testId="agents-start-error">{starter.blocked ?? describeError(starter.error)}</NoticeCard>
+          )}
+          {imageError && <NoticeCard tone="danger" testId="agents-image-error" onDismiss={() => setImageError('')}>{imageError}</NoticeCard>}
+          <ComposerImages images={images.images} onRemove={images.remove} disabled={disabled.images} />
+        </>
+      }
       context={
         <>
-          <MachineChip finding={finding} machine={machine} items={machineMenuEntries(location, t, tools)} t={t} />
+          <MachineChip finding={finding} machine={machine} pending={location.pending} items={machineMenuEntries(location, t, tools)} t={t} />
           {machine && <ToolsMarkButton machine={machine} control={tools} mode={permission.mode} />}
           {machine && <DirectoryPicker key={machine.id} machine={machine} directory={directory} recents={directories} onPick={location.pickDirectory} />}
+          <GroupChip start={startGroup} t={t} />
         </>
       }
       settingsLeft={<PermissionPicker mode={permission.mode} ceiling={permission.ceiling} accepted={permission.accepted} onPick={permission.pick} />}

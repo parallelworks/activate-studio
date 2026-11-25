@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { act, render, screen } from '@testing-library/react'
+import { Markdown } from '@parallelworks/ui'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { markNotes } from '../src/adapter'
 import { forgetEngines, knowEngine } from '../src/chatEngine'
@@ -42,6 +43,14 @@ describe('A link in a chat message', () => {
     expect(a).not.toHaveAttribute('rel')
     expect(a).toHaveTextContent(/^Settings, Accounts$/)
     expect(a).toHaveAttribute('href', '#view=settings:accounts?open=activate&note=engine')
+  })
+
+  // Streamdown 2.8 takes a link that starts with # for one to a heading of
+  // its own and puts its headings' prefix on it.
+  it('to a place in the Studio, keeps its address', async () => {
+    render(<Markdown components={{ a: ChatMarkdownLink }}>{'[the notes](#open=file:a/notes.md&q=inlet) and [the run](#chat=c9)'}</Markdown>)
+    expect(await screen.findByRole('link', { name: 'the notes' })).toHaveAttribute('href', '#open=file:a/notes.md&q=inlet')
+    expect(screen.getByRole('link', { name: 'the run' })).toHaveAttribute('href', '#chat=c9')
   })
 
   it('to anywhere else, opens a new tab and says so', () => {

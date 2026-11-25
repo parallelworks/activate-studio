@@ -14,11 +14,14 @@ import {
   usePwCodeSubagent,
 } from '@parallelworks/code'
 import { ListError } from '@parallelworks/ui/list'
-import { type ReactNode, useMemo, useRef } from 'react'
+import { type ReactNode, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'use-intl'
 import { pwCode } from '../api'
 import { describeError } from '../describeError'
 import { type StatusActivity, SubagentBar } from './AgentSwitcher'
+import { ComposerImages } from './ComposerImages'
+import { type KeptImages, useComposerImages } from './useComposerImages'
+import { useTakeHandedBack } from './useTakeHandedBack'
 import './SubagentView.css'
 
 type SubagentOptions = Parameters<typeof usePwCodeSubagent>[0]
@@ -47,6 +50,10 @@ export interface SubagentViewProps {
   context: ReactNode
   modelNames: Record<string, string> | undefined
   pastes?: NonNullable<SessionViewProps['composer']>['pastes']
+  /** The counter the session's composers number images from, so this one never reuses the main conversation's. */
+  imageNumbers: { current: number }
+  /** Where this composer's waiting images go while another conversation is in view. */
+  keptImages: KeptImages
   username: string
   /** The subagent took a message, so its row in the list reads differently. */
   onSent: () => void
@@ -57,10 +64,20 @@ export interface SubagentViewProps {
  *  current from the session's feed, and a composer that talks to it. */
 export function SubagentView({
   machine, sessionId, subId, listed, usage, subscribe, loadPalette, sessionLock, sessionBanner, notice,
-  status, context, modelNames, pastes, username, onSent, onBack,
+  status, context, modelNames, pastes, imageNumbers, keptImages, username, onSent, onBack,
 }: SubagentViewProps) {
   const t = useTranslations('agents')
   const subagent = pwCode.useSubagentDetail(machine, sessionId, subId)
+  const [imageError, setImageError] = useState('')
+  const sentTexts = useMemo(() => subagent.data?.history?.map(item => ({ content: item.text })), [subagent.data?.history])
+  const images = useComposerImages({
+    machine,
+    sessionId,
+    messages: sentTexts,
+    numbering: imageNumbers,
+    keep: { in: keptImages, as: subId },
+    onError: setImageError,
+  })
   const view = usePwCodeSubagent({
     api: pwCode,
     machine,
@@ -74,6 +91,7 @@ export function SubagentView({
     describeError,
     sessionLock,
     modelNames,
+    images,
     onSent,
   })
   const { transcript, messages, composer, activity, historyId } = view
@@ -82,6 +100,7 @@ export function SubagentView({
     [username, historyId, transcript?.messages],
   )
   const sessionView = useRef<SessionViewHandle>(null)
+  useTakeHandedBack(sessionView, view, { holdsImages: images.images.length > 0 })
 
   return (
     <SessionView
@@ -89,7 +108,7 @@ export function SubagentView({
       sessionKey={view.draftKey}
       foldEveryRun
       messages={messages}
-      streamingMessage={transcript?.streaming ?? null}
+      streamingMessage={view.streaming}
       queuedMessages={view.queued}
       canRemoveQueued={view.canRemoveQueued}
       queueDelivery={view.queueDelivery}
@@ -111,8 +130,10 @@ export function SubagentView({
       flush
       find
       workingIndicator={false}
+      dropFiles
       composer={{
         attachments: false,
+        files: images.files,
         tools: false,
         requireModel: false,
         history,
@@ -134,6 +155,8 @@ export function SubagentView({
         notices: <>
           {view.notice && <NoticeCard tone="warning" onDismiss={view.dismissNotice}>{view.notice}</NoticeCard>}
           {notice}
+          {imageError && <NoticeCard tone="warning" onDismiss={() => setImageError('')}>{imageError}</NoticeCard>}
+          <ComposerImages images={images.images} onRemove={images.remove} />
         </>,
         // Every row the main composer has, so the status row and the box stay
         // put as the view changes between them.

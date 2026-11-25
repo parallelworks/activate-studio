@@ -79,7 +79,7 @@ func TestContinueASessionOnAnotherMachineThroughTheRelay(t *testing.T) {
 	if code, _, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap1", `{"allowed":true}`); code != 200 {
 		t.Errorf("approve: %d", code)
 	}
-	if code, _, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap2", `{"kind":"ask","answers":[{"question":"Which mesh?","picked":["Fine"]},{"question":"Why?","text":"accuracy"}]}`); code != 200 {
+	if code, _, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap2", `{"kind":"ask","answers":[{"question":"Which mesh?","picked":["Fine"],"notes":" only near the inlet "},{"question":"Why?","text":"accuracy"},{"question":"Anything else?","notes":"no pick"}]}`); code != 200 {
 		t.Errorf("ask: %d", code)
 	}
 	if code, _, _ := send(t, http.MethodPost, base+"/api/chat/pwcode/"+id+"/approvals/ap3", `{"kind":"plan","allowed":false,"message":"split step 2"}`); code != 200 {
@@ -94,7 +94,7 @@ func TestContinueASessionOnAnotherMachineThroughTheRelay(t *testing.T) {
 	}
 	want := []string{
 		`ap1 {"allowed":true}`,
-		`ap2 {"answers":[{"question":"Which mesh?","picked":["Fine"]},{"question":"Why?","picked":[],"text":"accuracy"}]}`,
+		`ap2 {"answers":[{"question":"Which mesh?","picked":["Fine"],"notes":"only near the inlet"},{"question":"Why?","picked":[],"text":"accuracy"},{"question":"Anything else?","picked":[]}]}`,
 		`ap3 {"allowed":false,"feedback":"split step 2"}`,
 		`ap5 {"allowed":true,"mode":"accept-edits"}`,
 		`ap6 {"allowed":true,"mode":"accept-edits"}`,

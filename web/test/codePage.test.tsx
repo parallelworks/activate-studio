@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { sessionGroupsPreference } from '@parallelworks/code'
 import { pagePath } from '../src/code/api'
 import { CodePage } from '../src/code/CodePage'
 import { PageHeadSlot } from '../src/pageHead'
@@ -30,7 +31,7 @@ const session = (o: Record<string, unknown>) => ({ machineId: 'm1', id: 'x', nam
 interface Sent { method: string; path: string; body: Record<string, unknown> | null }
 
 /** The Studio's routes the page calls, answered as the Studio would. */
-function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown; setupStatus?: number; create?: () => Promise<Response>; createOther?: () => Promise<Response> } = {}) {
+function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown; setupStatus?: number; create?: () => Promise<Response>; createOther?: () => Promise<Response>; goal?: string } = {}) {
   const sent: Sent[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = input instanceof Request ? input : new Request(new URL(String(input), 'http://studio.example'), init)
@@ -59,6 +60,9 @@ function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: u
       case '/api/code-page/machines/m1/sessions':
         if (over.create) return over.create()
         return json({ id: 'new1', machineId: 'm1', name: '', status: 'working', workspace: body?.workspace, createdAt: now, updatedAt: now, conversationId: 'c1', shownOn: 'studio' }, 201)
+      case '/api/code/machines/studio/sessions/new1/plan': return json({ action: 'turn' })
+      case '/api/code/machines/studio/sessions/new1/goal': return over.goal ? json({ detail: over.goal }, 409) : json({ output: 'Goal set.' })
+      case '/api/code/machines/studio/sessions/new1/images': return json({ path: '/cache/image-1.png' })
       case '/api/code/sessions': return json({ machines: [], sessions: [] })
       default:
         if (url.pathname.startsWith('/api/code-page/machines/')) return json({})
@@ -527,6 +531,91 @@ describe('the Code page', () => {
     await act(async () => { made(new Response(JSON.stringify({ id: 'new2', machineId: 'm1', name: '', status: 'working', workspace: '/home/alex/solver', createdAt: now, updatedAt: now, conversationId: 'c2', shownOn: 'studio' }), { status: 201, headers: { 'Content-Type': 'application/json' } })); await new Promise(r => setTimeout(r, 20)) })
     expect(screen.getByTestId('code-session')).toHaveTextContent('pump curves')
   })
+
+  // Sent as a message, the machine refuses /goal and /plan: the package makes
+  // the session empty and runs the command, then sends what /plan hands back.
+  it('starts a session with /plan, sent as its chat sends it', async () => {
+    const sent = studio()
+    render(<CodePage />)
+    await start('/plan refine the inlet mesh')
+    expect(await pane()).toBeInTheDocument()
+    const posts = sent.filter(s => s.method === 'POST' && /sessions/.test(s.path))
+    expect(posts.map(s => s.path)).toEqual(['/api/code-page/machines/m1/sessions', '/api/code/machines/studio/sessions/new1/plan', '/api/code/machines/studio/sessions/new1/messages'])
+    expect(posts[0].body).not.toHaveProperty('prompt')
+    expect(posts[2].body).toMatchObject({ text: 'refine the inlet mesh' })
+  })
+
+  it('leaves no session and no chat behind a command that was refused', async () => {
+    const sent = studio({ goal: 'A goal needs a newer pw code.' })
+    render(<CodePage />)
+    await start('/goal finish the sweep')
+    expect(await screen.findByText(/A goal needs a newer pw code/)).toBeInTheDocument()
+    await waitFor(() => expect(sent.filter(s => s.method === 'DELETE').map(s => s.path)).toEqual(['/api/code-page/machines/m1/sessions/new1', '/api/chat/conversations/c1']))
+    expect(await screen.findByDisplayValue('/goal finish the sweep')).toBeVisible()
+    expect(screen.queryByTestId('code-session')).toBeNull()
+  })
+
+  it('takes images with a first message, saved with the session it makes', async () => {
+    vi.stubGlobal('createImageBitmap', async () => ({ width: 10, height: 10, close: () => {} }))
+    URL.createObjectURL = () => 'blob:preview'
+    URL.revokeObjectURL = () => {}
+    const sent = studio()
+    const { container } = render(<CodePage />)
+    await listed('pump curves')
+    const picker = await waitFor(() => { const f = container.querySelector<HTMLInputElement>('.code-start input[type="file"]'); expect(f).toBeTruthy(); return f! })
+    expect(picker.accept).toBe('image/png,image/jpeg,image/gif,image/webp')
+    fireEvent.change(picker, { target: { files: [new File(['png'], 'shot.png', { type: 'image/png' })] } })
+    expect(await screen.findByRole('img', { name: '[Image #1]' })).toBeInTheDocument()
+    await start('what is wrong here')
+    expect(await pane()).toBeInTheDocument()
+    const posts = sent.filter(s => s.method === 'POST' && /sessions/.test(s.path))
+    expect(posts.map(s => s.path)).toEqual(['/api/code-page/machines/m1/sessions', '/api/code/machines/studio/sessions/new1/images', '/api/code/machines/studio/sessions/new1/messages'])
+    expect(posts[2].body).toMatchObject({ text: 'what is wrong here [Image #1]', images: [{ placeholder: '[Image #1]', path: '/cache/image-1.png' }] })
+  })
+
+  it('puts a new session in the group chosen', async () => {
+    localStorage.setItem(`studio.code.${sessionGroupsPreference('studio').key}`, JSON.stringify([{ id: 'g1', name: 'inlet work' }]))
+    const sent = studio({ machines: [{ ...machine, sessionGroups: true }] })
+    render(<CodePage />)
+    fireEvent.click(await screen.findByTestId('agents-group-chip'))
+    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'inlet work' }))
+    await start('refine the inlet mesh')
+    expect(await pane()).toBeInTheDocument()
+    await waitFor(() => expect(sent.find(s => s.method === 'PUT')).toMatchObject({ path: '/api/code-page/machines/m1/sessions/new1/group', body: { group: 'g1' } }))
+  })
+
+  it('holds a message for a workspace that is starting, and gives it back', async () => {
+    const workspace = { ...machine, id: 'w1', name: 'workspace', kind: 'workspace', status: 'starting', home: '/home/alex' }
+    const sent = studio({ machines: [workspace], sessions: [] })
+    render(<CodePage />)
+    const box = await screen.findByRole('textbox', { name: 'Describe a task or ask a question' })
+    fireEvent.change(box, { target: { value: 'refine the inlet mesh' } })
+    fireEvent.click(await screen.findByTestId('agents-start-button'))
+    const held = await screen.findByTestId('agents-start-held')
+    expect(sent.some(s => s.method === 'POST' && /sessions$/.test(s.path))).toBe(false)
+    expect(screen.queryByTestId('code-starting')).toBeNull()
+    fireEvent.click(within(held).getByRole('button'))
+    expect(await screen.findByDisplayValue('refine the inlet mesh')).toBeVisible()
+  })
+
+  it('starts a held message as the workspace answers, and adds nothing there that was not asked about', async () => {
+    const workspace = { ...other, name: 'workspace', kind: 'workspace', status: 'starting', home: '/home/alex' }
+    const over = { machines: [workspace], sessions: [], toolsMachines: [{ state: 'offer', available: true, machine: 'workspace', machineId: 'm2' }] }
+    const sent = studio(over)
+    render(<CodePage />)
+    const box = await screen.findByRole('textbox', { name: 'Describe a task or ask a question' })
+    fireEvent.change(box, { target: { value: 'refine the inlet mesh' } })
+    fireEvent.click(await screen.findByTestId('agents-start-button'))
+    await screen.findByTestId('agents-start-held')
+    over.machines = [{ ...workspace, status: 'connected' }]
+    const create = await waitFor(() => {
+      const c = sent.find(s => s.method === 'POST' && s.path === '/api/code-page/machines/m2/sessions')
+      expect(c).toBeTruthy()
+      return c!
+    }, { timeout: 12_000 })
+    expect(create.body).toMatchObject({ prompt: 'refine the inlet mesh' })
+    expect(create.body).not.toHaveProperty('studioTools')
+  }, 15_000)
 
   it('comes back to the message with the reason when a start fails', async () => {
     studio({ create: async () => new Response(JSON.stringify({ detail: 'box did not answer.' }), { status: 502, headers: { 'Content-Type': 'application/json' } }) })

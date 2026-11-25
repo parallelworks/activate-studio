@@ -21,13 +21,21 @@ function GoesTo({ conversationId }: { conversationId: string }) {
 /** Inside a link, whose text is not made another one (citedPaths.tsx). */
 export const InLink = createContext(false)
 
+/** The address a link was written with. The markdown renderer takes a link
+ *  that starts with # for one to a heading of its own, and puts the prefix of
+ *  the headings it draws on it; a place in the Studio has none. */
+export function writtenHref(href: string | undefined): string | undefined {
+  return href?.replace(/^#user-content-(?=(?:view|open|chat|note-goes-to)=)/, '#')
+}
+
 /**
  * A link in a chat message. One to a place in the Studio (#view=, #open=,
  * #chat=) opens here, in this tab (App.tsx routes it), so it is a plain
  * link and is not said to open a new tab; any other opens in a new tab,
  * as the chat package draws it, and says so.
  */
-export function ChatMarkdownLink({ node: _node, href, className, children, ...props }: ComponentProps<'a'> & { node?: unknown }) {
+export function ChatMarkdownLink({ node: _node, href: drawn, className, children, ...props }: ComponentProps<'a'> & { node?: unknown }) {
+  const href = writtenHref(drawn)
   const cls = ['link wrap-break-word', className].filter(Boolean).join(' ')
   if (typeof href === 'string' && href.startsWith(GOES_TO)) return <GoesTo conversationId={href.slice(GOES_TO.length)} />
   if (typeof href === 'string' && href.startsWith('#')) {

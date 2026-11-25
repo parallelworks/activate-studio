@@ -805,7 +805,7 @@ func TestATranscriptFromAnOlderPWCodeIsBuiltFromItsDetail(t *testing.T) {
 	res := getRaw(t, base+"/api/code/machines/studio/sessions/s1/transcript?tail=2&previews=refs", "identity")
 	b, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	want := `{"tail":{"id":"s1","status":"idle","messages":3,"history":[{"kind":"assistant","text":"two"},{"kind":"user","text":"three"}],"machineId":"studio"},"older":[{"kind":"user","text":"one"}]}`
+	want := `{"tail":{"id":"s1","status":"idle","messages":3,"history":[{"kind":"assistant","text":"two"},{"kind":"user","text":"three"}],"machineId":"studio","historyStart":1},"older":[{"kind":"user","text":"one"}]}`
 	if res.StatusCode != 200 || string(b) != want || res.Header.Get("Content-Type") != "application/json" {
 		t.Errorf("%d\n%s\n%s", res.StatusCode, b, want)
 	}

@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@novnc/novnc": "1.7.0",
-    "@parallelworks/code": "0.5.0",
+    "@parallelworks/code": "0.6.0",
     "@parallelworks/problem": "^0.6.1",
-    "@parallelworks/ui": "^0.146.2",
+    "@parallelworks/ui": "0.151.1",
     "@parallelworks/workflow-parser": "^0.8.0",
     "monaco-editor": "^0.57.0",
     "openapi-fetch": "^0.17.0",

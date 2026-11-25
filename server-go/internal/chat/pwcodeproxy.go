@@ -342,6 +342,11 @@ func (m *Module) transcriptFromDetail(w http.ResponseWriter, r *http.Request, t 
 	at := max(0, len(history)-n)
 	tail := o.Clone()
 	tail.Set("history", append([]any{}, history[at:]...))
+	// Where the end begins, so the view keeps each message's row as the
+	// earlier history arrives.
+	if at > 0 {
+		tail.Set("historyStart", at)
+	}
 	head, err := jsonv.Marshal(tail)
 	if err != nil {
 		return err

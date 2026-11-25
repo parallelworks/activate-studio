@@ -1,0 +1,66 @@
+diff --git a/dist/ai/components/ChatMessageList.js b/dist/ai/components/ChatMessageList.js
+index 2323790a9fbf4669f21a20add2837b3e3c626056..87c2e3bf3a28f4f249865cf5e6af4dc7fe6796fe 100644
+--- a/dist/ai/components/ChatMessageList.js
++++ b/dist/ai/components/ChatMessageList.js
+@@ -278,6 +278,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 	}, []);
+ 	const isNearBottomRef = useRef(true);
+ 	const lastScrollTopRef = useRef(0);
++	const dockHeightRef = useRef(null);
+ 	const [pinned, setPinned] = useState(true);
+ 	const touchedAtRef = useRef(Number.NEGATIVE_INFINITY);
+ 	const releaseReaderHold = useCallback(() => {
+@@ -286,7 +287,11 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 	const handleScroll = useCallback(() => {
+ 		if (!containerRef.current) return;
+ 		const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+-		const scrolledDown = scrollTop >= lastScrollTopRef.current;
++		const dockHeight = dockRef.current?.offsetHeight ?? 0;
++		const lastDockHeight = dockHeightRef.current ?? dockHeight;
++		const clamped = isNearBottomRef.current && dockHeight !== lastDockHeight && lastScrollTopRef.current - scrollTop < Math.max(dockHeight, lastDockHeight);
++		dockHeightRef.current = dockHeight;
++		const scrolledDown = clamped || scrollTop >= lastScrollTopRef.current;
+ 		lastScrollTopRef.current = scrollTop;
+ 		const { messages: all, end: last } = windowRef.current;
+ 		if (scrollHeight - scrollTop - clientHeight < 24) {
+@@ -295,15 +300,21 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 		setPinned(isNearBottomRef.current);
+ 		fitWindow();
+ 	}, [fitWindow]);
++	const raiseFloor = useCallback(() => {
++		const floor = floorRef.current;
++		const height = contentRef.current?.offsetHeight ?? 0;
++		if (floor && height > (Number.parseFloat(floor.style.minHeight) || 0)) floor.style.minHeight = `${height}px`;
++	}, []);
+ 	const followBottom = useCallback(() => {
+ 		const el = containerRef.current;
+ 		if (!el || !isNearBottomRef.current) return;
+ 		handleScroll();
+ 		if (isNearBottomRef.current) {
++			raiseFloor();
+ 			el.scrollTop = el.scrollHeight;
+ 			lastScrollTopRef.current = el.scrollTop;
+ 		}
+-	}, [handleScroll]);
++	}, [handleScroll, raiseFloor]);
+ 	const jumpToLatest = useCallback(() => {
+ 		const el = containerRef.current;
+ 		if (el) {
+@@ -452,6 +463,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 		} else if (el && kept?.row.isConnected) {
+ 			const moved = kept.row.getBoundingClientRect().top - kept.top;
+ 			if (Math.abs(moved) >= 1) {
++				raiseFloor();
+ 				el.scrollTop += moved;
+ 				lastScrollTopRef.current = el.scrollTop;
+ 			}
+@@ -461,7 +473,8 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 	}, [
+ 		start,
+ 		end,
+-		fitWindow
++		fitWindow,
++		raiseFloor
+ 	]);
+ 	useEffect(() => {
+ 		if (messageCount === 0) {

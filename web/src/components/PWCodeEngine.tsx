@@ -1,7 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SIGN_IN_TO_USE, accountsHref, needsActivate } from '../accounts'
 import { Button, Callout, ExternalLink, Popover } from '@parallelworks/ui'
-import { useChat } from '@parallelworks/ui/ai'
+import { ApprovalBlock, type ApprovalPart, type ApprovalQuestion, useChat } from '@parallelworks/ui/ai'
 import { type EngineInfo, readEngine, switchEngine, useEngine } from '../chatEngine'
 import { sessionToolsSaid } from './studioTools'
 import { liveModel, onModel } from '../pwcode/liveModel'
@@ -305,12 +305,7 @@ const NOTE_READ_MS = 1_000
  *  writes it. */
 export const ENGINE_NOTE_MARK = 'note=engine'
 
-/** A question pw code asks (an ask): its options are picked by label. */
-interface Question { question: string; header?: string; multiSelect?: boolean; options?: { label: string; description?: string }[] }
-interface Approval { id: string; kind?: string; tool?: string; command?: string; reason?: string; plan?: string; questions?: Question[] }
-/** One question's answer as the person gives it: the options picked, and
- *  what they typed. */
-interface Answer { picked: string[]; text: string }
+interface Approval { id: string; kind?: string; tool?: string; command?: string; reason?: string; plan?: string; questions?: ApprovalQuestion[] }
 interface Asked { conversationId: string; url?: string; approval: Approval }
 
 /* pw code's open requests for approval, by conversation. They live outside
@@ -392,8 +387,6 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
   const asked = usePending()
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
-  // An ask's answers so far, by approval and question.
-  const [answers, setAnswers] = useState<Record<string, Answer[]>>({})
   // What to change in a plan, sent with Reject; and the long plans shown
   // whole, which Approve waits for.
   const [feedback, setFeedback] = useState<Record<string, string>>({})
@@ -432,20 +425,15 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
   }
   const a = mine[0]
   const questions = a.approval.kind === 'ask' ? a.approval.questions ?? [] : []
-  const given = answers[a.approval.id] ?? questions.map(() => ({ picked: [], text: '' }))
-  const setGiven = (i: number, next: Answer) => setAnswers(m => ({ ...m, [a.approval.id]: given.map((g, j) => (j === i ? next : g)) }))
-  const complete = questions.length > 0 && given.every(g => g.picked.length > 0 || g.text.trim() !== '')
+  // The session view's own question card, with its option previews and notes.
+  const asks: ApprovalPart = { kind: 'approval', id: a.approval.id, approvalKind: 'ask', questions }
   const plan = a.approval.kind === 'plan' ? a.approval.plan ?? '' : ''
   const folded = plan.length > PLAN_FOLD && !whole[a.approval.id]
   const change = (feedback[a.approval.id] ?? '').trim()
   const what = a.approval.kind === 'plan' ? 'pw code has a plan for you to approve'
     : a.approval.kind === 'ask' ? (questions.length === 1 ? 'pw code asks you a question' : 'pw code asks you some questions')
     : `pw code asks to run ${a.approval.tool ?? 'a tool'}`
-  const action = a.approval.kind === 'ask' ? <>
-    <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy || !complete}
-      onClick={() => void answer(a, true, { answers: questions.map((q, i) => ({ question: q.question, picked: given[i].picked, text: given[i].text.trim() })) })}>Send</Button>
-    <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'chat'} disabled={!!busy} onClick={() => void answer(a, false, { chat: true })}>Talk it through</Button>
-  </> : a.approval.kind === 'plan' ? <>
+  const action = a.approval.kind === 'ask' ? undefined : a.approval.kind === 'plan' ? <>
     <Button variant="primary" size="sm" loading={busy === a.approval.id + 'true'} disabled={!!busy || folded}
       title={folded ? 'Show the whole plan to approve it' : undefined} onClick={() => void answer(a, true)}>Approve</Button>
     <Button variant="secondary" size="sm" loading={busy === a.approval.id + 'false'} disabled={!!busy}
@@ -457,23 +445,14 @@ export function PWCodeApprovals({ conversationId }: { conversationId: string | n
   return (
     <div ref={ref} className="cred-banner pwcode-approval" style={place}>
       <Callout variant="bar" tone="warning" live title={what} action={action}>
-        {questions.map((q, i) => (
-          <fieldset key={i} className="pwcode-question">
-            <legend>{q.header ? <strong>{q.header}: </strong> : null}{q.question}</legend>
-            {(q.options ?? []).map(o => {
-              const on = given[i].picked.includes(o.label)
-              return (
-                <label key={o.label} className="pwcode-option">
-                  <input type={q.multiSelect ? 'checkbox' : 'radio'} name={`${a.approval.id}-${i}`} checked={on}
-                    onChange={() => setGiven(i, { ...given[i], picked: q.multiSelect ? (on ? given[i].picked.filter(x => x !== o.label) : [...given[i].picked, o.label]) : [o.label] })} />
-                  <span>{o.label}{o.description ? <span className="muted"> · {o.description}</span> : null}</span>
-                </label>
-              )
-            })}
-            <input className="pwcode-answer" type="text" aria-label={`Your own answer to: ${q.question}`} placeholder={q.options?.length ? 'Or your own answer' : 'Your answer'}
-              value={given[i].text} onChange={e => setGiven(i, { ...given[i], text: e.target.value })} />
-          </fieldset>
-        ))}
+        {questions.length > 0 && (
+          <div className="pwcode-ask">
+            <ApprovalBlock key={a.approval.id} part={asks} onApprovalAnswer={(_, v) => {
+              if (v.kind !== 'ask') return
+              return v.chat ? answer(a, false, { chat: true }) : answer(a, true, { answers: questions.map((q, i) => ({ question: q.question, ...v.answers[i] })) })
+            }} />
+          </div>
+        )}
         {a.approval.command && <code className="pwcode-command">{a.approval.command}</code>}
         {plan && <>
           <p className={folded ? 'pwcode-plan' : 'pwcode-plan pwcode-plan-whole'}>{folded ? plan.slice(0, PLAN_FOLD) + '…' : plan}</p>
