@@ -1,6 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect } from 'vitest'
+// The folder menu's parts load with the form. They are many, so on a busy
+// machine a test that waited for them reached its time limit: they are
+// loaded with the tests instead.
+import '../src/components/addLibraryFolder'
 
 /** Steps of Add a library, as a person takes them. */
 

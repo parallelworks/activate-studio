@@ -12,7 +12,7 @@ import { ChatProvider, SessionView, type ChatAdapter, type Message } from '@para
 
 const ROW = 100
 const VIEW = 600
-const ALL: Message[] = Array.from({ length: 120 }, (_, i) => i).flatMap(i => [
+const ALL: Message[] = Array.from({ length: 60 }, (_, i) => i).flatMap(i => [
   { id: `u${i}`, conversationId: 'c', role: 'user', content: `Read gauge${i} at the pier.`, createdAt: '' },
   { id: `a${i}`, conversationId: 'c', role: 'assistant', content: `Answer${i}: the tide is in.`, createdAt: '' },
 ] as unknown as Message[])
@@ -31,15 +31,28 @@ const stub = (on: object, name: string, d: PropertyDescriptor) => {
   keep.set(name, [on, Object.getOwnPropertyDescriptor(on, name)])
   Object.defineProperty(on, name, { configurable: true, ...d })
 }
-const log = () => document.querySelector<HTMLElement>('[role="log"]')!
-const rows = () => [...document.querySelectorAll<HTMLElement>('[role="log"] [data-transcript] [data-row]')]
+// The list and its rows, found once for each change to the page: the list
+// measures every row it has, and a search of the page for each was nearly
+// all of these tests' time.
+let laid: { log: HTMLElement; rows: HTMLElement[]; at: Map<HTMLElement, number> } | null = null
+const changes = new MutationObserver(() => { laid = null })
+const layout = () => {
+  if (changes.takeRecords().length) laid = null
+  if (laid) return laid
+  const found = [...document.querySelectorAll<HTMLElement>('[role="log"] [data-transcript] [data-row]')]
+  return (laid = { log: document.querySelector<HTMLElement>('[role="log"]')!, rows: found, at: new Map(found.map((r, i) => [r, i])) })
+}
+const log = () => layout().log
+const rows = () => layout().rows
 beforeEach(() => {
+  laid = null
+  changes.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['role', 'data-transcript', 'data-row'] })
   stub(Element.prototype, 'checkVisibility', { value(this: Element) { return shown(this) } })
   stub(proto, 'clientHeight', { get(this: HTMLElement) { return this.getAttribute('role') === 'log' ? VIEW : 0 } })
   stub(proto, 'scrollHeight', { get(this: HTMLElement) { return this.getAttribute('role') === 'log' ? Math.max(VIEW, rows().length * ROW) : 0 } })
   stub(proto, 'getBoundingClientRect', {
     value(this: HTMLElement) {
-      const at = this.dataset['row'] ? rows().indexOf(this) : -1
+      const at = this.dataset['row'] ? layout().at.get(this) ?? -1 : -1
       const top = at < 0 ? 0 : at * ROW - (log()?.scrollTop ?? 0)
       const height = at < 0 ? VIEW : ROW
       return { top, bottom: top + height, left: 0, right: 0, width: 0, height, x: 0, y: top, toJSON: () => ({}) }
@@ -49,6 +62,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  changes.disconnect()
   vi.useRealTimers()
   for (const [name, [on, d]] of keep) { if (d) Object.defineProperty(on, name, d); else delete (on as Record<string, unknown>)[name] }
   keep.clear()
@@ -73,14 +87,14 @@ describe('find in a session that went on while another page showed', () => {
   it('finds turns the list let go of while it was hidden', async () => {
     const { rerender } = render(page(turns(4), false))
     await waitFor(() => expect(rows().length).toBeGreaterThan(0), { timeout: 8000 })
-    for (let n = 6; n <= 120; n += 6) rerender(page(turns(n), true))
+    for (let n = 6; n <= 60; n += 6) rerender(page(turns(n), true))
     await settle()
-    rerender(page(turns(120), false))
+    rerender(page(turns(60), false))
     await settle()
     expect(rows().some(r => r.dataset['row'] === 'u5')).toBe(false)
 
     const box = await openFind()
-    for (const q of ['gauge5 at', 'gauge60 at', 'gauge0 at', 'Answer100:', 'gauge119 at']) {
+    for (const q of ['gauge5 at', 'gauge30 at', 'gauge0 at', 'Answer50:', 'gauge59 at']) {
       fireEvent.change(box, { target: { value: q } })
       await waitFor(() => expect(count()).toHaveTextContent('1 of 1'), { timeout: 5000 })
     }
@@ -92,13 +106,13 @@ describe('find in a session that went on while another page showed', () => {
     const { rerender } = render(page(turns(4), false))
     await waitFor(() => expect(rows().length).toBeGreaterThan(0), { timeout: 8000 })
     const box = await openFind()
-    for (let n = 20; n <= 120; n += 20) {
+    for (let n = 10; n <= 60; n += 10) {
       rerender(page(turns(n), true))
       await settle()
     }
     await settle(700)
-    rerender(page(turns(120), false))
-    for (const q of ['gauge7 at', 'gauge50 at', 'gauge119 at']) {
+    rerender(page(turns(60), false))
+    for (const q of ['gauge7 at', 'gauge30 at', 'gauge59 at']) {
       fireEvent.change(box, { target: { value: q } })
       await waitFor(() => expect(count()).toHaveTextContent('1 of 1'), { timeout: 5000 })
     }

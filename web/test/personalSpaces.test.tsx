@@ -85,8 +85,27 @@ describe('a space of one\'s own', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' }))
     await waitFor(() => expect(screen.getByTestId('add-library-computer')).toHaveTextContent('Choose a cluster'))
     await chooseHome()
-    expect(await screen.findByTestId('add-library-folder')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('add-library-folder')).toBeInTheDocument())
     expect(screen.queryByText(/^Reached on/)).toBeNull()
+  })
+
+  // Until the viewer's status came, the box that sends people to Settings,
+  // Accounts showed, and then the sign-in took its place under the pointer.
+  it('shows one prompt, once it knows the person can sign in here', async () => {
+    let answer = (_: Response) => {}
+    const status = new Promise<Response>(r => { answer = r })
+    stub((m, u) => {
+      if (u === '/api/user-libraries/space') return status as unknown as Response
+      if (u === '/api/user-libraries/pw/systems') return json({ usable: false, why: 'Sign in with ACTIVATE under Settings, Accounts.', systems: [], error: null })
+      if (u === '/api/me/platform-sign-in' && m === 'GET') return json({ state: 'none', host: 'platform.example.com' })
+    })
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
+    expect(await screen.findByText('Checking your sign-in…')).toBeInTheDocument()
+    expect(screen.queryByText('Sign in with ACTIVATE to use this')).toBeNull()
+    await act(async () => { answer(json({ ...STATUS, available: false, why: 'My library reaches the cluster with your ACTIVATE sign-in.', credential: '', signInOffered: true })); await status })
+    expect(await screen.findByRole('button', { name: 'Sign in with ACTIVATE' })).toBeInTheDocument()
+    expect(screen.getAllByText('Sign in with ACTIVATE to use this')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Open Accounts' })).toBeNull()
   })
 
   it('says why My library is not available for another reason', async () => {
