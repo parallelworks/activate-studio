@@ -369,7 +369,7 @@ func TestGUFIRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	art := filepath.Join(base, "art.db")
-	s, err := Run(context.Background(), newX(t), Options{List: bytes.NewReader(list), Total: -1, Delim: DefaultDelim, Source: Local{Root: src, Strip: top}, Strip: top, Out: art, Jobs: 2})
+	s, err := Run(context.Background(), newX(t), Options{List: bytes.NewReader(list), Total: -1, Delim: DefaultDelim, Source: Local{Root: src, Strip: top}, Strip: top, Out: art, Jobs: 2, ExtraInfo: "local"})
 	if err != nil || s.States["text"] != 2 {
 		t.Fatalf("%+v %v", s, err)
 	}
@@ -383,12 +383,13 @@ func TestGUFIRoundTrip(t *testing.T) {
 	if rc := Main([]string{"shards", "--spread", spread, "--fsid", "local", "--index", top}, nil, &out, &errb); rc != 0 || !strings.Contains(out.String(), `"files":2`) {
 		t.Fatalf("shards %d: %s %s", rc, out.String(), errb.String())
 	}
-	shard := filepath.Join(top, extdb.ShardName(extdb.Prefix, extdb.ReadOther, int64(os.Getuid()), int64(os.Getgid())))
+	// The files are the folder owner's: ext_ur.db, as GUFI names it.
+	shard := filepath.Join(top, extdb.ShardName(extdb.Prefix, extdb.ReadUser, int64(os.Getuid()), int64(os.Getgid())))
 	if _, err := os.Stat(shard); err != nil {
 		t.Fatalf("no shard %s: %v", shard, err)
 	}
 	got, err := exec.Command(filepath.Join(bin, "gufi_query"), "-I", "CREATE TABLE c (n TEXT);",
-		"--external-copy", `\.db$`, "INSERT INTO c SELECT e.name FROM extdb.ext_bm25 b JOIN vrpentries e ON CAST(b.inode AS INT64) = e.inode AND CAST(b.mtime AS INT64) = e.mtime WHERE ext_bm25 MATCH 'zanzibar';",
+		"--external-copy", "ext", "INSERT INTO c SELECT e.name FROM extdb.ext_bm25 b JOIN vrpentries e ON CAST(b.inode AS INT64) = e.inode AND CAST(b.mtime AS INT64) = e.mtime WHERE ext_bm25 MATCH 'zanzibar';",
 		"-E", "SELECT n FROM c;", top).Output()
 	if err != nil || strings.TrimSpace(string(got)) != "a.md" {
 		t.Fatalf("walk found %q %v", got, err)

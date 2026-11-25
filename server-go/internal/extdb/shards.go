@@ -1,6 +1,7 @@
 package extdb
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -13,41 +14,49 @@ import (
 	"strings"
 )
 
-// Shard names: prefix_XX_uid_gid.db, where XX says who may read the
-// files whose records it holds, judged as GUFI's plan judges them against
-// the folder: OR when others may read the file, GR when the folder's
-// group may, UR when the folder's owner may, and NA for none of those.
-// uid and gid are the files' own. Attaching a shard is then the
-// permission check: its mode lets in exactly those who may read the
-// files.
+// Shards are named and classed as GUFI main's spread_to_external names
+// them, judged against the folder's owner: <prefix>_ur.db when the
+// folder's owner owns the file and may read it, <prefix>_gr.db when the
+// folder's group is the file's and may read it, <prefix>_or.db when
+// others may read it, and <prefix>_<uid>_<gid>.db, of the file's own
+// owner and group, for anything else. Attaching a shard is then the
+// permission check: its mode lets in those its name says.
 const (
-	ReadOther = "OR"
-	ReadGroup = "GR"
-	ReadUser  = "UR"
-	ReadNone  = "NA"
+	ReadUser  = "ur"
+	ReadGroup = "gr"
+	ReadOther = "or"
+	// ReadNone is the class of a file none of the others fit, whose
+	// shard is named by its uid and gid.
+	ReadNone = ""
 )
 
 // ShardClass is the class of a file of this owner and mode in a folder
-// of this owner.
+// of this owner, in GUFI's order.
 func ShardClass(mode, uid, gid, duid, dgid int64) string {
 	switch {
+	case uid == duid && mode&0o400 != 0:
+		return ReadUser
+	case gid == dgid && mode&0o040 != 0:
+		return ReadGroup
 	case mode&0o004 != 0:
 		return ReadOther
-	case mode&0o040 != 0 && gid == dgid:
-		return ReadGroup
-	case mode&0o400 != 0 && uid == duid:
-		return ReadUser
 	}
 	return ReadNone
 }
 
-// ShardName is the shard of a prefix for a class, uid and gid.
+// ShardName is the shard of a prefix for a class, and for ReadNone the
+// file's uid and gid.
 func ShardName(prefix, class string, uid, gid int64) string {
-	return fmt.Sprintf("%s_%s_%d_%d.db", prefix, class, uid, gid)
+	if class == ReadNone {
+		return fmt.Sprintf("%s_%d_%d.db", prefix, uid, gid)
+	}
+	return prefix + "_" + class + ".db"
 }
 
 // shardMode is a shard's permissions: readable by those its class names,
-// and for NA the file's own.
+// and for ReadNone the narrowest of its files' own. Unlike GUFI's, the
+// owner may always read and write it, so a Studio that is not root (and
+// cannot give a shard away) still reads the shards it writes.
 func shardMode(class string, fileMode int64) os.FileMode {
 	switch class {
 	case ReadOther:
@@ -57,8 +66,12 @@ func shardMode(class string, fileMode int64) os.FileMode {
 	case ReadUser:
 		return 0o600
 	}
-	return os.FileMode(fileMode) & 0o666
+	return os.FileMode(fileMode)&0o666 | 0o600
 }
+
+// legacyShard matches the shards the Studio wrote before
+// (studio_UR_501_20.db), removed wherever a refill finds them.
+var legacyShard = regexp.MustCompile(`^` + LegacyPrefix + `_(OR|GR|UR|NA)_[0-9]+_[0-9]+\.db$`)
 
 // ShardStats is what refilling an index's shards did.
 type ShardStats struct {
@@ -70,6 +83,21 @@ type ShardStats struct {
 	// Unchowned counts shards left owned by this account because only
 	// root may give a file to another.
 	Unchowned int `json:"unchowned,omitempty"`
+	// Legacy counts the earlier Studio's shards removed (studio_*).
+	Legacy int `json:"legacy,omitempty"`
+	// Vectors counts the shards given ext_vectors, and VectorError is the
+	// first failure to make one; such a shard keeps its text alone.
+	Vectors     int    `json:"vectors,omitempty"`
+	VectorError string `json:"vectorError,omitempty"`
+}
+
+// ShardOptions are FillShardsWith's options.
+type ShardOptions struct {
+	// GufiSqlite3, when set, gives each shard whose files have vectors in
+	// the spread tree an ext_vectors (VecShards); without it shards hold
+	// text alone.
+	GufiSqlite3 string
+	Ctx         context.Context
 }
 
 type indexFile struct {
@@ -114,11 +142,21 @@ func WalkIndex(root string, fn func(dir string, files []IndexEntry) error) error
 // files that changed or went are not kept, and a shard no file needs is
 // removed.
 func FillShards(s Spread, root, extraInfo string) (ShardStats, error) {
+	return FillShardsWith(s, root, extraInfo, ShardOptions{})
+}
+
+// FillShardsWith is FillShards with options.
+func FillShardsWith(s Spread, root, extraInfo string, o ShardOptions) (ShardStats, error) {
 	var st ShardStats
 	if err := s.Check(); err != nil {
 		return st, err
 	}
-	mine := regexp.MustCompile(`^` + regexp.QuoteMeta(s.Prefix) + `_(OR|GR|UR|NA)_[0-9]+_[0-9]+\.db$`)
+	ctx := o.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	vec := o.GufiSqlite3 != ""
+	mine := regexp.MustCompile(`^` + regexp.QuoteMeta(s.Prefix) + `_(ur|gr|or|[0-9]+_[0-9]+)\.db$`)
 	spreads := map[string]*sql.DB{}
 	defer func() {
 		for _, db := range spreads {
@@ -151,6 +189,7 @@ func FillShards(s Spread, root, extraInfo string) (ShardStats, error) {
 		}
 		want := map[string][]indexFile{}
 		modes := map[string]int64{}
+		classes := map[string]string{}
 		for _, f := range files {
 			src := spread(f.inode)
 			if src == nil {
@@ -165,7 +204,8 @@ func FillShards(s Spread, root, extraInfo string) (ShardStats, error) {
 			if _, ok := modes[name]; !ok {
 				modes[name] = f.mode
 			}
-			// An NA shard takes the narrowest mode of its files.
+			classes[name] = class
+			// A ReadNone shard takes the narrowest mode of its files.
 			modes[name] &= f.mode
 			want[name] = append(want[name], f)
 		}
@@ -174,8 +214,37 @@ func FillShards(s Spread, root, extraInfo string) (ShardStats, error) {
 			names = append(names, n)
 		}
 		sort.Strings(names)
+		var tmps []pendingShard
+		var withVecs []string
 		for _, name := range names {
-			unchowned, err := writeShard(filepath.Join(dir, name), want[name], spread, extraInfo, shardMode(name[len(s.Prefix)+1:len(s.Prefix)+3], modes[name]))
+			ps, err := writeShard(filepath.Join(dir, name), want[name], spread, extraInfo, shardMode(classes[name], modes[name]), vec)
+			if err != nil {
+				for _, t := range tmps {
+					os.Remove(t.tmp)
+				}
+				return err
+			}
+			tmps = append(tmps, ps)
+			if ps.vectors {
+				withVecs = append(withVecs, ps.tmp)
+			}
+		}
+		// The folder's shards with vectors get ext_vectors in one
+		// gufi_sqlite3; where that fails they keep their text alone.
+		if len(withVecs) > 0 {
+			if err := VecShards(ctx, o.GufiSqlite3, withVecs); err != nil {
+				if st.VectorError == "" {
+					st.VectorError = err.Error()
+				}
+				for _, t := range withVecs {
+					dropVecRows(t)
+				}
+			} else {
+				st.Vectors += len(withVecs)
+			}
+		}
+		for _, ps := range tmps {
+			unchowned, err := ps.finish()
 			if err != nil {
 				return err
 			}
@@ -183,13 +252,18 @@ func FillShards(s Spread, root, extraInfo string) (ShardStats, error) {
 				st.Unchowned++
 			}
 			st.Shards++
-			st.Files += len(want[name])
+			st.Files += ps.files
 		}
 		entries, _ := os.ReadDir(dir)
 		for _, e := range entries {
-			if mine.MatchString(e.Name()) && want[e.Name()] == nil {
+			switch {
+			case mine.MatchString(e.Name()) && want[e.Name()] == nil:
 				if os.Remove(filepath.Join(dir, e.Name())) == nil {
 					st.Removed++
+				}
+			case legacyShard.MatchString(e.Name()):
+				if os.Remove(filepath.Join(dir, e.Name())) == nil {
+					st.Legacy++
 				}
 			}
 		}
@@ -244,64 +318,106 @@ func readEntries(dbFile string) ([]IndexEntry, int64, int64, error) {
 	return out, duid, dgid, rows.Err()
 }
 
-// writeShard writes one shard whole from the spread tree, and reports
-// whether it could not be given to the files' owner.
-func writeShard(file string, files []indexFile, spread func(int64) *sql.DB, extraInfo string, mode os.FileMode) (bool, error) {
-	tmp := file + ".tmp"
-	os.Remove(tmp)
-	db, err := openShard(tmp, true, true)
-	if err != nil {
-		return false, err
+// pendingShard is a shard written to its temporary file, to be put in
+// place by finish.
+type pendingShard struct {
+	tmp, file string
+	files     int
+	uid, gid  int64
+	mode      os.FileMode
+	// vectors says its studio_vectors has rows, for VecShards.
+	vectors bool
+}
+
+// writeShard writes one shard whole from the spread tree to a temporary
+// file beside it; with vec, the files' vectors go into its studio_vectors.
+func writeShard(file string, files []indexFile, spread func(int64) *sql.DB, extraInfo string, mode os.FileMode, vec bool) (pendingShard, error) {
+	ps := pendingShard{tmp: file + ".tmp", file: file, files: len(files), mode: mode}
+	if len(files) > 0 {
+		ps.uid, ps.gid = files[0].uid, files[0].gid
 	}
-	tx, err := begin(db, tmp)
+	os.Remove(ps.tmp)
+	db, err := openShard(ps.tmp, true, true)
+	if err != nil {
+		return ps, err
+	}
+	tx, err := begin(db, ps.tmp, vec)
 	if err != nil {
 		db.Close()
-		return false, err
+		return ps, err
 	}
-	fail := func(err error) (bool, error) {
+	fail := func(err error) (pendingShard, error) {
 		tx.Rollback()
 		db.Close()
-		os.Remove(tmp)
-		return false, fmt.Errorf("%s: %w", file, err)
+		os.Remove(ps.tmp)
+		return ps, fmt.Errorf("%s: %w", file, err)
 	}
+	nvec := 0
 	for _, f := range files {
 		src := spread(f.inode)
-		if err := copyKey(src, tx, f.inode, f.mtime, extraInfo); err != nil {
+		n, err := copyKey(src, tx, f.inode, f.mtime, extraInfo, vec)
+		if err != nil {
+			return fail(err)
+		}
+		nvec += n
+	}
+	if vec && nvec == 0 {
+		if _, err := tx.Exec("DROP TABLE studio_vectors"); err != nil {
 			return fail(err)
 		}
 	}
+	ps.vectors = nvec > 0
 	if err := tx.Commit(); err != nil {
 		return fail(err)
 	}
 	db.Close()
+	return ps, nil
+}
+
+// finish syncs a written shard and renames it into place with its mode
+// and owner, and reports whether it could not be given to the files'
+// owner.
+func (ps pendingShard) finish() (bool, error) {
 	// Written with no syncs; synced once, so the rename puts a whole file
 	// in place.
-	if f, err := os.OpenFile(tmp, os.O_RDWR, 0); err == nil {
+	if f, err := os.OpenFile(ps.tmp, os.O_RDWR, 0); err == nil {
 		serr := f.Sync()
 		f.Close()
 		if serr != nil {
-			os.Remove(tmp)
+			os.Remove(ps.tmp)
 			return false, serr
 		}
 	}
-	if err := os.Chmod(tmp, mode); err != nil {
-		os.Remove(tmp)
+	if err := os.Chmod(ps.tmp, ps.mode); err != nil {
+		os.Remove(ps.tmp)
 		return false, err
 	}
 	unchowned := false
-	if len(files) > 0 && (int64(os.Getuid()) != files[0].uid || int64(os.Getgid()) != files[0].gid) {
-		if os.Chown(tmp, int(files[0].uid), int(files[0].gid)) != nil {
+	if ps.files > 0 && (int64(os.Getuid()) != ps.uid || int64(os.Getgid()) != ps.gid) {
+		if os.Chown(ps.tmp, int(ps.uid), int(ps.gid)) != nil {
 			unchowned = true
 		}
 	}
-	return unchowned, os.Rename(tmp, file)
+	return unchowned, os.Rename(ps.tmp, ps.file)
 }
 
-// copyKey copies one version of a file's records from a spread db.
-func copyKey(src *sql.DB, tx *sql.Tx, inode, mtime int64, extra string) error {
+// dropVecRows leaves a shard whose vectors could not be made with its
+// text alone.
+func dropVecRows(file string) {
+	db, err := openShard(file, false, true)
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	db.Exec("DROP TABLE IF EXISTS studio_vectors; VACUUM;")
+}
+
+// copyKey copies one version of a file's records from a spread db, with
+// vec its vectors too, and says how many vectors it copied.
+func copyKey(src *sql.DB, tx *sql.Tx, inode, mtime int64, extra string, vec bool) (int, error) {
 	rows, err := src.Query("SELECT "+assetCols+" FROM ext_assets WHERE inode = ? AND mtime = ? AND extra_info IS ?", inode, mtime, extra)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var assets [][]any
 	for rows.Next() {
@@ -312,18 +428,19 @@ func copyKey(src *sql.DB, tx *sql.Tx, inode, mtime int64, extra string) error {
 		}
 		if err := rows.Scan(ptrs...); err != nil {
 			rows.Close()
-			return err
+			return 0, err
 		}
 		assets = append(assets, vals)
 	}
 	rows.Close()
+	nvec := 0
 	for _, a := range assets {
 		if _, err := tx.Exec("INSERT INTO ext_assets ("+assetCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", a...); err != nil {
-			return err
+			return 0, err
 		}
 		crows, err := src.Query("SELECT "+bm25Cols+" FROM ext_bm25 WHERE asset_id = ?", a[4])
 		if err != nil {
-			return err
+			return 0, err
 		}
 		var chunks [][]any
 		for crows.Next() {
@@ -334,16 +451,27 @@ func copyKey(src *sql.DB, tx *sql.Tx, inode, mtime int64, extra string) error {
 			}
 			if err := crows.Scan(ptrs...); err != nil {
 				crows.Close()
-				return err
+				return 0, err
 			}
 			chunks = append(chunks, vals)
 		}
 		crows.Close()
 		for _, c := range chunks {
 			if _, err := tx.Exec("INSERT INTO ext_bm25 ("+bm25Cols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", c...); err != nil {
-				return err
+				return 0, err
+			}
+		}
+		if vec {
+			var has int
+			src.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'studio_vectors'").Scan(&has)
+			if has > 0 {
+				n, err := copyVecRows(src, tx, a[4])
+				if err != nil {
+					return 0, err
+				}
+				nvec += n
 			}
 		}
 	}
-	return nil
+	return nvec, nil
 }

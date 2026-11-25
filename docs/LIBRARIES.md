@@ -645,9 +645,15 @@ object version's outcome, so an object is read once until it changes,
 and a stopped pass goes on from where it stopped. What a pass added goes
 into the library's spread tree (`INDEX_BASE/libraries/<id>/spread`, under
 the library's fsid), and from there into the index's permission shards,
-`studio_UR_<uid>_<gid>.db` beside each `db.db` (objects are indexed as
-mode 0600 of the Studio's account), which search attaches as
-external databases. A new listing's index gets its shards from the spread
+`ext_ur.db` beside each `db.db` (objects are indexed as mode 0600 of the
+Studio's account), which search attaches as external databases. Where
+GUFI's `gufi_sqlite3` and the Studio's GGUF model are here, each new
+chunk also gets a vector for search by meaning (`index-extract vectors`,
+docs/EXTRACTION.md), and the shards an `ext_vectors` table. Every record's
+`extra_info` is the bucket's fsid. Text a Studio read before (in
+`studio_UR_<uid>_<gid>.db` shards, a spread tree under `studio/`, records
+with an empty `extra_info`) is moved to these names at the next listing
+or pass, and nothing is read again. A new listing's index gets its shards from the spread
 tree before it is swapped in, so the text stays searchable through every
 listing, and an object that changed or went loses its old text with the
 listing that finds it. The library's `textPass` in `bucket.json` records

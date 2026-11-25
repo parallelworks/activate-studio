@@ -10,11 +10,11 @@ import (
 )
 
 func TestSpreadPath(t *testing.T) {
-	s := Spread{Top: "/sp", Prefix: "studio", Fsid: "store1"}
-	if got := s.Path(123456789); got != filepath.FromSlash("/sp/studio/store1/89/67/45.db") {
+	s := Spread{Top: "/sp", Prefix: "ext", Fsid: "store1"}
+	if got := s.Path(123456789); got != filepath.FromSlash("/sp/ext/store1/89/67/45.db") {
 		t.Errorf("got %s", got)
 	}
-	if got := s.Path(5); got != filepath.FromSlash("/sp/studio/store1/05/00/00.db") {
+	if got := s.Path(5); got != filepath.FromSlash("/sp/ext/store1/05/00/00.db") {
 		t.Errorf("got %s", got)
 	}
 	for _, bad := range []Spread{{Top: "", Prefix: "p", Fsid: "f"}, {Top: "/t", Prefix: "a/b", Fsid: "f"}, {Top: "/t", Prefix: "p", Fsid: ".."}} {
@@ -25,10 +25,12 @@ func TestSpreadPath(t *testing.T) {
 }
 
 func TestShardClass(t *testing.T) {
+	// GUFI's order: the folder's owner first, then its group, then others.
 	cases := []struct {
 		mode, uid, gid, duid, dgid int64
 		want                       string
 	}{
+		{0o644, 1, 2, 1, 9, ReadUser},
 		{0o644, 1, 2, 9, 9, ReadOther},
 		{0o640, 1, 2, 9, 2, ReadGroup},
 		{0o640, 1, 2, 9, 3, ReadNone},
@@ -38,11 +40,13 @@ func TestShardClass(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := ShardClass(c.mode, c.uid, c.gid, c.duid, c.dgid); got != c.want {
-			t.Errorf("%+v: %s", c, got)
+			t.Errorf("%+v: %q", c, got)
 		}
 	}
-	if ShardName("studio", ReadUser, 1000, 100) != "studio_UR_1000_100.db" {
-		t.Error(ShardName("studio", ReadUser, 1000, 100))
+	for class, want := range map[string]string{ReadUser: "ext_ur.db", ReadGroup: "ext_gr.db", ReadOther: "ext_or.db", ReadNone: "ext_1000_100.db"} {
+		if got := ShardName(Prefix, class, 1000, 100); got != want {
+			t.Errorf("%q: %s, want %s", class, got, want)
+		}
 	}
 }
 
@@ -135,7 +139,7 @@ func TestSpreadAndShards(t *testing.T) {
 	if err != nil || st.Files != 4 || st.Chunks != 4 || st.DBs != 4 {
 		t.Fatalf("%+v %v", st, err)
 	}
-	for _, f := range []string{"fsid.db", "extdbprefix.db", "studio.sql"} {
+	for _, f := range []string{"fsid.db", "extdbprefix.db", "ext.sql"} {
 		if _, err := os.Stat(filepath.Join(s.Top, f)); err != nil {
 			t.Errorf("no %s at the spread top", f)
 		}
@@ -151,20 +155,25 @@ func TestSpreadAndShards(t *testing.T) {
 
 	ix := t.TempDir()
 	uid, gid := int64(os.Getuid()), int64(os.Getgid())
-	// a: 101 owner-read, 102 group-read; b: 201 other-read; 202 has no text.
-	fakeDir(t, filepath.Join(ix, "a"), uid, gid, [][5]int64{{101, 10, uid, gid, 0o600}, {102, 20, uid, gid, 0o640}})
-	fakeDir(t, filepath.Join(ix, "a", "b"), uid, gid, [][5]int64{{201, 30, uid, gid, 0o644}, {202, 5, uid, gid, 0o644}})
+	// Another owner and group, so the classes past ur are reached.
+	ou, og := uid+1000, gid+1000
+	// a: 101 the folder owner's, 102 the folder group's; b: 201 another's
+	// that all may read; 202 has no text.
+	fakeDir(t, filepath.Join(ix, "a"), uid, gid, [][5]int64{{101, 10, uid, gid, 0o600}, {102, 20, ou, gid, 0o640}})
+	fakeDir(t, filepath.Join(ix, "a", "b"), uid, gid, [][5]int64{{201, 30, ou, og, 0o644}, {202, 5, uid, gid, 0o644}})
 	os.WriteFile(filepath.Join(ix, "a", ShardName(Prefix, ReadOther, 5, 5)), []byte("stale"), 0o644)
 	os.WriteFile(filepath.Join(ix, "a", "other_UR_1_1.db"), []byte("not ours"), 0o644)
+	// The earlier Studio's shard is removed wherever a refill finds it.
+	os.WriteFile(filepath.Join(ix, "a", "studio_UR_1_1.db"), []byte("legacy"), 0o600)
 	fs, err := FillShards(s, ix, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fs.Dirs != 2 || fs.Files != 3 || fs.Shards != 3 || fs.Removed != 1 {
+	if fs.Dirs != 2 || fs.Files != 3 || fs.Shards != 3 || fs.Removed != 1 || fs.Legacy != 1 {
 		t.Errorf("%+v", fs)
 	}
-	ur, gr, or := ShardName(Prefix, ReadUser, uid, gid), ShardName(Prefix, ReadGroup, uid, gid), ShardName(Prefix, ReadOther, uid, gid)
-	if got := shardsIn(t, filepath.Join(ix, "a")); len(got) != 3 || got[0] != "other_UR_1_1.db" || got[1] != gr || got[2] != ur {
+	ur, gr, or := ShardName(Prefix, ReadUser, uid, gid), ShardName(Prefix, ReadGroup, ou, gid), ShardName(Prefix, ReadOther, ou, og)
+	if got := shardsIn(t, filepath.Join(ix, "a")); len(got) != 3 || got[0] != gr || got[1] != ur || got[2] != "other_UR_1_1.db" {
 		t.Errorf("folder a: %v", got)
 	}
 	if got := texts(t, filepath.Join(ix, "a", ur)); len(got) != 1 || got[101] != "alpha text" {
@@ -181,12 +190,13 @@ func TestSpreadAndShards(t *testing.T) {
 	}
 
 	// The index is rebuilt: 102 changed (no text for its new version), 101
-	// is now readable by all. Its records move to OR; GR goes.
-	fakeDir(t, filepath.Join(ix, "a"), uid, gid, [][5]int64{{101, 11, uid, gid, 0o644}, {102, 21, uid, gid, 0o640}})
+	// is now another's that all may read. Its records move to or; ur and
+	// gr go.
+	fakeDir(t, filepath.Join(ix, "a"), uid, gid, [][5]int64{{101, 11, ou, og, 0o644}, {102, 21, ou, gid, 0o640}})
 	if fs, err = FillShards(s, ix, ""); err != nil || fs.Removed != 2 {
 		t.Fatalf("%+v %v", fs, err)
 	}
-	if got := shardsIn(t, filepath.Join(ix, "a")); len(got) != 2 || got[1] != or {
+	if got := shardsIn(t, filepath.Join(ix, "a")); len(got) != 2 || got[0] != or {
 		t.Errorf("folder a after: %v", got)
 	}
 	if got := texts(t, filepath.Join(ix, "a", or)); got[101] != "alpha changed" || len(got) != 1 {

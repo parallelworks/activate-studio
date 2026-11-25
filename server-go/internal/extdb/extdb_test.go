@@ -135,14 +135,56 @@ func TestArtifact(t *testing.T) {
 	if content != "zanzibar only" || route != "text" {
 		t.Errorf("view gave %q %q", content, route)
 	}
+	// GUFI main's views: a nested assets_json per file, and the array and
+	// flat views renamed _sv.
 	var assets int
+	var js string
+	if err := db.QueryRow("SELECT asset_count, assets_json FROM ext_assets_by_file_v WHERE inode = 42").Scan(&assets, &js); err != nil || assets != 1 ||
+		!strings.Contains(js, `"asset_id":"`+k.FileUUID()+`"`) || !strings.Contains(js, `"component_type":"file"`) {
+		t.Errorf("by file view: %d %s %v", assets, js, err)
+	}
 	var ids string
-	if err := db.QueryRow("SELECT asset_count, asset_ids FROM ext_assets_by_file_v WHERE inode = 42").Scan(&assets, &ids); err != nil || assets != 1 || !strings.Contains(ids, k.FileUUID()) {
-		t.Errorf("by file view: %d %s %v", assets, ids, err)
+	if err := db.QueryRow("SELECT asset_ids FROM ext_assets_by_file_sv WHERE inode = 42").Scan(&ids); err != nil || !strings.Contains(ids, k.FileUUID()) {
+		t.Errorf("array view: %s %v", ids, err)
 	}
 	var flat string
-	if err := db.QueryRow("SELECT component_types FROM ext_assets_by_file_flat_v WHERE inode = 42").Scan(&flat); err != nil || flat != "file" {
+	if err := db.QueryRow("SELECT component_types FROM ext_assets_by_file_flat_sv WHERE inode = 42").Scan(&flat); err != nil || flat != "file" {
 		t.Errorf("flat view: %q %v", flat, err)
+	}
+}
+
+// An artifact of the schema before GUFI main's gets the new views when
+// it is opened again.
+func TestOldViewsReplaced(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{
+		"CREATE TABLE ext_assets (inode INTEGER NOT NULL,mtime INTEGER NOT NULL,extra_info TEXT,outer_file_uuid TEXT NOT NULL,asset_id TEXT PRIMARY KEY,component_type TEXT NOT NULL,member_path_json TEXT NOT NULL,file_metadata TEXT,indexing_provenance TEXT,mimetype TEXT,asset_route TEXT)",
+		"CREATE VIEW ext_assets_by_file_v AS SELECT inode, json_group_array(asset_id) AS asset_ids FROM ext_assets GROUP BY inode",
+		"CREATE VIEW ext_assets_by_file_flat_v AS SELECT inode, asset_ids FROM ext_assets_by_file_v",
+	} {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	a, err := Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Close()
+	db, _ = sql.Open("sqlite", p)
+	defer db.Close()
+	var n int
+	db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name IN ('ext_assets_by_file_flat_v')").Scan(&n)
+	if n != 0 {
+		t.Error("the old flat view is still there")
+	}
+	if _, err := db.Exec("SELECT assets_json FROM ext_assets_by_file_v"); err != nil {
+		t.Errorf("the by file view is not GUFI main's: %v", err)
 	}
 }
 

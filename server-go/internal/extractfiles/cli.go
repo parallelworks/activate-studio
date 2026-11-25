@@ -22,6 +22,7 @@ const usage = `usage: index-extract <command> [options]
 
 commands:
   files    read the files of a list and write their text to an extraction artifact
+  vectors  give each chunk of an extraction artifact a vector, with gufi_sqlite3 and a GGUF model
   spread   put the records of extraction artifacts into a spread tree
   shards   write each folder's permission shards of an index from a spread tree
   schema   print the SQL of the tables the artifact and the index's external databases hold
@@ -30,8 +31,14 @@ index-extract files --list FILE|- --out ARTIFACT.db [--root DIR | --rclone REMOT
   [--extra-info S] [--shard K/N] [--retry] [--max-size BYTES] [--extract-cache DIR] [--jobs N] [--progress]
   [--no-ocr] [--no-documents] [--pdf-reader auto|pdftotext|pypdf] [--soffice PATH]
   [--extractors FILE] [--report FILE]
-index-extract spread --spread DIR --fsid NAME [--prefix studio] ARTIFACT.db...
-index-extract shards --spread DIR --fsid NAME --index DIR [--prefix studio] [--extra-info S]
+index-extract vectors --artifact ARTIFACT.db --model FILE.gguf [--gufi-sqlite3 PATH] [--model-name NAME] [--dims N] [--max-chars N]
+index-extract spread --spread DIR --fsid NAME [--prefix ext] ARTIFACT.db...
+index-extract shards --spread DIR --fsid NAME --index DIR [--prefix ext] [--extra-info S] [--gufi-sqlite3 PATH]
+
+extra_info qualifies each inode with its file system: by default, files
+uses the site's id in STUDIO_FSID, or else this computer's name and the
+mount point of the files (host:/mnt/data), or for --rclone the remote and
+path. shards copies the records of --extra-info, by default --fsid.
 `
 
 // Main is the index-extract command: args without the program name; the
@@ -46,6 +53,8 @@ func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return filesMain(args[1:], stdin, stdout, stderr)
 	case "spread", "shards":
 		return loadMain(args[0], args[1:], stdout, stderr)
+	case "vectors":
+		return vectorsMain(args[1:], stdout, stderr)
 	case "schema":
 		fmt.Fprint(stdout, extdb.Schema)
 		return 0
@@ -65,7 +74,7 @@ func filesMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	root := fs.String("root", "", "the folder a relative path is found in (default: the working directory)")
 	strip := fs.String("strip", "", "a leading path to remove from each listed path, such as the index's top folder")
 	delim := fs.String("delim", `\x1e`, "the list's column separator (GUFI's default)")
-	extra := fs.String("extra-info", "", "the extra_info written with every record")
+	extra := fs.String("extra-info", "", "the extra_info written with every record (default: the files' file system id; see below)")
 	shard := fs.String("shard", "", "K/N: read only the files whose inode modulo N is K, as one job of an array of N")
 	retry := fs.Bool("retry", false, "read again every file the artifact holds without text (skipped, empty, missing, changed or failed)")
 	cache := fs.String("extract-cache", "", "an extract cache to use and keep (default: a temporary one)")
@@ -108,7 +117,31 @@ func filesMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			total = countLines(*list)
 		}
 	}
+	extraSet := false
+	fs.Visit(func(f *flag.Flag) { extraSet = extraSet || f.Name == "extra-info" })
 	var src Source = Local{Root: *root, Strip: *strip}
+	if !extraSet && *rcloneRoot == "" {
+		// The file system of the first listed file, or of --root.
+		br := bufio.NewReaderSize(in, 1<<16)
+		in = br
+		where := *root
+		if line, _ := br.Peek(1 << 15); len(line) > 0 {
+			if i := bytes.IndexByte(line, '\n'); i >= 0 {
+				line = line[:i]
+			}
+			if e, err := ParseLine(string(line), d); err == nil {
+				p := stripPath(e.Path, *strip)
+				if !filepath.IsAbs(p) {
+					p = filepath.Join(*root, filepath.FromSlash(p))
+				}
+				where = filepath.Dir(p)
+			}
+		}
+		if where == "" {
+			where = "."
+		}
+		*extra = extdb.Fsid(where)
+	}
 	if *rcloneRoot != "" {
 		if *root != "" {
 			fmt.Fprintln(stderr, "index-extract: --root and --rclone name two places to read from; give one")
@@ -120,6 +153,9 @@ func filesMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 2
 		}
 		src = Rclone{Bin: *rcloneBin, Root: r, Config: *rcloneConf, Strip: *strip, Tmp: filepath.Dir(*out)}
+		if !extraSet {
+			*extra = "rclone:" + r
+		}
 	}
 	x, rc := ef.Extractor(stderr)
 	if x == nil {
@@ -198,9 +234,15 @@ func loadMain(cmd string, args []string, stdout, stderr io.Writer) int {
 	fsid := fs.String("fsid", "", "the name of the file system or store the records are of, a folder of the spread tree")
 	prefix := fs.String("prefix", extdb.Prefix, "the prefix family")
 	index := fs.String("index", "", "shards: the index whose folders get the shards")
-	extra := fs.String("extra-info", "", "shards: the extra_info of the records to copy")
+	extra := fs.String("extra-info", "", "shards: the extra_info of the records to copy (default: --fsid)")
+	gufiSqlite3 := fs.String("gufi-sqlite3", "", "shards: gufi_sqlite3, to give the shards ext_vectors from the vectors in the spread tree")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	extraSet := false
+	fs.Visit(func(f *flag.Flag) { extraSet = extraSet || f.Name == "extra-info" })
+	if !extraSet {
+		*extra = *fsid
 	}
 	s := extdb.Spread{Top: *top, Prefix: *prefix, Fsid: *fsid}
 	if err := s.Check(); err != nil {
@@ -219,6 +261,7 @@ func loadMain(cmd string, args []string, stdout, stderr io.Writer) int {
 			st, err := extdb.LoadSpread(s, a)
 			total.Files += st.Files
 			total.Chunks += st.Chunks
+			total.Vectors += st.Vectors
 			total.DBs += st.DBs
 			if err != nil {
 				fmt.Fprintf(stderr, "index-extract: %s: %v\n", a, err)
@@ -231,7 +274,7 @@ func loadMain(cmd string, args []string, stdout, stderr io.Writer) int {
 			fmt.Fprint(stderr, usage)
 			return 2
 		}
-		st, err := extdb.FillShards(s, *index, *extra)
+		st, err := extdb.FillShardsWith(s, *index, *extra, extdb.ShardOptions{GufiSqlite3: *gufiSqlite3})
 		if err != nil {
 			fmt.Fprintln(stderr, "index-extract:", err)
 			return 1
@@ -240,5 +283,35 @@ func loadMain(cmd string, args []string, stdout, stderr io.Writer) int {
 	}
 	b, _ := json.Marshal(out)
 	fmt.Fprintf(stdout, "%s\n", b)
+	return 0
+}
+
+// vectorsMain is the vectors command.
+func vectorsMain(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("index-extract vectors", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	artifact := fs.String("artifact", "", "the extraction artifact whose chunks get vectors")
+	bin := fs.String("gufi-sqlite3", "gufi_sqlite3", "gufi_sqlite3, with sqlite-vec and sqlite-lembed")
+	model := fs.String("model", "", "the GGUF embedding model")
+	name := fs.String("model-name", extdb.DefaultModelName, "the name the vectors carry (vector_model_name)")
+	dims := fs.Int("dims", 384, "the model's dimensions")
+	maxChars := fs.Int("max-chars", 800, "the most characters of a chunk embedded")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *artifact == "" || *model == "" || fs.NArg() > 0 {
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	e := extdb.Embedder{GufiSqlite3: *bin, Model: *model, ModelName: *name, Dims: *dims, MaxChars: *maxChars}
+	st, err := e.EmbedArtifact(ctx, *artifact)
+	b, _ := json.Marshal(st)
+	fmt.Fprintf(stdout, "%s\n", b)
+	if err != nil {
+		fmt.Fprintln(stderr, "index-extract:", err)
+		return 1
+	}
 	return 0
 }

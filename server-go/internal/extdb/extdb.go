@@ -7,8 +7,9 @@
 // the text of a set of files, each keyed by inode, mtime and extra_info,
 // with no paths in it, so it stays valid when files are renamed and can be
 // loaded into any index of the same files. A loader puts its rows into the
-// spread tree and from there into the index's permission shards
-// (prefix_XX_uid_gid.db). Beside the schema's tables an artifact has
+// spread tree and from there into the index's permission shards, named as
+// GUFI names them (ext_ur.db, ext_gr.db, ext_or.db, ext_<uid>_<gid>.db).
+// Beside the schema's tables an artifact has
 // studio_extract_files, one row per file looked at, with what came of it,
 // so a run stopped part way, or a job of an array that ran again, goes on
 // where it left off.
@@ -27,19 +28,55 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Prefix is the Studio's prefix family: its permission shards are named
-// studio_XX_uid_gid.db.
-const Prefix = "studio"
+// Prefix is the prefix family the Studio writes: the first parameter of
+// GUFI's --external-copy, and the start of every shard's name (ext_ur.db).
+// Nothing in it is the Studio's own, so GUFI's queries read it as written.
+const Prefix = "ext"
+
+// LegacyPrefix is the prefix the Studio wrote before (studio_UR_501_20.db
+// shards, a spread tree under studio/), migrated to Prefix when found.
+const LegacyPrefix = "studio"
 
 // Schema is the prefix's .sql: the tables and views of each spread tree
-// db and permission shard.
+// db and permission shard, but for ext_vectors (VectorsSchema).
 //
 //go:embed schema.sql
 var Schema string
 
+// VectorsSchema makes ext_vectors, a vec0 table, and its view. Only a
+// SQLite with sqlite-vec runs it (gufi_sqlite3).
+//
+//go:embed vectors.sql
+var VectorsSchema string
+
 // PrefixTables are the tables of the prefix that carry records, as the
 // prefixtables configuration lists them.
-var PrefixTables = []string{"ext_assets", "ext_bm25"}
+var PrefixTables = []string{"ext_assets", "ext_bm25", "ext_vectors"}
+
+// vecRowsTable holds vectors where no sqlite-vec is, in an artifact and a
+// spread tree db: each chunk's vector at its native dimensions, at unit
+// length. A shard gets them in ext_vectors (VectorsSchema).
+const vecRowsTable = `CREATE TABLE IF NOT EXISTS studio_vectors (asset_id TEXT NOT NULL, outer_file_uuid TEXT NOT NULL, chunk_id INTEGER NOT NULL,
+ vector_mechanism TEXT NOT NULL, vector_model_name TEXT NOT NULL, vector_native_dimensions INTEGER NOT NULL, embedding BLOB NOT NULL,
+ PRIMARY KEY (asset_id, chunk_id, vector_mechanism, vector_model_name)) WITHOUT ROWID;`
+
+// oldViews are the views of the schema the Studio wrote before GUFI main's;
+// a db that has ext_assets_by_file_flat_v has them, and they are dropped
+// before Schema makes the new ones.
+const oldViews = "DROP VIEW IF EXISTS ext_assets_by_file_flat_v; DROP VIEW IF EXISTS ext_assets_by_file_v; DROP VIEW IF EXISTS ext_bm25_v;"
+
+// schemaFor is the SQL that brings a db's schema up to date: Schema, after
+// dropping the old views where it has them.
+func schemaFor(q interface {
+	QueryRow(string, ...any) *sql.Row
+}) string {
+	var n int
+	q.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'view' AND name = 'ext_assets_by_file_flat_v'").Scan(&n)
+	if n > 0 {
+		return oldViews + "\n" + Schema
+	}
+	return Schema
+}
 
 // filesTable is the artifact's own table of outcomes.
 const filesTable = `CREATE TABLE IF NOT EXISTS studio_extract_files (inode INTEGER NOT NULL, mtime INTEGER NOT NULL, extra_info TEXT NOT NULL,
@@ -89,8 +126,10 @@ type File struct {
 	// image, external), and the asset's route.
 	Reader   string
 	Mimetype string
-	// Provenance is the asset's indexing_provenance, JSON.
+	// Provenance is the asset's indexing_provenance, and Metadata its
+	// file_metadata: JSON, or empty for NULL.
 	Provenance string
+	Metadata   string
 	Chunks     []Chunk
 	Err        string
 }
@@ -117,7 +156,7 @@ func Create(path string) (*Artifact, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(Schema + "\n" + filesTable); err != nil {
+	if _, err := db.Exec(schemaFor(db) + "\n" + filesTable + "\n" + vecRowsTable); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("extdb: %s: %w", path, err)
 	}
@@ -174,6 +213,9 @@ func (a *Artifact) Put(f File) error {
 	if _, err := tx.Exec("DELETE FROM ext_assets WHERE asset_id = ?", id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec("DELETE FROM studio_vectors WHERE asset_id = ?", id); err != nil {
+		return err
+	}
 	chars := 0
 	if f.State == StateText {
 		var prov any
@@ -184,10 +226,15 @@ func (a *Artifact) Put(f File) error {
 		if f.Mimetype != "" {
 			mime = f.Mimetype
 		}
+		var meta any
+		if f.Metadata != "" {
+			meta = f.Metadata
+		}
 		// One asset per file, the file itself: its asset_id is its
-		// outer_file_uuid, as GUFI's example gives a file's own asset.
-		if _, err := tx.Exec("INSERT INTO ext_assets (inode, mtime, extra_info, outer_file_uuid, asset_id, component_type, member_path_json, file_metadata, indexing_provenance, mimetype, asset_route) VALUES (?, ?, ?, ?, ?, 'file', '[]', NULL, ?, ?, ?)",
-			f.Inode, f.Mtime, f.ExtraInfo, id, id, prov, mime, f.Reader); err != nil {
+		// outer_file_uuid, as GUFI gives a file's own asset, and every
+		// chunk and vector of the file joins to it.
+		if _, err := tx.Exec("INSERT INTO ext_assets (inode, mtime, extra_info, outer_file_uuid, asset_id, component_type, member_path_json, file_metadata, indexing_provenance, mimetype, asset_route) VALUES (?, ?, ?, ?, ?, 'file', '[]', ?, ?, ?, ?)",
+			f.Inode, f.Mtime, f.ExtraInfo, id, id, meta, prov, mime, f.Reader); err != nil {
 			return err
 		}
 		st, err := tx.Prepare("INSERT INTO ext_bm25 (inode, mtime, extra_info, outer_file_uuid, asset_id, chunk_sequence, start_position, end_position, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
