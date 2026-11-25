@@ -441,3 +441,58 @@ func TestIndexOnLaunch(t *testing.T) {
 		t.Fatalf("a second start indexed again: %+v", again)
 	}
 }
+
+// What is still arriving is in no index: not after a build, not after a sync
+// of the folder it is in or of the files at the top, and not in a library's.
+func TestWhatIsArrivingIsNotIndexed(t *testing.T) {
+	f := newFixture(t)
+	for _, d := range []string{".studio-upload-1", "alpha/.studio-upload-2", "beta/inner/.studio-transfer-3/sub"} {
+		write(t, filepath.Join(f.kb, d, "data"), "arriving\n")
+		write(t, filepath.Join(f.kb, d, "part.md"), "arrivingword\n")
+	}
+	os.Chmod(filepath.Join(f.kb, "alpha/.studio-upload-2"), 0)
+	defer os.Chmod(filepath.Join(f.kb, "alpha/.studio-upload-2"), 0o755)
+	want := []string{"", "alpha", "beta", "beta/inner"}
+	check := func(when, root string) {
+		t.Helper()
+		var got []string
+		filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+			if d.Name() == "db.db" {
+				rel, _ := filepath.Rel(root, filepath.Dir(p))
+				got = append(got, strings.TrimPrefix(rel, "."))
+			}
+			return nil
+		})
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Fatalf("%s: indexed %q", when, got)
+		}
+	}
+	_, body, _ := f.do("POST", "/api/index/build", map[string]any{})
+	if job := f.finished(int(body["id"].(float64))); job.State != "done" {
+		t.Fatalf("%s: %v", job.State, job.Error)
+	}
+	check("build", f.ix.P.GufiIndex)
+	if d := f.ix.ReadDenied(); d != nil && len(d.Folders) > 0 {
+		t.Fatalf("denied %v", d.Folders)
+	}
+	// A folder the sync reads again, and the files at the top.
+	write(t, filepath.Join(f.kb, "beta", "inner", "more.md"), "more\n")
+	write(t, filepath.Join(f.kb, "beta", ".studio-upload-4", "data"), "arriving\n")
+	write(t, filepath.Join(f.kb, "new.md"), "new\n")
+	later := time.Now().Add(5 * time.Second)
+	for _, d := range []string{"", "beta", "beta/inner"} {
+		os.Chtimes(filepath.Join(f.kb, d), later, later)
+	}
+	_, body, _ = f.do("POST", "/api/index/sweep", nil)
+	if len(body["changed"].([]any)) == 0 {
+		t.Fatalf("sweep %v", body)
+	}
+	check("sync", f.ix.P.GufiIndex)
+	if w := words(t, filepath.Join(f.ix.P.GufiIndex, "beta", "inner", "db.db")); len(w) != 2 {
+		t.Fatalf("words %q", w)
+	}
+	if w := words(t, filepath.Join(f.ix.P.GufiIndex, "db.db")); len(w) != 2 {
+		t.Fatalf("words at the top %q", w)
+	}
+}

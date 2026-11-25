@@ -24,7 +24,11 @@
 //     viewer's own credentials.
 package transfers
 
-import "time"
+import (
+	"time"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
+)
 
 // Location kinds.
 const (
@@ -256,5 +260,5 @@ const (
 	keepEvents    = 200
 	keepFinished  = 500
 	keepFor       = 30 * 24 * time.Hour
-	stagingPrefix = ".studio-transfer-"
+	stagingPrefix = staging.Transfer
 )

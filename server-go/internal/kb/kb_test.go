@@ -174,3 +174,60 @@ func TestApplyLabelsWritesTheIndexInode(t *testing.T) {
 		t.Fatalf("folder row: %q", value)
 	}
 }
+
+// Archives are listed as other files are; what compilers leave and what is
+// still arriving are not, whether hidden files are shown or not.
+func TestListDirShowsArchives(t *testing.T) {
+	base := t.TempDir()
+	for _, n := range []string{"a.tar", "b.tar.gz", "c.TGZ", "d.zip", "e.gz", "f.sif", "g.bin", "mod.pyc", "lib.so", "x.o", ".env", ".studio-upload-0a1b"} {
+		os.WriteFile(filepath.Join(base, n), []byte("x"), 0o644)
+	}
+	for _, d := range []string{"sub", ".studio-upload-123", ".studio-transfer-x", ".Studio-Upload-9"} {
+		os.Mkdir(filepath.Join(base, d), 0o755)
+	}
+	list := func(hidden bool) string {
+		got, err := ListDir("", base, hidden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, e := range got {
+			names = append(names, e.Name)
+			if e.Type == "file" && e.Name != ".env" && e.Kind != KindBinary {
+				t.Errorf("%s is %s", e.Name, e.Kind)
+			}
+		}
+		return strings.Join(names, " ")
+	}
+	const shown = "a.tar b.tar.gz c.TGZ d.zip e.gz f.sif g.bin"
+	if got := list(false); got != "sub "+shown {
+		t.Errorf("listed %s", got)
+	}
+	if got := list(true); got != "sub .env "+shown {
+		t.Errorf("with hidden files, listed %s", got)
+	}
+	for _, p := range []string{".studio-upload-123/data", "sub/.studio-transfer-x/a.txt", ".STUDIO-transfer-x"} {
+		if _, err := Resolve(p, base); err == nil {
+			t.Errorf("%s resolved", p)
+		}
+	}
+}
+
+func TestACopyLeavesOutWhatIsArriving(t *testing.T) {
+	base := t.TempDir()
+	for _, p := range []string{"run/a.txt", "run/.studio-upload-1/data", "run/deep/.studio-transfer-1/b.txt"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(base, p)), 0o755)
+		os.WriteFile(filepath.Join(base, p), []byte("x"), 0o644)
+	}
+	if err := copyTree(filepath.Join(base, "run"), filepath.Join(base, "run copy")); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	filepath.WalkDir(filepath.Join(base, "run copy"), func(p string, d os.DirEntry, err error) error {
+		got = append(got, relTo(base, p))
+		return err
+	})
+	if strings.Join(got, ",") != "run copy,run copy/a.txt,run copy/deep" {
+		t.Errorf("copied %v", got)
+	}
+}

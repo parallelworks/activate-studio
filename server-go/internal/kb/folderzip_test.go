@@ -63,6 +63,8 @@ func TestAFolderDownloadsAsAZip(t *testing.T) {
 	write("reports/.secret", "hidden")
 	write("reports/node_modules/x.js", "machinery")
 	write("reports/old.zip", "archive")
+	write("reports/mod.pyc", "build output")
+	write("reports/.studio-upload-1/data", "arriving")
 	write("top.txt", "top")
 	os.WriteFile(filepath.Join(outside, "elsewhere.txt"), []byte("outside"), 0o644)
 	os.Symlink(outside, filepath.Join(kbRoot, "reports/linked-dir"))
@@ -89,7 +91,7 @@ func TestAFolderDownloadsAsAZip(t *testing.T) {
 		t.Fatalf("%d %v %s", rec.Code, rec.Header(), rec.Body.String())
 	}
 	got := zipEntries(t, rec.Body.Bytes())
-	if names(got) != "reports/plan.md reports/sub/notes.txt" || got["reports/sub/notes.txt"] != "notes" {
+	if names(got) != "reports/old.zip reports/plan.md reports/sub/notes.txt" || got["reports/sub/notes.txt"] != "notes" {
 		t.Errorf("zip holds %q", names(got))
 	}
 	// A folder inside a folder is named for itself.
@@ -125,6 +127,14 @@ func TestAFolderDownloadsAsAZip(t *testing.T) {
 	}
 	if got := zipEntries(t, rec.Body.Bytes()); names(got) != "docs/deep/two.txt docs/one.txt" || got["docs/deep/two.txt"] != "two" || stub.downloads != 2 {
 		t.Errorf("remote zip %q, %d downloads", names(got), stub.downloads)
+	}
+	// What is still arriving there is not listed, hidden files shown or not.
+	stub.dirs["docs"] = append(stub.dirs["docs"], Entry{Name: ".studio-upload-1", Type: "dir"}, Entry{Name: ".studio-transfer-1", Type: "dir"})
+	for _, q := range []string{"", "&hidden=1"} {
+		rec := get("/api/kb/tree?library=far&path=docs" + q)
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), "one.txt") || strings.Contains(rec.Body.String(), ".studio-") || strings.Contains(rec.Body.String(), ".hidden") != (q != "") {
+			t.Errorf("tree%s: %d %s", q, rec.Code, rec.Body.String())
+		}
 	}
 	// Too many files is refused before anything is sent.
 	many := []Entry{}

@@ -15,6 +15,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // A library's files on another system (userLibraries.ts): its folders
@@ -171,7 +172,7 @@ func treeEntries(sub, filesOut, dirsOut string) []kb.Entry {
 		if i := strings.IndexByte(name, '/'); i >= 0 {
 			name, deeper = name[:i], true
 		}
-		if name == "" {
+		if name == "" || staging.Name(name) {
 			continue
 		}
 		if j, ok := seen[name]; ok {
@@ -191,7 +192,7 @@ func treeEntries(sub, filesOut, dirsOut string) []kb.Entry {
 		if len(x) >= 5 && strings.TrimSpace(x[4]) == "0" {
 			continue // a file of a subfolder, in a rolled-up folder's database
 		}
-		if x[0] != "" && (len(x) < 2 || x[1] != "d") {
+		if x[0] != "" && !staging.Name(x[0]) && (len(x) < 2 || x[1] != "d") {
 			fs = append(fs, kb.Entry{Name: x[0], Path: at(x[0]), Type: "file", Size: num(x, 2), Mtime: num(x, 3), Kind: kb.Classify(x[0], false)})
 		}
 	}

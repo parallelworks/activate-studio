@@ -12,6 +12,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 func hitNum(r []string, i int) float64 {
@@ -113,6 +114,9 @@ func (e *Engine) searchScopeVt(ctx context.Context, libs []libraries.Library, q 
 		}
 		count := map[string]int{}
 		for _, t := range r.Rows {
+			if staging.In(vtCell(t.Row, 0)) {
+				continue
+			}
 			n := count[t.ID] + 1
 			if n > cap {
 				continue

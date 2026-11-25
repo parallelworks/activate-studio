@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // The parsing of gufi_query's output: gufi.ts's parseRows and walk rows,
@@ -109,6 +111,9 @@ func WalkRows(stdout string, printed, roots []string) []WalkRow {
 		rel := ""
 		if r[2] != hit.p {
 			rel = r[2][len(hit.p)+1:]
+		}
+		if staging.In(rel) {
+			continue
 		}
 		rows = append(rows, WalkRow{Kind: kind, R: jsNumber(r[1]), Path: rel, Name: r[3], Size: orZero(r[4]), Mtime: orZero(r[5]), Snippet: WithoutProvenance(snippet), Root: hit.root})
 	}

@@ -200,6 +200,9 @@ jobs:
           previous="$( { sed -n 's/.*"startedAt": *\([0-9][0-9]*\).*/\1/p' "$manifest" 2>/dev/null || true; } | head -1)"
           echo "Indexing $SOURCE_DIR into $tree on $(hostname -s) with $THREADS threads (mode $MODE)"
 
+          # What a Studio was still writing in the directory is left out.
+          unstage() { find "$1" -mindepth 1 -type d \( -name '.studio-upload-*' -o -name '.studio-transfer-*' \) -prune -exec rm -rf {} + || true; }
+
           # gufi_incremental_update resolves the tree's entries relative to its
           # working directory and creates (and removes) a temporary database
           # there, so it runs from the directory that holds the tree, which
@@ -231,6 +234,7 @@ jobs:
             fi
             cd "$INDEX_DIR"
             rm -rf "$park"
+            unstage "$tree"
           else
             # A full build goes beside the current index and replaces it only
             # when complete.
@@ -245,6 +249,7 @@ jobs:
             fi
             gufi_dir2index -n "$THREADS" ${skip[@]+"${skip[@]}"} "$SOURCE_DIR" "$stage"
             [ -d "$stage/$base" ] || { echo "gufi_dir2index wrote no tree at $stage/$base"; exit 1; }
+            unstage "$stage/$base"
             if [ -d "$tree" ]; then mv "$tree" "$INDEX_DIR/.old-$$"; fi
             mv "$stage/$base" "$tree"
             rm -rf "$stage" "$INDEX_DIR/.old-$$"

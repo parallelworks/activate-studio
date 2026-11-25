@@ -30,6 +30,8 @@ printf '%s\n' .git node_modules .venv venv __pycache__ dist build .cache .pytest
 THREADS="${INDEX_THREADS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 t0=$(date +%s)
 "$GUFI_BIN/gufi_dir2index" -x -n "$THREADS" --skip-file "$SKIP_FILE" "$KB_ROOT" "$STAGING"
+# What the Studio is still writing in the library is left out.
+find "$STAGING" -mindepth 2 -type d \( -name '.studio-upload-*' -o -name '.studio-transfer-*' \) -prune -exec rm -rf {} + || true
 
 # Enrichment: extract text into fts5 tables inside the staged index and
 # refresh the on-disk extract cache used for previews.

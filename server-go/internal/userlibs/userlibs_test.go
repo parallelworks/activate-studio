@@ -671,6 +671,9 @@ func TestRemoteBuildCheckAndBuild(t *testing.T) {
 	eq(t, refused.Status, 409, "confirm")
 	match(t, refused.Body["error"], `do not exist yet: .*/indexes/project\. Confirm to create them`, "confirm")
 
+	// What is still arriving there is not indexed.
+	write(t, filepath.Join(box, "project", ".studio-upload-1", "data"), "arriving")
+	write(t, filepath.Join(box, "project", ".studio-transfer-1", "sub", "x.md"), "arriving")
 	b := h.post("/api/user-libraries/ssh/build", map[string]any{"destination": "me@linux-box:2222", "sourceRoot": "~/project", "label": "Project", "depth": "text"})
 	if b.Status != 200 {
 		t.Fatalf("%v", b.Body)
@@ -691,6 +694,9 @@ func TestRemoteBuildCheckAndBuild(t *testing.T) {
 	eq(t, []any{got["directories"], got["files"], got["fullText"], got["progress"], got["sourceRoot"], got["builtDepth"], got["buildingDepth"], got["depth"]},
 		[]any{3, 3, true, nil, filepath.Join(box, "project"), "text", nil, "text"}, "ready")
 	match(t, got["indexRoot"], `\.activate-studio/indexes/project-[0-9a-f]{8}/project$`, "index root")
+	if left, _ := filepath.Glob(filepath.Join(got["indexRoot"].(string), ".studio-*")); len(left) > 0 {
+		t.Errorf("indexed %v", left)
+	}
 	states, _ := os.ReadDir(filepath.Join(box, ".activate-studio", "builds"))
 	eq(t, len(states), 1, "one build there")
 

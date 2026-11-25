@@ -22,6 +22,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/search"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 	"github.com/parallelworks/activate-studio/server-go/internal/tracefile"
 	"github.com/parallelworks/activate-studio/server-go/internal/transfers"
 )
@@ -214,6 +215,9 @@ func (b *builds) bucketBuild(id string, own *index.OwnJob) (int64, error) {
 		var seen int
 		listed := time.Now()
 		if err := bk.Walk(b.ctx, bc.Path, func(e transfers.BucketEntry) error {
+			if staging.In(e.Path) {
+				return nil
+			}
 			if err := w.Add(e.Path, e.Size, e.ModTime.Unix(), e.IsDir); err != nil {
 				return err
 			}

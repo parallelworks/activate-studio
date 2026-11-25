@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // Files are the operations on the main library's files (move.ts and the
@@ -393,6 +395,9 @@ func copyDir(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	for _, e := range entries {
+		if staging.Name(e.Name()) {
+			continue
+		}
 		s, d := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
 		info, err := os.Lstat(s)
 		if err != nil {

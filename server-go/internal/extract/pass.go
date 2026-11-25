@@ -19,6 +19,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/xls"
 	"github.com/parallelworks/activate-studio/server-go/internal/posixaccess"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // Action is what a pass did with one file's cache entry.
@@ -424,7 +425,7 @@ func (x *Extractor) Plan(p PassOptions) ([]string, error) {
 			if part == ".." {
 				return nil, errors.New("extract: subdir escapes the knowledge base")
 			}
-			if SkipDirs[part] {
+			if SkipDirs[part] || staging.Name(part) {
 				return nil, nil
 			}
 		}
@@ -446,7 +447,7 @@ func (x *Extractor) Plan(p PassOptions) ([]string, error) {
 			if abs == start {
 				return nil
 			}
-			if p.NoRecurse || SkipDirs[d.Name()] {
+			if p.NoRecurse || SkipDirs[d.Name()] || staging.Name(d.Name()) {
 				return fs.SkipDir
 			}
 			return nil

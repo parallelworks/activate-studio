@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
@@ -156,5 +157,18 @@ func TestScopeAcrossUserLibraries(t *testing.T) {
 	}
 	if _, _, err := e.Reg.Scope([]string{"u-a,u-nope"}, single, "kb"); err == nil {
 		t.Fatal("an unknown id is a 404")
+	}
+}
+
+// What is still arriving is in no listing made from an index, whoever built
+// the index.
+func TestTreeEntriesLeaveOutWhatIsArriving(t *testing.T) {
+	got := treeEntries("runs", "a.tar\x1ef\x1e1\x1e2\n.studio-upload-0a\x1ef\x1e1\x1e2\n", "sub\x1e2\n.studio-upload-1\x1e2\n.studio-transfer-1/x\x1e2\n")
+	var names []string
+	for _, e := range got {
+		names = append(names, e.Name)
+	}
+	if strings.Join(names, ",") != "sub,a.tar" {
+		t.Errorf("listed %v", names)
 	}
 }

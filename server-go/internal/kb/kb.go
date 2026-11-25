@@ -17,6 +17,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
 // Roots are the directories the KB lives in, as config.ts names them.
@@ -58,7 +59,8 @@ func Error(status int, format string, a ...any) error { return apierr.New(status
 var (
 	ExcludeDirs = set(".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
 		".cache", ".pytest_cache", "screenshots", ".ipynb_checkpoints")
-	ExcludeFileSuffixes = []string{".sif", ".pyc", ".so", ".o", ".zip", ".tar", ".gz", ".tgz"}
+	// ExcludeFileSuffixes are what compilers leave beside the sources.
+	ExcludeFileSuffixes = []string{".pyc", ".so", ".o"}
 	TextSuffixes        = set(".md", ".txt", ".py", ".sh", ".yaml", ".yml", ".json", ".csv", ".tsv", ".xml",
 		".html", ".css", ".js", ".ts", ".tsx", ".svg", ".toml", ".cfg", ".ini", ".def", ".mjs", ".sql",
 		".log", ".conf", ".env", ".service")
@@ -148,8 +150,12 @@ func Classify(name string, isDir bool) string {
 	return KindBinary
 }
 
-// Excluded is kb.ts's excluded: machinery directories and opaque binaries.
+// Excluded is kb.ts's excluded: machinery directories and build outputs,
+// and what is still arriving.
 func Excluded(name string, isDir bool) bool {
+	if staging.Name(name) {
+		return true
+	}
 	if isDir {
 		return ExcludeDirs[name]
 	}
@@ -178,8 +184,8 @@ func Resolve(rel, base string) (string, error) {
 	if abs != base && !strings.HasPrefix(abs, base+string(filepath.Separator)) {
 		return "", Error(400, "path escapes the knowledge base root")
 	}
-	// A large file still arriving has no name here yet (uploadparts.go).
-	if in := strings.ToLower(filepath.ToSlash(abs[len(base):])); strings.Contains(in, "/"+partsPrefix) {
+	// A file still arriving has no name here yet.
+	if staging.In(filepath.ToSlash(abs[len(base):])) {
 		return "", Error(404, "not found")
 	}
 	return abs, nil

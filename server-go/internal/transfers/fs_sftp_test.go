@@ -127,14 +127,14 @@ func TestSFTPDetect(t *testing.T) {
 	loc := &localRunner{}
 	site, _ := remote.SSHSite("user@shell.example.com", 0, nil)
 	shell := &RemoteFS{R: shellSub{loc}, SiteID: site, Dir: t.TempDir(), Name: "Shell"}
-	if shell.SFTPOnly(ctx) || shell.SFTPOnly(ctx) || loc.calls != 1 {
-		t.Fatalf("a shell host: %d calls", loc.calls)
+	if shell.SFTPOnly(ctx) || shell.SFTPOnly(ctx) || loc.calls.Load() != 1 {
+		t.Fatalf("a shell host: %d calls", loc.calls.Load())
 	}
 	// A runner that cannot start a subsystem, or a pw ssh site, is never
 	// probed.
 	loc2 := &localRunner{}
-	if (&RemoteFS{R: loc2, SiteID: site}).SFTPOnly(ctx) || (&RemoteFS{R: shellSub{loc2}, SiteID: "gpu-cluster"}).SFTPOnly(ctx) || loc2.calls != 0 {
-		t.Fatalf("probed %d times", loc2.calls)
+	if (&RemoteFS{R: loc2, SiteID: site}).SFTPOnly(ctx) || (&RemoteFS{R: shellSub{loc2}, SiteID: "gpu-cluster"}).SFTPOnly(ctx) || loc2.calls.Load() != 0 {
+		t.Fatalf("probed %d times", loc2.calls.Load())
 	}
 	// A helper's answer that turns out to be the SFTP-only line marks the
 	// site, so the next call uses SFTP.
