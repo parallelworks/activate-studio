@@ -29,9 +29,9 @@ describe('the state marks', () => {
     expect(runLook('running')).toBe('running')
     expect(runLook('cancelled')).toBe('canceled')
   })
-  it('keep the ring’s track clear of a selected row’s fill', () => {
-    const { container } = render(<RunStatusIcon status="running" label="" />)
-    expect(container.querySelector("[data-status-icon='ring'] > circle:first-child")).not.toBeNull()
-    expect(css).toMatch(/\[data-status-icon='ring'\] > circle:first-child \{ opacity: 0\.5; \}/)
+  it('keep their color in the open chat’s row, whose rule is for its title', () => {
+    const rules = css.split('\n').filter(l => /li\.group\[class\*=" bg-\[color-mix"\][^{]*\{ color:/.test(l))
+    expect(rules).toHaveLength(2)
+    for (const r of rules) expect(r).toMatch(/\] \.theme-text \{/)
   })
 })

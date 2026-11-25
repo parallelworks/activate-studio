@@ -1218,9 +1218,10 @@ a.identity-btn { text-decoration: none; }
 [data-theme='dark'] .chat-canvas li.group[class*=" bg-[color-mix"] {
   background: color-mix(in oklab, var(--pw-link) 22%, var(--pw-rail-bg));
 }
-.chat-canvas li.theme-muted-panel a span,
-.chat-canvas li.group[class*=" bg-[color-mix"] span { color: var(--pw-navy); font-weight: 600; }
-[data-theme='dark'] .chat-canvas li.group[class*=" bg-[color-mix"] span { color: var(--pw-text); }
+/* Its title alone: its mark and second line keep the colors they say something with. */
+.chat-canvas li.theme-muted-panel a .theme-text,
+.chat-canvas li.group[class*=" bg-[color-mix"] .theme-text { color: var(--pw-navy); font-weight: 600; }
+[data-theme='dark'] .chat-canvas li.group[class*=" bg-[color-mix"] .theme-text { color: var(--pw-text); }
 /* Rows and rail actions are links; the dark theme's link blue is for links
    in prose, not for navigation, which reads as plain text like the Library tree. */
 .chat-canvas aside a { color: var(--pw-text); }
@@ -2293,6 +2294,7 @@ a.identity-btn { text-decoration: none; }
 .lib-field-path dt { grid-column: 1; }
 .lib-field-path dd { grid-column: 2 / -1; }
 .lib-path { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.lib-path > .machine-glyph { margin-right: 3px; }
 .lib-path-text { display: flex; min-width: 0; overflow: hidden; font-size: 12px; white-space: nowrap; }
 .lib-path-head { flex: 0 1 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; }
 .lib-path-tail { flex: 0 0 auto; }
@@ -3111,7 +3113,7 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-session-row:focus-visible { outline: 2px solid var(--pw-link); outline-offset: -2px; border-radius: 6px; }
 .code-row-leading { display: flex; align-items: center; gap: 4px; }
 .code-row-dot { display: flex; }
-.code-row-detail { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; font-weight: 400; color: var(--pw-muted); }
+.code-row-detail { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--pw-muted); }
 .code-row-detail > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .code-row-machine { font-family: ui-monospace, monospace; flex-shrink: 1000; }
 .code-row-chat, .code-row-delegated { flex: none; }
@@ -3122,8 +3124,6 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-mark-rail { width: 16px; height: 16px; }
 /* A run or a session waiting to start reads in the blue of one at work, as ACTIVATE's do. */
 span[data-status='pending'] > svg { color: var(--theme-info); }
-/* The ring's track is 25% of the blue, which a selected row's gray fill turned gray. */
-[data-status-icon='ring'] > circle:first-child { opacity: 0.5; }
 .code-mark-limit { width: 10px; height: 10px; color: var(--theme-warning, #b54708); }
 .code-pinned { display: inline-flex; color: var(--pw-muted); }
 .code-pinned svg { width: 11px; height: 11px; }
@@ -3169,6 +3169,8 @@ span[data-status='pending'] > svg { color: var(--theme-info); }
 [data-theme='dark'] .code-machine-icon.on-dark { display: inline-block; }
 /* A machine in a line of text (MachineLabel): its icon is as tall as the
    line's letters, and the line it is in cuts it short. */
+/* No wider than the screen leaves it, whatever its longest row says. */
+.system-chip-menu { max-width: var(--available-width); }
 .machine-label { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .machine-label > .code-machine-icon, .machine-glyph > .code-machine-icon { width: 1.15em; height: 1.15em; min-width: 12px; min-height: 12px; vertical-align: -.2em; }
 .machine-label > .code-machine-icon { margin-right: .35em; }

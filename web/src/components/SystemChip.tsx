@@ -29,6 +29,7 @@ export function SystemChip({ label, text, title, icon, items, finding = false, s
       label={label}
       items={items}
       align="start"
+      popupClassName="system-chip-menu"
       {...(search ? { search: { placeholder: 'Find a computer', empty: 'None by that name' } } : {})}
       trigger={
         <button type="button" aria-label={label} title={title} data-testid={testId} className="code-chip">

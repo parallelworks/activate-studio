@@ -480,7 +480,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
           {sessions.length > 0 && (
             <Group label="Sessions">
               {sessions.slice(0, 6).map(s => (
-                <Row key={`${s.user}/${s.name}`} tone="success" name={s.name} meta={s.type}
+                <Row key={`${s.user}/${s.name}`} tone="info" name={s.name} meta={s.type}
                   title={showsInStudio(s) ? 'Open it in the side view' : 'Open it in a window of its own'} onClick={() => openSession(s, view)} />
               ))}
               {sessions.length > 6 && (
