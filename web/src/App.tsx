@@ -33,6 +33,7 @@ import { StatusFooter } from './components/StatusFooter'
 import { embedded, signInHref } from './signIn'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
 import { aiPagesMounted, applyNavWidth, sectionAllowed, shownView, useAppConfig } from './config'
+import { NameTips } from './components/NameTip'
 import { NavResize } from './components/NavResize'
 import { applyAccent, applySurface } from './accents'
 import { onThemeChoice, rememberGround } from './theme'
@@ -620,6 +621,7 @@ export default function App() {
       <ClassificationBanner />
       <LinkNotice link={link} onClose={() => { dropItem(); setLink(null) }} onRetry={id => setLink({ id, state: 'opening' })} />
       <LinkToCopy />
+      <NameTips />
       {/* The setup panel covers the app; the app behind it takes no focus or clicks. */}
       <div className="app-body" inert={setupOpen}>
       <nav className={`sidenav ${navCollapsed ? 'collapsed' : ''}`}>

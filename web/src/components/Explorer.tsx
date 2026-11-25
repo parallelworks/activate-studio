@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Checkbox, IconButton } from '@parallelworks/ui'
 import { api, KbEntry } from '../api'
+import { nameTip } from './NameTip'
 
 function formatSize(n: number): string {
   if (n < 1024) return `${n} B`
@@ -150,6 +151,58 @@ function draggedPaths(e: React.DragEvent): string[] {
   } catch { return [] }
 }
 
+/** What a row's tip says under its name: its folder, and a file's size. */
+const rowDetail = (path = '', size?: number): string =>
+  [path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '', size === undefined ? '' : formatSize(size)].filter(Boolean).join(' · ')
+
+/** The row the keyboard's keys are for, when it is a row's own key and not
+ *  one for a button in it. */
+const keyRow = (e: React.KeyboardEvent): HTMLElement | null => {
+  const el = e.target as HTMLElement
+  return el.matches('.tree-row[data-path]') && !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) ? el : null
+}
+
+/** One row of the tree takes Tab, and the arrow keys move from it, as in a
+ *  file explorer: up and down a row, right and left to open and close a
+ *  folder, Enter to open. Rows come and go with their folders, so which one
+ *  takes Tab is kept on the rows themselves. */
+function onTreeKey(e: React.KeyboardEvent<HTMLElement>): void {
+  const row = keyRow(e)
+  if (!row) return
+  const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('.tree-row[data-path]')]
+  const at = rows.indexOf(row)
+  const open = row.getAttribute('aria-expanded')
+  const parent = () => {
+    const up = (row.dataset.path ?? '').split('/').slice(0, -1).join('/')
+    return rows.find(r => up && r.dataset.path === up)
+  }
+  let to: HTMLElement | undefined
+  switch (e.key) {
+    case 'ArrowDown': to = rows[at + 1]; break
+    case 'ArrowUp': to = rows[at - 1]; break
+    case 'Home': to = rows[0]; break
+    case 'End': to = rows[rows.length - 1]; break
+    case 'ArrowRight': if (open === 'false') row.click(); else if (open === 'true') to = rows[at + 1]; break
+    case 'ArrowLeft': if (open === 'true') row.click(); else to = parent(); break
+    case 'Enter': case ' ': row.click(); break
+    default: return
+  }
+  e.preventDefault()
+  // Marked here for the ring: WebKitGTK gives no :focus-visible to a focus a
+  // key moves after a click.
+  e.currentTarget.dataset.keys = ''
+  to?.focus()
+}
+
+/** The row that takes Tab: the one last focused, else the open file's, else the first. */
+function keepTabStop(tree: HTMLElement, row?: HTMLElement): void {
+  const rows = tree.querySelectorAll<HTMLElement>('.tree-row[data-path]')
+  const now = [...rows].filter(r => r.tabIndex === 0)
+  const want = row ?? now[0] ?? tree.querySelector<HTMLElement>('.tree-row.selected[data-path]') ?? rows[0]
+  for (const r of now) if (r !== want) r.tabIndex = -1
+  if (want) want.tabIndex = 0
+}
+
 /** Visible rows in the order they are on screen, read from the tree itself
  *  rather than tracked separately: the range a shift-click means is the one
  *  the reader can see. */
@@ -205,6 +258,8 @@ function DirNode(props: NodeProps) {
       {depth > 0 && (
         <div
           ref={row}
+          role="treeitem" aria-level={depth} aria-expanded={open} aria-selected={reveal?.path === path || multiSelected.has(path)} tabIndex={-1}
+          {...nameTip(name, rowDetail(path))}
           data-path={path}
           data-drop={takes ?? undefined}
           className={`tree-row dir ${reveal?.path === path ? 'selected' : ''} ${multiSelected.has(path) ? 'multi' : ''} ${dropOver ? 'drop-target' : ''} ${takes === 'none' ? 'drop-refused' : takes ? 'drop-ok' : ''}`}
@@ -242,9 +297,11 @@ function DirNode(props: NodeProps) {
           {selectMode && <RowCheck checked={multiSelected.has(path)} onToggle={() => onToggleMulti(path)} />}
           <Chevron open={open} />
           <FolderIcon open={open} />
-          <span className="tree-label">{name}</span>
-          <TreeTags tags={tags} show={showLabels} />
-          <IconButton className="row-tag" size="xs" icon={<TagIcon />} label="Labels for this directory (applies to everything beneath it)"
+          <span className="tree-text">
+            <span className="tree-label" data-tip-text="">{name}</span>
+            <TreeTags tags={tags} show={showLabels} />
+          </span>
+          <IconButton className="row-tag" data-tip-cover="" size="xs" icon={<TagIcon />} label="Labels for this directory (applies to everything beneath it)"
             onClick={e => { e.stopPropagation(); onLabel(path) }} />
         </div>
       )}
@@ -265,6 +322,8 @@ function DirNode(props: NodeProps) {
           <div
             key={e.path}
             ref={el => { if (el && selected === e.path) el.scrollIntoView({ block: 'nearest' }) }}
+            role="treeitem" aria-level={depth + 1} aria-selected={selected === e.path || multiSelected.has(e.path)} tabIndex={-1}
+            {...nameTip(e.name, rowDetail(e.path, e.size))}
             data-path={e.path}
             className={`tree-row file ${selected === e.path ? 'selected' : ''} ${multiSelected.has(e.path) ? 'multi' : ''}`}
             style={{ paddingLeft: 8 + (depth + 1) * 14 }}
@@ -282,16 +341,15 @@ function DirNode(props: NodeProps) {
               onOpen(e.path)
             }}
             onContextMenu={ev => { ev.preventDefault(); ev.stopPropagation(); onContext(e.path, false, ev.clientX, ev.clientY) }}
-            title={`${e.path} (${formatSize(e.size)})`}
           >
             {selectMode && <RowCheck checked={multiSelected.has(e.path)} onToggle={() => onToggleMulti(e.path)} />}
             <span className="chev-space" />
             <FileIcon />
-            <span className="tree-label">{e.name}</span>
-            <TreeTags tags={e.tags} show={showLabels} />
-            {/* An empty title keeps the row's own title from showing over
-                the button's tooltip. */}
-            <IconButton className="row-tag" size="xs" icon={<TagIcon />} label="Labels for this file" title=""
+            <span className="tree-text">
+              <span className="tree-label" data-tip-text="">{e.name}</span>
+              <TreeTags tags={e.tags} show={showLabels} />
+            </span>
+            <IconButton className="row-tag" data-tip-cover="" size="xs" icon={<TagIcon />} label="Labels for this file"
               onClick={ev => { ev.stopPropagation(); onLabel(e.path) }} />
           </div>
         ),
@@ -325,8 +383,22 @@ export function Explorer({ emptyHint, onOpen, onDirFocus, selected, rootLabel, m
   reveal?: { path: string } | null
 }) {
   const [dragging, setDragging] = useState<string[] | null>(null)
+  const tree = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = tree.current
+    if (!el) return
+    keepTabStop(el)
+    const seen = new MutationObserver(() => keepTabStop(el))
+    seen.observe(el, { childList: true, subtree: true })
+    return () => seen.disconnect()
+  }, [])
   return (
     <div
+      ref={tree}
+      role="tree" aria-label={rootLabel} aria-multiselectable
+      onKeyDown={onTreeKey}
+      onPointerDown={e => { delete e.currentTarget.dataset.keys }}
+      onFocus={e => { if (e.target.matches('.tree-row[data-path]')) keepTabStop(e.currentTarget, e.target) }}
       className={`explorer ${selectMode ? 'has-sel' : ''} ${dragging ? 'dragging' : ''}`}
       // Right-clicking the empty space below the tree targets the root, so a
       // folder can be created at the top level; rows handle their own menu.

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppConfig } from '../config'
 import { getChatLibrary } from '../labelScope'
+import { hideNameTip, nameTip, showNameTip } from './NameTip'
 
 /**
  * Library files for the composer: type @ and the chat's library appears,
@@ -44,6 +45,8 @@ export function MentionPalette({ canvas }: { canvas: React.RefObject<HTMLDivElem
   const [loading, setLoading] = useState(false)
   const [index, setIndex] = useState(0)
   const [pos, setPos] = useState<{ left: number; bottom: number; width: number } | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const keyed = useRef(false)
   const taRef = useRef<HTMLTextAreaElement | null>(null)
   const startRef = useRef(0)
   const stateRef = useRef({ open: false, index: 0, items: [] as MentionItem[] })
@@ -151,8 +154,8 @@ export function MentionPalette({ canvas }: { canvas: React.RefObject<HTMLDivElem
       const onKey = (e: KeyboardEvent) => {
         const st = stateRef.current
         if (!st.open) return
-        if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setIndex(i => Math.min(i + 1, st.items.length - 1)); return }
-        if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setIndex(i => Math.max(i - 1, 0)); return }
+        if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); keyed.current = true; setIndex(i => Math.min(i + 1, st.items.length - 1)); return }
+        if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); keyed.current = true; setIndex(i => Math.max(i - 1, 0)); return }
         if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
           const item = st.items[st.index]
           // Enter with nothing listed still closes the list, never sends
@@ -180,22 +183,34 @@ export function MentionPalette({ canvas }: { canvas: React.RefObject<HTMLDivElem
     return () => { obs.disconnect(); detach?.() }
   }, [canvas])
 
+  // The keys move the choice while the focus stays in the message, so a cut
+  // name they reach shows whole, and a choice far down comes into view.
+  useEffect(() => {
+    if (!keyed.current) return
+    keyed.current = false
+    const row = listRef.current?.querySelector<HTMLElement>('.mention-item.current') ?? null
+    row?.scrollIntoView?.({ block: 'nearest' })
+    showNameTip(row)
+  }, [index, items])
+  useEffect(() => { if (!open) hideNameTip() }, [open])
+
   if (!open || !pos) return null
   const cur = Math.min(index, Math.max(0, items.length - 1))
   const multi = libs.length > 1
   return (
-    <div className="slash-palette mention-palette" style={{ left: pos.left, bottom: pos.bottom, width: pos.width }} role="listbox" aria-label="Library files" data-testid="mention-palette">
+    <div ref={listRef} className="slash-palette mention-palette" style={{ left: pos.left, bottom: pos.bottom, width: pos.width }} role="listbox" aria-label="Library files" data-testid="mention-palette">
       <div className="mention-head muted">{query && !query.endsWith('/') ? `Files named “${query}”` : `${query ? query : 'Top folder'} in ${labelOf(libId)}`}</div>
       {items.map((it, i) => (
         <div
           key={`${it.lib}:${it.path}`}
           role="option"
           aria-selected={i === cur}
+          {...nameTip(it.name, it.path.includes('/') ? it.path.slice(0, it.path.lastIndexOf('/') + 1) : '')}
           className={`slash-item mention-item${i === cur ? ' current' : ''}`}
           onMouseDown={e => { e.preventDefault(); accept(it) }}
-          onMouseEnter={() => setIndex(i)}
+          onMouseEnter={() => { keyed.current = false; setIndex(i) }}
         >
-          <span className="mention-name">{it.dir ? `${it.name}/` : it.name}</span>
+          <span className="mention-name" data-tip-text="">{it.dir ? `${it.name}/` : it.name}</span>
           <span className="slash-desc">{it.path.includes('/') ? it.path.slice(0, it.path.lastIndexOf('/') + 1) : ''}{multi && it.lib !== primaryId ? ` · ${it.libLabel}` : ''}</span>
         </div>
       ))}
