@@ -13,6 +13,8 @@ export interface MachineTools {
   available?: boolean
   /** A session started there from here is given them as it starts. */
   attach?: boolean
+  /** The tools Add also sets pw code there to run without asking. */
+  allows?: string[]
 }
 
 /** POST /api/mcp/bridge/setup's answer. */
@@ -32,6 +34,11 @@ export interface SetupResult {
    *  there from now on do. */
   live?: 'now' | 'next'
   liveWhy?: string
+  /** The tools pw code there runs without asking, how many of those rules
+   *  were new, and why it took none. */
+  allows?: string[]
+  allowed?: number
+  allowWhy?: string
 }
 
 export async function runSetup(body: { conversationId?: string; machineId?: string; replace?: boolean; check?: boolean }): Promise<SetupResult> {
@@ -39,6 +46,14 @@ export async function runSetup(body: { conversationId?: string; machineId?: stri
   const out = await res.json().catch(() => ({})) as SetupResult & { error?: string; detail?: string }
   if (!res.ok) throw new Error(out.error ?? out.detail ?? `HTTP ${res.status}`)
   return out
+}
+
+/** Takes the Studio's tools, and what it allows, out of pw code on a machine. */
+export async function removeTools(body: { conversationId?: string; machineId?: string }): Promise<{ removed: boolean; rules: number }> {
+  const res = await fetch('/api/mcp/bridge/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const out = await res.json().catch(() => ({})) as { removed?: boolean; rules?: number; error?: string; detail?: string }
+  if (!res.ok) throw new Error(out.error ?? out.detail ?? `HTTP ${res.status}`)
+  return { removed: !!out.removed, rules: out.rules ?? 0 }
 }
 
 /** Whether the person wants the tools added on machine; not wanting them
@@ -74,7 +89,10 @@ export function setupSaid(r: SetupResult, where: string, inChat = true): string 
   const live = r.live === 'now'
     ? ' This session has them now.'
     : ` Sessions you start there from now on have them${r.liveWhy ? `; this one could not take them now (${r.liveWhy.replace(/\.$/, '')})` : inChat ? `; one already open, this one included, ${KEEPS_TOOLS}` : `; one already open ${KEEPS_TOOLS}`}.`
-  return how + live
+  const reads = r.allowWhy
+    ? ` Its tools that only read still ask there, as the Studio could not allow them: ${r.allowWhy.replace(/\.$/, '')}.`
+    : r.allows?.length ? ` The ${r.allows.length} that only read run without asking when you type in a session there.` : ''
+  return how + live + reads
 }
 
 /** What pw code does with MCP servers: it reads them when a session

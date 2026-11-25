@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { toast, useConfirm } from '@parallelworks/ui'
+import { AllowsNote } from '../components/MachineToolsAllow'
 import { type MachineTools, markAutoSetup, setMachineTools } from '../components/studioTools'
 
 /** A machine as the Code page's listing gives it. */
@@ -132,11 +133,14 @@ export function useOpenInStudio(machines: readonly MachineRef[]): {
       description: first.confirm ?? 'Your messages from this chat go to the same session.',
       children: offered && tools
         ? (
-            <label className="studio-tools-tick">
-              <input type="checkbox" defaultChecked={add.on} data-testid="studio-tools-tick" onChange={e => { add.on = e.currentTarget.checked }} />
-              {' '}Add this Studio's tools to pw code on {tools.machine}
-              <span className="muted"> (the Studio sets it up there over pw ssh as you, with that machine's own ACTIVATE sign-in)</span>
-            </label>
+            <>
+              <label className="studio-tools-tick">
+                <input type="checkbox" defaultChecked={add.on} data-testid="studio-tools-tick" onChange={e => { add.on = e.currentTarget.checked }} />
+                {' '}Add this Studio's tools to pw code on {tools.machine}
+                <span className="muted"> (the Studio sets it up there over pw ssh as you, with that machine's own ACTIVATE sign-in)</span>
+              </label>
+              <AllowsNote allows={tools.allows} />
+            </>
           )
         : undefined,
       confirmLabel: 'Continue in Studio',

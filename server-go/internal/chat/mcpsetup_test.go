@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -98,6 +99,9 @@ type fakeMachine struct {
 	// attached is each live attach: key, machine, session and URL.
 	attached []string
 	calls    []string // site and key of each run
+	// rules are the allow rules in its settings; rulesWhy is why they cannot change.
+	rules    []string
+	rulesWhy string
 	m        *Module
 	as       *auth.User
 }
@@ -124,6 +128,23 @@ func (f *fakeMachine) run(_ context.Context, site, key string, argv []string, _ 
 		e.Config.Command, e.Config.Args = argv[dash+1], argv[dash+2:]
 		f.entry = e
 		return remote.Result{Stdout: "Added"}, nil
+	case len(argv) > 5 && argv[2] == bridgeRules:
+		if f.rulesWhy != "" {
+			return remote.Result{Stdout: "why=" + f.rulesWhy + "\n"}, nil
+		}
+		n := 0
+		for _, x := range strings.Fields(argv[5]) {
+			i := slices.Index(f.rules, x)
+			if argv[4] == "add" && i < 0 {
+				f.rules, n = append(f.rules, x), n+1
+			} else if argv[4] == "remove" && i >= 0 {
+				f.rules, n = slices.Delete(f.rules, i, i+1), n+1
+			}
+		}
+		return remote.Result{Stdout: "changed=" + strconv.Itoa(n) + "\n"}, nil
+	case len(argv) > 3 && argv[1] == "code" && argv[3] == "remove":
+		f.entry = nil
+		return remote.Result{Stdout: "Removed"}, nil
 	case len(argv) > 3 && argv[2] == bridgeTry:
 		f.mu.Unlock()
 		defer f.mu.Lock()

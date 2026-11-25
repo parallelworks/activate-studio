@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 // With STUDIO_PW_E2E=1 and the pw CLI on PATH: the steps the Studio runs
@@ -53,6 +55,15 @@ func TestTheStepsWithARealPW(t *testing.T) {
 	at, ours, current := l.entry.target()
 	if at != url || !ours || !current {
 		t.Fatalf("read back as %q ours=%v current=%v: %+v", at, ours, current, l.entry.Config)
+	}
+	// The rules go into the file pw wrote, which pw still reads, and come out.
+	for _, act := range []string{"add", "remove"} {
+		if n, why := parseBridgeRules(remote.Result{Stdout: sh(bridgeRules, act, "mcp__studio__query_corpus mcp__studio__search_kb", allowAwk)}); n != 2 || why != "" {
+			t.Fatalf("%s: %d %q", act, n, why)
+		}
+		if l := parseBridgeLook(sh(bridgeLook, studioMCPName)); l.entry == nil {
+			t.Fatalf("%s: pw no longer reads its settings", act)
+		}
 	}
 	list := exec.Command(pw, "code", "mcp", "list", "--scope", "user")
 	list.Env, list.Dir = env, home

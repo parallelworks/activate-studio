@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
+import { AllowsNote, RemoveTools } from './MachineToolsAllow'
 import { KEEPS_TOOLS, type MachineTools, type SetupResult, machineHasSaid, runSetup, setupSaid, takeAutoSetup } from './studioTools'
 
 /** GET /api/mcp/bridge: how this Studio's tools reach a pw code session of
@@ -63,6 +64,7 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<SetupResult | null>(null)
   const [failed, setFailed] = useState('')
+  const [removed, setRemoved] = useState('')
   const auto = useRef(false)
   const read = useCallback(async () => { setReach(await readReach(conversationId)) }, [conversationId])
   useEffect(() => { void read() }, [read])
@@ -105,25 +107,43 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
       setCopied(text)
     } catch { setCopied('') }
   }
+  // On a machine the Studio set up: its next Check also allows the tools
+  // that only read there, and Remove takes both back.
+  const remove = conversationId ? <RemoveTools where={where} body={{ conversationId }} onRemoved={setRemoved} /> : null
+  const manage = conversationId && reach.setup?.state === 'set' && reach.setup.available
+    ? <>
+        <AllowsNote allows={reach.setup.allows} lead="Check it again" />
+        <p><button type="button" className="code-approval-more" disabled={running} onClick={() => void setUp({ check: true })}>{running ? 'Checking…' : 'Check it again'}</button>{' '}{remove}</p>
+      </>
+    : null
+  if (removed) {
+    return (
+      <div data-testid="studio-tools-removed"><Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
+        {removed}
+      </Callout></div>
+    )
+  }
   if (result?.done && result.worked) {
     return (
       <div data-testid="studio-tools-done"><Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
-        {setupSaid(result, where)}
+        <p>{setupSaid(result, where)}</p>
+        {remove && <p>{remove}</p>}
       </Callout></div>
     )
   }
   if (reach.seen && !result && !failed) {
     return (
       <Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
-        pw code reaches this Studio's tools as you: a session of yours last did at {new Date(reach.seen.at).toLocaleTimeString()}.
+        <p>pw code reaches this Studio's tools as you: a session of yours last did at {new Date(reach.seen.at).toLocaleTimeString()}.</p>
+        {manage}
       </Callout>
     )
   }
   if (reach.setup?.state === 'set' && !result && !failed) {
     return (
       <Callout tone="success" size="sm" className="studio-tools-setup" onDismiss={onDismiss}>
-        {machineHasSaid(where)}{' '}
-        <button type="button" className="code-approval-more" onClick={() => void setUp({ check: true })}>Check it again</button>
+        <p>{machineHasSaid(where)}</p>
+        {manage}
       </Callout>
     )
   }
@@ -151,6 +171,7 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
           ? <>Adding this Studio's tools to pw code on {where}, as you…</>
           : <>pw code on {where} does not have this Studio's tools (library search, queries, reading files and the rest) yet.</>}
       </p>
+      {canRun && !running && !result?.ask && <AllowsNote allows={reach.setup?.allows} />}
       {failed && <p data-testid="studio-tools-failed">{failed}</p>}
       {result?.ask && (
         <p>
@@ -173,7 +194,7 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
         : <>
             {reach.paste
               ? <>
-                  <p>1. In a terminal on {where}, paste this once. It adds the same entry the Studio would, which uses pw's own ACTIVATE sign-in there, so it needs no key (it needs curl):</p>
+                  <p>1. In a terminal on {where}, paste this once. It adds the same entry the Studio would, and allows no tool without asking; the entry uses pw's own ACTIVATE sign-in there, so it needs no key (it needs curl):</p>
                   <pre className="studio-tools-command" data-testid="studio-tools-paste">{reach.paste}</pre>
                   <p>
                     <Button variant="secondary" size="sm" onClick={() => void copy(reach.paste ?? '')}>{copied === reach.paste ? 'Copied' : 'Copy the command'}</Button>{' '}
