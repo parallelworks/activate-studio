@@ -1,10 +1,13 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 // The footer's count names the library it is of. Switching libraries while
 // the new library's stats are slow (or fail) must not show the last
 // library's count beside the new library's name.
 describe('the footer count after switching libraries', () => {
+  // The first load, which a busy computer takes seconds over, is no part of a
+  // test's own time.
+  beforeAll(() => import('../src/components/StatusFooter'), 60_000)
   afterEach(() => { vi.unstubAllGlobals() })
 
   it('drops the main library\'s count while My library\'s is not known', async () => {

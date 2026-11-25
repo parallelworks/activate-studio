@@ -113,7 +113,9 @@ func (c *RelayClient) relayPath(method, route string) string {
 	if i := strings.IndexByte(rest, '/'); i >= 0 {
 		id, suffix = rest[:i], rest[i:]
 	}
-	if id == "" || ProxyRoute(method, suffix) == "" {
+	// The session's name, which the Studio keeps as its chat's; a page does
+	// not send this through the chat.
+	if rename := method == http.MethodPost && suffix == "/rename" && query == ""; id == "" || (!rename && ProxyRoute(method, suffix) == "") {
 		return ""
 	}
 	return "/api/code/machines/" + platform.EncodeURIComponent(c.machine) + "/sessions/" + id + suffix + query

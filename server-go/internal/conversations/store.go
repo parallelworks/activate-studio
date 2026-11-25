@@ -677,6 +677,111 @@ func (s *Store) Rename(id string, title *string) *Conversation {
 	return c.Clone()
 }
 
+// SessionNamed keeps what a chat's session is called, read from the
+// session: name is the one a person gave it, auto the one pw code gave it.
+// The chat's title follows a name that changed there since it was last
+// seen. A title a person chose here for a session no person has named
+// stays, and waits to be given to the session (SessionName.Rename). It
+// reports whether the title changed.
+func (s *Store) SessionNamed(id, session, name, auto string) bool {
+	seen := oneName(name)
+	given := seen != ""
+	if !given {
+		seen = oneName(auto)
+	}
+	if seen == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.find(id)
+	if c == nil || c.PWCode == nil || c.PWCode.Session != session {
+		return false
+	}
+	was := c.SessionName
+	same := was != nil && was.Session == session
+	if same {
+		switch {
+		case was.Seen == seen:
+			if was.Was != "" {
+				was.Was = ""
+				s.persist()
+			}
+			return false
+		case was.Given && (!given || seen == was.Was):
+			// Read from a listing made before the name given from here.
+			return false
+		case was.Seen == "" && was.Rename != "":
+			// The first look at it: the title waiting is the newer.
+			was.Seen = seen
+			s.persist()
+			return false
+		}
+	}
+	// The next one is a session of this chat's that has not been seen named
+	// yet: the title is the chat's own unless it stood for a name.
+	if !same && !given && !c.titleFollows() {
+		c.SessionName = &SessionName{Session: session, Seen: seen, Rename: *c.Title}
+		s.persist()
+		return false
+	}
+	changed := c.Title == nil || *c.Title != seen
+	c.Title = strp(seen)
+	c.SessionName = &SessionName{Session: session, Seen: seen}
+	s.persist()
+	return changed
+}
+
+// TitleGiven keeps how a title given here stands with the chat's session:
+// sent, the session took it; else it waits to be.
+func (s *Store) TitleGiven(id, session, title string, sent bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.find(id)
+	if c == nil || c.PWCode == nil || c.PWCode.Session != session {
+		return
+	}
+	n := SessionName{Session: session}
+	if was := c.SessionName; was != nil && was.Session == session {
+		n = *was
+	}
+	if sent {
+		if now := oneName(title); now != n.Seen {
+			n.Was, n.Seen = n.Seen, now
+		}
+		n.Rename, n.Given = "", true
+	} else {
+		n.Rename = title
+	}
+	c.SessionName = &n
+	s.persist()
+}
+
+// SetTitle sets a conversation's title, leaving its place in the list.
+func (s *Store) SetTitle(id, title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c := s.find(id); c != nil && (c.Title == nil || *c.Title != title) {
+		c.Title = strp(title)
+		s.persist()
+	}
+}
+
+// Titles is every conversation's title, by id.
+func (s *Store) Titles() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]string{}
+	for _, c := range s.load() {
+		if c.Title != nil {
+			out[c.ID] = *c.Title
+		} else {
+			out[c.ID] = ""
+		}
+	}
+	return out
+}
+
 // SetPWCode records (or, with nil, forgets) the pw code session a
 // conversation runs in; false when the conversation is gone.
 func (s *Store) SetPWCode(id string, link *PWCodeLink) bool {

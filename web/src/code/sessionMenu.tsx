@@ -59,7 +59,7 @@ export function rowShortcut(key: SessionRowKey<HTMLLIElement>): SidebarRowShortc
 export function useCodeSessionActions({ machineById, open, onOpen, showStart }: {
   machineById: ReadonlyMap<string, PwCodeMachine>
   open: OpenSessionRef
-  /** Opens a session, as forking does with the copy: in a Studio chat. */
+  /** Opens a session, as forking does with the copy: in the page's pane. */
   onOpen: (s: Pick<Session, 'machineId' | 'id'>) => void
   showStart: () => void
 }): { actions: SessionActions<HTMLLIElement>; toMenu: (items: SessionMenuItem[]) => MenuEntry[]; dialogs: ReactNode } {

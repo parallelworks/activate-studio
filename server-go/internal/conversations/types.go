@@ -358,8 +358,24 @@ type Conversation struct {
 	// engine that answered it last, or the one the person switched it to.
 	// "" for a conversation stored before it was kept.
 	Engine string `json:"engine,omitempty"`
+	// SessionName is its pw code session's name as this chat knows it, so
+	// the two keep one name.
+	SessionName *SessionName `json:"sessionName,omitempty"`
 	// Extra is the stored conversation's other fields and key order.
 	Extra Extra `json:"-"`
+}
+
+// SessionName is what a chat knows of its pw code session's name: the
+// session it is the name of, the name last seen there, and a title given
+// here that has not reached the session yet. Given is that the name was
+// given from here, and Was the name before it, which a listing may have for
+// a moment yet.
+type SessionName struct {
+	Session string `json:"session"`
+	Seen    string `json:"seen,omitempty"`
+	Rename  string `json:"rename,omitempty"`
+	Given   bool   `json:"given,omitempty"`
+	Was     string `json:"was,omitempty"`
 }
 
 // PWCodeLink is a conversation's pw code session: the site whose daemon
@@ -423,7 +439,7 @@ type PWCodeLink struct {
 
 type conversationFields Conversation
 
-var conversationKeys = keys("id", "title", "owner", "createdAt", "updatedAt", "activeBranchId", "messages", "pwcode", "engine")
+var conversationKeys = keys("id", "title", "owner", "createdAt", "updatedAt", "activeBranchId", "messages", "pwcode", "engine", "sessionName")
 
 // MarshalJSON writes the fields in their declared order over the stored object.
 func (c Conversation) MarshalJSON() ([]byte, error) {
@@ -481,6 +497,10 @@ func (c *Conversation) Clone() *Conversation {
 	if c.PWCode != nil {
 		l := *c.PWCode
 		d.PWCode = &l
+	}
+	if c.SessionName != nil {
+		n := *c.SessionName
+		d.SessionName = &n
 	}
 	d.Messages = make([]Message, len(c.Messages))
 	for i, m := range c.Messages {

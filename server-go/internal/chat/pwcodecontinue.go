@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
@@ -325,7 +326,7 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 			if c.Title != nil {
 				title = *c.Title
 			}
-			chats = append(chats, reqbody.O("session", id, "conversationId", c.ID, "title", title, "continued", c.PWCode.Continued))
+			chats = append(chats, reqbody.O("session", id, "conversationId", c.ID, "title", title, "continued", c.PWCode.Continued, "machine", proxyMachine(c.PWCode)))
 		}
 		// Sessions on the viewer's other machines go through the relay.
 		var relayWhy any
@@ -369,13 +370,28 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 		// theirs before the platform is read: nothing is read as the
 		// Studio's account.
 		ctx := r.Context()
-		here, hereErr := m.pwcodeHere(ctx, r)
+		// The daemon is the one found for them within the minute (the page
+		// asked as it opened); read along with the platform's listing, which
+		// says the session is theirs.
+		if m.pwcodeUnavailable(ctx, r) != "" && m.relayUnavailable(r) != "" {
+			return pwErr(409, m.pwcodeUnavailable(ctx, r))
+		}
+		var mach *codesessions.Machine
+		var v *codesessions.View
+		var here *pwHere
+		var hereErr, findErr error
+		var wg sync.WaitGroup
+		// Each with its own copy of the request: finding who it is from
+		// keeps the answer on it.
+		hereReq, findReq := r.WithContext(ctx), r.WithContext(ctx)
+		wg.Go(func() { here, hereErr = m.pwcodeHereCached(ctx, hereReq) })
+		wg.Go(func() { mach, v, findErr = codesessions.Find(findReq, m.pf, in.Machine, in.Session) })
+		wg.Wait()
 		if hereErr != nil && m.relayUnavailable(r) != "" {
 			return hereErr
 		}
-		mach, v, err := codesessions.Find(r, m.pf, in.Machine, in.Session)
-		if err != nil {
-			return err
+		if findErr != nil {
+			return findErr
 		}
 		if hereErr != nil || !sameMachine(mach, here) {
 			return m.continueRelayed(w, r, mach, v, in.Session, in.Confirmed)
@@ -432,6 +448,7 @@ func (m *Module) pwcodeContinueRoutes(h func(pattern string, fn func(http.Respon
 		}
 		title := v.Title
 		c := m.Conv.CreateWith(&title, owner, msgs, link)
+		m.sessionNamed(c, d)
 		m.A.Log.Info("pw code chat: continued a session from the Code page", "session", in.Session, "conversation", c.ID, "status", status)
 		return reqbody.OK(w, reqbody.O("conversationId", c.ID, "tools", tools))
 	})
@@ -528,6 +545,7 @@ func (m *Module) continueRelayed(w http.ResponseWriter, r *http.Request, mach *c
 	}
 	title := v.Title
 	c := m.Conv.CreateWith(&title, owner, msgs, link)
+	m.sessionNamed(c, d)
 	m.A.Log.Info("pw code chat: continued a session on another machine through the platform", "session", session, "conversation", c.ID, "status", status)
 	return reqbody.OK(w, reqbody.O("conversationId", c.ID, "relay", true,
 		"tools", reqbody.O("connected", false, "count", 0, "note", "This session runs on "+mach.Name+" and keeps its own tools there, not the Studio's library tools.")))

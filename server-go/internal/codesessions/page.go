@@ -147,6 +147,9 @@ func crossSite(r *http.Request) bool {
 	return r.Header.Get("Origin") != "" && !sessions.SameOrigin(r)
 }
 
+// CrossSite is crossSite, for the chat's routes the Code page's pane uses.
+func CrossSite(r *http.Request) bool { return crossSite(r) }
+
 // pageTarget is where the page's request for machine goes: this computer's
 // pw code (local, with the machine it lists and whether the viewer is held
 // to their own sessions), or the platform as the viewer (key).
@@ -211,6 +214,11 @@ func (s *routes) forward(w http.ResponseWriter, r *http.Request, t *pageTarget, 
 	}
 	if method == http.MethodGet && path == "/api/code/sessions" && res.StatusCode == http.StatusOK {
 		raw = claudeCodeListing(r, raw)
+		if Listed != nil {
+			if v, err := jsonv.Decode(raw); err == nil {
+				Listed(r, jsonv.Arr(jsonv.Path(v, "sessions")))
+			}
+		}
 	}
 	ct := res.Header.Get("Content-Type")
 	if ct == "" {
@@ -269,6 +277,9 @@ func (s *routes) pageListing(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, err)
 		return
+	}
+	if Listed != nil {
+		Listed(r, sessions)
 	}
 	writeJSON(w, http.StatusOK, jsonv.NewObject("machines", machines, "sessions", sessions))
 }
@@ -543,6 +554,22 @@ func (s *routes) pageCreate(w http.ResponseWriter, r *http.Request) {
 	s.forward(w, r, t, http.MethodPost, "/api/code/machines/"+platform.EncodeURIComponent(machine)+"/sessions", raw)
 }
 
+// Listed and Renamed, set by the chat, are told of the viewer's sessions as
+// the page's listing has them, and of a name the page gave one, so a chat
+// and its session keep one name.
+var (
+	Listed  func(r *http.Request, rows []any)
+	Renamed func(r *http.Request, id, name string)
+)
+
+// answered keeps the status of an answer.
+type answered struct {
+	http.ResponseWriter
+	status int
+}
+
+func (a *answered) WriteHeader(s int) { a.status = s; a.ResponseWriter.WriteHeader(s) }
+
 // StartInChat, set by the chat, starts a Code page session as a chat's is
 // started, with the Studio's tools and instructions, and makes its chat:
 // mach is the machine as the platform lists it to the viewer (nil for this
@@ -631,6 +658,16 @@ func (s *routes) pageSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if mode != "" {
 		s.a.Log.Info("pw code: permission mode changed", "user", s.viewerName(r), "machine", machine, "session", id, "mode", mode, "via", "plan answer on the Code page")
+	}
+	if key == "POST /rename" && Renamed != nil && body != nil {
+		a := &answered{ResponseWriter: w, status: http.StatusOK}
+		w = a
+		name := jsonv.String(jsonv.Path(body, "name"))
+		defer func() {
+			if a.status < 300 {
+				Renamed(r, id, name)
+			}
+		}()
 	}
 	if t.local != nil {
 		var b any

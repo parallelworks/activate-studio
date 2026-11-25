@@ -18,11 +18,16 @@ export function openPlan(pending: readonly MessagePart[] | null | undefined): { 
  * plan with no way to answer it (PW Code on the web answers in the
  * terminal), and the Studio has no terminal, so without this the session
  * stayed paused until it was stopped. The answer goes through the chat's
- * own route (POST /api/chat/pwcode/{id}/approvals/{approval}), which picks
+ * own route (POST /api/chat/pwcode/{id}/approvals/{approval}), or the Code
+ * page's for the session it has open, which picks
  * the mode an approved plan moves on to and holds it to the machine's
  * ceiling, as for a mode change.
  */
-export function PlanAnswer({ conversationId, approvalId }: { conversationId: string; approvalId: string }) {
+export function PlanAnswer({ approvals, approvalId }: {
+  /** Where the session's answers go: its chat's route, or the Code page's. */
+  approvals: string
+  approvalId: string
+}) {
   const [change, setChange] = useState('')
   const [busy, setBusy] = useState<'approve' | 'keep' | ''>('')
   const [sent, setSent] = useState(false)
@@ -32,7 +37,7 @@ export function PlanAnswer({ conversationId, approvalId }: { conversationId: str
     setBusy(allowed ? 'approve' : 'keep'); setError('')
     const message = change.trim()
     try {
-      const res = await fetch(`/api/chat/pwcode/${encodeURIComponent(conversationId)}/approvals/${encodeURIComponent(approvalId)}`, {
+      const res = await fetch(`${approvals}/${encodeURIComponent(approvalId)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: 'plan', allowed, ...(!allowed && message ? { message } : {}) }),
       })

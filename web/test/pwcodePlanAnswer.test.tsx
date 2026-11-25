@@ -23,14 +23,14 @@ describe('A plan pw code waits on in a chat', () => {
       calls.push({ url, body: JSON.parse(String(init?.body)) })
       return new Response('{"ok":true}', { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
-    const { unmount } = render(<PlanAnswer conversationId="c1" approvalId="p1" />)
+    const { unmount } = render(<PlanAnswer approvals="/api/chat/pwcode/c1/approvals" approvalId="p1" />)
     fireEvent.click(screen.getByRole('button', { name: 'Approve plan' }))
     await waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0]).toEqual({ url: '/api/chat/pwcode/c1/approvals/p1', body: { kind: 'plan', allowed: true } })
     await waitFor(() => expect(screen.queryByTestId('pwcode-plan-answer')).toBeNull())
     unmount()
 
-    render(<PlanAnswer conversationId="c1" approvalId="p2" />)
+    render(<PlanAnswer approvals="/api/chat/pwcode/c1/approvals" approvalId="p2" />)
     fireEvent.change(screen.getByRole('textbox', { name: 'What to change in the plan' }), { target: { value: 'Use four lines' } })
     fireEvent.click(screen.getByRole('button', { name: 'Keep planning' }))
     await waitFor(() => expect(calls).toHaveLength(2))
@@ -39,7 +39,7 @@ describe('A plan pw code waits on in a chat', () => {
 
   it('says so when the answer does not go through, and can be sent again', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"pw code did not answer"}', { status: 502, headers: { 'Content-Type': 'application/json' } })))
-    render(<PlanAnswer conversationId="c1" approvalId="p1" />)
+    render(<PlanAnswer approvals="/api/chat/pwcode/c1/approvals" approvalId="p1" />)
     fireEvent.click(screen.getByRole('button', { name: 'Approve plan' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('pw code did not answer')
     expect(screen.getByRole('button', { name: 'Approve plan' })).toBeEnabled()

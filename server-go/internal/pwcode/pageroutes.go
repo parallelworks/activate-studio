@@ -9,7 +9,7 @@ import "strings"
 // worktree) and the reads they need, and an answer to what it waits on.
 // Each goes to the platform as the person, which relays it to the
 // session's machine, or to this computer's own pw code. Talking to the
-// session itself is not here: it opens in a Studio chat (ProxyRoute).
+// session itself is not here: its view does that (ProxyRoute).
 var pageRoutes = map[string]bool{
 	"GET ":                       true,
 	"GET /worktree":              true,

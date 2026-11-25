@@ -1,19 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SWRConfig } from 'swr'
 import { IntlProvider } from 'use-intl'
 import { loadPwCodeMessages, type PwCodeMessages,  } from '@parallelworks/code'
-import { Button, type MenuEntry, Popover } from '@parallelworks/ui'
+import { Button, type MenuEntry, Popover, toast } from '@parallelworks/ui'
 import { ChatProvider } from '@parallelworks/ui/ai'
 import { createOpenAIChatAdapter } from '@parallelworks/ui/ai/openai'
 import { AddIcon, ExternalLinkIcon, HelpIcon, SidebarOpenIcon } from '@parallelworks/ui/icons'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { useAppConfig } from '../config'
-import { publishListing, sessionSeen } from '../notices'
-import { type PageSession, pwCodePage } from './api'
+import { publishListing, sessionSeen, setFrontChat } from '../notices'
+import { knowSession, type PageSession, pwCodePage, startedSession } from './api'
 import { CodeSidebar } from './CodeSidebar'
-import { CodeStart } from './CodeStart'
+import { CodeSession, StartingSession } from './CodeSession'
+import { CodeStart, type Starting } from './CodeStart'
 import { LinkedSession, type Delegated } from './LinkedSession'
-import { sessionInHash, useOpenInStudio, sameMachine } from './openInStudio'
+import { paneFor, type SessionRef, sessionHash, sessionInHash, useOpenInStudio, sameMachine } from './openInStudio'
 import { MachineToolsOffer } from './MachineToolsOffer'
 import { HowSessionsAppear } from './parts'
 
@@ -21,9 +22,10 @@ import { HowSessionsAppear } from './parts'
  * The Code page: the person's pw code sessions as PW Code on the web shows
  * them, built from the same packages (@parallelworks/code for what is
  * listed, started and changed, @parallelworks/ui/ai for how it is drawn).
- * The list of sessions by machine sits beside the start of a new one;
- * opening a session continues it in a Studio chat, which shows it as PW
- * Code on the web's session page does.
+ * The list of sessions by machine sits beside the start of a new one, or
+ * the session that is open, drawn as a pw code chat draws it and live
+ * (CodeSession). Opening or starting one stays on the page; continuing it in
+ * a Studio chat is an action of its own.
  */
 export function CodePage() {
   const [messages, setMessages] = useState<PwCodeMessages | null>(null)
@@ -84,6 +86,7 @@ function useJSON<T>(url: string, every = 0): T | null {
 }
 
 function CodeScreen() {
+  const cfg = useAppConfig()
   const { data } = pwCodePage.useSessions()
   // The menu's marks and the Notices page show what this list shows.
   useEffect(() => { publishListing(data) }, [data])
@@ -94,7 +97,9 @@ function CodeScreen() {
   const delegatedById = useMemo(() => new Map((delegatedList?.sessions ?? []).map(d => [d.session, d])), [delegatedList])
   const delegated = useMemo(() => new Set(delegatedById.keys()), [delegatedById])
   const [onlyDelegated, setOnlyDelegated] = useState(false)
-  // A link to the Code page that names a session: Fleet, Agents, the status panel, a chat's note.
+  // The session that is open: the page's address names it, so a link to it
+  // (Fleet, Agents, the status panel, a chat's note), going back and a
+  // reload open the same one.
   const [link, setLink] = useState(() => (typeof location === 'undefined' ? null : sessionInHash(location.hash)))
   useEffect(() => {
     const read = () => setLink(sessionInHash(location.hash))
@@ -105,10 +110,13 @@ function CodeScreen() {
   const linked = link ? sessions.find(s => s.id === link.session && (!link.machine || s.machineId === link.machine)) : undefined
   const closeLink = useCallback(() => {
     setLink(null)
-    if (sessionInHash(location.hash)) history.replaceState(null, '', '#view=code')
+    if (sessionInHash(location.hash)) location.hash = '#view=code'
   }, [])
   const inChat = useMemo(() => new Set((studio.here?.chats ?? []).map(c => c.session)), [studio.here])
-  const [opened, setOpened] = useState<{ machine?: string; sessionId?: string }>(() => (link ? { machine: link.machine, sessionId: link.session } : {}))
+  const opened = useMemo((): { machine?: string; sessionId?: string } => {
+    const machine = linked?.machineId || link?.machine
+    return link ? { ...(machine ? { machine } : {}), sessionId: link.session } : {}
+  }, [link, linked])
   const [collapsed, setCollapsed] = useState(false)
   const narrow = useNarrow()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -118,26 +126,65 @@ function CodeScreen() {
   const [startMode, setStartMode] = useState<string | undefined>()
   const startOn = machines.find(m => m.id === startMachine)
   const startsElsewhere = !!startOn && !!studio.here && !sameMachine(startOn, studio.here)
+  // What is being started, and whether the person went to another session
+  // meanwhile: it then opens only when they pick it.
+  const [starting, setStarting] = useState<Starting | null>(null)
+  const [startedAt, setStartedAt] = useState<Record<string, Starting>>({})
+  const left = useRef(false)
 
+  const show = useCallback((machine: string, session: string) => {
+    setLink({ machine, session })
+    if (location.hash !== sessionHash(machine, session)) location.hash = sessionHash(machine, session)
+  }, [])
   const open = useCallback((s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => {
-    setOpened({ machine: s.machineId, sessionId: s.id })
-    sessionSeen(s.id)
+    setDrawerOpen(false)
+    left.current = true
+    show(s.machineId, s.id)
+  }, [show])
+  const continueIn = useCallback((s: SessionRef) => {
     setDrawerOpen(false)
     // One that cannot be continued here shows why, with what still works.
-    void studio.open(s).then(ok => { if (!ok) setLink({ machine: s.machineId, session: s.id }) })
-  }, [studio])
-  const newSession = useCallback(() => { setOpened({}); closeLink(); setStartKey(k => k + 1) }, [closeLink])
+    void studio.open(s).then(ok => { if (!ok) show(s.machineId, s.id) })
+  }, [studio, show])
+  // A start that is under way keeps its composer, which says if it fails.
+  const newSession = useCallback(() => { setDrawerOpen(false); closeLink(); if (!starting) setStartKey(k => k + 1) }, [closeLink, starting])
+  const onStarting = useCallback((s: Starting | null) => {
+    if (!s && left.current) toast.error('The session did not start. Its message and the reason are under New session.')
+    left.current = false
+    setStarting(s)
+  }, [])
   const onStarted = useCallback((machine: string, id: string) => {
-    setOpened({ machine, sessionId: id })
-    void studio.open({ machineId: machine, id }, { started: true })
-  }, [studio])
+    setStarting(s => {
+      if (s) setStartedAt(all => ({ ...all, [id]: s }))
+      return null
+    })
+    void studio.reload()
+    if (!left.current) show(machine, id)
+    else toast.success('The session started. It is in the list.')
+  }, [show, studio.reload])
+  const shownAt = link ? paneFor({ machineId: opened.machine ?? '', id: link.session }, machines, studio.here) : null
+  // Shown as soon as it is known to be the person's: listed, in a chat of
+  // theirs, or just started here.
+  const known = !!link && (!!linked || inChat.has(link.session) || !!startedSession(link.session))
+  const inPane = !!link && !!shownAt?.machine && known
+  // What the pane shows is seen: the end of work delegated to the session,
+  // and the replies and questions of the chat that holds it.
+  const seenSession = inPane ? link.session : ''
+  const seenChat = inPane ? shownAt.conversationId : undefined
+  useEffect(() => { if (seenSession) sessionSeen(seenSession) }, [seenSession])
+  useEffect(() => {
+    if (!seenChat) return
+    setFrontChat(seenChat)
+    return () => setFrontChat(null)
+  }, [seenChat])
 
   const sessionUrl = (s: PageSession) => (where?.codeUrl ? `${where.codeUrl}/${encodeURIComponent(s.machineId)}/${encodeURIComponent(s.id)}` : '')
   const extraMenu = (s: PageSession): MenuEntry[] => {
     const why = studio.why(s)
     const url = sessionUrl(s)
     return [
-      { label: inChat.has(s.id) ? 'Open its Studio chat' : 'Continue in Studio', onClick: () => open(s), ...(why ? { disabledReason: why } : {}) },
+      { label: 'Open', onClick: () => open(s) },
+      { label: inChat.has(s.id) ? 'Open in its Studio chat' : 'Continue in a Studio chat', onClick: () => continueIn(s), ...(why ? { disabledReason: why } : {}) },
       ...(url ? [{ label: 'Open in ACTIVATE', icon: <ExternalLinkIcon />, onClick: () => { window.open(url, '_blank', 'noopener,noreferrer') } }] : []),
     ]
   }
@@ -158,11 +205,11 @@ function CodeScreen() {
         onToggle={() => (narrow ? setDrawerOpen(o => !o) : setCollapsed(c => !c))}
         drawer={narrow ? { open: drawerOpen, onClose: () => setDrawerOpen(false), label: 'Sessions' } : undefined}
       />
-      <main className="code-main">
+      <main className="code-main" data-pane={inPane || (starting && !link) ? 'session' : 'start'}>
         <div className="code-main-actions">
           {narrow && <Button variant="secondary" size="sm" icon={<SidebarOpenIcon aria-hidden />} data-testid="code-sessions-drawer" onClick={() => setDrawerOpen(true)}>Sessions</Button>}
           <Button variant="secondary" size="sm" icon={<AddIcon aria-hidden />} data-testid="agents-new-session" onClick={newSession}>New session</Button>
-          {where?.codeUrl && (
+          {where?.codeUrl && !inPane && !(starting && !link) && (
             <Button variant="ghost" size="sm" icon={<ExternalLinkIcon aria-hidden />} href={where.codeUrl} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>
           )}
           <Popover
@@ -174,25 +221,48 @@ function CodeScreen() {
             <HowSessionsAppear compact />
           </Popover>
         </div>
-        {/* A session on the Studio's own machine starts with its tools; on
-            another, the start says when it would not. */}
-        {startsElsewhere
-          ? <MachineToolsOffer key={startMachine} machines={machines} selected={startMachine} always mode={startMode} />
-          : <MachineToolsOffer machines={machines} selected={startMachine} />}
-        <CodeStart key={startKey} onOpen={open} onStarted={onStarted} onMachine={setStartMachine} onMode={setStartMode} top={link ? answer => (
-          <LinkedSession
+        {starting && !link && <StartingSession starting={starting} />}
+        {inPane && link && shownAt && (
+          <CodeSession
             session={linked}
             machine={linked ? machines.find(m => m.id === linked.machineId) : undefined}
-            missing={!!data && !linked}
-            delegated={linked ? delegatedById.get(linked.id) : undefined}
-            why={linked ? studio.why(linked) : ''}
-            inChat={!!linked && inChat.has(linked.id)}
+            pane={shownAt}
+            sessionId={link.session}
+            first={startedSession(link.session)?.first}
+            where={startedAt[link.session]}
+            username={cfg.user?.username ?? ''}
+            delegated={delegatedById.get(link.session)}
+            inChat={!!shownAt.conversationId}
+            why={linked ? studio.why(linked) : shownAt.conversationId ? '' : 'This session is not listed yet.'}
             url={linked ? sessionUrl(linked) : ''}
-            onAnswer={answer}
-            onOpen={() => linked && open(linked)}
-            onClose={closeLink}
+            onContinue={() => continueIn(linked ?? { machineId: opened.machine ?? '', id: link.session })}
+            onClose={newSession}
+            onMoved={id => { knowSession(id, { shownOn: shownAt.machine, conversationId: shownAt.conversationId }); show(opened.machine ?? '', id) }}
           />
-        ) : undefined} />
+        )}
+        {/* Kept while a session is open or being started: a message half
+            written stays, and a start that fails comes back to it. */}
+        <div className="code-start" hidden={inPane || (!!starting && !link)}>
+          {/* A session on the Studio's own machine starts with its tools; on
+              another, the start says when it would not. */}
+          {startsElsewhere
+            ? <MachineToolsOffer key={startMachine} machines={machines} selected={startMachine} always mode={startMode} />
+            : <MachineToolsOffer machines={machines} selected={startMachine} />}
+          <CodeStart key={startKey} onOpen={open} onStarting={onStarting} onStarted={onStarted} onMachine={setStartMachine} onMode={setStartMode} top={link && !inPane ? answer => (
+            <LinkedSession
+              session={linked}
+              machine={linked ? machines.find(m => m.id === linked.machineId) : undefined}
+              missing={!!data && !linked && !!studio.here}
+              delegated={linked ? delegatedById.get(linked.id) : undefined}
+              why={linked ? studio.why(linked) : ''}
+              inChat={!!linked && inChat.has(linked.id)}
+              url={linked ? sessionUrl(linked) : ''}
+              onAnswer={answer}
+              onOpen={() => linked && continueIn(linked)}
+              onClose={closeLink}
+            />
+          ) : undefined} />
+        </div>
       </main>
       {studio.dialog}
     </div>

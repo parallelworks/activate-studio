@@ -21,8 +21,8 @@ const DELEGATED_STATE: Record<Delegated['state'], string> = {
 const fileHref = (rel: string) => `#open=file:${encodeURIComponent(rel).replace(/%2F/gi, '/')}`
 
 /**
- * The session a link to the Code page names (from Fleet, Agents, the
- * status panel or a chat's note): its state, what it waits on, answered in
+ * A session the Code page cannot show in its pane (its machine is one this
+ * Studio does not reach for the person, say): its state, what it waits on, answered in
  * place, the work a chat delegated to it, and the ways to open it.
  */
 export function LinkedSession({ session, machine, missing, delegated, why, inChat, url, onAnswer, onOpen, onClose }: {
@@ -69,7 +69,7 @@ export function LinkedSession({ session, machine, missing, delegated, why, inCha
       ))}
       {inSession !== null && <p className="muted">{inSession}</p>}
       <div className="code-linked-actions">
-        <Button variant="primary" size="sm" onClick={onOpen} disabled={!!why} title={why || undefined}>{inChat ? 'Open its Studio chat' : 'Continue in Studio'}</Button>
+        <Button variant="primary" size="sm" onClick={onOpen} disabled={!!why} title={why || undefined}>{inChat ? 'Open in its Studio chat' : 'Continue in a Studio chat'}</Button>
         {url && <Button variant="secondary" size="sm" href={url} target="_blank" rel="noopener noreferrer">Open in ACTIVATE</Button>}
       </div>
       {why && <p className="muted code-linked-why">{why}</p>}
@@ -77,7 +77,7 @@ export function LinkedSession({ session, machine, missing, delegated, why, inCha
   )
 }
 
-function DelegatedNote({ d }: { d: Delegated }) {
+export function DelegatedNote({ d }: { d: Delegated }) {
   return (
     <section className="code-delegated" aria-label="Delegated work">
       <p>

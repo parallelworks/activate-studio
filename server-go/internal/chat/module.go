@@ -16,6 +16,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
+	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/extensions"
 	"github.com/parallelworks/activate-studio/server-go/internal/libapi"
@@ -346,8 +347,10 @@ func Register(mux *http.ServeMux, a *app.App) {
 			}
 			return w, true
 		},
-		ToNode: m.toNode,
+		Renamed: m.chatRenamed,
+		ToNode:  m.toNode,
 	}
+	codesessions.Listed, codesessions.Renamed = m.pageListed, m.pageRenamed
 	m.Convs.Register(mux, h)
 	m.chatSaveRoutes(h)
 	m.liveRoutes(h)

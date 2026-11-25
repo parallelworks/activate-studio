@@ -261,7 +261,7 @@ func (m *Module) startFromCode(r *http.Request, machine string, mach, body *json
 	title := sp(firstLine(firstNonEmpty(p.prompt, "pw code in "+shortWorkspace(p.folder)), 70))
 	answer := func(c *conversations.Conversation, l *conversations.PWCodeLink) *jsonv.Object {
 		return jsonv.NewObject("id", l.Session, "machineId", machine, "name", "", "status", "idle", "workspace", l.Workspace, "model", l.Model,
-			"createdAt", l.CreatedAt, "updatedAt", l.CreatedAt, "conversationId", c.ID)
+			"createdAt", l.CreatedAt, "updatedAt", l.CreatedAt, "conversationId", c.ID, "shownOn", proxyMachine(l))
 	}
 	if !own {
 		client, err := m.relayClient(r, machine)
@@ -275,6 +275,7 @@ func (m *Module) startFromCode(r *http.Request, machine string, mach, body *json
 		c := m.Conv.CreateWith(title, owner, nil, l)
 		if p.prompt != "" {
 			m.recordSent(r, c, &pwTarget{client: client, site: l.Site, workspace: l.Workspace, relay: true}, p.prompt, 0)
+			m.nameTold(r, c, &pwTarget{client: client, site: l.Site, workspace: l.Workspace, relay: true}, p.prompt)
 		}
 		return answer(c, l), true, nil
 	}
