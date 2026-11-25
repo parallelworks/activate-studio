@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -46,6 +47,10 @@ const pageMaxAnswer = 16 << 20
 // platform's own CreateSessionRequest.
 var createFields = []string{"workspace", "model", "effort", "allocation", "claudeAccount", "permissionMode", "prompt"}
 
+// StartTools is a new session's choice to add the Studio's tools to pw code
+// on its machine first (chat, bridgeAtStart). It is not sent on.
+const StartTools = "studioTools"
+
 // modeRank orders the permission modes by authority; plan is not a mode a
 // session starts in from here.
 var modeRank = map[string]int{"read-only": 0, "accept-edits": 1, "auto": 2, "bypass-permissions": 3}
@@ -66,6 +71,7 @@ func registerPage(mux *http.ServeMux, s *routes) {
 	}
 	mux.HandleFunc("GET "+pagePrefix+"/openai/models", s.pageModels)
 	mux.HandleFunc("GET "+pagePrefix+"/where", s.pageWhere)
+	mux.HandleFunc("GET "+pagePrefix+"/icon", s.pageIcon)
 }
 
 // pageWhere says where the page's sessions are: on this computer, or on
@@ -251,7 +257,7 @@ func callLocal(w http.ResponseWriter, r *http.Request, c pwcode.Client, method, 
 func (t *pageTarget) localMachineView() *jsonv.Object {
 	m := t.machine
 	o := jsonv.NewObject("id", m.ID, "name", m.Name, "kind", "local", "owner", "", "hostname", m.Hostname,
-		"status", m.Status, "daemonId", m.DaemonID, "claudeCodeAllowed", false, "remoteStart", !t.only,
+		"status", m.Status, "os", runtime.GOOS, "daemonId", m.DaemonID, "claudeCodeAllowed", false, "remoteStart", !t.only,
 		"directories", !t.only, "sessionGroups", true)
 	// The new session form offers the modes the daemon accepts; without
 	// them the package falls back to a list that has no auto.
@@ -515,6 +521,12 @@ func (s *routes) pageCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	// For the chat only: the platform and pw code have no such field.
+	tools, choseTools := in.Get(StartTools)
+	if _, ok := tools.(bool); choseTools && !ok {
+		writeProblem(w, http.StatusBadRequest, StartTools+" must be true or false.")
+		return
+	}
 	mode := jsonv.String(jsonv.Path(body, "permissionMode"))
 	if mode == "" {
 		mode = "read-only"
@@ -546,8 +558,15 @@ func (s *routes) pageCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if machErr == nil && s.startInChat(w, r, machine, mach, body, mode) {
-		return
+	if machErr == nil {
+		chat := body
+		if choseTools {
+			chat = body.Clone()
+			chat.Set(StartTools, tools)
+		}
+		if s.startInChat(w, r, machine, mach, chat, mode) {
+			return
+		}
 	}
 	raw, _ := jsonv.Marshal(body)
 	s.a.Log.Info("code page: started a session", "user", s.viewerName(r), "machine", machine, "mode", mode, "via", "platform")

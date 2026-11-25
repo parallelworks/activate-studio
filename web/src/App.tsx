@@ -35,6 +35,7 @@ import { applyAccent, applySurface } from './accents'
 import { onThemeChoice, rememberGround } from './theme'
 import { FullViewHost, RunPane } from './components/RunPane'
 import { startLive, useWatch } from './live'
+import { PageHeadSlot } from './pageHead'
 import { PanelToggle, StatusPanel } from './components/StatusPanel'
 import { setPanelView } from './panelState'
 import { studioMark } from './studioMark'
@@ -61,7 +62,8 @@ const PAGE_NOTES: Partial<Record<ViewId, string>> = {
   agents: '',
   notices: 'What needs you across the Studio',
   workflows: 'Each runs under your own account',
-  code: 'Your pw code sessions on the platform\'s machines',
+  // The Code page's own start says what it is for.
+  code: '',
   history: 'The corpus at each index pass',
   transfers: 'Copy, move and sync files between libraries, this computer, clusters and saved locations',
 }
@@ -721,6 +723,7 @@ export default function App() {
           <header className="page-head">
             <h1>{NAV.find(n => n.id === view)?.label}</h1>
             {pageNote && <span className="page-note" title={pageNote}>{pageNote}</span>}
+            <PageHeadSlot />
             <PanelToggle className="page-head-toggle" />
           </header>
         )}

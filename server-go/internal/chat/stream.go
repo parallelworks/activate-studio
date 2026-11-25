@@ -121,6 +121,9 @@ type streamBody struct {
 	PWCodeMachine *string `json:"pwcodeMachine"`
 	PWCodeFolder  *string `json:"pwcodeFolder"`
 	PWCodeMode    *string `json:"pwcodeMode"`
+	// PWCodeTools is whether to add the Studio's tools to pw code on that
+	// machine first, as the person chose with the message.
+	PWCodeTools *bool `json:"pwcodeTools"`
 
 	// engineNote is the note stored after the reply when the Studio
 	// assistant answers in pw code's place (engineFor); never read from

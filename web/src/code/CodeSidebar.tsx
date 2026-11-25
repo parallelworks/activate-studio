@@ -32,7 +32,7 @@ import { Button, LoadingRegion, type MenuEntry, menuDivider, SearchInput, Skelet
 import { useTranslations } from 'use-intl'
 import { describeError } from '../pwcode/PWCodeSession'
 import { type PageSession, pwCodePage } from './api'
-import { PinnedMark, SessionMark, type Translate } from './parts'
+import { MachineIcon, PinnedMark, SessionMark, type Translate } from './parts'
 import { rowShortcut, useCodeSessionActions } from './sessionMenu'
 
 /**
@@ -226,7 +226,7 @@ function SessionRow({ session, machine, showMachine, selected, updated, delegate
   const marked = showsPinMark(session)
   const prs = (session.pullRequests ?? []).filter(Boolean)
   const parts = [
-    showMachine && machine && <span key="machine" className="code-row-machine" title={machine.name}>{machine.name}</span>,
+    showMachine && machine && <span key="machine" className="code-row-machine" title={machine.name}><MachineIcon machine={machine} />{machine.name}</span>,
     showSecondLine && <span key="state" className={statusTextClass(tone)}>{stateText}</span>,
     inChat && <span key="chat" className="code-row-chat" title="A Studio chat continues this session">in a chat</span>,
     delegated && <span key="delegated" className="code-row-delegated" title="A Studio chat delegated work to this session">delegated</span>,

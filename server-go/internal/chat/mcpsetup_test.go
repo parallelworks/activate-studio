@@ -345,7 +345,7 @@ func TestADeclinedMachineIsNotOfferedAgain(t *testing.T) {
 		}
 		return states
 	}
-	if got := list(); got["m-bob"] != "offer" || got["m-laptop"] != "unavailable" {
+	if got := list(); got["m-bob"] != "offer" || got["m-laptop"] != "command" {
 		t.Fatalf("%v", got)
 	}
 	prefs := func(u *auth.User, body string) int {
@@ -496,5 +496,214 @@ func TestTheCardOffersSetupWhereItCanRun(t *testing.T) {
 	}
 	if s := get(&auth.User{ID: "ada", Username: "ada", Source: "proxy"}, id); s["available"] != false {
 		t.Errorf("ada's card for bob's chat: %v", s)
+	}
+}
+
+// The machines the Studio lists to Bob, by id.
+func offersOf(t *testing.T, m *Module, u *auth.User) map[string]bridgeOfferT {
+	t.Helper()
+	w := httptest.NewRecorder()
+	if err := m.bridgeMachinesRoute(w, setupReq(u)); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Machines []bridgeOfferT `json:"machines"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	by := map[string]bridgeOfferT{}
+	for _, o := range out.Machines {
+		by[o.MachineID] = o
+	}
+	return by
+}
+
+// A computer that connected itself has no pw ssh: the person adds the tools
+// with one command, and the Studio knows once a session there reaches them.
+func TestAComputerThatConnectedItselfIsGivenACommand(t *testing.T) {
+	m, f, _ := setupStudio(t)
+	o := offersOf(t, m, bobProxy)["m-laptop"]
+	if o.State != "command" || o.Available || !strings.HasPrefix(o.Command, "pw code mcp add --scope user") || !strings.Contains(o.Command, "/me/session/ada/studio/api/mcp?machine=m-laptop'") || o.Uncommand != "pw code mcp remove --scope user studio" {
+		t.Fatalf("%+v", o)
+	}
+	if strings.Contains(o.Command, "pwt_") {
+		t.Error("the command carries a key")
+	}
+	// A session of his starting there.
+	reach := func(u *auth.User, machine, method string) {
+		r := asViewer(httptest.NewRequest(http.MethodPost, "/api/mcp?machine="+machine, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"`+method+`"}`)), u)
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("X-Forwarded-Host", "platform.example")
+		r.Header.Set("X-Forwarded-Prefix", "/me/session/ada/studio")
+		w := httptest.NewRecorder()
+		if err := m.mcpPost(w, r); err != nil || w.Code != 200 {
+			t.Fatalf("%d %v", w.Code, err)
+		}
+	}
+	title := "Started there"
+	made := func(machine string, ago time.Duration) string {
+		return m.Conv.CreateWith(&title, "bob", nil, &conversations.PWCodeLink{Relay: true, Picked: true, Machine: machine, Session: "s9", ToolsError: "x", CreatedAt: time.Now().Add(-ago).UTC().Format("2006-01-02T15:04:05.000Z")}).ID
+	}
+	now, before, elsewhere := made("m-laptop", time.Minute), made("m-laptop", time.Hour), made("m-bob", time.Minute)
+	// One already open calls on; only a session that starts says so.
+	reach(bobProxy, "m-laptop", "tools/list")
+	if o := offersOf(t, m, bobProxy)["m-laptop"]; o.State != "command" {
+		t.Fatalf("after a call: %+v", o)
+	}
+	reach(bobProxy, "m-laptop", "initialize")
+	reach(bobProxy, "../m", "initialize")
+	o = offersOf(t, m, bobProxy)["m-laptop"]
+	if o.State != "set" || o.Available || o.Command == "" || o.Uncommand == "" || len(f.calls) != 0 {
+		t.Fatalf("%+v, ran %v", o, f.calls)
+	}
+	if l := m.Conv.Get(now).PWCode; !l.HasTools || l.ToolsError != "" {
+		t.Errorf("the session that just started there: %+v", l)
+	}
+	if m.Conv.Get(before).PWCode.HasTools || m.Conv.Get(elsewhere).PWCode.HasTools {
+		t.Error("a session that did not reach the tools was said to have them")
+	}
+	// Each person's own.
+	if p := m.bridgePrefs().get("ada", "m-laptop"); p.URL != "" {
+		t.Errorf("ada's %+v", p)
+	}
+	// Taken out by hand, it is as it was.
+	r := setupReq(bobProxy)
+	r.Body = io.NopCloser(strings.NewReader(`{"machineId":"m-laptop","forget":true}`))
+	if err := m.bridgeDecline(httptest.NewRecorder(), r); err != nil || offersOf(t, m, bobProxy)["m-laptop"].State != "command" {
+		t.Fatalf("%v %+v", err, offersOf(t, m, bobProxy)["m-laptop"])
+	}
+}
+
+// The entry a pasted command wrote is this Studio's own, though its address
+// names the machine: Set up leaves it, and Remove takes it.
+func TestAnEntryThatNamesItsMachineIsThisStudios(t *testing.T) {
+	m, f, id := setupStudio(t)
+	f.entry = &bridgeEntry{}
+	f.entry.Config.Command = "sh"
+	f.entry.Config.Args = []string{"-c", bridgeShim, bridgeShimName, "https://platform.example/me/session/ada/studio/api/mcp?machine=m-bob", "/home/x/pw/pw"}
+	if _, out := setupAs(t, m, bobProxy, `{"conversationId":"`+id+`"}`); out["changed"] != false || out["worked"] != true || f.adds != 0 {
+		t.Fatalf("%v, %d adds", out, f.adds)
+	}
+	r := setupReq(bobProxy)
+	r.Body = io.NopCloser(strings.NewReader(`{"machineId":"m-bob"}`))
+	if err := m.bridgeRemove(httptest.NewRecorder(), r); err != nil || f.entry != nil {
+		t.Fatalf("%v %v", err, f.entry)
+	}
+}
+
+// Where a machine's pw code takes the tools with a session, nothing is set
+// up on it, a computer that connected itself included.
+func TestAMachineThatTakesThemWithASessionNeedsNoCommand(t *testing.T) {
+	m, _, _ := setupStudio(t)
+	for _, mach := range []bridgeMach{{ID: "m-laptop", Kind: "local", Name: "bobs-laptop", Owner: "bob", Status: "connected", Attach: true}, {ID: "m-laptop", Kind: "local", Name: "bobs-laptop", Owner: "bob", Status: "connected", Create: true}} {
+		if o := m.bridgeOffer(setupReq(bobProxy), mach); o.State != "offer" || !o.Attach || o.Available || o.Command != "" {
+			t.Errorf("%+v: %+v", mach, o)
+		}
+	}
+}
+
+// The tools are added as a session starts: once the person has chosen it
+// for that machine, and quietly from then on.
+func TestTheToolsAreAddedAsASessionStarts(t *testing.T) {
+	const url = "https://platform.example/me/session/ada/studio/api/mcp"
+	yes, no := true, false
+	bobs := bridgeMach{ID: "m-bob", Kind: "cloud", Name: "bobs-cluster", Owner: "bob", Status: "connected"}
+	m, f, _ := setupStudio(t)
+	// Never asked: nothing runs.
+	if has, why := m.bridgeAtStart(setupReq(bobProxy), bobs, url, nil); has || why != "" || len(f.calls) != 0 {
+		t.Fatalf("not asked: %v %q, ran %v", has, why, f.calls)
+	}
+	// Unticked: kept, and nothing runs then or later.
+	for _, chose := range []*bool{&no, nil} {
+		if has, why := m.bridgeAtStart(setupReq(bobProxy), bobs, url, chose); has || why != "" || len(f.calls) != 0 {
+			t.Fatalf("unticked: %v %q, ran %v", has, why, f.calls)
+		}
+	}
+	if o := offersOf(t, m, bobProxy)["m-bob"]; o.State != "declined" || o.Chosen {
+		t.Fatalf("unticked: %+v", o)
+	}
+	// Ticked: added as him, with the rules for the tools that only read.
+	if has, why := m.bridgeAtStart(setupReq(bobProxy), bobs, url, &yes); !has || why != "" || f.adds != 1 || len(f.rules) == 0 {
+		t.Fatalf("ticked: %v %q, %d adds, rules %v", has, why, f.adds, f.rules)
+	}
+	for _, rule := range f.rules {
+		if !chatReadTools[strings.TrimPrefix(rule, studioToolPrefix)] {
+			t.Errorf("allows %s", rule)
+		}
+	}
+	for _, c := range f.calls {
+		if c != "pw://bob/bobs-cluster pwt_bobs.key" {
+			t.Errorf("ran as %q", c)
+		}
+	}
+	if o := offersOf(t, m, bobProxy)["m-bob"]; o.State != "set" || !o.Chosen {
+		t.Fatalf("added: %+v", o)
+	}
+	// There already: not opened again.
+	n := len(f.calls)
+	if has, _ := m.bridgeAtStart(setupReq(bobProxy), bobs, url, nil); !has || len(f.calls) != n {
+		t.Fatalf("again: %v, %d more runs", has, len(f.calls)-n)
+	}
+	// For another Studio it is another's entry, which is left as it is.
+	if has, why := m.bridgeAtStart(setupReq(bobProxy), bobs, "https://platform.example/me/session/ada/studio2/api/mcp", nil); has || !strings.Contains(why, "does not replace by itself") || f.adds != 1 {
+		t.Fatalf("another Studio's entry: %v %q, %d adds", has, why, f.adds)
+	}
+}
+
+// What keeps the tools from being added does not keep a session from
+// starting: it is said, and what will not change by itself is not tried
+// again at every start.
+func TestAStartWaitsOnceForWhatWillNotChange(t *testing.T) {
+	const url = "https://platform.example/me/session/ada/studio/api/mcp"
+	yes := true
+	bobs := bridgeMach{ID: "m-bob", Kind: "cloud", Name: "bobs-cluster", Owner: "bob", Status: "connected"}
+	for what, c := range map[string]struct {
+		set  func(*fakeMachine)
+		says string
+		held bool
+	}{
+		"another Studio's entry": {func(f *fakeMachine) {
+			f.entry = &bridgeEntry{}
+			f.entry.Config.Type, f.entry.Config.URL = "http", "https://platform.example/me/session/cy/old/api/mcp"
+		}, "pw code there has a studio entry for https://platform.example/me/session/cy/old/api/mcp", true},
+		"pw signed in as someone else": {func(f *fakeMachine) { f.who = "ada" }, "signed in as ada", true},
+		"out of reach": {func(f *fakeMachine) {
+			f.m.bridgeRunFn = func(_ context.Context, site, key string, _ []string, _ time.Duration) (remote.Result, error) {
+				f.calls = append(f.calls, site+" "+key)
+				return remote.Result{}, errors.New("timed out")
+			}
+		}, "could not reach bobs-cluster with pw ssh", false},
+	} {
+		m, f, _ := setupStudio(t)
+		c.set(f)
+		has, why := m.bridgeAtStart(setupReq(bobProxy), bobs, url, &yes)
+		if has || !strings.Contains(why, c.says) || f.adds != 0 {
+			t.Fatalf("%s: %v %q, %d adds", what, has, why, f.adds)
+		}
+		n := len(f.calls)
+		if has, why = m.bridgeAtStart(setupReq(bobProxy), bobs, url, nil); has || !strings.Contains(why, c.says) || (len(f.calls) == n) != c.held {
+			t.Errorf("%s, again: %v %q, %d more runs", what, has, why, len(f.calls)-n)
+		}
+		o := offersOf(t, m, bobProxy)["m-bob"]
+		if o.State != "offer" || !o.Chosen || (o.Held != "") != c.held {
+			t.Errorf("%s: %+v", what, o)
+		}
+	}
+	// Choosing it again tries again.
+	m, f, _ := setupStudio(t)
+	f.who = "ada"
+	m.bridgeAtStart(setupReq(bobProxy), bobs, url, &yes)
+	f.who = "bob"
+	if code, out := setupAs(t, m, bobProxy, `{"machineId":"m-bob","check":true}`); code != 200 || out["worked"] != true {
+		t.Fatalf("%d %v", code, out)
+	}
+	if has, why := m.bridgeAtStart(setupReq(bobProxy), bobs, url, nil); !has || why != "" {
+		t.Errorf("after Add now: %v %q", has, why)
+	}
+	// Only as the machine's owner, and not where pw ssh does not reach.
+	n := len(f.calls)
+	for _, mach := range []bridgeMach{{ID: "m-ada", Kind: "cloud", Name: "adas-cluster", Owner: "ada", Status: "connected"}, {ID: "m-laptop", Kind: "local", Name: "bobs-laptop", Owner: "bob", Status: "connected"}, {ID: "m-off", Kind: "cloud", Name: "bobs-old", Owner: "bob", Status: "no_agent"}} {
+		if has, _ := m.bridgeAtStart(setupReq(bobProxy), mach, url, &yes); has || len(f.calls) != n {
+			t.Errorf("%s: %v, %d runs", mach.ID, has, len(f.calls)-n)
+		}
 	}
 }

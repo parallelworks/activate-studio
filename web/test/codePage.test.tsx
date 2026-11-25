@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { pagePath } from '../src/code/api'
 import { CodePage } from '../src/code/CodePage'
+import { PageHeadSlot } from '../src/pageHead'
 import { continuable, sessionInHash, type Here } from '../src/code/openInStudio'
 
 // The session view's client takes the page's fetch as it loads.
@@ -11,6 +12,16 @@ vi.hoisted(() => {
   globalThis.fetch = current
 })
 
+// A checkbox forwards its press to its hidden input as a PointerEvent, which
+// jsdom does not define.
+if (!('PointerEvent' in window)) {
+  class PointerEventShim extends MouseEvent {
+    pointerType: string
+    constructor(type: string, init: PointerEventInit = {}) { super(type, init); this.pointerType = init.pointerType ?? '' }
+  }
+  Object.assign(window, { PointerEvent: PointerEventShim })
+}
+
 const machine = { id: 'm1', name: 'box', kind: 'existing', status: 'connected', remoteStart: true, directories: true, claudeCodeAllowed: false, hostname: 'box.example', daemonId: 'd1' }
 const other = { ...machine, id: 'm2', name: 'gpu', hostname: 'gpu.example', daemonId: 'd2' }
 const now = new Date().toISOString()
@@ -19,7 +30,7 @@ const session = (o: Record<string, unknown>) => ({ machineId: 'm1', id: 'x', nam
 interface Sent { method: string; path: string; body: Record<string, unknown> | null }
 
 /** The Studio's routes the page calls, answered as the Studio would. */
-function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown; setupStatus?: number; create?: () => Promise<Response> } = {}) {
+function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: unknown[]; where?: unknown; delegated?: unknown[]; continueAnswer?: (body: Record<string, unknown>) => unknown; toolsMachines?: unknown[]; setup?: unknown; setupStatus?: number; create?: () => Promise<Response>; createOther?: () => Promise<Response> } = {}) {
   const sent: Sent[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = input instanceof Request ? input : new Request(new URL(String(input), 'http://studio.example'), init)
@@ -39,8 +50,12 @@ function studio(over: { here?: Partial<Here>; sessions?: unknown[]; machines?: u
         return json(over.continueAnswer ? over.continueAnswer(body ?? {}) : body?.confirmed ? { conversationId: 'c1' } : { confirm: 'Your messages go to mesh refinement on box.' })
       case '/api/mcp/bridge/machines': return json({ available: true, machines: over.toolsMachines ?? [] })
       case '/api/mcp/bridge/setup': return json(over.setup ?? { done: true, worked: true, changed: true, tools: 40, live: 'next' }, over.setupStatus)
+      case '/api/mcp/bridge/remove': return json({ removed: true, rules: 2 })
       case '/api/mcp/bridge/prefs': return json({ ok: true })
       case '/api/code-page/machines/m1/directories': return json({ path: '/home/alex', home: '/home/alex', entries: [] })
+      case '/api/code-page/machines/m2/sessions':
+        if (over.createOther) return over.createOther()
+        return json({ id: 'new2', machineId: 'm2', name: '', status: 'working', workspace: body?.workspace, createdAt: now, updatedAt: now }, 201)
       case '/api/code-page/machines/m1/sessions':
         if (over.create) return over.create()
         return json({ id: 'new1', machineId: 'm1', name: '', status: 'working', workspace: body?.workspace, createdAt: now, updatedAt: now, conversationId: 'c1', shownOn: 'studio' }, 201)
@@ -200,101 +215,155 @@ describe('the Code page', () => {
     sessionStorage.clear()
   })
 
-  it('offers the Studio\'s tools once for a machine that lacks them', async () => {
-    const cpu = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3' }
-    let sent = studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'set', machine: 'box', machineId: 'm1' }] })
-    render(<CodePage />)
-    const offer = await screen.findByTestId('machine-tools-offer')
-    expect(offer).toHaveTextContent('pw code on gpu')
-    fireEvent.click(within(offer).getByRole('button', { name: 'Add' }))
-    expect(await screen.findByTestId('machine-tools-said')).toHaveTextContent("pw code on gpu now has this Studio's tools (40 of them)")
-    expect(sent.find(s => s.path === '/api/mcp/bridge/setup')?.body).toEqual({ machineId: 'm2' })
-    // Offered once: not again on the next visit.
+  const own = { ...machine, remoteStart: false }
+  const START = '/api/code-page/machines/m2/sessions'
+  /** The page with gpu chosen to start on, and what the Studio knows of its tools. */
+  const onGpu = (tools: Record<string, unknown>, over: Parameters<typeof studio>[0] = {}, gpu: Record<string, unknown> = {}) => {
     cleanup()
-    sent = studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'offer', machine: 'cpu', machineId: 'm3' }] })
+    location.hash = '#view=code'
+    const sent = studio({ machines: [own, { ...other, ...gpu }], sessions: [session({ id: 's1', name: 'mesh refinement' }), session({ id: 's4', machineId: 'm2', name: 'far one', workspace: '/data/runs' })], toolsMachines: [{ machine: 'gpu', machineId: 'm2', ...tools }], ...over })
     render(<CodePage />)
-    const next = await screen.findByTestId('machine-tools-offer')
-    expect(next).toHaveTextContent('pw code on cpu')
-    fireEvent.click(within(next).getByRole('button', { name: 'Not on cpu' }))
-    await waitFor(() => expect(sent.find(s => s.path === '/api/mcp/bridge/prefs')?.body).toEqual({ machineId: 'm3', add: false }))
-    expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
+    return sent
+  }
+  const startOne = async () => {
+    const box = await screen.findByRole('textbox', { name: /message|task|describe/i }).catch(() => document.querySelector('textarea')!)
+    fireEvent.change(box, { target: { value: 'go' } })
+    await waitFor(() => expect(screen.getByTestId('agents-start-button')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('agents-start-button'))
+  }
+  const toolsMark = () => screen.findByTestId('machine-tools-button')
+
+  it('has no line of text or row of buttons over the start: they are in the header and on the machine', async () => {
+    for (const tools of [{ state: 'set', available: true }, { state: 'command', command: 'pw code mcp add x', why: 'the Studio cannot open a terminal on it.' }, { state: 'unavailable', why: 'pw ssh does not reach gpu.' }]) {
+      onGpu(tools)
+      await toolsMark()
+      const main = document.querySelector('.code-start')!
+      expect(main.textContent).not.toMatch(/Studio's tools|pw ssh|terminal/)
+    }
+    const head = document.querySelector('.page-head-actions')!
+    for (const name of ['New session', 'How sessions appear']) expect(within(head as HTMLElement).getByRole('button', { name })).toHaveTextContent('')
+    expect(await within(head as HTMLElement).findByRole('link', { name: 'Open in ACTIVATE' })).toHaveAttribute('href', 'https://platform.example/code')
   })
 
-  // Matthew saw the offer for a cluster that was not connected. Only a
-  // machine the page lists as connected is offered, whatever the Studio's
-  // own answer says.
-  it('offers the tools only on a machine the page shows online', async () => {
-    const stopped = { ...other, status: 'unreachable' }
-    const noDaemon = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3', status: 'no_daemon' }
-    const tpu = { ...other, id: 'm4', name: 'tpu', hostname: 'tpu.example', daemonId: 'd4' }
-    studio({ machines: [machine, stopped, noDaemon, tpu], toolsMachines: [
-      { state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'offer', machine: 'cpu', machineId: 'm3' },
-      { state: 'set', machine: 'box', machineId: 'm1' }, { state: 'set', machine: 'tpu', machineId: 'm4' }] })
+  it('draws the controls in the page header where there is one', async () => {
+    studio()
+    render(<><header data-testid="head"><PageHeadSlot /></header><CodePage /></>)
+    expect(await within(screen.getByTestId('head')).findByTestId('agents-new-session')).toBeInTheDocument()
+    expect(screen.getAllByTestId('agents-new-session').length).toBe(1)
+  })
+
+  it('marks each machine in the menu and beside the one chosen', async () => {
+    const cpu = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3' }
+    studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2', available: true }, { state: 'set', machine: 'cpu', machineId: 'm3' }] })
     render(<CodePage />)
+    // The Studio's own always has them.
+    fireEvent.click(await screen.findByTestId('agents-machine-chip'))
+    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: /^box/ }).catch(() => screen.findByRole('menuitem', { name: /^box/ })))
+    expect((await toolsMark())).toHaveAccessibleName("pw code on box has this Studio's tools")
+    fireEvent.click(screen.getByTestId('agents-machine-chip'))
+    const row = async (name: RegExp) => (await screen.findByText(name, { selector: '[role^="menuitem"] *' })).closest('[role^="menuitem"]') as HTMLElement
+    for (const [name, on] of [[/^box$/, 'true'], [/^gpu$/, 'false'], [/^cpu$/, 'true']] as const) {
+      const r = await row(name)
+      expect(within(r).getByTestId('tools-mark')).toHaveAttribute('data-on', on)
+      expect(r).toHaveTextContent(on === 'true' ? "with this Studio's tools" : "without this Studio's tools")
+    }
+  })
+
+  it('gives a computer that connected itself its one command, and nothing more', async () => {
+    onGpu({ state: 'command', command: "pw code mcp add --scope user studio -- sh -c 'x'", uncommand: 'pw code mcp remove --scope user studio', why: 'gpu is a computer that connected itself to ACTIVATE.' }, {}, { kind: 'local' })
+    fireEvent.click(await toolsMark())
+    const tip = await screen.findByTestId('machine-tools-popover')
+    expect(tip.querySelectorAll('p').length).toBe(1)
+    expect(tip).toHaveTextContent("Run this once on gpu to give its pw code this Studio's tools:pw code mcp add --scope user studio -- sh -c 'x'")
+    expect(within(tip).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Copy command'])
+    expect(screen.queryByTestId('machine-tools-choice')).toBeNull()
+  })
+
+  it('asks once, ticked, as the first session starts on a machine it can add them to', async () => {
+    const reply = () => new Response(JSON.stringify({ id: 'new2', machineId: 'm2', status: 'working', createdAt: now, updatedAt: now, conversationId: 'c2', shownOn: 'm2' }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+    let sent = onGpu({ state: 'offer', available: true, allows: ['list_kb_dir', 'search_kb'] }, { createOther: async () => reply() })
+    const choice = await screen.findByTestId('machine-tools-choice')
+    expect(choice).toHaveTextContent("Add the Studio's tools to gpu")
+    expect(within(choice).getByRole('checkbox')).toBeChecked()
+    await startOne()
+    await waitFor(() => expect(sent.find(s => s.path === START)?.body).toMatchObject({ prompt: 'go', studioTools: true }))
+    expect(sent.some(s => s.path === '/api/mcp/bridge/setup')).toBe(false)
+    // Unticked: kept, and sent with the start.
+    sent = onGpu({ state: 'offer', available: true }, { createOther: async () => reply() })
+    fireEvent.click(within(await screen.findByTestId('machine-tools-choice')).getByRole('checkbox'))
+    await startOne()
+    await waitFor(() => expect(sent.find(s => s.path === START)?.body).toMatchObject({ studioTools: false }))
+    // Chosen before, said no to, there already, or given by the machine: not asked.
+    for (const tools of [{ state: 'offer', available: true, chosen: true }, { state: 'declined', available: true }, { state: 'set', available: true }, { state: 'offer', attach: true }, { state: 'unavailable', why: 'x' }]) {
+      sent = onGpu(tools, { createOther: async () => reply() })
+      await toolsMark()
+      expect(screen.queryByTestId('machine-tools-choice')).toBeNull()
+      await startOne()
+      await waitFor(() => expect(sent.find(s => s.path === START)).toBeTruthy())
+      expect(sent.find(s => s.path === START)!.body).not.toHaveProperty('studioTools')
+    }
+  })
+
+  it('never asks about a machine the page does not list as connected', async () => {
+    onGpu({ state: 'offer', available: true }, {}, { status: 'unreachable' })
     await listed('mesh refinement')
     await new Promise(r => setTimeout(r, 50))
-    expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
+    expect(screen.queryByTestId('machine-tools-choice')).toBeNull()
   })
 
-  it('offers the tools on the machine chosen on the page, not another', async () => {
-    // box is the one machine to start on, so it is chosen; gpu is online too.
-    const watchOnly = { ...other, remoteStart: false }
-    studio({ machines: [machine, watchOnly], toolsMachines: [
-      { state: 'offer', machine: 'gpu', machineId: 'm2' }, { state: 'offer', machine: 'box', machineId: 'm1' }] })
-    render(<CodePage />)
-    expect(await screen.findByTestId('machine-tools-offer')).toHaveTextContent('pw code on box')
+  it('says it is adding them while the session starts', async () => {
+    onGpu({ state: 'offer', available: true, chosen: true }, { createOther: () => new Promise(() => {}) })
+    await toolsMark()
+    await startOne()
+    expect(await screen.findByTestId('code-starting')).toHaveTextContent("Adding the Studio's tools, then starting on gpu")
   })
 
-  // A session on another machine never starts silently without the tools:
-  // said each time one is chosen to start on, with Add or why not.
-  it('says each time that a session on another machine would lack the tools', async () => {
-    const own = { ...machine, remoteStart: false }
-    const at = (toolsMachines: unknown[]) => { cleanup(); studio({ machines: [own, other], toolsMachines }); render(<CodePage />) }
-    for (let visit = 0; visit < 2; visit++) {
-      at([{ state: 'offer', machine: 'gpu', machineId: 'm2' }])
-      const offer = await screen.findByTestId('machine-tools-offer')
-      expect(offer).toHaveTextContent("pw code on gpu does not have this Studio's tools, so a session there works with its own.")
-      within(offer).getByRole('button', { name: 'Add' })
-    }
-    at([{ state: 'unavailable', machine: 'gpu', machineId: 'm2', why: 'pw ssh does not reach gpu.' }])
-    expect(await screen.findByTestId('machine-tools-none')).toHaveTextContent('They cannot be added there now: pw ssh does not reach gpu.')
-    // Set up there, or attached as a session starts: only that read-only
-    // mode, the widest gpu takes here, does not run them.
-    for (const has of [{ state: 'set' }, { state: 'offer', attach: true }]) {
-      cleanup()
-      studio({ machines: [own, { ...other, remoteMaxPermissionMode: 'read-only' }], toolsMachines: [{ ...has, machine: 'gpu', machineId: 'm2' }] })
-      render(<CodePage />)
-      expect(await screen.findByTestId('machine-tools-mode')).toHaveTextContent("In read-only mode pw code on gpu does not run this Studio's tools for a chat here. In accept edits it asks you before each one.")
-      expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
-      expect(screen.queryByTestId('machine-tools-none')).toBeNull()
-    }
-  })
-
-  it('checks and removes the tools on a machine chosen to start on that has them, and says what Add allows', async () => {
-    const own = { ...machine, remoteStart: false }
-    const sent = studio({ machines: [own, other], toolsMachines: [{ state: 'set', machine: 'gpu', machineId: 'm2' }] })
-    render(<CodePage />)
-    const line = await screen.findByTestId('machine-tools-set')
-    expect(line).toHaveTextContent("pw code on gpu has this Studio's tools.")
-    fireEvent.click(within(line).getByRole('button', { name: 'Remove' }))
-    within(line).getByRole('button', { name: 'Keep' })
+  it('checks and removes them from the machine\'s menu, once asked', async () => {
+    const sent = onGpu({ state: 'set', available: true, allows: ['search_kb'] })
+    await toolsMark()
+    fireEvent.click(screen.getByTestId('agents-machine-chip'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Check' }))
+    await waitFor(() => expect(sent.find(s => s.path === '/api/mcp/bridge/setup')?.body).toEqual({ machineId: 'm2', check: true }))
+    fireEvent.click(screen.getByTestId('agents-machine-chip'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove' }))
+    const dialog = await screen.findByRole('dialog').catch(() => screen.findByRole('alertdialog'))
+    expect(dialog).toHaveTextContent('with the rules that let the ones that only read run without asking')
     expect(sent.some(s => s.path === '/api/mcp/bridge/remove')).toBe(false)
-    fireEvent.click(within(line).getByRole('button', { name: 'Check' }))
-    await screen.findByTestId('machine-tools-said')
-    expect(sent.find(s => s.path === '/api/mcp/bridge/setup')?.body).toEqual({ machineId: 'm2', check: true })
-    cleanup()
-    studio({ machines: [own, other], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2', allows: ['list_kb_dir', 'search_kb'] }] })
-    render(<CodePage />)
-    expect(await screen.findByTestId('studio-tools-allows')).toHaveTextContent('as they only read: list_kb_dir, search_kb.')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(sent.find(s => s.path === '/api/mcp/bridge/remove')?.body).toEqual({ machineId: 'm2' }))
   })
 
-  it('says plainly that a machine gone offline is not connected', async () => {
-    const cpu = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3' }
-    studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }],
-      setupStatus: 409, setup: { error: 'gpu is not connected. Start it, then add the tools.' } })
+  it('adds them from the menu, saying what that allows, and says why it could not at a start', async () => {
+    const sent = onGpu({ state: 'offer', available: true, chosen: true, held: 'pw there is signed in as someone else.', allows: ['list_kb_dir', 'search_kb'] })
+    fireEvent.click(await toolsMark())
+    expect(await screen.findByTestId('machine-tools-popover')).toHaveTextContent("pw code on gpu does not have this Studio's tools: pw there is signed in as someone else.")
+    fireEvent.click(within(screen.getByTestId('machine-tools-popover')).getByRole('button', { name: 'Add' }))
+    expect(await screen.findByTestId('studio-tools-allows')).toHaveTextContent('as they only read: list_kb_dir, search_kb.')
+    const dialog = screen.getByTestId('studio-tools-allows').closest('[role$="dialog"]') as HTMLElement
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }))
+    await waitFor(() => expect(sent.find(s => s.path === '/api/mcp/bridge/setup')?.body).toEqual({ machineId: 'm2' }))
+  })
+
+  it('says read-only mode does not run them on another machine, where the mark says how it stands', async () => {
+    for (const has of [{ state: 'set' }, { state: 'offer', attach: true }]) {
+      onGpu(has, {}, { remoteMaxPermissionMode: 'read-only' })
+      fireEvent.click(await toolsMark())
+      expect(await screen.findByTestId('machine-tools-mode')).toHaveTextContent('In read-only mode it does not run them for a chat here.')
+    }
+  })
+
+  it('shows each machine\'s own icon in the menu, the list and the start', async () => {
+    const linux = { ...own, kind: 'local', os: 'linux' }
+    studio({ machines: [linux, { ...other, schedulerType: 'slurm' }], sessions: [session({ id: 's1', name: 'mesh refinement' }), session({ id: 's4', machineId: 'm2', name: 'far one' })] })
     render(<CodePage />)
-    fireEvent.click(within(await screen.findByTestId('machine-tools-offer')).getByRole('button', { name: 'Add' }))
-    expect(await screen.findByTestId('machine-tools-said')).toHaveTextContent('gpu is not connected. Start it, then add the tools.')
+    const src = (el: Element | null | undefined) => [...(el?.querySelectorAll('img') ?? [])].map(i => decodeURIComponent(i.getAttribute('src') ?? '').replace('/api/code-page/icon?path=/assets/images/icons/', ''))
+    expect(src(await listed('mesh refinement'))).toEqual(['compute/penguin.png'])
+    expect(src(await listed('far one'))).toEqual(['compute/slurm.png', 'compute/slurm-dark.png'])
+    expect(src(await screen.findByTestId('agents-machine-chip'))).toEqual(['compute/slurm.png', 'compute/slurm-dark.png'])
+    // One that does not load becomes the plain glyph.
+    fireEvent.error(screen.getByTestId('agents-machine-chip').querySelector('img')!)
+    expect(screen.getByTestId('agents-machine-chip').querySelector('img')).toBeNull()
+    expect(screen.getByTestId('agents-machine-chip').querySelector('svg.code-machine-icon')).not.toBeNull()
   })
 
   it('renames and archives from a row menu, as the session actions of the package do', async () => {

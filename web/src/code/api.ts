@@ -38,13 +38,29 @@ async function keepStarted(request: Request, body: ArrayBuffer | undefined, res:
   startedHere.set(d.id, { conversationId: d.conversationId, shownOn: d.shownOn, first })
 }
 
+/** Whether the next start on a machine adds the Studio's tools there first,
+ *  as the person chose on the page; the Studio reads it and sends it no
+ *  further. With no choice, the one they made before stands. */
+const toolsChoice = new Map<string, boolean>()
+export function setToolsChoice(machine: string, add: boolean | undefined): void {
+  if (add === undefined) toolsChoice.delete(machine)
+  else toolsChoice.set(machine, add)
+}
+
+function withToolsChoice(request: Request, path: string, body: ArrayBuffer | undefined): ArrayBuffer | string | undefined {
+  const machine = request.method === 'POST' && body && /\/machines\/([^/]+)\/sessions$/.exec(path)?.[1]
+  const add = machine ? toolsChoice.get(decodeURIComponent(machine)) : undefined
+  if (add === undefined) return body
+  try { return JSON.stringify({ ...JSON.parse(new TextDecoder().decode(body)), studioTools: add }) } catch { return body }
+}
+
 /** The same request at the Studio's path. A Request is not a RequestInit:
  *  passed as one it loses its body, or throws on a streamed one. */
 const pageFetch = async (request: Request): Promise<Response> => {
   const url = new URL(request.url)
   url.pathname = pagePath(url.pathname)
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
-  const res = await fetch(url, { method: request.method, headers: request.headers, body, signal: request.signal, credentials: 'same-origin' })
+  const res = await fetch(url, { method: request.method, headers: request.headers, body: withToolsChoice(request, url.pathname, body), signal: request.signal, credentials: 'same-origin' })
   await keepStarted(request, body, res)
   return res
 }

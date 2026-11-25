@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const chat = { isStreaming: false }
@@ -9,6 +9,16 @@ import { createStudioAdapter } from '../src/adapter'
 import { NewChatTargetSlot } from '../src/pwcode/NewChatTarget'
 import { pickModel, pickedModel } from '../src/pwcode/newChatPick'
 import { firstMessageStart, forgetStarts, startOf } from '../src/pwcode/newChatStart'
+
+// A checkbox forwards its press to its hidden input as a PointerEvent, which
+// jsdom does not define.
+if (!('PointerEvent' in window)) {
+  class PointerEventShim extends MouseEvent {
+    pointerType: string
+    constructor(type: string, init: PointerEventInit = {}) { super(type, init); this.pointerType = init.pointerType ?? '' }
+  }
+  Object.assign(window, { PointerEvent: PointerEventShim })
+}
 
 const base = { status: 'connected', remoteStart: true, directories: true, claudeCodeAllowed: false, claudeInstalled: false }
 const own = { ...base, id: 'studio', name: 'box', kind: 'existing' }
@@ -66,7 +76,7 @@ describe('where a new pw code chat starts', () => {
     expect(await folderChip()).toHaveTextContent('kb')
     // In the row the package keeps over an empty chat's composer.
     expect(screen.getByTestId('kept')).toContainElement(screen.getByTestId('pwcode-start'))
-    expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
+    expect(screen.queryByTestId('machine-tools-choice')).toBeNull()
     expect(screen.queryByRole('button', { name: /permission/i })).toBeNull()
     expect(firstMessageStart(null)).toEqual({})
     await act(async () => { await new Promise(r => setTimeout(r, 100)) })
@@ -142,30 +152,34 @@ describe('where a new pw code chat starts', () => {
     await waitFor(() => expect(startOf(null).folder).toBe('/home/them'))
   })
 
-  it('says another machine lacks the Studio\'s tools and adds them', async () => {
+  it('asks, ticked, to add the Studio\'s tools to a machine that lacks them, and sends the choice', async () => {
     const asked = studio()
     render(<Chat />)
+    await machineChip()
+    expect(screen.queryByTestId('machine-tools-choice')).toBeNull()
     await chooseMachine(/gpu/)
-    expect(await screen.findByTestId('machine-tools-offer')).toHaveTextContent("pw code on gpu does not have this Studio's tools")
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
-    expect(await screen.findByTestId('machine-tools-said')).toHaveTextContent("pw code on gpu now has this Studio's tools (40 of them)")
-    expect(asked).toContain('POST /api/mcp/bridge/setup')
+    const choice = await screen.findByTestId('machine-tools-choice')
+    expect(choice).toHaveTextContent("Add the Studio's tools to gpu")
+    await waitFor(() => expect(startOf(null)).toMatchObject({ machine: { id: 'm2' }, tools: true }))
+    expect(firstMessageStart(null)).toMatchObject({ pwcodeMachine: 'm2', pwcodeTools: true })
+    fireEvent.click(within(choice).getByRole('checkbox'))
+    await waitFor(() => expect(firstMessageStart(null)).toMatchObject({ pwcodeMachine: 'm2', pwcodeTools: false }))
+    // The Studio adds them as the chat's session starts, not the page.
+    expect(asked).not.toContain('POST /api/mcp/bridge/setup')
   })
 
-  it('says why they cannot be added, and nothing where they are there already', async () => {
-    studio({ tools: [{ state: 'unavailable', machine: 'gpu', machineId: 'm2', why: 'pw ssh does not reach gpu.' }] })
-    const { unmount } = render(<Chat />)
-    await chooseMachine(/gpu/)
-    expect(await screen.findByTestId('machine-tools-none')).toHaveTextContent('works with its own. They cannot be added there now: pw ssh does not reach gpu.')
-    unmount()
-    forgetStarts()
-    studio({ tools: [{ state: 'set', machine: 'gpu', machineId: 'm2' }] })
-    render(<Chat />)
-    await chooseMachine(/gpu/)
-    await waitFor(() => expect(startOf(null).machine?.id).toBe('m2'))
-    await act(async () => { await new Promise(r => setTimeout(r, 100)) })
-    expect(screen.queryByTestId('machine-tools-none')).toBeNull()
-    expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
+  it('marks whether the machine has them, with no sentence in the chat', async () => {
+    for (const [tools, on] of [[{ state: 'unavailable', why: 'pw ssh does not reach gpu.' }, 'false'], [{ state: 'set' }, 'true']] as const) {
+      forgetStarts()
+      studio({ tools: [{ machine: 'gpu', machineId: 'm2', ...tools }] })
+      const { unmount } = render(<Chat />)
+      await chooseMachine(/gpu/)
+      await waitFor(() => expect(startOf(null).machine?.id).toBe('m2'))
+      await waitFor(() => expect(within(screen.getByTestId('pwcode-start')).getByTestId('tools-mark')).toHaveAttribute('data-on', on))
+      expect(screen.getByTestId('pwcode-start').textContent).not.toMatch(/Studio's tools|pw ssh/)
+      expect(firstMessageStart(null)).not.toHaveProperty('pwcodeTools')
+      unmount()
+    }
   })
 
   it('shows a persona\'s own folder, and says a persona does not go to another machine', async () => {

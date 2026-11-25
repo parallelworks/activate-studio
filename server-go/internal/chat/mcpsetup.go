@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,11 +16,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
 	"github.com/parallelworks/activate-studio/server-go/internal/platform"
+	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 	"github.com/parallelworks/activate-studio/server-go/internal/sessions"
@@ -93,11 +96,22 @@ printf 'entry=%s\n' "$("$p" code mcp get --scope user "$1" -o json 2>/dev/null |
 
 // bridgePaste is the command a person pastes in a terminal on the machine
 // to do what Set up for me does there: the same entry, which uses that
-// machine's own pw sign-in, so it needs no key.
-func bridgePaste(url string) string {
+// machine's own pw sign-in, so it needs no key. Made for one machine, the
+// entry names it in its address, so the Studio knows which machine a
+// session that starts there is on.
+func bridgePaste(url, machine string) string {
+	if pwcode.IsRouteID(machine) {
+		url += bridgeMachineParam + machine
+	}
 	return "pw code mcp add --scope user --force " + studioMCPName + " -- sh -c " + bridgeQuote(bridgeShim) +
 		" " + bridgeShimName + " " + bridgeQuote(url) + ` "$(command -v pw)"`
 }
+
+// bridgeMachineParam names the machine in an entry's address.
+const bridgeMachineParam = "?machine="
+
+// bridgeUnpaste is the command that takes bridgePaste's entry out again.
+const bridgeUnpaste = "pw code mcp remove --scope user " + studioMCPName
 
 // bridgeQuote is s in single quotes for a POSIX shell.
 func bridgeQuote(s string) string {
@@ -123,13 +137,21 @@ type bridgeMach struct {
 	// answers ACTIVATE.
 	Status string
 	Attach bool
+	// Create: its pw code takes the Studio's tools in the request that makes
+	// a session (sessionMCPCreate, asked for of ACTIVATE).
+	Create bool
 }
+
+// gives: a session started on it from here is given the Studio's tools as
+// it starts, with nothing set up on the machine.
+func (b bridgeMach) gives() bool { return b.Attach || b.Create }
 
 func machOf(o *jsonv.Object) bridgeMach {
 	attach, _ := jsonv.Path(o, "sessionMCPAttach").(bool)
+	create, _ := jsonv.Path(o, "sessionMCPCreate").(bool)
 	return bridgeMach{ID: jsonv.String(jsonv.Path(o, "id")), Kind: jsonv.String(jsonv.Path(o, "kind")),
 		Name: jsonv.String(jsonv.Path(o, "name")), Owner: jsonv.String(jsonv.Path(o, "owner")),
-		Status: jsonv.String(jsonv.Path(o, "status")), Attach: attach}
+		Status: jsonv.String(jsonv.Path(o, "status")), Attach: attach, Create: create}
 }
 
 // bridgeOnline is whether mach is online as the Code page says it is: on,
@@ -200,13 +222,10 @@ func (m *Module) bridgeCheck(r *http.Request, mach bridgeMach) (key string, err 
 	if u == nil || u.Username == "" {
 		return "", pwErr(401, "Sign in to set up pw code.")
 	}
+	if why := bridgeByHand(mach); why != "" {
+		return "", pwErr(409, why)
+	}
 	switch {
-	case mach.Kind == "local":
-		return "", pwErr(409, name+" is a computer that connected itself to ACTIVATE, and the Studio cannot open a terminal on it: do it yourself in a terminal there.")
-	case mach.Kind != "cloud" && mach.Kind != "instance" && mach.Kind != "existing":
-		return "", pwErr(409, "The Studio does not know how to reach "+name+" (an ACTIVATE machine of kind "+firstNonEmpty(mach.Kind, "unknown")+"): do it yourself in a terminal there.")
-	case mach.Name == "" || !bridgeName.MatchString(mach.Name) || mach.Owner != "" && !bridgeName.MatchString(mach.Owner):
-		return "", pwErr(409, "The Studio cannot name "+name+" to pw ssh: do it yourself in a terminal there.")
 	case mach.Kind != "existing" && !strings.EqualFold(mach.Owner, u.Username):
 		return "", pwErr(403, name+" is "+firstNonEmpty(mach.Owner, "someone else")+"'s, not yours: only its owner sets up pw code there.")
 	}
@@ -215,6 +234,21 @@ func (m *Module) bridgeCheck(r *http.Request, mach bridgeMach) (key string, err 
 		return "", pwErr(409, "The Studio reaches "+name+" with your own ACTIVATE sign-in, and has none for you: sign in with ACTIVATE under Settings, Accounts, or do it yourself.")
 	}
 	return key, nil
+}
+
+// bridgeByHand is why the Studio has no pw ssh to mach, whoever asks: the
+// person adds the tools there with a command (bridgePaste) instead.
+func bridgeByHand(mach bridgeMach) string {
+	name := firstNonEmpty(mach.Name, mach.ID)
+	switch {
+	case mach.Kind == "local":
+		return name + " is a computer that connected itself to ACTIVATE, and the Studio cannot open a terminal on it: do it yourself in a terminal there."
+	case mach.Kind != "cloud" && mach.Kind != "instance" && mach.Kind != "existing":
+		return "The Studio does not know how to reach " + name + " (an ACTIVATE machine of kind " + firstNonEmpty(mach.Kind, "unknown") + "): do it yourself in a terminal there."
+	case mach.Name == "" || !bridgeName.MatchString(mach.Name) || mach.Owner != "" && !bridgeName.MatchString(mach.Owner):
+		return "The Studio cannot name " + name + " to pw ssh: do it yourself in a terminal there."
+	}
+	return ""
 }
 
 // bridgeSite is the pw ssh site of the viewer's machine mach, always
@@ -347,8 +381,9 @@ func (m *Module) bridgeListed(r *http.Request, id, name string) (bridgeMach, err
 
 // bridgeOfferT is what the Studio says of its tools on a machine for the
 // viewer: set (pw code there has this Studio, as the Studio last found
-// it), declined (they said not to add it there), offer, or unavailable,
-// with why.
+// it), declined (they said not to add it there), offer, command (the
+// Studio cannot reach it, and the person can with a command), or
+// unavailable, with why.
 type bridgeOfferT struct {
 	State     string `json:"state"`
 	Machine   string `json:"machine"`
@@ -361,25 +396,50 @@ type bridgeOfferT struct {
 	// Attach: the machine takes the Studio's tools into a session as it
 	// starts, so one started from here has them without a setup.
 	Attach bool `json:"attach,omitempty"`
+	// Chosen: the person has said to add them there, so a session started
+	// there adds them with no question.
+	Chosen bool `json:"chosen,omitempty"`
+	// Held: what kept the Studio from adding them as a session started
+	// there; it does not try again until the person says to.
+	Held string `json:"held,omitempty"`
+	// Command adds the tools in a terminal on a machine the Studio does not
+	// reach, and Uncommand takes them out.
+	Command   string `json:"command,omitempty"`
+	Uncommand string `json:"uncommand,omitempty"`
 }
 
 func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 	o := bridgeOfferT{Machine: firstNonEmpty(mach.Name, mach.ID), MachineID: mach.ID}
 	url, why := m.bridgeReach(r)
-	if why == "" {
-		if _, err := m.bridgeCheck(r, mach); err != nil {
-			why = apiMessage(err)
-		}
-	}
 	if why != "" {
 		o.State, o.Why = "unavailable", why
 		return o
 	}
 	p := m.bridgePrefs().get(userID(r), mach.ID)
-	if p.URL != "" && p.URL == url {
+	set := p.URL != "" && p.URL == url
+	o.Attach = mach.gives() && m.viewerPlatformKey(r) != ""
+	o.Chosen, o.Held = p.Add, p.Held
+	if _, err := m.bridgeCheck(r, mach); err != nil {
+		why = apiMessage(err)
+	}
+	if why != "" && !o.Attach {
+		o.State, o.Why = "unavailable", why
+		if bridgeByHand(mach) == "" || user(r) == nil || m.viewerPlatformKey(r) == "" {
+			return o
+		}
+		o.State, o.Command, o.Uncommand = "command", bridgePaste(url, mach.ID), bridgeUnpaste
+		if set {
+			o.State = "set"
+		}
+		return o
+	}
+	if set {
 		// Set up already: so it stays while the machine is off, though it
 		// is not checked again until it is on.
-		o.State, o.Available, o.Allows = "set", bridgeOnline(mach) == nil, m.bridgeAllows(r)
+		o.State, o.Available, o.Allows = "set", why == "" && bridgeOnline(mach) == nil, m.bridgeAllows(r)
+		if why != "" && bridgeByHand(mach) != "" {
+			o.Command, o.Uncommand = bridgePaste(url, mach.ID), bridgeUnpaste
+		}
 		return o
 	}
 	// Offered, declined or not, only on a machine that is on with its pw
@@ -388,7 +448,7 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 		o.State, o.Why = "unavailable", apiMessage(err)
 		return o
 	}
-	o.Available, o.Attach, o.Allows = true, mach.Attach, m.bridgeAllows(r)
+	o.Available, o.Allows = why == "", m.bridgeAllows(r)
 	switch {
 	case p.Declined:
 		o.State = "declined"
@@ -433,7 +493,8 @@ type bridgeEntry struct {
 func (e *bridgeEntry) target() (url string, ours, current bool) {
 	c := e.Config
 	if c.Command == "sh" && len(c.Args) >= 4 && c.Args[0] == "-c" && c.Args[2] == bridgeShimName {
-		return c.Args[3], true, c.Args[1] == bridgeShim
+		at, _, _ := strings.Cut(c.Args[3], bridgeMachineParam)
+		return at, true, c.Args[1] == bridgeShim
 	}
 	if c.URL != "" {
 		return c.URL, false, false
@@ -526,7 +587,7 @@ func (m *Module) bridgeSetup(w http.ResponseWriter, r *http.Request) error {
 		return reqbody.OK(w, out)
 	}
 	if out["worked"] == true {
-		m.bridgePrefs().set(who, mach.ID, bridgePref{URL: url})
+		m.bridgePrefs().set(who, mach.ID, bridgePref{URL: url, Add: true})
 	}
 	// The session in front of them: pw code reads its servers when a
 	// session starts, and a daemon that attaches one to a live session
@@ -703,10 +764,119 @@ func (m *Module) bridgeAttach() bridgeAttachFn {
 	}
 }
 
-// bridgeDecline is POST /api/mcp/bridge/prefs {machineId, add}: whether
-// the person wants the Studio's tools added on that machine. Not wanting
-// them there keeps the Studio from offering them again for it until they
-// choose them.
+// bridgeChoose keeps whether the person wants the Studio's tools on machine.
+func (m *Module) bridgeChoose(who, machine string, add bool) {
+	p := m.bridgePrefs().get(who, machine)
+	if p.Add != add || p.Declined == add {
+		p.Add, p.Declined, p.Held = add, !add, ""
+		m.bridgePrefs().set(who, machine, p)
+	}
+}
+
+// bridgeStartWait is the most a session's start waits for the Studio's
+// tools to be added on its machine first.
+const bridgeStartWait = 45 * time.Second
+
+// bridgeAtStart adds the Studio's tools to pw code on mach before a session
+// starts there, since pw code reads its servers as one starts. chose is the
+// person's choice with this start, nil for the one they made before: with
+// none, or where they said not to, nothing is done. Where the tools could
+// not be added, why says so, and the session starts without them. What will
+// not change by itself (another Studio's entry, pw signed in as someone
+// else) is kept, so the next start does not wait for the same answer.
+func (m *Module) bridgeAtStart(r *http.Request, mach bridgeMach, url string, chose *bool) (has bool, why string) {
+	who := userID(r)
+	if chose != nil {
+		m.bridgeChoose(who, mach.ID, *chose)
+	}
+	p := m.bridgePrefs().get(who, mach.ID)
+	switch {
+	case p.URL == url:
+		return true, ""
+	case !p.Add || p.Declined:
+		return false, ""
+	case p.Held != "":
+		return false, p.Held
+	}
+	if bridgeByHand(mach) != "" {
+		return false, ""
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), bridgeStartWait)
+	defer cancel()
+	// A request of its own: resolving the viewer writes to the request.
+	r = r.WithContext(ctx)
+	site, key, err := m.bridgeSite(r, mach)
+	if err != nil {
+		return false, apiMessage(err)
+	}
+	release, err := m.bridgeClaim(r)
+	if err != nil {
+		return false, apiMessage(err)
+	}
+	defer release()
+	out, err := m.bridgeInstall(r, site, key, mach, url, false)
+	var refused *apierr.Error
+	switch {
+	case errors.As(err, &refused) && refused.Status == http.StatusConflict:
+		p.Held = apiMessage(err)
+	case err != nil:
+		why = apiMessage(err)
+	case out["ask"] == true:
+		at, _ := out["current"].(string)
+		p.Held = "pw code there has a studio entry for " + at + ", which the Studio does not replace by itself."
+	case out["worked"] != true:
+		why, _ = out["why"].(string)
+	default:
+		p.URL = url
+	}
+	if p.Held == "" && p.URL != url {
+		m.A.Log.Warn("mcp setup: a session starts without the Studio's tools", "user", who, "machine", mach.Name, "why", why)
+		return false, firstLine(why, 300)
+	}
+	m.bridgePrefs().set(who, mach.ID, p)
+	return p.URL == url, firstLine(p.Held, 300)
+}
+
+// bridgeMachineSeen keeps that a machine's pw code has this Studio, when a
+// session that starts there reaches the tools through an entry that names
+// the machine (bridgePaste): how the Studio knows it of one it cannot open.
+func (m *Module) bridgeMachineSeen(r *http.Request) {
+	machine, who := r.URL.Query().Get("machine"), userID(r)
+	if who == "" || !pwcode.IsRouteID(machine) {
+		return
+	}
+	url, why := m.bridgeReach(r)
+	if why != "" {
+		return
+	}
+	prefs := m.bridgePrefs()
+	if p := prefs.get(who, machine); p.URL == url || p.URL == "" && prefs.count(who) >= bridgeMachinesMost {
+		return
+	}
+	prefs.set(who, machine, bridgePref{URL: url, Add: true})
+	// A session just started there from here is the one that reached them.
+	for _, c := range m.Conv.List() {
+		if l := c.PWCode; l != nil && l.Relay && l.Picked && !l.HasTools && l.Machine == machine && deref(c.Owner) == user(r).Username && m.bridgeJustMade(l) {
+			now := *l
+			now.HasTools, now.ToolsError = true, ""
+			m.Conv.SetPWCode(c.ID, &now)
+		}
+	}
+}
+
+// bridgeJustMade is whether l's session was started within the last minutes.
+func (m *Module) bridgeJustMade(l *conversations.PWCodeLink) bool {
+	at, err := time.Parse(time.RFC3339, l.CreatedAt)
+	return err == nil && time.Since(at) < 5*time.Minute
+}
+
+// bridgeMachinesMost is the most machines kept for one person.
+const bridgeMachinesMost = 500
+
+// bridgeDecline is POST /api/mcp/bridge/prefs {machineId, add | forget}:
+// whether the person wants the Studio's tools added on that machine. Not
+// wanting them there keeps the Studio from offering them again for it until
+// they choose them; forget is neither, for a machine they took them out of.
 func (m *Module) bridgeDecline(w http.ResponseWriter, r *http.Request) error {
 	if bridgeCrossSite(r) {
 		return pwErr(403, "Change this from this Studio's own pages.")
@@ -723,9 +893,12 @@ func (m *Module) bridgeDecline(w http.ResponseWriter, r *http.Request) error {
 	if _, err := m.bridgeListed(r, id, ""); err != nil {
 		return err
 	}
-	p := m.bridgePrefs().get(userID(r), id)
-	p.Declined = !add
-	m.bridgePrefs().set(userID(r), id, p)
+	if forget, _ := rb.Get("forget").(bool); forget {
+		// The person takes them out themselves, where the Studio cannot.
+		m.bridgePrefs().set(userID(r), id, bridgePref{})
+		return reqbody.OK(w, reqbody.O("ok", true))
+	}
+	m.bridgeChoose(userID(r), id, add)
 	return reqbody.OK(w, reqbody.O("ok", true))
 }
 
@@ -750,11 +923,13 @@ func (m *Module) bridgeMachinesRoute(w http.ResponseWriter, r *http.Request) err
 }
 
 // bridgePref is what the Studio keeps of one person's machine: the Studio
-// URL pw code there was last found or set up to reach, and whether they
-// said not to add the tools there.
+// URL pw code there was last found or set up to reach, whether they said to
+// add the tools there or not to, and what kept the Studio from adding them.
 type bridgePref struct {
 	URL      string `json:"url,omitempty"`
+	Add      bool   `json:"add,omitempty"`
 	Declined bool   `json:"declined,omitempty"`
+	Held     string `json:"held,omitempty"`
 	At       string `json:"at,omitempty"`
 }
 
@@ -790,6 +965,13 @@ func (s *bridgePrefStore) get(user, machine string) bridgePref {
 	defer s.mu.Unlock()
 	s.load()
 	return s.all[user][machine]
+}
+
+func (s *bridgePrefStore) count(user string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.load()
+	return len(s.all[user])
 }
 
 func (s *bridgePrefStore) set(user, machine string, p bridgePref) {

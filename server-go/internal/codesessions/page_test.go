@@ -399,3 +399,96 @@ func TestACodePageStartGoesToTheChat(t *testing.T) {
 		t.Errorf("not offered: %d %v", code, out)
 	}
 }
+
+// Whether to add the Studio's tools on the machine is the chat's to read: it
+// is not sent to the platform, which refuses a field it does not know.
+func TestTheToolsChoiceGoesToTheChatOnly(t *testing.T) {
+	got := &asked{}
+	ceiling := "accept-edits"
+	plat := pagePlatform(t, got, &ceiling)
+	v := &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id", Username: "alex"}, Cred: &platform.Cred{Key: "alex-own-key"}}
+	url := signedInServer(t, map[string]string{"PW_GATEWAY_URL": plat.URL + "/api/openai/v1"}, false, func() *platform.Viewer { return v }, nil).URL + pagePrefix + "/machines/m1/sessions"
+	prev := StartInChat
+	t.Cleanup(func() { StartInChat = prev })
+	var seen []any
+	StartInChat = func(r *http.Request, machine string, mach, body *jsonv.Object) (*jsonv.Object, bool, error) {
+		seen = append(seen, jsonv.Path(body, StartTools))
+		return nil, false, nil
+	}
+	for _, c := range []struct {
+		body string
+		want any
+	}{{`{"workspace":"/w","studioTools":true}`, true}, {`{"workspace":"/w","studioTools":false}`, false}, {`{"workspace":"/w"}`, nil}} {
+		code, _ := send(t, "POST", url, c.body, nil)
+		sent, body := got.last()
+		if _, has := body[StartTools]; code != 200 || has || sent != "POST /api/code/machines/m1/sessions" || seen[len(seen)-1] != c.want {
+			t.Errorf("%s: %d, chat saw %v, sent %s %v", c.body, code, seen[len(seen)-1], sent, body)
+		}
+	}
+	n := got.n()
+	if code, _ := send(t, "POST", url, `{"workspace":"/w","studioTools":"yes"}`, nil); code != 400 || got.n() != n || len(seen) != 3 {
+		t.Errorf("not a choice: %d", code)
+	}
+}
+
+// A machine's icon is fetched from the platform with no credential, and
+// nothing but its icons is.
+func TestMachineIconsComeFromThePlatformAlone(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\nimage")
+	got := &asked{}
+	plat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.take(r)
+		switch r.URL.Path {
+		case "/assets/images/icons/compute/slurm.png", "/api/blobs/0123456789abcdef":
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(png)
+		case "/assets/images/icons/os/macos.svg":
+			w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+			w.Write([]byte("<svg/>"))
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte("<html>sign in</html>"))
+		}
+	}))
+	t.Cleanup(plat.Close)
+	v := &platform.Viewer{AuthEnabled: true, User: &platform.User{ID: "alex-id", Username: "alex"}, Cred: &platform.Cred{Key: "alex-own-key"}}
+	base := signedInServer(t, map[string]string{"PW_GATEWAY_URL": plat.URL + "/api/openai/v1"}, false, func() *platform.Viewer { return v }, nil).URL + pagePrefix + "/icon?path="
+	for path, want := range map[string]string{"/assets/images/icons/compute/slurm.png": "image/png", "/api/blobs/0123456789abcdef": "image/png", "/assets/images/icons/os/macos.svg": "image/svg+xml"} {
+		for range 2 {
+			res, err := http.Get(base + path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res.Body.Close()
+			if res.StatusCode != 200 || res.Header.Get("Content-Type") != want || !strings.Contains(res.Header.Get("Content-Security-Policy"), "sandbox") || res.Header.Get("X-Content-Type-Options") != "nosniff" {
+				t.Errorf("%s: %d %v", path, res.StatusCode, res.Header)
+			}
+		}
+	}
+	if got.n() != 3 {
+		t.Errorf("asked %v, where each is kept", got.reqs)
+	}
+	for _, a := range got.auth {
+		if a != "" {
+			t.Errorf("sent a credential: %q", a)
+		}
+	}
+	// A page in place of an image is none, and no other path is fetched.
+	if res, err := http.Get(base + "/assets/images/icons/compute/none.png"); err != nil || res.StatusCode != 404 {
+		t.Errorf("not an image: %v %v", res.StatusCode, err)
+	}
+	n := got.n()
+	for _, path := range []string{"", "/api/users/me", "/api/blobs/../users/me", "/api/blobs/0123456789abcdef/../../users", "//elsewhere.example/a.png", "https://elsewhere.example/a.png", "/assets/images/icons/compute/../../../a.png", "/assets/images/icons/compute/slurm.png%3Fx", "/assets/images/icons/compute/slurm.png%0a"} {
+		res, err := http.Get(base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 404 {
+			t.Errorf("%q: %d", path, res.StatusCode)
+		}
+	}
+	if got.n() != n {
+		t.Errorf("fetched %v", got.reqs[n:])
+	}
+}
