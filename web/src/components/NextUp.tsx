@@ -2,6 +2,7 @@ import { useChat } from '@parallelworks/ui/ai'
 import { useEffect, useRef, useState } from 'react'
 import { currentLibrary, setLibrary } from '../api'
 import { buildOpenHash } from '../nav'
+import { leaveUnsaved } from '../unsaved'
 
 /**
  * What to type next. When a turn ends, the server reads the tool calls it
@@ -47,6 +48,9 @@ export function middleCut(name: string, max = 32): string {
  *  A file the chat placed in the main library names no library, so the
  *  main one is chosen when another is open. */
 export function openWritten(s: Suggestion): void {
+  leaveUnsaved(() => goToWritten(s))
+}
+function goToWritten(s: Suggestion): void {
   const lib = s.lib || 'kb'
   const cur = currentLibrary()
   if (cur !== 'all' && cur !== lib) setLibrary(lib)

@@ -54,7 +54,7 @@ describe('the main library for a signed-in person who does not administer the St
     await configLoaded()
     fireEvent.contextMenu(await screen.findByText('reports'))
     await screen.findByRole('menuitem', { name: /^Download as zip/ })
-    for (const name of ['New folder', 'Upload files…', 'Upload a folder…', 'Rename…', 'Cut', 'Labels…', 'Delete folder…']) {
+    for (const name of ['New folder', 'New file…', 'Upload files…', 'Upload a folder…', 'Rename…', 'Cut', 'Labels…', 'Delete folder…']) {
       expect(item(name), name).toHaveAttribute('aria-disabled', 'true')
     }
     // Reading and copying out stay.
@@ -83,7 +83,7 @@ describe('the main library for a signed-in person who does not administer the St
     await configLoaded()
     fireEvent.contextMenu(await screen.findByText('reports'))
     await screen.findByRole('menuitem', { name: /^Download as zip/ })
-    for (const name of ['New folder', 'Upload files…', 'Rename…', 'Labels…', 'Delete folder…']) {
+    for (const name of ['New folder', 'New file…', 'Upload files…', 'Rename…', 'Labels…', 'Delete folder…']) {
       expect(item(name), name).not.toHaveAttribute('aria-disabled', 'true')
     }
   })

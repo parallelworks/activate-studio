@@ -1,3 +1,4 @@
+import { TextConflict } from './textFiles'
 import type { GufiCommand } from './components/GufiCommands'
 import type { Omission } from './components/OmittedLine'
 import type { GridSheetData } from './components/SheetGrid'
@@ -331,6 +332,13 @@ async function sendJson<T>(method: string, url: string, body?: unknown): Promise
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw Object.assign(new Error((data as { error?: string }).error ?? `${url}: ${res.status}`), { status: res.status })
   return data as T
+}
+
+/** A text file as a save left it. */
+export interface TextSaved {
+  path: string; version: string; size: number
+  /** Its library updates its own index after the change. */
+  reindexing?: boolean
 }
 
 let warmedAt = 0
@@ -733,6 +741,19 @@ export const api = {
     return getJson<{ hits: SearchHit[]; error?: string; gufi?: GufiCommand[]; slow?: string[]; omitted?: Omission[]; searched?: string[] }>(`/api/search?${params}`, opts.signal)
   },
   health: () => getJson<{ ok: boolean; gufi: boolean }>(`/healthz`),
+  /** A text file's whole text, to edit, with its version. */
+  textFile: (path: string) => getJson<{ path: string; content: string; version: string; size: number }>(`/api/kb/text?path=${encodeURIComponent(path)}`),
+  /** Writes a text file over the version named, or makes a new one (NO_BASE).
+   *  Refused with a TextConflict rather than written over something else. */
+  saveText: async (path: string, text: string, base: string): Promise<TextSaved> => {
+    const res = await fetch(withLibrary(`/api/kb/text?path=${encodeURIComponent(path)}&base=${base}`, 'PUT'), {
+      method: 'PUT', headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: text,
+    })
+    const d = await res.json().catch(() => ({})) as Partial<TextSaved> & { error?: string; conflict?: 'changed' | 'missing' | 'exists' }
+    if (res.status === 409 && d.conflict) throw new TextConflict(d.conflict, d.error ?? 'the file was not saved', d.version)
+    if (!res.ok || typeof d.path !== 'string') throw Object.assign(new Error(d.error ?? `save: ${res.status}`), { status: res.status })
+    return { ...(d as TextSaved), path: prefixFor(path)(d.path) }
+  },
   mkdir: async (path: string) => {
     const r = await postJson<{ created: string }>(`/api/kb/mkdir`, { path })
     return { ...r, created: prefixFor(path)(r.created) }

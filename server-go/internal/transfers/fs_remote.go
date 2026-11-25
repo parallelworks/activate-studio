@@ -85,7 +85,7 @@ plain() {
 # mine: in a private location, the folder this is in is this account's and
 # closed to every other, so nothing in it is another's doing.
 mine() { [ -n "${PRIV:-}" ] || return 0; [ -O . ] || return 1; case "$(ls -ld . | cut -c5-10)" in ------|--S---) return 0;; esac; return 1; }
-if [ "${GUARD:-}" = 1 ]; then case "$cmd" in write|mkdir|land|remove|rmstage|rmtree|pstart|part) guard ;; esac; fi
+if [ "${GUARD:-}" = 1 ]; then case "$cmd" in write|mkdir|land|remove|rmstage|rmtree|pstart|part|text|swap) guard ;; esac; fi
 G=0; find . -maxdepth 0 -printf '' >/dev/null 2>&1 && G=1
 F='%y\t%s\t%T@\t%m\t%p\0'
 SF='%HT%t%z%t%m%t%Lp%t%N'
@@ -219,6 +219,56 @@ land)
     closed "$d" && chmod go-rwx -- "$b" 2>/dev/null
     printf '%s\0' "$b"
   done ;;
+text)
+  # A file's bytes, to edit: the checks swap makes, and at most $2 of them.
+  b=$1; d=$(dirof "$b"); n=${b##*/}
+  plain "$d" || fail 6 "$b goes through a link"
+  [ -d "$d" ] || fail 4 "$b is not there"
+  inside "$d" || fail 6 "$b leads outside the location"
+  cd -P -- "$d" 2>/dev/null || fail 4 "$b is not there"
+  P=$(pwd -P); case "$P/" in "$Rp"*) ;; *) fail 6 "$b leads outside the location";; esac
+  [ -L "./$n" ] && fail 7 "$b is a link"
+  [ -e "./$n" ] || fail 4 "$b is not there"
+  [ -f "./$n" ] || fail 5 "$b is not a plain file"
+  [ -w "./$n" ] || fail 15 "$b is not yours to change"
+  head -c "$2" -- "./$n" || fail 12 "$b could not be read"
+  exit 0 ;;
+swap)
+  # The bytes on standard input take the place of a file's, only while it
+  # still has the checksum the change was made from. They go into a file
+  # beside it first, and count once their own checksum is right. The file
+  # keeps its mode, group, ACL and attributes; another account's file is
+  # written where it is, so it stays that account's.
+  b=$1; d=$(dirof "$b"); n=${b##*/}; s=$4
+  plain "$d" || fail 6 "$b goes through a link"
+  [ -d "$d" ] || fail 14 "$b is not there any more"
+  inside "$d" || fail 6 "$b leads outside the location"
+  cd -P -- "$d" 2>/dev/null || fail 8 "$b: the folder cannot be opened"
+  P=$(pwd -P); case "$P/" in "$Rp"*) ;; *) fail 6 "$b leads outside the location";; esac
+  [ -L "./$n" ] && fail 7 "$b is a link"
+  [ -e "./$n" ] || fail 14 "$b is not there any more"
+  [ -f "./$n" ] || fail 5 "$b is not a plain file"
+  [ -w "./$n" ] || fail 15 "$b is not yours to change"
+  if command -v sha256sum >/dev/null 2>&1; then H="sha256sum"; elif command -v shasum >/dev/null 2>&1; then H="shasum -a 256"; else H="openssl dgst -sha256 -r"; fi
+  sum() { local h; h=$($H < "$1") && printf '%s' "${h%% *}"; }
+  trap 'rm -f -- "./$s" "./$s-was"' EXIT
+  ( umask 077; set -C; cat > "./$s" ) 2>/dev/null || fail 9 "$b: its folder takes no new file"
+  [ "$(sum "./$s")" = "$3" ] || fail 12 "$b: the change did not arrive whole"
+  h=$(sum "./$n") || fail 12 "$b could not be read"
+  [ "$h" = "$2" ] || { printf '%s\n' "$h"; fail 13 "$b has changed"; }
+  if [ -O "./$n" ]; then
+    chgrp --reference="./$n" -- "./$s" 2>/dev/null
+    cp --attributes-only --preserve=xattr -- "./$n" "./$s" 2>/dev/null
+    cp --attributes-only --preserve=mode -- "./$n" "./$s" 2>/dev/null || chmod --reference="./$n" -- "./$s" 2>/dev/null || chmod "$(stat -f %Lp -- "./$n" 2>/dev/null)" "./$s" 2>/dev/null || fail 9 "$b: its permissions could not be kept"
+    mv -f -- "./$s" "./$n" 2>/dev/null || fail 9 "$b could not be replaced"
+  else
+    ( umask 077; set -C; cat -- "./$n" > "./$s-was" ) 2>/dev/null || fail 9 "$b could not be written"
+    dd if="./$s" of="./$n" oflag=nofollow bs=65536 2>/dev/null || {
+      dd if="./$s-was" of="./$n" oflag=nofollow bs=65536 2>/dev/null && fail 9 "$b could not be written"
+      trap 'rm -f -- "./$s"' EXIT; fail 9 "$b could not be written; what it held is in $s-was beside it"
+    }
+  fi
+  exit 0 ;;
 remove)
   while IFS= read -r -d '' k && IFS= read -r -d '' p; do
     inside "$(dirof "$p")" || fail 6 "$p leads outside the location"

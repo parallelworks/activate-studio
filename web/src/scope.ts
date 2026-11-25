@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { currentLibrary, setLibrary, type PublicLibrary } from './api'
+import { leaveUnsaved } from './unsaved'
 
 /**
  * Which libraries Search, Query and the chat look in: all of them, or the
@@ -110,6 +111,9 @@ export function librariesIn<T extends { id: string }>(libraries: T[], s: Scope):
 /** Opens a match in its own library: in the combined tree when the Library
  *  page shows all of them, else by switching the Library page to it. */
 export function openInLibrary(onOpen: (path: string) => void, libraryId: string | undefined, path: string): void {
+  leaveUnsaved(() => openIn(onOpen, libraryId, path))
+}
+function openIn(onOpen: (path: string) => void, libraryId: string | undefined, path: string): void {
   const cur = currentLibrary()
   if (cur === ALL) { onOpen(libraryId && libraryId !== ALL ? `${libraryId}/${path}` : path); return }
   if (libraryId && libraryId !== ALL && libraryId !== cur) setLibrary(libraryId)

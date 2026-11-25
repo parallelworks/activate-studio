@@ -130,6 +130,8 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	}
 	h("GET /api/kb/tree", m.tree)
 	h("GET /api/kb/file", m.file)
+	h("GET /api/kb/text", m.openText)
+	h("PUT /api/kb/text", m.saveText)
 	h("GET /api/kb/download", m.download)
 	h("GET /api/kb/raw", m.raw)
 	h("GET /api/kb/html", m.html)
