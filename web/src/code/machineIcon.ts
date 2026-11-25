@@ -2,6 +2,8 @@ import { isComputer, type PwCodeMachine } from '@parallelworks/code'
 
 /** What the platform's listing says of a machine beyond the package's own
  *  type: its resource's image, its cloud, scheduler and operating system. */
+// TODO(#950): @parallelworks/code 0.6.0 has these fields on PwCodeMachine, so
+// this type goes with that update. The package has no icon component.
 export type MachineLooks = { imageUrl?: string; csp?: string; schedulerType?: string; os?: string }
 export type IconMachine = Pick<PwCodeMachine, 'kind'> & MachineLooks
 
