@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
+	"github.com/parallelworks/activate-studio/server-go/internal/kb"
 )
 
 // LocalFS is a folder on this computer.
@@ -432,5 +433,5 @@ func (l *LocalFS) Free(ctx context.Context, rel string) (int64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	return freeBytes(p)
+	return kb.FreeBytes(p)
 }

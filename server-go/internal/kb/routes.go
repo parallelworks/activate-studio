@@ -37,6 +37,7 @@ type Module struct {
 	Fetch *http.Client
 
 	stats statsCache
+	up    uploads
 }
 
 // forgetting drops the module's counts whenever the index changes.
@@ -102,6 +103,9 @@ func Register(mux *http.ServeMux, a *app.App) {
 		return err
 	}
 	a.AddBusy(m.Jobs.Running)
+	a.AddBusy(m.up.active)
+	a.OnStop("files: end uploads", func() int { m.stopUploads(); return 0 })
+	a.OnIndexWork("files: clear ended uploads", func(context.Context) { m.clearUploads() })
 	// An empty overlay beside an index that still carries labels is a lost
 	// overlay; recover once the index is up. With Node behind the Go
 	// server, Node's own timer does it (tags.ts).
@@ -145,6 +149,10 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	h("DELETE /api/kb/file", m.spaceAware("file", m.deleteFile))
 	h("POST /api/kb/mkdir", m.spaceAware("mkdir", m.mkdir))
 	h("POST /api/kb/upload", m.spaceAware("upload", m.upload))
+	h("POST /api/kb/upload-parts", m.startParts)
+	h("PUT /api/kb/upload-parts/{id}/{n}", m.putPart)
+	h("POST /api/kb/upload-parts/{id}/finish", m.finishParts)
+	h("DELETE /api/kb/upload-parts/{id}", m.dropParts)
 	h("POST /api/kb/upload-url", m.spaceAware("upload-url", m.uploadURL))
 	h("GET /api/tags", m.vocabulary)
 	h("GET /api/kb/tags", m.getTags)

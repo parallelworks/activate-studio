@@ -82,7 +82,10 @@ plain() {
   [ -d "$a" ] || a=$(dirof "$a")
   [ "$(cd -P -- "$a" 2>/dev/null && pwd -P)" = "$(cd -L -- "$a" 2>/dev/null && pwd -L)" ]
 }
-if [ "${GUARD:-}" = 1 ]; then case "$cmd" in write|mkdir|land|remove|rmstage|rmtree) guard ;; esac; fi
+# mine: in a private location, the folder this is in is this account's and
+# closed to every other, so nothing in it is another's doing.
+mine() { [ -n "${PRIV:-}" ] || return 0; [ -O . ] || return 1; case "$(ls -ld . | cut -c5-10)" in ------|--S---) return 0;; esac; return 1; }
+if [ "${GUARD:-}" = 1 ]; then case "$cmd" in write|mkdir|land|remove|rmstage|rmtree|pstart|part) guard ;; esac; fi
 G=0; find . -maxdepth 0 -printf '' >/dev/null 2>&1 && G=1
 F='%y\t%s\t%T@\t%m\t%p\0'
 SF='%HT%t%z%t%m%t%Lp%t%N'
@@ -164,6 +167,39 @@ write)
   [ -n "$2" ] && TZ=UTC touch -t "$2" -- "./$n" 2>/dev/null
   [ "$3" = x ] && chmod u+x -- "./$n" 2>/dev/null
   exit 0 ;;
+pstart)
+  # A folder of its own ($1) for the parts of a file that will be named $2,
+  # with $3 KB free for it. It is closed to other accounts from the start;
+  # the file in it takes the modes and ACL it would have beside it, and
+  # keeps them when it is named.
+  p=$1; d=$(dirof "$p"); n=${p##*/}
+  case "$n" in .studio-upload-*) ;; *) fail 5 "not a folder of parts";; esac
+  plain "$d" || fail 6 "$2 goes through a link"
+  a=$d; while [ ! -d "$a" ]; do a=$(dirof "$a"); done
+  inside "$a" || fail 6 "$2 leads outside the location"
+  if [ -d "$2" ] || [ -L "$2" ]; then fail 10 "$2 is already there and is not a file"; fi
+  free=$(df -Pk -- "$a" 2>/dev/null | awk 'NR==2 {print $4}')
+  case "$free" in ''|*[!0-9]*) ;; *) [ "$free" -ge "$3" ] || fail 14 "$free";; esac
+  like "$p"; mkdir -p -- "$d" 2>/dev/null; inside "$d" || fail 6 "$2 leads outside the location"
+  cd -P -- "$d" || fail 8 "$2: the folder cannot be opened"
+  mkdir -m 700 -- "./$n" 2>/dev/null || fail 8 "$2 could not be written there"
+  if ! { cd -P -- "./$n" && mine && : > ./data; }; then rm -f ./data; cd .. && rmdir -- "./$n" 2>/dev/null; fail 8 "$2 could not be written there"; fi ;;
+part)
+  # What comes on standard input, $3 bytes, at MB $2 of the file in $1.
+  p=$1; d=$(dirof "$p")
+  case "${p##*/}" in .studio-upload-*) ;; *) fail 5 "not a folder of parts";; esac
+  plain "$d" || fail 6 "$p goes through a link"
+  inside "$p" || fail 4 "the parts that arrived are no longer there"
+  cd -P -- "$p" || fail 4 "the parts that arrived are no longer there"
+  P=$(pwd -P); case "$P/" in "$Rp"*) ;; *) fail 6 "$p leads outside the location";; esac
+  mine && [ -f ./data ] && [ ! -L ./data ] || fail 4 "the parts that arrived are no longer there"
+  # Blocks of 1 MB out whatever size they come in, so any dd can seek.
+  e=$(LC_ALL=C dd of=./data ibs=65536 obs=1048576 seek="$2" conv=notrunc 2>&1) || case "$e" in
+    *"o space left"*|*uota*) fail 14 "there is no space left there";;
+    *) fail 8 "a part could not be written: $(printf '%s' "$e" | head -n 1)";;
+  esac
+  got=$(printf '%s\n' "$e" | sed -n 's/^\([0-9][0-9]*\) bytes.*/\1/p')
+  [ -z "$got" ] || [ "$got" = "$3" ] || fail 12 "a part did not arrive whole" ;;
 mkdir) [ -z "$1" ] && exit 0; plain "$1" || fail 6 "$1 goes through a link"; like "$1"; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] || fail 8 "$1 could not be made"; inside "$1" || fail 6 "$1 leads outside the location" ;;
 land)
   while IFS= read -r -d '' a && IFS= read -r -d '' b && IFS= read -r -d '' f; do

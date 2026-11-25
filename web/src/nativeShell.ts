@@ -36,6 +36,10 @@ export interface DroppedFile { rel: string; size: number; id: string }
  *  the macOS window gives the page File objects, as a browser does. */
 export const shellListsFolders = () => '__studioShell' in window
 
+/** Whether the window can send one part of a file it listed. */
+export const shellSendsParts = () =>
+  (window as unknown as { __studioShell?: { sendsParts?: boolean } }).__studioShell?.sendsParts === true
+
 /** Asks for a folder and lists the files under it. Empty when cancelled. */
 export async function chooseUpload(message: string): Promise<DroppedFile[]> {
   const got = await handler()?.postMessage({ action: 'chooseUpload', message }).catch(() => null)

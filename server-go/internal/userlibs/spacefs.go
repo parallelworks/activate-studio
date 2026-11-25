@@ -329,7 +329,7 @@ func (c *capped) Read(p []byte) (int, error) {
 func stagingName(dir string) string {
 	var b [6]byte
 	rand.Read(b[:])
-	return path.Join(dir, ".studio-upload-"+hex.EncodeToString(b[:]))
+	return path.Join(dir, transfers.PartsPrefix+hex.EncodeToString(b[:]))
 }
 
 // Put writes beside the file, then puts it in place in one rename.
@@ -365,6 +365,86 @@ func (s spaceFiles) Put(r *http.Request, lib kb.Library, rel string, src io.Read
 		return err
 	}
 	return nil
+}
+
+// StartParts makes the folder a large file's parts are written in, beside
+// where the file goes.
+func (s spaceFiles) StartParts(r *http.Request, lib kb.Library, rel string, size, need int64) (string, error) {
+	rel, err := inSpace(rel)
+	if err != nil {
+		return "", err
+	}
+	if rel == "" {
+		return "", apierr.New(400, "a file needs a name")
+	}
+	fs, _, _, d, err := s.target(r, lib)
+	if err != nil {
+		return "", err
+	}
+	defer s.wrote(fs, d.Site, rel)
+	in := path.Dir(rel)
+	if in == "." {
+		in = ""
+	}
+	dir := stagingName(in)
+	// The answer may be lost while the folder is made: it goes too.
+	if err := fs.StartParts(r.Context(), dir, rel, size, need); err != nil {
+		if r.Context().Err() != nil {
+			fs.DropParts(context.WithoutCancel(r.Context()), dir)
+		}
+		return "", err
+	}
+	return dir, nil
+}
+
+// partsDir is dir as StartParts gave it, refused when it is anything else.
+func partsDir(dir string) (string, error) {
+	c, err := inSpace(dir)
+	if err == nil && (c != dir || !strings.HasPrefix(path.Base(c), transfers.PartsPrefix)) {
+		err = apierr.New(400, "not a folder of parts")
+	}
+	return c, err
+}
+
+func (s spaceFiles) WritePart(r *http.Request, lib kb.Library, dir string, off, n int64, src io.Reader) error {
+	dir, err := partsDir(dir)
+	if err != nil {
+		return err
+	}
+	fs, _, _, _, err := s.target(r, lib)
+	if err != nil {
+		return err
+	}
+	return fs.WritePart(r.Context(), dir, off, n, src)
+}
+
+func (s spaceFiles) LandParts(r *http.Request, lib kb.Library, dir, rel string, size int64) error {
+	dir, err := partsDir(dir)
+	if err == nil {
+		rel, err = inSpace(rel)
+	}
+	if err != nil {
+		return err
+	}
+	fs, _, _, d, err := s.target(r, lib)
+	if err != nil {
+		return err
+	}
+	defer s.wrote(fs, d.Site, rel)
+	return fs.LandParts(r.Context(), dir, rel, size)
+}
+
+func (s spaceFiles) DropParts(r *http.Request, lib kb.Library, dir string) error {
+	dir, err := partsDir(dir)
+	if err != nil {
+		return err
+	}
+	fs, _, _, d, err := s.target(r, lib)
+	if err != nil {
+		return err
+	}
+	defer s.wrote(fs, d.Site, dir)
+	return fs.DropParts(r.Context(), dir)
 }
 
 func (s spaceFiles) Rename(r *http.Request, lib kb.Library, rel, name string) (string, error) {

@@ -3,6 +3,7 @@
 package kb
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -36,6 +37,12 @@ var processUmask = func() os.FileMode {
 	syscall.Umask(m)
 	return os.FileMode(m)
 }()
+
+// noSpaceLeft reports an error for want of space, or of a person's share
+// of it.
+func noSpaceLeft(err error) bool {
+	return errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT)
+}
 
 // umask is the mode bits a new file does not get, as Node's writeFile
 // leaves them to the process umask.

@@ -21,6 +21,19 @@ type SpaceFS interface {
 	// Put writes src to rel whole, replacing a file there; more than max
 	// bytes is refused and nothing is left.
 	Put(r *http.Request, lib Library, rel string, src io.Reader, max int64) error
+	// StartParts makes a place for the parts of a file that will be rel,
+	// closed to other accounts, and answers its path: a 507 unless need
+	// bytes are free there, for it and for what else is on its way. What is
+	// written there is only ever the person's who started it, and is not rel
+	// until LandParts.
+	StartParts(r *http.Request, lib Library, rel string, size, need int64) (dir string, err error)
+	// WritePart writes the n bytes src gives at off of the file in dir.
+	WritePart(r *http.Request, lib Library, dir string, off, n int64, src io.Reader) error
+	// LandParts makes the file in dir rel, in one rename, once it holds
+	// size bytes, replacing a file there.
+	LandParts(r *http.Request, lib Library, dir, rel string, size int64) error
+	// DropParts removes dir and the parts in it.
+	DropParts(r *http.Request, lib Library, dir string) error
 	// Rename gives rel a new name in its folder and answers the new path.
 	Rename(r *http.Request, lib Library, rel, name string) (string, error)
 	// Move puts each of rels into the folder dest, never over something
