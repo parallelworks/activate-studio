@@ -266,7 +266,8 @@ const EVENTS: [string, (e: Event) => void][] = [
   ['ade-pwcode-approval', onChange],
   ['ade-pwcode-approval-resolved', onChange],
   ['ade:fleet-changed', onChange],
-  // With a key of their own, a person is told what is shared with them.
+  // With a key of their own, a person is told what is shared with them, and
+  // with ACTIVATE, of their delegated work.
   ['ade:model-access-changed', onChange],
 ]
 

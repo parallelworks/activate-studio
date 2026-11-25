@@ -4,7 +4,7 @@ import { Button, DisclosurePanel, IconButton, StatusDot, type BadgeVariant } fro
 import { statusLook } from '../statusLook'
 import { ChevronRightIcon } from '@parallelworks/ui/icons'
 import { currentLibrary, type IndexStatus, type PublicLibrary, type UserLibrary } from '../api'
-import { mainWritable, reloadAppConfig, type AppConfig } from '../config'
+import { hasActivate, mainWritable, reloadAppConfig, type AppConfig } from '../config'
 import { setPanelOpen, usePanel } from '../panelState'
 import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '../statusShare'
 import { indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
@@ -268,10 +268,10 @@ export function connectionsSummary(rows: ConnLine[]): Summary {
 
 // ---- what it reads ----
 
-function useStatusData(agents: boolean, runs: boolean, mcp = true): [StatusData, (p: Partial<StatusData>) => void] {
+function useStatusData(agents: boolean, delegated: boolean, runs: boolean, mcp = true): [StatusData, (p: Partial<StatusData>) => void] {
   const [data, setData] = useState<StatusData>(lastData)
   const patch = (p: Partial<StatusData>) => setData(d => (lastData = { ...d, ...p }))
-  useWatch<{ sessions: DelegatedRow[] }>('/api/delegated', FAST_MS, agents, d => patch({ tasks: (d.sessions ?? []).map(s => ({ id: s.session, objective: s.objective, state: delegatedState(s) })) }))
+  useWatch<{ sessions: DelegatedRow[] }>('/api/delegated', FAST_MS, delegated, d => patch({ tasks: (d.sessions ?? []).map(s => ({ id: s.session, objective: s.objective, state: delegatedState(s) })) }))
   const [refused, setRefused] = useState(fleetRefused)
   useWatch<{ agents: FleetAgent[] }>('/api/fleet', FAST_MS, agents && !refused, d => patch({ fleet: d.agents ?? [] }), e => {
     if (e.status === 403) { fleetRefused = true; setRefused(true); patch({ fleet: [] }) }
@@ -406,7 +406,9 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const ai = cfg.aiEnabled !== false
   const agentsOn = ai && shown('agents')
   const runsOn = !!cfg.platform && shown('workflows')
-  const [data] = useStatusData(agentsOn, runsOn, ai)
+  // Delegated work opens on the Code page, for people with ACTIVATE.
+  const tasksOn = agentsOn && hasActivate(cfg)
+  const [data] = useStatusData(agentsOn, tasksOn, runsOn, ai)
   const shared = useShared()
   // On the Library page, what is selected in its tree (LibraryDetails.tsx).
   const details = useEntryDetails(view === 'library')
@@ -420,7 +422,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   }
 
   // Activity: what is running, then the latest runs, then open sessions.
-  const tasks = agentsOn ? (data.tasks ?? []).filter(t => LIVE_TASK.has(t.state)) : []
+  const tasks = tasksOn ? (data.tasks ?? []).filter(t => LIVE_TASK.has(t.state)) : []
   const fleet = agentsOn ? (data.fleet ?? []).filter(a => a.state !== 'retired') : []
   const me = [cfg.user.username, cfg.user.id]
   const myRuns = runsOn ? (data.runs ?? []).filter(r => !r.owner || me.includes(r.owner)) : []

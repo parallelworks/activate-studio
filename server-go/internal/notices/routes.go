@@ -208,6 +208,20 @@ func (s *Service) dismiss(r *http.Request, owner string, ids []string) (Answer, 
 
 func esc(s string) string { return url.QueryEscape(s) }
 
+// hasActivate says whether the person r is from has ACTIVATE, as the page's
+// hasActivate does (GET /api/config: platform or localCode).
+func hasActivate(a *app.App, r *http.Request) bool {
+	viewer := ""
+	if u := auth.UserOf(r); u != nil {
+		viewer = u.ID
+	}
+	if f := a.Providers.PlatformAvailable; f != nil && f(r, viewer) {
+		return true
+	}
+	f := a.Providers.LocalCode
+	return f != nil && f(r)
+}
+
 // sources are the Studio's own.
 func sources(a *app.App) Sources {
 	return Sources{
@@ -240,7 +254,7 @@ func sources(a *app.App) Sources {
 			return out
 		},
 		Delegated: func(r *http.Request) []delegation.Record {
-			if delegation.Default == nil {
+			if delegation.Default == nil || !hasActivate(a, r) {
 				return nil
 			}
 			return delegation.Default.Mine(r)

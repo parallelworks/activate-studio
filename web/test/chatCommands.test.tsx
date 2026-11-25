@@ -66,7 +66,7 @@ describe('"/" in a pw code chat', () => {
     await waitFor(() => expect(names()).toEqual(['compact', 'plan', 'search-files', 'harbor:tide', 'mcp__harbor__ebb']))
     expect(screen.getAllByRole('option').map(o => o.children[1].textContent)).toEqual(['command', 'command', 'command', 'skill', 'prompt'])
     expect(screen.getByText('[open|<description>]')).toBeInTheDocument()
-    expect(asked).toEqual([`${START}?own=1`, START])
+    expect(asked.filter(u => u !== '/api/config')).toEqual([`${START}?own=1`, START])
   })
 
   it('has pw code’s own commands until the machine answers, and where it does not', async () => {

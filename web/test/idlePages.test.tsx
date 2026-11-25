@@ -18,6 +18,7 @@ const reply = (u: string): unknown => {
   if (u.startsWith('/api/whoami')) return { authEnabled: false, header: '', verified: false, user: null, token: null, claims: null }
   if (u.startsWith('/healthz')) return { ok: true, gufi: true }
   if (u.startsWith('/api/version')) return { version: 'v1.0', commit: 'a', builtAt: null, startedAt: null, source: 'bundle' }
+  if (u.startsWith('/api/config')) return { platform: true }
   if (u.startsWith('/api/fleet')) return { agents: [], recent: [] }
   if (u.startsWith('/api/extensions')) return { dir: '/kb/.agents', tools: [], personas: [], skills: [] }
   return { runs: [], tasks: [], agents: [] }

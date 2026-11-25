@@ -10,7 +10,7 @@ import { ApplyToFolder, changeFolder, type AgentFolder } from '../components/App
 import { useWatch } from '../live'
 import { FleetPage, topicVariant } from './FleetPage'
 import { libraryNames } from '../libraryNames'
-import { useAppConfig } from '../config'
+import { hasActivate, sectionAllowed, useAppConfig } from '../config'
 import { MachineLabel } from '../components/MachineLabel'
 
 /**
@@ -111,8 +111,16 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
   // restarts; listed here so long-running work has a place to be seen.
   const [runs, setRuns] = useState<PlatformRun[]>([])
   useWatch<{ runs?: PlatformRun[] }>('/api/runs', 15_000, active, d => setRuns(d.runs ?? []))
-  const [page, setPageState] = useState<'fleet' | 'tasks' | 'library'>(() =>
+  const [picked, setPageState] = useState<'fleet' | 'tasks' | 'library'>(() =>
     (localStorage.getItem('ade-agents-page') as 'fleet' | 'tasks' | 'library') || 'fleet')
+  // Standing agents are pw code sessions: without ACTIVATE the tab shows only
+  // where there are some, to read or retire.
+  const without = cfg.loaded && !hasActivate(cfg)
+  const [standing, setStanding] = useState(0)
+  useWatch<{ agents?: unknown[] }>('/api/fleet', 15_000, active && without, d => setStanding(d.agents?.length ?? 0), () => setStanding(0))
+  const fleetShown = !without || standing > 0
+  const page = picked === 'fleet' && !fleetShown ? 'library' : picked
+  const codeShown = sectionAllowed('code', cfg)
   const setPage = (v: 'fleet' | 'tasks' | 'library') => { setPageState(v); localStorage.setItem('ade-agents-page', v) }
   useEffect(() => {
     // #view=agents:fleet opens the standing agents; any other section is a
@@ -287,7 +295,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
     <div className="overview-view agents-view">
       <div className="card ov-head">
         <Tabs label="Agents" className="agents-tabs" value={page} onValueChange={setPage} items={[
-          { value: 'fleet', label: 'Fleet' },
+          ...(fleetShown ? [{ value: 'fleet' as const, label: 'Fleet' }] : []),
           { value: 'tasks', label: 'Earlier tasks' },
           { value: 'library', label: 'Instructions and skills' },
         ]} />
@@ -299,7 +307,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
         <section className="card task-board-card">
           <Callout tone="info" size="sm" className="task-moved">
             Work you delegate now goes to pw code: one session in a library folder, with the agent instructions you choose
-            in its <code>AGENTS.md</code>. Find it on the <a href="#view=code">Code page</a> under <b>Delegated</b>. This page
+            in its <code>AGENTS.md</code>. {codeShown && <>Find it on the <a href="#view=code">Code page</a> under <b>Delegated</b>. </>}This page
             keeps the tasks of the earlier task engine to read: their agents, board and output, with their results in the
             library under <code>tasks/</code>.
           </Callout>
@@ -380,8 +388,8 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
                           )}
                           {a.sessionId && (
                             <p className="muted">
-                              pw code session <code>{a.sessionId}</code>{a.host ? <> on <MachineLabel machine={{ name: a.host }} /></> : null}; it may
-                              still be on the <a href={`#view=code?session=${encodeURIComponent(a.sessionId)}`}>Code page</a>.
+                              pw code session <code>{a.sessionId}</code>{a.host ? <> on <MachineLabel machine={{ name: a.host }} /></> : null}{codeShown && <>; it may
+                              still be on the <a href={`#view=code?session=${encodeURIComponent(a.sessionId)}`}>Code page</a></>}.
                             </p>
                           )}
                           {a.usage?.total ? <p className="muted">tokens: {fmtTokens(a.usage.input)} in, {fmtTokens(a.usage.output)} out, {fmtTokens(a.usage.total)} total{a.usage.cost != null ? `, $${a.usage.cost.toFixed(3)}` : ''}</p> : null}

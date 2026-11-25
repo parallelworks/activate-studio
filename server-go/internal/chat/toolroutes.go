@@ -26,7 +26,12 @@ func (m *Module) toolsRoute(w http.ResponseWriter, r *http.Request) error {
 	eff := m.eff()
 	disabled := func(n string) bool { return slices.Contains(eff.DisabledTools, n) }
 	tools := []*jsonobj.Object{}
+	// The slash list is the person's (?mine=1); Settings lists them all.
+	without := r.URL.Query().Get("mine") == "1" && !m.pwCodeFor(r)
 	for _, t := range builtinSpecs {
+		if without && toolGroupOf(t.Name) == "agents" {
+			continue
+		}
 		o := reqbody.O("name", t.Name, "description", t.Description, "builtin", true, "enabled", !disabled(t.Name), "parameters", t.Parameters,
 			"implementation", "built-in (server/src/chat/tools.ts)")
 		if c, ok := toolCalls[t.Name]; ok {

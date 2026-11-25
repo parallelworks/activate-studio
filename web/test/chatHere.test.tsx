@@ -36,6 +36,7 @@ let place: unknown
 let placeStatus: number
 let wait: Promise<void>
 let libraries: unknown[]
+let activate: object
 let sent: Record<string, unknown>[]
 let made: number
 
@@ -43,13 +44,14 @@ function studio() {
   asked = []; sent = []; made = 0
   place = there; placeStatus = 200; wait = Promise.resolve()
   libraries = [lib('kb', 'Projects')]
+  activate = { platform: true }
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://studio.example')
     const method = (input instanceof Request ? input.method : init?.method ?? 'GET').toUpperCase()
     const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'Content-Type': 'application/json' } })
     asked.push(`${method} ${url.pathname}${url.search}`)
     switch (url.pathname) {
-      case '/api/config': return json({ loaded: true, aiEnabled: true, features: {}, libraries, suggestedPrompts: [], user: { id: 'alex', username: 'alex' } })
+      case '/api/config': return json({ loaded: true, ...activate, aiEnabled: true, features: {}, libraries, suggestedPrompts: [], user: { id: 'alex', username: 'alex' } })
       case '/api/chat/pwcode/start/library': await wait; return json(place, placeStatus)
       case '/api/chat/pwcode/start': return json({ available: true, machine: 'studio', machines: [own, gpu], sessions: [], folder: '/kb' })
       case '/api/chat/models': return json({ models: [{ id: 'm', label: 'm', available: true, kind: 'platform' }], unreachableSessions: [] })
@@ -150,11 +152,11 @@ describe('New pw code chat here', () => {
 })
 
 describe('in the Library\'s menu', () => {
-  const open = async (text = 'plans') => {
+  const open = async (text = 'plans', name: RegExp | string = /^New pw code chat here/) => {
     render(<LibraryView display={null} onDisplay={() => {}} />)
     await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 20)) })
     fireEvent.contextMenu(await screen.findByText(text))
-    return screen.findByRole('menuitem', { name: /^New pw code chat here/ })
+    return screen.findByRole('menuitem', { name })
   }
   const item = () => screen.getByRole('menuitem', { name: /^New pw code chat here/ })
 
@@ -169,6 +171,44 @@ describe('in the Library\'s menu', () => {
     cleanup()
     expect(await open('a.md')).not.toHaveAttribute('aria-disabled', 'true')
     expect(asked.filter(a => a.includes('/start/library')).map(a => a.split('?')[1])).toEqual(['library=kb&path=plans', 'library=kb&path=a.md'])
+  })
+
+  it('is not there without ACTIVATE, for a folder, a file, the top or a bucket, and nothing is asked', async () => {
+    activate = { platform: false }
+    const menu = async (text: string) => {
+      const entry = await open(text, 'Add to chat')
+      expect(screen.queryByRole('menuitem', { name: /pw code/ })).toBeNull()
+      cleanup()
+      return entry
+    }
+    await menu('plans')
+    await menu('a.md')
+    libraries = [lib('kb', 'Scans', { access: { where: 'bucket', readAs: 'studio', write: false, index: 'built' } })]
+    await menu('plans')
+    expect(asked.some(a => a.includes('/start/library'))).toBe(false)
+  })
+
+  it('comes with a sign-in and goes with a sign-out, with no reload', async () => {
+    activate = { platform: false }
+    await open('plans', 'Add to chat')
+    expect(screen.queryByRole('menuitem', { name: /pw code/ })).toBeNull()
+    const again = async () => {
+      fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Add to chat' }), { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('menuitem')).toBeNull())
+      await act(async () => { window.dispatchEvent(new CustomEvent('ade:model-access-changed')); await new Promise(r => setTimeout(r, 20)) })
+      fireEvent.contextMenu(screen.getByText('plans'))
+      await screen.findByRole('menuitem', { name: 'Add to chat' })
+    }
+    activate = { platform: true }
+    await again()
+    expect(item()).not.toHaveAttribute('aria-disabled', 'true')
+    activate = { platform: false }
+    await again()
+    expect(screen.queryByRole('menuitem', { name: /pw code/ })).toBeNull()
+    // This computer's own pw code is ACTIVATE too.
+    activate = { platform: false, localCode: true }
+    await again()
+    expect(item()).toBeInTheDocument()
   })
 
   it('Add to chat is as it was', async () => {
