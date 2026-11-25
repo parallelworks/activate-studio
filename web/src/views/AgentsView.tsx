@@ -11,6 +11,7 @@ import { useWatch } from '../live'
 import { FleetPage, topicVariant } from './FleetPage'
 import { libraryNames } from '../libraryNames'
 import { useAppConfig } from '../config'
+import { MachineLabel } from '../components/MachineLabel'
 
 /**
  * Agent instructions and skills: the markdown files that shape how agents
@@ -279,7 +280,6 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
   const fmtTokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
   // Where the agents run. Shown once in the task header when they share a
   // machine, and on each row only when they are spread across machines.
-  const hostLabel = (h: string) => h.split('/').pop() || h
   const hosts = new Set((detail?.agents ?? []).map(a => a.host).filter((h): h is string => !!h))
   const sharedHost = hosts.size === 1 ? [...hosts][0] : null
 
@@ -318,7 +318,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
                     <StatusDot {...taskOutcome(mi).look} />
                     <span className="task-card-state">{taskOutcome(mi).label}</span>
                     {(mi as { execution?: string }).execution === 'campaign' && (
-                      <StatusBadge>campaign · {((mi as { resource?: string }).resource ?? '').split('/').pop() || '?'}</StatusBadge>
+                      <StatusBadge>campaign · {(mi as { resource?: string }).resource ? <MachineLabel machine={{ name: (mi as { resource?: string }).resource }} /> : '?'}</StatusBadge>
                     )}
                     {mi.runtime === 'session' && <StatusBadge>pw code sessions</StatusBadge>}
                   </div>
@@ -339,7 +339,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
                 <div key={r.slug} className="run-row">
                   <StatusDot {...statusLook(r.state)} />
                   <span className="run-slug">{r.slug}</span>
-                  <span className="muted run-meta">{r.workflow}{r.resource ? ` on ${r.resource.replace(/^pw:\/\/[^/]+\//, '')}` : ''} · {r.state}{r.endedAt ? '' : ' · since ' + new Date(r.launchedAt).toLocaleTimeString()}</span>
+                  <span className="muted run-meta">{r.workflow}{r.resource ? <> on <MachineLabel machine={{ name: r.resource }} /></> : ''} · {r.state}{r.endedAt ? '' : ' · since ' + new Date(r.launchedAt).toLocaleTimeString()}</span>
                   {r.conversationId && <a href={`#chat=${r.conversationId}`}>chat</a>}
                 </div>
               ))}
@@ -351,7 +351,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
                 <StatusDot {...(() => { const row = taskRuns.find(t => t.id === detail.id); return row ? taskOutcome(row).look : statusLook(detail.state) })()} />
                 <span className="task-detail-title">
                   <span className="task-detail-objective">{detail.objective}</span>
-                  {sharedHost && <span className="tree-host" title={`Every agent in this task runs on ${sharedHost}`}>on {hostLabel(sharedHost)}</span>}
+                  {sharedHost && <span className="tree-host" title={`Every agent in this task runs on ${sharedHost}`}>on <MachineLabel machine={{ name: sharedHost }} /></span>}
                 </span>
                 <a className="task-results-link" href={`#open=file:tasks/${detail.id}`} onClick={e => { e.preventDefault(); onOpen(`tasks/${detail.id}`) }}>results in the library</a>
               </div>
@@ -366,7 +366,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
                         {a.depth > 0 && <span className="tree-elbow" style={{ left: `${a.depth * 20 - 8}px` }} />}
                         <StatusDot {...statusLook(a.state)} />
                         <span className="tree-name">{a.name}</span>
-                        {a.host && !sharedHost && <span className="tree-host" title={`Runs on ${a.host}`}>{hostLabel(a.host)}</span>}
+                        {a.host && !sharedHost && <span className="tree-host" title={`Runs on ${a.host}`}><MachineLabel machine={{ name: a.host }} /></span>}
                         <span className="tree-note muted">{a.note && a.state === 'canceled' ? a.note : a.state}{a.usage?.total ? ` · ${fmtTokens(a.usage.total)} tok${a.usage.cost != null ? ` · $${a.usage.cost.toFixed(2)}` : ''}` : ''}</span>
                         {a.resultPath && (
                           <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); onOpen(a.resultPath!) }}>result</Button>
@@ -380,7 +380,7 @@ export function AgentsView({ active = true, onOpen }: { active?: boolean; onOpen
                           )}
                           {a.sessionId && (
                             <p className="muted">
-                              pw code session <code>{a.sessionId}</code>{a.host ? <> on <code>{hostLabel(a.host)}</code></> : null}; it may
+                              pw code session <code>{a.sessionId}</code>{a.host ? <> on <MachineLabel machine={{ name: a.host }} /></> : null}; it may
                               still be on the <a href={`#view=code?session=${encodeURIComponent(a.sessionId)}`}>Code page</a>.
                             </p>
                           )}

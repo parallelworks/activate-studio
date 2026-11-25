@@ -24,6 +24,8 @@ import {
 } from '@parallelworks/code'
 import { IconButton, Popover, Tooltip } from '@parallelworks/ui'
 import { ExternalLinkIcon, FolderIcon, PullRequestIcon, RemoveIcon } from '@parallelworks/ui/icons'
+import { MachineIcon } from '../../code/parts'
+import { type MachineRef, useMachineLook } from '../../machines'
 import { pwCode } from '../api'
 import { describeError as describeDefault } from '../describeError'
 import './ContextRow.css'
@@ -33,6 +35,8 @@ export interface SessionContextRowProps {
   sessionId: string
   /** The machine's name as the session shows it, such as `gpu-box`. */
   machineName: string
+  /** The machine as it is read, for the resource it is. */
+  on?: MachineRef
   workspace: string
   added: PwCodeAddedDirectory[] | null | undefined
   allowed: PwCodeAllowedDirectory[] | null | undefined
@@ -53,6 +57,7 @@ export const SessionContextRow = memo(function SessionContextRow({
   machine,
   sessionId,
   machineName,
+  on,
   workspace,
   added,
   allowed,
@@ -74,7 +79,7 @@ export const SessionContextRow = memo(function SessionContextRow({
   )
   return (
     <div className="pwcode-ctx" data-testid="pwcode-context-row">
-      <WorkspaceChip machineName={machineName} workspace={workspace} opens={opens} />
+      <WorkspaceChip machine={{ ...on, id: machine, name: machineName }} workspace={workspace} opens={opens} />
       {context.added.length > 0 && <AddedDirectoryChips dirs={context.added} opens={opens} />}
       {context.pullRequests.length > 0 && <PullRequestPills ordered={context.pullRequests} stateOf={context.stateOf} />}
     </div>
@@ -83,15 +88,18 @@ export const SessionContextRow = memo(function SessionContextRow({
 
 type Opens = (trigger: ReactElement) => ReactElement
 
-/** `machineName:folder`, as the Studio has always named the session's place;
- *  the full path is in its tooltip and its popover. */
-function WorkspaceChip({ machineName, workspace, opens }: { machineName: string; workspace: string; opens: Opens }) {
+/** The machine's icon and `name:folder`, as the Studio has always named the
+ *  session's place; the host and the full path are in its tooltip, and the
+ *  path in its popover. */
+function WorkspaceChip({ machine, workspace, opens }: { machine: MachineRef; workspace: string; opens: Opens }) {
   const t = usePwCodeTranslations('agents')
-  const { label } = workingDirectoryText(machineName, workspace, t)
+  const look = useMachineLook(machine)
+  const { label } = workingDirectoryText(look.name, workspace, t)
   const folder = workspace.split('/').filter(Boolean).pop() ?? workspace
   return opens(
-    <button type="button" className="pwcode-ctx-chip" aria-label={label} title={`${machineName}:${workspace}`} data-testid="pwcode-workspace">
-      <span className="pwcode-ctx-text">{machineName}:{folder}</span>
+    <button type="button" className="pwcode-ctx-chip" aria-label={label} title={`${look.title || look.name}:${workspace}`} data-testid="pwcode-workspace">
+      <MachineIcon machine={look.icon} />
+      <span className="pwcode-ctx-text">{look.name}:{folder}</span>
     </button>,
   )
 }

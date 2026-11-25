@@ -554,7 +554,7 @@ func TestPwSystemsListAndWhy(t *testing.T) {
 echo "$PW_API_KEY $*" >> `+log+`
 if [ -f `+fail+` ]; then echo "Error: unauthorized: the token has expired" >&2; exit 1; fi
 case "$*" in
-  "clusters ls"*) echo "checking for updates"; echo '[{"name":"beta","displayName":"Beta","status":"off","type":"aws-slurm"},{"name":"alpha","status":"active","type":"existing"},{"name":"bad name!","status":"active"},{"name":"gamma","displayName":"Gamma cluster","status":"active"}]' ;;
+  "clusters ls"*) echo "checking for updates"; echo '[{"name":"beta","displayName":"Beta","status":"off","type":"aws-slurm"},{"name":"alpha","status":"active","type":"existing","user":"alex"},{"name":"bad name!","status":"active"},{"name":"gamma","displayName":"Gamma cluster","status":"active","user":{"username":"robin"}}]' ;;
 esac
 `)
 	r = h.listing()
@@ -571,8 +571,8 @@ esac
 	s = h.do(http.MethodGet, "/api/user-libraries/pw/systems", nil).Body
 	eq(t, []any{s["usable"], s["error"]}, []any{true, nil}, "signed in")
 	eq(t, s["systems"], []any{
-		map[string]any{"name": "alpha", "label": "alpha", "status": "active", "running": true, "type": "existing"},
-		map[string]any{"name": "gamma", "label": "Gamma cluster", "status": "active", "running": true, "type": nil},
+		map[string]any{"name": "alpha", "label": "alpha", "status": "active", "running": true, "type": "existing", "owner": "alex"},
+		map[string]any{"name": "gamma", "label": "Gamma cluster", "status": "active", "running": true, "type": nil, "owner": "robin"},
 		map[string]any{"name": "beta", "label": "Beta", "status": "off", "running": false, "type": "aws-slurm"},
 	}, "systems")
 	b, _ := os.ReadFile(log)

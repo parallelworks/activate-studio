@@ -1,4 +1,5 @@
 import { Callout } from '@parallelworks/ui'
+import { TransferEnd } from './MachineLabel'
 
 /** A transfer's plan as the server holds it with an assistant's transfer
  *  call (internal/transfers Plan): the fields the card shows. */
@@ -89,10 +90,10 @@ export function ChatTransferPlan({ transfer }: { transfer: HeldTransfer }) {
         <dt>From</dt>
         <dd className="chat-xfer-mono">
           {paths.length > 1
-            ? <>{plan.source.label}<Names names={paths} count={paths.length} /></>
-            : where(plan.source.label, paths[0])}
+            ? <><TransferEnd location={plan.source.location}>{plan.source.label}</TransferEnd><Names names={paths} count={paths.length} /></>
+            : <TransferEnd location={plan.source.location}>{where(plan.source.label, paths[0])}</TransferEnd>}
         </dd>
-        <dt>To</dt><dd className="chat-xfer-mono">{where(plan.destination.label, plan.destination.path)}</dd>
+        <dt>To</dt><dd className="chat-xfer-mono"><TransferEnd location={plan.destination.location}>{where(plan.destination.label, plan.destination.path)}</TransferEnd></dd>
         <dt>Files</dt><dd>{countText(plan.files, plan.dirs)}</dd>
         <dt>Size</dt><dd>{sizeText(plan.bytes)}</dd>
         <dt>Free space</dt><dd>{free === null ? 'Not reported by the destination' : sizeText(free)}</dd>

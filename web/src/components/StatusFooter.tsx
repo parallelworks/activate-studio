@@ -20,6 +20,7 @@ import { reloadOntoNewest, useShellUpdate } from '../shellWorker'
 import { plural } from '../plural'
 import { steadyCount } from '../steady'
 import { embedded, signInHref } from '../signIn'
+import { libraryMachine, MachineLabel } from './MachineLabel'
 
 /** The sync row's words: when the background sync last finished. */
 export function syncedLine(iso: string | null): string {
@@ -77,10 +78,11 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
   }
   const last = idx?.lastBuild?.kind === 'build' ? idx.lastBuild : null
   // A row marked in its last field is a library's, indented under the total.
-  const rows: [string, string, Dot | null, boolean?][] = [
+  const rows: [string, string, Dot | null, boolean?, ReactNode?][] = [
     ['GUFI engine', gufi === null ? 'checking…' : gufi ? 'available' : 'unavailable (search falls back to grep)', gufi === null ? 'off' : gufi ? 'ok' : 'warn'],
     ['Indexed', stats?.files ? `${plural(stats.files, 'file')} in ${plural(stats.dirs ?? 0, 'directory', 'directories')}, ${gb}${stats.libraries ? `, across ${stats.libraries.length} libraries` : ''}` : idx?.indexed === false ? 'not indexed yet' : 'loading…', null],
-    ...(stats?.libraries ?? []).map(l => [`${l.label}${l.site ? ` (on ${l.site})` : ''}`, l.available ? `${plural(l.files ?? 0, 'file')} in ${plural(l.dirs ?? 0, 'directory', 'directories')}` : (l.error ?? 'not available'), l.available ? 'ok' : 'warn', true] as [string, string, Dot | null, boolean]),
+    ...(stats?.libraries ?? []).map(l => [`${l.label}${l.site ? ` (on ${l.site})` : ''}`, l.available ? `${plural(l.files ?? 0, 'file')} in ${plural(l.dirs ?? 0, 'directory', 'directories')}` : (l.error ?? 'not available'), l.available ? 'ok' : 'warn', true,
+      l.site ? <>{l.label} (on <MachineLabel machine={libraryMachine(libs.find(x => x.id === l.id)) ?? { name: l.site }} />)</> : undefined] as [string, string, Dot | null, boolean, ReactNode]),
     ...(last ? [['Last build', `${jobOutcome(last)}${last.finishedAt ? ` ${ago(last.finishedAt)}` : ''}`, last.state === 'done' ? 'ok' : 'warn'] as [string, string, Dot | null]] : []),
     ['Sync loop', idx ? (idx.sweepIntervalSec > 0 ? `every ${idx.sweepIntervalSec}s, last ${ago(idx.lastSweepAt ?? null)}${idx.lastSweepMs != null ? ` (${fmtDuration(idx.lastSweepMs)})` : ''}` : 'paused') : 'loading…', null],
     ['Last result', summary.tone === 'warning' && summary.detail ? summary.detail : idx?.lastSweepAt || last ? 'clean' : 'no sync yet this server start', summary.tone === 'warning' ? 'warn' : idx?.lastSweepAt || last ? 'ok' : 'off'],
@@ -90,8 +92,8 @@ function IndexPanel({ trigger, idx, gufi, stats, onSync, syncing }: {
     <FooterPanel trigger={trigger} title="Index health">
       {job && <IndexJobView job={job} onStop={() => void stop()} stopping={stopping} />}
       <DescriptionList variant="divided" className="identity-list">
-        {rows.map(([k, v, dot, sub]) => (
-          <DescriptionListItem key={k} label={k} className={sub ? 'identity-sub' : undefined}>
+        {rows.map(([k, v, dot, sub, label]) => (
+          <DescriptionListItem key={k} label={label ?? k} className={sub ? 'identity-sub' : undefined}>
             {dot && <StatusDot variant={DOT_TONE[dot]} size={7} className="identity-dot" />}{v}
           </DescriptionListItem>
         ))}

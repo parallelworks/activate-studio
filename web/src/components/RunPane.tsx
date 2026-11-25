@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { shownTimeout } from '../live'
-import { Button, Callout, EmptyState, IconButton, Loader, StatusDot, Tabs, type BadgeVariant } from '@parallelworks/ui'
+import { Button, Callout, EmptyState, IconButton, Loader, StatusDot, Tabs } from '@parallelworks/ui'
+import { statusLook } from '../statusLook'
 import { CloseIcon } from '@parallelworks/ui/icons'
 import { useChat, useChatStream } from '@parallelworks/ui/ai'
 import { initializeValues } from '@parallelworks/ui/form'
@@ -66,12 +67,10 @@ const json = async <T,>(r: Response): Promise<T> => {
   return r.json() as Promise<T>
 }
 
-/** A run's status as a dot: blue and pulsing while it runs. */
+/** A run's status as a dot: blue while it waits or runs, pulsing once it runs. */
 function RunDot({ status }: { status: string }) {
-  const tone: BadgeVariant = status === 'running' || status === 'starting' ? 'info'
-    : status === 'completed' ? 'success'
-    : status === 'error' || status === 'failed' ? 'error' : 'muted'
-  return <StatusDot variant={tone} pulse={tone === 'info'} className="run-dot" />
+  const look = statusLook(status)
+  return <StatusDot variant={look.variant ?? 'muted'} pulse={look.pulse} className="run-dot" />
 }
 
 /** One line saying what is still on its way. */

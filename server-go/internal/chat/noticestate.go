@@ -2,12 +2,14 @@ package chat
 
 import (
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsites"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
+	"github.com/parallelworks/activate-studio/server-go/internal/remote"
 )
 
 // What the Notices page and the chat list's marks read of the person's
@@ -21,6 +23,9 @@ type ChatState struct {
 	// Session is the pw code session it runs in, "" for none, and Machine
 	// that session's machine where the chat knows it.
 	Session, Machine string
+	// MachineName is what the machine is called: as the platform listed it,
+	// or the site or this host where the Studio drives the session itself.
+	MachineName string
 	// Local: the session is on this computer's pw code daemon.
 	Local bool
 	// Working: a reply is being written.
@@ -112,6 +117,14 @@ func (m *Module) ChatStates(r *http.Request) []ChatState {
 		if c.PWCode != nil {
 			s.Session, s.Machine = c.PWCode.Session, c.PWCode.Machine
 			s.Local = !c.PWCode.Relay && c.PWCode.Site == agentsites.Local
+			s.MachineName = c.PWCode.MachineName
+			switch {
+			case s.MachineName != "" || c.PWCode.Relay:
+			case s.Local:
+				s.MachineName, _ = os.Hostname()
+			default:
+				s.MachineName = remote.SiteName(c.PWCode.Site)
+			}
 		}
 		t, following := turns[c.ID]
 		s.Working = following || m.Conv.Answering(c.ID)

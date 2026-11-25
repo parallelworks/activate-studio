@@ -3,6 +3,8 @@ import { Checkbox, Popover, Radio, RadioGroup, cx, fieldBox } from '@parallelwor
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import type { PublicLibrary } from '../api'
 import type { Scope } from '../scope'
+import { libraryMachine, MachineLabel } from './MachineLabel'
+import type { MachineRef } from '../machines'
 
 /** A library's name as the pickers show it, with where it is or that it is
  *  read only. */
@@ -17,6 +19,18 @@ export const libraryAccess = (l: Named) => {
   const kind = (a?.sharedFrom ?? l.sharedFrom) ? 'Shared' : (a?.write ?? l.writable) ? 'Read/write' : 'Read only'
   const on = a?.where === 'system' ? (a.system || l.site) : a?.where === 'bucket' ? null : (l.site || l.host)
   return `${kind}${on ? ` (on ${on})` : ''}`
+}
+
+/** What libraryAccess says of a library, with its machine as a label. */
+export function LibraryAccessText({ library }: { library: Named }) {
+  return <AccessText text={libraryAccess(library)} machine={libraryMachine(library)} />
+}
+
+/** An access with the machine it says it is on, as a label. */
+export function AccessText({ text, machine }: { text: string; machine: MachineRef | null }) {
+  const at = text.indexOf(' (on ')
+  if (!machine || at < 0) return <>{text}</>
+  return <>{text.slice(0, at)} (on <MachineLabel machine={machine} />)</>
 }
 
 /** A library as pickers name it: its label and its access. */
@@ -100,7 +114,7 @@ export function LibraryTicks({ libraries, value, onChange, className }: {
         return (
           <label key={l.id} className="library-scope-row" title={last ? 'At least one library stays ticked' : undefined}>
             <Checkbox aria-label={libraryName(l)} checked={on} disabled={last} onCheckedChange={v => toggle(l.id, !!v)} />
-            <span className="truncate">{libraryName(l)}</span>
+            <span className="truncate" title={libraryName(l)}>{l.label} · <LibraryAccessText library={l} /></span>
           </label>
         )
       })}
@@ -138,7 +152,7 @@ function OneLibrary({ libraries, value, onChange, hint }: {
         {libraries.map(l => (
           <label key={l.id} className="library-scope-row">
             <Radio value={l.id} aria-label={libraryName(l)} />
-            <span className="truncate">{libraryName(l)}</span>
+            <span className="truncate" title={libraryName(l)}>{l.label} · <LibraryAccessText library={l} /></span>
           </label>
         ))}
       </RadioGroup>

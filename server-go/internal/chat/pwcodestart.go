@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -492,6 +493,14 @@ func (m *Module) startListing(w http.ResponseWriter, r *http.Request) error {
 	for _, mach := range ms {
 		if m.startIsOwn(mach, here) {
 			ownID = jsonv.String(jsonv.Path(mach, "id"))
+			// By its resource's name, as the Code page has it, and its host's
+			// in the tooltip.
+			if name := jsonv.String(jsonv.Path(mach, "name")); name != "" {
+				if jsonv.Path(own, "hostname") == nil && here != nil && here.hostname != "" {
+					own.Set("hostname", here.hostname)
+				}
+				own.Set("name", name)
+			}
 			for _, k := range []string{"kind", "imageUrl", "csp", "schedulerType", "os"} {
 				if v := jsonv.Path(mach, k); v != nil {
 					own.Set(k, v)
@@ -568,6 +577,8 @@ func (m *Module) startMachine(r *http.Request, here *pwHere) *jsonv.Object {
 	own := m.ownMachine(r, name, st)
 	if signIn {
 		own.Set("kind", "existing")
+	} else {
+		own.Set("os", runtime.GOOS)
 	}
 	own.Set("remoteStart", true)
 	own.Set("directories", true)

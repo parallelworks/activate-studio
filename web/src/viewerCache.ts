@@ -3,6 +3,7 @@ import { clearChatRecords, setRecordViewer } from './chatRecord'
 import { forgetEngines } from './chatEngine'
 import { forgetCommands } from './pwcode/chatCommands'
 import { forgetStarts } from './pwcode/newChatStart'
+import { VIEWER_CACHES_CLEARED } from './viewerEvents'
 import { forgetModelSource } from './pwcode/session/usePlatformModels'
 
 /**
@@ -18,7 +19,7 @@ let viewer: string | null = null
 
 /** Said on the window when the caches are cleared, for what the page keeps
  *  drawn (the hidden pw code chats). */
-export const VIEWER_CACHES_CLEARED = 'ade:viewer-caches-cleared'
+export { VIEWER_CACHES_CLEARED }
 
 /** Says who the viewer is: someone other than before clears what was kept. */
 export function setCacheViewer(username: string): void {

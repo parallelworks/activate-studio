@@ -3,6 +3,7 @@ import { NoticeCard } from '@parallelworks/ui/ai'
 import type { ChatLink } from './useChatLink'
 import { StudioToolsSetup } from '../components/StudioToolsSetup'
 import { autoSetupWaits } from '../components/studioTools'
+import { MachineLabel } from '../components/MachineLabel'
 
 const SEEN = 'ade-pwcode-tools-note-seen'
 
@@ -56,7 +57,7 @@ export function PWCodeToolsNote({ conversationId, link }: { conversationId: stri
   if (open !== conversationId) {
     return (
       <NoticeCard tone="neutral" testId="pwcode-tools-line" onDismiss={dismiss}>
-        This session on {link.machineName || 'its machine'} works without the Studio's tools.{' '}
+        This session on {link.machineName ? <MachineLabel machine={{ id: link.machine, name: link.machineName }} /> : 'its machine'} works without the Studio's tools.{' '}
         <button type="button" className="code-approval-more" onClick={() => setOpen(conversationId)}>Add them</button>
       </NoticeCard>
     )

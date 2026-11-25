@@ -47,6 +47,9 @@ describe('The session context row', () => {
     const chip = screen.getByTestId('pwcode-workspace')
     expect(chip).toHaveTextContent('gpu-box:project')
     expect(chip).toHaveAttribute('title', 'gpu-box:/home/user/project')
+    // Its machine is not one the Studio knows: its own name, and a glyph.
+    expect(chip.querySelector('svg.code-machine-icon')).not.toBeNull()
+    expect(chip.querySelector('img')).toBeNull()
     expect(screen.getByTestId('pwcode-added-directory')).toHaveTextContent('/data/shared')
 
     fireEvent.click(screen.getByTestId('pwcode-added-directory'))

@@ -406,7 +406,7 @@ function SessionPane({ conversationId, machine, sessionId, username, notes, sett
       : undefined
   const banner = <SessionBanner banner={screen.banner} />
   const contextRow = detail && (
-    <SessionContextRow machine={machine} sessionId={sessionId} machineName={page.machineName}
+    <SessionContextRow machine={machine} sessionId={sessionId} machineName={page.machineName} on={machineRead.machine ?? undefined}
       workspace={detail.workspace} added={addDirs} allowed={allowedDirs} pullRequests={detail.pullRequests} />
   )
   const viewing = agent ? agents.find(a => a.id === agent) : undefined

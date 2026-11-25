@@ -3,7 +3,8 @@ import { Button, statusTextClass, toast } from '@parallelworks/ui'
 import { ApprovalBlock, NoticeCard } from '@parallelworks/ui/ai'
 import { useTranslations } from 'use-intl'
 import type { PageSession } from './api'
-import { MachineIcon, SessionMark } from './parts'
+import { MachineLabel } from '../components/MachineLabel'
+import { SessionMark } from './parts'
 
 /** Work a chat delegated to pw code: the session, the library folder it
  *  works in and what it wrote there (GET /api/delegated). */
@@ -60,7 +61,7 @@ export function LinkedSession({ session, machine, missing, delegated, why, inCha
         <SessionMark session={session} machine={machine} size="row" />
         <strong className="code-linked-title">{sessionLabel(session, t)}</strong>
         <span className={statusTextClass(tone)}>{stateText}</span>
-        {machine && <span className="code-machine-name code-mono muted"><MachineIcon machine={machine} />{machine.name}</span>}
+        {machine && <MachineLabel machine={machine} className="code-mono muted" />}
       </div>
       {session.workspace && <div className="code-mono muted code-linked-path">{session.workspace}</div>}
       {delegated && <DelegatedNote d={delegated} />}

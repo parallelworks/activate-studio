@@ -3,6 +3,7 @@ import { useWatch } from 'react-hook-form'
 import { Field, Input, Select } from '@parallelworks/ui'
 import { EditorField } from '@parallelworks/ui/editor'
 import { fieldFrame, useFieldValue, type FieldComponent } from '@parallelworks/ui/form'
+import { MachineGlyph } from './MachineLabel'
 
 /**
  * Field components the platform's DynamicForm leaves to the host: the
@@ -41,7 +42,7 @@ function clusterName(v: unknown): string {
 
 function Picker({ frame, value, options, onChange, disabled, placeholder, note }: {
   frame: Props; value: string
-  options: { value: string; label: string }[]; onChange: (v: string) => void; disabled: boolean; placeholder: string; note?: ReactNode
+  options: { value: string; label: string; icon?: ReactNode }[]; onChange: (v: string) => void; disabled: boolean; placeholder: string; note?: ReactNode
 }) {
   const f = fieldFrame(frame)
   // The placeholder is an option, so a pick can be taken back; a value not
@@ -78,7 +79,7 @@ const ClusterField: FieldComponent = (props) => {
   }, [opts])
   return (
     <Picker frame={props} value={current} disabled={disabled} placeholder={err ? 'Clusters unavailable' : 'Select a cluster'}
-      options={opts.map(o => ({ value: o.value, label: `${o.label}${o.status && o.status !== 'active' ? ` (${o.status})` : ''}` }))}
+      options={opts.map(o => ({ value: o.value, label: `${o.label}${o.status && o.status !== 'active' ? ` (${o.status})` : ''}`, icon: <MachineGlyph machine={{ name: o.user ? `pw://${o.user}/${o.name}` : o.name }} /> }))}
       onChange={pick} note={err ? `Could not list clusters: ${err}` : undefined} />
   )
 }

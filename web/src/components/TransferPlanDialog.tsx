@@ -4,6 +4,7 @@ import {
   ACTION_TEXT, TransferError, bytesText, confirmText, countWords, destLine, sourceLine, transferApi,
   type Plan, type PlanRequest, type Transfer,
 } from '../transferApi'
+import { TransferEnd } from './MachineLabel'
 
 /** The first names of a list the plan cut at 50, and how many more there are. */
 function Names({ names, count }: { names: string[]; count: number }) {
@@ -96,8 +97,8 @@ export function TransferPlanDialog({
           <dt>From</dt>
           <dd className="xfer-mono">{plan.source.paths.length > 1
             ? <>{plan.source.label}<Names names={plan.source.paths} count={plan.source.paths.length} /></>
-            : sourceLine(plan.source)}</dd>
-          <dt>To</dt><dd className="xfer-mono">{destLine(plan.destination)}</dd>
+            : <TransferEnd location={plan.source.location}>{sourceLine(plan.source)}</TransferEnd>}</dd>
+          <dt>To</dt><dd className="xfer-mono"><TransferEnd location={plan.destination.location}>{destLine(plan.destination)}</TransferEnd></dd>
           <dt>Files</dt><dd>{what}</dd>
           <dt>Size</dt><dd>{bytesText(plan.bytes)}</dd>
           <dt>Free space</dt><dd>{free === null ? 'Not reported by the destination' : bytesText(free)}</dd>

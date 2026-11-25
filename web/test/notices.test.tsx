@@ -327,7 +327,7 @@ describe('a chat in the list', () => {
     const day = 86_400_000
     const conv = (id: string, title: string, age: number) => ({ id, title, createdAt: new Date(Date.now() - age).toISOString(), updatedAt: new Date(Date.now() - age).toISOString(), isOwner: true })
     const list = [conv('c-new', 'Newest', 1000), conv('c-work', 'Working one', 2000), conv('c-read', 'Unread one', 3000), conv('c-wait', 'Waiting one', day * 3), { ...conv('c-old', 'Old one', day * 4), isOwner: false }]
-    answer = { ...answer, sessions: [session({ id: 's2', status: 'running' })], chats: { 'c-work': { session: 's2' }, 'c-wait': { waiting: true }, 'c-read': { unread: 'reply' } } }
+    answer = { ...answer, sessions: [session({ id: 's2', status: 'running' })], chats: { 'c-work': { session: 's2' }, 'c-wait': { waiting: true }, 'c-read': { unread: 'reply', session: 's-gone', machineName: 'gpu-07' } } }
     const adapter = { conversations: { list: async () => list, get: async () => null, create: async () => list[0], rename: async () => {}, delete: async () => {} }, models: { list: async () => ({ models: [], unreachableSessions: [], providerIssues: [] }) } } as unknown as ChatAdapter
     function Page() {
       const [id, setId] = useState<string | null>(null)
@@ -345,6 +345,12 @@ describe('a chat in the list', () => {
     expect(titles.map(x => ['Waiting one', 'Working one', 'Newest', 'Unread one', 'Old one'].find(n => x!.includes(n)))).toEqual(['Waiting one', 'Working one', 'Newest', 'Unread one', 'Old one'])
     expect(titles[0]).toContain('Waiting on you')
     expect(titles[3]).toContain('New reply')
+    // A pw code chat says its machine, on one second line with its state; a
+    // Studio assistant chat's row is as it was.
+    expect(titles[1]).toContain('example-box')
+    expect(titles[3]).toContain('gpu-07')
+    expect(titles[0]).not.toContain('example-box')
+    expect(screen.getAllByTestId('machine-label').map(x => [x.textContent, x.title])).toEqual([['example-box', 'example-box (box.example)'], ['gpu-07', 'gpu-07']])
     // Another person's chat, shared, keeps its icon.
     expect(screen.getAllByTitle(/shared/i)).toHaveLength(1)
     expect(within(container.querySelectorAll<HTMLElement>('[data-sidebar-row]')[4]).getByTitle(/shared/i)).toBeInTheDocument()

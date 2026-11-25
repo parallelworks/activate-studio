@@ -23,6 +23,7 @@ import { PwBlocked } from './SshLibraryForm'
 import { SystemChip } from './SystemChip'
 import { TargetIcon, addChoices, firstTarget, targetKey, targetMenu, targetName, type AddOptions, type PwBuckets, type Target } from './addLibraryTarget'
 import { useCheck } from './useCheck'
+import { knowSystems } from '../machines'
 
 export type { AddOptions } from './addLibraryTarget'
 
@@ -98,7 +99,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   useEffect(() => {
     if (!asksSystems) return
     let live = true
-    api.pwSystems().then(r => { if (live) setSystems(r) }, e => { if (live) setSystems({ usable: true, why: null, systems: [], error: say(e) }) })
+    api.pwSystems().then(r => { knowSystems(r); if (live) setSystems(r) }, e => { if (live) setSystems({ usable: true, why: null, systems: [], error: say(e) }) })
     return () => { live = false }
   }, [asksSystems, round])
   const [buckets, setBuckets] = useState<PwBuckets>({ buckets: [], loading: true })

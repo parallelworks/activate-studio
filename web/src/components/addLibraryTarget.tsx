@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 import { menuDivider, type MenuEntry } from '@parallelworks/ui'
 import { BucketIcon, ClusterIcon } from '@parallelworks/ui/icons'
-import type { IconMachine } from '../code/machineIcon'
 import { MachineIcon } from '../code/parts'
+import { systemLooks } from '../machines'
 import { pwBucketPlace, type PwBucket, type PwSystem, type PwSystems } from '../api'
 
 /** Where a library is added from: this computer, one of the person's
@@ -91,23 +91,13 @@ export const targetName = (t: Target | null, systems?: PwSystems | null, buckets
   return ''
 }
 
-/** A cluster as its icon is picked: a resource the person added, or one of
- *  a cloud's, by what the platform says of it. */
-const clusterLooks = (s?: PwSystem): IconMachine => ({
-  kind: s?.type === 'existing' ? 'existing' : 'cloud',
-  ...(s?.imageUrl ? { imageUrl: s.imageUrl } : {}),
-  ...(s?.csp ?? s?.type ? { csp: s?.csp ?? s?.type ?? undefined } : {}),
-  ...(s?.schedulerType ? { schedulerType: s.schedulerType } : {}),
-  ...(s?.os ? { os: s.os } : {}),
-})
-
 export function TargetIcon({ target, systems }: { target: Target; systems?: PwSystems | null }): ReactNode {
   switch (target.kind) {
     case 'here': return <MachineIcon machine={{ kind: 'local' }} />
     case 'pwbucket':
     case 'bucket': return <BucketIcon aria-hidden className="code-machine-icon" />
     case 'ssh': return <MachineIcon machine={{ kind: 'existing' }} />
-    case 'cluster': return <MachineIcon machine={clusterLooks(systems?.systems.find(s => s.name === target.name))} />
+    case 'cluster': return <MachineIcon machine={systemLooks(systems?.systems.find(s => s.name === target.name))} />
   }
 }
 
