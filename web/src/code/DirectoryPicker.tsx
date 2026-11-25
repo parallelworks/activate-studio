@@ -1,4 +1,4 @@
-import { Fragment, type KeyboardEvent, type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { cloneElement, Fragment, type KeyboardEvent, type ReactElement, type Ref, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { directoryChip, listedText, pickedOnClose, type PwCodeApi, type PwCodePathRow, type RecentDirectory } from '@parallelworks/code'
 import { Input, Kbd, ListboxGroup, ListboxOption, LoadingRegion, Popover, Skeleton, useListboxNavigation } from '@parallelworks/ui'
 import { ArrowUpIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, FolderOpenIcon, HistoryIcon, RepositoryIcon } from '@parallelworks/ui/icons'
@@ -15,6 +15,16 @@ import type { Translate } from './parts'
  */
 
 type Draft = { typed: string; home: string | undefined; edited: boolean }
+/** Its full height and the space around it: the field, a list of 20rem and the keys. */
+const FULL_HEIGHT = 420
+/** Below the row, or above it where there is more room and below is too little. */
+function roomier(row: Element | null): 'top' | 'bottom' {
+  if (!row) return 'bottom'
+  const { top, bottom } = row.getBoundingClientRect()
+  const below = window.innerHeight - bottom
+  return below >= FULL_HEIGHT || below >= top ? 'bottom' : 'top'
+}
+
 type Machine = Parameters<typeof pwCodePage.usePathCompletion>[0]['machine'] & {}
 
 export function DirectoryPicker({ api = pwCodePage, machine, directory, recents, onPick, trigger, label, placeholder, anew = false }: {
@@ -34,6 +44,8 @@ export function DirectoryPicker({ api = pwCodePage, machine, directory, recents,
 }) {
   const t = useTranslations('agents')
   const [open, setOpen] = useState(false)
+  const [side, setSide] = useState<'top' | 'bottom'>('bottom')
+  const row = useRef<HTMLElement>(null)
   const draft = useRef<Draft | null>(null)
   const escaped = useRef(false)
   const keepDraft = useCallback((next: Draft) => { draft.current = next }, [])
@@ -45,10 +57,18 @@ export function DirectoryPicker({ api = pwCodePage, machine, directory, recents,
     return () => window.removeEventListener('keydown', onKey, true)
   }, [open])
 
+  useEffect(() => {
+    if (!open) return
+    const onResize = () => setSide(roomier(row.current))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [open])
+
   const settle = (next: boolean) => {
     if (next) {
       draft.current = null
       escaped.current = false
+      setSide(roomier(row.current))
       setOpen(true)
       return
     }
@@ -65,24 +85,27 @@ export function DirectoryPicker({ api = pwCodePage, machine, directory, recents,
   }
   const narrow = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 639.98px)').matches === true
   const chip = directoryChip(directory, t)
+  const button = (trigger ?? (
+    <button type="button" aria-label={chip.label} data-testid="agents-directory-chip" className="code-chip">
+      <FolderIcon aria-hidden className="code-chip-icon" />
+      <span className="code-chip-label">{chip.text}</span>
+      <ChevronDownIcon className="code-chip-caret" aria-hidden />
+    </button>
+  )) as ReactElement<{ ref?: Ref<HTMLElement> }>
 
   return (
     <Popover
       open={open}
       onOpenChange={settle}
       align="start"
+      // Chosen as it opens and kept, so the list never jumps while one types.
+      side={side}
       keepSide
       flush
       initialFocus={narrow ? 'popup' : 'first-control'}
       aria-label={label ?? t('start.chooseDirectory')}
       className="code-path-popover"
-      trigger={trigger ?? (
-        <button type="button" aria-label={chip.label} data-testid="agents-directory-chip" className="code-chip">
-          <FolderIcon aria-hidden className="code-chip-icon" />
-          <span className="code-chip-label">{chip.text}</span>
-          <ChevronDownIcon className="code-chip-caret" aria-hidden />
-        </button>
-      )}
+      trigger={cloneElement(button, { ref: row })}
     >
       <PathField placeholder={placeholder} anew={anew} api={api} machine={machine} directory={directory} recents={recents} typing={!narrow} onDraft={keepDraft} onUse={use} />
     </Popover>
