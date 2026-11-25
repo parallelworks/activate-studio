@@ -18,7 +18,7 @@ import { useInstall } from './install'
 import { WorkflowsView } from './views/WorkflowsView'
 import { CodePage } from './code/CodePage'
 import { useCodeWaiting } from './code/waiting'
-import { countFor, setTransfersShown, transfersReadAt, useNotices, useNoticesRead } from './notices'
+import { countFor, setTransfersShown, useNotices, useNoticesRead } from './notices'
 import { NoticesView } from './views/NoticesView'
 import { AgentsView } from './views/AgentsView'
 import { HelpView } from './views/HelpView'
@@ -34,6 +34,7 @@ import { NavResize } from './components/NavResize'
 import { applyAccent, applySurface } from './accents'
 import { onThemeChoice, rememberGround } from './theme'
 import { FullViewHost, RunPane } from './components/RunPane'
+import { startLive, useWatch } from './live'
 import { PanelToggle, StatusPanel } from './components/StatusPanel'
 import { setPanelView } from './panelState'
 import { studioMark } from './studioMark'
@@ -226,30 +227,31 @@ export default function App() {
   const [hasTransfers, setHasTransfers] = useState<boolean | null>(null)
   useEffect(() => { void transfersPresent().then(setHasTransfers) }, [])
   // The menu entry's mark: how many transfers are under way, or a warning
-  // when one failed in the last day and has not been seen. Read every 15
-  // seconds while shown, unless the notices have just brought it. While the Transfers page is open its failures are
-  // seen, so the read marks them seen first; a transfer's details mark
-  // theirs and send the summary.
+  // when one failed in the last day and has not been seen. Followed at 15
+  // seconds, and the notices bring it as well. While the Transfers page is
+  // open its failures are seen, so the read marks them seen first; a
+  // transfer's details mark theirs and send the summary.
   const [xferSummary, setXferSummary] = useState<TransferSummary | null>(null)
   // Sessions waiting on the person, as PW Code on the web's menu counts
   // them, and what else needs them: one read for every mark (notices.ts).
   const codeWaiting = useCodeWaiting(cfg.loaded && sectionAllowed('code', cfg))
   useNoticesRead(cfg.loaded)
+  // What the pages follow comes over one socket (live.ts).
+  useEffect(() => startLive(), [])
   const notices = useNotices()
   const onTransfers = view === 'transfers'
   useEffect(() => { setTransfersShown(onTransfers) }, [onTransfers])
   useEffect(() => {
     if (notices.transfers && !onTransfers) setXferSummary(notices.transfers)
   }, [notices.transfers, onTransfers])
+  useWatch<TransferSummary>('/api/transfers/summary', XFER_EVERY_MS, hasTransfers === true && !onTransfers, setXferSummary)
   useEffect(() => {
     if (!hasTransfers) return
     const read = () => {
-      if (document.visibilityState === 'hidden' || (!onTransfers && Date.now() - transfersReadAt() < XFER_EVERY_MS)) return
-      const ask = onTransfers ? transferApi.seen() : transferApi.summary()
-      ask.then(setXferSummary, () => {})
+      if (onTransfers && document.visibilityState !== 'hidden') transferApi.seen().then(setXferSummary, () => {})
     }
     read()
-    const t = setInterval(read, XFER_EVERY_MS)
+    const t = onTransfers ? setInterval(read, XFER_EVERY_MS) : undefined
     const seen = (e: Event) => {
       const sum = (e as CustomEvent<TransferSummary | undefined>).detail
       if (sum) setXferSummary(sum)
@@ -735,9 +737,9 @@ export default function App() {
         {view === 'transfers' && hasTransfers && <div className="view"><TransfersView /></div>}
         <div className={view === 'search' ? 'view' : 'view hidden'}><SearchView onOpen={openFile} /></div>
         <div className={view === 'query' ? 'view' : 'view hidden'}><QueryView onOpen={openFile} /></div>
-        <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView onOpen={openFile} /></div>
+        <div className={view === 'overview' ? 'view' : 'view hidden'}><OverviewView active={view === 'overview'} onOpen={openFile} /></div>
         <div className={view === 'history' ? 'view' : 'view hidden'}><HistoryView onOpen={openFile} /></div>
-        {aiPagesMounted(cfg) && <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView onOpen={openFile} /></div>}
+        {aiPagesMounted(cfg) && <div className={view === 'agents' ? 'view' : 'view hidden'}><AgentsView active={view === 'agents'} onOpen={openFile} /></div>}
         {/* Without ACTIVATE, where Accounts can sign in to it, these ask to sign in. */}
         {allowed('workflows') && view === 'workflows' && <div className="view"><WorkflowsView /></div>}
         {allowed('code') && view === 'code' && <div className="view"><CodePage /></div>}

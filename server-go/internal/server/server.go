@@ -18,6 +18,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/app"
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/config"
+	"github.com/parallelworks/activate-studio/server-go/internal/live"
 )
 
 // nodeOnly are the Node server's routes outside /api/. They are passed to
@@ -38,6 +39,8 @@ type Server struct {
 	front *auth.Front
 	// App is the process every module shares (internal/app).
 	App *app.App
+	// live sends open pages what they show as it changes.
+	live *live.Service
 	// unported answers 501 for a Node route no Go package serves, in
 	// Node-free mode (cfg.NodeOff).
 	unported *http.ServeMux
@@ -90,6 +93,21 @@ func (s *Server) routes() {
 		s.front.Routes(s.ported)
 	}
 	registerTracks(s.ported, s.App)
+	s.live = live.New(s.read)
+	s.live.Routes(s.ported)
+}
+
+// read answers one read of the live socket (internal/live) as the same
+// request on its own is, and returns the request as the sign-in gate passed
+// it, nil when refused.
+func (s *Server) read(w http.ResponseWriter, r *http.Request) *http.Request {
+	if s.front != nil {
+		if r = s.front.Gate(w, r); r == nil {
+			return nil
+		}
+	}
+	s.dispatch(w, r)
+	return r
 }
 
 // Unported is every Node route no Go package serves, as "METHOD pattern".
@@ -211,6 +229,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = gated
 	}
 	via = s.dispatch(rec, r)
+	// New cookies (a sign-in, a key added or removed): the person's open
+	// sockets still read with the old ones, so their pages open others.
+	if len(rec.Header().Values("Set-Cookie")) > 0 {
+		if u := auth.UserOf(r); u != nil {
+			s.live.Drop(u.ID)
+		}
+	}
 }
 
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) string {

@@ -1,4 +1,5 @@
 import { cachedChat, forgetChat } from '../chatRecord'
+import { useWatch } from '../live'
 
 /**
  * A pw code chat and its session keep one name. The Studio's server does
@@ -16,17 +17,18 @@ export function announceName(conversationId: string, name: string): void {
   const before = said.get(conversationId) ?? (cachedChat(conversationId) as { title?: string } | undefined)?.title
   said.set(conversationId, name)
   if (before === name) return
-  void readNames(0).finally(() => { forgetChat(conversationId); changed() })
+  void readNames().finally(() => { forgetChat(conversationId); changed() })
 }
 
-let read = 0
-
-/** Reads what the person's sessions are called now, at most every half
- *  minute, and their chats again when one changed. */
-export async function readNames(every = 30_000): Promise<void> {
-  if (Date.now() - read < every) return
-  read = Date.now()
+/** Reads what the person's sessions are called now, and their chats again
+ *  when one changed. */
+export async function readNames(): Promise<void> {
   const res = await fetch('/api/chat/pwcode/names', { method: 'POST' }).catch(() => null)
   const d = res?.ok ? await res.json().catch(() => null) as { changed?: number } | null : null
   if (d?.changed) changed()
+}
+
+/** Follows the names, which the Notices page shows as well. */
+export function useNames(): void {
+  useWatch<{ changed?: number }>('/api/chat/pwcode/names', 30_000, true, d => { if (d.changed) changed() }, undefined, true)
 }

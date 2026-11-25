@@ -42,7 +42,7 @@ import { SaveChatButton } from '../components/SaveChatButton'
 import { EngineMarks, EngineNoteReader, PWCodeApprovals, PWCodeEngine, PWCodeModelNotice, PWCodeNotice, PWCodeWatcher } from '../components/PWCodeEngine'
 import { fitControls, watchNotices } from '../chatTop'
 import { PWCodeSession } from '../pwcode/PWCodeSession'
-import { readNames } from '../pwcode/chatNames'
+import { useNames } from '../pwcode/chatNames'
 import { BackgroundCommandHint } from '../pwcode/session/BackgroundCommandHint'
 import { BACKGROUND_TOOL } from '@parallelworks/code'
 
@@ -62,19 +62,14 @@ const MODEL_STORAGE_KEY = 'studio.chat.lastModel'
  *  remounting the provider and tearing down an open stream. */
 function FilterReloader() {
   const { loadConversations } = useChat()
+  // A chat's title follows its pw code session's name, wherever that is
+  // changed.
+  useNames()
   useEffect(() => {
     const on = () => { void loadConversations() }
     window.addEventListener('ade:chat-filter-changed', on)
     window.addEventListener('ade:chats-changed', on)
-    // A chat's title follows its pw code session's name, wherever that is
-    // changed.
-    const names = () => { if (document.visibilityState === 'visible') void readNames() }
-    names()
-    const t = setInterval(names, 30_000)
-    document.addEventListener('visibilitychange', names)
     return () => {
-      clearInterval(t)
-      document.removeEventListener('visibilitychange', names)
       window.removeEventListener('ade:chat-filter-changed', on)
       window.removeEventListener('ade:chats-changed', on)
     }

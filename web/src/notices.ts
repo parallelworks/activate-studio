@@ -2,19 +2,18 @@ import { useEffect, useSyncExternalStore } from 'react'
 import type { PwCodeMachine, PwCodeSession } from '@parallelworks/code'
 import type { TransferSummary } from './transferApi'
 import { waitsOnYou } from './code/waiting'
+import { watch, type Watch } from './live'
 
 /**
  * What needs the person across the Studio, in one place: the menu's marks,
  * the chat list's marks and the Notices page all read this, and it carries
  * the Code page's listing, so they cannot disagree.
  *
- * It is read every 30 seconds while the tab shows, in the one request that
- * used to read the Code page's listing for the Code entry's mark (and it
- * brings the Transfers entry's summary, so that is asked for less), and at
+ * It is followed at 30 seconds while the tab shows (live.ts), and read at
  * once when something in the page says it changed: a reply ended, pw code
  * asked or was answered, the Code page's own listing shows another session
  * waiting, or another tab of this browser said so. While a chat is open in
- * front of the person the same request also says they have seen it.
+ * front of the person, a reply in it is said to be seen as it shows up.
  */
 
 export interface Notice {
@@ -55,11 +54,13 @@ export interface Notices {
 }
 
 const NONE: Notices = { items: [], chats: {}, listed: false, machines: [], sessions: [], loaded: false }
-/** How often the notices are read while the tab shows. */
+/** How often the notices are followed while the tab shows. */
 export const NOTICES_EVERY_MS = 30_000
 /** How long after something happens its read goes, so several in a row are
  *  one request, and the server has stored what happened. */
 export const NOTICES_SOON_MS = 400
+/** A reading that comes this soon after the page's own may be from before it. */
+const SETTLE_MS = 3_000
 const CHANNEL = 'studio-notices'
 
 let state = NONE
@@ -71,13 +72,14 @@ let front: string | null = null
 let onTransfers = false
 /** Replies being written in this page, which it knows before a read. */
 const writing = new Set<string>()
-let timer: ReturnType<typeof setInterval> | null = null
+let following: Watch | null = null
 let soon: ReturnType<typeof setTimeout> | null = null
 let soonAt = 0
 let soonTell = false
-let lastRead = 0
-let summaryAt = 0
 let reads = 0
+/** Requests of the page's own under way, and when the last one ended. */
+let sending = 0
+let sentAt = 0
 let channel: BroadcastChannel | null = null
 /** Chats the person left since the last read, to say seen with the next. */
 let left: string[] = []
@@ -110,13 +112,12 @@ function changed() {
 function take(d: Partial<Notices> | null) {
   if (!d || !Array.isArray(d.items)) return
   state = { items: d.items, chats: d.chats ?? {}, listed: !!d.listed, machines: d.machines ?? [], sessions: d.sessions ?? [], transfers: d.transfers, loaded: true }
-  if (d.transfers) summaryAt = Date.now()
   changed()
 }
 
 async function send(path: string, body?: unknown, keepalive = false): Promise<void> {
   const n = ++reads
-  lastRead = Date.now()
+  sending++
   try {
     const res = await fetch(path, body === undefined ? undefined : {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive,
@@ -127,7 +128,17 @@ async function send(path: string, body?: unknown, keepalive = false): Promise<vo
       if (d) take(d)
       else if (state.loaded && state.listed) { state = { ...state, listed: false }; changed() }
     }
-  } catch { /* the next read tries again */ }
+  } catch { /* the next read tries again */ } finally { sending--; sentAt = Date.now() }
+}
+
+/** What is followed, as it is read. */
+function follow(d: Partial<Notices>): void {
+  // The page's own requests mark things seen: what was read before that is
+  // older news, and it is read again.
+  if (sending || Date.now() - sentAt < SETTLE_MS) { if (!soon) refreshNotices({ tell: false, after: SETTLE_MS }); return }
+  take(d)
+  const here = inFront()
+  if (here && d.chats?.[here]?.unread) void read()
 }
 
 /** Reads the notices now. The chat in front, and those just left, are seen. */
@@ -180,9 +191,6 @@ export function setTransfersShown(on: boolean): void {
   changed()
 }
 
-/** When the last read brought the Transfers entry's summary. */
-export const transfersReadAt = () => summaryAt
-
 /** A reply in a chat is being written, or ended. */
 export function setReplying(conversationId: string, on: boolean): void {
   if (writing.has(conversationId) === on) return
@@ -225,7 +233,6 @@ function onVisibility() {
     return
   }
   changed()
-  if (Date.now() - lastRead > 5_000) void read()
 }
 const onChange = () => refreshNotices()
 const EVENTS: [string, (e: Event) => void][] = [
@@ -237,21 +244,24 @@ const EVENTS: [string, (e: Event) => void][] = [
 
 function start() {
   enabled = true
-  void read()
-  timer = setInterval(() => { if (visible()) void read() }, NOTICES_EVERY_MS)
+  following = watch<Partial<Notices>>('/api/notices', NOTICES_EVERY_MS, follow, () => {
+    if (state.loaded && state.listed) { state = { ...state, listed: false }; changed() }
+  })
   document.addEventListener('visibilitychange', onVisibility)
   for (const [e, f] of EVENTS) window.addEventListener(e, f)
   try {
     channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL)
-    if (channel) channel.onmessage = () => { lastRead = 0; if (visible()) refreshNotices({ tell: false }) }
+    if (channel) channel.onmessage = () => { if (visible()) refreshNotices({ tell: false }) }
   } catch { channel = null }
 }
 
 function stop() {
   enabled = false
-  if (timer) clearInterval(timer)
+  following?.stop()
+  following = null
   if (soon) clearTimeout(soon)
-  timer = soon = null
+  soon = null
+  sentAt = 0
   soonTell = false
   left = []
   document.removeEventListener('visibilitychange', onVisibility)

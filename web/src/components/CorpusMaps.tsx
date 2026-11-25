@@ -1,4 +1,5 @@
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { shownTimeout } from '../live'
 import { createPortal } from 'react-dom'
 import { Button, IconButton, Loader, SegmentedControl } from '@parallelworks/ui'
 import { CloseIcon, ExpandIcon, ResetIcon, ZoomInIcon, ZoomOutIcon } from '@parallelworks/ui/icons'
@@ -1059,7 +1060,7 @@ export function defaultMapLibrary(maps: { id: string; available: boolean; files:
   return best?.id ?? libraries.find(l => l.caps?.vectors)?.id ?? 'kb'
 }
 
-export function SemanticMap({ onOpen, libraries = [], follow }: { onOpen: (path: string) => void; libraries?: PublicLibrary[]; follow?: string | null }) {
+export function SemanticMap({ active = true, onOpen, libraries = [], follow }: { active?: boolean; onOpen: (path: string) => void; libraries?: PublicLibrary[]; follow?: string | null }) {
   const PALETTE = accentPalette()
   const several = libraries.length > 1
   // Without a choice kept, the largest map: asked for once.
@@ -1075,6 +1076,9 @@ export function SemanticMap({ onOpen, libraries = [], follow }: { onOpen: (path:
   const [chosen, setLib] = useMapLibrary('semantic', libraries, fallback, follow)
   const lib = several ? chosen : 'kb'
   const base = lib ? mainOrLibrary(lib, 'semantic-map') : null
+  const shown = useRef(active)
+  shown.current = active
+  const due = useRef<(() => void) | null>(null)
   const [data, setData] = useState<MapOverview | null>(null)
   // What changes from one look to the next while a map stays the same.
   const [live, setLive] = useState<{ building: boolean; progress: MapProgress | null; error: string | null }>({ building: false, progress: null, error: null })
@@ -1097,18 +1101,23 @@ export function SemanticMap({ onOpen, libraries = [], follow }: { onOpen: (path:
   useEffect(() => { setData(null); setLive({ building: false, progress: null, error: null }) }, [base])
   useEffect(() => {
     if (!base) return
-    let alive = true, timer: ReturnType<typeof setTimeout> | undefined
+    let alive = true, stop = () => {}
     const load = () => fetch(base).then(r => r.json()).then((d: MapOverview) => {
       if (!alive) return
       setData(prev => (prev && sameMap(prev, d) ? prev : d))
       setLive({ building: !!d.building, progress: d.progress ?? null, error: d.error ?? null })
       // A map being made (a first one, or a new one over the one shown), or
-      // one waiting for its embeddings, shows when ready.
-      if (d.building || (!d.available && d.reason === 'none')) timer = setTimeout(load, d.building ? 5000 : 30_000)
+      // one waiting for its embeddings, shows when ready: asked for again
+      // while the page shows, and as it is opened.
+      if (d.building || (!d.available && d.reason === 'none')) {
+        due.current = () => { due.current = null; stop(); void load() }
+        if (shown.current) stop = shownTimeout(() => due.current?.(), d.building ? 5000 : 30_000)
+      }
     }).catch(() => { /* stays empty */ })
     void load()
-    return () => { alive = false; if (timer) clearTimeout(timer) }
+    return () => { alive = false; stop(); due.current = null }
   }, [base, depthAsked, tick])
+  useEffect(() => { if (active) due.current?.() }, [active])
   // Another library starts with no depth asked for.
   useEffect(() => { setDepthAsked(false); setDepthError('') }, [lib])
   // A new map starts over: no cluster open, nothing extra loaded, no answers kept.

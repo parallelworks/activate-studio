@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { shownInterval } from '../live'
 import {
   ActionMenu, Button, Callout, Card, CopyButton, IconButton, Loader, type MenuEntry, Modal, ProgressBar, Select, StatusBadge, toast, useConfirm,
 } from '@parallelworks/ui'
@@ -333,11 +334,10 @@ export function LibrariesSection({ pollMs = 1000, heading = true }: {
   useEffect(() => {
     if (!followHere && !followRemote && !followRuns) return
     const fast = followHere || followRemote
-    const t = window.setInterval(() => {
+    return shownInterval(() => {
       if (followHere) void loadLibs()
       if (followRemote || followRuns) void loadUser()
     }, fast ? Math.max(pollMs * 2, 2000) : 15_000)
-    return () => window.clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followHere, followRemote, followRuns])
 

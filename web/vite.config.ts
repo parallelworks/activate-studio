@@ -88,7 +88,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:4080',
+      '/api': { target: 'http://localhost:4080', ws: true },
     },
   },
   build: { outDir: 'dist' },

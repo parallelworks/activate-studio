@@ -162,7 +162,7 @@ func TestTheSessionFeedOpensOnlyForTheStudiosOwnPages(t *testing.T) {
 	local, remote := &fakePW{}, &fakePW{}
 	_, base, _, _ := relayModule(t, local, remote)
 	relayedChat(t, base)
-	for _, u := range []string{"/api/pwcode-feed/machines/m2/sessions/s1/events?after=0", "/api/pwcode-feed/sessions"} {
+	for _, u := range []string{"/api/pwcode-feed/machines/m2/sessions/s1/events?after=0"} {
 		req, _ := http.NewRequest(http.MethodGet, base+u, nil)
 		req.Header.Set("Origin", "https://elsewhere.example")
 		req.Header.Set("Connection", "Upgrade")

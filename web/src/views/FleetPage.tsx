@@ -9,6 +9,7 @@ import { PersonaIcon } from '../components/PersonaIcon'
 import { commandHead } from '../commandHead'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { needsActivate } from '../accounts'
+import { readNow, shownInterval, useWatch } from '../live'
 
 /**
  * The operator base: standing agents with goals, their state, their
@@ -64,7 +65,7 @@ export const journalTime = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso.slice(0, 16).replace('T', ' ') : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpenTask: (taskId: string) => void }) {
+export function FleetPage({ active = true, personas, onOpenTask }: { active?: boolean; personas: Persona[]; onOpenTask: (taskId: string) => void }) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [open, setOpen] = useState<string | null>(null)
@@ -96,21 +97,20 @@ export function FleetPage({ personas, onOpenTask }: { personas: Persona[]; onOpe
   const [acted, setActed] = useState(0)
   const [form, setForm] = useState({ name: '', goal: '', persona: '', model: '', resource: '', every: '1h', onRunEnd: true, watchPath: '', maxTicks: '', maxTokens: '', maxTurns: '' })
 
-  const refresh = () => fetch('/api/fleet').then(r => r.json()).then(d => { setAgents(d.agents ?? []); setUnavailable(d.unavailable ?? null); setError(null) }).catch(() => {})
+  useWatch<{ agents?: Agent[]; unavailable?: string | null }>('/api/fleet', 10_000, active, d => { setAgents(d.agents ?? []); setUnavailable(d.unavailable ?? null); setError(null) })
+  const refresh = () => { readNow('/api/fleet').catch(() => {}) }
   useEffect(() => {
-    refresh()
-    const t = setInterval(refresh, 10_000)
     fetch('/api/fleet/templates').then(r => r.json()).then(d => setTemplates(d.templates ?? [])).catch(() => {})
-    return () => clearInterval(t)
   }, [])
   useEffect(() => {
     if (!open) { setDetail(null); return }
+    if (!active) return
     let stop = false
     const load = () => fetch(`/api/fleet/${encodeURIComponent(open)}`).then(r => r.json()).then(d => { if (!stop && d.agent) setDetail({ agent: d.agent, journal: d.journal ?? [], session: d.session ?? null, approval: d.approval ?? null }) }).catch(() => {})
     load()
-    const t = setInterval(load, 5_000)
-    return () => { stop = true; clearInterval(t) }
-  }, [open, acted])
+    const t = shownInterval(load, 5_000)
+    return () => { stop = true; t() }
+  }, [open, acted, active])
 
   const act = async (id: string, name: string, body?: Record<string, unknown>) => {
     const r = await fetch(`/api/fleet/${encodeURIComponent(id)}/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) })

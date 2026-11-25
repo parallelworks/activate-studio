@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { shownTimeout } from '../live'
 import {
   Button, Callout, Drawer, EmptyState, Loader, ProgressBar, SearchInput, Select, StatusDot, StatusLabel, Tabs, type BadgeVariant,
 } from '@parallelworks/ui'
@@ -311,16 +312,16 @@ export function TransferActivity({
   const pollSoon = useRef<() => void>(() => {})
   useEffect(() => {
     let stop = false
-    let timer: ReturnType<typeof setTimeout>
+    let cancel = () => {}
     lastSince.current = Date.now()
     const tick = async () => {
-      clearTimeout(timer)
+      cancel()
       const busy = await loadActive()
-      if (!stop) { clearTimeout(timer); timer = setTimeout(tick, busy || activeIds.current.size ? POLL_ACTIVE_MS : POLL_IDLE_MS) }
+      if (!stop) { cancel(); cancel = shownTimeout(() => void tick(), busy || activeIds.current.size ? POLL_ACTIVE_MS : POLL_IDLE_MS) }
     }
-    pollSoon.current = () => { clearTimeout(timer); timer = setTimeout(tick, POLL_ACTIVE_MS) }
+    pollSoon.current = () => { cancel(); cancel = shownTimeout(() => void tick(), POLL_ACTIVE_MS) }
     void tick()
-    return () => { stop = true; clearTimeout(timer); pollSoon.current = () => {} }
+    return () => { stop = true; cancel(); pollSoon.current = () => {} }
   }, [loadActive])
 
   // The transfer just started shows at once, before the next read lists it.
