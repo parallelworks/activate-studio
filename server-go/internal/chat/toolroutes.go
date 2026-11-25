@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -118,7 +119,7 @@ var goExecutors = map[string]func(m *Module, r *http.Request, args map[string]an
 // studioDocs are the documents studio_docs reads, by the name the model passes.
 var studioDocs = map[string]string{
 	"help": "HELP.md", "reference": "REFERENCE.md", "deploy": "DEPLOY.md", "architecture": "ARCHITECTURE.md", "customization": "CUSTOMIZATION.md", "libraries": "LIBRARIES.md",
-	"workflows": "WORKFLOWS.md", "agents": "AGENTS.md", "multi-user": "MULTI-USER.md", "macos": "MACOS.md", "updates": "UPDATES.md", "extraction": "EXTRACTION.md",
+	"workflows": "WORKFLOWS.md", "agents": "AGENTS.md", "multi-user": "MULTI-USER.md", "access-control": "ACCESS-CONTROL.md", "macos": "MACOS.md", "updates": "UPDATES.md", "extraction": "EXTRACTION.md",
 }
 
 // toolError is a failure the tool reports as its result.
@@ -222,7 +223,19 @@ func (m *Module) toolStudioDocs(r *http.Request, args map[string]any, _ ToolCtx)
 	}
 	eff := m.eff()
 	md := helpdoc.Fill(string(b), eff.AppName, eff.KbLabel)
-	return &Outcome{Result: jsval.Slice(md, toolOutputCap), Summary: file + " (" + itoaInt(jsval.Len(md)) + " chars)"}, nil
+	req := helpdoc.Request{Section: argString(args, "section"), Find: argString(args, "find")}
+	if n, err := strconv.Atoi(argString(args, "part")); err == nil {
+		req.Part = n
+	}
+	summary := file
+	switch {
+	case strings.TrimSpace(req.Section) != "":
+		summary += ", " + strings.TrimSpace(req.Section)
+	case strings.TrimSpace(req.Find) != "":
+		summary += ", " + strings.TrimSpace(req.Find)
+	}
+	out := helpdoc.Read(md, req, toolOutputCap)
+	return &Outcome{Result: out, Summary: jsval.Slice(summary, 80) + " (" + itoaInt(jsval.Len(out)) + " chars)"}, nil
 }
 
 // nodeFSError is the message a failed fs call has in Node.

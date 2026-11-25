@@ -1,6 +1,6 @@
 # Deploying
 
-Three ways to run the Studio, how people sign in to a shared one, then how it reaches a model. Settings and branding are in [`CUSTOMIZATION.md`](CUSTOMIZATION.md).
+Three ways to run the Studio, how people sign in to a shared one and what its administrators set, then how it reaches a model. Settings and branding are in [`CUSTOMIZATION.md`](CUSTOMIZATION.md).
 
 ## On ACTIVATE
 
@@ -55,7 +55,7 @@ The README's quick start is the whole procedure. Values that differ per deployme
 A Studio serves one person unless it is told how to tell people apart. Two ways, which can be used together:
 
 - **Behind the ACTIVATE session proxy:** set `AUTH_JWKS_URL` to `https://<platform host>/api/platform/keys`. The proxy forwards a short-lived JWT naming the user with each request ([`CUSTOMIZATION.md`](CUSTOMIZATION.md)).
-- **Through an OpenID Connect provider:** ACTIVATE (a feature preview) or any provider with a discovery document, such as Keycloak, Entra ID or Okta. People sign in once and the Studio keeps a session for them. Sign-in is handled by the Go server, which starts Node behind it (`server-go`, `STUDIO_NODE_SPAWN=1`; [`GO-PORT.md`](GO-PORT.md)); the Node server started on its own does not offer it.
+- **Through an OpenID Connect provider:** ACTIVATE (a feature preview) or any provider with a discovery document, such as Keycloak, Entra ID or Okta. People sign in once and the Studio keeps a session for them. The releases and the deployment workflow run the Go server, which handles sign-in; the Node server a clone starts does not.
 
 A request that carries a valid proxy JWT is that JWT's user; otherwise the sign-in session decides. Either way the Studio runs in shared mode: setup, the pw CLI's sign-in and other deployment-level controls are closed, and each person brings their own model and platform key under Settings, Accounts.
 
@@ -72,7 +72,11 @@ A request that carries a valid proxy JWT is that JWT's user; otherwise the sign-
 | `OIDC_END_SESSION` | `1`: sign-out also ends the provider's session (its `end_session_endpoint`). By default sign-out ends the Studio's session only |
 | `OIDC_SESSION_MAX_AGE_SEC` | how long a sign-in lasts, default 43200 (12 hours) |
 | `STUDIO_ADMINS` | who changes the main library and the Studio's settings on a Studio with sign-in, besides the deployment's owner (`PW_USER`): user names, ids, e-mail addresses or `group:NAME`, separated by commas or spaces. Everyone else reads it only |
+| `REQUIRE_PERSONAL_KEY` | `1`: chat and models refuse the administrator's endpoint and the model served beside the Studio, so each person uses their own sign-in or key. `DISABLE_PERSONAL_KEYS=1` is its opposite, and wins when both are set |
+| `CHAT_SHARED_HISTORY` | `1`: everyone signed in can open and read everyone's chats, under **All chats**. Off by default with sign-in, and an administrator's choice in Settings, General, AI features comes first. Answers can quote files from people's own libraries |
 | `OIDC_REQUIRED` or `AUTH_REQUIRED` | `1`: API requests need a signed-in user, and a page load without one goes to sign-in. `/healthz`, the app's script, style and icon files, the brand image (`APP_ICON`, `APP_FAVICON`), and a mission worker's token on `/api/mcp` stay open |
+
+**The strict posture** is `AUTH_REQUIRED=1` and `REQUIRE_PERSONAL_KEY=1`: every request is a signed-in person's, and each person's chat runs on their own credential. The deployment workflow's **Multi-user, personal keys required** sets both and takes the platform host from the form. With it, name the administrators in `STUDIO_ADMINS`, list the bucket endpoints below, and give the Studio a fixed address. Who can see what is in [`MULTI-USER.md`](MULTI-USER.md#what-administrators-set-and-see).
 
 The username from the provider is not assumed to be an account on any host. ACTIVATE releases `sub`, `name`, `preferred_username`, `email` and `groups`, and no uid or gid; its username can differ from a person's login on a cluster. Name `AUTH_ACCOUNT_CLAIM` only for a provider whose claim is the host account.
 
@@ -98,6 +102,16 @@ Each person signs in to ACTIVATE under Settings, Accounts (the device code, or a
 | `SSL_CERT_FILE` | a bundle with the network's own certificate authority, for the Studio and the pw CLI |
 
 The host asks the platform and the store itself, so both have to be reachable from it: directly, through the proxy, or through a VPC endpoint. When one cannot be, the person is told so and the Studio's log says why. The pw CLI is run without the host's own cloud credentials (`AWS_*`, `GOOGLE_*`, `AZURE_*`, `CLOUDSDK_*`, and instance metadata on AWS). The indexes are in `INDEX_BASE/users`, about what the same number of files would take.
+
+### Links that last
+
+Copy link makes addresses that start with the Studio's own, so they stop working when it changes. The address is the first of these that applies:
+
+1. `STUDIO_SELF_URL`, where it is https and not loopback (the deployment form's **Public Studio URL**).
+2. `OIDC_REDIRECT_URI` without `/api/auth/callback`.
+3. The address the page is open at.
+
+Set the first to the Studio's fixed subdomain (`pw subdomains reserve <label>` gives one), or launch again under the same session name, which keeps the subdomain. The link log in `INDEX_BASE/link-log`, one file a month, has who made and opened links and when, with the ID of the item and no path; keep it with the audit logs, since nothing removes it. `INDEX_BASE/links.json` maps an ID to its path and is as sensitive as a file listing. See [`REFERENCE.md`](REFERENCE.md#links-to-items).
 
 ### Registering the Studio with ACTIVATE
 
