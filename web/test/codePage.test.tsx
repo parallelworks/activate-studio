@@ -186,6 +186,31 @@ describe('the Code page', () => {
     expect(await screen.findByTestId('machine-tools-offer')).toHaveTextContent('pw code on box')
   })
 
+  // A session on another machine never starts silently without the tools:
+  // said each time one is chosen to start on, with Add or why not.
+  it('says each time that a session on another machine would lack the tools', async () => {
+    const own = { ...machine, remoteStart: false }
+    const at = (toolsMachines: unknown[]) => { cleanup(); studio({ machines: [own, other], toolsMachines }); render(<CodePage />) }
+    for (let visit = 0; visit < 2; visit++) {
+      at([{ state: 'offer', machine: 'gpu', machineId: 'm2' }])
+      const offer = await screen.findByTestId('machine-tools-offer')
+      expect(offer).toHaveTextContent("pw code on gpu does not have this Studio's tools, so a session there works with its own.")
+      within(offer).getByRole('button', { name: 'Add' })
+    }
+    at([{ state: 'unavailable', machine: 'gpu', machineId: 'm2', why: 'pw ssh does not reach gpu.' }])
+    expect(await screen.findByTestId('machine-tools-none')).toHaveTextContent('They cannot be added there now: pw ssh does not reach gpu.')
+    // Set up there, or attached as a session starts: only that read-only
+    // mode, the widest gpu takes here, does not run them.
+    for (const has of [{ state: 'set' }, { state: 'offer', attach: true }]) {
+      cleanup()
+      studio({ machines: [own, { ...other, remoteMaxPermissionMode: 'read-only' }], toolsMachines: [{ ...has, machine: 'gpu', machineId: 'm2' }] })
+      render(<CodePage />)
+      expect(await screen.findByTestId('machine-tools-mode')).toHaveTextContent("In read-only mode pw code on gpu does not run this Studio's tools for a chat here. In accept edits it asks you before each one.")
+      expect(screen.queryByTestId('machine-tools-offer')).toBeNull()
+      expect(screen.queryByTestId('machine-tools-none')).toBeNull()
+    }
+  })
+
   it('says plainly that a machine gone offline is not connected', async () => {
     const cpu = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3' }
     studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }],

@@ -31,14 +31,25 @@ export function PWCodeToolsNote({ conversationId, link }: { conversationId: stri
   if (hidden) return null
   if (!link.relay) {
     if (!link.toolsError) return null
+    if (link.continued && link.picked) {
+      return (
+        <NoticeCard tone="warning" onDismiss={() => setHidden(true)}>
+          This session started without the Studio's tools, which pw code could not connect to ({link.toolsError}). A session keeps the tools it started with: start a new one to try again.
+        </NoticeCard>
+      )
+    }
     return (
       <NoticeCard tone="warning" onDismiss={() => setHidden(true)}>
         This session does not have the Studio's tools: the Studio tried twice before your last message and could not connect them ({link.toolsError}). It tries again with your next message.
       </NoticeCard>
     )
   }
+  if (link.hasTools) return null
   // A session on another machine reaches the Studio's tools once its
   // machine's pw code has the Studio as an MCP server: the setup card shows
   // the one-time command and checks that it worked (/api/mcp/bridge).
-  return <StudioToolsSetup machineName={link.machineName} conversationId={conversationId} onDismiss={() => { markSeen(conversationId); setHidden(true) }} />
+  return <>
+    {link.toolsError && <NoticeCard tone="warning">This session started without the Studio's tools: ACTIVATE could not attach them ({link.toolsError}).</NoticeCard>}
+    <StudioToolsSetup machineName={link.machineName} conversationId={conversationId} onDismiss={() => { markSeen(conversationId); setHidden(true) }} />
+  </>
 }

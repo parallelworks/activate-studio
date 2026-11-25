@@ -14,6 +14,7 @@ vi.mock('../src/pwcode/session/usePlatformModels', () => ({ usePlatformModels: (
 
 import { NewChatModelSlot } from '../src/pwcode/NewChatModel'
 import { firstMessagePick, pickModel, pickedModel } from '../src/pwcode/newChatPick'
+import { setStart } from '../src/pwcode/newChatStart'
 import { createStudioAdapter } from '../src/adapter'
 import { forgetEngines, readEngine } from '../src/chatEngine'
 
@@ -65,6 +66,16 @@ describe('a new pw code chat, before its first message', () => {
     await waitFor(() => expect(screen.queryByRole('button')).toBeNull())
     act(() => canvas.setAttribute('data-engine', 'pwcode'))
     expect(await screen.findByRole('button', { name: 'claude-code/haiku' })).toBeInTheDocument()
+  })
+  it('offers the models of the machine the chat is set to start on', async () => {
+    render(<NewChatModelSlot conversationId="c8" hasSession={false} />, { container: canvas.appendChild(document.createElement('div')) })
+    await screen.findByRole('button', { name: 'claude-code/haiku' })
+    // It runs no Claude Code, so the model Settings names is not its model.
+    act(() => setStart('c8', { machine: { id: 'm2', claudeInstalled: false } }))
+    expect(await screen.findByRole('button', { name: 'none' })).toHaveAttribute('data-ready', 'false')
+    act(() => setStart('c8', { machine: { id: 'm3', claudeInstalled: true, claudeCodeAllowed: true } }))
+    expect(await screen.findByRole('button', { name: 'claude-code/haiku' })).toHaveAttribute('data-ready', 'true')
+    act(() => setStart('c8', {}))
   })
   it('is sent with the chat\'s first message to the Studio', async () => {
     pickModel(null, { model: 'claude-code/opus', allocation: 'alloc-1' })

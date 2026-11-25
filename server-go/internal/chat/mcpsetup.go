@@ -358,6 +358,9 @@ type bridgeOfferT struct {
 	Available bool `json:"available"`
 	// Allows is the tools pw code there would run without asking.
 	Allows []string `json:"allows,omitempty"`
+	// Attach: the machine takes the Studio's tools into a session as it
+	// starts, so one started from here has them without a setup.
+	Attach bool `json:"attach,omitempty"`
 }
 
 func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
@@ -385,7 +388,7 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 		o.State, o.Why = "unavailable", apiMessage(err)
 		return o
 	}
-	o.Available, o.Allows = true, m.bridgeAllows(r)
+	o.Available, o.Attach, o.Allows = true, mach.Attach, m.bridgeAllows(r)
 	switch {
 	case p.Declined:
 		o.State = "declined"

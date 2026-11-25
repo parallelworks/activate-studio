@@ -5,7 +5,6 @@ import {
   machinesById,
   type PwCodeMachine,
   type PwCodePicker,
-  
   type PwCodeStartLocation,
   type PwCodeStartMachine,
   type PwCodeStartPermission,
@@ -57,13 +56,15 @@ import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useStartAc
  * session started here opens in a Studio chat.
  */
 
-type Machine = PwCodeStartMachine & PwCodeMachine
+export type Machine = PwCodeStartMachine & PwCodeMachine
 
-export function CodeStart({ onOpen, onStarted, onMachine, top }: {
+export function CodeStart({ onOpen, onStarted, onMachine, onMode, top }: {
   onOpen: (s: Pick<PageSession, 'machineId' | 'id'> & { archivedAt?: string | null }) => void
   onStarted: (machine: string, id: string) => void
   /** The machine chosen to start a session on, as it changes. */
   onMachine?: (id: string | undefined) => void
+  /** The permission mode it would start in, as it changes. */
+  onMode?: (mode: string) => void
   /** Above the composer: the session a link named. */
   top?: (answer: PwCodeStartScreen['answer']) => ReactNode
 }) {
@@ -77,6 +78,7 @@ export function CodeStart({ onOpen, onStarted, onMachine, top }: {
   useEffect(() => { onMachine?.(chosen) }, [onMachine, chosen])
   const screen = useStartScreen(pwCodePage, { location, describeError })
   const startMode = useStartPermissionMode(useStartMode(), location.machine)
+  useEffect(() => { onMode?.(startMode.mode) }, [onMode, startMode.mode])
   const machineById = useMemo(() => machinesById(machines), [machines])
   const triage = useMemo(() => triageSessions(sessions, machineById), [sessions, machineById])
   const shortlist = startShortlist(triage)
@@ -183,7 +185,7 @@ function ShortlistLoading({ t }: { t: Translate }) {
   )
 }
 
-function machineMenuEntries(location: PwCodeStartLocation<Machine>, t: Translate): MenuEntry[] {
+export function machineMenuEntries(location: PwCodeStartLocation<Machine>, t: Translate): MenuEntry[] {
   const menu = machineMenu(location, t)
   const byId = machinesById([...location.startable, ...location.down])
   const icon = (id: string) => {
@@ -196,7 +198,7 @@ function machineMenuEntries(location: PwCodeStartLocation<Machine>, t: Translate
   return [...up, menuDivider, { label: menu.downLabel, items: unavailable }]
 }
 
-function MachineChip({ finding, machine, items, t }: { finding: boolean; machine: Machine | undefined; items: MenuEntry[]; t: Translate }) {
+export function MachineChip({ finding, machine, items, t }: { finding: boolean; machine: Machine | undefined; items: MenuEntry[]; t: Translate }) {
   const chip = machineChip(machine, t, finding)
   if (finding) {
     return <span data-testid="agents-finding-machines" className="code-chip muted"><Loader inline decorative size={12} />{chip.text}</span>

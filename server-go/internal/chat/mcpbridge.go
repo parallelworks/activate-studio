@@ -187,6 +187,9 @@ func (m *Module) bridgeRoute(w http.ResponseWriter, r *http.Request) error {
 // bridgeReach is the Studio's MCP endpoint for r's viewer on another
 // machine, or why there is none.
 func (m *Module) bridgeReach(r *http.Request) (url, why string) {
+	if m.bridgeReachFn != nil {
+		return m.bridgeReachFn(r)
+	}
 	u := user(r)
 	switch {
 	case !m.A.Cfg.AuthEnabled() || u == nil || u.Source != "proxy":

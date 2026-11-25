@@ -17,6 +17,12 @@ import (
 // the person's own library on a shared one), with the persona's text in
 // that folder's AGENTS.md; the Studio assistant keeps taking a persona as
 // its stance in the system prompt.
+//
+// A folder the person chose is theirs: the Studio writes nothing into it,
+// and an AGENTS.md there stays as it is. The persona goes into that
+// session's own prompt instead (pickedPersonaPrompt). A session on another
+// machine takes no prompt from here, so the two are not combined
+// (startElsewhere).
 
 // personaFolder points t at the persona's folder, written first; where no
 // library the session sees can take it, the session works where it would
@@ -24,7 +30,7 @@ import (
 func (m *Module) personaFolder(r *http.Request, t *pwTarget, persona string) {
 	t.persona = persona
 	svc := agentsmd.Default
-	if persona == "" || svc == nil {
+	if persona == "" || svc == nil || t.folderPicked {
 		return
 	}
 	rel := "agents/" + persona
@@ -50,6 +56,21 @@ func (m *Module) personaFolder(r *http.Request, t *pwTarget, persona string) {
 		return
 	}
 	t.workspace = ws
+}
+
+// pickedPersonaPrompt is the persona as a session in a folder the person
+// chose carries it, in its prompt; "" for none.
+func (m *Module) pickedPersonaPrompt(t *pwTarget) string {
+	svc := agentsmd.Default
+	if !t.folderPicked || t.persona == "" || svc == nil {
+		return ""
+	}
+	name, body, err := svc.Instructions(t.persona)
+	if err != nil {
+		m.A.Log.Warn("pw code chat: the persona could not be read, so the session works without it", "persona", t.persona, "err", err.Error())
+		return ""
+	}
+	return "\n\nThe person chose the agent instructions " + name + " for this chat. Follow them in all your work here:\n\n" + body
 }
 
 // ownSpace is the id of the person's own library, "" when they have none.

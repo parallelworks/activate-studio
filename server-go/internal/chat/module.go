@@ -90,6 +90,7 @@ type Module struct {
 	bridgeMachineFn  bridgeMachineFn
 	bridgeMachinesFn bridgeMachinesFn
 	bridgeAttachFn   bridgeAttachFn
+	bridgeReachFn    func(r *http.Request) (url, why string)
 	bridgeClustersFn bridgeClustersFn
 	access           Access
 
@@ -353,6 +354,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	m.pwcodeRoutes(h)
 	m.pwcodeContinueRoutes(h)
 	m.pwcodeProxyRoutes(h)
+	m.pwcodeStartRoutes(h)
 	m.keyRoutes(h)
 	h("GET /api/chat/models", m.models)
 	h("GET /api/ai/health", m.health)
