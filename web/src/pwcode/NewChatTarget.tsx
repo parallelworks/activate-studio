@@ -101,8 +101,8 @@ export function NewChatTarget({ conversationId, persona }: { conversationId: str
   // The machine chosen is no longer there to start on: back to the default,
   // as the row shows it.
   useEffect(() => {
-    if (listing && start.machine && machine?.id !== start.machine.id) setStart(conversationId, {})
-  }, [listing, start.machine, machine?.id, conversationId])
+    if (listing && start.machine && !start.library && machine?.id !== start.machine.id) setStart(conversationId, {})
+  }, [listing, start.machine, start.library, machine?.id, conversationId])
 
   // On another machine nothing is the default: the folder used there last,
   // else the home folder where it lists its folders.
@@ -123,13 +123,16 @@ export function NewChatTarget({ conversationId, persona }: { conversationId: str
     : start.folder || listing?.folder || ''
   // What the row shows on another machine is what the message carries.
   useEffect(() => {
-    if (other && start.machine?.id === machine.id) setStart(conversationId, { machine: start.machine, ...(folder ? { folder } : {}), mode: permission.mode, ...(asks ? { tools: ticked } : {}) })
-  }, [other, machine, start.machine, folder, permission.mode, asks, ticked, conversationId])
+    if (other && start.machine?.id === machine.id) setStart(conversationId, { machine: start.machine, ...(start.library ? { library: start.library } : {}), ...(folder ? { folder } : {}), mode: permission.mode, ...(asks ? { tools: ticked } : {}) })
+  }, [other, machine, start.machine, start.library, folder, permission.mode, asks, ticked, conversationId])
 
   if (!listing?.available) return null
   const location = { ...at, pickMachine, directory: folder }
+  // The machine that holds the Library's folder is not there to start on:
+  // the chat says so, and takes the place of neither by itself.
+  const lost = !!start.library && (start.machine ? machine?.id !== start.machine.id : other)
   const pickFolder = (path: string) => {
-    if (other) setStart(conversationId, { ...start, folder: path })
+    if (other) setStart(conversationId, { ...start, library: undefined, folder: path })
     else setStart(conversationId, path === listing.folder ? {} : { folder: path })
   }
   return (
@@ -139,13 +142,18 @@ export function NewChatTarget({ conversationId, persona }: { conversationId: str
           The {persona} persona works only on this Studio's own pw code machine: a session on {machine.name} has no way to take it from the Studio. Choose Default under Persona, or the Studio's machine.
         </p>
       )}
+      {lost && (
+        <p className="pwcode-start-note warn" role="status" data-testid="pwcode-start-lost">
+          {start.folder} is on {start.library?.machineName || 'another machine'}, which takes no new sessions now. Start this chat again from the Library once it does, or choose another machine here.
+        </p>
+      )}
       {waits && conversationId && (
         <p className="pwcode-start-note" role="status">No model is set. Choose one in the message box, or add one under Settings, Accounts.</p>
       )}
-      <MachineChip finding={false} machine={machine} items={machineMenuEntries(location, t, tools)} t={t} />
-      {machine && <ToolsMarkButton machine={machine} control={tools} mode={permission.mode} />}
-      {machine && <DirectoryPicker key={machine.id} api={startApi} machine={machine} directory={folder} recents={at.directories} onPick={pickFolder} />}
-      {other && <PermissionPicker mode={permission.mode} ceiling={permission.ceiling} accepted={permission.accepted} onPick={permission.pick} />}
+      <MachineChip finding={false} machine={lost ? undefined : machine} items={machineMenuEntries(location, t, tools)} t={t} />
+      {machine && !lost && <ToolsMarkButton machine={machine} control={tools} mode={permission.mode} />}
+      {machine && !lost && <DirectoryPicker key={machine.id} api={startApi} machine={machine} directory={folder} recents={at.directories} onPick={pickFolder} />}
+      {other && !lost && <PermissionPicker mode={permission.mode} ceiling={permission.ceiling} accepted={permission.accepted} onPick={permission.pick} />}
       {asks && toolsThere?.tools && <ToolsChoice tools={toolsThere.tools} checked={ticked} disabled={isStreaming} onChange={on => setStart(conversationId, { ...start, tools: on })} />}
       {tools.dialog}
     </fieldset>

@@ -66,11 +66,20 @@ func (m *Module) startFor(r *http.Request, body *streamBody, c *conversations.Co
 	if p.machine != "" && !pwcode.IsRouteID(p.machine) {
 		return startPick{}, pwErr(400, "Not a machine.")
 	}
-	if p.folder != "" {
+	lib := strings.TrimSpace(deref(body.PWCodeLibrary))
+	// One from the Library is compared with the folder found there, which on
+	// this computer may be a Windows path.
+	if p.folder != "" && lib == "" {
 		if !strings.HasPrefix(p.folder, "/") || strings.ContainsAny(p.folder, "\x00\r\n") || len(p.folder) > 4096 {
 			return startPick{}, pwErr(400, "The folder must be a full path on the machine.")
 		}
 		p.folder = path.Clean(p.folder)
+	}
+	if lib != "" {
+		var err error
+		if p, err = m.pickInLibrary(r, p, lib, deref(body.PWCodePath)); err != nil {
+			return startPick{}, err
+		}
 	}
 	if p.machine != "" {
 		return p, nil
@@ -446,6 +455,7 @@ func remoteCeiling(mach *jsonv.Object) (ceiling, why string) {
 func (m *Module) pwcodeStartRoutes(h func(pattern string, fn func(http.ResponseWriter, *http.Request) error)) {
 	codesessions.StartInChat = m.startFromCode
 	h("GET /api/chat/pwcode/start", m.startListing)
+	h("GET /api/chat/pwcode/start/library", m.startInLibrary)
 	h("GET /api/chat/pwcode/start/machines/{machine}/directories", m.startDirectories)
 	h("GET /api/chat/pwcode/start/machines/{machine}/palette", m.startPalette)
 }

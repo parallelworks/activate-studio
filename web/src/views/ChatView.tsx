@@ -10,6 +10,9 @@ import { NewChatModelSlot } from '../pwcode/NewChatModel'
 import { PwCodeOwnModel, useModelHeld } from '../pwcode/ownModel'
 import { takeHanded, onFirstMessage } from '../pwcode/firstMessage'
 import { NewChatTargetSlot } from '../pwcode/NewChatTarget'
+import { dropLibraryStart } from '../pwcode/newChatStart'
+import { CHAT_HERE_EVENT } from '../pwcode/chatHere'
+import { setNewChatEngine } from '../chatEngine'
 import { MentionPalette } from '../components/MentionPalette'
 import { MentionLinks } from '../components/MentionLinks'
 import { breakable } from '../components/breakable'
@@ -220,6 +223,21 @@ function usePhoneLayout(): boolean {
   return phone
 }
 
+/** Puts text at the end of what the composer holds, the cursor after it. */
+function insertInBox(text: string): void {
+  const put = (tries: number) => {
+    const box = document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')
+    if (!box) { if (tries > 0) setTimeout(() => put(tries - 1), 100); return }
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    const next = box.value ? `${box.value.replace(/\s*$/, '')} ${text} ` : `${text} `
+    setter?.call(box, next)
+    box.dispatchEvent(new Event('input', { bubbles: true }))
+    box.focus()
+    box.setSelectionRange(next.length, next.length)
+  }
+  put(20)
+}
+
 /** active: the chat is the view on screen. Find in the transcript listens
  *  for ⌘F / Ctrl+F on the whole page, so a hidden chat leaves the key to
  *  the view that is showing. */
@@ -313,18 +331,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   useEffect(() => {
     const onInsert = (e: Event) => {
       const text = (e as CustomEvent<{ text: string }>).detail?.text
-      if (!text) return
-      const put = (tries: number) => {
-        const box = document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')
-        if (!box) { if (tries > 0) setTimeout(() => put(tries - 1), 100); return }
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-        const next = box.value ? `${box.value.replace(/\s*$/, '')} ${text} ` : `${text} `
-        setter?.call(box, next)
-        box.dispatchEvent(new Event('input', { bubbles: true }))
-        box.focus()
-        box.setSelectionRange(next.length, next.length)
-      }
-      put(20)
+      if (text) insertInBox(text)
     }
     window.addEventListener('ade-chat-insert', onInsert)
     return () => window.removeEventListener('ade-chat-insert', onInsert)
@@ -452,7 +459,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   // The package's default link is a real anchor (/chat/<id>) meant for a
   // routed host; without interception it full-page navigates and loses the
   // SPA state, which read as "sessions do not load".
-  const startNewChat = useCallback(() => {
+  const openNewChat = useCallback(() => {
     setActiveId(null); setShowAttachments(false); setShowManage(false)
     // Land the cursor in the composer so typing starts immediately.
     const focus = (tries: number) => {
@@ -461,7 +468,24 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
       else if (tries > 0) setTimeout(() => focus(tries - 1), 100)
     }
     setTimeout(() => focus(5), 50)
-  }, [])
+  }, [setActiveId])
+  const startNewChat = useCallback(() => {
+    // A new chat asked for here is a plain one.
+    dropLibraryStart()
+    setNewChatEngine('')
+    openNewChat()
+  }, [openNewChat])
+  // New pw code chat here, in the Library (pwcode/chatHere.ts).
+  useEffect(() => {
+    const on = (e: Event) => {
+      const text = (e as CustomEvent<{ text: string }>).detail?.text
+      openNewChat()
+      // Once the new chat's own box is drawn in place of the open chat's.
+      if (text) setTimeout(() => insertInBox(text), 50)
+    }
+    window.addEventListener(CHAT_HERE_EVENT, on)
+    return () => window.removeEventListener(CHAT_HERE_EVENT, on)
+  }, [openNewChat])
   const LinkComponent = useCallback(function StudioChatLink({ target, className, title, onClick, children }: ChatLinkProps) {
     return (
       <a

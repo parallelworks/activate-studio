@@ -3188,6 +3188,10 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .pwcode-start .code-chip { max-width: min(16rem, 100%); }
 .pwcode-start-note { flex: 1 1 100%; margin: 2px 7px; font-size: 12px; overflow-wrap: anywhere; }
 .pwcode-start-note.warn { color: var(--theme-warning, #b54708); }
+/* A reason written in a disabled entry of the Library's menu wraps, and reads. */
+.library-menu [role="menuitem"] .text-xs { max-width: 16rem; overflow-wrap: anywhere; }
+.library-menu [role="menuitem"][aria-disabled="true"]:has(.text-xs) { opacity: 1; }
+.library-menu [role="menuitem"][aria-disabled="true"]:has(.text-xs) .wrap-break-word { opacity: 0.5; }
 .code-path-popover { width: min(32rem, calc(100vw - 32px)); overflow: hidden; }
 .code-path { display: flex; flex-direction: column; max-height: inherit; font-size: 13px; }
 .code-path-field { display: flex; gap: 8px; padding: 8px; flex: none; }

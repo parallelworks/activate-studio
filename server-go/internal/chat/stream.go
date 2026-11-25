@@ -120,6 +120,11 @@ type streamBody struct {
 	// (pwcodestart.go).
 	PWCodeMachine *string `json:"pwcodeMachine"`
 	PWCodeFolder  *string `json:"pwcodeFolder"`
+	// PWCodeLibrary and PWCodePath are the library's folder or file a chat
+	// was started at from the Library, which PWCodeMachine and PWCodeFolder
+	// must be where it is (pwcodeplace.go).
+	PWCodeLibrary *string `json:"pwcodeLibrary"`
+	PWCodePath    *string `json:"pwcodePath"`
 	PWCodeMode    *string `json:"pwcodeMode"`
 	// PWCodeTools is whether to add the Studio's tools to pw code on that
 	// machine first, as the person chose with the message.
