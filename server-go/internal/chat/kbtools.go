@@ -23,6 +23,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/libapi"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 )
 
@@ -413,7 +414,9 @@ func (m *Module) labelEntries(t labelTarget, rel string) ([]labelEntry, error) {
 			return nil, err
 		}
 		for _, e := range entries {
-			out = append(out, labelEntry{e.Name(), e.IsDir()})
+			if !ownfile.At(filepath.Join(abs, e.Name())) {
+				out = append(out, labelEntry{e.Name(), e.IsDir()})
+			}
 		}
 	} else {
 		entries, err := kb.Default.LibraryListing(t.r, t.lib, rel)

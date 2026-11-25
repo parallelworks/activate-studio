@@ -433,6 +433,7 @@ func (c *jobCtx) names(src, dest string, maxLevel0 bool) (string, error) {
 	if err := pruneStaging(built); err != nil {
 		return "", err
 	}
+	LeaveOutOwn(built, src, c.log)
 	if len(unmade) > 0 {
 		c.log(fmt.Sprintf("%d folder(s) could not be indexed and are left out: %s", len(unmade), strings.Join(first(unmade, 5), ", ")))
 		if ix.deniedTo != nil {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/gufi"
 	"github.com/parallelworks/activate-studio/server-go/internal/libraries"
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 )
 
 // IndexTextCap is INDEX_TEXT_CAP: the most characters of a file the
@@ -137,7 +138,7 @@ func GrepFallback(ctx context.Context, query, kbRoot string, limit int) []string
 	close(done)
 	rels := []string{}
 	for _, p := range strings.Split(out.String(), "\n") {
-		if p == "" {
+		if p == "" || ownfile.At(p) {
 			continue
 		}
 		if len(rels) >= limit {

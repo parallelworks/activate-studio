@@ -326,21 +326,23 @@ func (m *Module) startRemote(ctx context.Context, site, key string, b *libraries
 	// sent since, or by an earlier version, is taken as it is.
 	platform, tools, version := "", "", ""
 	sendTools, send := false, false
-	if reads {
-		r, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", embedProbe}, 60*time.Second)
-		out := ""
-		if err == nil {
-			out = r.Stdout
+	out := ""
+	if probe, err := m.Pool.Run(ctx, site, key, []string{"sh", "-c", embedProbe}, 60*time.Second); err == nil {
+		out = probe.Stdout
+	}
+	kv := keyValues(out)
+	platform = helperPlatform(kv["platform"])
+	if tools = m.toolsVersion(platform); tools != "" {
+		sendTools = !fieldsHave(kv["tools"], tools)
+		if !reads && sendTools {
+			// A build with no text pass uses a helper that is there (to
+			// leave out the Studio's own files), and none is sent for it.
+			tools, sendTools = "", false
 		}
-		kv := keyValues(out)
-		platform = helperPlatform(kv["platform"])
-		if tools = m.toolsVersion(platform); tools != "" {
-			sendTools = !fieldsHave(kv["tools"], tools)
-			if embeds {
-				if v := m.embedVersion(platform); v != "" {
-					version = v
-					send = !fieldsHave(kv["embeds"], v)
-				}
+		if embeds {
+			if v := m.embedVersion(platform); v != "" {
+				version = v
+				send = !fieldsHave(kv["embeds"], v)
 			}
 		}
 	}

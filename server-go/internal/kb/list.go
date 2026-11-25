@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 )
 
 // Entry is kb.ts's KbEntry, with the labels a listing adds.
@@ -24,7 +26,8 @@ type Entry struct {
 // each group in locale order. A directory that does not exist lists as
 // empty. An entry is a directory by its directory entry, so a link to a
 // directory is a file, sized and dated by what it points at; a broken
-// link is left out.
+// link is left out. The Studio's own AGENTS.md (internal/ownfile) is
+// listed with the hidden files.
 func ListDir(rel, base string, showHidden bool) ([]Entry, error) {
 	abs, err := Resolve(rel, base)
 	if err != nil {
@@ -48,6 +51,9 @@ func ListDir(rel, base string, showHidden bool) ([]Entry, error) {
 			continue
 		}
 		p := filepath.Join(abs, name)
+		if !showHidden && ownfile.At(p) {
+			continue
+		}
 		st, err := os.Stat(p)
 		if err != nil {
 			continue

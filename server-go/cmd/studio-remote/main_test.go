@@ -16,6 +16,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 )
 
 func TestVerify(t *testing.T) {
@@ -113,5 +115,39 @@ func TestHelperRunsTheTextPass(t *testing.T) {
 	}
 	if out, _ := exec.CommandContext(ctx, exe, "version").Output(); !strings.HasPrefix(string(out), "studio-remote "+runtime.GOOS+"-"+runtime.GOARCH) {
 		t.Errorf("version %q", out)
+	}
+}
+
+// A build with no text pass leaves the Studio's own AGENTS.md out too.
+func TestLeaveOut(t *testing.T) {
+	src, index := t.TempDir(), t.TempDir()
+	const body = "Use the index first."
+	own := ownfile.Begin(body) + "\n\n" + body + "\n\n<!-- ACTIVATE Studio instructions studio_tools: end -->\n"
+	if err := os.WriteFile(filepath.Join(src, "AGENTS.md"), []byte(own), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(index, "db.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, q := range []string{"CREATE TABLE entries(name TEXT, type TEXT, size INT64, mtime INT64)",
+		"CREATE TABLE summary(isroot INT64, totfiles INT64, totsize INT64, minsize INT64, maxsize INT64, totzero INT64, totltk INT64, totmtk INT64, totltm INT64, totmtm INT64, totmtg INT64, totmtt INT64, minmtime INT64, maxmtime INT64, totmtime INT64)",
+		"INSERT INTO summary (isroot, totfiles) VALUES (1, 2)", "INSERT INTO entries VALUES ('AGENTS.md', 'f', 500, 9), ('a.md', 'f', 10, 5)"} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var errb bytes.Buffer
+	if code := run([]string{"leaveout", "--kb-root", src, "--index", index}, &errb, &errb); code != 0 || errb.Len() > 0 {
+		t.Fatalf("%d %s", code, errb.String())
+	}
+	var names string
+	var files, size, last int
+	if err := db.QueryRow("SELECT (SELECT group_concat(name) FROM entries), totfiles, totsize, maxmtime FROM summary").Scan(&names, &files, &size, &last); err != nil || names != "a.md" || files != 1 || size != 10 || last != 5 {
+		t.Fatalf("%v: %s, %d files, %d bytes, newest %d", err, names, files, size, last)
+	}
+	if code := run([]string{"leaveout", "--index", index}, &errb, &errb); code != 2 {
+		t.Errorf("no folder: %d", code)
 	}
 }

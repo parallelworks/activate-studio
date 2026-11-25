@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
@@ -38,6 +39,10 @@ type Module struct {
 
 	stats statsCache
 	up    uploads
+
+	// own is which AGENTS.md files of spaces are the Studio's (ownInSpace).
+	ownMu sync.Mutex
+	own   map[string]bool
 }
 
 // forgetting drops the module's counts whenever the index changes.

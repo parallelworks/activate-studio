@@ -17,6 +17,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/extract"
 	"github.com/parallelworks/activate-studio/server-go/internal/extract/pytext"
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 	"github.com/parallelworks/activate-studio/server-go/internal/posixaccess"
 )
 
@@ -246,10 +247,14 @@ func listWordFiles(src string, srcSt os.FileInfo, rel string, cacheable map[stri
 	var out []wordFile
 	for _, e := range entries {
 		// DirEntry.is_file() follows a symbolic link, and so does stat().
-		st, err := os.Stat(filepath.Join(src, e.Name()))
+		abs := filepath.Join(src, e.Name())
+		if ownfile.At(abs) {
+			continue
+		}
+		st, err := os.Stat(abs)
 		if err != nil {
 			if errors.Is(err, fs.ErrPermission) {
-				warn(fmt.Sprintf("  cannot read %s: %s", filepath.Join(src, e.Name()), pyErr(err)))
+				warn(fmt.Sprintf("  cannot read %s: %s", abs, pyErr(err)))
 			}
 			continue
 		}

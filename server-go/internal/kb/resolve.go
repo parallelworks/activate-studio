@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/ownfile"
 	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
@@ -293,7 +295,7 @@ func (m *Module) remoteTree(r *http.Request, lib Library, rel string, showHidden
 	}
 	out := []Entry{}
 	for _, e := range list {
-		if (showHidden || !HiddenName(e.Name)) && !staging.Name(e.Name) {
+		if (showHidden || !HiddenName(e.Name)) && !staging.Name(e.Name) && (showHidden || !m.ownInSpace(r, lib, e)) {
 			out = append(out, e)
 		}
 	}
@@ -307,6 +309,35 @@ func (m *Module) remoteTree(r *http.Request, lib Library, rel string, showHidden
 		}
 	}
 	return out, nil
+}
+
+// ownInSpace reports whether e, an entry of a space listed as it is now, is
+// the Studio's own AGENTS.md (internal/ownfile), read there once for each
+// change of it. Any other library on another system lists from its index,
+// which does not hold it.
+func (m *Module) ownInSpace(r *http.Request, lib Library, e Entry) bool {
+	if e.Name != ownfile.Name || e.Type != "file" || e.Size > ownfile.Max || !lib.AsViewer() || SpaceFiles == nil {
+		return false
+	}
+	k := fmt.Sprint(lib.IndexRoot, "\x00", e.Path, "\x00", e.Size, "\x00", e.Mtime)
+	m.ownMu.Lock()
+	is, known := m.own[k]
+	m.ownMu.Unlock()
+	if known {
+		return is
+	}
+	b, err := SpaceFiles.Get(r, lib, e.Path, ownfile.Max)
+	if err != nil {
+		return false
+	}
+	is = ownfile.Is(b)
+	m.ownMu.Lock()
+	defer m.ownMu.Unlock()
+	if m.own == nil || len(m.own) >= 2000 {
+		m.own = map[string]bool{}
+	}
+	m.own[k] = is
+	return is
 }
 
 // remoteFile is a file of a library on another system, or read through
