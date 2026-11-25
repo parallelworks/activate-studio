@@ -524,7 +524,7 @@ func noModelCredential(shared bool) string {
 
 // signInFirst is what it says where everyone uses models of their own
 // (REQUIRE_PERSONAL_KEY).
-const signInFirst = "Sign in with ACTIVATE first, under Settings, Accounts. The models here need an account of your own."
+const signInFirst = modelkeys.SignInFirst
 
 // noCredential is the one of them that holds for this Studio.
 func (m *Module) noCredential() string {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"math/rand/v2"
 	"net/http"
 	"os"
@@ -567,10 +568,28 @@ func (b *builds) work(d *libraries.Def, jobID int, s index.Settings) *index.Libr
 	os.WriteFile(p.SkipFile, []byte(strings.Join(b.ix().SkipDirs(), "\n")+"\n"), 0o644)
 	id := d.ID
 	return b.ix().LibraryWork(b.ctx, p, index.LibraryWorkOptions{
-		JobID: jobID, Settings: s, Threads: b.ix().Settings.Threads("kb"),
+		JobID: jobID, Settings: s, Threads: b.ix().Settings.Threads("kb"), VisionKey: b.visionKey(d),
 		Denied:   func(paths []string) { b.deny(id, paths...) },
 		Embedded: func(time.Duration) {},
 	})
+}
+
+// visionKey is the key the images of d are described with: a person's own
+// library, where each person uses their own credential
+// (REQUIRE_PERSONAL_KEY), with its owner's, or none; nil, the Studio's,
+// for the rest.
+func (b *builds) visionKey(d *libraries.Def) func() (string, string, bool) {
+	a := b.s.a
+	if d.Owner == "" || !a.Cfg.AuthEnabled() || a.Cfg.DisablePersonalKeys || a.Settings == nil || !a.Settings.Effective().RequirePersonalKey {
+		return nil
+	}
+	owner := d.Owner
+	return func() (string, string, bool) {
+		if k := b.s.storedKey(owner); k != "" {
+			return k, "", true
+		}
+		return "", modelkeys.SignInFirst, false
+	}
 }
 
 func (b *builds) scan(id, root string) index.Scan {

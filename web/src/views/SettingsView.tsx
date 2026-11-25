@@ -789,6 +789,9 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                         Captioning runs during background indexing, when no user is present, so it uses
                         the deployment credential or the host's pw CLI login rather than a personal key.
                         This deployment has neither, so images will be indexed by OCR and filename only.
+                      </> : form.visionModel && form.requirePersonalKey ? <>
+                        Captions images as they are indexed, so they can be found by what they show. A person's own
+                        bucket library is captioned with their own ACTIVATE sign-in, and not at all without one.
                       </> : 'Captions images as they are indexed, so they can be found by what they show.'}>
                       <ModelInput
                         value={form.visionModel}

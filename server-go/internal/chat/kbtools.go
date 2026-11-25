@@ -721,6 +721,11 @@ func (m *Module) labelSuggestionsRoute(w http.ResponseWriter, r *http.Request) e
 	if !eff.AiEnabled {
 		return apierr.New(409, "AI features are off in this Studio, so labels are not suggested.")
 	}
+	// Where each person uses their own credential, the Studio's is never
+	// used for them: without one they are told what the Assistant says.
+	if m.personalRequired(m.cred(r)) {
+		return apierr.New(403, "%s", signInFirst)
+	}
 	cred, hasCred := m.credArgsOf(r)
 	model := b.Str("model")
 	if model == "" {

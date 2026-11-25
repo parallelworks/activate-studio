@@ -353,8 +353,9 @@ func (m *Module) models(w http.ResponseWriter, r *http.Request) error {
 	if m.deploymentModelsKey() == "" && cred == nil && !m.LLM.SidecarConfigured() {
 		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", m.noCredential(), "kind", "credential"))
 	}
-	forConfig := r.URL.Query().Get("config") == "1"
-	if !forConfig && m.personalRequired(cred) {
+	// Settings' pickers (?config=1) too: a listing is a call to the
+	// gateway, and probes the providers with a call to each.
+	if m.personalRequired(cred) {
 		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", signInFirst, "kind", "credential"))
 	}
 	viewer := ""

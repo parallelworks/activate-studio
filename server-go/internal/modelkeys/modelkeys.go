@@ -41,6 +41,11 @@ import (
 // SingleOwner is the one user of a Studio with sign-in off.
 const SingleOwner = "single"
 
+// SignInFirst is the refusal of a model call for a person without a
+// credential of their own where REQUIRE_PERSONAL_KEY asks for one: the
+// Assistant's words, for every call made for a person.
+const SignInFirst = "Sign in with ACTIVATE first, under Settings, Accounts. The models here need an account of your own."
+
 // sharedSub is the vault subject of the key a user shares for everyone.
 const sharedSub = "__shared__"
 

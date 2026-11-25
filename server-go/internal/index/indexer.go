@@ -331,6 +331,8 @@ type jobCtx struct {
 	ctx      context.Context
 	threads  int
 	settings Settings
+	// visionKey: LibraryWorkOptions.VisionKey.
+	visionKey func() (key, why string, ok bool)
 }
 
 func (c *jobCtx) log(msg string) {

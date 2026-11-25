@@ -28,9 +28,13 @@ type LibraryWork struct {
 // LibraryWorkOptions are a LibraryWork's settings and hooks.
 type LibraryWorkOptions struct {
 	// JobID names the job in the index log.
-	JobID    int
-	Settings Settings
-	Threads  int
+	JobID int
+	// VisionKey is the key images are described with, for a library built
+	// for one person: ok false describes none, and why says so in the
+	// job's log. Nil is the Studio's own.
+	VisionKey func() (key, why string, ok bool)
+	Settings  Settings
+	Threads   int
 	// Denied takes the folders gufi_dir2index could not read, or could not
 	// make an index folder for (omissions.ts's record of the library).
 	Denied func(paths []string)
@@ -61,8 +65,12 @@ func (ix *Indexer) LibraryWork(ctx context.Context, p LibraryPaths, o LibraryWor
 		threads = 1
 	}
 	rec := &jobRec{pub: &IndexJob{ID: o.JobID, Kind: "folder", Phases: []*Phase{}}, ctx: ctx}
-	return &LibraryWork{c: &jobCtx{ix: sub, rec: rec, ctx: ctx, threads: threads, settings: o.Settings}}
+	return &LibraryWork{c: &jobCtx{ix: sub, rec: rec, ctx: ctx, threads: threads, settings: o.Settings, visionKey: o.VisionKey}}
 }
+
+// Vision is the captioning model the documents pass describes images
+// with, "" for none, and the key: "" for the Studio's own.
+func (w *LibraryWork) Vision() (model, key string) { return w.c.vision() }
 
 // Names is gufi_dir2index of src into stage; it returns the tree it wrote
 // (stage/<base of src>). maxLevel0 indexes the top folder alone.
