@@ -122,4 +122,38 @@ describe('the setup card for the Studio\'s tools on another machine', () => {
     expect(await screen.findByText(/The platform's tools come once you sign in with ACTIVATE/)).toBeInTheDocument()
     expect(screen.getByText(/Account, Authentication, API Keys/)).toBeInTheDocument()
   })
+
+  it('says what it allows before it is chosen, how many run without asking after, and takes both back', async () => {
+    const allows = ['query_corpus', 'search_kb']
+    let set = false
+    const reach = () => ({ available: true, command, tools: 44, seen: null, setup: { ...offer, allows, state: set ? 'set' as const : 'offer' as const } })
+    serve(reach, () => { set = true; return [200, { done: true, worked: true, changed: true, tools: 44, live: 'next', allows, allowed: 2, allowWhy: '' }] })
+    const inner = fetch
+    const removed: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url !== '/api/mcp/bridge/remove') return inner(url, init)
+      removed.push(JSON.parse(String(init?.body)))
+      return new Response(JSON.stringify({ removed: true, rules: 2 }), { headers: { 'Content-Type': 'application/json' } })
+    }))
+    render(<StudioToolsSetup conversationId="c1" />)
+    expect(await screen.findByTestId('studio-tools-allows')).toHaveTextContent('run these tools without asking, as they only read: query_corpus, search_kb. The rest still ask')
+    fireEvent.click(screen.getByRole('button', { name: 'Set up for me' }))
+    expect(await screen.findByTestId('studio-tools-done')).toHaveTextContent('The 2 that only read run without asking when you type in a session there.')
+    // Asked once more before it goes.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(removed).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(await screen.findByTestId('studio-tools-removed')).toHaveTextContent('out of pw code on build-box, and so is what it allowed there')
+    expect(removed).toEqual([{ conversationId: 'c1' }])
+  })
+
+  it('checks a machine set up before, which a session has reached, and says why its settings took no rules', async () => {
+    const posted = serve(() => ({ available: true, command, tools: 44, seen: { at: new Date().toISOString(), method: 'tools/list' }, setup: { ...offer, state: 'set', allows: ['search_kb'] } }),
+      () => [200, { done: true, worked: true, changed: false, tools: 44, live: 'next', allows: ['search_kb'], allowed: 0, allowWhy: 'its settings file is not valid JSON' }])
+    render(<StudioToolsSetup conversationId="c1" />)
+    expect(await screen.findByTestId('studio-tools-allows')).toHaveTextContent('Check it again also sets pw code there')
+    fireEvent.click(screen.getByRole('button', { name: 'Check it again' }))
+    expect(await screen.findByTestId('studio-tools-done')).toHaveTextContent('still ask there, as the Studio could not allow them: its settings file is not valid JSON.')
+    expect(posted).toEqual([{ conversationId: 'c1', check: true }])
+  })
 })

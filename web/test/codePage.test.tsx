@@ -211,6 +211,24 @@ describe('the Code page', () => {
     }
   })
 
+  it('checks and removes the tools on a machine chosen to start on that has them, and says what Add allows', async () => {
+    const own = { ...machine, remoteStart: false }
+    const sent = studio({ machines: [own, other], toolsMachines: [{ state: 'set', machine: 'gpu', machineId: 'm2' }] })
+    render(<CodePage />)
+    const line = await screen.findByTestId('machine-tools-set')
+    expect(line).toHaveTextContent("pw code on gpu has this Studio's tools.")
+    fireEvent.click(within(line).getByRole('button', { name: 'Remove' }))
+    within(line).getByRole('button', { name: 'Keep' })
+    expect(sent.some(s => s.path === '/api/mcp/bridge/remove')).toBe(false)
+    fireEvent.click(within(line).getByRole('button', { name: 'Check' }))
+    await screen.findByTestId('machine-tools-said')
+    expect(sent.find(s => s.path === '/api/mcp/bridge/setup')?.body).toEqual({ machineId: 'm2', check: true })
+    cleanup()
+    studio({ machines: [own, other], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2', allows: ['list_kb_dir', 'search_kb'] }] })
+    render(<CodePage />)
+    expect(await screen.findByTestId('studio-tools-allows')).toHaveTextContent('as they only read: list_kb_dir, search_kb.')
+  })
+
   it('says plainly that a machine gone offline is not connected', async () => {
     const cpu = { ...other, id: 'm3', name: 'cpu', hostname: 'cpu.example', daemonId: 'd3' }
     studio({ machines: [machine, other, cpu], toolsMachines: [{ state: 'offer', machine: 'gpu', machineId: 'm2' }],

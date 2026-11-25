@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Callout } from '@parallelworks/ui'
 import { isConnected, type PwCodeMachine } from '@parallelworks/code'
+import { AllowsNote, RemoveTools } from '../components/MachineToolsAllow'
 import { type MachineTools, type SetupResult, runSetup, setMachineTools, setupSaid } from '../components/studioTools'
 
 const OFFERED = 'ade-studio-tools-offered'
@@ -46,7 +47,7 @@ export function MachineToolsOffer({ machines: listed, selected, always = false, 
   const [machines, setMachines] = useState<MachineTools[] | null>(null)
   const [none, setWhy] = useState('')
   const [busy, setBusy] = useState(false)
-  const [said, setSaid] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null)
+  const [said, setSaid] = useState<{ tone: 'success' | 'warning'; text: string; added?: MachineTools } | null>(null)
   const [skipped, setSkipped] = useState<string[]>([])
   // Offered once per machine: one shown in an earlier visit is not shown again.
   const [before] = useState(offered)
@@ -63,7 +64,8 @@ export function MachineToolsOffer({ machines: listed, selected, always = false, 
   if (said) {
     return (
       <div data-testid="machine-tools-said"><Callout tone={said.tone} size="sm" className="studio-tools-setup" onDismiss={() => setSaid(null)}>
-        {said.text}
+        <p>{said.text}</p>
+        {said.added && <p><RemoveTools where={said.added.machine} body={{ machineId: said.added.machineId }} onRemoved={text => { setSaid({ tone: 'success', text }); void load() }} /></p>}
       </Callout></div>
     )
   }
@@ -76,9 +78,15 @@ export function MachineToolsOffer({ machines: listed, selected, always = false, 
     if (at?.state === 'set' || (at?.attach && at.state === 'offer')) {
       // pw code asks before each tool in a turn sent from elsewhere, and
       // in read-only and plan mode runs none that would ask.
-      return mode === 'read-only' || mode === 'plan'
-        ? <p className="muted pwcode-start-note" data-testid="machine-tools-mode">In {mode === 'plan' ? 'plan' : 'read-only'} mode pw code on {name} does not run this Studio's tools for a chat here. In accept edits it asks you before each one.</p>
-        : null
+      return <>
+        {(mode === 'read-only' || mode === 'plan')
+          && <p className="muted pwcode-start-note" data-testid="machine-tools-mode">In {mode === 'plan' ? 'plan' : 'read-only'} mode pw code on {name} does not run this Studio's tools for a chat here. In accept edits it asks you before each one.</p>}
+        {at.state === 'set' && online(selected) && <p className="muted pwcode-start-note" data-testid="machine-tools-set">
+          pw code on {name} has this Studio's tools.{' '}
+          <button type="button" className="code-approval-more" disabled={busy} onClick={() => void add(at, true)}>{busy ? 'Checking…' : 'Check'}</button>{' '}
+          <RemoveTools where={name} body={{ machineId: at.machineId }} onRemoved={text => { setSaid({ tone: 'success', text }); void load() }} />
+        </p>}
+      </>
     }
     if (at && at.state !== 'unavailable' && online(selected)) {
       return <Offer next={at} busy={busy} lacks onAdd={() => void add(at)} onDecline={at.state === 'offer' ? () => { decline(at); void load() } : undefined} />
@@ -89,7 +97,7 @@ export function MachineToolsOffer({ machines: listed, selected, always = false, 
     && !skipped.includes(m.machineId) && !before.includes(m.machineId))
   return next ? <Offer next={next} busy={busy} onAdd={() => void add(next)} onDecline={() => decline(next)} /> : null
 
-  async function add(next: MachineTools) {
+  async function add(next: MachineTools, check = false) {
     // Gone offline since the offer showed: said, and pw ssh is not tried.
     if (!online(next.machineId)) {
       setSaid({ tone: 'warning', text: notConnected(next.machine) })
@@ -98,11 +106,11 @@ export function MachineToolsOffer({ machines: listed, selected, always = false, 
     }
     setBusy(true)
     try {
-      const r: SetupResult = await runSetup({ machineId: next.machineId })
+      const r: SetupResult = await runSetup(check ? { machineId: next.machineId, check } : { machineId: next.machineId })
       if (r.ask) {
         setSaid({ tone: 'warning', text: `${r.why} Use Set up for me in a chat on ${next.machine} to replace it.` })
       } else {
-        setSaid({ tone: r.worked ? 'success' : 'warning', text: setupSaid(r, next.machine, false) })
+        setSaid({ tone: r.worked ? 'success' : 'warning', text: setupSaid(r, next.machine, false), added: r.worked ? next : undefined })
       }
       await load()
     } catch (e) {
@@ -131,6 +139,7 @@ function Offer({ next, busy, lacks = false, onAdd, onDecline }: { next: MachineT
           : lacks ? <>{lacksTools(next.machine)} Add them (library search, queries, reading files and the rest)? The Studio sets it up there over pw ssh as you, with that machine's own ACTIVATE sign-in, and a session started after that has them.</>
           : <>Add this Studio's tools (library search, queries, reading files and the rest) to pw code on {next.machine}? The Studio sets it up there over pw ssh as you, with that machine's own ACTIVATE sign-in, so sessions you start there have them.</>}
       </p>
+      {!busy && <AllowsNote allows={next.allows} />}
       <p>
         <Button variant="primary" size="sm" loading={busy} disabled={busy} onClick={onAdd}>Add</Button>{' '}
         {onDecline && <Button variant="ghost" size="sm" disabled={busy} onClick={onDecline}>Not on {next.machine}</Button>}
