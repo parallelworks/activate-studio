@@ -3183,6 +3183,8 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-path-field { display: flex; gap: 8px; padding: 8px; flex: none; }
 .code-path-field > * { flex: 1; min-width: 0; }
 .code-path-list { min-height: 0; max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--pw-border); padding: 4px; }
+/* Opened up (or the phone's sheet), it hangs from its foot: one height, so the field stays put as the list narrows. */
+.code-path-popover[data-side="top"] .code-path-list { height: 20rem; }
 .code-path-loading { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 12px; }
 .code-path-new {
   all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px;
@@ -3201,7 +3203,7 @@ html.shell-inset .cls-banner ~ .setup-overlay { top: var(--shell-top); padding-t
 .code-path-open { all: unset; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: -6px -8px -6px 0; border-radius: 6px; color: var(--pw-muted); cursor: pointer; }
 .code-path-open:hover { background: var(--theme-hover); color: var(--pw-text); }
 .code-path-open svg { width: 14px; height: 14px; }
-@media (max-width: 639.98px) { .code-path-keys { display: none; } }
+@media (max-width: 639.98px) { .code-path-popover .code-path-list { height: 20rem; } .code-path-keys { display: none; } }
 .code-needs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .code-needs-head { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; cursor: pointer; }
 .code-needs-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
