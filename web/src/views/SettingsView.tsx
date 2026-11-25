@@ -92,8 +92,8 @@ const TOOL_GROUPS: [string, string[]][] = [
   ['Knowledge base', ['search_kb', 'read_kb_file', 'read_original', 'write_kb_file', 'edit_kb_file', 'move_kb_files', 'rename_kb_file', 'copy_kb_files', 'delete_kb_files', 'list_kb_dir', 'query_corpus', 'get_labels', 'suggest_labels', 'apply_labels']],
   ['Transfers', ['transfer_locations', 'browse_location', 'transfer_files', 'transfer_status', 'cancel_transfer', 'save_transfer_location']],
   ['Workflows', ['list_workflows', 'list_github_workflows', 'get_workflow', 'compose_workflow', 'serve_model', 'run_workflow', 'workflow_runs', 'workflow_run_detail', 'cancel_workflow_run', 'list_sessions', 'pw_help']],
-  ['Clusters and storage', ['list_clusters', 'start_cluster', 'resume_cluster', 'stop_cluster', 'destroy_cluster', 'list_storage', 'hpc_status', 'cluster_command']],
-  ['pw code agents', ['agent_sites', 'agent_sessions', 'start_agent', 'agent_status', 'agent_steer', 'agent_goal', 'agent_approve', 'agent_stop']],
+  ['Clusters and storage', ['list_clusters', 'start_cluster', 'resume_cluster', 'stop_cluster', 'destroy_cluster', 'list_storage', 'hpc_status', 'launch_status_monitor', 'cluster_command']],
+  ['pw code agents', ['agent_sites', 'start_agent_daemon', 'agent_sessions', 'start_agent', 'agent_status', 'agent_steer', 'agent_goal', 'agent_approve', 'agent_stop']],
   ['Display and skills', ['show_in_viewer', 'use_skill', 'studio_docs']],
 ]
 

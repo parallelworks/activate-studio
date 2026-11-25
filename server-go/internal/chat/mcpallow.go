@@ -23,18 +23,12 @@ import (
 // saved rules aside on a turn driven from elsewhere (the web app, a Studio
 // chat through the platform), which keeps asking.
 
-// machineAsks are the chatReadTools the Studio does not allow on a machine,
-// because some arguments make them do more than read: hpc_status launches
-// the Status Monitor workflow (launch), agent_sites starts a pw code daemon
-// (probe), and pw_help passes its words to the pw CLI, whose ssh runs them.
-var machineAsks = map[string]bool{"hpc_status": true, "agent_sites": true, "pw_help": true}
-
 // machineRules are the tools of names the Studio allows on a machine, as
 // pw code's rules, each tool by name (a wildcard is not matched), sorted.
 func machineRules(names []string) []string {
 	out := []string{}
 	for _, n := range names {
-		if chatReadTools[n] && !machineAsks[n] {
+		if chatReadTools[n] {
 			out = append(out, studioToolPrefix+n)
 		}
 	}

@@ -71,7 +71,7 @@ func isPlatformTool(name string) bool { _, ok := platformByName[name]; return ok
 // asksFirst is whether the tool's calls wait for the user's approval.
 func asksFirst(name string) bool {
 	t := platformByName[name]
-	return (t != nil && t.Method == "POST") || localAsksFirst(name)
+	return (t != nil && t.Method == "POST") || localAsksFirst(name) || isActionAsksFirst(name)
 }
 
 // insteadOf is the tools the user may run in place of a held call.
@@ -89,7 +89,7 @@ func insteadOf(name string) []string {
 
 // toolHash identifies what a call to the tool does.
 func toolHash(name string) string {
-	if localAsksFirst(name) {
+	if localAsksFirst(name) || isActionAsksFirst(name) {
 		return kbToolHash(name)
 	}
 	t := platformByName[name]
@@ -111,6 +111,9 @@ func prepareArgs(name string, raw any, viewerUsername string) (args *jsonobj.Obj
 	}
 	if isTransferAsksFirst(name) {
 		return canonicalTransferArgs(raw)
+	}
+	if isActionAsksFirst(name) {
+		return prepareActionArgs(name, raw)
 	}
 	t := platformByName[name]
 	if t == nil {
@@ -276,6 +279,9 @@ var effects = map[string]effect{
 		insteadLabel: "Stop it instead", insteadNote: "Keeps its disks and settings, so it can be resumed."},
 	"destroy_cluster": {title: func(a *jsonobj.Object) string { return "Destroy cluster " + argText(a, "clusterName") + "?" }, reason: "Destroys its provisioned resources, including its disks, so nothing bills. Its definition stays, so it can be started again from scratch.",
 		insteadLabel: "Destroy it instead", insteadNote: "Deletes its disks too, so nothing bills."},
+	launchMonitorTool: {title: func(*jsonobj.Object) string { return "Launch a Status Monitor?" }, reason: "Runs this deployment's Status Monitor workflow as you. It can use compute."},
+	startDaemonTool: {title: func(a *jsonobj.Object) string { return "Start pw code on " + argText(a, "site") + "?" },
+		reason: "Starts pw code there as you, where it is not running. It stays running until it is stopped."},
 	"cancel_workflow_run": {title: func(a *jsonobj.Object) string { return "Cancel run " + argText(a, "slug") + "?" }, reason: "Cancels the workflow run."},
 	"delete_kb_files": {title: func(a *jsonobj.Object) string {
 		if p := kbPaths(a); len(p) == 1 {

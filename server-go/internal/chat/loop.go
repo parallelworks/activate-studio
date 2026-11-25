@@ -968,7 +968,7 @@ var liveTools = map[string]bool{
 var changingTools = map[string]bool{
 	"write_kb_file": true, "edit_kb_file": true, "move_kb_files": true, "rename_kb_file": true, "copy_kb_files": true, "delete_kb_files": true, "apply_labels": true,
 	"start_agent": true, "agent_steer": true, "agent_goal": true, "agent_approve": true, "agent_stop": true, "delegate": true,
-	"run_workflow": true, "serve_model": true, "cancel_workflow_run": true,
+	"run_workflow": true, "serve_model": true, "cancel_workflow_run": true, launchMonitorTool: true, startDaemonTool: true,
 	"start_cluster": true, "resume_cluster": true, "stop_cluster": true, "destroy_cluster": true,
 	"transfer_files": true, "cancel_transfer": true, "save_transfer_location": true,
 	"save_chat_to_library": true,

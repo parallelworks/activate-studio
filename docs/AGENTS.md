@@ -78,7 +78,7 @@ The Studio talks to this host's pw code daemon over its Unix socket (`$XDG_STATE
 
 ## pw code agents at sites
 
-The assistant can run pw code agents directly, on one of the user's clusters or, where offered, on the Studio's host. These are pw code sessions the user could also start in a terminal; the assistant's tools start, follow, and steer them (`agent_sites`, `agent_sessions`, `start_agent`, `agent_status`, `agent_steer`, `agent_goal`, `agent_approve`, `agent_stop`).
+The assistant can run pw code agents directly, on one of the user's clusters or, where offered, on the Studio's host. These are pw code sessions the user could also start in a terminal; the assistant's tools start, follow, and steer them (`agent_sites`, `agent_sessions`, `start_agent`, `agent_status`, `agent_steer`, `agent_goal`, `agent_approve`, `agent_stop`, and `start_agent_daemon`, which the user approves). Listing sites and sessions and reading a session's status do not start pw code on a system where it is not running.
 
 *Transport.* A cluster's daemon is reached the way `pw code attach` reaches it: the Studio server runs `pw ssh <cluster> pw code daemon proxy --ensure`, which bridges the ssh session to that machine's daemon socket and starts the daemon if none runs, and speaks the daemon's HTTP API over the pipe (`server/src/pwcodeBridge.ts`). One keep-alive bridge per user and cluster carries every request; the first pays for the ssh setup (about 5 seconds), later ones take about a quarter of a second. The bridge closes after 10 idle minutes. This needs only `pw ssh` and a pw CLI with `pw code daemon proxy` on the cluster (v7.120 or later), not the platform's agent routes.
 

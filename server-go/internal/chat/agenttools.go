@@ -29,9 +29,9 @@ func init() {
 	for name, fn := range map[string]func(*Module, *http.Request, map[string]any, ToolCtx) (*Outcome, error){
 		"list_sessions":  (*Module).toolListSessions,
 		"agent_sites":    (*Module).toolAgentSites,
-		"agent_sessions": (*Module).toolAgentSessions,
+		"agent_sessions": withoutStart((*Module).toolAgentSessions),
 		"start_agent":    (*Module).toolStartAgent,
-		"agent_status":   bySession((*Module).toolAgentStatus),
+		"agent_status":   withoutStart(bySession((*Module).toolAgentStatus)),
 		"agent_steer":    bySession((*Module).toolAgentSteer),
 		"agent_goal":     bySession((*Module).toolAgentGoal),
 		"agent_approve":  bySession((*Module).toolAgentApprove),
@@ -737,36 +737,6 @@ func (m *Module) toolAgentSites(r *http.Request, args map[string]any, ctx ToolCt
 	if err != nil {
 		return nil, err
 	}
-	var probe []string
-	for _, x := range strings.Split(tmplOr(arg(args, "probe"), ""), ",") {
-		if x = jsTrim(x); x != "" && len(probe) < 5 {
-			probe = append(probe, x)
-		}
-	}
-	checked := make([]string, len(probe))
-	var wg sync.WaitGroup
-	for i, site := range probe {
-		wg.Add(1)
-		go func(i int, site string) {
-			defer wg.Done()
-			st, err := s.ProbeSite(r.Context(), site, key, auth)
-			if err != nil {
-				checked[i] = site + ": " + jsval.Slice(err.Error(), 200)
-				return
-			}
-			if truthy(prop(st, "usable")) {
-				n := prop(st, "sessions")
-				one := ""
-				if n != 1.0 {
-					one = "s"
-				}
-				checked[i] = site + ": pw code " + tmpl(prop(st, "version")) + " on " + tmpl(prop(st, "hostname")) + ", " + tmpl(n) + " session" + one
-			} else {
-				checked[i] = site + ": not usable, " + tmpl(prop(st, "why"))
-			}
-		}(i, site)
-	}
-	wg.Wait()
 	lines := make([]string, len(list))
 	for i, x := range list {
 		l := tmpl(prop(x, "name"))
@@ -778,8 +748,11 @@ func (m *Module) toolAgentSites(r *http.Request, args map[string]any, ctx ToolCt
 		}
 		lines[i] = l
 	}
-	head := orStr(strings.Join(lines, "\n"), "No sites: the user has no active clusters.")
-	return &Outcome{Result: capText(strings.Join(append([]string{head}, checked...), "\n")), Summary: strconv.Itoa(len(list)) + " site" + plural(len(list))}, nil
+	out := orStr(strings.Join(lines, "\n"), "No sites: the user has no active clusters.")
+	if truthy(arg(args, "probe")) {
+		out += "\nagent_sites only lists, so no site was checked. " + startDaemonTool + " asks the user in the Studio's chat, then starts pw code on a site and says its version."
+	}
+	return &Outcome{Result: capText(out), Summary: strconv.Itoa(len(list)) + " site" + plural(len(list))}, nil
 }
 
 func (m *Module) toolAgentSessions(r *http.Request, args map[string]any, ctx ToolCtx) (*Outcome, error) {

@@ -83,8 +83,8 @@ func platformFixtures() []cliFixture {
 		{args: []string{"workflows", "run", "train"}, out: "", stderr: "Error: validation failed: missing required field: cluster.slurm.account\n", code: "1"},
 		{args: []string{"workflows", "run", "--dry-run", "-i", `{"cluster":{"resource":"orion"}}`, "train", "-o", "json"}, out: "", stderr: "Error: validation failed: missing required field: cluster.slurm.account\n", code: "1"},
 		{args: []string{"clusters", "ls", "--status", "active", "-o", "json"}, out: `[{"name":"vega","type":"slurm","status":"active","namespace":"alice"},{"name":"lyra","type":"pbs","status":"active","namespace":"alice"}]`},
-		{args: []string{"workflows", "--help"}, out: "Manage workflows.\n\nUsage: pw workflows [command]\n"},
-		{args: []string{"workflows", "run", "--help"}, out: "Run a workflow.\n"},
+		{args: []string{"help", "workflows"}, out: "Manage workflows.\n\nUsage: pw workflows [command]\n"},
+		{args: []string{"help", "workflows", "run"}, out: "Run a workflow.\n"},
 	}
 }
 

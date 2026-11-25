@@ -38,6 +38,9 @@ func (l *localClient) Dial(ctx context.Context) (io.ReadWriteCloser, error) {
 func (r *remoteClient) Dial(ctx context.Context) (io.ReadWriteCloser, error) {
 	r.s.bridges.mu.Lock()
 	spawn := r.s.bridges.spawn
+	if r.read {
+		spawn = r.s.bridges.spawnRead
+	}
 	r.s.bridges.mu.Unlock()
 	// A bridge of its own, so its stderr is not the request bridge's.
 	b := &bridge{id: r.id + "|events", resource: r.resource}
