@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/links"
 	"github.com/parallelworks/activate-studio/server-go/internal/staging"
 )
 
@@ -18,6 +19,8 @@ type Files struct {
 	Roots    Roots
 	Previews *Previews
 	Indexer  Indexer
+	// Links are the IDs of items here, which follow what is done to them.
+	Links *links.Store
 }
 
 // Moved is one item a move, copy or rename did.
@@ -204,6 +207,7 @@ func (f *Files) moveOne(cleaned, dest string, out *Outcome) error {
 	if st.Mode().IsRegular() {
 		f.moveCaches(cleaned, target)
 	}
+	f.Links.Moved("", PrimaryID, cleaned, target)
 	out.Moved = append(out.Moved, Moved{cleaned, target})
 	out.touch(cleaned)
 	out.touch(target)
@@ -260,6 +264,7 @@ func (f *Files) Rename(rel, nameRaw string) (*Outcome, error) {
 	if st.Mode().IsRegular() {
 		f.moveCaches(cleaned, target)
 	}
+	f.Links.Moved("", PrimaryID, cleaned, target)
 	out.Moved = append(out.Moved, Moved{cleaned, target})
 	if parent != "" {
 		out.Roots = append(out.Roots, strings.SplitN(parent, "/", 2)[0])
@@ -497,6 +502,7 @@ func (f *Files) deleteOne(cleaned string) (string, error) {
 		return "not found", err
 	}
 	f.dropCaches(cleaned)
+	f.Links.Deleted("", PrimaryID, cleaned)
 	return "", nil
 }
 
@@ -512,6 +518,7 @@ func (f *Files) DeleteDir(ctx context.Context, cleaned, abs string) error {
 	if err := os.RemoveAll(abs); err != nil {
 		return err
 	}
+	f.Links.Deleted("", PrimaryID, trimSlashes(cleaned))
 	for _, c := range []string{"extract", "pdf-preview", "pdf-pages", "model-cache"} {
 		os.RemoveAll(filepath.Join(f.Roots.IndexBase, c, cleaned))
 	}
@@ -526,5 +533,6 @@ func (f *Files) DeleteFile(ctx context.Context, rel, abs string) (int64, error) 
 		return 0, err
 	}
 	f.dropCaches(rel)
+	f.Links.Deleted("", PrimaryID, trimSlashes(rel))
 	return ReindexForFile(ctx, f.Indexer, rel)
 }

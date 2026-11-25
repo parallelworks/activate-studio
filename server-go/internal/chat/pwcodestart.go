@@ -447,6 +447,7 @@ func (m *Module) pwcodeStartRoutes(h func(pattern string, fn func(http.ResponseW
 	codesessions.StartInChat = m.startFromCode
 	h("GET /api/chat/pwcode/start", m.startListing)
 	h("GET /api/chat/pwcode/start/machines/{machine}/directories", m.startDirectories)
+	h("GET /api/chat/pwcode/start/machines/{machine}/palette", m.startPalette)
 }
 
 // startListing is GET /api/chat/pwcode/start?persona=: the machines a new
@@ -465,6 +466,7 @@ func (m *Module) startListing(w http.ResponseWriter, r *http.Request) error {
 	var ms, ss []*jsonv.Object
 	if m.relayUnavailable(r) == "" {
 		ms, ss, _ = codesessions.PlatformListing(r, m.pf)
+		m.sawReleases(r, ms)
 	}
 	here := <-hereCh
 	own := m.startMachine(r, here)
@@ -498,11 +500,7 @@ func (m *Module) startListing(w http.ResponseWriter, r *http.Request) error {
 	}
 	if ownID == "" && here != nil {
 		if list, err := pwcode.ListSessions(ctx, here.client); err == nil {
-			rows := jsonv.Arr(list)
-			if rows == nil {
-				rows = jsonv.Arr(jsonv.Path(list, "sessions"))
-			}
-			for _, x := range rows {
+			for _, x := range sessionRows(list) {
 				if o := jsonv.Obj(x); o != nil {
 					add(directMachine, o)
 				}

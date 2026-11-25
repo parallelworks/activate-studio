@@ -1557,6 +1557,9 @@ a.identity-btn { text-decoration: none; }
 
 /* The tree's New folder and Rename dialog */
 .name-dialog-error { margin-top: 10px; }
+.link-notice-text { margin: 0; }
+.link-to-copy { display: flex; align-items: center; gap: 8px; }
+.link-to-copy > :first-child { flex: 1; min-width: 0; }
 
 
 /* Your model access card */
@@ -1638,11 +1641,12 @@ a.identity-btn { text-decoration: none; }
    as tall as its list. */
 .chat-canvas > .slash-palette { height: auto; }
 .slash-item {
-  display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 10px;
+  display: grid; grid-template-columns: fit-content(55%) auto minmax(0, 1fr); align-items: baseline; gap: 10px;
   padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
 }
 .slash-item.current { background: var(--pw-hover-row); }
-.slash-name { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
+.slash-name { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slash-hint { font-weight: 400; color: var(--pw-muted); }
 .slash-desc { color: var(--pw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slash-foot { font-size: 11px; padding: 6px 10px 2px; }
 /* The @ file picker: the slash palette's box, a line saying where it

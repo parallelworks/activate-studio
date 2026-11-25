@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { cachedChat, readChat, type ChatRecord } from '../chatRecord'
 import { type Engine, readEngine, useEngine } from '../chatEngine'
 import { sessionMachine } from './api'
+import type { Owed } from './carried'
 
 /** A chat's pw code session as the Studio keeps it (conversations.PWCodeLink). */
 export interface ChatLink {
@@ -16,6 +17,9 @@ export interface ChatLink {
   /** The Studio started it where the person chose. */
   picked?: boolean
   url?: string
+  /** The chat's turns the session is told with the next message sent from
+   *  its view (server-go chat, pwcodefirst.go). */
+  owed?: Owed
 }
 
 /** The engine stored for the chat, as its record has it ('' for nothing
@@ -27,13 +31,16 @@ function storedEngine(c: ChatRecord | null | undefined): Engine {
 /** Whether the Studio assistant gave the chat's last reply: its pw code
  *  session has not seen it, so the chat's next message goes through the
  *  Studio, which gives the session the turns it missed, and not straight
- *  to the session from its own view. */
+ *  to the session from its own view. One it is owed goes with a message
+ *  from there too. */
 function behindOf(c: ChatRecord | null | undefined): boolean {
   const replies = ((c?.messages ?? []) as { id?: string; role?: string; model?: string | null }[])
     .filter(m => m.role === 'assistant' && !String(m.id ?? '').startsWith('note-'))
   const last = replies[replies.length - 1]
   if (!last) return false
   const id = String(last.id ?? '')
+  const owed = linkOf(c)?.owed, ids = (c?.messages ?? []).map(m => (m as { id?: string }).id)
+  if (owed && ids.indexOf(owed.upto) >= ids.indexOf(last.id)) return false
   return !(id.startsWith('pwc-') || id.startsWith('pwh-') || String(last.model ?? '').startsWith('pw code'))
 }
 

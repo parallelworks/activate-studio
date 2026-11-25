@@ -1,6 +1,7 @@
 package libapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -13,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -1067,4 +1069,53 @@ func TestPWBucketStart(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Errorf("%v; %s", os.IsNotExist(func() error { _, err := os.Stat(left); return err }()), f.logs)
+}
+
+// Copy link in a person's own bucket: her link leads her there, says to
+// anyone else what a link that is none says, and goes with the library.
+func TestPWBucketLinks(t *testing.T) {
+	p := newFakePlatform(t)
+	f := newSignInFixture(t, p)
+	f.keys["ada"], f.keys["bob"] = "key-ada", "key-bob"
+	p.object("ada", "runs/otter.txt", "a")
+	p.object("bob", "runs/otter.txt", "b")
+	add := func(who string) string {
+		_, b := f.as(who, "", "POST", "/api/libraries/bucket", map[string]any{"bucket": "pw://" + who + "/papers"})
+		id := b["library"].(map[string]any)["id"].(string)
+		f.wait(who, id)
+		return id
+	}
+	lib := add("ada")
+	add("bob")
+	link := map[string]any{"library": lib, "path": "runs/otter.txt"}
+	if st, b := f.as("bob", "", "POST", "/api/links", link); st < 400 {
+		t.Errorf("bob made one: %d %v", st, b)
+	}
+	st, b := f.as("ada", "", "POST", "/api/links", link)
+	id, _ := b["id"].(string)
+	if st != 200 || id == "" {
+		t.Fatal(st, b)
+	}
+	if st, b := f.as("ada", "", "GET", "/api/links/"+id, nil); st != 200 || b["library"] != lib || b["path"] != "runs/otter.txt" {
+		t.Errorf("hers: %d %v", st, b)
+	}
+	none, nb := f.as("bob", "", "GET", "/api/links/"+strings.Repeat("A", 22), nil)
+	if st, b := f.as("bob", "", "GET", "/api/links/"+id, nil); st != 404 || st != none || !reflect.DeepEqual(b, nb) {
+		t.Errorf("to bob: %d %v, a link that is none: %d %v", st, b, none, nb)
+	}
+	if st, _ := f.as("", "", "GET", "/api/links/"+id, nil); st != 401 {
+		t.Errorf("signed out: %d", st)
+	}
+	if strings.Contains(f.logs.String(), "otter") {
+		t.Error("the log names the file")
+	}
+	if st, b := f.as("ada", "", "DELETE", "/api/libraries/"+lib, nil); st != 200 {
+		t.Fatal(st, b)
+	}
+	if st, _ := f.as("ada", "", "GET", "/api/links/"+id, nil); st != 404 {
+		t.Errorf("removed: %d", st)
+	}
+	if kept, _ := os.ReadFile(filepath.Join(f.base, "links.json")); bytes.Contains(kept, []byte("otter")) {
+		t.Error("the link is kept")
+	}
 }

@@ -469,6 +469,8 @@ func Register(mux *http.ServeMux, a *app.App) {
 	m.Routes(mux, a.Log)
 	kb.SpaceFiles = m.SpaceFiles()
 	kb.SpaceText = spaceFiles{m}
+	kb.Links = spaceFiles{m}
+	m.Users.OnRemoved(m.linksRemoved)
 	search.IndexQueued = m.spaceQueued
 	a.Providers.SpaceFolder = m.SpaceFolder
 	a.Providers.SpaceChanged = m.SpaceTransferred

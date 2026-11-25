@@ -81,11 +81,12 @@ func (s spaceFiles) SaveText(r *http.Request, lib kb.Library, rel string, data [
 	if rel == "" {
 		return apierr.New(400, "a file needs a name")
 	}
-	fs, _, _, d, err := s.target(r, lib)
+	fs, _, owner, d, err := s.target(r, lib)
 	if err != nil {
 		return err
 	}
 	defer s.wrote(fs, d.Site, rel)
+	rewrote := s.m.rewriting(r.Context(), fs, owner, d, rel)
 	st, err := fs.Swap(r.Context(), rel, data, base)
 	switch {
 	case err != nil:
@@ -95,5 +96,6 @@ func (s spaceFiles) SaveText(r *http.Request, lib kb.Library, rel string, data [
 	case !st.Done:
 		return &kb.TextConflict{State: kb.TextChanged, Version: st.Version}
 	}
+	rewrote(rel)
 	return nil
 }

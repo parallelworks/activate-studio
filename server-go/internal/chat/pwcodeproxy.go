@@ -444,7 +444,7 @@ func (m *Module) codeFollow(w http.ResponseWriter, r *http.Request) error {
 		return pwErr(409, "That session is not this chat's session cleared: it works in another folder.")
 	}
 	l := *c.PWCode
-	l.Session = next
+	l.Session, l.Owed = next, nil
 	m.Conv.SetPWCode(c.ID, &l)
 	m.A.Log.Info("pw code chat: followed a cleared session", "user", userID(r), "conversation", c.ID, "from", c.PWCode.Session, "to", next, "site", l.Site)
 	return reqbody.OK(w, reqbody.O("session", next))
@@ -502,7 +502,7 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	var lastSeq int64
-	sentText := ""
+	sentText, owed := "", ""
 	switch key {
 	case "PATCH /settings":
 		if err := m.checkSettings(r, c, t, body); err != nil {
@@ -522,10 +522,17 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 		}
 	case "POST /messages":
 		sentText = jsonv.String(jsonv.Path(body, "text"))
-		if o := jsonv.Obj(body); o != nil && c.PWCode.Untold && strings.TrimSpace(sentText) != "" {
-			o.Set("text", sentText+m.relayInstructions(r))
-		} else if note := untoldScope(c, t, sentText); o != nil && note != "" {
-			o.Set("text", sentText+relayInstructionsHead+note)
+		if o := jsonv.Obj(body); o != nil {
+			text := sentText
+			if c.PWCode.Untold && strings.TrimSpace(sentText) != "" {
+				text += m.relayInstructions(r)
+			} else if note := untoldScope(c, t, sentText); note != "" {
+				text += relayInstructionsHead + note
+			}
+			owed = owedContext(c, sentText)
+			if text = owed + text; text != sentText {
+				o.Set("text", text)
+			}
 		}
 		m.studioToolsFor(ctx, r, c, t)
 		if d, err := pwcode.GetSession(ctx, t.client, id); err == nil {
@@ -581,9 +588,19 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 				m.logModeChange(r, c, t, mode, "command")
 			}
 		}
+	case "GET /palette":
+		m.learnFrom(r, c.PWCode, v)
+		if o := jsonv.Obj(v); o != nil {
+			o.Set("notListed", notListed())
+		}
 	case "POST /messages":
 		if note := untoldScope(c, t, sentText); note != "" {
 			c.PWCode.ScopeNote = note
+			l := *c.PWCode
+			m.Conv.SetPWCode(c.ID, &l)
+		}
+		if owed != "" {
+			c.PWCode.Owed = nil
 			l := *c.PWCode
 			m.Conv.SetPWCode(c.ID, &l)
 		}

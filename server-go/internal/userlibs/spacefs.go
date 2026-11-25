@@ -340,7 +340,7 @@ func (s spaceFiles) Put(r *http.Request, lib kb.Library, rel string, src io.Read
 	if rel == "" {
 		return apierr.New(400, "a file needs a name")
 	}
-	fs, _, _, d, err := s.target(r, lib)
+	fs, _, owner, d, err := s.target(r, lib)
 	if err != nil {
 		return err
 	}
@@ -350,6 +350,7 @@ func (s spaceFiles) Put(r *http.Request, lib kb.Library, rel string, src io.Read
 	if dir == "." {
 		dir = ""
 	}
+	rewrote := s.m.rewriting(ctx, fs, owner, d, rel)
 	staged := stagingName(dir)
 	c := &capped{r: src, left: max}
 	if _, err := fs.Write(ctx, staged, c, 0, 0o644); err != nil {
@@ -363,6 +364,7 @@ func (s spaceFiles) Put(r *http.Request, lib kb.Library, rel string, src io.Read
 		fs.Remove(context.WithoutCancel(ctx), []string{staged}, nil)
 		return err
 	}
+	rewrote(rel)
 	return nil
 }
 
@@ -425,12 +427,17 @@ func (s spaceFiles) LandParts(r *http.Request, lib kb.Library, dir, rel string, 
 	if err != nil {
 		return err
 	}
-	fs, _, _, d, err := s.target(r, lib)
+	fs, _, owner, d, err := s.target(r, lib)
 	if err != nil {
 		return err
 	}
 	defer s.wrote(fs, d.Site, rel)
-	return fs.LandParts(r.Context(), dir, rel, size)
+	rewrote := s.m.rewriting(r.Context(), fs, owner, d, rel)
+	if err := fs.LandParts(r.Context(), dir, rel, size); err != nil {
+		return err
+	}
+	rewrote(rel)
+	return nil
 }
 
 func (s spaceFiles) DropParts(r *http.Request, lib kb.Library, dir string) error {
@@ -454,7 +461,7 @@ func (s spaceFiles) Rename(r *http.Request, lib kb.Library, rel, name string) (s
 	if rel == "" || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\x00") {
 		return "", apierr.New(400, "unusable name")
 	}
-	fs, _, _, d, err := s.target(r, lib)
+	fs, _, owner, d, err := s.target(r, lib)
 	if err != nil {
 		return "", err
 	}
@@ -463,9 +470,12 @@ func (s spaceFiles) Rename(r *http.Request, lib kb.Library, rel, name string) (s
 	if to == rel {
 		return rel, nil
 	}
+	rewrote := s.m.rewriting(r.Context(), fs, owner, d, rel)
 	if _, err := fs.Land(r.Context(), []transfers.LandPair{{Staged: rel, Final: to}}); err != nil {
 		return "", err
 	}
+	s.m.linkMoved(owner, d, rel, to)
+	rewrote(to)
 	return to, nil
 }
 
@@ -477,7 +487,7 @@ func (s spaceFiles) Move(r *http.Request, lib kb.Library, rels []string, dest st
 	if err != nil {
 		return nil, nil, err
 	}
-	fs, _, _, d, err := s.target(r, lib)
+	fs, _, owner, d, err := s.target(r, lib)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -514,9 +524,15 @@ func (s spaceFiles) Move(r *http.Request, lib kb.Library, rels []string, dest st
 	}
 	var moved []kb.Moved
 	if len(pairs) > 0 {
+		rewrote := map[string]func(string){}
+		for _, p := range pairs {
+			rewrote[p.Final] = s.m.rewriting(ctx, fs, owner, d, p.Staged)
+		}
 		done, err := fs.Land(ctx, pairs)
 		for _, to := range done {
 			moved = append(moved, kb.Moved{From: from[to], To: to})
+			s.m.linkMoved(owner, d, from[to], to)
+			rewrote[to](to)
 		}
 		if err != nil {
 			return moved, skipped, err
@@ -535,12 +551,13 @@ func (s spaceFiles) Delete(r *http.Request, lib kb.Library, rels []string) ([]st
 			return nil, nil, apierr.New(400, "refusing to remove the space's own folder")
 		}
 	}
-	fs, _, _, d, err := s.target(r, lib)
+	fs, _, owner, d, err := s.target(r, lib)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer s.wrote(fs, d.Site, rels...)
 	done, err := fs.RemoveTrees(r.Context(), rels)
+	s.m.linkDeleted(owner, d, done)
 	if err != nil {
 		return done, nil, err
 	}

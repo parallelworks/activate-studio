@@ -44,6 +44,9 @@ export interface AppConfig {
   aiEnabled?: boolean
   /** How many workflows this Studio offers on its Workflows tab. */
   workflowCount?: number
+  /** The address links to items start with, where the Studio has a lasting
+   *  one; empty, and the page's own is used. */
+  linkBase?: string
   user: { id: string; username: string; name?: string }
   loaded: boolean
   /** True when the name and icon came from the previous visit, so the header
@@ -157,6 +160,7 @@ export function useAppConfig(): AppConfig {
           accounts: !!d.accounts,
           aiEnabled: d.aiEnabled !== false,
           workflowCount: typeof d.workflowCount === 'number' ? d.workflowCount : 0,
+          linkBase: typeof d.linkBase === 'string' ? d.linkBase : '',
           loaded: true,
         }
         rememberBrand(cached)

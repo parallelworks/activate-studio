@@ -23,7 +23,7 @@ import { heldModels } from '../src/pwcode/ownModel'
 
 type Engine = 'studio' | 'pwcode'
 interface Message { id: string; role: string; content: string; parentId?: string | null; model?: string }
-interface Chat { id: string; title: string; messages: Message[]; pwcode?: { session: string }; engine?: Engine }
+interface Chat { id: string; title: string; messages: Message[]; pwcode?: { session: string; owed?: { upto: string } }; engine?: Engine }
 interface Stream { send: (event: string, data: unknown) => void; end: () => void; body: { messages: { content: string }[]; model: string }; aborted: boolean }
 
 const now = new Date().toISOString()
@@ -458,4 +458,23 @@ describe('a new chat pw code answers, with no model for pw code', () => {
     await start(1, 'hello')
     expect(posts).toEqual([{ id: ID(1), text: 'hello' }])
   })
+})
+
+// A command in a chat the Studio assistant answered last was sent to the
+// session as text, with the turns it missed.
+it.each([['owed', true], ['not owed', false]] as const)('the session shows where the turns it missed are %s to it', async (_what, owed) => {
+  engine = 'pwcode'
+  chats.set(ID(1), { id: ID(1), title: 'A chat', engine: 'pwcode', messages: [{ id: 'u0', role: 'user', content: 'What is the budget?' }, { id: 'srv-0', role: 'assistant', content: 'Nine pounds.', parentId: 'u0', model: 'm' }], pwcode: { session: 's1', ...(owed ? { owed: { upto: 'srv-0' } } : {}) } })
+  await show()
+  await open(1)
+  await waitFor(() => expect(document.body.textContent).toContain('Nine pounds.'), { timeout: 5000 })
+  await waitFor(() => expect(!!document.querySelector('.pwcode-session')).toBe(owed), { timeout: 5000 })
+  if (owed) await waitFor(() => expect(document.body.textContent).toContain('s1 says'), { timeout: 5000 })
+  expect(document.body.textContent).toContain('Nine pounds.')
+  // "/" in a box the session does not have is that session's list too.
+  if (owed) return
+  const box = document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')!
+  await act(async () => { fireEvent.input(box, { target: { value: '/' } }); await new Promise(r => setTimeout(r, 60)) })
+  const asked = () => vi.mocked(fetch).mock.calls.map(c => String(c[0] instanceof Request ? c[0].url : c[0]))
+  await waitFor(() => expect(asked()).toContain('/api/code/machines/studio/sessions/s1/palette'), { timeout: 3000 })
 })

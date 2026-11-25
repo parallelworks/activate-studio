@@ -85,7 +85,7 @@ plain() {
 # mine: in a private location, the folder this is in is this account's and
 # closed to every other, so nothing in it is another's doing.
 mine() { [ -n "${PRIV:-}" ] || return 0; [ -O . ] || return 1; case "$(ls -ld . | cut -c5-10)" in ------|--S---) return 0;; esac; return 1; }
-if [ "${GUARD:-}" = 1 ]; then case "$cmd" in list|list2|walk|stat|free|sha|read) ;; *) guard ;; esac; fi
+if [ "${GUARD:-}" = 1 ]; then case "$cmd" in list|list2|walk|stat|ident|free|sha|read) ;; *) guard ;; esac; fi
 G=0; find . -maxdepth 0 -printf '' >/dev/null 2>&1 && G=1
 F='%y\t%s\t%T@\t%m\t%p\0'
 SF='%HT%t%z%t%m%t%Lp%t%N'
@@ -141,6 +141,23 @@ stat)
     [ -e "$p" ] || [ -L "$p" ] || continue
     inside "$(dirof "$p")" || fail 6 "$p leads outside the location"
     one "$p"
+  done ;;
+ident)
+  # What tells each path from another file that takes its name: type, 1 if
+  # this account can read it (a folder: list and enter it), device:inode,
+  # when it was made, and, for a link, the inode it leads to.
+  while IFS= read -r -d '' p; do
+    [ -e "$p" ] || [ -L "$p" ] || continue
+    inside "$(dirof "$p")" || fail 6 "$p leads outside the location"
+    r=0; [ -r "$p" ] && { [ ! -d "$p" ] || [ -x "$p" ]; } && r=1
+    l=
+    if [ $G = 1 ]; then
+      [ -L "$p" ] && l=$(find -L "$p" -maxdepth 0 -printf %i 2>/dev/null)
+      find "$p" -maxdepth 0 -printf "%y\t$r\t%D:%i\t%B@\t$l\t%p\0"
+    else
+      [ -L "$p" ] && l=$(stat -L -f %i -- "$p" 2>/dev/null)
+      stat -f "%HT%t$r%t%d:%i%t%B%t$l%t%N" -- "$p" | tr '\n' '\0'
+    fi
   done ;;
 free) df -Pk -- "${1:-.}" 2>/dev/null | awk 'NR==2 {print $4}' ;;
 guard) exit 0 ;;
@@ -760,6 +777,66 @@ func (r *RemoteFS) Stat(ctx context.Context, rels []string) (map[string]FileInfo
 		out[e.Rel] = e
 	}
 	return out, nil
+}
+
+// PathIdent is what tells the file at a path from another that takes its
+// name, and whether the account can read it.
+type PathIdent struct {
+	Type     byte // f, d, l or o
+	Readable bool
+	Dev, Ino string
+	// Birth is when it was made, "" where the host does not say.
+	Birth string
+}
+
+// Ident is PathIdent of each of rels that is there; ok false on a host
+// that does not say (an account that takes SFTP only).
+func (r *RemoteFS) Ident(ctx context.Context, rels []string) (map[string]PathIdent, bool, error) {
+	out := map[string]PathIdent{}
+	if len(rels) == 0 {
+		return out, true, nil
+	}
+	if r.SFTPOnly(ctx) {
+		return nil, false, nil
+	}
+	named := make([]string, len(rels))
+	for i, rel := range rels {
+		// "./" so that no name is taken for an option of find.
+		named[i] = "./" + rel
+		if rel == "" {
+			named[i] = "."
+		}
+	}
+	res, err := r.run(ctx, nulList(named), "ident")
+	if err != nil {
+		return nil, true, err
+	}
+	for _, rec := range bytes.Split(res.Raw, []byte{0}) {
+		if len(rec) == 0 {
+			continue
+		}
+		f := strings.SplitN(string(rec), "\t", 6)
+		if len(f) != 6 {
+			return nil, false, nil
+		}
+		dev, ino, ok := strings.Cut(f[2], ":")
+		if !ok || ino == "" {
+			return nil, false, nil
+		}
+		if f[4] != "" {
+			ino += ">" + f[4]
+		}
+		birth := f[3]
+		if n, err := strconv.ParseFloat(birth, 64); err != nil || n <= 0 {
+			birth = ""
+		}
+		p := strings.TrimPrefix(f[5], "./")
+		if p == "." {
+			p = ""
+		}
+		out[p] = PathIdent{Type: typeOf(f[0]), Readable: f[1] == "1", Dev: dev, Ino: ino, Birth: birth}
+	}
+	return out, true, nil
 }
 
 func (r *RemoteFS) Walk(ctx context.Context, rels []string, limit int) (Walked, error) {

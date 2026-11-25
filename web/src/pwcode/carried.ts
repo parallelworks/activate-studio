@@ -60,6 +60,25 @@ function typedAt(record: readonly ChatMessage[], typed: string, from: number): n
   return -1
 }
 
+/** The chat's turns a session has not been told: those after one message
+ *  ("" for the chat's start), up to another. */
+export interface Owed { after?: string; upto: string }
+
+/** Where in a session's messages the turns it is owed came: after the last
+ *  of them the chat's record has, and its answer. */
+function owedAt(messages: readonly ChatMessage[], record: readonly ChatMessage[]): number {
+  let from = 0, at = 0
+  messages.forEach((m, i) => {
+    if (m.role !== 'user') return
+    const found = typedAt(record, typedPart(textOf(m)).trim(), from)
+    if (found < 0) return
+    from = found + 1
+    at = messages.findIndex((x, j) => j > i && x.role === 'user')
+    if (at < 0) at = messages.length
+  })
+  return at
+}
+
 /**
  * A session's messages with the chat's turns it was given as carried over
  * (pwcodeContext) drawn from the chat's record, where they came: the
@@ -69,11 +88,22 @@ function typedAt(record: readonly ChatMessage[], typed: string, from: number): n
  * is never sent them again. Each such turn's id starts with EARLIER.
  * Then the session's messages are drawn as typed (withoutCarried).
  */
-export function withEarlier<L extends readonly ChatMessage[] | undefined>(messages: L, record: readonly ChatMessage[] | undefined): L {
+export function withEarlier<L extends readonly ChatMessage[] | undefined>(messages: L, record: readonly ChatMessage[] | undefined, owed?: Owed): L {
   if (!messages || !record?.length) return messages
   const out: ChatMessage[] = []
   let from = 0
+  const draw = (turns: readonly ChatMessage[], all: boolean) => {
+    for (const r of turns) {
+      if ((r.role === 'user' || r.role === 'assistant') && !r.id.startsWith('note-') && (all || !byPWCode(r))) {
+        out.push({ ...r, id: (r.role === 'assistant' && !byPWCode(r) ? EARLIER_STUDIO : EARLIER) + r.id })
+      }
+    }
+  }
+  const owes = owed ? record.slice(record.findIndex(r => r.id === owed.after) + 1, record.findIndex(r => r.id === owed.upto) + 1) : []
+  const before = owes.length ? owedAt(messages, record) : -1
+  let i = 0
   for (const m of messages) {
+    if (i++ === before) draw(owes, !owed?.after)
     if (m.role === 'user') {
       const text = textOf(m)
       const head = HEADS.find(h => text.startsWith(h))
@@ -81,17 +111,12 @@ export function withEarlier<L extends readonly ChatMessage[] | undefined>(messag
       if (at >= 0) {
         // Before the session joined, every turn of the chat is new to its
         // view; since its last reply, only the Studio assistant's turns.
-        if (head) {
-          for (const r of record.slice(from, at)) {
-            if ((r.role === 'user' || r.role === 'assistant') && !r.id.startsWith('note-') && (head === HEADS[0] || !byPWCode(r))) {
-              out.push({ ...r, id: (r.role === 'assistant' && !byPWCode(r) ? EARLIER_STUDIO : EARLIER) + r.id })
-            }
-          }
-        }
+        if (head) draw(record.slice(from, at), head === HEADS[0])
         from = at + 1
       }
     }
     out.push(m)
   }
+  if (i === before) draw(owes, !owed?.after)
   return (out.length === messages.length ? messages : out) as unknown as L
 }

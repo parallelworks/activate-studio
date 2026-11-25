@@ -479,6 +479,13 @@ export function splitLibraryPath(p: string): { id: string; rel: string } | null 
 export function libraryOf(p: string): string {
   return current === ALL ? splitLibraryPath(p)?.id ?? ALL : current
 }
+/** A path on screen as its library and the path there. */
+export function itemOf(p: string): { library: string; path: string } {
+  const clean = p.replace(/^\/+/, '')
+  if (current !== ALL) return { library: current, path: clean }
+  const t = splitLibraryPath(clean)
+  return { library: t?.id ?? ALL, path: t?.rel ?? '' }
+}
 // Routes that take All mode's prefixed paths themselves, when read (GET).
 // Every other request addresses one library, so in All mode a request on a
 // path goes to that path's library, which is what keeps files viewable and
