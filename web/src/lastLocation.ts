@@ -8,6 +8,8 @@
  * The last hash is kept here and put back before React reads it.
  */
 
+import { itemInAddress } from './itemLinks'
+
 const KEY = 'ade-last-hash'
 
 /**
@@ -35,7 +37,8 @@ export function forgetHash(): void {
  *  state initializers, and replaceState fires no event to correct them. */
 export function restoreLastHash(): void {
   try {
-    if (location.hash) return
+    // A link to an item is followed, not replaced by where the tab last was.
+    if (location.hash || itemInAddress(location)) return
     const last = store()?.getItem(KEY)
     if (!last || !last.startsWith('#')) return
     history.replaceState(null, '', location.pathname + location.search + last)
@@ -43,7 +46,8 @@ export function restoreLastHash(): void {
 }
 
 export function rememberHashChanges(): void {
-  const save = () => rememberHash(location.hash)
+  // Not a link to an item: what it opened is what to come back to.
+  const save = () => { if (!itemInAddress({ search: '', hash: location.hash })) rememberHash(location.hash) }
   // pushState and replaceState fire no event, so the app's own navigation is
   // caught on the way out as well as on hashchange.
   window.addEventListener('hashchange', save)

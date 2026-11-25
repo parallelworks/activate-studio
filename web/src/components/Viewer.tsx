@@ -2,7 +2,7 @@ import { ReactElement, Suspense, lazy, useCallback, useEffect, useMemo, useRef, 
 import { Button, Callout, ConfirmModal, EmptyState, IconButton, Loader, TabPanel, Tabs } from '@parallelworks/ui'
 import { ZoomInIcon, ZoomOutIcon } from '@parallelworks/ui/icons'
 import { Streamdown } from 'streamdown'
-import { api, withLibrary, FileContent, type OfficeBlock, type OfficeOutline } from '../api'
+import { api, itemOf, withLibrary, FileContent, type OfficeBlock, type OfficeOutline } from '../api'
 import { forgetHash } from '../lastLocation'
 import { TagMenu } from './TagMenu'
 const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })))
@@ -13,6 +13,8 @@ import { pageWidth, stepZoom, useSettled, ZOOM_MAX, ZOOM_MIN, ZoomView, type Zoo
 import { CsvTable, DELIMITED_SUFFIXES } from './CsvTable'
 import { GRID_SUFFIXES, SheetWorkbook } from './SheetWorkbook'
 import { LockedButton } from './LockedButton'
+import { useAppConfig } from '../config'
+import { copyItemLink, copyLinkLabel } from '../itemLinks'
 import { TextEditor, type OpenText } from './TextEditor'
 import { TextNote } from './TextNote'
 import { indexText } from '../transfers'
@@ -467,6 +469,7 @@ export function Viewer({ path, find, onDeleted, onOpen, startEditing, readOnly, 
   // The file was open and is no longer there: moved, renamed or deleted
   // by something else (the assistant, another window, the file system).
   const [gone, setGone] = useState(false)
+  const { linkBase } = useAppConfig()
   const [tab, setTab] = useState<Tab>('preview')
   // Zoom for a PDF's or Office file's pages, or an image (ZoomView). The
   // buttons show while such a preview is on screen.
@@ -905,6 +908,7 @@ export function Viewer({ path, find, onDeleted, onOpen, startEditing, readOnly, 
             ? <LockedButton reason={editLocked}>Edit</LockedButton>
             : <Button variant="secondary" size="sm" loading={opening} onClick={() => void edit(path)} title="Edit this file's text">Edit</Button>)}
           <Button variant="secondary" size="sm" onClick={() => setFindOpen(o => !o)} title="Find text in this file">Find</Button>
+          <Button variant="secondary" size="sm" title="Copy a link to this file. It opens only for people who can open the file." onClick={() => void copyItemLink(itemOf(file.path), linkBase)}>{copyLinkLabel(linkBase)}</Button>
           {labelsLocked
             ? <LockedButton reason={labelsLocked}>Labels</LockedButton>
             : (

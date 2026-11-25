@@ -17,6 +17,7 @@ import { checkList, LIST_FORMAT } from '../libraryLists'
 import { TagMenu } from '../components/TagMenu'
 import { sectionAllowed, useAppConfig } from '../config'
 import { shownPath } from '../libraryPath'
+import { copyItemLink, copyLinkLabel } from '../itemLinks'
 import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
 import { chooseUpload, onShellDrop, shellListsFolders } from '../nativeShell'
 import { downloadPath } from '../libraryDownload'
@@ -40,9 +41,18 @@ const FILE_MIN = 480
 const DIVIDER = 5
 
 /** Human-sized byte counts for the upload panel. */
-export function LibraryView({ display, onDisplay }: {
+/** A folder a link leads to, as the tree reads its path: shown open, in
+ *  view and selected. Each link is one of these, the same folder or not. */
+export interface Reveal { path: string }
+
+export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRead }: {
   display: Display | null
   onDisplay: (d: Display | null) => void
+  reveal?: Reveal | null
+  /** What to say over an item that took the place of the one its link was
+   *  made for, while it is the one open. */
+  replaced?: { path: string; text: string } | null
+  onReplacedRead?: () => void
 }) {
   // Uploads land in uploads/ until a folder is picked; with All libraries
   // selected, the primary library's.
@@ -495,6 +505,7 @@ export function LibraryView({ display, onDisplay }: {
     }
     if (path) {
       items.push(
+        { label: copyLinkLabel(cfg.linkBase), onClick: () => void copyItemLink(itemAt(path), cfg.linkBase) },
         { label: 'Copy path', copy: { text: path, label: 'path' } },
         { label: `Cut${group}`, disabled: !!locked, disabledReason: locked ?? undefined, onClick: () => setClipboard({ mode: 'cut', paths: targets() }) },
         { label: `Copy${group}`, onClick: () => setClipboard({ mode: 'copy', paths: targets() }) },
@@ -589,6 +600,21 @@ export function LibraryView({ display, onDisplay }: {
   }), [targetDir, uploadItems, writableAt, dialogOpen])
 
   const selectedFile = display?.kind === 'file' ? display.target : null
+  // The folder a link led to, until another row is chosen.
+  const [revealed, setRevealed] = useState<Reveal | null>(null)
+  useEffect(() => {
+    if (!reveal) return
+    setRevealed(reveal)
+    setRailCollapsed(false)
+    if (/(^|\/)\./.test(reveal.path)) setShowHidden(true)
+    setTargetDir(reveal.path || uploadsDir)
+    selectLibraryEntry({ path: reveal.path, isDir: true })
+    // Once for each link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal])
+  useEffect(() => { if (selectedFile) setRevealed(null) }, [selectedFile])
+  useEffect(() => onLibraryChange(() => setRevealed(null)), [])
+  const replacedNote = replaced && (selectedFile === replaced.path || (!selectedFile && revealed?.path === replaced.path)) ? replaced : null
   const [dropOver, setDropOver] = useState(false)
   // The status panel describes what was last chosen in the tree: the file
   // open in the viewer, or a folder clicked since.
@@ -692,6 +718,7 @@ export function LibraryView({ display, onDisplay }: {
                   {!phone && <IconButton icon="«" label="Collapse tree" onClick={() => { if (crowded) askTree(false); else setRailCollapsed(true) }} />}
                 </span>
               </div>
+              {replacedNote && !selectedFile && <Callout tone="warning" variant="bar" size="sm" live className="link-replaced" onDismiss={onReplacedRead}>{replacedNote.text}</Callout>}
               {selectMode && (
                 <div className="multi-bar">
                   <span>{multiSel.size} selected</span>
@@ -733,8 +760,9 @@ export function LibraryView({ display, onDisplay }: {
               <Explorer
                 refreshTick={refreshKey}
                 onOpen={p => { anchor.current = p; onDisplay({ kind: 'file', target: p }) }}
-                onDirFocus={dir => { anchor.current = dir; setTargetDir(dir || uploadsDir); selectLibraryEntry({ path: dir, isDir: true }) }}
+                onDirFocus={dir => { anchor.current = dir; setRevealed(null); setTargetDir(dir || uploadsDir); selectLibraryEntry({ path: dir, isDir: true }) }}
                 selected={selectedFile}
+                reveal={revealed}
                 rootLabel={cfg.kbLabel}
                 emptyHint={writable
                   ? 'Nothing here yet. Add files with + Add, by dropping them here, or with Transfers.'
@@ -818,6 +846,7 @@ export function LibraryView({ display, onDisplay }: {
           </div>
         )}
         <section className="library-main">
+          {replacedNote && selectedFile && <Callout tone="warning" variant="bar" size="sm" live className="link-replaced" onDismiss={onReplacedRead}>{replacedNote.text}</Callout>}
           {display?.kind === 'workflow_dag' ? (
             <DagViewer workflow={display.target} />
           ) : (

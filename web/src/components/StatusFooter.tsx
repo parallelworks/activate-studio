@@ -19,6 +19,7 @@ import { aiOn, useAppConfig } from '../config'
 import { reloadOntoNewest, useShellUpdate } from '../shellWorker'
 import { plural } from '../plural'
 import { steadyCount } from '../steady'
+import { embedded, signInHref } from '../signIn'
 
 /** The sync row's words: when the background sync last finished. */
 export function syncedLine(iso: string | null): string {
@@ -309,16 +310,6 @@ interface WhoAmI {
   user: { id: string; username: string; name?: string; account?: string | null; uid?: number | null; gid?: number | null; groups?: string[] | null } | null
   token: { issuer: string | null; audience: unknown; issuedAt: string | null; expiresAt: string | null } | null
   claims: Record<string, unknown> | null
-}
-
-/** Inside the platform's embedded session view a provider's sign-in does
- *  not complete, so there it opens in a tab of its own. */
-function embedded(): boolean {
-  try { return window.self !== window.top } catch { return true }
-}
-
-export function signInHref(loginUrl: string): string {
-  return `${loginUrl}?returnTo=${encodeURIComponent(location.pathname + location.search + location.hash)}`
 }
 
 function SignInLink({ loginUrl }: { loginUrl: string }) {
