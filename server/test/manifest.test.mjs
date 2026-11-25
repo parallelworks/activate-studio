@@ -9,22 +9,26 @@ import path from 'node:path'
 const KB = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-kb-'))
 process.env.KB_ROOT = KB
 process.env.INDEX_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-ix-'))
-// A 300x200 PNG header is all imageSizes reads.
-const png = Buffer.alloc(33)
-png.writeUInt32BE(0x89504e47, 0); png.writeUInt32BE(0x0d0a1a0a, 4)
-png.writeUInt32BE(13, 8); png.write('IHDR', 12); png.writeUInt32BE(300, 16); png.writeUInt32BE(200, 20)
+// A PNG header is all imageSizes reads.
+const pngOf = (w, h) => {
+  const b = Buffer.alloc(33)
+  b.writeUInt32BE(0x89504e47, 0); b.writeUInt32BE(0x0d0a1a0a, 4)
+  b.writeUInt32BE(13, 8); b.write('IHDR', 12); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20)
+  return b
+}
+const png = pngOf(256, 256)
 const ICON = path.join(KB, 'brand.png')
 fs.writeFileSync(ICON, png)
 process.env.APP_ICON = ICON
 process.env.APP_NAME = 'Example Research Studio'
 
 const { default: Fastify } = await import('fastify')
-const { kbRoutes, webManifest, imageSizes, groundOf } = await import('../dist/routes.js')
+const { kbRoutes, webManifest, imageSizes, installIcon, groundOf } = await import('../dist/routes.js')
 const app = Fastify()
 await app.register(kbRoutes)
 await app.ready()
 
-test('the route names the deployment, puts its icon first at its real size, and is not cached', async () => {
+test('the route names the deployment, lists its icon at its real size, and is not cached', async () => {
   const res = await app.inject({ method: 'GET', url: '/manifest.webmanifest' })
   assert.equal(res.statusCode, 200)
   assert.match(res.headers['content-type'], /application\/manifest\+json/)
@@ -33,9 +37,19 @@ test('the route names the deployment, puts its icon first at its real size, and 
   assert.equal(m.name, 'Example Research Studio')
   assert.ok(m.short_name.length <= 12)
   assert.equal(m.display, 'standalone')
-  assert.match(m.icons[0].src, /^\/api\/brand-icon\?v=[0-9a-f]{10}$/)
-  assert.deepEqual({ ...m.icons[0], src: 'x' }, { src: 'x', type: 'image/png', sizes: '300x200' })
-  assert.ok(m.icons.some(i => i.sizes === '512x512' && i.purpose === 'maskable'))
+  // Alone: browsers take the largest icon, and some the maskable one, so
+  // the Studio's mark beside it was the one installed.
+  assert.equal(m.icons.length, 1)
+  assert.match(m.icons[0].src, /^api\/brand-icon\?v=[0-9a-f]{10}$/)
+  assert.deepEqual({ ...m.icons[0], src: 'x' }, { src: 'x', type: 'image/png', sizes: '256x256' })
+})
+
+test('an icon an installed app cannot have leaves the Studio\'s mark', () => {
+  assert.equal(installIcon('/api/brand-icon?v=1', pngOf(300, 200), 'image/png'), null)
+  assert.equal(installIcon('/api/brand-icon?v=1', pngOf(128, 128), 'image/png'), null)
+  assert.equal(installIcon('/api/brand-icon?v=1', Buffer.from('<svg/>'), 'image/svg+xml'), null)
+  assert.equal(installIcon('/api/brand-icon?v=1', Buffer.from('<!doctype html>'), 'text/html'), null)
+  assert.deepEqual(installIcon('/api/brand-icon?v=1', pngOf(144, 144), 'image/png'), { src: 'api/brand-icon?v=1', type: 'image/png', sizes: '144x144' })
 })
 
 test('no id, and start and scope stay under the mount path', () => {
@@ -44,10 +58,17 @@ test('no id, and start and scope stay under the mount path', () => {
   const mounted = 'https://host.example/tools/studio/manifest.webmanifest'
   assert.equal(new URL(m.start_url, mounted).pathname, '/tools/studio/')
   assert.equal(new URL(m.scope, mounted).pathname, '/tools/studio/')
+  assert.ok(m.icons.some(i => i.sizes === '512x512' && i.purpose === 'maskable'))
+  for (const i of [...m.icons, installIcon('/api/brand-icon?v=1', png, 'image/png')]) assert.match(new URL(i.src, mounted).pathname, /^\/tools\/studio\/(icon-|api\/brand-icon$)/)
+})
+
+test('the mark\'s addresses carry what src adds, so a new mark is a new address', () => {
+  const m = webManifest({ name: 'Studio', dark: false, brand: null, src: f => `${f}?v=1` })
+  assert.deepEqual(m.icons.map(i => i.src), ['icon-192.png?v=1', 'icon-512.png?v=1', 'icon-maskable-512.png?v=1'])
 })
 
 test('icon sizes: PNG from its header, SVG and unknown as any', () => {
-  assert.equal(imageSizes(png, 'image/png'), '300x200')
+  assert.equal(imageSizes(pngOf(300, 200), 'image/png'), '300x200')
   assert.equal(imageSizes(Buffer.from('<svg/>'), 'image/svg+xml'), 'any')
   assert.equal(imageSizes(Buffer.from('GIF89a'), 'image/gif'), 'any')
 })

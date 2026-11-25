@@ -5,6 +5,8 @@ import { About } from '../src/components/About'
 import { HelpView } from '../src/views/HelpView'
 import { StatusFooter } from '../src/components/StatusFooter'
 import { openAbout } from '../src/api'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 const VERSION = { version: 'v1.150', commit: 'abc1234', builtAt: null, startedAt: '2026-10-22T00:00:00Z', source: 'git' }
@@ -101,3 +103,15 @@ describe('the Studio mark in the accent', () => {
   })
 })
 
+describe('the icons a browser installs', () => {
+  const web = join(__dirname, '..')
+  // Width and height from the PNG's header.
+  const size = (f: string) => { const b = readFileSync(join(web, 'public', f)); return [b.readUInt32BE(16), b.readUInt32BE(20)] }
+  it('are the header\'s mark, at the sizes the manifest and the page name', () => {
+    expect(readFileSync(join(web, 'public', 'favicon.svg'), 'utf8')).toBe(readFileSync(join(web, 'icons', 'icon.svg'), 'utf8'))
+    expect(size('icon-192.png')).toEqual([192, 192])
+    expect(size('icon-512.png')).toEqual([512, 512])
+    expect(size('icon-maskable-512.png')).toEqual([512, 512])
+    expect(size('apple-touch-icon.png')).toEqual([180, 180])
+  })
+})

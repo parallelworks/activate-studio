@@ -227,7 +227,9 @@ Who changes settings: on a Studio with sign-in, `core.SettingsLocked` (`mainlib.
 
 The sidebar switches save the `sections` setting (`PUT /api/settings {sections}`). An empty list shows every page, including pages a later version adds. A list saved before a page existed shows that page too: the server adds it to the list it reports, and saving the switches records which pages the list knows of (`sectionsGen`), so a page switched off since stays off. Transfers shows only when its switch is on and the server answers `/api/transfers/locations`. The wizard's name and accent save `appName` and `accent` the same way, and its library step uses the Libraries routes ([`LIBRARIES.md`](LIBRARIES.md)), including the import of a library list.
 
-Brand images (`/api/brand-icon`, `/api/favicon`) are served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox` and `X-Content-Type-Options: nosniff`, so an SVG opened on its own runs nothing and loads nothing.
+Brand images (`/api/brand-icon`, `/api/favicon`) are served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox` and `X-Content-Type-Options: nosniff`, so an SVG opened on its own runs nothing and loads nothing. They answer without sign-in, since a browser installing the Studio may ask for its icon without cookies. One that cannot be loaded, or is not an image (a sign-in page), is answered with the Studio's mark and `Cache-Control: no-store`; the address is asked again after a minute, and an image loaded before is kept while its server is down.
+
+`GET /manifest.webmanifest` lists the Studio's mark (`icon-192.png`, `icon-512.png`, `icon-maskable-512.png`), or the deployment's icon alone when an installed app can have it (a square PNG, JPEG, GIF or WebP of at least 144 pixels). Every address in it is relative, so it holds under a path, and carries a hash of the file: Chrome looks at an installed app's icon again only when its address changes. The Studio's page itself is built for the root of its host, so an install needs an address of its own (a session subdomain).
 
 ## Indexing
 

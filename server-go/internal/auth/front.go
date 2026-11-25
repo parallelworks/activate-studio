@@ -126,6 +126,13 @@ var assetRe = regexp.MustCompile(`(?i)\.(m?js|css|map|png|jpe?g|gif|svg|ico|webp
 // public, and the sign-in redirect is for the page that loads them.
 func isAsset(p string) bool { return strings.HasPrefix(p, "/assets/") || assetRe.MatchString(p) }
 
+// isBrandImage is the deployment's own icon, which a browser installing the
+// Studio or adding it to a home screen may ask for without the person's
+// cookies. The Studio's own icons are assets, open in the same way.
+func isBrandImage(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && (r.URL.Path == "/api/brand-icon" || r.URL.Path == "/api/favicon")
+}
+
 // LoginURL is the sign-in route with a return path.
 func LoginURL(returnTo string) string { return LoginPath + "?returnTo=" + encodeURIComponent(returnTo) }
 
@@ -183,7 +190,7 @@ func (f *Front) Gate(w http.ResponseWriter, r *http.Request) *http.Request {
 			return r
 		}
 	}
-	if !f.required() {
+	if !f.required() || isBrandImage(r) {
 		return r
 	}
 	if invalid {

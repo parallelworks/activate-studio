@@ -67,6 +67,9 @@ export async function authHook(app: FastifyInstance): Promise<void> {
   if (!authEnabled()) return
   app.addHook('onRequest', async (req, reply) => {
     if (req.url === '/healthz' || !req.url.startsWith('/api/')) return
+    // The deployment's own icon, which a browser installing the Studio may
+    // ask for without the person's cookies.
+    if (req.method === 'GET' && /^\/api\/(brand-icon|favicon)(\?|$)/.test(req.url)) return
     // A mission worker presents its mission token, not a platform JWT.
     // The token authorizes one mission's board and nothing else, and the
     // MCP layer checks it again before exposing any board tool.
