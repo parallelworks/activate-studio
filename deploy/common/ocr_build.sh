@@ -21,7 +21,7 @@ fetch "https://github.com/pnggroup/libpng/archive/refs/tags/v$LIBPNG_VERSION.tar
   "$CACHE_DIR/libpng-$LIBPNG_VERSION.tar.gz" "$LIBPNG_SHA256"
 fetch "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/$JPEG_TURBO_VERSION/libjpeg-turbo-$JPEG_TURBO_VERSION.tar.gz" \
   "$CACHE_DIR/libjpeg-turbo-$JPEG_TURBO_VERSION.tar.gz" "$JPEG_TURBO_SHA256"
-fetch "https://download.osgeo.org/libtiff/tiff-$LIBTIFF_VERSION.tar.gz" \
+fetch "https://download.osgeo.org/libtiff/tiff-$LIBTIFF_VERSION.tar.gz https://ftp.osuosl.org/pub/blfs/conglomeration/tiff/tiff-$LIBTIFF_VERSION.tar.gz https://fossies.org/linux/misc/tiff-$LIBTIFF_VERSION.tar.gz" \
   "$CACHE_DIR/tiff-$LIBTIFF_VERSION.tar.gz" "$LIBTIFF_SHA256"
 fetch "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-$LIBWEBP_VERSION.tar.gz" \
   "$CACHE_DIR/libwebp-$LIBWEBP_VERSION.tar.gz" "$LIBWEBP_SHA256"
