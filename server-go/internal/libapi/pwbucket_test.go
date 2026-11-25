@@ -383,6 +383,15 @@ func TestPWBucketLibrary(t *testing.T) {
 	if bk["route"] != "pw" || bk["objects"] != float64(11) || bk["routeWhy"] != "no token for you" || bk["error"] != nil {
 		t.Errorf("through the CLI: %v", bk)
 	}
+	copies := filepath.Join(f.a.Cfg.IndexBase, "remote-previews", id)
+	if err := os.MkdirAll(copies, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if _, err := os.Stat(copies); err == nil {
+			t.Error("the copies of files opened stayed after the library was removed")
+		}
+	}()
 	if code, b = f.call("DELETE", "/api/libraries/"+id, nil); code != 200 {
 		t.Errorf("remove: %d %v", code, b)
 	}

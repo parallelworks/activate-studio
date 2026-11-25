@@ -253,7 +253,11 @@ func (c *CLI) runIn(ctx context.Context, home string, timeout time.Duration, max
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, &RunError{Command: "pw buckets " + args[0], Message: plain(errb.String(), err, key)}
+		said := errb.String()
+		if strings.TrimSpace(said) == "" {
+			said = problem(out.Bytes())
+		}
+		return nil, &RunError{Command: "pw buckets " + args[0], Message: plain(said, err, key)}
 	}
 	return out.Bytes(), nil
 }
@@ -296,6 +300,19 @@ func plain(stderr string, err error, secrets ...string) string {
 		msg = err.Error()
 	}
 	return redact(msg, secrets...)
+}
+
+// problem is what went wrong in an answer asked for as JSON: pw gives the
+// platform's own there, with nothing on its error output.
+func problem(out []byte) string {
+	var p struct{ Detail, Title string }
+	if len(out) > 64<<10 || json.Unmarshal(out, &p) != nil {
+		return ""
+	}
+	if p.Detail != "" {
+		return strings.ReplaceAll(p.Detail, "\n", " ")
+	}
+	return p.Title
 }
 
 func redact(msg string, secrets ...string) string {

@@ -1319,6 +1319,8 @@ func (r *Registry) Remove(id string) error {
 	}
 	os.Remove(filepath.Join(dir, "labels.json"))
 	os.Remove(filepath.Join(dir, "labels.json.bak"))
+	// The copies previews were made from: whole files of a place elsewhere.
+	os.RemoveAll(filepath.Join(r.o.IndexBase, "remote-previews", id))
 	for _, fn := range r.removedHooks {
 		fn(id)
 	}

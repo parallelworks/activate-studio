@@ -725,6 +725,18 @@ func TestErrorsHoldNoCredential(t *testing.T) {
 	}
 }
 
+// An answer asked for as JSON carries its error there.
+func TestErrorsInJSON(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "pw")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho '{\"title\":\"Internal Server Error\",\"status\":500,\"detail\":\"Something went wrong with pwt_abc.def.\"}'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := &CLI{Bin: bin, Key: func(context.Context) (string, error) { return "k", nil }, Environ: func(map[string]string) []string { return os.Environ() }}
+	if _, err := c.Buckets(context.Background()); err == nil || err.Error() != "Something went wrong with [removed]" {
+		t.Errorf("%v", err)
+	}
+}
+
 // Readings at once share one credential.
 func TestManyReaders(t *testing.T) {
 	f := newStore(many(20)...)
