@@ -34,6 +34,10 @@ export interface EngineInfo {
   toolsDown?: string | null
   /** The model Settings names for pw code. */
   model?: string
+  /** Where it names none, the one the person chose last, in any browser,
+   *  and the allocation that billed it. */
+  lastModel?: string
+  lastAllocation?: string
 }
 
 const ENGINE_LAST = 'ade-chat-engine'

@@ -45,6 +45,10 @@ type startPick struct {
 	machine, folder, mode, model string
 	allocation                   *string
 	effort, account, prompt      string
+	// chose is whether the person named the model with this start; last is
+	// the one it starts with where they did not and Settings names none.
+	chose bool
+	last  lastModel
 	// tools is whether the person chose to add the Studio's tools on the
 	// machine with this start, nil where they were not asked.
 	tools *bool
@@ -147,11 +151,17 @@ func (m *Module) startElsewhere(ctx context.Context, r *http.Request, body *stre
 	p.effort = pwcodeEffort(body.PWCodeEffort)
 	p.model = strings.TrimSpace(deref(body.PWCodeModel))
 	if p.model == "" {
-		if set := m.eff().PWCodeModel; !pwcode.IsClaudeModel(set) || (jsonv.Path(mach, "claudeInstalled") == true && jsonv.Path(mach, "claudeCodeAllowed") == true) {
+		runs := func(model string) bool {
+			return !pwcode.IsClaudeModel(model) || (jsonv.Path(mach, "claudeInstalled") == true && jsonv.Path(mach, "claudeCodeAllowed") == true)
+		}
+		if set := m.eff().PWCodeModel; runs(set) {
 			p.model = set
 		}
+		if l := m.startModel(r); runs(l.Model) && !machinesModel(l.Model) {
+			p.last = l
+		}
 	} else {
-		p.allocation = body.PWCodeAllocation
+		p.allocation, p.chose = body.PWCodeAllocation, true
 	}
 	return m.startRelayed(ctx, r, client, mach, p, StripAvailabilityMark(jsString(body.Model)))
 }
@@ -191,7 +201,7 @@ func (m *Module) startRelayed(ctx context.Context, r *http.Request, client *pwco
 		}
 		req.Set("allowedTools", allows)
 	}
-	s, err := pwcode.CreateSession(auth.ContextWithUser(ctx, user(r)), client, req)
+	s, err := m.createWithLast(auth.ContextWithUser(ctx, user(r)), r, client, req, p.last)
 	// An ACTIVATE that takes the server but not the rules, or neither after
 	// all, refuses the field: the session starts with what it does take.
 	for _, field := range []string{"allowedTools", "mcpServers"} {
@@ -206,7 +216,7 @@ func (m *Module) startRelayed(ctx context.Context, r *http.Request, client *pwco
 				req.Set("prompt", p.prompt)
 			}
 		}
-		s, err = pwcode.CreateSession(auth.ContextWithUser(ctx, user(r)), client, req)
+		s, err = m.createWithLast(auth.ContextWithUser(ctx, user(r)), r, client, req, p.last)
 	}
 	if err != nil {
 		code := 502
@@ -227,6 +237,9 @@ func (m *Module) startRelayed(ctx context.Context, r *http.Request, client *pwco
 	// session made here is.
 	m.pwcodeModel(ctx, r, &pwTarget{client: client, picked: p.model, chatModel: chatModel}, link)
 	link.Continued, link.ToolsError = true, toolsWhy
+	if p.chose {
+		m.choseModel(r, p.model, p.allocation, true)
+	}
 	if attach {
 		key, err := codesessions.ViewerKey(r, m.pf)
 		if err == nil {
@@ -307,6 +320,7 @@ func (m *Module) startFromCode(r *http.Request, machine string, mach, body *json
 	if a := str("allocation"); a != "" {
 		p.allocation = &a
 	}
+	p.chose = p.model != ""
 	if v, ok := jsonv.Path(body, codesessions.StartTools).(bool); ok {
 		p.tools = &v
 		body = body.Clone()

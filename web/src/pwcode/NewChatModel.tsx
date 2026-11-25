@@ -11,6 +11,8 @@ import { type MachineFacts, onStart, startOf, STUDIO_MACHINE } from './newChatSt
 import { usePlatformModels } from './session/usePlatformModels'
 import { PwCodeWords } from './PWCodeSession'
 
+/** A model ACTIVATE lists (provider:upstream/name), the same on any machine. */
+const PLATFORM_MODEL = /^[^:/]+:[^/]*\//
 
 /**
  * pw code's model picker and effort in a new pw code chat, before its first message:
@@ -18,15 +20,17 @@ import { PwCodeWords } from './PWCodeSession'
  * and the composer's picker sets the Studio assistant's model only, so it
  * is hidden while pw code answers. It lists what the session would run on
  * (the platform's models pw code can run, and Claude's where the machine it
- * starts on runs Claude Code), starting from the model Settings names, and the first
- * message carries the pick (newChatPick.ts). The effort is the one new
- * sessions start at, which the Code page's start sets too.
+ * starts on runs Claude Code), starting from the model Settings names, else the one
+ * the person chose last, and the first message carries the pick
+ * (newChatPick.ts). The effort is the one new sessions start at, which the Code page's start sets too.
  */
 export function NewChatModel({ conversationId }: { conversationId: string | null }) {
   const [machine, setMachine] = useState<MachineFacts>({})
-  // The model Settings names, from what the Studio said of this chat
-  // (chatEngine.ts; the chat bar's engine menu reads it).
-  const byDefault = useEngine(conversationId).info?.model ?? ''
+  // The model Settings names, or the one the person chose last, from what
+  // the Studio said of this chat (chatEngine.ts; the chat bar's engine menu
+  // reads it).
+  const info = useEngine(conversationId).info
+  const set = info?.model || info?.lastModel || ''
   useEffect(() => {
     let gone = false
     fetch('/api/code/sessions').then(r => (r.ok ? r.json() : null))
@@ -47,8 +51,14 @@ export function NewChatModel({ conversationId }: { conversationId: string | null
   const claudeReady = !!(on.claudeCodeAllowed && on.claudeInstalled)
   const [panel, setPanel] = useState<PwCodePicker>(null)
   const { saved: effort, remember: rememberEffort } = useStartEffort()
-  const model: BoundSetting = { value: pick?.model || (chosen && !claudeReady && isClaudeModel(byDefault) ? '' : byDefault) || null, onChange: v => pickModel(conversationId, { model: v }) }
-  const allocation: BoundSetting = { value: pick?.allocation ?? null, onChange: v => pickModel(conversationId, { allocation: v }) }
+  // Another machine runs Claude's models only with Claude Code, and not one
+  // last chosen that a machine has of its own.
+  const runs = !chosen || (isClaudeModel(set) ? claudeReady : !!info?.model || PLATFORM_MODEL.test(set))
+  const shown = pick?.model || (runs ? set : '')
+  const model: BoundSetting = { value: shown || null, onChange: v => pickModel(conversationId, { model: v }) }
+  // An allocation chosen goes with the model shown, or the one just picked.
+  const billed = pick?.allocation ?? (!pick?.model && shown && shown === info?.lastModel ? info.lastAllocation || null : null)
+  const allocation: BoundSetting = { value: billed, onChange: v => pickModel(conversationId, { model: pickedModel(conversationId)?.model || shown, allocation: v }) }
   return (
     <span className="pwcode-new-model" data-testid="pwcode-new-model">
       <AgentModelControls key={chosen?.id ?? STUDIO_MACHINE} api={pwCode} platform={platform} machine={chosen?.id ?? STUDIO_MACHINE}

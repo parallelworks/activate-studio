@@ -88,11 +88,11 @@ const probeEffort = "studio-asks-for-the-model"
 
 // pwcodeNeedsModel is whether pw code, on the machine the Studio drives for
 // the viewer, has no model to start a session on: Settings names none, and
-// the person has no default. No route reads the default, so a session is
-// asked for with an effort there is not: the daemon refuses it, for want of
-// a model where there is none, which it checks first.
+// the person chose none before and has no default. No route reads the
+// default, so a session is asked for with an effort there is not: the daemon
+// refuses it, for want of a model where there is none, which it checks first.
 func (m *Module) pwcodeNeedsModel(r *http.Request) bool {
-	if m.eff().PWCodeModel != "" {
+	if m.eff().PWCodeModel != "" || m.startModel(r).Model != "" {
 		return false
 	}
 	ctx, who := r.Context(), userID(r)

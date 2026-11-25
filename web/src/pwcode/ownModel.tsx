@@ -74,7 +74,7 @@ export function PwCodeOwnModel({ conversationId, fresh }: { conversationId: stri
   const picked = useSyncExternalStore(onPick, () => !!pickedModel(conversationId)?.model)
   // On another machine, the session runs on that one's own.
   const elsewhere = useSyncExternalStore(onStart, () => !!startOf(conversationId).machine)
-  const asks = on && fresh && !info?.model && !picked && !elsewhere
+  const asks = on && fresh && !info?.model && !info?.lastModel && !picked && !elsewhere
   const needed = useNeedsModel(asks)
   const holds = asks && needed
   const listed = models.some(m => m.id !== PWCODE_MODEL.id)
