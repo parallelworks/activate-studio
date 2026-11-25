@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { isArchived, isMachineDown, machinesById, type PwCodeMachine, type PwCodeSession, sessionRowState } from '@parallelworks/code'
 import { type BadgeVariant, isPlainClick, RelativeTime, RunStatusIcon, SearchInput, StatusDot, statusTextClass, type MenuEntry, type useContextMenu } from '@parallelworks/ui'
-import { ImageIcon, NewChatIcon } from '@parallelworks/ui/icons'
+import { ImageIcon, NewChatIcon, UsersIcon } from '@parallelworks/ui/icons'
 import {
   ConversationLayout, ConversationSidebar, FOCUS_SIDEBAR_SEARCH_EVENT, groupConversationsByDate, KeyboardShortcutsProvider, ManageProvidersLink,
   SidebarEmpty, SidebarRailItem, SidebarRow, SidebarRowBody, type SidebarMode, useChat, useChatConfig, useConversationActions,
@@ -106,7 +106,9 @@ function ChatRow({ conv, state, marks, current, menuItems, openMenu, onOpen }: {
         <SidebarRowBody
           leading={state
             ? <span className="code-row-leading" data-testid="chat-row-mark" data-state={state.waiting ? 'waiting' : state.active ? 'working' : state.unread ?? 'idle'}>{state.mark('row')}</span>
-            : marks && <span className="code-row-leading"><span className="code-mark code-mark-row" /></span>}
+            // Someone else's chat, shared: it has no state here.
+            : conv.isOwner === false ? <span className="code-row-leading"><UsersIcon className="h-3 w-3 theme-muted-text" title={strings.sidebar.sharedWithYou} /></span>
+              : marks && <span className="code-row-leading"><span className="code-mark code-mark-row" /></span>}
           title={state?.unread || state?.waiting ? <b className="chat-row-new">{conv.title || strings.sidebar.untitled}</b> : conv.title || strings.sidebar.untitled}
           time={<RelativeTime value={conv.updatedAt ?? conv.createdAt} format="compact" />}
           detail={state?.detail && <span className="code-row-detail"><span className={statusTextClass(state.tone)}>{state.text}</span></span>}
