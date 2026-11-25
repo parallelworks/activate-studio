@@ -12,6 +12,7 @@ import type { LibraryStats } from '../api'
 import { LibrarySwitch } from '../components/LibrarySwitch'
 import { aiOn, useAppConfig } from '../config'
 import { plural } from '../plural'
+import { MachineLabel } from '../components/MachineLabel'
 
 interface ExtRow { ext: string; count: number; bytes: number }
 interface QueryResult { columns: string[]; rows: string[][]; rowLibraries?: string[] }
@@ -196,7 +197,7 @@ export function OverviewView({ active = true, onOpen }: { active?: boolean; onOp
           <Table.Header>Size</Table.Header>
           {stats.libraries.map(l => (
             <tr key={l.id}>
-              <Table.Item>{l.label}{l.site ? <span className="muted"> on {l.site}</span> : null}</Table.Item>
+              <Table.Item>{l.label}{l.site ? <span className="muted"> on <MachineLabel machine={{ name: l.site }} /></span> : null}</Table.Item>
               {l.available
                 ? <><Table.Item>{(l.files ?? 0).toLocaleString()}</Table.Item><Table.Item>{(l.dirs ?? 0).toLocaleString()}</Table.Item><Table.Item>{fmtBytes(l.totalBytes ?? 0)}</Table.Item></>
                 : <Table.Item colSpan={3} wrap className="muted">{l.error ?? 'not available'}</Table.Item>}

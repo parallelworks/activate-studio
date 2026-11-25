@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react'
-import { isArchived, isMachineDown, machinesById, type PwCodeMachine, type PwCodeSession, sessionRowState } from '@parallelworks/code'
+import { isArchived, isMachineDown, isStarting, machinesById, type PwCodeMachine, type PwCodeSession, sessionRowState } from '@parallelworks/code'
 import { type BadgeVariant, isPlainClick, RelativeTime, RunStatusIcon, SearchInput, StatusDot, statusTextClass, Tooltip, type MenuEntry, type useContextMenu } from '@parallelworks/ui'
 import { ImageIcon, NewChatIcon, SearchIcon, UsersIcon } from '@parallelworks/ui/icons'
 import {
@@ -7,8 +7,10 @@ import {
   SidebarEmpty, SidebarRailItem, SidebarRow, SidebarRowBody, type SidebarMode, useChat, useChatConfig, useConversationActions,
 } from '@parallelworks/ui/ai'
 import { prefetchChat } from '../chatRecord'
-import { SessionMark, type Translate } from '../code/parts'
+import { RowDetail, SessionMark, type Translate } from '../code/parts'
+import type { MachineRef } from '../machines'
 import { type ChatNotice, useNotices } from '../notices'
+import { MachineLabel } from './MachineLabel'
 import { usePwCodeWords } from '../pwcode/PWCodeSession'
 
 /**
@@ -89,6 +91,9 @@ export function chatRowState(n: ChatNotice | undefined, session: PwCodeSession |
   if (unread) return { active: false, waiting: false, unread, text: said, detail: true, tone: 'info', mark: dot('info', said) }
   // A pw code chat whose session is over, or not to be reached now.
   if (n.session && (session ? t : listed)) {
+    if (session && !isArchived(session) && isStarting(machine)) {
+      return { active: false, waiting: false, text: 'Its machine is starting', detail: false, tone: 'info', mark: dot('info', 'Its machine is starting', true) }
+    }
     const text = session && isArchived(session) ? 'Session ended' : session ? 'Its machine is not connected' : 'Its session is not listed now'
     return { active: false, waiting: false, text, detail: false, tone: 'default', mark: dot('default', text) }
   }
@@ -100,9 +105,19 @@ export function readerItems(c: { isOwner?: boolean }, items: MenuEntry[]): MenuE
   return c.isOwner === false ? items.filter(i => 'label' in i && i.label === 'Download') : items
 }
 
-function ChatRow({ conv, state, marks, current, menuItems, openMenu, onOpen }: {
+/** The machine a pw code chat's session is on: the listing's, or the one the
+ *  chat knows; undefined for a Studio assistant chat. */
+export function chatMachine(n: ChatNotice | undefined, session: PwCodeSession | undefined): MachineRef | undefined {
+  if (!n?.session) return undefined
+  const id = session?.machineId || n.machine
+  return id || n.machineName ? { id, name: n.machineName, kind: n.local ? 'local' : undefined } : undefined
+}
+
+function ChatRow({ conv, state, machine, marks, current, menuItems, openMenu, onOpen }: {
   conv: Conversation
   state: ChatRowState | null
+  /** Where its pw code session is, for a chat that has one. */
+  machine: MachineRef | undefined
   /** The list has marks, so a chat without one keeps their place. */
   marks: boolean
   current: boolean
@@ -123,7 +138,10 @@ function ChatRow({ conv, state, marks, current, menuItems, openMenu, onOpen }: {
               : marks && <span className="code-row-leading"><span className="code-mark code-mark-row" /></span>}
           title={state?.unread || state?.waiting ? <b className="chat-row-new">{conv.title || strings.sidebar.untitled}</b> : conv.title || strings.sidebar.untitled}
           time={<RelativeTime value={conv.updatedAt ?? conv.createdAt} format="compact" />}
-          detail={state?.detail && <span className="code-row-detail"><span className={statusTextClass(state.tone)}>{state.text}</span></span>}
+          detail={(machine || state?.detail) && <RowDetail parts={[
+            machine && <MachineLabel key="machine" machine={machine} className="code-row-machine" />,
+            state?.detail && <span key="state" className={statusTextClass(state.tone)}>{state.text}</span>,
+          ]} />}
         />
       </LinkComponent>
     </SidebarRow>
@@ -209,16 +227,19 @@ function ChatSidebar({ top }: { top: (state: { collapsed: boolean }) => ReactNod
 
   const t = usePwCodeWords()
   const notices = useNotices()
-  const states = useMemo(() => {
+  const { states, places } = useMemo(() => {
     const machines = machinesById(notices.machines)
     const sessions = new Map(notices.sessions.map(s => [s.id, s]))
     const out = new Map<string, ChatRowState>()
+    const places = new Map<string, MachineRef>()
     for (const [id, n] of Object.entries(notices.chats)) {
       const session = n.row ?? (n.session ? sessions.get(n.session) : undefined)
       const s = chatRowState(n, session, session && machines.get(session.machineId), notices.listed, t)
       if (s) out.set(id, s)
+      const place = chatMachine(n, session)
+      if (place) places.set(id, place)
     }
-    return out
+    return { states: out, places }
   }, [notices, t])
 
   const filtered = useMemo(() => {
@@ -256,7 +277,7 @@ function ChatSidebar({ top }: { top: (state: { collapsed: boolean }) => ReactNod
           groupTestId="chat-list-group"
           getKey={c => c.id}
           renderRow={c => (
-            <ChatRow conv={c} state={states.get(c.id) ?? null} marks={states.size > 0} current={activeConversationId === c.id}
+            <ChatRow conv={c} state={states.get(c.id) ?? null} machine={places.get(c.id)} marks={states.size > 0} current={activeConversationId === c.id}
               menuItems={row => menuItems(c, row)} openMenu={openMenu} onOpen={closeDrawer} />
           )}
           loading={isLoading}

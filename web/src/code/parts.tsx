@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type ReactElement, useState } from 'react'
 import { CopyButton, RunStatusIcon, StatusDot, usePersistedState } from '@parallelworks/ui'
 import { DesktopIcon, PauseIcon, PinFilledIcon, ClusterIcon } from '@parallelworks/ui/icons'
 import {
@@ -7,7 +7,7 @@ import {
   type PwCodePreference,
   type PwCodeSession,
   sessionGroupsPreference,
-  sessionMark,
+  isMachineDown, isStarting, sessionMark,
   startEffortPreference,
   startMachinePreference,
   startModePreference,
@@ -19,6 +19,8 @@ import {
   useStartModePreference,
 } from '@parallelworks/code'
 import { useTranslations } from 'use-intl'
+import { startingLook } from '../statusLook'
+import { VIEWER_CACHES_CLEARED } from '../viewerEvents'
 import { type IconMachine, machineImage } from './machineIcon'
 
 /**
@@ -65,12 +67,17 @@ export function SessionMark({ session, machine, size, label }: {
   label?: string | undefined
 }) {
   const mark = sessionMark(session, machine)
+  // One waiting to start is work under way too: the package has no look for
+  // it, and draws its machine's as a failure.
+  const starting = isStarting(machine) ? 'started' : isMachineDown(machine) ? null : startingLook(session.status)
   return (
     <span {...(label ? { role: 'img', 'aria-label': label, title: label } : {})} className={`code-mark code-mark-${size}`}>
       {mark.working ? (
         <RunStatusIcon data-testid="agent-session-working" status="running" label="" />
       ) : mark.usageLimit ? (
         <PauseIcon data-testid="agent-session-usage-limit" strokeWidth={2.5} className="code-mark-limit" />
+      ) : starting ? (
+        <RunStatusIcon status={starting} label="" />
       ) : (
         <StatusDot variant={mark.tone} size={size === 'row' ? 6 : 10} pulse={mark.pulse} />
       )}
@@ -89,6 +96,7 @@ export function PinnedMark({ t }: { t: Translate }) {
 
 /** Images that did not load, so a row drawn again does not try them again. */
 const broken = new Set<string>()
+if (typeof window !== 'undefined') window.addEventListener(VIEWER_CACHES_CLEARED, () => broken.clear())
 
 /** A machine's icon, as PW Code on the web picks it (machineIcon.ts): both
  *  themes' images are drawn and the theme shows one. A computer's or a
@@ -137,4 +145,11 @@ export function HowSessionsAppear({ compact = false }: { compact?: boolean }) {
       </ol>
     </section>
   )
+}
+
+/** A row's second line: what it says, with dots between. */
+export function RowDetail({ parts }: { parts: (ReactElement | false | null | undefined)[] }) {
+  const said = parts.filter((p): p is ReactElement => !!p)
+  if (!said.length) return null
+  return <span className="code-row-detail">{said.flatMap((p, i) => (i ? [<span key={`dot${i}`} aria-hidden="true" className="code-row-sep">·</span>, p] : [p]))}</span>
 }

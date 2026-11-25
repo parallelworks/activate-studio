@@ -289,7 +289,8 @@ func TestTheComposerIsToldWhereAChatStarts(t *testing.T) {
 		t.Fatalf("start: %v", out)
 	}
 	own := out["machines"].([]any)[0].(map[string]any)
-	if own["name"] != "gpu-box.example" || own["remoteStart"] != true || own["status"] != "connected" || own["directories"] != true {
+	// By its resource's name, with its host's and its daemon's beside it.
+	if own["name"] != "gpu-box" || own["hostname"] != "gpu-box.example" || own["daemonId"] != "d1" || own["remoteStart"] != true || own["status"] != "connected" || own["directories"] != true {
 		t.Errorf("own machine: %v", own)
 	}
 	if s := mustJSON(out["sessions"]); !strings.Contains(s, `"machineId":"studio"`) || !strings.Contains(s, `"workspace":"/home/me/repo"`) || !strings.Contains(s, `"machineId":"m2"`) || strings.Contains(s, "Fix the build") {

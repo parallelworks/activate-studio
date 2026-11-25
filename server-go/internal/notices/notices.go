@@ -51,6 +51,12 @@ type Item struct {
 // Chat is the state of one of the person's chats, for its row in the list.
 type Chat struct {
 	Session string `json:"session,omitempty"`
+	// Machine and MachineName are that session's machine as the chat knows
+	// it, for one whose session is not listed now.
+	Machine     string `json:"machine,omitempty"`
+	MachineName string `json:"machineName,omitempty"`
+	// Local: the session is on this computer.
+	Local bool `json:"local,omitempty"`
 	// Row is its session as pw code lists it, where the listing beside it
 	// does not have it (a session no platform lists).
 	Row     *jsonv.Object `json:"row,omitempty"`
@@ -128,7 +134,7 @@ func build(r *http.Request, src Sources, st *record, now time.Time) Answer {
 	}
 	local := src.Local(r, unlisted)
 	for _, c := range chats {
-		state := Chat{Session: c.Session, Working: c.Working}
+		state := Chat{Session: c.Session, Machine: c.Machine, MachineName: c.MachineName, Local: c.Local, Working: c.Working}
 		row := listed[c.Session]
 		if row == nil && c.Session != "" {
 			row = local[c.Session]

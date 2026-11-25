@@ -15,6 +15,7 @@ import { useModelHeld } from './ownModel'
 import { clearModelPick } from './newChatPick'
 import { onStart, setStart, startOf, STUDIO_MACHINE } from './newChatStart'
 import { PwCodeWords } from './PWCodeSession'
+import { MachineLabel } from '../components/MachineLabel'
 
 /** Lists a machine's folders as the Studio reads them for this chat: on its
  *  own pw code machine as the person, on another through ACTIVATE. */
@@ -144,7 +145,7 @@ export function NewChatTarget({ conversationId, persona }: { conversationId: str
       )}
       {lost && (
         <p className="pwcode-start-note warn" role="status" data-testid="pwcode-start-lost">
-          {start.folder} is on {start.library?.machineName || 'another machine'}, which takes no new sessions now. Start this chat again from the Library once it does, or choose another machine here.
+          {start.folder} is on {start.library?.machineName ? <MachineLabel machine={{ id: start.machine?.id, name: start.library.machineName }} /> : 'another machine'}, which takes no new sessions now. Start this chat again from the Library once it does, or choose another machine here.
         </p>
       )}
       {waits && conversationId && (

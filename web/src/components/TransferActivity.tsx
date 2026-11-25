@@ -9,6 +9,7 @@ import {
   type Outcome, type Transfer, type TransferState,
 } from '../transferApi'
 import { ReadySummary, useTransfersReady } from './TransfersReady'
+import { TransferEnd } from './MachineLabel'
 
 /** Every 2 seconds while anything is under way, else every 15, as the
  *  contract asks. */
@@ -17,7 +18,7 @@ export const POLL_IDLE_MS = 15000
 
 const TONE: Record<TransferState, { variant?: BadgeVariant; off?: boolean; pulse?: boolean }> = {
   'awaiting-approval': { variant: 'warning' },
-  queued: { off: true },
+  queued: { variant: 'info' },
   running: { variant: 'info', pulse: true },
   verifying: { variant: 'info', pulse: true },
   succeeded: { variant: 'success' },
@@ -82,7 +83,7 @@ function Row({ t, highlight, onOpen }: { t: Transfer; highlight: boolean; onOpen
       </button>
       <div className="xfer-row-state"><StateLabel state={t.state} /></div>
       <div className="xfer-row-route xfer-mono" title={`${sourceLine(t.source)} → ${destLine(t.destination)}`}>
-        {sourceLine(t.source)} <span aria-label="to">→</span> {destLine(t.destination)}
+        <TransferEnd location={t.source.location}>{sourceLine(t.source)}</TransferEnd> <span aria-label="to">→</span> <TransferEnd location={t.destination.location}>{destLine(t.destination)}</TransferEnd>
       </div>
       <div className="xfer-row-meta">
         <span>{ACTION_TEXT[t.action]}</span>
@@ -150,7 +151,7 @@ const Line = memo(function Line({ t, highlight, onOpen }: { t: Transfer; highlig
         <span className="xfer-line-title" title={transferTitle(t)}>{transferTitle(t)}</span>
       </button>
       <span className="xfer-line-route xfer-mono" title={`${sourceLine(t.source)} → ${destLine(t.destination)}`}>
-        {sourceLine(t.source)} → {destLine(t.destination)}
+        <TransferEnd location={t.source.location}>{sourceLine(t.source)}</TransferEnd> → <TransferEnd location={t.destination.location}>{destLine(t.destination)}</TransferEnd>
       </span>
       <span className="xfer-line-mover">{t.mover}</span>
       <span className="xfer-line-who">{t.startedBy === 'assistant'
@@ -494,11 +495,11 @@ export function TransferDetail({
         <dl className="xfer-plan-facts">
           <dt>Action</dt><dd>{ACTION_TEXT[t.action]}</dd>
           <dt>From</dt>
-          <dd className="xfer-mono">{t.source.paths.length <= 1 ? sourceLine(t.source) : t.source.label}{t.source.paths.length > 1 && (
+          <dd className="xfer-mono"><TransferEnd location={t.source.location}>{t.source.paths.length <= 1 ? sourceLine(t.source) : t.source.label}</TransferEnd>{t.source.paths.length > 1 && (
             <ul className="xfer-names">{t.source.paths.slice(0, 20).map(p => <li key={p}>{p || '/'}</li>)}
               {t.source.paths.length > 20 && <li className="muted">and {t.source.paths.length - 20} more</li>}</ul>
           )}</dd>
-          <dt>To</dt><dd className="xfer-mono">{destLine(t.destination)}</dd>
+          <dt>To</dt><dd className="xfer-mono"><TransferEnd location={t.destination.location}>{destLine(t.destination)}</TransferEnd></dd>
           <dt>Mover</dt><dd>{t.mover}</dd>
           <dt>Started by</dt><dd><StartedBy t={t} /></dd>
           <dt>Requested</dt><dd>{timeText(t.requestedAt)}</dd>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { Button, Callout, Loader, Popover, Select, StatusDot, type BadgeVariant } from '@parallelworks/ui'
 import type RFB from '@novnc/novnc'
 import { NeedsActivate } from './NeedsActivate'
+import { statusLook } from '../statusLook'
 import { needsActivate } from '../accounts'
 
 /**
@@ -307,7 +308,7 @@ export function DesktopView({ user, name, className = '', onClosed }: { user: st
 
   const reconnect = () => { tries.current = 0; setReason(''); if (!running) setRecheck(n => n + 1); setAttempt(a => a + 1) }
 
-  const dot: BadgeVariant = phase === 'connected' ? 'success' : phase === 'refused' || phase === 'failed' ? 'error' : phase === 'closed' ? 'muted' : 'warning'
+  const dot: BadgeVariant = phase === 'connected' ? 'success' : phase === 'refused' || phase === 'failed' ? 'error' : phase === 'closed' ? 'muted' : phase === 'connecting' ? 'info' : statusLook(status ?? '').variant ?? 'warning'
   const state = {
     waiting: status === null ? 'Checking the desktop…' : `The desktop is ${status || 'not running'}`,
     connecting: tries.current ? 'Reconnecting…' : 'Connecting…',

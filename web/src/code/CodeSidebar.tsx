@@ -1,6 +1,7 @@
 import { type ReactElement, useMemo, useState } from 'react'
 import {
   foldedGroupsPreference,
+  isStarting,
   machinesById,
   type PwCodeMachine,
   
@@ -30,7 +31,8 @@ import { Button, LoadingRegion, type MenuEntry, menuDivider, SearchInput, Skelet
 import { useTranslations } from 'use-intl'
 import { describeError } from '../pwcode/PWCodeSession'
 import { type PageSession, pwCodePage } from './api'
-import { MachineIcon, PinnedMark, SessionMark, type Translate, useCodeGroups } from './parts'
+import { MachineLabel } from '../components/MachineLabel'
+import { RowDetail, PinnedMark, SessionMark, type Translate, useCodeGroups } from './parts'
 import { rowShortcut, useCodeSessionActions } from './sessionMenu'
 
 /**
@@ -222,12 +224,12 @@ function SessionRow({ session, machine, showMachine, selected, updated, delegate
   const marked = showsPinMark(session)
   const prs = (session.pullRequests ?? []).filter(Boolean)
   const parts = [
-    showMachine && machine && <span key="machine" className="code-row-machine" title={machine.name}><MachineIcon machine={machine} />{machine.name}</span>,
-    showSecondLine && <span key="state" className={statusTextClass(tone)}>{stateText}</span>,
+    showMachine && machine && <MachineLabel key="machine" machine={machine} className="code-row-machine" />,
+    showSecondLine && <span key="state" className={statusTextClass(isStarting(machine) ? 'info' : tone)}>{stateText}</span>,
     inChat && <span key="chat" className="code-row-chat" title="A Studio chat continues this session">in a chat</span>,
     delegated && <span key="delegated" className="code-row-delegated" title="A Studio chat delegated work to this session">delegated</span>,
     prs.length > 0 && <span key="prs" className="code-row-prs">{prs.map((u: string) => u.replace(/^https?:\/\/(www\.)?github\.com\/[^/]+\//, '').replace('/pull/', '#')).join(', ')}</span>,
-  ].filter((p): p is ReactElement => !!p)
+  ]
   return (
     <SidebarRow selected={selected} menuItems={menuItems} shortcuts={shortcuts} openMenu={openMenu}>
       <button type="button" data-testid="agent-session-row" aria-current={selected ? 'page' : undefined} className="code-session-row" onClick={onOpen}>
@@ -240,7 +242,7 @@ function SessionRow({ session, machine, showMachine, selected, updated, delegate
           )}
           title={sessionLabel(session, t)}
           time={updated}
-          detail={parts.length > 0 && <span className="code-row-detail">{parts.flatMap((p, i) => (i ? [<span key={`dot${i}`} aria-hidden="true" className="code-row-sep">·</span>, p] : [p]))}</span>}
+          detail={parts.some(Boolean) && <RowDetail parts={parts} />}
         />
       </button>
     </SidebarRow>

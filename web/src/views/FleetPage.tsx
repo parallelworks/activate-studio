@@ -10,6 +10,7 @@ import { commandHead } from '../commandHead'
 import { NeedsActivate } from '../components/NeedsActivate'
 import { needsActivate } from '../accounts'
 import { readNow, shownInterval, useWatch } from '../live'
+import { MachineLabel } from '../components/MachineLabel'
 
 /**
  * The operator base: standing agents with goals, their state, their
@@ -219,6 +220,7 @@ export function FleetPage({ active = true, personas, onOpenTask }: { active?: bo
               <div className="task-card-top">
                 <StatusDot {...statusLook(a.state)} />
                 <span className="task-card-state">{a.state}</span>
+                {a.resource && <MachineLabel machine={{ name: a.resource }} className="task-card-machine" />}
                 <PersonaIcon icon={iconOf(a.persona)} name={a.persona ?? a.name} size={18} />
               </div>
               <div className="task-card-objective">{a.name}</div>

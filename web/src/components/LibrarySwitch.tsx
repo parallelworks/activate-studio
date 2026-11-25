@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Select, cx, fieldBox } from '@parallelworks/ui'
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { currentLibrary, onLibraryChange, setLibrary, type PublicLibrary } from '../api'
-import { libraryAccess } from './LibraryScope'
+import { libraryAccess, LibraryAccessText } from './LibraryScope'
+import { LibraryGlyph, libraryMachine } from './MachineLabel'
 import { leaveUnsaved } from '../unsaved'
 
 /**
@@ -19,11 +20,13 @@ export function LibrarySwitch({ libraries }: { libraries: PublicLibrary[] }) {
   // The access (Read/write, Read only, Shared, and the system a library is
   // on) is a line of its own under the name, in the list and on the button,
   // so neither is cut off in a narrow tree pane.
+  const marked = libraries.some(l => libraryMachine(l))
   const items = [
-    ...libraries.map(l => ({ value: l.id, label: l.label, description: libraryAccess(l) })),
-    { value: ALL_LIBRARIES, label: 'All libraries', description: undefined as string | undefined },
+    ...libraries.map(l => ({ value: l.id, label: l.label, description: libraryAccess(l) as string | undefined, icon: marked ? <LibraryGlyph library={l} /> : undefined })),
+    { value: ALL_LIBRARIES, label: 'All libraries', description: undefined, icon: marked ? <LibraryGlyph /> : undefined },
   ]
   const shown = items.find(i => i.value === known)
+  const library = libraries.find(l => l.id === known)
   // A trigger of its own, drawn as the default one is, so the picker can
   // carry its hint: the default trigger takes no tooltip.
   return (
@@ -39,7 +42,7 @@ export function LibrarySwitch({ libraries }: { libraries: PublicLibrary[] }) {
           title={shown?.description ? `${shown.label} · ${shown.description}` : undefined}>
           <span className="library-switch-text">
             <span className="truncate">{shown?.label ?? known}</span>
-            {shown?.description && <span className="library-switch-access truncate"><span className="sr-only"> · </span>{shown.description}</span>}
+            {shown?.description && <span className="library-switch-access truncate"><span className="sr-only"> · </span>{library ? <LibraryAccessText library={library} /> : shown.description}</span>}
           </span>
           <ChevronDownIcon aria-hidden="true" className="shrink-0 text-(--theme-muted-text-color)" />
         </button>

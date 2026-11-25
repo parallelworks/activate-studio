@@ -9,7 +9,9 @@ import { PWCodeSession } from '../pwcode/PWCodeSession'
 import type { PageSession } from './api'
 import type { Starting } from './CodeStart'
 import { type Delegated, DelegatedNote } from './LinkedSession'
-import { MachineIcon, SessionMark } from './parts'
+import { useMachineLook } from '../machines'
+import { MachineLabel } from '../components/MachineLabel'
+import { SessionMark } from './parts'
 import { PWCodeToolsNote } from '../pwcode/ToolsNote'
 import { useChatLink } from '../pwcode/useChatLink'
 
@@ -98,6 +100,15 @@ function firstLine(s: string | undefined): string {
   return (s ?? '').trim().split('\n')[0]!.slice(0, 120)
 }
 
+/** Where a session works: its machine and the folder there. */
+function SessionPlace({ place }: { place: { machine: string; folder: string; on?: PwCodeMachine } }) {
+  const look = useMachineLook(place.on ?? { name: place.machine })
+  const title = `${look.title || look.name}:${place.folder}`
+  const folder = place.folder ? `:${shortFolder(place.folder)}` : ''
+  if (!place.machine) return <span className="code-mono muted code-session-place" title={title}>{folder}</span>
+  return <MachineLabel machine={place.on ?? { name: place.machine }} className="code-mono muted code-session-place" title={title}>{folder}</MachineLabel>
+}
+
 function SessionHead({ title, mark, state, place, onClose, children }: {
   title: string
   mark?: ReactNode
@@ -115,7 +126,7 @@ function SessionHead({ title, mark, state, place, onClose, children }: {
         </div>
         {state}
         {place && (place.machine || place.folder) && (
-          <span className="code-mono muted code-session-place" title={`${place.machine}:${place.folder}`}>{place.on && <MachineIcon machine={place.on} />}{place.machine}{place.folder ? `:${shortFolder(place.folder)}` : ''}</span>
+          <SessionPlace place={place} />
         )}
       </div>
       <div className="code-session-actions">

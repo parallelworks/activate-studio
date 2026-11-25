@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Field, Input, Select } from '@parallelworks/ui'
 import { api, type PwSystems } from '../api'
+import { MachineIcon } from '../code/parts'
+import { knowSystems, systemLooks } from '../machines'
 
 /** The list's choice for a system typed by name. */
 const ANOTHER = '\u0000another'
@@ -23,7 +25,7 @@ export function PwSystemField({ value, onChange, help, onSystems }: {
     let live = true
     api.pwSystems().then(r => {
       if (!live) return
-      setSystems(r); onSystems?.(r)
+      knowSystems(r); setSystems(r); onSystems?.(r)
       const pick = r.systems.find(x => x.running)
       if (!value && pick) onChange(pick.name)
     }).catch(e => {
@@ -44,7 +46,7 @@ export function PwSystemField({ value, onChange, help, onSystems }: {
         <Field label="Remote computer" description={say('Your clusters on the platform, running ones first. One that is off has to be started on ACTIVATE before it can be reached.')}>
           <Select value={typing ? ANOTHER : value || null} placeholder={systems === null ? 'Loading…' : 'Choose a remote computer'} disabled={systems === null}
             items={[
-              ...(systems?.systems ?? []).map(x => ({ value: x.name, label: x.label, description: x.label !== x.name ? x.name : undefined, hint: x.running ? 'running' : x.status })),
+              ...(systems?.systems ?? []).map(x => ({ value: x.name, label: x.label, description: x.label !== x.name ? x.name : undefined, hint: x.running ? 'running' : x.status, icon: <MachineIcon machine={systemLooks(x)} /> })),
               { value: ANOTHER, label: 'Another remote computer…', description: 'Type its name' },
             ]}
             onValueChange={v => {
