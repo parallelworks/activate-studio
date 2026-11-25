@@ -16,11 +16,12 @@ import { CreateConfirm, postJson, type CheckStep } from './LibraryFormParts'
 import { LibraryImport } from './LibraryImport'
 import { useFolderSuggestions, type FolderSuggestion } from './LocalLibraryForm'
 import { NeedsActivate } from './NeedsActivate'
+import { PwBucketForm } from './PwBucketForm'
 import { PlatformSignInPanel } from './PlatformSignInPanel'
 import { SharedWithMe } from './SharedWithMe'
 import { PwBlocked } from './SshLibraryForm'
 import { SystemChip } from './SystemChip'
-import { TargetIcon, addChoices, firstTarget, targetKey, targetMenu, targetName, type AddOptions, type Target } from './addLibraryTarget'
+import { TargetIcon, addChoices, firstTarget, targetKey, targetMenu, targetName, type AddOptions, type PwBuckets, type Target } from './addLibraryTarget'
 import { useCheck } from './useCheck'
 
 export type { AddOptions } from './addLibraryTarget'
@@ -32,8 +33,9 @@ export type { AddOptions } from './addLibraryTarget'
  *
  * - The computer: this one (sign-in off: with sign-in on, the libraries here
  *   are the deployment's), one of the viewer's clusters over pw ssh, a host
- *   over plain ssh on a Studio one person uses, or a bucket of an rclone
- *   remote. A folder on a remote computer is always listed, checked, indexed
+ *   over plain ssh on a Studio one person uses, one of their ACTIVATE
+ *   buckets, read with their own sign-in, or a bucket of an rclone remote.
+ *   A folder on a remote computer is always listed, checked, indexed
  *   and read as the viewer, with their own sign-in or ssh keys; here and in
  *   a bucket, with the account the Studio runs as.
  * - The folder is checked by itself once chosen, and the check is cancelled
@@ -73,7 +75,7 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
   /** A library was added, or its build started (`started`); `here` is a
    *  build on this computer, searchable by name while its text and meaning
    *  are read. */
-  onAdded: (lib: { id: string; label: string }, started: boolean, here?: boolean) => void
+  onAdded: (lib: { id: string; label: string }, started: boolean, here?: boolean, count?: number) => void
   /** A build through the platform's index workflow started. */
   onStarted?: (lib: UserLibrary) => void
   /** Offers importing a library list in place of the form; called with
@@ -99,6 +101,15 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
     api.pwSystems().then(r => { if (live) setSystems(r) }, e => { if (live) setSystems({ usable: true, why: null, systems: [], error: say(e) }) })
     return () => { live = false }
   }, [asksSystems, round])
+  const [buckets, setBuckets] = useState<PwBuckets>({ buckets: [], loading: true })
+  useEffect(() => {
+    if (!options.buckets) return
+    let live = true
+    api.pwBuckets().then(
+      r => { if (live) setBuckets({ buckets: r.buckets ?? [], why: r.why, loading: false }) },
+      e => { if (live) setBuckets({ buckets: [], why: say(e), loading: false }) })
+    return () => { live = false }
+  }, [options.buckets, round])
   const [hosts, setHosts] = useState<string[]>([])
   useEffect(() => {
     if (!options.ssh) return
@@ -130,19 +141,21 @@ export function AddLibrary({ options, browse = false, onAdded, onStarted, onImpo
     return <div className="lib-add-flow" ref={flow}><WorkflowOnly onStarted={onStarted} />{importLink && <div className="lib-where-below">{importLink}</div>}</div>
   }
 
-  const chosen = targetName(target, systems)
-  const chip = chosen || (naming === 'ssh' ? 'Another host…' : options.ssh || options.buildHere ? 'Choose a computer' : 'Choose a cluster')
-  const items = targetMenu({ options, systems, hosts, target, onPick: pick, onName: k => { holdHeight(); setNaming(k) } })
+  const chosen = targetName(target, systems, buckets.buckets)
+  const chip = chosen || (naming === 'ssh' ? 'Another host…' : options.ssh || options.buildHere ? 'Choose a computer' : options.buckets ? 'Choose a place' : 'Choose a cluster')
+  const items = targetMenu({ options, systems, buckets, hosts, target, onPick: pick, onName: k => { holdHeight(); setNaming(k) } })
+  // Buckets can be chosen while the clusters are still being found.
+  const finding = offered.finding && !target && !naming && !buckets.buckets.length
   return (
     <div className="lib-add-flow" ref={flow}>
       <FolderForm key={`${targetKey(target)}/${connect ? 'connect' : 'build'}`} target={naming ? null : target} place={chosen} connect={connect}
-        options={options} browse={browse} systems={systems} holdHeight={holdHeight}
+        options={options} browse={browse} systems={systems} buckets={buckets} holdHeight={holdHeight}
         onSignedIn={() => setRound(n => n + 1)}
         chip={(
-          <SystemChip label={chosen && !naming ? `Computer: ${chosen}` : 'Choose a computer'}
-            text={naming ? (naming === 'ssh' ? 'Another host…' : 'Another cluster…') : offered.finding && !target ? 'Finding your clusters…' : chip}
+          <SystemChip label={chosen && !naming ? `${target?.kind === 'bucket' || target?.kind === 'pwbucket' ? 'Bucket' : 'Computer'}: ${chosen}` : options.buckets ? 'Choose a computer or a bucket' : 'Choose a computer'}
+            text={naming ? (naming === 'ssh' ? 'Another host…' : 'Another cluster…') : finding ? 'Finding your clusters…' : chip}
             icon={target && !naming ? <TargetIcon target={target} systems={systems} /> : undefined}
-            items={items} finding={offered.finding && !target && !naming} search={hosts.length + (systems?.systems?.length ?? 0) > 10}
+            items={items} finding={finding} search={hosts.length + (systems?.systems?.length ?? 0) + buckets.buckets.length > 10}
             testId="add-library-computer" findingTestId="add-library-finding" />
         )}
         naming={naming && (
@@ -188,7 +201,8 @@ function AddHelp({ options, clusters }: { options: AddOptions; clusters: boolean
       {remote && <p><b>A remote computer</b> is read as you, with {[...(clusters ? ['your ACTIVATE sign-in (or the API key you added under Settings, Accounts)'] : []), ...(options.ssh ? ['your own ssh keys, agent and ~/.ssh/config'] : [])].join(', or ')}. The index stays there, in your ~/.activate-studio. The Library writes there as you where your account may.</p>}
       <p><b>Index depth</b> says what search covers. Search by meaning is the slowest part and runs last: names are searchable first, then words.</p>
       {offeredConnect(options) && <p><b>An existing index</b> is one GUFI made already. It is searched as it is, and never written to.</p>}
-      {options.bucket && <p><b>A bucket</b> is of an rclone remote set up on this computer: any S3 compatible store, AWS or on premises. It is searched by name, size and time, from its listing, and an object is read only when you open it.</p>}
+      {options.buckets && <p><b>An ACTIVATE bucket</b> is one you can read on the platform. It is listed and read with your own ACTIVATE sign-in, with no rclone and no keys to enter: searched by name, size and time, from its listing, and an object is read only when you open it.</p>}
+      {options.bucket && <p><b>{options.buckets ? 'Another bucket' : 'A bucket'}</b> is of an rclone remote set up on this computer: any S3 compatible store, AWS or on premises. It is searched by name, size and time, from its listing, and an object is read only when you open it.</p>}
       {options.copy && <p>A host that takes SFTP only, or a cloud drive: <a href="#view=transfers">Transfers</a> keeps a local copy of a folder there and indexes it.</p>}
     </Popover>
   )
@@ -264,20 +278,21 @@ function PathOption({ label, description, placeholder, place, value, onChange }:
  * per computer and per way of adding, so nothing chosen for one is carried
  * to another.
  */
-function FolderForm({ target, place, connect, options, browse, systems, holdHeight, chip, naming, below, onSignedIn, onAdded }: {
+function FolderForm({ target, place, connect, options, browse, systems, buckets, holdHeight, chip, naming, below, onSignedIn, onAdded }: {
   target: Target | null
   place: string
   connect: boolean
   options: AddOptions
   browse: boolean
   systems: PwSystems | null
+  buckets: PwBuckets
   holdHeight: () => void
   chip: ReactElement
   naming: ReactElement | null
   below: ReactElement
   /** The person signed in here: what their sign-in reaches is read again. */
   onSignedIn: () => void
-  onAdded: (lib: { id: string; label: string }, started: boolean, here?: boolean) => void
+  onAdded: (lib: { id: string; label: string }, started: boolean, here?: boolean, count?: number) => void
 }) {
   const signIn = !!useAppConfig().signIn
   const here = target?.kind === 'here'
@@ -350,14 +365,23 @@ function FolderForm({ target, place, connect, options, browse, systems, holdHeig
     return <><Where chip={chip} naming={naming} below={below} /><BucketLibraryForm onAdded={lib => onAdded(lib, true, true)} /></>
   }
 
+  if (target?.kind === 'pwbucket') {
+    return (
+      <>
+        <Where chip={chip} naming={naming} below={below} folder={<span className="lib-where-none muted" title={target.uri}><FolderIcon aria-hidden className="code-chip-icon" />{target.uri}</span>} />
+        <PwBucketForm uri={target.uri} buckets={buckets.buckets} holdHeight={holdHeight} onAdded={(lib, count) => onAdded(lib, true, true, count)} />
+      </>
+    )
+  }
+
   // Clusters that cannot be reached yet: the sign-in, or what is missing.
   if (!target && offered.blocked && (!status || status.available || !status.cluster)) {
-    return <><Where chip={null} naming={null} below={below} /><PwBlocked why={systems?.why} /></>
+    return <><Where chip={offered.buckets ? chip : null} naming={null} below={below} /><PwBlocked why={systems?.why} /></>
   }
   if (status && !status.available && (gone || (!target && offered.blocked))) {
     return (
       <>
-        <Where chip={gone ? chip : null} naming={naming} below={below} />
+        <Where chip={gone || offered.buckets ? chip : null} naming={naming} below={below} />
         {status.cluster && status.signInOffered && !status.credential ? (
           <div className="space-sign-in">
             <Callout tone="info" title={SIGN_IN_TO_USE}>

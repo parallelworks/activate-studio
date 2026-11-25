@@ -75,15 +75,25 @@ export interface SettingsLibrary extends PublicLibrary {
   }
   /** A copy library: a folder in a Transfers location that Studio copies here and keeps in step. */
   copyOf?: LibraryCopyOf | null
-  /** A bucket library: an rclone remote's folder indexed from its listing. */
+  /** A bucket library: an ACTIVATE bucket, or an rclone remote's folder, indexed from its listing. */
   bucket?: LibraryBucket | null
 }
 /** Where a bucket library's listing comes from, how often Studio lists it,
  *  and what the last listing found (POST /api/libraries/bucket). */
 export interface LibraryBucket {
-  /** The Transfers location id (rclone:<remote>), and the bucket and prefix in it. */
+  /** The ACTIVATE bucket's URI (pw://<namespace>/<bucket>) and the folder in
+   *  it, or the Transfers location id (rclone:<remote>) and the bucket and
+   *  prefix in it. */
   location: string; path: string
   label?: string
+  /** An ACTIVATE bucket's cloud and region, and another address its store is
+   *  asked at. */
+  csp?: string; region?: string; endpoint?: string
+  /** How an ACTIVATE bucket was last read: the store itself ('direct') or
+   *  through the pw CLI ('pw'), and why not the store. */
+  route?: string; routeWhy?: string
+  /** A listing waits for its owner, whose sign-in the Studio does not keep. */
+  waits?: boolean
   /** Minutes between listings; 0 only when asked. */
   every: number
   listedAt: string | null
@@ -159,9 +169,25 @@ export function textCost(e: BucketTextEstimate): { money: string; time: string }
     : `At ${ASSUMED_TEXT_RATE / 1e6} MB a second it takes about ${span}; the first pass measures the real rate, which depends on the link to the store.`
   return { money, time }
 }
+/** One of the viewer's ACTIVATE buckets (GET /api/libraries/buckets). */
+export interface PwBucket {
+  uri: string; name: string; namespace: string; label: string
+  /** aws, google, azure or oracle. */
+  csp: string
+  region: string
+  ready: boolean
+  /** Why it cannot be read here; absent when it can be tried. */
+  why?: string
+}
+const CLOUD: Record<string, string> = { aws: 'AWS', google: 'Google Cloud', azure: 'Azure', oracle: 'Oracle Cloud' }
+/** Where an ACTIVATE bucket is kept, in words. */
+export const pwBucketPlace = (b: Pick<PwBucket, 'csp' | 'region'>): string => [CLOUD[b.csp] ?? b.csp, b.region].filter(Boolean).join(' ')
+/** What is in a folder of one of them. */
+export interface PwBucketFolder { path: string; parent: string | null; dirs: string[]; objects: number; more: boolean }
 /** What one listing of a bucket library costs, in words: the requests it
- *  takes, priced at AWS's rate where rclone names AWS as the provider. */
-export function listingCost(b: Pick<LibraryBucket, 'requests' | 'provider' | 'every'>): string {
+ *  takes, priced at AWS's rate where AWS is the provider. */
+export function listingCost(b: Pick<LibraryBucket, 'requests' | 'provider' | 'every' | 'route'>): string {
+  if (b.route === 'pw') return `${b.requests.toLocaleString()} ${b.requests === 1 ? 'run' : 'runs'} of pw buckets a listing, each at least one list request`
   const reqs = `${b.requests.toLocaleString()} list ${b.requests === 1 ? 'request' : 'requests'}`
   if (b.provider === 'AWS') {
     const each = b.requests / 1000 * S3_LIST_PER_1000
@@ -175,7 +201,7 @@ export function listingCost(b: Pick<LibraryBucket, 'requests' | 'provider' | 'ev
 }
 /** Where a bucket library's listing comes from, in words. */
 export function bucketWhere(b: Pick<LibraryBucket, 'location' | 'path' | 'label'>): string {
-  return `${b.label || b.location.replace(/^rclone:/, '')}${b.path ? `, ${b.path}` : ''}`
+  return `${b.label || b.location.replace(/^rclone:|^pw:\/\//, '')}${b.path ? `, ${b.path}` : ''}`
 }
 /** Where a copy library's files come from, how often Studio looks, and
  *  what the last look found (POST /api/libraries/copy). */
@@ -974,7 +1000,7 @@ export const api = {
   },
   indexJob: (id: number) => getJson<IndexJob>(`/api/index/job/${id}`),
   /** `canBuild`: libraries can be built from folders on this computer. */
-  libraries: () => getJson<{ libraries: SettingsLibrary[]; canBuild?: boolean }>('/api/libraries'),
+  libraries: () => getJson<{ libraries: SettingsLibrary[]; canBuild?: boolean; buckets?: boolean }>('/api/libraries'),
   /** `ssh`: libraries over ssh are offered; `pw`: over pw ssh, usable now;
    *  `pwOffered`: pw ssh is shown as a choice, with `pwWhy` saying why it
    *  cannot be used yet; `workflow`: building on a cluster through the
@@ -1053,6 +1079,15 @@ export const api = {
     if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status}`)
     return data as BucketTextEstimate
   },
+  setBucketEndpoint: async (id: string, endpoint: string) => {
+    const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint }) })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status} ${res.statusText}`)
+  },
+  /** The viewer's ACTIVATE buckets. */
+  pwBuckets: () => getJson<{ available: boolean; why?: string; buckets: PwBucket[] }>('/api/libraries/buckets'),
+  pwBucketFolder: (uri: string, path: string, endpoint = '') =>
+    getJson<PwBucketFolder>(`/api/libraries/buckets/folders?${new URLSearchParams({ uri, path, ...(endpoint ? { endpoint } : {}) })}`),
   setBucketText: async (id: string, text: boolean) => {
     const res = await fetch(`/api/libraries/${encodeURIComponent(id)}/bucket`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
     const data = await res.json().catch(() => ({}))

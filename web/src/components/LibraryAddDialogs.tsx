@@ -14,10 +14,11 @@ export interface UserOffer { available: boolean; ssh: boolean; pwOffered: boolea
 /** The choices Add a library offers, from what the server says this viewer
  *  may add: building here (`canBuild`, sign-in off), ssh (sign-in off), pw
  *  ssh wherever it is offered (the form says why when it cannot be used
- *  yet), the platform's workflow on a Studio the platform hosts, and a copy
- *  of a folder in a Transfers location (`canBuild` too). */
-export function addOptions(canBuild: boolean, user: UserOffer, platform: boolean): AddOptions {
-  return { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && platform && user.available, copy: canBuild, bucket: canBuild, space: !!user.space, home: user.home || undefined }
+ *  yet), the platform's workflow on a Studio the platform hosts, a copy of a
+ *  folder in a Transfers location (`canBuild` too), and the viewer's
+ *  ACTIVATE buckets (`buckets`). */
+export function addOptions(canBuild: boolean, user: UserOffer, platform: boolean, buckets = false): AddOptions {
+  return { buildHere: canBuild, ssh: user.ssh, pw: user.pwOffered, workflow: user.workflow && platform && user.available, copy: canBuild, bucket: canBuild, buckets, space: !!user.space, home: user.home || undefined }
 }
 
 /**
@@ -25,18 +26,19 @@ export function addOptions(canBuild: boolean, user: UserOffer, platform: boolean
  * Settings forms and the library list check use. With sign-in off
  * (`canBuild`), anything. With sign-in on, libraries on the Studio's own
  * computer are the deployment's, so a viewer may add only libraries of
- * their own, and only once signed in: over pw ssh, or through the
- * platform's workflow.
+ * their own, and only once signed in: over pw ssh, of their ACTIVATE
+ * buckets, or through the platform's workflow.
  */
-export function mayAddLibraries(canBuild: boolean, user: UserOffer | null, platform: boolean): boolean {
+export function mayAddLibraries(canBuild: boolean, user: UserOffer | null, platform: boolean, buckets = false): boolean {
   if (!user) return false
-  if (canBuild) return true
+  if (canBuild || buckets) return true
   const o = addOptions(canBuild, user, platform)
   return user.available && (o.pw || o.workflow || !!o.space)
 }
 
 /** The toast after one library is added, or its build started. */
-export function addedMessage(lib: { label: string; bucket?: unknown }, started: boolean, here?: boolean): string {
+export function addedMessage(lib: { label: string; bucket?: unknown }, started: boolean, here?: boolean, count = 1): string {
+  if (count > 1) return `Listing ${lib.label}. Their progress shows in the list. Each is searchable by name once its listing is indexed.`
   if (!started) return `Added ${lib.label}. It is in the Library switcher.`
   if (lib.bucket) return `Listing ${lib.label}. Its progress shows in the list. It is searchable by name once the listing is indexed.`
   return here
@@ -68,7 +70,7 @@ export interface LibraryAddOffer {
  */
 export function useLibraryAddOffer(): LibraryAddOffer {
   const cfg = useAppConfig()
-  const [canBuild, setCanBuild] = useState(false)
+  const [here, setHere] = useState({ canBuild: false, buckets: false })
   const [user, setUser] = useState<UserOffer | null>(null)
   const [browse, setBrowse] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -76,7 +78,7 @@ export function useLibraryAddOffer(): LibraryAddOffer {
   useEffect(() => {
     let live = true
     void Promise.all([
-      api.libraries().then(r => !!r?.canBuild, () => false),
+      api.libraries().then(r => ({ canBuild: !!r?.canBuild, buckets: !!r?.buckets }), () => ({ canBuild: false, buckets: false })),
       api.userLibraries().then(
         r => (r && typeof r === 'object' ? { available: !!r.available, ssh: !!r.ssh, pwOffered: !!(r.pwOffered ?? r.pw), workflow: !!r.workflow } : null),
         () => null,
@@ -87,7 +89,7 @@ export function useLibraryAddOffer(): LibraryAddOffer {
       api.spaceStatus().then(s => ({ space: !!(s?.available || s?.cluster), home: s?.cluster ?? '' }), () => ({ space: false, home: '' })),
     ]).then(([b, u, s, sp]) => {
       if (!live) return
-      setCanBuild(b); setUser(u && { ...u, ...sp }); setBrowse(s); setLoaded(true)
+      setHere(b); setUser(u && { ...u, ...sp }); setBrowse(s); setLoaded(true)
     })
     return () => { live = false }
   }, [tick])
@@ -95,8 +97,8 @@ export function useLibraryAddOffer(): LibraryAddOffer {
   const offer = user ?? { available: false, ssh: false, pwOffered: false, workflow: false }
   return {
     loaded,
-    allowed: loaded && mayAddLibraries(canBuild, user, platform),
-    options: addOptions(canBuild, offer, platform),
+    allowed: loaded && mayAddLibraries(here.canBuild, user, platform, here.buckets),
+    options: addOptions(here.canBuild, offer, platform, here.buckets),
     browse,
     reload: useCallback(() => setTick(t => t + 1), []),
   }
@@ -127,7 +129,7 @@ export function AddLibraryDialog({ open, onClose, offer, onAdded }: {
     <Modal open={open} onClose={onClose} size="lg" align="center" className="lib-add-modal" title="Add a library" closeButton>
       {open && (
         <AddLibrary options={offer.options} browse={offer.browse}
-          onAdded={(lib, started, here) => done(addedMessage(lib, started, here))}
+          onAdded={(lib, started, here, count) => done(addedMessage(lib, started, here, count))}
           onStarted={() => done(CLUSTER_STARTED)} />
       )}
     </Modal>
