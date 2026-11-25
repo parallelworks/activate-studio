@@ -52,9 +52,10 @@ nothing is stored or migrated. It has four parts:
   `system` its name and `via` one of `pw`, `ssh` or `workflow`), or
   `bucket`.
 - `readAs`: `you`, the viewer's own sign-in or ssh keys, for every library
-  a person adds on one of their systems, or `studio`, the account the
-  Studio runs as, for the libraries on this computer and in buckets, which
-  on a shared Studio are the deployment's.
+  a person adds on one of their systems and for their ACTIVATE buckets, or
+  `studio`, the account the Studio runs as, for the libraries on this
+  computer and in buckets of rclone remotes, which on a shared Studio are
+  the deployment's.
 - `write`: whether the viewer may change its files from the Library. Only
   libraries read as the viewer can be: My library, a folder shared with
   them for writing, and an index they built on one of their systems, unless
@@ -196,7 +197,8 @@ page chooses one (`DirectoryPicker`, over `GET
 /api/libraries/folders`, listed as the viewer). The computers are this one
 (sign-in off), the viewer's clusters over pw ssh (the Studio's own first),
 the hosts of `~/.ssh/config` and any other over plain ssh (sign-in off),
-and a bucket. `GET /api/user-libraries/ssh/hosts` answers the config's
+the viewer's ACTIVATE buckets, and a bucket of an rclone remote (sign-in
+off). `GET /api/user-libraries/ssh/hosts` answers the config's
 `Host` names only (`remote.ConfigHosts`): patterns and `Match` blocks are
 left out, `Include` is followed, and a Studio people sign in to is refused
 it. **Connect an existing index**, under the row, takes an index's path
@@ -557,8 +559,97 @@ offered only with sign-in off.
 
 ## Buckets
 
-Preview. On a Studio with sign-in off, **Add a library**, "A bucket"
-indexes a bucket, or a folder in one, of an rclone remote from its
+Preview. A bucket, or a folder in one, is indexed from its listing alone:
+one of the person's ACTIVATE buckets, read with their own ACTIVATE sign-in
+([ACTIVATE buckets](#activate-buckets)), or, on a Studio with sign-in off,
+a bucket of an rclone remote. Both are built, listed again, and read for
+text the same way.
+
+### ACTIVATE buckets
+
+**Add a library** lists the person's ACTIVATE buckets by name, under
+**ACTIVATE buckets**, beside their clusters. They are offered wherever the
+person has an ACTIVATE sign-in: on a Studio of one person, in the apps,
+and on a Studio people sign in to. There is no rclone, and no key is
+entered or kept.
+
+*What is needed.* The Studio's gateway is an ACTIVATE platform, the `pw`
+CLI is on the Studio's host, and its GUFI has `gufi_trace2index` (the app
+ships both). On a Studio of one person the sign-in is the Studio's own; on
+one people sign in to it is each person's, under Settings, Accounts, and
+never the deployment's or another person's. The platform decides which
+buckets a person has.
+
+`GET /api/libraries/buckets` lists them (`pw buckets ls -o json`) with
+each one's cloud, region and, when it cannot be read, `why`. `GET
+/api/libraries/buckets/folders?uri=&path=` is what is directly in a folder
+of one, for choosing it. `POST /api/libraries/bucket` takes `bucket` (the
+URI, `pw://<namespace>/<name>`) with optional `path`, `label`, `every` and
+`endpoint`. The form ticks several and adds each as a library of its own,
+with the same interval; a bucket and folder that are already a library of
+the person's answer 409.
+
+*How it is read* (`server-go/internal/pwbucket`). Each run asks `pw
+buckets get-token` for a credential of that bucket alone, and Studio asks
+the store with it: ListObjectsV2 pages of 1,000 keys on S3, the JSON
+interface on Google Cloud Storage, and a ranged GET for an object. A
+listing of 100,000 objects takes 101 requests of the store and 4 of the
+platform. A credential that ends during a listing is fetched again and the
+listing goes on after the last key. Where the store refuses or cannot be
+reached, and for Azure, the bucket is read through `pw buckets ls` and `pw
+buckets cat` instead, a run for each folder and file; the card says so and
+why. The pw CLI gives no token for Oracle Cloud ("unsupported CSP"), so
+those are shown and cannot be chosen.
+
+*The credential.* Studio holds a token in memory for the run that asked
+for it and never writes it to a file, logs it, or puts it in
+`libraries.json`. The pw CLI keeps what it fetches in its home, so it is
+run with a private one (mode 0700) that is removed as the run ends: in
+memory on Linux (`/dev/shm`), a temporary folder on macOS. The text pass
+reads objects through the Studio over a socket in a folder only the
+Studio's account opens, so the extractor is given no credential.
+
+*Region, partition and FIPS.* The region is what the platform says and is
+never guessed; the partition follows from it (`us-gov-*` is GovCloud, at
+`amazonaws.com` with its own regions). FIPS endpoints are asked where the
+pw CLI asks them, the US and Canada regions and GovCloud, unless
+`AWS_USE_FIPS_ENDPOINT=false` is in the Studio's environment. pw's own
+requests stay on FIPS hosts whatever it says.
+
+*Network.* Requests use the Studio's proxy (`HTTPS_PROXY`, `NO_PROXY`) and
+trusted certificates, as its other outbound requests do, and so does the
+pw CLI. Where the store is reached only through a VPC endpoint, **More
+options**, **Endpoint** takes its address
+(`https://bucket.vpce-0example.s3.us-gov-west-1.vpce.amazonaws.com`); the
+next bucket in that region is offered the same. `PUT
+/api/libraries/<id>/bucket` with `{ endpoint }` changes it, and
+`AWS_ENDPOINT_URL_S3` or `AWS_ENDPOINT_URL` in the Studio's environment is
+the default for every S3 bucket. An endpoint is asked over https. On a
+Studio people sign in to, only the stores' own private endpoints (S3 VPC
+endpoints, Google Private Service Connect) and the hosts in
+`STUDIO_BUCKET_ENDPOINTS` (an administrator's list) are taken, so what the
+Studio asks on its own network is not for one person to say.
+
+*Where people sign in.* The library is the person's alone. Its index is on
+the Studio's host under `INDEX_BASE/users/<hash>/buckets/<id>` (mode 0700,
+its record in `buckets.json`, 0600), not in the deployment's libraries:
+nobody else lists, searches, opens or changes it, and to them its id
+answers as one that does not exist. Its jobs show to them alone, and the
+Studio's logs name it by its id. Another person adds the same bucket with
+their own sign-in. It is listed again at its interval while the Studio
+keeps the person's sign-in (the one they kept under Settings, Accounts,
+across restarts) or within 15 minutes of a request of theirs; otherwise it
+waits, its card says so, and it is listed when they next open the Studio.
+Signing out of ACTIVATE or changing the key drops what was held at once.
+
+*Where an index came from.* Its `.studio-index.json` has `bucket`: the
+URI, the folder, the cloud, the region, the store's bucket and when it was
+listed. The index is a plain GUFI tree.
+
+### Buckets of rclone remotes
+
+On a Studio with sign-in off, **Another bucket (rclone remote)** indexes a
+bucket, or a folder in one, of an rclone remote from its
 listing alone (`server-go/internal/libapi/bucket.go`). Any S3 compatible
 store works, AWS or on premises (MinIO, Ceph and the like), since rclone
 needs only its endpoint and keys, and so does any other store rclone
@@ -676,7 +767,8 @@ helper it lacked, whether it was stopped, and why it failed.
 
 The fsid names the bucket's records in a spread tree: the store's
 endpoint host (for AWS `s3.<region>.amazonaws.com`, else the backend
-type), the bucket and the library's prefix, as one folder name, lower
+type; for an ACTIVATE bucket the store's own host, whatever endpoint it is
+asked at), the bucket and the library's prefix, as one folder name, lower
 case, other characters than `a-z0-9.-` made `_`, at most 80 characters
 with a hash of the whole when cut. It never uses the remote's name, which
 each computer chooses, so the same bucket gets the same name wherever its
@@ -1515,7 +1607,9 @@ and a reload land in the right library.
 
 ## Not yet
 
-For buckets: reading their text through the platform next to the data,
+For ACTIVATE buckets: Azure from the store itself, as S3 and Google are;
+sharing an index among the people who have the bucket. For all buckets:
+reading their text through the platform next to the data,
 bringing back only the index; images (OCR) and search by meaning; a
 bucket read through an rclone mount; and
 owners, groups and modes per entry for a Studio that people sign in to.
