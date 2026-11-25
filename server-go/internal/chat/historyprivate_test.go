@@ -123,12 +123,13 @@ func TestAnotherPersonsChatIsAnsweredAsNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	// They read it and do nothing else, an administrator too.
-	unowned := m.Conv.CreateWith(&title, "", nil, nil).ID
+	m.Conv.CreateWith(&title, "", nil, nil)
 	for _, who := range []string{"bob", "cy", ""} {
 		if code, out := do(who, "GET", "/api/chat/conversations/"+there, ""); code != http.StatusOK || !strings.Contains(out, "QUOTED") || !strings.Contains(out, `"isOwner":false,"canCollaborate":false`) {
 			t.Errorf("shared, %q: %d %s", who, code, out)
 		}
-		if _, out := do(who, "GET", "/api/chat/conversations", ""); strings.Count(out, `"isOwner":false,"canCollaborate":false`) != 2 || strings.Count(out, `"isOwner":true,"canCollaborate":true`) != 1 {
+		his := map[bool]int{true: 1}[who == "cy"] // the one with no owner
+		if _, out := do(who, "GET", "/api/chat/conversations", ""); strings.Count(out, `"isOwner":false,"canCollaborate":false`) != 3-his || strings.Count(out, `"isOwner":true,"canCollaborate":true`) != his {
 			t.Errorf("shared, %q lists %s", who, out)
 		}
 		for _, id := range []string{there, pw} {
@@ -156,10 +157,6 @@ func TestAnotherPersonsChatIsAnsweredAsNone(t *testing.T) {
 					t.Errorf("shared, %q %s %s: %d %s", who, c.method, c.path, code, out)
 				}
 			}
-		}
-		// What has no owner is its readers', as before.
-		if code, out := do(who, "PATCH", "/api/chat/conversations/"+unowned, `{"title":"Ours"}`); code != 200 || !strings.Contains(out, `"isOwner":true`) {
-			t.Errorf("unowned, %q: %d %s", who, code, out)
 		}
 	}
 	if len(gw.requests) != 0 {

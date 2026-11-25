@@ -66,8 +66,29 @@ type Steer struct {
 
 // New is the store of indexBase's conversations.json.
 func New(indexBase, kbRoot string, hooks Hooks) *Store {
-	return &Store{file: filepath.Join(indexBase, "conversations.json"), kbRoot: kbRoot, hooks: hooks, now: time.Now,
+	s := &Store{file: filepath.Join(indexBase, "conversations.json"), kbRoot: kbRoot, hooks: hooks, now: time.Now,
 		answering: map[string]int{}, steers: map[string][]Steer{}}
+	s.close()
+	return s
+}
+
+// private is the mode of the file: chats are read through the Studio, not
+// by the other accounts of its host.
+const private = 0o600
+
+// close takes a file an earlier version left open to other accounts, and a
+// write of its own that was cut short, back to the Studio's account.
+func (s *Store) close() {
+	left, _ := filepath.Glob(s.file + ".*.tmp")
+	for _, f := range append(left, s.file) {
+		st, err := os.Lstat(f)
+		if err != nil || !st.Mode().IsRegular() || st.Mode().Perm()&^private == 0 {
+			continue
+		}
+		if err := os.Chmod(f, private); err != nil && s.hooks.Log != nil {
+			s.hooks.Log("other accounts on this host may be able to read the chats: " + err.Error())
+		}
+	}
 }
 
 // Now is the store's clock as an ISO string.
@@ -118,7 +139,9 @@ func (s *Store) persist() {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	tmp := fmt.Sprintf("%s.%d.tmp", s.file, os.Getpid())
-	if os.WriteFile(tmp, b, 0o644) != nil {
+	// Removed first: one left by a write cut short keeps its mode.
+	os.Remove(tmp)
+	if os.WriteFile(tmp, b, private) != nil {
 		return
 	}
 	// The stamp is the written file's, taken before the rename: one taken

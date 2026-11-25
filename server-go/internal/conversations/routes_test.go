@@ -54,7 +54,7 @@ func strs(v any) []string {
 	return out
 }
 
-func TestBulkDeleteOwnAndUnownedOnly(t *testing.T) {
+func TestBulkDeleteOwnOnly(t *testing.T) {
 	conv := func(id, owner string) string {
 		o := "null"
 		if owner != "" {
@@ -67,10 +67,10 @@ func TestBulkDeleteOwnAndUnownedOnly(t *testing.T) {
 	if code != 200 {
 		t.Fatal(code)
 	}
-	if got := strs(body["deleted"]); strings.Join(got, ",") != "a,b,legacy" {
+	if got := strs(body["deleted"]); strings.Join(got, ",") != "a,b" {
 		t.Errorf("deleted %v", got)
 	}
-	if got := strs(body["skipped"]); strings.Join(got, ",") != "nope,theirs" {
+	if got := strs(body["skipped"]); strings.Join(got, ",") != "legacy,nope,theirs" {
 		t.Errorf("skipped %v", got)
 	}
 	var left []string
@@ -78,7 +78,7 @@ func TestBulkDeleteOwnAndUnownedOnly(t *testing.T) {
 		left = append(left, c.ID)
 	}
 	sort.Strings(left)
-	if strings.Join(left, ",") != "c,theirs" {
+	if strings.Join(left, ",") != "c,legacy,theirs" {
 		t.Errorf("left %v", left)
 	}
 	for _, b := range []string{`{"ids":[]}`, `{}`} {

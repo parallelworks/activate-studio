@@ -682,10 +682,10 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           },
           sidebar: {
             manageProviders: 'Model access',
-            sharedWithYou: "Someone else's chat",
+            sharedWithYou: 'Not your chat',
           },
           thread: {
-            viewOnly: 'Only the person whose chat this is can add to it',
+            viewOnly: 'You can read this chat but not add to it',
           },
           input: {
             placeholderNoProviders: held ? 'Choose or add a model to start chatting' : signInFirst ? 'Sign in with ACTIVATE to start chatting' : 'Add a model under Settings, Accounts to start chatting',
