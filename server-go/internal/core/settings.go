@@ -40,6 +40,9 @@ func (c *Core) getSettings(w http.ResponseWriter, r *http.Request) error {
 	}
 	// Whether the saved custom tools may run (settings.CustomToolsApproved).
 	o.SetValue("customToolsApproved", c.a.Settings.CustomToolsApproved(c.a.Settings.Effective()))
+	if c.a.Settings.CustomToolsOff() {
+		o.SetValue("customToolsOff", true)
+	}
 	return ok(w, o)
 }
 
@@ -532,11 +535,21 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 		o.SetValue("saved", c.a.Settings.SavedObject())
 		return ok(w, o)
 	}
+	// With STUDIO_CUSTOM_TOOLS=0 the saved custom tools are kept as they
+	// are: none is added or changed, and a save, by someone Settings does
+	// not show them to, approves none.
+	off := c.a.Settings.CustomToolsOff()
+	if off && !sameRaws(c.a.Settings.Effective().CustomTools, after.CustomTools) {
+		return apierr.New(http.StatusForbidden, "%s", CustomToolsOff)
+	}
 	// Custom tools run as they were last saved here, by an administrator
-	// (settings.CustomToolsApproved).
-	if c.a.Cfg.AuthEnabled() && len(after.CustomTools) > 0 {
+	// (settings.CustomToolsApproved). With them off, the approval stays
+	// as it was.
+	switch {
+	case off:
+	case c.a.Cfg.AuthEnabled() && len(after.CustomTools) > 0:
 		next.SetValue(settings.CustomToolsApprovedKey, settings.CustomToolsDigest(after.CustomTools))
-	} else {
+	default:
 		next.Delete(settings.CustomToolsApprovedKey)
 	}
 	if err := c.a.Settings.WriteObject(next); err != nil {
@@ -550,6 +563,16 @@ func (c *Core) putSettings(w http.ResponseWriter, r *http.Request) error {
 	o.SetValue("effective", c.a.Settings.Effective())
 	o.SetValue("saved", next)
 	return ok(w, o)
+}
+
+// CustomToolsOff is the refusal of a change to custom tools where
+// STUDIO_CUSTOM_TOOLS=0.
+const CustomToolsOff = "Custom tools are off on this Studio (STUDIO_CUSTOM_TOOLS=0): the saved ones are kept, and none can be added or changed."
+
+// sameRaws is whether two lists of JSON values are the same, ignoring
+// spacing.
+func sameRaws(a, b []json.RawMessage) bool {
+	return settings.CustomToolsDigest(a) == settings.CustomToolsDigest(b)
 }
 
 func isStringValue(v json.RawMessage) bool { _, ok := jsonobj.String(v); return ok }

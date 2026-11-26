@@ -20,16 +20,17 @@ const EFFECTIVE = {
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 /** A Studio with sign-in, seen by someone who is (or is not) one of its administrators. */
-function stub(locked: boolean, toolsApproved = true) {
+function stub(locked: boolean, toolsApproved = true, toolsOff = false) {
   const puts: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input)
     if (url === '/api/settings' && init?.method === 'PUT') { puts.push(JSON.parse(String(init.body))); return reply({ effective: EFFECTIVE }) }
-    if (url === '/api/settings') return reply({ effective: EFFECTIVE, deploymentCredential: true, customToolsApproved: toolsApproved, ...(locked ? { locked: LOCKED } : {}) })
+    if (url === '/api/settings') return reply({ effective: EFFECTIVE, deploymentCredential: true, customToolsApproved: toolsApproved, ...(toolsOff ? { customToolsOff: true } : {}), ...(locked ? { locked: LOCKED } : {}) })
     if (url === '/api/config') return reply({ appName: 'Studio', aiEnabled: true, platform: true, signIn: true, settingsLocked: locked, navWidth: 240, user: { id: 'u', username: 'u' } })
     if (url.startsWith('/api/setup/status')) return reply({ firstRun: false, standalone: false, branding: { light: null, dark: null } })
     if (url === '/api/me/model-key') return reply({ authEnabled: true, verified: true, mode: 'none' })
     if (url === '/api/chat/tools') return reply({ tools: [] })
+    if (url === '/api/extensions') return reply({ dir: '/x/extensions', tools: [{ name: 'hello', description: 'From a file', file: 'hello.json', command: 'echo hello' }], skills: [], agents: [], personas: [] })
     if (url === '/api/workflows/catalog') return reply({ workflows: [{ name: 'hello', displayName: 'Hello' }], source: 'deployment', marketplace: [] })
     return reply({})
   }))
@@ -70,6 +71,27 @@ describe('Settings on a Studio with sign-in, for someone who is not an administr
     render(<SettingsView />)
     expect(await screen.findByText(/These custom tools do not run yet/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeEnabled()
+  })
+
+  it('shows no custom tools to change where they are off, and says why', async () => {
+    const puts = stub(false, false, true)
+    at('#view=settings:tools')
+    render(<SettingsView />)
+    expect(await screen.findByText(/Custom tools are off on this Studio/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add custom tool' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Command' })).toBeNull()
+    expect(screen.queryByText(/These custom tools do not run yet/)).toBeNull()
+    // The rest of the section still saves, with the kept tools sent back as they were.
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect((puts[0] as { customTools: unknown }).customTools).toEqual(EFFECTIVE.customTools)
+  })
+
+  it('says tool files do not run where custom tools are off', async () => {
+    stub(false, true, true)
+    at('#view=settings:ext')
+    render(<SettingsView />)
+    expect(await screen.findByText(/Tool files do not run on this Studio/)).toBeInTheDocument()
   })
 
   it('shows the workflow collection read only', async () => {
