@@ -23,6 +23,39 @@ func transport() *http.Transport {
 	return t
 }
 
+var (
+	refusedMu sync.Mutex
+	onRefused []func(key string)
+)
+
+// OnRefused has f told of each bearer key the platform answers 401 to,
+// through Request (and Get), in its own goroutine: a person's kept
+// sign-in uses it to find that the platform no longer accepts its token.
+// HTTPClient's transport stays a plain *http.Transport, which the relay
+// and its tests configure.
+func OnRefused(f func(key string)) {
+	refusedMu.Lock()
+	onRefused = append(onRefused, f)
+	refusedMu.Unlock()
+}
+
+// refused tells OnRefused's listeners of a 401 to req's bearer key.
+func refused(req *http.Request, res *http.Response) {
+	if res.StatusCode != http.StatusUnauthorized {
+		return
+	}
+	key, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
+	if !ok || key == "" {
+		return
+	}
+	refusedMu.Lock()
+	fs := append([]func(string){}, onRefused...)
+	refusedMu.Unlock()
+	for _, f := range fs {
+		go f(key)
+	}
+}
+
 // Response is a platform answer: its status and parsed body (nil when it
 // was not JSON), and the raw bytes.
 type Response struct {
@@ -52,6 +85,7 @@ func Request(ctx context.Context, method, url string, header map[string]string, 
 		cancel()
 		return nil, nil, err
 	}
+	refused(req, res)
 	return res, cancel, nil
 }
 

@@ -199,6 +199,14 @@ func (s *Routes) cliSignIn() *jsonv.Object {
 	return jsonv.NewObject("source", "cli", "host", host, "context", nullable(name))
 }
 
+// signInStopped is why the viewer's kept sign-in stopped working, "".
+func (s *Routes) signInStopped(v *platform.Viewer) string {
+	if s.p.SignInStopped == nil || v.User == nil {
+		return ""
+	}
+	return s.p.SignInStopped(v.User.ID)
+}
+
 func (s *Routes) requireSingle(v *platform.Viewer) error {
 	if v.AuthEnabled {
 		return platform.KbError(403, "The pw CLI on this server belongs to the deployment; choose a credential of your own under Settings, Accounts instead.")
@@ -218,7 +226,10 @@ func (s *Routes) get(w http.ResponseWriter, r *http.Request) (any, error) {
 	out := jsonv.NewObject("single", single, "authEnabled", v.AuthEnabled, "models", models, "platform", plat,
 		"deployment", s.deploymentSource(v, single), "gatewayHost", hostOf(s.p.GatewayBase()), "platformOrigin", nullable(s.p.Origin()),
 		// Each person can sign in with ACTIVATE (internal/personal).
-		"signInOffered", v.AuthEnabled && s.p.Getenv("DISABLE_PERSONAL_KEYS") != "1")
+		"signInOffered", v.AuthEnabled && s.p.Getenv("DISABLE_PERSONAL_KEYS") != "1",
+		// Why the person's kept ACTIVATE sign-in stopped working, or null:
+		// they are asked to sign in again.
+		"signInStopped", nullable(s.signInStopped(v)))
 	if single {
 		info := s.p.Info(fresh)
 		contexts := s.p.ListContexts()

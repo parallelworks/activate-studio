@@ -36,6 +36,10 @@ export function openAccounts(row?: AccountRowId): void {
 /** What a feature that needs ACTIVATE says when the person has no credential for it. */
 export const SIGN_IN_TO_USE = 'Sign in with ACTIVATE to use this'
 
+/** What it says instead when the person's kept ACTIVATE sign-in stopped
+ *  working (the platform no longer accepts it, or it could not be renewed). */
+export const SIGN_IN_STOPPED = 'Your ACTIVATE sign-in stopped working'
+
 /** Whether a server message is the one a feature gives for a missing
  *  ACTIVATE credential: those name Settings, Accounts as the remedy. */
 export const needsActivate = (message: string | null | undefined): boolean => !!message && /Settings, Accounts/.test(message)

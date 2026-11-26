@@ -371,7 +371,9 @@ export interface FolderShare {
 }
 /** The viewer's pw CLI sign-in on a Studio several people use. */
 export interface PlatformSignIn {
-  state: 'none' | 'starting' | 'waiting' | 'signed-in' | 'failed'
+  /** expired: kept, but it stopped working (renewing it failed, or the
+   *  platform refused its token); message says why, and the person signs in again. */
+  state: 'none' | 'starting' | 'waiting' | 'signed-in' | 'expired' | 'failed'
   host?: string; url?: string; code?: string; account?: string; signedInAt?: string; message?: string; startedAt?: string
 }
 

@@ -14,7 +14,7 @@ import {
   announceChange, api, chatModel, describeSource, errText, isLocalUrl, platformCredential, presetOf, readPlatformHost, testNote,
 } from './accessShared'
 import { useAppConfig } from '../config'
-import { type AccountRowId, OPEN_ACCOUNT, accountInHash } from '../accounts'
+import { type AccountRowId, OPEN_ACCOUNT, SIGN_IN_STOPPED, accountInHash } from '../accounts'
 
 /**
  * Settings, Accounts: the connections the Studio makes for the person, in
@@ -177,7 +177,7 @@ export function AccountsSection({ aiEnabled = true }: { aiEnabled?: boolean }) {
       setLogin(l => a.login ?? l)
       // ACTIVATE opens when signed in, or when it is the only account
       // here (AI features off); the endpoint when one is saved.
-      startRow('activate', a.platform.source !== 'none' || !aiEnabled || signInFirst)
+      startRow('activate', a.platform.source !== 'none' || !aiEnabled || signInFirst || !!a.signInStopped)
       if (aiEnabled) startRow('endpoint', a.models.source === 'endpoint' || a.models.source === 'env-endpoint')
       // The way in use; on a shared Studio with none of the person's own
       // yet, signing in with ACTIVATE.
@@ -384,6 +384,8 @@ export function AccountsSection({ aiEnabled = true }: { aiEnabled?: boolean }) {
   const p = access.platform.source
   const connected = p !== 'none'
   const own = p === 'signin' || p === 'key'
+  // A kept sign-in that stopped working, with nothing else in its place.
+  const stopped = !connected && !!access.signInStopped
 
   // The ways in, each named for what it is and said in one line. On a
   // shared Studio, signing in with ACTIVATE comes first: it is the
@@ -426,6 +428,7 @@ export function AccountsSection({ aiEnabled = true }: { aiEnabled?: boolean }) {
 
   // Who the Studio is signed in to ACTIVATE as, said first in its row.
   const who = access.cli?.stopped && !own ? 'Not using the pw CLI. The Studio works as for someone without ACTIVATE; sign in to use the parts below.'
+    : stopped ? `${SIGN_IN_STOPPED}: the platform no longer accepts it. Sign in again to use the parts below.`
     : !connected ? `Not signed in. ${signInFirst ? 'Sign in with ACTIVATE first: the parts below run with your own sign-in.'
       : single ? 'The Studio works without ACTIVATE; sign in to use the parts below.'
       : 'Browsing and search work without ACTIVATE; sign in to use the parts below.'}`
@@ -516,7 +519,9 @@ export function AccountsSection({ aiEnabled = true }: { aiEnabled?: boolean }) {
 
         <AccountRow id="activate" title="ACTIVATE" open={!!opened.activate} onOpenChange={x => openRow('activate', x)}
           description={aiEnabled ? 'Adds pw code, workflows, desktops, ACTIVATE systems and models.' : 'Adds pw code, workflows, desktops and ACTIVATE systems.'}
-          state={connected ? <StatusLabel variant="success">Signed in</StatusLabel> : <StatusLabel variant="muted">Not signed in</StatusLabel>}>
+          state={connected ? <StatusLabel variant="success">Signed in</StatusLabel>
+            : stopped ? <StatusLabel variant="warning">Sign in again</StatusLabel>
+            : <StatusLabel variant="muted">Not signed in</StatusLabel>}>
           <div>
             <p className="muted view-sub account-who">{who}</p>
             <ActivatePartsTable parts={activateParts(access, aiEnabled)} />

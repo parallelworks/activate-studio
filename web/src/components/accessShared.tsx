@@ -33,6 +33,8 @@ export interface AccessStatus {
   /** Each person can sign in with ACTIVATE (a Studio several people use,
    *  keeping personal credentials). */
   signInOffered?: boolean
+  /** Why the person's kept ACTIVATE sign-in stopped working, or null. */
+  signInStopped?: string | null
   cli: {
     available: boolean; version: string | null
     /** Where the Studio found the CLI, and how. */

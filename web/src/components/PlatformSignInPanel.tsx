@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Callout, CopyButton, ExternalLink, Loader } from '@parallelworks/ui'
 import { api, type PlatformSignIn } from '../api'
+import { SIGN_IN_STOPPED } from '../accounts'
 
 const FAILED = 'The sign-in did not finish'
 
@@ -35,12 +36,17 @@ export function PlatformSignInPanel({ onChanged }: { onChanged?: () => void }) {
     timer.current = window.setTimeout(() => void read(), 2000)
     return () => { if (timer.current) window.clearTimeout(timer.current) }
   }, [st])
-  // Tell the page when the person becomes signed in or signed out.
+  // Tell the page when the person becomes signed in or signed out, or
+  // their sign-in stops working.
   useEffect(() => {
     if (!st) return
     const was = last.current
     last.current = st.state
-    if (was !== null && was !== st.state && (st.state === 'signed-in' || (was === 'signed-in' && st.state === 'none'))) onChanged?.()
+    const kept = (x: string | null) => x === 'signed-in' || x === 'expired'
+    // Found stopped when the panel first reads it: the page's own reads,
+    // made at the same time, may not know yet.
+    if (was === null && st.state === 'expired') onChanged?.()
+    else if (was !== null && was !== st.state && (kept(st.state) || (kept(was) && st.state === 'none'))) onChanged?.()
   }, [st, onChanged])
 
   if (hidden || (!st && !error)) return null
@@ -52,6 +58,12 @@ export function PlatformSignInPanel({ onChanged }: { onChanged?: () => void }) {
 
   return (
     <div className="platform-sign-in">
+      {st?.state === 'expired' && (
+        <Callout tone="warning" title={`${SIGN_IN_STOPPED}${st.account ? ` (${st.account}${st.host ? ` on ${st.host}` : ''})` : ''}`}
+          action={<Button variant="secondary" size="sm" disabled={busy} onClick={() => void run(api.signOutPlatform)}>Sign out</Button>}>
+          {st.message || 'The platform no longer accepts it.'}
+        </Callout>
+      )}
       {st?.state === 'signed-in' && (
         <Callout tone="success" title={`Signed in${st.account ? ` as ${st.account}` : ''}${st.host ? ` on ${st.host}` : ''}`}
           action={<Button variant="secondary" size="sm" disabled={busy} onClick={() => void run(api.signOutPlatform)}>Sign out</Button>}>
@@ -78,10 +90,10 @@ export function PlatformSignInPanel({ onChanged }: { onChanged?: () => void }) {
           {failure || 'Start again, and approve the code on the platform while signed in as yourself.'}
         </Callout>
       )}
-      {(st?.state === 'none' || st?.state === 'failed') && (
+      {(st?.state === 'none' || st?.state === 'failed' || st?.state === 'expired') && (
         <div className="key-row">
           <Button variant="primary" loading={busy} onClick={() => void run(api.startPlatformSignIn)}>
-            {st.state === 'failed' ? 'Try again' : 'Sign in with ACTIVATE'}
+            {st.state === 'failed' ? 'Try again' : st.state === 'expired' ? 'Sign in again' : 'Sign in with ACTIVATE'}
           </Button>
         </div>
       )}
