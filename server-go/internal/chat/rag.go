@@ -271,6 +271,46 @@ func unauthorized(w http.ResponseWriter) error {
 	return reqbody.JSON(w, 401, reqbody.O("error", reqbody.O("message", noBearer)))
 }
 
+// v1Refused is why a /v1 call is refused where each person uses their own
+// credential (REQUIRE_PERSONAL_KEY), "" when it is not: /v1 knows no
+// signed-in person, so a call is a person's on the key it brings, and one
+// that brings none, or brings the Studio's own (the registration
+// forwarder's, which the platform's gateway and anyone on the host reach
+// without a key), would be a person's call on the Studio's credential.
+func (m *Module) v1Refused(r *http.Request) string {
+	if !m.eff().RequirePersonalKey || !m.A.Cfg.AuthEnabled() || m.Keys.Disabled() {
+		return ""
+	}
+	b := bearerOf(r)
+	switch {
+	case b == "":
+		return "no credential"
+	case headerString(r, "X-Studio-Injected-Key") == "1":
+		return "the Studio's credential, added by the registration forwarder"
+	case m.studiosKey(b):
+		return "the Studio's credential"
+	}
+	return ""
+}
+
+// studiosKey is whether b is a credential of the Studio's own.
+func (m *Module) studiosKey(b string) bool {
+	for _, k := range []string{m.GatewayKey(), m.deploymentModelsKey()} {
+		if k != "" && b == k {
+			return true
+		}
+	}
+	return false
+}
+
+// refuseV1 answers a call v1Refused refuses with the Assistant's words, in
+// the shape OpenAI clients read, and logs it.
+func (m *Module) refuseV1(w http.ResponseWriter, model, why string) error {
+	m.rag.logCall(&ragCall{At: nowISO(), Model: model, Mode: "?", AuthSource: "none", DurationMs: new(int64),
+		Status: "error", Detail: sp("rejected: " + why + "; each person uses their own credential here")})
+	return reqbody.JSON(w, 401, reqbody.O("error", reqbody.O("message", signInFirst, "type", "credential")))
+}
+
 func (m *Module) v1Models(w http.ResponseWriter, r *http.Request) error {
 	if !m.known() {
 		m.toNode(w, r, "the RAG proxy's call log is Node's where Node identifies the viewer")
@@ -280,6 +320,9 @@ func (m *Module) v1Models(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	m.refreshAccess(r, 0)
+	if why := m.v1Refused(r); why != "" {
+		return m.refuseV1(w, "(models)", why)
+	}
 	a := m.callerKey(r)
 	if a == nil {
 		return unauthorized(w)
@@ -358,6 +401,13 @@ func (m *Module) v1Completions(w http.ResponseWriter, r *http.Request) error {
 			_ = json.Unmarshal(raw, &v)
 		}
 		return v
+	}
+	if why := m.v1Refused(r); why != "" {
+		model := "?"
+		if v := field("model"); v != nil {
+			model = reqbody.JSString(v)
+		}
+		return m.refuseV1(w, model, why)
 	}
 	if a == nil {
 		model := "?"

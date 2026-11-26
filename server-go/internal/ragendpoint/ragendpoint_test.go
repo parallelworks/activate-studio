@@ -18,12 +18,20 @@ import (
 )
 
 func setup(t *testing.T, env map[string]string, settings string) (*http.ServeMux, *Endpoint, string) {
+	return setupWith(t, env, settings, nil)
+}
+
+// setupWith is setup with more of the server's configuration (cfgEnv).
+func setupWith(t *testing.T, env map[string]string, settings string, cfgEnv map[string]string) (*http.ServeMux, *Endpoint, string) {
 	t.Helper()
 	ix, kb := t.TempDir(), t.TempDir()
 	if settings != "" {
 		os.WriteFile(filepath.Join(ix, "settings.json"), []byte(settings), 0o644)
 	}
 	cfg, err := config.Load(func(k string) string {
+		if v, ok := cfgEnv[k]; ok {
+			return v
+		}
 		return map[string]string{"INDEX_BASE": ix, "KB_ROOT": kb, "PORT": "5999", "STUDIO_NODE": "off"}[k]
 	})
 	if err != nil {
@@ -185,5 +193,46 @@ func TestForwarder(t *testing.T) {
 	b, _ := io.ReadAll(res.Body)
 	if res.StatusCode != 502 || len(b) != 0 {
 		t.Fatal(res.StatusCode, string(b))
+	}
+}
+
+// Where each person uses their own credential (REQUIRE_PERSONAL_KEY, with
+// sign-in), the forwarder is given no key to add: the platform's gateway
+// and anyone on the host reach it without one, so what it added would be a
+// person's call on the Studio's credential. Elsewhere it is given the
+// Studio's, as before.
+func TestForwarderAddsNoKeyWhereEachPersonUsesTheirOwn(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		settings string
+		cfg      map[string]string
+		want     string
+	}{
+		{"required", `{"requirePersonalKey":true}`, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks"}, "5999  ctx1"},
+		{"not required", ``, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks"}, "5999 deploykey ctx1"},
+		{"sign-in off", `{"requirePersonalKey":true}`, nil, "5999 deploykey ctx1"},
+		{"personal keys off", `{"requirePersonalKey":true}`, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks", "DISABLE_PERSONAL_KEYS": "1"}, "5999 deploykey ctx1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			envf := filepath.Join(dir, "env")
+			cli := filepath.Join(dir, "pw")
+			os.WriteFile(cli, []byte("#!/bin/sh\necho \"$STUDIO_TARGET_PORT $STUDIO_INJECT_KEY $PW_CONTEXT\" > "+envf+".new && mv "+envf+".new "+envf+"\nexec sleep 30\n"), 0o755)
+			_, e, _ := setupWith(t, map[string]string{"PW_API_KEY": "deploykey", "PW_CONTEXT": "ctx1", "PW_CLI": cli}, c.settings, c.cfg)
+			e.Self = []string{"/bin/self", Subcommand}
+			if st := e.Start(); st.State != "starting" {
+				t.Fatalf("%+v", st)
+			}
+			t.Cleanup(func() { e.Stop() })
+			var b []byte
+			for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+				if b, _ = os.ReadFile(envf); len(b) > 0 {
+					break
+				}
+			}
+			if got := strings.TrimRight(string(b), "\n"); got != c.want {
+				t.Fatalf("%q", got)
+			}
+		})
 	}
 }

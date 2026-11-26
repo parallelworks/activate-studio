@@ -53,6 +53,9 @@ type Endpoint struct {
 	p        *platform.Platform
 	settings *settings.Store
 	port     int
+	// authEnabled and keysOff are the configuration's sign-in and
+	// DISABLE_PERSONAL_KEYS.
+	authEnabled, keysOff bool
 	// Self is the forwarder command: this binary and the subcommand.
 	Self []string
 
@@ -64,7 +67,8 @@ type Endpoint struct {
 // New is the endpoint for a.
 func New(a *app.App, p *platform.Platform) *Endpoint {
 	self, _ := os.Executable()
-	return &Endpoint{p: p, settings: a.Settings, port: a.Cfg.Port, Self: []string{self, Subcommand}, status: Status{State: "stopped"}}
+	return &Endpoint{p: p, settings: a.Settings, port: a.Cfg.Port, authEnabled: a.Cfg.AuthEnabled(), keysOff: a.Cfg.DisablePersonalKeys,
+		Self: []string{self, Subcommand}, status: Status{State: "stopped"}}
 }
 
 var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
@@ -173,7 +177,14 @@ func (e *Endpoint) Start() Status {
 	args = append(args, "--openai", "--name", name, "--subdomain", name, "-o", "text", "--")
 	args = append(args, e.Self...)
 	cmd := exec.Command(cli, args...)
-	cmd.Env = e.p.EnvironAsDeployment(map[string]string{"STUDIO_TARGET_PORT": strconv.Itoa(e.port), "STUDIO_INJECT_KEY": key})
+	// The forwarder adds the Studio's key to a call that brings none; where
+	// each person uses their own credential (REQUIRE_PERSONAL_KEY) it adds
+	// nothing, and /v1 refuses such a call (internal/chat, v1Refused).
+	inject := key
+	if e.personalRequired() {
+		inject = ""
+	}
+	cmd.Env = e.p.EnvironAsDeployment(map[string]string{"STUDIO_TARGET_PORT": strconv.Itoa(e.port), "STUDIO_INJECT_KEY": inject})
 	t := &tail{e: e, cmd: cmd}
 	cmd.Stdout, cmd.Stderr = t, t
 	e.mu.Lock()
@@ -223,6 +234,11 @@ func (e *Endpoint) Start() Status {
 		e.status.URL = ""
 	}()
 	return st
+}
+
+// personalRequired: each person uses their own credential.
+func (e *Endpoint) personalRequired() bool {
+	return e.settings.Effective().RequirePersonalKey && e.authEnabled && !e.keysOff
 }
 
 func (e *Endpoint) fail(detail string) Status {

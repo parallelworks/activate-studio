@@ -25,6 +25,7 @@ var deploymentUses = map[string]struct {
 	"chat/gotools.go":            {1, "the deployment credential the chat module holds (Module.GatewayKey)"},
 	"chat/module.go":             {3, "GatewayKey itself; deploymentModelsKey: a Studio of one, or the administrator's OpenAI-compatible endpoint"},
 	"chat/pwcodechat.go":         {1, "pw code on a Studio of one"},
+	"chat/rag.go":                {1, "compared, never used: /v1 refuses a call that brings the Studio's own key where each person uses their own"},
 	"chat/stream.go":             {1, "changes on a Studio of one (sign-in off)"},
 	"chat/toolroutes.go":         {1, "tool options on a Studio of one (sign-in off)"},
 	"chat/tooltypes.go":          {1, "envAccess: the deployment credential before the platform answers"},
