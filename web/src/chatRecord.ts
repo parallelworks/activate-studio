@@ -12,6 +12,8 @@
  * went is not kept.
  */
 
+import { SIGN_IN_TO_CHAT } from './signIn'
+
 export interface ChatRecord {
   id?: string
   pwcode?: Record<string, unknown> & { session?: string }
@@ -80,6 +82,11 @@ export function readChat(id: string): Promise<ChatRecord> {
   if (going) return going
   const read: Promise<ChatRecord> = fetch(`/api/chat/conversations/${encodeURIComponent(id)}`)
     .then(async r => {
+      // A visitor is asked to sign in, by the chat page.
+      if (r.status === 401) {
+        window.dispatchEvent(new Event(SIGN_IN_TO_CHAT))
+        throw new Error('Sign in to chat.')
+      }
       if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
       return r.json() as Promise<ChatRecord>
     })

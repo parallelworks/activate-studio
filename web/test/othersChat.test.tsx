@@ -14,7 +14,7 @@ vi.hoisted(() => {
 })
 
 import { createStudioAdapter, isOwnConversation, setChatListFilter, setViewerUsername } from '../src/adapter'
-import { clearChatRecords } from '../src/chatRecord'
+import { clearChatRecords, readChat } from '../src/chatRecord'
 import { readerItems } from '../src/components/ChatList'
 import { forgetModels } from '../src/api'
 import { reloadAppConfig, useAppConfig } from '../src/config'
@@ -226,6 +226,37 @@ describe('a visitor who starts a chat', () => {
     await act(async () => { await createStudioAdapter().conversations.create('x').catch(() => {}) })
     expect(said()).toContain('Sign in to chat.')
     expect(button()).toBeInTheDocument()
+  })
+})
+
+describe('a visitor with a link to a chat', () => {
+  it('is asked to sign in, and the chat is not asked for; the link stays for after the sign-in', async () => {
+    const asked = visitorsStudio({ signedOut: true, signInUrl: '/api/auth/login' })
+    const paths: string[] = []
+    const inner = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      paths.push(new URL(input instanceof Request ? input.url : String(input), 'http://studio.example').pathname)
+      return inner(input, init)
+    }))
+    forgetModels()
+    render(<Config />)
+    await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 30)) })
+    location.hash = `#chat=${ID}`
+    render(<ChatView />)
+    await act(async () => { await new Promise(r => setTimeout(r, 300)) })
+    expect(screen.getByTestId('sign-in-to-chat').textContent).toContain('Sign in to chat. Each chat belongs to the person who started it.')
+    expect(paths.filter(p => p.startsWith(`/api/chat/conversations/${ID}`))).toEqual([])
+    expect(asked).toEqual([])
+    expect(location.hash).toBe(`#chat=${ID}`)
+  })
+
+  it('who reads one anyway is told to sign in, as the chat page shows', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Sign in to chat. Each chat belongs to the person who started it.' }), { status: 401 })))
+    const told = vi.fn()
+    window.addEventListener('ade:sign-in-to-chat', told)
+    await expect(readChat(ID)).rejects.toThrow(/^Sign in to chat\.$/)
+    expect(told).toHaveBeenCalledTimes(1)
+    window.removeEventListener('ade:sign-in-to-chat', told)
   })
 })
 

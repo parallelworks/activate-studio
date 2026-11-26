@@ -298,10 +298,14 @@ const SIGN_IN_ELSEWHERE = 'Open this Studio from ACTIVATE to sign in.'
 export function ChatView({ active = true }: { active?: boolean } = {}) {
   // The open conversation lives in the URL, so a refresh (or a shared link)
   // returns to the same session instead of an empty chat.
-  const [activeId, setActiveIdState] = useState<string | null>(() => {
+  const [chosenId, setActiveIdState] = useState<string | null>(() => {
     const m = location.hash.match(/^#chat=([0-9a-f-]{8,})$/i)
     return m ? m[1] : null
   })
+  // A visitor who has not signed in opens no chat: a link to one keeps its
+  // address, for after the sign-in, and the page asks them to sign in.
+  const visitor = !!useAppConfig().signedOut
+  const activeId = visitor ? null : chosenId
   const setActiveId = useCallback((id: string | null) => {
     setActiveIdState(id)
     const next = id ? `#chat=${id}` : ''

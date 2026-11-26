@@ -122,9 +122,10 @@ func TestAnotherPersonsChatIsAnsweredAsNone(t *testing.T) {
 	if err := m.A.Settings.Update(map[string]any{"chatSharedHistory": true, "chatSharedHistoryChosen": true}); err != nil {
 		t.Fatal(err)
 	}
-	// They read it and do nothing else, an administrator too.
+	// They read it and do nothing else, an administrator too. A visitor
+	// reads none (TestAVisitorSeesNoChats).
 	m.Conv.CreateWith(&title, "", nil, nil)
-	for _, who := range []string{"bob", "cy", ""} {
+	for _, who := range []string{"bob", "cy"} {
 		if code, out := do(who, "GET", "/api/chat/conversations/"+there, ""); code != http.StatusOK || !strings.Contains(out, "QUOTED") || !strings.Contains(out, `"isOwner":false,"canCollaborate":false`) {
 			t.Errorf("shared, %q: %d %s", who, code, out)
 		}
