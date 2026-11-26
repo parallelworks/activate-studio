@@ -326,6 +326,19 @@ describe('in the Library\'s menu', () => {
     expect(item()).toHaveTextContent('read only for you')
     expect(asked.some(a => a.includes('/start/library'))).toBe(false)
   })
+
+  // A folder shared to read logged a refused request (403) as the menu opened.
+  it('knows a folder shared to read without asking, and asks for one shared to write', async () => {
+    libraries = [lib('kb', 'eve-notes (eve)', { writable: false, sharedFrom: 'eve' })]
+    expect(await open()).toHaveAttribute('aria-disabled', 'true')
+    expect(item()).toHaveTextContent('eve-notes (eve) is shared with you to read, so a pw code session cannot work here.')
+    await settle()
+    expect(asked.some(a => a.includes('/start/library'))).toBe(false)
+    cleanup()
+    libraries = [lib('kb', 'eve-plans (eve)', { writable: true, sharedFrom: 'eve' })]
+    await open()
+    await waitFor(() => expect(asked.some(a => a.includes('/start/library'))).toBe(true))
+  })
 })
 
 describe('on the chat page', () => {

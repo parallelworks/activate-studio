@@ -22,6 +22,20 @@ export const PWCODE_MODEL = { id: 'pwcode', name: 'pw code' }
 export const HELD_TITLE = 'Choose a model to start'
 export const HELD_SAY = 'Choose one with Select a model, below.'
 
+/** The no-model empty state's button for a person who is signed in and
+ *  only has no model: it opens the picker in the box, which is the fix,
+ *  rather than Accounts, which has nothing for them to do. */
+export const CHOOSE_MODEL = '#choose-model'
+
+/** Opens the model picker of the message box under root. */
+export function openModelPicker(root: ParentNode | null): void {
+  const box = root ?? document
+  const picker = box.querySelector<HTMLElement>('[data-testid="agents-model-chip"]')
+    ?? [...box.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.trim() === 'Select a model')
+  picker?.focus()
+  picker?.click()
+}
+
 let standsIn = false
 /** Whether pw code stands in when no model is listed. */
 export function pwCodeStandsIn(): boolean { return standsIn && !held }
@@ -41,9 +55,20 @@ export function modelHeld(): boolean { return held }
 
 /** Whether the chat's models are held back, keeping them for the picker. */
 export function holdModels(models: ModelsList['models']): boolean {
-  heldList = held ? models : null
+  const next = held ? models : null
+  const changed = (next?.length ?? -1) !== (heldList?.length ?? -1)
+  heldList = next
+  if (changed) for (const l of [...listeners]) l()
   return held
 }
+
+/** How many models the open chat that waits for one can choose among; -1
+ *  before they are known. */
+export function useHeldModelCount(): number { return useSyncExternalStore(onHeld, () => heldList?.length ?? -1) }
+
+/** What the no-model empty state says where pw code lists no model to
+ *  choose: then Accounts is where one is added. */
+export const HELD_NONE_SAY = 'pw code lists no model for you. Add one under Settings, Accounts.'
 
 /** The models held back from the chat package, which a pw code picker lists. */
 export function heldModels(): ModelsList['models'] | null { return heldList }

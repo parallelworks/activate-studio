@@ -507,7 +507,12 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     // here; the rest the Studio finds as the menu opens.
     const here = (why?: string): MenuEntry => ({ label: CHAT_HERE, disabled: !!why, description: why, onClick: () => void chatHere(itemAt(path), cfg.libraries ?? []) })
     const held = cfg.libraries?.find(l => l.id === libraryAt(path))
-    const noChat = held?.fromBucket || held?.access?.where === 'bucket' ? 'A bucket has no folder a pw code session can work in.' : labelsLocked ? 'This library is read only for you, so a pw code session cannot work here.' : undefined
+    // A folder shared to read says it as the Studio would (userlibs
+    // folderat.go), without a request that is refused.
+    const noChat = held?.fromBucket || held?.access?.where === 'bucket' ? 'A bucket has no folder a pw code session can work in.'
+      : labelsLocked ? 'This library is read only for you, so a pw code session cannot work here.'
+      : held?.sharedFrom && !held.writable ? `${held.label} is shared with you to read, so a pw code session cannot work here.`
+      : undefined
     // Only for a person with ACTIVATE, as Code and the chat bar's engine button.
     if (!allTop && sectionAllowed('chat', cfg) && hasActivate(cfg)) hereAt = items.push(here(noChat ?? knownPlace(itemAt(path))?.why)) - 1
     if (path && !libraryTop && canCopyOut) {

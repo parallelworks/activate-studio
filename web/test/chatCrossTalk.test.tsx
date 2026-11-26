@@ -435,11 +435,24 @@ describe('a new chat pw code answers, with no model for pw code', () => {
     await show()
     await closed()
     expect(screen.getByText('Choose a model to start')).toBeInTheDocument()
-    expect(screen.getByText('Choose one with Select a model, below.')).toBeInTheDocument()
     // pw code's own picker lists what there is.
     expect(heldModels()).toHaveLength(n)
-    fireEvent.click(screen.getByRole('link', { name: /Open Accounts/ }))
-    expect(location.hash).toBe('#view=settings:accounts')
+    if (n) {
+      // Signed in, with models to choose: the button opens the picker in
+      // the box, not Accounts (which sent them to the wrong place).
+      expect(screen.getByText('Choose one with Select a model, below.')).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: /Open Accounts/ })).toBeNull()
+      const was = location.hash
+      fireEvent.click(await screen.findByRole('link', { name: /Choose a model/ }))
+      expect(location.hash).toBe(was)
+      await waitFor(() => expect(screen.getByTestId('agents-model-chip')).toHaveAttribute('aria-expanded', 'true'))
+      expect(screen.getByRole('listbox')).toBeInTheDocument()
+    } else {
+      // None to choose: one is added under Accounts.
+      expect(await screen.findByText('pw code lists no model for you. Add one under Settings, Accounts.')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('link', { name: /Open Accounts/ }))
+      expect(location.hash).toBe('#view=settings:accounts')
+    }
   })
 
   it('opens once one is chosen, and the message carries it', async () => {
