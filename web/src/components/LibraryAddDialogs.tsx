@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button, Modal, toast } from '@parallelworks/ui'
 import { api } from '../api'
 import { reloadAppConfig, useAppConfig } from '../config'
-import { reloadWhenLibrariesBuilt } from '../libraryWatch'
+import { libraryAdded, reloadWhenLibrariesBuilt } from '../libraryWatch'
 import type { ListCheck } from '../libraryLists'
 import { AddLibrary, type AddOptions } from './AddLibrary'
 import { LibraryImport } from './LibraryImport'
@@ -115,10 +115,9 @@ export function AddLibraryDialog({ open, onClose, offer, onAdded }: {
 }) {
   const done = (message: string) => {
     toast.success(message)
-    reloadAppConfig()
     // A build that finishes later joins the switcher then, though Settings
     // is not open to notice it.
-    reloadWhenLibrariesBuilt()
+    libraryAdded()
     onAdded?.()
     onClose()
   }
