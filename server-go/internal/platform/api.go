@@ -15,12 +15,45 @@ import (
 // HTTPClient is the client every outbound call of the platform track uses:
 // the environment's proxy, the system's certificates, and no redirect
 // following unless a caller asks (fetch's redirect: 'manual' is the relay's).
-var HTTPClient = &http.Client{Transport: transport()}
+var HTTPClient = &http.Client{Transport: refusals{transport()}}
 
 func transport() *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.MaxIdleConnsPerHost = 16
 	return t
+}
+
+var (
+	refusedMu sync.Mutex
+	onRefused []func(key string)
+)
+
+// OnRefused has f told of each bearer key the platform answers 401 to,
+// through HTTPClient, in its own goroutine: a person's kept sign-in uses
+// it to find that the platform no longer accepts its token.
+func OnRefused(f func(key string)) {
+	refusedMu.Lock()
+	onRefused = append(onRefused, f)
+	refusedMu.Unlock()
+}
+
+// refusals is HTTPClient's transport, which tells OnRefused's listeners
+// of a 401.
+type refusals struct{ base http.RoundTripper }
+
+func (t refusals) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, err := t.base.RoundTrip(req)
+	if err == nil && res.StatusCode == http.StatusUnauthorized {
+		if key, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer "); ok && key != "" {
+			refusedMu.Lock()
+			fs := append([]func(string){}, onRefused...)
+			refusedMu.Unlock()
+			for _, f := range fs {
+				go f(key)
+			}
+		}
+	}
+	return res, err
 }
 
 // Response is a platform answer: its status and parsed body (nil when it

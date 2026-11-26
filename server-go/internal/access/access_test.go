@@ -126,7 +126,7 @@ func TestAccessSourcesAndChoice(t *testing.T) {
 	s := newStudio(t, map[string]string{"PW_CREDENTIALS_DIR": credsDir(t), "PW_CLI": cli, "PATH": "/usr/bin:/bin"}, n)
 
 	_, body, raw := s.do("GET", "/api/access", nil)
-	if !strings.HasPrefix(raw, `{"single":true,"authEnabled":false,"models":{"source":"endpoint","host":"127.0.0.1:11434","context":null,"baseUrl":"http://127.0.0.1:11434/v1","last4":"ocal","kind":"api-key"},"platform":{"source":"cli","host":"platform-a.example.com","context":"work"},"deployment":{"source":"cli","host":"platform-a.example.com","context":"work"},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":false,"cli":{"available":true,"version":"v7.1.0","path":"`+cli+`","source":"env","chosenPath":null,"commonDirs":[`) {
+	if !strings.HasPrefix(raw, `{"single":true,"authEnabled":false,"models":{"source":"endpoint","host":"127.0.0.1:11434","context":null,"baseUrl":"http://127.0.0.1:11434/v1","last4":"ocal","kind":"api-key"},"platform":{"source":"cli","host":"platform-a.example.com","context":"work"},"deployment":{"source":"cli","host":"platform-a.example.com","context":"work"},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":false,"signInStopped":null,"cli":{"available":true,"version":"v7.1.0","path":"`+cli+`","source":"env","chosenPath":null,"commonDirs":[`) {
 		t.Fatal(raw)
 	}
 	if !strings.HasSuffix(raw, `"chosen":null,"active":"work","used":"work","gatewayFromEnv":false,"envKey":false,"envModelKey":false,"stopped":false},"login":null}`) || strings.Contains(raw, "work-api-key") {
@@ -166,7 +166,7 @@ func TestAccessOnASignedInDeployment(t *testing.T) {
 	_, _, raw := s.do("GET", "/api/access", nil)
 	// The deployment's ACTIVATE credential (PW_API_KEY here) is the
 	// administrator's: a person without one of their own has none.
-	if raw != `{"single":false,"authEnabled":true,"models":{"source":"none","host":null,"context":null},"platform":{"source":"none","host":null,"context":null},"deployment":{"source":"none","host":null,"context":null},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":true,"cli":null,"login":null}` {
+	if raw != `{"single":false,"authEnabled":true,"models":{"source":"none","host":null,"context":null},"platform":{"source":"none","host":null,"context":null},"deployment":{"source":"none","host":null,"context":null},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":true,"signInStopped":null,"cli":null,"login":null}` {
 		t.Fatal(raw)
 	}
 	for _, c := range [][2]string{{"PUT", "/api/access/cli/path"}, {"PUT", "/api/access/source"}, {"PUT", "/api/access/cli/use"}, {"POST", "/api/access/cli/login"}, {"GET", "/api/access/cli/login"}, {"POST", "/api/access/cli/login/cancel"}} {
@@ -552,5 +552,25 @@ func TestAModelKeyInTheEnvironmentIsNoActivateSignIn(t *testing.T) {
 				t.Fatal("a key in the answer")
 			}
 		})
+	}
+}
+
+// A person whose kept ACTIVATE sign-in stopped working is told why under
+// Settings, Accounts, and asked to sign in again; the platform is not
+// theirs until then.
+func TestAccessSaysASignInStoppedWorking(t *testing.T) {
+	n := newNode(t, map[string]any{"authEnabled": true, "user": map[string]any{"id": "u1", "username": "ada", "name": "Ada"},
+		"cred": nil, "keyStatus": map[string]any{"mode": "none"}, "sharedLast4": nil})
+	s := newStudio(t, map[string]string{"PW_CREDENTIALS_DIR": credsDir(t)}, n)
+	why := "ACTIVATE no longer accepts your sign-in. Sign in again under Settings, Accounts."
+	s.p.SignInStopped = func(owner string) string {
+		if owner == "u1" {
+			return why
+		}
+		return ""
+	}
+	_, body, raw := s.do("GET", "/api/access", nil)
+	if body["signInStopped"] != why || !strings.Contains(raw, `"platform":{"source":"none"`) {
+		t.Fatal(raw)
 	}
 }

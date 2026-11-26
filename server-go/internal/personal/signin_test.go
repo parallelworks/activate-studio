@@ -1,7 +1,10 @@
 package personal
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +46,8 @@ case "$1 $2" in
 "auth whoami") cat "$ctl/who" ;;
 "--version ") echo "pw version v0.0.1" ;;
 "auth token")
+  if [ -e "$ctl/refuse" ]; then echo x >> "$ctl/token-calls"; echo "Error: refresh failed: the platform refused refresh token rt_0123456789abcdef0123456789abcdef (401)" >&2; exit 1; fi
+  if [ -e "$ctl/same" ]; then echo x >> "$ctl/token-calls"; echo '{"access_token":"tok-1","expires_in":3600}'; exit 0; fi
   if [ -e "$ctl/busy" ]; then echo overlap >> "$ctl/overlap"; fi
   touch "$ctl/busy"; echo x >> "$ctl/token-calls"; sleep 0.2; rm -f "$ctl/busy"
   n=$(wc -l < "$ctl/token-calls")
@@ -306,5 +311,197 @@ func TestFailureOf(t *testing.T) {
 	}
 	if got := failureOf(prompt + "\x1b[31mError: expired_token\x1b[0m\n"); got != "Error: expired_token" {
 		t.Errorf("after the prompt: %q", got)
+	}
+}
+
+// logBuf is a server log a test can read while sign-ins write to it.
+type logBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *logBuf) Write(p []byte) (int, error) { l.mu.Lock(); defer l.mu.Unlock(); return l.b.Write(p) }
+func (l *logBuf) String() string              { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+
+func signedIn(t *testing.T) (*SignIns, string, *logBuf) {
+	t.Helper()
+	s, ctl := newTest(t)
+	log := &logBuf{}
+	s.Log = slog.New(slog.NewTextHandler(log, nil))
+	os.WriteFile(filepath.Join(ctl, "who"), []byte("alice\n"), 0o600)
+	s.Start("user:alice", "alice", 5*time.Second)
+	os.WriteFile(filepath.Join(ctl, "approve"), nil, 0o600)
+	waitState(t, s, "user:alice", "signed-in")
+	if tok, err := s.Token(context.Background(), "user:alice"); tok != "tok-1" || err != nil {
+		t.Fatalf("token %q %v", tok, err)
+	}
+	return s, ctl, log
+}
+
+// nearEnd makes the kept token one the next ask renews.
+func nearEnd(s *SignIns, owner string) {
+	s.mu.Lock()
+	tk := s.tokens[owner]
+	tk.until, tk.asked = time.Now().Add(time.Minute), time.Now().Add(-time.Minute)
+	s.tokens[owner] = tk
+	s.mu.Unlock()
+}
+
+func stoppedLines(log *logBuf) int {
+	return strings.Count(log.String(), "personal sign-in stopped working")
+}
+
+// A kept sign-in whose renewal the platform refuses (as after a platform
+// that dropped its refresh tokens) says so, and asks to sign in again,
+// instead of still saying Signed in; the server logs it once, without the
+// token; the CLI is not asked again on every request; and it works again
+// once the platform does, or after signing in again.
+func TestASignInWhoseRenewalIsRefusedAsksToSignInAgain(t *testing.T) {
+	s, ctl, log := signedIn(t)
+	nearEnd(s, "user:alice")
+	os.WriteFile(filepath.Join(ctl, "refuse"), nil, 0o600)
+	_, err := s.Token(context.Background(), "user:alice")
+	var b *BrokenError
+	if !errors.As(err, &b) || !strings.HasPrefix(b.Why, "Your ACTIVATE sign-in could not be renewed (") || !strings.HasSuffix(b.Why, ". Sign in again under Settings, Accounts.") {
+		t.Fatalf("error: %v", err)
+	}
+	st := s.Status("user:alice")
+	if st.State != "expired" || st.Account != "alice" || st.Message != b.Why {
+		t.Fatalf("status: %+v", st)
+	}
+	if s.Stopped("user:alice") != b.Why || s.Key("user:alice") != "" {
+		t.Fatal("Stopped or Key")
+	}
+	calls := lines(t, filepath.Join(ctl, "token-calls"))
+	for i := 0; i < 5; i++ {
+		s.Token(context.Background(), "user:alice")
+		s.Status("user:alice")
+	}
+	if n := lines(t, filepath.Join(ctl, "token-calls")); n != calls {
+		t.Fatalf("the CLI was asked again %d times within the minute", n-calls)
+	}
+	if n := stoppedLines(log); n != 1 {
+		t.Fatalf("logged %d times:\n%s", n, log)
+	}
+	if l := log.String(); strings.Contains(l, "rt_0123456789") || strings.Contains(l, "tok-") || !strings.Contains(l, "[redacted]") || !strings.Contains(l, "host=platform.example.com") {
+		t.Fatalf("log:\n%s", l)
+	}
+	if strings.Contains(b.Why, "rt_0123456789") {
+		t.Fatalf("the message shows the token: %s", b.Why)
+	}
+	// The platform answers again: after the wait, it works again.
+	os.Remove(filepath.Join(ctl, "refuse"))
+	s.Retry = 20 * time.Millisecond
+	time.Sleep(30 * time.Millisecond)
+	if tok, err := s.Token(context.Background(), "user:alice"); err != nil || tok == "" || tok == "tok-1" {
+		t.Fatalf("again: %q %v", tok, err)
+	}
+	if st := s.Status("user:alice"); st.State != "signed-in" || s.Stopped("user:alice") != "" {
+		t.Fatalf("status after: %+v", st)
+	}
+	if !strings.Contains(log.String(), "personal sign-in works again") {
+		t.Fatal("no log of it working again")
+	}
+	// Stopped again, then signing in again clears it at once.
+	s.Retry = time.Hour
+	nearEnd(s, "user:alice")
+	os.WriteFile(filepath.Join(ctl, "refuse"), nil, 0o600)
+	if st := s.Status("user:alice"); st.State != "expired" {
+		t.Fatalf("not expired: %+v", st)
+	}
+	if n := stoppedLines(log); n != 2 {
+		t.Fatalf("a second time stopped is logged once more, got %d", n)
+	}
+	os.Remove(filepath.Join(ctl, "refuse"))
+	os.Remove(filepath.Join(ctl, "approve"))
+	s.Start("user:alice", "alice", 5*time.Second)
+	os.WriteFile(filepath.Join(ctl, "approve"), nil, 0o600)
+	waitState(t, s, "user:alice", "signed-in")
+	if s.Stopped("user:alice") != "" {
+		t.Fatal("still stopped after signing in again")
+	}
+}
+
+// A token the platform refuses while the CLI still holds it (its refresh
+// not yet due) is checked once more; refused again, the sign-in has
+// stopped working, and stays so while the CLI gives that token.
+func TestATokenThePlatformRefusesAsksToSignInAgain(t *testing.T) {
+	s, ctl, log := signedIn(t)
+	status := 200
+	var checks int
+	var mu sync.Mutex
+	s.Check = func(ctx context.Context, key string) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		checks++
+		if key != "tok-1" {
+			t.Errorf("checked %q", key)
+		}
+		return status, nil
+	}
+	// A refusal the platform does not repeat changes nothing.
+	s.Refused("tok-1")
+	if s.Stopped("user:alice") != "" || checks != 1 {
+		t.Fatal("stopped on a refusal the check did not repeat")
+	}
+	// A key no sign-in issued is not checked.
+	s.Refused("someone-elses-key")
+	if checks != 1 {
+		t.Fatal("checked a key no sign-in issued")
+	}
+	status = 401
+	s.Refused("tok-1")
+	want := "ACTIVATE no longer accepts your sign-in. Sign in again under Settings, Accounts."
+	if s.Stopped("user:alice") != want {
+		t.Fatalf("stopped: %q", s.Stopped("user:alice"))
+	}
+	if st := s.Status("user:alice"); st.State != "expired" || st.Message != want {
+		t.Fatalf("status: %+v", st)
+	}
+	s.Refused("tok-1")
+	if checks != 2 || stoppedLines(log) != 1 || strings.Contains(log.String(), "tok-1") {
+		t.Fatalf("checks %d, log:\n%s", checks, log)
+	}
+	// After the wait the CLI is asked again; it still gives the refused
+	// token, so the sign-in stays stopped.
+	os.WriteFile(filepath.Join(ctl, "same"), nil, 0o600)
+	s.Retry = 20 * time.Millisecond
+	time.Sleep(30 * time.Millisecond)
+	if _, err := s.Token(context.Background(), "user:alice"); err == nil || err.Error() != want {
+		t.Fatalf("the refused token was used again: %v", err)
+	}
+	// A new token works again.
+	os.Remove(filepath.Join(ctl, "same"))
+	time.Sleep(30 * time.Millisecond)
+	if tok, err := s.Token(context.Background(), "user:alice"); err != nil || tok == "tok-1" {
+		t.Fatalf("again: %q %v", tok, err)
+	}
+	if s.Stopped("user:alice") != "" {
+		t.Fatal("still stopped")
+	}
+}
+
+// Accounts asks the platform about a kept sign-in's token, at most once in
+// ten seconds, so it finds one the platform no longer accepts even when no
+// other page has asked the platform anything yet.
+func TestStatusFindsATokenThePlatformNoLongerAccepts(t *testing.T) {
+	s, _, log := signedIn(t)
+	status, checks := 200, 0
+	s.Check = func(ctx context.Context, key string) (int, error) { checks++; return status, nil }
+	if st := s.Status("user:alice"); st.State != "signed-in" || checks != 1 {
+		t.Fatalf("%+v %d", st, checks)
+	}
+	status = 401
+	if st := s.Status("user:alice"); st.State != "signed-in" || checks != 1 {
+		t.Fatalf("checked again within ten seconds: %+v %d", st, checks)
+	}
+	s.mu.Lock()
+	s.checked["user:alice"] = time.Now().Add(-11 * time.Second)
+	s.mu.Unlock()
+	if st := s.Status("user:alice"); st.State != "expired" || st.Message != "ACTIVATE no longer accepts your sign-in. Sign in again under Settings, Accounts." || checks != 2 {
+		t.Fatalf("%+v %d", st, checks)
+	}
+	if stoppedLines(log) != 1 || s.Key("user:alice") != "" {
+		t.Fatal("log or key")
 	}
 }

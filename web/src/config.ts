@@ -32,6 +32,9 @@ export interface AppConfig {
   signIn?: boolean
   /** The person here has not signed in, on a Studio with sign-in. */
   signedOut?: boolean
+  /** The person's kept ACTIVATE sign-in stopped working: what needs it asks
+   *  them to sign in again. */
+  signInStopped?: boolean
   /** The Studio's own sign-in page, where it has one. */
   signInUrl?: string
   /** Models answer a person only with an account of their own
@@ -133,6 +136,12 @@ export function applyRememberedFavicon(): void {
 
 /** Reads of the configuration under way. */
 let reading = 0
+/** Each read's number, in the order they were asked, and the newest whose
+ *  answer was kept: an answer to an older read that arrives after a newer
+ *  one (a read begun just before an ACTIVATE sign-in finished, answered
+ *  after the read the sign-in asked for) is not kept over it. */
+let asked = 0
+let kept = 0
 
 export function useAppConfig(): AppConfig {
   const [cfg, setCfg] = useState<AppConfig>(() => {
@@ -141,9 +150,15 @@ export function useAppConfig(): AppConfig {
     return { ...DEFAULTS, ...brand, brandRemembered: !!brand.appName }
   })
   useEffect(() => {
-    const load = () => { reading++; return fetch('/api/config')
+    const load = () => { reading++; const n = ++asked; return fetch('/api/config')
       .then(r => r.json())
       .then((d: Partial<AppConfig>) => {
+        if (n < kept) {
+          // A newer answer is in: show it, not this one.
+          if (cached) setCfg(cached)
+          return
+        }
+        kept = n
         cached = {
           appName: d.appName || DEFAULTS.appName,
           iconUrl: d.iconUrl ?? null,
@@ -166,6 +181,7 @@ export function useAppConfig(): AppConfig {
           platform: !!d.platform,
           signIn: !!d.signIn,
           signedOut: !!d.signedOut,
+          signInStopped: !!d.signInStopped,
           signInUrl: typeof d.signInUrl === 'string' ? d.signInUrl : '',
           signInFirst: !!d.signInFirst,
           settingsLocked: !!d.settingsLocked,
@@ -179,7 +195,7 @@ export function useAppConfig(): AppConfig {
         rememberBrand(cached)
         setCfg(cached)
       })
-      .catch(() => setCfg({ ...DEFAULTS, loaded: true }))
+      .catch(() => setCfg(n < kept && cached ? cached : { ...DEFAULTS, loaded: true }))
       .finally(() => { reading-- }) }
     // A part that mounts while it is read again (the chat page does, as a
     // sign-in changes) was not there for the event, and what is kept is old.

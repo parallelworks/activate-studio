@@ -577,6 +577,13 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	}
 	set("aiEnabled", eff.AiEnabled)
 	set("platform", c.a.Providers.PlatformAvailable(r, viewer(r)))
+	// Asked after platform, which asks for the person's token and so finds
+	// a kept sign-in that stopped working.
+	if f := c.a.Providers.SignInStopped; f != nil {
+		if u := auth.UserOf(r); u != nil && f(u.ID) != "" {
+			set("signInStopped", true)
+		}
+	}
 	if f := c.a.Providers.LocalCode; f != nil && f(r) {
 		set("localCode", true)
 	}

@@ -389,7 +389,7 @@ Signing in tells Studio who you are. It does not let Studio act for you on the p
 
 For ACTIVATE, choose how you sign in:
 
-- **Sign in with ACTIVATE** (a Studio several people use): a code to approve on the platform. Studio keeps it for you alone and renews it until **Sign out**.
+- **Sign in with ACTIVATE** (a Studio several people use): a code to approve on the platform. Studio keeps it for you alone and renews it until **Sign out**. If the platform stops accepting it, or it cannot be renewed, **ACTIVATE** says **Sign in again**, and so does each page that needs it; click **Sign in again** and approve a new code.
 - **pw CLI on this computer** (a Studio of one): the platforms the pw CLI is signed in to; **Use** picks one, and **Follow the pw CLI's current context** follows it. **Stop using the pw CLI** makes Studio read none of this computer's ACTIVATE sign-ins and never signs the CLI out; **Use it again** turns it back on.
 - **ACTIVATE API key**: a token or key from your account, for models and the platform. The host is the platform's own, such as `platform.example.com`; an address with a path is an endpoint, and **Use as an endpoint** moves it there.
 

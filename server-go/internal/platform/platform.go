@@ -55,6 +55,9 @@ type Platform struct {
 	// SignInKey is the access token of a person's own sign-in made through
 	// the Studio, "" for none (internal/personal sets it).
 	SignInKey func(owner string) string
+	// SignInStopped is why a person's kept sign-in stopped working, ""
+	// while it works or with none (internal/personal).
+	SignInStopped func(owner string) string
 	// OwnKeys is the person's ACTIVATE key and their own model endpoint as
 	// the Studio's key store holds them (owner is SingleOwner with sign-in
 	// off), each nil when absent; set by the chat track, where the keys are

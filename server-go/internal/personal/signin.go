@@ -42,6 +42,13 @@ type SignIns struct {
 	Expire time.Duration
 	// Kept is told whose sign-in was just kept; nil for none.
 	Kept func(owner string)
+	// Check asks the platform about key (GET /api/auth/whoami) and gives
+	// the status it answered, to confirm a refusal before a sign-in is
+	// said to have stopped working; nil, and a refusal is taken as said.
+	Check func(ctx context.Context, key string) (int, error)
+	// Retry is how long a sign-in that stopped working waits before it is
+	// tried again; 0 is a minute.
+	Retry time.Duration
 
 	mu       sync.Mutex
 	runs     map[string]*run
@@ -49,7 +56,43 @@ type SignIns struct {
 	renewing map[string]*renewCall
 	// issued is whose each token handed out is, until it expires.
 	issued map[string]issue
+	// broken is each kept sign-in that stopped working, until it works
+	// again or the person signs in again or out.
+	broken map[string]broken
+	// checking is whose refused token is being checked.
+	checking map[string]bool
+	// checked is when Status last had each person's token checked.
+	checked map[string]time.Time
 }
+
+// broken is why a kept sign-in stopped working: the pw CLI could not
+// renew it, or the platform refused its token.
+type broken struct {
+	why string
+	// token is the token the platform refused; "" when renewing failed.
+	token string
+	at    time.Time
+}
+
+// BrokenError is Token's answer for a sign-in that stopped working: the
+// person is asked to sign in again, and it is logged once, not per call.
+type BrokenError struct{ Why string }
+
+func (e *BrokenError) Error() string { return e.Why }
+
+// Messages for a kept sign-in that stopped working.
+const (
+	notRenewed = "Your ACTIVATE sign-in could not be renewed"
+	refused    = "ACTIVATE no longer accepts your sign-in"
+	againTail  = ". Sign in again under Settings, Accounts."
+)
+
+// secretish is anything in a message that might be a token: a JWT, a
+// pw key, or a long unbroken run of key characters.
+var secretish = regexp.MustCompile(`(?i)\b(?:ey[\w-]+\.[\w-]+\.[\w-]*|pw[tk]_\S+|[a-z0-9_\-]{32,})`)
+
+// redact is msg without anything that looks like a token.
+func redact(msg string) string { return secretish.ReplaceAllString(msg, "[redacted]") }
 
 type issue struct {
 	owner string
@@ -253,7 +296,22 @@ func (s *SignIns) Status(owner string) State {
 	}
 	dir := s.Dir(owner)
 	if rec := readRecord(dir); rec != nil && s.has(dir) {
-		return State{State: "signed-in", Host: rec.Host, Account: rec.Account, SignedIn: rec.SignedIn}
+		st := State{State: "signed-in", Host: rec.Host, Account: rec.Account, SignedIn: rec.SignedIn}
+		// A kept sign-in still has to work: asking for its token (kept, or
+		// renewed when near its end) finds one the CLI cannot renew, and
+		// asking the platform about it one it no longer accepts (as after
+		// the platform dropped its tokens). Only Settings, Accounts asks.
+		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+		defer cancel()
+		tok, err := s.Token(ctx, owner)
+		if err == nil && tok != "" {
+			err = s.checkKept(ctx, owner, tok)
+		}
+		var b *BrokenError
+		if errors.As(err, &b) {
+			st.State, st.Message = "expired", b.Why
+		}
+		return st
 	}
 	if r != nil {
 		return st
@@ -434,6 +492,8 @@ func (s *SignIns) finish(owner, username, host, staging string, started time.Tim
 	}
 	s.mu.Lock()
 	delete(s.tokens, owner)
+	delete(s.broken, owner)
+	delete(s.checked, owner)
 	s.mu.Unlock()
 	if hadOld {
 		go func() { s.signOut(old) }()
@@ -501,6 +561,8 @@ func (s *SignIns) SignOut(owner string) State {
 	s.signOut(s.Dir(owner))
 	s.mu.Lock()
 	delete(s.tokens, owner)
+	delete(s.broken, owner)
+	delete(s.checked, owner)
 	for k, v := range s.issued {
 		if v.owner == owner {
 			delete(s.issued, k)
@@ -546,6 +608,15 @@ func (s *SignIns) Token(ctx context.Context, owner string) (string, error) {
 	if s.tokens == nil {
 		s.tokens = map[string]token{}
 	}
+	// A sign-in that stopped working is tried again after a while, in
+	// case the platform was only away; until then it answers why.
+	if b, ok := s.broken[owner]; ok {
+		if now.Sub(b.at) < s.retry() {
+			s.mu.Unlock()
+			return "", &BrokenError{Why: b.why}
+		}
+		delete(s.tokens, owner)
+	}
 	t, ok := s.tokens[owner]
 	// Fresh enough, or asked moments ago (the CLI renews only close to
 	// the end, so a token near its end is used until it is renewed).
@@ -570,6 +641,21 @@ func (s *SignIns) Token(ctx context.Context, owner string) (string, error) {
 	s.mu.Unlock()
 	value, until, err := s.renew(dir)
 	s.mu.Lock()
+	b, wasBroken := s.broken[owner]
+	switch {
+	case err != nil:
+		err = s.breakLocked(owner, dir, notRenewed+" ("+redact(err.Error())+")"+againTail, "")
+	case wasBroken && b.token != "" && value == b.token:
+		// The CLI still holds the token the platform refused.
+		b.at = s.now()
+		s.broken[owner] = b
+		value, err = "", &BrokenError{Why: b.why}
+	case wasBroken:
+		delete(s.broken, owner)
+		if s.Log != nil {
+			s.Log.Info("personal sign-in works again", "owner", libraries.OwnerHash(owner))
+		}
+	}
 	if err == nil {
 		s.tokens[owner] = token{value: value, until: until, asked: s.now()}
 		if s.issued == nil {
@@ -589,10 +675,113 @@ func (s *SignIns) Token(ctx context.Context, owner string) (string, error) {
 	return value, err
 }
 
+func (s *SignIns) retry() time.Duration {
+	if s.Retry > 0 {
+		return s.Retry
+	}
+	return time.Minute
+}
+
+// breakLocked marks owner's sign-in as stopped working, logging it once
+// (never the token), and is the error to answer with.
+func (s *SignIns) breakLocked(owner, dir, why, token string) error {
+	if s.broken == nil {
+		s.broken = map[string]broken{}
+	}
+	if _, was := s.broken[owner]; !was && s.Log != nil {
+		host := ""
+		if rec := readRecord(dir); rec != nil {
+			host = rec.Host
+		}
+		s.Log.Warn("personal sign-in stopped working; the person is asked to sign in again", "owner", libraries.OwnerHash(owner), "host", host, "why", why)
+	}
+	s.broken[owner] = broken{why: why, token: token, at: s.now()}
+	delete(s.tokens, owner)
+	return &BrokenError{Why: why}
+}
+
+// Refused hears that the platform answered 401 to key. A key one of the
+// kept sign-ins issued is checked once more (Check), and if the platform
+// refuses it again, that sign-in has stopped working: the person is asked
+// to sign in again. Keys it did not issue are not its concern.
+func (s *SignIns) Refused(key string) {
+	owner := s.OwnerOfToken(key)
+	if owner == "" {
+		return
+	}
+	s.mu.Lock()
+	if _, ok := s.broken[owner]; ok || s.checking[owner] {
+		s.mu.Unlock()
+		return
+	}
+	if s.checking == nil {
+		s.checking = map[string]bool{}
+	}
+	s.checking[owner] = true
+	s.mu.Unlock()
+	status := 401
+	if s.Check != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		st, err := s.Check(ctx, key)
+		cancel()
+		if err != nil {
+			st = 0
+		}
+		status = st
+	}
+	s.mu.Lock()
+	delete(s.checking, owner)
+	if status == 401 {
+		if t, ok := s.tokens[owner]; !ok || t.value == key {
+			s.breakLocked(owner, s.Dir(owner), refused+againTail, key)
+		}
+	}
+	s.mu.Unlock()
+}
+
+// checkKept asks the platform about owner's token (Check) unless it was
+// asked in the last ten seconds; a refusal means the sign-in stopped
+// working.
+func (s *SignIns) checkKept(ctx context.Context, owner, tok string) error {
+	if s.Check == nil {
+		return nil
+	}
+	s.mu.Lock()
+	if s.checked == nil {
+		s.checked = map[string]time.Time{}
+	}
+	if s.now().Sub(s.checked[owner]) < 10*time.Second {
+		s.mu.Unlock()
+		return nil
+	}
+	s.checked[owner] = s.now()
+	s.mu.Unlock()
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	status, err := s.Check(cctx, tok)
+	cancel()
+	if err != nil || status != 401 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if b, ok := s.broken[owner]; ok {
+		return &BrokenError{Why: b.why}
+	}
+	return s.breakLocked(owner, s.Dir(owner), refused+againTail, tok)
+}
+
+// Stopped is why owner's kept sign-in stopped working, "" while it works
+// or with none.
+func (s *SignIns) Stopped(owner string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.broken[owner].why
+}
+
 func (s *SignIns) renew(dir string) (string, time.Time, error) {
 	out, err := s.exec(context.Background(), dir, 30*time.Second, "auth", "token", "--print", "-o", "json")
 	if err != nil {
-		return "", time.Time{}, errors.New("Your platform sign-in could not be renewed (" + err.Error() + "). Sign in again under Settings, Accounts.")
+		return "", time.Time{}, err
 	}
 	var d struct {
 		AccessToken string   `json:"access_token"`
@@ -602,7 +791,7 @@ func (s *SignIns) renew(dir string) (string, time.Time, error) {
 		json.Unmarshal([]byte(out[i:j+1]), &d)
 	}
 	if strings.TrimSpace(d.AccessToken) == "" {
-		return "", time.Time{}, errors.New("Your platform sign-in gave no token. Sign in again under Settings, Accounts.")
+		return "", time.Time{}, errors.New("the pw CLI gave no token")
 	}
 	until := s.now().Add(10 * time.Minute)
 	if d.ExpiresIn != nil {
@@ -618,7 +807,8 @@ func (s *SignIns) Key(owner string) string {
 	defer cancel()
 	k, err := s.Token(ctx, owner)
 	if err != nil {
-		if s.Log != nil {
+		var b *BrokenError
+		if s.Log != nil && !errors.As(err, &b) {
 			s.Log.Warn("personal sign-in: no token", "owner", libraries.OwnerHash(owner), "err", err.Error())
 		}
 		return ""

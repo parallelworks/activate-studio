@@ -81,6 +81,10 @@ type Providers struct {
 	// SignInOwner is whose sign-in issued key, "" for a key no sign-in
 	// issued (internal/personal).
 	SignInOwner func(key string) string
+	// SignInStopped is why the person's kept sign-in stopped working (the
+	// pw CLI could not renew it, or the platform refused its token), ""
+	// while it works or with none (internal/personal).
+	SignInStopped func(sub string) string
 	// SpaceFolder is owner's own space, My library: the site it is on
 	// and its folder there; "" and "" for none.
 	SpaceFolder func(owner string) (site, folder string)

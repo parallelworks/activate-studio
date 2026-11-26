@@ -1,6 +1,8 @@
 package personal
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"os"
 	"sync"
@@ -49,9 +51,34 @@ func Register(mux *http.ServeMux, a *app.App) {
 		}
 		return m.SignIns.Key(owner)
 	}
+	stopped := func(owner string) string {
+		if !m.enabled() || owner == "" || owner == "single" {
+			return ""
+		}
+		return m.SignIns.Stopped(owner)
+	}
 	a.Providers.SignInKey = key
 	a.Providers.SignInOwner = m.SignIns.OwnerOfToken
-	platform.Of(a).SignInKey = key
+	a.Providers.SignInStopped = stopped
+	p := platform.Of(a)
+	p.SignInKey = key
+	p.SignInStopped = stopped
+	// A refusal of a token a sign-in issued is checked once more against
+	// the platform before the person is asked to sign in again.
+	m.SignIns.Check = func(ctx context.Context, key string) (int, error) {
+		origin := p.Origin()
+		if origin == "" {
+			return 0, errors.New("no platform")
+		}
+		res, cancel, err := platform.Request(ctx, http.MethodGet, origin+"/api/auth/whoami", map[string]string{"Authorization": "Bearer " + key}, nil, 15*time.Second)
+		if err != nil {
+			return 0, err
+		}
+		defer cancel()
+		res.Body.Close()
+		return res.StatusCode, nil
+	}
+	platform.OnRefused(m.SignIns.Refused)
 	pwhome.Set(func(k string) string {
 		owner := m.SignIns.OwnerOfToken(k)
 		if owner == "" {
