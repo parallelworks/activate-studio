@@ -23,15 +23,29 @@ func TestMentionsIn(t *testing.T) {
 		{"@[Notes: draft.md]", []mention{{path: "Notes: draft.md"}}},
 	}
 	for _, c := range cases {
-		if got := mentionsIn(c.text); !reflect.DeepEqual(got, c.want) {
+		if got := mentionsIn(c.text, nil); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("mentionsIn(%q) = %#v, want %#v", c.text, got, c.want)
+		}
+	}
+	// By the name the person sees, as the picker writes it now: the longest
+	// name that fits, in any case; one two libraries share names neither.
+	names := map[string]string{"u-space-studio": "My library", "u-space-studio-2": "My library 2", "kb": "Shared library", "a": "Twin", "b": "twin"}
+	for text, want := range map[string][]mention{
+		"see @[My library:notes/a.md]":        {{path: "notes/a.md", lib: "u-space-studio"}},
+		"see @[my library 2:notes/a.md]":      {{path: "notes/a.md", lib: "u-space-studio-2"}},
+		"and @[u-space-studio:notes/a.md]":    {{path: "notes/a.md", lib: "u-space-studio"}},
+		"and @[Shared library: reports/x.md]": {{path: "reports/x.md", lib: "kb"}},
+		"@[Twin:x.md]":                        {{path: "Twin:x.md"}},
+	} {
+		if got := mentionsIn(text, names); !reflect.DeepEqual(got, want) {
+			t.Errorf("mentionsIn(%q) = %#v, want %#v", text, got, want)
 		}
 	}
 	many := ""
 	for i := 0; i < 12; i++ {
 		many += "@[f" + string(rune('a'+i)) + ".md] "
 	}
-	if n := len(mentionsIn(many)); n != maxMentions {
+	if n := len(mentionsIn(many, nil)); n != maxMentions {
 		t.Errorf("kept %d mentions, want %d", n, maxMentions)
 	}
 }

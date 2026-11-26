@@ -13,7 +13,9 @@ import (
 )
 
 // Files the user picked with @ in the composer. The picker writes each as
-// @[path], or @[library:path] for a library other than the main one, which
+// @[path], or @[library:path] for a library other than the main one, by
+// the library's name as the person sees it (its id where the name would
+// not read back as one; messages written before name it by id), which
 // reads plainly in the message and which the web app draws as a link to
 // the file. A pasted citation link, [name](#open=file:path&lib=id), counts
 // the same. Before the first model call the server reads the index's text
@@ -36,8 +38,9 @@ const (
 type mention struct{ path, lib string }
 
 // mentionsIn is the files text links to, in order, each once, at most
-// maxMentions.
-func mentionsIn(text string) []mention {
+// maxMentions. names is the libraries' names the person sees, by id, which
+// an @[name:path] may use.
+func mentionsIn(text string, names map[string]string) []mention {
 	type found struct {
 		at        int
 		path, lib string
@@ -46,7 +49,9 @@ func mentionsIn(text string) []mention {
 	for _, ix := range mentionAtRe.FindAllStringSubmatchIndex(text, -1) {
 		body := strings.TrimSpace(text[ix[2]:ix[3]])
 		lib := ""
-		if m := mentionLibRe.FindStringSubmatch(body); m != nil {
+		if id, rest, ok := namedIn(body, names); ok {
+			lib, body = id, rest
+		} else if m := mentionLibRe.FindStringSubmatch(body); m != nil {
 			lib, body = m[1], m[2]
 		}
 		all = append(all, found{ix[0], body, lib})
@@ -79,14 +84,52 @@ func mentionsIn(text string) []mention {
 	return out
 }
 
+// namedIn: body is name:path for one library's name in names (by id),
+// ignoring case; a name two libraries share names neither.
+func namedIn(body string, names map[string]string) (id, rest string, ok bool) {
+	low := strings.ToLower(body)
+	best, n := "", 0
+	for lid, name := range names {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" || !strings.HasPrefix(low, name+":") {
+			continue
+		}
+		switch {
+		case len(name) > n:
+			best, n = lid, len(name)
+		case len(name) == n:
+			best = ""
+		}
+	}
+	if best == "" {
+		return "", "", false
+	}
+	return best, strings.TrimSpace(body[n+1:]), true
+}
+
+// libraryNames is the names of the libraries ctx's person sees, by id.
+func (m *Module) libraryNames(ctx ToolCtx) map[string]string {
+	if m.Corpus == nil || m.Corpus.Reg == nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, l := range m.Corpus.Reg.List(m.primaryLabel(), viewerOfCtx(ctx)) {
+		out[l.ID] = l.Label
+	}
+	return out
+}
+
 // mentionNote is the system prompt's section for the files the user's
 // message links, or "" when it links none. Each file is read with the
 // reader's own access, through the library the link names (the
 // conversation's library when it names none), and a file that cannot be
 // read says why in its place.
 func (m *Module) mentionNote(r *http.Request, text string, ctx ToolCtx) string {
-	ms := mentionsIn(text)
-	if len(ms) == 0 || m.Corpus == nil {
+	if m.Corpus == nil || !strings.Contains(text, "@[") && !strings.Contains(text, "#open=file:") {
+		return ""
+	}
+	ms := mentionsIn(text, m.libraryNames(ctx))
+	if len(ms) == 0 {
 		return ""
 	}
 	each := max(minMentionChars, mentionBudget/len(ms))
@@ -107,7 +150,11 @@ func (m *Module) mentionBlock(c context.Context, mn mention, ctx ToolCtx, each i
 	head := "### " + mn.path
 	var want any
 	if mn.lib != "" {
-		head += " [library " + mn.lib + "]"
+		head += " [library " + mn.lib
+		if name := m.libraryNames(ctx)[mn.lib]; name != "" && name != mn.lib {
+			head += ", " + name
+		}
+		head += "]"
 		want = mn.lib
 	}
 	lib, err := m.namedLibrary(want, ctx)

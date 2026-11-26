@@ -17,15 +17,33 @@ describe('@ file picker', () => {
     expect(mentionQuery('@rep and', 8)).toBeNull()
     expect(mentionQuery('@[reports/a.md]', 15)).toBeNull()
   })
-  it('writes the token, with the library when it is not the main one', () => {
-    expect(mentionToken('reports/a b.md', 'kb', 'kb')).toBe('@[reports/a b.md]')
-    expect(mentionToken('specs/pump.pdf', 'archive', 'kb')).toBe('@[archive:specs/pump.pdf]')
+  const libs = [
+    { id: 'kb', label: 'Shared library', primary: true }, { id: 'archive', label: 'Archive' },
+    { id: 'u-space-studio', label: 'My library' }, { id: 'u-space-studio-2', label: 'My library 2' },
+    { id: 'a1', label: 'Twin' }, { id: 'a2', label: 'twin' }, { id: 'odd', label: 'Notes: 2024' },
+  ]
+  // The id of a library, u-space-studio, showed in the box and the message.
+  it('writes the token, with the library by its name when it is not the main one', () => {
+    expect(mentionToken('reports/a b.md', 'kb', libs)).toBe('@[reports/a b.md]')
+    expect(mentionToken('specs/pump.pdf', 'archive', libs)).toBe('@[Archive:specs/pump.pdf]')
+    expect(mentionToken('notes/a.md', 'u-space-studio', libs)).toBe('@[My library:notes/a.md]')
+    // By id where the name would not read back as this library alone.
+    expect(mentionToken('x.md', 'a1', libs)).toBe('@[a1:x.md]')
+    expect(mentionToken('x.md', 'odd', libs)).toBe('@[odd:x.md]')
   })
-  it('reads a token back to its file', () => {
-    expect(parseMention('archive:specs/pump.pdf', ['kb', 'archive'])).toEqual({ path: 'specs/pump.pdf', lib: 'archive' })
+  it('reads a token back to its file, by the name or the id', () => {
+    expect(parseMention('Archive:specs/pump.pdf', libs)).toEqual({ path: 'specs/pump.pdf', lib: 'archive' })
+    expect(parseMention('my library:notes/a.md', libs)).toEqual({ path: 'notes/a.md', lib: 'u-space-studio' })
+    expect(parseMention('My library 2:notes/a.md', libs)).toEqual({ path: 'notes/a.md', lib: 'u-space-studio-2' })
+    expect(parseMention('archive:specs/pump.pdf', libs)).toEqual({ path: 'specs/pump.pdf', lib: 'archive' })
+    expect(parseMention('u-space-studio:notes/a.md', libs)).toEqual({ path: 'notes/a.md', lib: 'u-space-studio' })
+    expect(parseMention('Twin:x.md', libs)).toEqual({ path: 'Twin:x.md' })
     // A colon that names no library is part of the path.
-    expect(parseMention('notes:plan.md', ['kb'])).toEqual({ path: 'notes:plan.md' })
-    expect(parseMention(' reports/a.md ', ['kb'])).toEqual({ path: 'reports/a.md' })
+    expect(parseMention('notes:plan.md', libs)).toEqual({ path: 'notes:plan.md' })
+    expect(parseMention(' reports/a.md ', libs)).toEqual({ path: 'reports/a.md' })
+    for (const l of libs) for (const path of ['a/b.md', 'c d.md']) {
+      expect(parseMention(mentionToken(path, l.id, libs).slice(2, -1), libs)).toEqual(l.primary ? { path } : { path, lib: l.id })
+    }
   })
 })
 

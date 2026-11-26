@@ -344,3 +344,120 @@ func TestUnderSignInALibrarysFolderIsThePersonsOwnToOpen(t *testing.T) {
 		t.Errorf("another's cluster: %v", out)
 	}
 }
+
+// pw code that stopped answering was offered for up to a minute, and a
+// chat started then said what ssh said.
+func TestPWCodeThatStopsAnsweringIsSaidPlainly(t *testing.T) {
+	f := &fakePW{script: helloTurn, status: map[string]any{"machineId": "d9", "hostname": "login1"}}
+	m := signInStudio(t, f)
+	sock := pwcodetest.Socket(t, f)
+	gone := false
+	pwSites().Daemon.SetBridgeSpawn(func(resource, key string) *exec.Cmd {
+		if gone {
+			return exec.Command("sh", "-c", `echo "bash: line 1: pw: command not found" >&2; exit 127`)
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=TestStartBridgeHelper")
+		cmd.Env = append(os.Environ(), "START_BRIDGE_SOCK="+sock)
+		return cmd
+	})
+	withLibraries(t, m, &placeLibrary{site: "testcluster"})
+	root := m.A.Cfg.KBRoot
+	os.MkdirAll(filepath.Join(root, "runs"), 0o755)
+	m.bridgeRunFn = func(ctx context.Context, site, key string, argv []string, _ time.Duration) (remote.Result, error) {
+		out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).Output()
+		return remote.Result{Stdout: string(out)}, err
+	}
+	call := func() (int, string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		if err := m.startInLibrary(rec, as("cy", http.MethodGet, "/api/chat/pwcode/start/library?library=kb&path=runs", "")); err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		why, _ := out["detail"].(string)
+		return rec.Code, why
+	}
+	if code, why := call(); code != 200 {
+		t.Fatalf("%d %s", code, why)
+	}
+	// It stops: the bridge to it is gone, and pw is not there any more.
+	gone = true
+	pwSites().Daemon.CloseBridges()
+	const plain = "pw code does not answer for you on this Studio's machine now. Try again in a moment; if it goes on, tell the Studio's administrator."
+	body := `"engine":"pwcode","pwcodeFolder":"` + filepath.Join(root, "runs") + `","pwcodeLibrary":"kb","pwcodePath":"runs",`
+	// Sent while the look a moment ago still stands: the start fails, and
+	// says so plainly.
+	sse := sendAs(t, m, "cy", m.Conv.Create(nil, "cy").ID, "u1", "", body)
+	if !strings.Contains(sse, `"message":"`+plain+`"`) || strings.Contains(sse, "command not found") {
+		t.Errorf("sent at once:\n%s", sse)
+	}
+	// The menu, a few seconds on, looks again.
+	m.pw.mu.Lock()
+	for k, h := range m.pw.here {
+		h.at = h.at.Add(-placeFresh)
+		m.pw.here[k] = h
+	}
+	m.pw.mu.Unlock()
+	if code, why := call(); code != 409 || why != plain {
+		t.Errorf("menu: %d %q", code, why)
+	}
+	sse = sendAs(t, m, "cy", m.Conv.Create(nil, "cy").ID, "u1", "", body)
+	if !strings.Contains(sse, `"message":"`+plain+`"`) || strings.Contains(sse, "command not found") || len(f.created) != 0 {
+		t.Errorf("sent later (made %d):\n%s", len(f.created), sse)
+	}
+}
+
+// pw code that cannot be started on the Studio's machine is said plainly in
+// the menu, not by what the pw CLI printed; and it is offered again a few
+// seconds after it answers again, not minutes.
+func TestPWCodeThatDoesNotStartHereIsSaidPlainlyAndComesBack(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "pw.sock")
+	cli := filepath.Join(dir, "pw")
+	os.WriteFile(cli, []byte("#!/bin/sh\necho '2026-01-01T00:00:00Z [ERROR] Get \"http://daemon/v1/status\": context deadline exceeded' >&2\nexit 1\n"), 0o755)
+	f := &fakePW{script: helloTurn}
+	m, base := pwModule(t, f, map[string]string{"PW_CODE_SOCKET": sock, "PW_CLI": cli})
+	withLibraries(t, m, nil)
+	os.MkdirAll(filepath.Join(m.A.Cfg.KBRoot, "runs"), 0o755)
+	const plain = "pw code does not answer for you on this Studio's machine now. Try again in a moment; if it goes on, tell the Studio's administrator."
+	if code, out := askPlace(t, base, "kb", "runs"); code != 409 || out["detail"] != plain {
+		t.Fatalf("not started: %d %v", code, out)
+	}
+	// It runs again.
+	pwcodetest.Listen(t, sock, f)
+	if code, _ := askPlace(t, base, "kb", "runs"); code != 409 {
+		t.Errorf("a moment on: %d", code)
+	}
+	m.pw.mu.Lock()
+	for k, a := range m.pw.avail {
+		a.at = a.at.Add(-placeFresh)
+		m.pw.avail[k] = a
+	}
+	m.pw.mu.Unlock()
+	if code, out := askPlace(t, base, "kb", "runs"); code != 200 || out["machine"] != "studio" {
+		t.Errorf("a few seconds on: %d %v", code, out)
+	}
+}
+
+// A look at pw code that the page gave up on (the menu closed) learned
+// nothing: it says the plain reason and is not kept for the next ask.
+func TestALookGivenUpOnIsNotKept(t *testing.T) {
+	dir := t.TempDir()
+	cli := filepath.Join(dir, "pw")
+	os.WriteFile(cli, []byte("#!/bin/sh\nsleep 5\n"), 0o755)
+	m, _ := pwModule(t, &fakePW{}, map[string]string{"PW_CODE_SOCKET": filepath.Join(dir, "pw.sock"), "PW_CLI": cli})
+	ctx, cancel := context.WithCancel(context.Background())
+	r := httptest.NewRequest(http.MethodGet, "/api/chat/pwcode/start/library", nil).WithContext(ctx)
+	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
+	why, _ := m.pwcodeAvailability(ctx, r)
+	if why != "pw code does not answer for you on this Studio's machine now. Try again in a moment; if it goes on, tell the Studio's administrator." {
+		t.Errorf("said %q", why)
+	}
+	m.pw.mu.Lock()
+	a := m.pw.avail[userID(r)]
+	m.pw.mu.Unlock()
+	if a.ttl != 0 {
+		t.Errorf("kept %v", a.ttl)
+	}
+}

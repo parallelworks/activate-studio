@@ -65,7 +65,7 @@ export function TransferPanel({ openFile }: {
               {t.phase === 'done' && <Button variant="ghost" size="sm" onClick={() => dismissTransfer(t.id)}>dismiss</Button>}
             </div>
             <ProgressBar className="upload-progress" aria-label={VERB[t.kind ?? 'upload'].label} value={amount(t)} />
-            {t.phase !== 'done' && t.current && <div className="upload-current">{t.current}</div>}
+            {t.phase !== 'done' && t.current && <div className="upload-current">{shown(t.current)}</div>}
             {t.indexError && t.kind !== 'text' && (
               <Callout tone="error" size="sm" className="upload-failed">
                 {t.kind === 'upload' ? `Uploaded, but indexing failed, so these files are not searchable yet: ${t.indexError}` : t.indexError}
@@ -73,7 +73,7 @@ export function TransferPanel({ openFile }: {
             )}
             {t.failed.length > 0 && (
               <Callout tone="error" size="sm" className="upload-failed">
-                {t.failed.length} failed: {t.failed.slice(0, 3).map(f => `${f.name} (${f.error})`).join(', ')}{t.failed.length > 3 ? '…' : ''}
+                {t.failed.length} failed: {t.failed.slice(0, 3).map(f => `${shown(f.name)} (${f.error})`).join(', ')}{t.failed.length > 3 ? '…' : ''}
               </Callout>
             )}
           </div>

@@ -130,6 +130,15 @@ func (b *builds) settleDenied(id string) {
 	b.s.Reg.RecordDenied(id, folders, len(d)-len(folders))
 }
 
+// libName is a library as the index log names it, which people read in
+// Settings: its name, or its id where it has none.
+func (b *builds) libName(id string) string {
+	if d := b.s.Reg.BuiltDef(id); d != nil && strings.TrimSpace(d.Label) != "" {
+		return d.Label
+	}
+	return id
+}
+
 func (b *builds) log(msg string) {
 	b.ix().Log.Write(msg)
 	b.s.a.Log.Info(msg)
@@ -939,7 +948,7 @@ func (b *builds) fullBuild(id string, own *index.OwnJob) (int64, error) {
 	s := b.ix().Settings.Built(id)
 	// A stop between the two renames of an earlier swap left the old index aside.
 	if index.RecoverSwap(tree, []string{filepath.Join(bd.IndexDir, ".old")}) != "" {
-		b.log(fmt.Sprintf("library %s: its index was put aside by a swap a stop cut off; restored it", id))
+		b.log(fmt.Sprintf("library %s: its index was put aside by a swap a stop cut off; restored it", b.libName(id)))
 	}
 	state := "building"
 	if exists(filepath.Join(tree, "db.db")) {
@@ -1381,7 +1390,7 @@ func (b *builds) requestSync(id string, delay time.Duration) {
 		delete(b.kicks, id)
 		b.mu.Unlock()
 		if _, err := b.sync(id); err != nil {
-			b.log(fmt.Sprintf("library %s: sync failed: %s", id, err))
+			b.log(fmt.Sprintf("library %s: sync failed: %s", b.libName(id), err))
 		}
 	})
 }
@@ -1427,7 +1436,7 @@ func (b *builds) startSync(ctx context.Context) {
 		}
 		// A swap a stop cut off between its renames: the old index is put back before anything else.
 		if index.RecoverSwap(d.IndexRoot, []string{filepath.Join(d.Build.IndexDir, ".old")}) != "" {
-			b.log(fmt.Sprintf("library %s: restored its index from a swap a stop cut off", id))
+			b.log(fmt.Sprintf("library %s: restored its index from a swap a stop cut off", b.libName(id)))
 		}
 		st := d.Build.State
 		switch {
@@ -1435,14 +1444,14 @@ func (b *builds) startSync(ctx context.Context) {
 			// A change of depth a stop cut off: its index is whole, and the depth
 			// record was not written, so a sync applies the change again.
 			b.s.Reg.UpdateBuild(id, func(lb *libraries.LocalBuild) { lb.State, lb.Pending, lb.HasPending = "ready", nil, true })
-			b.log(fmt.Sprintf("library %s: applying its index depth was interrupted; finishing it", id))
+			b.log(fmt.Sprintf("library %s: applying its index depth was interrupted; finishing it", b.libName(id)))
 			go func() {
 				if _, err := b.sync(id); err != nil {
-					b.log(fmt.Sprintf("library %s: sync failed: %s", id, err))
+					b.log(fmt.Sprintf("library %s: sync failed: %s", b.libName(id), err))
 				}
 			}()
 		case st == "building" || st == "updating":
-			b.log(fmt.Sprintf("library %s: the build was interrupted; building it again from what was read so far", id))
+			b.log(fmt.Sprintf("library %s: the build was interrupted; building it again from what was read so far", b.libName(id)))
 			b.start(id)
 		}
 	}
@@ -1484,9 +1493,9 @@ func (b *builds) startSync(ctx context.Context) {
 				}
 				changed, err := b.sync(id)
 				if err != nil {
-					b.log(fmt.Sprintf("library %s: sync failed: %s", id, err))
+					b.log(fmt.Sprintf("library %s: sync failed: %s", b.libName(id), err))
 				} else if len(changed) > 0 {
-					b.log(fmt.Sprintf("library %s: indexed again %s", id, strings.Join(changed, ", ")))
+					b.log(fmt.Sprintf("library %s: indexed again %s", b.libName(id), strings.Join(changed, ", ")))
 				}
 			}
 		}

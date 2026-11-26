@@ -63,6 +63,11 @@ function studio() {
       case '/api/chat/stream': sent.push(JSON.parse(String(init?.body))); return new Response('', { status: 500 })
       case '/api/kb/tree': {
         const at = url.searchParams.get('path') ?? ''
+        if (url.searchParams.get('library') === 'all') {
+          if (at === '') return json({ path: '', entries: [{ name: 'My library (on testcluster)', path: 'u-space-studio', type: 'dir', size: 0, mtime: 0 }] })
+          if (at === 'u-space-studio') return json({ path: at, entries: [{ name: 'note.md', path: 'u-space-studio/note.md', type: 'file', size: 1, mtime: 0 }] })
+          return json({ path: at, entries: [] })
+        }
         return json({ path: at, entries: at === '' ? [{ name: 'plans', path: 'plans', type: 'dir', size: 0, mtime: 0 }, { name: 'a.md', path: 'a.md', type: 'file', size: 1, mtime: 0 }] : [] })
       }
       case '/api/tags': return json({ tags: [] })
@@ -73,6 +78,7 @@ function studio() {
   }))
 }
 
+const LIBS = [lib('kb', 'Projects'), lib('u-work', 'Work'), lib('u-space-studio', 'My library')]
 const adapter = () => createStudioAdapter()
 const send = (id: string) => adapter().streamCompletion!({ conversationId: id, model: 'm', messages: [{ role: 'user', content: 'Hi' }] } as never, { onToken: () => {}, onDone: () => {}, onError: () => {} } as never, new AbortController().signal).catch(() => {})
 const settle = (ms = 60) => act(async () => { await new Promise(r => setTimeout(r, ms)) })
@@ -91,7 +97,7 @@ afterEach(() => { cleanup(); window.removeEventListener(CHAT_HERE_EVENT, heard);
 
 describe('New pw code chat here', () => {
   it('opens a chat on pw code, on the machine and in the folder the Studio found, for that chat alone', async () => {
-    await chatHere({ library: 'u-work', path: 'runs' }, 'kb')
+    await chatHere({ library: 'u-work', path: 'runs' }, LIBS)
     expect(events).toEqual([''])
     expect(location.hash).toBe('#view=chat')
     expect(startOf(null)).toMatchObject({ machine: { id: 'm2' }, folder: '/data/runs', library: { id: 'u-work', path: 'runs', machineName: 'gpu' } })
@@ -109,7 +115,7 @@ describe('New pw code chat here', () => {
   })
 
   it('does not go to a chat that was already there', async () => {
-    await chatHere({ library: 'u-work', path: 'runs' }, 'kb')
+    await chatHere({ library: 'u-work', path: 'runs' }, LIBS)
     await send('c-old')
     for (const k of ['engine', 'pwcodeMachine', 'pwcodeFolder', 'pwcodeLibrary']) expect(sent[0], k).not.toHaveProperty(k)
     expect(startOf(null).library?.id).toBe('u-work')
@@ -117,17 +123,18 @@ describe('New pw code chat here', () => {
 
   it('puts a file in the message as a link to it, its folder the one it is in', async () => {
     place = here
-    await chatHere({ library: 'kb', path: 'plans/budget.md' }, 'kb')
+    await chatHere({ library: 'kb', path: 'plans/budget.md' }, LIBS)
     expect(events).toEqual(['@[plans/budget.md]'])
     expect(startOf(null)).toEqual({ folder: '/kb/plans', library: { id: 'kb', path: 'plans/budget.md', machineName: 'box' } })
-    expect(fileReference('runs/a.md', 'u-work', 'kb')).toBe('@[u-work:runs/a.md]')
-    expect(fileReference('runs/a [1] (x).md', 'u-work', 'kb')).toBe('[a 1 (x).md](#open=file:runs/a%20%5B1%5D%20%28x%29.md&lib=u-work)')
+    expect(fileReference('runs/a.md', 'u-work', LIBS)).toBe('@[Work:runs/a.md]')
+    expect(fileReference('notes/a.md', 'u-space-studio', LIBS)).toBe('@[My library:notes/a.md]')
+    expect(fileReference('runs/a [1] (x).md', 'u-work', LIBS)).toBe('[a 1 (x).md](#open=file:runs/a%20%5B1%5D%20%28x%29.md&lib=u-work)')
   })
 
   it('says why it cannot, and opens nothing', async () => {
     place = { status: 409, detail: 'gpu has no pw code connected to ACTIVATE as you.' }; placeStatus = 409
     const error = vi.spyOn(toast, 'error').mockImplementation(() => '')
-    await chatHere({ library: 'u-work', path: 'runs' }, 'kb')
+    await chatHere({ library: 'u-work', path: 'runs' }, LIBS)
     expect(error).toHaveBeenCalledWith('gpu has no pw code connected to ACTIVATE as you.')
     expect(events).toEqual([]); expect(startOf(null)).toEqual({}); expect(location.hash).toBe('')
   })
@@ -143,7 +150,7 @@ describe('New pw code chat here', () => {
   })
 
   it('a switch of what answers it is the new chat\'s', async () => {
-    await chatHere({ library: 'u-work', path: 'runs' }, 'kb')
+    await chatHere({ library: 'u-work', path: 'runs' }, LIBS)
     await switchEngine('studio')
     const c = await adapter().conversations.create('New')
     await send(c.id)
@@ -235,6 +242,68 @@ describe('in the Library\'s menu', () => {
     expect(screen.getAllByRole('menuitem').length).toBeGreaterThan(3)
   })
 
+  // pw code that stopped answering was offered for up to a minute.
+  it('looks again each time it opens a few seconds on, and says so in the open menu, both ways', async () => {
+    const real = Date.now
+    let now = real()
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const reopen = async () => {
+      fireEvent.keyDown(item(), { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('menuitem')).toBeNull())
+      fireEvent.contextMenu(screen.getByText('plans'))
+      await screen.findByRole('menuitem', { name: /^New pw code chat here/ })
+    }
+    const reads = () => asked.filter(a => a.includes('/start/library')).length
+    await open()
+    await settle()
+    expect(reads()).toBe(1)
+    // At once again: what the page has.
+    await reopen(); await settle()
+    expect(reads()).toBe(1)
+    const stopped = 'pw code does not answer for you on this Studio\'s machine now. Try again in a moment; if it goes on, tell the Studio\'s administrator.'
+    place = { status: 409, detail: stopped }; placeStatus = 409
+    now += 6_000
+    await reopen()
+    await waitFor(() => expect(item()).toHaveAttribute('aria-disabled', 'true'))
+    expect(item()).toHaveTextContent(stopped)
+    expect(reads()).toBe(2)
+    place = there; placeStatus = 200
+    now += 6_000
+    await reopen()
+    await waitFor(() => expect(item()).not.toHaveAttribute('aria-disabled', 'true'))
+    // A click on an answer some seconds old looks again first.
+    place = { status: 409, detail: stopped }; placeStatus = 409
+    now += 6_000
+    const error = vi.spyOn(toast, 'error').mockImplementation(() => '')
+    fireEvent.click(item())
+    await waitFor(() => expect(error).toHaveBeenCalledWith(stopped))
+    expect(events).toEqual([])
+  })
+
+  // u-space-studio showed in the New folder dialog, the box and the message.
+  it('names a library by its name, not its id, in what it shows and writes', async () => {
+    libraries = [lib('kb', 'Projects'), lib('u-space-studio', 'My library')]
+    place = { ...here, library: 'u-space-studio', path: '', file: 'note.md' }
+    setLibrary('all')
+    await open('My library (on testcluster)', 'New folder')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New folder' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('My library')
+    expect(dialog).not.toHaveTextContent('u-space-studio')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByText('My library (on testcluster)'))
+    fireEvent.contextMenu(await screen.findByText('note.md'))
+    const got: string[] = []
+    const on = (e: Event) => got.push((e as CustomEvent<{ text: string }>).detail.text)
+    window.addEventListener('ade-chat-insert', on)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Add to chat' }))
+    window.removeEventListener('ade-chat-insert', on)
+    expect(got).toEqual(['@[My library:note.md]'])
+    fireEvent.contextMenu(screen.getByText('note.md'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^New pw code chat here/ }))
+    await waitFor(() => expect(events).toEqual(['@[My library:note.md]']))
+  })
+
   it('does not open a menu that was closed again', async () => {
     place = { status: 409, detail: 'no' }; placeStatus = 409
     let go!: () => void
@@ -266,7 +335,7 @@ describe('on the chat page', () => {
     await waitFor(() => expect(document.querySelector('.chat-canvas textarea')).toBeTruthy(), { timeout: 5000 })
     await readEngine(null)
     place = here
-    await act(async () => { await chatHere({ library: 'kb', path: 'plans/budget.md' }, 'kb') })
+    await act(async () => { await chatHere({ library: 'kb', path: 'plans/budget.md' }, LIBS) })
     await settle(400)
     const box = () => document.querySelector<HTMLTextAreaElement>('.chat-canvas textarea')!
     expect(box().value).toBe('@[plans/budget.md] ')

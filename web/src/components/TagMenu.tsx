@@ -2,6 +2,7 @@ import { ReactElement, useEffect, useId, useState } from 'react'
 import { Button, Callout, IconButton, Input, Loader, Popover, PopoverClose, toast } from '@parallelworks/ui'
 import { CloseIcon } from '@parallelworks/ui/icons'
 import { api } from '../api'
+import { useShownPath } from '../libraryPath'
 
 type TagMenuProps = {
   paths: string[]
@@ -74,6 +75,7 @@ function TagPanel({ paths, headId, onApplied }: {
   headId: string
   onApplied?: (updated: Record<string, string[]>) => void
 }) {
+  const shown = useShownPath()
   const [vocab, setVocab] = useState<{ tag: string; count: number }[]>([])
   // Each label on the selection, and how many of the items read carry it.
   const [held, setHeld] = useState<Map<string, number>>(new Map())
@@ -132,7 +134,7 @@ function TagPanel({ paths, headId, onApplied }: {
   return (
     <>
       <div className="tag-pop-head">
-        <span className="field-label" id={headId}>Labels for {paths.length === 1 ? paths[0].split('/').pop() : `${paths.length} items`}</span>
+        <span className="field-label" id={headId}>Labels for {paths.length === 1 ? shown(paths[0]).split('/').pop() : `${paths.length} items`}</span>
         {busy && <Loader inline size={12} />}
         <PopoverClose render={<Button variant="secondary" size="sm" />}>Close</PopoverClose>
       </div>

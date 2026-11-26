@@ -16,9 +16,10 @@ import { AddLibraryDialog, ImportLibrariesDialog, useLibraryAddOffer, type Dropp
 import { checkList, LIST_FORMAT } from '../libraryLists'
 import { TagMenu } from '../components/TagMenu'
 import { hasActivate, sectionAllowed, useAppConfig } from '../config'
-import { shownPath } from '../libraryPath'
+import { libraryPathParts, shownPath } from '../libraryPath'
+import { mentionToken } from '../components/MentionPalette'
 import { copyItemLink, copyLinkLabel } from '../itemLinks'
-import { askPlace, CHAT_HERE, chatHere, knownPlace } from '../pwcode/chatHere'
+import { askPlace, CHAT_HERE, chatHere, knownPlace, stalePlace } from '../pwcode/chatHere'
 import { collectChosen, collectDropped, collectListed, type UploadItem } from '../upload'
 import { chooseUpload, onShellDrop, shellListsFolders } from '../nativeShell'
 import { downloadPath } from '../libraryDownload'
@@ -420,9 +421,13 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     setSuggest({ ...suggest, busy: false, rows: suggest.rows.filter(r => left.has(r.path)), error: `These labels were not saved: ${failed[0].why}` })
   }
 
-  /** Hand a path to the chat as a reference, the way an editor does. */
-  const addToChat = (path: string) => {
-    window.dispatchEvent(new CustomEvent('ade-chat-insert', { detail: { text: path } }))
+  /** Hand a path to the chat as a reference, the way an editor does: a
+   *  file as the @ picker writes it, a folder as the person reads it, both
+   *  with the library's name and not its id. */
+  const addToChat = (path: string, isDir: boolean) => {
+    const parts = libraryPathParts(path, cfg.libraries)
+    const text = isDir ? shownPath(path, cfg.libraries) : mentionToken(parts ? parts.rel : path, parts ? parts.id : currentLibrary(), cfg.libraries ?? [])
+    window.dispatchEvent(new CustomEvent('ade-chat-insert', { detail: { text } }))
     location.hash = '#view=chat'
   }
 
@@ -487,7 +492,7 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
         },
       )
     }
-    if (!allTop) items.push({ label: isDir ? 'Download as zip' : 'Download', onClick: () => void downloadPath(path, isDir) })
+    if (!allTop) items.push({ label: isDir ? 'Download as zip' : 'Download', onClick: () => void downloadPath(path, isDir, shownPath(path, cfg.libraries)) })
     if (path && !libraryTop) {
       items.push({ label: 'Rename…', disabled: !!locked, disabledReason: locked ?? undefined, onClick: later(() => leaveUnsaved(() => setNameDialog({ mode: 'rename', path, isDir, value: path.split('/').pop() ?? '', busy: false, error: '' }), [path])) })
     }
@@ -496,11 +501,11 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     // Both call a model, so they are offered only with AI features on.
     const labelsLocked = labelsLockedAt(path)
     if (isDir && cfg.aiEnabled !== false) items.push({ label: 'Suggest labels…', disabled: !!labelsLocked, disabledReason: labelsLocked ?? undefined, onClick: () => void runSuggest(path) })
-    if (path && sectionAllowed('chat', cfg)) items.push({ label: 'Add to chat', onClick: () => addToChat(path) })
+    if (path && sectionAllowed('chat', cfg)) items.push({ label: 'Add to chat', onClick: () => addToChat(path, isDir) })
     // The reason it cannot is written in the entry: a tip does not open on
     // touch. A bucket's, and a library's read only to the person, is known
     // here; the rest the Studio finds as the menu opens.
-    const here = (why?: string): MenuEntry => ({ label: CHAT_HERE, disabled: !!why, description: why, onClick: () => void chatHere(itemAt(path), primaryId) })
+    const here = (why?: string): MenuEntry => ({ label: CHAT_HERE, disabled: !!why, description: why, onClick: () => void chatHere(itemAt(path), cfg.libraries ?? []) })
     const held = cfg.libraries?.find(l => l.id === libraryAt(path))
     const noChat = held?.fromBucket || held?.access?.where === 'bucket' ? 'A bucket has no folder a pw code session can work in.' : labelsLocked ? 'This library is read only for you, so a pw code session cannot work here.' : undefined
     // Only for a person with ACTIVATE, as Code and the chat bar's engine button.
@@ -515,7 +520,7 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     if (path) {
       items.push(
         { label: copyLinkLabel(cfg.linkBase), onClick: () => void copyItemLink(itemAt(path), cfg.linkBase) },
-        { label: 'Copy path', copy: { text: path, label: 'path' } },
+        { label: 'Copy path', copy: { text: shownPath(path, cfg.libraries), label: 'path' } },
         { label: `Cut${group}`, disabled: !!locked, disabledReason: locked ?? undefined, onClick: () => setClipboard({ mode: 'cut', paths: targets() }) },
         { label: `Copy${group}`, onClick: () => setClipboard({ mode: 'copy', paths: targets() }) },
       )
@@ -542,10 +547,12 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
     })
     show(items)
     // Where the chat would work is looked at as the person, on the machine
-    // that holds the folder: a reason it cannot comes into the open menu.
-    if (hereAt >= 0 && !noChat && !knownPlace(itemAt(path))) {
+    // that holds the folder, again once what the page has is a few seconds
+    // old: a reason it cannot, or that it now can, comes into the open menu.
+    if (hereAt >= 0 && !noChat && stalePlace(itemAt(path))) {
+      const shown = knownPlace(itemAt(path))?.why
       void askPlace(itemAt(path)).then(({ why }) => {
-        if (!why || !open) return
+        if (why === shown || !open) return
         const rows = items.slice()
         rows[hereAt] = here(why)
         show(rows)
@@ -793,7 +800,7 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
                   <div className="upload-panel-head">
                     <span>
                       {suggest.busy && !suggest.rows.length
-                        ? `Reading ${suggest.dir || 'the library'} and proposing labels…`
+                        ? `Reading ${suggest.dir ? shownPath(suggest.dir, cfg.libraries) : 'the library'} and proposing labels…`
                         : suggest.error && !suggest.rows.length
                           ? 'Could not propose labels'
                           : `${suggest.rows.length} of ${suggest.considered ?? 0} unlabelled files have proposals`}
@@ -820,7 +827,7 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
                                 rows: s2.rows.map((r, j) => (j === i ? { ...r, accept } : r)),
                               })}
                             />
-                            <span className="suggest-path">{row.path}</span>
+                            <span className="suggest-path">{shownPath(row.path, cfg.libraries)}</span>
                             <span className="suggest-tags">{row.labels.map(l => <code key={l}>{l}</code>)}</span>
                           </label>
                         ))}
@@ -892,7 +899,7 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
           onClose={() => setNameDialog(null)}
           size="sm"
           title={nameDialog.mode === 'rename' ? 'Rename' : nameDialog.mode === 'newfile' ? 'New file' : 'New folder'}
-          description={nameDialog.mode === 'newfile' ? `In ${nameDialog.path ? shownPath(nameDialog.path, cfg.libraries) : cfg.kbLabel}` : nameDialog.path || cfg.kbLabel}
+          description={nameDialog.mode === 'newfile' ? `In ${nameDialog.path ? shownPath(nameDialog.path, cfg.libraries) : cfg.kbLabel}` : nameDialog.path ? shownPath(nameDialog.path, cfg.libraries) : cfg.kbLabel}
           footer={
             <>
               <Button variant="ghost" size="sm" onClick={() => setNameDialog(null)}>Cancel</Button>

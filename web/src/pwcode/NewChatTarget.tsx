@@ -11,7 +11,7 @@ import { useStartMode } from '../code/parts'
 import type { PageSession } from '../code/api'
 import { VIEWER_CACHES_CLEARED } from '../viewerCache'
 import { useAnsweredByPWCode } from './NewChatModel'
-import { useModelHeld } from './ownModel'
+import { HELD_SAY, useModelHeld } from './ownModel'
 import { clearModelPick } from './newChatPick'
 import { onStart, setStart, startOf, STUDIO_MACHINE } from './newChatStart'
 import { PwCodeWords } from './PWCodeSession'
@@ -149,7 +149,7 @@ export function NewChatTarget({ conversationId, persona }: { conversationId: str
         </p>
       )}
       {waits && conversationId && (
-        <p className="pwcode-start-note" role="status">No model is set. Choose one in the message box, or add one under Settings, Accounts.</p>
+        <p className="pwcode-start-note" role="status">{HELD_SAY}</p>
       )}
       <MachineChip finding={false} machine={lost ? undefined : machine} items={machineMenuEntries(location, t, tools)} t={t} />
       {machine && !lost && <ToolsMarkButton machine={machine} control={tools} mode={permission.mode} />}

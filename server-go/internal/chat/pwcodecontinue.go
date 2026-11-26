@@ -105,9 +105,14 @@ type pwHereAt struct {
 // pwcodeHereCached is pwcodeHere kept a minute per viewer, since the Code
 // page asks every 20 seconds and a daemon on a cluster is a pw ssh away.
 func (m *Module) pwcodeHereCached(ctx context.Context, r *http.Request) (*pwHere, error) {
+	return m.pwcodeHereWithin(ctx, r, time.Minute)
+}
+
+// pwcodeHereWithin is pwcodeHere as it answered at most keep ago.
+func (m *Module) pwcodeHereWithin(ctx context.Context, r *http.Request, keep time.Duration) (*pwHere, error) {
 	who := userID(r)
 	m.pw.mu.Lock()
-	if a, ok := m.pw.here[who]; ok && time.Since(a.at) < time.Minute {
+	if a, ok := m.pw.here[who]; ok && time.Since(a.at) < keep {
 		m.pw.mu.Unlock()
 		return a.h, nil
 	}

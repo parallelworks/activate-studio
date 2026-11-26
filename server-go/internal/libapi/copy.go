@@ -180,7 +180,7 @@ func (b *builds) pull(ctx context.Context, id string, wait bool, progress progre
 		}
 	}
 	if werr := b.s.Reg.WriteCopyState(id, st); werr != nil {
-		b.log(fmt.Sprintf("library %s: recording its look for changes: %s", id, werr))
+		b.log(fmt.Sprintf("library %s: recording its look for changes: %s", b.libName(id), werr))
 	}
 	return res, true, err
 }
@@ -197,11 +197,11 @@ func (b *builds) update(ctx context.Context, id string) {
 	switch {
 	case !ran:
 	case err != nil:
-		b.log(fmt.Sprintf("library %s: looking for changes at its location failed: %s", id, err))
+		b.log(fmt.Sprintf("library %s: looking for changes at its location failed: %s", b.libName(id), err))
 	case res.Transfer != "":
-		b.log(fmt.Sprintf("library %s: brought %d files from its location and removed %d", id, res.Files, res.Deleted))
+		b.log(fmt.Sprintf("library %s: brought %d files from its location and removed %d", b.libName(id), res.Files, res.Deleted))
 		if _, err := b.sync(id); err != nil {
-			b.log(fmt.Sprintf("library %s: sync failed: %s", id, err))
+			b.log(fmt.Sprintf("library %s: sync failed: %s", b.libName(id), err))
 		}
 	}
 }

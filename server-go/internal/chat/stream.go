@@ -286,7 +286,7 @@ func (m *Module) stream(w http.ResponseWriter, r *http.Request) error {
 	if _, isResume := body.Resume.(map[string]any); !isResume {
 		engine, note, err := m.engineFor(r, deref(body.Engine), deref(body.NewChatEngine), convID)
 		if err != nil {
-			res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
+			res.event("error", reqbody.O("message", pwSaid(apiMessage(err)), "kind", "pwcode"))
 			return nil
 		}
 		if note != "" {

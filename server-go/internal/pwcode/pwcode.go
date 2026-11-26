@@ -41,6 +41,11 @@ const ProtocolVersion = 2
 type DaemonError struct {
 	Message string
 	Status  int
+	// Unreached: the daemon was not reached, or did not answer in time,
+	// on Site ("" for this host's); Message says what the pipe or socket
+	// said.
+	Unreached bool
+	Site      string
 }
 
 func (e *DaemonError) Error() string { return e.Message }
@@ -147,7 +152,7 @@ func Request(ctx context.Context, client Doer, method, route string, body any, t
 	}
 	req, err := http.NewRequestWithContext(cctx, method, "http://daemon"+route, rd)
 	if err != nil {
-		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error()}
+		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error(), Unreached: true}
 	}
 	req.Host = "daemon"
 	req.Header.Set("Accept", "application/json")
@@ -229,7 +234,7 @@ func RequestBytes(ctx context.Context, client Doer, route string, max int64) (*B
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, "http://daemon"+route, nil)
 	if err != nil {
-		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error()}
+		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error(), Unreached: true}
 	}
 	req.Host = "daemon"
 	res, err := client.Do(req)
@@ -277,7 +282,7 @@ func RequestStream(ctx context.Context, client Doer, route string) (*Stream, err
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, "http://daemon"+route, nil)
 	if err != nil {
 		cancel()
-		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error()}
+		return nil, &DaemonError{Message: "pw code daemon unreachable: " + err.Error(), Unreached: true}
 	}
 	req.Host = "daemon"
 	req.Header.Set("Accept", "application/json")
@@ -339,13 +344,13 @@ func (l *localClient) GetBytes(ctx context.Context, route string, max int64) (*B
 // its errno code, else its message.
 func transportError(ctx context.Context, err error) error {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return &DaemonError{Message: "pw code daemon did not answer in time"}
+		return &DaemonError{Message: "pw code daemon did not answer in time", Unreached: true}
 	}
 	var de *DaemonError
 	if errors.As(err, &de) {
 		return de
 	}
-	return &DaemonError{Message: "pw code daemon unreachable: " + errCode(err)}
+	return &DaemonError{Message: "pw code daemon unreachable: " + errCode(err), Unreached: true}
 }
 
 func errCode(err error) string {
@@ -463,7 +468,7 @@ func (s *Service) ensure(ctx context.Context) (*jsonv.Object, error) {
 			args = append(args, "--context", c)
 		}
 		if _, err := s.p.Exec(ctx, args, platform.ExecOptions{Timeout: 30 * time.Second}); err != nil {
-			return nil, &DaemonError{Message: "could not start the pw code daemon: " + sliceRunes(trimJS(platform.ErrText(err)), 300)}
+			return nil, &DaemonError{Message: "could not start the pw code daemon: " + sliceRunes(trimJS(platform.ErrText(err)), 300), Unreached: true}
 		}
 		for i := 0; i < 40 && st == nil; i++ {
 			time.Sleep(250 * time.Millisecond)

@@ -148,3 +148,32 @@ func TestCopyLibrary(t *testing.T) {
 		t.Fatal("the copy outlived its library")
 	}
 }
+
+// The index log in Settings named a library by its id.
+func TestTheIndexLogNamesALibraryByItsName(t *testing.T) {
+	f := newBuildFixture(t)
+	saved := copyKinds
+	copyKinds = append(slices.Clone(copyKinds), transfers.KindComputer)
+	t.Cleanup(func() { copyKinds = saved })
+	put(t, filepath.Join(f.dir, "Downloads", "share", "intro.md"), "# Introduction\n")
+	code, b := f.call("POST", "/api/libraries/copy", map[string]any{"location": "computer:Downloads", "path": "share", "label": "Field notes"})
+	if code != 200 {
+		t.Fatalf("add: %d %v", code, b)
+	}
+	id := b["library"].(map[string]any)["id"].(string)
+	f.waitReady(id)
+	put(t, filepath.Join(f.dir, "Downloads", "share", "more.md"), "# More\n")
+	if code, b = f.call("POST", "/api/libraries/"+id+"/update", nil); code >= 400 {
+		t.Fatalf("sync: %d %v", code, b)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for !strings.Contains(f.s.builds.ix().Log.Tail(50), "library Field notes: ") && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if log := f.s.builds.ix().Log.Tail(50); !strings.Contains(log, "library Field notes: ") || strings.Contains(log, "library "+id+":") {
+		t.Errorf("log:\n%s", log)
+	}
+	if got := f.s.builds.libName("no-such"); got != "no-such" {
+		t.Errorf("no name: %q", got)
+	}
+}
