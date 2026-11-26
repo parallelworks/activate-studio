@@ -724,7 +724,7 @@ func (m *Module) labelSuggestionsRoute(w http.ResponseWriter, r *http.Request) e
 	// Where each person uses their own credential, the Studio's is never
 	// used for them: without one they are told what the Assistant says.
 	if m.personalRequired(m.cred(r)) {
-		return apierr.New(403, "%s", signInFirst)
+		return apierr.New(403, "%s", m.signInFirstFor(r))
 	}
 	cred, hasCred := m.credArgsOf(r)
 	model := b.Str("model")

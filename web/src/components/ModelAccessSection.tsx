@@ -3,7 +3,7 @@ import { Button, Callout, type CalloutTone, ExternalLink, Field, Loader, RadioGr
 import './ModelAccessSection.css'
 import { NeedsActivate } from './NeedsActivate'
 import { type AccessStatus, type Health, type KeyStatus, announceChange, api, describeSource, errText } from './accessShared'
-import { ACCOUNTS_HREF, accountsHref, openAccounts } from '../accounts'
+import { ACCOUNTS_HREF, SIGN_IN_STOPPED, accountsHref, openAccounts } from '../accounts'
 
 export { endpointBase, readPlatformHost, testNote, type AccessStatus, type KeyTestResult } from './accessShared'
 
@@ -102,11 +102,15 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
   const own = access.platform.source === 'signin' || access.platform.source === 'key'
   const offline = health?.status === 'offline'
   const keyRequired = health?.status === 'key-required'
-  const title = from === 'none'
+  const stopped = !connected && !!access.signInStopped
+  const title = stopped && (from === 'none' || keyRequired)
+    ? `${SIGN_IN_STOPPED}: sign in again under Accounts`
+    : from === 'none'
     ? 'No model access yet'
     : keyRequired ? 'Sign in with ACTIVATE first: the models here need an account of your own'
     : `Models: ${describeSource(access.models, single)}`
-  const tone: CalloutTone = from === 'none' || keyRequired
+  const tone: CalloutTone = stopped && (from === 'none' || keyRequired) ? 'warning'
+    : from === 'none' || keyRequired
     ? (requirePersonalKey || single ? 'warning' : 'default')
     : !health ? 'default'
     : health.status === 'ok' ? 'success'
@@ -119,6 +123,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
       value: 'activate', label: 'ACTIVATE',
       description: connected
         ? `The models of your ACTIVATE account, with ${describeSource(access.platform, single)}.`
+        : stopped ? `The models of your ACTIVATE account. ${SIGN_IN_STOPPED}: sign in again under Accounts.`
         : 'The models of your ACTIVATE account. Sign in with ACTIVATE under Accounts first.',
     },
     {
@@ -172,7 +177,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         )}
         {from === 'none' ? (
           <p className="muted key-note">
-            Sign in with ACTIVATE, or add an OpenAI-compatible endpoint, under <a href={ACCOUNTS_HREF}>Accounts</a>.
+            {stopped ? 'Sign in again with ACTIVATE' : 'Sign in with ACTIVATE'}, or add an OpenAI-compatible endpoint, under <a href={ACCOUNTS_HREF}>Accounts</a>.
           </p>
         ) : health && health.status !== 'ok' && (health.message || modelsError) && (
           <p className="muted key-note">{health.message || modelsError}</p>

@@ -325,11 +325,11 @@ func (m *Module) answer(r *http.Request, res *sseWriter, body streamBody, convID
 		m.refreshAccess(r, 15000)
 	}
 	if m.personalRequired(userCred) {
-		res.event("error", reqbody.O("message", signInFirst, "kind", "credential"))
+		res.event("error", reqbody.O("message", m.signInFirstFor(r), "kind", "credential"))
 		return nil
 	}
 	if m.deploymentModelsKey() == "" && userCred == nil && !m.LLM.SidecarConfigured() {
-		res.event("error", reqbody.O("message", m.noCredential(), "kind", "credential"))
+		res.event("error", reqbody.O("message", m.noCredential(r), "kind", "credential"))
 		return nil
 	}
 

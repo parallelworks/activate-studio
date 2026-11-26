@@ -46,6 +46,10 @@ const SingleOwner = "single"
 // Assistant's words, for every call made for a person.
 const SignInFirst = "Sign in with ACTIVATE first, under Settings, Accounts. The models here need an account of your own."
 
+// SignInAgain is what it says instead to a person whose kept ACTIVATE
+// sign-in stopped working.
+const SignInAgain = "Your ACTIVATE sign-in stopped working: the platform no longer accepts it. Sign in again under Settings, Accounts."
+
 // sharedSub is the vault subject of the key a user shares for everyone.
 const sharedSub = "__shared__"
 

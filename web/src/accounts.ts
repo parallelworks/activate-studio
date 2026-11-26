@@ -40,6 +40,9 @@ export const SIGN_IN_TO_USE = 'Sign in with ACTIVATE to use this'
  *  working (the platform no longer accepts it, or it could not be renewed). */
 export const SIGN_IN_STOPPED = 'Your ACTIVATE sign-in stopped working'
 
+/** What a place that asks for the sign-in offers when it stopped working. */
+export const SIGN_IN_AGAIN = 'Sign in again'
+
 /** Whether a server message is the one a feature gives for a missing
  *  ACTIVATE credential: those name Settings, Accounts as the remedy. */
 export const needsActivate = (message: string | null | undefined): boolean => !!message && /Settings, Accounts/.test(message)

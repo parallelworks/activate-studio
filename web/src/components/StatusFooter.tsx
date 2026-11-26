@@ -154,9 +154,14 @@ export const AI_LABEL: Record<AiHealth['status'], string> = {
   off: 'AI features off',
 }
 
-function AiPanel({ trigger, ai, onRecheck }: { trigger: ReactElement; ai: AiHealth; onRecheck: () => void }) {
+/** The footer's words for the models' state; a kept ACTIVATE sign-in that
+ *  stopped working asks to sign in again. */
+export const aiLabel = (status: AiHealth['status'], stopped?: boolean) =>
+  status === 'key-required' && stopped ? 'sign in again' : AI_LABEL[status]
+
+function AiPanel({ trigger, ai, stopped, onRecheck }: { trigger: ReactElement; ai: AiHealth; stopped?: boolean; onRecheck: () => void }) {
   const rows: [string, string][] = [
-    ['Status', AI_LABEL[ai.status] + (ai.status === 'ok' ? ` (${ai.models} ${ai.models === 1 ? 'model' : 'models'})` : '')],
+    ['Status', aiLabel(ai.status, stopped) + (ai.status === 'ok' ? ` (${ai.models} ${ai.models === 1 ? 'model' : 'models'})` : '')],
     ['Gateway', ai.gatewayHost],
     ['Checked', new Date(ai.checkedAt).toLocaleTimeString()],
   ]
@@ -568,11 +573,12 @@ export function StatusFooter({ collapsed = false }: { collapsed?: boolean }) {
         <div className="status-line" title="Click for model availability details">
           <AiPanel
             ai={ai}
+            stopped={cfg.signInStopped}
             onRecheck={() => { fetch('/api/ai/health?fresh=1').then(r => r.json()).then((h: AiHealth) => { h = steadyModels(h, true); setAi(h); share({ ai: h }) }).catch(() => {}) }}
             trigger={
               <button className="identity-btn">
                 <StatusDot variant={ai.status === 'ok' ? 'success' : ai.status === 'unconfigured' ? 'muted' : 'warning'} size={7} />
-                <span className="identity-text">{sentence(ai.status === 'ok' ? modelsReady(ai.models) : AI_LABEL[ai.status])}</span>
+                <span className="identity-text">{sentence(ai.status === 'ok' ? modelsReady(ai.models) : aiLabel(ai.status, cfg.signInStopped))}</span>
               </button>
             }
           />

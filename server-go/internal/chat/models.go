@@ -351,12 +351,12 @@ func (m *Module) models(w http.ResponseWriter, r *http.Request) error {
 	m.refreshAccess(r, 8000)
 	cred := m.cred(r)
 	if m.deploymentModelsKey() == "" && cred == nil && !m.LLM.SidecarConfigured() {
-		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", m.noCredential(), "kind", "credential"))
+		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", m.noCredential(r), "kind", "credential"))
 	}
 	// Settings' pickers (?config=1) too: a listing is a call to the
 	// gateway, and probes the providers with a call to each.
 	if m.personalRequired(cred) {
-		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", signInFirst, "kind", "credential"))
+		return reqbody.OK(w, reqbody.O("models", []any{}, "unreachableSessions", []any{}, "error", m.signInFirstFor(r), "kind", "credential"))
 	}
 	viewer := ""
 	if u := user(r); u != nil {
@@ -481,7 +481,7 @@ func (m *Module) health(w http.ResponseWriter, r *http.Request) error {
 	cred := m.cred(r)
 	if m.personalRequired(cred) {
 		return reqbody.OK(w, reqbody.O("ok", false, "status", "key-required", "models", 0, "gatewayHost", "",
-			"message", signInFirst, "lastCallFailure", nil, "checkedAt", now))
+			"message", m.signInFirstFor(r), "lastCallFailure", nil, "checkedAt", now))
 	}
 	if r.URL.Query().Get("fresh") == "1" {
 		m.LLM.InvalidateProbes()

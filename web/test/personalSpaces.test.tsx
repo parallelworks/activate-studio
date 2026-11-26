@@ -496,3 +496,21 @@ describe('signing in with ACTIVATE', () => {
     expect(container).toBeEmptyDOMElement()
   })
 })
+
+describe('Add a library, once a kept ACTIVATE sign-in stopped working', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+  it('says so and offers Sign in again, not a first sign-in', async () => {
+    stub((m, u) => {
+      if (u === '/api/config') return json({ appName: 'Studio', accounts: true, signIn: true, signInStopped: true, platform: false, user: { id: 'ada', username: 'ada' } })
+      if (u === '/api/user-libraries/space') return json({ ...STATUS, available: false, why: 'My library reaches the cluster with your ACTIVATE sign-in.', credential: '', signInOffered: true })
+      if (u === '/api/user-libraries/pw/systems') return json({ usable: false, why: 'Sign in with ACTIVATE.', systems: [], error: null })
+      if (u === '/api/me/platform-sign-in' && m === 'GET') return json({ state: 'expired', account: 'ada', host: 'platform.example.com', message: 'ACTIVATE no longer accepts your sign-in.' })
+    })
+    render(<AddLibrary options={{ buildHere: false, ssh: false, pw: false, workflow: false, space: true, home: 'cluster-a' }} onAdded={() => {}} />)
+    // The configuration this file's other tests read is kept; read it again.
+    act(() => reloadAppConfig())
+    expect(await screen.findByText('Your ACTIVATE sign-in stopped working')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Sign in again' })).toBeInTheDocument()
+    expect(screen.queryByText('Sign in with ACTIVATE to use this')).toBeNull()
+  })
+})
