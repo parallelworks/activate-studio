@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Button, EmptyState, RelativeTime, StatusDot, toast } from '@parallelworks/ui'
 import { NotificationIcon } from '@parallelworks/ui/icons'
-import { api } from '../api'
+import { api, type UserLibrary } from '../api'
 import { MachineLabel } from '../components/MachineLabel'
-import { reloadAppConfig } from '../config'
+import { libraryAdded } from '../libraryWatch'
 import type { MachineRef } from '../machines'
 import { dismissNotices, type Notice, type Notices, type NoticeShare, refreshNotices, useNotices } from '../notices'
 
@@ -80,6 +80,21 @@ function NoticeRow({ notice: n }: { notice: Notice }) {
   )
 }
 
+/** Adds the folder of a notice. A share taken back and made again since the
+ *  notice was read has another ID: the folder is added by the one it has
+ *  now, as Add a library lists it. */
+async function addCurrent(s: NoticeShare): Promise<UserLibrary> {
+  try {
+    return await api.addShared(s.id, {})
+  } catch (e) {
+    if ((e as { status?: number }).status !== 404) throw e
+    const now = (await api.sharedWithMe().catch(() => null))?.shares
+      .find(x => x.id !== s.id && !x.library && x.from === s.from && x.folder === s.folder && (!x.site || x.site === s.site || x.site === s.system))
+    if (!now) throw e
+    return api.addShared(now.id, {})
+  }
+}
+
 /** A folder someone shared with the person, which they can add as a library
  *  here as Add a library, Shared with me does. */
 function ShareRow({ notice: n, share: s }: { notice: Notice; share: NoticeShare }) {
@@ -88,9 +103,9 @@ function ShareRow({ notice: n, share: s }: { notice: Notice; share: NoticeShare 
   const add = async () => {
     setBusy(true); setError('')
     try {
-      const lib = await api.addShared(s.id, {})
+      const lib = await addCurrent(s)
       toast.success(`Added ${lib.label} to your libraries. It is being indexed.`)
-      reloadAppConfig()
+      libraryAdded()
     } catch (e) {
       // Taken back, or added elsewhere, since: the notice goes with the next read.
       const gone = (e as { status?: number }).status === 404

@@ -48,5 +48,13 @@ export function reloadWhenLibrariesBuilt(opts: { everyMs?: number; forMs?: numbe
   void tick()
 }
 
+/** A library was added, from wherever: the page's list is read now, and
+ *  again as it finishes building, when it joins the switcher, the Library's
+ *  tree, Search and Query. */
+export function libraryAdded(): void {
+  reloadAppConfig()
+  reloadWhenLibrariesBuilt()
+}
+
 /** For tests: forget a watch left running. */
 export function resetLibraryWatchForTests(): void { watching = false }

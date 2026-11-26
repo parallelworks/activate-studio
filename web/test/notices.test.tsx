@@ -7,6 +7,8 @@ import { createTranslator } from 'use-intl'
 import App from '../src/App'
 import { chatRowState, StudioChatLayout } from '../src/components/ChatList'
 import { SharedWithMe } from '../src/components/SharedWithMe'
+import { toast } from '@parallelworks/ui'
+import { resetLibraryWatchForTests } from '../src/libraryWatch'
 import { NoticesView } from '../src/views/NoticesView'
 import {
   countFor, NOTICES_EVERY_MS, NOTICES_LOOKING_MS, type Notice, type Notices, publishListing, refreshNotices, sessionSeen, setFrontChat, setReplying, setTransfersShown, useNotices, useNoticesRead,
@@ -50,7 +52,11 @@ let answer: Partial<Notices>
 let sent: Sent[]
 let config: Record<string, unknown>
 /** What adding a folder shared with the person answers. */
-let added: () => Response | Promise<Response>
+let added: (path: string) => Response | Promise<Response>
+/** Add a library's list of folders shared with the person. */
+let listed: Record<string, unknown>[]
+/** The person's libraries, as the build watch reads them. */
+let libs: { id: string; state: string }[]
 const asked = (path: string) => sent.filter(s => s.path === path)
 
 beforeEach(() => {
@@ -58,13 +64,18 @@ beforeEach(() => {
   answer = { items: [], chats: {}, listed: true, machines: [machine], sessions: [] }
   config = { appName: 'Studio', platform: true, user: { id: 'u', username: 'alex' } }
   added = () => new Response(JSON.stringify({ id: 'u-shared-proj', label: 'proj (ada)' }), { status: 200 })
+  listed = [{ id: 's-1', from: 'ada', space: 'u-space-studio', path: 'proj', label: 'proj', folder: '/home/ada/studio/proj', kind: 'user', name: 'alex', access: 'write', createdAt: '2026-11-20T10:00:00Z', site: 'cluster-a' }]
+  libs = []
+  resetLibraryWatchForTests()
   vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }))
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input)
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : null
     sent.push({ method: init?.method ?? 'GET', path: url, body })
-    if (url.startsWith('/api/user-libraries/shared-with-me/')) return added()
-    if (url === '/api/user-libraries/shared-with-me') return new Response(JSON.stringify({ shares: [{ id: 's-1', from: 'ada', space: 'u-space-studio', path: 'proj', label: 'proj', folder: '/home/ada/studio/proj', kind: 'user', name: 'alex', access: 'write', createdAt: '2026-11-20T10:00:00Z', system: 'cluster-a' }], unreached: [] }), { status: 200 })
+    if (url.startsWith('/api/user-libraries/shared-with-me/')) return added(url)
+    if (url === '/api/user-libraries/shared-with-me') return new Response(JSON.stringify({ shares: listed, unreached: [] }), { status: 200 })
+    if (url === '/api/user-libraries') return new Response(JSON.stringify({ libraries: libs }), { status: 200 })
+    if (url === '/api/libraries') return new Response(JSON.stringify({ libraries: [] }), { status: 200 })
     if (url === '/api/notices/dismiss') answer = { ...answer, items: answer.items!.filter(i => !(body!.ids as string[]).includes(i.id)) }
     const out = url === '/api/config' ? config : url.startsWith('/api/notices') ? answer : url.startsWith('/api/transfers/locations') ? { locations: [] } : url.startsWith('/api/transfers/summary') ? answer.transfers ?? {} : url.startsWith('/api/setup/status') ? { firstRun: false } : {}
     return new Response(JSON.stringify(out), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -328,6 +339,45 @@ describe('a folder shared with the person', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss ada shared runs with your group team' }))
     expect(await screen.findByText('Nothing needs you')).toBeInTheDocument()
     expect(asked('/api/notices/dismiss').at(-1)!.body).toEqual({ ids: [GROUP.id] })
+  })
+
+  it('is in the Library, the switcher and Search once its build ends, as from Add a library', async () => {
+    vi.useFakeTimers()
+    answer = { ...answer, items: [SHARED] }
+    render(<><Reader /><NoticesView /></>)
+    await tick(0)
+    let reread = 0
+    const count = () => { reread++ }
+    window.addEventListener('ade:config-changed', count)
+    added = () => { libs = [{ id: 'u-shared-proj', state: 'building' }]; answer = { ...answer, items: [] }; return new Response(JSON.stringify({ id: 'u-shared-proj', label: 'proj (ada)' }), { status: 200 }) }
+    fireEvent.click(screen.getByRole('button', { name: 'Add to my libraries: proj' }))
+    await tick(100)
+    const atAdd = reread
+    expect(atAdd).toBeGreaterThan(0)
+    await tick(10_000)
+    expect(reread).toBe(atAdd)
+    // Built: the page's list of libraries, which the tree, the switcher,
+    // Details and Search read, is read again.
+    libs = [{ id: 'u-shared-proj', state: 'ready' }]
+    await tick(4_000)
+    expect(reread).toBeGreaterThan(atAdd)
+    window.removeEventListener('ade:config-changed', count)
+  })
+
+  it('adds the folder as it is shared now, when it was taken back and shared again since', async () => {
+    answer = { ...answer, items: [SHARED] }
+    listed = [{ ...listed[0], id: 's-9' }]
+    added = path => path.includes('/s-1/')
+      ? new Response(JSON.stringify({ error: 'not found' }), { status: 404 })
+      : new Response(JSON.stringify({ id: 'u-shared-proj', label: 'proj (ada)' }), { status: 200 })
+    const said = vi.spyOn(toast, 'success'), refused = vi.spyOn(toast, 'error')
+    render(<><Reader /><NoticesView /></>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to my libraries: proj' }))
+    await waitFor(() => expect(asked('/api/user-libraries/shared-with-me/s-9/add')).toHaveLength(1))
+    await waitFor(() => expect(said).toHaveBeenCalledWith('Added proj (ada) to your libraries. It is being indexed.'))
+    expect(refused).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+    said.mockRestore(); refused.mockRestore()
   })
 
   it('says why it could not be added, and goes when it is no longer shared', async () => {
