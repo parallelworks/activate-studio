@@ -125,6 +125,7 @@ func accessValues(work string) map[string]string {
 		"inputs.access_settings.admins":              exAdmins,
 		"inputs.access_settings.bucket_endpoints":    exEndpoints,
 		"inputs.access_settings.shared_chat_history": "true",
+		"inputs.access_settings.custom_tools":        "false",
 		"inputs.access_settings.oidc_client_id":      "tide-studio",
 		"inputs.access_settings.oidc_client_secret":  exSecret,
 	}
@@ -135,6 +136,7 @@ var wantAccess = map[string]string{
 	"STUDIO_ADMINS":                 exAdmins,
 	"STUDIO_BUCKET_ENDPOINTS":       exEndpoints,
 	"CHAT_SHARED_HISTORY":           "1",
+	"STUDIO_CUSTOM_TOOLS":           "0",
 	"STUDIO_SELF_URL":               exSelf,
 	"OIDC_ISSUER":                   "https://platform.example.com/api/oidc",
 	"OIDC_CLIENT_ID":                "tide-studio",
@@ -154,7 +156,7 @@ func needBash(t *testing.T) {
 
 func TestDeployFormSignInFields(t *testing.T) {
 	doc := deployDoc(t)
-	for _, f := range []string{"admins", "bucket_endpoints", "shared_chat_history", "oidc_client_id", "oidc_client_secret"} {
+	for _, f := range []string{"admins", "bucket_endpoints", "shared_chat_history", "custom_tools", "oidc_client_id", "oidc_client_secret"} {
 		o := formField(doc, "access_settings", f)
 		if o == nil {
 			t.Fatalf("the form has no access_settings.%s", f)
@@ -163,8 +165,9 @@ func TestDeployFormSignInFields(t *testing.T) {
 			t.Fatalf("%s has no label or help line", f)
 		}
 		if d, _ := o.Get("default"); jsonv.Str(jsonv.Path(o, "type")) == "boolean" {
-			if d != false {
-				t.Fatalf("%s is on by default", f)
+			// Custom tools are on unless turned off, as STUDIO_CUSTOM_TOOLS is.
+			if want := f == "custom_tools"; d != want {
+				t.Fatalf("%s defaults to %v", f, d)
 			}
 		} else if d != "" || jsonv.Path(o, "optional") != true {
 			t.Fatalf("%s is not optional and empty by default", f)
@@ -294,10 +297,11 @@ PORT=8123 exec "$@"
 		v["inputs.access_settings."+k] = ""
 	}
 	v["inputs.access_settings.shared_chat_history"] = "false"
+	v["inputs.access_settings.custom_tools"] = "true"
 	bash(t, work, step(t, doc, "submit_compute", "Write the job script", v), "HOME="+home, path)
 	bash(t, work, "bash compute-run/job.sh", "HOME="+home, path, "RUNTIME_ARGS="+args)
 	env = envArgs(t, args)
-	for _, k := range []string{"STUDIO_ADMINS", "STUDIO_BUCKET_ENDPOINTS", "CHAT_SHARED_HISTORY", "OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_SCOPES"} {
+	for _, k := range []string{"STUDIO_ADMINS", "STUDIO_BUCKET_ENDPOINTS", "CHAT_SHARED_HISTORY", "STUDIO_CUSTOM_TOOLS", "OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_SCOPES"} {
 		if _, ok := env[k]; ok {
 			t.Errorf("--env %s given for an empty field", k)
 		}

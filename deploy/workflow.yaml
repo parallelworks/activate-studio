@@ -518,7 +518,11 @@ permissions:
             default: ''
             optional: true
             tooltip: That application's client secret. Empty, the Studio signs in as a public client with PKCE alone.
-          # Custom tools (STUDIO_CUSTOM_TOOLS) go here once that setting lands.
+          custom_tools:
+            label: Custom tools
+            type: boolean
+            default: true
+            tooltip: Off for a deployment holding CUI unless it needs them. A custom tool runs a command as the Studio's own account, which reads every person's chats and kept sign-ins. Off sets STUDIO_CUSTOM_TOOLS=0, which hides them in Settings and runs none; saved ones are kept.
 jobs:
   setup:
     if: ${{ inputs.resource_and_execution.scheduler != true }}
@@ -958,6 +962,9 @@ jobs:
           if [ "${{ inputs.access_settings.shared_chat_history }}" = "true" ]; then
             echo "export CHAT_SHARED_HISTORY=1" >> ${SCRIPT}
           fi
+          if [ "${{ inputs.access_settings.custom_tools }}" = "false" ]; then
+            echo "export STUDIO_CUSTOM_TOOLS=0" >> ${SCRIPT}
+          fi
           # Sign-in through ACTIVATE as an OpenID Connect provider: the
           # issuer is the platform's, and the redirect is the Studio's fixed
           # address, as the application was registered with it.
@@ -1031,6 +1038,7 @@ jobs:
             ${STUDIO_ADMINS:+--env STUDIO_ADMINS="${STUDIO_ADMINS}"} \
             ${STUDIO_BUCKET_ENDPOINTS:+--env STUDIO_BUCKET_ENDPOINTS="${STUDIO_BUCKET_ENDPOINTS}"} \
             ${CHAT_SHARED_HISTORY:+--env CHAT_SHARED_HISTORY="${CHAT_SHARED_HISTORY}"} \
+            ${STUDIO_CUSTOM_TOOLS:+--env STUDIO_CUSTOM_TOOLS="${STUDIO_CUSTOM_TOOLS}"} \
             ${OIDC_ISSUER:+--env OIDC_ISSUER="${OIDC_ISSUER}"} \
             ${OIDC_CLIENT_ID:+--env OIDC_CLIENT_ID="${OIDC_CLIENT_ID}"} \
             ${OIDC_CLIENT_SECRET:+--env OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET}"} \
@@ -1450,6 +1458,7 @@ jobs:
           DISABLE_KEYS=""; [ "${{ inputs.model_settings.posture }}" = "multi-shared" ] && DISABLE_KEYS=1
           REQUIRE_KEY=""; [ "${{ inputs.model_settings.posture }}" = "multi-strict" ] && REQUIRE_KEY=1
           SHARED_HISTORY=""; [ "${{ inputs.access_settings.shared_chat_history }}" = "true" ] && SHARED_HISTORY=1
+          CUSTOM_TOOLS=""; [ "${{ inputs.access_settings.custom_tools }}" = "false" ] && CUSTOM_TOOLS=0
           SELF_URL='${{ inputs.app_settings.self_url }}'; SELF_URL="${SELF_URL%/}"
           OIDC_ID='${{ inputs.access_settings.oidc_client_id }}'; OIDC_SECRET='${{ inputs.access_settings.oidc_client_secret }}'
           OIDC_ISS=""; [ -n "$OIDC_ID" ] && [ -n "${{ inputs.model_settings.platform_host }}" ] && OIDC_ISS="https://${{ inputs.model_settings.platform_host }}/api/oidc"
@@ -1495,6 +1504,7 @@ jobs:
             printf 'ADMINS=%q\n'         '${{ inputs.access_settings.admins }}'
             printf 'BUCKET_ENDPOINTS=%q\n' '${{ inputs.access_settings.bucket_endpoints }}'
             printf 'SHARED_HISTORY=%q\n' "$SHARED_HISTORY"
+            printf 'CUSTOM_TOOLS=%q\n'   "$CUSTOM_TOOLS"
             printf 'SELF_URL=%q\n'       "$SELF_URL"
             printf 'OIDC_ISS=%q\n'       "$OIDC_ISS"
             printf 'OIDC_ID=%q\n'        "$OIDC_ID"
@@ -1626,6 +1636,7 @@ jobs:
             ${ADMINS:+--env STUDIO_ADMINS="$ADMINS"} \
             ${BUCKET_ENDPOINTS:+--env STUDIO_BUCKET_ENDPOINTS="$BUCKET_ENDPOINTS"} \
             ${SHARED_HISTORY:+--env CHAT_SHARED_HISTORY="$SHARED_HISTORY"} \
+            ${CUSTOM_TOOLS:+--env STUDIO_CUSTOM_TOOLS="$CUSTOM_TOOLS"} \
             ${SELF_URL:+--env STUDIO_SELF_URL="$SELF_URL"} \
             ${OIDC_ISS:+--env OIDC_ISSUER="$OIDC_ISS"} \
             ${OIDC_ID:+--env OIDC_CLIENT_ID="$OIDC_ID"} \
