@@ -41,7 +41,7 @@ export function fitTreeWidth(rail: Element, width: number): number | null {
 
 /**
  * The edge between the Library's tree and the file beside it: a drag resizes
- * the tree, a double click fits it to its widest name, up to half the window,
+ * the tree, a double click fits it to its widest name, as far as a drag goes,
  * and the arrow keys move it once it has the focus. The width is the
  * caller's, which keeps it in this browser.
  */
@@ -87,7 +87,8 @@ export function TreeResize({ width, max, rail, onWidth }: {
   const fit = () => {
     const el = rail()
     const w = el && fitTreeWidth(el, width)
-    if (w !== null && el) onWidth(clampTree(Math.max(FIT_LEAST, w), Math.min(max, Math.round(window.innerWidth / 2))))
+    // As far as a drag goes: half the window, TREE_MAX in a narrower one.
+    if (w !== null && el) onWidth(clampTree(Math.max(FIT_LEAST, w), max))
   }
   const key = (e: KeyboardEvent<HTMLDivElement>) => {
     setPressed(false)
