@@ -7,7 +7,7 @@ import {
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
 import { ComposerEngineSlot } from '../pwcode/NewChatModel'
-import { HELD_SAY, HELD_TITLE, PwCodeOwnModel, useModelHeld } from '../pwcode/ownModel'
+import { CHOOSE_MODEL, HELD_NONE_SAY, HELD_SAY, HELD_TITLE, openModelPicker, PwCodeOwnModel, useHeldModelCount, useModelHeld } from '../pwcode/ownModel'
 import { takeHanded, onFirstMessage } from '../pwcode/firstMessage'
 import { NewChatTargetSlot } from '../pwcode/NewChatTarget'
 import { dropLibraryStart } from '../pwcode/newChatStart'
@@ -571,6 +571,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           if (target.kind === 'conversation') { setActiveId(target.id); setShowAttachments(false); setShowManage(false) }
           else if (target.kind === 'newChat') startNewChat()
           else if (target.kind === 'attachments') { setShowAttachments(true); setShowManage(false) }
+          else if (target.kind === 'external' && target.href === CHOOSE_MODEL) openModelPicker(canvasRef.current)
           else if (target.kind === 'external' && target.href.startsWith('#')) location.hash = target.href
           // The sign-in comes back to this place, so it takes this tab.
           else if (target.kind === 'external' && target.href === signInHere.current && !embedded()) location.assign(target.href)
@@ -583,6 +584,10 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   // A chat with a pw code session shows the session itself (pwcode/).
   const pw = useChatLink(activeId)
   const held = useModelHeld()
+  // Signed in and only a model missing, with models to choose: the empty
+  // state's button opens the picker in the box, not Accounts.
+  const heldCount = useHeldModelCount()
+  const choose = held && heldCount !== 0
   const keptSessions = useKeptSessions(activeId, pw)
   // The libraries the chat searches are part of its scope, ticked in the
   // same menu as the labels: every library until the user narrows it. The
@@ -681,7 +686,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
         // The model picker's Manage link and the no-model empty state's button.
-        extraLinks: { manageProviders: '#view=settings:access', addProvider: signedOut ? place || undefined : accountsHref(held ? undefined : signInFirst ? 'activate' : 'endpoint') },
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: signedOut ? place || undefined : choose ? CHOOSE_MODEL : accountsHref(held ? undefined : signInFirst ? 'activate' : 'endpoint') },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
@@ -724,8 +729,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           },
           emptyState: {
             noProvidersTitle: signedOut ? 'Sign in to chat' : signInFirst && !held ? 'Sign in with ACTIVATE first' : held ? HELD_TITLE : 'A model is needed',
-            noProvidersBody: signedOut ? (place ? 'Each chat belongs to the person who started it.' : SIGN_IN_ELSEWHERE) : held ? HELD_SAY : noModelsBody(cfg, noCredential !== false),
-            addProvider: signedOut ? 'Sign in' : 'Open Accounts',
+            noProvidersBody: signedOut ? (place ? 'Each chat belongs to the person who started it.' : SIGN_IN_ELSEWHERE) : held ? (choose ? HELD_SAY : HELD_NONE_SAY) : noModelsBody(cfg, noCredential !== false),
+            addProvider: signedOut ? 'Sign in' : choose ? 'Choose a model' : 'Open Accounts',
           },
           sidebar: {
             manageProviders: 'Model access',
