@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Button, Callout, Checkbox, Field, IconButton, Input, Loader, Popover, SegmentedControl, Select, toast } from '@parallelworks/ui'
 import { ChevronDownIcon, FolderIcon, HelpIcon } from '@parallelworks/ui/icons'
-import { SIGN_IN_TO_USE, needsActivate } from '../accounts'
+import { SIGN_IN_STOPPED, SIGN_IN_TO_USE, needsActivate } from '../accounts'
 import {
   api, type FolderCount, type FolderShare, type IndexDepth, type PwSystems, type SettingsLibrary, type SpaceAsk, type SpaceCheck, type SpaceStatus, type UserLibrary,
 } from '../api'
@@ -292,7 +292,8 @@ function FolderForm({ target, place, connect, options, browse, systems, buckets,
   onSignedIn: () => void
   onAdded: (lib: { id: string; label: string }, started: boolean, here?: boolean, count?: number) => void
 }) {
-  const signIn = !!useAppConfig().signIn
+  const cfg = useAppConfig()
+  const signIn = !!cfg.signIn
   const here = target?.kind === 'here'
   const cluster = target?.kind === 'cluster' ? target.name : ''
   const ssh = target?.kind === 'ssh' ? target.destination : ''
@@ -386,10 +387,17 @@ function FolderForm({ target, place, connect, options, browse, systems, buckets,
         <Where chip={gone || offered.buckets ? chip : null} naming={naming} below={below} />
         {status.cluster && status.signInOffered && !status.credential ? (
           <div className="space-sign-in">
-            <Callout tone="info" title={SIGN_IN_TO_USE}>
-              A folder on {status.cluster} is indexed and read as your own account. Sign in with ACTIVATE here and approve
-              the code on the platform, then choose the folder. The sign-in is kept under Settings, Accounts.
-            </Callout>
+            {cfg.signInStopped ? (
+              <Callout tone="warning" title={SIGN_IN_STOPPED}>
+                A folder on {status.cluster} is indexed and read as your own account, and the platform no longer accepts
+                your sign-in. Sign in again here and approve the code on the platform, then choose the folder.
+              </Callout>
+            ) : (
+              <Callout tone="info" title={SIGN_IN_TO_USE}>
+                A folder on {status.cluster} is indexed and read as your own account. Sign in with ACTIVATE here and approve
+                the code on the platform, then choose the folder. The sign-in is kept under Settings, Accounts.
+              </Callout>
+            )}
             <PlatformSignInPanel onChanged={signedIn} />
           </div>
         ) : needsActivate(status.why)

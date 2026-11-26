@@ -37,6 +37,8 @@ const SAYS: Record<Posture, string> = {
 const none = { source: 'none' as const, host: null, context: null }
 
 let posture: Posture
+/** The person's kept ACTIVATE sign-in stopped working. */
+let stopped: boolean
 let admin: boolean
 /** What the model listing answers in place of having no account. */
 let models: Record<string, unknown> | null
@@ -47,7 +49,7 @@ beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); forgetEngines(); clearChatRecords(); forgetModels(); setLibrary('kb')
   resetStatusPanelForTests()
   location.hash = ''
-  posture = 'strict'; admin = false; models = null; job = null; posts = []
+  posture = 'strict'; stopped = false; admin = false; models = null; job = null; posts = []
   vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }))
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -58,7 +60,7 @@ beforeEach(() => {
     const signIn = posture !== 'one'
     switch (url.pathname) {
       case '/api/config': return json({
-        appName: 'Studio', kbLabel: 'Shared library', aiEnabled: true, accounts: true, signIn, ...(posture === 'strict' ? { signInFirst: true } : {}),
+        appName: 'Studio', kbLabel: 'Shared library', aiEnabled: true, accounts: true, signIn, ...(posture === 'strict' ? { signInFirst: true } : {}), ...(stopped ? { signInStopped: true } : {}),
         user: { id: 'ada', username: 'ada' }, suggestedPrompts: [],
         libraries: [{
           id: 'kb', label: 'Shared library', primary: true, writable: true, pinned: true, source: true, caps: { index: true, fullText: true, vectors: false },
@@ -118,6 +120,20 @@ describe('a new chat with no account for models', () => {
     act(() => screen.getByText('Open Accounts').click())
     expect(location.hash).toBe('#view=settings:accounts?open=activate')
   })
+  it('asks to sign in again where the kept sign-in stopped working, and opens its row', async () => {
+    stopped = true
+    Object.defineProperty(window, 'innerWidth', { value: 1440, configurable: true })
+    await draw(<ChatView active />, 'strict')
+    await waitFor(() => expect(screen.queryAllByText('Sign in again').length).toBeGreaterThan(0), { timeout: 5000 })
+    await act(async () => { await new Promise(r => setTimeout(r, 100)) })
+    const text = document.querySelector('.chat-canvas')!.textContent!
+    expect(text).toContain('Your ACTIVATE sign-in stopped working')
+    expect(text).toContain('The platform no longer accepts your ACTIVATE sign-in. Sign in again under Settings, Accounts.')
+    expect(text).not.toMatch(/Sign in with ACTIVATE|Open Accounts/)
+    expect(document.querySelector('textarea')).toHaveAttribute('placeholder', 'Sign in again to start chatting')
+    act(() => screen.getByText('Sign in again').click())
+    expect(location.hash).toBe('#view=settings:accounts?open=activate')
+  })
   it('speaks of no model on this computer where people sign in, which is a server', async () => {
     const text = await said('signin')
     expect(text).toContain('an OpenAI-compatible endpoint of your own')
@@ -158,6 +174,19 @@ describe('Settings, Accounts before signing in', () => {
     await draw(<AccountsSection />, 'one')
     expect(await screen.findByText(/^Not signed in\. The Studio works without ACTIVATE/)).toBeInTheDocument()
     expect(screen.getByText(/The Studio works without any of them: chat with a model of/)).toBeInTheDocument()
+  })
+})
+
+describe('the footer, once a kept sign-in stopped working', () => {
+  it('asks to sign in again, not to sign in with ACTIVATE', async () => {
+    stopped = true
+    await draw(<StatusFooter />, 'strict')
+    expect(await screen.findByText('Sign in again')).toBeInTheDocument()
+    expect(screen.queryByText('Sign in with ACTIVATE')).toBeNull()
+  })
+  it('still asks to sign in with ACTIVATE before a first sign-in', async () => {
+    await draw(<StatusFooter />, 'strict')
+    expect(await screen.findByText('Sign in with ACTIVATE')).toBeInTheDocument()
   })
 })
 

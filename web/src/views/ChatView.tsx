@@ -1,5 +1,5 @@
 import React, { Activity, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { accountsHref } from '../accounts'
+import { SIGN_IN_AGAIN, SIGN_IN_STOPPED, accountsHref } from '../accounts'
 import { embedded, SIGN_IN_TO_CHAT, signInPlace } from '../signIn'
 import {
   Button, Callout, Checkbox, EmptyState, Popover, PopoverClose, SearchInput, SegmentedControl,
@@ -241,6 +241,7 @@ function insertInBox(text: string): void {
 /** What a new chat says with no model listed. Where people sign in the
  *  Studio runs on a server, so a model on "this computer" is not theirs. */
 function noModelsBody(cfg: AppConfig, noCredential: boolean): string {
+  if (cfg.signInStopped) return 'The platform no longer accepts your ACTIVATE sign-in. Sign in again under Settings, Accounts. Browsing and search work without it.'
   if (!cfg.signIn) return 'Sign in with ACTIVATE, or add an OpenAI-compatible endpoint such as a model server on this computer, under Settings, Accounts. Browsing, search, and adding material work without one.'
   if (!cfg.signInFirst) return 'Sign in with ACTIVATE, or add an OpenAI-compatible endpoint of your own, under Settings, Accounts. Browsing and search work without one.'
   return noCredential
@@ -250,7 +251,7 @@ function noModelsBody(cfg: AppConfig, noCredential: boolean): string {
 
 /** The notice over the thread. A new chat that lists no model for want of
  *  an account says so itself (`saidBelow`), so the notice is not said twice. */
-function CredBanner({ note, row, saidBelow, onDismiss }: { note: string; row?: 'activate'; saidBelow: boolean; onDismiss: () => void }) {
+function CredBanner({ note, row, stopped, saidBelow, onDismiss }: { note: string; row?: 'activate'; stopped?: boolean; saidBelow: boolean; onDismiss: () => void }) {
   const { models } = useChat()
   if (saidBelow && !models.length) return null
   return (
@@ -261,7 +262,7 @@ function CredBanner({ note, row, saidBelow, onDismiss }: { note: string; row?: '
         live
         action={/Model access/.test(note)
           ? <Button variant="primary" size="sm" onClick={() => { location.hash = '#view=settings:access' }}>Open Model access</Button>
-          : <Button variant="primary" size="sm" onClick={() => { location.hash = accountsHref(row) }}>Open Accounts</Button>}
+          : <Button variant="primary" size="sm" onClick={() => { location.hash = accountsHref(row) }}>{stopped ? SIGN_IN_AGAIN : 'Open Accounts'}</Button>}
         onDismiss={onDismiss}
       >
         {note}
@@ -648,6 +649,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
 
   setViewerUsername(cfg.user?.username ?? '')
   const signInFirst = !!cfg.signInFirst && noCredential !== false
+  // A kept ACTIVATE sign-in that stopped working: what needs it asks to sign in again.
+  const stopped = !!cfg.signInStopped && !held
   // A visitor, or one whose sign-in ended while the page was open.
   const signedOut = !!cfg.signedOut || signInAsked
   const place = signedOut ? signInPlace(cfg) : ''
@@ -686,7 +689,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
         suggestedPrompts: cfg.suggestedPrompts,
         LinkComponent,
         // The model picker's Manage link and the no-model empty state's button.
-        extraLinks: { manageProviders: '#view=settings:access', addProvider: signedOut ? place || undefined : choose ? CHOOSE_MODEL : accountsHref(held ? undefined : signInFirst ? 'activate' : 'endpoint') },
+        extraLinks: { manageProviders: '#view=settings:access', addProvider: signedOut ? place || undefined : choose ? CHOOSE_MODEL : accountsHref(held ? undefined : signInFirst || stopped ? 'activate' : 'endpoint') },
         // Same-origin /?embed= image sources render as live viewers (DAGs,
         // 3D models) instead of broken images; the server emits them in
         // chat replies. Formerly a dist patch, now the supported hook.
@@ -728,9 +731,9 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             feedbackPlaceholder: 'Tell the assistant what to do instead…',
           },
           emptyState: {
-            noProvidersTitle: signedOut ? 'Sign in to chat' : signInFirst && !held ? 'Sign in with ACTIVATE first' : held ? HELD_TITLE : 'A model is needed',
+            noProvidersTitle: signedOut ? 'Sign in to chat' : stopped ? SIGN_IN_STOPPED : signInFirst && !held ? 'Sign in with ACTIVATE first' : held ? HELD_TITLE : 'A model is needed',
             noProvidersBody: signedOut ? (place ? 'Each chat belongs to the person who started it.' : SIGN_IN_ELSEWHERE) : held ? (choose ? HELD_SAY : HELD_NONE_SAY) : noModelsBody(cfg, noCredential !== false),
-            addProvider: signedOut ? 'Sign in' : choose ? 'Choose a model' : 'Open Accounts',
+            addProvider: signedOut ? 'Sign in' : choose ? 'Choose a model' : stopped ? SIGN_IN_AGAIN : 'Open Accounts',
           },
           sidebar: {
             manageProviders: 'Model access',
@@ -741,7 +744,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           },
           input: {
             ...(signedOut ? { placeholder: 'Sign in to chat' } : {}),
-            placeholderNoProviders: signedOut ? 'Sign in to chat' : held ? 'Choose a model to start chatting' : signInFirst ? 'Sign in with ACTIVATE to start chatting' : 'Add a model under Settings, Accounts to start chatting',
+            placeholderNoProviders: signedOut ? 'Sign in to chat' : stopped ? 'Sign in again to start chatting' : held ? 'Choose a model to start chatting' : signInFirst ? 'Sign in with ACTIVATE to start chatting' : 'Add a model under Settings, Accounts to start chatting',
           },
         },
       }}
@@ -752,7 +755,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           onClickCapture={e => { if ((e.target as Element).closest?.('button')?.getAttribute('aria-label')?.startsWith('Send message')) keepUnsent(e) }}>
           {signedOut && !showAttachments && !showManage && <SignInToChat place={place} saidBelow={!activeId} />}
           {credNote && !signedOut && (
-            <CredBanner note={credNote} onDismiss={dismissNote} row={signInFirst ? 'activate' : undefined}
+            <CredBanner note={credNote} onDismiss={dismissNote} row={signInFirst || stopped ? 'activate' : undefined} stopped={stopped}
               saidBelow={!!noCredential && !held && !activeId && !showAttachments && !showManage} />
           )}
           {!showAttachments && !showManage && !pw.shown && <PWCodeApprovals conversationId={activeId} />}

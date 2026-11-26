@@ -1,11 +1,15 @@
 package chat
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 )
 
 // The deployment's ACTIVATE credential (PW_API_KEY "k" in newTestModule)
@@ -159,5 +163,38 @@ func TestSlashListLeavesOutPWCodeWithoutActivate(t *testing.T) {
 	}
 	if text, _ := m.expandSlashCommand(r, "/delegate the sweep"); !strings.Contains(text, "Call the delegate tool") {
 		t.Fatal(text)
+	}
+}
+
+// A person whose kept ACTIVATE sign-in stopped working is asked to sign in
+// again, not to sign in first, by the model listing, the footer's health
+// line and a chat turn; anyone else still to sign in first.
+func TestStrictStudioAsksToSignInAgainOnceASignInStopped(t *testing.T) {
+	m, _, _, _ := newTestModule(t, map[string]string{"AUTH_REQUIRED": "1", "REQUIRE_PERSONAL_KEY": "1", "PW_PLATFORM_HOST": "platform.example.com", "AUTH_JWKS_URL": "http://127.0.0.1:9/jwks"})
+	m.A.Providers.SignInStopped = func(sub string) string {
+		if sub == "ada" {
+			return "ACTIVATE no longer accepts your sign-in."
+		}
+		return ""
+	}
+	read := func(who, path string, h func(http.ResponseWriter, *http.Request) error) map[string]any {
+		w := httptest.NewRecorder()
+		r := auth.WithUser(httptest.NewRequest(http.MethodGet, path, nil), &auth.User{ID: who, Username: who})
+		if err := h(w, r); err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(w.Body.String())
+		}
+		return out
+	}
+	for who, want := range map[string]string{"ada": modelkeys.SignInAgain, "bob": modelkeys.SignInFirst} {
+		if out := read(who, "/api/chat/models", m.models); out["error"] != want || out["kind"] != "credential" {
+			t.Fatalf("%s: models %v", who, out)
+		}
+		if h := read(who, "/api/ai/health", m.health); h["status"] != "key-required" || h["message"] != want {
+			t.Fatalf("%s: health %v", who, h)
+		}
 	}
 }

@@ -43,6 +43,7 @@ var paths = map[string]bool{
 	"/api/index/status":         true,
 	"/api/kb/stats":             true,
 	"/api/libraries":            true,
+	"/api/me/platform-sign-in":  true,
 	"/api/notices":              true,
 	"/api/runs":                 true,
 	"/api/sessions":             true,

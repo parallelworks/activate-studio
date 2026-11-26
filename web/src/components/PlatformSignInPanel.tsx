@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Callout, CopyButton, ExternalLink, Loader } from '@parallelworks/ui'
 import { api, type PlatformSignIn } from '../api'
-import { SIGN_IN_STOPPED } from '../accounts'
+import { SIGN_IN_AGAIN, SIGN_IN_STOPPED } from '../accounts'
+import { useWatch } from '../live'
 
 const FAILED = 'The sign-in did not finish'
+
+/** How often an open page reads a kept sign-in's state. */
+export const FOLLOW_MS = 20_000
 
 /**
  * Sign in with ACTIVATE: the viewer's own sign-in on a Studio several
@@ -14,8 +18,9 @@ const FAILED = 'The sign-in did not finish'
  * folders shared with them. Sign out ends it. Hidden where the route
  * answers that this Studio keeps no personal sign-ins. It shows the state
  * and the button only; the page around it says what the sign-in is for.
- * `onChanged` hears a sign-in or sign-out finish, so that page can read
- * again.
+ * `onChanged` hears a sign-in or sign-out finish, or a kept sign-in stop
+ * or start working again, so that page can read again. While it shows a
+ * kept sign-in it follows the state, so an open page sees it change.
  */
 export function PlatformSignInPanel({ onChanged }: { onChanged?: () => void }) {
   const [st, setSt] = useState<PlatformSignIn | null>(null)
@@ -30,6 +35,16 @@ export function PlatformSignInPanel({ onChanged }: { onChanged?: () => void }) {
     else setError(String(e.message ?? e))
   })
   useEffect(() => { void read() }, [])
+  // Follow a kept sign-in while the page is open: the platform may stop
+  // accepting it (or accept it again) without anything done here. A reading
+  // that answers after a sign-in or sign-out began here is not kept.
+  const kept = st?.state === 'signed-in' || st?.state === 'expired'
+  const now = useRef(st)
+  now.current = st
+  useWatch<PlatformSignIn>('/api/me/platform-sign-in', FOLLOW_MS, kept && !busy, s => {
+    const was = now.current?.state
+    if ((was === 'signed-in' || was === 'expired') && (s.state === 'signed-in' || s.state === 'expired' || s.state === 'none')) setSt(s)
+  })
   // While a sign-in waits for approval, look again every two seconds.
   useEffect(() => {
     if (st?.state !== 'starting' && st?.state !== 'waiting') return
@@ -93,7 +108,7 @@ export function PlatformSignInPanel({ onChanged }: { onChanged?: () => void }) {
       {(st?.state === 'none' || st?.state === 'failed' || st?.state === 'expired') && (
         <div className="key-row">
           <Button variant="primary" loading={busy} onClick={() => void run(api.startPlatformSignIn)}>
-            {st.state === 'failed' ? 'Try again' : st.state === 'expired' ? 'Sign in again' : 'Sign in with ACTIVATE'}
+            {st.state === 'failed' ? 'Try again' : st.state === 'expired' ? SIGN_IN_AGAIN : 'Sign in with ACTIVATE'}
           </Button>
         </div>
       )}

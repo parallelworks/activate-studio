@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodePage } from '../src/code/CodePage'
 import { AccountsSection } from '../src/components/AccountsSection'
-import { PlatformSignInPanel } from '../src/components/PlatformSignInPanel'
+import { FOLLOW_MS, PlatformSignInPanel } from '../src/components/PlatformSignInPanel'
+import { connectionLines, modelSummary } from '../src/components/StatusPanel'
 import { reloadAppConfig } from '../src/config'
 import { accessOf, reply, srv, stub } from './accessFixtures'
 
@@ -67,6 +68,35 @@ describe('a kept ACTIVATE sign-in that stopped working', () => {
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
     // Found stopped on its first read: the page reads again.
     await waitFor(() => expect(changed).toHaveBeenCalledTimes(1))
+  })
+
+  it('an open page sees the sign-in stop working, and work again, without leaving', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let st: Record<string, unknown> = { state: 'signed-in', account: 'ada', host: 'platform-a.example.com' }
+      vi.stubGlobal('fetch', vi.fn(async () => reply(st)))
+      const changed = vi.fn()
+      render(<PlatformSignInPanel onChanged={changed} />)
+      expect(await screen.findByText('Signed in as ada on platform-a.example.com')).toBeInTheDocument()
+      st = { state: 'expired', account: 'ada', host: 'platform-a.example.com', message: WHY }
+      await act(async () => { await vi.advanceTimersByTimeAsync(FOLLOW_MS + 100) })
+      expect(await screen.findByRole('button', { name: 'Sign in again' })).toBeInTheDocument()
+      expect(screen.queryByText('Signed in as ada on platform-a.example.com')).toBeNull()
+      await waitFor(() => expect(changed).toHaveBeenCalledTimes(1))
+      st = { state: 'signed-in', account: 'ada', host: 'platform-a.example.com' }
+      await act(async () => { await vi.advanceTimersByTimeAsync(FOLLOW_MS + 100) })
+      expect(await screen.findByText('Signed in as ada on platform-a.example.com')).toBeInTheDocument()
+      await waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
+    } finally { vi.useRealTimers() }
+  })
+
+  it('the Status panel asks to sign in again for the platform and the models', () => {
+    const go = connectionLines({ platform: false, authEnabled: true, signInStopped: true, ai: null, mcp: null, libs: [], userLibs: null })
+    expect(go.find(r => r.key === 'platform')?.meta).toBe('sign in again to use it')
+    expect(connectionLines({ platform: false, authEnabled: true, ai: null, mcp: null, libs: [], userLibs: null }).find(r => r.key === 'platform')?.meta).toBe('sign in with ACTIVATE to use it')
+    const ai = { ok: false, status: 'key-required' as const, models: 0, gatewayHost: '', message: null, lastCallFailure: null, checkedAt: '' }
+    expect(modelSummary(ai, null, true).text).toBe('sign in again')
+    expect(modelSummary(ai, null).text).toBe('sign in with ACTIVATE')
   })
 
   it('a page that needs ACTIVATE says it stopped working, and Sign in again opens Accounts', async () => {

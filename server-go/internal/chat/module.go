@@ -526,10 +526,19 @@ func noModelCredential(shared bool) string {
 // (REQUIRE_PERSONAL_KEY).
 const signInFirst = modelkeys.SignInFirst
 
+// signInFirstFor is signInFirst, or sign in again for a person whose kept
+// ACTIVATE sign-in stopped working.
+func (m *Module) signInFirstFor(r *http.Request) string {
+	if u := user(r); u != nil && m.A.Providers.SignInStopped != nil && m.A.Providers.SignInStopped(u.ID) != "" {
+		return modelkeys.SignInAgain
+	}
+	return signInFirst
+}
+
 // noCredential is the one of them that holds for this Studio.
-func (m *Module) noCredential() string {
+func (m *Module) noCredential(r *http.Request) string {
 	if m.personalRequired(nil) {
-		return signInFirst
+		return m.signInFirstFor(r)
 	}
 	return noModelCredential(m.A.Cfg.AuthEnabled())
 }

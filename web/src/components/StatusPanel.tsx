@@ -8,7 +8,7 @@ import { hasActivate, mainWritable, reloadAppConfig, type AppConfig } from '../c
 import { setPanelOpen, usePanel } from '../panelState'
 import { modelLabel, syncIndex, useShared, type AiHealth, type KbStats } from '../statusShare'
 import { indexSummary, kickIndexStatus, useIndexStatus } from '../indexActivity'
-import { AI_LABEL, modelsReady } from './StatusFooter'
+import { aiLabel, modelsReady } from './StatusFooter'
 import { openInSideView } from './RunPane'
 import { openSessionWindow, showsInStudio, type SessionInfo } from './SessionView'
 import { DetailsBody, detailsSummary, useEntryDetails } from './LibraryDetails'
@@ -201,10 +201,10 @@ export function librariesSummary(lines: LibLine[], idx: IndexStatus | null): Sum
   return { text: plural(lines.length, 'library', 'libraries'), tone: null }
 }
 
-export function modelSummary(ai: AiHealth | null, model: string | null): Summary {
+export function modelSummary(ai: AiHealth | null, model: string | null, stopped?: boolean): Summary {
   if (!ai) return { text: model ?? '', tone: null }
   if (ai.status === 'ok') return { text: model ?? `${ai.models} models`, tone: 'success' }
-  return { text: AI_LABEL[ai.status], tone: ai.status === 'unconfigured' || ai.status === 'off' ? 'muted' : 'warning' }
+  return { text: aiLabel(ai.status, stopped), tone: ai.status === 'unconfigured' || ai.status === 'off' ? 'muted' : 'warning' }
 }
 
 /** What a connection is: the ACTIVATE platform, an attached MCP server, or
@@ -221,7 +221,7 @@ export const CONN_GROUPS: { kind: ConnKind; label: string }[] = [
 ]
 
 export function connectionLines(o: {
-  platform: boolean; authEnabled: boolean | null; ai: AiHealth | null; mcp: McpRow[] | null
+  platform: boolean; authEnabled: boolean | null; signInStopped?: boolean; ai: AiHealth | null; mcp: McpRow[] | null
   libs: PublicLibrary[]; userLibs: UserLibrary[] | null
 }): ConnLine[] {
   const rows: ConnLine[] = []
@@ -230,7 +230,7 @@ export function connectionLines(o: {
       ? { key: 'platform', kind: 'platform', name: 'Platform', meta: 'your key does not reach it', tone: 'warning', onClick: () => go(accountsHref('activate')) }
       : { key: 'platform', kind: 'platform', name: 'Platform', meta: 'connected', tone: 'success' })
   } else if (o.authEnabled) {
-    rows.push({ key: 'platform', kind: 'platform', name: 'Platform', meta: 'sign in with ACTIVATE to use it', tone: 'warning', onClick: () => go(accountsHref('activate')) })
+    rows.push({ key: 'platform', kind: 'platform', name: 'Platform', meta: o.signInStopped ? 'sign in again to use it' : 'sign in with ACTIVATE to use it', tone: 'warning', onClick: () => go(accountsHref('activate')) })
   }
   for (const m of o.mcp ?? []) {
     const key = `mcp:${m.name}`
@@ -440,7 +440,7 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
   const newlyIndexed = (cfg.libraries ?? []).filter(l => !l.caps.index && data.libs?.some(n => n.id === l.id && n.caps.index)).map(l => l.id).join(',')
   useEffect(() => { if (newlyIndexed) reloadAppConfig() }, [newlyIndexed])
   const model = shared.model ?? rememberedModel()
-  const conns = connectionLines({ platform: !!cfg.platform, authEnabled: shared.authEnabled, ai: shared.ai, mcp: ai ? data.mcp : null, libs: cfg.libraries ?? [], userLibs: data.userLibs })
+  const conns = connectionLines({ platform: !!cfg.platform, authEnabled: shared.authEnabled, signInStopped: cfg.signInStopped, ai: shared.ai, mcp: ai ? data.mcp : null, libs: cfg.libraries ?? [], userLibs: data.userLibs })
   const ix = indexSummary(idx)
 
   return (
@@ -510,11 +510,11 @@ function PanelCards({ view, cfg }: { view: string; cfg: AppConfig }) {
         </Card>
       )}
       {cfg.aiEnabled !== false && (shared.ai || model) && (
-        <Card id="model" title="Model" summary={modelSummary(shared.ai, model)}>
+        <Card id="model" title="Model" summary={modelSummary(shared.ai, model, cfg.signInStopped)}>
           {model && <Row tone={shared.ai?.status === 'ok' ? 'success' : 'muted'} name={model} meta={shared.modelProvider ?? 'selected'} title={model} />}
           {shared.ai && (
             <Row tone={shared.ai.status === 'ok' ? 'success' : shared.ai.status === 'unconfigured' || shared.ai.status === 'off' ? 'muted' : 'warning'}
-              name={shared.ai.status === 'ok' ? modelsReady(shared.ai.models) : AI_LABEL[shared.ai.status]}
+              name={shared.ai.status === 'ok' ? modelsReady(shared.ai.models) : aiLabel(shared.ai.status, cfg.signInStopped)}
               sub={shared.ai.status === 'ok' ? undefined : shared.ai.message ?? undefined}
               title={shared.ai.gatewayHost ? `Through ${shared.ai.gatewayHost}` : undefined} />
           )}

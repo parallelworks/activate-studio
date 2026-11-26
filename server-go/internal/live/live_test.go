@@ -436,3 +436,11 @@ func TestAListingIsSentAsItChanges(t *testing.T) {
 		}
 	}
 }
+
+// An open Settings, Accounts follows the person's kept ACTIVATE sign-in, so
+// one that stops working (or works again) shows without leaving the page.
+func TestAPageMayFollowThePlatformSignIn(t *testing.T) {
+	if allowed("/api/me/platform-sign-in") != "/api/me/platform-sign-in" {
+		t.Fatal("/api/me/platform-sign-in may not be followed")
+	}
+}
