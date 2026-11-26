@@ -417,3 +417,30 @@ func TestAFolderSharedIsANotice(t *testing.T) {
 		t.Errorf("taken back: %s", ids(a))
 	}
 }
+
+// TestABodyThatIsNotWhatIsAskedIsA400: a body the notices' routes cannot
+// read, or of the wrong shape, is a 400 with words, never a 500.
+func TestABodyThatIsNotWhatIsAskedIsA400(t *testing.T) {
+	s := newStudio(t, true)
+	s.people["bob"] = &person{}
+	for _, path := range []string{"/api/notices/dismiss", "/api/notices/seen"} {
+		for _, b := range [][2]string{
+			{"application/json", ""}, {"application/json", "{"}, {"text/plain", "x"}, {"application/x-www-form-urlencoded", "ids=a"},
+			{"application/json", "[1]"}, {"application/json", `{"ids": "a"}`}, {"application/json", `{"ids": [1, 2]}`}, {"application/json", `{"conversations": {}, "session": 5}`},
+		} {
+			req, _ := http.NewRequest("POST", s.srv.URL+path, strings.NewReader(b[1]))
+			req.Header.Set("as", "bob")
+			req.Header.Set("Content-Type", b[0])
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out struct{ Error string }
+			json.NewDecoder(res.Body).Decode(&out)
+			res.Body.Close()
+			if res.StatusCode >= 500 || (res.StatusCode >= 400) != (out.Error != "") {
+				t.Errorf("%s %s %q: %d %q", path, b[0], b[1], res.StatusCode, out.Error)
+			}
+		}
+	}
+}

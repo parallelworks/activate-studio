@@ -509,9 +509,10 @@ func (m *Module) Routes(mux *http.ServeMux, log *slog.Logger) {
 			// the same way whether the route reads it or not.
 			var body *jsonv.Object
 			if read {
+				// A body that cannot be read is said to be, not a 500.
 				b, err := platform.BodyObject(r)
 				if err != nil {
-					return nil, err
+					return nil, platform.BadBody(err)
 				}
 				body = b
 			}

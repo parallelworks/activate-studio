@@ -47,11 +47,32 @@ func Handler(log *slog.Logger, h func(w http.ResponseWriter, r *http.Request) (a
 // KbError is Node's KbError.
 func KbError(status int, msg string) error { return &apierr.Error{Status: status, Message: msg} }
 
+// BodyError is a body Fastify refuses: Error is its words, as logged, and
+// Words what a route that answers it with a 4xx says (BadBody).
+type BodyError struct {
+	Fastify string
+	Words   string
+	Status  int
+}
+
+func (e *BodyError) Error() string { return e.Fastify }
+
+// BadBody is err as a route that does not keep Fastify's 500 for a body it
+// cannot read answers it: 400 (413 for one too large) with what is wrong.
+// Any other error is as it was.
+func BadBody(err error) error {
+	var b *BodyError
+	if errors.As(err, &b) {
+		return apierr.New(b.Status, "%s", b.Words)
+	}
+	return err
+}
+
 // Body is req.body as Fastify parses it: a JSON body as decoded values, a
 // text body as a string, none as nil. What Fastify refuses (malformed or
-// empty JSON, an unknown content type, more than 1 MiB) reaches
-// sanitizedErrorHandler as an error without a KbError's status, so it is
-// a 500, as there.
+// empty JSON, an unknown content type, more than 1 MiB) is a *BodyError
+// without a KbError's status, so it reaches sanitizedErrorHandler as a
+// 500, as there, unless the route answers it with BadBody.
 func Body(r *http.Request) (any, error) {
 	if r.Body == nil {
 		return nil, nil
@@ -61,7 +82,7 @@ func Body(r *http.Request) (any, error) {
 		return nil, err
 	}
 	if len(b) > 1<<20 {
-		return nil, errors.New("Request body is too large")
+		return nil, &BodyError{"Request body is too large", "The request body is larger than 1 MiB.", http.StatusRequestEntityTooLarge}
 	}
 	ct := r.Header.Get("Content-Type")
 	if len(b) == 0 && ct == "" {
@@ -71,15 +92,19 @@ func Body(r *http.Request) (any, error) {
 	switch {
 	case mt == "application/json" || strings.HasSuffix(mt, "+json"):
 		if len(b) == 0 {
-			return nil, errors.New("Body cannot be empty when content-type is set to 'application/json'")
+			return nil, &BodyError{"Body cannot be empty when content-type is set to 'application/json'", "The request says its body is JSON and has none: send {} or no Content-Type.", http.StatusBadRequest}
 		}
-		return jsonv.Decode(b)
+		v, err := jsonv.Decode(b)
+		if err != nil {
+			return nil, &BodyError{err.Error(), "The request body is not valid JSON.", http.StatusBadRequest}
+		}
+		return v, nil
 	case mt == "text/plain":
 		return string(b), nil
 	case len(b) == 0:
 		return nil, nil
 	}
-	return nil, errors.New("Unsupported Media Type: " + ct)
+	return nil, &BodyError{"Unsupported Media Type: " + ct, "The request body must be JSON (Content-Type: application/json).", http.StatusBadRequest}
 }
 
 // BodyObject is `(req.body ?? {})` as an object: fields of anything that
