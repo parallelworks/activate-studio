@@ -405,7 +405,7 @@ permissions:
             type: string
             default: ''
             optional: true
-            tooltip: Platform host for identity verification, e.g. activate.parallel.works; the JWKS path is appended automatically. Ignored for the single-user posture.
+            tooltip: Platform host for identity verification, e.g. activate.parallel.works; the JWKS path is appended automatically. Ignored for the single-user posture, except by ACTIVATE sign-in under Sign-in and Sharing.
           pw_api_key:
             label: Platform API key
             tooltip: A platform API key from your ACTIVATE account (Account, API keys), not an AI gateway or model key. The Studio's own housekeeping authenticates with it (renewing its sign-in, registering the grounded model, image descriptions while indexing, reading its workflow collection), so the host never depends on a pw login that expires. On a Studio several people use it is never used for a person's work; each person signs in with ACTIVATE under Settings, Accounts.
@@ -484,6 +484,41 @@ permissions:
               Platform endpoint name for the served model, expanded like the session
               name, so gemma-${USER} gives each person their own. Empty derives
               <session name>-model.
+      access_settings:
+        label: Sign-in and Sharing (optional)
+        type: group
+        collapsed: true
+        items:
+          admins:
+            label: Administrators
+            type: string
+            default: ''
+            optional: true
+            tooltip: Who changes the main library and the Studio's settings where people sign in, besides you as the deployment's owner. User names, ids, e-mail addresses or group:NAME, separated by commas or spaces, such as ada, group:studio-admins. Everyone else reads the main library only. Sets STUDIO_ADMINS.
+          bucket_endpoints:
+            label: Bucket Endpoints
+            type: string
+            default: ''
+            optional: true
+            tooltip: The only hosts people may choose as an ACTIVATE bucket's endpoint, separated by commas, such as s3.storage.example.com:9443 (port 443 where none is given). Empty, nobody chooses one and each store is asked at its own address. Sets STUDIO_BUCKET_ENDPOINTS.
+          shared_chat_history:
+            label: Shared Chat History
+            type: boolean
+            default: false
+            tooltip: Everyone signed in can read everyone's chats, under All chats, and only a chat's owner changes it. Answers can quote files from people's own libraries, so this shares those quotes too. Off, each person sees only their own; an administrator can still turn it on in Settings, General, AI features. Sets CHAT_SHARED_HISTORY=1.
+          oidc_client_id:
+            label: ACTIVATE Sign-in Client ID
+            type: string
+            default: ''
+            optional: true
+            tooltip: The client ID of a web application registered for this Studio in ACTIVATE (Organization, Settings, Applications; a feature preview), so people sign in once in the Studio's own tab. Needs the platform host above and the Public Studio URL, a fixed subdomain, whose /api/auth/callback is the registered redirect URI. See docs/DEPLOY.md, Registering the Studio with ACTIVATE.
+          oidc_client_secret:
+            label: ACTIVATE Sign-in Client Secret
+            type: string
+            default: ''
+            optional: true
+            tooltip: That application's client secret. Empty, the Studio signs in as a public client with PKCE alone.
+          # Custom tools (STUDIO_CUSTOM_TOOLS) go here once that setting lands.
 jobs:
   setup:
     if: ${{ inputs.resource_and_execution.scheduler != true }}
@@ -911,6 +946,34 @@ jobs:
           if [ "$POSTURE" = "multi-strict" ]; then
             echo "export REQUIRE_PERSONAL_KEY=1" >> ${SCRIPT}
           fi
+          # Sign-in and sharing (docs/DEPLOY.md, Sign-in): each is set only
+          # when the form gives it, so an empty field leaves the Studio's
+          # default.
+          if [ -n '${{ inputs.access_settings.admins }}' ]; then
+            printf 'export STUDIO_ADMINS=%q\n' '${{ inputs.access_settings.admins }}' >> ${SCRIPT}
+          fi
+          if [ -n '${{ inputs.access_settings.bucket_endpoints }}' ]; then
+            printf 'export STUDIO_BUCKET_ENDPOINTS=%q\n' '${{ inputs.access_settings.bucket_endpoints }}' >> ${SCRIPT}
+          fi
+          if [ "${{ inputs.access_settings.shared_chat_history }}" = "true" ]; then
+            echo "export CHAT_SHARED_HISTORY=1" >> ${SCRIPT}
+          fi
+          # Sign-in through ACTIVATE as an OpenID Connect provider: the
+          # issuer is the platform's, and the redirect is the Studio's fixed
+          # address, as the application was registered with it.
+          if [ -n '${{ inputs.access_settings.oidc_client_id }}' ] && [ -n "$PLATFORM_HOST" ]; then
+            printf 'export OIDC_ISSUER=%q\n' "https://${PLATFORM_HOST}/api/oidc" >> ${SCRIPT}
+            printf 'export OIDC_CLIENT_ID=%q\n' '${{ inputs.access_settings.oidc_client_id }}' >> ${SCRIPT}
+            if [ -n '${{ inputs.access_settings.oidc_client_secret }}' ]; then
+              printf 'export OIDC_CLIENT_SECRET=%q\n' '${{ inputs.access_settings.oidc_client_secret }}' >> ${SCRIPT}
+            fi
+            SELF='${{ inputs.app_settings.self_url }}'; SELF="${SELF%/}"
+            if [ -n "$SELF" ]; then
+              printf 'export OIDC_REDIRECT_URI=%q\n' "${SELF}/api/auth/callback" >> ${SCRIPT}
+              printf 'export OIDC_POST_LOGOUT_REDIRECT_URI=%q\n' "${SELF}/" >> ${SCRIPT}
+            fi
+            echo "export OIDC_SCOPES='openid profile email groups offline_access'" >> ${SCRIPT}
+          fi
 
           if [ "${{ inputs.session_settings.session_method }}" = "cleanup" ]; then
             cat >> ${SCRIPT} << 'CLEANUP_BODY'
@@ -965,6 +1028,15 @@ jobs:
             ${AUTH_REQUIRED:+--env AUTH_REQUIRED="${AUTH_REQUIRED}"} \
             ${DISABLE_PERSONAL_KEYS:+--env DISABLE_PERSONAL_KEYS="${DISABLE_PERSONAL_KEYS}"} \
             ${REQUIRE_PERSONAL_KEY:+--env REQUIRE_PERSONAL_KEY="${REQUIRE_PERSONAL_KEY}"} \
+            ${STUDIO_ADMINS:+--env STUDIO_ADMINS="${STUDIO_ADMINS}"} \
+            ${STUDIO_BUCKET_ENDPOINTS:+--env STUDIO_BUCKET_ENDPOINTS="${STUDIO_BUCKET_ENDPOINTS}"} \
+            ${CHAT_SHARED_HISTORY:+--env CHAT_SHARED_HISTORY="${CHAT_SHARED_HISTORY}"} \
+            ${OIDC_ISSUER:+--env OIDC_ISSUER="${OIDC_ISSUER}"} \
+            ${OIDC_CLIENT_ID:+--env OIDC_CLIENT_ID="${OIDC_CLIENT_ID}"} \
+            ${OIDC_CLIENT_SECRET:+--env OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET}"} \
+            ${OIDC_REDIRECT_URI:+--env OIDC_REDIRECT_URI="${OIDC_REDIRECT_URI}"} \
+            ${OIDC_POST_LOGOUT_REDIRECT_URI:+--env OIDC_POST_LOGOUT_REDIRECT_URI="${OIDC_POST_LOGOUT_REDIRECT_URI}"} \
+            ${OIDC_SCOPES:+--env OIDC_SCOPES="${OIDC_SCOPES}"} \
             --env PW_CLI="/usr/local/bin/pw" \
             --bind "${KB_ROOT}:${KB_ROOT}" --bind "${INDEX_BASE}:${INDEX_BASE}" \
             ${PW_BIN_HOST:+--bind "${PW_BIN_HOST}:/usr/local/bin/pw"} \
@@ -1377,6 +1449,11 @@ jobs:
           fi
           DISABLE_KEYS=""; [ "${{ inputs.model_settings.posture }}" = "multi-shared" ] && DISABLE_KEYS=1
           REQUIRE_KEY=""; [ "${{ inputs.model_settings.posture }}" = "multi-strict" ] && REQUIRE_KEY=1
+          SHARED_HISTORY=""; [ "${{ inputs.access_settings.shared_chat_history }}" = "true" ] && SHARED_HISTORY=1
+          SELF_URL='${{ inputs.app_settings.self_url }}'; SELF_URL="${SELF_URL%/}"
+          OIDC_ID='${{ inputs.access_settings.oidc_client_id }}'; OIDC_SECRET='${{ inputs.access_settings.oidc_client_secret }}'
+          OIDC_ISS=""; [ -n "$OIDC_ID" ] && [ -n "${{ inputs.model_settings.platform_host }}" ] && OIDC_ISS="https://${{ inputs.model_settings.platform_host }}/api/oidc"
+          [ -n "$OIDC_ISS" ] || { OIDC_ID=""; OIDC_SECRET=""; }
           # The image tests INDEX_ON_START=1 exactly, so "true" reads as off and
           # the corpus is served unindexed with search silently on the grep
           # fallback. Send what the image checks for.
@@ -1415,9 +1492,17 @@ jobs:
             printf 'JWKS=%q\n'           "$JWKS"
             printf 'DISABLE_KEYS=%q\n'   "$DISABLE_KEYS"
             printf 'REQUIRE_KEY=%q\n'    "$REQUIRE_KEY"
+            printf 'ADMINS=%q\n'         '${{ inputs.access_settings.admins }}'
+            printf 'BUCKET_ENDPOINTS=%q\n' '${{ inputs.access_settings.bucket_endpoints }}'
+            printf 'SHARED_HISTORY=%q\n' "$SHARED_HISTORY"
+            printf 'SELF_URL=%q\n'       "$SELF_URL"
+            printf 'OIDC_ISS=%q\n'       "$OIDC_ISS"
+            printf 'OIDC_ID=%q\n'        "$OIDC_ID"
+            printf 'OIDC_SECRET=%q\n'    "$OIDC_SECRET"
             printf 'INDEX_ON_START=%q\n' "$INDEX_ON_START"
           } > job.env
-          cat job.env
+          # The keys are not printed to the job's log.
+          sed -E 's/^(GATEWAY_KEY|OIDC_SECRET)=.+/\1=(set)/' job.env
 
           # The only generated line in the job script is the path to the
           # values above; the scheduler copies the script elsewhere, so it
@@ -1538,6 +1623,16 @@ jobs:
             ${JWKS:+--env AUTH_REQUIRED=1} \
             ${DISABLE_KEYS:+--env DISABLE_PERSONAL_KEYS="$DISABLE_KEYS"} \
             ${REQUIRE_KEY:+--env REQUIRE_PERSONAL_KEY="$REQUIRE_KEY"} \
+            ${ADMINS:+--env STUDIO_ADMINS="$ADMINS"} \
+            ${BUCKET_ENDPOINTS:+--env STUDIO_BUCKET_ENDPOINTS="$BUCKET_ENDPOINTS"} \
+            ${SHARED_HISTORY:+--env CHAT_SHARED_HISTORY="$SHARED_HISTORY"} \
+            ${SELF_URL:+--env STUDIO_SELF_URL="$SELF_URL"} \
+            ${OIDC_ISS:+--env OIDC_ISSUER="$OIDC_ISS"} \
+            ${OIDC_ID:+--env OIDC_CLIENT_ID="$OIDC_ID"} \
+            ${OIDC_SECRET:+--env OIDC_CLIENT_SECRET="$OIDC_SECRET"} \
+            ${OIDC_ISS:+${SELF_URL:+--env OIDC_REDIRECT_URI="$SELF_URL/api/auth/callback"}} \
+            ${OIDC_ISS:+${SELF_URL:+--env OIDC_POST_LOGOUT_REDIRECT_URI="$SELF_URL/"}} \
+            ${OIDC_ISS:+--env OIDC_SCOPES="openid profile email groups offline_access"} \
             ${SIDECAR_URL:+--env SIDECAR_MODEL_URL="$SIDECAR_URL"} \
             ${SIDECAR_URL:+--env SIDECAR_ENDPOINT="$MODEL_EP"} \
             --env PW_CLI="/usr/local/bin/pw" --env HOME="$HOME" \

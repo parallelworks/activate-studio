@@ -321,10 +321,10 @@ full suite.
 ### 1. Prerequisites
 
 ```
-brew install node pnpm
+brew install node pnpm go
 ```
 
-Node 26 or newer. Nothing else is needed to start.
+Node 26 or newer and Go 1.26 or newer. Nothing else is needed to start: `pnpm start` builds the Go server and runs it, as the app does (`pnpm start:node` runs the Node reference server).
 
 ### 2. Run it
 

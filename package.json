@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @activate-studio/server --filter @activate-studio/web dev",
     "build": "pnpm --filter @activate-studio/web build && pnpm --filter @activate-studio/server build",
-    "start": "node server/dist/main.js",
+    "start": "node scripts/start.mjs",
+    "start:node": "node server/dist/main.js",
     "test": "pnpm test:server && pnpm test:web",
     "test:server": "pnpm --filter @activate-studio/server build && node --import ./server/test/setup.mjs --test server/test/*.test.mjs testdata/extraction.test.mjs testdata/server.test.mjs",
     "test:web": "pnpm --filter @activate-studio/web test"

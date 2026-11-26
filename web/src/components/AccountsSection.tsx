@@ -52,7 +52,7 @@ type Method = 'cli' | 'signin' | 'key'
 type NoteAt = Note & { at: 'activate' | 'endpoint' }
 
 /** A part of the Studio that ACTIVATE turns on, and how it stands. */
-export interface ActivatePart { part: string; state: 'on' | 'sign-in' | 'cli' | 'endpoint' | 'admin-endpoint' | 'sidecar'; detail?: string }
+export interface ActivatePart { part: string; state: 'on' | 'sign-in' | 'cli' | 'endpoint' | 'admin-endpoint' | 'env-endpoint' | 'sidecar'; detail?: string }
 
 /**
  * What ACTIVATE turns on in this Studio, each part with its state. Every
@@ -69,6 +69,7 @@ export function activateParts(access: AccessStatus, aiEnabled: boolean): Activat
   const m = access.models.source
   const models: ActivatePart[] = !aiEnabled ? [] : [
     m === 'endpoint' ? { part: 'Models', state: 'endpoint', detail: access.models.baseUrl ?? undefined }
+      : m === 'env-endpoint' ? { part: 'Models', state: 'env-endpoint', detail: access.models.baseUrl ?? undefined }
       : m === 'admin-endpoint' ? { part: 'Models', state: 'admin-endpoint', detail: access.models.baseUrl ?? undefined }
       : m === 'sidecar' ? { part: 'Models', state: 'sidecar' }
       : { part: 'Models', state: m === 'none' ? 'sign-in' : 'on' },
@@ -94,6 +95,7 @@ const PART_STATE: Record<ActivatePart['state'], ReactNode> = {
   cli: <StatusLabel variant="warning">pw CLI not found</StatusLabel>,
   endpoint: <StatusLabel variant="muted">From your endpoint</StatusLabel>,
   'admin-endpoint': <StatusLabel variant="muted">From the administrator's endpoint</StatusLabel>,
+  'env-endpoint': <StatusLabel variant="muted">From the endpoint in the Studio's environment</StatusLabel>,
   sidecar: <StatusLabel variant="muted">From the model served beside this Studio</StatusLabel>,
 }
 
@@ -176,7 +178,7 @@ export function AccountsSection({ aiEnabled = true }: { aiEnabled?: boolean }) {
       // ACTIVATE opens when signed in, or when it is the only account
       // here (AI features off); the endpoint when one is saved.
       startRow('activate', a.platform.source !== 'none' || !aiEnabled || signInFirst)
-      if (aiEnabled) startRow('endpoint', a.models.source === 'endpoint')
+      if (aiEnabled) startRow('endpoint', a.models.source === 'endpoint' || a.models.source === 'env-endpoint')
       // The way in use; on a shared Studio with none of the person's own
       // yet, signing in with ACTIVATE.
       setMethod(m => m ?? (a.platform.source === 'signin' ? 'signin'
@@ -374,6 +376,9 @@ export function AccountsSection({ aiEnabled = true }: { aiEnabled?: boolean }) {
   const keyMe = me.activate ?? me
   const keyStored = apart ? me.activate!.mode !== 'none' : me.mode !== 'none' && access.models.source !== 'endpoint'
   const endpointStored = access.models.source === 'endpoint'
+  // The model key in the Studio's environment (OPENAI_API_KEY beside an
+  // endpoint that is not an ACTIVATE platform's): models, not ACTIVATE.
+  const envEndpoint = access.models.source === 'env-endpoint'
   const signInOffered = !single && !!access.signInOffered
   const signedIn = access.platform.source === 'signin'
   const p = access.platform.source
@@ -444,8 +449,16 @@ export function AccountsSection({ aiEnabled = true }: { aiEnabled?: boolean }) {
         {aiEnabled && (
           <AccountRow id="endpoint" title="OpenAI-compatible endpoint" open={!!opened.endpoint} onOpenChange={x => openRow('endpoint', x)}
             description={`Models from any service that speaks the OpenAI API: a site AI portal${single ? ', a provider, or a model server on this computer' : ' or a provider'}.`}
-            state={endpointStored ? <StatusLabel variant="success">Saved</StatusLabel> : <StatusLabel variant="muted">Not saved</StatusLabel>}>
+            state={endpointStored ? <StatusLabel variant="success">Saved</StatusLabel>
+              : envEndpoint ? <StatusLabel variant="success">In the Studio's environment</StatusLabel>
+              : <StatusLabel variant="muted">Not saved</StatusLabel>}>
             <div>
+              {envEndpoint && (
+                <p className="identity-note env-endpoint-note" data-testid="env-endpoint">
+                  OPENAI_BASE_URL and OPENAI_API_KEY in the Studio's environment give the models at {access.models.baseUrl ?? access.models.host}.
+                  That key is a model key, not an ACTIVATE sign-in. An endpoint saved here is used instead.
+                </p>
+              )}
               <p className="muted view-sub">
                 The base URL usually ends in /v1. It covers models only; the platform parts keep using ACTIVATE.
                 {single && ' A model server on this computer keeps working with no network.'}
@@ -639,7 +652,7 @@ function ActivatePartsTable({ parts }: { parts: ActivatePart[] }) {
         {parts.map(r => (
           <tr key={r.part}>
             <Table.Item wrap>{r.part}</Table.Item>
-            <Table.Item wrap>{PART_STATE[r.state]}{r.state === 'endpoint' && r.detail ? <span className="muted"> {r.detail}</span> : null}</Table.Item>
+            <Table.Item wrap>{PART_STATE[r.state]}{(r.state === 'endpoint' || r.state === 'env-endpoint') && r.detail ? <span className="muted"> {r.detail}</span> : null}</Table.Item>
           </tr>
         ))}
       </Table>

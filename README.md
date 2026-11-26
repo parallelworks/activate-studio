@@ -16,7 +16,7 @@ The macOS and Linux apps are built as the Go version: the Go server (`server-go`
 
 **On ACTIVATE:** run the workflow in [`deploy/workflow.yaml`](deploy/workflow.yaml) on a connected resource and set its "Knowledge Base Directory" to your folder. It builds the index and opens the Studio as a session. The platform's models work with no setup.
 
-**On your own machine** (Linux or macOS, with git, Node 26 and pnpm; on Ubuntu or Debian `indexer/setup_gufi.sh` installs the build tools and libraries it needs with apt, so it asks for sudo unless run as root; on macOS it uses Homebrew):
+**On your own machine** (Linux or macOS, with git, Node 26, pnpm and Go 1.26 or newer; on Ubuntu or Debian `indexer/setup_gufi.sh` installs the build tools and libraries it needs with apt, so it asks for sudo unless run as root; on macOS it uses Homebrew):
 
 ```
 git clone https://github.com/parallelworks/activate-studio && cd activate-studio
@@ -25,10 +25,10 @@ indexer/setup_gufi.sh                      # once: builds the GUFI index engine 
 export KB_ROOT=/path/to/your/folder
 export OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=<your key>
 indexer/reindex.sh                         # indexes the folder (or later: Settings, Indexing, Libraries, Build index)
-pnpm start                                 # then open http://localhost:4080
+pnpm start                                 # builds and starts the Go server; then open http://localhost:4080
 ```
 
-Without `KB_ROOT`, it opens a small sample folder. Any OpenAI-compatible endpoint works in place of OpenAI's, including a site's AI portal; Settings, Accounts takes the headers, model names and query string a portal may need, and its Test says whether the model calls tools, which chat needs to search your files. A clone on a Mac is covered in [`docs/MACOS.md`](docs/MACOS.md) too.
+Without `KB_ROOT`, it opens a small sample folder. `pnpm start` runs the Go server, as the apps do; `pnpm start:node` runs the Node reference server. Any OpenAI-compatible endpoint works in place of OpenAI's, including a site's AI portal; Settings, Accounts takes the headers, model names and query string a portal may need, and its Test says whether the model calls tools, which chat needs to search your files. A clone on a Mac is covered in [`docs/MACOS.md`](docs/MACOS.md) too.
 
 ## What it does
 
