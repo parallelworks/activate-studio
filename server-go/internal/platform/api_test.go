@@ -9,8 +9,9 @@ import (
 	"time"
 )
 
-// A 401 to a bearer key through HTTPClient tells OnRefused's listeners of
-// that key; other answers, and a 401 to a request with no key, do not.
+// A 401 to a bearer key through Request tells OnRefused's listeners of
+// that key, and HTTPClient's transport stays a *http.Transport, which the
+// relay configures; other answers, and a 401 to a request with no key, do not.
 func TestOnRefusedHearsA401ToABearerKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "Bearer good-key" {
@@ -20,6 +21,9 @@ func TestOnRefusedHearsA401ToABearerKey(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer srv.Close()
+	if _, ok := HTTPClient.Transport.(*http.Transport); !ok {
+		t.Fatalf("HTTPClient's transport is %T", HTTPClient.Transport)
+	}
 	var mu sync.Mutex
 	var heard []string
 	OnRefused(func(key string) { mu.Lock(); heard = append(heard, key); mu.Unlock() })
