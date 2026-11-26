@@ -102,8 +102,14 @@ func (s *Routes) deploymentSource(v *platform.Viewer, single bool) *jsonv.Object
 	if s.p.Stopped() {
 		return jsonv.NewObject("source", "none", "host", nil, "context", nil)
 	}
-	if s.p.APIKeyEnv() != "" {
+	if s.p.EnvKeyIsActivate() {
 		return jsonv.NewObject("source", "env", "host", host, "context", nil)
+	}
+	// OPENAI_API_KEY beside an endpoint that is not an ACTIVATE platform's
+	// is that endpoint's model key: models come from it, and it is no
+	// ACTIVATE sign-in (sources).
+	if s.p.EnvModelKey() {
+		return jsonv.NewObject("source", "env-endpoint", "host", host, "context", nil, "baseUrl", nullable(s.p.GatewayBase()))
 	}
 	if s.p.CLICredential() != "" {
 		var ctx any
@@ -160,6 +166,13 @@ func (s *Routes) sources(v *platform.Viewer) (models, plat *jsonv.Object) {
 		plat = signIn
 	case key != nil:
 		plat = mine("key", gw, key)
+	case single && jsonv.Str(jsonv.Path(dep, "source")) == "env-endpoint":
+		// A model key is no ACTIVATE credential; the pw CLI's sign-in
+		// still is (HasActivate).
+		plat = jsonv.NewObject("source", "none", "host", nil, "context", nil)
+		if s.p.HasActivate() {
+			plat = s.cliSignIn()
+		}
 	case single:
 		plat = dep
 	default:
@@ -167,6 +180,23 @@ func (s *Routes) sources(v *platform.Viewer) (models, plat *jsonv.Object) {
 		plat = jsonv.NewObject("source", "none", "host", nil, "context", nil)
 	}
 	return models, plat
+}
+
+// cliSignIn is the pw CLI's sign-in that HasActivate found, where the
+// gateway is no platform's: the context it uses for the gateway, else the
+// CLI's current one, with that context's platform.
+func (s *Routes) cliSignIn() *jsonv.Object {
+	name := s.p.CredentialContextName()
+	if name == "" {
+		name = s.p.ActiveContextName()
+	}
+	var host any
+	for _, c := range s.p.ListContexts() {
+		if jsonv.Str(jsonv.Path(c, "name")) == name {
+			host = nullable(jsonv.Str(jsonv.Path(c, "server")))
+		}
+	}
+	return jsonv.NewObject("source", "cli", "host", host, "context", nullable(name))
 }
 
 func (s *Routes) requireSingle(v *platform.Viewer) error {
@@ -203,7 +233,10 @@ func (s *Routes) get(w http.ResponseWriter, r *http.Request) (any, error) {
 			"active", nullable(s.p.ActiveContextName()),
 			"used", nullable(s.p.CredentialContextName()),
 			"gatewayFromEnv", s.p.GatewayFromEnv(),
-			"envKey", s.p.APIKeyEnv() != "",
+			// PW_API_KEY, or OPENAI_API_KEY for an ACTIVATE platform's
+			// gateway; envModelKey is OPENAI_API_KEY for another endpoint.
+			"envKey", s.p.APIKeyEnv() != "" && (s.p.Getenv("PW_API_KEY") != "" || s.p.PlatformGateway()),
+			"envModelKey", s.p.EnvModelKey(),
 			// Stop using the pw CLI: the Studio reads none of the computer's
 			// ACTIVATE credentials (stopped in access.json).
 			"stopped", s.p.Stopped(),

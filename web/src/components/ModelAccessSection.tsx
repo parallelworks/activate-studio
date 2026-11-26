@@ -18,7 +18,7 @@ export { endpointBase, readPlatformHost, testNote, type AccessStatus, type KeyTe
  * endpoint is stored removes the endpoint, after saying so.
  */
 
-type From = 'activate' | 'endpoint' | 'sidecar' | 'admin-endpoint' | 'none'
+type From = 'activate' | 'endpoint' | 'sidecar' | 'admin-endpoint' | 'env-endpoint' | 'none'
 
 /** Where models come from now, as the choice names it. */
 export function modelsFrom(a: AccessStatus): From {
@@ -26,6 +26,7 @@ export function modelsFrom(a: AccessStatus): From {
     case 'endpoint': return 'endpoint'
     case 'sidecar': return 'sidecar'
     case 'admin-endpoint': return 'admin-endpoint'
+    case 'env-endpoint': return 'env-endpoint'
     case 'none': return 'none'
     default: return 'activate'
   }
@@ -127,6 +128,7 @@ export function ModelAccessSection({ requirePersonalKey = false }: { requirePers
         : `A site AI portal${single ? ', a provider, or a model server on this computer' : ' or a provider'}. Add one under Accounts first.`,
     },
     ...(from === 'sidecar' ? [{ value: 'sidecar' as From, label: 'The model served beside this Studio', description: 'Set by the deployment, for anyone without an account of their own.' }] : []),
+    ...(from === 'env-endpoint' ? [{ value: 'env-endpoint' as From, label: 'The endpoint in the Studio\'s environment', description: `${access.models.baseUrl ?? 'An OpenAI-compatible endpoint'}, from OPENAI_BASE_URL and OPENAI_API_KEY. It is a model key, not an ACTIVATE sign-in.` }] : []),
     ...(from === 'admin-endpoint' ? [{ value: 'admin-endpoint' as From, label: 'The administrator\'s endpoint', description: `${access.models.baseUrl ?? 'An OpenAI-compatible endpoint'}, set by the administrator for anyone without an account of their own.` }] : []),
   ]
   const shown = pending ?? from

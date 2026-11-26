@@ -76,6 +76,18 @@ describe('Model access', () => {
     expect(screen.queryByRole('button', { name: 'Remove the endpoint and use ACTIVATE' })).toBeNull()
   })
 
+  it('names a model key in the Studio\'s environment as its endpoint, not ACTIVATE', async () => {
+    const none = { source: 'none' as const, host: null, context: null }
+    const env = { source: 'env-endpoint' as const, host: 'models.example.org', context: null, baseUrl: 'https://models.example.org/v1' }
+    stub(srv({ access: accessOf({ models: env, platform: none, deployment: env, gatewayHost: 'models.example.org', platformOrigin: null }) }))
+    render(<ModelAccessSection />)
+    expect(await screen.findByText('Models: the model endpoint in the Studio\'s environment (https://models.example.org/v1)')).toBeInTheDocument()
+    expect(choices('Where models come from')).toEqual(['ACTIVATE', 'OpenAI-compatible endpoint', 'The endpoint in the Studio\'s environment'])
+    expect(screen.getByRole('radio', { name: 'The endpoint in the Studio\'s environment' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'ACTIVATE' })).not.toBeChecked()
+    expect(screen.getByText('The models of your ACTIVATE account. Sign in with ACTIVATE under Accounts first.')).toBeInTheDocument()
+  })
+
   it('with no model at all, points to Accounts', async () => {
     const none = { source: 'none' as const, host: null, context: null }
     stub(srv({ access: accessOf({ models: none, platform: none, deployment: none }), models: [], health: { status: 'unconfigured', models: 0 } }))

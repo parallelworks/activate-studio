@@ -390,7 +390,7 @@ func (p *Platform) HasActivate() bool {
 	if p.Stopped() {
 		return false
 	}
-	if p.apiKey != "" && (p.Getenv("PW_API_KEY") != "" || p.PlatformGateway()) {
+	if p.EnvKeyIsActivate() {
 		return true
 	}
 	s := p.ReadStore()
@@ -405,6 +405,21 @@ func (p *Platform) HasActivate() bool {
 		return true
 	}
 	return false
+}
+
+// EnvKeyIsActivate says whether the key in the Studio's environment is an
+// ACTIVATE credential: PW_API_KEY, or OPENAI_API_KEY where the gateway is
+// an ACTIVATE platform's. OPENAI_API_KEY beside any other endpoint is that
+// endpoint's model key. False with no key, and after Stop using the pw CLI.
+func (p *Platform) EnvKeyIsActivate() bool {
+	return !p.Stopped() && p.apiKey != "" && (p.Getenv("PW_API_KEY") != "" || p.PlatformGateway())
+}
+
+// EnvModelKey says whether the key in the Studio's environment is a model
+// endpoint's (OPENAI_API_KEY beside an endpoint that is not an ACTIVATE
+// platform's), and no ACTIVATE credential.
+func (p *Platform) EnvModelKey() bool {
+	return !p.Stopped() && p.apiKey != "" && !p.EnvKeyIsActivate()
 }
 
 // KeyFor is the platform key work for the viewer runs with: their own

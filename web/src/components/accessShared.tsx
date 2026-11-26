@@ -14,7 +14,7 @@ import { Button, Callout, type CalloutTone, CopyButton, ExternalLink, Loader, ty
  * says where models come from.
  */
 
-export type Source = 'endpoint' | 'key' | 'signin' | 'shared' | 'env' | 'cli' | 'sidecar' | 'admin-endpoint' | 'none'
+export type Source = 'endpoint' | 'key' | 'signin' | 'shared' | 'env' | 'cli' | 'sidecar' | 'admin-endpoint' | 'env-endpoint' | 'none'
 export type CliSource = 'env' | 'chosen' | 'path' | 'common' | 'none'
 export interface SourceInfo { source: Source; host: string | null; context: string | null; baseUrl?: string | null; last4?: string | null; kind?: string | null }
 export interface CliContext { name: string; server: string; organization: string | null; kind: 'sign-in' | 'api-key' | 'token' | null; expiresAt: string | null; expired: boolean; current: boolean; renewError: string | null }
@@ -38,6 +38,8 @@ export interface AccessStatus {
     /** Where the Studio found the CLI, and how. */
     path: string | null; source: CliSource; chosenPath: string | null; commonDirs: string[]
     contexts: CliContext[]; chosen: string | null; active: string | null; used: string | null; gatewayFromEnv: boolean; envKey: boolean
+    /** OPENAI_API_KEY in the environment is a model endpoint's key, not ACTIVATE's. */
+    envModelKey?: boolean
     /** Stop using the pw CLI: the Studio reads none of the computer's ACTIVATE credentials. */
     stopped?: boolean
   } | null
@@ -175,6 +177,7 @@ export function describeSource(s: SourceInfo, single: boolean): string {
     case 'shared': return `the key${s.last4 ? ` ending ${s.last4}` : ''} shared with everyone here${at}`
     case 'env': return `${single ? 'PW_API_KEY in the Studio\'s environment' : 'the deployment credential'}${at}`
     case 'sidecar': return 'the model served beside this Studio'
+    case 'env-endpoint': return `the model endpoint in the Studio's environment${s.baseUrl ? ` (${s.baseUrl})` : at}`
     case 'admin-endpoint': return `the endpoint the administrator set${s.baseUrl ? ` (${s.baseUrl})` : at}`
     default: return 'none'
   }
