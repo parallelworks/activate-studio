@@ -280,6 +280,33 @@ func TestConfigSignedOut(t *testing.T) {
 	}
 }
 
+// Voice runs on the grounded model's agent mode, which is refused where
+// people sign in: the page is offered it only on a Studio without sign-in.
+func TestVoiceIsOfferedOnlyWithoutSignIn(t *testing.T) {
+	for _, c := range []struct {
+		env  map[string]string
+		want bool
+	}{
+		{map[string]string{"VOICE_ENABLED": "1", "VOICE_URL": "https://voice.example"}, true},
+		{map[string]string{"VOICE_ENABLED": "1", "VOICE_URL": "https://voice.example", "AUTH_JWKS_URL": "http://127.0.0.1:9/keys"}, false},
+	} {
+		for k, v := range c.env {
+			t.Setenv(k, v)
+		}
+		e := newEnv(t, c.env)
+		for _, who := range []string{"", "ada"} {
+			b := e.do("GET", "/api/config", nil).body
+			if who != "" {
+				b = e.doAs(who, "GET", "/api/config", nil).body
+			}
+			voice, _ := b["features"].(map[string]any)["voice"].(map[string]any)
+			if voice["enabled"] != c.want {
+				t.Errorf("%v %q: %v", c.env, who, voice)
+			}
+		}
+	}
+}
+
 // STUDIO_CUSTOM_TOOLS=0: Settings says so, keeps the saved tools, and
 // takes no change to them; the rest of a save goes through.
 func TestCustomToolsOffInSettings(t *testing.T) {

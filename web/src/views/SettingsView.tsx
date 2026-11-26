@@ -300,6 +300,8 @@ export function navWidthPreset(px: number): keyof typeof NAV_WIDTHS | null {
 export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const cfg = useAppConfig()
   const [form, setForm] = useState<Effective | null>(null)
+  // Agent mode is refused, and not listed, where people sign in.
+  const agentListed = !!form?.ragAdvertiseAgentModel && !cfg.signIn
   const [deploymentCred, setDeploymentCred] = useState<boolean | null>(null)
   const [claudeCode, setClaudeCode] = useState<ClaudeCodeState | null>(null)
   /** Why this person may not change the Studio's settings (GET
@@ -1170,6 +1172,12 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               <p className="muted key-note toggle-note">
                 Runs the full assistant pipeline on the server (system prompt, search, read, query, labels) and returns a finished cited answer. Slower, several model calls per question. The right choice inside tool-calling harnesses such as pw code.
               </p>
+              {cfg.signIn && (
+                <p className="muted key-note toggle-note" data-testid="agent-mode-signin">
+                  Where people sign in to this Studio, <code>studio-agent</code> and <code>studio-voice</code> are refused and not listed:
+                  they run the Studio's tools, and this address does not know which person is calling. <code>studio-rag</code> answers as before.
+                </p>
+              )}
               <label className="key-persist">
                 <Checkbox disabled={!!locked} checked={form.ragAdvertiseRagModel}
                   onCheckedChange={v => setForm({ ...form, ragAdvertiseRagModel: v })} />
@@ -1209,15 +1217,15 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 </>}>
                 {ragEp?.state === 'running' && ragEp.name && (
                   <div className="rag-banner-models">
-                    Users can now select {form.ragAdvertiseAgentModel && form.ragAdvertiseRagModel ? 'these models' : 'this model'} anywhere on the platform:
+                    Users can now select {agentListed && form.ragAdvertiseRagModel ? 'these models' : 'this model'} anywhere on the platform:
                     <div className="rag-chip-row">
-                      {form.ragAdvertiseAgentModel && (
+                      {agentListed && (
                         <span><code>session:{cfg.user.username}:{ragEp.name}/studio-agent</code><CopyButton text={`session:${cfg.user.username}:${ragEp.name}/studio-agent`} label="model name" /></span>
                       )}
                       {form.ragAdvertiseRagModel && (
                         <span><code>session:{cfg.user.username}:{ragEp.name}/studio-rag</code><CopyButton text={`session:${cfg.user.username}:${ragEp.name}/studio-rag`} label="model name" /></span>
                       )}
-                      {!form.ragAdvertiseAgentModel && !form.ragAdvertiseRagModel && <span className="muted">No models advertised; enable a toggle above.</span>}
+                      {!agentListed && !form.ragAdvertiseRagModel && <span className="muted">No models advertised; enable a toggle above.</span>}
                     </div>
                   </div>
                 )}
@@ -1273,6 +1281,12 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 <Switch disabled={!!locked} checked={form.voiceEnabled} onCheckedChange={v => setForm({ ...form, voiceEnabled: v })} onLabel="On" offLabel="Off" aria-label="Voice conversations" />
                 <span>Voice conversations: talk with the assistant out loud, through a speech service you deploy</span>
               </div>
+              {cfg.signIn && (
+                <p className="muted key-note" data-testid="voice-signin">
+                  Where people sign in to this Studio, the Voice button is not offered: voice answers through <code>studio-voice</code>,
+                  which runs the Studio's tools for whoever calls it, and this Studio refuses it.
+                </p>
+              )}
               {form.voiceEnabled && (
                 <>
                   <p className="muted view-sub">

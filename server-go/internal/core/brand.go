@@ -559,7 +559,9 @@ func (c *Core) config(w http.ResponseWriter, r *http.Request) error {
 	set("bannerColor", eff.BannerColor)
 	set("bannerWhenEmbedded", eff.BannerWhenEmbedded)
 	voice := jsonobj.New()
-	voice.SetValue("enabled", eff.VoiceEnabled && eff.VoiceURL != "")
+	// Voice runs on the grounded model's agent mode, which is not offered
+	// where people sign in (internal/chat, AgentNeedsPerson).
+	voice.SetValue("enabled", eff.VoiceEnabled && eff.VoiceURL != "" && !c.a.Cfg.AuthEnabled())
 	voice.SetValue("url", eff.VoiceURL)
 	features := jsonobj.New()
 	features.SetValue("voice", voice)
