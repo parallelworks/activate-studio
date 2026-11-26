@@ -1183,7 +1183,9 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
               {saveRow('rag', false)}
               <div className="tool-group">Platform registration</div>
               <p className="muted view-sub">
-                Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. Platform callers reach it with their own credentials; the deployment credential covers only keyless clients such as pw code. Requires an authenticated pw CLI on the host.
+                Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. The platform calls it without the caller's credential, so the forwarder adds the deployment credential to calls that bring none{form.requirePersonalKey
+                  ? <>; with each user required to use their own model credential it adds none, and those calls are refused (a caller's own key still works)</>
+                  : null}. Requires an authenticated pw CLI on the host.
               </p>
               <Callout className="rag-banner" tone={ragEpTone}
                 title={ragEpError ? 'Registration status unavailable' :
