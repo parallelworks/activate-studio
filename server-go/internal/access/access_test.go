@@ -129,7 +129,7 @@ func TestAccessSourcesAndChoice(t *testing.T) {
 	if !strings.HasPrefix(raw, `{"single":true,"authEnabled":false,"models":{"source":"endpoint","host":"127.0.0.1:11434","context":null,"baseUrl":"http://127.0.0.1:11434/v1","last4":"ocal","kind":"api-key"},"platform":{"source":"cli","host":"platform-a.example.com","context":"work"},"deployment":{"source":"cli","host":"platform-a.example.com","context":"work"},"gatewayHost":"platform-a.example.com","platformOrigin":"https://platform-a.example.com","signInOffered":false,"cli":{"available":true,"version":"v7.1.0","path":"`+cli+`","source":"env","chosenPath":null,"commonDirs":[`) {
 		t.Fatal(raw)
 	}
-	if !strings.HasSuffix(raw, `"chosen":null,"active":"work","used":"work","gatewayFromEnv":false,"envKey":false,"stopped":false},"login":null}`) || strings.Contains(raw, "work-api-key") {
+	if !strings.HasSuffix(raw, `"chosen":null,"active":"work","used":"work","gatewayFromEnv":false,"envKey":false,"envModelKey":false,"stopped":false},"login":null}`) || strings.Contains(raw, "work-api-key") {
 		t.Fatal(raw)
 	}
 	_ = body
@@ -484,5 +484,73 @@ func TestChoosingAContextKeepsTheEndpoint(t *testing.T) {
 	}
 	if _, _, raw := s.do("GET", "/api/access", nil); !strings.Contains(raw, `"models":{"source":"endpoint"`) || !strings.Contains(raw, `"platform":{"source":"cli"`) {
 		t.Fatal(raw)
+	}
+}
+
+// A Studio of one whose only credential is a model key in its environment
+// (OPENAI_API_KEY beside an endpoint that is not an ACTIVATE platform's):
+// models come from that endpoint, and ACTIVATE is not signed in. The same
+// key beside a platform's gateway is an ACTIVATE credential, and so is
+// PW_API_KEY; a pw CLI sign-in beside a model key still is.
+func TestAModelKeyInTheEnvironmentIsNoActivateSignIn(t *testing.T) {
+	viewer := map[string]any{"authEnabled": false, "user": nil, "cred": nil, "keyStatus": map[string]any{"mode": "none"}, "sharedLast4": nil}
+	none := `{"source":"none","host":null,"context":null}`
+	for _, c := range []struct {
+		name              string
+		env               map[string]string
+		models, plat, dep string
+		envKey, envModel  bool
+	}{
+		{"model key", map[string]string{"OPENAI_BASE_URL": "https://models.example.org/v1", "OPENAI_API_KEY": "sk-example-1234"},
+			`{"source":"env-endpoint","host":"models.example.org","context":null,"baseUrl":"https://models.example.org/v1"}`, none,
+			`{"source":"env-endpoint","host":"models.example.org","context":null,"baseUrl":"https://models.example.org/v1"}`, false, true},
+		{"model key and a pw CLI sign-in", map[string]string{"OPENAI_BASE_URL": "https://models.example.org/v1", "OPENAI_API_KEY": "sk-example-1234", "PW_CREDENTIALS_DIR": "creds"},
+			`{"source":"env-endpoint","host":"models.example.org","context":null,"baseUrl":"https://models.example.org/v1"}`,
+			`{"source":"cli","host":"platform-a.example.com","context":"work"}`,
+			`{"source":"env-endpoint","host":"models.example.org","context":null,"baseUrl":"https://models.example.org/v1"}`, false, true},
+		{"a platform's gateway", map[string]string{"OPENAI_BASE_URL": "https://platform-a.example.com/api/openai/v1", "OPENAI_API_KEY": "sk-example-1234"},
+			`{"source":"env","host":"platform-a.example.com","context":null}`, `{"source":"env","host":"platform-a.example.com","context":null}`,
+			`{"source":"env","host":"platform-a.example.com","context":null}`, true, false},
+		{"PW_API_KEY", map[string]string{"PW_API_KEY": "pwt_example-1234"},
+			`{"source":"env","host":"platform-a.example.com","context":null}`, `{"source":"env","host":"platform-a.example.com","context":null}`,
+			`{"source":"env","host":"platform-a.example.com","context":null}`, true, false},
+		{"neither", map[string]string{"PW_GATEWAY_URL": "https://platform-a.example.com/api/openai/v1"},
+			`{"source":"none","host":"platform-a.example.com","context":null}`, `{"source":"none","host":"platform-a.example.com","context":null}`,
+			`{"source":"none","host":"platform-a.example.com","context":null}`, false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			env := map[string]string{"PATH": "/usr/bin:/bin", "PW_CLI": "/nonexistent", "PW_CREDENTIALS_DIR": t.TempDir()}
+			if _, ok := env["PW_GATEWAY_URL"]; !ok && c.env["OPENAI_BASE_URL"] == "" && c.env["PW_GATEWAY_URL"] == "" {
+				env["PW_GATEWAY_URL"] = "https://platform-a.example.com/api/openai/v1"
+			}
+			for k, v := range c.env {
+				env[k] = v
+			}
+			if env["PW_CREDENTIALS_DIR"] == "creds" {
+				env["PW_CREDENTIALS_DIR"] = credsDir(t)
+			}
+			s := newStudio(t, env, newNode(t, viewer))
+			_, body, raw := s.do("GET", "/api/access", nil)
+			got := func(k string) string { b, _ := json.Marshal(body[k]); return string(b) }
+			want := func(j string) string {
+				var m any
+				json.Unmarshal([]byte(j), &m)
+				b, _ := json.Marshal(m)
+				return string(b)
+			}
+			if got("models") != want(c.models) || got("platform") != want(c.plat) || got("deployment") != want(c.dep) {
+				t.Fatalf("models %s\nplatform %s\ndeployment %s", got("models"), got("platform"), got("deployment"))
+			}
+			cli := body["cli"].(map[string]any)
+			if cli["envKey"] != c.envKey || cli["envModelKey"] != c.envModel {
+				t.Fatal(cli["envKey"], cli["envModelKey"])
+			}
+			if s.p.HasActivate() != !strings.Contains(c.plat, `"none"`) {
+				t.Fatal("HasActivate", s.p.HasActivate())
+			}
+			if strings.Contains(raw, "sk-example") || strings.Contains(raw, "pwt_example") {
+				t.Fatal("a key in the answer")
+			}
+		})
 	}
 }

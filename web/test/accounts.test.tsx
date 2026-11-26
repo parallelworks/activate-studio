@@ -81,6 +81,27 @@ describe('Settings, Accounts on a Studio of one', () => {
     expect(screen.queryByText('Subscriptions through ACTIVATE')).toBeNull()
   })
 
+  it('names a model key in the Studio\'s environment as a model key, not an ACTIVATE sign-in', async () => {
+    const none = { source: 'none' as const, host: null, context: null }
+    const env = { source: 'env-endpoint' as const, host: 'models.example.org', context: null, baseUrl: 'https://models.example.org/v1' }
+    stub(srv({ access: accessOf({ models: env, platform: none, deployment: env, gatewayHost: 'models.example.org', platformOrigin: null,
+      cli: { ...accessOf().cli!, available: false, contexts: [], active: null, used: null, gatewayFromEnv: true, envKey: false, envModelKey: true } }) }))
+    render(<AccountsSection />)
+    expect(await screen.findByText(/^Not signed in\. The Studio works without ACTIVATE/)).toBeInTheDocument()
+    expect(within(row('ACTIVATE')).getByText('Not signed in')).toBeInTheDocument()
+    expect(screen.queryByText(/^Signed in/)).toBeNull()
+    const p = parts()
+    expect(p['pw code and the Code page']).toBe('Sign in to use')
+    expect(p.Workflows).toBe('Sign in to use')
+    expect(p.Models).toBe('From the endpoint in the Studio\'s environment https://models.example.org/v1')
+    // The endpoint row says where its models come from, and is open.
+    expect(row('OpenAI-compatible endpoint')).toHaveAttribute('aria-expanded', 'true')
+    expect(within(row('OpenAI-compatible endpoint')).getByText('In the Studio\'s environment')).toBeInTheDocument()
+    expect(screen.getByTestId('env-endpoint')).toHaveTextContent('give the models at https://models.example.org/v1. That key is a model key, not an ACTIVATE sign-in.')
+    expect(screen.queryByText(/PW_API_KEY is set/)).toBeNull()
+    expect(screen.queryByText('Subscriptions through ACTIVATE')).toBeNull()
+  })
+
   it('lists the pw CLI contexts and switches to another one, keeping an endpoint', async () => {
     const endpoint = { source: 'endpoint' as const, host: '127.0.0.1:11434', context: null, baseUrl: 'http://127.0.0.1:11434/v1' }
     const s = srv({ access: accessOf({ models: endpoint }) })

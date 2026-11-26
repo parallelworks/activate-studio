@@ -1206,6 +1206,8 @@ a.identity-btn { text-decoration: none; }
 }
 .identity-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--pw-muted); }
 .identity-note code { font-size: 11px; }
+/* The model key from the environment, above the endpoint row's own note. */
+.identity-note.env-endpoint-note { margin-bottom: 8px; }
 .identity-src { font-size: 11px; white-space: nowrap; }
 /* The Build panel's updates: up to date or a newer version, and Check now. */
 .build-updates { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--pw-border); }

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { heldModels } from '../ownModel'
 
 /** Model sources that are not ACTIVATE: their models are not ones pw code can run. */
-const NOT_ACTIVATE = new Set(['endpoint', 'sidecar', 'none'])
+const NOT_ACTIVATE = new Set(['endpoint', 'env-endpoint', 'admin-endpoint', 'sidecar', 'none'])
 
 const EMPTY: PwCodePlatformModelList['models'] = []
 
