@@ -9,10 +9,10 @@ The README's quick start and [`docs/MACOS.md`](docs/MACOS.md) cover setup. The s
 ```
 pnpm install
 pnpm build
-pnpm start          # http://localhost:4080, over knowledge-base/ beside the code
+pnpm start          # the Go server on http://localhost:4080, over knowledge-base/ beside the code
 ```
 
-Node 26 or newer and pnpm are required. GUFI is needed only for the indexed search surfaces; everything else runs without it.
+Node 26 or newer, pnpm and Go 1.26 or newer are required: `pnpm start` builds the Go server in `server-go/` and runs it, as the apps do, and `pnpm start:node` runs the Node reference server. GUFI is needed only for the indexed search surfaces; everything else runs without it.
 
 ## Working in the repository
 
