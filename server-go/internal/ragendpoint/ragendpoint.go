@@ -30,6 +30,12 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
 
+// NotWhereSignIn is why the grounded model is not registered on the
+// platform where people sign in to this Studio: there /v1 answers only
+// people of this Studio, each with their own key, and the platform's gateway
+// calls a registered model with no caller's key (internal/chat, v1Person).
+const NotWhereSignIn = "Not registered on the platform: where people sign in to this Studio, its grounded model answers only people of this Studio, each with their own ACTIVATE key, and the platform calls a registered model without the caller's key, so it would answer no one. People call this Studio's /v1 with their own key instead."
+
 // Subcommand is the forwarder's subcommand name.
 const Subcommand = "rag-forward"
 
@@ -67,8 +73,12 @@ type Endpoint struct {
 // New is the endpoint for a.
 func New(a *app.App, p *platform.Platform) *Endpoint {
 	self, _ := os.Executable()
-	return &Endpoint{p: p, settings: a.Settings, port: a.Cfg.Port, authEnabled: a.Cfg.AuthEnabled(), keysOff: a.Cfg.DisablePersonalKeys,
+	e := &Endpoint{p: p, settings: a.Settings, port: a.Cfg.Port, authEnabled: a.Cfg.AuthEnabled(), keysOff: a.Cfg.DisablePersonalKeys,
 		Self: []string{self, Subcommand}, status: Status{State: "stopped"}}
+	if e.authEnabled {
+		e.status.Detail = NotWhereSignIn
+	}
+	return e
 }
 
 var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
@@ -160,6 +170,9 @@ func (e *Endpoint) Start() Status {
 		return st
 	}
 	e.mu.Unlock()
+	if e.authEnabled {
+		return e.fail(NotWhereSignIn)
+	}
 	targs, _, ok := e.target()
 	if !ok {
 		return e.fail("No explicit platform target: set PW_CONTEXT or PW_PLATFORM_HOST for this deployment, otherwise the proxy would register on whatever platform the host’s pw CLI happens to point at.")
@@ -271,6 +284,10 @@ func (e *Endpoint) running() bool { e.mu.Lock(); defer e.mu.Unlock(); return e.c
 func (e *Endpoint) MaybeAutoStart(log func(string)) {
 	eff := e.settings.Effective()
 	if !eff.RagEndpointAutoStart || !eff.RagProxyEnabled {
+		return
+	}
+	if e.authEnabled {
+		log("rag endpoint auto-start skipped: " + NotWhereSignIn)
 		return
 	}
 	if _, detail, ok := e.target(); !ok {

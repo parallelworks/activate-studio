@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/people"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
 
@@ -48,6 +49,10 @@ func TestAgentModeIsRefusedWhereSignInIs(t *testing.T) {
 		mark := filepath.Join(t.TempDir(), "ran")
 		m.A.Settings.Update(map[string]any{"customTools": []any{map[string]any{"name": "mark", "description": "", "command": "touch " + mark}}})
 		m.A.Settings.Update(map[string]any{settings.CustomToolsApprovedKey: settings.CustomToolsDigest(m.A.Settings.Effective().CustomTools)})
+		// The key is a person's who has signed in here: agent mode is
+		// refused even so, and studio-rag answers them.
+		aPlatform(t, map[string]string{"any-gateway-key": "user:bob"}, nil)
+		people.Of(m.A).Seen(&auth.User{ID: "user:bob", Username: "bob"})
 		for _, model := range []string{"studio-agent", "studio-agent/test-model", "studio-voice", "studio-voice/test-model"} {
 			for _, stream := range []bool{false, true} {
 				for _, bearer := range []string{"any-gateway-key", ""} {
@@ -63,7 +68,9 @@ func TestAgentModeIsRefusedWhereSignInIs(t *testing.T) {
 						if code != http.StatusForbidden || !strings.Contains(out, AgentNeedsPerson) || len(gw.requests) != 0 || ran {
 							t.Errorf("%s stream=%v key=%q: %d %s, the model asked %d times, the tool ran=%v", model, stream, bearer, code, out, len(gw.requests), ran)
 						}
-					} else if code != http.StatusOK || len(gw.requests) == 0 || !ran {
+					} else if code != http.StatusOK || len(gw.requests) == 0 || ran {
+						// A Studio of one answers, and runs no custom tool
+						// (TestAgentModeNeverRunsCustomTools).
 						t.Errorf("no sign-in, %s stream=%v: %d %s, the model asked %d times, the tool ran=%v", model, stream, code, out, len(gw.requests), ran)
 					}
 					os.Remove(mark)
@@ -112,31 +119,46 @@ func TestAgentModeRunsOnlyWhatItOffers(t *testing.T) {
 	}
 }
 
-// TestAgentModeOffersCustomToolsOnlyToAnAdministrator: a custom tool runs a
-// command as the Studio's account. In agent mode it is offered, and runs,
-// only for an administrator: on a Studio of one, its person; where people
-// sign in, a signed-in administrator, and never a call that names no one.
-func TestAgentModeOffersCustomToolsOnlyToAnAdministrator(t *testing.T) {
-	m, _, gw, _ := newTestModule(t, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks", "STUDIO_FRONT_AUTH": "1", "STUDIO_ADMINS": "cy"})
-	m.Tools = runningTools{m.Tools.(fakeTools), m}
-	mark := filepath.Join(t.TempDir(), "ran")
-	m.A.Settings.Update(map[string]any{"customTools": []any{map[string]any{"name": "mark", "description": "", "command": "touch " + mark}}})
-	m.A.Settings.Update(map[string]any{settings.CustomToolsApprovedKey: settings.CustomToolsDigest(m.A.Settings.Effective().CustomTools)})
-	for _, who := range []string{"", "bob", "cy"} {
-		r := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-		if who != "" {
-			r = auth.WithUser(r, &auth.User{ID: who, Username: who})
+// TestAgentModeNeverRunsCustomTools: a custom tool runs a command as the
+// Studio's account, and /v1 knows a caller only by a key the model gateway
+// takes. So agent mode never offers or runs one, with sign-in or without,
+// for anyone, an administrator included. It keeps its other tools.
+func TestAgentModeNeverRunsCustomTools(t *testing.T) {
+	for _, signIn := range []bool{false, true} {
+		env := map[string]string{"STUDIO_ADMINS": "cy"}
+		if signIn {
+			env["AUTH_JWKS_URL"] = "http://127.0.0.1:9/jwks"
+			env["STUDIO_FRONT_AUTH"] = "1"
 		}
-		gw.load([]reply{call("mark", `{}`), text("Done.")})
-		msg, _ := json.Marshal(map[string]any{"role": "user", "content": "mark it"})
-		if _, _, err := m.agentic(r.Context(), r, "test-model", []json.RawMessage{msg}, &callerAuth{Key: "any-gateway-key"}, func(string) {}, false); err != nil {
-			t.Fatal(err)
+		m, _, gw, _ := newTestModule(t, env)
+		m.Tools = runningTools{m.Tools.(fakeTools), m}
+		mark := filepath.Join(t.TempDir(), "ran")
+		m.A.Settings.Update(map[string]any{"customTools": []any{map[string]any{"name": "mark", "description": "", "command": "touch " + mark}}})
+		m.A.Settings.Update(map[string]any{settings.CustomToolsApprovedKey: settings.CustomToolsDigest(m.A.Settings.Effective().CustomTools)})
+		os.MkdirAll(m.A.Cfg.KBRoot, 0o755)
+		os.WriteFile(filepath.Join(m.A.Cfg.KBRoot, "plan.md"), []byte("PLAN-4242 the plan"), 0o644)
+		for _, who := range []string{"", "bob", "cy"} {
+			r := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+			if who != "" {
+				r = auth.WithUser(r, &auth.User{ID: who, Username: who})
+			}
+			gw.load([]reply{call("mark", `{}`), call("read_kb_file", `{"path":"plan.md"}`), text("Done.")})
+			msg, _ := json.Marshal(map[string]any{"role": "user", "content": "mark it, then read the plan"})
+			if _, _, err := m.agentic(r.Context(), r, "test-model", []json.RawMessage{msg}, &callerAuth{Key: "any-gateway-key"}, func(string) {}, false); err != nil {
+				t.Fatal(err)
+			}
+			_, statErr := os.Stat(mark)
+			if len(gw.requests) != 3 {
+				t.Fatalf("sign-in=%v %q: the model was asked %d times", signIn, who, len(gw.requests))
+			}
+			first, last := string(gw.requests[0]), string(gw.requests[2])
+			if statErr == nil || strings.Contains(first, `"name":"mark"`) || !strings.Contains(string(gw.requests[1]), "mark is not available here, so nothing ran") {
+				t.Errorf("sign-in=%v %q: the custom tool ran=%v, offered=%v", signIn, who, statErr == nil, strings.Contains(first, `"name":"mark"`))
+			}
+			if !strings.Contains(first, `"name":"read_kb_file"`) || !strings.Contains(last, "PLAN-4242") {
+				t.Errorf("sign-in=%v %q: read_kb_file was not offered or did not run: %s", signIn, who, last)
+			}
+			os.Remove(mark)
 		}
-		_, statErr := os.Stat(mark)
-		offered := len(gw.requests) > 0 && strings.Contains(string(gw.requests[0]), `"name":"mark"`)
-		if admin := who == "cy"; (statErr == nil) != admin || offered != admin {
-			t.Errorf("%q: the tool ran=%v, offered=%v", who, statErr == nil, offered)
-		}
-		os.Remove(mark)
 	}
 }

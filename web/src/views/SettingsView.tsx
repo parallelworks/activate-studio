@@ -1147,6 +1147,14 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 any OpenAI-speaking client (pw code, SDKs, other agents) use the knowledge base as a grounded model.
                 Callers authenticate with their own gateway API key as the bearer token; the endpoint holds no credentials of its own.
               </p>
+              {cfg.signIn && (
+                <p className="muted view-sub" data-testid="rag-people-only">
+                  Where people sign in to this Studio, it answers only people of this Studio: a call must bring the caller's own ACTIVATE key,
+                  and the platform must say it belongs to someone who has signed in here or to an administrator. A call with no key, with the
+                  Studio's own, or with anyone else's is refused. Answers draw on the main library, which everyone here reads, and never on
+                  anyone's own library.
+                </p>
+              )}
               <p className="muted view-sub">
                 Pick the underlying model per request as <code>studio-agent/&lt;model-id&gt;</code> (any other model id behaves like studio-rag with that model), or set the default below. Headers <code>X-RAG-Top-K</code>, <code>X-RAG-Tags</code>, and <code>X-RAG-Off: 1</code> tune retrieval per request.
               </p>
@@ -1192,13 +1200,22 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                   placeholder="defaults to <product-name>-rag"
                   onChange={e => setForm({ ...form, ragEndpointName: e.target.value })} />
               </div>
-              <label className="key-persist">
-                <Checkbox disabled={!!locked} checked={form.ragEndpointAutoStart}
-                  onCheckedChange={v => setForm({ ...form, ragEndpointAutoStart: v })} />
-                Register on the platform automatically at startup
-              </label>
+              {!cfg.signIn && (
+                <label className="key-persist">
+                  <Checkbox disabled={!!locked} checked={form.ragEndpointAutoStart}
+                    onCheckedChange={v => setForm({ ...form, ragEndpointAutoStart: v })} />
+                  Register on the platform automatically at startup
+                </label>
+              )}
               {saveRow('rag', false)}
               <div className="tool-group">Platform registration</div>
+              {cfg.signIn ? (
+                <Callout className="rag-banner" tone="info" title="Not registered on the platform" data-testid="rag-not-registered">
+                  Where people sign in to this Studio, its grounded model answers only people of this Studio, each with their own ACTIVATE key,
+                  and the platform calls a registered model without the caller's key, so it would answer no one. It is not registered here;
+                  people call this Studio's <code>/v1</code> with their own key instead.
+                </Callout>
+              ) : (<>
               <p className="muted view-sub">
                 Publishes this /v1 surface into the platform chat and AI provider catalog (via <code>pw endpoints run --openai</code> around a local forwarder), so users pick the corpus-grounded models like any other. The platform calls it without the caller's credential, so the forwarder adds the deployment credential to calls that bring none{form.requirePersonalKey
                   ? <>; with each user required to use their own model credential it adds none, and those calls are refused (a caller's own key still works)</>
@@ -1232,6 +1249,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                 {ragEp?.detail && ragEp.state !== 'running' && <p className="muted key-note">{ragEp.detail}</p>}
                 {ragEpError && <p className="muted key-note" role="alert">{ragEpError}</p>}
               </Callout>
+              </>)}
               </>)}
               {form.ragProxyEnabled && (<>
               <div className="tool-group">Recent grounded-model calls</div>

@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/auth"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
+	"github.com/parallelworks/activate-studio/server-go/internal/people"
 	"github.com/parallelworks/activate-studio/server-go/internal/ragendpoint"
 )
 
@@ -17,7 +19,9 @@ import (
 // own, or with the one the registration forwarder adds (which the
 // platform's gateway and anyone on the host reach without a key) is told
 // what the Assistant says, and nothing reaches a model. Without the
-// requirement, the forwarder's key serves keyless callers, as before.
+// requirement they are refused too, as no person of this Studio
+// (TestStudioRagAnswersOnlyPeopleOfThisStudio). A person's own key works at
+// the Studio and through the forwarder.
 func TestV1RunsOnlyOnTheCallersOwnKey(t *testing.T) {
 	for _, required := range []bool{true, false} {
 		t.Run(map[bool]string{true: "required", false: "not required"}[required], func(t *testing.T) {
@@ -31,6 +35,8 @@ func TestV1RunsOnlyOnTheCallersOwnKey(t *testing.T) {
 			t.Cleanup(gs.Close)
 			m.Tools = fakeTools{gs.URL + "/v1"}
 			m.setAccess(&Access{GatewayBase: gs.URL + "/v1", DeploymentKey: "studio-key"})
+			aPlatform(t, map[string]string{"bobs-key": "user:bob"}, nil)
+			people.Of(m.A).Seen(&auth.User{ID: "user:bob", Username: "bob"})
 			// The registration's forwarder in front of this Studio, given the
 			// Studio's key to add as it was before.
 			fwd := httptest.NewServer(ragendpoint.Forwarder(strings.TrimPrefix(srv.URL, "http://127.0.0.1:"), "studio-key"))
@@ -72,17 +78,8 @@ func TestV1RunsOnlyOnTheCallersOwnKey(t *testing.T) {
 					switch {
 					case required && (code != 401 || !strings.Contains(out, modelkeys.SignInFirst) || len(took) != 0):
 						t.Errorf("%s, %s: %d %s; the gateway took %v", c.name, p.path, code, out, took)
-					case !required && c.name == "no key" && (code != 401 || len(took) != 0):
+					case !required && (code != 403 || !strings.Contains(out, RagNeedsPerson) || len(took) != 0):
 						t.Errorf("%s, %s: %d %s; the gateway took %v", c.name, p.path, code, out, took)
-					case !required && strings.Contains(c.name, "Studio's key") || !required && strings.Contains(c.name, "forwarder") && c.bearer == "":
-						for _, k := range took {
-							if !strings.HasPrefix(k, "studio-key ") {
-								t.Errorf("%s, %s: %v", c.name, p.path, took)
-							}
-						}
-						if code != 200 || p.method == "POST" && len(took) == 0 {
-							t.Errorf("%s, %s: %d %s", c.name, p.path, code, out)
-						}
 					}
 				}
 			}

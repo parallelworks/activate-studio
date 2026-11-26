@@ -221,6 +221,15 @@ describe('Settings, agent mode where people sign in', () => {
     expect((await screen.findByTestId('agent-mode-signin')).textContent).toContain('studio-agent and studio-voice are refused and not listed')
   })
 
+  it('says studio-rag answers only people of this Studio, and offers no platform registration', async () => {
+    await open('#view=settings:rag', true)
+    expect((await screen.findByTestId('rag-people-only')).textContent).toContain('it answers only people of this Studio')
+    expect(screen.getByText('Not registered on the platform')).toBeInTheDocument()
+    expect(screen.getByText(/so it would answer no one/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Register now' })).toBeNull()
+    expect(screen.queryByText('Register on the platform automatically at startup')).toBeNull()
+  })
+
   it('says nothing of it on a Studio of one', async () => {
     await open('#view=settings:previews', false)
     expect(await screen.findByText(/^Voice conversations: talk with the assistant out loud/)).toBeInTheDocument()
@@ -230,6 +239,10 @@ describe('Settings, agent mode where people sign in', () => {
     expect((await screen.findAllByText(/^Grounded model/)).length).toBeGreaterThan(0)
     expect(screen.getByText(/The right choice inside tool-calling harnesses/)).toBeInTheDocument()
     expect(screen.queryByTestId('agent-mode-signin')).toBeNull()
+    expect(screen.queryByTestId('rag-people-only')).toBeNull()
+    expect(screen.queryByText(/so it would answer no one/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Register now' })).toBeInTheDocument()
+    expect(screen.getByText('Register on the platform automatically at startup')).toBeInTheDocument()
   })
 })
 
