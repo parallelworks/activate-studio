@@ -344,6 +344,9 @@ func (m *Module) v1Models(w http.ResponseWriter, r *http.Request) error {
 	if why := m.v1Refused(r); why != "" {
 		return m.refuseV1(w, "(models)", why)
 	}
+	if _, why, words := m.v1Person(r); why != "" {
+		return m.refusePerson(w, "(models)", why, words)
+	}
 	a := m.callerKey(r)
 	if a == nil {
 		return unauthorized(w)
@@ -438,6 +441,14 @@ func (m *Module) v1Completions(w http.ResponseWriter, r *http.Request) error {
 	if v := field("model"); v != nil && m.agentRefused(reqbody.JSString(v)) {
 		return m.refuseAgent(w, reqbody.JSString(v))
 	}
+	person, why, words := m.v1Person(r)
+	if why != "" {
+		model := "?"
+		if v := field("model"); v != nil {
+			model = reqbody.JSString(v)
+		}
+		return m.refusePerson(w, model, why, words)
+	}
 	if a == nil {
 		model := "?"
 		if v := field("model"); v != nil {
@@ -468,6 +479,9 @@ func (m *Module) v1Completions(w http.ResponseWriter, r *http.Request) error {
 	authSource := a.Source
 	if headerString(r, "X-Studio-Injected-Key") == "1" {
 		authSource = "deployment (injected by registration forwarder)"
+	}
+	if person != nil {
+		authSource += " of " + person.Username
 	}
 	m.A.Log.Info("rag proxy call", "model", requested, "underlying", underlying, "mode", mode, "authSource", authSource)
 	started := time.Now()

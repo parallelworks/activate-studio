@@ -196,22 +196,22 @@ func TestForwarder(t *testing.T) {
 	}
 }
 
-// Where each person uses their own credential (REQUIRE_PERSONAL_KEY, with
-// sign-in), the forwarder is given no key to add: the platform's gateway
-// and anyone on the host reach it without one, so what it added would be a
-// person's call on the Studio's credential. Elsewhere it is given the
-// Studio's, as before.
-func TestForwarderAddsNoKeyWhereEachPersonUsesTheirOwn(t *testing.T) {
+// TestNotRegisteredWhereSignInIs: where people sign in, /v1 answers only
+// people of this Studio with their own key, and the platform calls a
+// registered model with none, so the model is not registered there at all:
+// Start, and the start at launch, run nothing and say why. A Studio of one
+// registers it as before, its forwarder adding the deployment's key.
+func TestNotRegisteredWhereSignInIs(t *testing.T) {
 	for _, c := range []struct {
 		name     string
 		settings string
 		cfg      map[string]string
 		want     string
 	}{
-		{"required", `{"requirePersonalKey":true}`, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks"}, "5999  ctx1"},
-		{"not required", ``, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks"}, "5999 deploykey ctx1"},
-		{"sign-in off", `{"requirePersonalKey":true}`, nil, "5999 deploykey ctx1"},
-		{"personal keys off", `{"requirePersonalKey":true}`, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks", "DISABLE_PERSONAL_KEYS": "1"}, "5999 deploykey ctx1"},
+		{"required", `{"requirePersonalKey":true,"ragEndpointAutoStart":true}`, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks"}, ""},
+		{"not required", `{"ragEndpointAutoStart":true}`, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks"}, ""},
+		{"personal keys off", `{"requirePersonalKey":true,"ragEndpointAutoStart":true}`, map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks", "DISABLE_PERSONAL_KEYS": "1"}, ""},
+		{"sign-in off", `{"requirePersonalKey":true,"ragEndpointAutoStart":true}`, nil, "5999 deploykey ctx1"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -220,6 +220,19 @@ func TestForwarderAddsNoKeyWhereEachPersonUsesTheirOwn(t *testing.T) {
 			os.WriteFile(cli, []byte("#!/bin/sh\necho \"$STUDIO_TARGET_PORT $STUDIO_INJECT_KEY $PW_CONTEXT\" > "+envf+".new && mv "+envf+".new "+envf+"\nexec sleep 30\n"), 0o755)
 			_, e, _ := setupWith(t, map[string]string{"PW_API_KEY": "deploykey", "PW_CONTEXT": "ctx1", "PW_CLI": cli}, c.settings, c.cfg)
 			e.Self = []string{"/bin/self", Subcommand}
+			if c.want == "" {
+				if st := e.Status(); st.State != "stopped" || st.Detail != NotWhereSignIn {
+					t.Fatalf("before: %+v", st)
+				}
+				var said []string
+				e.MaybeAutoStart(func(s string) { said = append(said, s) })
+				st := e.Start()
+				time.Sleep(200 * time.Millisecond)
+				if _, err := os.Stat(envf); err == nil || st.State != "error" || st.Detail != NotWhereSignIn || len(said) != 1 || !strings.Contains(said[0], NotWhereSignIn) {
+					t.Fatalf("registered: %+v %v (%v)", st, said, err)
+				}
+				return
+			}
 			if st := e.Start(); st.State != "starting" {
 				t.Fatalf("%+v", st)
 			}

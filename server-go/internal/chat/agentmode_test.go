@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/auth"
+	"github.com/parallelworks/activate-studio/server-go/internal/people"
 	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 )
 
@@ -48,6 +49,10 @@ func TestAgentModeIsRefusedWhereSignInIs(t *testing.T) {
 		mark := filepath.Join(t.TempDir(), "ran")
 		m.A.Settings.Update(map[string]any{"customTools": []any{map[string]any{"name": "mark", "description": "", "command": "touch " + mark}}})
 		m.A.Settings.Update(map[string]any{settings.CustomToolsApprovedKey: settings.CustomToolsDigest(m.A.Settings.Effective().CustomTools)})
+		// The key is a person's who has signed in here: agent mode is
+		// refused even so, and studio-rag answers them.
+		aPlatform(t, map[string]string{"any-gateway-key": "user:bob"}, nil)
+		people.Of(m.A).Seen(&auth.User{ID: "user:bob", Username: "bob"})
 		for _, model := range []string{"studio-agent", "studio-agent/test-model", "studio-voice", "studio-voice/test-model"} {
 			for _, stream := range []bool{false, true} {
 				for _, bearer := range []string{"any-gateway-key", ""} {

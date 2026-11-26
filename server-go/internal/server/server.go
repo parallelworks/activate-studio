@@ -6,6 +6,7 @@ package server
 
 import (
 	"github.com/parallelworks/activate-studio/server-go/internal/bridge"
+	"github.com/parallelworks/activate-studio/server-go/internal/people"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -105,6 +106,7 @@ func (s *Server) read(w http.ResponseWriter, r *http.Request) *http.Request {
 		if r = s.front.Gate(w, r); r == nil {
 			return nil
 		}
+		people.Of(s.App).Seen(auth.UserOf(r))
 	}
 	s.dispatch(w, r)
 	return r
@@ -227,6 +229,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r = gated
+		// Who has signed in here: the grounded model at /v1 answers them.
+		people.Of(s.App).Seen(auth.UserOf(r))
 	}
 	via = s.dispatch(rec, r)
 	// New cookies (a sign-in, a key added or removed): the person's open
