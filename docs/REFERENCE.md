@@ -218,7 +218,7 @@ A file's own labels show green in the viewer, and labels it inherits from a fold
 
 ## Feature previews
 
-Settings, "Feature previews" turns on capabilities still in preview; each is off by default (`VOICE_ENABLED=1` turns voice on for a deployment). **Voice conversations** add a Voice button above the chat for a spoken conversation with the assistant, which can use its tools while you talk. It runs on a separate Unmute deployment (the `unmute` workflow); the section shows how to set one up, and the field for its address, only while the switch is on.
+Settings, "Feature previews" turns on capabilities still in preview; each is off by default (`VOICE_ENABLED=1` turns voice on for a deployment). **Voice conversations** add a Voice button above the chat for a spoken conversation with the assistant, which can use its tools while you talk. It runs on a separate Unmute deployment (the `unmute` workflow); the section shows how to set one up, and the field for its address, only while the switch is on. Voice answers through the grounded model's `studio-voice`, which is refused where people sign in, so there the Voice button is not offered.
 
 ## Setup
 

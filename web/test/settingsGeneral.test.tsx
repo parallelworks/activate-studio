@@ -1,8 +1,11 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openUpdates } from '../src/api'
 import { ServerSection, addressOn } from '../src/components/ServerSection'
 import { GENERAL_TABS, SettingsView, settingsTarget } from '../src/views/SettingsView'
+import { reloadAppConfig, useAppConfig } from '../src/config'
+
+function Config() { useAppConfig(); return null }
 
 // A switch forwards its press to its hidden input as a PointerEvent, which
 // jsdom does not define.
@@ -190,6 +193,43 @@ describe('Settings, General tabs', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Voice conversations' }))
     expect(await screen.findByLabelText('Unmute session URL')).toBeInTheDocument()
     expect(screen.getByText(/Kyutai/)).toBeInTheDocument()
+  })
+})
+
+describe('Settings, agent mode where people sign in', () => {
+  // The configuration is kept between tests: read again for each.
+  async function open(hash: string, signIn: boolean) {
+    const s = stub()
+    const inner = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) =>
+      String(input) === '/api/config' ? Promise.resolve(reply({ appName: 'Studio', user: { id: 'u', username: 'u' }, signIn })) : inner(input, init)))
+    render(<Config />)
+    await act(async () => { reloadAppConfig(); await new Promise(r => setTimeout(r, 30)) })
+    at(hash)
+    render(<SettingsView />)
+    return s
+  }
+  afterEach(() => cleanup())
+
+  it('says studio-agent and studio-voice are refused there, and offers no Voice button', async () => {
+    await open('#view=settings:previews', true)
+    expect((await screen.findByTestId('voice-signin')).textContent).toContain('the Voice button is not offered')
+  })
+
+  it('says so beside the grounded model, which keeps studio-rag', async () => {
+    await open('#view=settings:rag', true)
+    expect((await screen.findByTestId('agent-mode-signin')).textContent).toContain('studio-agent and studio-voice are refused and not listed')
+  })
+
+  it('says nothing of it on a Studio of one', async () => {
+    await open('#view=settings:previews', false)
+    expect(await screen.findByText(/^Voice conversations: talk with the assistant out loud/)).toBeInTheDocument()
+    expect(screen.queryByTestId('voice-signin')).toBeNull()
+    cleanup()
+    await open('#view=settings:rag', false)
+    expect((await screen.findAllByText(/^Grounded model/)).length).toBeGreaterThan(0)
+    expect(screen.getByText(/The right choice inside tool-calling harnesses/)).toBeInTheDocument()
+    expect(screen.queryByTestId('agent-mode-signin')).toBeNull()
   })
 })
 

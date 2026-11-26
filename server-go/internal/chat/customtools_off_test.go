@@ -3,7 +3,6 @@ package chat
 import (
 	"net/http"
 
-	"github.com/parallelworks/activate-studio/server-go/internal/settings"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -94,12 +93,12 @@ func TestCustomToolsRunWithoutTheStudiosSecrets(t *testing.T) {
 	}
 }
 
-// The grounded model's agent mode (/v1/chat/completions, studio-agent),
-// outside sign-in, runs custom tools for any caller whose bearer the model
-// gateway takes; with STUDIO_CUSTOM_TOOLS=0 it runs none.
+// The grounded model's agent mode (/v1/chat/completions, studio-agent) on
+// a Studio of one runs its custom tools, and with STUDIO_CUSTOM_TOOLS=0
+// none. Where people sign in it runs no tool at all (agentmode_test.go).
 func TestTheGroundedModelRunsCustomToolsOnlyWhenOn(t *testing.T) {
 	for _, off := range []bool{false, true} {
-		env := map[string]string{"AUTH_JWKS_URL": "http://127.0.0.1:9/jwks", "STUDIO_FRONT_AUTH": "1"}
+		env := map[string]string{}
 		if off {
 			env["STUDIO_CUSTOM_TOOLS"] = "0"
 		}
@@ -107,7 +106,6 @@ func TestTheGroundedModelRunsCustomToolsOnlyWhenOn(t *testing.T) {
 		m.Tools = runningTools{m.Tools.(fakeTools), m}
 		mark := filepath.Join(t.TempDir(), "ran")
 		m.A.Settings.Update(map[string]any{"customTools": []any{map[string]any{"name": "mark", "description": "", "command": "touch " + mark}}})
-		m.A.Settings.Update(map[string]any{settings.CustomToolsApprovedKey: settings.CustomToolsDigest(m.A.Settings.Effective().CustomTools)})
 		gw.load([]reply{call("mark", `{}`), text("Done.")})
 		req, _ := http.NewRequest("POST", srv.URL+"/v1/chat/completions", strings.NewReader(`{"model":"studio-agent/test-model","messages":[{"role":"user","content":"mark it"}]}`))
 		req.Header.Set("Content-Type", "application/json")

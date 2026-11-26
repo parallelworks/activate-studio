@@ -15,6 +15,7 @@ import (
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsval"
 	"github.com/parallelworks/activate-studio/server-go/internal/llm"
+	"github.com/parallelworks/activate-studio/server-go/internal/mainlib"
 	"github.com/parallelworks/activate-studio/server-go/internal/modelkeys"
 	"github.com/parallelworks/activate-studio/server-go/internal/reqbody"
 )
@@ -38,6 +39,26 @@ const ragDirective = `Context blocks retrieved from the knowledge base follow, n
 const VoiceStyle = "You are speaking aloud in a live voice conversation. Answer in one or two short sentences of plain spoken language. No markdown, no lists, no headings, no links: say a file name instead of writing a path. Before a tool call that will take time, say in a few words what you are checking. If the user is silent or vague, ask one short question."
 
 const noBearer = "bearer API key required"
+
+// AgentNeedsPerson is the refusal of agent mode (studio-agent and
+// studio-voice) on a Studio where people sign in. Agent mode runs this
+// Studio's tools, and /v1 is outside sign-in: neither the caller's key nor
+// the platform's gateway says which person of this Studio is calling, so
+// it would run them for anyone with a key the gateway takes.
+const AgentNeedsPerson = "studio-agent and studio-voice run this Studio's tools, and where people sign in to this Studio they run only for a person signed in here. This address does not know who is calling: use studio-rag here, or the Assistant in the Studio."
+
+// agentRefused: agent mode on a Studio with sign-in.
+func (m *Module) agentRefused(requested string) bool {
+	return m.A.Cfg.AuthEnabled() && m.resolveModel(requested).Mode == "agent"
+}
+
+// refuseAgent answers agentRefused's calls, in the shape OpenAI clients
+// read, and logs them. Nothing reaches a model or a tool.
+func (m *Module) refuseAgent(w http.ResponseWriter, model string) error {
+	m.rag.logCall(&ragCall{At: nowISO(), Model: model, Mode: "agent", AuthSource: "none", DurationMs: new(int64),
+		Status: "error", Detail: sp("rejected: agent mode runs only for a person signed in to this Studio")})
+	return reqbody.JSON(w, 403, reqbody.O("error", reqbody.O("message", AgentNeedsPerson, "type", "agent_mode")))
+}
 
 // callerAuth is whose credential a call runs on and where it goes: the
 // gateway (BaseURL ""), or an endpoint of the caller's own.
@@ -338,7 +359,9 @@ func (m *Module) v1Models(w http.ResponseWriter, r *http.Request) error {
 		data = append(data, entry(id, "studio"))
 		has[id] = true
 	}
-	if eff.RagAdvertiseAgentModel {
+	// Agent mode is not offered where it would be refused.
+	agent := !m.A.Cfg.AuthEnabled()
+	if eff.RagAdvertiseAgentModel && agent {
 		add("studio-agent")
 		add("studio-voice")
 	}
@@ -347,6 +370,9 @@ func (m *Module) v1Models(w http.ResponseWriter, r *http.Request) error {
 	}
 	if strings.Join(r.URL.Query()["all"], ",") == "1" {
 		for _, id := range []string{"studio-agent", "studio-rag"} {
+			if id == "studio-agent" && !agent {
+				continue
+			}
 			if !has[id] {
 				add(id)
 			}
@@ -408,6 +434,9 @@ func (m *Module) v1Completions(w http.ResponseWriter, r *http.Request) error {
 			model = reqbody.JSString(v)
 		}
 		return m.refuseV1(w, model, why)
+	}
+	if v := field("model"); v != nil && m.agentRefused(reqbody.JSString(v)) {
+		return m.refuseAgent(w, reqbody.JSString(v))
 	}
 	if a == nil {
 		model := "?"
@@ -635,6 +664,16 @@ func (m *Module) agentStream(w http.ResponseWriter, r *http.Request, id, request
 	return nil
 }
 
+// callerAdministers: the caller of agent mode administers this Studio.
+// Without sign-in that is its one person; with it, agent mode is refused
+// before this, and only a signed-in administrator would count.
+func (m *Module) callerAdministers(r *http.Request) bool {
+	if !m.A.Cfg.AuthEnabled() {
+		return true
+	}
+	return mainlib.Admin(mainlib.Of(m.A, r))
+}
+
 // agentic is agenticCompletion: the assistant's loop behind an OpenAI
 // answer, with the tools no person has to approve.
 func (m *Module) agentic(ctx context.Context, r *http.Request, underlying string, client []json.RawMessage, a *callerAuth, onDelta func(string), voice bool) (string, string, error) {
@@ -651,11 +690,21 @@ func (m *Module) agentic(ctx context.Context, r *http.Request, underlying string
 		messages = append(messages, clientMessage(raw))
 	}
 	specs := []json.RawMessage{}
+	// What the model is offered is all that runs: a call to any other tool,
+	// one that asks first or one the model made up, runs nothing.
+	offered := map[string]bool{}
+	custom := map[string]bool{}
+	for _, s := range customToolSpecs(m.eff(), m.Ext) {
+		custom[s.Name] = true
+	}
+	admin := m.callerAdministers(r)
 	for _, s := range activeToolSpecs(m.eff(), m.Ext) {
 		// No one is present to approve a change, so the tools that change
-		// something are not offered (and do not run if called).
-		if !asksFirst(s.Name) {
+		// something are not offered. A custom tool runs a command as the
+		// Studio's account, so only an administrator's call offers one.
+		if !asksFirst(s.Name) && (admin || !custom[s.Name]) {
 			specs = append(specs, s.JSON())
+			offered[s.Name] = true
 		}
 	}
 	final := ""
@@ -680,6 +729,10 @@ func (m *Module) agentic(ctx context.Context, r *http.Request, underlying string
 			for _, tc := range turn.ToolCalls {
 				ck := tc.Function.Name + ":" + tc.Function.Arguments
 				result, ok := cache[ck]
+				if !ok && !offered[tc.Function.Name] {
+					result, ok = "The tool "+tc.Function.Name+" is not available here, so nothing ran. Use only the tools offered, or answer in plain text.", true
+					cache[ck] = result
+				}
 				if !ok {
 					out, err := m.Tools.Execute(r, tc.Function.Name, tc.Function.Arguments, ToolCtx{UserKey: key})
 					if err != nil {
