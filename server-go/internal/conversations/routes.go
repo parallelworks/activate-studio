@@ -36,10 +36,14 @@ type Routes struct {
 	ToNode func(w http.ResponseWriter, r *http.Request, why string)
 }
 
-// VisibleTo says whether who may read c. One with no owner, made before
-// sign-in was turned on or by a visitor who had not signed in, is its
+// VisibleTo says whether who may read c. With sign-in, a visitor who has
+// not signed in reads none, owned or not, shared history or not. One with
+// no owner, made before sign-in was turned on or by a visitor, is its
 // administrators' where chats are not shared.
 func (rt *Routes) VisibleTo(c *Conversation, who Who) bool {
+	if rt.visitor(who) {
+		return false
+	}
 	// A chat that drives a pw code session on another of its owner's
 	// machines holds that session's turns, copied from their machine: it
 	// is theirs alone, even where chat history is shared.
@@ -50,8 +54,17 @@ func (rt *Routes) VisibleTo(c *Conversation, who Who) bool {
 	return rt.MayChange(c, who)
 }
 
-// FindVisible is conversation id as who may read it.
+// visitor: sign-in is on and who has not signed in.
+func (rt *Routes) visitor(who Who) bool {
+	return rt.AuthEnabled() && who.UserID == "" && who.Username == ""
+}
+
+// FindVisible is conversation id as who may read it. A visitor is asked to
+// sign in, the same for every id, one that is there or not.
 func (rt *Routes) FindVisible(id string, who Who) (*Conversation, error) {
+	if rt.visitor(who) {
+		return nil, apierr.New(401, SignInToChat)
+	}
 	c := rt.Store.Get(id)
 	if c == nil || !rt.VisibleTo(c, who) {
 		return nil, apierr.New(404, "conversation not found")

@@ -10,8 +10,9 @@ import (
 )
 
 // TestAChatWithNoOwner: with sign-in, a chat with no owner is its
-// administrators'. Others read it where chats are shared, and nothing else;
-// where they are not, it is answered as one that is not there.
+// administrators'. Others who have signed in read it where chats are
+// shared, and nothing else; where they are not, it is answered as one that
+// is not there. A visitor reads none (TestAVisitorSeesNoChats).
 func TestAChatWithNoOwner(t *testing.T) {
 	const none = "7f1c2b9e-0000-4000-8000-00000000000f"
 	stream := func(id string) string {
@@ -45,7 +46,7 @@ func TestAChatWithNoOwner(t *testing.T) {
 			id := m.Conv.CreateWith(&title, "", msgs, nil).ID
 			relay := m.Conv.CreateWith(&title, "", msgs, &conversations.PWCodeLink{Relay: true, Site: "pw://me/box", Session: "s9", CreatedAt: m.Conv.Now()}).ID
 
-			for _, who := range []string{"bob", ""} {
+			for _, who := range []string{"bob"} {
 				for _, c := range routes {
 					ask := func(id string) (int, string) {
 						body := strings.ReplaceAll(c.body, "ID", id)
