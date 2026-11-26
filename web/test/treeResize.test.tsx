@@ -97,15 +97,38 @@ describe("the edge of the Library's tree", () => {
     expect(now()).toBe(360 + 60 + 2 + 40 + 7)
   })
 
-  it('a fit is never wider than half the window, nor narrower than the least', () => {
+  it('a fit goes as far as a drag can: half the window, or TREE_MAX in a narrower one', () => {
     const { unmount } = render(<Page names={['c'.repeat(400)]} />)
     fireEvent.doubleClick(edge())
     expect(now()).toBe(720)
     unmount()
-    setWindow(800)
-    render(<Page names={['c'.repeat(400)]} />)
+    for (const w of [900, 800]) {
+      setWindow(w)
+      const { unmount: gone } = render(<Page names={['c'.repeat(400)]} />)
+      fireEvent.doubleClick(edge())
+      expect(now()).toBe(TREE_MAX)
+      // Where a drag stops.
+      fireEvent.keyDown(edge(), { key: 'Home' })
+      fireEvent.pointerDown(edge(), { button: 0, clientX: TREE_MIN })
+      fireEvent.pointerMove(edge(), { clientX: 5000 })
+      fireEvent.pointerUp(edge(), { clientX: 5000 })
+      expect(now()).toBe(TREE_MAX)
+      gone()
+    }
+  })
+
+  it('after a fit, a narrower window takes the tree in as far as it must, and a wider one gives the fit back', () => {
+    const { rerender } = render(<Page names={['c'.repeat(400)]} cardWidth={900} />)
     fireEvent.doubleClick(edge())
-    expect(now()).toBe(400)
+    expect(now()).toBe(720)
+    setWindow(900)
+    rerender(<Page names={['c'.repeat(400)]} cardWidth={600} />)
+    expect(now()).toBe(480)
+    expect(screen.getByTestId('rail').style.width).toBe('480px')
+    setWindow(1440)
+    rerender(<Page names={['c'.repeat(400)]} cardWidth={900} />)
+    expect(now()).toBe(720)
+    expect(saved).toHaveBeenCalledTimes(1)
   })
 
   it('a fit keeps the buttons over the tree whole, and an empty tree stays as it is', () => {
