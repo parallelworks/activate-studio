@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { buildOpenHash } from '../nav'
+import type { MentionLibrary } from './MentionPalette'
 
 /**
  * The @[path] tokens in sent messages read as links and open their file.
@@ -13,10 +14,21 @@ import { buildOpenHash } from '../nav'
 const TOKEN = /@\[([^\]\n]{1,500})\]/g
 const LIB = /^([a-z0-9][a-z0-9_-]{0,39}):(.+)$/
 
-export function parseMention(body: string, libraryIds: string[]): { path: string; lib?: string } {
-  const m = LIB.exec(body.trim())
-  if (m && libraryIds.includes(m[1])) return { path: m[2], lib: m[1] }
-  return { path: body.trim() }
+/** The file a token names: by its library's name as the person sees it
+ *  (the longest that fits, in any case; one two libraries share names
+ *  neither), or by its id, as messages written before name it. */
+export function parseMention(body: string, libraries: readonly MentionLibrary[]): { path: string; lib?: string } {
+  const t = body.trim(), low = t.toLowerCase()
+  let best: MentionLibrary | undefined, n = 0
+  for (const l of libraries) {
+    const name = l.label.trim().toLowerCase()
+    if (!name || !low.startsWith(`${name}:`)) continue
+    if (name.length > n) { best = l; n = name.length } else if (name.length === n) best = undefined
+  }
+  if (best) return { path: t.slice(n + 1).trim(), lib: best.id }
+  const m = LIB.exec(t)
+  if (m && libraries.some(l => l.id === m[1])) return { path: m[2], lib: m[1] }
+  return { path: t }
 }
 
 function bubbleTexts(root: HTMLElement): Text[] {
@@ -47,7 +59,7 @@ function caretAt(x: number, y: number): { node: Node; offset: number } | null {
   return r ? { node: r.startContainer, offset: r.startOffset } : null
 }
 
-export function MentionLinks({ canvas, libraryIds }: { canvas: React.RefObject<HTMLDivElement | null>; libraryIds: string[] }) {
+export function MentionLinks({ canvas, libraries }: { canvas: React.RefObject<HTMLDivElement | null>; libraries: readonly MentionLibrary[] }) {
   useEffect(() => {
     const root = canvas.current
     if (!root) return
@@ -80,7 +92,7 @@ export function MentionLinks({ canvas, libraryIds }: { canvas: React.RefObject<H
       if (!at || at.node.nodeType !== Node.TEXT_NODE || !bubble.contains(at.node)) return
       const body = tokenAt(at.node as Text, at.offset)
       if (!body) return
-      const { path, lib } = parseMention(body, libraryIds)
+      const { path, lib } = parseMention(body, libraries)
       e.preventDefault()
       location.hash = buildOpenHash({ kind: 'file', target: path, ...(lib ? { lib } : {}) })
     }
@@ -91,6 +103,6 @@ export function MentionLinks({ canvas, libraryIds }: { canvas: React.RefObject<H
       root.removeEventListener('click', onClick)
       css?.highlights?.delete('studio-mention')
     }
-  }, [canvas, libraryIds])
+  }, [canvas, libraries])
   return null
 }

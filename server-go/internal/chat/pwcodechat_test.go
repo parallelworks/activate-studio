@@ -434,7 +434,7 @@ func TestStudioAnswersWhenChosenOrWherePWCodeIsNot(t *testing.T) {
 		t.Errorf("engine: %v", out)
 	}
 	sse := post(t, base2, map[string]any{"engine": "pwcode", "messages": []any{map[string]any{"role": "user", "content": "hi"}}})
-	if !strings.Contains(sse, `"message":"pw code: pw code needs ACTIVATE`) {
+	if !strings.Contains(sse, `"message":"pw code needs ACTIVATE`) {
 		t.Errorf("%s", sse)
 	}
 }

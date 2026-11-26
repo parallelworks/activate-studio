@@ -7,7 +7,7 @@ import {
 import { useEffectiveTheme } from '../theme'
 import { SlashPalette } from '../components/SlashPalette'
 import { ComposerEngineSlot } from '../pwcode/NewChatModel'
-import { PwCodeOwnModel, useModelHeld } from '../pwcode/ownModel'
+import { HELD_SAY, HELD_TITLE, PwCodeOwnModel, useModelHeld } from '../pwcode/ownModel'
 import { takeHanded, onFirstMessage } from '../pwcode/firstMessage'
 import { NewChatTargetSlot } from '../pwcode/NewChatTarget'
 import { dropLibraryStart } from '../pwcode/newChatStart'
@@ -585,7 +585,6 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   // button names the choice when there is more than one library.
   const libraries = useMemo(() => cfg.libraries ?? [], [cfg.libraries])
   const hasLibraries = libraries.length > 1
-  const libraryIds = useMemo(() => libraries.map(l => l.id), [libraries])
   const [chatScope, setChatScope] = useChatScope(cfg.libraries)
   const libLabel = scopeLabel(libraries, chatScope)
 
@@ -720,8 +719,8 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
             feedbackPlaceholder: 'Tell the assistant what to do instead…',
           },
           emptyState: {
-            noProvidersTitle: signedOut ? 'Sign in to chat' : signInFirst && !held ? 'Sign in with ACTIVATE first' : 'A model is needed',
-            noProvidersBody: signedOut ? (place ? 'Each chat belongs to the person who started it.' : SIGN_IN_ELSEWHERE) : held ? 'pw code has no model set. Choose one in the message box, or add one under Settings, Accounts.' : noModelsBody(cfg, noCredential !== false),
+            noProvidersTitle: signedOut ? 'Sign in to chat' : signInFirst && !held ? 'Sign in with ACTIVATE first' : held ? HELD_TITLE : 'A model is needed',
+            noProvidersBody: signedOut ? (place ? 'Each chat belongs to the person who started it.' : SIGN_IN_ELSEWHERE) : held ? HELD_SAY : noModelsBody(cfg, noCredential !== false),
             addProvider: signedOut ? 'Sign in' : 'Open Accounts',
           },
           sidebar: {
@@ -733,7 +732,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           },
           input: {
             ...(signedOut ? { placeholder: 'Sign in to chat' } : {}),
-            placeholderNoProviders: signedOut ? 'Sign in to chat' : held ? 'Choose or add a model to start chatting' : signInFirst ? 'Sign in with ACTIVATE to start chatting' : 'Add a model under Settings, Accounts to start chatting',
+            placeholderNoProviders: signedOut ? 'Sign in to chat' : held ? 'Choose a model to start chatting' : signInFirst ? 'Sign in with ACTIVATE to start chatting' : 'Add a model under Settings, Accounts to start chatting',
           },
         },
       }}
@@ -815,7 +814,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
               this one would answer Enter for. */}
           {!showAttachments && !showManage && !pw.shown && <SlashPalette canvas={canvasRef} conversationId={activeId} persona={persona} machine={pw.machine} session={pw.link?.session} />}
           {!showAttachments && !showManage && <MentionPalette canvas={canvasRef} />}
-          <MentionLinks canvas={canvasRef} libraryIds={libraryIds} />
+          <MentionLinks canvas={canvasRef} libraries={libraries} />
           {!showAttachments && !showManage && <NextUp canvas={canvasRef} />}
           {voiceOpen && cfg.features?.voice?.url && <VoiceOverlay url={cfg.features.voice.url} onClose={() => setVoiceOpen(false)} />}
           <div className="chat-controls" hidden={showManage}>

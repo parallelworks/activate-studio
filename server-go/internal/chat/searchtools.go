@@ -85,7 +85,15 @@ func (m *Module) namedLibrary(v any, ctx ToolCtx) (libraries.Library, error) {
 	if strings.ToLower(want) == "all" {
 		return libraries.Library{}, &toolError{errOneLibrary}
 	}
-	return m.Corpus.Reg.Get(want, m.primaryLabel(), viewerOfCtx(ctx))
+	l, err := m.Corpus.Reg.Get(want, m.primaryLabel(), viewerOfCtx(ctx))
+	if err != nil {
+		// A library named as the person sees it, as a message's @[name:path]
+		// names it: one name, one library.
+		if id, _, ok := namedIn(want+":", m.libraryNames(ctx)); ok {
+			return m.Corpus.Reg.Get(id, m.primaryLabel(), viewerOfCtx(ctx))
+		}
+	}
+	return l, err
 }
 
 // sliceEnd is the length of Array.prototype.slice(0, end) over n items.

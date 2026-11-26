@@ -15,6 +15,13 @@ import { onStart, startOf } from './newChatStart'
  */
 export const PWCODE_MODEL = { id: 'pwcode', name: 'pw code' }
 
+/** What a new pw code chat with no model at all says, in one line: every
+ *  person meets it once where Settings names no model for pw code (the
+ *  choice is kept for them after). Select a model is the picker's own
+ *  word for it, in the box. */
+export const HELD_TITLE = 'Choose a model to start'
+export const HELD_SAY = 'Choose one with Select a model, below.'
+
 let standsIn = false
 /** Whether pw code stands in when no model is listed. */
 export function pwCodeStandsIn(): boolean { return standsIn && !held }

@@ -715,7 +715,7 @@ func (b *builds) libLog(id, what string, why error) {
 		b.s.a.Log.Info("library " + id + ": " + what)
 		return
 	}
-	msg := "library " + id + ": " + what
+	msg := "library " + b.libName(id) + ": " + what
 	if why != nil {
 		msg += ": " + why.Error()
 	}

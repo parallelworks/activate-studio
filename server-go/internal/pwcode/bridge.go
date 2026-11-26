@@ -180,7 +180,7 @@ func (r *remoteClient) Call(ctx context.Context, method, route string, body any,
 	if notRunning {
 		return nil, &DaemonError{Message: "pw code is not running on " + r.resource + ", and reading does not start it."}
 	}
-	return nil, &DaemonError{Message: r.resource + ": " + said}
+	return nil, &DaemonError{Message: r.resource + ": " + said, Unreached: true, Site: r.resource}
 }
 
 // GetBytes reads a body that is not JSON through the bridge; a failure that

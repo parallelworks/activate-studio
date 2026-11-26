@@ -1,10 +1,12 @@
 package chat
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/codesessions"
 	"github.com/parallelworks/activate-studio/server-go/internal/folders"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
@@ -33,10 +35,29 @@ type libraryStart struct {
 	claudeInstalled    any
 }
 
+// placeFresh is how old a look at the viewer's pw code New pw code chat
+// here takes: pw code that stopped answering shows in the menu within it,
+// and a menu opened again and again asks pw code once.
+const placeFresh = 5 * time.Second
+
+// forgetRefusalAfter drops a refusal of pw code kept for r's viewer longer
+// than keep (pwcodeAvailability keeps a failed start minutes), so pw code
+// that answers again is offered as soon as one that stops is refused. A
+// viewer barred from pw code stays barred.
+func (m *Module) forgetRefusalAfter(r *http.Request, keep time.Duration) {
+	who := userID(r)
+	m.pw.mu.Lock()
+	defer m.pw.mu.Unlock()
+	if a, ok := m.pw.avail[who]; ok && a.why != "" && !a.barred && time.Since(a.at) >= keep {
+		delete(m.pw.avail, who)
+	}
+}
+
 // libraryStart is where a session in the folder at path of the viewer's
 // library named library starts, or why none does.
 func (m *Module) libraryStart(r *http.Request, library, at string) (*libraryStart, error) {
 	ctx := r.Context()
+	m.forgetRefusalAfter(r, placeFresh)
 	if why := m.pwcodeUnavailable(ctx, r); why != "" {
 		return nil, pwErr(409, why)
 	}
@@ -68,9 +89,15 @@ func (m *Module) libraryStart(r *http.Request, library, at string) (*libraryStar
 // ownStart: the session starts on the machine the Studio drives for the
 // viewer, whose pw code answers.
 func (m *Module) ownStart(r *http.Request, out *libraryStart) error {
-	here, err := m.pwcodeHereCached(r.Context(), r)
+	here, err := m.pwcodeHereWithin(r.Context(), r, placeFresh)
 	if err != nil {
-		return pwErr(409, "pw code does not answer for you on this Studio's machine: "+firstLine(apiMessage(err), 300))
+		var ae *apierr.Error
+		if errors.As(err, &ae) && ae.Status != 502 {
+			// Said plainly already: a sign-in, a setting.
+			return pwErr(409, ae.Message)
+		}
+		m.A.Log.Warn("pw code chat here: pw code did not answer", "err", err.Error())
+		return pwErr(409, m.notAnswering(""))
 	}
 	if st := jsonv.Obj(here.status); st != nil {
 		if why := pwcode.UnusableReason(st); why != "" {
@@ -133,7 +160,7 @@ func (m *Module) machineStart(r *http.Request, f kb.FolderAt, out *libraryStart)
 		if f.Daemon == "" {
 			return pwErr(409, name+" runs no pw code for your account now. Start it there (pw code, then /rc), then try again.")
 		}
-		if here, err := m.pwcodeHereCached(r.Context(), r); err == nil && here.daemonID == f.Daemon {
+		if here, err := m.pwcodeHereWithin(r.Context(), r, placeFresh); err == nil && here.daemonID == f.Daemon {
 			return m.ownStart(r, out)
 		}
 	}
@@ -171,7 +198,7 @@ func (m *Module) machineStart(r *http.Request, f kb.FolderAt, out *libraryStart)
 		return pwErr(409, "ACTIVATE lists more than one pw code machine named "+name+" to you, and the Studio does not guess which one this library is on.")
 	}
 	mach := on[0]
-	if here, err := m.pwcodeHereCached(r.Context(), r); err == nil && m.startIsOwn(mach, here) {
+	if here, err := m.pwcodeHereWithin(r.Context(), r, placeFresh); err == nil && m.startIsOwn(mach, here) {
 		return m.ownStart(r, out)
 	}
 	if started, _ := jsonv.Path(mach, "remoteStart").(bool); jsonv.String(jsonv.Path(mach, "status")) != "connected" || !started {

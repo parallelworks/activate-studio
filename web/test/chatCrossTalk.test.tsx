@@ -427,14 +427,15 @@ describe('a new chat pw code answers, with no Studio assistant model', () => {
 describe('a new chat pw code answers, with no model for pw code', () => {
   beforeEach(() => { engine = 'pwcode'; settingsModel = ''; needed = true })
   afterEach(() => clearModelPick(null))
-  const closed = () => waitFor(() => expect(screen.getByPlaceholderText('Choose or add a model to start chatting')).toBeDisabled(), { timeout: 5000 })
+  const closed = () => waitFor(() => expect(screen.getByPlaceholderText('Choose a model to start chatting')).toBeDisabled(), { timeout: 5000 })
   const opened = () => waitFor(() => expect(screen.getByPlaceholderText('Ask anything')).toBeEnabled(), { timeout: 5000 })
 
   it.each([['some to choose', 1], ['none listed', 0]] as const)('is closed and says what to do, %s', async (_what, n) => {
     if (!n) models = []
     await show()
     await closed()
-    expect(screen.getByText('pw code has no model set. Choose one in the message box, or add one under Settings, Accounts.')).toBeInTheDocument()
+    expect(screen.getByText('Choose a model to start')).toBeInTheDocument()
+    expect(screen.getByText('Choose one with Select a model, below.')).toBeInTheDocument()
     // pw code's own picker lists what there is.
     expect(heldModels()).toHaveLength(n)
     fireEvent.click(screen.getByRole('link', { name: /Open Accounts/ }))

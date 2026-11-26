@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { PublicLibrary } from '../api'
 import { useAppConfig } from '../config'
 import { getChatLibrary } from '../labelScope'
 import { hideNameTip, nameTip, showNameTip } from './NameTip'
@@ -19,9 +20,24 @@ import { hideNameTip, nameTip, showNameTip } from './NameTip'
  */
 export interface MentionItem { path: string; name: string; dir: boolean; lib: string; libLabel: string }
 
-/** The token a chosen file becomes in the message. */
-export function mentionToken(path: string, lib: string, primaryId: string): string {
-  return lib && lib !== primaryId ? `@[${lib}:${path}]` : `@[${path}]`
+/** A library as a mention names it. */
+export type MentionLibrary = Pick<PublicLibrary, 'id' | 'label'> & { primary?: boolean }
+
+/** The library's name as a person sees it, where it reads back as this
+ *  library alone (MentionLinks.parseMention, and the server's mentionsIn):
+ *  else its id. */
+export function mentionName(lib: string, libraries: readonly MentionLibrary[]): string {
+  const name = libraries.find(l => l.id === lib)?.label.trim() ?? ''
+  const low = name.toLowerCase()
+  const shared = libraries.some(l => l.id !== lib && (l.label.trim().toLowerCase() === low || l.id.toLowerCase() === low))
+  return name && !/[[\]:\n]/.test(name) && !shared ? name : lib
+}
+
+/** The token a chosen file becomes in the message: the main library's
+ *  file by its path, another's with the library's name. */
+export function mentionToken(path: string, lib: string, libraries: readonly MentionLibrary[]): string {
+  const primaryId = (libraries.find(l => l.primary) ?? libraries[0])?.id ?? 'kb'
+  return lib && lib !== primaryId ? `@[${mentionName(lib, libraries)}:${path}]` : `@[${path}]`
 }
 
 /** The @ query the caret is in, if any: the text after an @ that starts a
@@ -128,7 +144,7 @@ export function MentionPalette({ canvas }: { canvas: React.RefObject<HTMLDivElem
       setQuery(`${item.path}/`)
       return
     }
-    write(ta, `${mentionToken(item.path, item.lib, primaryId)} `, false)
+    write(ta, `${mentionToken(item.path, item.lib, libs)} `, false)
   }
   const acceptRef = useRef(accept)
   acceptRef.current = accept

@@ -301,6 +301,15 @@ func (m *Module) pwcodeCheck(ctx context.Context, r *http.Request) (string, bool
 	defer cancel()
 	st, err := s.Daemon.EnsureDaemon(cctx)
 	if err != nil {
+		if _, ok := unreached(err); ok || cctx.Err() != nil {
+			m.A.Log.Warn("pw code chat: pw code did not start here", "err", err.Error())
+			// Asked by a page that went away, nothing was learned: it is
+			// not kept for the next ask.
+			if ctx.Err() != nil {
+				return m.notAnswering(""), false, 0
+			}
+			return m.notAnswering(""), false, 5 * time.Minute
+		}
 		return "pw code did not start here: " + err.Error(), false, 5 * time.Minute
 	}
 	if why := pwcode.UnusableReason(st); why != "" {
@@ -814,13 +823,13 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	// existing chat does not start or reach a session there.
 	if old := m.Conv.Get(convID); old != nil {
 		if _, err := m.ownPWChat(r, convID); err != nil {
-			res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
+			res.event("error", reqbody.O("message", pwSaid(apiMessage(err)), "kind", "pwcode"))
 			return nil
 		}
 	}
 	m.Conv.RecordUserTurn(convID, msgID, content, body.ParentMessageID, owner)
 	fail := func(err error) error {
-		res.event("error", reqbody.O("message", "pw code: "+apiMessage(err), "kind", "pwcode"))
+		res.event("error", reqbody.O("message", pwSaid(apiMessage(m.plainReach(err, "pw code did not answer"))), "kind", "pwcode"))
 		return nil
 	}
 	if strings.TrimSpace(content) == "" {

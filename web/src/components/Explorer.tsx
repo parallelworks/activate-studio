@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Checkbox, IconButton } from '@parallelworks/ui'
 import { api, KbEntry } from '../api'
+import { useShownPath } from '../libraryPath'
 import { nameTip } from './NameTip'
 
 function formatSize(n: number): string {
@@ -213,6 +214,7 @@ export function visibleRowPaths(): string[] {
 }
 
 function DirNode(props: NodeProps) {
+  const shown = useShownPath()
   const { path, name, depth, onOpen, onDirFocus, selected, multiSelected, onToggleMulti, onSelectRange, onMoveInto, onCopyInto, onDropInto, onLabel, onContext, selectMode, showLabels, showHidden, tagsTick, refreshTick, tags, dragKind, dropKind, dragging, onDragging, reveal } = props
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<KbEntry[] | null>(null)
@@ -259,7 +261,7 @@ function DirNode(props: NodeProps) {
         <div
           ref={row}
           role="treeitem" aria-level={depth} aria-expanded={open} aria-selected={reveal?.path === path || multiSelected.has(path)} tabIndex={-1}
-          {...nameTip(name, rowDetail(path))}
+          {...nameTip(name, rowDetail(shown(path)))}
           data-path={path}
           data-drop={takes ?? undefined}
           className={`tree-row dir ${reveal?.path === path ? 'selected' : ''} ${multiSelected.has(path) ? 'multi' : ''} ${dropOver ? 'drop-target' : ''} ${takes === 'none' ? 'drop-refused' : takes ? 'drop-ok' : ''}`}
@@ -323,7 +325,7 @@ function DirNode(props: NodeProps) {
             key={e.path}
             ref={el => { if (el && selected === e.path) el.scrollIntoView({ block: 'nearest' }) }}
             role="treeitem" aria-level={depth + 1} aria-selected={selected === e.path || multiSelected.has(e.path)} tabIndex={-1}
-            {...nameTip(e.name, rowDetail(e.path, e.size))}
+            {...nameTip(e.name, rowDetail(shown(e.path), e.size))}
             data-path={e.path}
             className={`tree-row file ${selected === e.path ? 'selected' : ''} ${multiSelected.has(e.path) ? 'multi' : ''}`}
             style={{ paddingLeft: 8 + (depth + 1) * 14 }}

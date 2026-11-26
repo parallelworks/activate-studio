@@ -812,7 +812,7 @@ export function Viewer({ path, find, onDeleted, onOpen, startEditing, readOnly, 
       key={`${path}@${file.mtime}@${file.size}`}
       sandbox="allow-scripts allow-modals"
       src={withLibrary(`/api/kb/html?path=${encodeURIComponent(path)}`)}
-      title={path}
+      title={shown(path)}
       className="html-preview-frame"
     />
   ) : isModel ? (

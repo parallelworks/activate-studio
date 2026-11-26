@@ -36,9 +36,10 @@ export function saveFromStudio(url: string, name: string): void {
   a.remove()
 }
 
-/** Downloads a library file, or a folder as a zip. */
-export async function downloadPath(path: string, isDir: boolean): Promise<void> {
-  const name = path.split('/').filter(Boolean).pop() || 'library'
+/** Downloads a library file, or a folder as a zip. shown is the path as
+ *  the person reads it (libraryPath.ts), which messages name it by. */
+export async function downloadPath(path: string, isDir: boolean, shown = path): Promise<void> {
+  const name = shown.split('/').filter(Boolean).pop() || 'library'
   if (!isDir) {
     saveFromStudio(api.downloadUrl(path), name)
     return
