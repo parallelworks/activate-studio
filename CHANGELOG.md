@@ -2,6 +2,7657 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.204 (2026-11-26)
+
+### Personal spaces and folder sharing (Preview) (#724)
+
+Stable release of this change from Preview v1.203.1, with nothing further. See v1.203.1 below.
+
+### Builds: take the ONNX Runtime library from the pinned onnxruntime wheel (#726)
+
+Stable release of this change from Preview v1.203.2, with nothing further. See v1.203.2 below.
+
+### Libraries: buckets of an rclone remote, indexed from their listing (Preview) (#725)
+
+Stable release of this change from Preview v1.203.2, with nothing further. See v1.203.2 below.
+
+### Setup wizard test: wait for Up to be enabled before clicking it (#727)
+
+Stable release of this change from Preview v1.203.3, with nothing further. See v1.203.3 below.
+
+### Chats: into a library only when someone saves them (#728)
+
+Stable release of this change from Preview v1.203.3, with nothing further. See v1.203.3 below.
+
+### Tasks test: wait for the stand-in CLI to go quiet before TestCampaign ends (#731)
+
+Stable release of this change from Preview v1.203.3, with nothing further. See v1.203.3 below.
+
+### Workflow: multi-user postures require sign-in; the first index starts without HTTP (#729)
+
+Stable release of this change from Preview v1.203.3, with nothing further. See v1.203.3 below.
+
+### Sign in with ACTIVATE as a credential of its own, and My library (#730)
+
+Stable release of this change from Preview v1.203.3, with nothing further. See v1.203.3 below.
+
+### Sign in with ACTIVATE: find the sign-in where the pw CLI saves it (.credentials) (#732)
+
+Stable release of this change from Preview v1.203.4, with nothing further. See v1.203.4 below.
+
+### Chat: pw code answers by default under ACTIVATE (#733)
+
+Stable release of this change from Preview v1.203.5, with nothing further. See v1.203.5 below.
+
+### pw code chat: the Studio's tools, checked before every message (#734)
+
+Stable release of this change from Preview v1.203.6, with nothing further. See v1.203.6 below.
+
+### Documents: a cover page, italic leader phrases, no divider lines, and a writing check (#735)
+
+Stable release of this change from Preview v1.203.7, with nothing further. See v1.203.7 below.
+
+### Library: download and upload from the right-click menu, a folder as a zip (#736)
+
+Stable release of this change from Preview v1.203.8, with nothing further. See v1.203.8 below.
+
+### Viewer: zoom a document's pages or an image without zooming the window (#737)
+
+Stable release of this change from Preview v1.203.9, with nothing further. See v1.203.9 below.
+
+### Bucket libraries: an object's inode is a hash of its path, the same in every listing (#739)
+
+Stable release of this change from Preview v1.203.10, with nothing further. See v1.203.10 below.
+
+### index-extract: read the text of a list of files for an index, in GUFI's common external schema (#738)
+
+Stable release of this change from Preview v1.203.10, with nothing further. See v1.203.10 below.
+
+### index-extract spread and shards: load extracted text into a spread tree and an index's permission shards (#740)
+
+Stable release of this change from Preview v1.203.10, with nothing further. See v1.203.10 below.
+
+### Model access: subscriptions are asked for again after signing in (#741)
+
+Stable release of this change from Preview v1.203.11, with nothing further. See v1.203.11 below.
+
+### Model access: a refused key is not called an AI gateway key (#742)
+
+Stable release of this change from Preview v1.203.11, with nothing further. See v1.203.11 below.
+
+### Transfers into My library: index it again, and write as the Library does (#744)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### feat(transfers): clear the failed mark once the failure is seen (#747)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Transfers: rsync over pw ssh says what failed, and Studio copy takes over when rsync never connects (#748)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Library: Copy to another library from the right-click menu (#749)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Library: drag onto another library's folder to copy, with the folders that take the drop marked (#751)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### CI flakes: three tests that failed on slow macOS runners (#752)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Code: continue a pw code session in a Studio chat (server) (#753)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### pw code chat: a finished turn stops being followed before the reply ends (#757)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Code: Continue in Studio on the Code page (#754)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Transfers test: the 2,000-row bound counts the rows the last page renders (#756)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Add a library: one size for the dialog, with the form's buttons in view (#743)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Libraries: the main library names the cluster it is on (#745)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Code: tool calls in a row fold into one line, named by what they worked on (#746)
+
+Stable release of this change from Preview v1.203.12, with nothing further. See v1.203.12 below.
+
+### Bucket libraries: read the objects' text after each listing, when asked, through index-extract (#758)
+
+Stable release of this change from Preview v1.203.13, with nothing further. See v1.203.13 below.
+
+### Code: a continued chat links back to its session on the Code page (#755)
+
+Stable release of this change from Preview v1.203.13, with nothing further. See v1.203.13 below.
+
+### Settings: Read text for a bucket library, asked first with what it reads and costs (#759)
+
+Stable release of this change from Preview v1.203.14, with nothing further. See v1.203.14 below.
+
+### Installed app: the splash takes the theme the person last used (#760)
+
+Stable release of this change from Preview v1.203.15, with nothing further. See v1.203.15 below.
+
+### Keep the app shell on the device with a service worker (#761)
+
+Stable release of this change from Preview v1.203.15, with nothing further. See v1.203.15 below.
+
+### Code: the session's title and actions stay in view, and Continue in Studio says why it could not go on (#762)
+
+Stable release of this change from Preview v1.203.16, with nothing further. See v1.203.16 below.
+
+### My library: file work over the kept-open session, about 15 times faster per click (#763)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Agents: write agent instructions and skills into a folder's AGENTS.md for pw code (#764)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### My library: listings kept per viewer, folders read two levels at once (#765)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Agents: Instructions and skills applied to folders, and a pw code chat's persona as its folder's AGENTS.md (#766)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Sign-in on: only the deployment sets the libraries on the Studio's computer (#770)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Library: write in a library you built on one of your systems (#767)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Library: a rename or move of a file that is not there says so (#775)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Agents: delegation starts a pw code session in a library folder with its AGENTS.md, shown on the Code page (#769)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### My library on any of your systems (#768)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Index: extracted text is kept closed to other accounts (#776)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### feat(agents): standing agents are long-lived pw code sessions (#772)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Every library says what you may do in it and where it is (#771)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### feat(agents): retire the task engine; earlier tasks stay readable (#774)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Add a library: one form of where, whose account, and what (#773)
+
+Stable release of this change from Preview v1.203.17, with nothing further. See v1.203.17 below.
+
+### Desktops: relay a platform desktop's VNC socket as the viewer (#777)
+
+Stable release of this change from Preview v1.203.18, with nothing further. See v1.203.18 below.
+
+### Desktops: draw platform desktop sessions in the Studio (#778)
+
+Stable release of this change from Preview v1.203.18, with nothing further. See v1.203.18 below.
+
+### Code: the open session shows the one chosen, refreshes, and follows its output (#782)
+
+Stable release of this change from Preview v1.203.18, with nothing further. See v1.203.18 below.
+
+### Chat: tell the model a desktop's card draws the desktop (#780)
+
+Stable release of this change from Preview v1.203.18, with nothing further. See v1.203.18 below.
+
+### Code: the session header keeps its room at narrow and medium widths (#786)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Chat: the conversation no longer runs between and behind the header buttons (#789)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### The main library is read only for signed-in people who do not administer the Studio (#779)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Code page: approve or deny a call a session waits on (#788)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Rename in My library keeps the open file open, and Delete then closes (#783)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Settings, Libraries: Add a library scrolls to its form (#785)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Library: an empty library says so, and one that cannot be listed says why (#787)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Instructions page: say instructions, and keep each row's actions together (#795)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Earlier tasks: a card counts its agents by how they ended (#796)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Stats for another library shows that library's maps, not the main library's runs (#790)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Upload to My library no longer runs the main library's index job (#781)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Status: the Libraries card says the main library is indexed when it is (#784)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Chat: a pw code chat runs on a model the AI connection offers, and says which (#793)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Library switcher: the access is a line of its own under the name (#791)
+
+Stable release of this change from Preview v1.203.19, with nothing further. See v1.203.19 below.
+
+### Agents: delegated and standing agents read and list without asking (#792)
+
+Stable release of this change from Preview v1.203.20, with nothing further. See v1.203.20 below.
+
+### Fleet: a steadier page, rendered results, and Retire that asks (#794)
+
+Stable release of this change from Preview v1.203.20, with nothing further. See v1.203.20 below.
+
+### Apply to a folder: pick the folder from the library's folders (#797)
+
+Stable release of this change from Preview v1.203.20, with nothing further. See v1.203.20 below.
+
+### A library added from the Library page joins the switcher when its build finishes (#798)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Status: the Libraries card reads each library's state as it is now (#799)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Keep a local copy: no folder is copied until one is chosen (#801)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### pw code chat: delegate as the Studio assistant does (#800)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Fleet: the agent's actions stay in one place (#805)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Desktop view: Fit without the window focus, Pan in Actual size (#807)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Session cards notice a session stopped or deleted (#808)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### My library: Details, Stats and counts read the index again once it catches up (#812)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Chat: notices and header buttons keep off the conversation (#811)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Counts say 1 file, and the footer names the library its count is of (#814)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Code: a session's Studio chat marker leads its line in the list (#815)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Agents tab: a failed task reads failed, take-offs stay put, descriptions align (#806)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Search: the reply names the libraries searched; no library means the main library (#816)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Main library read only: a disabled button gives its reason on click or tap too (#809)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Chat: a reply pw code wrote is labelled with pw code's model (#810)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Folder check: name the mount's file system, ext4 rather than ext2/ext3 (#803)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Status: session and model counts hold steady between polls (#813)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Sessions, account checks and probes are kept per whole key, not its last 16 characters (#818)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Fleet: an agent is its owner's and the administrators' (#819)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Fleet: an agent's record and journal are private to the Studio account (#820)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Library listings: a write over plain ssh drops the kept listing, and a read across a write is not kept (#826)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Code page: with sign-in on, read and answer as the person only (#824)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Delegation: keep the person's instructions, reach gone, finish waiting once (#825)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Agent instructions: refuse a linked folder on the way to AGENTS.md (#828)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Desktop relay: pass only the WebSocket headers of the platform's handshake (#821)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Shared with me: systems are asked side by side, for 20 seconds at most, and one not reached is named with its reason (#833)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Fleet: a watcher is not woken by its own round (#835)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Code page: a crossing read and a platform 404 no longer say the wrong thing (#837)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Earlier tasks: stop the sessions the retired engine left running (#836)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Extract cache: every folder is 0700, from enrich.py too, and old open folders are closed (#822)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Chat: a model's failed call counts only for the person who made it, and the note says what happened (#832)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Code page: an approval shows its whole command before Approve is offered (#827)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Two-level listing: the folders inside a hidden folder are read, not taken as empty (#829)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Desktops: one rule for which are drawn, and no loop on a relay 404 (#834)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### test(caption): the stand-in gateway answers after reading the whole request (#846)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Combined fixes and Indexing redesign for v1.203.21 (#858)
+
+Stable release of this change from Preview v1.203.21, with nothing further. See v1.203.21 below.
+
+### Continue in Studio for pw code sessions on any machine, through the ACTIVATE relay (#861)
+
+Stable release of this change from Preview v1.203.22, with nothing further. See v1.203.22 below.
+
+### Bump @parallelworks/ui to 0.146.2 and add @parallelworks/code 0.5.0 (#864)
+
+Stable release of this change from Preview v1.203.23, with nothing further. See v1.203.23 below.
+
+### Add a library: the cluster a Studio runs on is not a remote computer (#862)
+
+Stable release of this change from Preview v1.203.23, with nothing further. See v1.203.23 below.
+
+### Sidebar footer: one list, each row on one line in sentence case (#863)
+
+Stable release of this change from Preview v1.203.23, with nothing further. See v1.203.23 below.
+
+### pw code chats drawn with the PW Code web packages, following the session live (#865)
+
+Stable release of this change from Preview v1.203.23, with nothing further. See v1.203.23 below.
+
+### pw code chat: plan answer modes checked and logged, strict route ids, a ceiling check that fails closed, no viewer tool on the Studio's key (#866)
+
+Stable release of this change from Preview v1.203.24, with nothing further. See v1.203.24 below.
+
+### Sidebar footer: the update rows fit the narrowest sidebar on one line (#868)
+
+Stable release of this change from Preview v1.203.24, with nothing further. See v1.203.24 below.
+
+### pw code chat: every direct mode change logged, the direct path's missing ceiling noted as decided (#867)
+
+Stable release of this change from Preview v1.203.24, with nothing further. See v1.203.24 below.
+
+### Settings, Accounts: one place for the ACTIVATE sign-in and other accounts; Model access keeps where models come from (#870)
+
+Stable release of this change from Preview v1.203.25, with nothing further. See v1.203.25 below.
+
+### pw code chat: PW Code web's session view options, from the same packages (#871)
+
+Stable release of this change from Preview v1.203.25, with nothing further. See v1.203.25 below.
+
+### Code page: PW Code web's options from the same packages, with sessions opening in a Studio chat (#869)
+
+Stable release of this change from Preview v1.203.25, with nothing further. See v1.203.25 below.
+
+### pw code chat: the session's model controls from the Code page, offering only models pw code can run (#872)
+
+Stable release of this change from Preview v1.203.25, with nothing further. See v1.203.25 below.
+
+### Chat: a text-protocol tool request that cannot be read is mended, asked again, or withheld, never shown (#873)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### pw code chat: the session view laid out as PW Code on the web, with no pinned prompt over the header (#875)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### pw code chat: the band under the header buttons back at the top of the thread (#877)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### Accounts: Stop using the pw CLI; the deployment's credential is never a person's (#876)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### Chat: a file written in parts says what it holds, a short "I'll do it" turn is asked for its request, and the pre-search is the Studio's (#880)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### pw code chat: plans answered in the chat, Auto in a direct chat's permission menu, the header naming the session's model (#878)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### Code, Agents and pw code ask to sign in without ACTIVATE (#881)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### pw code chat from the keyboard: focus goes to what the session waits on, and back; the conversation rail is one Tab stop with a ring (#883)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### Accounts: say under the host field what Sign in needs (#884)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### pw code on another machine: the Studio adds its own tools there, as the person, over pw ssh (#874)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### Chat: a workbook short of the rows asked for is finished by the model; notes say tool request (#882)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### Chat switching: show a chat at once from what is known, read it once (#879)
+
+Stable release of this change from Preview v1.203.26, with nothing further. See v1.203.26 below.
+
+### Chat: an empty reply while a file is written in parts is nudged again; a final answer after a write says what was done (#885)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Chat: requests lacking their last brackets are read, write_kb_file takes the shapes models send, a failed write says why (#886)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### fleet test: wait for the second wake-up to end before steering and following it (#887)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### pw code chat: a command typed before the session is taken up takes it up first, and is never sent as a message (#888)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Chat: a workbook is checked against the rows asked for, the same ask is not run a third time, a workbook's row says what it holds (#889)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### pw code chat from the keyboard: a chat opened while it waits goes to the card, and the rail's Tab stop follows its focus (#890)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Chat: a file asked for is written, a round's text shows only when it stands, no brackets left after a request (#891)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Chat: parts written in one round land in order, a turn ends with what its workbook holds, no text written before a request's results (#892)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Set up for me: an existing cluster is pw://owner/name, and the fallback gives a command to paste (#893)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Chat: a workbook over the rows asked for is written again; a call answered from an earlier one is logged as not run (#895)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### pw code chat: a new chat offers pw code's models from the start, and its first message starts the session on the one picked (#896)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Library: a move or delete in a person's space runs as a job the panel can watch (#894)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Chat writes go where the person means: My library, the shared library, or asked (#897)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### Spreadsheets open as a grid: sheet tabs, formats, merges, frozen panes, selection and copy (#898)
+
+Stable release of this change from Preview v1.203.27, with nothing further. See v1.203.27 below.
+
+### fix(chat): a workbook asked for with a count of rows stops at it, even when parts are sent at once (#899)
+
+Stable release of this change from Preview v1.203.28, with nothing further. See v1.203.28 below.
+
+### Chat: a failed step the turn recovered from folds with the other steps, and is not offered for a retry (#905)
+
+Stable release of this change from Preview v1.203.28, with nothing further. See v1.203.28 below.
+
+### Library header: the title fits whole beside its controls (#901)
+
+Stable release of this change from Preview v1.203.28, with nothing further. See v1.203.28 below.
+
+### Settings on a phone: the open section is brought into the section strip (#902)
+
+Stable release of this change from Preview v1.203.28, with nothing further. See v1.203.28 below.
+
+### Settings, Indexing: its address opens the first tab, as the rail does (#903)
+
+Stable release of this change from Preview v1.203.28, with nothing further. See v1.203.28 below.
+
+### Accounts, OpenAI-compatible endpoint: an unsaved address says it is a suggestion (#904)
+
+Stable release of this change from Preview v1.203.28, with nothing further. See v1.203.28 below.
+
+### fix(chat): a workbook part sent twice in one round is written once; clearer row count in the chat (#900)
+
+Stable release of this change from Preview v1.203.28, with nothing further. See v1.203.28 below.
+
+### runs test: wait for a run's end to be heard, not only for its state (#906)
+
+Stable release of this change from Preview v1.203.28, with nothing further. See v1.203.28 below.
+
+### fix(chat): a Studio assistant reply runs on when its page closes; a reopened chat follows it, and Stop ends it (#907)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### fix(chat): a reply ended by Stop shows as Stopped, and Stop is logged as stopped, not as a failure (#908)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### fix(chat): a short answer after a tool call is the answer, not followed by a forced, hedged second one (#909)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### Chat: a provider's failure names the model as picked and gives the provider's own words (#910)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### ci(container): reuse GUFI from an earlier build of the same app.def (#841)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### ci(mac-app): OCR from a pinned release, window shots on their own runner (#843)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### ci(go): vet for each platform in a job of its own (#854)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### ci: run the required checks for a merge queue's batch (#853)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### Delegation and Fleet: review 2 findings R5, R6 and the Fleet link decode (#860)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### Refuse SQL functions that run programs or open files in raw queries (#911)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### release_preview: tag only a commit whose required checks passed (#852)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### ci(container): a change to web/ or docs/ alone does not rebuild the image (#844)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### ci(mac-app): take OCR from the pinned ocr-1fbcd2827092-macos14 release (#913)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### ci(macos): run the macOS suite as two halves on two runners (#842)
+
+Stable release of this change from Preview v1.203.29, with nothing further. See v1.203.29 below.
+
+### feat(accounts): each account is a row that opens, none ahead of another (#915)
+
+Stable release of this change from Preview v1.203.30, with nothing further. See v1.203.30 below.
+
+### Code page: offer the Studio's tools only on a machine that is online (#917)
+
+Stable release of this change from Preview v1.203.30, with nothing further. See v1.203.30 below.
+
+### fix(chat): a written file is one chip that opens it, not a message to send (#918)
+
+Stable release of this change from Preview v1.203.30, with nothing further. See v1.203.30 below.
+
+### feat(pwcode): a deployment setting for Claude Code accounts, off where shared (#919)
+
+Stable release of this change from Preview v1.203.30, with nothing further. See v1.203.30 below.
+
+### My library: a pw code chat's files are indexed; Indexed text says when the index has not caught up (#916)
+
+Stable release of this change from Preview v1.203.30, with nothing further. See v1.203.30 below.
+
+### Chat engine menu: judge the chat it is in, and keep each chat's engine (#920)
+
+Stable release of this change from Preview v1.203.30, with nothing further. See v1.203.30 below.
+
+### Settings and configuration routes need an administrator on a Studio with sign-in (#921)
+
+Stable release of this change from Preview v1.203.30, with nothing further. See v1.203.30 below.
+
+### fix(chat): a library's name at the front of a path is not a folder, on every Studio (#922)
+
+Stable release of this change from Preview v1.203.31, with nothing further. See v1.203.31 below.
+
+### Indexed text says when a local library's index has not caught up with a file (#924)
+
+Stable release of this change from Preview v1.203.31, with nothing further. See v1.203.31 below.
+
+### Chat engine: the Studio assistant answers for a person pw code is not for; the chat shows only what they typed (#925)
+
+Stable release of this change from Preview v1.203.31, with nothing further. See v1.203.31 below.
+
+### Settings: Accounts opens at the top, and each Save reports only its own result (#923)
+
+Stable release of this change from Preview v1.203.31, with nothing further. See v1.203.31 below.
+
+### Indexed text older than the file says so above it (#926)
+
+Stable release of this change from Preview v1.203.32, with nothing further. See v1.203.32 below.
+
+### Chat engine: one source on the page for what answers a chat, and the earlier turns in a switched chat (#927)
+
+Stable release of this change from Preview v1.203.32, with nothing further. See v1.203.32 below.
+
+### Chat engine: a pw CLI sign-in made outside the Studio reaches open chat tabs (#928)
+
+Stable release of this change from Preview v1.203.33, with nothing further. See v1.203.33 below.
+
+### Below 761 px: the Library shows an open file, and the Settings strip shows it scrolls (#929)
+
+Stable release of this change from Preview v1.203.33, with nothing further. See v1.203.33 below.
+
+### Library: between 761 and 1199 px the tree gives way to an open file (#931)
+
+Stable release of this change from Preview v1.203.34, with nothing further. See v1.203.34 below.
+
+### Accounts: keep an ACTIVATE key and an OpenAI-compatible endpoint side by side (#930)
+
+Stable release of this change from Preview v1.203.34, with nothing further. See v1.203.34 below.
+
+### Add a library: one Index a folder, and who sees it (#933)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### The MCP server says which of its tools to use when, and the tools say what they do better than grep (#932)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### pw code: choose where a new chat starts, and start every session with the Studio's tools (#936)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### feat: add files of several GB to a library, sent in parts (#935)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### Notices: a page and a count of what needs you, and state marks in the chat list (#937)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### Adding the Studio to pw code on a machine also allows its read-only tools there (#938)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### fix(library): archives show in the tree, and what is still arriving is indexed nowhere (#940)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### Code page: sessions open in the page, a start shows at once, one name with the chat (#941)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### The tools given without asking only read; their actions ask first (#942)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### feat(library): make and edit text files (#934)
+
+Stable release of this change from Preview v1.203.35, with nothing further. See v1.203.35 below.
+
+### Write in folders others can change, through a helper nobody can redirect (#939)
+
+Stable release of this change from Preview v1.203.36, with nothing further. See v1.203.36 below.
+
+### perf(web): an idle tab makes next to no requests (#943)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### feat(chat): the folded chat list keeps a mark for each live chat, and search (#946)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### pw code: the Studio's tools before grep, in the words people use (#944)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### Remove the Open steps / Fold steps button from pw code sessions (#945)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### perf(web): notice a silent page socket, and renew it before it ends (#948)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### feat(chat): library files a reply names open in the viewer (#947)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### feat(code): a tidier Code page, with the Studio's tools as a mark on each machine (#949)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### feat(libraries): Add a library in two steps, with the check run by itself (#951)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### feat(web): @parallelworks/ui 0.151.1 and @parallelworks/code 0.6.0, with images, notes, shell mode and workspace starts (#950)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### fix(chat): a chat draws only its own reply, and pw code's own model opens the message box (#952)
+
+Stable release of this change from Preview v1.203.37, with nothing further. See v1.203.37 below.
+
+### The Studio's own AGENTS.md is not library content (#953)
+
+Stable release of this change from Preview v1.203.38, with nothing further. See v1.203.38 below.
+
+### fix(libraries): the folder menu opens where there is room (#955)
+
+Stable release of this change from Preview v1.203.38, with nothing further. See v1.203.38 below.
+
+### fix: uploaded icons, a platform that does not answer, find after being away, and plan mode kept to its chat (#956)
+
+Stable release of this change from Preview v1.203.38, with nothing further. See v1.203.38 below.
+
+### fix(chat): a command as the first message, and a new pw code chat with no model (#957)
+
+Stable release of this change from Preview v1.203.39, with nothing further. See v1.203.39 below.
+
+### fix(chat): list only what the session takes under / in a pw code chat (#959)
+
+Stable release of this change from Preview v1.203.39, with nothing further. See v1.203.39 below.
+
+### Copy link: a link to a file or folder, opened only by people who can open the item (#960)
+
+Stable release of this change from Preview v1.203.39, with nothing further. See v1.203.39 below.
+
+### fix(chat): refuse a session command by any of its names in a pw code chat (#961)
+
+Stable release of this change from Preview v1.203.39, with nothing further. See v1.203.39 below.
+
+### ACTIVATE buckets as libraries, read through the pw CLI's credential (#958)
+
+Stable release of this change from Preview v1.203.39, with nothing further. See v1.203.39 below.
+
+### New pw code chat here: a pw code chat from a folder or file in the Library (#962)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### fix(libraries): one sign-in prompt in Add library, and tests that failed now and then (#963)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### fix: an installed Studio shows the Studio's mark, and takes a new one (#967)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### feat(web): machine icons and names wherever the Studio names a machine, and blue marks for work waiting to start (#964)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### fix(chat): a first command in a new pw code chat is run however slowly the chat is read (#970)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### Bucket libraries: the Studio's page names its requests, whatever Host a proxy sends (#968)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### feat(web): Chat is Assistant, with links both ways between a chat and its session in Code (#971)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### feat(chat): one set of effort levels, and pw code's slider in a new pw code chat (#966)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### feat: notices of folders shared with you (#973)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### fix(first day): the welcome card covers nothing, one sign-in prompt, and Sync now for those it works for (#972)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### feat(library): a cut name shows whole, and the tree's edge is easy to find and fits the names (#974)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### feat(chat): a new pw code chat starts on the model the person chose last (#975)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### Shared chat history is off by default with sign-in (#969)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### fix(web): pw code's entry points show only to people with ACTIVATE (#977)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### Chats with no owner are the administrators', and conversations.json is 0600 (#976)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### Help and docs for v1.204 (#965)
+
+Stable release of this change from Preview v1.203.40, with nothing further. See v1.203.40 below.
+
+### Every model call made for a person uses their own key where REQUIRE_PERSONAL_KEY is set (#980)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### Deployment form: administrators, bucket endpoints, shared chat history and ACTIVATE sign-in; pnpm start runs the Go server (#979)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### fix(access): a model key in the environment is not an ACTIVATE sign-in (#981)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### /v1 runs no person's call on the Studio's key where REQUIRE_PERSONAL_KEY is set (#982)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### fix(library): a double click fits the tree as far as a drag goes (#983)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### fix(notices): a folder added from its notice shows in the Library without a reload (#984)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### A visitor who has not signed in sees no chats (#985)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### STUDIO_CUSTOM_TOOLS=0 turns custom tools off, and tools run without the Studio's secrets (#978)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### fix(chat): New pw code chat here looks again as the menu opens, says plainly when pw code does not answer, and names libraries by their names (#986)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### Deployment form: Custom tools, off sets STUDIO_CUSTOM_TOOLS=0 on every placement (#987)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### Refuse the grounded model's agent mode where people sign in (#989)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### fix(signin): a kept ACTIVATE sign-in that stops working asks to sign in again (#988)
+
+Stable release of this change from Preview v1.203.41, with nothing further. See v1.203.41 below.
+
+### fix(chat): the no-model button opens the model picker, and New pw code chat here knows a folder shared to read (#991)
+
+Stable release of this change from Preview v1.203.42, with nothing further. See v1.203.42 below.
+
+### Answer only people of this Studio from studio-rag, and run no custom tool from /v1 (#990)
+
+Stable release of this change from Preview v1.203.42, with nothing further. See v1.203.42 below.
+
+### fix(userlibs): a body the share routes cannot read is a 400, not a 500 (#992)
+
+Stable release of this change from Preview v1.203.42, with nothing further. See v1.203.42 below.
+
+### fix(signin): every place that asks for the ACTIVATE sign-in says Sign in again once it stopped (#993)
+
+Stable release of this change from Preview v1.203.42, with nothing further. See v1.203.42 below.
+
+## v1.203.42 (2026-11-26)
+
+### fix(chat): the no-model button opens the model picker, and New pw code chat here knows a folder shared to read (#991)
+
+Two findings from the v1.203.41 pass on #986.
+
+- **F2:** a signed-in person's first pw code chat with no model offered **Open Accounts**, which has nothing for them to do. Where pw code lists models to choose, the button is **Choose a model** and opens the picker in the message box. Open Accounts stays where pw code lists no model ("pw code lists no model for you. Add one under Settings, Accounts.") and where the sign-in itself is missing or stopped.
+- **F3:** on a folder shared to read, New pw code chat here asked the Studio and got a 403 that the console logged. The menu now gives the Studio's reason itself, from the library list ("<name> is shared with you to read, so a pw code session cannot work here."), with no request. A folder shared to write still asks.
+
+Tests: the new web tests fail without the change. Both web suites and the type check pass. Checked in Chromium and WebKit, light and dark, 1440 and 390 px, on a test Studio: the button opens the picker with the page unchanged, and the menu on a folder shared to read sends no request and logs no console error.
+
+### Answer only people of this Studio from studio-rag, and run no custom tool from /v1 (#990)
+
+Matthew's decision on the open item from #989: on a Studio with sign-in, `studio-rag` answers only people of this Studio. For v1.203.42.
+
+## Who is answered
+
+Where people sign in, `/v1` answers only a caller whose own ACTIVATE key the platform says belongs to a person of this Studio. That covers `studio-rag`, any other model id, the plain pass-through and `/v1/models`. A person of this Studio is:
+- someone who has signed in here, or
+- an administrator (`PW_USER` or `STUDIO_ADMINS`).
+
+How the check works:
+- **The key's owner:** the Studio asks the platform's `GET /api/auth/whoami` with the key, which returns `user:<name>` or the bare name. Any other kind of account counts as no person.
+- **Caching:** an owner the platform names is kept 5 minutes, a refused key 1 minute. The cache is keyed by a hash of the key, and the key is never logged.
+- **Who has signed in:** the sign-in gate records each verified person the first time they make a request, in a new `internal/people` store (`INDEX_BASE/people.json`, 0600).
+- **Groups:** the Studio has no list of who may sign in, so groups count only through `STUDIO_ADMINS` `group:` entries.
+
+## Who is refused
+
+Everyone else gets 403 with a plain message, before any model call:
+- no key;
+- the Studio's own keys;
+- a call the forwarder marked;
+- a key the platform does not take;
+- a service's key;
+- the key of an account that has not signed in here.
+
+Each refusal goes to the call log and the server log with its reason, never the key.
+
+**Fallback:** where the Studio has no platform gateway to ask, it cannot tell whose a key is, so `/v1` refuses everyone where people sign in, with a message that says so. The same applies when the platform does not answer.
+
+## Whose libraries
+
+`studio-rag` retrieval searches only the main library, which every person here reads. It never draws on anyone's own library or bucket libraries. The suite checks this with matching files in three people's own libraries.
+
+## Registration
+
+The grounded model is no longer registered on the platform where people sign in. The platform calls a registered model without the caller's key, so it would answer no one:
+- `Start` and auto-start refuse, and the status gives the reason.
+- Settings shows that reason in place of the Register button and the auto-start checkbox.
+- Settings also says beside the grounded model who it answers.
+
+A Studio of one is unchanged.
+
+## Custom tools never run from /v1
+
+Found in the v1.203.41 test pass. On a Studio without sign-in, any key the model gateway accepts reached agent mode as the Studio's one person, and so could run custom tools, which run commands as the Studio's account.
+- Agent mode (`studio-agent`, `studio-voice`) now never offers or runs a custom tool, with sign-in or without, for anyone, an administrator included.
+- On a Studio of one it keeps its other tools.
+- Custom tools still run in the Studio's own chats.
+- `studio-rag` and the pass-through run no tools.
+
+## Tests
+
+Go:
+- `TestStudioRagAnswersOnlyPeopleOfThisStudio`, for each kind of caller across `studio-rag/<m>`, `studio-rag`, a plain model and `/v1/models`, with sign-in on and with a Studio of one. It also covers the cache, a platform that is down and no platform at all.
+- `TestWhoamiIsAPersonsAccount`, `TestPeopleWhoHaveSignedIn` and `TestNotRegisteredWhereSignInIs`.
+- `TestAgentModeNeverRunsCustomTools` (with and without sign-in, an administrator included, and `read_kb_file` still runs) and `TestTheGroundedModelRunsNoCustomTool`, which replaces `TestTheGroundedModelRunsCustomToolsOnlyWhenOn`.
+- `TestV1RunsOnlyOnTheCallersOwnKey` and `TestAgentModeIsRefusedWhereSignInIs` are updated.
+- Mutations of each refusal branch, the cache, the account parsing, the registration refusal and the file mode each fail a test.
+
+Web: Settings with and without sign-in. Each new test fails without the change.
+
+Security suite: the cases are in the `agentmode` and `strict` phases. They ran with sign-in optional, required, strict without a platform (the fallback), strict with a platform, and a Studio of one.
+
+### fix(userlibs): a body the share routes cannot read is a 400, not a 500 (#992)
+
+F4 from the v1.203.41 pass: Stop sharing sent with `Content-Type: application/json` and no body answered 500 "internal error".
+
+`platform.Body` keeps Fastify's refusals (empty JSON body, malformed JSON, another content type, over 1 MiB) as a 500, on purpose. It now returns them as a `*platform.BodyError` with words, and `platform.BadBody` turns one into a 400 (413 for the size). The user-library routes use it, which covers Share, Stop sharing, Shared with me's add and the rest of `/api/user-libraries`. Other routes are as they were, and the logged text is the same.
+
+Checked live on a bed, as it is and strict (`AUTH_REQUIRED=1 REQUIRE_PERSONAL_KEY=1`), with empty, malformed, form, array and wrong-typed bodies on Share, Stop sharing, add, and the notices' dismiss and seen: no 500. Unreadable bodies are 400 with words; wrong-typed fields are 400 with what is wrong, or ignored where the route has none. The notices routes already answered 400.
+
+Tests: `TestABodyThatIsNotJSONIsA400` (userlibs) fails on main; `TestABodyThatIsNotWhatIsAskedIsA400` (notices) holds the notices routes to it. Security suite: setup, sharenotice, csrf and revoke 89 passed, 0 failed, on both beds. The page's Share, Stop sharing, share again and Add to my libraries in Chromium and WebKit, light and dark, 1440 and 390 px: no errors from these routes.
+
+### fix(signin): every place that asks for the ACTIVATE sign-in says Sign in again once it stopped (#993)
+
+F1 from the v1.203.41 test pass, on #988.
+
+After a kept ACTIVATE sign-in stopped working, only Accounts and Workflows said **Sign in again**. The Assistant ("Sign in with ACTIVATE first. The models here need an account of your own."), Add a library ("Sign in with ACTIVATE to use this") and the sidebar footer ("Sign in with ACTIVATE") kept their first-sign-in wording, and an Accounts page left open still said Signed in until it was left.
+
+**Every place that asks for the sign-in**, when it stopped working, now says "Your ACTIVATE sign-in stopped working" and offers **Sign in again**, which opens Accounts' ACTIVATE row:
+- The Assistant: its notice over the chat (the server's refusal), the no-model empty state, the box's placeholder and the button.
+- Add a library's sign-in prompt (the panel under it already offered Sign in again).
+- The sidebar footer's model line and the Status panel (Model card, the Platform connection).
+- Settings, Model access.
+- Where everyone uses an account of their own (`REQUIRE_PERSONAL_KEY`), the server's model refusals say it too: the model listing, the footer's health line, a chat turn and label suggestions (`modelkeys.SignInAgain` for a person whose sign-in stopped, `SignInFirst` for anyone else). Studio-rag's `/v1` keeps its text.
+
+**An open Accounts page follows the sign-in.** The sign-in panel follows `/api/me/platform-sign-in` every 20 seconds while it shows a kept sign-in, through the page's live socket (the path is added to those it may follow), and tells the page when it stops or works again, so the row, the parts and the configuration change without leaving the page. In the browser check it changed 17 s after the platform dropped its tokens. A reading that answers after a sign-in or sign-out began on the page is not kept.
+
+**Tests**
+- New: the open panel sees the sign-in stop and work again (fake timers); the Status panel's platform and model wording; the Assistant's empty state, placeholder and button; the footer; Add a library's prompt; the server's refusals for a person whose sign-in stopped and for anyone else; `/api/me/platform-sign-in` may be followed. All fail without the change (the web ones on main's sources, the Go ones do not build there).
+- Both web suites (1503, 1489) and the type check pass; Go chat, live, modelkeys, personal, access, core, server, platform and pwcode pass.
+- Browsers: Chromium 31/31 and WebKit 31/31, light and dark, 1440 and 390 px, on a sign-in Studio with a stand-in platform and pw CLI (strict posture, a home cluster): Ada signed in on Accounts, the platform drops its tokens with the page left open, then the Assistant, the footer, Add a library and Model access, Sign in again from the Assistant, and back. One log line per drop, no token. Main fails 15 of the checks in each browser.
+
+Screenshots (main, then this change) are in [pr-shots/pr-993](https://github.com/parallelworks/activate-studio/tree/pr-shots/pr-993).
+
+## v1.203.41 (2026-11-26)
+
+### Every model call made for a person uses their own key where REQUIRE_PERSONAL_KEY is set (#980)
+
+With `REQUIRE_PERSONAL_KEY=1`, every model call made for a person now uses that person's own key. Without one, the call fails with the same message the Assistant gives and nothing is sent to a model.
+
+**Suggest labels** (`POST /api/kb/label-suggestions`). A person without a key of their own gets 403 with "Sign in with ACTIVATE first, under Settings, Accounts. The models here need an account of your own." The Library view already shows the server's text. Before this change, the call used the endpoint the administrator set for everyone.
+
+**Settings' model list** (`GET /api/chat/models?config=1`). This request skipped the check and listed and probed models with the Studio's key. It now gets the same answer as the Assistant's list. The model fields in Settings are free text, so an administrator without a key can still type a model id.
+
+**pw code's model check** (`enabledModels`) calls nothing for a person without a key.
+
+**Image captioning**. When a person's own ACTIVATE bucket library is indexed, its images are described with its owner's sign-in. The key is passed to the extraction child as `STUDIO_VISION_KEY`, which replaces the Studio's key there and never comes from the Studio's own environment. If the owner has no key, no images are described and the index log says why in the Assistant's words. The Studio's own libraries (the main library, libraries the administrator adds, sweeps) are the Studio's work with no person behind it, so they still use the Studio's credential. Without the setting, or with sign-in off or personal keys off, nothing changes.
+
+The settings note under the captioning model says so when the setting is on. MULTI-USER, DEPLOY, ARCHITECTURE, REFERENCE and CUSTOMIZATION no longer list Suggest labels and captioning as exceptions.
+
+Tests:
+- Go:
+  - `TestEveryCallForAPersonIsOnTheirOwnKey` covers Suggest labels, Settings' list and pw code's check, with and without the setting. It checks which key each call carries.
+  - `TestImagesAreDescribedWithTheLibrarysKey` covers the job's key and the extraction child's environment.
+  - `TestOwnLibraryDescribesImagesWithItsOwnersKey` covers which library uses whose key, through the build's documents pass.
+  - `TestVisionKeyFromTheJob` covers the extraction child.
+  - Every check was mutated out once, and each mutation fails a test.
+- Go `internal/index` and `internal/libapi` run in full with a working GUFI.
+- Web: 1477 tests and 1463 tests (rhel9 config), and the type check.
+- Security suite, new `strict` phase (`AUTH_REQUIRED=1`, `REQUIRE_PERSONAL_KEY=1`, an administrator's endpoint for everyone):
+  - With this change, 10 of 10 checks pass.
+  - Before it, 4 fail: Suggest labels for a person without a key ran on the endpoint's key, and Settings listed models for them.
+
+### Deployment form: administrators, bucket endpoints, shared chat history and ACTIVATE sign-in; pnpm start runs the Go server (#979)
+
+The deployment form now sets what the docs tell an administrator of a Studio with sign-in to set, and `pnpm start` runs the Go server.
+
+**Sign-in and Sharing (optional)**, a new collapsed group in `deploy/workflow.yaml`. Every field is optional and empty, or off, by default, and sets nothing then.
+
+| Field | Sets |
+|---|---|
+| **Administrators** | `STUDIO_ADMINS` |
+| **Bucket Endpoints** | `STUDIO_BUCKET_ENDPOINTS` |
+| **Shared Chat History** (off) | `CHAT_SHARED_HISTORY=1` when on |
+| **ACTIVATE Sign-in Client ID** and **Client Secret** | `OIDC_ISSUER` (`https://<Platform Host>/api/oidc`), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` and `OIDC_POST_LOGOUT_REDIRECT_URI` from **Public Studio URL**, and `OIDC_SCOPES` with `offline_access`: step 3 of DEPLOY.md's *Registering the Studio with ACTIVATE*. Only with a platform host |
+
+A comment marks where `STUDIO_CUSTOM_TOOLS` goes once that setting lands.
+
+- They reach the Studio on each placement: the login node's run script (the Linux app's server), the container there (`--env`), and the scheduler job's container.
+- The scheduler job now passes **Public Studio URL** (`STUDIO_SELF_URL`) too, which it left out, so Copy links last there as well.
+- The scheduler job prints its values to the job log without the platform key and the client secret.
+
+**`pnpm start`** runs `scripts/start.mjs`: it builds `server-go/bin/studio-server` with Go (only what changed) and runs it over the clone with `STUDIO_NODE=off`, as the apps and the workflow do, and stops it on Ctrl+C. Without Go it says what to install. `pnpm start:node` keeps the Node reference server. README, CONTRIBUTING, MACOS.md and DEPLOY.md say so.
+
+**Tests.** `server-go/internal/workflows/deployform_test.go` runs the workflow's own steps with bash and stand-ins for the server, the container runtime and the pw CLI, and checks what the Studio is given on all three placements, that empty fields give nothing, and that the secret is not in the job's log; on main's workflow it fails. `wfparser/testdata/golden.json` is regenerated from the Node reference. `pnpm start` was run over a clone with an isolated home on a loopback port: the Go server answered in Node-free mode and stopped with the script.
+
+**Not changed.** The generated turnkey copy of this workflow (see `deploy/COMPUTE.md`) is made from a site preset that is not in the repository and has not been regenerated since #655; it needs regenerating with that preset. `deploy/run_endpoint.sh` still runs the Node server.
+
+### fix(access): a model key in the environment is not an ACTIVATE sign-in (#981)
+
+Settings, Accounts said ACTIVATE was **Signed in** on a Studio whose only credential was `OPENAI_API_KEY` for an endpoint that is not an ACTIVATE platform's (found by the help pass, #965; it predates v1.203.39).
+
+Accounts now follows the rule `HasActivate` uses since #971: **Signed in** only for an ACTIVATE sign-in, `PW_API_KEY`, or `OPENAI_API_KEY` where the gateway is an ACTIVATE platform's. A model key in the environment shows as what it is:
+
+- **OpenAI-compatible endpoint** says **In the Studio's environment**, opens, and names the address; ACTIVATE says **Not signed in**, each part **Sign in to use**, and Models **From the endpoint in the Studio's environment**.
+- **Model access** names it: "Models: the model endpoint in the Studio's environment (address)", chosen under **Where models come from**.
+- `GET /api/access` gives it the source `env-endpoint` with its `baseUrl`, and `cli.envModelKey`; `platform` is `none`, or the pw CLI's context where it holds a sign-in. `envKey` is true only for an ACTIVATE key, so "PW_API_KEY is set" no longer shows for a model key.
+
+The other places that show ACTIVATE state already follow the rule: the status panel's Platform connection, Notices, setup's sidebar step ("needs ACTIVATE") and the sidebar read `cfg.platform` or `PlatformAvailable`, which a model key never set. pw code's model list treats `env-endpoint` (and `admin-endpoint`) as models it cannot run.
+
+**Tests**
+- New: `TestAModelKeyInTheEnvironmentIsNoActivateSignIn` (model key; model key with a pw CLI sign-in; `OPENAI_API_KEY` for a platform's gateway; `PW_API_KEY`; neither), and one test each in `accounts.test.tsx` and `modelAccess.test.tsx`. On main both web tests and the model key cases fail.
+- Both web suites (1479, 1465), the type check, and Go access, platform, chat, notices, core, server, codesessions, agentsites, workflows pass.
+- Browsers: Chromium 169/169 and WebKit 169/169, light and dark, 1440 and 390 px, on three Studios of one: with ACTIVATE (`PW_API_KEY`), with only a model key, and with neither. Each covers setup's AI and sidebar steps, the status panel, Notices, Accounts and Model access, and no sideways scroll. Main fails the model key Studio's Accounts and Model access checks.
+
+Screenshots (before and after) are in [pr-shots/pr-981](https://github.com/parallelworks/activate-studio/tree/pr-shots/pr-981).
+
+### /v1 runs no person's call on the Studio's key where REQUIRE_PERSONAL_KEY is set (#982)
+
+With `REQUIRE_PERSONAL_KEY=1`, no model call made for a person runs on the Studio's key through `/v1` or the platform registration anymore.
+
+**Who reaches `/v1`, and what key each call used before this change**
+
+- **Anyone who can reach the Studio's address, including a signed-in person's browser.** `/v1` is outside sign-in, so it knows no person. A call runs on the bearer it brings. With no bearer it was refused ("bearer API key required"). With the Studio's own key as bearer it ran on that key.
+- **The registered model through the ACTIVATE gateway**, as `session:<owner>:<name>-rag/...`: pw code, the platform chat, or anyone the session is team-shared with. The gateway reaches the endpoint session through its tunnel and sends no caller credential or name. The Studio registers without `--auth-file`, so no key is sent either. The forwarder then added the Studio's key (`STUDIO_INJECT_KEY`), and the call ran on it.
+- **Anyone on the Studio's host.** The forwarder listens on loopback with no check, so a keyless request there also got the Studio's key.
+
+**Now, with the setting on** (sign-in on, personal keys on):
+
+- `/v1/models` and `/v1/chat/completions` refuse a call in three cases, with 401 and the Assistant's words ("Sign in with ACTIVATE first, under Settings, Accounts. The models here need an account of your own."):
+  - it brings no key;
+  - it brings one of the Studio's own keys (the deployment credential, or the endpoint the administrator set);
+  - it is marked `X-Studio-Injected-Key: 1`, which covers a forwarder started earlier with an older key.
+
+  Each refusal is logged in the call log. A caller's own key works as before, at the Studio and through the forwarder.
+- The forwarder is started with no key to add.
+- Without the setting, nothing changes.
+
+The settings text and CUSTOMIZATION, REFERENCE and MULTI-USER now describe the forwarder and the strict behavior. They used to say that platform callers brought their own credentials, which the gateway's code does not do.
+
+**Consequence.** With the setting on, the registered model answers only callers that bring their own key. Calls through the platform gateway, pw code included, are refused until the platform passes the caller's own credential to an OpenAI endpoint session.
+
+Tests:
+- Go:
+  - `TestV1RunsOnlyOnTheCallersOwnKey` covers no key, the Studio's key, a key marked as the forwarder's, a keyless call through the real forwarder, and a caller's own key both directly and through the forwarder, with and without the setting. It checks which key reached the model.
+  - `TestForwarderAddsNoKeyWhereEachPersonUsesTheirOwn` checks the key the forwarder is started with in four configurations.
+  - Every check was mutated out once, and each mutation fails a test.
+- Security suite, `strict` phase: 21 of 21 checks pass. Before the change, 11 fail, including a keyless request from another account on the host through a running forwarder that ran on the Studio's key.
+- Web: 1477 tests and 1463 tests (rhel9 config), and the type check. Go `internal/chat`, `internal/ragendpoint` and `cmd/studio-server` pass; vet and Windows vet pass.
+
+### fix(library): a double click fits the tree as far as a drag goes (#983)
+
+In a window under 1040 px the tree's edge drags to 520 px, but a double click stopped at half the window (450 px at 900), so a long name stayed cut. The fit now uses the drag's limit: half the window, or 520 px in a narrower one, and less when the file needs the room.
+
+After a fit, resizing the window works as before: a narrower window takes the tree in as far as it must, or folds it when a file is open and crowded, and a wider one gives the fit back, with the fitted width kept.
+
+### Checks
+
+- A test that fails on main (450 against 520 at 900 and 800 px) and passes here, and one for a resize after a fit.
+- Both web suites (1480 and 1466 tests) and the type check. No Go change.
+- Chromium and WebKit, light and dark: at 900 px a double click fits to 520 with no name cut; then 1440, 800 and back, and a reload, keep the fit; the tree checks of #974 at 1440 and 390 px. WebKit again reports requests cut off by the check's own page reload, as on main.
+
+### Screenshots
+
+Example names, 900 px window, after a double click.
+
+| | Light | Dark |
+|---|---|---|
+| chromium | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-983/fit900-chromium-light.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-983/fit900-chromium-dark.png) |
+| webkit | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-983/fit900-webkit-light.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-983/fit900-webkit-dark.png) |
+
+### fix(notices): a folder added from its notice shows in the Library without a reload (#984)
+
+Two findings from the v1.203.40 pass on the share notices (#973).
+
+- **S1:** after **Add to my libraries** on a notice, the folder did not show in the Library until a reload. The notice read the page's libraries once, while the new library was still building, and nothing read them again. It now does what Add a library does (`libraryAdded`: read now, and again as the build ends), so the folder joins the tree, the switcher, Details and Search scope. Add a library's dialog uses the same helper.
+- **L3:** a notice of a share taken back and shared again since the page read it asked for the old share (404, "no longer shared"). On a 404 it now looks the folder up in Add a library's list and adds it by its current share, if the same person still shares the same folder.
+
+Tests: two web tests in `notices.test.tsx`, both failing on main. Live, strict sign-in bed, after taking the share back and sharing it again while the row was shown: on main the folder was not in the tree after 90 s; with the change it is in the tree in 3.5 to 4.8 s and in the switcher and Search scope, with Details showing it, in Chromium and WebKit, light and dark, 1440 and 390 px.
+
+| 1440 px | 390 px |
+| --- | --- |
+| ![tree](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-984/library-chromium-light-1440.png) | ![tree](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-984/library-webkit-dark-390.png) |
+
+### A visitor who has not signed in sees no chats (#985)
+
+On a Studio where sign-in is on but optional, a visitor who has not signed in now sees no chat at all. This holds for chats with an owner and chats with none, with sharing on or off. Signed-in people read shared chats as before.
+
+From the v1.203.40 test pass: with sharing on and sign-in optional, a chat with no owner opened for a visitor, and the security suite expected that. #976 says such chats are for administrators. This PR settles it.
+
+**Server** (`conversations/routes.go`)
+- `VisibleTo` is false for a visitor whenever sign-in is on, sharing on or off.
+- `FindVisible` refuses a visitor with 401 "Sign in to chat". It gives the same answer for every id, so a chat's existence is not revealed.
+
+**Every chat route, checked for a visitor:**
+- **List and search** (`GET /api/chat/conversations`, `?q=`, `?all=1`): empty.
+- **Open, a copied link, generating** (`GET /api/chat/conversations/{id}`, `/generating`): 401 "Sign in to chat", the same as for an id that is not there.
+- **Engine, suggestions, rename, steer, stop, Save, engine switch, send** (`/api/chat/stream`), **delete, delete with others**: answered as for a chat that is not there. None returns a title or words.
+- **pw code routes** (session, transcript, events, machine, interrupt, new session, approve, follow): answered as for a chat that is not there.
+- **Notices:** name no chat, as before.
+- **Download:** goes through open, so it is covered.
+- **Copy link:** a chat's address is `#chat=<id>`, opened through the route above. `/api/links` is for files and folders only.
+- **Not chats:** saved chats (`chat-session` files) and chat attachments are library files, under the library's rules. They are not changed here.
+
+**Page**
+- A visitor's chat page opens no chat.
+- A link to a chat keeps its `#chat=` address, for after the sign-in, and shows "Sign in to chat". The chat is never requested.
+- A chat read refused with 401 shows "Sign in to chat", the same as a refused new chat.
+
+**Tests**
+- **Go:**
+  - New: `TestAVisitorSeesNoChats`, with sharing on and off. It covers ada's chat, a chat with no owner, and a pw code chat across the list, notices and every route above, and checks that a signed-in person still reads shared chats.
+  - Updated: `TestAChatWithNoOwner` and `historyprivate_test.go`, which expected a visitor to read shared chats.
+  - Mutations: removing each of the three checks fails the new test.
+- **Web:**
+  - New in `othersChat.test.tsx`: a visitor's link to a chat (the chat is not requested, and the address is kept), and `readChat` on a 401.
+  - Mutations: removing either change fails its test.
+  - Both suites pass: 1481 and 1467 tests (rhel9 config). The type check passes.
+- **Security suite, history phase:**
+  - New expectation: a visitor sees nothing, with sharing on or off.
+  - The phase now checks every route above for a visitor, against a chat that does not exist.
+  - With this change: 1736 of 1736 pass, both with sign-in optional and with sign-in required.
+  - On current main with sign-in optional: 66 fail, all of them visitor checks.
+- **Browser:** Chromium and WebKit, light and dark, at 1440 and 390 px.
+  - A visitor following a link to a shared chat gets "Sign in to chat" and an empty list, under My chats and All chats.
+  - A signed-in person reads the same chat.
+  - On current main, the visitor saw the chat's messages.
+
+### STUDIO_CUSTOM_TOOLS=0 turns custom tools off, and tools run without the Studio's secrets (#978)
+
+A custom tool runs a command as the Studio's own account, so it can read what that account reads, including everyone's chats and the sign-ins people keep with the Studio. This adds a switch to turn custom tools off and takes the Studio's secrets out of their environment.
+
+**`STUDIO_CUSTOM_TOOLS=0`**
+- Settings, Assistant tools: the custom tool editor is replaced by one line saying they are off. Settings, Extensions says tool files do not run.
+- `PUT /api/settings` refuses a change to `customTools` with 403. A save that sends them back unchanged goes through and leaves `customToolsApproved` as it was, so a hidden list is never approved by it.
+- No custom tool, saved or from `extensions/tools/*.json`, is offered or run: chat, `/name`, pw code chats and the grounded model's agent mode (`/v1/chat/completions`, `studio-agent`) all go through `allCustomTools`, which returns none.
+- Saved tools are kept. The default stays on, so nothing changes on update.
+
+**Environment**
+Every custom tool runs with the server's environment less each variable whose name holds a word that marks a secret (KEY, SECRET, TOKEN, PASSWORD, CREDENTIALS and a few more): model keys, `PW_API_KEY`, `OIDC_CLIENT_SECRET`, the bridge and trace secrets, `GH_TOKEN`, cloud credentials. `bash -lc` still reads the account's profile, and files on disk are unchanged; the docs say so.
+
+**Docs**
+ACCESS-CONTROL.md and MULTI-USER.md say what a custom tool can read, who can make one run, and that a deployment holding CUI should set `STUDIO_CUSTOM_TOOLS=0` unless it needs them. DEPLOY.md has the variable, CUSTOMIZATION.md and REFERENCE.md the mechanics.
+
+**Tests**
+Four Go tests that fail on main: tools off in chat (Settings tools and tool files), the stripped environment, the grounded model's agent mode running a tool only when on, and Settings refusing a change while off. Two web tests that fail on main (the editor hidden, the tool files note). Both web suites and the type check pass; Go chat, core, settings, helpdoc and server pass.
+
+### fix(chat): New pw code chat here looks again as the menu opens, says plainly when pw code does not answer, and names libraries by their names (#986)
+
+Findings from the v1.203.40 pass on New pw code chat here (#962).
+
+- **Stays on offer after pw code stops (L5a):** the menu asks the Studio again when its last answer is 5 seconds old, and updates while open, both ways. The server looks within 5 seconds for this route, and drops a kept refusal after 5 seconds, so pw code that answers again is offered again just as quickly. pw code that cannot be reached (bridge, socket, timeout) or does not start is one plain reason, the same in the menu and in a failed send. What ssh or the CLI said goes to the log. A look the page gave up on is not kept.
+- **Library ids on screen (L5b):** a file's chat and Add to chat write `@[My library:notes/a.md]`, and mentions are read back by name or id (server, page, and the tools' library lookup). The New folder and Rename dialogs, Suggest labels, transfers, row tips, the Labels heading, download messages, Copy path, the preview frame title and the index log name the library.
+- **No model:** a new pw code chat with no model says "Choose a model to start" and "Choose one with Select a model, below."
+- A pw code error no longer reads "pw code: pw code ...".
+
+Tests: new web and Go tests fail without the change. Both web suites, the type check, and Go `-race` for chat, pwcode, libapi and kb pass. Checked in Chromium and WebKit, light and dark, 1440 and 390 px, on a test Studio.
+
+### Deployment form: Custom tools, off sets STUDIO_CUSTOM_TOOLS=0 on every placement (#987)
+
+Fills the place #979 left in the deployment form's **Sign-in and Sharing** group for #978's `STUDIO_CUSTOM_TOOLS`.
+
+- **Custom tools**, a checkbox, on by default. Its help line: "Off for a deployment holding CUI unless it needs them", with what a custom tool can read and what off does.
+- Off sets `STUDIO_CUSTOM_TOOLS=0` on all three placements: the login node's run script, the container there (`--env`), and the scheduler job's container. On sets nothing, so the Studio's default stays.
+- DEPLOY.md's strict posture paragraph names the checkbox.
+
+**Tests.** `deployform_test.go` checks the field and its default, that off reaches the Studio as `STUDIO_CUSTOM_TOOLS=0` on each placement, and that on gives nothing; on main's workflow it fails. `wfparser/testdata/golden.json` is regenerated from the Node reference.
+
+Stored workflow records copied from `deploy/workflow.yaml`, and the generated turnkey copy, need this as well; nothing stored is changed here.
+
+### Refuse the grounded model's agent mode where people sign in (#989)
+
+On a Studio with sign-in, the grounded model's agent mode (`/v1/chat/completions` with `studio-agent` or `studio-voice`) is now refused. Agent mode runs this Studio's tools, custom tools included, as the Studio's own account. Before this change it ran them for anyone with a key the model gateway accepts. On a Studio without sign-in it keeps working, with two limits described below.
+
+Found by the indexing-settings work in #978. It sits next to #982.
+
+## Who could reach agent mode, and as whom it acted
+
+`/v1` is outside sign-in. The front gate returns before identifying anyone on `/v1`, so no request there carries a person.
+
+| Caller | How they reach it | Identity they bring |
+|---|---|---|
+| pw code or the platform chat, through the registered model | the ACTIVATE gateway | none; the gateway sends no caller credential or name (see #982) |
+| anyone who can reach the Studio's address | `/v1` directly | the bearer key they send, if any |
+| any account on the Studio's host | the registration forwarder's loopback port | none; the forwarder adds the Studio's key when sign-in is optional |
+
+Agent mode's tools ran with no person attached. On a test Studio built from current main, with sign-in on, a caller with a gateway key that belongs to no one in this Studio got the following:
+
+- **Main library and the deployment's other libraries** (Team site): read, and searched once indexed. Reads run as the Studio's account, which is what every signed-in person reads.
+- **Custom tools**: ran as the Studio's account (`studio`). The test tool read `index/conversations.json`, which holds everyone's chats.
+- **People's My libraries and bucket libraries**: not reachable. They are per person, and there was no person.
+- **Writes and deletes in the main library**: refused, because the main library is read only with sign-in.
+- **Platform tools** (clusters, workflows, agents): ran on the caller's own key, not on anyone's stored sign-in.
+- **The loop ran any tool the model named**, including ones it was never offered. That covers ones that ask for approval first (delete, transfers, cluster start and stop) and made-up names. A code comment said those "do not run if called"; nothing enforced it.
+
+## The choice: refuse
+
+No caller of `/v1` can show which person of this Studio it is. The gateway sends no identity, and the page never calls agent mode. Acting "as a signed-in person" would therefore serve no real caller, and refusing is both simpler and safe.
+
+- **Sign-in on**:
+  - `studio-agent` and `studio-voice`, bare or with a model, streamed or not, get 403 before any model call or tool. The message: "studio-agent and studio-voice run this Studio's tools, and where people sign in to this Studio they run only for a person signed in here. This address does not know who is calling: use studio-rag here, or the Assistant in the Studio." The refusal is logged.
+  - `/v1/models` no longer lists them, including with `?all=1`.
+  - `studio-rag` answers as before.
+  - Under `REQUIRE_PERSONAL_KEY=1`, a call that #982 refuses still gets #982's 401.
+- **Voice** answers through `studio-voice`, so on a Studio with sign-in the page no longer offers the Voice button (`features.voice.enabled` is false). Settings says why, both beside Voice and beside the grounded model.
+- **Sign-in off** (a Studio of one): agent mode works as before, with two limits that hold everywhere:
+  - it runs only the tools it offers; a call to any other tool runs nothing and tells the model so;
+  - it offers and runs custom tools only for an administrator, which on a Studio of one is its person. With sign-in on this is a second safeguard behind the refusal.
+
+Docs: CUSTOMIZATION, MULTI-USER (custom tools), ARCHITECTURE, REFERENCE (voice), GO-PORT.
+
+## Not changed, for a decision
+
+`studio-rag` on a Studio with sign-in still gives any caller whose key the gateway accepts retrieved blocks from the main library. That is what every signed-in person can read, but the caller does not have to be one of them. Closing it would also stop the registered model's grounding for pw code on Studios with sign-in.
+
+## Tests
+
+- **Go:**
+  - `TestAgentModeIsRefusedWhereSignInIs`: four models, streamed and not, with a key and without. It checks that nothing reached a model and the custom tool did not run, plus the call log, the listing, and `studio-rag`. It runs with sign-in on and off.
+  - `TestAgentModeRunsOnlyWhatItOffers`: `delete_kb_files` named by the model deletes nothing.
+  - `TestAgentModeOffersCustomToolsOnlyToAnAdministrator`.
+  - `TestVoiceIsOfferedOnlyWithoutSignIn`.
+  - Rewritten: `TestTheGroundedModelRunsCustomToolsOnlyWhenOn`, which recorded the old behaviour on a Studio with sign-in.
+  - Mutations: removing each of the six checks fails a test.
+- **Web:** new Settings tests for the two notes. Each fails without its change. Both suites pass, 1489 and 1475 tests (rhel9 config), and the type check passes.
+- **Vet:** vet and Windows vet are clean. Local Go packages pass, except the GUFI-backed packages, which fail on this host only because its GUFI is missing `libllama.so.0`.
+- **Security suite, new `agentmode` phase:** seven kinds of caller (no key, a gateway key that is no one's here, a person's, an administrator's with and without their sign-in token, the Studio account's, a key marked as the forwarder's), each with four models, streamed and not, asking for the custom tool and for a main-library read. Also covered: another host account through the forwarder, the listings, Voice in `/api/config`, and `studio-rag`.
+
+  | Studio | This change | Current main |
+  |---|---|---|
+  | sign-in optional (setup + agentmode) | 137 of 137 pass | 120 fail |
+  | sign-in required (setup + agentmode) | 137 of 137 pass | not run |
+  | strict posture (setup + strict + agentmode) | 158 of 158 pass | 84 fail |
+
+  On main, every caller with a key had the model reached and the tool run, including under the strict posture. Another host account got the same through the forwarder. The keyless call was already refused on main, with different words.
+- **Neighbouring phases** on this build (mainlib, settingsadmin, links): 347 pass. `access` crashed only because it needs setup's `ctx.json` in the same output folder.
+
+### fix(signin): a kept ACTIVATE sign-in that stops working asks to sign in again (#988)
+
+Two findings from the v1.203.40 test pass.
+
+**L2: a kept ACTIVATE sign-in that stops working.** After the stand-in platform was restarted and dropped its tokens, Accounts still said "Signed in as ada" while Add a library, buckets and pw code asked her to sign in, and nothing was logged. The kept sign-in is now marked as stopped when:
+- the pw CLI cannot renew it (the platform refuses the refresh), or
+- the platform answers 401 to its token through `platform.Request` (`platform.OnRefused`; the client's transport stays a plain `*http.Transport`, which the pw code relay configures), and again to `GET /api/auth/whoami`. Settings, Accounts also asks whoami when it opens (at most every ten seconds), so it finds a dropped token even before any other page asked the platform anything.
+
+Then:
+- `GET /api/me/platform-sign-in` answers `state: "expired"` with why. The ACTIVATE row says **Sign in again**, its panel says "Your ACTIVATE sign-in stopped working" with the reason and a **Sign in again** button, and the parts list asks to sign in.
+- `/api/config` gives `signInStopped`, so every page that needs ACTIVATE (the shared prompt, `NeedsActivate`) says it stopped working, with **Sign in again**, which opens Accounts' ACTIVATE row. `/api/access` gives `signInStopped` with the reason.
+- The server logs it once per episode, without the token (anything token-like in the CLI's message is redacted). It no longer runs the CLI on every request while the sign-in is broken: it tries again after a minute, so a platform that was only away comes back by itself, and it stays stopped while the CLI still gives the refused token. Signing in again or out clears it.
+
+**L6: Code sometimes did not come back after the ACTIVATE sign-in.** The race is in the web app's configuration reads. Each part of the page reads `/api/config`, and every answer was kept as it arrived. A read begun just before the sign-in finished (on returning to the tab, say) that was answered after the read the sign-in asked for put back `platform: false`, so the navigation lacked Code and pages offered "Sign in with ACTIVATE" until the next change. Reads are now numbered, and an answer older than one already kept is not kept over it.
+
+**Tests**
+- New Go tests: a refused renewal (status, one log line without the token, no CLI run per request, works again, cleared by signing in again); a token the platform refuses (checked once more, stays stopped while the CLI gives that token, works with a new one); the status check; the 401 hook on the platform client; `signInStopped` in `/api/access`. On main the sign-in still reads signed-in after a refused renewal, and the CLI runs on every request (5 of 5).
+- New web tests: the configuration keeps the newest answer (L6); Accounts, the sign-in panel and a page that needs ACTIVATE for a stopped sign-in. All four fail on main.
+- Both web suites (1490, 1476) and the type check pass, and so does the Go suite of every package that uses the platform package (access, agentsites, chat, codesessions, core, delegation, fleet, mainlib, maps, notices, pasttasks, personal, platform, platformtrack, pwcode, ragendpoint, server, sessions, transfers, updates, workflows). libapi, libraries, search and userlibs fail only tests that also fail on main on this host (GUFI); CI has GUFI. A first push wrapped the client's transport, which broke the relay's `*http.Transport` check (CI caught it in pwcode); the refusal is now reported from `Request` instead.
+- Browsers: Chromium 57/57 and WebKit 57/57, light and dark, 1440 and 390 px, on a sign-in Studio with a stand-in platform and pw CLI. Each run signs Ada in while holding every configuration read begun before the sign-in finished and answering them last (L6), then has the platform drop its tokens (L2): Accounts, Workflows, Code, **Sign in again**, and back. The server log has one line per drop and no token. Main fails L6 in all four combinations and every L2 check (32 failures).
+
+Screenshots (main, then this change) are in [pr-shots/pr-988](https://github.com/parallelworks/activate-studio/tree/pr-shots/pr-988).
+
+## v1.203.40 (2026-11-25)
+
+### New pw code chat here: a pw code chat from a folder or file in the Library (#962)
+
+## What
+
+**New pw code chat here** in the Library's right-click menu, on folders, files and library tops. It opens a new chat on pw code whose session works in that folder, on the machine that holds it and as the person, with the cursor in the message box. On a file it uses the file's folder and puts a link to the file in the message. **Add to chat** is unchanged.
+
+- **Machine:** this computer's pw code for My library and libraries here; the person's own pw code on the Studio's cluster where several people share the Studio; the person's machine through ACTIVATE for a library on another system. It uses the machine and folder choice and the Studio's-tools check over the new chat's box.
+- **That chat alone:** the last choice of engine, machine and folder for new chats is left as it was.
+- **When it cannot start:** the entry is disabled with the reason (pw code not offered, no ACTIVATE sign-in, a bucket, no write access, no pw code connected on that machine, or it takes no new sessions). It never starts on another machine or in another folder. If the machine goes away before the first message, the chat says so and starts nothing.
+
+## Access
+
+`GET /api/chat/pwcode/start/library` finds the folder and the machine, and `POST /api/chat/stream` finds them again for the first message and refuses one whose machine or folder differ.
+
+- The folder is looked at on its own system, as the person, through the library's connection. A folder a link takes out of the library, or that they cannot list or write in, is refused. A library or folder they do not have and one that does not exist get the same answer.
+- With sign-in, a folder on the Studio's host must be in a library the person may change, and must be the same folder (inode) as that account sees on the cluster. Administrators get nothing extra.
+- Machines are matched by owner and name, and by the daemon's ID for ssh; a machine of kind `local` is never matched by name.
+
+## Not included
+
+No button in the viewer's header: beside Copy link it adds a row to the header (75 to 111 px at 1440, 111 to 147 px at 390).
+
+## Checks
+
+- Tests for each part fail when that part is undone (35 mutations).
+- Security suite, own containers: new phase `chathere` with `setup` 114 passed (also with `AUTH_REQUIRED=1`); the existing phases 1351 passed, and `loose` on a bed of its own 81 passed, with no failures. `races` was not run (it needs rsync in the bed).
+- Chromium and WebKit, light and dark, 1440 and 390 px, on a Studio of one and a sign-in Studio, with a remote library on a stand-in machine: all passed.
+- The type check and the Go tests of chat, kb, folders and libapi pass, and those of userlibs but one (`TestSSHConnectionTestStepByStep`), which fails the same on main in that container. Both web suites pass (1354 and 1340).
+
+### fix(libraries): one sign-in prompt in Add library, and tests that failed now and then (#963)
+
+Four tests that failed now and then on main.
+
+- Add library, for a person without a sign-in: it showed "Sign in with ACTIVATE to use this" with **Open Accounts** until the Studio answered whether they can sign in there, then replaced that box with the sign-in itself. It now says it is checking until it knows, and shows one prompt. `personalSpaces` sometimes found the first box as it left.
+- `TestCopyLibrary` expected the answer to Update now to say a look is on; a look at its small folder could end before the answer was made. The test now holds the look until it has read the answer. Copying is unchanged.
+- `findWhileAway` searched the whole page for every row it measured, and reached its time limit on a busy machine. It measures each layout once, over half the turns.
+- `citedPaths` gave the first reply one second to be drawn and linked, which took longer on a busy machine.
+- The folder menu's parts load with the Add library tests, rather than inside the first that opens it.
+
+### fix: an installed Studio shows the Studio's mark, and takes a new one (#967)
+
+An installed Studio kept a white S on navy. That is the Studio's own icon from 2 to 21 October (#356, replaced in #506 and #531). Chrome's letter for an app with no icon is on gray (`#444444`), where the old icon is navy (`#06354f`).
+
+**Cause.** Chrome reads an installed app's icon again only when the icon's address changes. The addresses never did (`/icon-192.png`), so an app installed from the old icon never changed: in Chrome 146, opened again on main, it read the manifest and asked for no icon.
+
+**Fix**
+- The manifest's icon addresses carry the file's hash. An installed app then says **App update available**; **Review app update**, **Update** gives it the mark. Someone who already has the mark is asked nothing.
+- The addresses are relative to the manifest, so they hold under a path.
+- A deployment's own icon is the one installed, where before the mark won unless the image was a PNG over 512 pixels. It needs to be a square PNG, JPEG, GIF or WebP of at least 144 pixels. An SVG leaves the mark, as before: alone, Chrome made a letter of it.
+- Where a configured image cannot be loaded, or is a web page, the mark takes its place in the app, the tab and the header, where it was a broken image. An image loaded before stays while its server is down, one load runs at a time, and the manifest waits 5 seconds for it at most.
+- `/api/brand-icon` and `/api/favicon` (GET) answer before sign-in, as the Studio's own icons do, since a browser may ask for an icon without cookies.
+
+The favicon, the PNGs, the maskable icon and the apple-touch-icon are already the mark: each matches its drawing in `web/icons` pixel for pixel.
+
+**Installs read back, Chrome 146 on Linux**, icon files on disk:
+
+| | main | this |
+|---|---|---|
+| Behind a stand-in of the session proxy, on a subdomain | mark | mark |
+| With OpenID Connect sign-in required | mark | mark |
+| Installed with the October icon, opened again | S | asks, then mark |
+| Installed with the mark, opened again | mark | mark, nothing asked |
+| Own icon: PNG 256 | mark | own icon |
+| Own icon: PNG 1024 | own icon | own icon |
+| Own icon: PNG 64, SVG, a sign-in page, missing | mark | mark |
+| Icons refused | letter on gray | letter on gray |
+
+Under a path (`/me/session/<owner>/<name>/`), on main and here, the page's scripts load from the platform's root, so the Studio does not start there and cannot be installed; a hosted Studio has its own subdomain. The relative addresses do not change that.
+
+**Checks:** both web suites (1,340 and 1,326), the type check, the build, `go vet`, the Go core, auth and server tests, the Node manifest tests. The new manifest tests fail on main. One web test failed in one of two runs and passed in the other; CI is the authority.
+
+**Not checked here:** Chrome and Edge on macOS and Windows, Safari's Add to Dock, iOS and Android, which this Linux host cannot run. A Mac check: install from Chrome (the Dock shows the mark) and from Safari's Add to Dock.
+
+| | |
+|---|---|
+| Icons read back | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-967/installed-icons.png) |
+| Chrome offers the mark | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-967/chrome-review.png) |
+
+### feat(web): machine icons and names wherever the Studio names a machine, and blue marks for work waiting to start (#964)
+
+A machine or cluster is drawn the same way everywhere: its icon (the uploaded one, else its OS or provider icon) and its resource name, with the host name in the tooltip. One component, `MachineLabel`.
+
+- Chat: the machine and folder chip, its menu, the chip in a chat under way, and a second line under each pw code chat in the list. Studio assistant chats are as they were.
+- Libraries: Add a library, the Library switcher and scope, Details, Settings, Shared with me, New pw code chat here.
+- Transfers, Fleet, Desktops session cards, Continue in Studio, Notices, Overview, Status panel and footer, workflow fields.
+- A machine the Studio cannot match to one of the viewer's keeps its host name, with a glyph and no image. Icons are read with the viewer's own credential and the per-credential cache, as on the Code page.
+
+**Grey ring.** In the open chat's row, a rule meant for its title colored every span in it, so a running ring was drawn in the page's ink. It now colors the title only. Running is `--theme-info`, the token PW Code on the web uses. Pending, queued, starting and running marks are the same blue, and a session on a starting machine no longer reads as a failure.
+
+**Add a library at 390 px.** A long name or reason made the list of places 5 px wider than the screen. The machine menus now stop at the width the screen leaves them. This was there before this change.
+
+**Server.** The chat list gets each chat's machine (`machine`, `machineName`, `local`), so a machine no longer listed is still named, and `GET /api/user-libraries/pw/systems` gives a system's `owner`.
+
+Tests: the component and its fallbacks, the marks, the chat states and systems in Go.
+
+Marks in the chat list, before (left) and after: ![marks](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/marks-chat-list.png)
+
+Marks on the Code page: ![Code page](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/marks-code-page.png)
+
+The list of places at 390 px, before and after: ![places](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/addlibrary-menu-390.png)
+
+Every place, before and after, in Chromium and WebKit, light and dark, Studio of one and sign-in, 1440 and 390 px:
+
+<details><summary>newchat</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/newchat-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/newchat-390.jpg)
+</details>
+<details><summary>chat</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/chat-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/chat-390.jpg)
+</details>
+<details><summary>chatlist</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/chatlist-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/chatlist-390.jpg)
+</details>
+<details><summary>code</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/code-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/code-390.jpg)
+</details>
+<details><summary>continue</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/continue-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/continue-390.jpg)
+</details>
+<details><summary>switcher</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/switcher-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/switcher-390.jpg)
+</details>
+<details><summary>libraries</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/libraries-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/libraries-390.jpg)
+</details>
+<details><summary>addlibrary</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/addlibrary-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/addlibrary-390.jpg)
+</details>
+<details><summary>scope</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/scope-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/scope-390.jpg)
+</details>
+<details><summary>transfers</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/transfers-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/transfers-390.jpg)
+</details>
+<details><summary>locations</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/locations-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/locations-390.jpg)
+</details>
+<details><summary>fleet</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/fleet-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/fleet-390.jpg)
+</details>
+<details><summary>tasks</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/tasks-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/tasks-390.jpg)
+</details>
+<details><summary>desktops</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/desktops-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/desktops-390.jpg)
+</details>
+<details><summary>notices</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/notices-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/notices-390.jpg)
+</details>
+<details><summary>overview</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/overview-1440.jpg)
+![390](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/overview-390.jpg)
+</details>
+<details><summary>status</summary>
+
+![1440](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-964/status-1440.jpg)
+</details>
+
+### fix(chat): a first command in a new pw code chat is run however slowly the chat is read (#970)
+
+A first `/command` in a new pw code chat could be lost: the box emptied, the command stayed in the thread with nothing to run it, and the session was empty after a reload. Any first message there could stay in the plain thread instead of its session's view.
+
+The page reads the chat when it opens and again when its session starts. The second read joined the first while that was still on its way, and so came back without the session. A read for a change now starts after the change, an older answer no longer replaces a newer one, and a read that fails is tried again instead of dropping the session.
+
+A test's stand-in daemon now reads a request before it answers, as pw code does; one run in thousands failed without it.
+
+### Bucket libraries: the Studio's page names its requests, whatever Host a proxy sends (#968)
+
+On a Studio of one behind a proxy that rewrites `Host` over plain http on a host name, adding a bucket and rebuilding a library answered 403 (200 in v1.203.38). Browsers send `Sec-Fetch-Site` only to https and localhost, so the check there fell back to comparing the page's origin with `Host`.
+
+- The Studio's page sends `X-Studio-Request: 1` with its requests (the shared JSON helpers and the bucket calls), and the server accepts a request that has it. A page of another site cannot send one without a CORS preflight, and the Studio grants none.
+- Requests without it are checked as before. A request the browser itself says is from another site (`Sec-Fetch-Site: cross-site` or `same-site`) is refused with the header too: that word does not depend on `Host`, and no browser sends both unless something in front of the Studio grants CORS.
+- It goes with the reads of the same routes (the list of buckets, a text estimate, opening a file), or the bucket form would still be refused there. A download or picture of a file in an ACTIVATE bucket is opened by its address and has no header, so it still needs `STUDIO_SELF_URL` or `X-Forwarded-Host`; DEPLOY.md says so.
+- A refusal names the remedy: `STUDIO_SELF_URL`, or `X-Forwarded-Host` from the proxy.
+
+Tests (they fail without the change): the host rewrite case with and without the header on every guarded route, a form of another site with and without it, other values of the header, and a preflight, which is granted nothing; in the web, that each call has it.
+
+Checked in Chromium and WebKit, light and dark, 1440 and 390 px, through a real proxy on plain http: add a bucket, rebuild, list again, how often, remove, all 200 (403 on main). From a page of another site, the form is refused and the request with the header stops at the preflight. With a proxy that drops the header the form shows the refusal with the remedy, without overflow. The bucket forms scroll to their error, which was below the fold of the dialog on a phone.
+
+### feat(web): Chat is Assistant, with links both ways between a chat and its session in Code (#971)
+
+Chat is now **Assistant**, the engine that answers there is **pw code** or **Studio**, and a chat and its pw code session open each other. Links, ids and settings keys stay as they are (`#view=chat`, `#chat=<id>`, the `chat` section, `CHAT_ENGINE`, the Help address `#view=help:chat`).
+
+**Links both ways**
+- Code to Assistant: "in a chat" on a row opens that chat; an open session has **Open in Assistant**, or **Continue in Assistant** where it has no chat yet. With Assistant off, neither is offered.
+- Assistant to Code: **Open in Code** in the bar, in the engine menu and in the chat's menu in the list. It shows while pw code answers, where the Code page shows and the session's machine is known. On a phone it is in the two menus only.
+- A Code row keeps its whole width as a button; the link lies over it, not inside it, so each is reached by Tab on its own.
+
+**Without ACTIVATE**
+- The engine button and the Code item show only to a person with ACTIVATE. The sign-in stays under Settings, Accounts. A Studio that shows every page but has no ACTIVATE sign-in hides Code too, and a link to it opens the first page shown.
+- `HasActivate` counted `OPENAI_API_KEY` as an ACTIVATE credential whatever the gateway was, so a Studio on its own with a model endpoint reported `localCode` and showed Code. It counts now only with a platform's gateway; `PW_API_KEY` and the pw CLI count as before.
+- A sign-in made outside the Studio (the pw CLI) brings the button and Code back without a reload.
+
+**Fixed on the way**: the engine menu stayed open over the page its links went to, since the app routes those clicks itself. It closes as the address changes.
+
+**Words**: the sidebar, Settings, the setup wizard, Notices, Help, README, HELP, REFERENCE, CUSTOMIZATION, MULTI-USER, AGENTS and ARCHITECTURE. Kept on purpose: "chat" for one conversation (New chat, My chats, "in a chat"), and code names and paths (`ChatView`, `/api/chat`, `chat-session`).
+
+**Checks**: both web suites and the type check; Go tests for the packages touched; 56 paired shots below; every page in Chromium and WebKit, light and dark, at 1440 and 390 px, for a person with ACTIVATE, one not signed in, and a Studio with none (no page errors, no sideways scroll); every link clicked in each.
+
+Shots, before and after, in [pr-shots/pr-971](https://github.com/parallelworks/activate-studio/tree/pr-shots/pr-971). For example:
+
+| | Before | After |
+|---|---|---|
+| Chat | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-971/1-chat-1440-light-chromium-before.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-971/1-chat-1440-light-chromium-after.png) |
+| Code | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-971/4-code-1440-light-chromium-before.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-971/4-code-1440-light-chromium-after.png) |
+| Engine menu, phone | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-971/2-engine-menu-390-dark-chromium-before.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-971/2-engine-menu-390-dark-chromium-after.png) |
+| No ACTIVATE | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-971/7-no-activate-1440-light-chromium-before.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-971/7-no-activate-1440-light-chromium-after.png) |
+
+### feat(chat): one set of effort levels, and pw code's slider in a new pw code chat (#966)
+
+The effort menus match.
+
+- The Studio's effort menu has **Extra high**, between High and Max.
+- A new pw code chat shows pw code's own effort slider before its session starts, as the session does, and the session starts at that effort. Until one is chosen it starts at pw code's default, High. Before, the chat showed the Studio's menu, and what was chosen there did not reach the session. The choice is the one the Code page's start keeps.
+- pw code's slider names its levels as the Studio's menu does (Low, Medium, High, Extra high, Max), in chats and on the Code page.
+
+### feat: notices of folders shared with you (#973)
+
+When someone shares a folder with a person, or with a group they are in, that person has a notice in Notices: who shared which folder, on which machine (`MachineLabel`), and read or read and write. **Add to my libraries** adds it as Add a library, Shared with me does. Add a library's own list is unchanged.
+
+- **Who is told:** nothing is sent or stored per person. When their page reads its notices, their own session on that system, with their own key, says which account and groups they have and whether the folder opens, as Add a library's list does. Someone who first signs in later has it then. Someone with no key is told nothing.
+- **When it goes:** when the share is taken back, added (from either place) or dismissed. Someone who removes the library they made from it is not told again. More access is another notice.
+- **Not told:** a share with every account, and the person who shared it.
+- **Cost:** the sessions run in the background, at most every 10 minutes (30 where nothing reaches the person), and only on the Studio's cluster, a system they have a library on, or a running cluster of their own, so a share cannot make the Studio connect somewhere as them.
+- The page reads notices again once a key is set and after a folder is added. An open page shows a share taken back within 30 seconds.
+- Adding a shared folder is refused to a page of another site, since the sharer knows the share's ID. It uses the check bucket libraries have (#968), now `sessions.OtherSite`.
+- The Share dialog, HELP and MULTI-USER say so.
+
+Tests: Go (`sharednew_test.go`, `notices_test.go`) and web (4 of the notices tests fail on main). A `sharenotice` phase in the spaces security suite with two people, a group, someone who has never signed in and an administrator: 76 passed with setup, as it is and with `AUTH_REQUIRED=1 REQUIRE_PERSONAL_KEY=1`; 19 fail on main. Chromium and WebKit, light and dark, 1440 and 390 px, and a Studio of one.
+
+| 1440 px | 390 px |
+| --- | --- |
+| ![light](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-973/notices-chromium-light-1440.png) | ![dark](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-973/notices-webkit-dark-390.png) |
+
+### fix(first day): the welcome card covers nothing, one sign-in prompt, and Sync now for those it works for (#972)
+
+Three findings from a first-day check of four people signing in to a Studio with `AUTH_REQUIRED=1` and `REQUIRE_PERSONAL_KEY=1`.
+
+**Welcome card.** It floated over the lower right corner and covered the send button and part of the sign-in panel until Got it. It is now a part of the page, at the foot of the content, so the page ends above it. On a phone or in a window lower than 640 px it is two lines, so the message box keeps its room. Its text no longer ends in an extra full stop.
+
+**Before signing in.**
+- A new chat with no account for models says so once. The notice over the thread is left out where the page below says the same, and is there as before in an open chat or for any other failure.
+- In the strict posture a new chat, the model line, the server's messages and Settings, Accounts ask to sign in with ACTIVATE first. Open Accounts opens the ACTIVATE row, which starts open there. `/api/config` carries `signInFirst` for this.
+- Where people sign in, the texts no longer name a model server or libraries "on this computer", and Accounts says that browsing and searching the main library need no account. A Studio of one reads as before.
+
+**Sync now.** The server refuses it (403) to anyone who may not change the main library, and nothing was shown. It is now offered only to those it works for, in the navigation, the Index health panel (with Stop) and the Status panel. The note on a file not yet indexed no longer points others to it.
+
+Checks:
+- `firstDay.test.tsx`: 19 tests, 13 failing on main. Go: `TestStrictStudioAsksForTheSignInFirst` and `TestConfigSignInFirst`, both failing on main.
+- Both web suites and the type check. The packages changed here pass their Go tests. Of the whole Go suite, 30 tests that need GUFI fail on this host, on main too; CI runs them.
+- Live on test Studios, Chromium and WebKit, light and dark, 1440x900, 1280x720 and 390x844: strict as a member and as an administrator, sign-in without the requirement, and a Studio of one. 48 runs pass. They ask, on nine pages, whether the card lies over any control, and check the texts, Open Accounts, the send button, Sync now and Got it. The same runs at 1440 and 390 fail on main. A window of 1024x620, and the strict Studio after saving a key, were checked as well.
+
+HELP.md is updated.
+
+| Before, 1440 | After, 1440 |
+|---|---|
+| ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-972/before-chat-1440.png) | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-972/chat-1440.png) |
+| ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-972/before-accounts-1440.png) | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-972/accounts-dark-webkit-1440.png) |
+
+| 390 px | More, with no Sync now |
+|---|---|
+| ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-972/chat-390.png) | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-972/more-390.png) |
+
+### feat(library): a cut name shows whole, and the tree's edge is easy to find and fits the names (#974)
+
+Long file names in the Library's tree were cut to the same few letters, with nothing near to read the rest: the browser's own tooltip on a file was slow, a folder had none, and the edge that widens the tree was a 5 px strip with no sign of what it does.
+
+**Full names.** A name that is cut shows whole in a tip, with its folder and, for a file, its size, 0.2 s after the pointer rests on the row and at once on the next row. A name that fits has none. It works the same on files and folders in the Library's tree, Add a library's folder menu (and the Code page's, the same menu), both sides of Transfers, and the @ file list in a chat. The keyboard shows it too, including where the keys move a highlight while the focus stays in a text field. The tip replaces the native tooltip on tree and Transfers rows.
+
+**Keys in the tree.** The tree's rows could not take the keyboard focus. One row now takes Tab; the arrow keys move between rows and open and close folders, and Enter opens.
+
+**The label button** on a hovered or selected row sits over the row's end, where the name fades under it. The name keeps its place and has the 25 px the hidden button used to hold. On a touch screen, where the button always shows, it stays beside the name.
+
+**The tree's edge** has a grip, faint until hovered, a 14 px target that reaches over the file's margin and not the tree's scrollbar, and the resize cursor. Double-click fits the widest listed name, up to half the window; it can now be dragged that far as well. With the edge focused, the left and right arrow keys move it, Home and End take it to its ends, and Enter fits it. A drag over a PDF or an app shown in the file's place no longer loses the edge. The width is kept in the browser as before.
+
+On a phone the tree fills the page and has no edge; names there use the row's full width.
+
+### Checks
+
+- Both web suites (1421 and 1407 tests) and the type check, on current main. New tests: the tip only for a cut name, by pointer and by key, in each list; a press, scroll or touch; the tree's keys; the edge's keys, double click, drag and limits.
+- Chromium and WebKit, light and dark, at 1440 and 390 px: the tree, the edge, Transfers, the folder menu and the @ list. WebKit also reported a request cut off by the check's own page reload.
+- A WebKitGTK 2.52 window with real pointer and key input, and Chromium in a standalone app window: the tip, drag, double click, and the width after a reload; in WebKitGTK, the keys as well. WebKitGTK does not count a focus a key moves after a click as `:focus-visible`, so the tip and the tree's ring do not depend on it.
+
+### Screenshots
+
+Example names. Chromium unless marked.
+
+| | Before | After |
+|---|---|---|
+| Hover, 1440 px, light | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/before-light-1440.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-light-1440.png) |
+| Hover, 390 px, light (WebKit) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/before-light-390-webkit.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-light-390-webkit.png) |
+| Hover, 1440 px, dark | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/before-dark-1440.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-dark-1440.png) |
+| Hover, 390 px, dark (WebKit) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/before-dark-390-webkit.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-dark-390-webkit.png) |
+
+Double-click fit, light (WebKit): ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-fit-light-1440-webkit.png)
+
+Edge hovered, light: ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-grip-light-1440.png)
+
+Keyboard focus, light (WebKit): ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-keyboard-light-1440-webkit.png)
+
+Double-click fit, dark (WebKit): ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-fit-dark-1440-webkit.png)
+
+Edge hovered, dark: ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-grip-dark-1440.png)
+
+Keyboard focus, dark (WebKit): ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-974/after-keyboard-dark-1440-webkit.png)
+
+### feat(chat): a new pw code chat starts on the model the person chose last (#975)
+
+With no pw code model in Settings, every new pw code chat showed "A model is needed" and waited until one was chosen again.
+
+A new pw code chat now starts on the model the person chose last. The Studio keeps it for each person in `pwcode-models.json` in INDEX_BASE, with the allocation that bills it, so it follows them across browsers. It is taken from a chat's first message, the Code page's start and a session's own model picker.
+
+- The model Settings names still wins, and `GET /api/chat/engine` then answers no `lastModel`.
+- The picker shows the model and its allocation from the start, and the box is not held.
+- A model a machine has of its own (an inference server set up there) is kept only from the machine the Studio drives, and used only there. Claude's is used on another machine only where it runs Claude Code.
+- When pw code refuses a session for that model, the session is made without it and the model is forgotten.
+
+An allocation chosen for the model shown is now sent with that model; before, choosing only the allocation sent neither.
+
+`chatLinks` waited one second for a link in lazily loaded markdown and failed under load (24 of 24 with 12 at once on 2 cores, now 0 of 24); it waits longer.
+
+### Shared chat history is off by default with sign-in (#969)
+
+On a Studio with sign-in, people could open each other's chats by default. An answer can quote files from its owner's own library, so this is now off unless an administrator turns it on, in Settings, General, AI features, or with `CHAT_SHARED_HISTORY=1`. A Studio without sign-in is unchanged.
+
+**On update**
+- The environment decides as before where it says on, and a saved off stays off.
+- Saving Settings used to write every field of the form, so a saved `true` may be the old default that nobody chose. It counts as a choice when it carries the new mark, when the environment says off (the form showed off then), or when the file lacks the fields the form saves with it. Otherwise it is off, and one click turns it on.
+- A save now keeps the switch only when it changed.
+
+**With it off**, another person's chat, or a pw code session in it, is answered as one that is not there on every route: open, send, steer, stop, save, rename, delete, engine, suggestions, the session's own routes and the Code page's. Administrators get nothing extra. The send route did not check before whose chat it was given, and suggestions answered a visitor who had not signed in. With sign-in, sending to or deleting a chat that does not exist is now 404.
+
+**With it on**, others read a chat and nothing else. Rename, steer, send, stop, save, delete (one or many) and what answers it are its owner's alone, and administrators get nothing extra. A chat's scope, persona and effort go with the message that is sent, so they are covered by send. The page shows another person's chat read only, with Download alone in its menu. Renaming, steering and deleting one only checked that it was visible before. A chat with no owner (made before sign-in, or by a visitor who had not signed in) is its readers' to change, as before.
+
+**Also**
+- A line by the switch says that answers can quote files from people's own libraries, so turning it on shares those quotes with everyone.
+- Add library says "Shared with me", as the share dialog and the link refusal do, with the system beside the heading.
+- The details card says what its reader may do in the main library.
+
+**Checked**
+- Go tests and both web suites, each new test failing with its change undone (40 mutations).
+- Data written by v1.203.39, then this build: eight ways the switch can stand.
+- A `history` phase in the security suite with two people, two administrators and a visitor, with and without required sign-in.
+
+### fix(web): pw code's entry points show only to people with ACTIVATE (#977)
+
+Follows #971: pw code's other entry points show only to a person with ACTIVATE, as the engine button and Code do, and come back as they sign in, without a reload.
+
+| Entry point | Without ACTIVATE | With it |
+|---|---|---|
+| **New pw code chat here** (Library menu) | not there, and nothing is asked of the server | as before: disabled with the reason where it cannot start |
+| The list **/** opens, and `/name` | no pw code tools (`agent_*`, `start_agent`, `start_agent_daemon`, `delegate`, `task_status`); Settings still lists every tool | as before |
+| **Fleet** (Agents) | no tab, unless there are agents to read or retire | as before |
+| Earlier tasks | no links to the Code page | as before |
+| Notices, and Activity in the Status panel | no delegated work, which opens on the Code page | as before |
+
+Already hidden, and checked: the machine and folder chips and the model picker of a new pw code chat, the engine button, Code, and the Claude Code accounts row in Settings, Accounts.
+
+A sign-in is picked up in the page, in another tab, and on coming back to the tab after one made elsewhere, also where pw code then cannot answer for another reason.
+
+Fixed on the way: a part of the page that mounts while the configuration is read again kept the old one. The chat page mounts its parts again as a sign-in changes, so after a sign-out it went on as if signed in.
+
+**Checks**: both web suites and the type check; Go tests for chat and notices; 238 assertions per browser in Chromium and WebKit, light and dark, at 1440 and 390 px, for a person with ACTIVATE on a shared Studio, a Studio of one, this computer's own pw code, a person not signed in, and a Studio with none, signing in and out in an open page. The same checks on main fail 40 times in Chromium.
+
+Shots in [pr-shots/pr-977](https://github.com/parallelworks/activate-studio/tree/pr-shots/pr-977).
+
+| | Before | After |
+|---|---|---|
+| Library menu | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-977/ada-out-library-menu-390-dark-before.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-977/ada-out-library-menu-390-dark-after.png) |
+| The list **/** opens | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-977/alone-slash-390-dark-before.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-977/alone-slash-390-dark-after.png) |
+| Agents | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-977/alone-agents-390-dark-before.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-977/alone-agents-390-dark-after.png) |
+| With ACTIVATE, cannot start there | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-977/bob-library-menu-390-dark-before.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-977/bob-library-menu-390-dark-after.png) |
+
+### Chats with no owner are the administrators', and conversations.json is 0600 (#976)
+
+Follow-up to #969.
+
+**conversations.json.** It holds every chat and was written 0644, so any account of the host that could reach the index base could read it. It is now written 0600. On start, the file and a write that was cut short (`conversations.json.<pid>.tmp`) are taken back to 0600; a narrower mode and a symbolic link are left as they are, and a file that cannot be changed is logged. State snapshots keep older copies, in folders of mode 0700.
+
+**Chats with no owner, with sign-in.** One made before sign-in was turned on, or by a visitor, was everyone's to read, rename and delete.
+
+| | Not shared | Shared |
+|---|---|---|
+| Administrator | reads, changes, deletes | reads, changes, deletes |
+| Anyone else | answered as a chat that is not there | reads, and nothing else |
+
+- A chat that has an owner is still that person's alone to change. Administrators get nothing extra there.
+- An administrator's message makes the chat theirs, as a first message did before.
+- A chat that copies a pw code session of another machine is never read by others where it has an owner. With no owner it is the administrators', shared or not, and no one drives its session.
+- Without sign-in nothing changes.
+
+**A visitor who starts a chat.** It would have no owner, so the visitor could not see it. With sign-in on and not required, `POST /api/chat/conversations` without a signed-in person answers 401, "Sign in to chat. Each chat belongs to the person who started it.", and nothing is stored.
+
+- The chat page says the same before anything is written, with a **Sign in** button that comes back to the same place. It is the Studio's own sign-in page, else its address on the platform (`STUDIO_SELF_URL`). Where neither is known, or the page is at that address already, it says to open the Studio from ACTIVATE.
+- Sending moves to the button and keeps what was written, in the box and through the sign-in.
+- Someone whose sign-in ended while the page was open sees it when a chat is refused.
+- `GET /api/config` gives `signedOut` (the one who asks has not signed in) and `signInUrl` (the Studio's own sign-in page, where it has one).
+
+**Web.** A chat with no owner is under the viewer's own, and can be picked for deletion, only where the server says it is theirs. The message box of a chat that is only read says "You can read this chat but not add to it", which is true of both kinds.
+
+The Node reference server is not changed: no test compares the two servers on who may see or change a chat.
+
+**Tests.** `unowned_test.go` (every chat route, shared and not, for a person, a visitor and two administrators), `private_test.go` (modes), `TestConfigSignedOut`, `othersChat.test.tsx`. 42 mutations of the change, each caught by a test. The sign-in was also done in a browser against a test OpenID provider.
+
+### Help and docs for v1.204 (#965)
+
+The help and the administrators' documents, read as a whole against main (v1.203.39 and what merged since, to #969 and #971 to #977) on a Studio people sign in to and on a Studio of one, and fixed.
+
+**docs/HELP.md** goes from 145,000 to about 63,000 characters. It keeps its pages and group headings, with `###` sections of short bullets instead of paragraphs several thousand characters long.
+
+- **Quick start** has two parts after the four steps: a first day on a Studio you sign in to (sign in, let the Studio act as you under Settings, Accounts, My library, another folder or an ACTIVATE bucket, a chat, share a folder, Copy link and the second sign-in, Notices) and your own computer.
+- A **History** page, which the navigation has and the guide did not.
+- **Chats** are described as #969 makes them: each person's own unless an administrator turns sharing on, and then read only for the others; chats with no owner are the administrators' (#976), and what shows only with ACTIVATE is as #977 makes it. Assistant, the engines `Studio` and `pw code`, Extra high, share notices, Sync now and the rest of what merged this week are in.
+- Stale or contradictory lines are gone: one shared library scope in a chat, "Shared with me", attachments on a Studio where the main library is read only, and two descriptions of Add a library.
+
+**The assistant reads the whole guide.** `studio_docs` returned the first 24,000 characters of a document and had no way to read further, so it saw Quick start and part of Chat. It now takes `find` (the passages with the question's words, under their headings), `section` and `part`; without them a long document comes back as its opening and the names of its sections. `access-control` is one of the documents. A test checks that every page of the guide fits one answer.
+
+**Administrators:** MULTI-USER.md has a section on what they set and see: the strict posture, `STUDIO_BUCKET_ENDPOINTS`, links that last, the link log, chats (each person's own by default; `CHAT_SHARED_HISTORY=1` or the setting lets everyone read everyone's), what administrators cannot see in people's spaces, and what the host's operator can. DEPLOY.md gets the variables, the strict posture and Links that last; ACCESS-CONTROL.md points to them. REFERENCE.md has a table of the commands in a pw code chat and which are refused. README's feature list matches.
+
+Checked: the steps in the running app between three people (sharing a folder and its notice, Shared with me, chats shared and not, Code to Assistant and back, Add a library, a first visit); the guide in light and dark at 1440 and 390 px in Chromium and WebKit (no page or text overflow, no raw markup, no script error), and three how-to questions through the chat with a stand-in model (share a folder, Copy link, add a bucket), whose tool results hold the steps. Go and web tests pass.
+
+## v1.203.39 (2026-11-25)
+
+### fix(chat): a command as the first message, and a new pw code chat with no model (#957)
+
+**A pw code command as the first message of a new chat.** `/plan`, `/goal`, `/compact`, `/help` and the rest were sent to the new session as a message. The daemon refused it, the page had already moved to the session's view, and the line and the reason were lost. The Studio now makes the session, keeps the line out of the chat's record, and the session's view runs it as it runs a later command. A command pw code does not know, and any other first message its session refuses, goes back in the box with the reason. A chat started this way takes its name from its session, not the command, and its scope reaches the session with the first message sent there.
+
+**No model set.** A new pw code chat whose pw code has no default model, with none in Settings and none chosen, kept its box open, and the error named pw code's terminal. The box stays closed and says to choose a model or add one under Settings, Accounts, and opens when one is chosen or set. pw code's own default, the model in Settings, and a session on another machine work as before. Where pw code's refusal still arrives, it is in those words. The model menu now shows on a phone too, where it was hidden.
+
+**The folder menu.** Opened up, it is as tall as its rows, with the path field next to the chip, so the field stays put as the rows narrow.
+
+Verification: Go tests for `chat`, `conversations`, `pwcode` and `codesessions`; both web suites and the type check; new tests fail without the change. In Chromium and WebKit, light and dark, at 1440 and 390 px, on a single-user and a sign-in Studio with stand-in models: commands as a first message (also on another machine, and after a reload), an unknown command, plain text with a slash, no model with and without models to choose, pw code's own default, and the folder menu (in a window 720 px tall).
+
+### fix(chat): list only what the session takes under / in a pw code chat (#959)
+
+In a pw code chat, typing `/` listed the Studio's own skills, agents and tools, which pw code does not know.
+
+- A pw code chat, new or under way, lists only what its session takes. Before the session exists, the list comes from pw code on the chosen machine, for the chosen folder: its skills and custom commands, and pw code's own commands. Those are learned from pw code's sessions and kept by release, so an upgrade refreshes them. Until the machine answers, or where it cannot be read, the list has pw code's own commands only.
+- Commands that work only in a terminal and those the Studio does not send (such as rename and archive) are left out of the list in the session's own box too.
+- A Studio assistant chat keeps its list, and switching what answers the chat switches the list.
+- A command in a chat the Studio assistant answered last runs in the session as a command. The turns the session has not seen go with the next message that is not a command.
+- A line pw code does not know still comes back in the message box with the reason.
+
+### Copy link: a link to a file or folder, opened only by people who can open the item (#960)
+
+**Copy link**, on a right-click of a file, folder or library and in the viewer's header, copies a link to that item. The link opens the item in the Studio for anyone who can open it: a file in the viewer, a folder open and selected in the tree.
+
+**The link.** `<the Studio's address>/?item=<id>#item=<id>`. The ID is 128 random bits and names nothing: no path, file name or library is in the link. It grants nothing. Opening one asks for sign-in, finds the item in the libraries the person has, and looks at it as them, as browsing does. `#open=` addresses are unchanged.
+
+**The answers.** No such link, no access, and a library the person does not have are one 404, the same bytes for each; an administrator without a share gets it too. A deleted item is said plainly to someone who can list the folder it was in. Signed out is one 401. Someone a folder is shared with opens links into it once they have added it, and the notice says to.
+
+**What a link follows.** Renames and moves in the Library, of the item or of a folder above it. A change made outside the Studio is not followed: the item is said to be deleted or moved, or, where another file took its place (told by inode and the time it was made), it opens with a line saying it was replaced after the link was made.
+
+**Where it works.** The main library, the deployment's, My library and shared folders, libraries on other systems, and bucket and index-only libraries through their index (these cannot tell a replaced file).
+
+**Records.** `INDEX_BASE/links.json` (0600) holds the IDs and is the only thing that maps one back to a path; every write is a temporary file, synced and renamed, one writer at a time. `INDEX_BASE/link-log/<month>.jsonl` has a line for each link made or opened: the time, the ID, the user name and the outcome, and never a path or file name.
+
+**Address.** Links start with `STUDIO_SELF_URL`, else the address people sign in at, else the one the page is open at. On a person's own computer the action reads **Copy link (this computer only)**. A hosted Studio needs a fixed subdomain for links to last.
+
+**Limits.** Someone signed out of ACTIVATE itself lands on the Studio's first page after signing in and opens the link again, since the session proxy keeps only the host. Files a transfer overwrites or removes count as changed outside the Studio. A folder newer than the viewer's index is said not to be listed yet.
+
+**Tests.** Go tests for the store, the audit log, the routes and people's libraries; web tests for the form of a link and each answer; a links phase in the spaces security suite (two people, shared and not added, no access, an administrator without a share, signed out).
+
+Docs: HELP, README, REFERENCE, DEPLOY.
+
+### fix(chat): refuse a session command by any of its names in a pw code chat (#961)
+
+In a pw code chat, the Studio refuses `/rename`, `/fork`, `/archive`, `/resume` and `/remote-control`. The refusal matched the name exactly, so `rc`, ` remote-control`, `/remote-control` and a field named `Name` sent to the session's API got past it.
+
+- These commands are refused by any of their names, in any case, with leading spaces, a slash or arguments. The names are a fixed list and the aliases pw code gives in the session's palette.
+- A command the Studio does not know passes only where the session's palette lists it, so an alias new in a pw code release is refused until it is known.
+- The same lines are refused as a message, a steer or a subagent's message, and on the chat stream.
+- A request with a checked field's name in another case is refused. This also closes a plan answer's `Mode` getting past the machine's permission ceiling, and `/permissions` written with a space or slash before it.
+
+### ACTIVATE buckets as libraries, read through the pw CLI's credential (#958)
+
+Add a library lists the person's ACTIVATE buckets by name, beside their clusters, and indexes one, or several at once, from its listing. They are read with the person's own ACTIVATE sign-in: no rclone, no keys entered. The rclone route stays as **Another bucket (rclone remote)**, where sign-in is off.
+
+**How a bucket is read.** Each run asks `pw buckets get-token` for a credential of that bucket and asks the store directly: ListObjectsV2 and ranged GETs on S3, the JSON interface on Google Cloud Storage. A credential that ends during a listing is fetched again and the listing goes on after the last key. Where the store refuses or cannot be reached, and for Azure for now, it falls back to `pw buckets ls` and `cat`, and the card says so and why. The pw CLI gives no token for Oracle Cloud, so those are shown with that reason and cannot be chosen. Opening a file and the text pass use the same route; the extractor reads through a socket of the Studio's and is given no credential.
+
+**Credentials.** A token is held in memory for the run that asked for it and is in no file, log, or saved configuration. The pw CLI runs with a private home that is removed after each run: in memory on Linux, a temporary folder on macOS.
+
+**Where people sign in.** The route is per person, with or without `REQUIRE_PERSONAL_KEY`: only their own sign-in is used, never the deployment's or another person's. Their index is in a folder of their own (0700) on the Studio's host, and its id does not exist for anyone else: listings, search across libraries, files, jobs, notices and logs. It is listed on schedule while the Studio keeps their sign-in; otherwise it waits, its card says so, and it is listed when they next open the Studio. A signed-in person with no ACTIVATE sign-in yet is told where to sign in.
+
+**Government platforms and networks.** The region comes from the platform, the partition from the region, and FIPS endpoints are asked where the pw CLI asks them (`AWS_USE_FIPS_ENDPOINT=false` turns that off for Studio's own requests). `HTTPS_PROXY`, `NO_PROXY` and the system's or a custom CA apply, as for the Studio's other requests and to the pw CLI. Where a store is reached only through a VPC endpoint, More options, Endpoint takes it, and the next bucket in that region is offered the same; `AWS_ENDPOINT_URL` is the Studio-wide default. An endpoint is one of the private endpoints of the bucket's own store or a host in `STUDIO_BUCKET_ENDPOINTS`, at the port listed there (443 by default); on a Studio people sign in to it is chosen from that list alone, and what a failed connection says is in the log, not shown.
+
+**Other sites.** Every route that has a token fetched, lists, reads an object or its text, rebuilds or stops refuses a page of another site (403), with sign-in off as with it on. Where a browser sends no `Sec-Fetch-Site`, the page's origin has to be the host asked or the Studio's own address (`STUDIO_SELF_URL`, `OIDC_REDIRECT_URI`), for proxies that rewrite the host. A folder is looked at by POST, so no address can name an endpoint.
+
+**What cannot be a path.** A key with a control character other than a tab, or a slash at its start or two together, is left out and counted, for rclone remotes too: it fails no listing and opens no other object. A legacy S3 bucket name (upper case, underscores) is asked by path.
+
+**Copy link** (#960) leads to a file in a person's own bucket for that person alone; to anyone else it is a link that opens nothing.
+
+**The host's own credentials.** pw is given none of the Studio's cloud credentials (`AWS_*`, `GOOGLE_*`, `AZURE_*`, `CLOUDSDK_*`, their files, EC2 metadata). A private home left by a Studio that was cut off is removed at the next start; those in use are locked. An `AWS_ENDPOINT_URL` that is not an address is an error in the log at start, and AWS buckets are not read until it is corrected. A listing that panics is a failed listing.
+
+**Several buckets.** The form ticks the person's other buckets and adds them in one go, each a library of its own. One that is refused is named, and the rest stay added.
+
+**Also.** Removing a library on a Studio of one now removes the copies its previews were made from, for any library read elsewhere.
+
+**Numbers.** 100,000 objects in about 330 folders on a mock store, 20 ms a page:
+
+| Route | Time | Store requests | Platform requests |
+|---|---|---|---|
+| Direct (this) | 3.5 s listing, 3.7 s with the index built | 101 | 4 |
+| `pw buckets ls`, 4 at once | 12.1 s | 329 | 658 |
+| get-token, then `rclone lsjson` | 3.6 s | 101 | 2 |
+
+Signing is the aws-sdk-go-v2 SigV4 signer alone: `studio-server` goes from 49.32 MB to 49.70 MB. Adding a library makes one more store request and one more token of its own, to check the folder before it is added.
+
+**Tests.**
+- Go: `pwbucket` (paging, expired tokens, GovCloud partitions and FIPS hosts, endpoints, the fallback), `libapi` (one person, two people in the strict posture, a schedule with and without a kept sign-in, another site's page), with -race; both web suites and the type check.
+- The real pw CLI against a mock platform and store in a network namespace with loopback only: commercial and GovCloud regions with FIPS hosts, Google, a token that ends every second during a listing, HTTPS_PROXY, NO_PROXY, a custom CA and a missing one, a VPC endpoint where the store's own host cannot be reached.
+- Studios: standalone with a saved pw sign-in and without one, a hosted Studio of one, and a sign-in Studio with `AUTH_REQUIRED=1` and `REQUIRE_PERSONAL_KEY=1` and two people. The spaces security suite: 1074 passed, 0 failed. A phase of its own for two people's buckets (every known GET by the other's id, every change, endpoints, a swapped and a cleared key, what is on disk and in logs): 79 passed, 0 failed.
+- rclone against a local S3 store, with its text pass, beside an ACTIVATE bucket.
+- Chromium and WebKit, light and dark, 1440 and 390 px, with no overflow.
+- Read only against real AWS and Google buckets: the direct route and the CLI gave the same counts and bytes, files opened whole, and the text pass read what its estimate said. Azure was not checked against a real bucket: the platform gave no credential for the one tried.
+- After the review: a test for each fix, each seen to fail without it, and the real pw on the mock again (the direct and the CLI route, other sites, a Studio killed during a run, a bad `AWS_ENDPOINT_URL`, and the host's own AWS and Google credentials in the Studio's environment, which no request carried).
+
+Docs: HELP, README, LIBRARIES, MULTI-USER, DEPLOY (how an administrator offers this), GO-PORT.
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-958/menu-1440-dark.png)
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-958/several-1440.png)
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-958/folder-390-webkit-dark.png)
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-958/added-signin-webkit.png)
+
+## v1.203.38 (2026-11-25)
+
+### The Studio's own AGENTS.md is not library content (#953)
+
+Since #944 the Studio keeps an `AGENTS.md` for pw code in the folders of its own that its chats start in. That file showed up as library content: it was first in the newest files, and it was in search hits, counts and the Library tree.
+
+**The rule.** A file named `AGENTS.md` is the Studio's, and not library content, when it holds the Studio's section (`studio_tools`) and nothing else, exactly as the Studio wrote it. Anything else is the person's and is listed as before. To tell "exactly as written", the section's begin marker now carries a digest of its text. A person's word before, after or inside the section therefore keeps the file listed, and so do agent instructions applied beside it. The rule looks only at the file, so it needs no list of folders and gives the same answer on any host. A link is never the Studio's. It is one small package, `internal/ownfile`.
+
+**Where it applies.**
+- The index: the row is taken out of each folder just indexed, with the folder's totals made again, and no words or embeddings are made of it. That covers newest, largest, search, counts, query and `list_kb_dir` on another system. It is done for the main library, libraries built here, and libraries built on another system (by the Studio's helper there).
+- Folder listings here, in a person's own library on another system (read as the person, once for each change of the file), and a folder's zip. The eye button, which shows hidden files, shows it.
+- The search used with no GUFI, label suggestions, and the list of an agent's files.
+
+A person's library is still read by path as before, so the file opens and can be edited.
+
+**Limits.**
+- A file #944 wrote has no digest. It stays listed until a chat next starts in that folder, which rewrites it.
+- On another system, a build at names depth leaves it out only where the Studio's helper is already installed; none is sent for it. The Library tree there is right either way.
+- An index built outside the Studio is searched as it is.
+
+**Tests that fail on main.** A folder's listing and its zip, a space's listing, the words pass, and a whole build with GUFI that lists the file again once a person has written in it. Also the rule itself (15 cases), the totals of a folder left with nothing, the helper's command and the search with no GUFI. I ran the remote build script with the real GUFI at names depth with and without the helper, and at text depth.
+
+Checked in a test Studio with the file a pw code chat wrote there: the tree, search, newest, `list_kb_dir` and the counts leave it out, list it once a line is added, and leave it out again without the line.
+
+Help and `docs/AGENTS.md` say it.
+
+### fix(libraries): the folder menu opens where there is room (#955)
+
+The folder menu of Add a library always opened down. In Settings, Indexing, where the row sits low on the page, that left room for one folder of 32 at 1440x900, and at 1280x720 the menu could open below the window.
+
+- The side is chosen as the menu opens: down where there are 420 px for it (the whole menu and a little over), otherwise the side with more room. It is kept while one types, and chosen again if the window is resized. The list is capped to the room there and scrolls inside, as before.
+- Opened up, and in the phone's sheet, the list has one height. Both hang from their foot, so the field used to move as the list narrowed (280 px on a phone).
+- The Code page and a new chat's folder chip use the same picker and get the same.
+
+**Checked**
+- New tests (low row, high row, neither side, resize, side kept while typing), five of six failing on main. Both web suites and the type check pass.
+- Chromium and WebKit, light and dark, 1440x900, 1280x720 and 390x844, on a single-user and a sign-in test Studio: Settings with the row low, the Library page's dialog, and Browse under More options. With 32 folders the list is 320 px high, inside the window, in every run. On main it was as little as 11 px.
+- The Code page's chip and a new chat's, on a sign-in test Studio with the platform's machines and folders stood in for and no message sent: Chromium and WebKit, light and dark, 1440x900, 1280x720 and 390x844, and a new chat with its box held at the foot of the page. All 36 pass: the list is 301 to 320 px and inside the window, its last folder can be reached, the field stays put as the list narrows, Escape cancels and Enter takes the folder. On main 22 of the 36 fail.
+
+Before and after, main on the left:
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-955/settings-1440.png)
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-955/settings-signin-1280-webkit-dark.png)
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-955/library-more-options-1280-webkit.png)
+
+The list narrowed on a phone (main, then this), the phone in Settings, and the list narrowed at 1440:
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-955/narrowed.png)
+
+The Code page (Chromium) and a new chat (WebKit) at 1440:
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-955/code-and-new-chat-1440.png)
+
+The Code page and a new chat on a phone, then a new chat at 1280x720 on main and with this:
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-955/code-and-new-chat-small.png)
+
+### fix: uploaded icons, a platform that does not answer, find after being away, and plan mode kept to its chat (#956)
+
+Four findings from the test pass on v1.203.37.
+
+**C1. An icon uploaded for a resource shows.** The platform gives an uploaded icon only to someone signed in, and the Studio asked without a credential. It is now read with the credential the Code page uses for the person: their own ACTIVATE sign-in on a sign-in Studio, never the deployment's or another person's. It is kept for that credential alone, and the browser checks with the Studio before it draws one it has. The platform's own icons are still read without a credential. With no icon the plain one is drawn. One the platform could not answer for is asked for again after a minute, not six hours.
+
+**C2. The platform not answering.** The Code page's pane drew the package's bare error code ("internal"). It now says what the list says, "The platform did not answer.", and a session's pane does too. No error is said by its bare code. `GET /api/sessions` (the Status panel and Workflows) answers 502 with the same words in place of an unhandled 500.
+
+**A2. Find in a long pw code chat after being on another page.** The chat stays mounted but hidden under the Library and Code pages. Rows the list let go of while hidden were kept for find as empty text, as were rows find read while hidden. Cause in `@parallelworks/ui`; fixed in the Studio's patch of 0.151.1: a hidden list is not read, and find reads those turns when it shows again. A find left open keeps what it had found.
+
+**O1. /plan stays in its chat.** pw code keeps the mode of any session as the mode of every later one that names none. A chat whose session comes up in plan mode, with no mode set under Settings, gets one in pw code's own default (asks before commands) instead; the empty one is deleted. Plan first in Settings, and any other mode the person has pw code keep, work as before. A chat that plans goes on planning if its session is replaced. Standing agents' sessions start through the same call.
+
+**Tests.** Go: icon credentials and what is kept, per person, signed out, with no key, and with sign-in off; the listing with the platform gone; plan mode at creation and across a replaced session. Web: both panes' words, and find while away (three tests, each failing without its part of the patch). Checked live in Chromium and WebKit, light and dark, 1440 and 390 px, on a single-user and a sign-in Studio with pw 7.141.1.
+
+## v1.203.37 (2026-11-25)
+
+### perf(web): an idle tab makes next to no requests (#943)
+
+One open tab made 47 to 71 requests a minute while nothing happened. It now makes at most 0.5 (the update check, every 2 minutes), and none while hidden.
+
+## Requests a minute, idle tab
+
+Own test Studios, Chromium, 4 minutes per page after 15 seconds to settle, main at d903aed3 (after #941). WebKit gives the same counts after the change (2 minutes per page).
+
+| Page | Single user, before | after | Sign-in, before | after |
+| --- | ---: | ---: | ---: | ---: |
+| Chat, Studio assistant | 49.0 | 0.5 | 55.3 | 0 |
+| Chat, pw code | 61.5 | 0.5 | 68.0 | 0 |
+| Library | 47.2 | 0.5 | 53.8 | 0 |
+| Code | 47.3 | 0.5 | 71.0 | 0 |
+| Settings | 47.5 | 0.5 | 54.0 | 0 |
+| Settings, Libraries | 47.5 | 0.5 | 54.0 | 0 |
+| Hidden tab (pw code chat) | 17.5 | 0 | 17.0 | 0 |
+
+The socket sends the page 12 to 14 small frames a minute (6 to 12 more for a pw code chat or the Code page's feeds). Where no WebSocket opens (blocked in the test, single user): 15.5 a minute, 27.5 on a pw code chat.
+
+## What was polled before
+
+| Endpoint | A minute | Where, and why |
+| --- | ---: | --- |
+| `GET /api/fleet` | 12 | status panel, and the Agents page's list though not shown, every 10 s each; the second one hidden too |
+| `GET /api/code/sessions` | 12 | pw code session view, every 5 s: the session's state and machine |
+| `GET /api/code-page/sessions` | 12 | Code page, every 5 s: its list |
+| `GET /api/runs` | 4 to 10 | Agents page every 15 s though not shown, hidden too; status panel every 10 s with a platform |
+| `GET /api/delegated` | 6 to 8 | status panel every 10 s, Code page every 30 s |
+| `GET /api/settings/mcp-servers?cached=1` | 6 | status panel, every 10 s |
+| `GET /api/index/status` | 4 | index line, every 15 s |
+| `GET /api/chat/pwcode/here` | 3 | Code page, every 20 s |
+| `GET /api/kb/semantic-map` | 2 | Stats though not shown, while there is no map, hidden too |
+| `GET /api/transfers/summary`, `GET /api/transfers?state=active...` | 2 each | Transfers mark; the open chat's transfer notes |
+| `GET /api/notices` or `POST /api/notices/seen` | 2 | marks, every 30 s |
+| `POST /api/chat/pwcode/names` | 2 | chat titles, every 30 s |
+| `/api/kb/stats`, `/api/whoami`, `/healthz`, `/api/ai/health`, `/api/version` | 1 each | footer, hidden too |
+| `/api/user-libraries`, `/api/libraries`, `/api/sessions` | 1 each | status panel |
+| `GET /api/updates` | 0.5 | update check, hidden too (kept, while shown) |
+
+## The change
+
+- `GET /api/live` (`server-go/internal/live`): one WebSocket per page. The page says what it shows and how often each is worth reading; the server reads each path at that pace as the person, through the sign-in gate and the route, and sends what changed. Only listed paths are read. It opens from the Studio's own pages only, and ends when the gate refuses a read or finds another person, when an answer sets the person's cookies, and after 10 minutes.
+- `web/src/live.ts`: every poll above follows its path here, once however many parts show it. Until the socket is open the page reads by request as before; where none opens, paths due together go in one `GET /api/live/read`.
+- The pw code listings come over feeds in the package's own form (`/api/pwcode-feed/sessions`, `/api/code-page/feed`), so the package stops its 5 second poll.
+- A page that is not shown is not read for. A hidden tab reads nothing, and reads everything at once when it shows. Timers of open runs, sessions and transfers wait too.
+- `POST /api/notices/seen` goes when the chat in front has something unread, not every 30 seconds.
+
+## Nothing shows later
+
+- The server reads at the pace the page polled, and what the page itself changes is still read at once.
+- 12 index changes at spread phases of the 15 s read: mean 7.2 s before they show, 7.3 s on main, 7.2 s with the socket blocked.
+- A mode changed elsewhere on a pw code session: 5 to 20 ms in Chromium, 26 to 82 ms in WebKit, as on main.
+- After a server restart the page is back on its socket with no polling left.
+
+## Checked
+
+- New tests fail on main: `idlePages.test.tsx`, `notices.test.tsx`, `chatNames.test.ts`, `TestThePagesSocketReadsAsTheSignedInPerson`; `live.test.ts` and `internal/live` are new (also under the race detector).
+- Both web suites, the type check, go vet and the Go suites (the failures left are the same on main on this machine).
+- Chat, Agents, Stats, Workflows, Code and Settings in Chromium and WebKit, light and dark, 1440 and 390 px, single user and sign-in: no page errors, and they look as before.
+- docs/REFERENCE.md has a section on what an open page reads.
+
+### feat(chat): the folded chat list keeps a mark for each live chat, and search (#946)
+
+Folding the chat list left marks only for chats that were working, waiting or unread, and in another order than the list's. The rail now matches the Code page's:
+
+- A Search button, which opens the list with the cursor in its search box.
+- One mark per chat that works, waits, has a live pw code session, or has a new reply or note, in the list's order. The open chat keeps a mark, so the one just clicked does not go from under the pointer or the focus once it is read; it is a hollow dot where the chat has no state.
+- A mark opens its chat and leaves the list folded. The title and state are its tooltip on hover and focus and its accessible name; arrow keys, Home and End move between marks. Pointing at or focusing a mark reads the chat ahead, as a row does.
+- What was typed in the search before folding no longer hides marks, and with no marks the unseen rows behind the rail are no longer reached by Tab.
+
+The states are the ones the list and the menu read from /api/notices; nothing else is read. On a phone the list is still a drawer, with no rail.
+
+Five new tests fail on main. Checked with a pw code daemon in Chromium and WebKit, light and dark, at 1440 and 390 px. docs/HELP.md says what the rail shows.
+
+
+![The rail: a live chat pointed at, light; a working one reached by the keyboard, dark](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-946/rail.png)
+
+### pw code: the Studio's tools before grep, in the words people use (#944)
+
+## What changes
+
+- **The words people use.** The guide given to pw code and MCP clients now says that library, my library, knowledge base, KB, the Studio, the index, my files, my documents, our docs or a library's name mean the files the Studio's tools search, and to start with search_kb or query_corpus. It names Grep, Glob, GrepSearch and GlobSearch beside find, grep, ls and du.
+- **"This folder".** It is in that list only where it is true: the session works in a library, or in `~/studio-chat`. In a folder the person chose that is in no library, and on another machine, "this folder" is that folder, and pw code's own file tools look in it. The MCP server's instructions do not know the folder and leave it out.
+- **AGENTS.md.** Where a chat's session works in a folder of the Studio's (the main library on a Studio of one, My library, `agents/<persona>`, `~/studio-chat`), a section says the same. pw code puts AGENTS.md above its own "use GlobSearch and GrepSearch". The person's text and the file's mode are kept; a link, a file that changed while being read and a file that cannot be written are left; a folder the person chose is never written.
+- **Continued sessions on another machine.** They had the Studio's tools and no instructions, because the chat only told a session it started itself. The first message now brings them, once, and the question, the note and the answer say whether that machine has the tools. A session with no Studio tools is told to ignore them.
+- **Citations.** A pw code session is told to cite every library file as `[path](#open=file:path)`, as the Studio assistant is. search_kb, read_kb_file, read_original, list_kb_dir and query_corpus give it each file's link to copy. The Studio assistant's own calls and other MCP clients' return exactly what they did: the assistant's replies are already repaired into links, and a client outside the Studio cannot open one.
+
+## Measured
+
+Main at v1.203.36, pw code v7.139.0, a made-up 57-file corpus, test Studios and daemons. Five first tool calls, two runs. (a) a chat in its default folder, (b) the Code page starting in the Studio's folder, (d) a chat continuing a session on another machine whose pw code has the tools; S = first a Studio tool, F = first a file tool.
+
+**Before, `codex/gpt-6.2-sol`** (60 rows)
+
+| | newest spreadsheet | largest folders | topic | "search my knowledge base" | "in my files" | "in this folder" |
+|---|---|---|---|---|---|---|
+| single user (a) | S S | S S | S S | S S | S S | S S |
+| single user (b) | S S | S S | S S | S S | S S | S S |
+| sign-in (a) | S S | S S | S S | S S | S S | S S |
+| sign-in (b) | S S | S S | S S | S S | S S | S S |
+| sign-in (d) | S S | S S | S S | S S | S S | **F F** |
+
+On this model main already goes to the Studio's tools first in 58 of 60 rows. The two others are "look in this folder" in a folder on another machine, where the file tools are the right choice. So these rows do not show the problem reported, and cannot show that the wording fixes it.
+
+**Are the cited files links**, before, `codex/gpt-6.2-sol`, from the first 300 characters of each of the 60 replies: 32 named files in inline code, 1 as bare text, 1 as a relative link, 8 as a Studio link, and 18 named no file in that part or were stopped at five calls.
+
+**After**: there is no after table. 25 rows ran on an earlier commit of this branch, without the citation change, and all 25 went to a Studio tool first; the model then reached its usage limit. No second model was measured. The effect of the new wording, the section and the citation rule on a model's choices is therefore not shown here; the tests show what each session is told and given.
+
+## Relayed turns
+
+pw code asks before each Studio call in a relayed turn, and refuses them in read-only mode. That is pw code's and is left to parallelworks/core#24308. What the Studio can do is here: give a continued session the instructions, and say whether the machine has the tools.
+
+## Tests
+
+New tests fail on v1.203.36 (the guide's words, the section, the folder a person chose, continued sessions). The Go suite fails 47 tests on the machine used, the same 47 on main, because its GUFI build does not run; the web suite passes; the Node server suite fails the same tests on both.
+
+### Remove the Open steps / Fold steps button from pw code sessions (#945)
+
+Removes the "Open steps" / "Fold steps" button beside the terminal button in a pw code session's message box, with its state, the `ExpandAllProvider` around the view and its styles; nothing else used them. Each step still opens and folds on its own, as in PW Code on the web. The session view starts with steps folded, as before.
+
+A chat, a chat continued from the Code page and the Code page's pane all draw the same view, so there was one copy. The Help page did not mention the button.
+
+Most of the diff in `PWCodeSession.tsx` is indentation.
+
+Checked:
+- New test: in a chat and in the Code page's pane, no such button, and a step opens while the one beside it stays folded. Both cases fail on main.
+- Both web suites, the type check, go vet, and the Go tests of the chat, conversations, code sessions and pw code packages pass.
+- A test Studio, Chromium and WebKit, 1440 and 390 px, light and dark: a continued chat and the pane, with steps opened one by one, the terminal button working, and no sideways scroll.
+
+| 1440 px, Chromium | 390 px, WebKit |
+|---|---|
+| ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-945/box-chromium-1440.png) | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-945/box-webkit-390.png) |
+
+### perf(web): notice a silent page socket, and renew it before it ends (#948)
+
+Follows #943. Through the platform's session proxy the page's socket upgrades and holds, with three rough edges, fixed here.
+
+- **A silent socket is noticed.** The server says it is there every 4 seconds (15 before). After 5 seconds of silence the page reads what is overdue by request; after 10 it opens another socket (40 before). The pw code listings' feeds are given up the same way, so the package reads for itself.
+- **The socket is renewed before it ends.** The server says first how long a socket has: 10 minutes, or what is left of the session proxy's token (5 minutes; the proxy gives a new one in its last minute). The page opens the next socket 20 seconds before, moves to it once it is open, and closes the old one: no gap, no request.
+- **A lost socket does not send everything at once.** The next is tried after 0.25 to 0.5 s. Until it is open, paths due together go in one request, and those read once a minute wait up to 3 seconds for it.
+
+- **A server that was away is found at once.** The first read that reaches it after failed ones opens the socket, instead of waiting out the retry delay (up to 60 s).
+
+Measured through the platform's session proxy on test Studios, Chromium and WebKit, with a pw code chat on both. The idle, silence and tunnel-killed rows are from before the last commit, which only changes what happens after a failed read.
+
+| | #943 | Here |
+|---|---|---|
+| Idle 12.5 minutes, requests a minute, single user | 0.7 to 1.3 | 0.64 (the update check and the 5-minute model list) |
+| Idle 12.5 minutes, requests a minute, with sign-in | 0.3 to 0.5 | 0.16 (the model list) |
+| Requests at a renewal | 0 to 8 | 0 |
+| Socket silent while requests work: a change shows after (24 tries) | not measured | 1.0 to 11.7 s, mean 7 |
+| Next socket asked for after the silence | its limit was 40 s | 8.8 to 15.1 s |
+| Server restart, single user: requests | not measured | 1 to 2 |
+| Tunnel killed and restarted: live again | 5.8 to 8.2 s | 4.3 to 4.8 s |
+| Tunnel stalled 60 s: live again after it resumes | 12 to 19 s | 0.4 to 1.7 s |
+
+Not changed: in a long outage the paths read once a minute still go as 4 or 5 plain requests together, once a minute. On a Studio with sign-in, a restart showed 9 to 14 requests in one second, mostly library reads; the test also adds its model key again there, which may be what reloads them.
+
+### feat(chat): library files a reply names open in the viewer (#947)
+
+A path in a reply, as inline code or plain text, that is a file of one of the person's libraries is now a link that opens it in the viewer. This covers pw code chats, the Code page's pane and Studio assistant chats, and paths in full from a library's folder on the session's machine.
+
+- The page gathers the paths it shows and asks once (`POST /api/libraries/cited`). The Studio looks them up as the person, only among their own libraries: local folders here, and a library on another system once for all its paths with the person's own key. Only plain files the Library shows are answered. Hidden and excluded names, `..` and symlinks that lead out of a library are not.
+- A bare name is taken from the chat's own steps and links, or the session's folder. Two files that fit are no link. A session in a folder outside the libraries does not match its own files to a library's of the same name.
+- Markdown links, web addresses, code blocks and paths with no file stay as written. The links are underlined, since the theme's link color is close to the text's own.
+- An idle chat makes no request. Paths not found are asked again once, when the reply that names them ends.
+
+Tests: server tests for the lookup (folders, another machine over a stand-in shell, symlinks out, ambiguous names, another person's library, one session per host); web tests for inline code, text, tables and lists, existing links, code blocks, one request and none while idle, and each of the three views. Checked live in Chromium and WebKit, light and dark, at 1440 and 390 px.
+
+![A reply with its files linked, light and dark](https://github.com/parallelworks/activate-studio/blob/pr-shots/pr-947/reply.png?raw=true)
+![At 390 px](https://github.com/parallelworks/activate-studio/blob/pr-shots/pr-947/reply-390.png?raw=true)
+
+### feat(code): a tidier Code page, with the Studio's tools as a mark on each machine (#949)
+
+## What changes
+
+**Code page**
+- The start screen is as PW Code on the web has it: title and one line of help, the machine with its icon, the folder, the composer. No toolbar over it and no status line.
+- New session, Open in ACTIVATE and help are compact buttons in the page header, named on hover. On a narrow page the sessions drawer's button is there too.
+- Each machine has the icon ACTIVATE gives it, in the machine menu, the chip, the session list, the start list and a session's header. `GET /api/code-page/icon` passes on the platform's own icons only, fetched with no credential, images of at most 1 MB.
+
+**The Studio's tools on a machine**
+- Whether pw code on a machine has them is a mark in the machine menu and beside the machine chosen. The mark opens a small popover.
+- A machine the Studio reaches: the first start there has **Add the Studio's tools to cluster-a**, ticked. The choice is kept per person and machine, the Studio adds them before that session is created (45 s at most), and from then on quietly when they are missing. Unticked, it is left alone until Add in the menu. A start that cannot add them goes on without, and the chat says so. What would not change by itself (another Studio's entry, another pw sign-in) is not tried again at every start.
+- A computer that connected itself: the popover is one line and the command with Copy. The command carries the machine's id, so the first session there that reaches the Studio turns the mark on, for that person only.
+- Check and Remove (asked once) are in the machine menu. The read-only allow rules of #938 go with the install and the removal as before.
+- A chat whose session has no tools says it in one line with **Add them**, which opens the card that was there before. The composer of a new pw code chat has the same mark and tick.
+
+**Each mode**
+- With no ACTIVATE sign-in (fully standalone too) the page is only **Sign in with ACTIVATE to use this** and Open Accounts: no machine, no mark, no header controls, and nothing of the start shows while the page is finding out.
+- With ACTIVATE through the pw CLI and no platform, it lists this computer's sessions: this computer's icon, no tools mark, nothing to open in ACTIVATE. A session there was opened through a platform that is not there (an empty pane saying `not_found`); it now says why it is not continued here.
+
+**Ready for the platform**
+- `sessionMCPAttach` is used as before. A machine that lists `sessionMCPCreate` is given the server and the allow list with the create request; a 422 drops first the allow list, then the server. Asked for in parallelworks/core#24317, with core#24302 and core#24308.
+
+HELP.md and REFERENCE.md follow.
+
+## Testing
+
+- New web tests (14) fail on main; new Go tests cover the choice, the hold, the machine's command, the create path and its 422s, and the icon route.
+- Both web suites, the type check, go vet, and the Go chat and codesessions packages pass.
+- Chromium and WebKit, light and dark, 1440 and 390 px, on a sign-in and a single-user test Studio against a stand-in platform: a ticked start added the tools before the session, an unticked one ran nothing, and the pasted command's own shim turned the mark on for its person only.
+
+Screenshots, named for each mode (sign-in, single-user, pw-cli, standalone): https://github.com/parallelworks/activate-studio/tree/pr-shots/pr-949
+
+### feat(libraries): Add a library in two steps, with the check run by itself (#951)
+
+Add a library showed eight choices and five paragraphs at once. It is now two steps with a default for every setting.
+
+**Step one, where.** One row: a computer and a folder on it.
+- The computer is the Code page's machine chip, now one component for both pages (`SystemChip`), with the same icons. A cluster that is off is greyed with "Start it on ACTIVATE".
+- The folder menu lists that computer's folders as the person (`GET /api/user-libraries/folders`, `GET /api/libraries/folders`), and takes a new folder by name.
+- **Connect an existing index** is a link under the row and goes through the same steps.
+
+**The check runs by itself** once a folder is chosen. It waits a moment and is cancelled when the choice changes. One card shows the folder, its files, size and main kinds (counted for at most five seconds), whether it is new, and each warning in a few words that opens to its detail and the `chmod`. What blocks it is one line that says what to do.
+
+**Step two, review.** Name (from the folder), Who sees it (Only me, or Shared, which reveals with whom and read only or read and write), Index depth with one line for the level, and **Index**. The default depth is unchanged. The rest is under **More options**. The explanations are in HELP.md and one **?**.
+
+**ssh.** On a single-user Studio the menu lists the hosts of `~/.ssh/config` beside the clusters, and **Another host…** takes a user@host[:port]. Only the `Host` names are read: patterns and `Match` blocks are skipped, `Include` is followed, and a Studio people sign in to refuses the route.
+
+**Modes.** With no ACTIVATE, the form lists this computer and hosts over ssh and says nothing of clusters, ACTIVATE or pw ssh. A single-user Studio with ACTIVATE lists clusters and hosts together. Where people sign in, only their clusters.
+
+**Workflow job** is gone from the form. Where the workflow is the one way to build, it is under **More options** with one line saying why. Libraries it built before are refreshed, read and removed as they were.
+
+How syncing works is unchanged.
+
+**Checked**
+- New tests: the automatic check and its cancelling, the defaults, Shared, Connect an index, the warnings, the three modes, the ssh config listing (patterns, Match, Include, a missing file), and workflow-built libraries (Go and web). Both web suites, the type check and the Go tests pass.
+- Chromium and WebKit, light and dark, 1440 and 390 px, on test Studios in each mode: a local folder, a new folder, a folder on a test cluster or ssh host, a folder others can write, and Connect an index. A folder was indexed and its index connected for real in each mode.
+
+**Before** (main, a cluster chosen; a single-user Studio, then where people sign in)
+
+<img src="https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/before-one.png" width="420"> <img src="https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/before-signin.png" width="420">
+
+**After, one person with ACTIVATE** (clusters and ssh hosts; Chromium, then WebKit)
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/one-light.png)
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/one-dark-webkit.png)
+
+**After, no ACTIVATE**
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/standalone-light.png)
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/standalone-dark-webkit.png)
+
+**After, where people sign in**
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/signin-light.png)
+
+**Connect an existing index, and what blocks it**
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/connect.png)
+
+**390 px**
+
+![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-951/phone.png)
+
+### feat(web): @parallelworks/ui 0.151.1 and @parallelworks/code 0.6.0, with images, notes, shell mode and workspace starts (#950)
+
+Takes @parallelworks/ui from 0.146.2 to 0.151.1 and @parallelworks/code from 0.5.0 to 0.6.0, and what they add that Studio hand-built or can use.
+
+**Adopted**
+- A pw code session's box takes images (PNG, JPEG, GIF, WebP) with **+**, dropped on the conversation, or pasted. It replaces Studio's paste handler, which also caught a paste made in a subagent's view. A subagent's box takes them too, and the marks for images sent before are numbered as the package numbers them.
+- Notes on a pick. A chat's approvals bar draws the package's question card in place of its own form, so it has notes, previews, number keys and **Chat about this**. Studio's approvals route passes notes on and lets one question of several be left blank. Without previews, pw code before 7.142.0 on the session's machine drops the note.
+- Shell mode: `!` first runs the line on the session's machine.
+- A card with **Update pw** when the session's machine has a newer pw.
+- A message pw code hands back (its turn was stopped, or it was refused) goes back in the box, with its images.
+- The reply being written comes from the package's conversation, so a hidden tab does less work, and `historyStart` is passed on, so a long session's rows stay as earlier history arrives.
+- Code page: images on a start; `/goal` and `/plan` starts; a chip for the session's group; a message held while the workspace starts. These starts are sent through the chat the Studio makes for the session, whose routes allow them. One that is refused leaves no session and no chat. A held message starts as the workspace answers, so the Studio's tools are not added there for it: its box for that was never seen.
+- The machine's icon fields. #949's own type for them goes. The package has no icon component, so #949's stays.
+- Text can be dragged into a message. Studio's window-wide guard canceled that drop (`dropGuard.ts`).
+
+**Left**
+- `pinPrompt` (PW Code on the web pins the prompt of the turn in view): a change of look to decide on its own.
+- A drop on the Code page's start box (it has **+** and paste, as on the web), and the slash palette there.
+- The update card on the machine the Studio drives itself: its listing is the Studio's and has no update in it.
+- Turn windowing and find need nothing here.
+
+**Fixed for the update**
+- streamdown 2.8 rewrites a link to `#x` as `#user-content-x`, which broke a reply's links into the Studio. The written address is read back (`writtenHref`).
+- Studio's focus outline drew a line down the box in shell mode.
+- The suggestion chips covered **Jump to latest** (on main too). They hide while it shows.
+
+**A patch on 0.151.1** (parallelworks/foundation#842, open for review). With streamdown 2.8, a send at the latest turn of a pw code chat stopped following in WebKit. The same change ends the WebKit approval case. The next release with it drops the patch. The first two fixes (parallelworks/foundation#839) are in 0.151.1.
+
+At the latest turn of 70 turns, 1440x900, four runs each, px short of the end:
+
+| | main | 0.151.1 as released | this |
+|---|---:|---:|---:|
+| Eight lines typed, both chats, Chromium and WebKit | 156, Jump to latest | 0 | 0 |
+| Tall draft after Jump to latest, pw code / Studio chat | 330 / 156 | 0 | 0 |
+| 1 s and 3 s after a send, pw code, WebKit | 0, 0 | 968, 1,458 | 0, 0 |
+| The other sends | 0 | 0 | 0 |
+| A second send during the reply, pw code, WebKit | 4,209 to 4,271 | 0 | 0 |
+| Approval answered, long reply at once, Chromium / WebKit | 213 / 684 | 0 / 684 | 0 / 0 |
+
+No row moves back on itself while typing on this build (main: up to 131 px). Sampled after paint, the rows of a send are at the same places as main's.
+
+A 320-turn session, main and this (pw code and Studio chat, Chromium and WebKit):
+
+| | main | this |
+|---|---|---|
+| Open: last turn drawn | 0.74 to 1.35 s | 0.75 to 1.35 s |
+| Earlier history arrives (pw code) | rows replaced, 705 px | rows kept, 34 px at the end as the last turn's line comes |
+| Wheel to the top | no blank frame, no jump back, at most 40 rows | the same |
+| Find: opens / finds turn 160 in view | 24 to 29 ms / 0.24 to 0.62 s | 24 to 39 ms / 0.24 to 0.64 s |
+| Jump to latest | 0 px | 0 px |
+| Eight lines typed | 156 px short, Jump to latest | 0 px |
+| A reply streams | 0 px | 0 px |
+| Memory after (Chromium) | 36 to 38 MB | 37 to 39 MB |
+
+**Checked** on main with #949 and #951
+- Both web suites, the type check, the build, `go vet` and the Go chat tests. New tests fail on main.
+- The full UI check, every view, light and dark, three sizes, against main. One finding gone (**Jump to latest** covered). Seven extra in the first run (a title beside an unread mark, the first run's setup) were a rebuild during that run and timing: two reruns of those scenarios on both builds show none. One layout shift of 0.125 did not come again.
+- New screens in Chromium and WebKit, light and dark, 1440 and 390.
+- The packaged Linux app (WebKitGTK) with real keys: typing, shell mode, a long reply, an approval, a send in the 320-turn Studio chat. All at the end.
+
+**By hand on a Mac** (only WKWebView can confirm)
+1. A long pw code chat at its latest turn: type five lines with Shift+Enter, then delete them. The transcript moves by a line at a time and nothing else, and no Jump to latest.
+2. Send there, and send again while the reply streams: the reply stays in view.
+3. The same while typing with an input method (accents, dictation).
+4. Answer an approval whose command replies at once: the reply's end is in view.
+5. Drag an image from Finder and a screenshot's floating thumbnail onto a pw code session, and paste a screenshot (Cmd+V). **+** opens the file panel with images only. The same paste on the Code page's start.
+6. Drag selected text from a reply into the message box: it lands as text.
+7. Type `!ls` in a session: no line beside the `!`, and Escape or Delete leaves shell mode.
+8. Cmd+F in a long session, and scroll up and down it with the trackpad's momentum.
+
+| | |
+|---|---|
+| Starts, Chromium light, WebKit dark | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-950/start.png) |
+| Update and shell mode | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-950/session.png) |
+| 390 px, WebKit | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-950/phone.png) |
+| Linux app | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-950/linux-app.png) |
+| Jump to latest, main and this | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-950/jump-before-after.png) |
+| Images | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-950/images-light-chromium-dark-webkit.png) |
+| Notes on a pick | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-950/notes-light-webkit-dark-chromium.png) |
+| Typing, Chromium, main and this | ![](https://github.com/parallelworks/activate-studio/raw/pr-shots/pr-950/typing-before-after.png) |
+
+### fix(chat): a chat draws only its own reply, and pw code's own model opens the message box (#952)
+
+**A new chat drew another chat's reply.** `@parallelworks/ui` keeps one text reveal buffer, one sending flag, one Stop and one queue for the whole chat provider, and labels revealed text with the chat that sent last. A chat started while another streamed was drawn with the other's text: in the thread for the Studio assistant, and over the session view for pw code, because the message list also draws the provider's stream in a host's own view. It also meant Stop could stop the other chat's stream, and a message queued in one chat could be sent to another.
+
+- `patches/@parallelworks__ui@0.151.1.patch` (added to the existing patch): the stream, its reveal, Stop, the sending flag and the queue are kept by conversation id, and text of another conversation is dropped. A message list given its own stream draws none of the provider's.
+- While a chat is being opened over another, the other's thread is not drawn. A session view lets go of the chat that was open before it.
+
+**The message box was disabled though pw code answers.** With no Studio assistant model listed, or with the listing failing, the box said "Add a model under Settings, Accounts". pw code now stands in for a model while it answers the open chat; the server gets no model name for it. With the Studio assistant chosen and no model, the box stays disabled.
+
+Tests: `web/test/chatCrossTalk.test.tsx`, 15 tests, 11 of which fail on main: a new chat while another streams and back and forth on both engines, the Code page's pane, a chat still being read, Stop, queued messages, and the message box. The two reload tests pass on main too, as a reload cleared it.
+
+The upstream package needs the same change; `pnpm-workspace.yaml` says to keep the patch until a release has it.
+
+A new chat while another streams, before and after:
+
+![before and after](https://github.com/parallelworks/activate-studio/blob/pr-shots/pr-952/new-chat-before-after.png?raw=true)
+
+No model listed, pw code answering, before and after:
+
+![before and after](https://github.com/parallelworks/activate-studio/blob/pr-shots/pr-952/no-model-before-after.png?raw=true)
+
+## v1.203.36 (2026-11-25)
+
+### Write in folders others can change, through a helper nobody can redirect (#939)
+
+Since #933 the Library writes nothing in a folder another account could change. Project folders on clusters are usually group writable, so people could not upload, move or delete in them. This makes the writes impossible to redirect, so those folders are written again, with a warning.
+
+- `studio-write`, a small static helper (linux amd64 and arm64, about 2 MB), is sent to `~/.activate-studio/write/` the first time the Studio writes on a system, checked by its digest, and run as the person. Upload, parts of a large file, new folder, rename, move, delete, transfers, sharing and file saves go through it, on `pw ssh` clusters and over ssh.
+- It opens the library's folder once, compares it with the inode and owner the library was added for, and works on descriptors from there: `openat2` with `RESOLVE_BENEATH` and `RESOLVE_NO_SYMLINKS`, or `openat` with `O_NOFOLLOW` one folder at a time where the kernel has no `openat2`. A component swapped between the check and the write, or a link in its place, is refused and nothing is changed.
+- A transfer is staged in a closed folder the helper made in the library, and rsync is given that folder as an open descriptor. Between file systems the helper copies, then renames. CONDUIT writes by path as a service of its own, so it does not carry a transfer into such a folder.
+- Sharing is applied on descriptors.
+- Read only stays where the helper cannot run (another platform, a home folder mounted noexec, a `~/.activate-studio` others can change), and the warning says so. The shell helper is used there, and checks the folder, the way to it and its inode before each write.
+- It covers every library written as a person, old and new. One kept read only by v1.203.35 is written again.
+
+The folder check and the library's card say who else can change the folder. My library still has to be a folder no other account can change.
+
+Staging is in the library's own file system rather than in `~/.activate-studio`: it needs no room in the home folder, lands by one rename, and keeps the folder's group and default ACL. The staging folder is mode 700, held by descriptor, and compared with its owner when it lands.
+
+#934's text files are opened and saved through the helper too. Where it cannot run, the same answer is given as before.
+
+Tests: the helper's own (a race of swaps and links, with and without `openat2`, across file systems), the transfers and userlibs suites through the helper and without it, and the web tests. In the spaces-security suite a new phase has another account exchange a folder for a link many thousand times a second, plant links, and swap staging folders and the library's own folder while its owner uploads, moves, deletes, shares and transfers: nothing of the owner's elsewhere changes. The whole suite passes (1341 checks), and that phase over ssh on a single-user Studio (78). Docs: HELP.md, LIBRARIES.md, MULTI-USER.md, UPDATES.md, GO-PORT.md.
+
+| | |
+| --- | --- |
+| ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-939/card.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-939/card-read-only.png) |
+| ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-939/check.png) | ![](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-939/card-phone-dark.png) |
+
+## v1.203.35 (2026-11-25)
+
+### Add a library: one Index a folder, and who sees it (#933)
+
+Add a library asked for My own folder or Index a folder on a remote computer. On a cluster these were nearly the same thing: both are indexed, read and written as the viewer. They differed in the check, in closing a new folder, in the name My library, and in sharing. The form now asks two things.
+
+**Where it is.** This computer where it is offered, a cluster or host, or a bucket. On a system there is one choice, Index a folder, beside Connect an index, which stays as it was.
+
+**Who sees it.** Only me, or Shared with a person, a group or everyone, read only or read and write (everyone reads). It uses the share code behind Share…, set as the folder is added. It is offered where the viewer owns the folder; otherwise the form says why. A share that cannot be granted is refused before anything is made. One the system refuses afterwards leaves the library and reports why.
+
+With sign-in on, a folder only the viewer sees can be My library, where their chats and the assistant's files are saved, chosen for the first one. Chats saved there work as before. On a single-user Studio the main library stays the person's library.
+
+**The check.** Refused: a folder that cannot be opened or made, a file, the home folder or one that holds it, one in `~/.activate-studio`, a `~/.activate-studio` of another account, and no usable GUFI. Everything else is a warning with its consequence and fix. A folder that does not exist yet is made with mode 700.
+
+**Folders another account could change.** A folder another account owns, that a group, every account or an ACL can write in, or that another account could move, is indexed and read as the viewer and is **read only**: no upload, new folder, rename, move, delete, share or transfer. Read only was chosen because none of the Studio's writers rechecks the path at the write. The helper checks a path and then uses it by name, and rsync, rclone and the share script do the same, so an account that can rename a folder in between could send the write elsewhere. The warning and the library's card say why, and name the `chmod` that closes the folder. A rebuild reads it again.
+
+Each write to a library added this way also checks its folder and the folders above it in the helper that makes the change. Opening the folder later stops writes at once, and closing it lets them go on. Accounts the owner shared the folder with for writing are let through, as before, and no write follows a link.
+
+My library keeps its guards: it is never made of such a folder, never indexed with a GUFI another account could change, and its index stays in `~/.activate-studio`. A GUFI another account could change can still index any other folder, as before, now with a warning.
+
+**What does not change.** Libraries added before this keep their record and are written as they were, including one whose folder others can write in. Removing one and adding it again gives it the checks.
+
+**Tests.**
+- New Go tests for the warnings, read only over every kind of write, the recheck at each write, ACLs, shares set as a folder is added, My library, and Transfers. Those for the endpoints fail on main.
+- userlibs, libraries, libapi, kb, transfers, chat and agentsmd pass, `go vet` clean.
+- Web: 1064 and 1050 pass, type check clean.
+- The spaces security suite: 980 passed, 0 failed. Two of its expectations changed by design: the check of `/etc` and of a folder another account owns now warn instead of refusing. A new phase tries every write on such folders, a folder opened after it was added, a folder swapped for a link, and planted links.
+- Chromium and WebKit, light and dark, 1440 and 390 px, on a sign-in and a single-user test Studio: no overflow, nothing cut, no page errors. A shared folder was added through the page in both engines.
+
+Docs: HELP, LIBRARIES, ACCESS-CONTROL, MULTI-USER.
+
+### The MCP server says which of its tools to use when, and the tools say what they do better than grep (#932)
+
+The MCP server's `initialize` now answers with `instructions`: which of the Studio's tools to use when. The descriptions of `search_kb`, `query_corpus` and `read_kb_file` now say what each does better than find, grep or cat.
+
+**Instructions**
+- They name only the tools that caller is listed: a chat's session, a person's own session through the session proxy, or another MCP client. A tool turned off in Settings is not named.
+- Under 2 KB, since they are in every session's context.
+- `studioguide.go` holds the text for both the instructions and the pw code chat prompt (`pwcodePrompt`), so the two cannot drift. The chat prompt says what it said before.
+- A call's tool list and the instructions now come from one function (`mcpSpecs`).
+
+**pw code does not use MCP instructions.** Its MCP client keeps a server's tools and prompts and not `InitializeResult.Instructions` (v7.139.0, and core's canary branch on 2026-11-23). Instructions help the clients that give them to their model. In pw code only the tool descriptions carry the guidance.
+
+**Live check**: pw code v7.139.0, a scratch HOME, a local open-weight model, no ACTIVATE sign-in, and the `studio` server at user scope over HTTP (the form `mcpbridge.go` gives), without agent "studio". The person's identity came from a stand-in for the session proxy with its own signing key. A synthetic 51-file library. Three trials of each question on main and on this branch, with the same read-only tools allowed and every model request recorded.
+
+| | main | this branch |
+|---|---|---|
+| Requests carrying the instructions | 0 of 18 | 0 of 20 |
+| Requests carrying the new descriptions | 0 of 18 | 20 of 20 |
+| "find the newest spreadsheet in the library": calls `query_corpus` and `search_kb` | 3 of 3 | 3 of 3 |
+| "which folders are largest": calls `query_corpus` first | 3 of 3 | 3 of 3 |
+| Trials that also tried the shell | 1 of 6 (`du`, after `query_corpus`) | 0 of 6 |
+| Right answer | 6 of 6 | 6 of 6 |
+
+So this check does **not** reproduce a session that ignores the studio tools, and it does not show that this change fixes one. One trial in six is not a difference. It shows that the new descriptions reach the model and do no harm.
+
+One thing seen while setting it up: before the studio tools were on the session's allowlist, pw code denied each call to them (nobody could answer the prompt), and the model then used its own file search (GlobSearch), which needs no approval. The Studio allows its read-only tools in advance for sessions it starts for a chat, and `pw code mcp add` does not. That may be why such sessions end up on Grep and Glob, but it was not tested in an interactive session.
+
+**Tests** (`studioguide_test.go`): the instructions for each kind of caller name only its tools, a tool turned off is left out, the prompt and the instructions share every line, and the descriptions say what they are better at. All fail on main; the one about the shared text fails there because there is no shared text to compare. `go vet` and the Go chat package pass. No web files changed. HELP.md and REFERENCE.md updated.
+
+### pw code: choose where a new chat starts, and start every session with the Studio's tools (#936)
+
+A new pw code chat shows the machine and folder it will start on, with the Code page's own controls, and every session the Studio starts (from a chat or the Code page) starts with the Studio's tools and instructions where pw code there can have them, and says so where it cannot.
+
+**Where a new chat starts**
+- The message box has the machine and folder until the first message. The default is unchanged. Another folder on the Studio's machine gets a session of the Studio's own there; under sign-in the folders are listed as the person, with their own key. Another machine is started through ACTIVATE as the person, held to its remote ceiling, and the chat continues it as a relayed session.
+- Persona: in a folder the person chose it goes into the session's prompt, and nothing is written into that folder (an AGENTS.md there is untouched). With another machine it is refused with the reason, since nothing carries a persona there.
+
+**Tools and instructions at the start**
+- On the machine the Studio drives, a Code page start uses the studio agent as a chat does (tools, instructions, the read-only tools allowed in advance), and has its chat from the start. If the tools cannot be reached, the session starts and its chat says why.
+- What the platform's create-session call takes on this release: allocation, the account to bill, effort, model, permissionMode, prompt, workspace. It answers 422 "unexpected property" for agentsJson, agent, mcpServers and allowedTools. No machine reports sessionMCPAttach and the API has no session MCP route. So on another machine the tools come from pw code's settings there (Add). Where a machine does report attach, the Studio attaches before the first turn; that path has unit tests only.
+- Instructions: pw code 7.139 did not give the model a server's initialize instructions (a stub server with a phrase in them, three models, never seen). So the Studio's instructions go after the person's first message to a session on another machine that has the tools. The chat draws the message without them; PW Code on the web shows them.
+- A chosen machine without the tools is named each time, with Add or why not, on the Code page and in a new chat.
+- Left to pw code: a turn sent from elsewhere asks before each studio tool in accept edits, and does not run them in read-only or plan mode. The start says so.
+
+**Live checks**, on my own test Studios and sessions, archived after. Questions: "Find the newest spreadsheet in the library." and "Which folders are largest in the library?"
+
+| Start | Tool calls seen (first question; second) |
+|---|---|
+| Code page, this computer, single user | search_kb, query_corpus; query_corpus, list_libraries |
+| Code page, the Studio's cluster, sign-in | list_libraries, search_kb ×3, query_corpus, ...; query_corpus, list_libraries, ... |
+| Code page, another machine, accept edits | list_libraries, query_corpus, search_kb ×3, ...; query_corpus, list_libraries, ... |
+| New chat, another machine, accept edits | list_libraries, query_corpus, search_kb, read_kb_file, read_original, search_kb; query_corpus |
+| Code page, another machine, read-only | calls made and refused by pw code in that mode |
+| Code page, real ACTIVATE relay, no tools there | GlobSearch, Bash; the start says the tools are not there |
+
+In the two cluster and Code page rows with "..." the index files of that test Studio could not be read (a missing shared library on this host), so the model went on to list_kb_dir. The sign-in Studio's platform was a stand-in (the same create fields and 422, relay and WebSocket) in front of a real pw code daemon; its "other machine" had the studio server as an agent of the stand-in, in place of user settings. I had no second real machine of my own connected, so the real relay row reached this host through ACTIVATE as another machine.
+
+Default, another folder, another machine and a persona with each: Chromium and WebKit, light and dark, 1440 and 390 px. WebKit ran default, another machine and persona with another machine. HELP.md updated.
+
+### feat: add files of several GB to a library, sent in parts (#935)
+
+A file over 16 MB added to a library goes up in parts, each its own request, instead of in one request with a 200 MB limit. The free space where it goes is the limit now.
+
+**How it works**
+- `POST /api/kb/upload-parts` checks the free space (507 with what it needs and what is free), makes a folder `.studio-upload-*` with mode 700 beside the destination, and answers an id and the part size. `PUT .../{id}/{n}` writes one part at its offset in one file there, `POST .../finish` checks the size and renames it into place, `DELETE` removes it.
+- A library on a cluster takes each part over the person's own session, with the rules its other writes have: no link followed, only into a folder of the same account that is closed to others.
+- An id answers only to the person who started it; to anyone else it is the 404 of an id that does not exist. Their rights are checked again on each part. An upload under way cannot be read by path.
+- A part is sent again up to five times over about 38 seconds. A file that fails or is cancelled, or whose page closes, is removed; what nobody asked to remove goes after 30 minutes without a part, when the Studio stops or next starts, or, in a person's own library, with their next large file.
+- The desktop window sends the parts of files dropped on it. A window from before this still sends those whole, up to 200 MB.
+- Files of 16 MB and less are batched as before. The library they go to is settled when they are added; choosing another one during an upload used to change where the rest went.
+
+**Measured**
+- Through the platform, 8, 16 and 32 MB parts are equally fast; three at once are 2 to 4 times one, and six no better than three. 16 MB, three at once.
+- No limit on the size of a request was found up to 512 MB, and a 16 MB part that took 273 s to arrive was accepted. So there is no ceiling per file.
+- The platform gives up 30 seconds after a request's body has been taken in if no answer has begun, which a slow link to a cluster can exceed. The answer to a part that is slow to write begins after 8 seconds; its body says how it ended.
+
+**Checked live**, every file compared with the original afterwards
+
+| | size | time |
+|---|---|---|
+| main library, local | 3.0 GB | 4 to 12 s |
+| main library, through the platform | 2.1 GB | 679 s, 39 requests cut and sent again |
+| library on a cluster | 2.1 GB | 404 s |
+| cluster at 150 kB/s a part, through the platform | 50 MB | 146 s, parts of 105 s |
+| connection cut for 6 s at 900 MB | 3.0 GB | 13 s |
+
+Connection cut for good: the file is named as failed after 39 s and nothing has its name. Studio killed mid-file: what it had is removed at the next start.
+
+Indexing is unchanged: an archive gets its name, size and dates.
+
+### Notices: a page and a count of what needs you, and state marks in the chat list (#937)
+
+A chat that waits on the person, or whose reply ended while they were elsewhere, was not shown anywhere outside that chat. This adds one list of what needs the person, and everything that marks it reads that list.
+
+**What a person sees**
+
+- *Chat in the menu* counts the chats that need them: a pw code chat waiting for an approval, answer or plan review, or a reply that ended while the chat was not open in front of them. Amber where something waits, blue where there is only a reply to read. An open chat is not counted; one left unanswered counts again.
+- *The chat list* marks each chat's state with the Code page's own marks (`SessionMark`, `sessionRowState`): working, waiting on you, live and idle, ended, and new reply. Working and waiting chats are first, under Active, and the rest follow by date. A Studio assistant chat shows working while its reply is written.
+- *Notices*, the bell at the foot of the navigation and in the phone's bar, lists: waiting and unread chats, Code page sessions and Fleet agents waiting on them, delegated work that finished or failed, transfers that failed in the last day, and libraries whose index failed. Each has its time, a link, and Dismiss, and goes when it is dealt with. A session that is a chat's is one item, not two.
+
+**One source.** `GET /api/notices` is the Code page's listing plus the notices; `useCodeWaiting` counts from it. The seen and dismissed marks are kept per person in `INDEX_BASE/notices` (0600). Under sign-in each person gets only their own, and nobody signed in is refused.
+
+**Requests per minute**, a pw code chat open and idle, 3 minutes, same server:
+
+| | before | after |
+| --- | --- | --- |
+| Code page not shown (default pages) | 58.3 | 58.3 |
+| Code page shown | 60.3 | 58.0 |
+
+The read replaces the menu's read of the Code listing, and carries the Transfers summary, which is asked for half as often. Otherwise it goes when something happens in the page (a reply ends, pw code asks or is answered, the Code page's listing shows another wait, another tab says so).
+
+**Checked** on test Studios with a pw code daemon of their own, single-user and sign-in (two people), in Chromium and WebKit: a pw code chat waiting on an approval, left and answered; a reply ending with two tabs open, opened in one and cleared in both; a Studio assistant chat. Light and dark at 1440 and 390 px. Both web suites, the type check, go vet, and the Go packages touched.
+
+### Adding the Studio to pw code on a machine also allows its read-only tools there (#938)
+
+pw code asks before every call of an MCP server's tool, whatever its `readOnlyHint`, and in read-only mode refuses it. A session on a machine the Studio added itself to therefore stops on each library search, or searches with the shell instead.
+
+When the Studio adds itself to a machine (Set up for me, the Code page's Add, the tick as a session is continued), it now also allows its tools that only read in pw code's user settings there.
+
+- **What is allowed:** `chatReadTools` by name, of those the person is listed, and nothing that writes. Three of that list stay out because some arguments do more than read: `hpc_status` launches a workflow (`launch`), `agent_sites` starts a pw code daemon (`probe`), `pw_help` passes its words to the pw CLI, whose `ssh` runs them on a host. Names only: `mcp__studio__*` is not matched.
+- **The card lists the tools** before Add, and the result says how many run without asking or why none were allowed.
+- **A machine set up before** gets them on its next Check, and not before. The card hid Check once a session had reached the tools; it no longer does. The Code page has Check and Remove for a machine chosen to start on.
+- **Remove** takes the rules and this Studio's entry back, as the machine's owner. It leaves the person's other rules and servers, and refuses another Studio's entry. A rule for one of these tools that the person wrote themselves goes too, since the server it names is gone.
+- **The file:** pw code has no command for this, so an awk script edits `code.json` on the machine, under pw's lock where `flock` is there, atomically, keeping mode and every other byte. Its text is never sent to the Studio or put on a command line (it can hold other servers' keys). A file the script does not follow is left as it is. The setup still succeeds and says why.
+
+**Limit.** pw code sets saved rules aside on a turn from a remote origin (`decideInMode`, read in v7.139.0, not exercised here). So this covers turns typed on the machine. A relayed chat or PW Code on the web still asks, or refuses in read-only mode. The card and HELP say so.
+
+## Interactive test
+
+pw code v7.139.0 in its own TUI (tmux), on the development host with a scratch HOME made for the test, a test Studio on loopback behind a stand-in for the session proxy, and a local model. The workspace is the library folder, so find and grep could answer too. The only difference is the rules, written by the script the Studio runs. The server was added over HTTP, since a scratch HOME has no pw sign-in; pw ssh was not part of this.
+
+| | newest spreadsheet | largest folders |
+|---|---|---|
+| before, accept edits | waits at `search_kb`; a denial ended the turn with no answer. Approving each: 5 prompts, 4 of them studio calls | 1 prompt |
+| **after, accept edits** | 14 studio calls, **0 prompts, 0 denied** | 1 studio call, **0 prompts, 0 denied** |
+| before, read-only | 3 studio calls refused, then `ls`, `find`, `stat` | no studio call; `du` three times |
+| **after, read-only** | 6 studio calls, **0 prompts, 0 denied** | 1 studio call, **0 prompts, 0 denied**, then one `du` |
+| after Remove | | prompts again |
+
+One run of each. The two read-only "before" questions were in one session, so the second followed the first one's refusals. In accept edits a denial ended the turn; the shell fallback showed only in read-only mode.
+
+<details><summary>Tool calls from the transcripts</summary>
+
+Before, accept edits, denied:
+```
+find the newest spreadsheet in the library
+  search_kb {"name":"*.xlsx"}   -> The user doesn't want to proceed with this tool use.
+```
+Before, accept edits, each approved (the fourth prompt was the Bash call):
+```
+find the newest spreadsheet in the library
+  list_libraries {}
+  search_kb {"name":"*.xlsx"}
+  query_corpus {"canned":"newest","library":"kb","n":15}
+  Bash ls && stat ...
+  search_kb {"name":"*.xls*"}
+which folders are largest
+  query_corpus {"canned":"big_directories","n":20}
+```
+After, accept edits:
+```
+find the newest spreadsheet in the library
+  query_corpus {"canned":"newest","n":25}
+  search_kb {"limit":20,"name":"*.xlsx"}
+  search_kb {"limit":20,"name":"*.xls"}
+  list_kb_dir {"path":"data/runs"}
+  list_kb_dir {"path":"meetings"}
+  list_kb_dir {"path":"reports/2026"}
+  query_corpus {"canned":"newest","n":5,"subtree":"reports/2026"}
+  query_corpus {"canned":"newest","n":5,"subtree":"meetings"}
+  query_corpus {"canned":"newest","n":5,"subtree":"data/runs"}
+  query_corpus {"canned":"newest","n":5,"subtree":"reports/2025"}
+  query_corpus {"canned":"newest","n":30,"subtree":"meetings"}
+  query_corpus {"canned":"newest","n":10,"subtree":"data/runs"}
+  query_corpus {"canned":"oldest","n":5,"subtree":"data/runs"}
+  query_corpus {"canned":"newest","n":60,"subtree":"data/runs"}
+which folders are largest
+  query_corpus {"canned":"big_directories","n":25}
+```
+Before, read-only:
+```
+find the newest spreadsheet in the library
+  list_libraries {}                           -> not available in read-only mode
+  query_corpus {"canned":"newest","n":10}     -> not available in read-only mode
+  search_kb {"name":"*.xlsx", ...}            -> not available in read-only mode
+  Bash ls -la ...
+  Bash find ... -type f | sort && du -sh ...
+  Bash find ... -iname '*.xlsx' ...
+  Bash stat -c ...
+which folders are largest
+  Bash du -sh ... | sort -rh
+  Bash du -sh .../*/* | sort -rh
+  Bash du -sh $(find ... -type d) | sort -rh
+```
+After, read-only:
+```
+find the newest spreadsheet in the library
+  query_corpus {"canned":"newest","n":10}
+  search_kb {"name":"*.xlsx"}
+  query_corpus {"canned":"recent","days":30,"n":50}
+  search_kb {"name":"*.xls"}
+  search_kb {"name":"*.ods"}
+  read_kb_file {"path":"meetings/attendance.xlsx"}
+which folders are largest
+  query_corpus {"canned":"big_directories","n":10}
+  Bash du -ah . --max-depth=2 ...
+```
+</details>
+
+## Tests
+
+New tests: the list, the script on 18 settings files under gawk, mawk and busybox, setup, Check, Remove and their refusals, the card and the Code page. The script is also run against real pw (opt-in `STUDIO_PW_E2E=1`): pw still reads its settings after add and after remove. The Go chat package, both web suites and go vet pass.
+
+### fix(library): archives show in the tree, and what is still arriving is indexed nowhere (#940)
+
+**Archives.** The main library's tree left out `.zip`, `.tar`, `.gz`, `.tgz` and `.sif`, so a large archive uploaded there did not show. The list dates from the first commit ("opaque binaries: no preview, no extraction") and nothing in indexing or extraction uses it. Other binary files are listed, and libraries on other systems, search and the counts in Details already included archives. They are now ordinary files: listed, opened with no preview (64 KB of a 5 GB file is read to tell), downloaded, and part of **Download as zip**, whose size limit they now count towards. Compiled files (`.pyc`, `.so`, `.o`) stay out of the tree.
+
+**What is still arriving.** The folders a large upload or a transfer is written in (`.studio-upload-*`, `.studio-transfer-*`) could be indexed by a build or a sweep that ran meanwhile. `gufi_dir2index` skips exact names only, and these end in something random, so they are now taken out of the tree it just wrote, before anything reads it: in the main library's builds and sweeps, libraries here, libraries on other systems, bucket libraries, `indexer/reindex.sh` and the index workflow. They are also left out of the tree (with hidden files shown too), of listings and search results whoever built the index, of text extraction, and of a folder's copy.
+
+**Race in `TestLibraryFolderWritableByAccess`.** It is the test's: locations are probed side by side, and the tests' stand-in for a host counted its calls without a lock. The count is atomic, and the whole package passes under `-race`.
+
+Checked: each new test fails on main. 18 uploads, each indexed part way through, main and branch: a staging folder in the index after 15 and 0, listed or found 33 times and 0. Chromium and WebKit, light and dark, 1440 and 390 px.
+
+![The tree with archives in it, light and dark](https://github.com/parallelworks/activate-studio/blob/pr-shots/pr-940/tree.png?raw=true)
+
+### Code page: sessions open in the page, a start shows at once, one name with the chat (#941)
+
+Three things on the Code page and the pw code chats.
+
+**A start shows at once.** The page says "Starting on (machine), in (folder)", with the message, from the moment it is sent, then the seconds waited and what for, and the session opens live in the same place. Nothing waits on the platform's session listing any more: the create's answer says which chat was made and where its view is. A start that fails comes back to the message in its box, with the reason.
+
+Start to the first sign of it / the session open, in ms (two runs each, Chromium, own test Studios; "relay" adds 250 ms per request through the stand-in platform and 1200 ms per pw ssh):
+
+| Case | main | this PR |
+|---|---|---|
+| Single-user, this computer | 1213, 824 | 49 / 674, 41 / 645 |
+| Single-user, through ACTIVATE | 880, 1163 | 45 / 471, 38 / 486 |
+| Sign-in, the cluster, no added delay | 631, 602 | 23 / 408, 23 / 426 |
+| Sign-in, the cluster, relay | 1455, 1549 | 25 / 688, 30 / 700 |
+| Sign-in, another machine, no added delay | 439, 299 | 21 / 159, 24 / 178 |
+| Sign-in, another machine, relay | 1661, 1351 | 20 / 660, 29 / 677 |
+| Sign-in, listing 3 s behind, either machine | never opened (404) | as above |
+
+On main nothing shows before the session is open, so it has one number. What is left is the create itself (pw code, plus the relay's round trip: about 390 to 640 ms here) and the model's own reply. The "this PR" sign-in runs all had the listing 3 s behind. Continuing a session also uses the daemon found within the last minute, and its independent reads go together.
+
+**Opening a session stays on the Code page.** A row, a link (Fleet, Agents, a chat's note), Back and a reload open it in the page's pane beside the list, with the session view the chat uses. "Continue in a Studio chat" ("Open in its Studio chat" when it has one) over it, and in the row menu, is the one action that goes to the chat. A start stays there too. I chose the pane for a start because the session's chat is made either way, one click away. A session the Studio cannot show keeps its card, with why; an archived one shows its conversation.
+
+The pane's requests go through the chat view's proxy with the same route list, mode ceiling and logging, as the viewer: this Studio's own daemon only where it is the viewer's, else the platform with their credential. A session held by another person's chat is a 404, a cross-site write a 403, and nothing of a session no chat holds is kept.
+
+**One name.** The chat's title follows its session's name (listing, detail, feed, the Code page); renaming the chat renames the session, at the daemon or through ACTIVATE, as the viewer. The last change wins. Where a rename cannot reach the session, the chat keeps its name, the person is told why, and it goes with their next message, unless the session was renamed on its own side meanwhile, which then wins. Renaming another person's shared chat leaves their session's name. A session started with the Studio's instructions in its first message is named after the person's own words.
+
+Tests: Go for the pane's checks, names in both directions, the relay's rename route and the plan answer; the Code page suite for the pane, the start and its failure. Run on main, the five pane and continue tests and 12 of the Code page's fail, and the names tests do not compile there; that a failed start keeps its message holds on main too. Checked live in Chromium and WebKit, light and dark, 1440 and 390 px, single-user and sign-in. Two footer tests load their module before their own time starts, since they timed out on a busy computer.
+
+![1440 px: starting, and open](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-941/wide.png)
+![390 px: starting, open, the list, dark](https://raw.githubusercontent.com/parallelworks/activate-studio/pr-shots/pr-941/narrow.png)
+
+### The tools given without asking only read; their actions ask first (#942)
+
+The tools a pw code session may run without asking now only read, whatever arguments they are given. Each action three of them could take is a separate tool the user approves, or is refused.
+
+- **pw_help** runs `pw help` with a topic and nothing else.
+- **hpc_status** reads status. Launching a Status Monitor is **launch_status_monitor**, which waits for **Yes, allow this call** and runs with the person's own platform key.
+- **agent_sites** lists. Starting pw code on a site is **start_agent_daemon**, which also waits.
+- **agent_sessions** and **agent_status** reach a cluster's pw code only where it runs already, and say so where it does not.
+
+The handlers enforce this, not only the schemas. It applies to pw code chats, sessions the Studio starts, machines the Studio is added to, and the Studio assistant. The two new tools are never given to a pw code session or the RAG endpoint. Settings, Tools lists them.
+
+The list allowed on a machine is the full read-only list again, so the two lists match. A machine set up before gets the added rules at the next Add or Check.
+
+The earlier Node server refuses the same arguments; it has no replacement tools.
+
+**Tests.** Go: the pw commands each tool runs over a range of arguments, for a pw that logs its calls; the held tools refused when called directly, without the person's key, declined, answered twice or with bad arguments, and run once when approved; no tool on the read-only list asks first, and no pw code chat is given a held one. Node: the same refusals. Docs: HELP, REFERENCE, AGENTS, ARCHITECTURE, GO-PORT.
+
+### feat(library): make and edit text files (#934)
+
+Make and edit plain text files in the Library.
+
+- **New file…** is on a folder's right-click menu, in + Add, and in the arrow menu beside it. The name starts as `Untitled.md` with the part before the dot selected. A taken name is refused. The file opens ready to type.
+- **Edit** opens a UTF-8 text file of up to 1 MB in a monospace editor. Save shows the file again; Ctrl/Cmd+S saves and stays. Leaving with unsaved changes asks first. Line endings and a byte order mark are kept; a file with mixed line endings or other bytes says why it cannot be edited.
+- **Who may write** follows the Library's other edits. Where a library is read only, both are disabled with the reason.
+- **A save never overwrites a newer version.** It names the sha256 the file was opened at. On a conflict: Keep theirs, Save mine as a copy, Overwrite, or Keep editing. A file that has gone can be made again.
+- **Index:** the main library indexes as after an upload. A person's own library catches up by itself. The viewer says which.
+
+Server: `GET` and `PUT /api/kb/text` (Go only), in `kb/textedit.go`. The main library is written in place through `os.Root`, so a file keeps its owner, mode and labels. Libraries on a cluster use two new commands, `text` and `swap`, in the script that already runs there as the person: no link is followed, nothing outside the library is reached, and the checksum is compared in the same command that replaces the file. The upload code is not changed.
+
+Also fixes the viewer showing the old heading of a rewritten Markdown file when the new one has the same length.
+
+Tests: Go tests for the handlers, the commands (GNU) and the libraries; web tests for the editor, the conflict choices and leaving. The spaces security suite has a new `textedit` phase. Checked live in Chromium and WebKit, light and dark, at 1440 and 390 px, on a single-user Studio and on one with sign-in and a library on a cluster.
+
+## v1.203.34 (2026-11-24)
+
+### Library: between 761 and 1199 px the tree gives way to an open file (#931)
+
+Between 761 and 1044 px the desktop Library kept the tree at its full width (320 px by default) beside an open file, which left the file 196 to 479 px wide. The « button could collapse the tree, but nothing did it for you.
+
+**Fix.** From 761 to 1199 px, where the tree would leave an open file less than 480 px, the tree folds to its strip. » brings it back beside that file, and opening another file or « folds it again. The tree stays mounted while folded, so its open folders, scroll position and selection are kept, and the saved collapse setting is not changed. The check uses the measured width of the card and the tree's own width.
+
+**Why this option.**
+- Moving the single-column breakpoint up to 1044 px would end side by side in that range even with a narrow tree, and make the tree the whole page at 900 px.
+- Capping the tree's width cannot work at the low end: at 761 px the card is 521 px, so the tree would be about 40 px.
+- With the tree giving way, the file gets 480 to 763 px and the tree stays one click away.
+
+» puts the tree back beside the file, so the file is narrow again (196 px at 761 px) until it folds.
+
+**Tests.** Five in `web/test/narrowLayout.test.tsx`; four fail on main. The fifth guards 1100 px and 1200 px, where nothing changes. Both web suites pass (1,056 and 1,042) and tsc is clean.
+
+**Browsers.** Chromium and WebKit, light and dark, 26 widths from 390 to 1440 px, compared with main:
+- The Library's layout, with and without a file open, measures the same as main at 760 px and below and at 1045 px and up.
+- No horizontal page overflow and no page errors.
+- Also checked in both engines: resizing one page through the breakpoints, a tree 220 and 520 px wide, the browser's back button, and the tree's folders and scroll position.
+
+HELP.md, Getting around, describes it.
+
+### Accounts: keep an ACTIVATE key and an OpenAI-compatible endpoint side by side (#930)
+
+A person's own key lived in one slot: the `ade_mk` cookie, the key store's memory, and the one owner's vault entry each held either an ACTIVATE key or an endpoint. Saving an OpenAI-compatible endpoint under Settings, Accounts therefore replaced the ACTIVATE key, and the platform (remote libraries, pw code, workflows) then had no key for that person.
+
+## Change
+
+The key store keeps two slots per person. A key without a base URL is the ACTIVATE key, and a key with a base URL is the endpoint. Saving or removing one leaves the other. Clearing without `which` removes both, as before.
+
+- **Cookies:**
+  - `ade_mk` holds the ACTIVATE key, or the endpoint when there is no key (as earlier builds wrote and read it).
+  - Beside a key, the endpoint goes in `ade_me` and `ade_mep`. They are sealed the same way for the same subject and set with the same attributes (Max-Age, Path, HttpOnly, Secure, SameSite=None, Partitioned on the `p` twin).
+  - `ade_me` counts only beside the person's own key in `ade_mk`, and only when it holds an endpoint.
+  - Existing cookies are read as before.
+- **Vault (sign-in off):** the `single` entry keeps the ACTIVATE key and gains an optional sealed `endpoint` field. Earlier builds read the key.
+- **Which key is used:**
+  - Chat uses the endpoint, then the person's sign-in, then their ACTIVATE key.
+  - Platform work uses the sign-in, then the ACTIVATE key, never the endpoint. That covers `PersonalCred` (libraries, workflows, transfers, search), the viewer's `PlatformKey` and `KeyFor`, pw code tools, the MCP bridge and the tool options.
+  - Node is sent the ACTIVATE key.
+- **Viewer:** where Go keeps the keys, the viewer reads the key store instead of the cookies alone. So a key not kept in the browser counts for Accounts and workflows, as it already did for libraries.
+- **API:** `GET /api/me/model-key` adds `activate`, the ACTIVATE key's status. `POST /api/me/model-key/clear` and `DELETE /api/me/model-key` take `which` (`endpoint` or `activate`).
+- **Accounts:**
+  - Each row removes its own key.
+  - The "Saving one replaces..." notes show only where Node keeps the keys, which is left one-slot.
+  - In Model access, choosing ACTIVATE removes only the endpoint.
+  - Choosing a pw CLI context with `clearKey` keeps an endpoint stored beside the key.
+- **Docs:** HELP.md says both can be kept, and which one chat and the platform use.
+
+## Tests
+
+- **New Go tests:** `chat/twokeys_test.go`, `modelkeys/twokeys_test.go`, and two in `access/access_test.go`.
+  - The route tests fail on main: both keys kept, the cookie attributes, sign-in off, and the viewer reading the store.
+  - They also cover reading an old `ade_mk` that holds an endpoint, and what v1.203.32 reads after each change.
+  - The key cookies with a 1.2 KB token and a typical endpoint take 4,132 bytes of the Cookie header, of which `ade_me` and `ade_mep` add 735.
+- **New web tests:** `web/test/accountsTwoKeys.test.tsx`. Two of its three tests fail on main. The web suite passes 1,046.
+- **Go suite:** the changed packages pass. 30 tests in `extractfiles`, `gufi`, `index`, `libapi`, `libraries`, `search` and `userlibs` fail the same way on main on the test host, whose `gufi_query` cannot load `libllama.so.0`.
+- **spaces-security on a fresh bed:** phases setup, attacks, tokens, csrf, cache, access, revoke and mainlib gave 483 passed, 0 failed.
+- **Added two-key phase, 30 passed, 0 failed:**
+  - bob cannot read, replay or swap ada's `ade_me`. He gets his own key only, his chat never reaches her endpoint, and her cookies give nothing when signed out or with an expired token.
+  - pw ssh sessions carry her ACTIVATE key, and neither they nor the server log ever carry the endpoint key.
+  - Both keys come back from the cookies after a restart.
+  - Each removal leaves the other key, and removing both clears all four cookies.
+- **Rollback, 5 passed, 0 failed:** a v1.203.32 bed sharing the sealing secret reads the ACTIVATE key from both cookies, and the endpoint when it is alone. Rolling forward, the endpoint v1.203.32 saved wins over a stale `ade_me`.
+- **Screens:** Accounts in Chromium and WebKit, light and dark, at 1440, 900, 760, 720 and 390 px. Both keys are shown saved, each row has its own Remove, there is no "replaces" note, no overflow and no page errors.
+
+## v1.203.33 (2026-11-24)
+
+### Chat engine: a pw CLI sign-in made outside the Studio reaches open chat tabs (#928)
+
+An open chat tab kept pw code greyed after the pw CLI was signed in at a terminal, until an Accounts change or a reload.
+
+Causes:
+- The server kept the "pw code needs ACTIVATE" answer for a minute, and checked it against the chat's copy of the Studio's credential, which only the model, stream and RAG routes reread.
+- The page read /api/chat/engine again only on an Accounts change (or a menu open, which got the kept answer).
+
+Changes:
+- The kept answer is asked again when the Studio's ACTIVATE credential has changed since (HasActivate, a cheap read of the pw CLI's file), and a "needs ACTIVATE" check rereads the credential first.
+- The engine menu reads again when the tab is shown or focused, one read for both. No timer.
+- The new chat's model picker uses the answer the page has instead of reading on mount.
+- HELP.md: one sentence.
+
+Tests: TestATerminalSignInIsSeenByTheNextRead (Go), engineReread.test.tsx and a new case in pwcodeNewChatModel.test.tsx count the reads; each fails on main.
+
+### Below 761 px: the Library shows an open file, and the Settings strip shows it scrolls (#929)
+
+Two layout bugs at 760 px and below, open since v1.203.29.
+
+**Library: an open file was 0 px wide.** The 760 px rule set `.library` to a column, but the tree and the viewer sit in `.library-card`, which stayed a row with `overflow: hidden`. The tree took the full width and pushed the viewer past the card's edge. At that width the card is now a column, and the tree and the open file take the whole width in turn: the tree until a file opens, then the file under **Back to the list**. The browser's back button and **Library** in the bottom bar also return to the tree. The collapse button is not shown at that width, and a tree collapsed at a wider width shows anyway.
+
+**Settings: the section strip was cut off.** At 760 px and below the section rail is a strip that scrolls sideways with its scrollbar hidden. At 720 px it ended in "External acce" with no cue, and a section reached with Tab stayed out of view. The new `SectionStrip` shows a round arrow over each edge that has sections past it, and clicking it moves the strip along. A focused section is brought into view clear of the arrows, by moving only the strip. Help uses the same rail, so it gets the same arrows.
+
+HELP.md, Getting around, describes both.
+
+Tests: `web/test/narrowLayout.test.tsx` has 6 tests. 5 fail on main; the sixth checks that nothing changes above 760 px. Both web suites pass, and Go is unchanged.
+
+Checked in Chromium and WebKit, light and dark, at 25 widths from 390 to 1440 px, with steps around 760/761, 900, and 1200. At 760 px and below, the open file takes the full width, Back returns to the tree, and every Settings section is reachable with the arrows and with Tab. At 761 px and above, the layout is the same as before. There is no horizontal page overflow at any width.
+
+## v1.203.32 (2026-11-24)
+
+### Indexed text older than the file says so above it (#926)
+
+A workbook changed after it was indexed showed its old indexed text with no word that the file had changed since. The notes from #916 and #924 were computed only when the index had no text for the file.
+
+The Indexed text tab now checks the same things for text that is shown. On this computer it compares the index's entry for the file with the file's time. On another system it compares the library's last pass with the file's time. When the text is older, one quiet line above it says so:
+
+- This computer: "This text is from before the file changed on <date>. It updates at the next background sync (every 5 minutes), or at once with Sync now at the bottom of the navigation." A library built of a folder here names Rebuild in Settings, Indexing, Libraries. With the sync paused, the line says so.
+- Another system: "This text is from before the file changed on <date>. The library's last index pass was on <date>; rebuild the library to update it."
+- While that library is indexing: "...The library is indexing now; the new text appears here when that ends."
+
+Text that matches the file gets no line. HELP.md describes it.
+
+Tests: a kb route test, a search test and four web tests that fail without the change.
+
+Checked on a local test Studio with the main library and a library built of a folder, in Chromium and WebKit, light and dark, 1440 and 390 px:
+- Workbooks changed in place showed the line, and the background sync updated them by itself.
+- In the added library, #924's Rebuild wording showed for a new file.
+- Rebuild pressed in Settings, Indexing, Libraries went from the line to "indexing" to the new text.
+
+### Chat engine: one source on the page for what answers a chat, and the earlier turns in a switched chat (#927)
+
+Fixes from the v1.203.31 pass on #925.
+
+**N2, request loop.** On a Studio where pw code is not for the person, opening an old pw code chat that had no fallback reply yet made the browser read `/api/chat/engine` and the chat hundreds of times a second, and the message box flipped between the session's and the Studio's. Cause: `PWCodeEngine` marked the chat as the Studio assistant's from `/api/chat/engine` (`current`), while `useChatLink` marked it as pw code from the stored record (`engine`). Each mark fired `ade:chat-engine`, and each of the two listened for it and read again.
+
+- `web/src/chatEngine.ts` is now the one place on the page that says what answers a chat. It holds the answers from `/api/chat/engine` (one read in flight per chat), plus what a reply's stream or a switch said since.
+- The record's engine is shown only until the first answer arrives, and never written back. The parts subscribe with `useEngine`, and none of them reads the server again because the value changed. `ade:chat-engine` is gone.
+- Other effects that fetch on an engine or link change were checked:
+  - `useChatLink` rereads the record only on a new session or a finished reply.
+  - `PWCodeEngine` reads on open, at a reply's end, on a sign-in and on a tools fallback.
+  - `NewChatModel` takes the model from the store instead of its own read on each mount.
+  - `PWCodeWatcher` reads on mount and never sets the engine.
+- A test counts the reads while such a chat is open. Today's code makes 42 or more in 0.6 s; it now makes 1.
+
+**N3.** The note opening a continued chat says "Messages you send here go to that session." only while pw code answers. While the Studio assistant does, it says "The Studio assistant answers this chat now, so messages you send here do not go to that session." The stored note is not changed; the sentence follows the engine as it is drawn.
+
+**N4.** A link in a chat message to a place in the Studio (`#view=`, `#open=`, `#chat=`) opens in this tab, as it always did. It no longer has `target=_blank` or "(opens in a new tab)". Other links are unchanged. The links in the fallback note and the continued note are underlined.
+
+**P2, rest.** While a chat switched to pw code shows its session, the turns the session was given as carried over are drawn from the chat's saved record, where they came:
+- everything before the switch goes above the session's first message;
+- the Studio assistant's turns since pw code's last reply go before the message they came with.
+
+Each block is headed "Earlier in this chat" in the engine labels' quiet type, and its Studio assistant replies read "Studio assistant · model". They are drawn only, never sent to pw code again.
+
+Tests (each fails on main): `engineOneSource.test.tsx` (request count), `chatLinks.test.tsx` (N3, N4), and `engineFallback.test.tsx` (earlier turns). `updateFooter.test.tsx` failed once under load: it waits for the polls instead of timing them.
+
+Checked on test Studios of my own:
+- **No ACTIVATE, stub model, seeded old direct and relayed pw code chats:**
+  - 12 s open: 1 engine read and 1 chat read, and the message box stays the Studio's.
+  - A message falls back, with no "conflict".
+  - The relayed chat's line says the session on its machine keeps running.
+  - The continued line follows the engine.
+  - The link has no new-tab target and is underlined.
+  - Chromium and WebKit, light and dark, 1440 and 390 px, no overflow.
+- **With pw code:** an old Studio assistant chat switched to pw code shows its earlier turns live and after a reload, in the same browsers, themes and widths.
+
+## v1.203.31 (2026-11-24)
+
+### fix(chat): a library's name at the front of a path is not a folder, on every Studio (#922)
+
+On a Studio one person uses, asking the chat to write a file "into my library under notes" wrote `My library/notes/<name>.md` and made a folder named "My library" inside My library.
+
+**Cause.** `splitNamed` (`chat/where.go`) takes a library's name off the front of a path only when the person has a space of their own. A Studio without sign-in also names its main library My library, and a signed-in person without a space sees it as Shared library (or its given name), so those names were kept as folders. The read tools' `libraryFromPath` and the move and copy destination (`destIn`) had the same gate. delete_kb_files and suggest_labels never took a name off.
+
+**Change.**
+- `libraryNameAt` is the library a path's first part names. Where the person has a space it is any of their libraries, as before. On every other Studio it is the main library, by its label ("My library", "Shared library" or the name it was given) or by "my library" in any case where nobody signs in.
+- `splitNamed`, `libraryFromPath` and `destIn` use it on every Studio. That covers write_kb_file (with `source`), edit_kb_file, move, rename, copy, read_kb_file, read_original, list_kb_dir, show_in_viewer and now apply_labels.
+- A folder with that name at the top of the library is kept as a folder, and the path is left whole. `place.folderAt` checks the main library and spaces.
+- delete_kb_files: the main library's name is taken off its paths before the approval card lists them (`mainPathsIn`, in `Prepare`). A direct call takes it off in the executor. An approved call is not stripped again, so it deletes what the card listed. suggest_labels takes it off its `dir` in the main library.
+
+**Tests** (`chat/libraryname_test.go`, each fails on main):
+- Single-user Studio: write, edit, copy, move, rename, read and delete with `My library/` and `my library/` paths. No "My library" folder is made, and the delete card lists the path in the library.
+- Single-user Studio with a given name: both that name and "My library" are taken off.
+- Real folder: a top folder named "My library" in the main library, and one in a person's space, is used as a folder.
+- Studio with sign-in, person without a space: "Team library/..." is a path in the shared library.
+
+On a local test Studio with no sign-in, write, copy, move and read through the Studio's MCP endpoint with `My library/` paths put the files under `notes/` and `archive/`. The Library tree shows no "My library" folder in light and dark at 1440 and 390 px. HELP.md, "Where the assistant writes", says this holds on every Studio. Web suite 1020 passed; Go `internal/chat`, `internal/server` and `internal/kb` passed.
+
+### Indexed text says when a local library's index has not caught up with a file (#924)
+
+In the main library, or a library built of a folder on this computer, a file copied in outside the Studio showed "No text is stored in the index for this file." until the next sync. The notes added in #916 covered only libraries on another system.
+
+The file view now looks the file up in its folder's db.db in the library's index:
+
+- No entry, or an entry older than the file: "Added or changed since the library's last index pass. The background sync, every 5 minutes, adds its text; Sync now at the bottom of the navigation adds it at once." A library built here names Rebuild in Settings, Indexing, Libraries. With the sync paused, the note says so.
+- While a build or sync of the library runs, or one is waiting: "Not indexed yet. The library is indexing now..."
+- No index at all yet: "This library has no index yet. Build index in Settings, Indexing, Building adds its text."
+- In the index as it is, with no text: "No text is stored", as before.
+
+Files in folders the index passes over (dot folders, node_modules) get no note. HELP.md describes the notes.
+
+Syncing is unchanged. The main library and libraries built here already sync on the background interval (5 minutes by default). Each sync compares each folder's latest time with the last pass.
+
+Tests: a kb route test and three web tests that fail without the change. Checked on a local test Studio. A workbook copied in with `cp -p` (keeping its older date) and one with plain `cp` both showed the note. The background sync added their text 4 min 43 s later. In a library built here, Rebuild showed "Not indexed yet" and then the text. Light and dark, 1440 and 390 px.
+
+### Chat engine: the Studio assistant answers for a person pw code is not for; the chat shows only what they typed (#925)
+
+Follow-up to #920.
+
+**The Studio assistant answers when pw code is not for this person.** Before this change, a chat pw code had answered (or a new chat whose last choice, or the deployment's setting, was pw code) refused every message with the sign-in error for someone who cannot use pw code here. That covers no ACTIVATE sign-in of their own, being signed out since, `STUDIO_HOME_CLUSTER` missing, pw code not set up, or a Studio of one without ACTIVATE. The chat stayed stuck until they switched it in the menu.
+
+- `engineState` now separates "pw code is not for this viewer here" (`barred`) from "pw code is down or failing". When the chat's engine is pw code and the viewer is barred, `current` is the Studio assistant and `default` is the Studio assistant for them. The menu and the send path still come from this one rule.
+- A message that names no engine is answered by the Studio assistant. The stream sends `engine_fallback`, and the Studio stores one note after the reply, before `done`. The note reads "pw code is not available to you here, so the Studio assistant answered. Sign in with ACTIVATE under Settings, Accounts to switch back.", and the link opens the ACTIVATE row. For a relayed chat it adds that the session on that machine keeps running and does not see the reply. pw code is not shown this note when it takes the chat back.
+- **Stored engine: `studio`, written once the Studio assistant's reply is stored.** Why:
+  - It is what any switch does, and what the tools fallback already does.
+  - The reply labels and the session view follow it.
+  - The note is said once, not on every reply.
+  - pw code does not take the chat back silently after a sign-in. The person switches back in the menu, and pw code then gets the turns it missed.
+  - If the Studio assistant cannot answer either (no model credential), the engine stays pw code.
+- A message whose `engine` is `pwcode` is still refused, as is a switch (PUT) to pw code. So is a pw code chat whose pw code is down, did not start, or failed.
+- **What the client sends:** the web client sends no `engine`, only `newChatEngine` (the last choice), and a pick is the PUT. That has been true since #920, so the server can tell a pick from a default. The menu's read now also sets what the open chat shows, so a barred person's old pw code chat shows its own thread and its message goes through the Studio, not straight to the session.
+- On a Studio of one, `localPWCodeRefused` (no ACTIVATE) is now part of the availability check, so it falls back the same way.
+- **`chatEngine: pwcode`:** Settings labels it "pw code", and HELP and the Settings text say each session runs as its person through their own ACTIVATE sign-in. A person who cannot use pw code therefore starts new chats on the Studio assistant, with the note.
+
+**The chat no longer shows the carried-over turns as the person's message.** When a chat is switched to pw code, the session is sent the turns it missed before the person's message. The chat's session view draws the session's transcript, so the person's bubble held all of it. `pwcode/carried.ts` now draws each user message as the person typed it, both live and from the stored record shown on a reload, and also in the composer's history.
+
+**Old long model notes are read the short way.** A pw code link stored by an earlier build with the long note ("pw code's own model, X, is not enabled for your AI connection, so this chat runs on Y, ...") is rewritten when it is read: "Runs on y because x is not enabled for you. Choose another under Settings, External access, pw code model." `modelFrom` is filled in, so the full ids show on hover. Stored chats are not migrated.
+
+Tests (each fails on main):
+- Go `engine_fallback_test.go`, the fallback cases:
+  - a chat pw code answered, signed in without ACTIVATE;
+  - a new chat whose last choice was pw code;
+  - the deployment setting;
+  - a relayed chat's note;
+  - a Studio of one without ACTIVATE.
+- Go `engine_fallback_test.go`, the cases that must not change:
+  - an explicit pick of pw code is still an error;
+  - pw code being down is still an error;
+  - a person signed in with ACTIVATE still goes to pw code;
+  - the note is not passed on to pw code.
+- `TestPWCodeIsNeverTheStudiosOwnForAPersonWithoutActivate` covers an ordinary (non-relayed) chat: the Studio's own pw code and key are never used for a person without ACTIVATE.
+- Go `modelnote_test.go`: each old note form.
+- Web `engineFallback.test.tsx`:
+  - no `engine` in the request;
+  - the chat is re-read for the note once the reply ends;
+  - the menu's read sets what the chat shows;
+  - a transcript and a stored record are drawn with only what was typed.
+
+Checked on a test Studio with sign-in (a test identity and a stub model endpoint): the menu and the note in light and dark, at 1440 and 390 px. Checked on a single-user test Studio with this host's pw code: an old Studio assistant chat switched to pw code shows only the typed message, live and after a reload.
+
+### Settings: Accounts opens at the top, and each Save reports only its own result (#923)
+
+Two Settings fixes for v1.203.31.
+
+- **Settings, Accounts opens at the top.** The Claude Code account list brought its highlighted account into view whenever the highlight moved, also on load: when the full account list replaced the names, the start row moved to the first account that can be chosen, and with the row already open that scrolled the page down to the list. The list now keeps the highlight without scrolling until focus is in it. Keys still move through it and scroll it, and a link to a row still opens and scrolls to that row. The other `scrollIntoView` calls in Settings run only after a link or the person's own action, and are unchanged.
+- **Each Save reports its own result.** Tabs with several Save rows (External access and Indexing) shared one note and one busy state, so one Save showed "Saved." beside every row. Each row now shows its own note and spinner; the others wait while it saves. The other Settings sections already keep their notes apart, or use notices.
+
+HELP.md says the Accounts page opens at its top.
+
+**Tests**
+- `pwcodeSessionAccounts.test.tsx`: nothing scrolls on load or when the pointer moves; a key in the focused list moves the highlight and scrolls it. It fails without the fix.
+- `settingsLocked.test.tsx`: one Save shows "Saved." beside that row only, and the next Save moves it. It fails without the fix.
+- Web suites: 1022 and 1008 passed. Go is unchanged.
+- In Chromium and WebKit at 1440 and 390 px, light and dark, with the account list stubbed: before, the list scrolled itself on load (and the page with a short window); after, nothing scrolls and the endpoint row is in view. External access: before, "Saved." on every row; after, on the pressed row only. No horizontal overflow.
+- `nextUpOpen.test.tsx` now waits for the composer's placeholder, which an effect sets after the chips are drawn. The test had failed on CI here and once on main. No other test in `web/test` reads such a value straight after a `findBy` query.
+
+## v1.203.30 (2026-11-24)
+
+### feat(accounts): each account is a row that opens, none ahead of another (#915)
+
+Settings, Accounts led with ACTIVATE, fully open: the "What it turns on" table, the sign-in methods and the Sign in button. Someone using the Studio on its own scrolled past all of it to reach the OpenAI-compatible endpoint. Each account is now one row with the same weight as the others: its name, one line on what it adds, its state on the right (Saved / Not saved, Signed in / Not signed in, or the number of Claude Code accounts) and a chevron. A click, or Enter, opens it.
+
+**Order (fixed):** OpenAI-compatible endpoint, ACTIVATE, Claude Code accounts. Each row comes before the rows that build on it: the endpoint needs nothing else, ACTIVATE adds the platform, and Claude Code accounts are only for pw code, which runs through ACTIVATE. This doesn't rank them by recommendation, and the order doesn't change with state. The intro sentence ("The Studio works without any of them") stays.
+
+**Which rows start open:** an account in use starts open (ACTIVATE signed in by any means, an endpoint saved, at least one Claude Code account). The others start closed, so with none in use the page is a list of options. With AI features off, ACTIVATE is the only account on the page, so it starts open. Each row's starting state is decided once, when its state is first known, and after that the row stays as the person leaves it. Saving an endpoint or signing in doesn't fold anything away.
+
+On "only way in" for a Studio running on ACTIVATE: the app has no separate hosted flag for this page. `cfg.platform` means the viewer has a credential, and `single`/`authEnabled` say whether people sign in. A hosted Studio still offers a personal endpoint, so ACTIVATE is only the sole way in when AI features are off, and that is the rule used. No new flag.
+
+**Inside the ACTIVATE row:** who you're signed in as, the "What it turns on" table, How you sign in, and Subscriptions. The collapsed line reads "Adds pw code, workflows, desktops, ACTIVATE systems and models." (no "Recommended"; without "and models" when AI features are off).
+
+**Deep links:** `#view=settings:accounts?open=endpoint|activate|claude-code` opens that row and scrolls to it, on arrival, on a later hash change, or when the same link is used again (`accountsHref`, `openAccounts` in `web/src/accounts.ts`).
+- These open the ACTIVATE row: Sign in with ACTIVATE to use this (NeedsActivate, used by Workflows, Code, desktops, Fleet, My library and spaces), the pw ssh prompt, the status panel's Platform line, the chat engine menu, the first-visit card, Settings, Workflows, setup, and Model access's expired-token note.
+- These open the endpoint row: Model access ("Add an endpoint under Accounts") and the chat model picker's add-a-provider link.
+- "Use as an endpoint" on the ACTIVATE key form opens and scrolls to the endpoint row.
+
+**Semantics:** as in the Status panel's cards, an `h2` holds a `button` with `aria-expanded` and `aria-controls`. The button is named for the account and described by its line and state. The panel is `DisclosurePanel` from @parallelworks/ui, kept mounted, so a half-filled form survives closing. @parallelworks/ui has no accordion. Its `Disclosure` puts the toggle inside the summary, with no room for the heading, so the Status panel's pattern is used instead.
+
+**Tests:** new tests in `accounts.test.tsx` cover:
+- the starting state: none in use, signed in, AI features off;
+- that the order and the open rows hold when state changes;
+- the deep link on arrival, through hashchange, and repeated through `openAccounts`;
+- `accountInHash`.
+
+`accountsSlot.test.tsx` covers the Claude Code row's count, open state and toggle. Tests that pinned the old address now expect `?open=activate`. Full web suite: 998 passed. HELP.md (Accounts) and REFERENCE.md describe the rows and the addresses. The README doesn't describe this page's layout, so it is unchanged.
+
+Checked in a local Studio built from this branch at 1440, 900 and 390 px, in light and dark, in three states: signed out with no endpoint, an endpoint saved, and signed in with a test ACTIVATE key. The page never scrolls sideways. The Claude Code row needs pw code to be available, which the isolated test Studio doesn't have, so its row is covered by the tests only.
+
+| Before | After |
+|---|---|
+| ![](https://github.com/parallelworks/activate-studio/blob/screenshots/accounts-rows/before-1440-light.png?raw=true) | ![](https://github.com/parallelworks/activate-studio/blob/screenshots/accounts-rows/signedout-1440-light.png?raw=true) |
+| ![](https://github.com/parallelworks/activate-studio/blob/screenshots/accounts-rows/before-390-dark.png?raw=true) | ![](https://github.com/parallelworks/activate-studio/blob/screenshots/accounts-rows/signedout-390-dark.png?raw=true) |
+
+| Endpoint saved, 900 dark | Signed in, 1440 dark |
+|---|---|
+| ![](https://github.com/parallelworks/activate-studio/blob/screenshots/accounts-rows/endpoint-900-dark.png?raw=true) | ![](https://github.com/parallelworks/activate-studio/blob/screenshots/accounts-rows/signedin-1440-dark.png?raw=true) |
+
+### Code page: offer the Studio's tools only on a machine that is online (#917)
+
+The Code page offered to add this Studio's tools to pw code on a cluster that was not connected. `bridgeCheck` checked that the person was signed in, the machine's kind (not a local computer; cloud, instance or existing), that its name and owner can be given to pw ssh, that a cloud or instance machine is theirs, and that they have their own ACTIVATE credential. It did not check whether the machine was on or whether its pw code was connected.
+
+## Server (`chat/mcpsetup.go`)
+
+- `bridgeMach` now carries the machine's `status` from the platform's pw code listing, the same listing the Code page uses. A machine is online when that status is `connected`.
+- A machine that is not online is never `offer`. `/api/mcp/bridge/machines`, the chat's setup card and the Continue in Studio tick all get `unavailable`, with the reason "<machine> is not connected. Start it, then add the tools."
+- A machine that is already set up stays `set` while it is off, but it is not offered for setup again.
+- Setup, from the Code page or a chat, refuses a machine that is not online with that same reason, before it opens pw ssh.
+
+## Code page
+
+- The offer shows only for a machine the page's own machine list shows as connected.
+- When a machine is chosen to start a session on, the offer is for that machine only.
+- Add on a machine that dropped offline since the offer showed gives the reason above and makes no request.
+
+## Tests
+
+- Go, `mcponline_test.go`: one machine online, one stopped, and one running without pw code connected. Covers the offer, setup by machine and by chat without pw ssh, and a machine that is set up while it is off. Two of these tests fail on main. The offer test was not run against main.
+- Web, `codePage.test.tsx`: offline machines get no offer, only the chosen machine is offered, and the not-connected reason is shown. The first two fail on main.
+- Ran the web suite (995 passed) and the Go internal suite. Six `userlibs` tests fail locally because this machine's `/opt/gufi/bin/gufi_query` cannot load `libllama.so.0`; this change does not touch userlibs, and CI runs them.
+- Looked at the Code page on a local test Studio with example machines, in light and dark, at 1440 and 390 px: only the online machine is offered.
+
+`docs/HELP.md` is updated.
+
+### fix(chat): a written file is one chip that opens it, not a message to send (#918)
+
+A turn that wrote a document as `.md` and then as `.pdf` showed two chips above the composer, "Open <path>.md in the library" and "Open <path>.pdf in the library". Clicking one put that text in the message box, so opening the file took a turn of the agent.
+
+**Server** (`chat/opensuggest.go`, `chat/suggest.go`):
+- The files a turn wrote (write_kb_file and edit_kb_file calls that did not fail) are suggestions with `kind: "open"`, `path`, `lib`, `title`, and `also` (the other formats) or `folder: true`. The old text suggestion is gone.
+- The files and their library come from the links in the call's result (`#open=file:<path>&lib=<id>`, as #897 writes them), or else from the call's `path` and `also`.
+- One chip per document: files in one library that share a folder and a stem are one chip. It opens the PDF, then the Word file, then the first one written. A path written and then edited is one chip too.
+- The label is the file name. The title is "Open reports/q3.pdf in My library. Also written as q3.md" ("in the Library" where there is one library). `show_in_viewer` builds its "Open <name> in the Library" from the same helper.
+- At most two open chips. When more documents were written, the second is "Open the N files written", which opens the folder that holds them. The other suggestions are unchanged and come first.
+
+**Web** (`NextUp.tsx`, `Viewer.tsx`, `styles.css`):
+- An open chip shows a file or folder icon, the name cut in the middle when long (the extension stays visible), and the other formats as "+md". A click sets the viewer's hash and switches to the file's library; it sends no message. The placeholder and Tab take only the text suggestions.
+- The chips are placed again when the composer changes size. At 390 px, a long placeholder that wrapped had pushed the box up into the chip rows.
+- The viewer shows a folder opened by link as a folder, which the tree has expanded, rather than "Cannot open this file: path is a directory".
+
+**Docs**: HELP.md, chat section, describes the chips.
+
+**Tests** (each fails on main):
+- `chat/opensuggest_test.go`: .md then .pdf in one turn is one chip opening the PDF; `also` with docx plus an edit of the same path is one chip opening the docx, and a failed write gives none; a file in My library carries its library id and title; five documents give one chip and a folder chip, with the retry suggestion kept.
+- `web/test/nextUpOpen.test.tsx`: a click opens the file and leaves the message box empty; the placeholder is the text suggestion; a chip in another library switches to it, and a main-library chip switches back to the main one; the folder chip; middle cut of a long name.
+
+Checked on a local test Studio, in a Studio assistant chat and a pw code chat, light and dark, at 1440 and 390 px: the chips fit with no page scroll, a click opens the PDF in the viewer with no request to the chat, and the folder chip opens the folder in the tree. Web suite 996 passed; Go `internal/chat` and `internal/server` passed (other local Go failures are the missing GUFI library on this host).
+
+### feat(pwcode): a deployment setting for Claude Code accounts, off where shared (#919)
+
+Some Studios serve people who cannot use Anthropic, yet Settings, Accounts offered Claude Code accounts wherever pw code ran. This adds a deployment setting, `claudeCodeAccounts` (env `CLAUDE_CODE_ACCOUNTS`), with the values `auto` (the default), `on` and `off`.
+
+**Default (`auto`)**
+- On for a single-user install: no sign-in and no `PW_PLATFORM_HOST` (`settings.PersonalInstall`). That covers the Mac and Linux apps and a clone.
+- Off where people sign in or ACTIVATE deployed the Studio. The hosted workflow sets `PW_PLATFORM_HOST`, so it is off in both the workflow's single-user posture and its sign-in postures.
+- **Nobody loses access silently.** When the Studio first reaches someone's pw code (`/api/chat/pwcode/here`, which Settings, the Code page and chats already call), it asks that daemon for `GET /v1/claude-code/accounts`. If the answer has any accounts, it records that person in `claude-code-in-use.json` beside the index, and they keep Claude Code from then on, across restarts. It asks at most once every 10 minutes for someone not yet recorded. This is per person, not Studio-wide, so one person's accounts turn nothing on for anyone else. An explicit `off` holds for everyone, including people already recorded.
+
+**Who controls it.** The deployment, through the env var. In Settings, External access, **Claude Code accounts** offers Automatic, On and Off, and a saved choice wins over the env var. Today any signed-in person can save Settings on a shared Studio. So on a Studio with sign-in, only administrators can change this one value, using the same rule as the main library: `mainlib.Admin`, which covers `PW_USER` and `STUDIO_ADMINS`. Anyone else gets 403. The same value sent back with the rest of the form is accepted, so other settings still save. For everyone else the field is disabled and says why. The setting shows where the pw code settings already show (under ACTIVATE, or with the chat engine set to pw code). No new mechanism: an env default with a Settings override, as the other deployment settings work, plus the main library's admin rule.
+
+**When it is off for someone**
+- Settings, Accounts shows no Claude Code accounts row (`/here` answers `claudeCode: false` with the reason).
+- Every machine record the Studio hands `@parallelworks/code` says `claudeCodeAllowed: false`: the direct machine, relayed machines, and the Code page's listing from the platform. The package then offers no Claude models and no account panel in the new pw code chat picker (`NewChatModel`), the session view (`AgentModelControls`), or the Code page start (`CodeStart`). None of those files changed.
+- The Code page's `claude-code/models` and `/accounts` answer `[]`.
+- **The server refuses, not only hides (403):**
+  - the account routes;
+  - a session's `GET claude-code/accounts`;
+  - `PATCH settings` or `/model` to a `claude-code/` model, and `/claude-code`;
+  - a session start with such a model or a `claudeAccount`. This is checked in `pwcode.CreateSession`, which chat, the Studio's own sessions, delegation and Fleet all go through, and in the Code page's create.
+
+  A session that pw code starts on a Claude model **by its own default** is archived and refused, with a message that names the model to change.
+
+**What the Studio can't hide:** a session that already ran on a `claude-code/` model before the setting went off still shows the package's account chip (`claudeAccountChip` keys on the model). Its panel and any change of account or model are then refused by the server. The chip itself is drawn by `web/src/pwcode/session/AccountPanel.tsx`, which studio-code-continue owns, so I left it alone.
+
+**Workflow:** `deploy/workflow.yaml` needs no change, since the default is already off there. If a launch-time choice is wanted, the change would be:
+- add a `model_settings.claude_code_accounts` dropdown (auto/on/off);
+- add `echo "export CLAUDE_CODE_ACCOUNTS=${...}" >> ${SCRIPT}` beside the `REQUIRE_PERSONAL_KEY` lines;
+- pass `${CLAUDE_CODE_ACCOUNTS:+--env CLAUDE_CODE_ACCOUNTS="${CLAUDE_CODE_ACCOUNTS}"}` at both container launches, next to `REQUIRE_PERSONAL_KEY`.
+
+No live workflow was touched.
+
+**Tests**
+- Go: `pwcode/claudecode_test.go` covers modes, the in-use record surviving a restart, the 10-minute throttle, refusal before pw code is asked, and the archived default-model session. `chat/claudecode_test.go` covers `/here`, machine records and account routes, for an explicit off and for a deployed Studio with and without accounts. `core` covers the admin rule, validation and the env default. The golden `effective.golden.json` gains the new key.
+- Web: the Accounts row hides when off, and the field is disabled for non-admins.
+- Full web suite: 1000 passed. Go: the touched packages pass. The GUFI-dependent packages fail the same way locally with or without this change, because this machine has no GUFI build. CI has one.
+
+Docs: CUSTOMIZATION.md (Chat), HELP.md (Accounts), REFERENCE.md and GO-PORT.md's env list.
+
+Builds on #915 (merged): the Claude Code accounts row it hides is the new collapsed row.
+
+| Settings, External access, 1440 light | 390 dark |
+|---|---|
+| ![](https://github.com/parallelworks/activate-studio/blob/screenshots/claude-code-setting/cc-setting-1440-light.png?raw=true) | ![](https://github.com/parallelworks/activate-studio/blob/screenshots/claude-code-setting/cc-setting-390-dark.png?raw=true) |
+
+### My library: a pw code chat's files are indexed; Indexed text says when the index has not caught up (#916)
+
+**Cause.** A pw code chat on a Studio with per-user spaces works in the person's space (My library). pw code's own tools (its shell, its file writes) write there directly on disk, and nothing told the space's index. A workbook a chat made therefore had only its name in the index, and the viewer's Indexed text tab said "No text is stored in the index for this file" until the library was rebuilt by hand. Writes through the Studio's own tools, the Library and transfers already queue the space's build.
+
+**Fix.**
+- When a pw code turn ends and it ran any of pw code's own tools that may change files (anything but its read, search and list tools), and the session's folder is in the person's space, the space's build is queued, as after a write from the Library. The index catches up about 20 seconds later.
+- When a file of a library on a remote computer has no text in the index, `/api/kb/file` now says why when the index is the reason. `index.state` is `indexing` while a build runs or waits to start, and `newer` (with `indexedAt`) for a file changed after the last pass.
+- The Indexed text tab shows "Not indexed yet. The library is indexing now..." or "Added or changed after the library's last index pass on <date>. Rebuild the library to add its text." "No text is stored" stays for a file that was indexed and has none.
+- HELP.md describes both.
+
+**Ruled out.**
+- A build at "Meaning on documents" stores an .xlsx's text in a space build. The text pass gets the same arguments at both meaning depths, and a test bed confirmed it.
+- My library and All libraries read the file through the same route and give the same answer.
+
+**Tests**, each failing without the fix:
+- `TestAPWCodeTurnInMySpaceHasItIndexed`: a turn that runs a shell command or writes in the space queues its build. One that only reads, or uses only Studio tools, does not. A folder outside the space, or on another cluster, is not taken for it.
+- `TestAFileWithoutIndexedTextSaysWhy`
+- `web/test/viewerIndexNote.test.tsx`
+
+**Checks.**
+- `go test ./...` fails only in the GUFI packages that fail the same way on main on this host. Vitest passes 995 of 995.
+- On a test Studio with sign-in and a space, at "Meaning on documents": an uploaded workbook and one already on disk had their text after the next pass. One put on disk after it showed the new note, and its text arrived after the next queued pass. The viewer was checked in light and dark at 1440 and 390 px.
+
+### Chat engine menu: judge the chat it is in, and keep each chat's engine (#920)
+
+The chat bar's engine menu judged every chat as a new one, and a chat's engine lived only in one browser.
+
+- The menu reads `/api/chat/engine?conversation=` and judges the chat by the rule its messages are sent by, so a relayed chat is no longer called unavailable when this Studio's own pw code is. It marks the chat's engine as current and "default" only on what a new chat starts with.
+- The server keeps each chat's engine: the one that answered last, or the one the person switched to (`PUT .../engine`, refused while a reply runs). Old chats take it from their last reply.
+- A sign-in clears the minute-long "pw code offered" answer, and other tabs are told.
+- After a Studio assistant reply, the next pw code message goes through the Studio rather than the session's own view, so the session gets the turns it missed. Replies in a mixed chat name their engine.
+- A relayed session's tools: the menu says what can be known (the platform does not pass a session's MCP state on) and offers a new session on that machine with the chat carried over.
+- The model note is two short sentences with short names, a link to the setting and the full ids on hover.
+
+Tested: Go and web suites; a new test for each fix fails without it. Live on a test Studio: switching both ways on a new chat and a relayed one, a clean browser, the new session through the platform, and the menu in light and dark at 1440 and 390 px.
+
+### Settings and configuration routes need an administrator on a Studio with sign-in (#921)
+
+Settings and configuration routes need an administrator on a Studio with sign-in.
+
+On a Studio with sign-in, the Studio's settings and the routes that change its configuration now need one of its administrators, the same as for the main library: `PW_USER` and `STUDIO_ADMINS`. Anyone else gets 403 with the reason. A Studio without sign-in is unchanged.
+
+- **`PUT /api/settings`:** the server compares the effective settings before and after the request.
+  - Any change by someone who isn't an administrator is refused whole, and nothing is saved.
+  - A request that changes nothing is accepted and writes nothing, so forms sent back as they stand keep working.
+  - The `claudeCodeAccounts` check from #919 is now part of this rule.
+- **Skills, personas and the model endpoint:** new skills and personas, and starting or stopping the model endpoint, need an administrator.
+- **Custom tools:** a custom tool runs only as an administrator last saved it. The save keeps a digest of the list. On an existing Studio with sign-in, custom tools wait until an administrator saves Settings once, and Settings says so.
+- **Web:**
+  - Settings shows the Studio's settings read only, with the reason.
+  - A person's browser theme and sidebar width stay theirs, in their browser.
+  - `GET /api/settings` carries `locked`, and `GET /api/config` carries `settingsLocked`.
+
+**Tests**
+- Go tests in `core`, `chat` and `ragendpoint` cover: refused for a signed-in non-administrator and for anonymous; accepted for the owner and `STUDIO_ADMINS`; unchanged without sign-in; custom tools at run time.
+- Web: `settingsLocked.test.tsx`. Full web suite: 1013 passed.
+- Spaces security suite, new `settingsadmin` phase on a fresh bed: 115 passed, 0 failed, with and without `AUTH_REQUIRED=1`.
+
+Docs: HELP.md, ACCESS-CONTROL.md, MULTI-USER.md, CUSTOMIZATION.md, DEPLOY.md and REFERENCE.md.
+
+## v1.203.29 (2026-11-24)
+
+### fix(chat): a Studio assistant reply runs on when its page closes; a reopened chat follows it, and Stop ends it (#907)
+
+Closing the browser tab, reloading or losing the connection used to end a Studio assistant reply: the reply ran on the request's own context, so the Studio cancelled it ("chat stream failed: context canceled"). A long workbook write was lost halfway. pw code chats already keep running past the page; the Studio's own assistant now does too.
+
+**Server** (`server-go/internal/chat/liveturn.go`)
+
+- A reply in a conversation runs on a context that outlives its request, for up to two hours.
+- While the page is open, the request writes the reply's events as before. When the page goes, the request returns and the reply carries on.
+- The reply is stored in the conversation when it ends. It still counts as a reply in progress for updates.
+- `GET /api/chat/conversations/{id}/generating` is the running reply so far (its id, text and reasoning), or `null` when none runs.
+- `POST /api/chat/conversations/{id}/stop` ends the reply, and only the person who asked for it can stop it. It waits for the reply to be stored, as stopped with the text it had written, before it answers.
+- For a pw code chat, Stop still goes through pw code's interrupt. This endpoint just waits briefly for that turn to be stored, because the page reads the chat again once Stop answers.
+- A reply outside a conversation has nowhere to be stored or followed, so it still ends with its request.
+
+**Page** (`web/src/adapter.ts`)
+
+- The chat package already supports a reply running on the server, through its adapter's `conversations.generating` and `conversations.stop`. The Studio now provides both.
+- A conversation opened mid-reply comes with its `generating`. The package then shows the reply being written, follows it until it ends, and loads the stored answer.
+- Stop calls `stop`, and closing the page no longer ends the reply.
+- A connection that drops before any words now says the Studio is still writing the reply and to open the chat again. It used to say the reply was cut off and offer Retry, which would have started a second reply.
+
+**Tests**
+
+- `TestReplyRunsOnWhenThePageGoes` starts a reply that pauses after its first words, then cancels the request as a closed tab does. A reload then still finds the reply running with the same id and text, and once the model finishes, the whole answer is stored. It fails when the reply runs on the request's context.
+- `TestStopEndsAReplyRunningWithoutItsPage` stops a reply after its page has gone, and checks it is stored as stopped with the text it had written.
+- `web/test/replyRunsOn.test.ts` covers four cases, and each fails with its part taken out:
+  - a chat opened mid-reply carries `generating`;
+  - an ended reply does not;
+  - Stop posts to `/stop`;
+  - a dropped connection before any words says the reply runs on.
+- `go test ./internal/chat ./internal/server` passes, and so does the full web suite (141 files, 990 tests).
+- Not run in a browser yet: following a running reply after a real reload is the chat package's own code. A tester retest should reload mid-reply on a long workbook ask, and close the tab and reopen the chat.
+
+### fix(chat): a reply ended by Stop shows as Stopped, and Stop is logged as stopped, not as a failure (#908)
+
+Two follow-ups from the #907 retest.
+
+**A stopped reply did not say it was stopped.** A reply ended by Stop is stored with `finishReason: "stopped"`, but the web adapter never set the chat package's `stopped` flag. After the chat was read again, the reply showed only its steps and the retry icon. The adapter now marks such a message `stopped` when it loads the conversation, and the package shows its "Stopped" label, as it already did for a reply stopped in the same page.
+
+**Stop was logged as a failure.** It showed as ERROR "chat stream failed: context canceled" with an error id. A reply that ends because the person stopped it is now logged at INFO as "chat reply stopped". A failure for any other reason, the two-hour limit included, is still an error.
+
+Tests:
+
+- `TestStopEndsAReplyRunningWithoutItsPage` now also checks the log: it has "chat reply stopped" and no "chat stream failed".
+- `web/test/replyRunsOn.test.ts` has a new case: a stored reply with `finishReason: "stopped"` comes back marked `stopped`, and one that ended normally does not.
+- Each fails with its change taken out. `go test ./internal/chat` passes.
+
+Not in this PR: after a reload mid-reply, the steps already run do not show until the reply ends, and the working timer starts again. The chat package follows a running reply as text and reasoning only (`GeneratingReply`, unchanged up to 0.149.0), so it needs a package change: steps (parts) and a start time in `GeneratingReply`. The Studio would then send both from `/generating`.
+
+### fix(chat): a short answer after a tool call is the answer, not followed by a forced, hedged second one (#909)
+
+BUG M from the v1.203.28 retest, also present on v1.203.25. With native tool calls, a short answer after a tool call was shown twice, and the second copy cast doubt on the first. Asked "How many files are in the notes folder of my library? List them.", the chat showed "The notes folder contains 1 file: notes/readme.md" and then "I could verify one file in your notes folder … I can't verify the total count." It happened 3 times in 3 tries.
+
+**Cause.** After any tool use, a reply under 200 characters with no tool calls was taken for chatter and the turn went on to the forced final answer. The rule came across from the Node server, from a time when harmony-template models ended on lines like "Open one to see content." The forced final asks the model to "state plainly anything you could not verify". With native tool calls the short answer had already streamed, so the forced final was added after it. Most short questions about the library hit this.
+
+**Fix.** After tool use, a reply now goes on to the forced final only when it is empty, or when it is under 200 characters and says what the model will do next ("Let me read the other file", "I'll check the rest"). "Let me know …" offers more and does not count. A short reply that answers is the answer.
+
+The other exceptions are unchanged: a reply after a call that changed something, a reply that embeds a card, and the text-protocol nudge.
+
+Tests:
+
+- New `TestShortAnswerAfterReadingStands`: after `list_kb_dir`, each of three short answers is the whole reply, with two model requests and no hedged second answer. The three are the folder count, a file's first line, and an answer ending "Let me know if you want it opened." All three fail without the fix, and the third fails without the "Let me know" exception.
+- `TestShortReplyAfterAChangeStands` now gives the read-only case a reply that announces a next step, which is still forced to a final answer.
+- `go test ./internal/chat` passes.
+- GO-PORT.md says how a short reply is judged. It also no longer says a reply is cancelled with the client's connection; since #907 only Stop ends one.
+
+### Chat: a provider's failure names the model as picked and gives the provider's own words (#910)
+
+From the tester's #909 retest: when a model's provider fails, the chat's error card read like this:
+
+> `<owner>:codex/gpt-6.2-sol` cannot be called right now: its provider returned an error. Pick another model from the list while it recovers. Other models are unaffected. Provider said: gateway chat 502: {"error":{"message":"The AI provider could not be reached","type":"error","code":"server_error"}}
+
+## Fix
+
+`GatewayChatMessage` now:
+- **Model name:** names the model as it is picked, so `gpt-6.2-sol`, without the account and provider it is listed under.
+- **Provider's words:** gives only what the provider said. That is the message of a JSON error body (`{"error":{"message":…}}`, `{"error":"…"}` or `{"message":…}`); otherwise the text after the gateway's status; otherwise the whole text.
+
+The first sentences and the advice are unchanged.
+
+## Test
+
+`TestAProvidersFailureReadsInPlainWords` checks:
+- the reported 502 reads in full as expected;
+- the other error body shapes;
+- a plain-text body;
+- an error without a gateway status line;
+- a card with no model named.
+
+It fails on main's `helpers.go`. The `chat` package passes.
+
+## Not in this PR
+
+While the card showed, the status panel's Model row stayed green on the failed model, although the composer said "last call failed". This PR does not change that.
+
+### ci(container): reuse GUFI from an earlier build of the same app.def (#841)
+
+The `build-test` check (container.yaml) is the slowest required check: 17.7 min median over the last 30 PR runs, of which `build studio.sif` is 15.7 min. About 8 minutes of that is compiling GUFI and llama.cpp from source in app.def's build stage, on every PR that touches the image's inputs.
+
+That compile is fully determined by app.def: the base image is pinned by digest, GUFI by commit, and every step is in the file. This change caches the resulting `/opt/gufi` keyed on the hash of `deploy/app.def` and hands it to the next build as `.gufi-prebuilt/` beside the source. app.def takes it only when its recorded commit matches `GUFI_COMMIT`, and otherwise compiles as before.
+
+- A push to main writes the entry every PR reads; a PR's own entry is visible to that PR alone, so a PR cannot change what other builds get.
+- An image that is published (`workflow_dispatch` with push, or a release) never restores the cache and compiles everything.
+- The entry is saved only after the smoke test passed, from the image that passed it.
+- The final stage's checks (binaries present, `ldd` finds every library, GUFI builds an index in the smoke test) run either way.
+- A hand build (`apptainer build studio.sif deploy/app.def`) has no `.gufi-prebuilt` and is unchanged.
+- harden-runner keeps the same block list: it allows the cache host on its own.
+
+Expected: `build-test` about 17.7 to 9.5 min. Measured timings from this PR's runs are below (first run fills the PR's cache, the re-run reads it).
+
+Not to merge until the Stable release in progress is out.
+
+## Measured on this PR (run 45045454962)
+
+| Attempt | GUFI | build studio.sif | build-test job |
+|---|---|---|---|
+| 1 | no entry yet: compiled, then saved (10 s to pack, 3 s to save) | 17.3 min | 18.3 min |
+| 2 (re-run) | restored (2 s) | 2.8 min | 4.0 min |
+
+Baseline: build-test 17.7 min median over the last 30 PR runs. In attempt 2 the log shows `GUFI f2292ea...: the earlier build in .gufi-prebuilt`, the final stage's library checks passed, and the smoke test built the index with it (`{"ok":true,"gufi":true}`, "index rebuilt at /data/index/gufi/kb in 2 s"). After merge, the first push to main that builds the image fills the entry every PR then reads.
+
+### ci(mac-app): OCR from a pinned release, window shots on their own runner (#843)
+
+mac-app.yml takes 16.1 min median on a PR (30 runs) and 14.3 min for a release. Two parts of it are repeated work:
+
+- `OCR` (2.0 min in every build job): tesseract, leptonica and the image libraries built from source on each run, fetched from their upstream hosts. A 502 from download.osgeo.org failed two PR runs today, and five attempts of one release run on 9 Nov.
+- `screenshots of the window` (3.6 min) runs at the end of the `hardened` job, after signing and the run of the signed app, so `hardened` (5.9 min) is the long pole after `build`.
+
+This change:
+
+- Adds `ocr-macos.yml`, modeled on `gufi-macos.yml`: it builds the OCR tree with `deploy/mac/build_ocr.sh` (which runs the tree on its test images before packing), keeps it as an artifact, and for an `ocr-*` tag attaches it to that tag's release. The release job runs no build code, holds the only write token, and refuses a tag other than `ocr-KEY-macos14`.
+- Adds `deploy/mac/ocr_key.sh`: a short hash of `build_ocr.sh` and the OCR pins in `deploy/common/pins.sh`.
+- In `mac-app.yml`, OCR comes from `OCR_RUN` (to try a build), else from `OCR_RELEASE` checked against the pinned `OCR_SHA256`, used only when the tag carries this checkout's key, else from source as today. A change to `build_ocr.sh` or the OCR pins therefore builds from source until a new tag is published; it never takes a stale archive.
+- Moves the window screenshots into a `window-shots` job that runs beside `hardened` and `bridge`, on the build's app.
+
+Expected: PR runs about 16 to 11.5 min (build 9.6 to 7.6, then max(hardened 2.3, window-shots about 4.4, bridge 3.2)); release runs about 14.3 to 12.3 min. Measured timings are below: the first run builds OCR here; a second commit points `OCR_RUN` at this PR's ocr-macos run to measure the archive path, and is reverted before merge.
+
+To switch it on after merge (a repository write, for the parent or Matthew): push the tag `ocr-<deploy/mac/ocr_key.sh output>-macos14` on main, let ocr-macos.yml publish it, then set `OCR_RELEASE` and `OCR_SHA256` from the release notes in a one-line PR.
+
+Not to merge until the Stable release in progress is out.
+
+## Measured on this PR
+
+| Run | OCR | build job | window-shots / hardened / bridge | Wall |
+|---|---|---|---|---|
+| baseline (30 PR runs) | from source, 2.0 | 9.6 | screenshots inside hardened: 5.9 | 16.1 median |
+| 45045815851 (OCR from source) | 2.0 | 9.7 | 4.2 / 2.4 / 3.2 | 14.0 |
+| 45046557225 (OCR_RUN, the archive from ocr-macos run 45045816023) | 0.02 | 8.8 | 4.2 / 2.5 / 3.1 | 13.0 |
+
+ocr-macos itself took 2 min and passed build_ocr.sh's own checks on the five test images. The archive saved 2 min in the OCR step, but `build the app` took 4.1 min in the second run against 3.4 in the first (Go compile from a cold cache; run to run noise), so the build job gained 0.9. `window-shots` is now the longest job after the build (4.2). Measured saving: 3.1 min per PR run (16.1 to 13.0), less than the 4.5 expected. For a release (no window-shots, hardened or bridge), the saving is the OCR step, about 2 min.
+
+The measuring commit was dropped before merge; `OCR_RUN` is empty on this branch.
+
+### ci(go): vet for each platform in a job of its own (#854)
+
+The `go` job in ci.yml takes 9.3 min median over the last 30 PR runs; `go vet for each platform` (scripts/crossvet.sh, six targets in series) is 5.3 min of it, after `go test` (1.9) and before the release binaries (1.1). Once the macOS suite runs as two halves (#842), this job is the longest in ci.yml.
+
+The script now runs in a `go-crossvet` job beside `go`, with the same harden-runner block list and Go cache. Neither job is a required check, and what they run is unchanged.
+
+Expected: `go` about 9.3 to 4 min, `go-crossvet` about 6 min, so the Go checks finish about 3 min sooner. Measured timings from this PR's run are below.
+
+Not to merge until the Stable release in progress is out.
+
+## Measured on this PR (run 45048606764)
+
+`go` 3.5 min (baseline 9.3 median), `go-crossvet` 6.9 min beside it, so the Go checks finish in 6.9. The first run's go-crossvet could not reach proxy.golang.org (runner network fault) and was restarted with an empty commit.
+
+### ci: run the required checks for a merge queue's batch (#853)
+
+Adds the `merge_group` trigger to the three workflows behind the required checks (ci: `build-and-test`, `macos`; container: `build-test`; zizmor: `zizmor`). With a merge queue on main, GitHub tests each batch on a temporary branch and waits for the required checks there; a workflow without the trigger never reports and the queue stalls. For a batch, the container job's file list is the comparison of the queue's base and head, as it is for a push.
+
+Nothing changes until a merge queue rule is added to the ruleset; this PR does not add it.
+
+Why a merge queue: today about 40 PRs merged, many touching the same files (`docs/HELP.md` in 56 of the last 80, `web/src/styles.css` in 25). Each was rebased after a sibling merged and paid a full CI run again (18 to 20 min), and each squash then started a main run that the next push cancelled. A queue tests the batch once, on top of main, and merges it; no PR needs a rebase run, and the squashed commit is the tested tree.
+
+What blocks it today, for Matthew to decide:
+
+1. The organization ruleset requires two approving reviews (and approval of the last push) on main, and every PR here is opened under one account, so sessions merge with `gh pr merge --admin`. With a merge queue, `--admin` merges at once outside the queue (that is what the flag is for), so the queue would be skipped by every merge that happens today. A PR enters the queue only through `gh pr merge` without `--admin` (or auto-merge), after its reviews are satisfied.
+2. So a queue helps only if the review requirement is met or relaxed for this repository: approvals from a second account (a bot or a second person), or a repository-level exception to the organization rule. That is an organization policy decision, not a workflow change.
+3. The organization is on GitHub Enterprise and the repository is public, so the merge queue is available.
+
+The rule to add to the repository ruleset "main: required checks" (ID 24667464), once the above is settled:
+
+```json
+{
+  "type": "merge_queue",
+  "parameters": {
+    "merge_method": "SQUASH",
+    "grouping_strategy": "ALLGREEN",
+    "max_entries_to_build": 5,
+    "min_entries_to_merge": 1,
+    "max_entries_to_merge": 5,
+    "min_entries_to_merge_wait_minutes": 5,
+    "check_response_timeout_minutes": 60
+  }
+}
+```
+
+Until then, AGENTS.md (#855) describes the batching that gets most of the same effect by hand.
+
+Not to merge until the Stable release in progress is out.
+
+### Delegation and Fleet: review 2 findings R5, R6 and the Fleet link decode (#860)
+
+Three findings from review 2 of v1.203.21, left out of the release because none blocked it. One commit each, each with a test that fails without its fix.
+
+**R5: a passing error between a goal's turns is not a failure** (`server-go/internal/delegation`)
+pw code clears a session's `lastError` when its next turn starts, and reports a goal session as `running` while the goal's check is pending. Between a failed turn's end and that check, the session reads idle with the error and an active goal for a moment. A look in that moment finished a delegated session's record as stopped while the goal went on, so the Code page and Status read failed for a session that then finished. Such a record is now finished only once the same error has stood for two seconds; the watcher looks every 20. A session with no active goal is finished at once as before. The docs sentence in `docs/AGENTS.md` says so.
+
+**R6: Fleet offers Approve for a call with a tool and no command** (`web/src/views/FleetPage.tsx`)
+Approve waited for the whole command to be on screen, which only the command's own view reported, so such a call could only be denied although the server accepts an Approve for it and the Code page offers one. A command still has to be shown whole first.
+
+**Fleet link decode** (`web/src/views/FleetPage.tsx`)
+A hand-made link `#view=agents:fleet?agent=%` threw a URIError while the page was drawn. It now opens no agent. The Studio's own link encodes the id.
+
+Tests: `go vet` and the delegation, chat and fleet packages pass; web type check clean; 122 web test files (876 tests) pass.
+
+### Refuse SQL functions that run programs or open files in raw queries (#911)
+
+Refuse SQL functions that run programs or open files in raw queries.
+
+- `RawPlan` refuses the whole statement, with a message naming the function, when it names: `strop`, `intop`, `blobop`, `lineop`, `create_spread`, `spread_to_external`, `run_vt`, `load_extension`, `gufi_vt` and `gufi_vt_*`, `lembed_model_from_file`, `lembed_models`, and SQLite's file extensions should a GUFI build include them (`readfile`, `writefile`, `fsdir`, `lsdir`, `zipfile`, `sqlar_compress`, `sqlar_uncompress`, `sqlite_dbpage`, `sqlite_dbdata`, `sqlite_dbptr`, `fts3_tokenizer`).
+- Names are read as SQLite's tokenizer reads them: any case, quoted identifiers, and comments or whitespace before the parenthesis. String literals and comments are ignored unless a literal is exactly a refused name. A statement with a NUL character is refused.
+- The existing checks stay: a single SELECT only, and no ATTACH, DETACH, CREATE (including virtual tables, triggers and views), PRAGMA or writes.
+- Every raw query from a person reaches `gufi_query` through `PlanFor` and `RawPlan`: the Query page, saved queries run again, and `POST /api/query` and `/api/query/sql`. The assistant's query tool sends only canned queries. Search and the builder put a person's text in as quoted literals only.
+
+Tests: case and quoting, comments and spacing, CTEs, subqueries, trigger and view bodies, each function, virtual tables, ATTACH and DETACH, ordinary queries still allowed (including the external database tables), and both engine entry points.
+
+### release_preview: tag only a commit whose required checks passed (#852)
+
+`deploy/release_preview.sh` tags and publishes whatever commit it is given; it checks nothing about CI. Sessions therefore wait by hand for main's CI on the commit (12 to 18 min) before running it, and a commit in the middle of a series of merges often has no CI at all, because each push to main cancels the runs still queued for the push before it.
+
+This adds a check before the tag:
+
+- Each of the ruleset's required checks (`build-and-test`, `macos`, `build-test`, `zizmor`; `REQUIRED_CHECKS` overrides) must have passed, or been skipped by its own path filter, on the commit.
+- If not yet, and the commit came from a pull request whose head has the same tree (the branch was up to date with main when it was squashed), the head's passed checks count: main's run would repeat them on the same files. The Preview then goes out without waiting.
+- Otherwise it waits for main's run (`CI_WAIT=0` fails instead; 45 min limit). A failed check stops it; a cancelled one stops it with a note that a newer push usually cancelled it.
+- `CI_GATE=0` skips the check for a commit whose CI cannot pass for a reason outside it.
+
+Tried with `DRY_RUN=1 CI_WAIT=0` on main today:
+
+| Commit | Result |
+|---|---|
+| e19bf1c (tip, CI running) | stops: still running |
+| 2445978 (three merges back) | stops: zizmor cancelled by a newer push |
+| 42b49bd (#797, three hours back) | passes at once: its PR head 5ccf627 has the same tree and passed |
+
+Expected saving: none for a commit squashed out of date with main (the wait moves from the person into the script, and a red or cancelled commit can no longer be tagged by mistake). The full 12 to 18 min main CI wait for a round's batch PR merged up to date with main, which is the process AGENTS.md (#855) proposes.
+
+Not to merge until the Stable release in progress is out.
+
+### ci(container): a change to web/ or docs/ alone does not rebuild the image (#844)
+
+The container workflow's `changes` job decides whether a PR rebuilds the image; `build-test` (required, 17.7 min median) is skipped otherwise, and a skipped job counts as passing. Its list of image inputs included `web/*` and `docs/*`, so nearly every PR rebuilt it: of the last 80 merged PRs, 75 did, most for `docs/HELP.md` (56 of the 80) or a file under `web/src`.
+
+Neither needs the image to be tested:
+
+- `web/`: the image runs `pnpm install --frozen-lockfile` and `pnpm build`, which ci.yml's `build-and-test` runs on every PR from the same lockfile and the same Node major; the smoke test checks `/healthz`, the change log and the index, none of which the web client affects.
+- `docs/`: copied into the image as files; nothing in the build or the smoke test reads them.
+
+With both out, 6 of those 80 PRs would have rebuilt the image (changes to `server/`, `indexer/`, the lockfile, `app.def` or this workflow). Pushes to main follow the same rule.
+
+Expected: for a docs or web change, `build-test` 17.7 min to skipped (the `changes` job takes 0.2 min). Proof: draft PR #845, a docs-only change opened against this branch, where `build-test` reports as skipped and passing.
+
+Not to merge until the Stable release in progress is out.
+
+## Measured
+
+#845 (a one-file docs change against this branch): `changes` passed in 17 s with no image input changed, `build-test` reported as skipped, and the PR's required checks were satisfied without it (build-and-test 7.5 min, macos 11.3, zizmor 0.3). Baseline for the same kind of PR: build-test 17.7 min median.
+
+### ci(mac-app): take OCR from the pinned ocr-1fbcd2827092-macos14 release (#913)
+
+Follows #843. Sets `OCR_RELEASE` to ocr-1fbcd2827092-macos14 (pushed on main and built by ocr-macos run 45319408421) and `OCR_SHA256` to its archive's checksum (87dff212...7477, checked against the release's .sha256). The key is `deploy/mac/ocr_key.sh` on main, so mac-app now downloads OCR in place of building it, about 2 min less per mac-app run. A later change to build_ocr.sh or the OCR pins changes the key, and mac-app builds from source until a new tag is pinned.
+
+### ci(macos): run the macOS suite as two halves on two runners (#842)
+
+The required `macos` check (ci.yml) takes 12.3 min median over the last 30 PR runs, and `pnpm test` is 8.7 min of it: the server suite (about 3.7 min), then Vitest with the default config (3.1 min), then Vitest with the RHEL 9 config (2.6 min), one after another on a three-core runner.
+
+This runs them on two runners at once:
+
+- `macos (server)`: the extraction tools, the Go helper and rsync tests, the document readers and embedding packages, `pnpm build` (so the macOS build is still checked) and `pnpm test:server`.
+- `macos (web)`: `pnpm install` and `pnpm test:web` (both Vitest runs); Vitest does not need the build.
+- `macos`: the required check, on a small Linux runner. It needs both halves, runs with `always()` so it reports even when one fails or is cancelled, and passes only when both succeeded. The ruleset needs no change.
+
+`pnpm test` is unchanged for local use: the root package.json now has `test:server` and `test:web`, and `test` runs them in turn.
+
+Expected: the `macos` check about 12.3 to 8 min (the server half). Measured timings from this PR's runs are below.
+
+Not to merge until the Stable release in progress is out.
+
+## Measured on this PR
+
+| Run | macos (server) | macos (web) | macos (gate) | macos check done after |
+|---|---|---|---|---|
+| baseline (30 PR runs) | | | | 12.3 median (one job) |
+| 45045538788 | 6.5 | 6.1 | 3 s | 6.6 |
+| 45048545719 | 6.9 | 6.4 | 3 s | 7.0 |
+
+The first run's build-and-test lost its checkout to a runner network fault and the run hung; the second was started by an empty commit.
+
+## v1.203.28 (2026-11-24)
+
+### fix(chat): a workbook asked for with a count of rows stops at it, even when parts are sent at once (#899)
+
+A chat asked to write a workbook with a count of rows ("250 rows") could not finish at that count. On the emulated path the model sends all the parts of a round at once, about 50 rows each, so it never sees a count before it passes 250. In a 250 row retest the file went 248, 300, back to 49, up to 349, and so on for 28 rounds, and a nudge cannot fix that.
+
+The write now stops at the count itself:
+
+- When the user's message asks to write or make a workbook with a count of rows, each `write_kb_file` call for it runs with that count as a limit. The limit applies to the file the message names, or to any workbook when it names none.
+- A first part over the count is cut to it. An appended part adds only the rows up to the count, so a replace and the appends after it in one round end at the count.
+- That call's result says how many rows were not written and that the workbook is finished. A part that arrives when the workbook is already full writes nothing and says so. The chat row shows the rows left out.
+- Rows the workbook already held are never removed.
+- There is no limit when the message asks for rows more ("50 more rows", "add 100 rows"), when the workbook has more than one sheet, or when the file is not the one the message names.
+
+Tests:
+
+- `TestPartsSentAtOnceStopAtTheRowsAsked` writes the real files. A first part of 300 is cut to 250. A replace of 100 plus appends of 50, 50, 49, 50 and 50 ends at 250 with rows in order, the fourth result says 49 rows were not written, and the fifth says none were. A workbook the message does not name keeps all 300.
+- `TestWritesOfAWorkbookCarryTheRowsAsked` checks the chat loop passes the count only for the named workbook, and not for asks for rows more or rows added.
+- Each fails with its part of the change turned off. `go test ./internal/chat ./internal/docwrite` passes.
+
+### Chat: a failed step the turn recovered from folds with the other steps, and is not offered for a retry (#905)
+
+From the tester's #899 retest. In one run, the first write of a workbook failed on the model's JSON, and the next writes of the same file went through. The finished chat still showed the failed write in red on its own row, outside the grouped steps. It also offered "Retry the write_kb_file step that failed and explain what went wrong", although the file was written and the answer was right.
+
+## Cause
+
+- **The red row:** the chat package folds only settled calls into the "Ran N tools" row, and a failed call breaks the run. Nothing recorded that a later call had redone the failed one.
+- **The chip:** `suggest.go` offered a retry for any failed call, named by its tool.
+
+## Fix
+
+A failed call is recovered when a later call of the same tool on the same target (path, folder, run or name) goes through.
+- **Thread (`web/src/recoveredSteps.ts`):** a recovered failure is settled.
+  - While the reply streams, the adapter does this when the recovering call ends.
+  - When a chat is opened, `markNotes` does it.
+  - The thread then folds it with the other steps. Opened, its result still starts with "Failed, then done again by a later step." and keeps the error.
+- **Suggestions (`suggest.go`):** a recovered failure gets no retry chip. A step that stayed failed is offered in plain words, such as "Retry the step that failed (writing a.xlsx) and explain what went wrong", never by its tool's name.
+
+## Tests
+
+Both tests fail without the fix.
+- **Go, `TestARecoveredStepIsNotOfferedForARetry`:**
+  - a recovered failure gets no retry;
+  - a failure that stayed is offered in plain words;
+  - no tool name appears in a suggestion.
+  
+  It fails on main's `suggest.go`.
+- **Web, `recoveredSteps.test.ts`:**
+  - an opened chat settles the recovered failure and keeps its error;
+  - the stream re-ends the failed call when the next write of the same file goes through, which fails with the adapter's re-end removed;
+  - a failure nothing redid stays a failure, as does one followed only by a different tool on the same file.
+
+All 140 web test files, `tsc` and the `chat` Go package pass.
+
+## Checked live
+
+On a test Studio, I served the report's case (a failed write, then two writes of the same workbook) as a saved chat. The thread showed one "Ran 3 tools" row and no red row. Opened, the first step reads "Failed, then done again by a later step. error: Could not write …".
+
+For v1.203.28.
+
+### Library header: the title fits whole beside its controls (#901)
+
+With the status panel open, at 900 and 1440 px, the Library rail's head read "Libr…". Its six controls sat 6 px apart and left the title 41 px of the 49 it needs at the rail's default width of 320 px. In this head they now sit 4 px apart, which leaves the title 51 px. The chat rail and the head with a library switch are unchanged.
+
+Measured in Chromium at 1440 and 900 px with the status panel open: the title is 51 px wide and its text 51 px, so nothing is cut. CSS only.
+
+### Settings on a phone: the open section is brought into the section strip (#902)
+
+At 390 px the Settings rail becomes a strip of section chips that scrolls sideways, with its scrollbar hidden. A section past the strip's right edge (Workflows, Accounts, Assistant, External access) opened with its chip out of view, so the strip read as cut off with no sign of where you were.
+
+The strip now scrolls the open section's chip into view, near its middle, when the section changes. It checks after each render until it has done so for the section, since the sections listed arrive with the account and settings. Wider screens, where the rail is a column, are unchanged.
+
+Checked in Chromium at 390 px: opening #view=settings:accounts used to leave Accounts at 433 to 518 px, off the screen. It now sits at 239 to 324 px.
+
+### Settings, Indexing: its address opens the first tab, as the rail does (#903)
+
+`#view=settings:indexing`, the address of General's old Indexing tab, opened the Indexing section on its second tab, Sync and search, while the Settings rail opened it on its first, Libraries. That address is what links and bookmarks to Indexing use, so the section seemed to open on the wrong tab. Both open Libraries now. Sync and search keeps its own address, `#view=settings:sync-search`.
+
+Tests: the address mapping (two test files) and a new render test that `#view=settings:indexing` selects Libraries. The Sync and search save test now opens by its own address. docs/REFERENCE.md updated.
+
+### Accounts, OpenAI-compatible endpoint: an unsaved address says it is a suggestion (#904)
+
+With no endpoint saved, the OpenAI-compatible endpoint card's badge read "None" beside a Base URL box already holding the first choice's address (Ollama on this computer, http://127.0.0.1:11434/v1). It read as a contradiction: is an endpoint set or not?
+
+The badge now says "Not saved". While nothing is saved and the box holds an address, a line under it says: "Filled in from the Endpoint choice. Nothing is used until you Save and use." A saved endpoint still shows "In use for models", with no extra line.
+
+Tests: accounts.test.tsx checks both states. Checked in Chromium, light at 1440 px and dark at 900 and 390 px.
+
+### fix(chat): a workbook part sent twice in one round is written once; clearer row count in the chat (#900)
+
+Two follow-ups from the #899 retest, both about writing a workbook in parts.
+
+**A part sent twice in one round was written twice.** In one round the model sent its first part as a replace and again as an append, plus ten more copies of that append. The ten copies were answered from the cache, because they matched the append exactly. The replace and the first append both ran, because they differ only in `append`, so rows 26 to 50 repeated rows 1 to 25.
+
+Writes to a workbook in one round already run one at a time, in order. Now, before each one runs, Studio compares its rows to those of the parts already written to the same workbook in that round:
+
+- The header is ignored in the comparison, taken as the first row of the round's first part.
+- When the rows are the same, the part is not run. It is answered with the earlier write's result and a note to add the next rows instead, and logged as "tool call not run".
+- When the earlier write failed, the later copy runs, since it is the retry.
+- This applies only to one-sheet `.xlsx` writes.
+
+**Wording.** The chat row for a part cut at the asked count read "(50 over the 250 asked not written)". It now reads "…, 250 rows after the header; 50 rows past the 250 asked were not written, so the workbook is finished". The model-facing result already said "finished"; the chat row did not.
+
+Tests:
+
+- `TestAPartSentTwiceInOneRoundIsWrittenOnce` sends a replace, the same rows as an append (with and without the header), and a new part. Only the replace and the new part are written. When the replace fails, the first copy runs in its place.
+- `TestPartsSentAtOnceStopAtTheRowsAsked` now checks the chat row's wording.
+- `TestPartsInOneRoundLandInOrderAndTheTurnSaysWhatTheWorkbookHolds` sent the same 20 rows in every part as test filler. Each part now has its own rows.
+- The new test fails with the guard turned off. `go test ./internal/chat ./internal/docwrite` passes.
+
+### runs test: wait for a run's end to be heard, not only for its state (#906)
+
+`TestRunFollowedToItsEndAndReported` failed once on #904's go job and passed on rerun.
+
+**Cause:** the test waited only for the run to read `completed`, then checked its note and the fleet's end hook straight away. `MarkEnded` sets the state under its lock, but leaves the note and calls the hooks after unlocking, so on a slow runner the test can read the note before it is left.
+
+**Fix:** the test now waits for the end hook, which runs last. Test-only change.
+
+**Checked:** with a 50 ms delay put in `MarkEnded` before the note, the old test failed 3 of 3 runs and the new one passed 5 of 5. The delay is not in this PR.
+
+## v1.203.27 (2026-11-23)
+
+### Chat: an empty reply while a file is written in parts is nudged again; a final answer after a write says what was done (#885)
+
+This follows #882. It is for v1.203.27.
+
+In a desktop retest on the text tool protocol, the model was asked for a 250-row workbook. It wrote the first part and added four more with `append=true`, then sent an empty reply at 100 rows. The turn had already used its one nudge, so a final answer was forced and the job stopped at 100 of 250. That answer also said "I could not verify from the material whether the columns are exactly as requested". The line comes from the forced final prompt, and after a write the Studio made itself it reads as doubt about its own file.
+
+- **Nudges.** On the emulated path, a short or empty reply with no request is nudged again once a round has made calls since the last nudge, up to three times in a turn. The note quotes the last `write_kb_file` result, which says what the file holds, and says how to send the next part.
+- **Final answer.** A final answer forced after a call that changed something now asks for what was done, with the tool results' figures, and for what was asked for but not done. It no longer asks for anything that could not be verified. The material it is given is introduced as the tools' results, including what was written.
+
+Test: `TestEmptyTurnsWhileWritingPartsAreNudged`. Three parts are written with an empty reply after each, so the turn is nudged three times. The nudge quotes what the file holds, and the final prompt reports what was done. The test fails with either change turned off.
+
+### Chat: requests lacking their last brackets are read, write_kb_file takes the shapes models send, a failed write says why (#886)
+
+This follows #885 and is for v1.203.27. It fixes what a desktop retest of the text tool protocol showed:
+
+1. **A request re-sent at a reasonable size could still not be read.** The re-sent request was 5,051 characters and ended on its own (finish stop), so it was withheld. The log kept none of its text.
+   - When a reply ends on its own but its envelope lacks its last closing brackets, it is now read with them added. A reply stopped at the output limit is still asked for again, not closed, so truncated content is never written as if it were complete.
+   - The start and end of a request that still cannot be read, and where decoding stopped, are logged at debug. The text can hold file content, so it is not logged at a higher level. With this, the mender can be extended to the cases models actually send.
+2. **`write_kb_file` did not take the shapes models sent.**
+   - An append sent as `"append":"true"` was not taken as an append, so the result said "wrote", not "added to". `append` and `overwrite` now accept `true`, `"true"`, `"yes"` or `1`.
+   - A bare row `["2026-01-21","North",...]`, or rows alone, is taken as rows of the first sheet. Before, a bare row was read as one row per value.
+   - A workbook's JSON lacking its last brackets (`]]}` where `]]}]}` was meant) is read with them added.
+   - A workbook replaced with `overwrite=true` now says in the result what it held: "which held Sales, 20 rows after the header (overwrite=true replaces a workbook; append=true adds rows to it)".
+   - A write that fails is marked failed, and its row in the chat gives the reason instead of "error".
+
+Tests, each checked to fail with its fix turned off:
+- `TestEnvelopeMissingItsLastBracketsRuns`: the request is closed and run on finish stop, and not on finish length.
+- `TestCloseJSON`, `TestSheetsTakesTheShapesModelsSend`
+- `TestWriteKBFileTakesWhatModelsSend`: append given as text with a bare row, the note on a replaced workbook, and the reason on a failed write.
+
+### fleet test: wait for the second wake-up to end before steering and following it (#887)
+
+TestWakeFollowDecide waited for the note "wake-up 2 working", which the
+wake-up sets before it sets the round's goal and ends. A message sent
+while it still wakes is not steered into the session, and Follow leaves
+it alone, so on a loaded runner the test failed at "steered []" (it
+failed the go job of #886 once). With a 50 ms delay before a wake-up
+ends, it fails every time; with the wait, the package passes. This is
+the same race #883 fixed in TestApprovalGoneAndBudget, and no other test
+in the package fails with the delay.
+
+For v1.203.27.
+
+### pw code chat: a command typed before the session is taken up takes it up first, and is never sent as a message (#888)
+
+Bug K from studio-desktop-test's pass on v1.203.26, for v1.203.27.
+
+## What happened
+
+The steps: open a pw code chat whose saved session the daemon has not taken up, and within a few seconds type `/plan create plan28.txt with one line omega`. The tester's log, in ms from load:
+
+| ms | Request | Answer |
+|---|---|---|
+| 3129 | `GET .../palette` | 404 "session is not live; attach it first" |
+| 3647 | `GET .../palette` | 404 |
+| 3652 | `POST .../messages`, with the `/plan` text | 422 "/plan is an interactive command and cannot be sent as a session message" |
+| 5867 | `GET .../palette` | 200 |
+
+The package's `resolveTyped` treats a palette it could not read as "send it as a message". A permission pick in that window also got a 404 on `.../settings` and did not stick.
+
+## The fix
+
+- **Server, `chat/pwcodeproxy.go`:**
+  - The palette, and any request that changes or is sent to the session, takes a direct chat's session up when the daemon says it is not live (`POST /v1/sessions/{id}/attach`), then sends the request again. PW Code on the web's server does the same.
+  - Reading the session (transcript, detail, subagents) does not take it up.
+  - A relayed session, which the platform does not attach, and a direct one that could not be taken up, get a 409: "The Studio is still connecting to this session. Try again in a moment." This replaces the daemon's "attach it first".
+- **Browser, `pwcode/api.ts`:** a palette request that fails throws its reason. The composer shows it, and the line stays in the box, never sent as text.
+
+## Tests
+
+Each was checked by reverting one part at a time:
+- `TestACommandTakesASavedSessionUpFirst` fails when:
+  - the attach is removed;
+  - reads also take the session up;
+  - the daemon's wording is passed on.
+- `pwcodeApi.test.ts`, "never sends a typed command as a message…": without the middleware, the package resolves `/plan …` as message text.
+
+The web suite (136 files) and `tsc` pass, and so do the `chat` and `pwcode` Go packages. Live, on a direct chat in a test Studio, `/plan …` typed right after opening went `GET /palette` 200, `POST /plan` 200, and the plan card showed.
+
+## Also: a flaky chat test
+
+`TestChatScopeSearchesTheChosenLibraries` failed its temp-folder cleanup in 49 of 200 runs, on main as well.
+- **Cause:** with GUFI installed, the library registry probes each test library in the background, and the probe wrote `library-caps.json` after the test ended.
+- **Fix:** the scope tests set no GUFI. After the fix, 0 failures in 200 runs of the three tests.
+
+### Chat: a workbook is checked against the rows asked for, the same ask is not run a third time, a workbook's row says what it holds (#889)
+
+This follows #886 and is for v1.203.27. It fixes what a desktop retest of the text tool protocol showed:
+
+1. **A 600-row ask got a workbook with only its header.** The model then gave a long answer saying so, and nothing nudged it, because #885's nudge only answers a short or empty reply.
+   - When the user's message asks for a count of rows ("250 rows", "600 data rows", "1,000 records"), each workbook write's result now says where the file stands against it. It says how many rows are still to add, that all are there, or that there are more than asked (in which case the answer should give the real count).
+   - On the emulated path, a reply with no request while the workbook is short gets a note, whatever the reply says. The note gives what the workbook holds against the ask and how to add the rest, and is sent up to four times in a turn.
+2. **A 250-row ask spent 20 `search_kb` calls on the file it was to create.** Thirteen of them asked the same thing with only `limit` or the argument's name changed.
+   - A read-only call that asks what two calls before it in the same reply asked is not run again. Its arguments are compared without `limit` and the like, and by value whatever their names.
+   - Instead it gets the earlier result, with a note that a file the user asked for does not exist until it is written.
+3. **A workbook's row in the chat now says what each sheet holds**, for example "wrote items.xlsx: Items, 0 rows after the header: the header only". This covers appended parts too.
+
+Tests, each checked to fail with its fix turned off:
+- `TestWorkbookShortOfTheRowsAskedIsFinished`: a header-only write, a long answer admitting it, the nudge, then the rest appended. It checks each write's note against the 60 rows asked for.
+- `TestSameAskIsNotRunAThirdTime`
+- `TestRowsHeldAndAsked`
+- `TestWriteKBFileTakesWhatModelsSend`: the row text for an appended part.
+
+### pw code chat from the keyboard: a chat opened while it waits goes to the card, and the rail's Tab stop follows its focus (#890)
+
+From studio-desktop-test's pass on v1.203.26.
+- A chat opened from the conversations list while it already waited on
+  a plan or question kept focus on the list's row, 51 Tab stops from the
+  card. As the chat opens, focus now moves from that row to the card's
+  first answer. Later, focus on the list stays where it is.
+- On the conversation rail, Tab after Home landed on the tick in view
+  again: the rail's one Tab stop now follows the tick in focus.
+- The rail's preview of a message read from the page ran its blocks
+  together ("Answered: greenCOLOR=green"); it reads the text as shown.
+
+Checked live in a test Studio on a direct chat waiting on a plan: opened from the list, focus went to Approve plan; on the rail, Home then Tab left the rail (to the header's Persona button); the preview read with its spaces. New test in pwcodeFocusAnswer.test.ts (the list row gives focus up only as the chat opens). 136 web test files and tsc pass.
+
+
+
+For v1.203.27.
+
+### Chat: a file asked for is written, a round's text shows only when it stands, no brackets left after a request (#891)
+
+This follows #889 and is for v1.203.27. It fixes what a desktop retest of the text tool protocol showed:
+
+1. **A named file was not written.** The 250-row ask searched four times for the file it was asked to create. It then sent 108 characters, "I can't write the spreadsheet...", with no request.
+   - A short reply is only nudged when it is empty or says what it will do. This one was neither, so a final answer was forced. A forced final answer has no tools by design, which is why it said it could not write.
+   - Now, when the message asks to write a named file and nothing has been written yet, a reply with no request gets a note: the file does not exist until it is written, and here is how to write it. This shares the turn's three nudges.
+2. **The cut-off notice showed in the middle of a turn that went on.** It read "...was cut off... Ask for it in smaller parts" while the Studio was already adding parts.
+   - A request withheld while the turn goes on is now a progress line: "↳ ... was cut off again; nothing ran".
+   - The notice becomes the answer only if the turn ends there.
+   - On the emulated path, a round's text is now held until the loop knows what the round was. It is shown beside the round's calls, or as the answer. It is not shown when the model is asked again, so text like "I can't write..." or "the workbook has 0 rows" stays out of the reply when the turn carries on.
+3. **A line holding only `"}` showed in a reply.**
+   - Quotes and brackets left right after a request are dropped, as is leftover text with no letter or digit.
+
+Tests, each checked to fail with its fix turned off:
+- `TestFileAskedForIsWritten`, with `askedFile` cases
+- `TestWithheldRequestMidTurnIsAProgressLine`
+- `TestNoBracketsLeftAfterARequest`
+
+**Added after the 600-row rerun of #889**
+
+In that rerun, every request was cut off at about 30k characters, because the model sent all the remaining rows in one request. After the shortfall nudge, the next cut-off ended the turn. The answer was the cut-off notice twice, and it never said what the workbook held.
+
+4. **Requests now name a row count.** A request cut off at the output limit sets how many rows to ask for in each part: a quarter of the rows it got to, between 10 and 50. The re-ask and the shortfall nudge both say "at most N rows in each request".
+5. **A cut-off no longer stops the shortfall nudge.** It is sent again after a withheld request, up to its limit of four.
+6. **A turn that ends on a cut-off with a short workbook says what it holds**, for example "reports/items.xlsx holds 30 of the 600 rows asked for. The request to add the rest was cut off...". The notice is given once, as item 2 above already ensures.
+
+Test, checked to fail with each of the three changes turned off: `TestCutOffRequestsForTheRestEndWithWhatTheWorkbookHolds`, with `rowsPerPart` cases.
+
+### Chat: parts written in one round land in order, a turn ends with what its workbook holds, no text written before a request's results (#892)
+
+This follows #891 and is for v1.203.27. It fixes what a desktop retest of the text tool protocol showed.
+
+1. **The 600-row run's closing line said 75 rows, but the file held 95.** Calls in a round ran in parallel, and an append reads the workbook and writes it back.
+   - In that round, the second-listed append finished first and reported 75. The first-listed one then added its rows on top and reported 95. Results are read in listed order, so 75 was the count Studio kept. The rows in the file are out of order too, and with other timing a part could have been lost.
+   - Now writes to library files in a round run one at a time, in the order asked. Other calls still run beside them.
+   - Each file also has a lock, so only one write to it runs at a time, from any chat.
+2. **The 600-row run ended on a reply that blamed missing tools, with an earlier round's cut-off notice under it.** That reply was the model's own text, not a forced final.
+   - A cut-off's notice now belongs to its own round.
+   - The nudge for the rest of the rows is sent again after a reply that gives up, not only after a cut-off, up to six times in a turn.
+   - After a cut-off, a part is half the rows the cut request got to, from 10 to 50. It was a quarter, which came to about 20 rows in that run.
+   - The forced final is told not to say tools are unavailable.
+3. **The 250-row answer was stale text, run together.** It read "...before calling it complete.The workbook was not confirmed complete... no results came back". The model wrote that after its last request, in the same reply, before any results.
+   - Text after a request that made calls is now left out. A natively calling model can't write there.
+   - Pieces of text around requests are set apart with a blank line.
+   - A turn that wrote a workbook against a count of rows now ends with what it holds, for example "reports/items.xlsx holds 250 of the 250 rows asked for.". This line is skipped when the answer already gives that count.
+   - One `TestSplitEnvelope` case from #672 expected text after a request to be kept. It now expects it left out.
+
+Tests, each checked to fail with its fix turned off:
+- `TestPartsInOneRoundLandInOrderAndTheTurnSaysWhatTheWorkbookHolds`: order, one write at a time, and the closing line.
+- `TestAppendsAtOnceAllLand`: 12 concurrent appends to one workbook, through the real tool.
+- `TestGivingUpAfterACutOffIsNudgedAndTheNoticeIsNotLeftOver`
+- `TestCutOffNoticeIsNotLeftOnALaterReply`
+- `TestNoBracketsLeftAfterARequest` and `TestSplitEnvelope`: text after a request.
+
+The round budget, Settings > Assistant tools, defaults to 50. At 50 rows a part, with several parts a round, 600 rows fits in it.
+
+### Set up for me: an existing cluster is pw://owner/name, and the fallback gives a command to paste (#893)
+
+Set up for me failed on an existing cluster with `[ERROR] Cluster not found`: the Studio named it `pw://<name>`, and pw ssh finds no cluster by a bare name.
+
+**Site**
+- Always `pw://<owner>/<name>`.
+- For an existing cluster, the owner is the one the pw code machine listing gives (core sets it from the pool's namespace, which can be empty).
+- Where it gives none, the owner is that of the one existing cluster of that name in the viewer's own `GET /api/clusters`, asked with their own key (`user`, or the owner in `uri`).
+- With no such cluster, or when the listing cannot be read, the owner is the viewer.
+- Two or more clusters of the name are refused, and the message names each site.
+- The ownership rules are unchanged: an existing cluster an administrator shared with the viewer is still set up with the viewer's own credential.
+
+**Fallback**
+- A failed pw ssh now says the site it tried.
+- `GET /api/mcp/bridge` gives `paste`: the same `pw code mcp add --scope user --force studio -- sh -c '<shim>' studio-mcp '<url>' "$(command -v pw)"` that Set up for me runs. It uses pw's own sign-in there, so it needs no key.
+- The card's Do it myself leads with it and Copy the command. The API key steps move behind "No curl there? Use an ACTIVATE API key".
+- HELP.md and REFERENCE.md are updated.
+
+**Tests** (`mcpsite_test.go`)
+- Existing cluster with an owner in the listing, including one shared by an administrator.
+- Without one: lookup with one match (by `user` and by `uri`), zero matches, two matches (refused, nothing runs), and a listing that cannot be read.
+- The failure message names the site.
+- The paste command, run through real `sh` with a fake pw, gives exactly the argv Set up for me uses.
+- With the old site code, every test except the paste ones fails (8 failures).
+- Web: a failed setup names the site, the paste command comes first and is copied, and the key steps sit behind their button.
+
+**Checked live**, read only and against a cluster that is off, so no machine is touched: `pw ssh pw://<name>` gives `Cluster not found`, and `pw ssh pw://<owner>/<name>` finds the cluster (`cluster disconnected`). The real `/api/clusters` gives `name`, `type`, `user` and `uri` for existing clusters, as the lookup reads them.
+
+### Chat: a workbook over the rows asked for is written again; a call answered from an earlier one is logged as not run (#895)
+
+This follows #892 and is for v1.203.27. It fixes what a desktop retest of the text tool protocol showed.
+
+1. **A 250-row ask wrote 365 rows.** The answer said so honestly and stopped there.
+   - On the emulated path, when the workbook holds more rows than asked and the reply makes no request, the model now gets one note. It says to write the workbook again with exactly the count asked: `overwrite=true` with the first rows, then `append=true` with the rest.
+   - It is sent once per turn. If the count still doesn't match, the closing line from #892 states it.
+2. **Five identical `search_kb` calls looked as if they ran.**
+   - The `tool call` log line is written for every request.
+   - From the second identical call on, each was answered from the first through the existing repeat cache. None of them ran again.
+   - Calls not run for this reason are now logged as not run, after their `tool call` line.
+   - The exact-repeat note now says, as the same-ask note from #889 does, to go on with the task: a file the user asked for does not exist until it is written.
+
+Tests, each checked to fail with its change turned off:
+- `TestWorkbookOverTheRowsAskedIsWrittenAgain`
+- `TestTheSameCallIsAnsweredFromTheFirst`
+
+The 600-row run was stopped by the tester's host running low on memory, so this PR has nothing new on that run.
+
+### pw code chat: a new chat offers pw code's models from the start, and its first message starts the session on the one picked (#896)
+
+From Matthew's report on v1.203.26: a new pw code chat showed only `+`, Effort and send until its first exchange, with no model selector.
+
+## Cause
+
+Until its first message, a pw code chat has no session, so it shows the plain chat thread rather than the session view, and the session view's own model picker is not there.
+- **The thread's picker** sets the Studio assistant's model. It is hidden while pw code answers (styles.css, since #866).
+- **Not a regression from v1.203.26:** v1.203.25 behaves the same. On a Studio of one, with both builds side by side, a new pw code chat has the picker hidden in both.
+- **Ruled out:** after the first message the session view shows its picker, and `/api/chat/models` lists the models.
+
+## Fix
+
+A new pw code chat's composer now offers pw code's models from the start (`pwcode/NewChatModel.tsx`, using `AgentModelControls` as the Code page's start form does).
+- **Choice:** the platform's models pw code can run, and the agent models of the Studio's machine where it offers them.
+- **Default:** the model Settings names (`/api/chat/engine` now says it).
+- **The first message:** it carries the pick (`pwcodeModel`, with `pwcodeAllocation`). The server makes the session with it, over the Settings model, and does not move it to another model.
+- **Later messages:** a pick is ignored once the chat has a session, whose own composer picks.
+- **Machine listing:** the chat's machine listing (`/api/code/sessions`) includes the Studio's own machine whenever pw code is offered to the person, so its agent models are offered before any session.
+- **Words:** pw code's words (`PwCodeWords`, factored out of `PWCodeSession`) wrap the new picker as they do the session view. Without them, the package's picker throws.
+- **HELP.md** says how a new chat picks.
+
+## Tests
+
+Each part was checked by reverting it:
+- **Go, `TestANewPWCodeChatStartsOnTheModelPickedBeforeItsFirstMessage`:**
+  - the session is made on the picked model, with its allocation;
+  - the pick wins over the Settings model;
+  - a picked model the connection does not offer is not moved;
+  - without a pick, the Settings model is used, as before.
+- **Web, `pwcodeNewChatModel.test.tsx`:**
+  - the picker shows before any message, starting from the Settings model;
+  - a pick is kept for the chat's first message;
+  - there is no picker once a session exists, or while the Studio assistant answers;
+  - the adapter sends the pick with the first message.
+
+All 137 web test files, `tsc`, and the `chat` and `codesessions` Go packages pass.
+
+## Checked live
+
+In a test Studio, on a new pw code chat:
+- before any message the composer showed the picker on "Haiku 5.5", the Settings model;
+- I picked Sonnet 5.5, and the first message was sent with Sonnet as `pwcodeModel`;
+- the session view then showed Sonnet 5.5, and the header read "pw code · sonnet".
+
+For v1.203.27.
+
+### Library: a move or delete in a person's space runs as a job the panel can watch (#894)
+
+On a Studio with sign-in, a person who moved files inside their own space saw "0 of N moved … no such job" every time.
+
+**Cause**
+
+The Library panel starts a move with `async: true` and then polls `GET /api/jobs/<id>`. A write whose library is a person's space is routed to `spaceOp` (`kb/spaces.go`), which ignored `async`:
+- It did the move at once, as the person, and answered `{"moved":[…],"skipped":[…]}` with no `id`.
+- The panel then polled `/api/jobs/undefined` and got a 404 "no such job".
+- The files had in fact moved. The panel just never learned that.
+
+Bulk deletes and folder deletes in a space had the same problem. The cause was not a restart losing in-memory jobs: there was no job to lose. Copy inside a space answers 409 ("not available yet"), and the panel already shows that message.
+
+**Fix**
+
+- `spaceOp`'s move, delete and folder delete now honour `async`. The work runs as a job in the same `kb.Jobs` store that `/api/jobs/{id}` reads. It runs as the request's person and carries on after the request ends, using the request's context without its cancellation.
+- Such a job can be read only by the person it works for. The job records an owner (`Job.Owner`), and `kb.JobOwner`, set by `internal/userlibs` from the viewer, says who is asking. Jobs in the main library have no owner and work as before.
+- The panel (`startPathJob`):
+  - It treats an answer that says what was done (no job id) as finished, so an older server's answer also works.
+  - An answer that is neither shows the server's error or "the move did not start". The panel no longer polls a job that never started.
+  - A start error the server refuses was already shown, and still is.
+
+**Tests**, each checked to fail with its part of the fix turned off:
+- `TestSpaceMovesAndDeletesAsJobsThePanelCanWatch` (Go). A five-file move in a space with `async` is answered with a job before the work runs, and polling shows it running and then done. Another person gets a 404 for it. The work survives the request's cancellation. Bulk and folder deletes run as jobs too. A bad path is still an error at start, and a move without `async` still answers at once.
+- `web/test/transfers.test.ts`: an answer with no job is taken as done with nothing polled, and a start that fails shows its reason.
+
+Example names only.
+
+### Chat writes go where the person means: My library, the shared library, or asked (#897)
+
+On a Studio with sign-in and per-user spaces, a chat asked to write a file into the person's own library wrote it into the shared main library. Every chat library tool resolved paths against `KB_ROOT`, and none knew about the person's space. For an administrator the write went to the shared library silently. For anyone else it was refused, so a person who is not an administrator could not save to their own library from chat at all.
+
+**Where a write goes** (`chat/where.go`), on a Studio where the person has a space of their own:
+1. A library the person names always wins. That is either the tool's new `library` argument or a path that starts with a library's name, such as `My library/notes/a.md`, the way the Library's All view names it.
+2. Otherwise, the place the person chose earlier in this chat. It is kept in `INDEX_BASE/chat-write-places.json`.
+3. Otherwise, the chat's own context, decided server side from its recorded calls. It counts:
+   - the files it read, opened, listed, edited, moved, copied or wrote (seeded from the stored conversation, plus this process's calls, so the current turn counts too);
+   - the library the chat is scoped to.
+
+   If 75% or more are in My library, the file goes there. If 75% or more are in the shared library and the person may change it, it goes there.
+4. Otherwise (mixed, no context yet, or shared context the person may not write in), the write is held. The chat shows **Where should this be saved?**: one button per place with the full path the file would get, the folder the context points to when there is one, and **Don't save it**. The answer carries the call with that library and path. The server checks it against the places it offered, runs it as the person and keeps the choice for later writes in the chat. The ask reuses the approval hold (`HeldCall.Where`, `wherePart`, `answerWhere`).
+
+A pw code session's Studio tools cannot show the card. They get a result saying the place is unclear, with the options, and are told to ask the user and call again with the library named.
+
+**Writing as the file browser does** (`chat/place.go`, `chat/spaceops.go`):
+- The person's space is written through `kb.SpaceFiles`, as them, as the Library does.
+- The main library is written here, under the existing `mainlib` rule.
+- This covers write_kb_file (including append, `also`, `source` and images), edit_kb_file (including documents made again from it), move, rename and copy.
+- An edit, move, copy or rename of a path that is in only one of the person's libraries needs no name.
+- A path in both is refused, with a request to name the library.
+- Moving or copying between libraries is refused and pointed at transfer_files.
+- Copy inside a space works file by file (it was not available there before); a folder is refused with a message.
+
+**Results name the library**: "Saved to [My library/notes/a.md](#open=file:notes/a.md&lib=<space id>)", with the reason when the chat chose the place. The link opens the file in its library. Edit, move, copy and rename results name the library too. The tool descriptions say which library is the default and how to name one.
+
+**Reads and search**: read_kb_file, read_original, list_kb_dir and show_in_viewer take a library's name at the front of a path. An unscoped search_kb by a person with a space covers the shared library and My library, and each hit already says its library.
+
+**pw code**: on a Studio with spaces (sign-in on), a pw code chat already works in the person's space folder on the Studio's cluster (`pwcodeTarget`). This computer's pw code is not used with sign-in on (#876), so the main library is no longer a pw code workspace there.
+
+**Unchanged**: without spaces (a Studio of one, or a person with no space), writes go to the main library as before, nothing is asked, and results read as before. delete_kb_files still deletes in the main library only; deleting in My library is done in the Library.
+
+**Tests** (`chat/where_test.go`, `web/test/whereChoice.test.tsx`), each failing without the change:
+- Mostly My library: the file is written in the space, and the result names it with its link and the reason.
+- Mostly shared, as an administrator: it is written in the main library.
+- Mostly shared, as a person who is not one: they are asked, the main library is not offered, and a direct call writes nothing and says to ask.
+- Mixed context: asked.
+- No context yet: asked.
+- A named path or library wins over the context, in both directions.
+- A person who is not an administrator naming the shared library is refused.
+- A path escape (`..`) is refused for write, edit, move, copy and rename, and the space is never handed one.
+- Edit, copy, rename and move in My library, by name and by path only.
+- The hold card carries its places; declining writes nothing; an answer with a place not offered writes nothing; the chosen place is written and kept for the chat's next write, and still kept after a restart.
+- Without spaces, writes go to the main library as before.
+- Reads map `My library/...` to the space.
+- The card offers each place, answers with that call, has no plain Allow, and shows nothing to choose once answered.
+
+**Checks**:
+- `go vet` is clean.
+- `go test ./...` passes except the eight GUFI packages that fail the same way on main on a host without libllama.
+- Vitest: 963 passed.
+- The per-user spaces security suite was run against this branch's server in the v1.203.26 Linux release on a fresh bed (spacesec:3, `STUDIO_ADMINS=cy`), all phases: 811 passed, 0 failed.
+
+Relation to #894: that PR changes the Library's own space move and delete routes into jobs. This PR calls `kb.SpaceFiles` directly and does not touch `spaceOp`, so the two do not overlap.
+
+**Live check** on a local test bed: sign-in, per-user spaces, `STUDIO_ADMINS`, models from an administrator's endpoint. The two people were the deployment's owner, who administers it and has a space, and a person who does not administer it and has a space. Each asked in plain words in a new chat. Screenshots are kept off this public repo because they show a local model's name.
+- The administrator, "save a short note to my library": written in their own space.
+- The other person, "save a short note to my library": written in their own space.
+- The administrator, "save a short note to the shared library": written in the main library, with "Saved: Shared library/team-note.md".
+- The other person, "save a short note to the shared library": refused with the read-only reason, and the reply offers My library instead.
+- The administrator, "save a short note called plans.md" (nothing named, no context): the chat showed **Where should this be saved?** with both places and their paths. Choosing the space wrote the file there.
+
+The live check found three things, fixed in later commits here:
+- The model often leaves out the library the person named. A library named in the person's own latest message ("my library", "the shared library", or its name) now wins, decided server side. For a person who may not change the shared library, naming it in words leads to the question, never a refusal.
+- A space that cannot be reached (no key) answers the file check with a 409, which was read as "already exists". Only a listing now decides that something is a folder, and the write says the real reason.
+- list_libraries called My library read only and the shared library read and write for everyone. It now says what this person may write in each.
+
+A listing of a library's top level no longer counts as the chat's context, since that is the model finding its way rather than the chat's material.
+
+### Spreadsheets open as a grid: sheet tabs, formats, merges, frozen panes, selection and copy (#898)
+
+## What was bad
+
+The Sheets tab showed a workbook as LibreOffice prints it: PDF pages drawn as images. A report from a user showed it plainly: a white letter page, in a dark Studio, holding a small two-column table whose long cell was cut off at the page edge, with most of the page empty and no gridlines or sheet tabs. Opening example workbooks (wide, long, several sheets, merged headers, dates, money, percents, formulas, a chart) in light, dark and at 390 px found the same and more:
+
+- a white page in both themes, print-size text, no gridlines, column letters, row numbers or sheet names;
+- wide sheets split across pages (a 40-column sheet shows 7 columns on page 1; a budget's last column and its chart fall to page 2, the chart cut at the page edge);
+- a 3,000-row sheet becomes 140 pages, a 30,000-row one 698;
+- several sheets run on one after another with nothing to say where one ends;
+- nothing can be selected: no value, no formula, no copying;
+- text longer than the page is cut off without a sign;
+- at 390 px, a scaled-down letter page;
+- without LibreOffice (the macOS app), a plain text outline of 200 rows by 30 columns.
+
+## What it is now
+
+An Excel workbook (.xlsx, .xlsm) opens on a read-only spreadsheet grid, the default view of the Sheets tab:
+
+- **Read on the server from the file itself** with excelize, which was already a dependency: `GET /api/kb/sheet?path=&sheet=N`, nothing to install. It is tagged with the file's version (304 while unchanged), kept for the last 12 sheets read, and gzipped when large. A sheet past 10,000 rows, 256 columns or 300,000 values is cut there, and the grid says so. A 30,000-row sheet answers in 0.7 s (830 KB before gzip); a budget sheet in 4 ms.
+- **One tab per sheet**, in workbook order, with the sheet names. Hidden sheets are left out, and the note under the grid counts them.
+- **Column letters and row numbers** stay in view, as do the file's frozen rows and columns. Column widths and custom row heights come from the file, merged cells span, and values show as the file formats them (dates, currency, percents, thousands, times, booleans). Bold, italic, underline, font colour, fills and alignment are kept and mapped onto the Studio theme, dark included, not a white page.
+- **Long text** ends in an ellipsis inside its column, shows in full on hover, and shows in full in the bar above the grid when selected. **Wrap** wraps it in place.
+- **Smooth on large sheets**: only the rows and columns in view are drawn.
+- **Selection**: click, drag, Shift and click, or the keys (arrows, Tab, Enter, Page Up and Down, Home and End, Ctrl+A); a column letter or row number selects it. One cell shows its value, formula and stored value. A range shows its count, sum and average. **Copy**, or Ctrl+C, copies it as tab-separated text that a spreadsheet pastes into cells. **Filter rows** keeps the rows holding some text.
+- **Print view** keeps the LibreOffice pages, charts included, as a second view, with **Grid** to come back. The note under the grid says when a sheet has charts or pictures that only Print view shows. Without LibreOffice, Print view returns to the grid and says why. A workbook the grid cannot read opens on its print view and says so.
+- **CSV and TSV** files use the same grid: the header row frozen and bold, numbers to the right, widths fitted to the values, and **Sort** on the selected column.
+
+.xls and .ods files keep the print view or outline they had. HELP.md describes all of it.
+
+## Screenshots (example data)
+
+Before, light and dark:
+
+<img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/before-light.png?raw=true" width="720"> <img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/before-dark-wide.png?raw=true" width="720">
+
+After: a formula cell selected, then a range with its sum in dark:
+
+<img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/grid-light.png?raw=true" width="720"> <img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/grid-dark-range.png?raw=true" width="720">
+
+A 3,000-row sheet scrolled to row 1,820 with its header row and first column frozen, a 40-column sheet scrolled right, a long note wrapped in its cell:
+
+<img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/long-sheet-dark.png?raw=true" width="720"> <img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/wide-light.png?raw=true" width="720"> <img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/wrapped-note.png?raw=true" width="720">
+
+A CSV file in WebKit, a long cell selected; 390 px in WebKit; Print view:
+
+<img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/csv-light-webkit.png?raw=true" width="720"> <img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/narrow-webkit.png?raw=true" width="300"> <img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/print-view.png?raw=true" width="720">
+
+The Linux desktop app (WebKitGTK) built from this branch, a range selected with the keyboard:
+
+<img src="https://github.com/parallelworks/activate-studio/blob/screenshots/sheet-grid/desktop-app-range.png?raw=true" width="720">
+
+## Tests
+
+- Go, `internal/kb`: a workbook built in the test with a merged, styled title; a styled header; dates, money, percent, thousands, a boolean and a formula; a set width and row height; frozen rows; a chart; a second sheet and a hidden one. Also the row cap (rows read, rows in all), a file that is not a workbook (422) and an .ods (415). The route is tested for JSON, its version tag and 304, gzip, a bad `sheet` (400), a path outside the library, and a missing file (404 with no tag, added to the existing table).
+- Web: the grid (letters, widths, formats, merges, the title on long text, formula and stored value, range count and sum, copy as TSV, keys, a drag that widens the selection only once the pointer moves, 20,000 rows drawing under 200 cells, the cut note, filtering under frozen rows), the workbook tabs (hidden sheet, chart note, cache), the Viewer (grid first, Print view without LibreOffice coming back, a broken workbook on its print view), and the CSV grid's sort and filter.
+- Checked by hand in Chromium and WebKit, light, dark and 390 px, and in the Linux desktop app.
+
+## v1.203.26 (2026-11-23)
+
+### Chat: a text-protocol tool request that cannot be read is mended, asked again, or withheld, never shown (#873)
+
+For a model that has no tool calls of its own (named in `CHAT_SYSTEM_IN_USER`), the Studio asks for tools through a text protocol: the model replies with an envelope, `{"protocol":"studio-tools-1","nonce":"...","calls":[...]}`. When an envelope did not decode, the whole reply came back as the answer. The chat then showed the raw request, with its underscores turned into italics.
+
+**Which case it was.** A stand-in model that answers with the text protocol (`envelope_loop_test.go`) shows the raw envelope for:
+
+- (a) a request cut off at the output limit (`finish_reason: length`). A large spreadsheet of long text easily passes the 8,192 token default.
+- (b) JSON written raw inside the `content` string, or a line break or quote left unescaped in a string.
+- (c) an envelope after prose that carries a nonce issued earlier in the same turn. This happens only when a turn is resumed after an approval. The nonce stays the same across the rounds of one request, so a message added mid-turn does not change it.
+- (d) an envelope after prose whose `protocol` key comes after its calls. Its opening brace is then more than 400 characters and 4 braces back.
+
+A reply that is the envelope alone is read whatever its nonce, so (c) and (d) only matter after prose. The reported reply opened with `{"protocol":...` and its nested content was escaped. That makes it (a), or (b) through a raw line break or quote in a long cell. The hosted Studio's log can now tell which: a warning, "model's tool request could not be read", gives the finish reason and whether the reply was cut off.
+
+**Fixes:**
+
+1. An envelope is never shown. Text with the marker that either opens the reply or carries a nonce of this turn, and that does not decode, is withheld. Prose before it is kept.
+2. It is asked for again once. The chat shows a line: "The model's request to write reports/items.xlsx was cut off; asking it again in smaller parts".
+   - The model gets a note on writing a large file in parts.
+   - When the reply was cut off, the output limit doubles, up to 32768 tokens and what the model's window leaves. A provider that refuses the higher limit takes the existing path that asks again without a limit.
+   - If the second try also fails, the answer says what did not run. No final answer is made up in its place.
+3. Before giving up, a lenient repair: JSON written raw inside a string value, raw line breaks and tabs, unescaped quotes (taken as text unless a comma, colon or bracket follows), and a file's content given as an object rather than a string.
+4. Nonces of the turn's earlier calls are accepted, read from the `em-<nonce>-...` ids of the turn's messages from `baseLen` on. Nonces from files or earlier turns are still not.
+5. The search for an envelope's opening brace goes up to 64 braces back, with no distance limit.
+
+**`write_kb_file` append mode.**
+- `append: true` adds text to the end of a file, and makes the file when it is not there.
+- For a `.xlsx` it adds the rows to the sheet of the same name and skips a repeated header row. A sheet name the workbook does not have yet adds that sheet. Formulas and numbers keep their types when the workbook is written again.
+- A `.pdf` or `.docx` is refused, with the advice to write its Markdown in parts and make it with `source`.
+- The tool's description says to write large files this way.
+
+**Tests.** Each fails with its fix turned off, which I checked one at a time:
+- (a) `TestCutOffRequestIsAskedAgainInParts` and `TestCutOffTwiceIsWithheld`
+- (b) `TestMalformedRequestIsRepaired`, for raw nested JSON, a raw line break, and content as an object
+- (c) `TestEarlierNonceOfTheTurnIsAccepted`, through a resume
+- (d) `TestEnvelopeWithProtocolLastRuns`
+- `TestBrokenEnvelope`: a quote from a file is not flagged.
+- `TestWriteKBFileInParts`: append for text and for a workbook.
+
+Docs: HELP.md (Chat) and GO-PORT.md.
+
+Not changed: the forced final answer turn on these models is not checked for an envelope, since its prompt offers no tools. `TestChatScopeSearchesTheChosenLibraries`, `TestReadsUnderSeveralLibraries` and `TestChatLibrariesRequestShapes` fail now and then on main as well.
+
+### pw code chat: the session view laid out as PW Code on the web, with no pinned prompt over the header (#875)
+
+Three layout bugs in a pw code chat on v1.203.25, fixed together for v1.203.26.
+
+## What was wrong
+
+- **Tool steps.** The Studio's own thread draws a tool call and its result summary on one row (`[data-testid="tool-call-part"] { display: flex }` with the summary capped at 45%). Those rules also matched the package's tool steps inside the session view, so a Write's file preview or an Edit's diff sat in a narrow column to the right of the call with every line cut. The Code page's session view was affected the same way.
+- **Header.** The session view pinned its first prompt across the top of the thread (`pinPrompt`, absolute, z-index 20), exactly where the chat's header buttons float. The pill was drawn over the engine button ("pw code · model" read "code · model") and the buttons showed through behind it.
+- **The rest of the audit.** Parsing every selector in the Studio's CSS and testing it against what the session views render (a Write, an Edit with a diff, Read and Bash runs folded and opened, a long Bash output, a todo list, an ask card, the composer and context row) found these other restyles reaching in: streamdown code blocks and inline code (a fixed light background), tables, images, the user bubble's colour, the message action bar painted as a menu card (`div.top-full`), the thinking peek's height, `chat-reasoning-tail { display: none }`, and the package header heights.
+
+## The fix
+
+- Each of those 37 rules ends in `:where(:not(.pwcode-session *, .code-page *))`. It adds no specificity, so the Studio's own thread is unchanged (checked: its tool rows are still one-line flex rows) and the session views are the package's, as PW Code on the web draws them.
+- Kept on purpose, since they belong to the Studio's frame rather than the package's look: the band under the header buttons, the find bar's offset, the screen-reader label clip, the theme token mapping, fonts, `::selection`, and scrollbars.
+- The chat's session view and its subagent view no longer pass `pinPrompt`. The Studio's chat already names the conversation (the conversations list shows its first prompt, truncated), and nothing is left in its place: the thread starts where it did.
+- `test/sessionScope.test.ts` fails if a rule naming the package's markup (test ids, streamdown parts, utility class matches and so on) lacks the guard without being on its short allowlist, or if a session view pins its prompt again. It fails on main's stylesheet and passes here.
+
+## Checked
+
+Playwright, by hand (the suite has no browser runner), on a throwaway pw code chat through the forced relay:
+- No two header items overlap, there is no pin and no horizontal overflow, and every tool step's output starts under its call.
+- Chromium and WebKit, light and dark, at 390, 760, 900, 1100, 1440, 1680 and 2560 px: 28 of 28 pass.
+- Also checked: the Studio's own chat, and the Code page.
+- `tsc` and all 131 web test files pass.
+
+## Grouping of tool steps
+
+The Studio passes the same `foldEveryRun` and `ExpandAllProvider` setup as PW Code web's AgentSessionPage. Here, reads and shell commands fold into one line ("Read 3 files, ran 5 shell commands >") and start collapsed.
+- **Steps that stay on their own by the package's design:** edits and writes, todo lists, tasks, and any step whose decision line carries a note.
+- **Before this fix:** every listed step had its output squeezed beside it.
+
+## For the package owners
+
+Nothing blocks this; `pinPrompt` is already an option.
+
+### pw code chat: the band under the header buttons back at the top of the thread (#877)
+
+Found in studio-desktop-test's UX pass on main 9a43e702: in a pw code chat scrolled up a little, message text ran up to and behind Persona, the engine button and Save, and a blank band about 45px tall a little lower hid a line or two. The Studio's own chats did not show it.
+
+## Cause
+
+The header buttons float over the thread. Under them, a band in the thread's colour sticks to the thread's top (`.chat-canvas main .chat-thread::before`), so text passes under the band rather than behind the buttons.
+
+A pw code chat's thread also had `padding-top: 44px` of its own, added in #865. A sticky box sticks inside its scroller's padding, so the band sat 44px lower than the buttons. The pinned prompt used to cover the row under them; once #875 removed it, the gap showed.
+
+## Fix
+
+The padding is removed. The band already starts the conversation below the buttons, as it does in the Studio's own chats. On a phone the phone rule already set the thread's top padding, so nothing changes there.
+
+`test/sessionScope.test.ts` fails if a rule pads the session's thread again. It fails on main's stylesheet and passes here.
+
+## Checked
+
+On a long pw code chat scrolled up:
+- The band sits under the buttons and text fades out under them, as in a built-in chat: Chromium at 1440 light, WebKit at 900 dark.
+- The first message starts clear of the buttons on desktop and at 390px.
+- The web suite passes.
+
+### Accounts: Stop using the pw CLI; the deployment's credential is never a person's (#876)
+
+Two changes to Settings, Accounts and to every path that uses an ACTIVATE credential.
+
+### 1. Stop using the pw CLI
+
+On a Studio of one, the pw CLI card has **Stop using the pw CLI**. The Studio then reads none of this computer's ACTIVATE credentials: no pw CLI context, no `PW_API_KEY`, no gateway key. Every pw CLI run gets an empty `HOME` and `PW_CREDENTIALS_DIR`, the pw code daemon is not started, and image descriptions and library keys are off. It never signs the CLI out, since other tools on the computer use it. **Use it again** turns it back on with the same context. The choice is `stopped` in `access.json` beside the index (`PUT /api/access/cli/use {use}`, sign-in off only). While stopped, every ACTIVATE part says **Sign in to use**, each page shows **Sign in with ACTIVATE to use this**, and nothing makes an ACTIVATE call. HELP.md, Accounts, says how to test as a user without ACTIVATE.
+
+### 2. The deployment's credential is never a person's
+
+On a Studio several people use, a person with no ACTIVATE sign-in or key of their own gets none. Each path refuses (409, naming Settings, Accounts) and calls nothing: the Workflows page and DAG viewer, run watching, the assistant's platform and workflow tools, models through the platform gateway, pw code and the Code page, desktops and sessions, libraries over pw ssh, the RAG proxy and subscriptions. A pw CLI run for such a person cannot reach the deployment's sign-in. Runs now record their owner's id, so the watcher follows a run with its owner's key.
+
+Removed:
+- the "The deployment's credential" row in Accounts and the deployment source for people;
+- key sharing (one person's key promoted for everyone: `ALLOW_KEY_SHARING`, the share route now answers 403);
+- `ragAllowDeploymentKey` (`RAG_PROXY_ALLOW_DEPLOYMENT_KEY`);
+- with sign-in on, this host as an agent site (`AGENT_LOCAL_SITE=1` is ignored), since its pw code daemon runs as the Studio's account. Delegation, the agent tools and the Code page use the person's own clusters with their own key;
+- with sign-in on, Fleet's standing agents, which run on that daemon: `POST /api/fleet` answers 409 and an existing agent does not wake (its note says why).
+
+On a Studio of one, the person and the owner are the same, so the owner's credential stays theirs (unchanged, and covered by the Code page sign-in test).
+
+Models on a shared Studio may still come from an OpenAI-compatible endpoint the administrator set (`OPENAI_BASE_URL` and `OPENAI_API_KEY` naming a gateway that is not an ACTIVATE platform's), shown as **From the administrator's endpoint**, or from the sidecar model. `REQUIRE_PERSONAL_KEY` refuses both for chat.
+
+The deployment's credential is used only for housekeeping that acts as no person:
+- renewing its own pw CLI sign-in;
+- registering the grounded model at `/v1` into the platform catalog;
+- the deployment's icon;
+- image descriptions while indexing;
+- reading the Studio's workflow collection definitions. Runs, clusters and installs take the person's own key.
+
+`platform/deploymentuse_test.go` fails if any other code reads it. The update check reads releases and uses no ACTIVATE credential. A test guards that too. `deploy/workflow.yaml` keeps passing `pw_api_key` for the housekeeping above; only its tooltip changes.
+
+### Tests
+
+There is one test per path that it makes no ACTIVATE call when nothing is in use, and none with the deployment credential on a shared Studio. The paths are: workflows (routes, DAG, run watcher), sessions and desktops, the Code page, pw code, libraries over pw ssh (userlibs and library keys), models and platform tools (chat), access routes, agent sites, Fleet, and updates. `go test ./...` passes except the GUFI packages, which fail identically on main on this host (missing libllama). Vitest 929 passed, tsc and the build are clean.
+
+### Screenshots
+
+The Studio of one after Stop using the pw CLI:
+
+![](https://github.com/parallelworks/activate-studio/blob/pr-assets/no-activate-fallback/shots/accounts-stopped-light.png?raw=true)
+
+The pw CLI card with Stop using the pw CLI (dark, and narrow):
+
+![](https://github.com/parallelworks/activate-studio/blob/pr-assets/no-activate-fallback/shots/accounts-cli-dark.png?raw=true)
+![](https://github.com/parallelworks/activate-studio/blob/pr-assets/no-activate-fallback/shots/accounts-cli-narrow.png?raw=true)
+
+A shared Studio, not signed in: every part asks to sign in, with no deployment row:
+
+![](https://github.com/parallelworks/activate-studio/blob/pr-assets/no-activate-fallback/shots/accounts-shared-no-sign-in-light.png?raw=true)
+
+Models from the administrator's endpoint (Accounts in WebKit dark, and Model access):
+
+![](https://github.com/parallelworks/activate-studio/blob/pr-assets/no-activate-fallback/shots/accounts-shared-admin-endpoint-dark-webkit.png?raw=true)
+![](https://github.com/parallelworks/activate-studio/blob/pr-assets/no-activate-fallback/shots/model-access-admin-endpoint-light.png?raw=true)
+
+The Workflows page when stopped:
+
+![](https://github.com/parallelworks/activate-studio/blob/pr-assets/no-activate-fallback/shots/workflows-stopped-light.png?raw=true)
+
+### Chat: a file written in parts says what it holds, a short "I'll do it" turn is asked for its request, and the pre-search is the Studio's (#880)
+
+This follows #873 and fixes three findings from a desktop retest of the text tool protocol (a model named in `CHAT_SYSTEM_IN_USER`). In that retest, no raw request reached the screen.
+
+**E: a file written in parts was called done early.** The model was asked for 250 rows. Its first request was cut off, so it was asked again in smaller parts. It then wrote one part of 49 rows and said the file had 250. The tool's result was only "wrote emu-250.xlsx", so the model had no way to check.
+- A `.xlsx` write's result now says what each sheet holds, for example "an Excel workbook of 1 sheet (Items, 49 rows after the header)". Each appended part gives the same count.
+- The note sent after a cut-off request says the file is not done until every part is in. It tells the model to check the counts and report the one the result gave.
+- The tool's description now says to write rows as values. A spilled formula such as `=LET(SEQUENCE(400), ...)` shows as one row outside Excel 365 and in the library's text extract.
+
+**F: a short "I'll write it now" turn ended the job.** After searches, a short reply with no request forced a final answer with no tools, so nothing was written.
+- On the text-protocol path, such a reply now gets one note asking for the request, with the tools still offered, before the final answer is forced. The reply qualifies when it is empty, or says what the model will do ("I'll", "let me", "going to", and so on).
+- Models with native tools keep the old rule, because a system message in the middle of a conversation is not safe with every chat template.
+
+**G: the Studio's own search showed as the model's.** It appeared as a search of the model's ("Ran 2 searches") even when the user had said not to search.
+- It is now a progress line, "Studio searched your libraries first, for the model to answer from".
+- Its results in the prompt tell the model it did not ask for that search.
+- It is not run when the message asks for no search ("do not search first", "without searching").
+
+**Tests:**
+- `TestAnnouncedActionIsAskedForOnce` (F) and `TestPresearchIsTheStudios` (G) each fail with their fix turned off.
+- `TestWriteKBFileInParts` now checks the per-sheet counts after a whole write and after an appended part.
+
+The Node server (`server/src/chat/routes.ts`) keeps its old pre-search event, so the Node-against-Go comparison test, which runs only when `STUDIO_GOLDEN_NODE` is set, will differ on that event. The three library chat tests that fail now and then on main still do.
+
+### pw code chat: plans answered in the chat, Auto in a direct chat's permission menu, the header naming the session's model (#878)
+
+Three bugs from studio-desktop-test's UX pass on main 9a43e702, in a direct pw code chat, and a HELP mismatch.
+
+## D: a plan could not be approved in the Studio (blocked the user)
+
+After `/plan …`, the session waits on an approval of kind plan.
+- **What happened:** the package's `PlanApproval` draws the plan as text, and its `ApprovalAnswerValue` has no plan answer. PW Code on the web answers plans in the terminal. The card read "Plan awaiting approval in the terminal", with no buttons, the composer was disabled, and Stop was the only way out.
+- **New:** `session/PlanAnswer.tsx` puts the answer under the transcript: **Approve plan**, and **Keep planning** with what to change. It posts to the chat's existing route, `POST /api/chat/pwcode/{id}/approvals/{approval}` with `kind: plan`. That route already picks the mode an approved plan moves on to, held to the machine's ceiling and logged (#866).
+- **Which plan:** the card finds the open plan with the package's own `pendingApprovals(transcript)`.
+- **Package line:** the Studio overrides the package's `planPending` string to "Plan waiting for your answer, below".
+
+## B: no Auto in a direct chat's permission menu
+
+The package's `permissionModesUpTo` offers the modes the machine record's `permissionModes` lists. Without it, the package falls back to a list that has no auto.
+- **Chat:** the Studio's record of its own machine did not carry the daemon's `permissionModes`. It does now (`directFacts`).
+- **Code page:** its record of this computer, used by the new session form on a Studio with no sign-in, does too.
+
+## C: the header button kept the old model
+
+The engine button named the model the chat was linked with. The session view now says the model the session runs on (`pwcode/liveModel.ts`), and the button follows it, including when it mounts after the session view.
+
+## HELP
+
+- **Removed:** the claim that each pw code reply is labelled with its model. The session view does not show one.
+- **Added:** how the button follows the model, how the session's own model picker works, and how to answer a plan.
+
+## Tests
+
+Each new test fails when its fix is reverted, checked one at a time:
+- `TestTheDirectMachineCarriesWhatItsDaemonAllows`, and the local listing in `TestOnThisComputerAPersonManagesOnlyTheirOwn`.
+- `pwcodeEngine.test.tsx`: the button follows the model.
+- `pwcodePlanAnswer.test.tsx`: which plan is open, what Approve and Keep planning post, and an error that can be retried.
+
+`tsc`, the 133 web test files, and the chat and codesessions Go packages pass.
+
+## Checked live
+
+A direct pw code chat on a throwaway session:
+- **B:** the menu lists Read only, Accept edits, Auto and Bypass permissions.
+- **C:** picking Sonnet in the composer moved the header from "pw code · haiku" to "pw code · sonnet".
+- **D, Approve plan:** answered with a 200. The session wrote the file and left plan mode for Auto, and the composer came back.
+- **D, Keep planning:** with feedback, the plan was revised to it and a new card asked again.
+
+## For the package owners
+
+- `PlanApproval` cannot be answered, and `ApprovalAnswerValue` has no plan variant. The Studio answers through its own route; a package plan answer would serve PW Code on the web without a terminal too.
+- `REQUESTABLE_PERMISSION_MODES` leaves out plan. A session left in Plan after Stop shows "Plan" on its chip, with no Plan item in the menu; picking another mode leaves it.
+- Escape does not close the **/** palette while text follows the command.
+
+### Code, Agents and pw code ask to sign in without ACTIVATE (#881)
+
+Follows #876, from the desktop test pass on 848c1973 (Studios of one).
+
+### No ACTIVATE, or Stop using the pw CLI: Code, Agents and pw code ask to sign in
+
+This computer's pw code signs in with the computer's ACTIVATE login. With no ACTIVATE at all, or after Stop using the pw CLI, nothing reaches it, even a daemon that was already running.
+
+- `platform.HasActivate()`: `PW_API_KEY`, or a pw CLI context holding a sign-in, token or key (the one for the gateway's platform, else the CLI's current context). It is false after Stop. It reads no token and renews nothing.
+- `agentsites.LocalSiteAllowed` requires it on a Studio of one. That one rule covers the Code page, delegation, the chat's agent tools and the Agents sites list.
+- The pw code chat's direct paths (`pwcodeTarget`, `pwcodeDaemon`) refuse with "pw code needs ACTIVATE. Sign in with ACTIVATE under Settings, Accounts."
+- The Code page: `/where` answers `signIn: true`, `/sessions` answers 409 naming Settings, Accounts (no more 502 or raw ENOENT), and `/openai/models` answers an empty list. The Code item's badge goes with the listing.
+- Fleet: `GET /api/fleet` carries `unavailable` with the reason, `POST /api/fleet` answers 409, and agents do not wake. The Fleet page shows **Sign in with ACTIVATE to use this** and hides New agent and the templates.
+
+The local Code page stays for a Studio of one whose pw CLI is signed in but whose models come from elsewhere, as before.
+
+### Accounts
+
+- After Stop, only the card says so; the duplicate success note is gone.
+- With no CLI sign-ins and no `PW_API_KEY`, Stop using the pw CLI is not offered.
+- The platform host to sign in to is prefilled with the platform the Studio knows, and Sign in explains itself when the field is empty.
+
+### Tests
+
+Go tests cover:
+- the Code page with no ACTIVATE and after Stop, with a daemon running that is never asked;
+- `HasActivate`;
+- the local site rule;
+- Fleet refusing to create or wake without ACTIVATE.
+
+Fixtures that used this computer's pw code now give it an owner key. Web tests cover the Fleet prompt, the Stop button hidden with no sign-ins, the prefilled host, and the single stop message. `go test ./...` passes except the GUFI packages that fail the same way on main on this host. Vitest, tsc and the build pass. HELP.md (Code, Fleet, testing without ACTIVATE) and docs/AGENTS.md are updated.
+
+### pw code chat from the keyboard: focus goes to what the session waits on, and back; the conversation rail is one Tab stop with a ring (#883)
+
+From studio-desktop-test's keyboard pass, finding J (medium).
+
+## Focus goes to what the session waits on
+
+A question, plan or approval disables the composer, which dropped focus to the page.
+- **Before:** a keyboard user reached the card by Tab only after every earlier message's Copy button and tool row. That was 46 stops in a four-turn chat.
+- **Now:** when a card arrives, focus moves to its first answer (`session/focusAnswer.ts`):
+  - the plan answer under the transcript (#878) first;
+  - else the last open approval card.
+- **After answering:** focus goes back to the message box.
+- **Unchanged:** focus the person put somewhere else stays there.
+
+## The conversation rail
+
+The rail had a Tab stop per message tick, six in a row, with no visible ring. Now:
+- it is one Tab stop, the message in view;
+- Up, Down, Home and End move along it;
+- it opens from the keyboard as it does under the pointer;
+- the tick in focus has a ring.
+
+## Checked
+
+- **Unit tests:** `test/pwcodeFocusAnswer.test.ts` covers the card's first answer past earlier messages' buttons, the plan card first, focus kept elsewhere, and the return to the message box. 134 web test files pass, and so does `tsc`.
+- **Live, a direct pw code chat on a throwaway session, Chromium:**
+  - A question card focused "red". Enter picked it and moved to Send, and Enter sent it. Focus came back to the message box.
+  - A plan card focused "Approve plan", and Enter approved it from the keyboard. Focus came back to the message box.
+  - The rail has one Tab stop, Up moves along it, and the outline is 2px solid.
+
+## Not changed here
+
+The one-question card's own-answer row has no placeholder (the package's `AskApproval`). I list it for the package owners.
+
+## Also: a flaky Fleet test
+
+The first CI run of this PR failed `TestApprovalGoneAndBudget` in `internal/fleet`, which this PR does not touch.
+- **Cause:** the test waited for the renewed session's first message, but the wake-up goes on to set the round's goal before it ends. `follow` leaves an agent alone while it wakes (`wake.go`). On a loaded runner, `follow` came first and the agent stayed working.
+- **Reproduced:** a 50 ms delay before the wake-up ends fails the test every time.
+- **Fix:** the test now waits for the wake-up to end. It passes with the delay in place, and the package passes with `-race`.
+
+### Accounts: say under the host field what Sign in needs (#884)
+
+From the desktop test pass on #881. When the platform host field is empty, the pw CLI card now shows a line under it: "Type the platform's host to sign in to, such as platform.example.com." This replaces the title on the disabled Sign in button, which most browsers do not show and which keyboard and screen reader users cannot reach. The field is usually prefilled, so the line shows only after it is cleared. The Accounts test covers the line appearing and Sign in staying disabled. Vitest 940 passed, tsc clean.
+
+### pw code on another machine: the Studio adds its own tools there, as the person, over pw ssh (#874)
+
+The Studio's tools in a person's pw code sessions on their other machines, set up for them rather than by a command they run.
+
+**Where it runs**
+- **Continue in Studio**, for a session on another machine: the question has "Add this Studio's tools to pw code on <machine>", ticked by default and remembered per machine. Ticked, the chat's card runs the setup as it opens. Unticked, the Studio does not offer it for that machine again until the person chooses it.
+- **Code page**: once for each machine that lacks the tools, **Add** or **Not on <machine>**.
+- **The chat's card**: **Set up for me**, with the manual command behind **Do it myself** for machines pw ssh does not reach (a computer that connected itself to ACTIVATE, say).
+
+**How**
+- The Studio reaches the machine with pw ssh (the remote pool, as remote libraries do) and the person's own ACTIVATE credential. It never uses the Studio's account, and runs only on a machine the platform lists as theirs: `cloud` or `instance` owned by them, or `existing`.
+- On the machine it requires `pw auth whoami` to be the person and curl to be present. It reads `pw code mcp get --scope user studio`, then writes one user-scope entry.
+- **No key**: the entry is a stdio shim that asks pw on that machine for its own access token (`pw auth token --print`) at each use. It sends each message to the Studio's `/api/mcp` through the session proxy.
+  - The token is fetched every four minutes and again on a 401.
+  - It goes to curl through a mode 0600 file, never on a command line.
+  - A request the Studio refused is answered with a JSON-RPC error, so pw code is not left waiting.
+  - ACTIVATE creates API keys only from a browser session, so the Studio could not mint one as the person anyway.
+- **Idempotent**: an entry for this Studio, or one added by hand with its URL, is kept. One for another Studio is replaced only after asking. A machine recorded as set up for this Studio is not opened again unless the card asks to check.
+- **The session in front**: pw code reads MCP servers when a session starts, and on released pw code reconnect only reaches servers the session started with. So sessions started from then on have the tools, and the card says so. Where the machine lists `sessionMCPAttach`, the Studio also attaches itself to the chat's live session through the platform with `platformAuth`, and the card says the session has them now. That attach comes from parallelworks/core#24127, a draft.
+- New routes: `POST /api/mcp/bridge/setup`, `POST /api/mcp/bridge/prefs`, `GET /api/mcp/bridge/machines`. The continue confirm carries `studioTools`, and `GET /api/mcp/bridge?conversation=` carries `setup`. Each person's machine records are in `INDEX_BASE/studio-tools-machines.json`.
+
+**Tests**
+- Go, in `mcpsetup_test.go`:
+  - The shim runs for real with sh and curl against a test server: the token comes from pw at run time and renews on a 401, a notification gets no answer, and a refused request gets an error with its id.
+  - Setup adds, tries and reports, and a second run changes nothing and opens nothing.
+  - Another Studio's entry is replaced only when asked; one added by hand for this Studio is kept and recorded.
+  - Ownership: nothing runs for another person's chat or machine, a `local` computer, a machine not listed, someone else's pw sign-in on the machine, or a missing curl. Without the person's own credential it stops, though the Studio has an account. MCP access off runs nothing.
+  - Live attach only where the daemon supports it, with the person's key.
+  - A declined machine stays declined across a restart.
+- `mcpsetup_pw_test.go` (`STUDIO_PW_E2E=1`) runs the look and add steps with a real pw CLI under a scratch HOME. It caught dash's `echo` mangling the entry's JSON (fixed with printf).
+- Web: the card's Set up for me, auto-run, replace and failure paths; the confirm checkbox ticked, the untick remembered, and an already set-up machine skipped; the Code page offer shown once per machine.
+- `docs/HELP.md` and `docs/REFERENCE.md` are updated. HELP no longer says `/mcp` reconnect gives an open session a newly added server, since it cannot.
+
+**Not tested live**: running it through pw ssh on a real machine needs a throwaway ACTIVATE account and machine, which this change did not have.
+
+### Chat: a workbook short of the rows asked for is finished by the model; notes say tool request (#882)
+
+This follows #880. In a desktop retest (text tool protocol, a model named in `CHAT_SYSTEM_IN_USER`), the reply was truthful but the work stopped half done. A 250-row workbook's first request was cut off and asked for again. The model then wrote one part of 49 rows and told the user the workbook held 49 rows, not 250. It never added the rest with `append=true`.
+
+- A workbook write's result now tells the model to send the next rows at once, with `append=true`, the same path and the same sheet name, when a sheet holds fewer rows than were asked for. The rest goes in part after part, before any reply to the user. Each appended part's result says the same.
+- The note after a cut-off request says to send the next part at once when the sheet is short. It still says to report the count the result gave.
+- The Studio's notes to the model now say "tool request" rather than "lookup request". A reply that repeats a note no longer calls a write a lookup ("The lookup reports that ... was created").
+
+Tests: `TestWriteKBFileInParts` checks the continue wording in the results of a whole write and of an appended part. `TestCutOffRequestIsAskedAgainInParts` and `TestAnnouncedActionIsAskedForOnce` check the wording of the notes.
+
+### Chat switching: show a chat at once from what is known, read it once (#879)
+
+Switching chats in the sidebar felt slow on v1.203.25. This makes a chat show right away from what the page already knows, and cuts the round trips a pw code chat waits on.
+
+## Where the time went (v1.203.25)
+
+- **The chat's record was read three times per switch, one read after another.** `GET /api/chat/conversations/{id}` was called by the adapter, `useChatLink` and `PWCodeEngine`, and the session view mounted only after those reads.
+- **A direct chat made two round trips in a row before anything showed.** The page asks `/transcript?tail=200`. A daemon without that route answers 404, and only then does the page read the whole session. With 1.5 s per call, content showed after about 3.1 s.
+- **The relayed transcript was buffered whole.** For a 5 MB session (455 history items) that took about 4.3 s. The platform's own time to first byte is 2.3 to 4 s.
+- **Going back to a chat started over.** The session view remounted, so a revisit cost 225 to 344 ms. Leaving a long pw code chat cost a 130 ms unmount, and the previous chat's content flashed before the new one.
+- **Smaller costs on every switch:**
+  - `/api/access` was read on each mount to learn where models come from.
+  - The `@parallelworks/ui/ai` message catalog loaded asynchronously on each mount.
+  - The events socket opens only after the fresh read.
+
+## What changed
+
+**Web**
+- `web/src/chatRecord.ts` reads a chat's record once per open, however many parts of the page ask. It keeps the records of the 30 chats opened last, and reads a chat ahead when the pointer rests on it in the list.
+- A pw code chat opened before shows its session from the kept record at once, with no empty frame.
+- A pw code chat never opened before shows the record's messages until its transcript arrives, as v1.203.22 did.
+- The three pw code chats opened last stay drawn but hidden (React `Activity`):
+  - Nothing of a hidden chat runs: its effects are torn down and its socket is closed.
+  - Going back shows the chat as it was, and its feed picks up after its last event.
+- Where the session's models come from (`/api/access`) is kept for a minute.
+- The message catalog is loaded once per page.
+
+**Server**
+- `GET .../transcript` is passed on as it arrives (`pwcode.StreamGetter`, the same path for the relay and the local daemon, 2 minute limit), gzipped for a browser that accepts it. The end of the transcript draws at first byte.
+  - The ownership check (`proxiedSession`) and the route allowlist run before upstream is called, as for every route.
+  - Only a 200 with `application/json` is passed on; anything else is a 502.
+  - The response sets `nosniff` and passes on none of upstream's other headers (cookies, CORS).
+- A daemon without the transcript route (404 or 405) is read once whole by the Studio and answered in the same form, end first. The page asks once instead of twice.
+
+**Privacy and ownership**
+
+Everything kept is the viewer's own. `web/src/viewerCache.ts` clears the kept records, the model source and SWR's cache, and empties the hidden chats, whenever:
+- another person becomes the viewer on the page, or
+- the ACTIVATE sign-in or key changes (`ade:model-access-changed`).
+
+A read still on its way at that moment is not kept. A Studio sign-out leaves the page. No ownership check on the server changed.
+
+## Before and after
+
+**Cold first open**, on studio-desktop-test's data and scripts. Times are ms from click to content / settled, Chromium, with 1.5 s added to each `/api/code`, `/api/chat/pwcode`, `/api/pwcode-feed` and `/api/access` call (standing in for a platform or relay round trip):
+
+| chat | v1.203.22 | v1.203.25 | this PR | this PR, WebKit |
+|---|---|---|---|---|
+| built-in short | 55/364 | 88/88 | 94/94 | 265/265 |
+| built-in long | 47/347 | 71/71 | 59/59 | 179/179 |
+| pw code direct short | 37/336 | 3087/3087 | 63/63 | 168/168 |
+| pw code direct long | 77/353 | 3149/3149 | 1658/1789 | 1854/1958 |
+| pw code long, started in Studio | 44/334 | 3092/3092 | 74/74 | 176/176 |
+| relayed short | 38/340 | 1632/1730 | 72/85 | 189/1844 |
+| relayed long | 69/350 | 1811/1844 | 1754/1782 | 1886/1947 |
+
+The two long rows still wait about one round trip. Their last turn was sent from the session view, so it is in the session and not yet in the chat's record. The record's earlier messages show at once, and the last turn arrives with the transcript.
+
+**Cold first open with no added delay**, content / settled:
+
+| chat | v1.203.22 | v1.203.25 | this PR | this PR, WebKit |
+|---|---|---|---|---|
+| built-in short | 78/367 | 79/79 | 102/102 | 242/242 |
+| built-in long | 42/341 | 66/66 | 51/51 | 179/179 |
+| pw code direct short | 44/347 | 68/372 | 60/352 | 154/405 |
+| pw code direct long | 78/355 | 135/346 | 158/411 | 276/502 |
+| pw code long, started in Studio | 50/347 | 83/923 | 69/271 | 163/339 |
+| relayed short | 40/337 | 136/401 | 60/409 | 166/518 |
+| relayed long | 77/351 | 221/429 | 232/482 | 377/597 |
+
+**Warm switch** (the chat was opened earlier in the page), median content time in ms, Chromium / WebKit:
+
+| chat | v1.203.22 | v1.203.25 | this PR |
+|---|---|---|---|
+| built-in short | 97 / 178 | 79 / 92 | 73 / 134 |
+| built-in long | 128 / 114 | 74 / 100 | 69 / 134 |
+| pw code direct long | 75 / 129 | 64 / 88 | 71 / 97 |
+| pw code long, started in Studio | 66 / 80 | 73 / 98 | 39 / 57 |
+| relayed short | 92 / 76 | 35 / 62 | 29 / 60 |
+| relayed long | 148 / 80 | 72 / 117 | 54 / 125 |
+
+The direct short chat's session was running a turn from another test during these runs, so it is left out of this table. WebKit varied a lot here: the same switch took 55 to 300 ms from round to round while another test ran on the host.
+
+**A long real session through the platform relay** (455 history items, 5 MB, `STUDIO_PWCODE_FORCE_RELAY=1`), Chromium, 60 ms added to each `/api` call, ms from click to content:
+
+| | v1.203.22 | v1.203.25 | this PR |
+|---|---|---|---|
+| long, first open | about 400 | 4469 | 3600 to 6000 (bound by the platform's time to first byte) |
+| long, going back | about 400 | 225 to 344 | 56 to 79 |
+| short, going back | about 100 | about 100 | 19 to 24 |
+| requests per switch | 5 | 12 to 18 | 7 to 14 |
+
+## Tests
+
+- `web/test/chatRecord.test.tsx`:
+  - A record read for one viewer is never handed to another on a shared Studio. That viewer's session data in SWR's cache is cleared too.
+  - A read on its way during a clear is not kept.
+  - The cache is cleared on an ACTIVATE sign-in change.
+  - One read serves callers that ask at the same moment.
+  - A read ahead is used once.
+  - `useChatLink` draws a kept chat in its first render.
+- `pwcodeproxy_test.go`:
+  - The transcript arrives a part at a time and gzipped.
+  - Another person's session, or the session under another machine, is 404 and the machine is not asked.
+  - HTML from upstream is a 502.
+  - A refusal passes on as the route's error.
+  - Upstream's cookies and CORS headers are dropped.
+  - An older daemon's transcript is built from the detail with a single page request.
+  - Removing the content-type check makes the test fail (checked by mutation).
+- `pwcodeSessionPlatformModels.test.tsx`: the model source is read once per minute.
+
+## Left for the packages and the platform
+
+- **`@parallelworks/code`**:
+  - A preload API that keeps the tail-first read, so the sidebar can warm a session's transcript on hover.
+  - A way to open the feed with `after=` from a cached copy before the fresh read returns.
+- **`@parallelworks/ui`**:
+  - Virtualizing long transcripts and threads. Rendering 100 messages is a 197 ms task.
+  - Base UI's collapsible reads `getComputedStyle` for each collapsible as it mounts, about 50 ms of the 157 ms task when a built-in chat opens after a long pw code chat.
+- **pw code daemon**: the `/transcript` route and `previews=refs` (v7.139.0 sends inline images, 5 MB for the long session).
+- **Platform**: time to first byte for `/transcript` through the relay is 2.3 to 4 s on a 5 MB session.
+- **The Studio**: `/api/code/sessions` asks the platform on each 5 s poll for each open view. A short per-viewer cache would cut that load. It is not on the path to content.
+
+## v1.203.25 (2026-11-23)
+
+### Settings, Accounts: one place for the ACTIVATE sign-in and other accounts; Model access keeps where models come from (#870)
+
+The ACTIVATE sign-in lived in Settings, Model access, but it now turns on much more than models: pw code and the Code page, libraries over pw ssh, workflows, desktops and the assistant's platform tools. Other screens sent people to "Settings, Model access" to sign in. This adds **Settings, Accounts**, one place for the accounts the Studio uses, and leaves Model access with the choice of where models come from.
+
+### Settings, Accounts
+
+- **ACTIVATE** first: who is signed in, and **What it turns on in this Studio**, one row per part with its state: pw code and the Code page, libraries on ACTIVATE systems (pw ssh), Workflows, Desktops, the assistant's platform tools, Models (the last two with AI features on). States: On; On, with the deployment's credential; Sign in to use; Needs your own sign-in; pw CLI not found; From your endpoint.
+- **How you sign in**: pw CLI on this computer (a Studio of one, with the contexts table, device sign-in and CLI location as before), Sign in with ACTIVATE (a Studio several people use, first and recommended), ACTIVATE API key, and The deployment's credential (shared only, marked **Administrator setting**, read only). Subscriptions through ACTIVATE sit in the same card.
+- **OpenAI-compatible endpoint** as its own card (AI features on), with Advanced and Test as before. An ACTIVATE host typed with a path moves to it with **Use as an endpoint**.
+- An empty slot after the endpoint card for the Claude account pw code uses: `web/src/components/ClaudeAccountSlot.tsx`, which studio-code-continue fills.
+
+### Model access
+
+The model banner (Re-check, models, unlock link) and **Where models come from**: ACTIVATE or an OpenAI-compatible endpoint, both set up under Accounts. While an endpoint is stored, models come from it, so choosing ACTIVATE says the endpoint will be removed and removes it only on **Remove the endpoint and use ACTIVATE** (`POST /api/me/model-key/clear`). Choosing an endpoint before there is one opens Accounts. With AI features off, Model access is left out and `#view=settings:access` opens Accounts.
+
+### One prompt for every ACTIVATE feature
+
+Without a credential, each ACTIVATE feature shows **Sign in with ACTIVATE to use this** with **Open Accounts** (`<NeedsActivate>` in `web/src/components/NeedsActivate.tsx`), instead of being hidden, erroring or naming Model access: the Workflows page and Settings, Workflows, the Code page, desktops, the Add a library form's pw ssh choice, personal spaces, the pw code engine menu in chat, and the status panel's platform row. A server message that sends the person to sign in now names "Settings, Accounts" (about 30 Go files), and `needsActivate()` in `web/src/accounts.ts` reads that to show the same prompt. `GET /api/config` gains `accounts` (true unless `DISABLE_PERSONAL_KEYS=1`); with it, the Workflows and Code pages show in the sidebar and ask to sign in where the person has no ACTIVATE credential. A Studio of one that never uses ACTIVATE can switch them off in Settings, Sidebar. The setup wizard, the first visit card, StudioToolsSetup, chat's model notices and the add-provider link point to Accounts.
+
+### Shared Studio rules (unchanged, now shown)
+
+The rules stay as the server applies them: pw code, desktops and libraries over pw ssh take only the person's own sign-in or key and never the deployment's; workflows, platform tools and models may fall back to the deployment's credential, which only the administrator sets. Accounts shows those as "Needs your own sign-in" or "On, with the deployment's credential" per part, and the deployment's credential has no controls for a person.
+
+### Stored credentials
+
+No storage key or route changed, so existing sign-ins, keys, endpoints and pw CLI choices keep working with no re-sign-in, and no migration is needed.
+
+### Tests
+
+- New `web/test/accounts.test.tsx` (17): parts and states on a Studio of one, with no ACTIVATE, on a shared Studio signed in and out, the deployment's credential never counted as the person's own, the Administrator setting label, unverified identity, CLI contexts, device sign-in, CLI location, subscriptions, AI features off, the endpoint card and the move to it.
+- `web/test/modelAccess.test.tsx` rewritten for the choice: endpoint removal only on confirmation, Keep the endpoint, no ACTIVATE account, no model at all.
+- New `web/test/needsActivate.test.tsx`: Workflows page and Settings, Workflows ask nothing of the platform without a credential; the Code page shows the server's reason in the prompt. Prompt tests added for desktops and the pw code engine menu; `sectionAllowed` with `accounts`.
+- Go: `TestAccountsOfferedUnlessPersonalKeysAreOff`; message expectations updated in access, sessions and workflows tests.
+- tsc clean; web 904 passed; `go test ./...` passed.
+
+Docs: HELP (new Accounts section, Model access rewritten, pointers), REFERENCE (Accounts and model access), README, ACCESS-CONTROL, AGENTS, CUSTOMIZATION, DEPLOY, LIBRARIES, MULTI-USER, TRANSFERS, WINDOWS.
+
+### Screenshots
+
+Chromium and WebKit, light and dark, desktop and narrow; the full set is on the `pr-assets/settings-accounts` branch.
+
+| | |
+|---|---|
+| Accounts, a Studio of one, pw CLI (light) | ![](https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-accounts-cli-desktop-light-chromium.png?raw=true) |
+| Accounts, no ACTIVATE, endpoint for models (dark, WebKit) | ![](https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-accounts-none-desktop-dark-webkit.png?raw=true) |
+| Accounts, hosted shared, signed in (light) | ![](https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-accounts-shared-in-desktop-light-chromium.png?raw=true) |
+| Accounts, hosted shared, not signed in (dark) | ![](https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-accounts-shared-out-desktop-dark-chromium.png?raw=true) |
+| Accounts, the deployment's credential (light, WebKit) | ![](https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-accounts-shared-admin-desktop-light-webkit.png?raw=true) |
+| Model access, endpoint in use (light, WebKit) | ![](https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-access-none-desktop-light-webkit.png?raw=true) |
+| Workflows without ACTIVATE (dark) | ![](https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-workflows-none-desktop-dark-chromium.png?raw=true) |
+| Narrow: Accounts shared signed in (dark), no ACTIVATE (light, WebKit) | <img src="https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-accounts-shared-in-narrow-dark-chromium.png?raw=true" width="300"> <img src="https://github.com/parallelworks/activate-studio/blob/pr-assets/settings-accounts/accounts/acct-accounts-none-narrow-light-webkit.png?raw=true" width="300"> |
+
+### pw code chat: PW Code web's session view options, from the same packages (#871)
+
+The session view inside a Studio chat gets PW Code on the web's options, built from the same packages (`@parallelworks/code` 0.5.0, `@parallelworks/ui` 0.146.2, the versions the platform uses). The Code page's part is #869; Settings, Accounts came in #870, and its pw code accounts card is here.
+
+## Parity: PW Code web's session page and the Studio chat
+
+| PW Code web option | Studio chat | How |
+|---|---|---|
+| Whole transcript, live turns, steps, auto-reviewer notes | done (v1.203.23) | `SessionView` |
+| Send, queue, direct, interrupt, Stop | done | `usePwCodeComposer` |
+| Approvals, questions, plans | done | package bars |
+| Model, effort, permission mode | done | model select now; `AgentModelControls` from #869 once it merges |
+| Context row: machine, folder, branch, worktree | added | `SessionContextRow` port |
+| Pull requests with their state | added | `pull-requests` route, `PullRequestStateIcon` port |
+| Tasks | added | `SessionTasks` port, `transcript.todos` |
+| Subagents: switcher, view, steer, stop, dismiss, stop all | added | `useSubagents`; `AgentSwitcher`, `SubagentView` ports |
+| Background command hint and Ctrl+B | added | `BackgroundCommandHint`, `toolFooters` |
+| Goal: chip, time, edit, pause, resume, clear, achieved notice | added | `GoalControl` port, `useGoalNotice` |
+| Images in the composer: paste, attach, previews, full size | added | `useComposerImages`; `images` routes, `previewsByRef` |
+| Slash palette of the session's commands | added | package palette; the Studio's own palette stays out of a session's composer |
+| `/clear` into a new session | added | `cleared` event, `POST /api/chat/pwcode/{id}/follow` |
+| `/compact`, `/plan`, `/shell`, `/goal`, other built-ins | added | own routes, `commands` |
+| Usage limit wait | added | `UsageLimitWait` port |
+| Away recap | added | `useAwayRecap` port, `recap` route |
+| Terminal handoff: the `pw code` command to pick it up | added | `TerminalHandoff` port |
+| Account chip, accounts panel with usage, choose, sign in, remove, move sessions | added | `useClaudeAccountPanel`, `useClaudeSignIn`; machine account routes |
+| Accounts in settings | added | the same panel, bare, as the Settings, Accounts card for the Studio's own pw code (#870's slot) |
+| Sign-in prompts | added | a session's refusal that names Settings, Accounts shows the shared prompt with Open Accounts |
+| Open in a terminal (local app) | not possible | the Studio has no terminal; the handoff gives the command to copy |
+| Rename, archive, pin, group, fork, delete, leave worktree | not in a chat | the Code page's (#869); refused by the chat's proxy, also as slash commands |
+| `/resume`, `/remote-control` | not in a chat | they change which session or how the machine takes remote control; refused |
+| Live subagent switcher on a daemon that reports no subagent status | not possible | the package hides the list until every subagent has a status; same on PW Code web |
+| New session, session list, sidebar, folder picker, start page | Code page | #869 |
+
+## Server
+
+- The proxy passes what the view uses, as the platform relays it, owner only: `worktree`, `pull-requests`, `claude-code/accounts`, `images`, `github-images`, `background`, `recap`, `goal`, `clear`, `compact`, `plan`, `shell`, `commands`, and the subagent routes. Session-managing routes stay refused.
+- Images pass as bytes, up to 25 MB, only as png, jpeg, gif or webp, with `nosniff` and a sandboxing CSP.
+- `POST commands` keeps to the chat's rules: `/permissions <mode>` goes through the same ceiling check as the picker and is logged (`via=command`); `POST plan` is logged; rename, fork, archive, resume and remote-control are refused.
+- `/follow` moves the chat to the session its session was cleared into: only one the chat's target reaches as the viewer, in the same folder, and logged.
+- `/api/code/machines/{machine}/claude-code/{...}`: the account panel's routes for the viewer's own pw code; the `studio` machine is the daemon the Studio drives for the viewer, any other is relayed as the viewer. Removing, moving and signing in are logged.
+- The direct machine record carries its daemon's facts (sign-in, removal, allowed, remote limits).
+
+Each new safeguard has a test that fails when it is broken (checked by breaking each one).
+
+## Checked live
+
+On a test Studio through the forced relay and on the direct path: tasks, context, the slash palette, `/clear` followed into the new session, the account chip and panel with usage, the terminal handoff, an image pasted and shown full size, Ctrl+B to the background, the goal set and achieved. Light, dark and 390 px wide have no horizontal overflow. The screenshots show real machine names, so they are not attached here.
+
+## Requests for the packages' owners
+
+The Studio wrote these itself; they belong in the packages:
+- Components: `GoalControl`, `ComposerImages`, `BackgroundCommandHint`, `SessionContextRow`, `SessionTasks`, `UsageLimitWait`, `TerminalHandoff`, `AgentSwitcher`, `SubagentView`, the account panel and sign-in.
+- An `onPaste` prop on `SessionView`'s composer.
+- Exports: `PullRequestStateIcon`, the `TodoItem` and `Schemas` types.
+- `useFold` and `fitRow` as utilities, and a merged-colour token.
+- A plain-text output renderer for the sign-in, and message keys for its code field.
+- A manage-only mode for the account panel (for a settings page).
+- Browser defaults for `useAwayRecap` and `useComposerImages`.
+
+### Code page: PW Code web's options from the same packages, with sessions opening in a Studio chat (#869)
+
+The Code page now offers what PW Code on the web's Code page offers, built from the same packages it uses (`@parallelworks/code` 0.5.0 for what is listed, started and changed, `@parallelworks/ui/ai` 0.146.2 for how it is drawn) rather than recreated. Opening a session continues it in a Studio chat (Continue in Studio) with the same confirm as before; the session view inside that chat is studio-code-continue's part of v1.203.25.
+
+## What changed
+
+- **Sessions list** (`web/src/code/CodeSidebar.tsx`): `useSessionList` in `ConversationSidebar`, as core's AgentsSidebar: Needs you, Pinned, the person's own groups, Active, Inactive, Archived. Each row has its state mark, pinned mark, machine (when there are several), state text, pull requests, and the Studio's **in a chat** and **delegated** marks. It also has search, the **Delegated** filter, the folded rail of live sessions, resize, and the row, group and list menus and keys. On a phone the list opens in the sidebar's drawer (**Sessions**).
+- **Session menu** (`sessionMenu.tsx`): `useSessionActions` drawn as core's useAgentSessionMenu draws it: Rename (`RenameDialog`), Pin, Fork, Stop, Archive or Restore, Move to group or a new group, Leave worktree, Delete. Archive and Delete offer the worktree choice (a port of SessionWorktreeChoice on `useWorktreeChoice`). The Studio's **Continue in Studio** and **Open in ACTIVATE** come first.
+- **Start** (`CodeStart.tsx`, `DirectoryPicker.tsx`): `ChatStage` and `ChatInput` with the machine chip (`machineMenu`, machines not answering listed apart), the folder picker with completion (`usePathCompletion`, recents, Tab opens, Enter uses), `PermissionPicker` with the machine's ceiling, the model picker (`useModelPicker` in a `Combobox`, the platform's models read as the person), `EffortPicker`, and `AllocationSelector` when the package offers one. Under it, Needs you with `ApprovalBlock` answered in place, and the shortlist. A session started here continues in a Studio chat at once, with `confirmed: true` and no second question, since the person has just started it.
+- **A link to a session** (`#view=code?session=`, from Fleet, Agents, the status panel and chat notes) shows that session at the top: its state, what it waits on (answerable), the delegated work and its files, **Continue in Studio** and **Open in ACTIVATE**. A row the Studio cannot continue for the person shows the same card with why.
+- **Sign-in**: with no ACTIVATE credential of the person's own (or no platform), the page shows Settings, Accounts' `<NeedsActivate>` prompt (#870), "Sign in with ACTIVATE to use this" with **Open Accounts**, and calls nothing else. It shows wherever `sectionAllowed('code')` allows, as #870 set.
+- **Waiting count**: the menu's Code entry counts the sessions waiting on the person, as PW Code on the web's menu does.
+- `web/src/views/CodeView.tsx` and its four tests are removed; #870's Code page check in `needsActivate.test.tsx` now renders the CodePage. The old `/api/code-sessions` server routes are left in place; the web no longer calls them.
+
+## Server: `/api/code-page`
+
+`server-go/internal/codesessions/page.go` serves the platform paths the packages call, under `/api/code-page`, so the chat-limited `/api/code/*` routes are unchanged:
+
+- Every call goes to the platform with the person's own credential (`viewerKey`), never the deployment key, or to this computer's pw code where the page lists it. Without a credential it answers 409, and the platform is not asked.
+- A session's routes are limited to what PW Code on the web's list and menu use: `pwcode.PageRoute` in a new file, `server-go/internal/pwcode/pageroutes.go`, so `proxyroutes.go` (studio-code-continue's) is untouched. The allowed routes are GET, worktree, pull-requests, rename, archive (POST and DELETE), pin (POST and DELETE), group (PUT and DELETE), stop, fork, DELETE, worktree/leave, and approvals/{id}. Anything else (messages, shell, clear, compact, settings, goal, attach, transcript, commands, interrupt, subagents, images, traversal ids) answers 404 without asking the platform.
+- Owner only: the platform lists only the person's sessions. On a shared Studio's own computer, a person lists and changes only the sessions the Studio started for them; others answer 404, and start, fork and folder listing answer 403.
+- Ceiling: a new session's mode, and the mode a plan's answer moves a session to, are held to the machine's remote ceiling as the platform lists it. With none named the ceiling is accept-edits; an unreadable listing or an unknown ceiling means read-only. Unknown fields are dropped, and a relative workspace answers 400.
+- A change from another site (cross-site `Sec-Fetch-Site`, or a foreign `Origin`) answers 403. Start, delete, archive, stop, fork and leave worktree are logged with the person's name.
+- `GET /api/code-page/where` answers `{local, codeUrl, signIn}`.
+
+## PW Code web options and the Studio
+
+| PW Code web | Studio | Notes |
+|---|---|---|
+| Sessions by state: Needs you, Pinned, groups, Active, Inactive, Archived (AgentsSidebar, sessionGroups) | done | `useSessionList` and `ConversationSidebar` |
+| Machine on each row when sessions span machines | done | as there |
+| SessionMark (working, usage limit, state dot) | added | Studio copy of the app's component |
+| Pinned mark | added | Studio copy |
+| Pull requests on a row (InlinePullRequests) | added, simpler | names only; per pull request state and folding are app-local |
+| Search | done | package's `searchedSessions` |
+| Folded rail of live sessions | done | |
+| Row keys (A archive, Backspace delete), cycle with Ctrl+Alt arrows | done | from the package |
+| Resize | done | |
+| Group menu (rename, delete group), list menu (new session, new group) | added | right-click a heading or empty space |
+| Drag a session onto a group | not added | Move to group in the menu does it; the drag wiring is app-local |
+| Phone: rows in the app's navigation | different | the Studio opens the list in the sidebar's drawer |
+| Waiting count in the app's menu | added | badge on Code |
+| HowSessionsAppear | added | empty page and the ? button |
+| Rename | done | `RenameDialog` |
+| Pin, Unpin | done | |
+| Move to group, new group | done | groups kept in this browser |
+| Fork | done | the copy opens in a Studio chat after the confirm; refused on a shared Studio's own computer |
+| Stop | done | |
+| Archive, Restore, with the worktree choice | done | SessionWorktreeChoice port |
+| Delete, with the worktree choice | done | |
+| Leave worktree | done | |
+| Open a session (session page) | Continue in Studio | same confirm as v1.203.23; the session view is studio-code-continue's |
+| Machine chip and menu, machines not answering apart | done | `machineMenu` |
+| MachineIcon | added, simpler | computer and resource icons; core's per-cluster icons are app-local |
+| DirectoryPicker with completion and recents | added | port on `usePathCompletion` |
+| DirectoryBrowser (folder tree dialog) | not added | the path field lists and opens folders; the tree dialog is app-local |
+| PermissionPicker with the machine's ceiling | done | the server enforces the same ceiling |
+| Model picker (AgentModelControls, `useModelPicker`) | added | `web/src/code/AgentModelControls.tsx`, shared with the session composer; platform models as the person; Claude models through `claude-code/models` |
+| EffortPicker | done | |
+| AllocationSelector | wired | shows when the package offers allocations; the Studio's adapter lists none yet |
+| ClaudeAccountChip, ClaudeAccountPanel, ClaudeSignIn | not added | Claude sign-in drives a login terminal through routes the page does not relay; sign-in belongs in Settings, Accounts, and studio-code-continue has the Claude account slot |
+| Slash palette at start (agentsCommands, startCommands), prompt history | not added | needs the session view's `commands` route and app-local history |
+| ComposerImages at start | not added | images are saved to the new session through a route the page does not relay |
+| Needs you, answered in place (ApprovalBlock) | done | |
+| Shortlist of sessions to pick back up | done | |
+| Session link notice (`?session=`) | added | shows the linked session's card |
+| Start from a chat (`fromChat` handoff) | not possible | hands over a platform chat; the Studio's chats are its own |
+| Live listing feed (`/ws/code/sessions`) | not added | the Studio does not proxy that WebSocket; the package polls |
+| Preferences in the person's account | different | kept in this browser |
+| AgentsHeaderActions find, TerminalHandoff, AgentSessionHeader | session view | studio-code-continue |
+| SessionContextRow, SessionTasks, SubagentView, BackgroundCommandHint, GoalControl, AgentPullRequests, UsageLimitWait, useAwayRecap | session view | studio-code-continue |
+
+## Requests for the packages' owners
+
+The Studio wrote these because they are core's app-local code, not exported:
+
+- SessionMark, PinnedMark, MachineIcon (with core's icon map), HowSessionsAppear.
+- DirectoryPicker and DirectoryBrowser, SessionWorktreeChoice.
+- AgentModelControls and MachineChip (with `machineMenuEntries`).
+- The session row and its detail line (SessionRow, SessionDetail, InlinePullRequests), NeedsYou and the shortlist.
+- The drag to group wiring, and `useWaitingSessionCount`.
+- A preference store the host provides, so preferences need not be per browser.
+- A `noMatches` and a load failure string in the `agents` catalog.
+
+## Tests
+
+- Go (`codesessions/page_test.go`), each failing without its check:
+  - Allowed routes reach the platform with the person's key, and no other key.
+  - With no key of their own, nothing is sent and `/where` says `signIn`.
+  - Seventeen refused routes, among them traversal ids, never reach the platform.
+  - A new session and a plan answer are held to the ceiling: default, auto, unknown ceiling, listing down. Unknown fields are dropped and bad bodies get 400.
+  - Cross-site changes are refused.
+  - On this computer, a signed-in person sees and changes only their own sessions, and start and fork are refused.
+- Web (`codePage.test.tsx`, 13 tests): the client's paths, links, `continuable`, the list and the ask-first open, an existing chat, a session that cannot be continued, rename and archive from the row menu, the linked card with delegated work, a gone link, the local case, the sign-in notice, starting a session (sent fields, opened without a second ask), and the waiting count.
+- Go and web suites, typecheck and build pass on main as of #870: 125 files, 889 web tests.
+- Denylist grep is clean on the diff.
+
+## Screenshots
+
+PW Code web could not be signed in to from here, so these are light, dark and narrow, from a local Studio with the page's platform routes answered by stand-in data (Chromium; WebKit lacks system libraries on this host).
+
+| | |
+|---|---|
+| ![light](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/light-code.png?raw=true) | ![dark](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/dark-code.png?raw=true) |
+| Folder picker ![folder](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/light-folder-picker.png?raw=true) | Machine menu ![machine](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/light-machine-menu.png?raw=true) |
+| Row menu ![menu](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/dark-row-menu.png?raw=true) | Linked session ![linked](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/light-linked.png?raw=true) |
+| Sign in ![sign in](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/dark-sign-in.png?raw=true) | |
+| Narrow ![narrow](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/light-narrow-code.png?raw=true) | Narrow list ![drawer](https://github.com/parallelworks/activate-studio/blob/screenshots/code-page-parity/dark-narrow-drawer.png?raw=true) |
+
+### pw code chat: the session's model controls from the Code page, offering only models pw code can run (#872)
+
+The session composer in a pw code chat picks the model, effort and allocation with `AgentModelControls` from #869, as PW Code on the web does, in place of the plain model select.
+
+- Models pw code can run: the platform's models come from the chat's own list only while it comes from ACTIVATE (`GET /api/access`, `models.source`). While the Studio takes its models from an OpenAI-compatible endpoint or a local model server (`endpoint`, `sidecar`, `none`), the picker offers only the machine's own models, since pw code cannot reach those. When the source cannot be read, the chat's list stands. (`usePlatformModels`, tested for each source.)
+- `AgentModelControls` imports `describeError` from its own module, so the session view can use it without an import cycle.
+- The old select and its model list request are removed.
+
+Checked live through the forced relay on a throwaway session: the picker lists ACTIVATE's models and the machine's; picking Sonnet sent `PATCH settings` (200) and the session moved to it; a message got its reply; the Code page lists sessions and starts one.
+
+Also, for main's CI:
+- **macOS build out of memory.** `vite build` peaks near 3.7 GB, over Node's default heap on the macOS runner since #869 (3.6 GB before it). The web build script now runs vite with a 6 GB heap, which covers CI and the release builds, since both run `pnpm build`.
+- **`TestApprovalGoneAndBudget` race.** It read the daemon's second message unlocked, right after the new session's id appeared and before that message was sent ("index out of range [1]"). It now waits for the message under the lock. It passes 20 runs under `-race`.
+
+## v1.203.24 (2026-11-23)
+
+### pw code chat: plan answer modes checked and logged, strict route ids, a ceiling check that fails closed, no viewer tool on the Studio's key (#866)
+
+Fixes from the narrow security review of v1.203.23. The review found no cross-person access and no use of the Studio's account for pw code. These are for v1.203.24.
+
+- **F2, a plan answer's mode:** `POST .../approvals/{id}` with a `mode` is held to the relayed machine's ceiling and logged like `PATCH settings`, with `via="plan answer"`. Unknown modes are refused.
+- **F3, route ids:** an approval or queued-turn id must match `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`, the pattern the Studio's own approvals route uses. `..`, `%2e%2e`, `%252e%252e`, `;`, spaces and `%` are refused before anything is sent. This applies in both the proxy and the relay client.
+- **F4, the ceiling fails closed:** an unreadable platform listing, or a ceiling the Studio does not rank, allows read-only. The refusal says which.
+- **F5, `show_in_viewer`:** it is not offered to, or callable by, a bridge caller without their own ACTIVATE credential. Its `workflow_dag` kind would otherwise read with the Studio's key.
+
+F1, no ceiling on sessions the Studio drives directly, waits on a decision and is unchanged.
+
+## Tests
+
+Each test fails with its fix removed:
+- `TestAPlanAnswersModeIsHeldToTheCeilingAndLogged`: fails without the check, and without the log line.
+- `TestARouteIDIsOnePlainSegment`: covers the unit allowlist and HTTP. Nothing reaches the platform.
+- `TestTheCeilingCheckFailsClosed`: an unknown ceiling, and the listing down.
+- `TestTheViewerToolNeedsTheCallersOwnKey`
+
+The full Go suite and vet pass. REFERENCE.md is updated.
+
+## From the v1.203.23 desktop test
+
+- **Bug 1, effort picker hidden:** a rule from #793 that hides the Studio composer's model button while pw code answers also matched the session view's `EffortPicker`, a button that opens a dialog in the same place. It now skips the session view's composer (`.chat-composer:not(.pwcode-session *)`).
+- **Bug 2, model picks refused:** the package's model picker sends `allocation` with every model (`""` for none), which the settings check refused. An `allocation` is now taken together with `model`, never alone. The test fails without this.
+- **Nit 1, scroll to a waiting card:** a question, plan or approval that arrives scrolls the thread to it, using the thread's own Jump to latest once the card has settled.
+- Checked in Chromium through the forced relay on a throwaway session:
+  - the effort picker is visible;
+  - a model pick returns 200, and the session moved model and back;
+  - the ask card is fully in view, with no Jump to latest left.
+- `statsLibrary` gets longer waits. It timed out under full parallel runs in three of my four local runs.
+
+Nit 2, the footer's update line truncating, comes from #863's one-line footer and is left to its owner.
+
+### Sidebar footer: the update rows fit the narrowest sidebar on one line (#868)
+
+At the narrowest sidebar (200px) the footer from #863 cut the update rows: "Reopen to finish updating" showed as "Reopen to fini…", and "Updated to v1.203.24" as "Updated to v…". The two rows also used bordered buttons, while the footer's other actions are quiet links.
+
+What changes:
+
+- The line after an update that changed the app's window says **Update ready** with **Reopen now** as a quiet link, like **Sync now**. On a narrow sidebar the link reads **Reopen**; its name stays "Reopen now". Its tooltip says the update is installed and the app's window updates when the app reopens.
+- Where the app cannot reopen itself (a browser, or an older window that refuses the request) the line says **Reopen to update**, with no link.
+- The line for a version deployed while the page was open says **Updated to v1.203.24** with **Reload** as a quiet link. On a narrow sidebar it says **Updated**, and the version is in its tooltip.
+- The collapsed rail's mark for the reopen is named "Reopen to update".
+- HELP.md, REFERENCE.md and UPDATES.md describe the new wording.
+
+Every row fits on one line at 200px and 400px, light and dark, in Playwright WebKit and Chromium. Measured at 200px in WebKit, the reopen row's text needs 75px and the reload row's 47px, and neither is cut. The update-available tint from #709 is untouched.
+
+Before and after, both rows, 200px sidebar (WebKit light, WebKit dark, Chromium light, Chromium dark):
+
+![200px](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/update-rows/compare-both-200.png?raw=true)
+
+400px sidebar:
+
+![400px](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/update-rows/compare-both-400.png?raw=true)
+
+In a browser, which cannot reopen the app (200px and 400px, WebKit, light):
+
+![browser 200](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/update-rows/after-footer-browser-200-light-webkit.png?raw=true) ![browser 400](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/update-rows/after-footer-browser-400-light-webkit.png?raw=true)
+
+All screenshots, the measurements (`before-rows.json`, `after-rows.json`) and the script are in [footer/update-rows](https://github.com/parallelworks/activate-studio/tree/pr-assets-status-footer/footer/update-rows) on the pr-assets-status-footer branch.
+
+Tests: five footer tests fail on main and pass here. They cover the reopen line in the app and in a browser, the narrow form of the link, the rail's name and the reload line. 890 web tests pass and the typecheck is clean.
+
+### pw code chat: every direct mode change logged, the direct path's missing ceiling noted as decided (#867)
+
+F1 from the narrow security review of v1.203.23, as decided: a session the Studio drives directly keeps no ceiling from the Studio. It runs on the Studio's own machine, as the Studio's terminal does. Every mode change there is logged.
+
+- `PATCH settings` and a plan's answer through `/api/code/...` were already logged on both paths (#866).
+- A plan approved on the chat's own route, `POST /api/chat/pwcode/{id}/approvals/{approval}`, was not logged. That route moves a direct session into `auto` by default. It is now logged with `via="chat plan answer"`, with user, conversation, session, site, relay and mode.
+- REFERENCE notes the decision where the ceiling is described.
+
+## Tests
+
+`TestTheDirectPathHasNoCeilingAndLogsEveryModeChange`:
+- a direct session takes `bypass-permissions` by settings and by a plan's answer;
+- a chat-route plan approval logs `auto`;
+- each change is logged once with its chat and session, and a confirm is not logged as a mode change.
+
+It fails without the new log line. The full Go suite and vet pass.
+
+## v1.203.23 (2026-11-23)
+
+### Bump @parallelworks/ui to 0.146.2 and add @parallelworks/code 0.5.0 (#864)
+
+Brings Studio's shared UI packages up to the versions the platform's web app uses, so the pw code chat can be built on the same components.
+
+- `@parallelworks/ui` goes from ^0.120.0 to ^0.146.2, the range the platform's web app asks for (0.146.2 is the newest release in it).
+- `@parallelworks/code` 0.5.0 is added, with the peers it needs: `@parallelworks/problem`, `openapi-fetch`, `swr` and `use-intl`.
+- The pnpm patch on `@parallelworks/ui@0.120.0` is dropped. Upstream 0.146.2 fixed the same bug: Escape only stops a chat reply while the chat is on screen.
+
+No source changes were needed.
+
+## Checks
+
+- Typecheck, build, server tests and web tests pass. Under load, three timing tests hit their 5 s limit; each passes when run alone, on this branch and on main.
+- UI check: main and this branch, each built and served on public sample data with a scripted model. Screens: chat (empty and after a reply), Library, Settings (General, AI), Indexing, Libraries and Add a library (form and checked folder), and the Code page (list and a session waiting on an approval, with stand-in session data). Light and dark, Playwright Chromium and WebKit, at 1440 by 900.
+  - Settings, Indexing, Libraries, Add a library and the Code page are pixel-identical to main in both browsers and both themes.
+  - The remaining differences come from the test data, not the change: the version string, the random greeting, the run folder paths and label counts. Section headings in the chat list sit 1 to 2 px lower.
+  - No console errors that main does not also show.
+
+### Add a library: the cluster a Studio runs on is not a remote computer (#862)
+
+On a Studio a cluster hosts, Add a library listed that cluster under **Remote computer**, chosen already, with the hint "the Studio's cluster". The two ways to that cluster are not the same: **This computer** reads with the Studio's account, while the cluster under the list is read as the person over pw ssh, with their ACTIVATE sign-in. So the cluster stays in the list, and the form now says which is which.
+
+## On a Studio a cluster hosts
+
+- The Where choice is **Your clusters** instead of **Remote computer**. The list is labeled **Cluster**, and its last item is **Another cluster…**.
+- The Studio's own cluster is listed first as "<name>, where this Studio runs" and is no longer called remote.
+- Nothing is chosen until the person chooses. Before, the Studio's cluster was chosen for them, or the first running one, or its name was typed in when the list failed.
+- **This computer** now says it reads "with the Studio's account, not yours". It also says that to read a folder there as yourself, you choose Your clusters, then that cluster.
+- The read-as line names the cluster where this Studio runs.
+- The My library form no longer falls back to the Studio's cluster when nothing is chosen. Check the folder waits for a choice.
+
+## In the Mac and Linux apps
+
+Every cluster is remote there, so nothing changes: the choice is still **Remote computer**, and the first running cluster is chosen to begin with.
+
+## Tests
+
+- `homeClusterChoice.test.tsx`:
+  - hosted: what each choice reads as, the cluster listed first, nothing chosen. This fails on main.
+  - the apps: as before. This passes on main too.
+- `personalSpaces.test.tsx`: the shared Studio, where people sign in and only Your clusters is offered. Each test now chooses the cluster itself, and one checks that nothing is chosen or called remote.
+
+`docs/HELP.md` is updated.
+
+### Sidebar footer: one list, each row on one line in sentence case (#863)
+
+The status footer at the bottom of the sidebar looked uneven: the file count wrapped onto two centered lines with its dot between them, "what's new" was a heavier lowercase chip, its tooltip read awkwardly, and "sync 2m ago" and "sync now" were lowercase where the rest of Studio is in sentence case.
+
+## What changes
+
+The footer reads as one list. Every row is left aligned on one line at 12px, its dot beside the text, and a row's text is cut with an ellipsis before it would wrap.
+
+| Row | Before | After |
+|---|---|---|
+| Files | 1,384 files indexed in all libraries (two lines) | 1,384 files indexed; tooltip: 1,384 files indexed in all libraries |
+| Version action | what's new (chip) | What's new, plain text at the row's size; tooltip: Updated since you last opened Studio. Shows what changed. |
+| Version action | check for updates (two lines on a narrow sidebar) | Check for updates (Check on the narrowest sidebar; the whole in its tooltip and accessible name) |
+| Version action | update available (tinted, two lines on a narrow sidebar) | Update available, the same tint from #709 (Update on the narrowest sidebar) |
+| Version action | updating…, update failed | Updating…, Update failed |
+| Sync | sync 2m ago, sync pending, sync now | Synced 2m ago, Sync pending, Sync now |
+| Index state | index loading, index needs attention, index incomplete, not indexed | Index loading, Index needs attention, Index incomplete, Not indexed |
+| Models, identity | models unreachable, identity not verified | Models unreachable, Identity not verified |
+
+The actions are ghost buttons restyled to the row's size and weight, underlined on hover. The collapsed rail's tooltip says "synced 2m ago" too. HELP.md describes the footer's lines and the new labels.
+
+## Screenshots
+
+Before, then after. Playwright WebKit (the Mac's engine) and Chromium, the narrowest sidebar (200 px) and the widest (400 px), light and dark, each with What's new, with Update available (the #709 tint), and with neither. The test Studio has two libraries with All libraries open, as in the report.
+
+WebKit, 200 px, light, What's new:
+
+![before](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/before-footer-whatsnew-200-light-webkit.png?raw=true) ![after](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/after-footer-whatsnew-200-light-webkit.png?raw=true)
+
+WebKit, 200 px, dark, Update available:
+
+![before](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/before-footer-update-200-dark-webkit.png?raw=true) ![after](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/after-footer-update-200-dark-webkit.png?raw=true)
+
+Every state, before (columns: 200 light, 200 dark, 400 light, 400 dark; rows: What's new, Update available, neither, each WebKit then Chromium):
+
+![before](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/montage-before.png?raw=true)
+
+After:
+
+![after](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer/montage-after.png?raw=true)
+
+All 48 screenshots and the script that takes them: [footer folder](https://github.com/parallelworks/activate-studio/blob/pr-assets-status-footer/footer).
+
+## Tests
+
+- A new footer test: the count row reads "22,332 files indexed" with "in all libraries" in its tooltip only, the sync row reads "Synced 2m ago", and the action is "Sync now".
+- The What's new test checks its tooltip.
+- The update and index status tests use the sentence case labels.
+- Web: 881 tests pass, typecheck clean.
+
+### pw code chats drawn with the PW Code web packages, following the session live (#865)
+
+## What changes
+
+A Studio chat with a pw code session now shows the session the way PW Code on the web does, using the same packages: `@parallelworks/code` (sessions client, transcript, live events, composer and screen hooks) and `@parallelworks/ui/ai` (`SessionView`, `ActivityLine`, `PermissionPicker`, `EffortPicker`, notices), composed as PW Code web's session page composes them. Built on #864 (the ui bump and the new packages, merged).
+
+### Why chats stopped following (the cause)
+
+The Studio followed a turn only while its own request for that turn lasted, and dropped every event whose `turnId` was not the one its own `POST /messages` returned. A turn started from PW Code on the web, a terminal or a goal step, or one already running when the chat was continued, was invisible; only its approvals showed, because approval events carry no `turnId`. The relay, its deadline, `after=` and buffering were ruled out by reproducing through the real relay. Following the session instead of the turn needed a new path from the server to the page, so this is the package view rather than a patch.
+
+### What the chat does now
+
+- The whole transcript, and every turn live, whoever started it: steps, auto-reviewer events (reviewing, approved, denied with its reason), and the activity line with elapsed time and tokens up and down.
+- A reload or a dropped feed picks the turn up after its last frame.
+- A question with one answer takes one value: typing your own answer clears the choice, picking a choice clears the text (the package's ask card).
+- Plans and approvals answer in place.
+- A refusal from the machine reads in full, with no Retry.
+- Composer: "Send a message to this session", machine:folder chip, model, effort and permission pickers, and Send that becomes Stop.
+
+### Server: the platform's routes, for the viewer's own chats only
+
+`server-go/internal/chat/pwcodeproxy.go` serves `/api/code/machines/{machine}/sessions/{id}{suffix}`, `/api/code/sessions`, and the event feed at `/api/pwcode-feed/...`:
+- **Relayed chat:** through ACTIVATE as the viewer.
+- **Direct chat:** to the daemon the Studio reaches (machine `studio`). The direct path uses an adapter to the local daemon, not the platform routes: it works without a platform (desktop and offline Studios), works for a multi-user Studio's cluster daemon, keeps the Studio's tools, and saves a hop.
+- **Allowlist** (`pwcode.ProxyRoute`, shared with the relay client): GET of the session, transcript, palette and subagents; POST of messages, direction, direction/withdraw, interrupt, stop, texts and approvals; DELETE of queued turns; PATCH of settings. Anything else gets a 404 problem, and the session is not asked.
+- **Ownership:** only the viewer's own pw code chats. Another person's chat is refused, shared history or not, so a shared Studio never drives a session with its own account.
+- **Settings:** only `permissionMode`, `model` and `effort` can change. A relayed mode above the machine's `remoteMaxPermissionMode` gets a 403 (the default ceiling is accept-edits). Every mode change is logged.
+- **Feed:** opens only for the Studio's own pages (same origin). It passes the session's frames on from `after`, with the Studio's own heartbeat.
+
+### Studio's tools
+
+- **Direct path:** attached at each message, retried once after 2 s. The chat shows what failed only after the retry.
+- **Parity** (merged from `mcp-parity`): pw code chat sessions also get the deployment's custom tools, skills and attached MCP servers' tools. A parity test covers this.
+- **Remote machines, until ACTIVATE can attach them:**
+  - `/api/mcp` gives a person their pw code chat tools, as them, when the platform's session proxy vouches for them. That means sign-in on, no other bearer, and no `Origin` or `Sec-Fetch-Site`, so no web page can use it.
+  - Platform tools run on the person's own ACTIVATE key and are left out without one.
+  - The relayed chat shows a setup card (**Set them up once**) with the key page, the one-time `pw code mcp add --scope user ...` command, and **Check that it worked** (`GET /api/mcp/bridge`).
+- The core change for native attach is a separate draft PR on core, in review. Studio will use it once the platform reports it.
+
+### Testing switch
+
+`STUDIO_PWCODE_FORCE_RELAY=1` is for testing only and off by default. It sends a session on the Studio's own machine through the relay too.
+
+## Tests
+
+- **Go `pwcodeproxy_test.go`:** each test fails without its check.
+  - only the viewer's own chat's session is reached (other session, other machine: 404 problem);
+  - the allowlist (archive, DELETE, shell, clear, fork, attach, mcp, PUT settings, goal are refused, and the session is never asked);
+  - settings fields;
+  - the remote ceiling (default accept-edits, and a machine set to auto);
+  - owner only on a shared Studio, relayed and direct;
+  - the feed refuses another origin.
+- **Go relay mapping table** updated for the wider allowlist.
+- **Web:** feed URL mapping and the machine id a chat is shown under.
+- **Full suites:** Go and web pass. Four tests (`TestCopyLibrary`, and the footer, index status and stats web tests) time out only under full-suite load and pass alone.
+
+## Hand tests through the forced relay, on a throwaway session
+
+- a long turn with live steps;
+- a turn started outside the Studio;
+- an ask answered with an own answer (only the own answer was sent);
+- a plan approved;
+- a reload mid-turn (following resumed);
+- Stop (the turn was interrupted).
+
+The direct path was also tested with a new chat calling the Studio's library tools. Screenshots are below.
+
+## Upstream requests for the package owners
+
+Studio needed thin versions of these app-local parts of PW Code web:
+- AgentSessionHeader, AgentModelControls (there is no model picker export; the Studio uses a plain select);
+- the account panel and chip;
+- SessionTasks, SubagentView, GoalControl;
+- ComposerImages and useComposerImages;
+- UsageLimitWait, SessionContextRow, AgentSwitcher, BackgroundCommandHint.
+
+Exporting these from `@parallelworks/code` or `@parallelworks/ui/ai` would let the Studio drop its versions.
+
+## v1.203.22 (2026-11-23)
+
+### Continue in Studio for pw code sessions on any machine, through the ACTIVATE relay (#861)
+
+Drive any of your pw code sessions from a Studio chat, wherever they run. Continue in Studio for a session on another of your machines makes a chat that sends its messages, approvals, answers and Stop through the ACTIVATE relay, as you. The session keeps running where it is: nothing is attached or moved, and its commands run on its own machine. Sessions on the same machine keep today's direct path. Do not merge until told; this is for Preview v1.203.22.
+
+## What the platform relay offers
+Read from parallelworks/core canary (no live session touched):
+- **Sources:** `cmd/ingress/internal/handlers/agents/routes.go`, `sessions.go`, `events_ws.go`, `cmd/cli/cmd/code/serverapi/types.go`, and the Code page's `packages/code/src/sessionEvents.ts`.
+- **Routing:** `/api/code/machines/{m}/sessions/{id}<suffix>` goes to the machine's daemon as `/v1/sessions/{id}<suffix>` with the same body, as the caller.
+- **Messages:** `POST .../messages` sends one; `.../direction` steers the running turn.
+- **Stop:** `.../interrupt` stops the turn; `.../stop` stops it and pauses its goal. Neither is held to the machine's remote permission ceiling.
+- **Answers:** `.../approvals/{id}` answers all three kinds: confirm (`allowed`, `denyMessage`), ask (`answers [{question, picked, text}]` or `chat`), and plan (`allowed`, `mode`, `feedback`, ...). A plan approval leaves plan mode only when it names a `mode`, and a remote one may not name a mode above the machine's remote ceiling (`accept-edits` by default).
+- **Following the turn:** the WebSocket `/ws/code/machines/{m}/sessions/{id}/events?after=N&heartbeat=S` passes the daemon's own event frames through, with a `{"type":"heartbeat"}` frame every S seconds. A server-side handshake with an Authorization header is accepted.
+- **Session detail:** the platform's detail is the daemon's `SessionDetail` (with `lastSeq`) plus `machineId`.
+- **The machine decides:** a session above its remote permission ceiling, or one another host holds, is driven only from the machine itself (interrupt and stop excepted).
+
+Nothing the chat needs is missing, so no control says "answer in ACTIVATE for now".
+
+## Gaps for core (none block this)
+- **Not relayed:** attach, mcp, goal and state. So a relayed session keeps its own tools and cannot be given the Studio's library tools, and the Studio cannot read or set its goal. The chat says it has its own tools.
+- **Listing:** `/api/code/sessions` leaves out a session until it has a message. A session just made shows up only after its first turn (seen in the hand test).
+- **Plans on the platform's Code page:** it answers confirms and asks but not plans, so there is no platform client to match for a plan answer; the Studio follows the terminal's.
+- **Events behind a proxy (review F6, not done):** the events socket is dialled directly and ignores `HTTPS_PROXY`, and a message is sent before the events handshake, so a refused handshake shows "lost the session's events" while the message still runs. Left as is on purpose.
+
+## The change
+- `server-go/internal/pwcode/relay.go` (`pwcode.Relay`) is the only place that knows the relay, and it names the core sources above. It implements the same client interface as the local daemon. It sends only what a relayed chat uses, by method and route: `GET` of the session, and `POST` of `messages`, `interrupt` and one approval by id. Anything else, such as `DELETE` of the session, is refused without asking the platform. The events handshake offers HTTP/1.1 only: the platform offers HTTP/2, which a WebSocket handshake cannot use (found in the hand test). The events read waits at most three heartbeats (30 seconds); a silent link ends the turn saying the link was lost, instead of waiting out the 4 hour turn limit.
+- **Continue route:** `POST /api/chat/pwcode/continue` reads a session on another machine through the relay and asks first, saying where it runs and that it stays there. Confirmed, it makes a chat with `pwcode.relay` set. Its messages, Stop, approvals and answers go through the relay, and `GET /api/chat/pwcode/{id}` reports `relay` and `machine`. `GET /api/chat/pwcode/here` adds `relay` and `relayReason`. A relayed session is not sent the Studio's library-scope note, since it has no Studio tools.
+- **Credential:** the one the Code page uses (`codesessions.ViewerKey`): your own ACTIVATE sign-in or key where people sign in, never the Studio's account.
+- **Questions and plans in the chat:** the approval card shows a question's choices and a box for your own answer, with Send and Talk it through. A plan shows whole: a long one is folded with Show all, which Approve waits for, as the Code page does with a long command. Approve names the mode the session leaves plan mode into: `auto` on the direct path, as the terminal's Approve does, and `accept-edits` through the relay, since the machine refuses a remote answer above its ceiling. Reject sends what you type in the box under the plan as pw code's feedback. This works on the direct path too, which only offered Allow and Deny before.
+- **Stop:** a turn the person stopped ends as "Stopped.", where it used to say "pw code did not finish this reply: context canceled". The turn is marked before the interrupt is sent, since the turn's error can arrive first, and unmarked if the interrupt fails. This applies on both paths.
+- **Wording (item 4):** where a session still cannot be continued (archived, or no relay for you), the Code page and the route say what still works here (reading it, Approve and Deny) and where to answer it, instead of "read only here". A question or plan on the Code page now points to a Studio chat as well.
+- HELP (Code) and REFERENCE are updated.
+
+## Ownership and tests (each fails without its check)
+- **Never the Studio's account:** `TestTheRelayIsNeverTheStudiosAccount`. With sign-in on and no ACTIVATE sign-in of the person's own, there is no relay, and the platform is never asked with the Studio's key.
+- **Only the owner drives it:** `TestARelayedChatIsOnlyItsOwners`. Another person cannot direct a pw code chat, send it a message (new, or during the owner's turn, which the session takes as direction), Stop it or answer it, and nothing is stored in the chat or reaches the session. `POST /api/chat/stream` checks this before the stream starts. On a Studio where people sign in, a relayed chat is visible only to its owner, even with shared chat history on, since it holds the session's turns from their machine: to anyone else it is 404 everywhere, and the question before continuing and HELP say so. A pw code chat on this machine keeps today's rule: seen when shared, 403 to direct. A session the platform does not list as yours is 404 (`TestContinueStaysReadOnlyWhereTheStudioCannotDriveIt`).
+- **End to end:** `TestContinueASessionOnAnotherMachineThroughTheRelay` runs a stand-in platform relay to a second fake daemon. It covers the question and note wording, that nothing is attached on either machine, a message and its streamed reply, status, Stop, and confirm, ask and plan answers with their exact bodies. It also checks that every relayed request carries the viewer's own credential and that the events handshake sends the platform's own Origin.
+- **Session state:** `TestARelayedChatReadsTheSessionsStateThere` covers a session archived before and after continuing.
+- **Relay client:** `TestTheRelayMapsOnlyTheRoutesThePlatformRelays` (method and route), `TestTheRelayRefusesWhatItDoesNotOfferWithoutAsking` (DELETE and archive are not sent), `TestTheRelaysEventsOpenOnAPlatformThatOffersHTTP2` (fails without the HTTP/1.1 fix with the same "unexpected EOF" the hand test hit), and `TestASilentRelayEndsTheTurnAndHeartbeatsKeepItOpen`.
+- **Stop and plans:** `TestAStoppedTurnSaysStoppedNotFailed` (the turn's error arrives before the interrupt is answered), `TestAFailedStopLeavesTheTurnAsItWas`, and the plan modes in `TestPWCodeApprovalReachesTheChatAndIsAnswered` (direct) and `TestContinueASessionOnAnotherMachineThroughTheRelay` (relay).
+- **Web:** `codeView.test.tsx` (offered through the relay, the wording, the dialog) and `pwcodeEngine.test.tsx` (answering questions; a plan shown whole before Approve, and Reject with what to change).
+- **Results:** the full Go suite passes, and all 880 web tests pass.
+
+## Hand test, against the real platform relay
+I could not test on a second machine of my own. Only one of my machines on the platform has a pw code daemon connected; every other one is listed with no agent, and I did not start a cluster for this. I did not touch any other deployment or anyone else's sessions.
+
+So I made a throwaway session on that one connected machine. The test Studio's own pw code was a stand-in daemon that answers only `/v1/status`, as a different machine. The Studio therefore took the relay path, and every call below went through the platform relay to the real daemon:
+- **Here:** `/api/chat/pwcode/here` said `relay: true`.
+- **Continue:** the question read "This session runs on `<machine>`, in …/relay-ws, and stays there: this chat sends your messages, answers and Stop to it through ACTIVATE, as you, and its commands run on `<machine>`. It keeps its own tools, not the Studio's library tools. …" The confirmed chat opened with the note and the session's earlier turn.
+- **A message:** "reply with just the word pong" streamed back "pong". On the first try the events handshake failed with "unexpected EOF"; that was the HTTP/2 finding, fixed above.
+- **Approval:** a Bash call in accept-edits mode arrived as a confirm. Deny with a message went through the relay, the approval resolved, and pw code reported the denial with that message.
+- **Stop:** a long reply stopped from the Studio; the session went from running to idle, and the chat now reads "Stopped.".
+- **Nothing local:** the stand-in daemon was asked only `GET /v1/status` (8 times). Nothing was attached or sent to it.
+- **Browser (Chromium):** the Code page opened the chat for the session, and the chat showed the note and the replies.
+- **Not tried by hand:** answers to an ask or a plan over the real relay. Those go through the same approvals route as the Deny above, and their bodies are checked against the stand-in relay. The plan card was checked in Chromium in a test Studio (folded, Show all, then Approve; the box for Reject).
+
+**Cleanup:** the throwaway session is archived, and the test Studio and the stand-in daemon are stopped by PID.
+
+## Routine calls
+- **Session's own machine unreachable:** when this Studio's own pw code is not running, Continue uses the relay for every machine, including the Studio's own.
+- **Open on another host:** a relayed session that another host holds is offered anyway. The question says that host may answer for it, and the machine's refusal shows in the chat.
+- **Second person:** on a relayed chat, 404 everywhere where people sign in (review F3, a conservative call that can be loosened). On a shared pw code chat on this machine, today's 403 to direct it, now including messages.
+
+
+
+## Review 3 fixes
+- **F1** a51d84b4: a plan approval names the mode it leaves plan mode into, on both paths.
+- **F2** ac9761f9: the message route checks the owner, as Stop and the approvals do.
+- **F3** 8846f650: a relayed chat is visible only to its owner, said before continuing and in HELP.
+- **F4** 34e75fe7: the stopped mark is set before the interrupt.
+- **F5** aaba866a: the relay client checks method and route, and sends nothing it does not map.
+- **F7** 2d1cff33: a read deadline of three heartbeats on the relay's events.
+- **F8** 240c60b9: the whole plan before Approve, and a box for Reject's feedback.
+- **F6** skipped, as asked; listed under the gaps above.
+
+## v1.203.21 (2026-11-22)
+
+### A library added from the Library page joins the switcher when its build finishes (#798)
+
+Phase 3 review, bug 1: a My library made from the Library page's Add a library dialog never appeared in the Library switcher until the app restarted.
+
+## Cause
+
+The dialog reloaded the app config once, when the build started. Settings, Libraries reloads it again when a build finishes, but only while Settings is open, so a library added from the Library page never got the second reload.
+
+## Fix
+
+A small watcher, `web/src/libraryWatch.ts`, starts after a library is added or imported, from the dialog or from Settings. It reads `/api/user-libraries` and `/api/libraries` every 3 seconds and reloads the app config each time a library finishes building, plus once more when nothing is building. Then it stops. It gives up after an hour, and only one watcher runs at a time.
+
+Routine call: I chose a short poll that only runs while a build is pending, over a server push. The lists it reads are the ones Settings already polls.
+
+## Tests
+
+`web/test/libraryWatch.test.ts` covers:
+- a My library that finishes building reloads the config, and polling then stops;
+- a library built on this computer does the same;
+- only one watcher runs at a time.
+
+The full web suite passes.
+
+HELP.md: the Library's Add menu entry says the new library joins the picker when its build finishes.
+
+### Status: the Libraries card reads each library's state as it is now (#799)
+
+Phase 3 review, bug 8 (P2-6, still open for one case): the Status Libraries card showed a kept-copy library as "not indexed" for over 40 minutes after it was built and searchable, while `/api/libraries` said its index was built.
+
+## Cause
+
+The card used the app config, which is read once when the page loads. #784 fixed the main library by using the index status. Every other library still showed its capabilities from page load. A copy added on Transfers finishes building later, and nothing reloads the config.
+
+## Fix
+
+- The Status panel's once-a-minute poll now reads `/api/libraries` too.
+- The card takes each library's capabilities from that live list. Which libraries it lists still comes from the config.
+- When a library on the live list has become indexed, the panel reloads the app config, so the library also joins the Library switcher, Search and Query.
+
+Routine call: I used the panel's existing one-minute poll rather than adding a faster one, so the card can lag a build by up to a minute.
+
+## Tests
+
+`statusPanel.test.tsx` checks that `freshLibraries` takes the live capabilities and keeps the config's list. A copy indexed since page load reads as indexed. The full web suite passes.
+
+HELP.md: the status panel paragraph says the card reads each library's state as it is now.
+
+### Keep a local copy: no folder is copied until one is chosen (#801)
+
+Phase 3 review, bug 9: Keep a local copy opened with the whole home folder selected and **Copy and index** enabled, so one click copied a home folder. Its Location field and Label heading also touched.
+
+## Fix
+
+- Browsing starts in the location's start folder, as before. That folder is no longer treated as chosen. **Copy and index** stays disabled until the person opens a folder or clicks **Copy this whole folder**, which appears beside the path while nothing is chosen. A line under the path says to open the folder to copy below or choose this whole folder.
+- The form had no styles. Its fields are now spaced 14px apart. The folder list scrolls inside a 240px box instead of pushing the form far down, and the path wraps.
+
+Routine call: copying a location's whole start folder is still allowed, but it now takes a deliberate click.
+
+## Tests
+
+`librariesPage.test.tsx` checks that the copy is disabled at the start folder, enabled by **Copy this whole folder**, and enabled when a folder is opened. The rest of the copy flow is unchanged. The suite passes.
+
+HELP.md: the Transfers keep-a-copy paragraph says the button waits for a chosen folder.
+
+### pw code chat: delegate as the Studio assistant does (#800)
+
+Desktop review of v1.203.20, bug 2: in a pw code chat (the default engine), "Delegate this to an agent with the reviewer instructions..." did not delegate. `chatLeftOut` dropped `delegate`, `task_status` and the agent tools from pw code chats, so the chat did the work itself and asked for approvals outside its folder. HELP says the assistant delegates.
+
+**Change**
+- A person's pw code chat now lists `delegate`, `agent_sites`, `agent_sessions`, `agent_status` and `task_status`, under the same conditions as the Studio assistant: delegation on (Settings, External access), and a site to run on (the platform, or this host where it is offered).
+- `delegate` runs `toolDelegate`, the same path as the Studio assistant's call. That means the same folder under `agents/<instructions>/`, the same AGENTS.md, the same Delegated marking on the Code page, and the same read rules from #792.
+- The chat's prompt tells pw code to call `delegate` when the person asks to delegate, not to do the work in the chat, and to give the Code page link from the result.
+- A standing agent's session (chat token grant `fleet:<id>`) gets none of these tools, so a standing agent cannot start sessions. The MCP server decides by the token's grant, and `StudioSession` asks for the tools without them.
+
+**Product calls made here**
+- `delegate` runs without asking in the chat (it is added to the session's allowed rules), as the Studio assistant's call does. The person asked for it, and the delegated session still asks for anything beyond reading and its own folder.
+- The read-only agent tools are marked read only and also run without asking.
+- `start_agent`, `agent_steer`, `agent_goal`, `agent_approve` and `agent_stop` stay out of pw code chats. A chat approving or steering another session's calls is a bigger change than this bug, and the Code page now has Approve and Deny for that.
+- An existing chat session gets the new tools at its next message. The tool check sees the list has changed and reconnects the studio server, as it does after any Studio update.
+
+**Tests (Go)**
+- The chat token lists `delegate` (not read only) and `agent_status` and `agent_sessions` (read only), and still not `start_agent`, `agent_steer`, `agent_approve`, `agent_stop` or the deletes.
+- `chatTools(r, true)` has the delegation tools and `chatTools(r, false)` (a standing agent) does not. `grantDelegates` holds for a chat and not for `fleet:<id>`. With `DELEGATION_ENABLED=0` the chat does not get `delegate` or `task_status`.
+- A new chat session's allowed rules include `mcp__studio__delegate` and not `write_kb_file`, and its prompt names `delegate`.
+
+Not run live: a pw code chat needs an ACTIVATE credential, and the test Studio on this host has none. The desktop retest covers it end to end.
+
+Docs: HELP (the pw code engine and Agents), REFERENCE (a pw code chat's tools).
+
+### Fleet: the agent's actions stay in one place (#805)
+
+Desktop review of v1.203.20, bug 17: on the Fleet page, Wake now, Pause and Retire sat on the title row until the first wake-up. Then "Its session on the Code page" appeared and the actions moved to a row below, so a second click on the same spot missed.
+
+**Change**
+- The agent's header is always three rows: name, settings line, actions.
+- Wake now stays in its place while a round runs, disabled with "It is working now", instead of vanishing and shifting Pause and Retire left. Pause and Resume share one slot.
+- Before the first wake-up, "No session until its first wake-up" holds the session link's place.
+- A manual agent's settings line says "no schedule" instead of "every manual" (seen while testing this).
+
+**Product calls:** the actions always sit on their own row, even where the title row has room for them, so they are in the same place at every width and in every state. Wake now is disabled rather than hidden while the agent works.
+
+**Tests (web):** the actions are `Wake now, Pause, Retire` and the session placeholder before the first wake-up, and the same three and the link while it works, with Wake now disabled. The header lays out as a column, and the settings line reads as before for a scheduled agent.
+
+**Live** (test Studio on this host's daemon, claude-code/haiku, 1280x800): a new manual agent, then one Wake now. Wake now (281, 384) and Retire (431, 384) were at the same coordinates before and after the wake. The agent was retired and its session archived afterwards.
+
+Docs: HELP (Fleet).
+
+### Desktop view: Fit without the window focus, Pan in Actual size (#807)
+
+Two problems with the desktop viewer's View setting, found in a review of the packaged Linux app.
+
+Fit never resized the desktop in the desktop app. The viewer resized only while `document.hasFocus()` was true, and the app's WebKitGTK window can report no focus while it takes keys. Fit now resizes from the view used last (shown last or clicked last, shared across chat cards as before) whenever its page is visible, and the window's focus is not consulted. When the view that resizes closes, as Full screen does, the view used before it takes over, so the side view fits again after Full screen closes; before, nothing resized the desktop until a click.
+
+In Actual size, the bottom and right of a desktop larger than the view were out of reach: the desktop was clipped, and the wheel went to the desktop. Actual size now leaves the desktop unscaled and unclipped in the viewer's own scrolling box, and a **Pan** button, shown in Actual size only, makes a drag or the wheel move the view; pressing it again gives the mouse back to the desktop. The scroll bars work too, though WebKitGTK draws them only near the view's edge. The View menu's description and HELP.md say how.
+
+Product calls made here:
+- Fit follows the view used last, with no focus check, and passes back to the earlier view when that one closes.
+- In Actual size the wheel stays with the desktop's own windows unless Pan is on, so scrolling inside desktop apps keeps working.
+- Pan is per view and starts off each time.
+
+Tested in the packaged Linux app (v1.203.20 with this web build) on a private display against a throwaway desktop, deleted after:
+- Fit resized the desktop at once in the side view, Full screen and a chat card, with no click needed.
+- After Full screen closed, the side view resized the desktop back to its own size.
+- In Actual size in a window smaller than the desktop, a drag with Pan on reached the bottom right and the wheel moved the view back.
+
+Tests: `desktopView.test.tsx` covers Fit with a window that reports no focus, the handover when a view closes, Actual size settings, and Pan's drag and view-only switch. Web suites pass under both configs, 803 and 789 tests.
+
+### Session cards notice a session stopped or deleted (#808)
+
+A session card in a chat kept its green running dot after the session was stopped and deleted, because the card stopped checking the session once it was running. Found in a review of the packaged Linux app.
+
+The card now checks the session every 30 seconds while it runs (every 10 seconds before it runs, as before), and at once when a desktop drawn under the card closes or loses its connection. A session the platform no longer lists, after the card had it, shows a grey dot, "no longer listed" in the bar, and "Session X is no longer listed on ACTIVATE. This card updates if it runs again." The card keeps checking and comes back if a session runs again under the same name. A stopped session that is still listed shows as stopped, as before. A session not found on the first check is still an error.
+
+Product calls made here:
+- 30 seconds while running; the server caches session lists for 10 seconds per key, so many cards do not multiply platform calls.
+- "No longer listed" wording; the card cannot tell a deleted session from one the viewer lost access to.
+
+Tested in the packaged Linux app (v1.203.20 with this web build) on a private display: a chat card showing a throwaway desktop went to "no longer listed" within 8 seconds of the desktop being stopped and deleted.
+
+Tests: new `sessionCard.test.tsx` (gone, back again, stopped, not found at first; the first two fail on main), and `desktopView.test.tsx` checks the viewer tells its card when the desktop closes the connection. HELP.md says how the card follows the session.
+
+### My library: Details, Stats and counts read the index again once it catches up (#812)
+
+Phase 3 review, bug 5: for a My library, the Details card was stale after a write. It showed 0 B and Files 0 after an upload or a rename until something re-fetched, and a deleted file stayed in Details. The same staleness explains part of bug 15: Stats and the file counts did not refresh after writes.
+
+## Cause
+
+A person's own library re-indexes on its system about 20 seconds after the last change. The Library told the views (`ade-kb-changed`) right after the write, while the index still held the old state. Nothing told them when the rebuild finished. The index status that drives this for the main library covers only the main library.
+
+The selection in the Details card also kept the old path after a delete or rename.
+
+## Fix
+
+- `web/src/libraryCatchUp.ts`, `libraryWritten()`:
+  - tells the views at once, as before;
+  - for a library whose id is a user library's (`u-…`), watches its `builtAt` in `/api/user-libraries` every 5 seconds for 2 minutes after the last change;
+  - tells the views again each time the index is rebuilt.
+
+  Every listener of `ade-kb-changed` then re-reads: the Details card, Stats (OverviewView and the maps), the footer, the tree and the viewer.
+- Calls to it:
+  - the Library's delete, rename and new folder;
+  - uploads, moves and deletes run as transfers (`transfers.ts`).
+- The Details card's selection:
+  - is cleared when the selected file or folder, or a folder above it, is deleted (single, bulk, or folder job);
+  - follows a rename to the new path.
+
+Routine call: I poll the person's library list while a change is pending rather than adding a server push. The list is the one Settings already polls during builds, and polling stops 2 minutes after the last change.
+
+## Tests
+
+- `web/test/libraryCatchUp.test.ts`:
+  - views are told at once, not again while the index updates, and again when `builtAt` changes;
+  - the main library is not watched;
+  - selection is cleared under a deleted path and follows renames of a file or a folder above it.
+- The transfers test mock gains `currentLibrary`.
+- The full web suite passes (802).
+
+HELP.md: the My library paragraph says these views read the index again once it catches up.
+
+### Chat: notices and header buttons keep off the conversation (#811)
+
+Review of v1.203.20, bugs 7 and 13.
+
+**Bug 7.** The notice that pw code runs a chat on another model covered the start of the transcript until it was dismissed. The band at the top of the thread now grows to the foot of any notice there, so the conversation starts below it and scrolls under it; on a phone the thread is padded the same way. Notices are also centred on the thread instead of on the thread and conversations list together, which put their left edge over the list.
+
+**Bug 13.** At 1280 with the Status panel open, Persona, Scope, pw code and Save were wider than the thread and ran about 20 px over the conversations list. Where the labels do not fit, Persona, Scope, Save and Voice drop to their icons, and then the engine button too. The fit is checked again when the thread resizes or a label changes (a persona chosen, the engine's model named).
+
+Routine calls:
+- The notice pushes the conversation down rather than shrinking or collapsing to a single line, so its full text stays readable until dismissed.
+- The engine button keeps its label longest, since it names what answers the chat.
+
+- web/src/chatTop.ts: the fit and the notice offset; web/src/views/ChatView.tsx measures; web/src/styles.css draws.
+- web/test/chatTop.test.ts.
+- docs/HELP.md: a line on both.
+
+Checked in a browser: at 1280 with Status open, a 1100 window and 1920, the model notice sits over the thread, and the first message starts 10 px below its foot (and back at the top once dismissed). A long persona name drops the row to icons, and shortening it again brings the labels back.
+
+### Counts say 1 file, and the footer names the library its count is of (#814)
+
+Phase 3 review, bug 15: "1 files" in the Libraries card and the footer; the footer's "N files indexed" followed the selected library without naming it; Stats did not refresh after writes; the Libraries card count stayed at "1 files" after a delete.
+
+## Fix
+
+- One `plural()` helper (`web/src/plural.ts`) replaces three local copies and every "N files" or "N directories" built by hand, so one file reads "1 file". It covers:
+  - the status panel's Libraries card;
+  - the footer and its index popover;
+  - History, Stats and the maps;
+  - setup;
+  - Settings, Libraries;
+  - the index warnings.
+
+  `transferApi` re-exports it.
+- The footer's count is of the library selected in the Library. It now names that library when it is not the main one ("3 files indexed in My library", "… in all libraries"). The index popover does the same.
+- Stats and the Libraries card not refreshing after writes in a My library is fixed in #812. Stats, the footer and the status panel listen for `ade-kb-changed`, and that PR fires it again once the library's index catches up.
+
+Routine call: I named the library in the footer rather than always showing the main library's count, so the footer keeps following the Library page's selection as before.
+
+## Tests
+
+`web/test/counts.test.ts`:
+- `plural` for one, many and large counts;
+- the index summary's "1 file indexed";
+- the Libraries card line "1 file";
+- `countedIn` for the main library, a user library and all libraries, and the footer text with and without a name.
+
+The full web suite passes.
+
+HELP.md: the navigation footer line says what the count is of.
+
+### Code: a session's Studio chat marker leads its line in the list (#815)
+
+Review of v1.203.20, bug 22.
+
+At 1280 with the Status panel open, a Code list row read "<machine> · in a Stu…": the machine came first, so the marker was the part cut off. What the Studio did with the session (**in a Studio chat**, **delegated, …**) now leads the line, ahead of the machine and the folder. The whole line is the row's tooltip.
+
+Routine calls:
+- Order over a second line or a badge: the row keeps its height and the list its density, and only the machine or folder, which repeat from row to row, get cut.
+- The delegated marker moves first as well, for the same reason.
+
+- web/src/views/CodeView.tsx (`rowMeta`, title on the line); web/test/codeView.test.tsx.
+- docs/HELP.md: the Continue in Studio paragraph.
+
+Checked in a browser at 1280 with Status open: rows read "in a Studio chat · <machine…", with the full line on hover.
+
+### Agents tab: a failed task reads failed, take-offs stay put, descriptions align (#806)
+
+Desktop review of v1.203.20, bugs 11, 16 and 19, all on the Agents tab.
+
+**11. Earlier tasks state.** A card showed a green "completed" beside "0 of 1 done, 1 failed", because the state came from the task's last snapshot. `taskOutcome` now reads the agents' end counts from #796:
+- a completed task whose agents all failed reads **failed** (red);
+- one where some failed reads **completed, N failed** (amber);
+- anything else reads as before.
+
+The task's header dot follows the same rule.
+
+**16. Take off reflowed.** Taking instructions or a skill off a folder reloaded the list, so the next action moved under the pointer.
+- What was taken off now stays in its place, disabled and greyed out, reading "reporter · taken off".
+- Its label is laid out at the width of the wider of "take off" and "taken off", so nothing after it moves.
+- The heading's count and each row's "in N folders" leave out what was taken off.
+- The list is read again when the page opens or after an apply, as before.
+
+**19. Ragged descriptions at 1280.** Instruction and skill rows put the name in a column of one width (28%), so every description starts at the same place and is left-aligned. Below 520 px they still stack.
+
+**Product calls:**
+- "completed, N failed" in amber for a mixed outcome.
+- A taken-off item stays until the list is next read, rather than disappearing.
+
+**Tests (web):**
+- The failed task's card reads `failed`; `taskOutcome` for mixed and clean outcomes.
+- After a take-off, the item stays disabled in place, the other stays enabled in its slot, and the count leaves it out.
+- The CSS for the description column and its left alignment.
+
+**Live** (test Studio, 1280x800):
+- Instructions rows: every description starts at the same x.
+- A folder with instructions and a skill: taking the instructions off left the skill's button at exactly the same box (533.9, 410, width 198) before and after.
+
+Docs: HELP (Earlier tasks, Instructions and skills).
+
+### Search: the reply names the libraries searched; no library means the main library (#816)
+
+Phase 3 review, bug 20: a search with no `library` parameter left out the keep-copy library, while the UI's All libraries search found it. The review asked whether that is right and to make the API and the UI agree.
+
+## Decision (routine call)
+
+The default is right, and I kept it. With no `library`, every route in the Studio works in the main library alone, `GET /api/search` included, and the code says so (`libraries.ScopeIDs`: nil for none, the main folder). Nothing treats the keep-copy library differently: any library other than the main one, My library included, is searched only when it is named or with `library=all`.
+
+Changing the default would quietly widen every API and MCP caller's search, including the assistant's tools, and make the API's results depend on which libraries a person has added. The UI already agrees with the API: the Search page always sends its scope, and All libraries sends `library=all`.
+
+## What changes
+
+- `GET /api/search` answers `searched`: the ids of the libraries the search covered, `["kb"]` with no library. A caller can now see its scope instead of inferring it. The web API type carries it.
+- `docs/REFERENCE.md` states the default and `searched`.
+- `HELP.md` says that All libraries takes in kept copies, and that an API search without a library searches the main library alone.
+
+## Tests
+
+`internal/libapi/build_test.go`, with a library built in the test: no library searches `[kb]`, and `library=all` includes the built library. `go test ./internal/libapi` passes.
+
+### Main library read only: a disabled button gives its reason on click or tap too (#809)
+
+Phase 3 review, bug 18: on the security bed, as a non-administrator, the disabled **+ Add**, **Labels** and **Delete** for the main library gave no reason on hover in WebKit. Only the context menu items carried it.
+
+## What I found
+
+These buttons already used a tooltip with `focusableWhenDisabled` (`aria-disabled` rather than `disabled`), and no `title`. On the bed in Chromium the tooltip does open on hover. I could not run WebKit here, because the host lacks its system libraries, so I could not reproduce the empty hover the review saw. In any case, a tooltip never opens on touch.
+
+## Fix
+
+A shared `LockedButton` replaces the six hand-made sites:
+- the Library toolbar's **+ Add**;
+- the file reader's **Labels** and **Delete**;
+- the selection bar's **Labels…**, **Move to…** and **Delete…**.
+
+It keeps the tooltip and adds the reason as the button's `aria-description`. A click or tap now also shows the reason as a notice, which works in every engine and on touch.
+
+Routine call: a notice on click rather than a native `title`. Chromium would show the native title on top of the tooltip, so the reason would appear twice.
+
+## Checked
+
+On the spacesec bed (sign-in on, `STUDIO_ADMINS=cy`) as ada in Chromium, with suite phases setup and mainlib at 85 passed, 0 failed:
+- hovering **Delete** shows the reason;
+- clicking **+ Add** shows the notice and the tooltip.
+
+Screenshots: `chromium-delete.png`, `chromium-click.png` (kept locally).
+
+## Tests
+
+`mainLibraryReadOnly.test.tsx`: **+ Add** has `aria-disabled` and the reason as its description, and a click calls the notice with the reason. The web suite passes; one unrelated update-footer test flaked under load and passes alone.
+
+HELP.md: the read-only main library paragraph says how the reason is shown.
+
+### Chat: a reply pw code wrote is labelled with pw code's model (#810)
+
+Review of v1.203.20, bug 6.
+
+In a chat continued from the Code page, replies sent from the chat were labelled **Codex (gpt-6.2-sol)**, the picker's model, although pw code wrote them on the session's claude-code/haiku and the stored reply says **pw code · claude-code/haiku** (a reload showed the right label).
+
+Cause: the chat package labels a new reply with the picker's model whenever that model takes the Responses API, and with the model the stream reports otherwise. gpt-6.2-sol takes the Responses API. The Studio's stream never uses it, so after a turn pw code answered, the adapter now says so on the request, and the package labels the reply with the model the stream reported.
+
+Routine call: the Studio assistant's replies are left as they were (labelled by the picker's model when it takes the Responses API), so only pw code replies change.
+
+- web/src/adapter.ts: the change.
+- web/test/replyModel.test.tsx: a pw code reply reports its own model and clears the flag; a Studio assistant reply leaves it.
+- docs/HELP.md: the label, in the pw code paragraph.
+
+Checked in a browser at 1280: in a chat continued from a claude-code/haiku session with gpt-6.2-sol picked, two replies sent from the chat are both labelled **pw code · claude-code/haiku**.
+
+### Folder check: name the mount's file system, ext4 rather than ext2/ext3 (#803)
+
+Phase 3 review, bug 14: the folder check's Sharing line said "ext2/ext3" for an ext4 file system.
+
+## Cause
+
+The check ran `stat -f -c %T`. That command reports one magic number for ext2, ext3 and ext4, and prints it as ext2/ext3.
+
+## Fix
+
+The check now asks `findmnt -n -o FSTYPE -T` for the type the folder is mounted as. It falls back to `stat -f` only where findmnt is missing. In that case the server shows the shared name as "ext2, ext3 or ext4" instead of the misleading "ext2/ext3". The Sharing lines use that name.
+
+Routine call: a system without findmnt (util-linux) gets the vaguer "ext2, ext3 or ext4" rather than a guess.
+
+## Tests
+
+`internal/userlibs/fsname_test.go`:
+- runs the real check script against a temp folder and compares its `fs` with findmnt's (skipped where findmnt is missing);
+- unit-tests the fallback name.
+
+HELP.md: the My library paragraph says the folder check names the file system as mounted.
+
+### Status: session and model counts hold steady between polls (#813)
+
+Review of v1.203.20, bug 21.
+
+The Activity card's session count and the footer's **models ready** flickered between polls (16 and 17 sessions, 23 and 24 models). The Studio shows what the platform answers, and those answers flap now and then: a running session reported as something else for one read, or a model served from a session (`session:…`) missing while that session is slow to answer. It did not reproduce while I sampled both routes every 10 s for two and a half minutes (17 and 24 throughout), so the fix is in the UI. The review's shots show the cause: the session that serves the 24th model (an endpoint session) is in the Activity list in p5/155 (17 sessions, 24 models) and missing in p5/96 (16 sessions, 23 models), so that one session flapping on the platform moves both counts together.
+
+Something shown now goes only when two reads in a row leave it out; something new shows at once.
+- Sessions: `keepMissing` in web/src/steady.ts, applied to the Status panel's `/api/sessions` poll (once a minute), so an ended session leaves within about two minutes.
+- Models: `steadyCount`, applied to the footer's `/api/ai/health` poll, which the Status panel shares.
+
+Routine calls:
+- Rises show at once and only drops wait one read, so a session you just started is never hidden.
+- **Re-check** in the models panel shows the count exactly as read, since that is an explicit ask.
+
+- web/test/steady.test.ts: a flap 17, 16, 17 holds at 17; two lower reads drop; a new item shows at once; Re-check takes the read.
+- docs/HELP.md: a sentence in the status panel paragraph.
+
+### Sessions, account checks and probes are kept per whole key, not its last 16 characters (#818)
+
+Review 1, finding 19 (hardening). The review was right, and the same pattern was in one more place than it listed.
+
+## What was wrong
+
+These maps kept an entry per key using only the key's last 16 characters, so a key that ended like another person's would find that person's entry:
+- the pool's kept-open session (`remote.channelID`, also used by `pwcli`);
+- the account check for My library writes (`userlibs` `sameAccount`, and `wrote` in spacefs.go);
+- the identity cache behind Shared with me (`shares.go` `identity`);
+- the toolkit install queue and the index probe cache;
+- **also** the pw code bridge's client id (`pwcode/bridge.go` `Remote`), which the review did not list.
+
+## Fix
+
+New `remote.KeyID(key)`: the first 16 bytes of SHA-256 over the whole key, in hex. Every map above now keys on it. As a side effect the maps no longer hold any part of the key. The listing cache already hashed the whole key; it is unchanged.
+
+## Tests (fail on main, pass here)
+
+- `remote.TestKeysThatEndAlikeKeepSessionsApart` runs two keys with the same last 16 characters through a local pool. It asserts two session groups, with no part of the key in their ids. On main: `keys ending alike share the session id "0123456789abcdef|c"`.
+- `userlibs.TestAccountCheckIsKeptPerWholeKey`. On main: `two keys ending alike share the account and identity entries`.
+- `remote.TestKeyID`.
+
+`go test` for remote, userlibs and pwcode passes. No user-facing change, so no HELP entry.
+
+### Fleet: an agent is its owner's and the administrators' (#819)
+
+Review 1, finding 1 (high). Verified by reading `fleet/routes.go`: every route acted on any agent id, and the only gate was `DelegationEnabled`.
+
+On a shared Studio:
+- Bob could message Ada's agent and read its answer from `GET /api/fleet/<id>`. The agent's session runs with Ada's Studio tool token and her stored ACTIVATE sign-in.
+- Bob could also wake, pause or retire Ada's agent.
+- `GET /api/fleet` returned each owner's `ownerUser`, with their groups and claims.
+
+**Change** (`fleet/access.go`, `fleet/routes.go`):
+- With sign-in on, an agent is visible and actionable only by its owner (`owner` equals the signed-in person's id) and the Studio's administrators (`mainlib.Admin`: `PW_USER`, `STUDIO_ADMINS`).
+- `GET /api/fleet` lists only those agents. `GET /api/fleet/<id>` (detail, journal, session lines) and `tick`, `pause`, `resume`, `retire` and `message` answer 404 for anyone else, before anything is read or changed.
+- No answer carries `ownerUser`. It stays in the stored record for the agent's own wake-ups.
+- With sign-in off (one person), nothing changes.
+
+**Product calls**
+- Another person's agent answers 404 rather than 403, so its existence is not revealed.
+- Administrators see and act on everyone's agents.
+- An agent stored with no owner (possible only for records taken over from the old engine) is visible to administrators alone.
+- A request with no signed-in person on a sign-in Studio sees no agents.
+
+**Test (Go).** `TestAnAgentIsItsOwners`, with sign-in on and `STUDIO_ADMINS=cy`:
+- Bob and an anonymous request list nothing. They get 404 on read, tick, pause, resume, retire and message, and Ada's agent is unchanged.
+- Ada and cy list and read it, and no answer contains `ownerUser`, Ada's e-mail or her group.
+- cy can pause it, and the stored record keeps its `ownerUser`.
+
+The test fails on main (8 assertions) and passes with the fix.
+
+Docs: docs/AGENTS.md (who sees an agent), HELP (Fleet).
+
+### Fleet: an agent's record and journal are private to the Studio account (#820)
+
+Review 1, finding 8. Verified in `fleet/fleet.go`: `persist` made each agent's folder 0755 and wrote `agent.json` 0644, and `journal` appended `journal.jsonl` 0644. Those files hold:
+- `ownerUser`, with groups and claims;
+- goals and the messages people sent the agent;
+- round results, which can quote a private library.
+
+Where the index base is group readable, any account in the group could read every person's agents. The delegation and agentsmd records were already 0600 in 0700.
+
+**Change**
+- New folders are 0700 and the record, its `.part` and the journal are 0600.
+- When the fleet is first read, `closeUp` sets the fleet folder and each agent's folder to 0700, and any of those three files that are group or world readable to 0600. Links are left alone.
+
+**Product call:** existing records are closed in place when the fleet is read, with no separate migration step, as #776 does for extracted text.
+
+**Test (Go):** `TestRecordsArePrivate`.
+- A new agent's folders are 0700, and its record and journal are 0600.
+- A record written 0644 in a 0755 folder by an earlier version is 0600 in 0700 after a new Fleet reads it.
+
+The test fails on main (8 checks) and passes with the fix.
+
+Docs: docs/AGENTS.md.
+
+### Library listings: a write over plain ssh drops the kept listing, and a read across a write is not kept (#826)
+
+Review 1, findings 6 and 14, and the listing test gaps in finding 23. Both findings confirmed.
+
+## Finding 6 (medium): a write over plain ssh never dropped the kept listing
+
+Listings of a person's own library are kept under the library's site, `d.Site`. The five Library writes (upload, new folder, rename, move, delete) dropped them by the session's site, `fs.SiteID`.
+- Over pw ssh the two are equal.
+- Over plain ssh, `d.Site` is `me@host` and `fs.SiteID` is `ssh://me@host:port`, so nothing was dropped and the file just written was missing from the next listing.
+- `TestListAfterWrite/ssh` on main: `an upload is missing from the next listing: before=[runs,readme.md] after=[runs,readme.md]`.
+
+The writes now drop by `d.Site`, as every other drop already did (shares, transfers, removal).
+
+## Finding 14: a read in flight across a write was kept as fresh
+
+`changed` dropped the listing, but a read that began before the write could put its older answer back afterwards. The fix:
+- The cache counts the writes it is told of and remembers the last 256.
+- A read notes the count when it begins. Its answer, and the subfolders it read, are returned but not kept if a write in that folder, one inside it or one above it came in meanwhile.
+- My call: if more than 256 writes came in, the read is not kept. The cost is one more read later.
+
+## Finding 23, the listing tests
+
+- **New `TestListAfterWrite`:** pw and plain ssh, each running list, upload, list; new folder, list; rename, list; delete, list.
+- **`TestListCacheAges`:** the step "a read older than the one kept replaced it" stored the same name twice, so it could not fail. It now stores a different name.
+- **New `TestListCacheReadAcrossAWrite`** covers three cases:
+  - a read across a write in its folder is not kept;
+  - writes elsewhere, or on another system, do not stop a read from being kept;
+  - a read older than every remembered write is not kept.
+
+The userlibs and transfers tests pass. No HELP change: the Library now behaves as HELP already says.
+
+### Code page: with sign-in on, read and answer as the person only (#824)
+
+Review 1, findings 2 (High) and 11, plus the sign-in gap finding 23 names for approve.
+
+**Verified first.** Both hold. `codesessions.viewerKey` used `sessions.KeyFor` → `Platform.KeyFor`, which returns `GatewayKey()` when the viewer has no key of their own. The new test shows that on main a signed-in person with no key lists "someone's delegated work" with the deployment key. On this host with `AGENT_LOCAL_SITE=1`, `localList`, `localItem` and the local Approve path had no owner check. The new test shows that on main the person sees, and could answer, another person's session.
+
+**Finding 2.** With sign-in on, the Code page uses only `Viewer.PlatformKey()`: the person's ACTIVATE sign-in, then a pasted platform key. It never uses the deployment's key, and without one it answers 409 ("sign in with ACTIVATE under Settings, Model access"). This matches `sessions.DesktopKey` and `viewerPlatformKey`. A signed-out request answers 401, and a model-provider key does not count. List, detail, Approve and `Find` (Continue in Studio) all go through it. Sign-in off is unchanged.
+
+**Finding 11.** With sign-in on, this host's daemon is read only for a signed-in person with no platform credential of their own. Even then it lists, opens and answers only the sessions the Studio started for that person. Anything else answers 404 and the daemon is never asked. Ownership comes from a new `app.Providers.OwnSessions` list with one source per part that starts sessions:
+- chat: `ownChats`, the person's conversations with a pw code link;
+- delegation: `Mine`;
+- fleet: `SessionsOf`, the agents whose `OwnerUser` is the person.
+
+The fleet source is in a new `fleet/owned.go` and is registered in `platformtrack/packages.go`, which keeps clear of `fleet/routes.go` where finding 1 is being fixed. Owner identity is the same as elsewhere: `auth.UserOf(r).ID` for delegation and fleet, and the conversation's owner for chats.
+
+Routine calls:
+- A session that is not the person's answers 404, as one that is not there does, rather than 403, so ids of other people's sessions are not confirmed.
+- With sign-in on and the person's own key present, the page reads the platform, not this host. Their sessions are there, and sessions the Studio runs for them on this host come up in the chat and on the Agents page.
+
+Tests (each fails on main):
+- `TestSignedInUsesOnlyTheirOwnKey`: with sign-in on and no own key, list, detail and Approve answer 409 and the platform is never asked; a provider key is not enough; signed out answers 401; with alex's own key, every platform call carries it; with sign-in off, the deployment key works as before.
+- `TestSignedInOnThisComputerSeesOnlyTheirs`: alex lists and reads only his own session. Approve on another person's session answers 404 and the daemon takes nothing, while his own goes through. Another person sees none, and someone signed out does not read this host.
+- `fleet.TestSessionsOf`.
+
+Docs: HELP.md (Code) and docs/AGENTS.md (*Code page without the platform*, *Local site*).
+
+### Delegation: keep the person's instructions, reach gone, finish waiting once (#825)
+
+Review 1, findings 5, 7 and 18. All three are in `delegation/delegation.go`, around one record's start and watch. I verified each with a test that fails on main.
+
+**5. A failed start removed the person's instructions.** `applied` was set even when `ApplyNamed` changed nothing. So when the start failed (for example, the daemon was down), `RemoveInstructions` took out a section the person had applied themselves, and deleted `AGENTS.md` if that emptied it.
+- Before applying, the start now reads the folder's `AGENTS.md`. If the named instructions are already there (or the file cannot be read), the start does not take them out afterwards.
+- A folder the start created is removed again if the start fails. A folder that already existed is never removed, including on the path where the site does not see the library.
+
+**7. `gone` could not be reached.** `Look` matched only `*apierr.Error` 404, but this host's daemon answers `*pwcode.DaemonError`. `notFound` now accepts either.
+
+**18. A waiting session was finished on every poll.** Every 20 second poll re-ran the reindex, the file walk and the record rewrite. When the record is already `waiting` and the session still waits, `Look` now just polls again. It finishes the record when the session goes on.
+
+**Product calls**
+- An `AGENTS.md` that cannot be read counts as "the instructions may be the person's": nothing is removed.
+- A waiting session stays watched, as before, so the record finishes when the person approves.
+
+**Tests (Go, delegation)**
+- `TestAFailedStartKeepsThePersonsInstructions` covers three cases:
+  - a folder that already carries `reviewer` keeps its `AGENTS.md` byte for byte;
+  - a folder with other files loses only the start's `AGENTS.md`;
+  - a new folder is removed.
+- `TestAGoneSessionIsGone`: a daemon 404 records `gone` with a finish time and ends the watch.
+- `TestAWaitingSessionIsFinishedOnce`:
+  - three further looks while waiting leave the record file untouched and list no files;
+  - after the approval, the record finishes and lists the file.
+
+All three fail on main and pass with the fix (run 3 times).
+
+Docs: docs/AGENTS.md (record and finish).
+
+### Agent instructions: refuse a linked folder on the way to AGENTS.md (#828)
+
+Review 1, finding 17. Verified with a test that fails on main. `Local.abs` resolved the path as written, and `Read`/`Write` Lstat only the file itself. So if `linked` (or `p/.agents`) was a symbolic link to a folder outside the library, `AGENTS.md` and `SKILL.md` were written there. The docs and the package comment say the Studio never writes through a link. Only people who may write the main library could reach this.
+
+**Change:** `Local.abs` now Lstats each existing folder between the library's top and the file, and refuses a link with 409: "`<path>` in `<library>` is a linked folder; the Studio does not read or write through one."
+
+**Product calls**
+- The library's top itself (`KB_ROOT`) may be a link, as deployments commonly mount it that way.
+- Folders that do not exist yet are fine; they are made as real folders.
+- Reads through a linked folder are refused too, for consistency.
+
+**Test (Go, agentsmd):** `TestNoWriteThroughALinkedFolder` covers three placements of the link:
+- the folder itself;
+- a folder above it;
+- the folder's `.agents`.
+
+Each is refused for `SKILL.md` (and for `AGENTS.md` where the link is on its way), and nothing is written outside the library. A library whose top is a link still writes. The test fails on main and passes with the fix; the whole Go suite passes.
+
+Docs: docs/AGENTS.md, the `Folder` interface comment.
+
+### Desktop relay: pass only the WebSocket headers of the platform's handshake (#821)
+
+Review finding 20. On a 101 answer, the desktop relay (`httputil.ReverseProxy`) copied every header of the platform's handshake to the browser. A cookie the platform set there would have been stored under the Studio's origin.
+
+The relay now passes only the handshake's own headers: `Upgrade`, `Connection`, `Sec-WebSocket-Accept`, `Sec-WebSocket-Protocol` and `Sec-WebSocket-Extensions`. The Studio's own response headers are unchanged.
+
+The finding was marked "plausible", so I checked the platform. On 22 November its 101 for a desktop socket carried no `Set-Cookie`. It did carry `Access-Control-Allow-Origin` naming the platform's origin, plus `Access-Control-Expose-Headers` and `Vary: Origin`, and those reached the browser until this change. Through a Studio built from this branch, the same handshake returns only the five WebSocket headers, followed by the desktop's RFB greeting.
+
+Product call: an allowlist rather than a blocklist, so any header the platform adds later stays out by default.
+
+Test: `TestDesktopHandshakeCarriesOnlyWebSocketHeaders`. Its fake platform answers with `Set-Cookie`, `Strict-Transport-Security`, `Access-Control-Allow-Origin` and a custom header; it fails on main and passes here. All Go packages pass. WORKFLOWS.md states the rule.
+
+### Shared with me: systems are asked side by side, for 20 seconds at most, and one not reached is named with its reason (#833)
+
+Review 1, finding 15. Confirmed by reading `sharedWithMe` and reproduced in a test.
+
+## What was wrong
+
+Shared with me checked the viewer's account on every system that holds a share, one system after another. Each check could wait for the pool's full 60 seconds, so one stopped cluster delayed the list for everyone by a minute or more. A system whose session failed was treated as one where nothing was shared, and the list said so with no reason.
+
+## Fix
+
+- **Server:**
+  - the systems are asked side by side, at most 6 at a time, each for at most 20 seconds (`sharedReachWait`);
+  - a system that fails or does not answer is listed in a new `unreached` field (`site`, `name`, `why`), and its shares are left out rather than reported as none;
+  - the reason is the session's own error, or "<system> did not answer within 20 seconds.".
+- **Web:** Add a library, A system, says "Folders shared with you on <system> could not be checked: <why>" for that system, and no longer says nothing is shared there.
+- **HELP:** the Add a library paragraph says so.
+
+## My calls
+
+- **20 seconds** is long enough for a session to open on a busy login node, and short enough that the form is not held for a minute.
+- **6 at a time**, so a person with shares on many systems does not open every session at once.
+- **A failed system** is reported, not retried. The identity cache already keeps a successful answer for ten minutes, so opening the form again tries the failed one again.
+
+## Tests
+
+- **Go:** `TestSharedWithMeNamesSystemsNotReached` has shares on three systems: one that answers, one whose session is refused, and one whose `id` takes a minute. It asserts four things:
+  - the list comes back in under 8 seconds;
+  - it holds the one share reached;
+  - it names both other systems;
+  - it gives the slow one's reason as a timeout.
+
+  On main it fails: `the list waited 1m0.016534151s`.
+- **Web:** `personalSpaces.test.tsx` shows the reason for an unreached system, and not "Nothing is shared".
+
+The userlibs tests and the full web suite pass.
+
+### Fleet: a watcher is not woken by its own round (#835)
+
+Review 1, finding 22, the results-reviewer item. The reviewer rated it plausible; it is confirmed by a test that fails on main ("its own round woke it again: 2 wake-ups").
+
+The results reviewer template watches `agents/`. That folder holds its own folder `agents/fleet/<id>`, and its goal is to write a summary beside the results it reads. Every round therefore moved the newest mtime under `agents/`, and the next pass woke it again. The template has no budget, so this never stopped.
+
+**Change** (`fleet.go`, `wake.go`)
+- `newestMtime` leaves out the agent's own folder, both at create and in each pass.
+- When a round settles, the agent's `LastSeenMtime` takes in what changed under its watched folder during the round.
+
+**Product calls**
+- Changes made while the agent worked count as its own round's. It re-reads the folder on its next wake, so nothing is lost. A result someone else wrote during that round wakes it only if a later change lands. I chose this over trying to tell authors apart by mtime, which cannot be done.
+- I did not add a default wake budget to the template. The loop is gone, and a budget would silently stop a reviewer people expect to keep watching. People can still set one.
+
+**Test (Go):** `TestAWatcherIsNotWokenByItsOwnRound`:
+- a round that writes in its own folder and beside a result does not wake it again;
+- a later write in its own folder does not either;
+- a new result written afterwards wakes it.
+
+The test fails on main and passes with the fix.
+
+Docs: docs/AGENTS.md (wake-ups).
+
+### Code page: a crossing read and a platform 404 no longer say the wrong thing (#837)
+
+Review 1, finding 21: the Code page items, an older read landing after a newer one and every platform 404 on approve reported as "no longer waiting". Also finding 23's gap: the follow-output test checked only the arithmetic. The other two items of finding 21, the model note and the failed model move, are in #832.
+
+**Older read after a newer one (verified).** While a session works it is read every 5 s (`setInterval`) and again when the list row changes (`liveMark`). The two `loadDetail` calls for the same session could cross. `wanted` only drops reads of another session, so the older answer replaced the newer transcript. Each read now takes a number, and a read asked before one already shown is dropped; an error from such a read is dropped too.
+
+**404 on approve (verified).** `answerOnPlatform` mapped every 404 to "That approval is no longer waiting". The platform also answers 404 for a session or machine it cannot reach, and where the route is missing. After a 404 the session is now read again as the viewer:
+- it still waits on that approval: 502, "The platform did not take the answer although the session still waits on it (<platform's detail>). Answer it where the session runs."
+- it no longer does: 409, "no longer waiting", as before.
+- the session cannot be read: 404, "could not reach that session…"
+
+Routine calls:
+- One extra platform read, made only after a 404, rather than parsing the platform's wording, which is not a contract.
+- 502 for "still waiting": the platform failed the request while the state says it should have taken it.
+
+Tests (the first two fail on main):
+- `keeps the newer read of the same session when an older one comes back after it` (web/test/codeView.test.tsx). The newer read has one more turn, so a stale replacement is visible; on main it is.
+- `TestApproveNotFoundSaysWhy`: the three 404 cases.
+- `follows new output while the reader is at the end, and stays put once they scroll up`: drives the pane through its ResizeObserver and scroll events rather than only `isAtEnd`.
+- `TestApproveThroughThePlatform`: its fake platform now serves the session read, so the "gone" case goes through the real path.
+
+No HELP change: the page behaves as HELP says; only the messages are now right.
+
+### Earlier tasks: stop the sessions the retired engine left running (#836)
+
+Review 1, finding 22, the first item. Verified by reading. `pasttasks.Task` rewrites a `working` or `input-required` agent as canceled, with the note "stopped when the task engine was retired". Nothing stopped its pw code session, which the engine (#774 removed it) ran on this host's daemon.
+
+**Change**
+- `Archive.LeftRunning` lists the `sessionId`s of agents whose stored state was still working or waiting.
+- `Archive.StopLeftRunning` interrupts each one on the local daemon:
+  - A 4xx answer (the session is gone or not running) counts as nothing to stop.
+  - When all are done it writes `INDEX_BASE/tasks/.left-running-stopped` (0600), so it runs once.
+  - If the daemon cannot be reached, it writes no mark and tries again at the next start.
+- `platformtrack` runs it on start where this process owns the jobs, as the old engine and the fleet scheduler do.
+
+**Product calls**
+- Interrupt, not archive. The session stays on the Code page with its transcript, which the Earlier tasks page links to.
+- It runs once per Studio, not on every start, so a session someone later resumed by hand is not stopped again.
+
+**Test (Go):** `TestTheSessionsLeftRunningAreStopped`. Of four agents, the working one and the waiting one are interrupted. The completed one is left alone, and one the daemon no longer has is skipped. A daemon that is down leaves no mark, and a second run does nothing.
+
+Docs: docs/AGENTS.md (Earlier tasks).
+
+### Extract cache: every folder is 0700, from enrich.py too, and old open folders are closed (#822)
+
+Review 1, finding 16. Confirmed: the review was right on all three counts.
+
+## What was wrong
+
+The extract cache holds the text of every file read, and its folders mirror the source's names. The docs and #776 say each entry is 0600 "in folders of 0700", but that was not true:
+- **`enrich.py`** made a cache folder with `mkdir(mode=0o700, parents=True, exist_ok=True)`. Python applies the mode to the last folder only; the parents it makes get the default mode. Under umask 022, a new `a/b/c` came out 0755, 0755, 0700 (the reviewer saw the same).
+- **The Go pass** (`cache.go`) made new folders 0700, but `fresh` closed only an old entry's file, never its folder.
+- **The cache top** was closed only for a root build (`STUDIO_TEXT_ACCESS=file`).
+
+So the text was closed, but the names of private files stayed listable by other accounts wherever the cache top was reachable.
+
+## Fix
+
+- **`enrich.py`:**
+  - new `private_dir()` makes each missing folder 0700 and closes the entry's folder if it is open;
+  - the cache top is closed at the start of the run;
+  - a cache that cannot be changed is reported on stderr and used as it is, the same as a failed cache write.
+- **Go:**
+  - `writeEntry` and `fresh` close the entry's folder if an earlier version left it open (`closeDir`);
+  - `Run` closes the cache top on every pass;
+  - under a root build a failure to close the top is still an error, as before. Otherwise it is used as it is, as its writes are.
+- **`docs/REFERENCE.md`** now says what is true: every cache folder is made 0700 by both writers, and old open ones are closed as met (the top at every pass, an entry's folder when the entry is checked or written).
+
+My call: a folder that only holds other folders and that no pass checks or writes in is left as it was. It is under the cache top, which is now closed on every pass, so its listing cannot be reached.
+
+## Tests (fail on main, pass here)
+
+- `TestOpenCacheFoldersAreClosed`: a cache with 0755 folders. Checking an entry closes its folder; writing into an open folder closes it; a pass closes the top. On main: `an old entry's folder stayed -rwxr-xr-x`.
+- `TestEnrichCacheFoldersAreClosed`: runs `enrich.write_cache` under umask 022 into a new `a/b/c` and an open folder. On main: `a is -rwxr-xr-x`, `a/b is -rwxr-xr-x`, `open is -rwxr-xr-x`.
+
+`go test ./internal/extract/...` passes. No user-facing change, so no HELP entry.
+
+### Chat: a model's failed call counts only for the person who made it, and the note says what happened (#832)
+
+Review 1, finding 10, plus two items of finding 21: a failed model move was only logged, and the model note outlived its session.
+
+**Verified.** `llm.Client.failures` was a `map[model]ModelFailure` shared by every person. `enabledModels` (pwcodemodel.go) dropped any model with an entry in the last ten minutes, and `pickPWCodeModel` treated "not listed" as "not offered", so the note said "is not enabled for your AI connection". A new test shows that on main another person's failed call moves the chat.
+
+**Fix.**
+- `RecordOutcome(key, id, …)` / `ModelFailure(key, id)`: a model's last outcome is kept per model and per calling credential (8 bytes of a SHA-256 of the key; the key itself is never kept; "" means the gateway's own). `StreamTurn` records with the key it called with.
+- The chat reads failures with `callKey`, the key a turn would use (the sidecar's, the person's own, else the gateway's). This applies in the pw code check, the picker's `callable`/`last_error` and the Retry choices.
+- `pickPWCodeModel(current, chosen, enabled, failing)`: a model that is offered but failing for this person counts as a reason to move, and a failing model is never the target. The note says "is not enabled for your AI connection" or "failed when you last used it, in the last ten minutes".
+- A refused `PATCH settings` now sets a note ("…and the Studio could not move this chat to X: <reason>") and `modelStuck` on the stream event. The chat's notice shows it as a warning titled "pw code could not move this chat to another model". The link keeps the model the session is on.
+- PWCodeEngine: the menu's note is the server's note for the current session (`d.modelNote`) rather than `d.modelNote || prev.modelNote`, which kept an old session's note.
+
+Routine calls:
+- Per key rather than per person: two people who share the deployment key share its failures, which is right, since it is the same credential. A person's own key is theirs alone.
+- The key hash is 8 bytes (16 hex characters): enough to tell keys apart in memory, and the record never holds a key.
+
+Tests (the first two fail on main):
+- `llm.TestModelFailuresArePerKey`.
+- `TestPWCodeChatModelFailuresArePerKey`: another key's failure leaves the chat where it is; the person's own failure moves it, and the note says it failed, not that it is not enabled.
+- `TestPWCodeChatSaysWhenTheModelCannotMove`: a refused PATCH gives `modelStuck` and the note, and the link keeps its model.
+- `pickPWCodeModel` cases for failing models.
+- web/test/pwcodeEngine.test.tsx: a new session clears the old note, and the stuck notice has its own title.
+
+Docs: HELP.md (pw code), REFERENCE.md (pw code model paragraph).
+
+### Code page: an approval shows its whole command before Approve is offered (#827)
+
+Review 1, finding 3.
+
+**Verified.** `codesessions.item` sent each approval's command through `clip(a.Command, maxToolArgs)`, which cuts it to 600 characters. `POST /api/code-sessions/approve` sends only the approval id, so the daemon ran the whole command. The card gave no sign that it was cut. The existing test even asserted the cut (`len == maxToolArgs`).
+
+**Fix.**
+- Server: the command is sent whole, up to 65,536 characters, with `commandLength`. A longer one is sent cut, with `commandCut: true`.
+- Page: a command over 8 lines or 600 characters shows its start, then **Show the whole command (N lines, M characters)**. Approve appears only once the whole command shows; until then the card says "Show the whole command to approve it." A command with `commandCut` offers Deny alone and says to answer it where the session runs.
+- The command box no longer has its own scroll area (it had a 160 px max height), so what shows is everything.
+
+Routine calls:
+- The 65,536 character ceiling: commands that long are not something a person reviews on this page, and Deny is still there.
+- Approve is hidden rather than disabled until the command shows, so it cannot be pressed by mistake; the note says why it is missing.
+- The pw code chat's approval card already shows the whole command (nothing there cuts it), so it is unchanged.
+
+Tests:
+- `approve_test.go`: the 907-character command comes back whole with its length, and one over the ceiling comes back cut and flagged. Both fail on main.
+- `web/test/codeApproval.test.tsx`: a short command has Approve and Deny. A long one hides its dangerous tail and Approve until it is opened, then approves the call. A cut one offers Deny alone. The line rule is covered too.
+
+Docs: HELP.md, Code.
+
+### Two-level listing: the folders inside a hidden folder are read, not taken as empty (#829)
+
+Review 1, finding 13. Confirmed, with a correction to the reviewer's example.
+
+## What was wrong
+
+The two-level listing (`list2` in the remote helper) read the second level with `find "$p" -mindepth 2 -maxdepth 2 ! -path '*/.*'`. That pattern is matched against the whole path, so it also matches every entry when the folder asked for is hidden. Those folders were then reported as read and empty, and kept that way in the listing cache.
+- **Affected:** a hidden folder below the top of a space (`proj/.agents`), and one given as `./.agents`.
+- **Not affected:** the review's own example, `.agents` at the top of a space. It is sent as `.agents`, and a path that starts with the hidden name has no `/.` in it.
+
+Shell check:
+```
+find proj/.agents -mindepth 2 -maxdepth 2 ! -path '*/.*'   -> nothing (skills/one is there)
+find .agents      -mindepth 2 -maxdepth 2 ! -path '*/.*'   -> .agents/skills/one ...
+```
+
+## Fix
+
+Hidden names are now left out by name (`! -name '.*'`). What is inside a hidden first-level folder is left out with `! -path "$q/.*"`, where `$q` is the folder asked for with its pattern characters (`[ ] * ?` and backslash) escaped.
+
+## Test (fails on main, passes here)
+
+`TestListTwoReadsTheFoldersInside` now also lists `proj/.agents`, `.agents` and `we[i]*rd`, over a direct run and a kept session. It checks that the folders inside are read, that hidden names inside are still left out (`skills/.cache`, `we[i]*rd/.hid`), and that the folder name's pattern characters are taken literally.
+
+On main: `proj/.agents/skills read as holding "", not "one"`.
+
+The transfers, userlibs and remote tests pass. No user-facing text changes.
+
+### Desktops: one rule for which are drawn, and no loop on a relay 404 (#834)
+
+Review finding 9, and the desktop part of finding 23.
+
+I confirmed both parts in the code before changing anything.
+
+**The 404 loop.** When the relay answered 404 (no desktop at that address), the viewer cleared the session's state and read it again at once. If the platform still listed the desktop as running, the viewer opened a new socket at once, got 404 again, and repeated. Each turn was three requests (session item, WebSocket, logs), with no pause and no count, for as long as the page was open. The viewer now:
+- reads the state again after the same growing pauses as a dropped connection (1, 2, 4, 8 seconds);
+- tries a desktop the platform still lists as running up to 5 times, about 23 seconds;
+- then shows "Could not connect" with the platform's reason, "The platform has no desktop at that address; it may have stopped.", and waits for **Reconnect**.
+
+A desktop the platform no longer lists as running goes back to waiting for it to run, as before.
+
+**Web and server disagreed on what is a desktop.** The web drew any `type: desktop`, while the relay opens only `type: desktop` with software `vnc`, so another desktop software led to the loop above. Session rows now carry `desktop`, computed by the relay's own rule, in the Go server and in Node (`sessions.ts`), and the web draws only rows with `desktop: true`. Any other desktop gets the usual card with Open and Open in new tab.
+
+Product calls made here:
+- 5 tries for a 404 while the platform lists the desktop as running; the pauses are shared with the dropped-connection retries.
+- The row gains a `desktop` key, not a `software` key, so the page and the relay apply one rule.
+
+Tests:
+- `desktopView.test.tsx`: a relay 404 waits before the next socket, gives up after `MISSING_TRIES` with its reason shown, opens nothing more over two minutes, and Reconnect starts again. It fails on main, where a second socket opens at once. It also checks that a session marked `desktop: false` is not drawn.
+- Go: `TestRowSaysWhichDesktopsTheStudioDraws`; `TestRowShape` includes the new key; `TestDesktopUpstreamAnswers` now covers a platform 404.
+- Node: `sessions.test.mjs` checks the same rule.
+
+Suites:
+- Web: 820 tests (one updateFooter test failed once in the full run and passes alone), and 806 under the RHEL 9 config.
+- Go: all packages pass.
+- Node: the session tests pass. Eleven tests in `outbound`, `offline`, `modelsListingCache` and `standaloneChat` fail on this host with or without this change.
+
+Live check against a throwaway desktop, since deleted: stopping a desktop under an open card made the platform close the socket cleanly, so the 404 path did not occur. The card then read the session about every 30 seconds, and nothing else. HELP.md and WORKFLOWS.md describe the new behaviour.
+
+### test(caption): the stand-in gateway answers after reading the whole request (#846)
+
+`server/test/captionRetry.test.mjs` is the most frequent flaky test on the required `macos` check: of the 12 macOS `pnpm test` failures in ci.yml since 13 Nov that passed on a re-run, 8 were this file (runs on 15, 16, 21 and 22 Nov). The failure is always the same shape: a caption that should have been cached is missing (`ENOENT .../picture.png.txt`, or the empty entry not refilled), and the following tests then count one call too many.
+
+The stand-in gateway called `res.end()` as soon as the request arrived, before the indexer (`indexer/enrich.py`, `urllib`) had finished sending the request body, a base64 image of about 195 KB. Node may then close the connection under the upload. On Linux the loopback socket buffers absorb the whole body and the test passes; with macOS's smaller buffers the upload is still in flight, the indexer gets a connection reset, `caption_image` returns `None` (a failed request), and by design nothing is cached.
+
+The stand-in now answers on the request's `end` event, as a real gateway does. Production code is unchanged.
+
+Verified: the file passes locally on Linux; the macOS check on this PR runs it. One green run does not prove a 1-in-10 flake gone; the rate on the required check over the next days does.
+
+The other macOS failures in that window: `transfersPage.test.tsx` "stays quick with all 2,000 loaded" (3, fixed by #756 on 21 Nov, no failures since) and `updateFooter.test.tsx` (1, on Linux, issue to follow).
+
+### Combined fixes and Indexing redesign for v1.203.21 (#858)
+
+The integration branch for v1.203.21: everything still to ship, tested and reviewed together, then squash-merged and tagged once. Each session adds its own section below. The commits on the branch carry the finding or bug number.
+
+## studio-remote-libs
+
+### Library names follow the mode (Matthew); folded from #817
+Commits `44e42ed`, `c833dc6`.
+- **Without sign-in** (the Mac and Linux apps): the main library is called **My library** everywhere.
+- **With sign-in:** the main library is **Shared library**, and My library is each person's folder.
+- **Name order:** a name saved in Settings or set by `KB_LABEL` still wins over these defaults.
+- **New helper:** `web/src/libraryNames.ts`.
+- **Release note:** the main library's default name changes on every Studio with no saved name and no `KB_LABEL`. It was the folder's name (often "kb"); it is now "My library", or "Shared library" where people sign in. A saved chat or a habit that names the main library by its folder's name will no longer match. Nothing stored changes. A space made earlier under the name My library keeps its files and is shown by its folder's name.
+
+### This computer, Remote computer, Bucket (Matthew); folded from #817
+Commit `80d8a3d`. Add a library's Where choices now read This computer, Remote computer and Bucket. The form, the picker ("Another remote computer…"), Settings, the server messages, HELP, README, LIBRARIES.md and MULTI-USER.md all use the same term. "(on <name>)" and "cluster" (where the text means an ACTIVATE cluster) are kept.
+
+### Phase 3 bug 10 (folded from #804, then #817)
+Commits `c83afec`, `435dc30`. The Settings, Libraries introduction now says which libraries are written to, per mode.
+
+### Review 2 items 4, 6, 7, 8, 9, 11, 13
+One commit each, and each test fails without its fix.
+- **4** (`a90fce7`), the library watch:
+  - **fix:** a list that fails to answer is taken as it last was, not as empty, so the watch no longer ends before the library is ready;
+  - **test:** `libraryWatch.test.ts`.
+- **6** (`73d9928`), four more caches keyed by the key's tail:
+  - **fix:** access accounts, workflows, the session list and transfers now key on a hash of the whole key (`remote.KeyID`);
+  - **tests:** `keytail_test.go` in each package. On main the workflows and transfers tests fail with "keys ending alike share the cache entry".
+- **7** (`8e0730f`), the footer count:
+  - **fix:** a count is shown only beside the library it is of. It is dropped when the library changes, and a late answer for another library is ignored;
+  - **test:** `footerCountLibrary.test.tsx`.
+- **8** (`cfee5df`), the catch-up watch:
+  - **fix:** uploads, path jobs and the Library's delete, rename and new folder now watch the library written to, not the one selected when the write lands;
+  - **test:** `transferCatchUp.test.ts`.
+- **9** (`74d5008`), the two-level listing:
+  - **fix:** a folder given with trailing slashes, or `/`, is normalised once, so hidden folders' contents are left out;
+  - **the reviewer is right that the Library cannot reach this:** the Go side never sends a trailing slash, and it drops entries whose parent folder was not listed. The fix keeps such entries from counting toward the cap;
+  - **test:** `listtwo_test.go` runs `list2` on `a/` and `a//`.
+- **11** (`b0e49748`), `searched` in the search reply:
+  - **fix:** the empty-query and no-GUFI answers now carry `searched: []`, and a library stopped at the time limit is no longer listed as searched;
+  - **my call:** only the time limit takes a library out of `searched`. A library that answered with nothing (not indexed, say) was still searched, and `omitted` says why. Leaving it out would make the main library vanish from the scope;
+  - **tests:** `searched_test.go`, and the empty-query check in `build_test.go`. REFERENCE.md is updated.
+- **13** (`0a699f5`), the main library's name:
+  - **fix:** the registry and kb fallbacks take the default name by mode, not the folder's name;
+  - **the reviewer undersold this:** `GET /api/semantic-maps` really did reach the folder-name fallback, and it now passes the configured name;
+  - **fix:** without sign-in, any library of one's own hand-named "My library" (not only a space) is shown by its folder, so it no longer shares a name with the main library;
+  - **tests:** `mainlabel_test.go` and `users_test.go`;
+  - **release note:** see above.
+
+Local: `go test ./internal/...` passes, and the web suite passes (842).
+
+
+### studio-remote-libs: phase 4 retest fixes
+One commit each; each test fails without its fix. Local: the web suite (870) and `go test ./internal/...` pass.
+- **C2** (`3b0edf7`), the Details card stuck at 0 B after an upload:
+  - **cause:** with All libraries showing, `currentLibrary()` is "all", so no library's index was watched after an upload or write, and nothing re-read Details once the space was indexed. It was not cfee5df8 itself, which only kept the same value;
+  - **fix:** the library is taken from the written folder's prefix (`libraryOf`);
+  - **test:** `transferCatchUp.test.ts`.
+- **F** (`550ddd0`), the Add panel staying open after an upload:
+  - **fix:** it closes once files are chosen or a page is added;
+  - **test:** `libraryAddMenu.test.tsx`.
+- **J** (`6920b52`), a Where choice scrolling the page under the pointer:
+  - **cause:** the form ends Settings, Indexing, so a shorter form shortened the page and the browser scrolled up;
+  - **fix:** the form keeps the tallest height it had while it is open;
+  - **test:** `addLibraryHeight.test.tsx`.
+- **K** (`4d00ba7`), the Remote computer form saying twice who reads it:
+  - **fix:** it is said once. The folder's form adds a line only for the API-key case;
+  - **test:** `personalSpaces.test.tsx`.
+- **L** (`115a7f5`), the library's id where its name belongs:
+  - **fix:** in All libraries the Add panel, the viewer's header and the Delete dialog show the library's name. The destination field reads "In <name>" and takes the folder inside it;
+  - **test:** `libraryPath.test.tsx`.
+- **M** (`73e809e`), the walkthrough wording:
+  - **fix:** it says "remote computer" (steps 1 and 7, and the library tabs), and Done says "no accent color" for the default. The ssh form's and the Libraries card's last "another machine" strings follow;
+  - **test:** `setupWizard.test.tsx`.
+- **First visit with sign-in** (`a7a6f32`):
+  - **context:** nobody gets the setup walkthrough where people sign in (`setup.go` answers `firstRun: false`), since it sets the Studio, which is the deployment's to set. I kept that;
+  - **added:** a card in the lower right corner, once per person in each browser. It names the shared library (and says whether the person may change it) and My library, their folder on a remote computer, with where to add it. It changes nothing, is client only, and does not show in a framed page;
+  - **HELP:** says what a signed-in person sees first;
+  - **test:** `firstVisitCard.test.tsx`;
+  - **not done, for Matthew:** a fuller per-person walkthrough with sign-in, such as one that makes My library.
+
+
+### studio-remote-libs: phase 4, last round
+One commit each; each test fails without its fix. main (#846, `433212c`) is merged into the branch. Local: the web suite (874) and `go test ./internal/...` pass.
+- **U** (`024905e`), uploading with All libraries selected:
+  - **cause:** the index job after the upload carried library "all", and the server refused it. Its path is in the POST body, and a library's top folder is not routed there;
+  - **fix:** the job is routed by the folder's library, and the upload panel names the library ("added to My library", not "kb");
+  - **tests:** `indexJobRoute.test.ts`, `transferPanelName.test.tsx`.
+- **L, the rest** (`1f7bfba`): the viewer's own Delete dialog names the library too. **Test:** `viewerDeleteName.test.tsx`.
+- **S** (`e69ea56`): the first-visit card and HELP point to the arrow beside + Add for Add a library. **Test:** `firstVisitCard.test.tsx`.
+- **T** (`22d3a82`), the pw CLI contexts table in Settings, Model access:
+  - **fix:** context names wrap, and a narrow section stacks each context with Use beside it (a container query). It no longer scrolls sideways with Use off screen;
+  - **test:** `cliContextsFit.test.ts`. I also checked it in headless Chrome at 438 px.
+- **T2** (`c76e1ce`), the same table when stacked:
+  - **fix:** a stacked cell grows with its wrapped name, so a long name no longer runs over the platform line under it;
+  - **test:** `cliContextsFit.test.ts`, checked in headless Chrome at 438 px with two long names.
+
+## v1.203.20 (2026-11-22)
+
+### Agents: delegated and standing agents read and list without asking (#792)
+
+Desktop test of v1.203.17, bug 4: a delegated session asked for 4 approvals (pwd, ls -la, a search outside its folder, cat with a link check), and a standing agent asked for 3 per wake-up (ls, a printf append to log.md, ls).
+
+**What pw code supports.** The daemon's `CreateSessionRequest.allowedTools` extends the session's allow list, from a local caller only (it is refused for a remote origin). Its Bash rules match the command's text, stage by stage, so a rule cannot say "a command that only reads, inside this folder": `Bash(ls *)` also matches `ls > /elsewhere`. Path rules for the read tools (`ReadFile(/dir/**)`) are checked against the resolved path. So this PR passes what can be stated exactly. The real fix (accept-edits runs a command its read-only classifier recognizes when every path stays in the workspace) is a pw code change, opened for review as parallelworks/core#24117.
+
+**This PR:**
+- `agentsmd.ReadRules(library)` gives:
+  - `ReadFile`, `GlobSearch` and `GrepSearch` under the main library's top, named both ways when it is reached through a link;
+  - whole commands that only list or print the folder: `pwd`, `date`, `ls`, `ls -l`, `ls -a`, `ls -la`, `ls -al`, `ls -lah`, `ls -alh`, `ls -R`, `ls -lR`, `tree`.
+
+  pw code checks every stage, so `pwd; ls -la` runs, while `ls -la notes`, `cat x` and `ls > x` ask.
+- `agentsites.Start` (delegation, `start_agent`) sets them on this host's daemon only. The fleet passes them through `StudioSession`, after the Studio's own read tools, and through its fallback session.
+- `agentsmd.WorkingNote` goes into a delegated session's first message and a standing agent's AGENTS.md section. It tells the agent to read, list and search with its file tools and to append to a file by editing it.
+- Not changed: sessions on a cluster get no rules. A standing agent's existing session keeps its earlier rules until it is renewed. What still waits is answered on the Code page (#788).
+
+**Tests:**
+- Go: `ReadRules` (no pattern Bash rules, symlinked library, no library); the agent-sites local start passes folder commands only; delegation passes the library read rules and the note; a fleet session gets the rules and its AGENTS.md the note; the existing cluster start test still sends no rules.
+- Live, this host's daemon with claude-code/haiku through a test Studio, a standing agent in the main library:
+  - First wake-up: listed its folder, read notes/ with the Studio's tools, ran `date` and wrote log.md with WriteFile. 0 approvals.
+  - Second wake-up: ReadFile `../../../notes/valve.md`, GrepSearch at the library top, and `pwd; ls -la` ran without asking; `cat ../../../notes/pump.md` waited for approval as it should. Denied, then retired, with its session archived.
+
+Docs: docs/AGENTS.md ("What runs without asking"), HELP (delegation, Fleet).
+
+### Fleet: a steadier page, rendered results, and Retire that asks (#794)
+
+Desktop test of v1.203.17, minor items 8, 9 and 10.
+
+**8. Fleet at 1280**
+- The agent's header now puts its name above its settings line (instructions, model, cadence), with the actions in a group that wraps. Before, all of it was squeezed into one row of narrow wrapped columns.
+- A round's result is rendered as markdown (`**Did:**` shows as bold).
+- The idle note no longer carries a raw UTC time ("next wake-up 2026-11-22T00:47"). It says "waiting for its next wake-up", and the card shows `nextTickAt` in the reader's own time, as journal times now are.
+- "Needs you" is a line in the header row, naming the agents, instead of a banner above everything. It no longer pushes the actions down when it comes and goes. The agent's detail says what it asks, or that a call waits for approval, with a link to the Code page.
+- No more lagging a poll behind the session: `GET /api/fleet` and `GET /api/fleet/<id>` look at working agents' sessions (or the one asked for) before answering, within 5 seconds. An action reloads the open agent at once.
+
+**9. Retire**
+- Retire asks first and says what it does: no more wake-ups, the session is archived and still shown on the Code page, and the folder, AGENTS.md and journal stay.
+- The page fires `ade:fleet-changed` after any action, and the Status panel reads the fleet at once instead of at its next 10 s poll.
+
+**10. AGENTS.md at create.** Create writes the agent's folder and AGENTS.md (instructions and `standing_agent` section). A failure is journaled and does not stop the create. Wake-ups still rewrite it with the current goal.
+
+**Tests:**
+- Go: AGENTS.md exists after Create, before any wake-up; `Follow` settles a finished round; the idle note.
+- Web: the result renders through markdown; the Needs you line in the header; the detail says what it asks; Retire posts only after the dialog's Retire; the fleet-changed event fires.
+
+**Live** (test Studio on this host's daemon, claude-code/haiku, 1280x800):
+- A new agent had AGENTS.md at once.
+- After a wake-up and a round ending in NEEDS DECISION, the result rendered as markdown. The Retire button stayed at the same position whether or not the agent needed you.
+- Retire through the dialog cleared the Status panel in about 250 ms and archived the session.
+
+Docs: HELP (Fleet), docs/AGENTS.md (standing agents: AGENTS.md at create, Retire, the page).
+
+### Apply to a folder: pick the folder from the library's folders (#797)
+
+Desktop test of v1.203.17 follow-up: a folder picker for Apply to a folder, now that #773 merged.
+
+#773's `FolderBrowser` browses the disk of this computer (`/api/setup/browse`), so it cannot pick a folder inside a library, which is what Apply to a folder needs. This adds a small `LibraryFolders` list in the same style, inside `ApplyToFolder.tsx` (none of the Add library forms or the userlibs write path change):
+
+- It lists the chosen library's folders one level at a time through `GET /api/kb/tree?path=…&library=…`. It works for the main library and for My library; before, only the main library had suggestions (a datalist from `/api/kb/dirs`), and My library had none.
+- Opening a folder picks it, filling the Folder field. **Up** goes to the parent, and the head shows where you are ("Top of …" or the path).
+- Typing still works, including a new folder, which is made on Apply. Changing the library starts the list at its top.
+- Files are not offered.
+
+Tests (web): browsing into `reports/q3` and back Up sets the field each time, and Apply posts the picked folder; only folders, in order; the list reads the library it is given (My library).
+
+Checked at 1280x800 in a test Studio: the dialog lists the library's top folders, and opening `papers` fills the field and lists its subfolders.
+
+Docs: HELP (Instructions and skills).
+
+## v1.203.19 (2026-11-22)
+
+### Code: the session header keeps its room at narrow and medium widths (#786)
+
+Layout fixes on the Code page from the Linux desktop test (v1.203.16 and v1.203.17).
+
+- **Header squeezed at narrow and medium widths.** At an 860 pixel window the list kept its full 380 pixels and the session got about 200, so the title broke mid-word and the path every few characters. The list now takes about a third of the page, between 220 and 380 pixels.
+- **Details held left of the buttons.** At 1280 with the Status panel open, a long title took three or four lines and the path four or five. The title now shares a line with the buttons, at most two lines with the full title in its tooltip. The details run the full width under both, with the workspace path last on one line, cut at the end (the full path is in its tooltip). In a pane under 520 pixels the buttons go under the title.
+- **"in a Studio chat" cut off.** The marker was after the path, so the row's ellipsis cut it. It now comes before the path, as does "delegated".
+- **Two clear buttons in Filter sessions.** WebKitGTK draws the native search clear button even with `appearance: none`, so it is hidden beside SearchInput's own. The CSV table's filter, which has no clear button of its own, keeps the native one.
+
+Tests: web/test/codeView.test.tsx checks the row's second line order. Checked in a test Studio at 860x700, 1280x800 with the Status panel, 1920x1080 and 720 (stacked). At 1280 the pinned header is 132 pixels, down from about 260.
+
+### Chat: the conversation no longer runs between and behind the header buttons (#789)
+
+From the Linux desktop test (Phase 2, bug 7): the chat's header buttons (Persona, Scope, the engine button, Save) float over the top right of the thread with nothing behind the gaps between them, so a line scrolled up to them could not be read, at 1920 and at 1280.
+
+A band in the thread's own color, as tall as the buttons' row and fading out under it, now sticks to the top of the thread. The text passes under it, and the first message starts below the buttons. With the find bar open, the thread already starts below the bar and the buttons, so the band is not drawn. On a phone the buttons sit in the package's own header row, as before.
+
+CSS only. Checked in a test Studio at 1280x800 and 1920x1080 in light and dark, scrolled mid-thread, at the top of a thread, on an empty chat and with Ctrl+F open. The phone layout at 700 is unchanged.
+
+### The main library is read only for signed-in people who do not administer the Studio (#779)
+
+On a Studio with sign-in, the main library is now read only for each person who signs in. Only its administrators change it: the deployment's owner (`PW_USER`) and the accounts `STUDIO_ADMINS` names (user name, id, e-mail, or `group:NAME`). A Studio without sign-in is unchanged, and so are personal spaces, folders shared for writing and libraries people add on their own systems.
+
+## Server (fails closed, 403 with a plain reason)
+
+The rule lives in a new package, `internal/mainlib`. It reaches every write path through one hook, `kb.ForRequest`, which marks the main library read only for the request with `ReadOnlyWhy`. `kb.RequireWritable` answers 403 with that reason. A sign-in that cannot be read counts as no person, and with sign-in on, no person never writes.
+
+Covered:
+- Upload, upload from a web address, new folder, rename, move, copy, delete, delete one file, and edits from the file reader.
+- Labels and label recovery, on the main library only.
+- Snapshots (capture, prune, delete).
+- `AGENTS.md` apply and remove.
+- Transfers into the main library, which Transfers now also lists as read only with the reason.
+- A chat saved to the main library.
+- Chat attachments, which are kept in the main library.
+- Agent instructions (personas) shared with everyone.
+- Index settings: the depth and meaning of the deployment's libraries, and the main folder's settings under Settings, Indexing.
+
+The library lists (`/api/config` and `/api/libraries`) give a person who may not write `writable: false`, `access.write: false` and `readOnlyWhy`.
+
+## The chat's write tools
+
+`write_kb_file`, `edit_kb_file`, `move_kb_files`, `copy_kb_files`, `rename_kb_file`, `apply_labels` and `save_chat_to_library` follow the rule for the person who drives the chat. `delete_kb_files`, which asks first, is not offered for approval to someone who may not run it. An approved call is checked again for the person who approves it.
+
+## Agents and Fleet: refused the main library, not placed in the person's space
+
+Delegation, `start_agent` and Fleet sessions run through pw code as the Studio's own account. Putting them in the person's space would mean the Studio's account writing in a folder private to the person's POSIX account, which the Studio never does, and pw code cannot run these sessions as the person. So, for a person who may not change the main library:
+- `start_agent` works in a folder on its site under the person's own key (`~/studio-agents`). A main-library folder they name explicitly is refused.
+- Delegation works outside the library, as it does where the library cannot be reached.
+- A Fleet agent uses its own folder under the index, as it does without a library, unless the person it runs for is an administrator.
+
+## UI
+
+The Library shows the main library as **Read only** for these people. Upload, New folder, Rename, Cut, Paste, Delete, Labels and Suggest labels are disabled there, each with the server's reason. The file reader's Labels and Delete buttons are disabled with the reason too. Settings, Libraries shows the main folder as read only for you and locks the depth of the deployment's libraries. Settings, Indexing shows the main folder's settings without letting them change. Save and the chat's attach button show the server's reason.
+
+## Docs
+
+`docs/MULTI-USER.md`, `docs/ACCESS-CONTROL.md`, `docs/HELP.md`, `README.md`, and `docs/DEPLOY.md` (`STUDIO_ADMINS`).
+
+## Tests
+
+- Go: `mainlib` (who is an administrator), libapi (lists, the file hook and depth, with sign-in on and off, for the owner, a `STUDIO_ADMINS` e-mail, someone else and no one), and chat (every write tool refused, the delete not offered, an administrator's write).
+- Web: the Library's menu for a non-administrator and for an administrator.
+- The security suite gains a `mainlib` phase.
+
+## Follow-ups, not in this PR
+
+- Chat attachments could be stored in the person's own space, so non-administrators can attach files again.
+- Labels on the deployment's other read-only libraries are still allowed.
+- `PUT /api/settings` (app-wide settings) is open to any signed-in person.
+- `POST /api/extensions/skill` writes skills outside the library and is not gated.
+
+### Code page: approve or deny a call a session waits on (#788)
+
+Delegated and standing agent sessions stop for approval on shell commands, and the Code page had no way to answer, so a person had to go to ACTIVATE or ask the chat (desktop test of v1.203.17, bug 4). This adds Approve and Deny.
+
+- `GET /api/code-sessions/item` also answers `approvals`: `{id, kind, tool, command, reason, agent}` for each decision the session waits on, with the command cut to 600 characters.
+- `POST /api/code-sessions/approve` with `{machine, id, approval, allowed}` answers one confirm. It goes to this host's daemon (`/v1/sessions/<id>/approvals/<approval>`) when the page reads this computer's sessions, and otherwise to the platform's `/api/code/machines/<machine>/sessions/<id>/approvals/<approval>` as the viewer. The machine's daemon decides whether it takes an answer from there, and a 403 says to answer where the session runs.
+- A denial carries "Denied from the Studio's Code page." for the agent to read. The answer never carries `allowDir` or `allowRules`, so nothing standing is granted. An approval already answered or gone answers 409.
+- On the page, a **Waiting for you** box under the conversation, next to the call it waits on, shows the command with Approve and Deny. A question or plan says to answer it where the session runs, with the ACTIVATE link when there is one.
+
+Tests:
+- Go: local daemon and platform paths, the deny note, no standing grant, 409 for an answered approval, 403 from a machine that refuses remote answers, bad ids.
+- Web: the card shows, Approve posts and the card clears, a refused answer shows its reason.
+- Live, on this host's daemon with claude-code/haiku through a test Studio: Approve ran `ls -la /tmp | head -3` and the session finished; answering again gave 409; Deny refused `date`, and the agent quoted "Denied from the Studio's Code page."
+
+Docs: HELP (Code), REFERENCE (routes), docs/AGENTS.md (delegation), README.
+
+### Rename in My library keeps the open file open, and Delete then closes (#783)
+
+Fixes bug 2 from the v1.203.17 Linux desktop test. Renaming the open file in My library left the viewer on "Nothing open" while Details still showed the old name. The next Delete removed the file, but its dialog stayed open with "undefined is not an object (evaluating 'e.target.startsWith')".
+
+Cause: the rename route for a library on a system (`internal/kb/spaces.go`) answered `"renamed": "<new path>"`, a bare string. The main library answers `{from, to}`. `api.rename` read `renamed.to` as undefined, `LibraryView` opened target `undefined`, and the delete handler then called `display.target.startsWith`.
+
+Fix:
+- The server now answers `{from, to}` for a library on a system, the same reply as the main library.
+- `api.rename` follows a rename only when the reply names both paths.
+- The delete handler checks that the open target is a string.
+
+Tests: `web/test/libraryRename.test.tsx` covers the open file following its new name in My library, a reply without both names never opening `undefined`, and the reply mapping. `internal/kb/spaces_test.go` checks the new reply. HELP.md is updated.
+
+### Settings, Libraries: Add a library scrolls to its form (#785)
+
+Fixes minor 11 from the v1.203.17 Linux desktop test. In Settings, Indexing, Libraries at 1280x800, **Add a library** opened its form under the list of libraries, and only the form's heading showed at the bottom of the window. The person had to scroll to find it.
+
+Cause: only the form's address (`#view=settings:libraries?add=1`) brought it into view. The button just showed it.
+
+Fix: the button now opens the form the same way the link does. The form is scrolled to as it appears, and again over the first moments while the lists above it load and push it down.
+
+Tests: `web/test/librariesPage.test.tsx` checks that the button scrolls the form into view. HELP.md is updated.
+
+### Library: an empty library says so, and one that cannot be listed says why (#787)
+
+Fixes minor 12 from the v1.203.17 Linux desktop test. A new, empty My library showed a blank tree with no hint (p2-58).
+
+Changes:
+- The top of the tree now says "Nothing here yet. Add files with + Add, by dropping them here, or with Transfers." in a library the viewer may write, and "Nothing here yet." in a read-only one.
+- A listing that fails used to show an empty tree, because the error was swallowed. It now shows "This library could not be listed:" and the server's reason, so a dropped session to a cluster no longer looks like an empty library.
+
+Tests: `web/test/libraryEmpty.test.tsx` covers a writable empty library, a read-only one, a failed listing, and no hint once there are files. HELP.md is updated.
+
+### Instructions page: say instructions, and keep each row's actions together (#795)
+
+Desktop test of v1.203.17, minor item 14.
+
+- The Add one form still spoke of personas. Its button now says **Save instructions** (or **Save skill**). The icon note says the image travels with the instructions and asks to name them first, the upload button says "Upload image (name them first)", and its tooltip and upload note follow.
+- Row action links wrapped unevenly at 1280 because each link wrapped on its own. Each row's actions (in library, apply to a folder, duplicate, remove) are now one group that never splits: beside a short description, or on a line of its own under a long one. The count of folders that carry it ("· in 1 folder") moves into the description, so it no longer widens one row's group. Every row's actions line up.
+
+Tests (web): the actions are one group with the four buttons and stay on one line; the description is apart; the form says Save instructions and "name them first", and nothing says "Save persona" or "Name the persona". The existing folder-count test now looks for the count in its new place.
+
+Checked at 1280x800 in a test Studio: each row's actions sit in one column, including a row whose instructions are in a folder.
+
+Docs: HELP (Instructions and skills).
+
+### Earlier tasks: a card counts its agents by how they ended (#796)
+
+Desktop test of v1.203.17: an Earlier tasks card said "completed, 1 of 1 done" while its only agent had failed. The card counted every agent not running as done.
+
+- `pasttasks.List` now counts the agents of each task by their end state: `done` (completed), `failed`, and `stopped` (canceled, which includes work stopped when the engine was retired).
+- The card says "0 of 1 done, 1 failed" or "1 of 2 done, 1 stopped", and its bar is amber when an agent failed. An older server without the counts falls back to the old count.
+- The task's own state (from its last snapshot) is unchanged.
+
+Tests:
+- Go: a task whose only agent failed counts 0 done and 1 failed; the stopped task counts 1 done and 1 stopped.
+- Web: both cards' text; the fallback with no counts.
+
+Docs: docs/AGENTS.md (Earlier tasks), HELP.
+
+### Stats for another library shows that library's maps, not the main library's runs (#790)
+
+Fixes minor 13 from the v1.203.17 Linux desktop test. Stats with zz-test-mylib picked under **Statistics for** still showed the main library's Index runs, including a failed "Updating uploads" run and **Update index**. Corpus topology and Semantic map stayed on kb (p3-00).
+
+Fix:
+- Index runs lists the main library's jobs, so it shows only for the main library or All libraries. With another library picked, the card says the runs are the main library's and points to Settings, Indexing, Libraries for that library's own index. **Update index** is not offered there.
+- Both maps follow the page's library (`useMapLibrary`'s new `follow`). They open on it, or switch to it, when it is not the main library and has a map. While the page shows the main library, a map keeps the choice made beside its title. All libraries has no map of its own, so a map stays where it is then.
+
+Tests: `web/test/statsLibrary.test.tsx` covers the maps following the page and the Index runs card. HELP.md is updated.
+
+### Upload to My library no longer runs the main library's index job (#781)
+
+Fixes bug 1 from the v1.203.17 Linux desktop test. Uploading a file to My library (a library on a system) said "Uploaded, but indexing failed ... not a directory: uploads". The sidebar then said the index needed attention, and Stats listed a failed "Updating uploads" run in the main library.
+
+Cause: after a bulk upload the client asks for one index pass with `POST /api/index/job {path: dir}`. That job only indexes the main library. The request named the library, but the route ignored it and indexed `KB_ROOT/uploads`.
+
+Fix:
+- Client (`web/src/upload.ts`): when an upload's reply says `reindexing: true`, the client does not ask for the job. That reply comes from a library that keeps its own index, which the Studio updates after each change. The progress row then says that search finds the files once the library's index catches up.
+- Server (`internal/index/routes.go`): `POST /api/index/job` naming any library but the main one now returns 409 with a reason. A wrong call can no longer index the main library's folder or mark the main library unhealthy.
+
+Tests: `web/test/transfers.test.ts` covers both cases, a self-indexing library getting no job and the main library getting one pass. `internal/index/index_test.go` checks the 409. HELP.md is updated.
+
+### Status: the Libraries card says the main library is indexed when it is (#784)
+
+Fixes bug 6 from the v1.203.17 Linux desktop test. The Status panel's Libraries card showed kb as "not indexed" while Settings said "Indexed, 4 files" and the footer said "4 files indexed". It corrected itself on the next sync.
+
+Cause: `libraryLines` read the main library's `caps.index` from the app config. That config is fetched once when the page loads, so an index built after load still showed as not indexed.
+
+Fix: the card now takes the main library's state from the live index status (`useIndexStatus().indexed`), the same source as the footer. Other libraries keep the state they have.
+
+Tests: `web/test/statusPanel.test.tsx` checks that a stale config gives way to the live status for the main library only. HELP.md is updated.
+
+### Chat: a pw code chat runs on a model the AI connection offers, and says which (#793)
+
+From the Linux desktop test (Phase 2, bug 5, and Phase 1, minor 6).
+
+**pw code chat failed on a host whose pw code default is not offered.** pw code's default here is a platform model the person's AI connection does not offer, so every pw code chat failed with "This model is not enabled for the AI connection". Meanwhile the menu named that model and the composer showed another.
+
+When Settings names no pw code model and the session's model is a platform model (`connection:provider/model`) that the connection does not list, the Studio now moves the session to one it lists, with `PATCH /v1/sessions/{id}/settings {model}`. It picks the model chosen for the Studio assistant when the connection lists it, else the first one listed. It checks when it makes the session and before each later message, which also repairs a chat already stuck on such a model.
+
+These are left as they are:
+- a model Settings names;
+- pw code's own backends (`claude-code/...`);
+- a session continued from the Code page.
+
+The chat says once which model it moved to and why. The pw code menu keeps saying it, and the conversation records it (`pwcode.modelNote`).
+
+**The composer's picker read as if its model answered.** The chat bar's pw code button now names the model pw code answers with, as "pw code · haiku". The composer's model picker sets only the Studio assistant's model, so it is hidden while pw code answers and comes back when the Studio assistant is chosen.
+
+Tests:
+- server-go/internal/chat/pwcodemodel_test.go covers the choice, the move against a fake daemon and gateway (a second message leaves the session alone), and a model Settings names staying put.
+- web/test/pwcodeEngine.test.tsx covers the button, the menu, the canvas marker and the one-time notice.
+- The full web suite (99 files, 768 tests), the chat, pwcode and conversations Go tests, and crossvet pass.
+
+Live check, on a single-user test Studio with no pw code model set, against this host's daemon:
+- On the daemon, pw code's default fails as reported, and an enabled platform model answers. A session's model can be changed live with the settings PATCH.
+- In the Studio, a new chat moved the session to the Studio assistant's model and answered. The notice and menu named both models, the button read "pw code · gpt-6.2-sol", and the picker was hidden; choosing the Studio assistant brought the picker back.
+
+HELP.md (chat section) and REFERENCE.md describe it.
+
+### Library switcher: the access is a line of its own under the name (#791)
+
+Fixes the truncated access label from the v1.203.17 Linux desktop test. At 1280x800 the Library switcher showed "zz-test-mylib · Read/write (on a30gpuse…" in its list and on its button (p2-57, p2-58), so the system name was cut off.
+
+Change: the switcher now gives the access (Read/write, Read only, Shared, and "(on <system>)") its own smaller line under the library's name.
+- In the list it is the option's description.
+- On the button the two lines stack, and each is cut only on its own line.
+- The button's tooltip carries both in full, and a screen reader still reads "name · access".
+
+Checked at 1280x800 against a scratch Studio with a long library name: both lines show in full in the list and on the button.
+
+Tests: `web/test/libraries.test.tsx` checks the access line. HELP.md is updated.
+
+## v1.203.18 (2026-11-22)
+
+### Desktops: relay a platform desktop's VNC socket as the viewer (#777)
+
+Part 1 of showing platform desktop sessions in the Studio the way web sessions show today. A desktop session (type `desktop`, a VNC desktop on one of the person's clusters) has no host of its own, and its page on the platform refuses frames, so the web app will draw the desktop itself with an RFB client (part 2). This PR is the server side.
+
+## What it adds
+
+- `GET /api/session-desktop/<user>/<name>/websockify`: the desktop's VNC socket, relayed with `httputil.ReverseProxy`. The Go server's one WebSocket route.
+- `GET /api/session-desktop/<user>/<name>/logs`: the desktop's start-up logs (`{xstartup, xvnc}`), under the same checks. The viewer shows them while it connects, and its error says why a socket would not open.
+
+## Access
+
+- Only a WebSocket, and only from the Studio's own pages: `Origin` must name the request's host or the `X-Forwarded-Host` a proxy in front sets. A WebSocket is not bound by CORS, so without this a page on another site could open a person's desktop through their browser.
+- Only a desktop the viewer's key lists under that user and name, with software `vnc`. An endpoint session, another person's desktop, or a name that is not listed is 404, and the platform's desktop is not contacted.
+- The upstream address comes from the record and the platform's own host (`/me/session/<user>/<name>/websockify`), never from the request.
+- With sign-in on (or any identity on the request), the person's own ACTIVATE sign-in or platform key and nothing else. Signed out is 401; no credential of their own (including `DISABLE_PERSONAL_KEYS=1`) is 409. The deployment's key is never used for a person. With sign-in off the Studio is one person's and their key is the deployment's.
+- Only the WebSocket headers go upstream, with the viewer's bearer key and the platform's origin. The Studio's cookies and sign-in headers stay behind.
+- No time limit on the socket while both sides hold it; either side closing closes the other. A platform redirect (sign-in), 401 or 403 says the credential was refused; 502/503/504 says the cluster is not answering.
+
+## Window shell
+
+The desktop app's proxy (`desktop/wails/proxy.go`) now sets `X-Forwarded-Host` to the address the page was loaded from, so the server can match the page's `Origin`, which names the shell's port. It already passed upgrades; a test covers both.
+
+## Checked
+
+- `go test ./internal/sessions ./internal/server` pass. New tests: relays as the viewer (own key, platform origin, no cookies, bytes both ways, close follows close), refusals (another site's page, another person's desktop by name and by key, not listed, an endpoint session, a non-VNC desktop, signed out, signed in with no key of their own, a provider key), the deployment key never seen for a signed-in person, upstream sign-in and offline answers, single-user, a plain GET, logs, `SameOrigin`, and the address builder.
+- `desktop/wails` proxy test passes in the WebKitGTK 4.1 build container.
+- Live on a local Go-only Studio against an ACTIVATE platform, with a throwaway desktop made for the test: 101 with the `binary` subprotocol and the desktop's RFB greeting through the relay; logs answered; a foreign `Origin` got 403.
+
+### Desktops: draw platform desktop sessions in the Studio (#778)
+
+Part 2 of showing platform desktop sessions in the Studio. The viewer connects through the relay of #777 (merged).
+
+## What a person sees
+
+A running ACTIVATE desktop shows wherever a relayed web session does:
+
+- **Workflows page, Sessions** and the **status panel**: clicking a desktop opens it in the side view (before, a desktop opened only in a window of its own).
+- **Side view**: the desktop under a bar with **Fit / Scale / Actual size**, quality (**High quality**, **Medium quality**, **Low bandwidth**), **Clipboard**, **Ctrl+Alt+Del** and **Logs**. **Full screen** now works for desktops too.
+- **Chat**: a session card for a desktop has **Hide**, **Beside chat** and **Full screen** and draws the desktop under its bar, as a web session's card does.
+- **Run pane**: a run whose session is a desktop shows it on the Session tab.
+
+While the session starts, the view says so and waits; while it connects, it shows the desktop's start-up logs. A dropped connection is tried again after 1, 2, 4, then 8 seconds (up to 30 times). A refusal from the Studio (signed out, no ACTIVATE sign-in of the person's own, a credential the platform refused) shows its reason and waits for **Reconnect**. A desktop the platform no longer lists goes back to waiting.
+
+## How
+
+- `web/src/components/DesktopView.tsx`: noVNC 1.7.0's RFB client (`@novnc/novnc`, pinned, unmodified) on `ws(s)://<studio>/api/session-desktop/<user>/<name>/websockify`, subprotocol `binary`. noVNC loads in a chunk of its own (`rfb-*.js`, 182 kB) the first time a desktop shows. It awaits at the top of a module, so `vite.config.ts` tells esbuild top-level await is supported; every engine the Studio runs in has it, and only that chunk uses it.
+- **Fit** asks the desktop to take the view's size only from the view used last (shown last or clicked) and only while the window has the focus, so a desktop open in the side view and full screen, or in a chat card too, is not resized back and forth. Settings go on the client when it is made, so the first resize happens as soon as the desktop accepts one.
+- **Clipboard**: text copied on the desktop shows in the panel and is put on this computer's clipboard where the browser allows that unasked; text typed or pasted in the panel is sent to the desktop's clipboard, or **Send what this computer copied** reads the clipboard on that click.
+- **One view resizes a desktop.** A chat card is a page of its own in a frame, so the claim of the view used last also goes over a `BroadcastChannel` to the Studio's other pages and frames, and view ids are unique across them.
+- **Session cards in a narrow chat column**: the card's bar and the desktop bar no longer shrink, so when their buttons wrap they do not spill over the desktop and the card reports its full height. This also fixes the same overlap on relayed web session cards.
+- `showsInStudio()` in `SessionView.tsx` decides relay or viewer for the side view, the status panel and the Workflows list; `sessionItem()` carries the desktop's user and name into side view tabs and full view.
+- Licensing: noVNC's core is MPL 2.0 and includes parts of pako (MIT). NOTICE says what is carried, that it is unmodified, and where its source is; the build copies the license texts and AUTHORS into `web/dist/novnc/`.
+
+## Desktop app
+
+The window from #777 sets `X-Forwarded-Host`, which the relay's Origin check needs. A window opened before that version refuses desktops until it is reopened, which the update already asks for when the window program changes.
+
+## Checked
+
+- `web`: tsc, vitest pass (765, and 751 with the RHEL 9 config). New `test/desktopView.test.tsx`: only the view used last resizes the desktop, including a claim from another frame, the relay address and subprotocol, settings on the client before it connects, Ctrl+Alt+Del, clipboard both ways, waiting for a session that is not running (no socket), a refusal shown with its reason and no retry until Reconnect, a retry after a drop, a clean close, closing on unmount, logs while connecting, and `showsInStudio`/`sessionItem` for desktops.
+- Live on a local Go-only test Studio against an ACTIVATE platform with a throwaway desktop made for the test, in Chromium and Playwright WebKit: side view, Full screen (Fit resized the desktop to 1440x818), a right-click reaching the desktop's own menu, the chat card inline, text sent to the desktop and read back from its X clipboard, text copied on the desktop shown in the card, quality and Ctrl+Alt+Del without a drop, and Hide closing the connection.
+- A chat reply at the chat column's width (580px card), in Chromium and WebKit: one card, the bars on their own rows, the desktop drawn and scaled to the card.
+- Packaged Linux app (WebKitGTK 4.1 window built from this branch, on a private display): opened from the status panel into the side view, keyboard and mouse reach the desktop, Full screen resizes it to the window.
+- Docs: HELP.md (Workflows), README, WORKFLOWS.md (The side view).
+
+### Code: the open session shows the one chosen, refreshes, and follows its output (#782)
+
+Fixes from the Linux desktop test of the Code page.
+
+**The wrong session after a quick second click.** A click on a large session, then within a second on a small one, left the large one in the pane: its slower read came back last. A read that comes back for a session no longer chosen is now dropped, and the pane shows a conversation only when its session is the one chosen.
+
+**A session opened while Ready never refreshed.** The 5 second refresh read the list as it was when the session opened, so a session that started working later was never read again, even after its turn finished. It now reads the latest list and the session's own last read, and when the list says the open session moved on (a turn started or finished, a new message) the session is read again at once.
+
+**The transcript did not follow new output, and a resize left it mid-transcript.** It scrolled to the end once per session. It now stays at the end while the reader is there: as new output arrives, as late content lays out, and when the pane changes size. A scroll up by the reader leaves it where they put it.
+
+Tests: web/test/codeView.test.tsx adds a slow earlier read that comes back after a later click, a session opened Ready that the list later shows working and then finished, and the at-the-end check. Full web suite passes (98 files, 757 tests).
+
+Live check on a single-user test Studio against this host's pw code daemon at 1280x800, with a throwaway claude-code/haiku session opened while Ready and then sent a ten-step task from the daemon:
+- The pane changed from Ready to Working on the list's next read.
+- It stayed at the end as each step arrived and showed the last turn.
+- After a scroll up it stayed put.
+- Crossing to 720 wide and back left it at the end.
+
+HELP.md's Code section says how the conversation updates and follows.
+
+### Chat: tell the model a desktop's card draws the desktop (#780)
+
+Part 3 of showing platform desktop sessions in the Studio. Stacked on #778 (the viewer); #777 (the relay) is merged.
+
+`list_sessions` and the run tools (`watch_run`'s session note, and the note a run leaves in its conversation when its session comes up) already return `![name](/?embed=session&user=…&name=…)` for every running session, desktops included, since `sessions.Embed` does not look at the type. With #778 that card draws the desktop under it. What was out of date is what the model is told about the card:
+
+- The system prompt sentence on sessions (`server/src/chat/context.ts` and `server-go/internal/chat/context.go`, identical) now names a desktop among the sessions, says the card's buttons open it beside the chat, full screen, in a window or a new tab, that a relayed web session and a desktop also show under the card where the user can use them, and that the model does not see what is on a desktop's screen, so it does not describe one.
+- The `sessionEmbed` comment in `server/src/sessions.ts` says the same.
+- **A short reply that shows something is the answer** (Go `loop.go`, Node `routes.ts`). After a reading tool, a reply under 200 characters was taken for a stub, and a second, final answer was asked for and told to state what it could not verify. Asked for a desktop, the model's first reply was two lines and its card; the forced second answer put the card in again and said it could not check that the card shows, so the reply drew the desktop twice. A reply that embeds something (`![…](/?embed=…)`) now stands. This applies to every session card, document page and DAG a short reply shows.
+- The prompt asks for a session's markdown once and says not to describe a desktop's screen, which the model cannot see.
+- HELP.md, Chat: "show me my desktop" draws it in the chat.
+
+## Checked
+
+- New `server-go/internal/chat/sessiontools_test.go`: against a fake platform, a running desktop comes back from `list_sessions` with its owner, run and card, a stopped one is listed without a card, and the `watch_run` note for its run carries the card.
+- New `TestShortReplyThatShowsSomethingStands`: a short reply with a card after `list_sessions` is not followed by a forced answer (it fails without the change).
+- Live on a local test Studio against an ACTIVATE platform, "show me my desktop session …" in Chromium and WebKit: one `list_sessions` call and one reply with one card, which draws the desktop. Before the change the same question gave two cards and a hedge.
+- `go test ./internal/chat/ ./internal/sessions/ ./internal/workflows/...` pass; Node `sessions` and `sessionAgents` tests pass. The prompt sentence was compared from Go's source and Node's built `dist`: identical.
+
+## v1.203.17 (2026-11-21)
+
+### My library: file work over the kept-open session, about 15 times faster per click (#763)
+
+My library (a person's space, reached with their own key over `pw ssh`) took about a second for every click, while the main library on the same host answered in milliseconds. This makes its file work go over the session the Studio already keeps open to the cluster, so each action is one round trip.
+
+**Measured first.** A local test Studio with sign-in on, a test cluster on the ACTIVATE platform that is the Studio's own host, and My library holding a copy of the main library's files (1,696 entries, 567 MB). Median of five runs after the first, in milliseconds, through the API:
+
+| Action | Main library | My library before | My library after |
+|---|---:|---:|---:|
+| List a folder | 1 | 1,067 | 74 |
+| Expand a folder | 1 | 1,060 | 74 |
+| Open a text file | 0 | 103 | 103 |
+| Preview a PDF (opened before) | 7 | 721 | 62 |
+| Search | 31 | 147 | 135 |
+| Upload a small file | 130 | 2,293 | 173 |
+| Rename | 124 | 1,141 | 80 |
+| Delete | 114 | 1,106 | 72 |
+
+Where the time went:
+- Listing, new folder, rename, move, delete and upload ran through the transfers helper with `RunOnce`, which starts a new `pw ssh` for each command. Starting one took about 1.05 s here (the CLI, the platform, the ssh login). An upload started two. A command over the session kept open takes 60 to 70 ms.
+- Opening a PDF or Office file fetched it whole each time, even when it had not changed.
+- The first click after a restart, or after ten minutes idle, waited about 1.1 s for the session to open. The warm route that Search and Query call covered plain ssh hosts only.
+- The web app is not chatty: a folder click makes one tree call and one details call, and the details call for a space answers in 1 to 2 ms. The account check (`id -u`) runs once in ten minutes and already used the kept session.
+
+**What changed:**
+- `RemoteFS.Kept`: the helper's commands go over `remote.Pool.Run`. A list the helper reads on standard input (stat, land, remove) is sent as arguments and fed to it by a small wrapper, up to 64 KB. A file up to 48 KB is written the same way, in base64. Anything larger takes a session of its own, as before. My library sets it; other transfer locations do not change.
+- A PDF or Office preview of a library on another system checks the file's size and time there, as the viewer, in one round trip, and uses the copy kept from the same ones. A viewer who can no longer read the file is refused, copy or not.
+- `POST /api/user-libraries/warm` also opens the session kept with the viewer's own key to each cluster their libraries are on (and reads which account it reaches, for a space or a shared folder). The Library calls it as it opens and when the tab comes back.
+
+After warming, the first list of a fresh server took 70 ms instead of 1,147.
+
+Security is unchanged: the session is opened with the viewer's own key, one per person and cluster, so commands run as their account. The helper's checks (paths inside the space, no write through a link) run the same way; the link tests now also run over a kept session, with names holding spaces, quotes, line breaks, `$( )` and leading dashes.
+
+Docs: MULTI-USER.md (My library) and REFERENCE.md (the warm route).
+
+### Agents: write agent instructions and skills into a folder's AGENTS.md for pw code (#764)
+
+First of five changes that move the Agents tab onto pw code and AGENTS.md. pw code reads `AGENTS.md` from the folder a session works in, so agent instructions belong there; this change is the writer the later pages and delegation use. It has no page of its own yet; the Agents page uses it in the next change, which also updates the user guide and README.
+
+## Instructions
+
+Applying an instructions template (a persona file, from the corpus `.agents/` or the deployment's `extensions/agents/`) to a library folder writes its text into that folder's `AGENTS.md` inside a section between markers that name the template, `<!-- ACTIVATE Studio instructions <name>: begin ... -->` and `<!-- ACTIVATE Studio instructions <name>: end -->`. The file is made when absent. Applying the same template again replaces its section in place, and taking it off removes the section with the blank lines that set it apart, and deletes the file when nothing else is left. A second template gets a section of its own. Text outside the markers is never changed, and the tests check that the person's own text comes back byte for byte after apply, re-apply and removal. A begin marker without its end is reported and left for the person to mend. An `AGENTS.md` that is a symbolic link is refused: some folders link it to a shared conventions file, which the Studio must not change. A file the person wrote keeps its mode.
+
+## Where it writes
+
+The folder is in the main library, written as the Library writes there (`RequireWritable`) and indexed with `ReindexForFile`, or in the person's own library (My library), read and written as them over their own session through `kb.SpaceFiles` and rebuilt as that library is. `SpaceFS` gains `Get`, which stats first and refuses a link or a folder, so reading the person's existing `AGENTS.md` never follows a link out of the space. A folder shared with the person and any other library are refused. Folders are relative to the library's top, with no `..`, hidden or machinery parts.
+
+## Skills
+
+pw code discovers a workspace's skills under `<workspace>/.agents/skills/<name>/SKILL.md` (and the person's own under `~/.agents/skills`), per `pw code --help`, the daemon's `GET /v1/sessions/{id}/skills`, and the public pw code skills page. Applying a skill writes that `SKILL.md`, with the `name` and `description` front matter pw code reads and a line marking it as the Studio's; only a file with that line is replaced or deleted.
+
+Checked live against this host's pw code daemon (v7.139.0, `claude-code/haiku`): a session in a folder whose `AGENTS.md` carried a Studio section followed it at once. The same session did not list the project skill, in a plain folder or a git repository, and reported `workspaceUntrusted: true`. pw code loads a workspace's files beyond `AGENTS.md` only after the person approves the workspace, which it asks at the first interactive launch there, and the daemon API has no route to approve one. So skills written here take effect once the person opens the folder in pw code once; docs/AGENTS.md says so. The Studio chat assistant keeps loading skills mid-conversation as before.
+
+## Routes
+
+`GET /api/agents-md?library=&folder=` answers the folder and what the Studio has put there (`exists`, `instructions`, `skills`, `problem`); `POST /api/agents-md/apply` and `POST /api/agents-md/remove` take `{library, folder, instructions, skills}`. Documented in docs/AGENTS.md and the reference.
+
+### My library: listings kept per viewer, folders read two levels at once (#765)
+
+Follows #763 (based on it; review after it merges). With My library's commands over the kept-open session, a click still cost one round trip, 70 to 110 ms on a cluster that is the Studio's own host and more on one farther away. This removes the round trip for the clicks that repeat.
+
+**Two levels in one command.** A listing of a space also reads the folders in it (the helper's new `list2`: the folder's entries, the folders in it this account cannot list, then their entries, at most 2,000). A folder is kept as known only when all of its entries were read: never one the account cannot list, and never one at or past where the cap cut the answer off, since find reads each folder whole before the next. Hosts without GNU find answer the folder alone.
+
+**Listings kept per viewer.** Keyed by the person, a hash of their key, the cluster, the folder and the path. Within five seconds a listing is answered as it is; up to two minutes it is answered at once and read again behind the answer; older, it is read first. A listing is only answered after the same checks as one read from the cluster (signed in, the library is theirs, their session reaches the account it was made for). What drops listings:
+- a write through the Studio (upload, new folder, rename, move, delete, a transfer into the space) drops the listings of that folder, the folders in it and those above it, for every viewer, so a folder shared with someone shows the change to them too;
+- a new key drops every listing read with the old one, and signing out, or setting or clearing a personal key, drops the person's listings (`Providers.CredentialChanged`);
+- taking a share back, and removing a library, drop the folder's listings for everyone.
+
+Measured on the same test Studio as #763 (median of five runs, ms):
+
+| Action | Main library | My library, #763 | My library, this |
+|---|---:|---:|---:|
+| Expand a folder just listed | 0 | 74 | 1 |
+| List a folder seen in the last two minutes | 1 | 74 | 1 |
+| List a folder after a write in it | 1 | 74 | 86 |
+
+Tests: `TestListTwoReadsTheFoldersInside` (hidden entries, a folder closed to the account, a link, a name with a line break, an answer cut off after one entry, over a session of its own and a kept one), `TestListCacheKeepsEachViewerApart` and `TestListCacheAges`, and the space test now checks that a kept listing is answered, that the folder inside comes with it, and that a write drops both.
+
+Docs: HELP.md (My library) and MULTI-USER.md.
+
+### Agents: Instructions and skills applied to folders, and a pw code chat's persona as its folder's AGENTS.md (#766)
+
+Second of five changes that move the Agents tab onto pw code and AGENTS.md. Builds on #764 (the writer, merged).
+
+## The page
+
+**Personas and skills** becomes **Instructions and skills**. Templates are still edited as before (the kind switch reads Instructions or Skill). Each template and skill now has **apply to a folder**, which opens a dialog: the library (the main library when it can be written here, or the person's own library; a folder shared with them and read-only libraries are not offered), and the folder, defaulting to `agents/<name>`, with the main library's folders suggested as the person types. Each row says how many folders carry it, with the folders in its tooltip. A new card, **Folders with agent instructions**, lists every such folder with **take off** for each template or skill in it; a main-library folder opens its `AGENTS.md` in the Library.
+
+`GET /api/agents-md/folders` finds them. The main library is walked for `AGENTS.md` files and `.agents/skills` folders (ten levels, 20,000 folders at most, hidden and machinery folders skipped, links not followed, the result reused for 20 seconds), and each is read for the Studio's markers, so a person's own `AGENTS.md` with no Studio section is not listed. My library is on a cluster and read as the person, so it is not walked: the Studio records the folders it wrote there per person (`INDEX_BASE/agents-md/space-folders.json`, mode 600) and reads each again when it lists them, so a folder whose sections were removed by hand drops out.
+
+## A chat's persona under pw code
+
+The Studio assistant keeps taking a persona as its stance in the system prompt. A pw code chat ignored the persona until now. It now works in `agents/<persona>/`, in the main library on a Studio one person uses and in the person's own library on a shared one, with the persona written into that folder's `AGENTS.md` before the session is made, which is how pw code takes instructions. The conversation's link records the persona; choosing another, or none, starts a session in that folder and archives the old one. A session continued from the Code page keeps its folder. Where neither library is one the session sees (a shared Studio with no My library on its cluster), the session works where it did before, and the log says why.
+
+## Also
+
+Cards in the Agents view had `overflow-x: auto` in a flex column, so a card under a long list shrank to a sliver (the Add one card did on main). The view's children no longer shrink.
+
+## Checks
+
+Go: the folders route (scan, record, a folder that drops out), and a pw code chat test against the fake daemon (persona folder and its `AGENTS.md`, same persona keeps the session, dropping it starts one at the library top and archives the old). Web: the page name, folder counts and list, the apply dialog's request, take off, and which libraries are offered; the full web suite passes. Checked on a local Go-only test Studio in headless Chromium: applied `watcher` to `agents/watch-test` from the dialog, the folder card listed it, and the file carried the section.
+
+User guide, README and docs/AGENTS.md describe the page and the chat behavior.
+
+### Sign-in on: only the deployment sets the libraries on the Studio's computer (#770)
+
+Found while assessing Add a library for the access model: on a Studio with sign-in on (Go, Node-free), any signed-in person could
+
+- `POST /api/libraries` with any `indexRoot` the Studio's service account can read, and the library was added for everyone, read with the service account. That includes another person's index on the server.
+- `DELETE /api/libraries/{id}` on a library the deployment added.
+
+Reproduced on a local test Studio with sign-in on: a person's token added an index built in a scratch folder (200) and removed it (200).
+
+The docs already say that with sign-in on the deployment sets these libraries (`STUDIO_LIBRARIES`) and people add their own on their systems. Building here, copies, buckets and read-through were already refused with sign-in on; these two routes were not.
+
+## Change
+
+- Both routes answer 403 with sign-in on: "On a Studio with sign-in, the libraries on this computer are the deployment's and are set by it. Add a library of your own on one of your systems instead."
+- Add a library no longer offers **This computer** with sign-in on (it offered Connect an existing index there, which now fails). With sign-in off nothing changes.
+- A library list imported with sign-in on that holds an index on this computer now fails that entry with the same message.
+
+Not changed, for a later look: the depth and meaning of the main library can still be set by any signed-in person on a shared Studio.
+
+## Checked
+
+- New `libapi/deployment_test.go`: both routes answer 403 with sign-in on. `go test ./internal/libapi` passes.
+- Web: vitest 742 pass; the two tests that said "this computer always" now say it is offered only with sign-in off.
+
+### Library: write in a library you built on one of your systems (#767)
+
+A library a person built on one of their systems (Add a library, A remote system, Build an index of a folder) is now theirs to change in the Library, the way My library is.
+
+## What changes
+
+- Upload, new folder, rename, move and delete run on that system as the person's own account: over pw ssh with their own key, or over plain ssh with the keys of the account the Studio runs as, on a Studio with sign-in off only. The system's permissions decide what they may change.
+- The account is read from their session at the first write (`id -u`, `id -un`) and kept with the library (`writer`). A session that later reaches another account is refused, as for a space.
+- Writes go through the same helper and checks as My library: a path outside the folder, or one through a link, is refused before anything is written. Unlike a space, nothing is closed to others: files take the person's umask and the folder's default ACL, since such a folder is often already shared on that system (`RemoteFS.NoLinks`, helper mode `LINKS=1`).
+- The index is built again about 20 seconds after the last change, as for a space. Transfers treat these libraries as written as the person too.
+- Still read only: an index connected as it is (the Studio did not build it), libraries over plain ssh on a Studio with sign-in on, and every library the deployment provides.
+- Settings, Indexing, Libraries says "read and written as you" on such a library.
+
+The Library flags this with `mine` (registry, kb and the web), separate from `space`, so save-to-chat, Share and the space routes are unchanged.
+
+## Checked
+
+- `go test ./...` and web `tsc` pass. New `userlibs/mine_test.go`: the account is learned and kept; the person's umask applies (644 files, 755 folders under umask 022); writes and folders through a link are refused and nothing lands behind it; lists of `..` are refused; rename, delete and the rebuild work; a session reaching another uid is refused. A second test covers which libraries qualify (built yes, connected no, no folder yet no, space no) and that plain ssh is refused with sign-in on and pw ssh needs the person's own key.
+- Live, on a local test Studio with sign-in on, against a cluster reached with pw ssh: build over pw ssh, then upload (241 ms), list (80 ms), rename, a new folder through a planted link refused ("goes through a link"), a list of `../..` refused (400), delete of the file and the link (the link only), and the index rebuilt about 20 s later. The uid kept matched the account.
+
+Stacked on #765.
+
+### Library: a rename or move of a file that is not there says so (#775)
+
+Found by the spaces security suite (a new check for writes in a person's libraries): on a space, or a library a person built on one of their systems, renaming or moving a file that is not there answered 200 (`{"renamed":"x.txt"}`, `{"moved":[...]}`) and changed nothing. The remote helper's `land` step never checked that its source exists: `ln` and `mv -n` both fail quietly, and the check after them only looks for the source still being there.
+
+The helper now stops with exit 4 (404, "<name> is not there") before landing, the same refusal the local file system gives. No security impact (the paths had already passed the inside and link checks, and nothing is written), but the Library showed a rename as done when it was not.
+
+## Checked
+- `TestListReadWriteLand` lands a file that is not there on the local and the remote file system: refused, nothing reported done, no name left behind.
+- `go test ./internal/transfers ./internal/userlibs ./internal/kb` pass.
+
+### Agents: delegation starts a pw code session in a library folder with its AGENTS.md, shown on the Code page (#769)
+
+Third of five changes that move the Agents tab onto pw code and AGENTS.md. #764 and #766 are merged; this one is on main.
+
+## Delegation
+
+The chat's `delegate` tool no longer makes a task with a subtask tree, a board and a JSON result contract. It hands the work to pw code: one session, started by the same path as `start_agent`, in a library folder with the chosen agent instructions in that folder's `AGENTS.md` and the goal set. pw code splits the work itself, so strands the model passes as `subtasks` go into the brief as a suggestion.
+
+- **Folder.** The one the model names, or a new `agents/<instructions>/<date>-<time>-<first words>` (`agents/delegated/...` with none). The instructions are written before the session is made, through the agent instructions writer with the Library's rights. Where the main library cannot be written here, or the site does not see it, the session works in a folder of its own on the site with the instructions at the top of its brief; a folder the model named is refused instead.
+- **Goal.** The model's condition, or by default that the work is done with its outputs in the folder, bounded by `max_turns`.
+- **Record and finish.** A per-person record (`INDEX_BASE/delegation/sessions.json`, mode 600, last 500) with site, session, folder, instructions, objective, goal and state. The Studio watches each session (every 20 seconds, up to 12 hours); when it settles it indexes the folder and records its newest files. `agent_status` does the same when it finds the session settled. After a restart, the process holding the index lock watches local sessions still working; cluster sessions need the person's key, which is not kept, so they are brought up to date at the next look. `GET /api/delegated` lists the person's records.
+
+## Code page, and why the Tasks page does not become a view of it
+
+Delegated sessions are marked on the Code page (with their instructions), a **Delegated** filter shows only them, and the detail of one says its folder and instructions and links the files it wrote once it finishes. The delegate tool's answer links `#view=code?session=<id>`, which the page now opens without a machine id.
+
+The Tasks page does not become a filtered Code page: the Code page already lists these sessions with their transcripts, and a second list would only repeat it. The Tasks page keeps the tasks delegated before this change, with a note pointing to the Code page, and goes with the old engine in the last change.
+
+Where the platform is not available to the viewer and the Studio offers its own host as an agent site (sign-in off, or `AGENT_LOCAL_SITE=1`), the Code page lists this host's pw code sessions from its daemon socket, as one machine named "This computer", with no ACTIVATE links. `/api/config` has `localCode: true` then, and the Code tab shows.
+
+## Also
+
+- `agentsites.Current()` holds the registered sites, so delegation and the Code page do not depend on the task engine, which goes later. `tasks.CurrentSites` falls back to it.
+- Without a platform, a chat's cue words now turn on the agents tool group where this host is offered as a site, as `more_tools` already allowed. Before, `start_agent` was reachable there only through `more_tools`.
+
+## Checks
+
+- Go: delegation against a fake daemon (folder and `AGENTS.md` before the session, objective and goal sent, record finished with its files, a named folder, a stop on an error, an unknown template, a folder outside the library); the local Code page source (listing, item, another machine refused, `Find`). Full `go test ./internal/...` passes.
+- Web: delegated marks, the Delegated filter, the folder note and file link, a session-only link, no ACTIVATE link without a platform, the Code tab's rule. The full web suite passes.
+- Live: a Go-only test Studio on a free port against this host's pw code daemon. A scripted model called `delegate` with the reviewer instructions on `claude-code/haiku`. The session started in `agents/reviewer/<...>/` with the reviewer section in its `AGENTS.md`, wrote `summary.md`, and finished in 20 seconds; the record went to finished with the file, the index count rose by one, and the Code page showed it under Delegated with the file linked. The session was archived and the test Studio stopped afterwards.
+
+User guide, README and docs/AGENTS.md describe delegation, the Code page and the Tasks page.
+
+### My library on any of your systems (#768)
+
+My library is no longer tied to the Studio's home cluster.
+
+## What a person sees
+
+Add a library, My library, now asks for a **System**: their clusters on the platform, the Studio's own cluster first (marked "the Studio's cluster"), and **Another system…** to type a name. On a Studio one person uses with sign-in off, **A host over ssh…** takes a user@host reached with their own keys. The rest of the form (folder check, confirm before making it, depth) is unchanged. A Studio that knows no cluster of its own now offers My library on the person's other systems instead of saying it is not available.
+
+## Rules (unchanged, now on every system)
+
+- Over pw ssh: the person's own key only, never the deployment's. A cluster name is checked as pw ssh takes it (`clusterRe`), so `-oProxyCommand=...` is refused (400).
+- Over plain ssh: only where `sshAllowed` (single-user, sign-in off). On a shared Studio it is refused (403), and the registry keeps a space over ssh read only there.
+- The folder check, mode 700, the person's own GUFI copy and the account check apply as before. Writes over ssh use the same helper as over pw ssh.
+- A space over ssh cannot be shared (409): nobody else uses that Studio.
+- Shares: "Shared with me" now lists shares from every system a share is on, each checked against the account the person's own session reaches there. Adding one goes over that share's system.
+- pw code's workspace (`SpaceFolder`) still prefers the space on the Studio's cluster.
+
+## Checked
+
+- `go test ./...` passes. New `userlibs/spaceanywhere_test.go`: offered without a home cluster; no system named gives a clear error; an option-like name is refused; a space made on a named cluster (mode 700) and built; a space over plain ssh made, built, written as the person (closed to others) and refused for sharing; plain ssh refused with sign-in on; pw ssh with sign-in on uses the person's own key.
+- Web: `tsc` and vitest pass (743). A new test picks the Studio's cluster first, then another cluster, then a host over ssh, and checks what each sends.
+- Live on a local test Studio with sign-in on: the check on a cluster named in the request ran there as the person; an option-like name gave 400; plain ssh gave 403.
+
+Stacked on #767.
+
+### Index: extracted text is kept closed to other accounts (#776)
+
+Found by the spaces security suite: `no index, log or record file under ~/.activate-studio is readable by others (below the 700 folder too)` failed on `.extract/private/plan.pdf.txt`, the extracted text of a PDF in a private folder, mode 0644.
+
+`internal/extract` wrote every cache entry with an explicit `chmod 0644` in folders made `0755` (the comment said, to match Node and Python under the usual umask). An entry is the text of a file that may be private.
+
+Impact today is low and this is defense in depth:
+- In a space, `~/.activate-studio` is 0700, so nobody else reaches the entries.
+- In an index built as root, `STUDIO_TEXT_ACCESS=file` already makes the cache folder's top 0700 (docs/REFERENCE.md).
+
+It still left the text of a private file more open than its source wherever the top folder was not closed, for example a cache copied, moved or shared with a project.
+
+## Change
+- `writeEntry` keeps `CreateTemp`'s 0600 and makes folders 0700.
+- `fresh`, which already stats each entry on every pass, closes an entry an earlier version left open, so existing caches are fixed as they are met, without a rebuild.
+- `indexer/enrich.py`'s `write_cache` does the same (0600 file, 0700 folders).
+- Only the account that builds an index reads its cache back (the text, words and embedding passes, and the server's own reads), so nothing that reads it loses access.
+- docs/REFERENCE.md: one sentence under *Text and file permissions*.
+
+## Checked
+- New `TestEntriesAreClosedToOthers`: an entry is 0600 in a 0700 folder; one set to 0644 is 0600 after `fresh` meets it.
+- `go test ./internal/extract ./internal/extractfiles ./internal/index ./internal/kb ./internal/chat` pass; `write_cache` run by hand: 0600, folder 0700.
+
+### feat(agents): standing agents are long-lived pw code sessions (#772)
+
+Part 4 of rebuilding the Agents tab around pw code and AGENTS.md. #764, #766 and #769 are merged; this one is on main.
+
+## What changes
+
+Each standing agent on the Fleet page is now a long-lived pw code session on the Studio's host, working in its own library folder, `agents/fleet/<id>/`.
+
+- **Instructions.** The folder's `AGENTS.md` holds the agent's instructions (its persona) and a `standing_agent` section with its name, goal, the system it works on, and how to answer a wake-up. Both are rewritten before every wake-up, so an edited goal reaches the session.
+- **Wake-ups.** A schedule, an ended platform run, changed files under a watched folder, a message, or **Wake now** sends a message to the session saying what woke it. It also sets a goal for that round, bounded by turns per wake-up (default 10).
+- **Studio tools.** The session gets the Studio's tools through the same MCP server and token a pw code chat uses (`chat.StudioSession`), acting for the person who made the agent. The session is renewed after 6 days, before its 7 day token runs out, and the new session is told the agent's latest results. If the tools cannot be attached, it starts a plain session and journals why.
+- **Journal and decisions.** The session history is the working record. The Studio's event log keeps each wake-up and each round's final answer. A `NEEDS DECISION:` line or a pending approval puts the agent under Needs you. A message while the agent works is steered into the running turn; otherwise it wakes the agent in the same session.
+- **Budget.** Maximum wake-ups and maximum tokens (pw code session tokens) pause the agent. Pause stops wake-ups. Retire archives the session.
+- **Code.** The fleet moves from `internal/tasks` to a new `internal/fleet` package. The `/api/fleet` routes and the record shape stay the same; the detail route adds `session` (id, earlier sessions, last 40 history lines).
+- **Fleet page.** The "Runs: campaign" option and the Studio model select are gone. Model is now free text for a pw code model id (blank uses pw code's default), and there is a new turns-per-wake-up field. The agent detail shows its folder, its recent session lines, a link to its session on the Code page, and what did not carry over for migrated agents.
+
+## Existing fleet agents
+
+A record from the task engine is taken over in place the first time it is read. Goal, persona, triggers, budget, counts and journal carry over. The record's `migrated` note and its journal say what did not:
+
+- **Campaign agents** ran their ticks as platform workflow runs. They now run on this host, with the system named in `AGENTS.md` so the agent can still submit runs there.
+- **Studio models** that are not pw code model ids fall back to pw code's default model.
+- **Earlier tokens** were counted on the Studio model; pw code session tokens add to them from now on.
+- **A running tick** is not resumed. Its result, if any, stays under `tasks/`.
+- **Board tools** (posting to the board, spawning helpers) are gone. pw code splits its own work.
+
+The old fleet code in `internal/tasks` is no longer registered and is removed with the engine in the next PR.
+
+## Tests
+
+- **Go** (`internal/fleet`, fake daemon):
+  - wake into the agent's folder with persona and goal in `AGENTS.md`, and a turn-bounded goal;
+  - follow the session to a NEEDS DECISION, answer it with a message in the same session, and steer while it works;
+  - token accounting, and retire archives the session;
+  - an approval as a question, a gone session replaced and told its latest results, and the wake-up budget pausing the agent;
+  - takeover of an earlier record;
+  - create checks.
+- **Web:** `fleetPwcode.test.tsx` covers the detail (folder, session, migration note, Code page link) and create with a pw code model and turns per wake-up.
+- **Full suites:** Go and web (751 tests) pass.
+- **Live run:** a test Studio on this host's pw code daemon, with an agent on claude-code/haiku using reviewer instructions.
+  - The first scheduled wake-up made the session in `agents/fleet/<id>/`, read `AGENTS.md`, wrote `log.md` and reported.
+  - A message woke it again in the same session, which followed the message.
+  - Retire archived the session.
+
+### Every library says what you may do in it and where it is (#771)
+
+Part 3, first step: one model for what a library is, and every library says its access.
+
+## The model
+
+Each library now carries `access` (`server-go/internal/libraries/access.go`):
+
+- `where`: `here`, `system` (with `system` and `via`: `pw`, `ssh` or `workflow`) or `bucket`
+- `readAs`: `you` (every library a person adds on their systems) or `studio` (the libraries on this computer and in buckets, which on a shared Studio are the deployment's)
+- `write`: whether the viewer may change its files from the Library
+- `index`: `built` or `connected`, and `sharedFrom` for a folder shared with the viewer
+
+It is worked out from the existing record each time a library is listed. Nothing is stored and nothing is migrated, so every existing library and every exported library list reads the same, and import is unchanged. Every kind of library today maps onto it (table test in `access_test.go`): built over pw ssh, connected over ssh, built by the workflow, My library, shared with them, the main library, a folder built here, an index connected here, a bucket.
+
+The rule for which libraries are written as their owner is now one function, `UserDef.WritableBy(owner, authEnabled)`, used by the registry and the Settings listing.
+
+## What a person sees
+
+- The Library switcher, the Search and Query scope and the Stats picker name each library as `Label · Read/write`, `Label · Read only (on cluster-a)` or `Label · Shared (on cluster-a)`.
+- Settings, Indexing, Libraries shows the same after each library's name.
+
+## Checked
+
+- `go test ./...` passes; new `libraries/access_test.go`.
+- Web: tsc and vitest pass (744). New `libraryAccess.test.tsx`. The picker tests now match a library by its label with the access after it.
+
+Stacked on #768.
+
+### feat(agents): retire the task engine; earlier tasks stay readable (#774)
+
+Part 5, the last one, of rebuilding the Agents tab around pw code and AGENTS.md. #764, #766, #769 and #772 are merged; this one is on main.
+
+## What is removed
+
+Delegation (#769) and the fleet (#772) now run on pw code sessions, so the Studio's own task engine is no longer used. This PR removes:
+
+- `internal/tasks`: the engine, task board, JSON result contract, one-shot runner, campaign runs, session agents, rehydration, and the old fleet code;
+- the board tools on `/api/mcp`, with `app.Providers.TaskBoard` and `TaskToolNames`. A bearer that is not a chat token now gets the corpus tools only;
+- the routes that changed tasks: `POST /api/tasks`, `/stop`, `/agents/{name}/approvals/{id}`, `/agents/{name}/direction`, and `GET /api/tasks/runtime`;
+- Settings: **Agent execution** and the agent ceilings (most agents per task, delegation depth), which only the engine read. The delegation section now describes pw code delegation. The `agentExecution` field stays in effective settings as an inert value, so saved settings and the legacy Node server keep their shape;
+- the Tasks page's Cancel, approvals, steering and live polling.
+
+## What stays
+
+- **Archive routes.** The new `internal/pasttasks` serves the engine's records read-only from `INDEX_BASE/tasks/`: `GET /api/tasks`, `GET /api/tasks/{id}` (with its board), and `GET /api/tasks/{id}/agents/{name}/output`. A task or agent still working when the engine was retired shows as canceled with "stopped when the task engine was retired", and pending approvals are dropped.
+- **Earlier tasks page.** The Agents tab's Tasks page becomes **Earlier tasks**. It lists those tasks newest first and shows each task's agents, board and output, with a link to its results under `tasks/` in the library. An agent that ran as a pw code session links to the Code page.
+- **`task_status`.** In a chat it reads the same records.
+- **Fleet journal links.** Task links in migrated fleet journals open the read-only view.
+- **Status panel.** It lists delegated pw code sessions that are working or waiting (`/api/delegated`), and each links to the Code page.
+- **Daemon wiring.** The pw code daemon access and agent sites are now registered directly in the platform track, in place of `tasks.Register`.
+
+The legacy Node server (`server/src`) is not in Preview or Stable builds, which are Go-only. Its copies of `tasks.ts` and `fleet.ts` are untouched and go with Node itself.
+
+## Tests
+
+- **Go:** `internal/pasttasks` tests listing (newest first, stopped state), the board after a sequence number, the output tail, and refusal of bad ids and agent names. The MCP test now checks that a non-chat bearer gets no board tools. The full suite passes.
+- **Web:** `earlierTasks.test.tsx` checks the read-only page (no Cancel, Steer or Approve, no POSTs, the results link, the Code page link). The status panel and Settings tests are updated. The full suite passes (750 tests).
+- **Live:** run on a test Studio against this host's pw code daemon.
+  - A seeded past task lists as canceled, with its board, output and results link.
+  - `POST /api/tasks` no longer exists, and `/api/tasks/runtime` is 404.
+  - A standing agent on claude-code/haiku woke, reported and was retired, with its session archived. This shows the daemon wiring works without `tasks.Register`.
+
+### Add a library: one form of where, whose account, and what (#773)
+
+Part 3: Add a library becomes one form in the terms of the access model (#771), offering only what the viewer may do. Same component in Settings, Indexing, Libraries and in the Library's Add menu.
+
+## Before and after
+
+| Before | After |
+|---|---|
+| Where: This computer, A remote system, A bucket, My library, Shared with me | Where: This computer (sign-in off), A system, A bucket |
+| How: Build an index of a folder, Connect an existing index, Copy here and index it | System: your clusters (the Studio's cluster first), Another system…, A host over ssh… (single-user) |
+| Connect with: SSH, ACTIVATE (pw ssh), Platform workflow | "Read as you on <system>, with your ACTIVATE sign-in / your own ssh keys, never the Studio's own account." |
+| Read or write only implied by the description | What: My own folder, Index a folder, Connect an index. Build with: pw ssh, Workflow job (where both exist) |
+| Shared with me as a place | Folders shared with you on the chosen system, listed under the form, each with Add |
+| Copy here and index it inside Add a library | Transfers, "Keep a local copy and index it…" |
+
+## The six points
+
+1. **One model.** Where x Read as x Index, from `access` (#771). On a system, a library is always read as the viewer; on this computer and in buckets, with the Studio's account. No record is migrated: the model is derived, so existing libraries and exported lists are unchanged and import works as before.
+2. **My library is a preset**, "My own folder", on the system picked (default the Studio's cluster, any system the person reaches, #768).
+3. **Shared with me** is no longer a place: picking a system as yourself lists the folders others shared with you there (shares now carry `site`).
+4. **Copy moves to Transfers.** Decision: a copy is the one library that is not read where it is. It is made from a Transfers location (an SFTP-only host, CONDUIT, a cloud drive), which only Transfers browses, and it is read only with the Studio's account. In Add a library it was a third "How" beside build and connect, which is what made the form confusing. Transfers' activity page now has "Keep a local copy and index it…" (sign-in off, as before), and Add a library, A system, points there in one line. The copy rows stay in Settings, where they are updated and removed.
+5. **Access everywhere:** done in #771 (switcher, scope pickers, Settings rows).
+6. **One form:** Settings and the Library's dialog already shared `AddLibrary`; both now also pass the Studio's cluster (`home`), and offer My library wherever one can be made (not only where the Studio has a home cluster).
+
+Also: the system picker is lifted out of the sub-forms (`SshLibraryForm`, `SpaceForm` and `ClusterLibraryForm` take the system as a prop), so it is chosen once. Where pw ssh cannot be used yet, the form says why once, as before.
+
+## Checked
+
+- Web: tsc and vitest pass (746). Tests updated to the new labels, plus: shared folders listed for the chosen system; the Transfers copy action is offered only where libraries are built here and opens the copy form.
+- Screenshots on a local test Studio with sign-in on, at 1440 and 390 px: the labels fit at phone width after shortening them.
+- `go test ./internal/userlibs` passes (shares carry `site`).
+
+Built on #771 (merged).
+
+## v1.203.16 (2026-11-21)
+
+### Code: the session's title and actions stay in view, and Continue in Studio says why it could not go on (#762)
+
+Two reports from a served Studio's Code page.
+
+- The head of a session (title, **Continue in Studio**, **Open in ACTIVATE**) scrolled away with the conversation, so with the transcript scrolled to its end the actions were out of sight. `.code-detail-head` is now sticky at the top of the session pane, over its padding, with the panel background and a rule under it (narrow layout included).
+- Confirming Continue in Studio went through `ConfirmModal`'s `onConfirm`, which does not catch a failure, and the dialog had no `error`. When the Studio refused, the button stopped and the dialog stayed open with nothing said. `ContinueButton` now catches the refusal and shows it in the dialog (which stays open on the session), and closes the dialog before opening the chat on success.
+
+Tests: `web/test/codeView.test.tsx` adds a refusal case (409 on the confirmed request: the message shows in the dialog and the page stays on the session). Code tests 10 passed; tsc clean.
+
+## v1.203.15 (2026-11-21)
+
+### Installed app: the splash takes the theme the person last used (#760)
+
+An installed Studio (a browser's Install app) shows the manifest's `background_color` from the moment its window opens until the page paints. That color followed the deployment's default theme (`#0c1320` for a dark default), so a person who uses the light theme on a dark deployment opened on a dark navy screen with the banner's green in the title bar, for as long as the page took to arrive.
+
+The page now keeps the ground it is painted in (`--pw-bg`) in a cookie, `ade_ground` (six hex digits, a year, `SameSite=Lax`, `Secure` over HTTPS), each time the theme is applied. A document whose theme its embedding host chose does not write it. `GET /manifest.webmanifest` reads the cookie in the Go server and in Node and uses it for `background_color`; a missing cookie or one of another form falls back to the default theme's ground as before. `theme_color` stays the banner's color when a banner is shown, and is the ground otherwise. The manifest is already fetched with credentials, so the cookie reaches it behind the platform's session proxy.
+
+Chrome reads an installed app's manifest again on a later launch, so the splash follows a theme change from the launch after that. The desktop apps paint their window from the bar color they remember (`desktop/wails/titlebar.go`) and are unchanged.
+
+Tests: `server-go/internal/core` (`TestConfigAndManifest`: the cookie, malformed cookies, with and without a banner), `server/test/manifest.test.mjs`, and `web/test/groundCookie.test.ts` (color forms, the cookie written).
+
+This is the first of two changes for the installed app's slow, dark start; the second keeps the app shell on the device with a service worker.
+
+### Keep the app shell on the device with a service worker (#761)
+
+An installed Studio, or a returning tab, now shows its own loading screen and starts the app within about half a second, also on a slow network, from a copy of the app shell kept on the device by a service worker. Follows #760 (the splash color).
+
+## Where the time went
+
+Measured on a test Studio served through the platform's session proxy, from a host in the same region, and from the access logs of three hosted test Studios:
+
+| Step | Time |
+|---|---|
+| Studio server answering `/`, the entry script, the stylesheet, `/api/config` (server log) | 0 to 5 ms |
+| One request through the session proxy (`/`, `/api/config`, `/api/whoami`), new connection | 165 to 320 ms |
+| Entry script, 843 KB brotli, not cached | 0.6 to 1.3 s |
+| The page's first paint | needs `index.html` and the 51 KB stylesheet (render blocking) |
+| No session cookie for the Studio's host | a 307 to the platform and back before `/` is served; with the platform sign-in also gone, the platform's sign-in page |
+
+The server is not where the seconds go. They go to the network: a new connection and a proxy hop for the page, the stylesheet before anything paints, the entry script whenever the HTTP cache no longer holds it (after every release, or when the browser evicted it), and the platform's session redirect when the Studio's session cookie has expired. Until the page paints, an installed app shows the manifest's `background_color`, which is the dark screen (#760 makes it the person's theme). The platform's redirect itself could not be timed from here with a browser session; it is outside this repository either way.
+
+## What this does
+
+`web/shell/sw.js` is written into the build as `sw.js` by a Vite plugin (`shellWorker`), with the build's shell filled in: the page, the files it names under `/assets/` (entry script and stylesheet) and the icons in `public/`. The cache is named by the hash of `index.html`, which names every other file's hash through the entry script. `web/src/shellWorker.ts` registers it after the page loads, with `scope: './'`, from a production build in a browser on HTTPS or localhost.
+
+- `index.html`: network first with a 500 ms wait, then the kept copy. A reachable server keeps the page and its scripts on one build and its sign-in redirect is followed directly. On a slower network the kept copy is shown, and the server's answer is still read: when it is anything but the page (a redirect to the platform's sign-in, the Studio's own sign-in redirect, an error page), the worker sends the window there, once, untouched. Offline, the kept copy. Stale-while-revalidate was the other choice; it paints a few hundred ms sooner on a good network but runs the previous build for one whole session after every update, and an expired session would show the app first every time.
+- Hashed files under `assets/`: cache first, kept on first use (lazy chunks, fonts). A `text/html` answer (the page served in place of a missing file) is never kept.
+- Not touched: `/api`, `/v1`, `/internal`, event streams, downloads, the manifest (no-store and per deployment; the browser fetches it on its own schedule), any navigation with a query or to another path (the platform's sign-in return), range requests and non-GET requests. Navigation preload is off: a first run with it on showed the platform's sign-in return reaching the server twice, which a single-use token would not survive.
+- Updates: install fails unless the server's `index.html` names this build's entry files, so a page from another build is never kept. A new build's worker waits. When the page already runs it (the server answered the page itself), it takes over quietly. Otherwise the footer's existing **Updated to vX** line appears with **Reload**, which now puts the new worker in charge before reloading; the reload after an update installed from the page (`updateFlow`) does the same. Older caches go when a new worker takes over. When the server's page is another build and the server has no worker script to update to (an in-app Roll back to a release from before this one), the worker unregisters and drops its caches.
+- The macOS and Linux apps' windows do not register it (`__studioShell` or the `studioShell` message handler present): their page comes from a server on the same computer, and the window's proxy writes its own script into each page, which a kept copy would hold stale.
+
+## Tests
+
+`web/test/shellWorkerSw.test.ts` runs the shipped `sw.js` in a fake worker scope (install, sign-in redirect and wrong build at install, activate, what it never answers, hashed files, the 500 ms race, a late redirect, offline, other navigations, removal after a roll back, the build message). `web/test/shellWorkerPage.test.ts` covers where it registers and the build comparison.
+
+A browser check ran a local test Studio (Go server, sign-in off) behind a stand-in for the session proxy that can delay or hold responses and sends a request without a session cookie to a separate "platform" origin, in Playwright Chromium and WebKit:
+
+| Open | Chromium | WebKit |
+|---|---|---|
+| Cold (nothing kept) | loading screen 28 ms, app 263 ms | 14 ms, 329 ms |
+| Warm | 24 ms, 252 ms | 12 ms, 337 ms |
+| Warm, page held 3 s by the network | 523 ms, 734 ms (kept copy) | 512 ms, 824 ms |
+| Warm, server paused | 522 ms, 724 ms (kept copy) | 510 ms, 813 ms |
+| After an update, network normal | new build at once, new worker took over quietly, no offer | same |
+| After an update, page held 3 s | previous build from the kept copy, **Updated to** offered, Reload ran the new build and left one cache | same |
+| Session expired | redirect followed to the platform and back, app | same |
+| Session expired, page held 3 s | kept app at 0.5 s, then the window went through the platform and back to the app | same |
+| Session and platform sign-in expired (fast and slow) | ends on the platform's sign-in page | same |
+| Roll back to a release without `sw.js`, page held 3 s | the kept page for that open, then worker and caches removed; next open from the network | same |
+| Desktop-like window (`__studioShell` set) | no registration, no caches | same |
+
+The full web suites (`vitest run` and the RHEL 9 config) pass.
+
+On a cold open nothing changes: the first visit after this ships, and the first after clearing site data, load from the network as before.
+
+## v1.203.14 (2026-11-21)
+
+### Settings: Read text for a bucket library, asked first with what it reads and costs (#759)
+
+Step 4 of the bucket extraction work, the Settings half: a bucket library's **Read text**, asked first with what it reads and costs. The server side is #758. See docs/HELP.md and docs/LIBRARIES.md, "Reading text from a bucket".
+
+## In Settings, Indexing, Libraries
+
+- The bucket row gets **Read text**: Off (the default), or After each listing.
+- Choosing After each listing first asks, from `GET /api/libraries/<id>/bucket/text`:
+  - how many objects and how much data it reads (text files and documents up to 100 MB);
+  - what was read before and is not read again;
+  - what is left out: objects too large, and kinds no reader reads, such as images;
+  - what it costs:
+    - on AWS, data out to the internet at $0.09 a GB and GET requests at $0.0004 per 1,000, at S3 Standard prices, with a note that data out within the region is free;
+    - elsewhere, that a store on premises charges nothing and a cloud provider's own prices apply;
+  - about how long it takes, at the last pass's measured rate, or at 25 MB a second before one, saying the first pass measures the real rate.
+- While a pass runs, the row says **Reading text**, with its progress ("239 of 345 objects, 76.1 MB read") and **Stop reading**. **List again** waits until the pass ends.
+- After a pass, the notes say how many objects have text and what the last pass read (objects, bytes, requests, when). They also say what could not be read, what a missing helper cost, a stop, or a failure.
+- Choosing Off stops reading, and says that the text read so far stays searchable.
+
+## Docs
+
+- HELP.md: what Read text does, from the user's side.
+- README: the bucket line mentions reading text after a cost preview.
+- LIBRARIES.md: the row and its estimate.
+
+## Tests
+
+- `web/test/bucketText.test.ts`: the cost wording for AWS, for a store on premises with a measured rate, and with nothing to read.
+- The full web suite passes (719 tests), and `tsc` is clean.
+- By hand, in a test Studio on 127.0.0.1 with a local S3 server holding the showcase corpus, I screenshotted each step:
+  - the question showed 345 objects and 449 MB, with 1,044 objects left out;
+  - the row showed Reading text with progress and Stop reading;
+  - after the pass, the row said "345 objects with text; the last pass read 345 objects, 449 MB in 345 requests".
+
+## v1.203.13 (2026-11-21)
+
+### Bucket libraries: read the objects' text after each listing, when asked, through index-extract (#758)
+
+Step 4 of the bucket extraction work, the server half: a bucket library can read its objects' text on this computer, after each listing, through `index-extract`. Off until asked. The Settings switch with the cost preview is the next PR. See docs/LIBRARIES.md, "Reading text from a bucket".
+
+## What a pass does
+
+- `PUT /api/libraries/<id>/bucket` takes `{ text: true }`, which lists the bucket and then reads its text. `{ text: false }` stops a pass that is running; nothing more is read, and what was read stays searchable.
+- After each listing of a library with text on, in the same job, once the new index is swapped in:
+  1. The readable objects (text files and documents; images are not read yet) with no record at their mtime are written to a file list.
+  2. `index-extract files --rclone <remote>:<path> --max-size 100 MB --no-ocr --jobs 8` reads them, one `rclone cat` request for each object, into the library's `text.db`. A stopped pass goes on from there next time.
+  3. What the pass added goes into the library's spread tree, and from there into the index's permission shards beside each `db.db`, which search already attaches.
+- A new listing's index gets its shards from the spread tree before it is swapped in, so the text stays searchable through every listing. Only new or changed objects are read again (inodes are stable since #739), and an object that went loses its text.
+- `GET /api/libraries/<id>/bucket/text` estimates a pass: objects and bytes to read, read before, too large, unreadable, the provider, and the last measured rate. `POST /api/libraries/<id>/bucket/text/stop` stops a pass.
+- `textPass` in `bucket.json` records the last pass: objects by outcome, bytes, requests, seconds, objects with text, missing helpers, stopped, error.
+- The library gets an fsid for its spread tree: the store's endpoint host, the bucket and the prefix, as one folder name (for example `s3.us-east-1.amazonaws.com_research-data_projects`), never the remote's local name.
+
+## index-extract
+
+- `files --rclone REMOTE:PATH` reads each listed path from an rclone remote (`--rclone-bin`, `--rclone-config`), one request an object into a temporary file that is removed after. The listed mtime is used, and a size other than the listed one counts as `changed`. Step 5 (near the data) uses the same source.
+- `--max-size BYTES` records a larger file as `skipped` with no request.
+- `spread` and `shards` now make the schema inside the write's own transaction, and a new shard is written without syncs and synced once before its rename. On a 345-object artifact, spread went from 37 s to 4.8 s and shards from 8 s to 1 s.
+
+## Tests
+
+- `TestBucketText` runs end to end against the fake s3 remote, with `index-extract` as a child:
+  - off by default, and the estimate's counts;
+  - on: each readable object read once, and search finds them by their words;
+  - a new listing with one object new, one changed and one gone: only two reads, and the gone object's text is dropped;
+  - off: nothing more is read, and the old text is kept.
+- `TestRcloneSource`: one request for each object read, none for an object too big or of an unreadable kind; changed, missing and skipped outcomes; no temporary objects left behind.
+- `TestBucketFsid`, `TestLoadSpreadSinceAndWalkIndex`.
+- By hand, against a local S3 server (rclone serve s3) holding the 1,389-object showcase corpus:
+  - the estimate gave 345 readable objects, 471 MB;
+  - the first pass took 9 s;
+  - search found PDFs by their contents;
+  - a second listing took 4 s with no object read and the text still found.
+
+  A stop sent there arrived after the reading had ended, so going on after a stop is covered by `index-extract`'s own tests rather than by hand.
+
+### Code: a continued chat links back to its session on the Code page (#755)
+
+A chat that continues a pw code session links back to it: the chat's **pw code** menu has "See it on the Code page", and the chat's first message links there too. The Code page opens the session an address names (`#view=code?machine=<id>&session=<id>`), including an archived one.
+
+The same menu says when the session started outside the Studio and so works with its own tools, since pw code cannot add the Studio's library tools to a session that already exists.
+
+## v1.203.12 (2026-11-21)
+
+### Transfers into My library: index it again, and write as the Library does (#744)
+
+Files copied or moved into a person's My library through Transfers did not show up in search: Studio re-indexed only the main library after a transfer, and a space's index waited for a manual rebuild. This is the server half of copying between libraries; the Library page's right-click and drag and drop follow in their own PRs.
+
+After a transfer lands in a space (My library, or a folder shared with the person for writing), Studio now queues that space's index build, the same build a write from the Library queues, about 20 seconds after the last change, and every index of the same folder builds again. A move out of a space queues it as well. The plan's index note for a space now reads "The index of My library shows this change when Studio builds it again, shortly after the transfer ends".
+
+A transfer that writes into a space, or moves out of one, first checks that the person's key reaches the cluster account the space was made for (`sameAccount`), as the Library's writes do, and is refused otherwise. The space's transfer location now uses the private helper (`RemoteFS.Private`), so no write goes through a link. The helper's `land` step also closes a landed file to other accounts when its folder is closed to them and has no ACL of its own: rsync keeps the source's mode, so before this a copy from the main library landed as 644 or 664 inside the space.
+
+Which mover a main library to space copy uses: the main library is a folder on the Studio's computer and the space is on the cluster, reached with the person's own key over pw ssh, so the plan picks rsync ("rsync on this computer sends to the cluster") when rsync is on both ends, and Studio copy otherwise. The source is read as the account the Studio runs as, and the destination is written as the person, so the copy is theirs and the cluster's permissions apply.
+
+`Users.Target` now falls back to the folder the build was asked for when the stored source root is missing, as the space's own writes do. A space that has not finished its first build is not yet a library, so it appears in Transfers when it appears in the Library.
+
+Tests: `transfers/space_test.go` (copy into a space: files closed, build queued once, main index untouched; the account check refusing a copy in and a move out but not a copy out; a move out queues the space's build), `TestPrivateLandingClosesWhatAMoverWrote`, and the space test in `userlibs` covering a transfer's rebuild and account check.
+
+### feat(transfers): clear the failed mark once the failure is seen (#747)
+
+**What a person sees now:** the red dot on **Transfers** in the navigation, and its screen-reader text, count only failures of the last day that the viewer has not seen. The dot clears when they open the Transfers page or the failed transfer's details, or when a later run of the same transfer succeeds.
+
+**How it is decided:**
+- New `POST /api/transfers/seen` with `{ id? }`. Without an id it records that every failure that has ended is seen; with one, that transfer (404 for another viewer's). It returns the summary.
+- The server keeps a "seen up to" time and the ids opened since, per owner, in `INDEX_BASE/transfers/seen.json` (mode 600). It is read at start.
+- `failedLast24h` counts a failure in the last 24 hours only if it ended after that time, its id was not opened, and no later success has the same source location and paths and destination location and path.
+- Web: while the Transfers page is open, the navigation's 15 second read calls `seen` in place of `summary`. The details drawer calls `seen(id)` for a failed transfer and sends the summary on window (`ade-transfers-seen`), so the mark updates at once.
+
+**Tests:**
+- Go (`seen_test.go`): a failure counts, then stops after seen; seen by id; 404 for an unknown id; the file is mode 600 and a new Service over the same INDEX_BASE keeps it; a later success of the same transfer clears a failure, but a success of another transfer or of another viewer does not; with sign-in on, each of two viewers has their own seen state over HTTP.
+- Web (`transfersNav.test.tsx`): the mark, its title and its screen-reader text drop the failure and the dot after the Transfers page is opened. The shared transfers mock models `seen`.
+
+Docs: HELP.md (Transfers) and TRANSFERS.md (HTTP table, History).
+
+### Transfers: rsync over pw ssh says what failed, and Studio copy takes over when rsync never connects (#748)
+
+A move of a folder from a served Studio's main library into a space on a cluster, reached with the person's ACTIVATE sign-in, failed at once with `rsync: rsync: connection unexpectedly closed (0 bytes received so far) [sender]`, with 0 of 33 files sent. The plan's rsync checks had passed over the same session. The plan chose rsync ("rsync on this computer sends to the cluster"), and the run goes through a different path: a remote shell script that rsync starts, which runs a fresh `pw ssh` per group.
+
+What I could and could not reproduce: on a test Studio with sign-in off, against a small cluster on a test platform, the same script with the pw CLI, with a fresh pw home and the account token in `PW_API_KEY` as a signed-in person's run has, copied with rsync without error (6 MB, 4 files, through the Transfers API). The served Studio's failure did not reproduce here, and the message it gave dropped what pw ssh printed, because only rsync's last stderr line was kept. This PR closes the gaps that could cause it, makes the next failure say what the remote shell said, and keeps the transfer going.
+
+- The remote shell script is run as `sh <script>`, so a temporary folder mounted noexec (common on hardened hosts and in containers) does not stop it. Before this, a noexec TMPDIR gave exactly this message: the exec fails, and rsync reports the connection closed with 0 bytes.
+- The script sends its own stderr to a file beside it, and the failure ends with "; the remote shell said: <last lines>", without the pw CLI's update notice. The doubled "rsync: rsync:" prefix is gone.
+- When rsync fails before any file or byte moved, the job empties its staging folder and goes on with the next mover the plan found able to reach both ends (Studio copy; CONDUIT is never a stand-in). The event reads "rsync failed before any data moved (...); continuing with studio-copy", and the transfer's mover shows the one that carried it.
+- The Move button: the plan dialog closes as soon as the transfer is queued, which it already did; the wait was the server listing the plan again before queuing it (about 5 seconds against the test cluster over pw ssh). That relisting now asks only the chosen mover instead of checking every mover against both ends again, and the dialog shows "Checking both ends again before it starts" while it runs.
+
+Tests: `TestRsyncThatCannotConnectFallsBack` (a stand-in remote shell that refuses the session: the move falls back to Studio copy, lands every file, removes the originals, and the event carries what the shell said without the update notice), `TestRsyncFailureSaysWhatTheRemoteShellSaid`, `TestRshRunsThroughSh`, and a plan dialog test that the start shows its status and hands the queued transfer on without waiting for it to end. The existing push and pull tests run through the new script form.
+
+### Library: Copy to another library from the right-click menu (#749)
+
+A person could not copy a folder from one library into another from the Library page, for example from the deployment's main library into their own My library. This adds the right-click way; drag and drop between libraries follows in its own PR.
+
+With the Transfers page shown (the server has Transfers and the pages setting shows it) and more than one library, the right-click menu of a file or folder, or of a selection, offers **Copy to another library…** ("Copy 3 items to another library…" for a selection). A library's own top folder in All libraries does not offer it. It opens the dialog Search and Query use (`ResultsTransferDialog`), which plans the copy through Transfers and confirms it in the plan dialog:
+
+- `copyOnly`: copy is the only action, with no Move choice. A move out of the main library would delete the originals from everyone's knowledge base. The note says the originals stay and the copy is written as the person, with the permissions of the place it lands in.
+- `prefer="library"`: the destination starts at a writable library other than the items' own, where Search and Query start at a place of another kind.
+- `destination`: a location and folder to start at, for a drop or a paste on a folder (used by the next PR).
+
+The copy is a normal transfer: the source is read as the account the Studio runs as, and the destination is written with the person's own key where the library is on a cluster, so the copy lands owned by them. Large folders are planned, counted and cancellable on the Transfers page. #744 makes a copy into My library show up in its search.
+
+Tests: `web/test/libraryCopy.test.tsx` (the menu opens the dialog copy only, starts at the next writable library, plans `library:kb` to `library:archive`; not offered without Transfers; `defaultDestination` with `prefer`). The user guide and README say what it does.
+
+### Library: drag onto another library's folder to copy, with the folders that take the drop marked (#751)
+
+Dragging a folder from one library onto another library's folder did nothing useful: in All libraries the drop always started a Library move job, which the server refuses with "This action works in one library at a time". Builds on #749 (the Copy to another library dialog), now in main. Replaces #750, which closed when the branch it was stacked on was deleted.
+
+What a person sees now in All libraries:
+
+- While a row is dragged, each folder says whether it takes the drop. Folders of another library that Transfers can write in are marked, with a copy cursor. Folders of a library it cannot write in are dimmed with a not-allowed cursor (`dropEffect: none`), and so is the dragged folder itself. Folders of the same library take a move, as before.
+- A drop on another library's folder opens the Copy to another library dialog with that folder chosen as the destination. Nothing moves: the plan is a copy, confirmed in the plan dialog.
+- A drop within one library still moves, through the same job as before.
+- A read-only library's rows drag as a copy only (`effectAllowed: copy`), and a library's own top folder does not drag.
+- Paste into another library, of a cut or a copied item, opens the same dialog, so a cut never takes files out of the library they were in. A copy pasted inside My library goes the same way, since the Library's own copy there answers 409.
+
+Whether another library takes the drop follows the Transfers locations (who reaches the files), not the Library's own write rule: with sign-in off a library folder on this computer takes a transfer, and with sign-in on My library does and a library reached with the server account does not.
+
+Checked on a local test Studio (Go server) with two libraries: the marks during a drag, the drop opening the dialog on Archive, 2026, the plan (rsync, both ends on this computer), and the copied folder landing with the original in place. Tests in `web/test/libraryCopy.test.tsx`: marks and `dropEffect` while dragging, the drop's dialog and destination, a move within one library, a read-only library's rows dragging as copy only and its top folder not dragging, and a cut pasted across libraries opening the copy.
+
+### CI flakes: three tests that failed on slow macOS runners (#752)
+
+Three tests failed on the macOS runners on PRs that do not touch them.
+
+- `web/test/transfersPage.test.tsx`, "stays quick with all 2,000 loaded", required every page added to the history list to render in under 1,500 ms; jsdom took 1,654 and 1,696 ms on #745 and #746 (#716 had already raised this limit once). What the test guards is that a page added to a long list re-renders only the new rows, so it now compares the median of the last five pages with the median of the first five on the same machine, failing when the last cost more than six times the first plus 250 ms. A list that re-rendered every row would grow about 40 times slower from the first page to the last.
+- `server/test/standaloneChat.test.mjs` failed in its after hook with ENOTEMPTY: the chat-session export writes into the test's folder a moment after a turn, and the removal ran while it did. The hook now closes the server first and lets `rmSync` retry.
+- `web/test/personalSpaces.test.tsx`, "shows the code to approve, looks again while it waits, and says who is signed in", read the sign-in panel's `onChanged` count right after the screen changed; the call happens in an effect after that render, so a slow runner saw one call where two were coming. The counts are now waited for.
+
+All three pass locally.
+
+### Code: continue a pw code session in a Studio chat (server) (#753)
+
+A person can now carry one of their existing pw code sessions on in a Studio chat. This is the server side; the Code page's button and the chat's link back follow in the next two PRs.
+
+`POST /api/chat/pwcode/continue` with `{machine, session}` checks that the platform lists the session as the viewer's (read with their own credential), that it is on the machine whose pw code daemon the chat reaches for them, that the daemon has it, and that it is not archived. The machine is matched by the `daemonId` the platform keeps for it against the `machineId` the daemon reports at `GET /v1/status`, or by host name where the platform has no daemon id. The first call answers with the question to ask the person. The daemon cannot report whether a terminal has the session open, so the question is always asked, and it says more when the session is open on another host (continuing takes it over) or at work. With `confirmed: true` the session is attached to the daemon, and a conversation is made that links to it (`pwcode.continued`), starting with a note that links to the session on the Code page and the session's latest 60 turns. A session that already has a chat answers with that chat.
+
+From then on every message, approval and stop takes the existing pw code chat path. A continued session is checked before each message (still there, not archived, not open on another host) and the chat says what is wrong; it is never archived or replaced. A continued chat is answered by pw code unless the person chose the Studio assistant for it.
+
+pw code takes MCP servers only when a session is made (`agentsJson`) or from its config files, and its API has no way to add one to a session that exists. A session that already has the Studio's `studio` server is checked and reconnected as a chat's own; any other keeps its own tools, and the answer says so.
+
+`GET /api/chat/pwcode/here` says which daemon the viewer's chat reaches (kept a minute per viewer) and which of their chats run in a pw code session.
+
+On a Studio with sign-in, the daemon is the person's own on the Studio's cluster, reached with their own sign-in or key; without one, nothing is read and nothing is made. Tested live on a single-user Studio against this host's daemon: a session started outside the Studio was continued, answered a follow-up with its own earlier context, asked for and got an approval, and stopped on request, all in the same session.
+
+### pw code chat: a finished turn stops being followed before the reply ends (#757)
+
+`TestPWCodeApprovalReachesTheChatAndIsAnswered` failed in the Go CI job on #756 with `answering:true` right after the reply ended. The reply's stream ends when `pwTurn.run` closes `turn.done`, and the turn was unfollowed only afterwards, in the goroutine that called `run`, so a status read in between still said answering. In the chat that shows as the conversation looking busy for a moment after a pw code reply.
+
+`run` now unfollows the turn before it closes `done` (deferred in that order), and the goroutine no longer unfollows. `go test -race ./internal/chat` three times and the pw code tests 20 times pass.
+
+### Code: Continue in Studio on the Code page (#754)
+
+The Code page gets **Continue in Studio** beside **Open in ACTIVATE**. It is enabled on a session on the machine where this Studio's pw code runs for the viewer. Pressing it asks the Studio, which checks the session and says what to ask; the person confirms in a dialog, and the new chat opens, answered by pw code, with the chat list refreshed.
+
+A session on another machine, or an archived one, stays read only: the button is disabled and a line under it says why. A session that is already in a Studio chat says "in a Studio chat" in the list, and its button reads **Open the Studio chat**.
+
+The user guide's Code section and the README describe it.
+
+### Transfers test: the 2,000-row bound counts the rows the last page renders (#756)
+
+The scale test in `web/test/transfersPage.test.tsx` guarded that a page added to the history list renders only its new rows, using time limits that failed on slow macOS runners while the list was fine: first a fixed 1,500 ms, then a relative wall time (#752), then a React Profiler ratio (0.18 here, 0.51 on a runner).
+
+It now counts renders. A pass-through mock of `transferApi` wraps `transferTitle` in a spy; each history row calls it three times when it renders. When the last page loads into a 1,950-row list the count is 150 (the 50 new rows). With `memo` removed from `Line` it is 11,850. The bound is 1,000, so the result is the same on any machine.
+
+All 33 tests in the file pass; tsc clean.
+
+### Add a library: one size for the dialog, with the form's buttons in view (#743)
+
+The Add a library dialog grew and shrank with whatever the chosen form showed: it hung from near the top of the window and reached its foot once a check's results appeared, and switching Where or How resized it.
+
+- The dialog is one size, 672 by 720 pixels or the window's height when that is less, centered; the form scrolls inside it (`size="xl" align="center"`, `.lib-add-modal { height: min(720px, 100%) }`).
+- The form's own buttons stay in view at the foot of the scrolling body (sticky `.query-actions` inside the dialog).
+- My library's form used an unstyled wrapper for its fields, so the line saying how the cluster is reached sat on the Folder label and the Folder description on the Label field. It now uses `settings-grid` and `view-sub`, as the remote-system form does.
+
+Checked on a local test Studio at 1440 by 900: the dialog stays at the same position and size for This computer, A remote system and A bucket, and the buttons stay visible when the form is scrolled. Web suite 701 passed.
+
+### Libraries: the main library names the cluster it is on (#745)
+
+A library on another system is listed as "Name (on cluster)", but the knowledge base and other folders on the Studio's own server were listed with no place at all, though on a workflow deployment they are on a cluster too: the one the Studio runs on.
+
+- `PublicLibrary` gains `host`: for a library with no remote site and no bucket, the short name of the cluster the Studio runs beside (`STUDIO_HOME_CLUSTER`, else `pw://PW_USER/PW_POOL_NAME`, the same value My library uses). Empty where the Studio knows no cluster, so a Studio on a computer of its own is unchanged.
+- `HomeCluster` moves from `userlibs` to `libraries` (the registry needs it and `userlibs` already imports `libraries`); `userlibs.HomeCluster` stays as a wrapper for its callers.
+- The library picker and `libraryName` share one naming rule: "(on site or host)", else "(read only)" as before.
+- HELP.md says how libraries are named in the picker.
+
+Not changed: the status footer's library lines, which come from `/api/kb/stats` and never carried a place.
+
+Tests: `TestLocalLibraryNamesTheClusterTheStudioRunsBeside` (workflow deployment, explicit setting, remote library, no cluster). Go suite passes; web suite 704 passed; tsc clean.
+
+### Code: tool calls in a row fold into one line, named by what they worked on (#746)
+
+A session's transcript on the Code page showed every tool call as its own line, and a long call as its raw arguments. The server keeps the first 600 characters of each call's arguments (`maxToolArgs` in `codesessions`), so a long command, edit or to-do list was no longer JSON, `argSummary` failed to parse it, and the line showed `{"command":"…` or `{"todos":[{"activeForm":…` as it came.
+
+- Tool calls in a row fold into one closed line, "6 tool calls: ReadFile 3, EditFile 2, Bash", that opens to each call. A call on its own keeps its line, and each result still folds under its call.
+- `argSummary(args, tool)` reads string fields from arguments that were cut short, and names a call by what it worked on: the file, the command's first line, the pattern and where for a search, the to-do item under way for a to-do list, else its first text field. It never returns the raw arguments.
+- HELP.md describes the folded runs.
+
+Tests: `web/test/codeView.test.tsx` covers cut-short Bash, TodoWrite (the item in progress, whole and cut short), GrepSearch, EditFile with and without a path, and a run of four calls folding into one closed line while a lone call keeps its own. Web suite 706 passed; tsc clean.
+
+## v1.203.11 (2026-11-21)
+
+### Model access: subscriptions are asked for again after signing in (#741)
+
+Subscriptions through ACTIVATE asked the platform once, when Settings opened, and again only if the platform host changed. Someone whose pasted key the platform refused (401) signed in with ACTIVATE and kept seeing the refusal: the sign-in uses the same host, so the panel never asked again until the page was reloaded.
+
+The panel now asks again whenever the platform credential changes (its source, host, last four characters or kind), so signing in, signing out or replacing the key shows the answer for the credential in use. Only the latest request's answer is shown, so a slow answer for the old credential cannot replace the new one. HELP.md says the list is checked again on those changes.
+
+Tests: `web/test/subscriptionsRefresh.test.tsx` (a refusal followed by a sign-in on the same host, a late answer for the old credential, no request when nothing changed). The first two fail with the old dependency on the host alone. Web suite 704 passed, `tsc --noEmit` clean.
+
+### Model access: a refused key is not called an AI gateway key (#742)
+
+ACTIVATE no longer issues AI gateway keys separately from platform keys; a token or API key from an account covers models and the platform. The Studio still explained every platform 401 or 403 as "an AI gateway key is not enough", which sent people looking for a kind of key that no longer exists when theirs had expired, been revoked, or come from another platform.
+
+- Subscriptions (Go and Node): a refusal now reads "The platform refused this credential (401): <what it said>. It may have expired, been revoked, or come from another platform. Sign in again, or add a current key under Model access."
+- Workflow credential message (Go and Node): "your stored credential was rejected by the platform API, so it may have expired or been revoked".
+- Settings: the note under a key that models accept but the platform API refuses points to signing in or a key from the account. The ACTIVATE API key tab and HELP.md drop the gateway-key wording.
+
+The probe that checks whether a key also reaches the platform API stays, since a platform that still issues separate keys, or a key limited to models, can still fail there.
+
+Tests: Go access and workflows packages pass (the access test pins the new sentence); Node access and offline tests pass; web suite 701 passed; tsc clean for web and server.
+
+## v1.203.10 (2026-11-21)
+
+### Bucket libraries: an object's inode is a hash of its path, the same in every listing (#739)
+
+A bucket library's objects now keep their inode numbers from one listing to the next. The trace writer used to number entries with a counter in output order, so adding one object renumbered every entry sorted after it. Anything keyed by inode then went stale at the next listing, including the extracted text in GUFI's external databases, which joins to the index on inode and mtime. This is needed before text extraction for buckets, since the extracted text must survive a re-listing.
+
+## How
+
+- An entry's inode is 63 bits of the FNV-1a hash of its kind (folder or file) and its path below the top folder, never 0 or 1. `tracefile.Inode` gives it.
+- Folders are all held in memory. Each takes the first try of the hash that no other folder has, in path order.
+- A file takes the first try that no folder and no other file of its own folder has. A folder is the scope an external database's inode and mtime join works in.
+- Across a whole listing, two paths collide with odds of about n² / 2⁶⁴ (one in 18 million for a million objects). Only a collision inside one folder could mix up text, and those are probed apart.
+- An object whose path is unchanged keeps its inode. Adding or removing an object or a folder changes no other entry's inode. Renaming a folder gives everything under it new inodes, since their paths change, so their text is read again.
+- Existing bucket indexes get the new numbers at their next listing. They hold names, sizes and times only, so nothing is lost.
+
+## Docs
+
+docs/LIBRARIES.md, in the bucket section.
+
+## Tests
+
+- The same listing gives the same inodes.
+- A listing with objects added before, beside and after others, and one removed, keeps every remaining entry's inode, with none shared.
+- A deliberately weak hash forces collisions: folders never share an inode, no file takes a folder's, files of one folder never share one, and the result is the same each run.
+- `gufi_trace2index` and `gufi_query` keep the 63-bit inodes as written.
+
+### index-extract: read the text of a list of files for an index, in GUFI's common external schema (#738)
+
+`index-extract` is a new program that reads the text of a list of files and writes it in GUFI's common external database schema, keyed by each file's inode and mtime. It is separate from the server, so it can run on this computer, on a node next to the storage, or as the jobs of a scheduler array. It is the first part of text extraction for libraries whose files are expensive to read from here, such as buckets and parallel file systems. See docs/EXTRACTION.md.
+
+## The program
+
+- `index-extract files --list FILE|- --out ARTIFACT.db` reads one line per file: inode, mtime, size, then the path, with GUFI's delimiter. That is what `gufi_query -E "SELECT inode, mtime, size, rpath(sname, sroll)||'/'||name FROM vrpentries WHERE type = 'f';"` prints. `--strip` and `--root` map the index's paths to the files. `--delim` takes another delimiter.
+- Files are read with the Studio's own readers (internal/extract): downmark, the OpenDocument, .xls, .ppt and mail readers, OCR, contributed extractors. The options are the same as the Studio's pass.
+- A file whose mtime or size differs from the list is not read and is recorded as `changed`, since its text would be keyed to the wrong version. A file of a kind nothing reads is not opened.
+- `--shard K/N` reads only the files whose inode modulo N is K, so N jobs of an array read every file once.
+- The summary is one JSON line: files by state, chunks, bytes read, seconds, the helpers found, and what the files lost for want of one. A missing helper never fails a run.
+- `index-extract schema` prints the SQL of the tables.
+- The extractor's command line options moved into `extract/cli.AddExtractorFlags`, which `studio-server extract` now uses too, with no change in behavior.
+
+## The artifact
+
+- GUFI's common schema, with the table and view definitions as GUFI's examples publish them: `ext_assets`, the fts5 table `ext_bm25`, and the views `ext_bm25_v`, `ext_assets_by_file_v` and `ext_assets_by_file_flat_v`.
+- One asset per file; text in `ext_bm25` chunks of at most 2,000 characters that do not overlap, cut at blank lines where possible. The Studio's reader joins the chunks with blank lines, so a file's text comes back whole in `read_kb_file`.
+- Every record carries inode, mtime and extra_info (`--extra-info`, empty by default). `outer_file_uuid` is derived from the three, so the same version of a file gets the same id in every run.
+- No paths: a renamed file keeps its text.
+- `studio_extract_files` records each file's outcome (`text`, `empty`, `skipped`, `changed`, `missing`, `failed`). A rerun passes by every file it holds and `--retry` reads again those without text. A stopped run records nothing for a file it was reading.
+- Placed beside a directory's db.db as `studio_UR_<uid>_<gid>.db`, an artifact is found by `--external-copy` walks and by the Studio's search today.
+- Vectors are not written yet. vec0 tables need sqlite-vec, which the server's SQLite does not load.
+
+## Shipping
+
+- The macOS and Linux apps carry `index-extract` beside `studio-server` in `app/bin`, about 26 MB (the server is 47 MB). The app checks list it and run it on a `gufi_query` list.
+- A new workflow, extractor.yml, attaches static `index-extract-linux-x86_64.tar.gz` and `index-extract-linux-aarch64.tar.gz` (each with a .sha256, LICENSE and NOTICE) to every published v* release, so a cluster job can fetch one. It can also be run by hand for a release.
+- CI's release binaries step builds it for Linux and macOS and checks that it prints its schema.
+- The assistant's `studio_docs` tool can read the new document.
+
+## Tests
+
+- internal/extdb: chunking (paragraphs rejoin exactly, positions, long lines, white space), stable ids, writing and replacing records, and the views.
+- internal/extractfiles: list, shard and delimiter parsing; a run over text, Office, unknown, lock, changed, missing and empty files; resume and retry; four shards that cover the list exactly once; a stop; missing helpers reported; the command line.
+- A round trip through GUFI: `gufi_dir2index`, the `gufi_query` list, extraction, then an `--external-copy` walk that finds the file by its text. It runs where GUFI is installed.
+
+## Next
+
+- Stable inode numbers in bucket traces, so text survives a re-listing.
+- A loader from artifacts into a spread tree and the index's permission shards.
+- Extraction for a bucket library from Settings, with the cost shown first.
+- Runs next to the data through ACTIVATE.
+- Moving the Studio's own extraction pass onto this program, so there is one extraction path.
+
+### index-extract spread and shards: load extracted text into a spread tree and an index's permission shards (#740)
+
+Two new `index-extract` commands load the text that `index-extract files` writes into an index, following GUFI's plan for system-level external databases. The text then outlives the index: after a bucket is listed again, or a parallel file system's index is rebuilt, the text goes back in with nothing read again. Nothing here is specific to one kind of storage. See docs/EXTRACTION.md, "Loading it into an index".
+
+## spread
+
+`index-extract spread --spread DIR --fsid NAME ARTIFACT.db...`
+
+- Puts the records of extraction artifacts into a spread tree, the pristine copy, sharded by inode: `<spread>/studio/<fsid>/89/67/45.db` holds inode 123456789, two digits a level.
+- Each file's records replace those of the same inode, mtime and extra_info, under the db's write lock, so array jobs can load side by side. Other versions of a file (other mtimes) are kept.
+- The top gets GUFI's configuration databases, `fsid.db` (the fsid) and `extdbprefix.db` (the prefix, its digits, its SQL path, the spread top, and `prefixtables`), and the prefix's SQL as `studio.sql`.
+- An artifact's chunks are indexed by asset once in a temporary table, so loading reads each artifact once instead of scanning the fts5 table per file.
+
+## shards
+
+`index-extract shards --spread DIR --fsid NAME --index DIR`
+
+- Reads each index folder's `db.db` directly (`entries` and the folder's own `summary` row), so no GUFI programs are needed.
+- Every file whose inode and mtime have records gets them in `studio_XX_<uid>_<gid>.db` beside `db.db`. XX is `OR` (others may read the file), `GR` (the folder's group may), `UR` (the folder's owner may) or `NA`, with the file's uid and gid.
+- Modes are 0644, 0640 and 0600, or for `NA` the narrowest mode of its files, so attaching a shard is the permission check. Run as root, a shard is given to the files' owner. Otherwise the count of shards it could not give away is reported.
+- A folder's shards are written whole each time, through a temporary file renamed into place. Records of files that changed or went are dropped, and shards of the prefix that no file needs are removed. Other files beside `db.db` are left alone.
+- The Studio's search and GUFI's example queries already attach these files (`STUDIO_EXTERNAL_DB_PATTERN`, default `\.db$`).
+
+Both commands print a JSON summary.
+
+## Tests
+
+- Spread paths and names.
+- Shard classes for each case of mode, owner and group, and shard names.
+- Loading twice: a version is replaced, not doubled, and a second version is kept beside it.
+- Shards for two folders: class, mode, content, a stale shard removed, another prefix's file left alone.
+- Refilling after the index changed: a changed file's text is dropped, and a file that became readable by all moves from `UR` to `OR`.
+- The GUFI round trip now runs `gufi_dir2index`, the `gufi_query` list, `files`, `spread` and `shards`, then an `--external-copy` walk that finds the file by its text.
+
+## v1.203.9 (2026-11-20)
+
+### Viewer: zoom a document's pages or an image without zooming the window (#737)
+
+A PDF's or Office file's pages, and an image, can now be zoomed in the viewer without zooming the whole Studio. Zooming the window to read a page made the rest of the layout too large.
+
+## Zoom
+
+- Range: 25% to 400% of the pane's width.
+- Controls:
+  - **+** and **-** in the viewer's header. The percentage between them fits the pane again.
+  - Ctrl or Cmd with the scroll wheel.
+  - A trackpad pinch. Chromium reports it as wheel events with Ctrl; Safari and the macOS window send gesture events.
+  - **+**, **-** and **0** when the document has focus.
+- A wheel or pinch keeps the point under the pointer in place. The buttons zoom about the middle of the view.
+- Only the document grows. Its pane scrolls across and the Library pane scrolls down, as before.
+- The window's own zoom keys still zoom the window. In the macOS app the menu takes Cmd+ and Cmd- before the page sees them.
+- Each file keeps its zoom while the Studio is open.
+
+## Sharp pages
+
+- **pdf.js** (the macOS app, and any host without poppler): each page is drawn again at the new width once the zoom holds still for a quarter second. The canvas is capped at 16 million pixels. The page is drawn off screen and copied in, so the one on screen never goes blank.
+- **Server page images:** `GET /api/kb/pdf-page` takes `dpi=` and rounds it up to 200, 300 or 400 (130 stays the default). Each resolution is cached in its own folder with its own ETag. Zoomed past 100%, the viewer asks for the resolution the page's width needs on the screen. A finer image replaces the one on screen only after it has loaded, and is kept for that file, so zooming back out makes no new request.
+
+## Also
+
+The file's tab row now stays under the header at the header's measured height. In a narrow pane the header wraps to two lines, and the fixed 49px offset had left the tabs under it.
+
+## Checked
+
+- **Go:** `PageDPI` rounding; pages drawn at 130, 300 and 400 dpi (1105, 2550 and 3400 pixels wide for a letter page), each in its own cache file.
+- **Web:** the zoom steps; wheel factors for a mouse notch, a pinch and line-mode deltas; page widths; the resolution choice; Ctrl and Cmd with the wheel prevented and applied, while a plain wheel still scrolls; pinch gesture events; the keys, with window zoom keys left alone; the 25% and 400% limits; the handle the header buttons use.
+- **Chromium and WebKit, in a test Studio with poppler:**
+  - the buttons step to 110% and 125%;
+  - Ctrl with the wheel kept the point under the pointer at the same spot on the page (0.800 before, 0.799 after);
+  - the window stayed at scale 1;
+  - zoomed pages asked for 200 and 300 dpi;
+  - an image zoomed with + and scrolled across;
+  - the tab row starts at the header's bottom edge.
+- **The same with no poppler on the PATH (the pdf.js path):** at 250%, each page canvas was redrawn at 2515 pixels for its 1258-pixel width, with the page's text on it.
+
+HELP.md, REFERENCE.md and README are updated.
+
+## v1.203.8 (2026-11-20)
+
+### Library: download and upload from the right-click menu, a folder as a zip (#736)
+
+Right-clicking a library file or folder now offers download and upload, so a file need not be opened first to save it, and a folder can take files without the Add panel.
+
+## Menu
+
+- A file: **Download**.
+- A folder: **Upload files…**, **Upload a folder…** and **Download as zip**.
+  - The upload entries are disabled in a read-only library, with the reason on hover, as New folder is.
+  - With All libraries, the top of the tree holds the libraries, so it offers neither.
+- Uploads go through the same transfer queue as **+ Add**, with progress below the tree. The Linux and Windows window lists a folder with its own chooser, as **+ Add** does.
+
+## Folder zip
+
+`GET /api/kb/download?path=…&folder=1` sends a zip of what the Library shows in the folder. It leaves out names that start with a dot and the build and cache folders the Library hides, and it does not follow symbolic links, so nothing outside the folder goes in.
+
+- For a library on another system, the zip is built from its index, and each file is fetched as its own download would be.
+- `check=1` returns the zip's name, file count and size. The menu asks for this first, so a folder that is too large or empty shows a notice, and no file holding the error is saved.
+- Limits:
+  - 50,000 files or 8 GB on this host;
+  - 500 files or 1 GB for a library elsewhere;
+  - over either, a 413.
+- A request without `folder=1` for a folder is still refused with a 400.
+
+## Saving the file
+
+Downloads start from a link with a `download` attribute, which each surface saves:
+
+- a browser keeps it with its downloads;
+- the macOS window saves the attachment to Downloads;
+- the Linux and Windows window fetches it through its bridge and reports where it went.
+
+The bridge's single five-minute limit is now five minutes for the Studio's answer and two hours for the transfer, since a folder's zip is written while it is sent.
+
+## Checked
+
+- Go tests:
+  - the zip's contents, with hidden entries, excluded folders and links leaving the folder all left out;
+  - a nested folder's name;
+  - a file still downloading as itself;
+  - a path leaving the library refused;
+  - a remote folder zipped from its index;
+  - the 413;
+  - the size check.
+- Web tests: a file download, a folder sized and then downloaded, the refusal and empty-folder notices.
+- In a test Studio, driven in Chromium and in WebKit (the macOS window's engine):
+  - both menus;
+  - Download as zip (the zip held what the Library shows, and nothing hidden or excluded) and its notice;
+  - Upload files… and Upload a folder… into a folder, the folder keeping its structure;
+  - a file's Download.
+- The desktop bridge vets clean as a Windows build. This host has no GTK headers, so CI builds the Linux window.
+
+HELP.md, REFERENCE.md and README are updated.
+
+## v1.203.7 (2026-11-20)
+
+### Documents: a cover page, italic leader phrases, no divider lines, and a writing check (#735)
+
+PDF and Word documents written from Markdown now follow common document conventions by default, and the assistant gets a check of its writing back with each report it saves.
+
+## Layout
+
+- Body text is justified by default (`align: left` keeps it ragged), and all text is black. Quotes, headers and footers are no longer gray, and links are black and underlined.
+- A `---` between sections becomes space, and no divider lines are drawn.
+- A paragraph, list item or quote that opens with a short label shows it in italic with a colon (*Why now:* ...). This covers labels written in bold, labels ending in a period, and punctuation outside the emphasis. Keys with short values (**Date:** 14 November 2026), lines broken within a paragraph, numbers, and Figure or Table captions keep their form. `leaders: as-written` turns this off.
+- `cover: true` makes what comes before the first `\newpage` a cover page. It is centered, its headings use the Title and Subtitle styles (kept out of the outline and a table of contents), and it shows the footer line with no page number.
+  - In Word the cover is its own section, and the body's page numbers start at 1.
+  - The PDF numbers its pages the same way.
+
+## Writing check
+
+`write_kb_file` and `edit_kb_file` return advice on the writing of a Markdown report, PDF or Word document: dashes used as punctuation, double hyphens, intensifiers, repeated "rather than", "X, not Y" contrasts, sentences written twice, and the length and longest section of long reports. Code, front matter and table rule lines are skipped, and "real" in "real-time" is not counted. The model weighs the advice before it hands the file over. Scripts and data files are not checked.
+
+The tool description lists the new options and gives short guidance on plain writing. A library's own conventions come first. A pw code chat is pointed at the library's conventions file when there is one.
+
+## Checked
+
+- Rendered a sample with a cover, labels, a table, a `---`, a quote and a link through the Studio's PDF writer, LibreOffice, and a Google Docs import exported to PDF:
+  - All three leave the cover unnumbered and number the first content page 1.
+  - Google Docs sets the headings in the document's font.
+  - The table border is on the left margin (1.000") in all three.
+- Table placement is unchanged. Measured through a Google Docs import, these documents' tables already sit on the margin, because they use Word's current table layout. An indent added for older layouts would move them into the text.
+- Go tests cover labels and the cases left alone, the cover's sections, styles, footers and page numbering in both formats, no lines and no gray or blue, and the writing check's counts. Chat tests cover the advice in write and edit results, and the pw code pointer.
+
+HELP.md and README are updated.
+
+## v1.203.6 (2026-11-20)
+
+### pw code chat: the Studio's tools, checked before every message (#734)
+
+A pw code chat session now has the Studio's tools, the index included, so it searches and counts from the index instead of walking files.
+
+## What changes
+
+- The chat's MCP token lists the Studio's tools that do not wait for an answer in the Studio's own chat: search_kb, query_corpus, read_kb_file, read_original, list_kb_dir, list_libraries, labels, write_kb_file and edit_kb_file, transfer locations and status, and the platform workflow tools where the platform is connected. Deletes, cluster changes, transfers and the agent tools are left out.
+- Each call runs with the conversation's scope (libraries, labels) and the person's own key, and a kind of tool switched off under +, Tools returns an error that says so. The session is told when the chat bar's scope changes.
+- Tools that only read are pre-approved and marked readOnlyHint; writes ask through pw code's approvals, which show the Studio tool's own name.
+- Before each message the Studio checks `GET /v1/sessions/{id}/mcp`. It reconnects a failed or stale studio server once, and otherwise starts a new session, trying each address that reaches this Studio. `STUDIO_MCP_URL` overrides the address.
+- When pw code cannot reach the tools, the Studio assistant answers the message, a notice in the chat says why, and `auto` answers with the Studio assistant for ten minutes. The engine menu shows whether the chat's session has the tools.
+- A Studio without ACTIVATE (no platform connected) never asks the pw code daemon. The chat bar shows no engine choice, and Settings shows no pw code settings unless `CHAT_ENGINE=pwcode`.
+- The prompt tells pw code to use the index tools before grep, find or ls.
+
+## Tested
+
+- Go tests: tools listed and excluded with the right hints, scope and switched-off tools, reconnect, stale tool lists, archive and fallback, the address list, and a Studio without the platform not asking the daemon.
+- Web tests: the engine menu's tools line, the fallback notice, and the pw code settings shown only under ACTIVATE.
+- Live against a local pw code daemon: asked for the three largest files and a plan in the library, pw code called query_corpus, search_kb and read_kb_file, with no grep. Asked to save a PDF summary, it called write_kb_file after approval in the Studio, and the PDF was written and indexed. With `STUDIO_MCP_URL` pointing at a closed port, the Studio assistant answered with the notice shown in both themes.
+
+HELP.md, README, CUSTOMIZATION.md and MULTI-USER.md are updated.
+
+## v1.203.5 (2026-11-20)
+
+### Chat: pw code answers by default under ACTIVATE (#733)
+
+## What changes
+
+A chat can be answered by pw code, the ACTIVATE agent harness, or by the Studio assistant.
+
+- **Default.** `CHAT_ENGINE=auto` (the default) has pw code answer where the Studio runs under ACTIVATE and a pw code daemon can be reached, and the Studio assistant elsewhere. `pwcode` and `studio` force one. `PWCODE_MODEL` and `PWCODE_PERMISSION_MODE` set what new pw code chats start with. All three are in Settings, External access, "What answers in chat". Bypassing permissions is not offered.
+- **Per chat.** A button in the chat bar switches a conversation between pw code and the Studio assistant, names the session's model, and links the session in PW Code on the web. Switching keeps the conversation: pw code is handed the turns it did not see.
+- **Session.** One pw code session per conversation, created with remote control on and a `studio` agent whose MCP server is this Studio's `/api/mcp`, with a bearer token sealed for that person and conversation. The library tools are listed in `allowedTools` since they only read, so they run without asking in every mode, read-only included. The token works whether or not MCP is on for other clients, and acts as the person it was issued for.
+- **Who runs it.** Single user: the local daemon. Shared Studio: the person's own daemon on the Studio's cluster through `pw ssh`, with the platform key from their ACTIVATE sign-in, never the deployment key; without that sign-in pw code is not offered. The session works in the person's space when they have one there, otherwise `~/studio-chat`.
+- **Stream.** The Studio follows the session's WebSocket event stream (`pwcode.Follow`) and maps it onto the chat stream: text, tool calls under their Studio names (so the Studio's renderers apply), and approval requests, which a bar over the composer answers (`POST /api/chat/pwcode/{id}/approvals/{approval}`). Stop interrupts the turn.
+- **Lost stream.** A turn keeps running when the page loses the stream (a remount, a reload, a dropped connection). `GET /api/chat/pwcode/{id}` reports the session's status and open approvals, and the chat polls it while a turn runs without a stream, shows the approval bar again, and reloads the conversation when the turn ends.
+
+## Docs
+
+HELP.md (Chat), README, CUSTOMIZATION.md (Chat) and MULTI-USER.md (pw code in chat).
+
+## Testing
+
+- Go: `internal/chat` tests against a fake daemon with a WebSocket event stream: default engine where pw code runs, session reuse and `allowedTools`, handing over missed turns, approvals reaching the chat and being answered, the Studio answering when chosen or where pw code is not, the session status route, and the chat token acting for its person only. Full `go test ./...`, `go vet`, and crossvet pass.
+- Web: `pwcodeEngine.test.tsx` covers the engine menu, approvals, and the watcher picking up a turn that outlived its stream. Full vitest suites pass (both configs).
+- Browser: an isolated test Studio against a real pw code daemon, light and dark, desktop and phone. A question that searched the library and ran a shell command showed the approval bar, ran on Allow, and answered with the source and the command's output. The menu showed the session's model and the PW Code on the web link.
+
+## v1.203.4 (2026-11-20)
+
+### Sign in with ACTIVATE: find the sign-in where the pw CLI saves it (.credentials) (#732)
+
+Signing in with ACTIVATE on a shared Studio never finished. On a served Studio, pw v7.135.0 and v7.141.1 both printed "Signed in as …", said the sign-in was saved in plain text in the credentials file, and exited 0. Preview v1.203.3 then said the sign-in was saved "where the Studio cannot find it".
+
+The cause: when `PW_CREDENTIALS_DIR` is set, the pw CLI's file in that folder is `.credentials`, not `credentials`. An strace of `pw context list` with an empty `PW_CREDENTIALS_DIR` shows it stat and open only `$PW_CREDENTIALS_DIR/.credentials`; `~/.config/pw/credentials` is the name only in the default location. The Studio checked for `credentials`, so it reported every sign-in as unfinished and removed the folder holding it. The tests' stand-in CLI wrote `credentials`, which is why they passed.
+
+- `platform.CredentialsIn(dir)` gives the file in a `PW_CREDENTIALS_DIR`: `.credentials`, or `credentials` where only that exists, as in a folder copied from `~/.config/pw`. It is used by:
+  - the personal sign-in's `has`;
+  - `Platform.CredentialsFile`, the deployment's contexts;
+  - `libraries.CLICredential`.
+  The last two had the same wrong name for a deployment run with `PW_CREDENTIALS_DIR`.
+- The test CLI now saves `.credentials` like the real one, so the sign-in tests cover the real name. New `TestCredentialsIn`.
+- If a sign-in still ends without a file, the log lists the names the CLI left in the sign-in folder (names only). The page's message no longer blames an old CLI, which was not the cause.
+
+`go test ./...` and `go vet ./...` pass. MULTI-USER.md names the file.
+
+## v1.203.3 (2026-11-20)
+
+### Setup wizard test: wait for Up to be enabled before clicking it (#727)
+
+The macOS job on main failed on 0179f58 and 6657a7e with `Unable to find role="button" and name "Research"` in setupWizard.test.tsx. **Up** stays disabled until the folder's listing has loaded, and the test clicked it as soon as the index status showed. On a slow runner that click landed on a disabled button and did nothing.
+
+The test now waits for **Up** to be enabled before clicking it. Locally, with the fake listing delayed by 400 ms, the old test fails with the same error and the new one passes. Test only; no app change.
+
+### Chats: into a library only when someone saves them (#728)
+
+Every chat was exported as Markdown into the main library's `chat-sessions/` after each reply, then labeled `chat-session` and indexed. In a Studio several people sign in to, that put every conversation where everyone could search it, including whatever the assistant quoted from a person's own space. It happened even with shared chat history off.
+
+Now nothing goes into a library unless someone saves it.
+
+- **Save** (`web/src/components/SaveChatButton.tsx`) sits in the chat's top bar beside Persona and Scope. Its popover first says where the copy will go and who can read it there (`GET /api/chat/conversations/{id}/save`). Its Save button then writes it (`POST` to the same path).
+- The copy goes to `chat-sessions/` in the person's own space, written as them through `SpaceFiles`, never to a folder someone shared with them. A person without a space gets it in the main library, labeled `chat-session` and `user-<name>` and indexed, as before. The popover says when everyone who uses the Studio can read it there.
+- `save_chat_to_library`, a new tool in the editing group, does the same when the person asks the assistant to save or remember the chat. Its copy holds the conversation up to the person's last message. The system prompt now says that only saved chats are in `chat-sessions/`.
+- Saving again replaces the copy, since the file is named for the day the chat started and the start of its id, as before. Deleting a chat now leaves a saved copy in the library.
+- Transcripts that earlier versions exported stay where they are. `docs/REFERENCE.md` and `docs/MULTI-USER.md` say so.
+
+`kb.Library` gains `SharedFrom`, so the save can tell a person's own space from a share. `conversations.Store` loses the export, its label and reindex hooks, and `Flush`.
+
+The tool writes without asking first, as `write_kb_file` already does into the main library.
+
+Tests:
+- `conversations/transcript_test.go`: a reply writes nothing, the transcript's format, and a saved copy outliving the chat.
+- `chat/savechat_test.go`: the route and the tool in the main library with their labels, and the space chosen over a share.
+- `web/test/saveChat.test.tsx`: the popover before and after saving, and a refusal.
+- Locally: full Go suite, `tsc`, and 675 web tests.
+- On a test Studio built from this branch, light and dark at 1440x900, 720x480 and 390x844: the popover fits, there's no sideways scroll or console error, and the saved file is written and indexed.
+
+HELP.md, README, REFERENCE.md, ARCHITECTURE.md and MULTI-USER.md are updated.
+
+### Tasks test: wait for the stand-in CLI to go quiet before TestCampaign ends (#731)
+
+`TestCampaign` failed on #730's Go job, in a package that PR does not touch:
+
+```
+--- FAIL: TestCampaign (2.13s)
+    testing.go:1464: TempDir RemoveAll cleanup: unlinkat /tmp/TestCampaign.../001: directory not empty
+```
+
+The test's stand-in pw CLI writes `ticks` and `calls.log` into the temp folder on every call. At the end the test stops both engines, which cancels their pollers, but a call that is already running finishes afterwards. On a loaded runner one landed while Go was removing the folder.
+
+The test now ends by waiting until the stand-in CLI has made no call for 750 ms, which is five of the test's 150 ms campaign polls, with a 10 s limit. 20 runs in a row pass locally. The failure itself hasn't been reproduced here (30 earlier runs on main passed), so this closes the window rather than proving it shut.
+
+### Workflow: multi-user postures require sign-in; the first index starts without HTTP (#729)
+
+A person's space stays closed only if every request to the Studio carries a verified session. Until now the workflow never set `AUTH_REQUIRED`, so a multi-user deployment answered unsigned requests with the signed-out view, and a relaunch dropped the setting wherever someone had added it by hand.
+
+- The multi-user postures (shared, personal, strict) set `AUTH_REQUIRED=1` whenever they set `AUTH_JWKS_URL`. That covers the bundle's `run_app.sh`, the container run, and the compute-node launch. The posture tooltip says so.
+- With sign-in required, `expose_session`'s `POST /api/reindex` from the node would get 401. Instead, when the index on launch is on, `run_app.sh` leaves `INDEX_BASE/index-on-launch` before it starts the server.
+- `internal/index` takes that file once as it starts and starts a full index (`indexOnLaunch`). It removes the file first, so a restart, such as after an update, does not index again.
+- `expose_session` says the Studio started the index itself, and keeps the HTTP request for the single-user posture.
+- The workflow parser's `golden.json` is regenerated.
+
+Tests:
+- `TestIndexOnLaunch`: no file starts no index, the file starts one full index and is taken, and a second start does nothing.
+- `go test ./...` passes. `TestCopyLibrary` failed once with the whole suite running and passed three times on its own; it doesn't touch this change.
+
+CUSTOMIZATION.md and MULTI-USER.md say the workflow sets it.
+
+### Sign in with ACTIVATE as a credential of its own, and My library (#730)
+
+Matthew asked for three things on Model access and personal spaces: make the pw CLI sign-in easier to see and a preferred option, treat it as an auth type like the API key (its refresh token yields the access tokens that transactions use), and make clear that My space needs a sign-in, renamed to My library. He also hit "The sign-in did not finish" with no reason given, and "Your session ... did not open: ... Unauthorized" in the space form.
+
+**Model access**
+- On a shared Studio, "Where access comes from" is now a list of described choices (the design system's `RadioGroup` with `SettingModeOption`), not a four-way segmented control. The labels had been cut off at desktop width ("Sign in with ACTIV…"). Each choice says in one line what it covers, and that line replaces the lead sentence each panel used to repeat.
+- **Sign in with ACTIVATE** comes first, marked recommended, and is chosen by default for a person with no credential of their own. The page no longer tacks it on below the subscriptions.
+- While a person is signed in, the sign-in is their credential for models (`modelkeys.ResolveOrSignIn`) and for the platform, before a pasted ACTIVATE key. An OpenAI-compatible endpoint they chose still serves models.
+  - `/api/access` reports source `signin` and `signInOffered`.
+  - Subscriptions and the "What each part uses" table follow it.
+  - A stored key gets a note and a **Remove the key** button.
+- The pw CLI choice on a one-person Studio uses the same described choices.
+
+**Sign-in failures** (`internal/personal`)
+- `finish` took the first line of the CLI's output, which is always "To sign in, open this page…", and replaced it with "The sign-in did not finish." Any real error was lost. It now reports the CLI's last line that is not the device prompt, and the page no longer repeats the heading as the body.
+- The CLI's full output and `pw --version` go to the server log at warn level.
+- If the CLI exits 0 having saved the sign-in under the person's home (`~/.config/pw/credentials` or `~/pw/.credentials`), as a pw CLI that predates `PW_CREDENTIALS_DIR` does, the Studio keeps it from there and logs that it did. That home is already per person and is where such a CLI reads it back.
+
+**My library** (the personal space)
+- Renamed throughout the UI, server messages and docs. Internal names and routes keep "space".
+- `GET /api/user-libraries/space` adds `credential` (`sign-in`, `key` or empty) and `signInOffered`.
+  - With no credential, the form says "My library needs your ACTIVATE sign-in" and offers the sign-in in place. It moves on to the folder form once the person signs in.
+  - With a credential, it says which one reaches the cluster.
+- A `pw ssh` session the platform refuses (Unauthorized) now says which credential was refused, using a new `Providers.SignInOwner`.
+  - If it was the person's sign-in, the message says to sign out and sign in again.
+  - Otherwise it says to sign in with ACTIVATE.
+  - The form shows the sign-in panel under the error.
+
+**Tests**
+- Go:
+  - `TestSignInFailureSaysWhy`, `TestSignInSavedUnderHomeIsKept` and `TestFailureOf` (personal);
+  - `TestSignInComesBeforeAPastedKey` (access);
+  - `TestSessionErrSaysToSignIn` (userlibs).
+- Web:
+  - the sign-in choice comes first and takes effect;
+  - My library offers the sign-in and then the folder;
+  - a refused credential offers the sign-in;
+  - a failed sign-in shows the CLI's message once.
+- `go test ./...`, `tsc` and 679 vitest pass.
+- Checked in Chromium against a signed-in Go server (test JWKS, stand-in pw CLI), light and dark at 1440x900, 720x480 and 390x844:
+  - Model access before and after signing in;
+  - My library signed out, during the code, signed in, and refused.
+  - No sideways scroll and no page errors.
+
+Docs: HELP.md, README.md, MULTI-USER.md, ACCESS-CONTROL.md.
+
+## v1.203.2 (2026-11-19)
+
+### Builds: take the ONNX Runtime library from the pinned onnxruntime wheel (#726)
+
+`github.com/microsoft/onnxruntime` has returned 404 since about 18 November 2026, release downloads included. The Mac and Linux app builds fetched `onnxruntime-osx-arm64-1.31.0.tgz` and `onnxruntime-linux-x64-1.31.0.tgz` from there, so every app build now stops at that step (seen on #725's mac-app run).
+
+The onnxruntime 1.31.0 wheels on PyPI were uploaded on 9 October 2026 and are already pinned by SHA-256 for every platform in `indexer/embed_deps.json`. They carry the same C library under `onnxruntime/capi/`, and `server-go/internal/userlibs` already takes it from there for builds on other systems. This PR has both `build_app.sh` scripts take it from the `cp312` wheel through a new `fetch_embed.py --ort-library` option. The option writes the library and its `LICENSE` and `ThirdPartyNotices.txt`, and refuses a version other than the pinned one. The tarball SHA-256 pins are gone; the wheel's pin replaces them.
+
+Checked on Linux against the archive cached before the takedown:
+- The same exported symbols (`OrtGetApiBase`, `OrtSessionOptionsAppendExecutionProvider_CPU`), SONAME `libonnxruntime.so.1`, dependencies and GLIBC_2.28 floor.
+- An identical `LICENSE` and `ThirdPartyNotices.txt`.
+- The Go embedder (`embed-query` with the MiniLM model) gives byte-identical vectors from both libraries.
+- `go test ./internal/embed` passes with either.
+
+The macOS wheel's dylib is checked by this PR's mac-app build. The wheel is tagged `macosx_14_0`, the app's existing minimum.
+
+`docs/UPDATES.md` and `docs/GO-PORT.md` name the new source. `server/test/fetchEmbedOrt.test.mjs` covers the option offline.
+
+### Libraries: buckets of an rclone remote, indexed from their listing (Preview) (#725)
+
+Adds bucket libraries as a Preview: a bucket, or a folder in one, of an rclone remote indexed from its listing alone. Any S3 compatible store works, AWS or on premises (MinIO, Ceph and the like), and so does any other store rclone lists. Offered with sign-in off, since it uses this computer's rclone configuration.
+
+## How it works
+
+Add a library has a new choice, "A bucket": pick an rclone remote from Transfers, browse to the bucket or folder, and choose how often it is listed again (once a day by default; every hour, every 6 hours, or only when asked).
+
+A listing is one `rclone lsjson -R --fast-list`. On S3 that is about one LIST request per 1,000 objects. The new `tracefile` package writes the entries as a GUFI trace, grouped by folder in sorted runs on disk so memory stays bounded and each folder is written once, and `gufi_trace2index` builds the index beside the old one, which is swapped out when the new one checks out. Search answers from the last listing while a new one runs. The trace layout is probed per GUFI, since builds before the device column read a different layout. No object is read to index a bucket.
+
+The Library tree, search and Stats read the index and send nothing to the store. Opening a file reads that one object: `lsjson --stat`, then `cat --count` for the first 512 KB of a text file, or the whole object up to 50 MB for a download or a document preview (413 above that, pointing to Transfers). The assistant's `read_original` reads plain text objects the same way.
+
+The Settings row shows objects, size, when it was listed, the requests a listing takes and, where rclone's configuration names AWS as the provider, their cost at the S3 Standard LIST rate per listing and per month at the chosen interval. **List again** lists at once; the interval can be changed in the row.
+
+## API
+
+- `POST /api/libraries/bucket` with `location` (`rclone:<remote>`), `path`, and optional `label`, `id`, `every` (0, 60, 360 or 1440 minutes).
+- `PUT /api/libraries/<id>/bucket` with `{ every }`.
+- `POST /api/libraries/<id>/rebuild` lists again.
+- State of the last listing is kept in `INDEX_BASE/libraries/<id>/bucket.json`.
+
+## Limits in this Preview
+
+Depth is names only (`PUT .../depth` answers 409 for deeper). A bucket library is not a Transfers location (its remote is), and library list exports leave it out with that reason. The app now ships `gufi_trace2index` on Linux and macOS, and the app checks look for it.
+
+## Next
+
+- Text extraction, off by default, with the cost of the read shown first, run on this computer or through the platform next to the data, bringing back only the index.
+- Reading a bucket through an rclone mount.
+- Owner, group and mode per entry for Studios that people sign in to.
+
+## Tests
+
+- `tracefile`: one stanza per folder, disk runs match the in-memory result, and `gufi_trace2index` builds the trace with both GUFI layouts.
+- `libapi` end to end against a fake rclone covers:
+  - refusals;
+  - one fast list and no object reads while indexing;
+  - search by name and the Library tree;
+  - a preview reading only its first bytes, and a missing object returning 404;
+  - download, plus `read_original` and `DownloadOriginal`;
+  - the Details card wording;
+  - depth refusal and interval handling;
+  - a relisting that finds a new object, and removal.
+- `transfers`, `libconfig` export, and web tests for the add flow, the Settings row and the cost wording.
+- Manual run against a local `rclone serve s3` store: a 20,000 object bucket listed and indexed in about 1.2 s. Tree, search, Stats, text, CSV, PDF and image previews, and download all worked. A Playwright pass in light and dark at 1440x900, 720x480 and 390x844 found no console errors and no sideways scrolling.
+
+## v1.203.1 (2026-11-17)
+
+### Personal spaces and folder sharing (Preview) (#724)
+
+Personal spaces and folder sharing, for a Studio several people sign in to that runs beside a cluster. Preview.
+
+*My space:* Add a library, My space makes a folder of the person's own on the Studio's cluster (`~/studio` unless they choose another), checked first as their account. The check refuses a folder another account owns or can write, one under a folder another account could replace, and the home folder itself. A missing folder is made with mode 700 once confirmed. The index is built as the person in their own `~/.activate-studio` with their own copy of GUFI. The Library reads and writes the space as them over `pw ssh` (upload, new folder, rename, move, delete), and search catches up about 20 seconds after the last change. What the Studio writes there is closed to other accounts whatever the account's umask.
+
+*Folder sharing:* Share… on a folder of a space gives an account, a group the owner is in, or every account read, or read and write. The Studio sets a POSIX ACL and default ACL as the owner, opens the folders above it for passing through where the recipient could not pass, and records which it opened. Recipients find it under Add a library, Shared with me, and their copy is indexed and read as them, so the kernel decides what they see. Stop sharing removes the entries, closes what the share opened when no other share needs it, and removes the recipients' libraries and indexes of it. On a file system without ACLs a folder can be shared with every account for reading.
+
+*Per-person pw CLI sign-in:* Settings, Model access has Sign in with the pw CLI on a shared Studio: a device code approved on the platform, after which the sign-in renews itself until Sign out. The Studio uses it only for that person, with a CLI home of their own, so the ssh key the CLI registers belongs to their account alone.
+
+The Studio uses only the person's own credential for their space and shared folders, and fails closed without it. Reading the deployment's own libraries as the viewer is the next step and is not in this Preview. Details are in `docs/MULTI-USER.md`; the guide and README describe the new choices.
+
+*Security pass:* A served Studio in a container with several accounts, each signed in with a session token and logged in to the cluster as itself, was attacked through every read and write route: another person's space, names outside a space, symbolic links planted in a write share, shell and option injection in names, forged and expired tokens, a removed or swapped credential, cross-site requests, a person who makes a library with the same id as someone else's, and a share taken back. 624 checks pass with `AUTH_REQUIRED` off, and 354 of them with it on. The pass found and this PR fixes: an existence test for names outside a space, writes that followed a link out of a write share, index and build files readable by the account's group, preview copies, labels and index settings shared between two people whose libraries had the same id (this predates spaces), and per-person files on the Studio's host that followed its umask. The Library was also checked in WebKit on a Linux desktop as three people. The limits that remain are listed in `docs/MULTI-USER.md` under What keeps a space closed and Limits; one is that labels set on a person's own libraries in a served Studio before this version stay behind.
+
+Tested with Go and web unit tests, including two people sharing a folder for writing on a local file system with ACLs, and on a cluster over `pw ssh`: space check, creation, writes, a share and its revoke, with the ACLs checked on the host before and after.
+
 ## v1.203 (2026-11-16)
 
 ### Search time limit setting, Stop, and queries that end on the host (#722)
