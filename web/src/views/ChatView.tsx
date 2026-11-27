@@ -59,6 +59,7 @@ import { CitedPaths, citedMarkdown } from '../citedPaths'
 import { VIEWER_CACHES_CLEARED } from '../viewerCache'
 import { prefetchChat } from '../chatRecord'
 import { setFrontChat } from '../notices'
+import { chatListPlacement, TOUCH_QUERY, useMediaQuery } from '../phoneLayout'
 import { PWCodeToolsNote } from '../pwcode/ToolsNote'
 
 const PWCODE_TOOL_FOOTERS = { [BACKGROUND_TOOL]: BackgroundCommandHint }
@@ -325,6 +326,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
   // the package's own button above the thread, and by the bottom-bar Assistant
   // item; the package closes it on a pick, a tap outside or Escape.
   const phone = usePhoneLayout()
+  const touch = useMediaQuery(TOUCH_QUERY)
   const [railOpen, setRailOpen] = useState(false)
   useEffect(() => {
     const t = () => setRailOpen(o => !o)
@@ -772,7 +774,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           <RetryWithModel />
           <ModelShare />
           <StudioChatLayout
-            sidebarMode={phone ? 'drawer' : 'inline'}
+            sidebarMode={chatListPlacement(phone, touch)}
             sidebarTop={({ collapsed }) => (
               <>
                 <ManageChatsRailItem
