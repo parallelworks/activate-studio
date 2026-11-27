@@ -2,6 +2,16 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.206 (2026-11-27)
+
+### The tab and Home Screen icons are the brand icon from the first load (#998)
+
+The server writes the brand icon into the page, with a dark variant for dark devices, so a browser tab shows it from the first request. The iPad and iPhone Home Screen icon is made from the brand icon. The deployment workflow mounts the icon file into the container, and an icon that cannot be read is logged and named in Settings, General.
+
+### Images added to a pw code chat reach the model, and a sent picture opens in the image viewer (#1002)
+
+Images up to pw code's own limit now reach the session from the session box, by paste, drop or +, and a picture sent with a new chat's first message goes to the session as an image. A sent picture opens in the image viewer. A library link whose path cannot be a path opens nothing.
+
 ## v1.205 (2026-11-27)
 
 ### Studio tools in the user workspace; name this Studio's machine (#995)
