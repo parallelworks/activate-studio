@@ -903,3 +903,36 @@ func TestACommandTakesASavedSessionUpFirst(t *testing.T) {
 		t.Fatalf("relayed palette: %d %v", code, out)
 	}
 }
+
+// The session view saves an image of up to 5 MiB with the session, sent as
+// base64 in JSON. Held to the 1 MiB other requests are, a screenshot past
+// about 750 KB was refused and the model never saw it.
+func TestAScreenshotIsSavedWithTheSession(t *testing.T) {
+	local, remote := &fakePW{}, &fakePW{}
+	_, base, _, _ := relayModule(t, local, remote)
+	relayedChat(t, base)
+	got := 0
+	remote.routes = map[string]http.HandlerFunc{
+		"POST /v1/sessions/s1/images": func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			got = len(b)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"path":"/home/me/.pw/code/images/s1-1.png"}`))
+		},
+	}
+	u := base + "/api/code/machines/m2/sessions/s1/images"
+	shot := strings.Repeat("A", 4<<20*4/3) // a 4 MiB picture, in base64
+	code, out, _ := send(t, http.MethodPost, u, `{"seq":1,"mime":"image/png","data":"`+shot+`"}`)
+	if code != 200 || out["path"] != "/home/me/.pw/code/images/s1-1.png" || got < len(shot) {
+		t.Fatalf("a 4 MiB screenshot: %d %v, the session got %d bytes", code, out, got)
+	}
+	got = 0
+	huge := strings.Repeat("A", 9<<20)
+	if code, _, _ := send(t, http.MethodPost, u, `{"seq":2,"mime":"image/png","data":"`+huge+`"}`); code == 200 || got != 0 {
+		t.Errorf("past the limit: %d, the session got %d bytes", code, got)
+	}
+	// Every other request is still held to 1 MiB.
+	if code, _, _ := send(t, http.MethodPost, base+"/api/code/machines/m2/sessions/s1/messages", `{"text":"`+strings.Repeat("a", 2<<20)+`"}`); code == 200 {
+		t.Errorf("a 2 MiB message: %d", code)
+	}
+}

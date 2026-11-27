@@ -46,12 +46,15 @@ func (b Body) Str(k string) string { return JSString(b.M()[k]) }
 
 // Read reads the body. A body that is not JSON for its content type is
 // Fastify's 400; a body past the limit is its 413.
-func Read(r *http.Request) (Body, error) {
-	raw, err := io.ReadAll(io.LimitReader(r.Body, Limit+1))
+func Read(r *http.Request) (Body, error) { return ReadUpTo(r, Limit) }
+
+// ReadUpTo is Read for a route that takes a body larger than Limit.
+func ReadUpTo(r *http.Request, limit int) (Body, error) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, int64(limit)+1))
 	if err != nil {
 		return Body{}, err
 	}
-	if len(raw) > Limit {
+	if len(raw) > limit {
 		return Body{}, apierr.New(413, "Request body is too large")
 	}
 	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))

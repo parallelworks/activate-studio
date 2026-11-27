@@ -13,6 +13,7 @@ package pwcode
 
 import (
 	"bytes"
+	"encoding/base64"
 	"context"
 	"errors"
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
@@ -570,7 +571,43 @@ func ArchiveSession(ctx context.Context, c Client, id string) (any, error) {
 
 // SendMessage queues a message as the session's next turn.
 func SendMessage(ctx context.Context, c Client, id, text string) (*jsonv.Object, error) {
-	return obj(c.Call(ctx, http.MethodPost, sid(id)+"/messages", jsonv.NewObject("text", text), 0))
+	return SendMessageWith(ctx, c, id, text, nil)
+}
+
+// Image is one image a message goes with, as SaveImage saved it: the
+// placeholder its text names it by ("[Image #1]"), where the session's
+// machine keeps it, and its type.
+type Image struct{ Placeholder, Path, Mime string }
+
+// SendMessageWith queues a message with images as the session's next turn.
+func SendMessageWith(ctx context.Context, c Client, id, text string, images []Image) (*jsonv.Object, error) {
+	body := jsonv.NewObject("text", text)
+	if len(images) > 0 {
+		list := make([]any, len(images))
+		for i, im := range images {
+			list[i] = jsonv.NewObject("placeholder", im.Placeholder, "path", im.Path, "mime", im.Mime)
+		}
+		body.Set("images", list)
+	}
+	return obj(c.Call(ctx, http.MethodPost, sid(id)+"/messages", body, 0))
+}
+
+// MaxImageBytes is the largest image pw code takes with a message.
+const MaxImageBytes = 5 << 20
+
+// SaveImage is POST /v1/sessions/:id/images: the image is kept on the
+// session's machine for the next message, numbered seq, and is named by
+// the path it answers with.
+func SaveImage(ctx context.Context, c Client, id string, seq int, mime string, data []byte) (string, error) {
+	v, err := obj(c.Call(ctx, http.MethodPost, sid(id)+"/images", jsonv.NewObject("seq", seq, "mime", mime, "data", base64.StdEncoding.EncodeToString(data)), 0))
+	if err != nil {
+		return "", err
+	}
+	p := jsonv.String(jsonv.Path(v, "path"))
+	if p == "" {
+		return "", errors.New("pw code did not say where it kept the image")
+	}
+	return p, nil
 }
 
 // AnswerApproval answers an approval request: {allowed, denyMessage?}.

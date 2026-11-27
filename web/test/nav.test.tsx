@@ -30,3 +30,20 @@ describe('library in a deep link', () => {
     expect(parseOpenHash('#open=file:a/b.md')).toEqual({ kind: 'file', target: 'a/b.md' })
   })
 })
+
+describe('a link that cannot name a file', () => {
+  // A pw code session's image address read as base64, as a chat attachment
+  // once was: the Library opened "Cannot open this file" on the garbage.
+  const garbage = atob('/api/code/machines/studio/sessions/6f1c2a7e+5b9d+4e3a+8c21+000000000002/images/9f86d081884c7d650000000000000001')
+  it('opens nothing for control characters or bytes that were not text', () => {
+    expect(parseOpenHash(`#open=file:${encodeURIComponent(garbage)}`)).toBeNull()
+    expect(parseOpenHash('#open=file:notes%00.md')).toBeNull()
+    expect(parseOpenHash('#open=file:notes%EF%BF%BD.md')).toBeNull()
+  })
+  it('opens nothing for a path that is not percent-encoded right', () => {
+    expect(parseOpenHash('#open=file:notes%E0%A4%A.md')).toBeNull()
+  })
+  it('still opens names with spaces and letters past ASCII', () => {
+    expect(parseOpenHash('#open=file:Team%20Knowledge%20Base/R%C3%A9sum%C3%A9.pdf')).toEqual({ kind: 'file', target: 'Team Knowledge Base/Résumé.pdf' })
+  })
+})

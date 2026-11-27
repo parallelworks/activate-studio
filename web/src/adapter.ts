@@ -1,4 +1,5 @@
 import { refreshNotices, setReplying } from './notices'
+import { attachmentDownloadUrl, openAttachment } from './chatAttachments'
 import type { ChatAdapter, GeneratingReply, ModelsList, StreamCompletion } from '@parallelworks/ui/ai'
 import { toast } from '@parallelworks/ui'
 import { SIGN_IN_TO_CHAT } from './signIn'
@@ -411,14 +412,11 @@ export function createStudioAdapter(): ChatAdapter {
     // onOpen is part of the package's adapter surface as of 0.1.0; it was
     // AttachmentsAdapter type, hence the cast. Attachments live in the KB
     // under uploads/chat/; the id is the base64url rel path, so a tile
-    // click opens the file in the Library via the #open deep link.
+    // click opens the file in the Library via the #open deep link. A pw
+    // code session's images, drawn in the same chat, have ids of their own
+    // and open in the image viewer (chatAttachments.tsx).
     attachments: {
-      onOpen: (att: { id: string }) => {
-        try {
-          const rel = atob(att.id.replace(/-/g, '+').replace(/_/g, '/'))
-          location.hash = `#open=file:${encodeURIComponent(rel).replace(/%2F/gi, '/')}`
-        } catch { /* malformed id: ignore */ }
-      },
+      onOpen: openAttachment,
       // ai-chat 0.5 pages by an opaque cursor and asks whether there is
       // more; the server pages by offset, so the cursor is the next offset.
       list: async ({ limit, cursor }: { limit: number; cursor?: string }) => {
@@ -448,7 +446,7 @@ export function createStudioAdapter(): ChatAdapter {
         const res = await fetch(`/api/chat/attachments/${id}`, { method: 'DELETE' })
         if (!res.ok) throw new Error(`remove: ${res.status}`)
       },
-      downloadUrl: (id: string) => `/api/chat/attachments/${id}/download`,
+      downloadUrl: attachmentDownloadUrl,
     } as ChatAdapter['attachments'],
   }
 }

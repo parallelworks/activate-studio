@@ -27,10 +27,12 @@ type fakePW struct {
 	mu       sync.Mutex
 	created  []map[string]any
 	messages []string
-	answers  []string
-	events   []string
-	seq      int64
-	turn     int
+	// images are the images each message was sent with.
+	images  [][]map[string]any
+	answers []string
+	events  []string
+	seq     int64
+	turn    int
 	// script is the events of a turn (without seq and turnId).
 	script []map[string]any
 	// mcp is how the session's studio MCP server stands: "" (a daemon
@@ -161,10 +163,14 @@ func (f *fakePW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/v1/sessions/s1/events":
 		websocket.Server{Handler: f.stream}.ServeHTTP(w, r)
 	case p == "/v1/sessions/s1/messages":
-		var req struct{ Text string }
+		var req struct {
+			Text   string
+			Images []map[string]any
+		}
 		json.NewDecoder(r.Body).Decode(&req)
 		f.mu.Lock()
 		f.messages = append(f.messages, req.Text)
+		f.images = append(f.images, req.Images)
 		tid := f.runTurn(req.Text)
 		f.mu.Unlock()
 		send(map[string]any{"queued": false, "turnId": tid})
