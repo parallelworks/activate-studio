@@ -35,6 +35,7 @@ import { destinationWhy, libraryLocation, transferApi } from '../transferApi'
 import { LockedButton } from '../components/LockedButton'
 import { MID_QUERY, useMediaQuery, usePhoneLayout } from '../phoneLayout'
 import { TreeResize, clampTree, treeMax } from '../components/TreeResize'
+import { useChromeFolded } from '../tabletChrome'
 
 /** The narrowest an open file reads well beside the tree, in pixels. */
 const FILE_MIN = 480
@@ -670,7 +671,14 @@ export function LibraryView({ display, onDisplay, reveal, replaced, onReplacedRe
   const [asked, setAsked] = useState({ key: openKey, tree: false })
   if (asked.key !== openKey) setAsked({ key: openKey, tree: false })
   const askTree = (tree: boolean) => setAsked({ key: openKey, tree })
-  const crowded = mid && openKey !== null && cardWidth > 0 && cardWidth - treeWidth - DIVIDER < FILE_MIN
+  const crowdedNow = mid && openKey !== null && cardWidth > 0 && cardWidth - treeWidth - DIVIDER < FILE_MIN
+  // While a touch screen's chrome is folded away (tabletChrome.ts) the room
+  // it gives goes to the file: the tree keeps the fold it had, where it
+  // would otherwise open into that room.
+  const chromeFolded = useChromeFolded()
+  const crowdedKept = useRef(crowdedNow)
+  if (!chromeFolded) crowdedKept.current = crowdedNow
+  const crowded = chromeFolded ? crowdedKept.current || crowdedNow : crowdedNow
   const folded = crowded && !(asked.key === openKey && asked.tree)
   const collapsed = !phone && (crowded ? folded : railCollapsed)
   const treeMounted = !collapsed || (folded && !railCollapsed)

@@ -8,6 +8,7 @@ import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
 import { applyRememberedFavicon, applyRememberedNavWidth } from './config'
 import { keepShellInPlace, settleAfterKeyboard } from './shellScroll'
+import { installTabletChrome } from './tabletChrome'
 import { installClipboardFallback } from './clipboard'
 import { installDownloadNotices } from './downloadNotice'
 import { guardDrops } from './dropGuard'
@@ -24,6 +25,8 @@ import './styles.css'
 
 keepShellInPlace()
 settleAfterKeyboard()
+// On a touch screen the chrome folds away while a person reads on.
+installTabletChrome()
 installClipboardFallback()
 // A notice for each file the page saves (an exported conversation, a CSV).
 installDownloadNotices()
