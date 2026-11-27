@@ -220,6 +220,7 @@ func (s *routes) forward(w http.ResponseWriter, r *http.Request, t *pageTarget, 
 	}
 	if method == http.MethodGet && path == "/api/code/sessions" && res.StatusCode == http.StatusOK {
 		raw = claudeCodeListing(r, raw)
+		raw = studioHomeListing(raw, s.a.Cfg.AuthEnabled())
 		if Listed != nil {
 			if v, err := jsonv.Decode(raw); err == nil {
 				Listed(r, jsonv.Arr(jsonv.Path(v, "sessions")))
@@ -258,7 +259,7 @@ func (t *pageTarget) localMachineView() *jsonv.Object {
 	m := t.machine
 	o := jsonv.NewObject("id", m.ID, "name", m.Name, "kind", "local", "owner", "", "hostname", m.Hostname,
 		"status", m.Status, "os", runtime.GOOS, "daemonId", m.DaemonID, "claudeCodeAllowed", false, "remoteStart", !t.only,
-		"directories", !t.only, "sessionGroups", true)
+		"directories", !t.only, "sessionGroups", true, StudioHome, true)
 	// The new session form offers the modes the daemon accepts; without
 	// them the package falls back to a list that has no auto.
 	if len(m.PermissionModes) > 0 {

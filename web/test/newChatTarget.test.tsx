@@ -58,6 +58,12 @@ function Chat({ engine = 'pwcode', kept = false, ...p }: { engine?: string; kept
     </div>
   )
 }
+/** The open menu's rows, in order. */
+const menuRows = () => waitFor(() => {
+  const rows = [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
+  expect(rows.length).toBeGreaterThan(0)
+  return rows
+})
 const machineChip = () => screen.findByTestId('agents-machine-chip', {}, { timeout: 5000 })
 const folderChip = () => screen.findByTestId('agents-directory-chip', {}, { timeout: 5000 })
 async function chooseMachine(name: RegExp) {
@@ -81,6 +87,33 @@ describe('where a new pw code chat starts', () => {
     expect(firstMessageStart(null)).toEqual({})
     await act(async () => { await new Promise(r => setTimeout(r, 100)) })
     expect(asked.filter(a => a.includes('/api/chat/pwcode/start')).length).toBe(1)
+  })
+
+  it('names the Studio\'s own machine as this Studio\'s, first and chosen ahead of the workspace, and says it runs as the person', async () => {
+    const workspace = { ...base, id: 'workspace', name: 'workspace', kind: 'workspace' }
+    studio({ machines: [{ ...own, owner: 'alex' }, workspace, gpu] })
+    render(<Chat />)
+    const chip = await machineChip()
+    expect(chip).toHaveTextContent('box (this Studio)')
+    expect(chip.getAttribute('title')).toMatch(/runs as you \(alex\)/)
+    fireEvent.click(chip)
+    const rows = await menuRows()
+    expect(rows[0]).toHaveTextContent(/^box \(this Studio\)/)
+    expect(rows[0]).toHaveAttribute('aria-checked', 'true')
+    expect(rows[1]).toHaveTextContent(/^workspace/)
+    expect(firstMessageStart(null)).toEqual({})
+  })
+
+  it('shows a command that wraps, with Copy beside it, for a machine the Studio does not reach', async () => {
+    const lap = { ...base, id: 'm3', name: 'lap', kind: 'local' }
+    const command = 'sh -c "$(pw auth token --print | tail -n 1 | sed \'s/^/Authorization: Bearer /\' | curl -fsS -H @- \'https://platform.example/me/session/ada/studio/api/mcp/bridge/setup.sh?machine=m3\')"'
+    studio({ machines: [own, lap], tools: [{ state: 'command', machine: 'lap', machineId: 'm3', command, uncommand: 'pw code mcp remove --scope user studio' }] })
+    render(<Chat />)
+    await chooseMachine(/^lap/)
+    fireEvent.click(await screen.findByTestId('machine-tools-button'))
+    const shown = await screen.findByTestId('machine-tools-command')
+    expect(shown.textContent).toBe(command)
+    expect(within(screen.getByTestId('machine-tools-popover')).getByRole('button', { name: 'Copy command' })).toBeInTheDocument()
   })
 
   it('is there only while pw code answers a chat with no session, right over the composer', async () => {

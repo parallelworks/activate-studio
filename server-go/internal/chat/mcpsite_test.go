@@ -175,7 +175,7 @@ func TestTheCardHasThePasteCommand(t *testing.T) {
 	}
 	var out map[string]any
 	json.Unmarshal(w.Body.Bytes(), &out)
-	if p, _ := out["paste"].(string); !strings.HasPrefix(p, "pw code mcp add --scope user --force studio -- sh -c '") {
+	if p, _ := out["paste"].(string); !strings.HasPrefix(p, `sh -c "$(pw auth token --print`) || strings.Contains(p, "\n") {
 		t.Errorf("paste %q", out["paste"])
 	}
 }

@@ -3232,8 +3232,10 @@ span[data-status='pending'] > svg { color: var(--theme-info); }
 .code-tools-popover { width: min(24rem, calc(100vw - 32px)); padding: 10px 12px; font-size: 13px; }
 .code-tools-popover p { margin: 0; overflow-wrap: anywhere; }
 .code-tools-popover p + p, .code-tools-command { margin-top: 8px; }
+/* The command wraps, scrolls past a few lines, and keeps Copy beside it. */
 .code-tools-command { display: flex; align-items: flex-start; gap: 4px; padding: 6px 4px 6px 8px; border-radius: 6px; background: var(--theme-muted-panel-bg); }
-.code-tools-command code { flex: 1; min-width: 0; max-height: 5rem; overflow: auto; font-family: ui-monospace, monospace; font-size: 11.5px; white-space: pre; }
+.code-tools-command code { flex: 1; min-width: 0; max-height: 7.5rem; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.code-tools-command > :last-child { flex: none; }
 .code-tools-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; width: 100%; max-width: var(--chat-column, 50rem); margin: 0 auto 12px; padding: 0 24px; box-sizing: border-box; font-size: 12px; }
 .code-tools-choice label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .pwcode-start .code-tools-choice { flex: 1 1 100%; margin: 2px 0; padding: 0 7px; max-width: none; }

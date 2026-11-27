@@ -18,6 +18,7 @@ import (
 
 	"github.com/parallelworks/activate-studio/server-go/internal/agentsmd"
 	"github.com/parallelworks/activate-studio/server-go/internal/conversations"
+	"github.com/parallelworks/activate-studio/server-go/internal/jsonv"
 	kbpkg "github.com/parallelworks/activate-studio/server-go/internal/kb"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode"
 	"github.com/parallelworks/activate-studio/server-go/internal/pwcode/pwcodetest"
@@ -290,7 +291,7 @@ func TestTheComposerIsToldWhereAChatStarts(t *testing.T) {
 	}
 	own := out["machines"].([]any)[0].(map[string]any)
 	// By its resource's name, with its host's and its daemon's beside it.
-	if own["name"] != "gpu-box" || own["hostname"] != "gpu-box.example" || own["daemonId"] != "d1" || own["remoteStart"] != true || own["status"] != "connected" || own["directories"] != true {
+	if own["name"] != "gpu-box" || own["hostname"] != "gpu-box.example" || own["daemonId"] != "d1" || own["remoteStart"] != true || own["status"] != "connected" || own["directories"] != true || own["studioHome"] != true {
 		t.Errorf("own machine: %v", own)
 	}
 	if s := mustJSON(out["sessions"]); !strings.Contains(s, `"machineId":"studio"`) || !strings.Contains(s, `"workspace":"/home/me/repo"`) || !strings.Contains(s, `"machineId":"m2"`) || strings.Contains(s, "Fix the build") {
@@ -503,5 +504,25 @@ func TestUnderSignInTheClusterIsReachedAsThePerson(t *testing.T) {
 		if k != "testcluster cy-own-key" {
 			t.Errorf("reached as %q", k)
 		}
+	}
+}
+
+// The Studio's own machine is marked as this Studio's, and under sign-in
+// with no home cluster known it says why nothing starts there, and takes no
+// start.
+func TestTheStudiosOwnMachineSaysWhyItCannotStart(t *testing.T) {
+	m := signInStudio(t, &fakePW{script: helloTurn})
+	r := as("cy", http.MethodGet, "/api/chat/pwcode/start", "")
+	own := m.startMachine(r, nil)
+	if jsonv.Path(own, "studioHome") != true || jsonv.String(jsonv.Path(own, "status")) != "connected" || jsonv.Path(own, "remoteStart") != true {
+		t.Fatalf("own: %s", mustJSON(own))
+	}
+	t.Setenv("STUDIO_HOME_CLUSTER", "")
+	t.Setenv("PW_USER", "")
+	t.Setenv("PW_POOL_NAME", "")
+	own = m.startMachine(r, nil)
+	if jsonv.Path(own, "studioHome") != true || jsonv.String(jsonv.Path(own, "status")) == "connected" || jsonv.Path(own, "remoteStart") != nil ||
+		!strings.Contains(jsonv.String(jsonv.Path(own, "error")), "STUDIO_HOME_CLUSTER") {
+		t.Fatalf("no home cluster: %s", mustJSON(own))
 	}
 }

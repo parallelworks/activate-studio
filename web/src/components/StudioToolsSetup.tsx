@@ -197,7 +197,7 @@ export function StudioToolsSetup({ machineName, conversationId, onDismiss, defau
         : <>
             {reach.paste
               ? <>
-                  <p>1. In a terminal on {where}, paste this once. It adds the same entry the Studio would, and allows no tool without asking; the entry uses pw's own ACTIVATE sign-in there, so it needs no key (it needs curl):</p>
+                  <p>1. In a terminal on {where}, paste this once. It fetches the same entry the Studio would add from this Studio with pw's own ACTIVATE sign-in there, so it needs no key (it needs curl), and allows no tool without asking:</p>
                   <pre className="studio-tools-command" data-testid="studio-tools-paste">{reach.paste}</pre>
                   <p>
                     <Button variant="secondary" size="sm" onClick={() => void copy(reach.paste ?? '')}>{copied === reach.paste ? 'Copied' : 'Copy the command'}</Button>{' '}

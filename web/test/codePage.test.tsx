@@ -28,6 +28,12 @@ const other = { ...machine, id: 'm2', name: 'gpu', hostname: 'gpu.example', daem
 const now = new Date().toISOString()
 const session = (o: Record<string, unknown>) => ({ machineId: 'm1', id: 'x', name: 't', status: 'idle', workspace: '/home/alex/solver', createdAt: now, updatedAt: now, messageCount: 1, ...o })
 
+/** The open menu's rows, in order. */
+const menuRows = () => waitFor(() => {
+  const rows = [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
+  expect(rows.length).toBeGreaterThan(0)
+  return rows
+})
 interface Sent { method: string; path: string; body: Record<string, unknown> | null }
 
 /** The Studio's routes the page calls, answered as the Studio would. */
@@ -287,12 +293,47 @@ describe('the Code page', () => {
     }
   })
 
+  it('names the Studio\'s own machine as this Studio\'s, lists it first and starts on it when nothing was picked', async () => {
+    const workspace = { ...machine, id: 'workspace', name: 'workspace', kind: 'workspace', hostname: 'ws.example', daemonId: 'd9' }
+    studio({ machines: [workspace, other, { ...machine, studioHome: true, owner: 'alex' }] })
+    render(<CodePage />)
+    const chip = await screen.findByTestId('agents-machine-chip')
+    await waitFor(() => expect(chip).toHaveTextContent('box (this Studio)'))
+    expect(chip.getAttribute('title')).toMatch(/Where this Studio runs\. pw code here runs as you \(alex\)/)
+    fireEvent.click(chip)
+    const rows = await menuRows()
+    expect(rows[0]).toHaveTextContent(/^box \(this Studio\)/)
+    expect(rows[0]).toHaveTextContent('runs as you')
+    expect(rows.map(r => r.textContent)).toEqual(expect.arrayContaining([expect.stringMatching(/^workspace/), expect.stringMatching(/^gpu/)]))
+    expect(rows.filter(r => /this Studio\)/.test(r.textContent ?? '')).length).toBe(1)
+  })
+
+  it('keeps a machine picked before over the Studio\'s own', async () => {
+    localStorage.setItem('studio.code.agents:startMachine', JSON.stringify('m2'))
+    studio({ machines: [{ ...machine, studioHome: true }, other] })
+    render(<CodePage />)
+    await waitFor(async () => expect(await screen.findByTestId('agents-machine-chip')).toHaveTextContent(/^gpu$/))
+  })
+
+  it('says why the Studio\'s own machine takes no start, first in the menu', async () => {
+    const why = 'This Studio does not know the cluster it runs on, so it cannot start pw code here. Its operator sets STUDIO_HOME_CLUSTER.'
+    studio({ machines: [{ id: 'studio', name: 'This Studio', kind: 'existing', status: 'unreachable', error: why, studioHome: true }, other] })
+    render(<CodePage />)
+    const chip = await screen.findByTestId('agents-machine-chip')
+    await waitFor(() => expect(chip).toHaveTextContent(/^gpu$/))
+    fireEvent.click(chip)
+    const rows = await menuRows()
+    expect(rows[0]).toHaveTextContent('This Studio')
+    expect(rows[0]).toHaveTextContent('STUDIO_HOME_CLUSTER')
+    expect(rows[0]).toHaveAttribute('aria-disabled', 'true')
+  })
+
   it('gives a computer that connected itself its one command, and nothing more', async () => {
     onGpu({ state: 'command', command: "pw code mcp add --scope user studio -- sh -c 'x'", uncommand: 'pw code mcp remove --scope user studio', why: 'gpu is a computer that connected itself to ACTIVATE.' }, {}, { kind: 'local' })
     fireEvent.click(await toolsMark())
     const tip = await screen.findByTestId('machine-tools-popover')
     expect(tip.querySelectorAll('p').length).toBe(1)
-    expect(tip).toHaveTextContent("Run this once on gpu to give its pw code this Studio's tools:pw code mcp add --scope user studio -- sh -c 'x'")
+    expect(tip).toHaveTextContent("Run this once in a terminal on gpu to give its pw code this Studio's tools. It fetches the setup from this Studio with your pw sign-in there.pw code mcp add --scope user studio -- sh -c 'x'")
     expect(within(tip).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Copy command'])
     expect(screen.queryByTestId('machine-tools-choice')).toBeNull()
   })

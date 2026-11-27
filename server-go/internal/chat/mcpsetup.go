@@ -110,6 +110,46 @@ func bridgePaste(url, machine string) string {
 // bridgeMachineParam names the machine in an entry's address.
 const bridgeMachineParam = "?machine="
 
+// bridgeScriptPath is where the Studio serves bridgePaste as a script, for
+// bridgeFetch.
+const bridgeScriptPath = "/api/mcp/bridge/setup.sh"
+
+// bridgeFetch is bridgePaste as one short line: it fetches the same command
+// from the Studio, through the session proxy with the person's own pw
+// sign-in on that machine, and runs it. The token goes to curl on its
+// input (-H @-), never on a command line there. url is the Studio's MCP
+// endpoint, as bridgeURL gives it.
+func bridgeFetch(url, machine string) string {
+	at := strings.TrimSuffix(url, "/api/mcp") + bridgeScriptPath
+	if pwcode.IsRouteID(machine) {
+		at += bridgeMachineParam + machine
+	}
+	return `sh -c "$(pw auth token --print | tail -n 1 | sed 's/^/Authorization: Bearer /' | curl -fsS -H @- ` + bridgeQuote(at) + `)"`
+}
+
+// bridgeScript is GET /api/mcp/bridge/setup.sh?machine=: bridgePaste for
+// the person whose pw sign-in fetched it, to run once on that machine. It
+// holds no key, and only a request through the session proxy gets it.
+func (m *Module) bridgeScript(w http.ResponseWriter, r *http.Request) error {
+	if bridgeCrossSite(r) {
+		return pwErr(403, "Fetch this from a terminal, with your pw sign-in.")
+	}
+	url, why := m.bridgeReach(r)
+	if why != "" {
+		return pwErr(409, why)
+	}
+	machine := r.URL.Query().Get("machine")
+	if machine != "" && !pwcode.IsRouteID(machine) {
+		return pwErr(400, "machine: one of your machines")
+	}
+	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, err := io.WriteString(w, "command -v pw >/dev/null 2>&1 || { echo 'pw is not on the PATH here.' >&2; exit 1; }\n"+
+		"command -v curl >/dev/null 2>&1 || { echo 'curl is not installed here.' >&2; exit 1; }\n"+
+		bridgePaste(url, machine)+" && echo \"pw code here has this Studio's tools from its next session.\"\n")
+	return err
+}
+
 // bridgeUnpaste is the command that takes bridgePaste's entry out again.
 const bridgeUnpaste = "pw code mcp remove --scope user " + studioMCPName
 
@@ -158,11 +198,20 @@ func machOf(o *jsonv.Object) bridgeMach {
 // with its pw code connected to ACTIVATE. The Studio neither offers its
 // tools on a machine that is not, nor opens pw ssh to one to add them.
 func bridgeOnline(mach bridgeMach) error {
-	if mach.Status == "connected" {
+	switch {
+	case mach.Status == "connected":
 		return nil
+	case mach.Kind == machineWorkspace && mach.Status == "starting":
+		return pwErr(409, "Your user workspace is starting. Add the tools once it is on.")
+	case mach.Kind == machineWorkspace:
+		return pwErr(409, "Your user workspace is not running. Start it, then add the tools.")
 	}
 	return pwErr(409, firstNonEmpty(mach.Name, mach.ID)+" is not connected. Start it, then add the tools.")
 }
+
+// machineWorkspace is the kind, and the id, the platform's pw code listing
+// gives the viewer's own user workspace, and the name pw ssh knows it by.
+const machineWorkspace = "workspace"
 
 // bridgeMachineFn is the viewer's machine as the platform lists it to them
 // (a test seam).
@@ -243,6 +292,14 @@ func bridgeByHand(mach bridgeMach) string {
 	switch {
 	case mach.Kind == "local":
 		return name + " is a computer that connected itself to ACTIVATE, and the Studio cannot open a terminal on it: do it yourself in a terminal there."
+	case mach.Kind == machineWorkspace:
+		// pw ssh names the viewer's own workspace by the word alone, and
+		// the platform lists only the viewer's own (bridgeCheck holds the
+		// owner to them).
+		if mach.ID != machineWorkspace {
+			return "The Studio cannot name " + name + " to pw ssh: do it yourself in a terminal there."
+		}
+		return ""
 	case mach.Kind != "cloud" && mach.Kind != "instance" && mach.Kind != "existing":
 		return "The Studio does not know how to reach " + name + " (an ACTIVATE machine of kind " + firstNonEmpty(mach.Kind, "unknown") + "): do it yourself in a terminal there."
 	case mach.Name == "" || !bridgeName.MatchString(mach.Name) || mach.Owner != "" && !bridgeName.MatchString(mach.Owner):
@@ -251,11 +308,14 @@ func bridgeByHand(mach bridgeMach) string {
 	return ""
 }
 
-// bridgeSite is the pw ssh site of the viewer's machine mach, always
-// pw://<owner>/<name> (pw ssh finds no cluster by its bare name), and
-// their own ACTIVATE credential. An existing cluster's owner is the one
-// the pw code listing gives; where it gives none, the one the viewer's own
-// cluster listing gives for that name; and only then the viewer.
+// bridgeSite is the pw ssh site of the viewer's machine mach, and their own
+// ACTIVATE credential. A resource's is always pw://<owner>/<name> (pw ssh
+// finds no cluster by its bare name): an existing cluster's owner is the
+// one the pw code listing gives; where it gives none, the one the viewer's
+// own cluster listing gives for that name; and only then the viewer. The
+// viewer's user workspace is the word workspace, which pw ssh takes for the
+// workspace of the key's own user (pw://<owner>/workspace would be a
+// cluster of that name), so with their key it can be no one else's.
 func (m *Module) bridgeSite(r *http.Request, mach bridgeMach) (site, key string, err error) {
 	key, err = m.bridgeCheck(r, mach)
 	if err != nil {
@@ -263,6 +323,9 @@ func (m *Module) bridgeSite(r *http.Request, mach bridgeMach) (site, key string,
 	}
 	if err := bridgeOnline(mach); err != nil {
 		return "", "", err
+	}
+	if mach.Kind == machineWorkspace {
+		return machineWorkspace, key, nil
 	}
 	owner := mach.Owner
 	if owner == "" {
@@ -427,7 +490,7 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 		if bridgeByHand(mach) == "" || user(r) == nil || m.viewerPlatformKey(r) == "" {
 			return o
 		}
-		o.State, o.Command, o.Uncommand = "command", bridgePaste(url, mach.ID), bridgeUnpaste
+		o.State, o.Command, o.Uncommand = "command", bridgeFetch(url, mach.ID), bridgeUnpaste
 		if set {
 			o.State = "set"
 		}
@@ -438,7 +501,7 @@ func (m *Module) bridgeOffer(r *http.Request, mach bridgeMach) bridgeOfferT {
 		// is not checked again until it is on.
 		o.State, o.Available, o.Allows = "set", why == "" && bridgeOnline(mach) == nil, m.bridgeAllows(r)
 		if why != "" && bridgeByHand(mach) != "" {
-			o.Command, o.Uncommand = bridgePaste(url, mach.ID), bridgeUnpaste
+			o.Command, o.Uncommand = bridgeFetch(url, mach.ID), bridgeUnpaste
 		}
 		return o
 	}
