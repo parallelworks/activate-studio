@@ -12,6 +12,18 @@ The server writes the brand icon into the page, with a dark variant for dark dev
 
 Images up to pw code's own limit now reach the session from the session box, by paste, drop or +, and a picture sent with a new chat's first message goes to the session as an image. A sent picture opens in the image viewer. A library link whose path cannot be a path opens nothing.
 
+### On an iPad, Jump to latest stays hidden at the latest turn (#999)
+
+At the end of a chat on an iPad, Jump to latest no longer shows, and the chat no longer scrolls far past its last turn.
+
+### Pinch zoom on an iPad is left to the pinch (#1000)
+
+After a pinch zoom on an iPad, taps land on what they visually hit and menus open where the tap was.
+
+### On an upright iPad the conversation and session lists open as drawers (#1001)
+
+In portrait on an iPad, the chat and session lists open as drawers over the page, so a conversation gets the full width.
+
 ## v1.205 (2026-11-27)
 
 ### Studio tools in the user workspace; name this Studio's machine (#995)
