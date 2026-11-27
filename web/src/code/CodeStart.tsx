@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  canStartHere,
   machineChip,
   machineMenu,
   machinesById,
@@ -54,6 +55,7 @@ import { useComposerImages } from '../pwcode/session/useComposerImages'
 import { type PageSession, pwCodePage, setToolsChoice, startedWell } from './api'
 import { AgentModelControls, useLastAgentModel } from './AgentModelControls'
 import { DirectoryPicker } from './DirectoryPicker'
+import { isStudioMachine, studioMachineName, studioMachineTip } from './studioMachine'
 import { addsTools, asksTools, type MachineToolsControl, ToolsChoice, ToolsMark, ToolsMarkButton } from './machineTools'
 import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useCodeGroups, useStartAccount, useStartEffort, useStartMachine, useStartMode } from './parts'
 
@@ -65,7 +67,10 @@ import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useCodeGro
  * session started here opens in the page's pane.
  */
 
-export type Machine = PwCodeStartMachine & PwCodeMachine
+export type Machine = PwCodeStartMachine & PwCodeMachine & {
+  /** This Studio's own machine (server-go codesessions.StudioHome). */
+  studioHome?: boolean
+}
 
 /** A session being started: where, and its first message. */
 export interface Starting {
@@ -91,7 +96,10 @@ export function CodeStart({ onOpen, onStarting, onStarted, tools, top }: {
   const { compact } = useCompactAgo()
   const machines = useMemo(() => (data?.machines ?? []) as Machine[], [data])
   const sessions = useMemo(() => data?.sessions ?? [], [data])
-  const location = useStartLocation(machines, sessions, useStartMachine())
+  const saved = useStartMachine()
+  // Nothing picked yet: this Studio's own machine, where it takes a start.
+  const home = machines.find(m => isStudioMachine(m) && canStartHere(m))?.id
+  const location = useStartLocation(machines, sessions, saved.saved || !home ? saved : { ...saved, saved: home })
   const screen = useStartScreen(pwCodePage, { location, describeError })
   const startMode = useStartPermissionMode(useStartMode(), location.machine)
   const machineById = useMemo(() => machinesById(machines), [machines])
@@ -215,21 +223,37 @@ export function machineMenuEntries(location: PwCodeStartLocation<Machine>, t: Tr
     const machine = byId.get(id)
     return machine && <MachineIcon machine={machine} />
   }
+  // This Studio's own machine by its name and what it is, first.
+  const named = (id: string, label: string) => {
+    const machine = byId.get(id)
+    return machine ? studioMachineName(machine) : label
+  }
+  const ours = (id: string) => isStudioMachine(byId.get(id))
   const up = menu.startable.map(m => {
     const v = tools.view(byId.get(m.id))
+    const what = ours(m.id) ? `${m.description}, runs as you` : m.description
     return {
-      label: m.label,
+      label: named(m.id, m.label),
       // The mark is only seen: the words are the row's.
-      description: v ? `${m.description}, ${v.on ? 'with' : 'without'} this Studio's tools` : m.description,
+      description: v ? `${what}, ${v.on ? 'with' : 'without'} this Studio's tools` : what,
       icon: icon(m.id), checked: m.checked, onClick: () => menu.pick(m.id),
       ...(v ? { badge: <ToolsMark on={v.on} /> } : {}),
+      ours: ours(m.id),
     }
   })
   const own = tools.entries(location.machine)
-  const unavailable = menu.down.map(m => ({ label: m.label, description: m.description, icon: icon(m.id), disabled: true, onClick: () => menu.pick(m.id) }))
+  const down = menu.down.map(m => {
+    const why = ours(m.id) ? byId.get(m.id)?.error : undefined
+    return { label: named(m.id, m.label), description: why ?? m.description, icon: icon(m.id), disabled: true, onClick: () => menu.pick(m.id), ours: ours(m.id) }
+  })
+  const plain = ({ ours: _, ...e }: { ours: boolean } & MenuEntry): MenuEntry => e
+  // One that takes no start stays first too, saying why.
+  const lead = [...up.filter(e => e.ours), ...down.filter(e => e.ours)].map(plain)
+  const startable = up.filter(e => !e.ours).map(plain)
+  const unavailable = down.filter(e => !e.ours).map(plain)
   const rest = own.length ? [menuDivider, ...own] : []
-  if (menu.downLabel === undefined) return [...up, ...unavailable, ...rest]
-  return [...up, menuDivider, { label: menu.downLabel, items: unavailable }, ...rest]
+  if (menu.downLabel === undefined || unavailable.length === 0) return [...lead, ...startable, ...unavailable, ...rest]
+  return [...lead, ...startable, menuDivider, { label: menu.downLabel, items: unavailable }, ...rest]
 }
 
 export function MachineChip({ finding, machine, pending, items, t }: {
@@ -243,8 +267,11 @@ export function MachineChip({ finding, machine, pending, items, t }: {
   const chip = machineChip(machine, t, finding, !!pending)
   const look = useMachineLook(machine ?? {})
   const icon = machine ? <MachineIcon machine={machine} /> : chip.waiting && <Loader inline decorative size={12} />
+  const host = machine && look.known && look.title !== machine.name ? look.title : undefined
+  const ours = studioMachineTip(machine)
+  const title = ours ? [ours, host].filter(Boolean).join(' ') : host
   return (
-    <SystemChip finding={finding} label={chip.label} text={chip.text} title={machine && look.known ? look.title : undefined} icon={icon} items={items}
+    <SystemChip finding={finding} label={chip.label} text={machine && !finding ? studioMachineName(machine) : chip.text} title={title} icon={icon} items={items}
       testId="agents-machine-chip" findingTestId="agents-finding-machines" />
   )
 }

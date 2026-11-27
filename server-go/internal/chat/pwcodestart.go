@@ -596,6 +596,13 @@ func (m *Module) startMachine(r *http.Request, here *pwHere) *jsonv.Object {
 	} else {
 		own.Set("os", runtime.GOOS)
 	}
+	if signIn && userlibs.HomeCluster() == "" {
+		// Nothing starts there: the entry says why, and is not the default.
+		own.Set("name", "This Studio")
+		own.Set("status", "unreachable")
+		own.Set("error", codesessions.NoHomeCluster)
+		return own
+	}
 	own.Set("remoteStart", true)
 	own.Set("directories", true)
 	return own

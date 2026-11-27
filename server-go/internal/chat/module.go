@@ -382,6 +382,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("POST /api/mcp/bridge/remove", m.bridgeRemove)
 	h("POST /api/mcp/bridge/prefs", m.bridgeDecline)
 	h("GET /api/mcp/bridge/machines", m.bridgeMachinesRoute)
+	h("GET /api/mcp/bridge/setup.sh", m.bridgeScript)
 	m.attachmentRoutes(h)
 
 	a.Providers.GatewayConfigured = func(r *http.Request) bool { return m.GatewayKey() != "" }

@@ -172,7 +172,7 @@ func (m *Module) bridgeRoute(w http.ResponseWriter, r *http.Request) error {
 		o := m.bridgeSetupOffer(r, id)
 		setup, on = &o, o.MachineID
 	}
-	out.SetValue("paste", bridgePaste(url, on))
+	out.SetValue("paste", bridgeFetch(url, on))
 	out.SetValue("tools", len(tools))
 	out.SetValue("ownKey", deref(tc.UserKey) != "")
 	out.SetValue("platformTools", slices.ContainsFunc(tools, func(s ToolSpec) bool { return isPlatformTool(s.Name) }))

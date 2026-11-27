@@ -161,8 +161,8 @@ export function ToolsMarkButton({ machine, control, mode }: { machine: M; contro
     </>
   } else if (tools?.state === 'command' && tools.command) {
     body = <>
-      <p>Run this once on {machine.name} to give its pw code this Studio's tools:</p>
-      <div className="code-tools-command"><code>{tools.command}</code><CopyButton text={tools.command} label="command" /></div>
+      <p>Run this once in a terminal on {machine.name} to give its pw code this Studio's tools. It fetches the setup from this Studio with your pw sign-in there.</p>
+      <div className="code-tools-command"><code data-testid="machine-tools-command">{tools.command}</code><CopyButton text={tools.command} label="command" /></div>
     </>
   } else {
     body = <>

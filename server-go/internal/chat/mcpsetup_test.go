@@ -522,7 +522,7 @@ func offersOf(t *testing.T, m *Module, u *auth.User) map[string]bridgeOfferT {
 func TestAComputerThatConnectedItselfIsGivenACommand(t *testing.T) {
 	m, f, _ := setupStudio(t)
 	o := offersOf(t, m, bobProxy)["m-laptop"]
-	if o.State != "command" || o.Available || !strings.HasPrefix(o.Command, "pw code mcp add --scope user") || !strings.Contains(o.Command, "/me/session/ada/studio/api/mcp?machine=m-laptop'") || o.Uncommand != "pw code mcp remove --scope user studio" {
+	if o.State != "command" || o.Available || !strings.HasPrefix(o.Command, `sh -c "$(pw auth token --print`) || !strings.Contains(o.Command, "/me/session/ada/studio/api/mcp/bridge/setup.sh?machine=m-laptop'") || o.Uncommand != "pw code mcp remove --scope user studio" {
 		t.Fatalf("%+v", o)
 	}
 	if strings.Contains(o.Command, "pwt_") {

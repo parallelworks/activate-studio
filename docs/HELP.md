@@ -64,7 +64,7 @@ A conversation keeps what answered it last, in any browser, until you switch it.
 
 ### A pw code chat
 
-- **Where it runs** shows over the message box: the machine and the folder. They start at the Studio's own computer or cluster and your library's folder, or `~/studio-chat`. Choose others before the first message; after it they stay.
+- **Where it runs** shows over the message box: the machine and the folder. They start at the Studio's own computer or cluster, named with **(this Studio)**, for example **my-cluster (this Studio)**, and listed first, where pw code runs as you; and your library's folder, or `~/studio-chat`. Choose others before the first message; after it they stay.
 - **From the Library:** right-click a folder or file and choose **New pw code chat here** (see **Library**). The machine and folder are set already.
 - **Another folder:** the list shows the folders your own account can read. The session has the Studio's tools as always, and the Studio writes nothing of its own into a folder you chose.
 - **Another machine:** one of yours that is connected to ACTIVATE and takes new sessions from it. A mark beside it says whether pw code there has the Studio's tools, and **Add the Studio's tools to cluster-a** (the machine's name), ticked on your first message, adds them where it can. Its models and its widest permission mode are that machine's own. A persona does not go to another machine.
@@ -324,7 +324,7 @@ Sessions are grouped: what needs you, pinned, your own groups, then active and i
 
 ### Start a session
 
-Choose the machine, the folder (type a path, Tab opens a folder, Enter uses it), the permission mode, the model and the effort, then describe the task. The first message may have images and may start with `/goal` or `/plan`. While it starts you can open other sessions; if it does not start, your message is back in its box with the reason. On the Studio's own machine a session always has the Studio's tools; on another machine, where pw code there has them, which a mark beside the machine shows. Below, what waits on you is answered in place.
+Choose the machine (the Studio's own, marked **(this Studio)**, is first and is the default until you pick another), the folder (type a path, Tab opens a folder, Enter uses it), the permission mode, the model and the effort, then describe the task. The first message may have images and may start with `/goal` or `/plan`. While it starts you can open other sessions; if it does not start, your message is back in its box with the reason. On the Studio's own machine a session always has the Studio's tools; on another machine, where pw code there has them, which a mark beside the machine shows. Below, what waits on you is answered in place.
 
 ### Continue in Assistant
 
@@ -338,8 +338,8 @@ Choose the machine, the folder (type a path, Tab opens a folder, Enter uses it),
 
 A session on another machine has the Studio's search tools once its pw code has this Studio added, with a `studio` entry that asks pw on that machine for its own access token, so nothing secret is written there. It works where the Studio is opened through ACTIVATE and MCP access is on.
 
-- **A cluster of yours:** the first session or chat you start there has **Add the Studio's tools to cluster-a** (the machine's name), ticked; continuing a session there asks the same; and **Add** is in the Code page's machine menu. It reaches your machine with your own sign-in over pw ssh, checks pw is signed in as you, and adds the `studio` entry. It leaves the entry for another Studio alone until you say so. **Check** and **Remove**, at the end of the machine menu, look again and take it out.
-- **A computer that connected itself to ACTIVATE:** the Studio cannot open a terminal on it. The mark beside the machine shows the one command to run there, with **Copy**, and a chat's card has it too. It needs curl; without it, **No curl there? Use an ACTIVATE API key** has another.
+- **A cluster of yours, or your user workspace:** the first session or chat you start there has **Add the Studio's tools to cluster-a** (the machine's name), ticked; continuing a session there asks the same; and **Add** is in the Code page's machine menu. It reaches your machine with your own sign-in over pw ssh, checks pw is signed in as you, and adds the `studio` entry. A workspace that has shut down says so: start it, then add them. It leaves the entry for another Studio alone until you say so. **Check** and **Remove**, at the end of the machine menu, look again and take it out.
+- **A computer that connected itself to ACTIVATE:** the Studio cannot open a terminal on it. The mark beside the machine shows a one-line command to run there, with **Copy**, and a chat's card has it too. It fetches the setup from this Studio with that computer's own pw sign-in. It needs curl; without it, **No curl there? Use an ACTIVATE API key** has another.
 - The tools that only read run without asking on that machine in turns you type; a turn sent from a chat or PW Code on the web asks, and in read-only or plan mode does not run them. **Remove** takes out the entry and these rules and leaves the rest. A project with its own `.mcp.json` needs the Studio added there too.
 
 # More
