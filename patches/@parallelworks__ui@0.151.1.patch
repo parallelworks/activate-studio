@@ -1,5 +1,5 @@
 diff --git a/dist/ai/components/ChatMessageList.js b/dist/ai/components/ChatMessageList.js
-index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900f1310faf 100644
+index 2323790a9fbf4669f21a20add2837b3e3c626056..96b1b95191d730b34935fdf3fe8b6bfbb80a7ad3 100644
 --- a/dist/ai/components/ChatMessageList.js
 +++ b/dist/ai/components/ChatMessageList.js
 @@ -6,6 +6,7 @@ import { CheckIcon } from "../../icons/CheckIcon.js";
@@ -20,7 +20,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  /** The next messages to read for a search: those the list doesn't draw and
  *  hasn't read, about READ_PARTS parts of them, nearest the window first. */
  function unread(messages, start, end, index) {
-@@ -85,10 +89,18 @@ function unread(messages, start, end, index) {
+@@ -85,10 +89,49 @@ function unread(messages, start, end, index) {
  	}
  	return picked.sort((a, b) => a - b).flatMap((i) => messages[i] ?? []);
  }
@@ -31,6 +31,37 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
 +	streamingParts: [],
 +	thinkingStartTime: null
 +};
++/** A finger on the thread. It reads back when it moves down the screen, as a
++*  wheel turned up does, and the list lets go of the latest turn then, if
++*  there is anything above to read. A finger moving up reads on and keeps it.
++*  iPadOS fires touchmove for any drag, including one at the end of a thread
++*  that cannot move, and no scroll followed to take the list back, so "Jump
++*  to latest" stayed up at the latest turn: a touch that moved nothing gives
++*  the list back to the end. */
++var TOUCH_SLOP = 4;
++function releaseTouch(el, { release, repin }) {
++	let low = null;
++	let top = 0;
++	return {
++		start(e) {
++			low = e.touches?.[0]?.clientY ?? null;
++			top = el.scrollTop;
++		},
++		move(e) {
++			const y = e.touches?.[0]?.clientY;
++			if (y === void 0 || low === null) {
++				release();
++				return;
++			}
++			if (y - low > TOUCH_SLOP && el.scrollTop > 0) release();
++			low = Math.min(low, y);
++		},
++		end() {
++			low = null;
++			if (Math.abs(el.scrollTop - top) < 1 && el.scrollHeight - el.scrollTop - el.clientHeight < 24) repin();
++		}
++	};
++}
  var jumpClasses = "chat-composer chat-jump rounded-full px-3 py-1.5 text-xs font-medium theme-text transition-colors";
  function ChatMessageList({ messages, allMessages, streamingMessage: streamingMessageProp, queuedMessages, onRemoveQueued, canRemoveQueued, onEditQueued, queueDelivery = "afterReply", editingMessageId, showAuthor, currentUsername, onNavigateBranch, onEditMessage, onSaveEdit, onCancelEdit, onRegenerateMessage, onRetryMessage, onOpenReasoning, onApprovalAnswer, inputElement, isStreaming: isStreamingProp, flush, foldEveryRun, label, footer, workingIndicator = true, pinPrompt, whole = false, textIndex, indexing = false, ref }) {
  	const { adapter, isStreaming: providerStreaming } = useChat();
@@ -40,7 +71,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  	const isStreaming = isStreamingProp ?? providerStreaming;
  	const conversationId = messages[0]?.conversationId;
  	const textInParts = streamingParts.some((part) => part.kind === "text");
-@@ -195,10 +207,16 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -195,10 +238,16 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	const readerRef = useRef(null);
  	useEffect(() => {
  		if (!indexing || !textIndex || reading.length > 0) return;
@@ -59,7 +90,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  		return () => clearTimeout(timer);
  	}, [
  		indexing,
-@@ -212,7 +230,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -212,7 +261,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	useLayoutEffect(() => {
  		if (reading.length === 0 || !textIndex) return;
  		const rows = [...readerRef.current?.children ?? []];
@@ -68,7 +99,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  			const row = rows.find((r) => r instanceof HTMLElement && r.dataset["row"] === message.id);
  			textIndex.set(message, row ? visibleText(row) : "");
  		}
-@@ -258,7 +276,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -258,7 +307,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  		const lowest = keep.length > 0 ? Math.min(...keep) : indexOfRow(rows.at(-1));
  		const highest = keep.length > 0 ? Math.max(...keep) : indexOfRow(rows[0]);
  		const remember = (gone) => {
@@ -77,7 +108,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  			for (const row of index ? rows : []) {
  				const message = all[indexOfRow(row)];
  				if (message && gone(indexOfRow(row))) index?.set(message, visibleText(row));
-@@ -278,6 +296,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -278,6 +327,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	}, []);
  	const isNearBottomRef = useRef(true);
  	const lastScrollTopRef = useRef(0);
@@ -85,7 +116,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  	const [pinned, setPinned] = useState(true);
  	const touchedAtRef = useRef(Number.NEGATIVE_INFINITY);
  	const releaseReaderHold = useCallback(() => {
-@@ -286,7 +305,11 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -286,7 +336,11 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	const handleScroll = useCallback(() => {
  		if (!containerRef.current) return;
  		const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
@@ -98,7 +129,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  		lastScrollTopRef.current = scrollTop;
  		const { messages: all, end: last } = windowRef.current;
  		if (scrollHeight - scrollTop - clientHeight < 24) {
-@@ -295,15 +318,21 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -295,15 +349,21 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  		setPinned(isNearBottomRef.current);
  		fitWindow();
  	}, [fitWindow]);
@@ -121,7 +152,52 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  	const jumpToLatest = useCallback(() => {
  		const el = containerRef.current;
  		if (el) {
-@@ -452,6 +481,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -367,23 +427,35 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 	useEffect(() => {
+ 		const container = containerRef.current;
+ 		if (!container) return;
+-		const releaseOnWheelUp = (e) => {
+-			if (e.deltaY < 0) {
+-				isNearBottomRef.current = false;
+-				setPinned(false);
+-			}
+-		};
+-		const releaseOnTouch = () => {
++		const release = () => {
+ 			isNearBottomRef.current = false;
+ 			setPinned(false);
+ 		};
++		const releaseOnWheelUp = (e) => {
++			if (e.deltaY < 0 && container.scrollTop > 0) release();
++		};
++		const touch = releaseTouch(container, {
++			release,
++			repin: () => {
++				const { messages: all, end: last } = windowRef.current;
++				if (last !== all.length) return;
++				isNearBottomRef.current = true;
++				setPinned(true);
++			}
++		});
+ 		container.addEventListener("scroll", handleScroll);
+ 		container.addEventListener("wheel", releaseOnWheelUp, { passive: true });
+-		container.addEventListener("touchmove", releaseOnTouch, { passive: true });
++		container.addEventListener("touchstart", touch.start, { passive: true });
++		container.addEventListener("touchmove", touch.move, { passive: true });
++		container.addEventListener("touchend", touch.end, { passive: true });
++		container.addEventListener("touchcancel", touch.end, { passive: true });
+ 		return () => {
+ 			container.removeEventListener("scroll", handleScroll);
+ 			container.removeEventListener("wheel", releaseOnWheelUp);
+-			container.removeEventListener("touchmove", releaseOnTouch);
++			container.removeEventListener("touchstart", touch.start);
++			container.removeEventListener("touchmove", touch.move);
++			container.removeEventListener("touchend", touch.end);
++			container.removeEventListener("touchcancel", touch.end);
+ 		};
+ 	}, [handleScroll, hasContent]);
+ 	const [anchor, setAnchor] = useState(null);
+@@ -452,6 +524,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  		} else if (el && kept?.row.isConnected) {
  			const moved = kept.row.getBoundingClientRect().top - kept.top;
  			if (Math.abs(moved) >= 1) {
@@ -129,7 +205,7 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  				el.scrollTop += moved;
  				lastScrollTopRef.current = el.scrollTop;
  			}
-@@ -461,7 +491,8 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+@@ -461,7 +534,8 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
  	}, [
  		start,
  		end,
@@ -139,6 +215,14 @@ index 2323790a9fbf4669f21a20add2837b3e3c626056..7c1f3e090de958bdd6f000a6acf14900
  	]);
  	useEffect(() => {
  		if (messageCount === 0) {
+@@ -500,6 +574,7 @@ function ChatMessageList({ messages, allMessages, streamingMessage: streamingMes
+ 		});
+ 		observer.observe(content);
+ 		if (dock) observer.observe(dock);
++		if (containerRef.current) observer.observe(containerRef.current);
+ 		return () => {
+ 			observer.disconnect();
+ 			content.removeEventListener("click", touched, true);
 diff --git a/dist/ai/components/TranscriptFind.js b/dist/ai/components/TranscriptFind.js
 index 78a081600db1f1850e5bf603dfe513762801fb70..944146b92da3da6560b1f01bce3b9df929e10bb3 100644
 --- a/dist/ai/components/TranscriptFind.js
