@@ -2,6 +2,46 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.205 (2026-11-27)
+
+### Studio tools in the user workspace; name this Studio's machine (#995)
+
+Stable release of this change from Preview v1.204.1, with nothing further. See v1.204.1 below.
+
+### Name the viewer in the Studio machine's tooltip; mark this computer (#996)
+
+Stable release of this change from Preview v1.204.2, with nothing further. See v1.204.2 below.
+
+## v1.204.2 (2026-11-27)
+
+### Name the viewer in the Studio machine's tooltip; mark this computer (#996)
+
+Two fixes to the "(this Studio)" machine from #995.
+
+The tooltip on the Code page named the cluster's owner as whom pw code runs as. On a Studio with sign-in that is the Studio's operator account. The server now sends `runsAs`, the signed-in viewer, on the marked machine in both the new chat and the Code page listings, and the tooltip names only that, or no account when there is none.
+
+On a Studio of one with no home cluster, the Code page marked no machine, while a new chat marked this computer. The Code page now marks the platform's machine whose pw code daemon is this computer's, by the daemon's id, or by hostname where the listing has no id. Nothing is marked when the daemon does not answer.
+
+REFERENCE is updated.
+
+Screenshots (Chromium and WebKit, light and dark, 1440 and 390 px, stand-in platform): https://github.com/parallelworks/activate-studio/tree/pr-shots/pr-996
+
+## v1.204.1 (2026-11-27)
+
+### Studio tools in the user workspace; name this Studio's machine (#995)
+
+The Studio adds its tools to pw code in your ACTIVATE user workspace, and names its own machine in the machine menus.
+
+**The user workspace.** Choosing your user workspace for a pw code chat or on the Code page no longer gives you a command to paste. The Studio adds its tools there over `pw ssh workspace` with your own ACTIVATE sign-in, as it does on your clusters: Add, Check, Remove, and the add when a session starts all work the same way. Only your own workspace is set up, and one that is not running says so. A computer that connected itself to ACTIVATE still gets a command.
+
+**This Studio's machine.** The machine where the Studio runs pw code for you is named `<name> (this Studio)` in a new chat's machine menu, on the chip once chosen, and in the Code page's machine menu, for example `my-cluster (this Studio)`. It is listed first, is the default until you pick another, and its tooltip says pw code there runs as you. Where a Studio with sign-in has no `STUDIO_HOME_CLUSTER`, the Code page lists it first with that reason, and nothing starts there.
+
+**The command to paste.** For a computer that connected itself, the command is now one line. It fetches the setup from the Studio through the session proxy with that computer's own pw sign-in, which goes to curl on its input, never on a command line. The box wraps it, with Copy beside it.
+
+The user guide, README and REFERENCE are updated.
+
+Screenshots (Chromium and WebKit, light and dark, 1440 and 390 px, stand-in platform): https://github.com/parallelworks/activate-studio/tree/pr-shots/pr-995
+
 ## v1.204 (2026-11-26)
 
 ### Personal spaces and folder sharing (Preview) (#724)
