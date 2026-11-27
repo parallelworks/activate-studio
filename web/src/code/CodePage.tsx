@@ -18,6 +18,7 @@ import { knowSession, type PageSession, pwCodePage, startedSession } from './api
 import { CodeSidebar } from './CodeSidebar'
 import { CodeSession, StartingSession } from './CodeSession'
 import { CodeStart, type Starting } from './CodeStart'
+import { CODE_DRAWER_QUERY } from '../phoneLayout'
 import { LinkedSession, type Delegated } from './LinkedSession'
 import { assistantLabel, type MachineRef, paneFor, type SessionRef, sessionHash, sessionInHash, useOpenInStudio, sameMachine } from './openInStudio'
 import { useMachineTools } from './machineTools'
@@ -66,9 +67,9 @@ function CodeChat() {
   )
 }
 
-/** A phone's width, where the list opens over the page. */
+/** Where the list opens over the page (CODE_DRAWER_QUERY). */
 function useNarrow(): boolean {
-  const query = '(max-width: 720px)'
+  const query = CODE_DRAWER_QUERY
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches === true)
   useEffect(() => {
     const m = window.matchMedia?.(query)

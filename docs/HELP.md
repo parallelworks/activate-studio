@@ -91,7 +91,7 @@ A conversation keeps what answered it last, in any browser, until you switch it.
 - **Search conversations** (⌘/Ctrl+Shift+F) finds chats. **Select chats**, above New chat, deletes several.
 - A chat's menu has **Rename**, **Download** (a Markdown file; a notice says where it went) and **Delete**.
 - **Save**, at the top right of an open chat, writes a copy to `chat-sessions/` in My library, where only you read it, or in the main library. It says where the copy goes before it writes, saving again replaces the copy, and deleting the chat leaves it. You can also ask the assistant to save or remember a chat.
-- The button at the foot of the list folds it to a rail of marks. The arrow keys, Home and End move between them. On a phone the list opens over the page.
+- The button at the foot of the list folds it to a rail of marks. The arrow keys, Home and End move between them. On a phone, and on a touch screen such as an iPad where the chat would be too narrow beside it, the list opens over the page from the button at the top left of the chat, as the Code page's **Sessions** list does.
 - **Model access**, at the foot of the list, opens the settings that say where models come from.
 
 ### Ask for files and reports
