@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { layoutSize } from '../shellScroll'
 
 /**
  * The whole name of a row whose name is cut off: in the Library's tree, the
@@ -203,9 +204,10 @@ export function NameTips() {
     const text = (tip.row.querySelector('[data-tip-text]') ?? tip.row).getBoundingClientRect()
     const { offsetWidth: w, offsetHeight: h } = box.current
     const below = row.bottom + 4
+    const view = layoutSize()
     setAt({
-      left: Math.max(8, Math.min(text.left - 10, window.innerWidth - w - 8)),
-      top: below + h + 8 <= window.innerHeight ? below : Math.max(8, row.top - h - 4),
+      left: Math.max(8, Math.min(text.left - 10, view.width - w - 8)),
+      top: below + h + 8 <= view.height ? below : Math.max(8, row.top - h - 4),
     })
   }, [tip])
 

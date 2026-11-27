@@ -3,6 +3,7 @@ import { Button, Callout, IconButton, Input, Loader, Popover, PopoverClose, toas
 import { CloseIcon } from '@parallelworks/ui/icons'
 import { api } from '../api'
 import { useShownPath } from '../libraryPath'
+import { layoutSize } from '../shellScroll'
 
 type TagMenuProps = {
   paths: string[]
@@ -33,7 +34,7 @@ type TagMenuProps = {
 /** The labels panel for a set of paths. */
 export function TagMenu(props: TagMenuProps) {
   const headId = useId()
-  const [corner] = useState(() => ({ clientX: window.innerWidth - 20, clientY: 58 }))
+  const [corner] = useState(() => ({ clientX: layoutSize().width - 20, clientY: 58 }))
   const panel = <TagPanel paths={props.paths} headId={headId} onApplied={props.onApplied} />
   if (props.trigger) {
     return (

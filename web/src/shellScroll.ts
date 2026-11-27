@@ -16,9 +16,20 @@ export function isShellBox(t: Element): boolean {
   return !!t.closest('.chat-canvas') && !!t.querySelector('.chat-thread')
 }
 
+/** Whether the page is pinched in or out (Safari on an iPad). The visible
+ *  part is then not the layout, and Safari moves the page under the pinch
+ *  itself: a script putting the page back fought the gesture, and the page
+ *  was drawn in one place while taps landed in another. */
+export function pinched(vv: { scale: number } | null = window.visualViewport): boolean {
+  return !!vv && Math.abs(vv.scale - 1) > 0.01
+}
+
+const isRoot = (t: Element) => t === document.scrollingElement || t === document.body || t === document.documentElement
+
 export function onShellScroll(e: Event): void {
   const t = e.target === document ? document.scrollingElement : e.target
   if (!(t instanceof Element)) return
+  if (isRoot(t) && pinched()) return
   if (isShellBox(t)) {
     if (t.scrollTop || t.scrollLeft) { t.scrollTop = 0; t.scrollLeft = 0 }
   } else if (t.matches('.sidenav') && t.scrollLeft) {
@@ -33,13 +44,26 @@ export function keepShellInPlace(): void {
 /** iPadOS pans the page to keep the composer above its on-screen keyboard
  *  and can leave it panned once the keyboard closes, which strands the
  *  composer mid screen over blank page. When the visible area grows back
- *  by a keyboard's height, the page goes back to the top. */
-export function settleAfterKeyboard(): void {
-  const vv = window.visualViewport
+ *  by a keyboard's height, the page goes back to the top. A pinch zooming
+ *  out grows the visible area too, but it changes the scale, which a
+ *  keyboard does not: the page is left to the pinch then. */
+export function settleAfterKeyboard(vv: VisualViewport | null = window.visualViewport, toTop = () => window.scrollTo(0, 0)): void {
   if (!vv) return
   let last = vv.height
+  let scale = vv.scale
   vv.addEventListener('resize', () => {
-    if (vv.height > last + 80 && (window.scrollY || vv.offsetTop)) window.scrollTo(0, 0)
+    const zooming = pinched(vv) || Math.abs(vv.scale - scale) > 0.01
+    if (!zooming && vv.height > last + 80 && (window.scrollY || vv.offsetTop)) toTop()
     last = vv.height
+    scale = vv.scale
   })
+}
+
+/** The layout viewport's size, which fixed layers and getBoundingClientRect
+ *  measure in. Safari on an iPad shrinks innerWidth and innerHeight to the
+ *  visible part while the page is pinched in, so a menu or tip kept inside
+ *  them landed away from what was tapped. */
+export function layoutSize(): { width: number; height: number } {
+  const root = document.documentElement
+  return { width: root.clientWidth || window.innerWidth, height: root.clientHeight || window.innerHeight }
 }

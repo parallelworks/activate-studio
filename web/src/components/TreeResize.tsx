@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { textBox } from './NameTip'
+import { layoutSize } from '../shellScroll'
 
 export const TREE_MIN = 220
 /** As wide as a drag goes in a window too narrow for half of it to be more. */
@@ -16,7 +17,7 @@ const NAME_PAD = 2
 /** The widest the tree may be: half the window, or TREE_MAX where that is
  *  more, with room left for the file in the card (0: not measured). */
 export function treeMax(cardWidth: number): number {
-  const most = Math.max(TREE_MAX, Math.round(window.innerWidth / 2))
+  const most = Math.max(TREE_MAX, Math.round(layoutSize().width / 2))
   return Math.max(TREE_MIN, cardWidth > 0 ? Math.min(most, cardWidth - FILE_LEAST) : most)
 }
 
