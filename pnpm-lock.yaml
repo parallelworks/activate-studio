@@ -15,7 +15,7 @@ overrides:
   katex@<0.18.2: ^0.18.2
 
 patchedDependencies:
-  '@parallelworks/ui@0.151.1': 064b607190a33400534b250bdde135798f956621d89894086aab3aec625e7a86
+  '@parallelworks/ui@0.151.1': b74514eae68783867ab2cb6c8730add70df1d13ed59ceab09a4f34dd2a760699
 
 importers:
 
@@ -68,13 +68,13 @@ importers:
         version: 1.7.0
       '@parallelworks/code':
         specifier: 0.6.0
-        version: 0.6.0(@parallelworks/problem@0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8)))(@parallelworks/ui@0.151.1(patch_hash=064b607190a33400534b250bdde135798f956621d89894086aab3aec625e7a86)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(openapi-fetch@0.17.0)(react@19.2.8)(swr@2.5.1(react@19.2.8))(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))
+        version: 0.6.0(@parallelworks/problem@0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8)))(@parallelworks/ui@0.151.1(patch_hash=b74514eae68783867ab2cb6c8730add70df1d13ed59ceab09a4f34dd2a760699)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(openapi-fetch@0.17.0)(react@19.2.8)(swr@2.5.1(react@19.2.8))(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))
       '@parallelworks/problem':
         specifier: ^0.6.1
         version: 0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))
       '@parallelworks/ui':
         specifier: 0.151.1
-        version: 0.151.1(patch_hash=064b607190a33400534b250bdde135798f956621d89894086aab3aec625e7a86)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
+        version: 0.151.1(patch_hash=b74514eae68783867ab2cb6c8730add70df1d13ed59ceab09a4f34dd2a760699)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       '@parallelworks/workflow-parser':
         specifier: ^0.8.0
         version: 0.8.0
@@ -3417,10 +3417,10 @@ snapshots:
 
   '@novnc/novnc@1.7.0': {}
 
-  '@parallelworks/code@0.6.0(@parallelworks/problem@0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8)))(@parallelworks/ui@0.151.1(patch_hash=064b607190a33400534b250bdde135798f956621d89894086aab3aec625e7a86)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(openapi-fetch@0.17.0)(react@19.2.8)(swr@2.5.1(react@19.2.8))(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))':
+  '@parallelworks/code@0.6.0(@parallelworks/problem@0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8)))(@parallelworks/ui@0.151.1(patch_hash=b74514eae68783867ab2cb6c8730add70df1d13ed59ceab09a4f34dd2a760699)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))(openapi-fetch@0.17.0)(react@19.2.8)(swr@2.5.1(react@19.2.8))(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))':
     dependencies:
       '@parallelworks/problem': 0.6.2(react@19.2.8)(use-intl@4.15.1(@types/react@19.2.18)(react@19.2.8))
-      '@parallelworks/ui': 0.151.1(patch_hash=064b607190a33400534b250bdde135798f956621d89894086aab3aec625e7a86)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
+      '@parallelworks/ui': 0.151.1(patch_hash=b74514eae68783867ab2cb6c8730add70df1d13ed59ceab09a4f34dd2a760699)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       gemoji: 8.1.0
       luxon: 3.7.2
       openapi-fetch: 0.17.0
@@ -3433,7 +3433,7 @@ snapshots:
       react: 19.2.8
       use-intl: 4.15.1(@types/react@19.2.18)(react@19.2.8)
 
-  '@parallelworks/ui@0.151.1(patch_hash=064b607190a33400534b250bdde135798f956621d89894086aab3aec625e7a86)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
+  '@parallelworks/ui@0.151.1(patch_hash=b74514eae68783867ab2cb6c8730add70df1d13ed59ceab09a4f34dd2a760699)(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(monaco-editor@0.57.0)(react-dom@19.2.8(react@19.2.8))(react-hook-form@7.90.0(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@daypicker/react': 10.0.2(@types/react@19.2.18)(react@19.2.8)
