@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -174,32 +175,52 @@ func TestNodeDown(t *testing.T) {
 	}
 }
 
-// The ETag is Node's (W/"<size hex>-<mtime ms hex>"), and a request that
-// sends it back gets a 304.
+// A file's ETag is Node's (W/"<size hex>-<mtime ms hex>"), and a request
+// that sends it back gets a 304. The page, which the server writes the
+// configured icons into, has its content's.
 func TestStaticETagAsNode(t *testing.T) {
 	dist := webDist(t)
+	os.WriteFile(filepath.Join(dist, "robots.txt"), []byte("User-agent: *\nAllow\n"), 0o644)
 	mtime := time.UnixMilli(1793987792827)
-	os.Chtimes(filepath.Join(dist, "index.html"), mtime, mtime)
+	os.Chtimes(filepath.Join(dist, "robots.txt"), mtime, mtime)
 	srv := front(t, dist, nil)
-	res, err := http.Get(srv.URL + "/some/deep/link")
+	revalidate := func(path, tag string) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", srv.URL+path, nil)
+		req.Header.Set("If-None-Match", tag)
+		req.Header.Set("Accept-Encoding", "identity")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotModified {
+			t.Fatalf("%s revalidation: %d, want 304", path, res.StatusCode)
+		}
+	}
+	res, err := http.Get(srv.URL + "/robots.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	res.Body.Close()
-	want := `W/"12-1a1b2014fbb"` // 18 bytes, 1793987792827 ms
+	want := `W/"14-1a1b2014fbb"` // 20 bytes, 1793987792827 ms
 	if got := res.Header.Get("ETag"); got != want {
 		t.Fatalf("ETag %q, want %q", got, want)
 	}
-	req, _ := http.NewRequest("GET", srv.URL+"/", nil)
-	req.Header.Set("If-None-Match", want)
+	revalidate("/robots.txt", want)
+
+	req, _ := http.NewRequest("GET", srv.URL+"/some/deep/link", nil)
+	req.Header.Set("Accept-Encoding", "identity")
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	res.Body.Close()
-	if res.StatusCode != http.StatusNotModified {
-		t.Fatalf("revalidation: %d, want 304", res.StatusCode)
+	page := res.Header.Get("ETag")
+	if !regexp.MustCompile(`^W/"[0-9a-f]{16}"$`).MatchString(page) {
+		t.Fatalf("page ETag %q", page)
 	}
+	revalidate("/", page)
 }
 
 // A stream the client leaves (Stop in the chat) is still in the access log.

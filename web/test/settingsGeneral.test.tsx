@@ -34,6 +34,7 @@ interface Server {
   posts: { url: string; body: unknown }[]
   portReply: Record<string, unknown>
   noCors: string[]
+  problems: Record<string, string>
 }
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -41,7 +42,7 @@ const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body)
 function stub(over: Partial<Server> = {}): Server {
   const s: Server = {
     setup: { firstRun: false, standalone: true, canRestart: true, launcher: true, port: 4180, portNext: null, branding: { light: null, dark: null } },
-    puts: [], posts: [], noCors: [],
+    puts: [], posts: [], noCors: [], problems: {},
     portReply: { saved: true, restarting: true, port: 4190 },
     ...over,
   }
@@ -51,7 +52,7 @@ function stub(over: Partial<Server> = {}): Server {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     if (init?.mode === 'no-cors') { s.noCors.push(url); return new Response(null, { status: 200 }) }
     if (url === '/api/settings' && method === 'PUT') { s.puts.push(body); return reply({ effective: { ...EFFECTIVE, ...body } }) }
-    if (url === '/api/settings') return reply({ effective: EFFECTIVE, deploymentCredential: false, gufiLogFile: { path: '/data/logs/gufi-commands.log', bytes: 2048 } })
+    if (url === '/api/settings') return reply({ effective: EFFECTIVE, deploymentCredential: false, gufiLogFile: { path: '/data/logs/gufi-commands.log', bytes: 2048 }, iconProblems: s.problems })
     if (url.startsWith('/api/setup/status')) return reply(s.setup)
     if (url === '/api/setup/port') { s.posts.push({ url, body }); return reply(s.portReply) }
     if (url === '/api/me/model-key') return reply({ authEnabled: false, single: true, verified: true, mode: 'none' })
@@ -180,6 +181,35 @@ describe('Settings, General tabs', () => {
     expect(localStorage.getItem('ade-theme')).toBe('dark')
     fireEvent.click(screen.getByRole('button', { name: 'Teal' }))
     await waitFor(() => expect(s.puts).toContainEqual({ accent: 'teal' }))
+  })
+
+  it('says beside the brand icon when the server cannot show the configured one, and again once it is changed', async () => {
+    const s = stub({ problems: { light: 'there is no file at that path on the server' } })
+    s.setup = { ...s.setup, standalone: false }
+    at('#view=settings:appearance')
+    render(<SettingsView />)
+    const warning = await screen.findByText('The brand icon cannot be shown: there is no file at that path on the server. The Studio mark is shown instead.')
+    // Beside the icon settings, in Branding.
+    const field = screen.getByLabelText('Brand icon (URL, or a path on the server)')
+    expect(field.compareDocumentPosition(warning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    s.problems = {}
+    fireEvent.change(field, { target: { value: '/data/branding/logo.png' } })
+    fireEvent.blur(field)
+    await waitFor(() => expect(s.puts).toContainEqual({ iconUrl: '/data/branding/logo.png' }))
+    await waitFor(() => expect(screen.queryByText(/cannot be shown/)).toBeNull())
+  })
+
+  it('names each icon that cannot be shown, and says nothing when all can', async () => {
+    const s = stub({ problems: { dark: 'its server answered 404', favicon: 'it is not an image' } })
+    at('#view=settings:appearance')
+    render(<SettingsView />)
+    expect(await screen.findByText('The dark mode icon cannot be shown: its server answered 404. The Studio mark is shown instead.')).toBeTruthy()
+    expect(screen.getByText('The tab icon (APP_FAVICON) cannot be shown: it is not an image. The Studio mark is shown instead.')).toBeTruthy()
+    cleanup()
+    s.problems = {}
+    render(<SettingsView />)
+    await screen.findByText('Product name')
+    expect(screen.queryByText(/cannot be shown/)).toBeNull()
   })
 
   it('Feature previews: voice says what it does, and shows its setup only when on', async () => {

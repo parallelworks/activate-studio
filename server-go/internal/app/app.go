@@ -67,6 +67,10 @@ type App struct {
 	ctx      context.Context
 	jobs     sync.WaitGroup
 	streams  atomic.Int64
+	// PageFilter, when set, rewrites the built index.html as it is served
+	// (internal/core writes the configured icons into it).
+	PageFilter func(r *http.Request, page []byte) []byte
+
 	// fallback is Node(): the reverse proxy to Node, set by the server.
 	fallback http.Handler
 }

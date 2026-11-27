@@ -132,8 +132,10 @@ type remoteIcon struct {
 	body []byte // the last image loaded, nil before the first
 	typ  string
 	at   time.Time
-	// failed is when the last try failed, the zero time when it did not.
+	// failed is when the last try failed, the zero time when it did not,
+	// and why says why.
 	failed time.Time
+	why    string
 }
 
 // An image that could not be loaded is not asked for again for a minute, so
@@ -179,14 +181,14 @@ func (c *Core) fetchRemoteIcon(ctx context.Context, url string) *remoteIcon {
 			done = make(chan struct{})
 			ic.busy[url] = done
 			go func() {
-				got := c.loadRemoteIcon(url)
+				got, why := c.loadRemoteIcon(url)
 				ic.mu.Lock()
 				defer ic.mu.Unlock()
 				if got != nil {
 					ic.m[url] = *got
 				} else {
 					was := ic.m[url]
-					was.failed = time.Now()
+					was.failed, was.why = time.Now(), why
 					ic.m[url] = was
 				}
 				delete(ic.busy, url)
@@ -210,18 +212,18 @@ func (c *Core) fetchRemoteIcon(ctx context.Context, url string) *remoteIcon {
 
 // loadRemoteIcon is routes.ts's fetchRemoteIcon: public images need no
 // credential; a platform blob answers 401 without one, so the deployment's
-// is tried.
-func (c *Core) loadRemoteIcon(url string) *remoteIcon {
-	attempt := func(withKey bool) *remoteIcon {
+// is tried. Without an image, why says what went wrong.
+func (c *Core) loadRemoteIcon(url string) (*remoteIcon, string) {
+	attempt := func(withKey bool) (*remoteIcon, string) {
 		key := ""
 		if withKey {
 			if key = c.a.Providers.GatewayKey(); key == "" {
-				return nil
+				return nil, ""
 			}
 		}
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			return nil
+			return nil, "it is not an address that can be loaded"
 		}
 		if withKey {
 			req.Header.Set("Authorization", "Bearer "+key)
@@ -229,26 +231,34 @@ func (c *Core) loadRemoteIcon(url string) *remoteIcon {
 		cl := &http.Client{Timeout: 15 * time.Second}
 		res, err := cl.Do(req)
 		if err != nil {
-			return nil
+			return nil, "its server could not be reached"
 		}
 		defer res.Body.Close()
 		if res.StatusCode < 200 || res.StatusCode > 299 {
-			return nil
+			return nil, "its server answered " + strconv.Itoa(res.StatusCode)
 		}
 		b, err := io.ReadAll(io.LimitReader(res.Body, 32<<20))
 		if err != nil {
-			return nil
+			return nil, "its server stopped while sending it"
 		}
 		t := imageType(b, res.Header.Get("Content-Type"))
 		if t == "" {
-			return nil
+			return nil, "its server sent something other than an image"
 		}
-		return &remoteIcon{body: b, typ: t, at: time.Now()}
+		return &remoteIcon{body: b, typ: t, at: time.Now()}, ""
 	}
-	if got := attempt(false); got != nil {
-		return got
+	got, why := attempt(false)
+	if got != nil {
+		return got, ""
 	}
-	return attempt(true)
+	// The second try is a platform blob's; the first answer says more
+	// where there is no key to try with.
+	if again, why2 := attempt(true); again != nil {
+		return again, ""
+	} else if why2 != "" {
+		why = why2
+	}
+	return nil, why
 }
 
 // imageOnly: a brand image is an image and nothing else.

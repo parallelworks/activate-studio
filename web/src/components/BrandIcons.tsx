@@ -89,3 +89,20 @@ export function BrandIcons({ value, onChange }: { value: Branding | null | undef
     </div>
   )
 }
+
+/** As GET /api/settings `iconProblems` gives it: for each configured icon
+ *  that cannot be shown (a missing path, an unreadable file, an address
+ *  that fails), why. */
+export type IconProblems = Partial<Record<'light' | 'dark' | 'favicon', string>>
+
+const WHICH = { light: 'The brand icon', dark: 'The dark mode icon', favicon: 'The tab icon (APP_FAVICON)' } as const
+
+/** Said beside the icon settings, so a configured icon the server cannot
+ *  show is not hidden behind the Studio's mark. */
+export function IconWarning({ problems }: { problems: IconProblems | null | undefined }) {
+  const lines = (Object.keys(WHICH) as (keyof typeof WHICH)[])
+    .filter(k => problems?.[k])
+    .map(k => `${WHICH[k]} cannot be shown: ${problems![k]}. The Studio mark is shown instead.`)
+  if (!lines.length) return null
+  return <Callout tone="warning">{lines.map(l => <div key={l}>{l}</div>)}</Callout>
+}

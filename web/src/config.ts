@@ -124,14 +124,22 @@ export function applyRememberedFavicon(): void {
     const dark = stored === 'dark' || (stored !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
     const href = (dark ? brand.faviconUrlDark ?? brand.faviconUrl : brand.faviconUrl) ?? null
     if (!href) return
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
-    if (!link) {
-      link = document.createElement('link')
-      link.rel = 'icon'
-      document.head.appendChild(link)
-    }
-    link.href = href
+    setTabIcon(href)
   } catch { /* storage unavailable */ }
+}
+
+/** Point the tab icon at href. The server's page may also name a dark
+ *  icon for a device set to dark (`media`); the app decides the theme from
+ *  here on, so that one goes. */
+export function setTabIcon(href: string): void {
+  for (const l of document.querySelectorAll<HTMLLinkElement>('link[rel="icon"][media]')) l.remove()
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+  if (!link) {
+    link = document.createElement('link')
+    link.rel = 'icon'
+    document.head.appendChild(link)
+  }
+  if (link.getAttribute('href') !== href) link.href = href
 }
 
 /** Reads of the configuration under way. */

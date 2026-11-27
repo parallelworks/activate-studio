@@ -17,7 +17,7 @@ import {
 import { ChevronDownIcon } from '@parallelworks/ui/icons'
 import { SURFACES, applySurface } from '../accents'
 import { AccentSwatches } from '../components/AccentSwatches'
-import { BrandIcons, type Branding } from '../components/BrandIcons'
+import { BrandIcons, IconWarning, type Branding, type IconProblems } from '../components/BrandIcons'
 import { ServerSection } from '../components/ServerSection'
 import { UpdatesSection } from '../components/UpdatesSection'
 import { NAV_WIDTHS, aiOn as aiOnIn, reloadAppConfig, saveNavWidth, saveAiEnabled, saveSections, saveSettings, useAppConfig } from '../config'
@@ -394,6 +394,9 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   /** The product name and icon addresses save once typing pauses, on
    *  leaving the box, or on Enter. */
   const [brandNote, setBrandNote] = useState('')
+  const [iconProblems, setIconProblems] = useState<IconProblems>({})
+  /** Asked again once an icon setting is saved: the server says whether it can show it. */
+  const recheckIcons = () => fetch('/api/settings').then(r => r.json()).then(d => setIconProblems(d?.iconProblems ?? {})).catch(() => {})
   const brandTimer = useRef<number | undefined>(undefined)
   const brandPending = useRef<Partial<Effective>>({})
   const saveBrand = (patch: Partial<Pick<Effective, 'appName' | 'iconUrl' | 'iconUrlDark'>>, delay = 800) => {
@@ -405,7 +408,9 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
       const next = brandPending.current
       brandPending.current = {}
       if (!Object.keys(next).length) return
-      saveSettings(next).catch(e => setBrandNote(String((e as Error).message ?? e)))
+      saveSettings(next)
+        .then(() => { if ('iconUrl' in next || 'iconUrlDark' in next) void recheckIcons() })
+        .catch(e => setBrandNote(String((e as Error).message ?? e)))
     }, delay)
   }
   /** The classification banner saves with its own button: a marking typed
@@ -446,7 +451,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
   const loadForm = () => {
     setTheme(null)
     fetch('/api/settings').then(r => r.json())
-      .then(d => { setForm(d.effective); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null); setClaudeCode(d.claudeCode ?? null); setLocked(d.locked || undefined); setToolsApproved(d.customToolsApproved !== false); setToolsOff(d.customToolsOff === true) })
+      .then(d => { setForm(d.effective); setIconProblems(d.iconProblems ?? {}); setDeploymentCred(d.deploymentCredential ?? null); setGufiLogFile(d.gufiLogFile ?? null); setClaudeCode(d.claudeCode ?? null); setLocked(d.locked || undefined); setToolsApproved(d.customToolsApproved !== false); setToolsOff(d.customToolsOff === true) })
       .catch(() => setNote('Could not load settings.'))
     fetch('/api/setup/status').then(r => r.json()).then(d => { setSetupAvailable(!!d?.standalone); setBranding(d?.branding ?? null) })
       .catch(() => {}).finally(() => setSetupKnown(true))
@@ -648,6 +653,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                         <BrandIcons value={branding} onChange={b => {
                           setBranding(b)
                           setForm(f => f && { ...f, iconUrl: b.iconUrl ?? '', iconUrlDark: b.iconUrlDark ?? '' })
+                          void recheckIcons()
                         }} />
                       </Field>
                     ) : (
@@ -659,6 +665,7 @@ export function SettingsView({ active = true }: { active?: boolean } = {}) {
                       </>
                     )}
                   </div>
+                  <IconWarning problems={iconProblems} />
                   {brandNote && <Callout tone="error" live>{brandNote}</Callout>}
                   <div className="banner-field settings-field">
                     <Field label="Classification banner (empty for none)">

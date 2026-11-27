@@ -32,7 +32,7 @@ import { FirstVisitCard } from './components/FirstVisitCard'
 import { StatusFooter } from './components/StatusFooter'
 import { embedded, signInHref } from './signIn'
 import { ClassificationBanner, bannerInk, bannerShownColor } from './components/ClassificationBanner'
-import { aiPagesMounted, applyNavWidth, sectionAllowed, shownView, useAppConfig } from './config'
+import { aiPagesMounted, applyNavWidth, sectionAllowed, setTabIcon, shownView, useAppConfig } from './config'
 import { NameTips } from './components/NameTip'
 import { NavResize } from './components/NavResize'
 import { applyAccent, applySurface } from './accents'
@@ -397,13 +397,7 @@ export default function App() {
     // With no icon of its own (one just removed, say), the bundled mark.
     const favicon = (effectiveTheme === 'dark' ? (cfg.faviconUrlDark ?? cfg.faviconUrl) : cfg.faviconUrl) ?? (cfg.loaded ? '/favicon.svg' : null)
     if (!favicon) return
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
-    if (!link) {
-      link = document.createElement('link')
-      link.rel = 'icon'
-      document.head.appendChild(link)
-    }
-    link.href = favicon
+    setTabIcon(favicon)
   }, [cfg, effectiveTheme])
   useEffect(() => { if (cfg.loaded) { applyAccent(cfg.accent); applySurface(cfg.surface) } }, [cfg])
   useEffect(() => { if (cfg.loaded) applyNavWidth(cfg.navWidth) }, [cfg.loaded, cfg.navWidth])
