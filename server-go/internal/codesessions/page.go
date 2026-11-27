@@ -220,7 +220,12 @@ func (s *routes) forward(w http.ResponseWriter, r *http.Request, t *pageTarget, 
 	}
 	if method == http.MethodGet && path == "/api/code/sessions" && res.StatusCode == http.StatusOK {
 		raw = claudeCodeListing(r, raw)
-		raw = studioHomeListing(raw, s.a.Cfg.AuthEnabled())
+		signIn := s.a.Cfg.AuthEnabled()
+		var viewer string
+		if v, err := s.p.ViewerOf(r); err == nil {
+			viewer = v.Username()
+		}
+		raw = studioHomeListing(raw, signIn, viewer, s.localHere(r, signIn))
 		if Listed != nil {
 			if v, err := jsonv.Decode(raw); err == nil {
 				Listed(r, jsonv.Arr(jsonv.Path(v, "sessions")))

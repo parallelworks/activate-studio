@@ -295,17 +295,28 @@ describe('the Code page', () => {
 
   it('names the Studio\'s own machine as this Studio\'s, lists it first and starts on it when nothing was picked', async () => {
     const workspace = { ...machine, id: 'workspace', name: 'workspace', kind: 'workspace', hostname: 'ws.example', daemonId: 'd9' }
-    studio({ machines: [workspace, other, { ...machine, studioHome: true, owner: 'alex' }] })
+    // The cluster is the operator's (ops); pw code there runs as the viewer.
+    studio({ machines: [workspace, other, { ...machine, studioHome: true, owner: 'ops', runsAs: 'alex' }] })
     render(<CodePage />)
     const chip = await screen.findByTestId('agents-machine-chip')
     await waitFor(() => expect(chip).toHaveTextContent('box (this Studio)'))
     expect(chip.getAttribute('title')).toMatch(/Where this Studio runs\. pw code here runs as you \(alex\)/)
+    expect(chip.getAttribute('title')).not.toMatch(/ops/)
     fireEvent.click(chip)
     const rows = await menuRows()
     expect(rows[0]).toHaveTextContent(/^box \(this Studio\)/)
     expect(rows[0]).toHaveTextContent('runs as you')
     expect(rows.map(r => r.textContent)).toEqual(expect.arrayContaining([expect.stringMatching(/^workspace/), expect.stringMatching(/^gpu/)]))
     expect(rows.filter(r => /this Studio\)/.test(r.textContent ?? '')).length).toBe(1)
+  })
+
+  it('never names the owner of the Studio\'s machine as whom pw code runs as', async () => {
+    studio({ machines: [{ ...machine, studioHome: true, owner: 'ops' }, other] })
+    render(<CodePage />)
+    const chip = await screen.findByTestId('agents-machine-chip')
+    await waitFor(() => expect(chip).toHaveTextContent('box (this Studio)'))
+    expect(chip.getAttribute('title')).toMatch(/runs as you, with/)
+    expect(chip.getAttribute('title')).not.toMatch(/ops/)
   })
 
   it('keeps a machine picked before over the Studio\'s own', async () => {

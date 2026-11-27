@@ -14,6 +14,8 @@ export interface StudioMachineFacts {
   name: string
   owner?: string
   studioHome?: boolean
+  /** Whom pw code there runs as: the viewer, as the server says it. */
+  runsAs?: string
   error?: string
 }
 
@@ -35,6 +37,8 @@ export function studioMachineName(m: Pick<StudioMachineFacts, 'name'> & Partial<
 export function studioMachineTip(m: Partial<StudioMachineFacts> | undefined): string | undefined {
   if (!isStudioMachine(m)) return undefined
   if (m?.error) return m.error
-  const as = m?.owner ? `as you (${m.owner})` : 'as you'
+  // The viewer the server names, never the machine's owner: the cluster a
+  // Studio runs beside is its operator's.
+  const as = m?.runsAs ? `as you (${m.runsAs})` : 'as you'
   return `Where this Studio runs. pw code here runs ${as}, with this Studio's tools.`
 }

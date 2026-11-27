@@ -153,3 +153,26 @@ func (s *routes) localFind(r *http.Request, c pwcode.Client, mid, id string) (*M
 	v.URL = ""
 	return &m, &v, nil
 }
+
+// localHere is, without sign-in, the machine of this computer's pw code
+// daemon, which the Studio drives for the person, so the platform's listing
+// can mark it as this Studio's; nil with sign-in on or no daemon answering.
+func (s *routes) localHere(r *http.Request, signIn bool) *Machine {
+	sites := agentsites.Current()
+	if signIn || sites == nil || sites.Daemon == nil {
+		return nil
+	}
+	c := sites.Daemon.Local()
+	if c == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), localHereTimeout)
+	defer cancel()
+	m, err := s.localMachine(ctx, c)
+	if err != nil {
+		return nil
+	}
+	return &m
+}
+
+const localHereTimeout = 2 * time.Second
