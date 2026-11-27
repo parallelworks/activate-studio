@@ -931,6 +931,9 @@ func (m *Module) ownMachine(r *http.Request, name string, st any) *jsonv.Object 
 	}
 	rec := jsonv.NewObject("id", directMachine, "name", firstNonEmpty(name, "this Studio's machine"), "kind", "local",
 		"owner", owner, "status", "connected", codesessions.StudioHome, true)
+	if owner != "" {
+		rec.Set(codesessions.RunsAs, owner)
+	}
 	// What the session view offers follows what the daemon allows, as the
 	// platform's machine record carries it: signing an account in, removing
 	// one, and the Claude Code integration itself.

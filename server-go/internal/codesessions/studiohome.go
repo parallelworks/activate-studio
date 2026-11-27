@@ -14,6 +14,11 @@ import (
 // by default.
 const StudioHome = "studioHome"
 
+// RunsAs is, on that machine, the viewer pw code there runs as: the person
+// signed in to this Studio, never the account that owns the machine, which
+// for the cluster a Studio runs beside is its operator's.
+const RunsAs = "runsAs"
+
 // NoHomeCluster is why a Studio with sign-in has no machine of its own for
 // the person's pw code.
 const NoHomeCluster = "This Studio does not know the cluster it runs on, so it cannot start pw code here. Its operator sets STUDIO_HOME_CLUSTER."
@@ -31,11 +36,25 @@ func IsHomeCluster(home, kind, name, owner string) bool {
 	return strings.EqualFold(at, name) && (who == "" || owner == "" || strings.EqualFold(who, owner))
 }
 
+// isHere is whether the platform's machine is the one whose daemon is
+// here: by the daemon's id where both sides have one, else by hostname.
+func isHere(here *Machine, daemonID, hostname string) bool {
+	if here == nil {
+		return false
+	}
+	if daemonID != "" && here.DaemonID != "" {
+		return daemonID == here.DaemonID
+	}
+	return hostname != "" && strings.EqualFold(hostname, here.Hostname)
+}
+
 // studioHomeListing is the platform's machine listing raw with this
-// Studio's machine marked (StudioHome) and put first. With sign-in on and
-// no home cluster known, an entry in its place says why nothing starts
-// there.
-func studioHomeListing(raw []byte, signIn bool) []byte {
+// Studio's machine marked (StudioHome, with RunsAs the viewer) and put
+// first: without sign-in the machine whose daemon is here (this computer,
+// which the Studio drives), else the cluster it runs beside. With sign-in
+// on and no home cluster known, an entry in its place says why nothing
+// starts there.
+func studioHomeListing(raw []byte, signIn bool, viewer string, here *Machine) []byte {
 	var body map[string]json.RawMessage
 	var machines []map[string]json.RawMessage
 	if json.Unmarshal(raw, &body) != nil || json.Unmarshal(body["machines"], &machines) != nil {
@@ -50,8 +69,12 @@ func studioHomeListing(raw []byte, signIn bool) []byte {
 	out := make([]map[string]json.RawMessage, 0, len(machines)+1)
 	found := false
 	for _, m := range machines {
-		if !found && IsHomeCluster(home, str(m, "kind"), str(m, "name"), str(m, "owner")) {
+		if !found && ((!signIn && isHere(here, str(m, "daemonId"), str(m, "hostname"))) || IsHomeCluster(home, str(m, "kind"), str(m, "name"), str(m, "owner"))) {
 			m[StudioHome] = json.RawMessage("true")
+			delete(m, RunsAs)
+			if viewer != "" {
+				m[RunsAs], _ = json.Marshal(viewer)
+			}
 			out = append([]map[string]json.RawMessage{m}, out...)
 			found = true
 			continue

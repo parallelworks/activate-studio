@@ -70,6 +70,7 @@ import { HowSessionsAppear, MachineIcon, SessionMark, type Translate, useCodeGro
 export type Machine = PwCodeStartMachine & PwCodeMachine & {
   /** This Studio's own machine (server-go codesessions.StudioHome). */
   studioHome?: boolean
+  runsAs?: string
 }
 
 /** A session being started: where, and its first message. */

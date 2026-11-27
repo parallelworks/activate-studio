@@ -91,7 +91,7 @@ describe('where a new pw code chat starts', () => {
 
   it('names the Studio\'s own machine as this Studio\'s, first and chosen ahead of the workspace, and says it runs as the person', async () => {
     const workspace = { ...base, id: 'workspace', name: 'workspace', kind: 'workspace' }
-    studio({ machines: [{ ...own, owner: 'alex' }, workspace, gpu] })
+    studio({ machines: [{ ...own, owner: 'alex', runsAs: 'alex' }, workspace, gpu] })
     render(<Chat />)
     const chip = await machineChip()
     expect(chip).toHaveTextContent('box (this Studio)')

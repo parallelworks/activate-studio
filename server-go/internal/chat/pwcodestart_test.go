@@ -517,6 +517,10 @@ func TestTheStudiosOwnMachineSaysWhyItCannotStart(t *testing.T) {
 	if jsonv.Path(own, "studioHome") != true || jsonv.String(jsonv.Path(own, "status")) != "connected" || jsonv.Path(own, "remoteStart") != true {
 		t.Fatalf("own: %s", mustJSON(own))
 	}
+	// pw code there runs as the viewer, named so for the tooltip.
+	if jsonv.String(jsonv.Path(own, "runsAs")) != "cy" {
+		t.Errorf("runs as: %s", mustJSON(own))
+	}
 	t.Setenv("STUDIO_HOME_CLUSTER", "")
 	t.Setenv("PW_USER", "")
 	t.Setenv("PW_POOL_NAME", "")
