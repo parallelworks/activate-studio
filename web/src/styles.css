@@ -3853,3 +3853,37 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .pwcode-session [data-row^='earlier-']:is(:first-child, :not([data-row^='earlier-']) + [data-row^='earlier-'])::before {
   content: 'Earlier in this chat'; display: block; padding-top: 8px; font-size: 12px; color: var(--pw-muted);
 }
+
+/* A touch screen's chrome makes room for what is read (tabletChrome.ts):
+   scrolling down hides the page header and the chat's controls, and on a
+   tablet folds the navigation away; it opens over the page from a swipe at
+   the left edge. The composer stays where it is. A phone keeps its bottom
+   bar, which the composer sits on. Nothing here applies with a mouse or
+   trackpad. */
+@media (hover: none) and (pointer: coarse) {
+  html[data-chrome='hidden'] .page-head { max-height: 0; min-height: 0; overflow: hidden; border-bottom-width: 0; }
+  html[data-chrome='hidden'] .viewer-head { position: static; }
+  html[data-chrome='hidden'] .chat-controls { opacity: 0; transform: translateY(-120%); pointer-events: none; }
+  html[data-chrome='hidden'] .chat-canvas main .chat-thread::before { display: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    .page-head { transition: max-height 0.2s ease; max-height: 120px; }
+    .chat-controls { transition: opacity 0.2s ease, transform 0.2s ease; }
+  }
+}
+@media (hover: none) and (pointer: coarse) and (min-width: 761px) {
+  html[data-chrome='hidden'] .sidenav {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
+    transform: translateX(-100%); visibility: hidden;
+  }
+  html[data-chrome='hidden'] .sidenav-resize { display: none; }
+  html[data-chrome='hidden'][data-nav='open'] .sidenav {
+    transform: none; visibility: visible; box-shadow: 0 0 24px rgb(0 0 0 / 0.25);
+  }
+  /* The page under the open navigation dims; a tap there closes it. */
+  html[data-nav='open'] .app-body::after {
+    content: ''; position: fixed; inset: 0; z-index: 59; background: rgb(0 0 0 / 0.2);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-chrome='hidden'] .sidenav { transition: transform 0.2s ease, visibility 0.2s; }
+  }
+}
