@@ -174,11 +174,14 @@ permissions:
             default: ''
             optional: true
             tooltip: >-
-              Image used as the interface brand icon and favicon (APP_ICON).
+              Image used as the interface brand icon, the browser tab icon,
+              the installed app's icon and the iPhone and iPad Home Screen
+              icon (APP_ICON); a square PNG of 512 pixels suits all of them.
               Either an https URL, or an absolute path on the resource, in
-              which case stage the file first (for a container deployment it
-              must sit under a bind-mounted directory, such as a .branding
-              folder inside the knowledge base).
+              which case stage the file first; a container deployment binds
+              it into the container read only. One that cannot be shown is
+              named in Settings, General, Appearance, and the Studio mark is
+              shown instead.
           icon_path_dark:
             label: Brand Icon Path (dark mode)
             type: string
@@ -893,6 +896,9 @@ jobs:
           if [ -n "${{ inputs.app_settings.icon_path }}" ]; then
             echo "export APP_ICON='${{ inputs.app_settings.icon_path }}'" >> ${SCRIPT}
           fi
+          if [ -n "${{ inputs.app_settings.icon_path_dark }}" ]; then
+            echo "export APP_ICON_DARK='${{ inputs.app_settings.icon_path_dark }}'" >> ${SCRIPT}
+          fi
           PROMPTS='${{ inputs.app_settings.suggested_prompts }}'
           if [ -n "$PROMPTS" ]; then
             JSON="["
@@ -1014,6 +1020,19 @@ jobs:
           [ -f app.log ] && mv -f app.log app.log.prev
           # The corpus and all writable state stay on the host; the image is
           # read-only. DATA_DIR holds the index, settings, and credentials.
+          # A brand icon given as a path on this node is bound into the container,
+          # read only at the same path, unless a folder bound below already holds
+          # it; otherwise the Studio inside cannot find it and shows its own mark.
+          ICON_BINDS=()
+          for f in "${APP_ICON:-}" "${APP_ICON_DARK:-}"; do
+            case "$f" in
+              ""|http://*|https://*) ;;
+              "${KB_ROOT%/}"/*|"${INDEX_BASE%/}"/*) ;;
+              /*) if [ -f "$f" ] && [ -r "$f" ]; then ICON_BINDS+=(--bind "$f:$f:ro")
+                  else echo "WARNING: brand icon $f is not a readable file on $(hostname); the Studio mark is shown instead."; fi ;;
+              *) echo "WARNING: brand icon $f is neither an absolute path nor an https address; the Studio mark is shown instead." ;;
+            esac
+          done
           setsid nohup "$RUNTIME" run \
             --env PORT="${PORT}" --env KB_ROOT="${KB_ROOT}" --env DATA_DIR="${INDEX_BASE}" \
             --env INDEX_BASE="${INDEX_BASE}" --env KB_LABEL="${KB_LABEL}" \
@@ -1025,6 +1044,7 @@ jobs:
             ${BANNER_TEXT:+--env BANNER_TEXT="${BANNER_TEXT}"} \
             ${BANNER_COLOR:+--env BANNER_COLOR="${BANNER_COLOR}"} \
             ${APP_ICON:+--env APP_ICON="${APP_ICON}"} \
+            ${APP_ICON_DARK:+--env APP_ICON_DARK="${APP_ICON_DARK}"} \
             ${SUGGESTED_PROMPTS:+--env SUGGESTED_PROMPTS="${SUGGESTED_PROMPTS}"} \
             ${PW_API_KEY:+--env PW_API_KEY="${PW_API_KEY}"} \
             ${PW_PLATFORM_HOST:+--env PW_PLATFORM_HOST="${PW_PLATFORM_HOST}"} \
@@ -1047,6 +1067,7 @@ jobs:
             ${OIDC_SCOPES:+--env OIDC_SCOPES="${OIDC_SCOPES}"} \
             --env PW_CLI="/usr/local/bin/pw" \
             --bind "${KB_ROOT}:${KB_ROOT}" --bind "${INDEX_BASE}:${INDEX_BASE}" \
+            ${ICON_BINDS[@]+"${ICON_BINDS[@]}"} \
             ${PW_BIN_HOST:+--bind "${PW_BIN_HOST}:/usr/local/bin/pw"} \
             "$IMG" > app.log 2>&1 < /dev/null &
           CONTAINER_LAUNCH
@@ -1614,6 +1635,19 @@ jobs:
           # clean exit (code 0) is a real shutdown and ends the loop; a
           # crash is retried a few times and then allowed to fail, so a
           # deployment that cannot start does not restart forever.
+          # A brand icon given as a path on this node is bound into the container,
+          # read only at the same path, unless a folder bound below already holds
+          # it; otherwise the Studio inside cannot find it and shows its own mark.
+          ICON_BINDS=()
+          for f in "$ICON" "$ICON_DARK"; do
+            case "$f" in
+              ""|http://*|https://*) ;;
+              "${KB%/}"/*|"${IDX%/}"/*) ;;
+              /*) if [ -f "$f" ] && [ -r "$f" ]; then ICON_BINDS+=(--bind "$f:$f:ro")
+                  else echo "WARNING: brand icon $f is not a readable file on $(hostname); the Studio mark is shown instead."; fi ;;
+              *) echo "WARNING: brand icon $f is neither an absolute path nor an https address; the Studio mark is shown instead." ;;
+            esac
+          done
           tries=0
           while :; do
             "$RUNTIME" run --cleanenv \
@@ -1649,6 +1683,7 @@ jobs:
             --env PW_CLI="/usr/local/bin/pw" --env HOME="$HOME" \
             --bind "$PW_BIN:/usr/local/bin/pw" \
             --bind "$KB:$KB" --bind "$IDX:$IDX" \
+            ${ICON_BINDS[@]+"${ICON_BINDS[@]}"} \
             "$SSIF" && break
             rc=$?
             tries=$((tries + 1))

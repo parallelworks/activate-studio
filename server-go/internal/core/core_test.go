@@ -41,6 +41,7 @@ type env struct {
 	home string
 	kb   string
 	ix   string
+	core *Core
 }
 
 func newEnv(t *testing.T, extra map[string]string) *env {
@@ -64,7 +65,7 @@ func newEnv(t *testing.T, extra map[string]string) *env {
 	}
 	e.a = app.New(cfg, slog.New(slog.DiscardHandler), nil, nil)
 	e.mux = http.NewServeMux()
-	Register(e.mux, e.a)
+	e.core = register(e.mux, e.a)
 	return e
 }
 

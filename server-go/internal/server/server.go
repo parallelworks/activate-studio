@@ -276,7 +276,7 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) string {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return "none"
 	}
-	if serveStatic(w, r, s.cfg.WebDist, s.static) {
+	if serveStatic(w, r, s.cfg.WebDist, s.static, s.App.PageFilter) {
 		return "static"
 	}
 	// Without a built web app Node answers as it would (Fastify's 404).

@@ -115,3 +115,27 @@ describe('the icons a browser installs', () => {
     expect(size('apple-touch-icon.png')).toEqual([180, 180])
   })
 })
+
+describe('the tab icon', () => {
+  afterEach(() => { for (const l of document.querySelectorAll('link[rel="icon"]')) l.remove() })
+
+  it('keeps the icon the server wrote into the page when it is the same, and drops the one for a dark device once the app sets it', async () => {
+    const { setTabIcon } = await import('../src/config')
+    document.head.insertAdjacentHTML('beforeend',
+      '<link rel="icon" href="/api/favicon?v=1" /><link rel="icon" href="/api/favicon?variant=dark&amp;v=2" media="(prefers-color-scheme: dark)" />')
+    const first = document.querySelector<HTMLLinkElement>('link[rel="icon"]')!
+    setTabIcon('/api/favicon?v=1')
+    const links = document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toBe(first)
+    expect(links[0].getAttribute('href')).toBe('/api/favicon?v=1')
+    setTabIcon('/api/favicon?variant=dark&v=2')
+    expect(document.querySelector('link[rel="icon"]')!.getAttribute('href')).toBe('/api/favicon?variant=dark&v=2')
+  })
+
+  it('adds one where the page has none', async () => {
+    const { setTabIcon } = await import('../src/config')
+    setTabIcon('/favicon.svg')
+    expect(document.querySelector('link[rel="icon"]')!.getAttribute('href')).toBe('/favicon.svg')
+  })
+})

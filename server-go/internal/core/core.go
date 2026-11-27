@@ -39,7 +39,9 @@ type Core struct {
 // Register registers the core routes on mux and the core's start-up work
 // on a (seeding the starter extensions in Node-free mode, which Node does
 // when it runs).
-func Register(mux *http.ServeMux, a *app.App) {
+func Register(mux *http.ServeMux, a *app.App) { register(mux, a) }
+
+func register(mux *http.ServeMux, a *app.App) *Core {
 	c := &Core{a: a, log: a.Log, icons: newIconCache(), exts: extensions.New(a.Cfg.IndexBase, a.Cfg.ProjectRoot, a.Cfg.KBRoot)}
 	h := func(pattern string, fn func(http.ResponseWriter, *http.Request) error) {
 		mux.Handle(pattern, apierr.Handler(a.Log, fn))
@@ -50,6 +52,9 @@ func Register(mux *http.ServeMux, a *app.App) {
 	h("GET /api/brand-icon", c.brandIcon)
 	h("GET /api/favicon", c.favicon)
 	h("GET /manifest.webmanifest", c.manifest)
+	h("GET /apple-touch-icon.png", c.appleTouchIcon)
+	a.PageFilter = c.PageIcons
+	a.OnStart("icons: check", c.logIconProblems)
 
 	h("GET /api/settings", c.getSettings)
 	h("PUT /api/settings", c.putSettings)
@@ -81,6 +86,7 @@ func Register(mux *http.ServeMux, a *app.App) {
 			}
 		})
 	}
+	return c
 }
 
 // writeJSON writes v as Fastify does: application/json; charset=utf-8,

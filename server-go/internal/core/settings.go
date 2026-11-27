@@ -1,11 +1,13 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/parallelworks/activate-studio/server-go/internal/apierr"
 	"github.com/parallelworks/activate-studio/server-go/internal/jsonobj"
@@ -43,6 +45,10 @@ func (c *Core) getSettings(w http.ResponseWriter, r *http.Request) error {
 	if c.a.Settings.CustomToolsOff() {
 		o.SetValue("customToolsOff", true)
 	}
+	// A configured icon that cannot be shown, and why (pageicons.go).
+	ctx, stop := context.WithTimeout(r.Context(), 3*time.Second)
+	defer stop()
+	o.SetValue("iconProblems", c.IconProblems(ctx, true))
 	return ok(w, o)
 }
 
