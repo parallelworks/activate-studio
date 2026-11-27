@@ -7,7 +7,7 @@ import { useRunFile } from './runFile'
 import App from './App'
 import { rememberHashChanges, restoreLastHash } from './lastLocation'
 import { applyRememberedFavicon, applyRememberedNavWidth } from './config'
-import { keepShellInPlace, settleAfterKeyboard } from './shellScroll'
+import { fitToVisualViewport, keepShellInPlace, settleAfterKeyboard } from './shellScroll'
 import { installClipboardFallback } from './clipboard'
 import { installDownloadNotices } from './downloadNotice'
 import { guardDrops } from './dropGuard'
@@ -24,6 +24,8 @@ import './styles.css'
 
 keepShellInPlace()
 settleAfterKeyboard()
+// The app keeps to what is visible above an on-screen keyboard.
+fitToVisualViewport()
 installClipboardFallback()
 // A notice for each file the page saves (an exported conversation, a CSV).
 installDownloadNotices()
