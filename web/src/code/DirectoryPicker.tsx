@@ -7,6 +7,7 @@ import { describeError } from '../pwcode/PWCodeSession'
 import { pwCodePage } from './api'
 import type { Translate } from './parts'
 import { nameTip } from '../components/NameTip'
+import { layoutSize } from '../shellScroll'
 
 /**
  * The folder a session starts in, as PW Code on the web chooses it (its
@@ -22,7 +23,7 @@ const FULL_HEIGHT = 420
 function roomier(row: Element | null): 'top' | 'bottom' {
   if (!row) return 'bottom'
   const { top, bottom } = row.getBoundingClientRect()
-  const below = window.innerHeight - bottom
+  const below = layoutSize().height - bottom
   return below >= FULL_HEIGHT || below >= top ? 'bottom' : 'top'
 }
 
