@@ -271,6 +271,12 @@ var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/g
 // maxImage is the largest image the Studio passes on.
 const maxImage = 25 << 20
 
+// imageBodyLimit is the largest image the session view saves with a
+// session: pw code takes an image of up to 5 MiB, sent as base64 in JSON,
+// which is a third larger. Under the 1 MiB every other request is held to,
+// a screenshot past about 750 KB was refused and never reached the model.
+const imageBodyLimit = 8 << 20
+
 // codeImage passes one of the session's images on as the session's
 // machine serves it.
 func (m *Module) codeImage(w http.ResponseWriter, r *http.Request, c *conversations.Conversation, t *pwTarget, route string) error {
@@ -498,7 +504,11 @@ func (m *Module) codeProxy(w http.ResponseWriter, r *http.Request) error {
 	}
 	var body any
 	if r.Method == http.MethodPost || r.Method == http.MethodPatch {
-		rb, err := reqbody.Read(r)
+		limit := reqbody.Limit
+		if key == "POST /images" {
+			limit = imageBodyLimit
+		}
+		rb, err := reqbody.ReadUpTo(r, limit)
 		if err != nil {
 			return writeProblem(w, http.StatusBadRequest, apiMessage(err))
 		}

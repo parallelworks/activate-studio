@@ -26,6 +26,7 @@ import { StudioChatLayout } from '../components/ChatList'
 import { ChatsManager } from '../components/ChatsManager'
 import { ManageChatsRailItem } from '../components/ManageChatsRailItem'
 import { createStudioAdapter, getChatListFilter, setChatListFilter, setViewerUsername } from '../adapter'
+import { ChatImageViewer } from '../chatAttachments'
 import { type AppConfig, useAppConfig } from '../config'
 import { api, fetchModels, forgetModels, type ModelsResponse } from '../api'
 import { EFFORT_WORDS, setLabelScope, setPersona } from '../labelScope'
@@ -952,6 +953,7 @@ export function ChatView({ active = true }: { active?: boolean } = {}) {
           {showManage && <div className="chat-controls"><PanelToggle className="chat-panel-toggle" /></div>}
         </div>
         <SideViewHost />
+        <ChatImageViewer />
       </div>
     </ChatProvider>
   )

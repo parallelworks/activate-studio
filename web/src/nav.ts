@@ -9,13 +9,27 @@ import type { Display } from './App'
 export function parseOpenHash(hash: string): Display | null {
   const m = /^#open=(file|workflow_dag):(.+?)(?:&q=([^&]*))?(?:&lib=([a-z0-9_-]+))?$/.exec(hash)
   if (!m) return null
-  const target = decodeURIComponent(m[2])
+  const target = decoded(m[2])
+  if (target === null || !nameable(target)) return null
   if (m[1] === 'workflow_dag') return { kind: 'workflow_dag', target }
   const d: Display = { kind: 'file', target }
-  if (m[3]) d.q = decodeURIComponent(m[3])
+  const q = m[3] ? decoded(m[3]) : null
+  if (q) d.q = q
   // Which library the path belongs to; absent means the primary.
   if (m[4]) d.lib = m[4]
   return d
+}
+
+function decoded(s: string): string | null {
+  try { return decodeURIComponent(s) } catch { return null }
+}
+
+/** Whether a link's path could name a file: no control characters, and no
+ *  bytes that were not text. A link made from something that is no path,
+ *  such as an image's address read as base64, opened the viewer on garbage. */
+export function nameable(path: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return !/[\u0000-\u001f\u007f-\u009f\ufffd]/.test(path)
 }
 
 export function buildOpenHash(display: Display): string {

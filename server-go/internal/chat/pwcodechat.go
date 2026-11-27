@@ -805,13 +805,18 @@ func contextBetween(c *conversations.Conversation, after, upto, current string) 
 func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody, convID string) error {
 	ctx := r.Context()
 	content, msgID := "", deref(body.UserMessageID)
+	// What the person attached in the chat's composer goes to the session
+	// with the message (pwcodeattach.go).
+	var attached []string
 	for i := len(body.Messages) - 1; i >= 0; i-- {
 		var mm struct {
-			Role    string `json:"role"`
-			Content any    `json:"content"`
+			Role          string   `json:"role"`
+			Content       any      `json:"content"`
+			AttachmentIDs []string `json:"attachment_ids"`
 		}
 		if json.Unmarshal(body.Messages[i], &mm) == nil && mm.Role == "user" {
 			content, _ = mm.Content.(string)
+			attached = mm.AttachmentIDs
 			break
 		}
 	}
@@ -832,7 +837,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		res.event("error", reqbody.O("message", pwSaid(apiMessage(m.plainReach(err, "pw code did not answer"))), "kind", "pwcode"))
 		return nil
 	}
-	if strings.TrimSpace(content) == "" {
+	if strings.TrimSpace(content) == "" && len(attached) == 0 {
 		return fail(errors.New("there is no message to send"))
 	}
 	c := m.Conv.Get(convID)
@@ -897,9 +902,10 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		return fail(errors.New("the conversation is gone"))
 	}
 	carried := pwcodeContext(c, fresh, msgID)
-	// The page takes the message from here, once the session is there.
-	takes := body.OpensSession && carried == ""
-	opens := body.OpensSession && slashLine.MatchString(strings.TrimSpace(content))
+	// The page takes the message from here, once the session is there; one
+	// with attachments is sent from here, which has them.
+	takes := body.OpensSession && carried == "" && len(attached) == 0
+	opens := body.OpensSession && len(attached) == 0 && slashLine.MatchString(strings.TrimSpace(content))
 	if opens {
 		// A command takes no turns with it: they go with the first message
 		// sent from the view.
@@ -945,7 +951,8 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 	if n, ok := jsonv.Num(jsonv.Path(d, "lastSeq")); ok {
 		after = int64(n)
 	}
-	text := scopeNote + carried + content + told
+	images, note := m.pwcodeAttachments(ctx, t.client, link.Session, attached, jsonv.Path(d, "history"))
+	text := scopeNote + carried + withAttachments(content, images, note) + told
 
 	// The turn runs on past the request, so its reply is recorded when the
 	// person has left; the request writes its events while it lasts.
@@ -964,7 +971,7 @@ func (m *Module) streamPWCode(r *http.Request, res *sseWriter, body *streamBody,
 		})
 		close(events)
 	}()
-	sent, err := pwcode.SendMessage(tctx, t.client, link.Session, text)
+	sent, err := pwcode.SendMessageWith(tctx, t.client, link.Session, text, images)
 	if err != nil {
 		cancel()
 		return fail(err)
