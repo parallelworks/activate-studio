@@ -177,10 +177,12 @@ func TestHistoryRetention(t *testing.T) {
 		return string(b) + "\n"
 	}
 	// A month file wholly past the limit is removed; an old line in a live
-	// month file is dropped.
+	// month file is dropped. Both lines go in this month's file, which is
+	// always live: old's own month can be wholly past the limit too, near a
+	// month's turn, and then the file and the recent line with it go.
 	ancient := filepath.Join(dir, now.AddDate(-1, 0, 0).UTC().Format("2006-01")+".jsonl")
 	os.WriteFile(ancient, []byte(line("ancient", now.AddDate(-1, 0, 0))), 0o600)
-	os.WriteFile(filepath.Join(dir, old.UTC().Format("2006-01")+".jsonl"), []byte(line("old", old)+line("new", now.Add(-time.Hour))), 0o600)
+	os.WriteFile(filepath.Join(dir, now.UTC().Format("2006-01")+".jsonl"), []byte(line("old", old)+line("new", now.Add(-time.Hour))), 0o600)
 	st := openStore(base, quiet)
 	if _, ok := st.get("", "old"); ok {
 		t.Fatal("kept past 180 days")
