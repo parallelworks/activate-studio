@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as shell from '../src/shellScroll'
 import { isShellBox, layoutSize, onShellScroll, settleAfterKeyboard } from '../src/shellScroll'
 
 // The chat as the package nests it in its drawer layout: a box that only
@@ -113,5 +114,61 @@ describe('a page pinched in or out on an iPad', () => {
     vi.stubGlobal('innerHeight', 597)
     expect(layoutSize()).toEqual({ width: 834, height: 1194 })
     vi.restoreAllMocks()
+  })
+})
+
+// iOS opens its keyboard over the page: the layout keeps its height and only
+// the visible part shrinks. The app keeps to the visible part, so the
+// composer at its bottom sits on the keyboard (an iPhone in Safari showed the
+// session above the keyboard and no composer).
+describe('the app above an on-screen keyboard', () => {
+  const fit = (shell as Record<string, unknown>)['fitToVisualViewport'] as
+    ((vv: VisualViewport, root: HTMLElement) => () => void) | undefined
+  const root = () => document.documentElement
+  const keyboard = (vv: { height: number; offsetTop: number; scale: number } & EventTarget, height: number, offsetTop = 0, scale = 1) => {
+    Object.assign(vv, { height, offsetTop, scale }); vv.dispatchEvent(new Event('resize'))
+  }
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete root().dataset['vv']; delete root().dataset['keyboard']
+    root().style.removeProperty('--vv-top'); root().style.removeProperty('--vv-h')
+  })
+
+  it('pins the app to what is visible while the keyboard is up, and lets go when it closes', () => {
+    expect(fit).toBeTypeOf('function')
+    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(659)
+    const vv = Object.assign(new EventTarget(), { scale: 1, height: 659, width: 393, offsetTop: 0, offsetLeft: 0 })
+    fit!(vv as unknown as VisualViewport, root())
+    expect(root().dataset['vv']).toBeUndefined()
+    keyboard(vv, 323)
+    expect(root().dataset['vv']).toBe('')
+    expect(root().dataset['keyboard']).toBe('open')
+    expect(root().style.getPropertyValue('--vv-h')).toBe('323px')
+    expect(root().style.getPropertyValue('--vv-top')).toBe('0px')
+    // Safari pans the page up to the field: the app follows.
+    Object.assign(vv, { offsetTop: 336 }); vv.dispatchEvent(new Event('scroll'))
+    expect(root().style.getPropertyValue('--vv-top')).toBe('336px')
+    keyboard(vv, 659)
+    expect(root().dataset['vv']).toBeUndefined()
+    expect(root().dataset['keyboard']).toBeUndefined()
+    expect(root().style.getPropertyValue('--vv-h')).toBe('')
+  })
+
+  it('leaves a pinch alone, and does not take a toolbar for a keyboard', () => {
+    expect(fit).toBeTypeOf('function')
+    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(1194)
+    const vv = Object.assign(new EventTarget(), { scale: 1, height: 1194, width: 834, offsetTop: 0, offsetLeft: 0 })
+    fit!(vv as unknown as VisualViewport, root())
+    keyboard(vv, 597, 200, 2)
+    expect(root().dataset['vv']).toBeUndefined()
+    keyboard(vv, 1140) // an iPad's shortcut bar over a hardware keyboard
+    expect(root().dataset['vv']).toBe('')
+    expect(root().dataset['keyboard']).toBeUndefined()
+  })
+
+  it('is what the stylesheet reads: the app keeps to it, and a phone sets its bar aside', () => {
+    const css = readFileSync('src/styles.css', 'utf8')
+    expect(css).toMatch(/html\[data-vv\] \.app \{[^}]*top: var\(--vv-top[^}]*height: var\(--vv-h/)
+    expect(css).toMatch(/html\[data-keyboard\] \.sidenav \{ display: none; \}/)
   })
 })

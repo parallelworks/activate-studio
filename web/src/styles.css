@@ -2138,6 +2138,10 @@ a.identity-btn { text-decoration: none; }
 @media (hover: none) and (pointer: coarse) {
   html, body, #root { height: 100%; overflow: hidden; overflow: clip; }
   .app { position: fixed; inset: 0; height: 100dvh; }
+  /* With the on-screen keyboard up, the app keeps to the part above it
+     (shellScroll.ts, fitToVisualViewport), so the composer sits on the
+     keyboard. */
+  html[data-vv] .app { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-h, 100dvh); }
 }
 @media (max-width: 760px) {
   /* Dynamic-toolbar browsers shrink the visual viewport as their chrome
@@ -3852,4 +3856,11 @@ input[type='search']:not(.csv-filter)::-webkit-search-cancel-button { -webkit-ap
 .pwcode-session [data-row^='earlier-studio-'] .chat-meta > :nth-child(2)::before { content: 'Studio · '; }
 .pwcode-session [data-row^='earlier-']:is(:first-child, :not([data-row^='earlier-']) + [data-row^='earlier-'])::before {
   content: 'Earlier in this chat'; display: block; padding-top: 8px; font-size: 12px; color: var(--pw-muted);
+}
+
+/* On a phone the bottom bar steps aside while the keyboard is up, so the
+   composer sits directly on the keyboard; it is back when the keyboard
+   closes. */
+@media (hover: none) and (pointer: coarse) and (max-width: 760px) {
+  html[data-keyboard] .sidenav { display: none; }
 }
