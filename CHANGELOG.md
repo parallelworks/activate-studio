@@ -2,6 +2,16 @@
 
 Every version, newest first. Each entry is the description of the pull request that made the change, which is written as a change note when the change is made.
 
+## v1.207 (2026-11-28)
+
+### With the on-screen keyboard up, the composer sits on it (#1006)
+
+On an iPhone or iPad, the app shrinks to the part of the screen above the on-screen keyboard while it is up, so the message box sits directly on the keyboard in the pw code session view and the Studio chat. On a phone the bottom bar steps aside while the keyboard is up. A pinch zoom is left alone, and desktop windows and a tablet with a mouse or trackpad are unaffected.
+
+### The retention test keeps its lines in a live month file (#1008)
+
+A test-only change. The transfer history retention test failed from 28 November because its recent line shared a month file that had passed the 180-day limit. The store is unchanged.
+
 ## v1.206 (2026-11-27)
 
 ### The tab and Home Screen icons are the brand icon from the first load (#998)
